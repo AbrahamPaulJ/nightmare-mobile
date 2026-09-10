@@ -1,0 +1,104 @@
+<resources>
+    <!--
+      简体中文. ⚠ Keys and %1$s ordering follow values/strings.xml exactly; the
+      positional markers exist so word order can differ from English.
+    -->
+    <string name="nav_models">模型</string>
+    <string name="nav_flows">流程</string>
+    <string name="nav_results">结果</string>
+    <string name="cd_settings">设置</string>
+    <string name="cd_device_info">本机 NPU：HTP 架构与 VTCM</string>
+    <string name="canvas_unsaved_flow">未保存的流程</string>
+    <string name="canvas_backend_idle">%1$s（空闲）</string>
+    <string name="canvas_holding">已加载 %1$s</string>
+    <string name="canvas_ram_free">可用内存 %1$s/%2$s GB</string>
+    <string name="run">运行</string>
+    <string name="running">运行中…</string>
+    <string name="batch">批量</string>
+    <string name="add_node">+ 节点</string>
+
+    <string name="log_done">完成</string>
+    <string name="log_seed_locked">种子已锁定：%1$s</string>
+    <string name="log_seed_random">种子：随机</string>
+    <string name="cd_copy_log">复制运行日志</string>
+    <string name="cd_hide_log">隐藏运行日志</string>
+    <string name="cd_lock_seed">锁定上次的种子，每次运行都生成相同的图</string>
+    <string name="cd_unlock_seed">解除种子锁定，每次运行都生成新的图</string>
+
+    <string name="batch_what_varies">变化的参数</string>
+    <string name="batch_values">取值</string>
+    <string name="batch_values_hint">1, 2, 3   或   1..8   或   1..10 by 3</string>
+    <string name="batch_type_values">请输入取值</string>
+    <string name="batch_unreadable">无法识别的列表或区间（最多 %1$d 个取值）</string>
+    <string name="batch_runs">%1$d 次运行</string>
+    <string name="batch_one_run">1 次运行</string>
+    <string name="batch_kept">每次运行都会连同生成它的流程保存到结果中</string>
+    <string name="batch_nothing_to_sweep">此画布上暂无可批量变化的参数 — 请添加采样器，或带数值的节点</string>
+    <string name="batch_run_n">运行 %1$d 次</string>
+    <string name="batch_progress">批量 %1$d / %2$d</string>
+    <string name="batch_stop">完成本次后停止</string>
+
+    <string name="settings">设置</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_community">社区</string>
+    <string name="settings_diagnostics">诊断</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_dark">深色</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_canvas_note">画布始终以深色绘制 — 它有自己的配色</string>
+    <string name="community_title">自制节点</string>
+    <string name="community_intro">一个节点由两个文件组成：一份声明其端口与参数的清单，和一段运行它的脚本。打包成 zip 后从「流程」导入，或把文件夹推送到本应用的插件目录。无需工具链、无需编译、无需新版本。</string>
+    <string name="community_files_title">这两个文件</string>
+    <string name="community_files_body">node.json 声明包 id、节点类型、输入与输出、控件，以及需要哪些宿主操作权限。\n\nindex.js 调用 __nm.register(&lt;pack&gt;:&lt;Type&gt;, { run: fn })。你的 run(ctx, inputs, widgets) 返回最后一个宿主操作的结果。</string>
+    <string name="community_ops_title">ctx.host 可调用的操作</string>
+    <string name="community_ops_body">image.info  宽与高\nimage.resize  image, width, height\nimage.crop  image, x, y, width, height\nimage.new  width, height, color\nimage.composite  base, overlay, x, y, mask\nimage.blend  a, b, alpha\nimage.grayscale、image.invert  image\nlatent.blend  两个 latent 与一张遮罩图</string>
+    <string name="community_handles_title">图像是 id，不是像素</string>
+    <string name="community_handles_body">输入以句柄形式传入，宿主操作也返回句柄。一张 512 图像进入脚本时约为 40 字节 JSON，而非 780 KB，这正是沙箱几乎不耗成本的原因。你从不遍历像素，而是组合会处理像素的操作。</string>
+    <string name="community_widgets_title">控件是声明出来的，不是画出来的</string>
+    <string name="community_widgets_body">为数值指定 min 与 max 就得到滑块；指定 options 就得到下拉框，若不超过四项则是一排选项条。加上 hint，它会显示在控件下方。\n\n你选择取值，应用选择控件。这是有意为之，以免每个包各自发明一套控件。</string>
+    <string name="community_cannot_title">目前还不能做什么</string>
+    <string name="community_cannot_body">宿主没有运行模型的操作，因此节点无法做分割、检测或估计。那属于下一层级，尚未实现。\n\n脚本运行在 QuickJS 沙箱中，权限默认拒绝，因此插件包无法访问网络或你的文件。但目前还没有对运行时长的限制。</string>
+    <string name="community_reference">参考</string>
+    <string name="community_repo">github.com/AbrahamPaulJ/nightmare-mobile\n\nexamples/ 目录中有四个可用的示例包，从单一操作的封装到含两个节点的工具包。README 涵盖与本页相同的内容，并附完整清单。\n\n该仓库目前为私有，只有获得访问权限后链接才有效。</string>
+    <string name="community_experimental">实验性。插件格式在版本之间仍可能变动，且导入的包尚无校验机制，请像对待任何来路不明的代码那样谨慎导入。</string>
+
+    <string name="flows_import">导入</string>
+    <string name="flows_import_note">别人发给你的流程（.json），或一个节点包（.zip）</string>
+    <string name="flows_import_flow">流程</string>
+    <string name="flows_import_pack">节点</string>
+    <string name="flows_import_warning">⚠ 节点包会运行自己的代码 — 请只导入你信任的包</string>
+    <string name="flows_recommended">推荐</string>
+    <string name="save">保存</string>
+    <string name="cancel">取消</string>
+    <string name="save_workflow">保存此工作流</string>
+    <string name="save_workflow_named">保存 \"%1$s\"</string>
+    <string name="name">名称</string>
+    <string name="save_replaces">这将覆盖已保存的副本</string>
+
+    <string name="open_flow">打开流程</string>
+    <string name="close">关闭</string>
+    <string name="cd_forget_result">删除这一张</string>
+    <string name="cd_open_fullscreen">点击全屏查看</string>
+
+    <string name="download">下载</string>
+    <string name="download_mb">下载 %1$d MB</string>
+    <string name="delete">删除</string>
+    <string name="remove">移除</string>
+    <string name="use">使用</string>
+    <string name="in_use">使用中</string>
+    <string name="unsupported">不支持</string>
+    <string name="installed_mb">已安装 · %1$d MB</string>
+    <string name="not_installed_mb">未安装  需下载 %1$d MB</string>
+    <string name="cannot_run_it">本机无法运行</string>
+    <string name="upscalers">放大模型</string>
+    <string name="upscalers_note">每个 8-24 MB。在流程中添加放大节点即可使用。</string>
+
+    <string name="cd_paint">绘制</string>
+    <string name="cd_erase">擦除</string>
+    <string name="cd_undo_stroke">撤销上一笔</string>
+    <string name="cd_invert_mask">反转遮罩</string>
+    <string name="cd_clear_mask">清除遮罩</string>
+    <string name="mask_brush_px">笔刷  %1$d 像素</string>
+    <string name="mask_paint_hint">涂抹你想重绘的区域 · 双指缩放</string>
+    <string name="mask_covered">已覆盖 %1$d%% · 红色区域会被重绘</string>
+</resources>

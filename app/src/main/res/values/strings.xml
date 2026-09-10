@@ -1,0 +1,127 @@
+<resources>
+    <!--
+      ⚠⚠ THE app's strings. Until 2026-09-10 every one of these was a literal in
+      a .kt file and `stringResource` appeared zero times, so no other language
+      was possible at all.
+
+      ⚠ Ordered by SCREEN, not alphabetically: a translator works through a
+      surface at a time, and "what sits next to this" is most of the context
+      they have. ⚠ Anything with a number in it takes a positional %1$s so the
+      word order can move — several of these read backwards in Russian if the
+      value is pinned to the end.
+    -->
+    <string name="app_name">Nightmare</string>
+
+    <!-- Canvas: the top bar and the run bar. -->
+    <string name="nav_models">Models</string>
+    <string name="nav_flows">Flows</string>
+    <string name="nav_results">Results</string>
+    <string name="cd_settings">Settings</string>
+    <string name="cd_device_info">This device\'s NPU: HTP arch and VTCM</string>
+    <string name="canvas_unsaved_flow">unsaved flow</string>
+    <string name="canvas_backend_idle">%1$s (idle)</string>
+    <string name="canvas_holding">holding %1$s</string>
+    <string name="canvas_ram_free">%1$s/%2$s GB free</string>
+    <string name="run">Run</string>
+    <string name="running">Running…</string>
+    <string name="batch">Batch</string>
+    <string name="add_node">+ Node</string>
+
+    <!-- The run log. -->
+    <string name="log_done">done</string>
+    <string name="log_seed_locked">seed locked: %1$s</string>
+    <string name="log_seed_random">seed: random</string>
+    <string name="cd_copy_log">Copy the run log</string>
+    <string name="cd_hide_log">Hide the run log</string>
+    <string name="cd_lock_seed">Lock the last seed, so every Run makes the same picture</string>
+    <string name="cd_unlock_seed">Release the seed, so every Run makes a new picture</string>
+
+    <!-- Batch. -->
+    <string name="batch_what_varies">what varies</string>
+    <string name="batch_values">values</string>
+    <string name="batch_values_hint">1, 2, 3   or   1..8   or   1..10 by 3</string>
+    <string name="batch_type_values">type some values</string>
+    <string name="batch_unreadable">that is not a list or a range this can read (max %1$d values)</string>
+    <string name="batch_runs">%1$d runs</string>
+    <string name="batch_one_run">1 run</string>
+    <string name="batch_kept">every run is kept in Results, with the flow that made it</string>
+    <string name="batch_nothing_to_sweep">nothing on this canvas can be swept yet — add a Sampler, or a node with a number you can vary</string>
+    <string name="batch_run_n">Run %1$d</string>
+    <string name="batch_progress">batch %1$d of %2$d</string>
+    <string name="batch_stop">Stop after this one</string>
+
+    <!-- Settings. -->
+    <string name="settings">Settings</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_community">Community</string>
+    <string name="settings_diagnostics">Diagnostics</string>
+    <string name="theme_system">Follow the system</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_canvas_note">the canvas is drawn dark either way — its palette is its own</string>
+    <string name="community_title">Bring your own nodes</string>
+    <string name="community_intro">A node is two files: a manifest that declares its ports and knobs, and a script that runs it. Zip them and import from Flows, or push the folder to this app\'s plugin directory. No toolchain, no compile step, no new version of the app.</string>
+
+    <string name="community_files_title">The two files</string>
+    <string name="community_files_body">node.json declares the pack id, the node type, its inputs and outputs, its widgets, and which host ops it needs permission for.\n\nindex.js calls __nm.register(&lt;pack&gt;:&lt;Type&gt;, { run: fn }). Your run(ctx, inputs, widgets) returns whatever the last host op returned.</string>
+
+    <string name="community_ops_title">What ctx.host can call</string>
+    <string name="community_ops_body">image.info  width and height\nimage.resize  image, width, height\nimage.crop  image, x, y, width, height\nimage.new  width, height, color\nimage.composite  base, overlay, x, y, mask\nimage.blend  a, b, alpha\nimage.grayscale, image.invert  image\nlatent.blend  two latents and a mask image</string>
+
+    <string name="community_handles_title">Images are ids, not pixels</string>
+    <string name="community_handles_body">Inputs arrive as handles and host ops return handles. A 512 image crosses into your script as about 40 bytes of JSON rather than 780 KB, which is what makes the sandbox free. You never loop over pixels; you compose ops that do.</string>
+
+    <string name="community_widgets_title">Widgets are declared, not drawn</string>
+    <string name="community_widgets_body">Give a number min and max and you get a slider. Give it options and you get a dropdown, or a row of chips when there are four or fewer. Add a hint and it shows under the control.\n\nYou choose the values; the app chooses the control. That is deliberate, so no pack invents a control language of its own.</string>
+
+    <string name="community_cannot_title">What a node cannot do yet</string>
+    <string name="community_cannot_body">There is no host op that runs a model, so a node cannot segment, detect or estimate anything. That is the next tier and it is not built.\n\nScripts run in a QuickJS sandbox and permissions are denied by default, so a pack cannot reach the network or your files. Nothing yet bounds how long one may run.</string>
+
+    <string name="community_reference">Reference</string>
+    <string name="community_repo">github.com/AbrahamPaulJ/nightmare-mobile\n\nThe examples/ folder has four working packs, from a one op wrapper to a two node toolkit. The README covers the same ground as this page with the full manifest.\n\nThe repository is private for now, so the link only works if you have been given access.</string>
+    <string name="community_experimental">Experimental. The plugin format can still change between versions, and there is no validation gate on an imported pack yet, so import packs the way you would run any other code you did not write.</string>
+
+    <!-- Flows. -->
+    <string name="flows_import">Import</string>
+    <string name="flows_import_note">a flow someone sent you (.json), or a pack of nodes (.zip)</string>
+    <string name="flows_import_flow">Flow</string>
+    <string name="flows_import_pack">Nodes</string>
+    <string name="flows_import_warning">⚠ a pack runs its own code — import ones you trust</string>
+    <string name="flows_recommended">Recommended</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="save_workflow">Save this workflow</string>
+    <string name="save_workflow_named">Save \"%1$s\"</string>
+    <string name="name">Name</string>
+    <string name="save_replaces">this replaces the saved copy</string>
+
+    <!-- Results. -->
+    <string name="open_flow">Open flow</string>
+    <string name="close">Close</string>
+    <string name="cd_forget_result">Forget this one</string>
+    <string name="cd_open_fullscreen">Tap to see it full screen</string>
+
+    <!-- Models and upscalers. -->
+    <string name="download">Download</string>
+    <string name="download_mb">Download %1$d MB</string>
+    <string name="delete">Delete</string>
+    <string name="remove">Remove</string>
+    <string name="use">Use</string>
+    <string name="in_use">In use</string>
+    <string name="unsupported">Unsupported</string>
+    <string name="installed_mb">installed · %1$d MB</string>
+    <string name="not_installed_mb">not installed  %1$d MB download</string>
+    <string name="cannot_run_it">this device cannot run it</string>
+    <string name="upscalers">Upscalers</string>
+    <string name="upscalers_note">8-24 MB each. Add an Upscale node to a flow to use one.</string>
+
+    <!-- Mask editor. -->
+    <string name="cd_paint">Paint</string>
+    <string name="cd_erase">Erase</string>
+    <string name="cd_undo_stroke">Undo the last stroke</string>
+    <string name="cd_invert_mask">Invert the mask</string>
+    <string name="cd_clear_mask">Clear the mask</string>
+    <string name="mask_brush_px">brush  %1$d px</string>
+    <string name="mask_paint_hint">paint over what you want REPAINTED · pinch to zoom</string>
+    <string name="mask_covered">%1$d%% covered · the red area is what gets repainted</string>
+</resources>

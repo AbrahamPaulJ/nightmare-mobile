@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The real theme is Compose (ui/Theme.kt). This exists only so the window
+         background matches before Compose draws. Without it the app flashes
+         white on launch, which on a dark-first app looks like a crash. -->
+    <style name="Theme.Nightmare" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/surface</item>
+        <item name="android:statusBarColor">@color/surface</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+    </style>
+</resources>

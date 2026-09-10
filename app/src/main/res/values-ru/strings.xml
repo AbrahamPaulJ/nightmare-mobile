@@ -1,0 +1,104 @@
+<resources>
+    <!--
+      Русский. ⚠ Ключи и порядок %1$s повторяют values/strings.xml; позиционные
+      маркеры существуют именно затем, чтобы порядок слов мог отличаться.
+    -->
+    <string name="nav_models">Модели</string>
+    <string name="nav_flows">Схемы</string>
+    <string name="nav_results">Результаты</string>
+    <string name="cd_settings">Настройки</string>
+    <string name="cd_device_info">NPU этого устройства: архитектура HTP и VTCM</string>
+    <string name="canvas_unsaved_flow">несохранённая схема</string>
+    <string name="canvas_backend_idle">%1$s (не запущена)</string>
+    <string name="canvas_holding">загружена %1$s</string>
+    <string name="canvas_ram_free">свободно %1$s/%2$s ГБ</string>
+    <string name="run">Запуск</string>
+    <string name="running">Выполняется…</string>
+    <string name="batch">Серия</string>
+    <string name="add_node">+ Узел</string>
+
+    <string name="log_done">готово</string>
+    <string name="log_seed_locked">сид закреплён: %1$s</string>
+    <string name="log_seed_random">сид: случайный</string>
+    <string name="cd_copy_log">Скопировать журнал запуска</string>
+    <string name="cd_hide_log">Скрыть журнал запуска</string>
+    <string name="cd_lock_seed">Закрепить последний сид, чтобы каждый запуск давал ту же картинку</string>
+    <string name="cd_unlock_seed">Освободить сид, чтобы каждый запуск давал новую картинку</string>
+
+    <string name="batch_what_varies">что меняется</string>
+    <string name="batch_values">значения</string>
+    <string name="batch_values_hint">1, 2, 3   или   1..8   или   1..10 by 3</string>
+    <string name="batch_type_values">введите значения</string>
+    <string name="batch_unreadable">это не список и не диапазон (максимум %1$d значений)</string>
+    <string name="batch_runs">запусков: %1$d</string>
+    <string name="batch_one_run">1 запуск</string>
+    <string name="batch_kept">каждый запуск сохраняется в Результатах вместе со схемой, которая его создала</string>
+    <string name="batch_nothing_to_sweep">на этом холсте пока нечего перебирать — добавьте сэмплер или узел с числовым параметром</string>
+    <string name="batch_run_n">запустить %1$d</string>
+    <string name="batch_progress">серия %1$d из %2$d</string>
+    <string name="batch_stop">остановить после текущего</string>
+
+    <string name="settings">Настройки</string>
+    <string name="settings_theme">Тема</string>
+    <string name="settings_community">Сообщество</string>
+    <string name="settings_diagnostics">Диагностика</string>
+    <string name="theme_system">Как в системе</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_canvas_note">холст в любом случае рисуется тёмным — у него своя палитра</string>
+    <string name="community_title">Свои узлы</string>
+    <string name="community_intro">Узел состоит из двух файлов: манифеста, который объявляет его порты и параметры, и скрипта, который его выполняет. Упакуйте их в zip и импортируйте из «Схем», либо положите папку в каталог плагинов приложения. Без тулчейна, без компиляции, без новой версии.</string>
+    <string name="community_files_title">Эти два файла</string>
+    <string name="community_files_body">node.json объявляет id пакета, тип узла, входы и выходы, виджеты и то, какие операции хоста ему нужны.\n\nindex.js вызывает __nm.register(&lt;pack&gt;:&lt;Type&gt;, { run: fn }). Ваш run(ctx, inputs, widgets) возвращает то, что вернула последняя операция хоста.</string>
+    <string name="community_ops_title">Что умеет ctx.host</string>
+    <string name="community_ops_body">image.info  ширина и высота\nimage.resize  image, width, height\nimage.crop  image, x, y, width, height\nimage.new  width, height, color\nimage.composite  base, overlay, x, y, mask\nimage.blend  a, b, alpha\nimage.grayscale, image.invert  image\nlatent.blend  два латента и изображение-маска</string>
+    <string name="community_handles_title">Изображения это идентификаторы, а не пиксели</string>
+    <string name="community_handles_body">Входы приходят как дескрипторы, и операции хоста возвращают дескрипторы. Изображение 512 попадает в скрипт как примерно 40 байт JSON, а не 780 КБ, и именно поэтому песочница почти ничего не стоит. Вы не перебираете пиксели, вы комбинируете операции, которые это делают.</string>
+    <string name="community_widgets_title">Виджеты объявляются, а не рисуются</string>
+    <string name="community_widgets_body">Задайте числу min и max и получите слайдер. Задайте options и получите список, а при четырёх вариантах и меньше ряд чипов. Добавьте hint, и он появится под элементом.\n\nВы выбираете значения, приложение выбирает элемент управления. Так задумано, чтобы ни один пакет не изобретал собственный язык интерфейса.</string>
+    <string name="community_cannot_title">Чего пока нельзя</string>
+    <string name="community_cannot_body">У хоста нет операции, запускающей модель, поэтому узел не может сегментировать, детектировать или оценивать. Это следующий уровень, и он не реализован.\n\nСкрипты выполняются в песочнице QuickJS, разрешения по умолчанию запрещены, так что пакет не доберётся до сети или ваших файлов. Но время его работы пока ничем не ограничено.</string>
+    <string name="community_reference">Справка</string>
+    <string name="community_repo">github.com/AbrahamPaulJ/nightmare-mobile\n\nВ папке examples/ четыре рабочих пакета, от обёртки над одной операцией до набора из двух узлов. README покрывает то же, что и эта страница, с полным манифестом.\n\nРепозиторий пока приватный, поэтому ссылка работает только при наличии доступа.</string>
+    <string name="community_experimental">Экспериментально. Формат плагинов ещё может меняться между версиями, а проверки импортируемых пакетов пока нет, поэтому импортируйте пакеты так же осторожно, как любой чужой код.</string>
+
+    <string name="flows_import">Импорт</string>
+    <string name="flows_import_note">схема, которую вам прислали (.json), или пакет узлов (.zip)</string>
+    <string name="flows_import_flow">Схема</string>
+    <string name="flows_import_pack">Узлы</string>
+    <string name="flows_import_warning">⚠ пакет выполняет собственный код — импортируйте только те, которым доверяете</string>
+    <string name="flows_recommended">Рекомендуемые</string>
+    <string name="save">сохранить</string>
+    <string name="cancel">отмена</string>
+    <string name="save_workflow">Сохранить эту схему</string>
+    <string name="save_workflow_named">Сохранить \"%1$s\"</string>
+    <string name="name">имя</string>
+    <string name="save_replaces">это заменит сохранённую копию</string>
+
+    <string name="open_flow">Открыть схему</string>
+    <string name="close">Закрыть</string>
+    <string name="cd_forget_result">Удалить эту</string>
+    <string name="cd_open_fullscreen">Нажмите, чтобы открыть во весь экран</string>
+
+    <string name="download">Скачать</string>
+    <string name="download_mb">Скачать %1$d МБ</string>
+    <string name="delete">Удалить</string>
+    <string name="remove">Убрать</string>
+    <string name="use">Выбрать</string>
+    <string name="in_use">Используется</string>
+    <string name="unsupported">Не поддерживается</string>
+    <string name="installed_mb">установлено · %1$d МБ</string>
+    <string name="not_installed_mb">не установлено  загрузка %1$d МБ</string>
+    <string name="cannot_run_it">это устройство не сможет её запустить</string>
+    <string name="upscalers">Апскейлеры</string>
+    <string name="upscalers_note">По 8-24 МБ. Добавьте узел Upscale в схему, чтобы использовать.</string>
+
+    <string name="cd_paint">Рисовать</string>
+    <string name="cd_erase">Стирать</string>
+    <string name="cd_undo_stroke">Отменить последний штрих</string>
+    <string name="cd_invert_mask">Инвертировать маску</string>
+    <string name="cd_clear_mask">Очистить маску</string>
+    <string name="mask_brush_px">кисть  %1$d пикс.</string>
+    <string name="mask_paint_hint">закрасьте то, что нужно перерисовать · щипок для масштаба</string>
+    <string name="mask_covered">закрашено %1$d%% · красная область будет перерисована</string>
+</resources>

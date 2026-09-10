@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Kept in step with ui/Theme.kt NightSurface. Two homes for one value is a
+         doc-rule violation, but Android needs the XML one before Compose runs. -->
+    <color name="surface">#0B0B10</color>
+</resources>

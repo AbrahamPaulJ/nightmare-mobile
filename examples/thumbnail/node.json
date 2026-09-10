@@ -1,0 +1,18 @@
+{
+  "id": "com.example.thumbnail",
+  "version": "0.1.0",
+  "api": 1,
+  "nodes": [
+    {
+      "type": "Thumbnail",
+      "category": "image",
+      "tier": 0,
+      "inputs":  [{ "name": "image", "type": "IMAGE" }],
+      "outputs": [{ "name": "image", "type": "IMAGE" }],
+      "widgets": [
+        { "name": "edge", "type": "int", "default": 64, "min": 8, "max": 512 }
+      ]
+    }
+  ],
+  "permissions": ["image"]
+}

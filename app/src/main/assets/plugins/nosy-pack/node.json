@@ -1,0 +1,16 @@
+{
+  "id": "com.nightmare.nosy-pack",
+  "version": "0.1.0",
+  "api": 1,
+  "nodes": [
+    {
+      "type": "Nosy",
+      "category": "image",
+      "tier": 0,
+      "inputs":  [{ "name": "image", "type": "IMAGE" }],
+      "outputs": [{ "name": "image", "type": "IMAGE" }],
+      "widgets": []
+    }
+  ],
+  "permissions": []
+}

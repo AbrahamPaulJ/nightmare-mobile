@@ -1,0 +1,770 @@
+--- ../LocalDream/local-dream/app/src/main/cpp/src/main.cpp	2026-08-21 16:35:42.952070300 +0930
++++ backend-src/src/main.cpp	2026-09-08 14:56:39.668194800 +0930
+@@ -1,10 +1,13 @@
+ #include <algorithm>
+ #include <chrono>
++#include <cstring>
+ #include <filesystem>
+ #include <fstream>
+ #include <iostream>
++#include <map>
+ #include <memory>
+ #include <mutex>
++#include <random>
+ #include <string>
+ #include <vector>
+ 
+@@ -24,6 +27,7 @@
+ #include "RequestParser.hpp"
+ #include "SDUtils.hpp"
+ #include "SafeTensor2MNN.hpp"
++#include "Sha256.hpp"
+ #include "TextEncoder.hpp"
+ #include "Upscaler.hpp"
+ 
+@@ -484,6 +488,736 @@
+ // new request arriving while an aborted one is still winding down).
+ static std::mutex g_generation_mutex;
+ 
++// --- Nightmare op endpoints -------------------------------------------------
++// A node graph needs the stage hooks individually. These sit BESIDE /generate
++// and change nothing about it: same pipeline, same mutex, same stage hooks.
++//
++// ⭐ Handles, not buffers (docs/ARCHITECTURE.md §6). A Conditioning is
++// [2, seq_len, hidden_dim] floats -- 473 KB for SD1.5 -- so the response
++// carries an id and shape, and the tensor stays server-side. Marshalling it
++// through JSON on every edge would dominate a graph that is otherwise 0.2%
++// transport.
++static std::mutex g_handle_mutex;
++static std::map<std::string, Conditioning> g_cond_handles;
++
++// A sampled latent, VAE-ready. Kept server-side for the same reason as
++// Conditioning: 4 x 64 x 64 floats is 64 KB, and a graph that moves it through
++// JSON on every edge pays for nothing.
++struct LatentHandle {
++  std::vector<float> data;
++  int width = 0;
++  int height = 0;
++  int channels = 0;
++};
++static std::map<std::string, LatentHandle> g_latent_handles;
++
++// One sample, one handle -- the body shared by both /sample paths.
++//
++// ⚠ Factored rather than copied, because of the KEY below: it is the rule
++// that decides when two requests are the SAME image. A second copy of that rule
++// drifts, and a drifted key serves a stale latent that looks almost right --
++// which is a failure that never raises an error. The streaming and the plain
++// endpoint differ only in what they do with the progress callback and with the
++// JSON this returns.
++//
++// ⚠ Takes g_generation_mutex itself; the caller must NOT already hold it.
++static nlohmann::json sampleToHandle(Pipeline *pipeline, GenerationRequest &req,
++                                     const ProgressCallback &progress) {
++  const auto t0 = std::chrono::steady_clock::now();
++  GenerationResult out;
++  {
++    std::lock_guard<std::mutex> lock(g_generation_mutex);
++    out = pipeline->opSample(req, progress);
++  }
++  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
++                      std::chrono::steady_clock::now() - t0)
++                      .count();
++
++  if (out.latent_data.empty())
++    throw std::runtime_error(
++        "sample() returned no latent -- return_latent was not honoured");
++
++  // Content-addressed on everything that changes the result. ⚠ Include the
++  // scheduler: two runs with identical prompt/steps/cfg/seed and different
++  // schedulers are different images, and a handle that collided across them
++  // would serve a stale latent that looks almost right.
++  std::string key = req.prompt + "" + req.negative_prompt +
++                    "" + std::to_string(req.steps) + "" +
++                    std::to_string(req.cfg) + "" +
++                    std::to_string(req.seed) + "" +
++                    req.scheduler_type + "" +
++                    std::to_string(req.width) + "x" +
++                    std::to_string(req.height);
++  // ⚠⚠ The starting latent and the denoise strength are part of the key.
++  // Two img2img renders from different images, or from the same image at
++  // different strengths, are different pictures -- and a handle that
++  // collided across them would serve a stale latent that looks almost
++  // right, which is a failure that never raises an error.
++  // ⚠⚠ A supplied conditioning is part of the key too, and it must be the
++  // TENSOR rather than the handle string: two handles can name identical
++  // conditionings (the same prompt encoded twice), and keying on the handle
++  // would miss a cache hit that is genuinely available.
++  if (!req.init_cond_hidden.empty()) {
++    key += "cond" +
++           Sha256::hashHex(
++               std::string(
++                   reinterpret_cast<const char *>(req.init_cond_hidden.data()),
++                   req.init_cond_hidden.size() * sizeof(float)),
++               16);
++  }
++  if (!req.init_latents.empty()) {
++    key += "img2img" +
++           Sha256::hashHex(
++               std::string(
++                   reinterpret_cast<const char *>(req.init_latents.data()),
++                   req.init_latents.size() * sizeof(float)),
++               16) +
++           "" + std::to_string(req.denoise_strength);
++  }
++  const std::string handle = "lat_" + Sha256::hashHex(key);
++
++  const std::string lat_hash = Sha256::hashHex(
++      std::string(reinterpret_cast<const char *>(out.latent_data.data()),
++                  out.latent_data.size() * sizeof(float)),
++      16);
++
++  nlohmann::json body = {{"ok", true},
++                         {"handle", handle},
++                         {"channels", out.channels},
++                         {"width", out.width},
++                         {"height", out.height},
++                         {"floats", out.latent_data.size()},
++                         {"latent_sha", lat_hash},
++                         {"steps", req.steps},
++                         {"cfg", req.cfg},
++                         {"seed", req.seed},
++                         {"scheduler", req.scheduler_type},
++                         {"ms", ms}};
++  {
++    std::lock_guard<std::mutex> hl(g_handle_mutex);
++    LatentHandle lh;
++    lh.width = out.width;
++    lh.height = out.height;
++    lh.channels = out.channels;
++    lh.data = std::move(out.latent_data);
++    g_latent_handles[handle] = std::move(lh);
++    body["latents_resident"] = g_latent_handles.size();
++  }
++
++  return body;
++}
++
++static void registerOpEndpoints(httplib::Server &svr, Pipeline *pipeline) {
++  svr.Post("/encode_text", [pipeline](const httplib::Request &request,
++                                      httplib::Response &res) {
++    try {
++      auto json = nlohmann::json::parse(request.body);
++      GenerationRequest req = parseGenerationRequest(
++          json, pipeline->isSdxl(), pipeline->isAnima(),
++          pipeline->isControlNet(), pipeline->supportsImg2Img(),
++          pipeline->supportsUltrafix());
++
++      const auto t0 = std::chrono::steady_clock::now();
++      Conditioning cond;
++      {
++        // Same mutex as /generate: the pipelines share MNN sessions and the
++        // global IO dimensions, so an op must never run beside a generation.
++        std::lock_guard<std::mutex> lock(g_generation_mutex);
++        cond = pipeline->opEncodeText(req);
++      }
++      const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
++                          std::chrono::steady_clock::now() - t0)
++                          .count();
++
++      // Content-addressed: the same prompt pair yields the same handle, which
++      // is what makes the executor's caching (§4) fall out for free. \x1f
++      // separates the fields so ("ab","c") and ("a","bc") cannot collide.
++      const std::string handle =
++          "cond_" + Sha256::hashHex(req.prompt + "\x1f" + req.negative_prompt);
++
++      // A few floats from EACH half, so a caller can prove the op ran and is
++      // reproducible without moving 473 KB. A handle alone is unfalsifiable.
++      //
++      // ⚠⚠ Sample BOTH halves. `hidden` is [negative, positive], so a preview
++      // taken from the front is entirely the NEGATIVE side. The first version
++      // of this did exactly that, and the smoke test then showed byte-identical
++      // previews for two different prompts that shared a negative prompt --
++      // which looks like a broken encoder and is actually a broken check.
++      // ⚠⚠⚠ THIS CHECK HAS BEEN WRONG TWICE. Both times it sampled something
++      // that is constant by construction and therefore proved nothing:
++      //   v1: sampled the front of `hidden`, which is entirely the NEGATIVE
++      //       side -- two different prompts sharing a negative prompt looked
++      //       byte-identical.
++      //   v2: sampled index 0 of each half, which is the CLIP
++      //       start-of-text token -- identical for EVERY prompt, so the
++      //       negative and positive halves looked identical to each other.
++      // A hash over the whole half cannot sample a constant by accident, which
++      // is the entire point. The floats are from token index 1 -- the first
++      // position that carries prompt content -- and are for eyeballing only.
++      const size_t half = (size_t)cond.seq_len * (size_t)cond.hidden_dim;
++      auto hash_half = [&cond](size_t begin, size_t count) -> std::string {
++        if (begin + count > cond.hidden.size()) return "short";
++        return Sha256::hashHex(
++            std::string(reinterpret_cast<const char *>(cond.hidden.data() + begin),
++                        count * sizeof(float)),
++            16);
++      };
++      const std::string neg_hash = hash_half(0, half);
++      const std::string pos_hash = hash_half(half, half);
++
++      const size_t tok1 = (size_t)cond.hidden_dim;  // second token
++      nlohmann::json preview_neg = nlohmann::json::array();
++      nlohmann::json preview_pos = nlohmann::json::array();
++      for (size_t i = 0; i < 3 && tok1 + i < cond.hidden.size(); ++i)
++        preview_neg.push_back(cond.hidden[tok1 + i]);
++      for (size_t i = 0; i < 3 && half + tok1 + i < cond.hidden.size(); ++i)
++        preview_pos.push_back(cond.hidden[half + tok1 + i]);
++
++      nlohmann::json out = {{"ok", true},
++                            {"handle", handle},
++                            {"seq_len", cond.seq_len},
++                            {"hidden_dim", cond.hidden_dim},
++                            {"pooled_dim", cond.pooled_dim},
++                            {"floats", cond.hidden.size()},
++                            {"bytes", cond.hidden.size() * sizeof(float)},
++                            {"neg_hash", neg_hash},
++                            {"pos_hash", pos_hash},
++                            {"preview_neg", preview_neg},
++                            {"preview_pos", preview_pos},
++                            {"ms", ms}};
++      {
++        std::lock_guard<std::mutex> hl(g_handle_mutex);
++        g_cond_handles[handle] = std::move(cond);
++        out["handles_resident"] = g_cond_handles.size();
++      }
++
++      res.status = 200;
++      res.set_content(out.dump(), "application/json");
++    } catch (const std::exception &e) {
++      nlohmann::json err = {
++          {"error",
++           {{"message", std::string(e.what())}, {"type", "encode_text_error"}}}};
++      res.status = 400;
++      res.set_content(err.dump(), "application/json");
++    }
++  });
++
++  // prompt -> latent. The fused sampler.
++  //
++  // ⚠ Streaming is OPT-IN via `?stream=1`, mirroring /vae_decode's
++  // `?binary=1`. The canvas needs per-node progress (§4); tools/graph_smoke.sh
++  // and the harness want one JSON object they can parse with toybox. Making the
++  // stream the only shape would have broken both, and an endpoint whose response
++  // type changes on nothing the caller said is worse than two it can choose
++  // between.
++  //
++  // The stream narrows /generate's existing contract rather than inventing one:
++  // the same `progress` / `complete` / `error` events, and `complete` carries
++  // exactly the body the plain call returns, plus `"type"`.
++  svr.Post("/sample", [pipeline](const httplib::Request &request,
++                                 httplib::Response &res) {
++    const bool stream = request.has_param("stream") &&
++                        request.get_param_value("stream") != "0";
++    try {
++      auto json = nlohmann::json::parse(request.body);
++      auto req = std::make_shared<GenerationRequest>(parseGenerationRequest(
++          json, pipeline->isSdxl(), pipeline->isAnima(),
++          pipeline->isControlNet(), pipeline->supportsImg2Img(),
++          pipeline->supportsUltrafix()));
++
++      // ⭐ A conditioning handed in by the graph: `encode_text` as a wire.
++      //
++      // ⚠ Copied out under the lock, like the latent below, because the render
++      // outlives the lookup.
++      if (json.contains("cond_handle")) {
++        const std::string h = json["cond_handle"].get<std::string>();
++        std::lock_guard<std::mutex> hl(g_handle_mutex);
++        auto it = g_cond_handles.find(h);
++        if (it == g_cond_handles.end())
++          throw std::invalid_argument("unknown cond_handle: " + h);
++        req->init_cond_hidden = it->second.hidden;
++        req->init_cond_pooled = it->second.pooled;
++        req->init_cond_time_ids = it->second.time_ids;
++        req->init_cond_seq = it->second.seq_len;
++        req->init_cond_dim = it->second.hidden_dim;
++      }
++
++      // ⭐ img2img from a latent already in the graph.
++      //
++      // ⚠ The latent is COPIED out under the handle lock rather than held by
++      // reference: the render runs for seconds and another request may register
++      // or evict handles in the meantime.
++      if (json.contains("latent_handle")) {
++        const std::string h = json["latent_handle"].get<std::string>();
++        {
++          std::lock_guard<std::mutex> hl(g_handle_mutex);
++          auto it = g_latent_handles.find(h);
++          if (it == g_latent_handles.end())
++            throw std::invalid_argument("unknown latent_handle: " + h);
++          req->init_latents = it->second.data;
++        }
++        req->img2img = true;
++        // ⚠ Defaulted to 0.6 rather than to 1.0. denoise 1.0 renoises
++        // completely, which is txt2img with extra steps -- a caller that forgot
++        // the field would get a result with no trace of the image they supplied
++        // and no error to explain it.
++        req->denoise_strength = json.value("denoise", 0.6f);
++      }
++
++      if (!stream) {
++        nlohmann::json body =
++            sampleToHandle(pipeline, *req, [](int, int, const std::string &) {});
++        res.status = 200;
++        res.set_content(body.dump(), "application/json");
++        return;
++      }
++
++      res.set_header("Content-Type", "text/event-stream");
++      res.set_header("Cache-Control", "no-cache");
++      res.set_header("Connection", "keep-alive");
++      res.set_chunked_content_provider(
++          "text/event-stream",
++          [pipeline, req](intptr_t, httplib::DataSink &sink) -> bool {
++            // The last denominator the sampler reported, so the closing event
++            // below needs no knowledge of generate()'s step budget.
++            int last_total = 0;
++            try {
++              nlohmann::json body = sampleToHandle(
++                  pipeline, *req,
++                  [&sink, &req, &last_total](int s, int t,
++                                             const std::string &img) {
++                    last_total = t;
++                    nlohmann::json p = {
++                        {"type", "progress"}, {"step", s}, {"total_steps", t}};
++                    if (!img.empty()) {
++                      p["image"] = img;
++                      p["format"] = req->preview_format;
++                    }
++                    const std::string ev =
++                        "event: progress\ndata: " + p.dump() + "\n\n";
++                    // A failed write means the client hung up. Abort the render
++                    // instead of burning the NPU on a latent nobody will read
++                    // -- this IS §4's visible stop: the canvas cancels a node by
++                    // closing the stream, and there is no other way to do it
++                    // because opSample() holds the generation mutex throughout.
++                    if (!sink.is_writable() ||
++                        !sink.write(ev.c_str(), ev.size()))
++                      throw std::runtime_error(
++                          "Client disconnected, sample aborted");
++                  });
++
++              // ⚠ sample() STOPS before the VAE decode, so generate()'s step
++              // budget (steps + 2) is never fully spent and a bar driven by
++              // these events would freeze one short of full. Close it with the
++              // sampler's OWN denominator rather than subtracting a magic 1
++              // here: that constant lives in generate() and would rot silently.
++              if (last_total > 0) {
++                nlohmann::json p = {{"type", "progress"},
++                                    {"step", last_total},
++                                    {"total_steps", last_total}};
++                const std::string ev =
++                    "event: progress\ndata: " + p.dump() + "\n\n";
++                sink.write(ev.c_str(), ev.size());
++              }
++
++              body["type"] = "complete";
++              const std::string ev =
++                  "event: complete\ndata: " + body.dump() + "\n\n";
++              sink.write(ev.c_str(), ev.size());
++              sink.done();
++              return true;
++            } catch (const std::exception &e) {
++              nlohmann::json err = {{"type", "error"}, {"message", e.what()}};
++              const std::string ev =
++                  "event: error\ndata: " + err.dump() + "\n\n";
++              sink.write(ev.c_str(), ev.size());
++              sink.done();
++              return false;
++            }
++          });
++    } catch (const std::exception &e) {
++      nlohmann::json err = {
++          {"error",
++           {{"message", std::string(e.what())}, {"type", "sample_error"}}}};
++      res.status = 400;
++      res.set_content(err.dump(), "application/json");
++    }
++  });
++
++  // latent -> PNG.
++  //
++  // ⚠ Deliberately does NOT go through parseGenerationRequest: that requires a
++  // "prompt", and a decode has nothing to do with prompts. Only the dimensions
++  // matter, and they must match the dimensions the server was LAUNCHED with --
++  // --patch binds resolution at process start (docs/ARCHITECTURE.md §4), so
++  // asking for another size here cannot work and must fail loudly rather than
++  // decode garbage.
++  svr.Post("/vae_decode", [pipeline](const httplib::Request &request,
++                                     httplib::Response &res) {
++    try {
++      auto json = nlohmann::json::parse(request.body);
++      GenerationRequest req;
++      req.width = json.value("width", 512);
++      req.height = json.value("height", 512);
++
++      const size_t want = (size_t)pipeline->opLatentChannels() *
++                          (size_t)(req.width / 8) * (size_t)(req.height / 8);
++
++      std::vector<float> latents;
++      std::string source;
++      if (json.contains("latent_handle")) {
++        // ⭐ The graph edge: sample() -> vae_decode without the latent ever
++        // leaving the server. The handle also carries the dimensions it was
++        // sampled at, which override whatever the request asked for -- decoding
++        // a 512 latent as if it were 768 is exactly the mismatch the guard in
++        // opVaeDecodeToRgb exists to refuse.
++        const std::string h = json["latent_handle"].get<std::string>();
++        std::lock_guard<std::mutex> hl(g_handle_mutex);
++        auto it = g_latent_handles.find(h);
++        if (it == g_latent_handles.end())
++          throw std::invalid_argument("unknown latent_handle: " + h);
++        latents = it->second.data;
++        req.width = it->second.width;
++        req.height = it->second.height;
++        source = "handle " + h;
++      } else if (json.contains("latent_b64")) {
++        const std::string raw =
++            base64_decode(json["latent_b64"].get<std::string>());
++        if (raw.size() % sizeof(float) != 0)
++          throw std::invalid_argument("latent_b64 is not a whole number of "
++                                      "float32s");
++        latents.resize(raw.size() / sizeof(float));
++        std::memcpy(latents.data(), raw.data(), raw.size());
++        source = "latent_b64";
++      } else if (json.contains("seed")) {
++        // Deterministic noise, so a decode is reproducible without shipping
++        // 64 KB of latent up the wire on every call.
++        std::mt19937 rng(json["seed"].get<unsigned>());
++        std::normal_distribution<float> nd(0.0f, 1.0f);
++        latents.resize(want);
++        for (auto &v : latents) v = nd(rng);
++        source = "seed";
++      } else {
++        // All zeros decodes to a flat field -- the cheapest possible proof that
++        // the graph ran, with an output that is obviously right or obviously
++        // wrong at a glance.
++        latents.assign(want, 0.0f);
++        source = "zeros";
++      }
++
++      const auto t0 = std::chrono::steady_clock::now();
++      std::vector<uint8_t> rgb;
++      {
++        std::lock_guard<std::mutex> lock(g_generation_mutex);
++        rgb = pipeline->opVaeDecodeToRgb(req, latents);
++      }
++      const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
++                          std::chrono::steady_clock::now() - t0)
++                          .count();
++
++      // Hash the PIXELS, not the PNG: a PNG carries encoder metadata and its
++      // bytes can differ for identical images, which would make a
++      // reproducibility check quietly useless.
++      const std::string rgb_hash = Sha256::hashHex(
++          std::string(reinterpret_cast<const char *>(rgb.data()), rgb.size()),
++          16);
++      auto png = encodePNG(rgb, req.width, req.height);
++
++      // ⭐ ?binary=1 returns the PNG as image/png, with the metadata moved into
++      // headers. Two reasons, and neither is cosmetic:
++      //   - base64 inflates an image 33% for no benefit on a loopback socket
++      //     that already moves 1 MB in ~1.3 ms (docs/ARCHITECTURE.md §3).
++      //   - extracting a base64 field from a 134 KB single-line JSON on the
++      //     DEVICE is not reliable. toybox sed silently produced an empty file,
++      //     which looked exactly like a failed decode. `curl -o out.png` cannot
++      //     fail that way.
++      if (request.has_param("binary")) {
++        res.set_header("X-Rgb-Sha", rgb_hash);
++        res.set_header("X-Ms", std::to_string(ms));
++        res.set_header("X-Source", source);
++        res.set_header("X-Width", std::to_string(req.width));
++        res.set_header("X-Height", std::to_string(req.height));
++        res.status = 200;
++        res.set_content(std::string(png.begin(), png.end()), "image/png");
++        return;
++      }
++
++      nlohmann::json out = {
++          {"ok", true},
++          {"source", source},
++          {"width", req.width},
++          {"height", req.height},
++          {"latent_floats", latents.size()},
++          {"rgb_bytes", rgb.size()},
++          {"rgb_sha", rgb_hash},
++          {"ms", ms},
++          {"png_b64", base64_encode(std::string(png.begin(), png.end()))}};
++      res.status = 200;
++      res.set_content(out.dump(), "application/json");
++    } catch (const std::exception &e) {
++      nlohmann::json err = {
++          {"error",
++           {{"message", std::string(e.what())}, {"type", "vae_decode_error"}}}};
++      res.status = 400;
++      res.set_content(err.dump(), "application/json");
++    }
++  });
++
++  // pixels -> latent. The img2img half of the VAE, and the way a picture gets
++  // back INTO a graph.
++  //
++  // ⚠ Takes a base64 image and the dimensions it must be at, exactly like
++  // /generate's "image" field, so a client that can do one can do the other.
++  svr.Post("/vae_encode", [pipeline](const httplib::Request &request,
++                                     httplib::Response &res) {
++    try {
++      auto json = nlohmann::json::parse(request.body);
++      GenerationRequest req;
++      req.width = json.value("width", 512);
++      req.height = json.value("height", 512);
++      // ⚠ The seed matters: the latent is mean + std * noise, so it is what
++      // makes the same image encode to the same latent twice.
++      req.seed = json.value("seed", 42);
++
++      const std::string img_b64 = json.at("image").get<std::string>();
++      const std::string dec = base64_decode(img_b64);
++      std::vector<uint8_t> buf(dec.begin(), dec.end());
++      std::vector<uint8_t> rgb;
++      decode_image(buf, rgb, req.width, req.height);
++      if (rgb.empty()) throw std::invalid_argument("image would not decode");
++
++      const auto t0 = std::chrono::steady_clock::now();
++      std::vector<float> latents;
++      {
++        std::lock_guard<std::mutex> lock(g_generation_mutex);
++        latents = pipeline->opVaeEncodeFromRgb(req, rgb);
++      }
++      const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
++                          std::chrono::steady_clock::now() - t0)
++                          .count();
++
++      // Content-addressed on the pixels and the seed. ⚠ The IMAGE's bytes,
++      // not a name: two different pictures at the same size would otherwise
++      // share a handle.
++      const std::string img_sha = Sha256::hashHex(dec, 16);
++      const std::string handle =
++          "lat_" + Sha256::hashHex("enc\x1f" + img_sha + "\x1f" +
++                                   std::to_string(req.seed) + "\x1f" +
++                                   std::to_string(req.width) + "x" +
++                                   std::to_string(req.height));
++      const std::string lat_sha = Sha256::hashHex(
++          std::string(reinterpret_cast<const char *>(latents.data()),
++                      latents.size() * sizeof(float)),
++          16);
++
++      nlohmann::json body = {{"ok", true},
++                             {"handle", handle},
++                             {"channels", pipeline->opLatentChannels()},
++                             {"width", req.width},
++                             {"height", req.height},
++                             {"floats", latents.size()},
++                             {"latent_sha", lat_sha},
++                             {"image_sha", img_sha},
++                             {"seed", req.seed},
++                             {"ms", ms}};
++      {
++        std::lock_guard<std::mutex> hl(g_handle_mutex);
++        LatentHandle lh;
++        lh.width = req.width;
++        lh.height = req.height;
++        lh.channels = pipeline->opLatentChannels();
++        lh.data = std::move(latents);
++        g_latent_handles[handle] = std::move(lh);
++        body["latents_resident"] = g_latent_handles.size();
++      }
++      res.status = 200;
++      res.set_content(body.dump(), "application/json");
++    } catch (const std::exception &e) {
++      nlohmann::json err = {
++          {"error",
++           {{"message", std::string(e.what())}, {"type", "vae_encode_error"}}}};
++      res.status = 400;
++      res.set_content(err.dump(), "application/json");
++    }
++  });
++
++  // latent + latent + mask -> latent. The op that makes inpainting a TIER 0
++  // node (docs/ARCHITECTURE.md §2): RePaint-style latent blending needs no
++  // 9-channel model and works on any 4-channel checkpoint
++  // (../LocalDream/docs/INPAINT.md §1).
++  //
++  // ⚠⚠ mask = 1 takes B. That is the same convention as /generate's own
++  // per-step blend (`latents = orig*(1-mask) + latents*mask`, where mask means
++  // "repaint"), and it is written here because the two MUST agree: a graph that
++  // blended the opposite way would produce a plausible picture with the wrong
++  // region replaced, and nothing would raise an error.
++  //
++  // ⚠ The mask arrives as a base64 image and is decoded at LATENT resolution
++  // (width/8), greyscaled and divided by 255 -- the identical treatment
++  // RequestParser gives an inpaint mask, deliberately, so that a mask drawn for
++  // /generate means the same thing here.
++  svr.Post("/latent_blend", [pipeline](const httplib::Request &request,
++                                       httplib::Response &res) {
++    try {
++      auto json = nlohmann::json::parse(request.body);
++      const std::string ha = json.at("a").get<std::string>();
++      const std::string hb = json.at("b").get<std::string>();
++
++      LatentHandle la, lb;
++      {
++        std::lock_guard<std::mutex> hl(g_handle_mutex);
++        auto ia = g_latent_handles.find(ha);
++        if (ia == g_latent_handles.end())
++          throw std::invalid_argument("unknown latent handle a: " + ha);
++        auto ib = g_latent_handles.find(hb);
++        if (ib == g_latent_handles.end())
++          throw std::invalid_argument("unknown latent handle b: " + hb);
++        la = ia->second;
++        lb = ib->second;
++      }
++
++      // ⚠ Both dimensions AND the element count. Two latents of the same
++      // width and height but different channel counts would blend element-wise
++      // into something shaped like a latent and meaning nothing.
++      if (la.width != lb.width || la.height != lb.height ||
++          la.channels != lb.channels || la.data.size() != lb.data.size())
++        throw std::invalid_argument(
++            "latents differ: a is " + std::to_string(la.channels) + "x" +
++            std::to_string(la.height / 8) + "x" + std::to_string(la.width / 8) +
++            " (" + std::to_string(la.data.size()) + " floats), b is " +
++            std::to_string(lb.channels) + "x" + std::to_string(lb.height / 8) +
++            "x" + std::to_string(lb.width / 8) + " (" +
++            std::to_string(lb.data.size()) + ")");
++
++      const int sample_w = la.width / 8;
++      const int sample_h = la.height / 8;
++      const size_t plane = (size_t)sample_h * sample_w;
++      if (la.data.size() != plane * (size_t)la.channels)
++        throw std::runtime_error("latent size does not match its dimensions");
++
++      // The mask, at latent resolution. ⚠ A missing mask is an error rather
++      // than an implicit 0.5: "blend these two latents somehow" is not a thing
++      // a caller means.
++      const std::string mask_b64 = json.at("mask").get<std::string>();
++      const std::string mask_bytes_str = base64_decode(mask_b64);
++      std::vector<uint8_t> mask_buf(mask_bytes_str.begin(),
++                                    mask_bytes_str.end());
++      std::vector<uint8_t> mask_rgb;
++      decode_image(mask_buf, mask_rgb, sample_w, sample_h);
++      if (mask_rgb.size() != plane * 3)
++        throw std::invalid_argument(
++            "mask decoded to " + std::to_string(mask_rgb.size()) +
++            " bytes, expected " + std::to_string(plane * 3) + " for " +
++            std::to_string(sample_w) + "x" + std::to_string(sample_h));
++
++      std::vector<float> mask(plane);
++      for (size_t i = 0; i < plane; ++i) {
++        // Mean of RGB, matching RequestParser. A mask is greyscale by
++        // convention; averaging is what makes an accidentally-coloured one
++        // behave sensibly instead of taking an arbitrary channel.
++        const float m = ((float)mask_rgb[i * 3] + (float)mask_rgb[i * 3 + 1] +
++                         (float)mask_rgb[i * 3 + 2]) /
++                        3.0f / 255.0f;
++        mask[i] = m;
++      }
++
++      LatentHandle out;
++      out.width = la.width;
++      out.height = la.height;
++      out.channels = la.channels;
++      out.data.resize(la.data.size());
++      for (int c = 0; c < la.channels; ++c) {
++        for (size_t i = 0; i < plane; ++i) {
++          const size_t k = (size_t)c * plane + i;
++          // The mask is a single spatial plane replicated across channels,
++          // exactly as the inpaint path replicates it.
++          out.data[k] = la.data[k] * (1.0f - mask[i]) + lb.data[k] * mask[i];
++        }
++      }
++
++      // Content-addressed on the inputs, like /sample. ⚠ The MASK is part of
++      // the key: two blends of the same pair through different masks are
++      // different images, and a handle that collided across them would serve a
++      // stale latent that looks almost right.
++      const std::string mask_sha = Sha256::hashHex(mask_bytes_str, 16);
++      const std::string handle =
++          "lat_" + Sha256::hashHex(ha + "\x1f" + hb + "\x1f" + mask_sha);
++      const std::string lat_sha = Sha256::hashHex(
++          std::string(reinterpret_cast<const char *>(out.data.data()),
++                      out.data.size() * sizeof(float)),
++          16);
++
++      nlohmann::json body = {{"ok", true},
++                             {"handle", handle},
++                             {"channels", out.channels},
++                             {"width", out.width},
++                             {"height", out.height},
++                             {"floats", out.data.size()},
++                             {"latent_sha", lat_sha},
++                             {"mask_sha", mask_sha}};
++      {
++        std::lock_guard<std::mutex> hl(g_handle_mutex);
++        g_latent_handles[handle] = std::move(out);
++        body["latents_resident"] = g_latent_handles.size();
++      }
++      res.status = 200;
++      res.set_content(body.dump(), "application/json");
++    } catch (const std::exception &e) {
++      nlohmann::json err = {
++          {"error",
++           {{"message", std::string(e.what())}, {"type", "latent_blend_error"}}}};
++      res.status = 400;
++      res.set_content(err.dump(), "application/json");
++    }
++  });
++
++  // Inspect the handle table. The executor needs to know what is resident
++  // before it decides what to recompute.
++  //
++  // ⚠⚠ BOTH tables. The first version walked only g_cond_handles, so a
++  // /sample that had just registered a latent was answered with `count: 0` --
++  // measured 2026-09-08, right after the app rendered from that very handle.
++  // An executor trusting that would recompute every latent it already had, and
++  // the symptom would be a graph that is merely SLOW: every answer correct,
++  // every cache miss invisible. A resident-set report that omits a kind of
++  // resident thing is worse than no report.
++  svr.Get("/handles", [](const httplib::Request &, httplib::Response &res) {
++    nlohmann::json arr = nlohmann::json::array();
++    size_t n_cond = 0, n_lat = 0;
++    {
++      std::lock_guard<std::mutex> hl(g_handle_mutex);
++      for (const auto &kv : g_cond_handles) {
++        ++n_cond;
++        arr.push_back({{"handle", kv.first},
++                       // ⚠ Tagged. The two kinds carry different fields, and a
++                       // caller that had to infer the kind from which fields
++                       // happened to be present would guess wrong the first
++                       // time a field was added.
++                       {"kind", "conditioning"},
++                       {"seq_len", kv.second.seq_len},
++                       {"hidden_dim", kv.second.hidden_dim},
++                       {"floats", kv.second.hidden.size()}});
++      }
++      for (const auto &kv : g_latent_handles) {
++        ++n_lat;
++        arr.push_back({{"handle", kv.first},
++                       {"kind", "latent"},
++                       {"channels", kv.second.channels},
++                       {"width", kv.second.width},
++                       {"height", kv.second.height},
++                       {"floats", kv.second.data.size()}});
++      }
++    }
++    nlohmann::json out = {{"ok", true},
++                          {"count", arr.size()},
++                          {"conditioning", n_cond},
++                          {"latents", n_lat},
++                          {"handles", arr}};
++    res.status = 200;
++    res.set_content(out.dump(), "application/json");
++  });
++}
++
+ static void registerGenerateEndpoint(httplib::Server &svr, Pipeline *pipeline) {
+   svr.Post("/generate", [pipeline](const httplib::Request &request,
+                                    httplib::Response &res) {
+@@ -891,6 +1625,8 @@
+   });
+ 
+   if (pipeline) registerGenerateEndpoint(svr, pipeline.get());
++  // Nightmare op endpoints, beside /generate rather than instead of it.
++  if (pipeline) registerOpEndpoints(svr, pipeline.get());
+   registerUpscaleEndpoint(svr);
+   if (text_encoder) registerTokenizeEndpoint(svr, text_encoder.get());
+ 

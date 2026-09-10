@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ⚠ ONE path, matching `Share.DIR`. Both must change together — a mismatch
+  fails at the moment of sharing with "Failed to find configured root", which
+  reads as a broken file rather than as a missing line of XML.
+
+  ⚠⚠ Deliberately NARROW. `<cache-path path="." />` would expose everything the
+  app has ever cached, including model archives mid-download; this exposes one
+  staging directory that holds only copies the user asked to send.
+-->
+<paths>
+    <cache-path name="share" path="share/" />
+</paths>

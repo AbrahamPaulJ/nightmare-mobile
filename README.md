@@ -1,0 +1,145 @@
+# Nightmare Mobile
+
+A node graph image generator that runs on your phone's NPU.
+
+Built on LocalDream's NPU backend. The name is a horse: the dark horse of the pair.
+
+<p align="center">
+  <img src="media/ui.gif" width="270" alt="Drawing a graph and running it on device">
+</p>
+
+> **Early and experimental.** It works, and it has been run on exactly one phone.
+> The plugin format can still change between versions.
+
+Stable Diffusion 1.5 and SDXL run on the Hexagon NPU with no server, no account, and no
+network. You draw a graph, press Run, and the picture appears on the node that made it.
+
+## What it does
+
+- **A canvas built for a phone.** Big ports, snap to connect, pinch to zoom, a node palette
+  in a sheet. Not a desktop editor shrunk down.
+- **Real decomposition.** `encode_text`, `sample`, `vae_encode`, `vae_decode` and
+  `latent_blend` are separate nodes. Conditionings and latents move between them as handles
+  that never cross the wire, so a 512 image costs about 40 bytes of JSON instead of 780 KB.
+- **Recipes to start from.** Text to image, image to image, and inpainting where you paint
+  the area to redo.
+- **Batching.** Arm `seed`, `steps`, `cfg`, `denoise` or `scheduler` on the sampler and Run
+  sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph
+  that produced it.
+- **Upscalers.** RealESRGAN x4plus anime and 4x UltraSharp V2 Lite, loaded per request so
+  they cost no process restart.
+- **Bring your own model.** Fifteen checkpoints in the catalogue, or import a converted one
+  as a zip. The app carries every HTP architecture tier and picks the build your chip can
+  actually load.
+- **Bring your own nodes.** A manifest and a script, no toolchain, no app release.
+- **Offline.** The one thing that leaves the device is a file you explicitly share.
+
+## Writing a node
+
+Two files. Nothing is compiled, and nothing needs a new version of the app.
+
+`node.json`
+
+```json
+{
+  "id": "com.example.center-square",
+  "version": "0.1.0",
+  "api": 1,
+  "nodes": [{
+    "type": "CenterSquare",
+    "category": "image",
+    "tier": 0,
+    "inputs":  [{ "name": "image", "type": "IMAGE" }],
+    "outputs": [{ "name": "image", "type": "IMAGE" }],
+    "widgets": [
+      { "name": "size", "type": "int", "default": 192, "min": 16, "max": 2048 }
+    ]
+  }],
+  "permissions": ["image"]
+}
+```
+
+`index.js`
+
+```js
+__nm.register('com.example.center-square:CenterSquare', {
+  run: function (ctx, inputs, widgets) {
+    var info = ctx.host('image.info', { image: inputs.image });
+    var side = Math.min(info.width, info.height);
+
+    var square = ctx.host('image.crop', {
+      image: inputs.image,
+      x: Math.floor((info.width  - side) / 2),
+      y: Math.floor((info.height - side) / 2),
+      width: side,
+      height: side
+    });
+
+    return ctx.host('image.resize', {
+      image: square.image,
+      width: parseInt(widgets.size, 10),
+      height: parseInt(widgets.size, 10)
+    });
+  }
+});
+```
+
+Zip the two files and import them from the Flows tab, or push the folder to the app's plugin
+directory. Four worked examples are in [`examples/`](examples/).
+
+**What a node can reach.** Inputs arrive as ids, never as pixels, and `ctx.host` is the whole
+surface:
+
+| op | takes |
+|---|---|
+| `image.info` | an image, returns width and height |
+| `image.resize` | image, width, height |
+| `image.crop` | image, x, y, width, height |
+| `image.new` | width, height, colour |
+| `image.composite` | base, overlay, x, y, optional mask |
+| `image.blend` | a, b, alpha |
+| `image.grayscale`, `image.invert` | an image |
+| `latent.blend` | two latents and a mask image |
+
+Widgets are declared, not drawn. Give a number `min` and `max` and you get a slider, give it
+`options` and you get a dropdown or a row of chips, add a `hint` and it appears under the
+control. An author picks values, never widgets, so no pack invents its own controls.
+
+**What a node cannot do yet.** There is no host op that runs a model, so a node cannot
+segment, detect or estimate anything. That is the next tier and it is not built. Scripts run
+in a QuickJS sandbox with permissions denied by default, but nothing yet bounds how long one
+may run, so treat an imported pack the way you would treat any other code you did not write.
+
+## Building it
+
+JDK 17 and Android SDK 35.
+
+```
+gradlew.bat assembleDebug
+```
+
+The NPU backend is a native binary and the QNN runtime libraries are not in this repository.
+Without them the app builds and the canvas works, but nothing renders.
+
+## Credits
+
+The NPU work is not ours. This app forks the C++ inference server from
+[xororz/local-dream](https://github.com/xororz/local-dream), which is where the QNN pipelines,
+the model conversions, the per chipset build tiers and the device gating all come from. The
+checkpoint and upscaler archives it downloads are published by the same author. Anyone
+interested in how Stable Diffusion runs on a Hexagon NPU at all should start there rather
+than here.
+
+[LocalDream](https://github.com/AbrahamPaulJ/dreamui) is the consumer app built on that
+backend, and it stays the simpler way to generate a picture on a phone. Its mask editor,
+brush behaviour and batch strip are ported here rather than reinvented, on purpose: someone
+who has both installed should not have to learn the same tool twice.
+
+What is new here is the graph. Pipelines were decomposed into ops, latents and conditionings
+became handles, and node types became something a contributor can add without an app release.
+
+## Licence
+
+`local-dream` is **CC BY-NC 4.0**, and the forked backend inherits that. The Qualcomm AI
+Runtime SDK has its own redistribution terms. Licensing for this repository is unresolved and
+is being worked out before contributions are invited.

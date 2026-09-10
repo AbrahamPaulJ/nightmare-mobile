@@ -1,0 +1,4 @@
+# ⚠ Device scripts must stay LF. A CRLF `#!/system/bin/sh` fails on Android with
+# a "not found" that names the interpreter, not the line endings -- an hour lost
+# to a one-byte problem.
+*.sh text eol=lf

@@ -1,0 +1,18 @@
+{
+  "id": "com.example.center-square",
+  "version": "0.1.0",
+  "api": 1,
+  "nodes": [
+    {
+      "type": "CenterSquare",
+      "category": "image",
+      "tier": 0,
+      "inputs":  [{ "name": "image", "type": "IMAGE" }],
+      "outputs": [{ "name": "image", "type": "IMAGE" }],
+      "widgets": [
+        { "name": "size", "type": "int", "default": 192, "min": 16, "max": 2048 }
+      ]
+    }
+  ],
+  "permissions": ["image"]
+}

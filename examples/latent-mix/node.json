@@ -1,0 +1,31 @@
+{
+  "id": "com.example.latent-mix",
+  "version": "0.1.0",
+  "api": 1,
+  "nodes": [
+    {
+      "type": "HalfMask",
+      "category": "mask",
+      "tier": 0,
+      "inputs":  [],
+      "outputs": [{ "name": "image", "type": "IMAGE" }],
+      "widgets": [
+        { "name": "size",     "type": "int",    "default": 64 },
+        { "name": "coverage", "type": "float",  "default": 0.5 }
+      ]
+    },
+    {
+      "type": "LatentMix",
+      "category": "latent",
+      "tier": 0,
+      "inputs": [
+        { "name": "a",    "type": "LATENT" },
+        { "name": "b",    "type": "LATENT" },
+        { "name": "mask", "type": "IMAGE"  }
+      ],
+      "outputs": [{ "name": "latent", "type": "LATENT" }],
+      "widgets": []
+    }
+  ],
+  "permissions": ["image", "latent"]
+}

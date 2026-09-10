@@ -1,0 +1,13 @@
+--- ../LocalDream/local-dream/app/src/main/cpp/src/SDUtils.hpp	2026-08-08 21:44:07.032141400 +0930
++++ backend-src/src/SDUtils.hpp	2026-09-07 23:50:27.883899700 +0930
+@@ -32,6 +32,10 @@
+   int channels;
+   int generation_time_ms;
+   int first_step_time_ms;
++  // Set instead of image_data when GenerationRequest::return_latent is on, i.e.
++  // the sample() op. Already scaled for the VAE (latentsToVae applied), so a
++  // later vae_decode feeds it straight to the decoder graph.
++  std::vector<float> latent_data;
+ };
+ 
+ inline std::string base64_encode(const std::string &in) {

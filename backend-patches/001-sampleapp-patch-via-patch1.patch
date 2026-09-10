@@ -1,0 +1,53 @@
+--- ../LocalDream/local-dream/app/src/main/cpp/CMakeLists.txt	2026-08-10 00:12:06.073594300 +0930
++++ backend-src/CMakeLists.txt	2026-09-07 22:42:28.358639800 +0930
+@@ -9,7 +9,23 @@
+ 
+ file(COPY ${QNN_SDK_ROOT}/examples/QNN/SampleApp/SampleApp/
+     DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp)
+-execute_process(COMMAND git apply --directory=app/src/main/cpp/ --verbose ${CMAKE_CURRENT_SOURCE_DIR}/SampleApp.patch
++# git apply is wrong for a fork, in two independent ways, and BOTH exit 0.
++#   1. --directory=app/src/main/cpp/ encodes local-dream's layout; this tree is
++#      backend-src/, so every path misses.
++#   2. Even with the prefix removed, git apply refuses paths that are gitignored
++#      -- which backend-src/ is, deliberately and permanently.
++# Either way it prints "Skipped patch ..." and still returns 0, so the configure
++# reports "Patch: 0" while QnnSampleApp.cpp stays unpatched. That surfaces much
++# later as a compile error naming mmap, with nothing pointing back here.
++# patch(1) cares about neither git nor the layout. --forward makes re-running
++# harmless when file(COPY) above has not refreshed the pristine SDK copy.
++# patch(1) is not on the Windows PATH -- it ships inside Git. Resolve it
++# explicitly and REQUIRE it, so a missing tool stops the configure instead of
++# quietly producing an unpatched tree.
++find_program(PATCH_EXECUTABLE NAMES patch
++    HINTS "$ENV{ProgramFiles}/Git/usr/bin" "$ENV{ProgramW6432}/Git/usr/bin"
++    REQUIRED)
++execute_process(COMMAND ${PATCH_EXECUTABLE} -p1 --forward -i ${CMAKE_CURRENT_SOURCE_DIR}/SampleApp.patch
+     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+     RESULT_VARIABLE patch_result
+     OUTPUT_VARIABLE patch_output
+@@ -19,6 +35,25 @@
+ message(STATUS "Patch: ${patch_output}")
+ message(STATUS "Patch: ${patch_error}")
+ 
++# ⚠⚠ VERIFY BY CONTENT, NOT BY EXIT CODE. This step has now failed silently in
++# three different ways -- git apply with the wrong --directory, git apply
++# refusing a gitignored path, and patch(1) missing from PATH -- and every one of
++# them still let the configure report success. The file(COPY) above restores the
++# pristine SDK copy on every configure, so an unnoticed failure does not merely
++# skip work: it REVERTS the previous run's patch, and the build then dies far
++# away in QnnModel.hpp complaining that m_graphsInfo is private.
++file(READ ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/QnnSampleApp.hpp _sampleapp_hpp)
++string(FIND "${_sampleapp_hpp}" "//  private:" _sampleapp_patched)
++if(_sampleapp_patched EQUAL -1)
++    message(FATAL_ERROR
++        "SampleApp.patch did NOT apply -- QnnSampleApp.hpp still has a live 'private:'.\n"
++        "  patch tool  : ${PATCH_EXECUTABLE}\n"
++        "  exit        : ${patch_result}\n"
++        "  stdout      : ${patch_output}\n"
++        "  stderr      : ${patch_error}\n"
++        "Without it QnnModel.hpp cannot reach m_graphsInfo/m_graphsCount.")
++endif()
++
+ make_directory(${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+ file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
