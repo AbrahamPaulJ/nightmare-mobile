@@ -165,7 +165,7 @@ class ExecutorTest {
      * ⭐ The prompt, as the node that now owns it.
      *
      * ⚠ Every graph below needs one: the sampler has no prompt of its own
-     * (notes/PROGRESS.md ⑦4) and refuses by name with nothing on `cond`. Most
+     * (docs/ARCHITECTURE.md §3) and refuses by name with nothing on `cond`. Most
      * graphs here share ONE, which is both the cheap shape and the one that
      * exercises a COND handle fanning out to two consumers.
      */

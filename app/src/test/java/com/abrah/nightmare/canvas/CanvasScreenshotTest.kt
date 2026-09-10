@@ -73,7 +73,7 @@ class CanvasScreenshotTest {
      * a plugin blend, a decode.
      *
      * ⚠ The text node is not decoration. The sampler has no prompt of its own
-     * (notes/PROGRESS.md ⑦4), so this is what a graph with two renders in it
+     * (docs/ARCHITECTURE.md §3), so this is what a graph with two renders in it
      * now LOOKS like -- one conditioning fanning out to both -- and a golden of
      * the old shape would be pinning a canvas nobody can draw any more.
      */

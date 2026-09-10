@@ -147,10 +147,11 @@ data class ModelSpec(
     val tier: String = ModelCatalog.TIER,
     /**
      * ⚠ The HTP architecture below which this model cannot load AT ALL.
-     * SDXL is compiled `_8gen3`, so 75. **Nothing enforces this yet** — the app
-     * ships V79 libraries only and therefore runs on one phone, and lifting
-     * both together is `notes/PROGRESS.md` ①. It is carried as data now so the
-     * gate has something true to read when it is built.
+     * SDXL is compiled `_8gen3`, so 75. ✅ **Enforced** — `buildFor` returns
+     * null below this and the row says the device cannot run it
+     * (`docs/DEVICES.md`). ⚠⚠ Enforced is not TESTED: the APK carries all six
+     * arch tiers, and every row above this phone's V79 is derived from
+     * LocalDream's measurements rather than re-measured here.
      */
     val minHtpArch: Int = 68,
     /**
