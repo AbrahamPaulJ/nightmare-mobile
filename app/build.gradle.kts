@@ -1,9 +1,35 @@
-﻿plugins {
+﻿import java.util.Properties
+
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("io.github.takahirom.roborazzi")
 }
+
+/**
+ * ⭐⭐ Release signing, read from OUTSIDE the repository.
+ *
+ * ⚠⚠ `../.secrets/nightmare-keystore/` is a sibling of the repo, not a
+ * gitignored path inside it. Gitignore is one `git add -f` away from
+ * committing a private key; a file that is not in the tree at all cannot be
+ * committed by accident.
+ *
+ * ⚠⚠ A MISSING keystore is not an error. The release build still runs and
+ * produces an unsigned APK, so a fresh clone on another machine can build
+ * and test the release variant without holding the key. Failing here would
+ * make the project unbuildable for everyone except one laptop, which is a
+ * strange thing for a public repository to do.
+ *
+ * ⚠ Android identifies an app by its signature: lose this key and no future
+ * build can update an installed copy. `facefusion-mobile` lost one already.
+ * The README beside the keystore says what to do about it.
+ */
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("../.secrets/nightmare-keystore/keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 
 android {
     namespace = "com.abrah.nightmare"
@@ -25,8 +51,8 @@ android {
         // a minor bump per push, which is what the rule exists to stop. The
         // minor moves only when a release is called a release. ⚠ versionCode
         // stays a plain incrementing integer; Android requires that.
-        versionCode = 114
-        versionName = "1.3.0"
+        versionCode = 115
+        versionName = "1.4.0"
         ndk { abiFilters += "arm64-v8a" }
 
         // The plugin runtime, built from source. ⚠ arm64 only, like everything
@@ -50,6 +76,36 @@ android {
         }
     }
 
+    signingConfigs {
+        if (keystoreProps.isNotEmpty()) {
+            create("release") {
+                storeFile = rootProject.file(
+                    "../.secrets/nightmare-keystore/" + keystoreProps.getProperty("storeFile")
+                )
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+                // ⚠ AGP leaves v3 OFF by default, and v3 is the scheme that
+                // makes KEY ROTATION possible later. It cannot be added
+                // retroactively to an APK people have already installed, so it
+                // goes on before the first release rather than after.
+                //
+                // ⚠⚠ MEASURED 2026-09-11: with v3 on, AGP emits a v3 block
+                // INSTEAD of v2, not alongside it -- `apksigner verify` reports
+                // v2 false, v3 true however `enableV2Signing` is set. That is
+                // fine here and only here: v3 needs API 28 and minSdk is 31, so
+                // every device that can install this app can verify it. Lower
+                // the minSdk and this line becomes a bug.
+                //
+                // v1 is dead weight at minSdk 31; v4 needs a separate .idsig
+                // file that a sideloaded APK has no use for.
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         // âš  Not minified, unlike DreamUI's debug build -- and that is only
         // tenable because the dex is small. MEASURED 2026-09-07: with
@@ -63,6 +119,9 @@ android {
             isMinifyEnabled = false
         }
         release {
+            // ⚠ Null when there is no keystore, which leaves the APK unsigned
+            // rather than failing the build.
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
