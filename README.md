@@ -12,6 +12,10 @@ no account, no cloud, no network. Built on LocalDream's NPU backend.
 > **Early and experimental.** It works, and it has been run on exactly one phone.
 > The plugin format can still change between versions.
 
+**[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)** —
+Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU. Models are not in the APK;
+pick one in the app and it downloads on first use.
+
 Stable Diffusion 1.5 and SDXL run locally on a Snapdragon NPU, offline. You draw a graph,
 press Run, and the picture appears on the node that made it. Everything stays on the phone.
 
