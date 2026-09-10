@@ -1,18 +1,23 @@
 # Nightmare Mobile
 
-A node graph image generator that runs on your phone's NPU.
+**A ComfyUI style node graph for Stable Diffusion on Android, running entirely on device.**
 
-Built on LocalDream's NPU backend. The name is a horse: the dark horse of the pair.
+Local text to image, image to image and inpainting on the Qualcomm Hexagon NPU. No server,
+no account, no cloud, no network. Built on LocalDream's NPU backend.
 
 <p align="center">
-  <img src="media/ui.gif" width="270" alt="Drawing a graph and running it on device">
+  <img src="media/ui.gif" width="270" alt="A ComfyUI style node graph running Stable Diffusion on an Android phone">
 </p>
 
 > **Early and experimental.** It works, and it has been run on exactly one phone.
 > The plugin format can still change between versions.
 
-Stable Diffusion 1.5 and SDXL run on the Hexagon NPU with no server, no account, and no
-network. You draw a graph, press Run, and the picture appears on the node that made it.
+Stable Diffusion 1.5 and SDXL run locally on a Snapdragon NPU, offline. You draw a graph,
+press Run, and the picture appears on the node that made it. Everything stays on the phone.
+
+**Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile
+Stable Diffusion, local image generation, node editor, Qualcomm Hexagon NPU, Snapdragon,
+QNN, SDXL, text to image, img2img, inpainting, no cloud, private.
 
 ## What it does
 
@@ -32,7 +37,8 @@ network. You draw a graph, press Run, and the picture appears on the node that m
   as a zip. The app carries every HTP architecture tier and picks the build your chip can
   actually load.
 - **Bring your own nodes.** A manifest and a script, no toolchain, no app release.
-- **Offline.** The one thing that leaves the device is a file you explicitly share.
+- **Offline and private.** Nothing is uploaded, there is no account, and no prompt or
+  picture leaves the phone. The only thing that ever does is a file you explicitly share.
 
 ## Writing a node
 
