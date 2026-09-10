@@ -1,0 +1,70 @@
+Nightmare Mobile
+Copyright (c) 2026 Abraham Paul Jaison
+
+This work is licensed under the Creative Commons Attribution-NonCommercial 4.0
+International License. See LICENSE for the full text, or visit
+https://creativecommons.org/licenses/by-nc/4.0/
+
+The licence is inherited, not chosen. This project derives from work released
+under CC BY-NC 4.0 and continues under the same terms. No additional
+restrictions are imposed by this project.
+
+
+ATTRIBUTION
+-----------
+
+Stable Diffusion on the Qualcomm Hexagon NPU
+    xororz/local-dream
+    https://github.com/xororz/local-dream
+    Licensed CC BY-NC 4.0
+
+    The C++ inference server in this project is a fork of local-dream's.
+    The QNN pipelines, the model conversion process, the per chipset build
+    tiers and the device capability gating are all that project's work.
+    The Stable Diffusion checkpoint archives and the upscaler weights this
+    app downloads are published by the same author.
+
+    Modifications made here: the pipeline was decomposed into individually
+    addressable ops (encode_text, sample, vae_encode, vae_decode,
+    latent_blend) exposed over HTTP, with conditionings and latents held
+    server side behind handles.
+
+LocalDream
+    https://github.com/AbrahamPaulJ/dreamui
+    A consumer application built on the same backend.
+
+    The mask editor's brush behaviour, its compositing rules, and the batch
+    result strip are ported from it rather than reimplemented.
+
+
+THIRD PARTY COMPONENTS
+----------------------
+
+Qualcomm AI Runtime (QAIRT / QNN)
+    Qualcomm Technologies, Inc.
+    Runtime libraries used to execute models on the Hexagon NPU. Distributed
+    under Qualcomm's own licence terms, which are separate from and not
+    superseded by this project's licence. Not included in this repository.
+
+QuickJS
+    Fabrice Bellard and Charlie Gordon
+    https://bellard.org/quickjs/
+    MIT licensed. Used as the sandbox for plugin nodes. Fetched at build
+    time rather than vendored.
+
+MNN
+    Alibaba
+    https://github.com/alibaba/MNN
+    Apache 2.0. Used for CPU and GPU model execution paths.
+
+Real-ESRGAN x4plus anime 6B, 4x UltraSharpV2 Lite
+    Upscaler weights, converted and published by xororz.
+    Downloaded by the app at the user's request; not included here.
+
+
+NON-COMMERCIAL
+--------------
+
+CC BY-NC 4.0 permits sharing and adaptation for non-commercial purposes only.
+Selling this software, or distributing it as part of a commercial offering, is
+not permitted by this licence.

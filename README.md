@@ -146,6 +146,13 @@ became handles, and node types became something a contributor can add without an
 
 ## Licence
 
-`local-dream` is **CC BY-NC 4.0**, and the forked backend inherits that. The Qualcomm AI
-Runtime SDK has its own redistribution terms. Licensing for this repository is unresolved and
-is being worked out before contributions are invited.
+**CC BY-NC 4.0**, inherited rather than chosen. This project derives from
+[xororz/local-dream](https://github.com/xororz/local-dream), which is released under that
+licence, and it continues under the same terms. No further restrictions are added here.
+
+Share it, fork it, build on it. Do not sell it or ship it inside something you sell.
+
+Full text in [LICENSE](LICENSE); attribution and third party components in [NOTICE](NOTICE).
+
+The Qualcomm AI Runtime libraries the app needs at runtime are covered by Qualcomm's own
+terms, which this licence does not override. They are not in this repository.
