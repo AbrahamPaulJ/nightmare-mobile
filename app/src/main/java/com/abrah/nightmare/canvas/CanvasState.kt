@@ -112,15 +112,19 @@ data class CanvasState(
      */
     val previews: Map<String, Pair<String, Float>> = emptyMap(),
     /**
-     * ⭐⭐ `node to field` while a prompt is being edited ON THE CANVAS, or null.
+     * ⭐⭐ The field the inspector should open FOCUSED on, with the keyboard up.
      *
-     * ⚠⚠ The one place a real composable is floated over the drawn canvas.
-     * That is the option `docs/ROADMAP.md` weighed and set aside for the batch
-     * strip — and it is affordable HERE because it is exactly one field at a
-     * time, positioned once from a rect the layout already computes, rather
-     * than N of them that must all stay hit-testable while the canvas pans.
+     * ⚠⚠ Set by a tap on a prompt box on the canvas. Typing in place was
+     * built and then withdrawn (the user's call, 2026-09-11): a real composable
+     * floated over the drawn canvas is the option `docs/ROADMAP.md` weighed and
+     * set aside, and even for one field it meant a text cursor, a scrim and the
+     * canvas's own gestures competing for the same pixels. Opening the sheet on
+     * the right field is the same two taps' worth of intent with none of that.
+     *
+     * ⚠ Cleared once consumed, or reopening the sheet by any other route would
+     * jump the keyboard up again.
      */
-    val editingProse: Pair<String, String>? = null,
+    val focusField: String? = null,
     /**
      * True while a long press has put the canvas in multi-select.
      *
@@ -371,10 +375,15 @@ data class CanvasState(
             // ⚠ Checked before the preview and before the inspector, because it
             // is the most specific target: the box is inside the node, and
             // falling through would open the sheet the user was avoiding.
+            // ⭐⭐ A tap on a PROMPT BOX opens the inspector ON that prompt, with
+            // the keyboard already up.
+            //
+            // ⚠ Checked before the preview and before the plain
+            // open-the-inspector below, because it is the most specific target.
             box?.proseRects()?.firstOrNull { (_, top, bottom) ->
                 world.y in top..bottom
             }?.let { (field, _, _) ->
-                return copy(gesture = Gesture.Idle, editingProse = g.id to field)
+                return copy(gesture = Gesture.Idle, editing = g.id, focusField = field)
             }
             val onPreview = box?.preview != null && world.y >= box.previewTop
             // ⚠⚠ …UNLESS the node is interactive, and the cropper is why. Its
@@ -386,7 +395,7 @@ data class CanvasState(
             return if (onPreview && box!!.type?.interactive != true) {
                 copy(gesture = Gesture.Idle, viewing = box.preview!!.imageId)
             } else {
-                copy(gesture = Gesture.Idle, editing = g.id)
+                copy(gesture = Gesture.Idle, editing = g.id, focusField = null)
             }
         }
         // ⭐⭐ A long press starts multi-select on the node under the finger.
@@ -480,7 +489,7 @@ data class CanvasState(
         workflow = workflow.copy(graph = workflow.graph.withParams(nodeId, values)),
     )
 
-    fun closeInspector() = copy(editing = null)
+    fun closeInspector() = copy(editing = null, focusField = null)
 
     /**
      * ⭐ Long press on a node: enter multi-select with it chosen.

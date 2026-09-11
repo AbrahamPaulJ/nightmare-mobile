@@ -2356,8 +2356,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         runLog = runLog.copy(
             startedAtMs = 0L, now = null, step = null,
             totalMs = android.os.SystemClock.elapsedRealtime() - started,
+            // ⭐⭐ Every run was kept, and the canvas shows only the LAST one —
+            // so say where the other seven went and offer to open it.
+            keptCount = done,
         )
-        say("batch: $done of ${combos.size} done")
+        say("batch: $done of ${combos.size} done -- all $done are in Results")
         refreshResults()
     }
 

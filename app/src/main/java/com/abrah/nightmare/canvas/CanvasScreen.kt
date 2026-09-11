@@ -275,67 +275,6 @@ fun CanvasScreen(
                 ),
         )
 
-        // ⭐⭐ **Editing a prompt ON the canvas**, without the inspector.
-        //
-        // ⚠⚠ This is the one real composable floated over the drawn canvas.
-        // `docs/ROADMAP.md` weighed that approach for the batch strip and set
-        // it aside, and the reason it is affordable here is that it is exactly
-        // ONE field at a time: it is positioned once, from a rect the layout
-        // already computes, and it exists only while the keyboard is up. N
-        // floating widgets that must stay hit-testable through every pan and
-        // zoom is the thing that was too expensive, and this is not that.
-        //
-        // ⚠ Positioned from the node's own box, so it lands on the prompt it is
-        // editing. It is NOT clipped to the canvas transform -- it is a real
-        // field at a screen position, which is what lets the keyboard, the
-        // cursor and text selection all behave normally.
-        state.editingProse?.let { (nodeId, field) ->
-            val node = state.workflow.graph.byId[nodeId]
-            val nodeBox = layout(state.workflow, types, state.previews)
-                .firstOrNull { it.id == nodeId }
-            val rect = nodeBox?.proseRects()?.firstOrNull { it.first == field }
-            if (node != null && nodeBox != null && rect != null) {
-                val topLeft = state.viewport.toScreen(Pt(nodeBox.topLeft.x, rect.second))
-                val widthDp = (nodeBox.width * state.viewport.scale / density).dp
-                var text by remember(nodeId, field) {
-                    mutableStateOf(node.params[field].orEmpty())
-                }
-                val focus = remember(nodeId, field) { FocusRequester() }
-                LaunchedEffect(nodeId, field) { focus.requestFocus() }
-                val commit = {
-                    onEdit { st -> st.setParam(nodeId, field, text).copy(editingProse = null) }
-                }
-                // ⚠⚠ The scrim is FIRST, so it sits UNDER the field. Drawn
-                // after, it would cover the thing it exists to dismiss and the
-                // field could never be typed into.
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .pointerInput(nodeId, field) { detectTapGestures { commit() } }
-                )
-                Box(Modifier.offset { IntOffset(topLeft.x.toInt(), topLeft.y.toInt()) }) {
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it },
-                        label = { Text(field) },
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        // ⚠ Prose wraps rather than scrolling sideways, same as
-                        // the inspector's field.
-                        minLines = 2,
-                        maxLines = 5,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        // ⚠⚠ Committed on Done AND on a tap outside. A prompt
-                        // typed and then lost to a stray tap is the worst
-                        // outcome an in-place editor can have.
-                        keyboardActions = KeyboardActions(onDone = { commit() }),
-                        modifier = Modifier
-                            .width(widthDp.coerceAtLeast(180.dp))
-                            .focusRequester(focus),
-                    )
-                }
-            }
-        }
-
         // ⚠ The old floating corner preview is GONE. A picture in the corner
         // belongs to no node, so with more than one image node on a canvas it
         // could not say which had produced it -- and it covered whatever was
@@ -406,6 +345,7 @@ fun CanvasScreen(
         }
 
         RunBar(
+            onResults = onResults,
             state = state,
             busy = busy,
             onRun = onRun,
@@ -848,6 +788,9 @@ private fun RunBar(
     state: CanvasState,
     busy: Boolean,
     onRun: () -> Unit,
+    /** ⚠ The SAME callback the top bar uses, so the run log's "in Results" row
+     *  and the Results button cannot land anywhere different. */
+    onResults: () -> Unit = {},
     onCancelRun: (() -> Unit)? = null,
     onBatch: () -> Unit,
     /** ⭐ Which run of how many, while a sweep is going. Null when it is not. */
@@ -920,6 +863,9 @@ private fun RunBar(
         RunLogPanel(
             runLog,
             onClose = onCloseRunLog,
+            // ⚠ The same callback the top bar's Results button uses, so the
+            // two cannot land anywhere different.
+            onResults = onResults,
             // ⚠⚠ Present whenever there IS a sampler, locked or not: a user
             // cannot tell "a new picture every Run" from "the same one" by
             // looking at the canvas, and that is the most confusing thing about

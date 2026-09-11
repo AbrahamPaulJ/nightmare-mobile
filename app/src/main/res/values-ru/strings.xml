@@ -112,4 +112,10 @@
     <string name="mask_brush_px">кисть  %1$d пикс.</string>
     <string name="mask_paint_hint">закрасьте то, что нужно перерисовать · щипок для масштаба</string>
     <string name="mask_covered">закрашено %1$d%% · красная область будет перерисована</string>
+    <plurals name="kept_in_results">
+        <item quantity="one">%1$d изображение сохранено в Результаты</item>
+        <item quantity="few">%1$d изображения сохранено в Результаты</item>
+        <item quantity="many">%1$d изображений сохранено в Результаты</item>
+        <item quantity="other">%1$d изображений сохранено в Результаты</item>
+    </plurals>
 </resources>

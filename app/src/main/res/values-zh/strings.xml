@@ -112,4 +112,7 @@
     <string name="mask_brush_px">笔刷  %1$d 像素</string>
     <string name="mask_paint_hint">涂抹你想重绘的区域 · 双指缩放</string>
     <string name="mask_covered">已覆盖 %1$d%% · 红色区域会被重绘</string>
+    <plurals name="kept_in_results">
+        <item quantity="other">已将 %1$d 张图片保存到结果</item>
+    </plurals>
 </resources>

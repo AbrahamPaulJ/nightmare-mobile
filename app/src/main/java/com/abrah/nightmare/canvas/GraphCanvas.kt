@@ -474,10 +474,13 @@ private fun DrawScope.drawNode(
                 overflow = TextOverflow.Ellipsis,
                 constraints = Constraints(maxWidth = inner),
             )
-            // ⚠ The box is sized from the MEASURED text, so it never clips the
-            // glyphs it contains -- and the node's height was computed from the
-            // same line count, so the two agree.
-            val boxH = body.size.height + 2 * boxPad
+            // ⚠⚠ A FIXED height from the line budget -- NOT from the measured
+            // text. Sizing it to the content made a short prompt a one-line
+            // strip, which is both a poor tap target and a box the vertical
+            // drag could not grow. `NodeBox.proseRects()` computes the same
+            // rect for hit-testing, and only agrees with this because both are
+            // `maxLines`, not content.
+            val boxH = maxLines * Sizes.PROSE_LINE_HEIGHT * viewport.scale + 2 * boxPad
             drawRoundRect(
                 color = CanvasColors.label.copy(alpha = 0.30f),
                 topLeft = Offset(tl.x + inset, y),

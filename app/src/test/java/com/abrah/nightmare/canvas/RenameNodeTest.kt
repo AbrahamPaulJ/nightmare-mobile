@@ -187,6 +187,47 @@ class RenameNodeTest {
         assertEquals(Sizes.PROSE_MAX_LINES, b.prose!!.maxLines)
     }
 
+    /**
+     * ⭐⭐ A SHORT prompt's box still grows with the drag.
+     *
+     * ⚠⚠ This is the regression that made "vertical resize not working" true:
+     * the box height was `min(wrapped, budget)`, so a one-line prompt pinned it
+     * to one line and raising the budget changed nothing. Every box is the
+     * budget's height now, whatever it holds.
+     */
+    @Test
+    fun aShortPromptsBoxStillGrowsWithTheDrag() {
+        val g = Graph(listOf(Node("t", "sd.clip_encode", mapOf("prompt" to "hi", "negative" to ""))))
+        val small = Workflow(g, mapOf("t" to Pt(0f, 0f)))
+        val big = small.proseResized("t", 6)
+        val a = layout(small, NODE_TYPES).first()
+        val b = layout(big, NODE_TYPES).first()
+        assertTrue("a two-character prompt did not grow when dragged", b.height > a.height)
+    }
+
+    /**
+     * ⚠⚠ Both boxes are the SAME height whatever they hold, so neither is a
+     * thin strip to aim a finger at — and a tap is what opens the prompt.
+     */
+    @Test
+    fun bothBoxesAreTheSameHeight() {
+        val g = Graph(
+            listOf(Node("t", "sd.clip_encode", mapOf("prompt" to "a ".repeat(200), "negative" to "")))
+        )
+        val rects = layout(Workflow(g, mapOf("t" to Pt(0f, 0f))), NODE_TYPES).first().proseRects()
+        assertEquals(2, rects.size)
+        val heights = rects.map { it.third - it.second }
+        assertEquals(heights[0], heights[1], 0.01f)
+    }
+
+    /** ⚠ The rects do not overlap, or a tap would open the wrong field. */
+    @Test
+    fun theBoxesDoNotOverlap() {
+        val g = Graph(listOf(Node("t", "sd.clip_encode", mapOf("prompt" to "x", "negative" to "y"))))
+        val rects = layout(Workflow(g, mapOf("t" to Pt(0f, 0f))), NODE_TYPES).first().proseRects()
+        assertTrue("prose boxes overlap: $rects", rects[0].third <= rects[1].second)
+    }
+
     /** ⚠ Clamped, so a drag cannot make a node taller than the canvas. */
     @Test
     fun theLineCountIsClamped() {

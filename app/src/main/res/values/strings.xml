@@ -136,4 +136,8 @@
     <string name="mask_brush_px">brush  %1$d px</string>
     <string name="mask_paint_hint">paint over what you want REPAINTED · pinch to zoom</string>
     <string name="mask_covered">%1$d%% covered · the red area is what gets repainted</string>
+    <plurals name="kept_in_results">
+        <item quantity="one">%1$d picture saved to Results</item>
+        <item quantity="other">%1$d pictures saved to Results</item>
+    </plurals>
 </resources>

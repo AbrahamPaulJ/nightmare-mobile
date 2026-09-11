@@ -165,6 +165,7 @@ fun NodeInspector(
             // ⚠ Read HERE, like `demand` above and for the same reason: the body
             // must stay a function of its arguments so the goldens can render
             // it, and this list is a cached disk scan.
+            focusField = state.focusField,
             resolutions = com.abrah.nightmare.SelectedModel.resolutions,
             onSetResolution = onSetResolution,
             onSetAspect = onSetAspect,
@@ -220,6 +221,14 @@ internal fun NodeInspectorBody(
      * every wire, position, size and preview with it.
      */
     onRename: (from: String, to: String) -> Unit = { _, _ -> },
+    /**
+     * ⭐⭐ Open with this field focused and the keyboard up — set by a tap on
+     * that prompt's box on the canvas.
+     *
+     * ⚠ Null for every other route in, so opening the sheet the ordinary way
+     * does not throw a keyboard over it.
+     */
+    focusField: String? = null,
     /**
      * ⭐⭐ The sizes the selected model can actually render, for the size chips
      * on a context-key node.
@@ -884,6 +893,14 @@ internal fun NodeInspectorBody(
             Box(Modifier.weight(1f)) {
             // ⚠ The two fields that hold sentences rather than a value.
             val isProse = w.name == "prompt" || w.name == "negative"
+            // ⭐⭐ The field a canvas tap asked for. Focus is requested ONCE per
+            // open (keyed on the node and name), so scrolling the sheet or
+            // editing another knob does not drag the keyboard back up.
+            val wanted = w.name == focusField
+            val fieldFocus = remember(w.name) { FocusRequester() }
+            if (wanted) {
+                LaunchedEffect(nodeId, w.name) { fieldFocus.requestFocus() }
+            }
             OutlinedTextField(
                 // ⚠ The manifest default when the graph carries nothing, so
                 // the field shows what the node will actually RUN with
@@ -933,7 +950,9 @@ internal fun NodeInspectorBody(
                 keyboardOptions = KeyboardOptions(
                     keyboardType = if (w.numeric) KeyboardType.Number else KeyboardType.Text,
                 ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (wanted) Modifier.focusRequester(fieldFocus) else Modifier),
             )
             }
             if (batchable) {

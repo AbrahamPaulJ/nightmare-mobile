@@ -117,7 +117,12 @@ object Sizes {
     /** ⚠ A cap, so one pasted paragraph cannot make a node taller than the canvas. */
     const val PROSE_MAX_LINES = 12
 
-    /** Lines a prose box shows before the user drags it taller. */
+    /**
+     * Lines a prose box shows before the user drags it taller.
+     *
+     * ⚠ Two, not one: a one-line box is a thin strip to aim a finger at, and
+     * a tap on it is what opens the prompt for editing.
+     */
     const val PROSE_DEFAULT_LINES = 2
 
     /** Inset of the text inside its box, top and bottom. */
@@ -219,12 +224,11 @@ data class NodeBox(
     fun proseRects(): List<Triple<String, Float, Float>> {
         val p = prose ?: return emptyList()
         var y = proseTop
-        return p.fields.map { (field, value) ->
-            val lines = if (value.isEmpty()) 1
-            else ((value.length / 28) + 1).coerceIn(1, p.maxLines)
-            val cap = Sizes.PROSE_LINE_HEIGHT
-            val boxH = lines * Sizes.PROSE_LINE_HEIGHT + 2 * Sizes.PROSE_BOX_PAD
-            val top = y + cap
+        // ⚠ Every box the same height, so this is plain arithmetic and cannot
+        // disagree with what the renderer draws.
+        val boxH = p.maxLines * Sizes.PROSE_LINE_HEIGHT + 2 * Sizes.PROSE_BOX_PAD
+        return p.fields.map { (field, _) ->
+            val top = y + Sizes.PROSE_LINE_HEIGHT
             y = top + boxH + Sizes.PROSE_BOX_PAD
             Triple(field, top, top + boxH)
         }
@@ -459,14 +463,19 @@ fun layout(
                 // ⚠ Wrapped against the node's own width at the drawn font size,
                 // so a WIDER node genuinely shows more -- which is what makes
                 // dragging the resize corner the way to "make it bigger".
-                val perLine = (previewWidth / Sizes.PROSE_CHAR_WIDTH).toInt().coerceAtLeast(8)
-                val lines = fields.sumOf { (_, v) ->
-                    val wrapped = if (v.isEmpty()) 1
-                    else ((v.length + perLine - 1) / perLine).coerceAtLeast(1)
-                    // ⚠ Each field is a CAPTION line plus a box, and the box
-                    // never collapses below one line even when empty.
-                    1 + wrapped.coerceAtMost(perFieldLines)
-                }
+                // ⚠⚠ **Every box is [perFieldLines] tall, whatever it contains.**
+                //
+                // It used to be `min(wrapped, budget)`, which had two bad
+                // consequences the phone found at once: a SHORT prompt pinned
+                // the box to one line, so dragging the node taller did nothing
+                // at all (the budget went up and the minimum ignored it); and
+                // the two boxes were different heights, so the smaller one was
+                // a thin strip to aim a finger at. Reported 2026-09-11 as
+                // "vertical resize not working".
+                //
+                // ⇒ A uniform, generous target that the drag actually changes.
+                // Text longer than the box is ellipsized by the renderer.
+                val lines = fields.size * (1 + perFieldLines)
                 NodeBox.Prose(
                     fields,
                     lines * Sizes.PROSE_LINE_HEIGHT + fields.size * Sizes.PROSE_BOX_PAD * 2,
