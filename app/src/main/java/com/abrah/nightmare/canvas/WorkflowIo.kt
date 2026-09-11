@@ -87,6 +87,10 @@ fun Workflow.toJson(types: Map<String, NodeType>, view: SavedView? = null): Stri
                 // not pin a default that a later release may want to change.
                 .apply {
                     sizes[n.id]?.let { put("w", it.toDouble()) }
+                    // ⚠ Beside "w" and for the same reason: a node the user
+                    // sized is sized until they say otherwise, and a reopened
+                    // flow that forgot it would silently shrink their prompts.
+                    proseLines[n.id]?.let { put("lines", it) }
                 }
         )
     }
@@ -151,6 +155,7 @@ fun workflowFromJson(json: String): LoadedWorkflow {
         ?: throw WorkflowFormatError("workflow has no \"nodes\"")
     val nodes = mutableListOf<Node>()
     val sizes = mutableMapOf<String, Float>()
+    val proseLines = mutableMapOf<String, Int>()
     val positions = mutableMapOf<String, Pt>()
     for (i in 0 until nodesJson.length()) {
         val o = nodesJson.getJSONObject(i)
@@ -173,6 +178,9 @@ fun workflowFromJson(json: String): LoadedWorkflow {
             o.optDouble("y", 0.0).toFloat(),
         )
         if (o.has("w")) sizes[id] = o.getDouble("w").toFloat()
+        // ⚠ Absent in every flow written before this existed, which is correct:
+        // `proseLinesOf` falls back to the default.
+        if (o.has("lines")) proseLines[id] = o.getInt("lines")
     }
 
     // ⚠⚠ RENAMES FIRST, and everything after this line may assume current
@@ -199,7 +207,7 @@ fun workflowFromJson(json: String): LoadedWorkflow {
         )
     }
     return LoadedWorkflow(
-        Workflow(Graph(migrated.first), migrated.second, sizes), requires, view,
+        Workflow(Graph(migrated.first), migrated.second, sizes, proseLines), requires, view,
     )
 }
 

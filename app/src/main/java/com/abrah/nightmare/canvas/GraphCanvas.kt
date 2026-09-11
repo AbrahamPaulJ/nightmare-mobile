@@ -423,21 +423,26 @@ private fun DrawScope.drawNode(
         drawText(subtitle, topLeft = Offset(tl.x + inset, tl.y + pad + title.size.height))
     }
 
-    // ⭐⭐ The node's own text, drawn in its body.
+    // ⭐⭐ The node's own text, drawn in its body — each field in its own BOX
+    // with its caption, mirroring the inspector's text fields.
+    //
+    // ⚠⚠ Both captions always, even for an empty value. Drawing only what was
+    // typed made an empty negative vanish, so a node with one prompt filled in
+    // looked like a node that HAS one field. Reported from the phone
+    // 2026-09-11.
     //
     // ⚠ Display only -- never hit-tested. That is what makes this cheap where
     // the batch thumbnail strip is not (`docs/ROADMAP.md`): a tappable body
     // needs hit-testing against the same viewport transform the pan/zoom uses,
-    // and text needs none of it. Editing stays in the inspector.
+    // and text needs none of it.
     box.prose?.let { prose ->
         var y = viewport.toScreen(Pt(box.topLeft.x, box.proseTop)).y
         val bodyW = (w - 2 * Sizes.BODY_PADDING * viewport.scale)
             .toInt().coerceAtLeast(1)
+        val boxPad = Sizes.PROSE_BOX_PAD * viewport.scale
+        // ⚠ The node's own line budget -- what the vertical resize sets.
+        val maxLines = prose.maxLines
         for ((field, value) in prose.fields) {
-            // ⚠ The field's own caption, so `prompt` and `negative` are told
-            // apart. Without it two blocks of text sit under each other with
-            // nothing saying which is which -- and the negative reads as a
-            // continuation of the prompt.
             val cap = measurer.measure(
                 field,
                 TextStyle(
@@ -451,22 +456,39 @@ private fun DrawScope.drawNode(
             )
             drawText(cap, topLeft = Offset(tl.x + inset, y))
             y += cap.size.height
+
             // ⚠⚠ A POSITIVE constraint, always -- the `maxWidth(-40)` crash
             // that took a golden out on 2026-09-08 came from letting drawText
             // derive its own near the canvas edge.
+            val inner = (bodyW - 2 * boxPad).toInt().coerceAtLeast(1)
             val body = measurer.measure(
-                value,
+                // ⚠ A placeholder rather than nothing, so an empty box still
+                // has a line's height and reads as "empty" instead of "broken".
+                value.ifBlank { "—" },
                 TextStyle(
-                    color = CanvasColors.title,
+                    color = if (value.isBlank()) CanvasColors.label else CanvasColors.title,
                     fontSize = (10f * textZoom).sp,
                     fontFamily = FontFamily.Monospace,
                 ),
-                maxLines = Sizes.PROSE_MAX_LINES,
+                maxLines = maxLines,
                 overflow = TextOverflow.Ellipsis,
-                constraints = Constraints(maxWidth = bodyW),
+                constraints = Constraints(maxWidth = inner),
             )
-            drawText(body, topLeft = Offset(tl.x + inset, y))
-            y += body.size.height + Sizes.BODY_PADDING * viewport.scale * 0.5f
+            // ⚠ The box is sized from the MEASURED text, so it never clips the
+            // glyphs it contains -- and the node's height was computed from the
+            // same line count, so the two agree.
+            val boxH = body.size.height + 2 * boxPad
+            drawRoundRect(
+                color = CanvasColors.label.copy(alpha = 0.30f),
+                topLeft = Offset(tl.x + inset, y),
+                size = Size(bodyW.toFloat(), boxH),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+                    6f * viewport.scale, 6f * viewport.scale,
+                ),
+                style = Stroke(width = 1f * viewport.scale),
+            )
+            drawText(body, topLeft = Offset(tl.x + inset + boxPad, y + boxPad))
+            y += boxH + boxPad
         }
     }
 

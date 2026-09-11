@@ -44,6 +44,17 @@ data class Workflow(
      * disagree and stretch the image, which is the thing resizing exists to fix.
      */
     val sizes: Map<String, Float> = emptyMap(),
+    /**
+     * ⭐⭐ Node id -> how many LINES each of its prose boxes may show.
+     *
+     * ⚠⚠ **Lines, not pixels.** A node's height is otherwise derived (ports
+     * plus a picture at its own aspect), and storing a height beside that would
+     * let the two disagree -- the exact reason [sizes] is width-only. A line
+     * count composes with the derivation instead of fighting it: the box grows
+     * by whole lines, and the node's height follows from the total as it always
+     * has.
+     */
+    val proseLines: Map<String, Int> = emptyMap(),
 ) {
     fun moved(id: String, to: Pt) = copy(positions = positions + (id to to))
 
@@ -51,7 +62,13 @@ data class Workflow(
     fun resized(id: String, width: Float) =
         copy(sizes = sizes + (id to width.coerceIn(Sizes.NODE_WIDTH, Sizes.NODE_MAX_WIDTH)))
 
+    /** ⚠ Clamped to a readable band; see [Sizes.PROSE_MAX_LINES]. */
+    fun proseResized(id: String, lines: Int) =
+        copy(proseLines = proseLines + (id to lines.coerceIn(1, Sizes.PROSE_MAX_LINES)))
+
     fun widthOf(id: String): Float = sizes[id] ?: Sizes.NODE_WIDTH
+
+    fun proseLinesOf(id: String): Int = proseLines[id] ?: Sizes.PROSE_DEFAULT_LINES
 }
 
 /**
@@ -98,7 +115,13 @@ object Sizes {
     const val PROSE_LINE_HEIGHT = 15f
 
     /** ⚠ A cap, so one pasted paragraph cannot make a node taller than the canvas. */
-    const val PROSE_MAX_LINES = 6
+    const val PROSE_MAX_LINES = 12
+
+    /** Lines a prose box shows before the user drags it taller. */
+    const val PROSE_DEFAULT_LINES = 2
+
+    /** Inset of the text inside its box, top and bottom. */
+    const val PROSE_BOX_PAD = 4f
 
     /**
      * ⚠ Smaller than a port's, deliberately. A wire passes THROUGH the space
@@ -160,7 +183,16 @@ data class NodeBox(
      * ⚠ [height] is computed from a LINE COUNT rather than measured — see
      * [layout]. The renderer clips to it.
      */
-    data class Prose(val fields: List<Pair<String, String>>, val height: Float)
+    data class Prose(
+        val fields: List<Pair<String, String>>,
+        val height: Float,
+        /**
+         * ⚠ Lines each box may use. Carried on the BOX so the renderer needs
+         * nothing but what it was handed -- and so the height above and the
+         * clipping below are computed from the same number.
+         */
+        val maxLines: Int,
+    )
 
     /** ⚠ Bottom-right, and hit BEFORE the body so a resize is not read as a drag. */
     val resizeCorner get() = Pt(right, bottom)
@@ -173,6 +205,30 @@ data class NodeBox(
     /** ⚠ Above the picture when a node somehow has both; today nothing does. */
     val proseTop get() = previewTop - (prose?.height ?: 0f) -
         (if (prose != null) Sizes.BODY_PADDING else 0f)
+
+    /**
+     * ⭐⭐ Where each prose box IS, in world units — `field to (top, bottom)`.
+     *
+     * ⚠⚠ **One definition, two consumers.** The renderer draws these boxes and
+     * the canvas hit-tests them to decide which field a tap landed on; if the
+     * two computed the rect separately they would drift, and a tap would edit
+     * the field next to the one under the finger. The renderer measures its
+     * text and so is exact to the pixel, but it agrees with this because both
+     * are driven by [Prose.maxLines].
+     */
+    fun proseRects(): List<Triple<String, Float, Float>> {
+        val p = prose ?: return emptyList()
+        var y = proseTop
+        return p.fields.map { (field, value) ->
+            val lines = if (value.isEmpty()) 1
+            else ((value.length / 28) + 1).coerceIn(1, p.maxLines)
+            val cap = Sizes.PROSE_LINE_HEIGHT
+            val boxH = lines * Sizes.PROSE_LINE_HEIGHT + 2 * Sizes.PROSE_BOX_PAD
+            val top = y + cap
+            y = top + boxH + Sizes.PROSE_BOX_PAD
+            Triple(field, top, top + boxH)
+        }
+    }
 
     val right get() = topLeft.x + width
     val bottom get() = topLeft.y + height
@@ -365,6 +421,11 @@ fun layout(
         // width less the padding -- using the full width would draw it over the
         // node's rounded corners.
         val previewWidth = width - 2 * Sizes.BODY_PADDING
+        // ⭐⭐ How many lines EACH prose box may use, from the node's own extra
+        // height. Dragging the node taller gives the prompts more room rather
+        // than padding the bottom -- which is what "make the prompt node bigger
+        // vertically" has to mean for a node whose height is otherwise derived.
+        val perFieldLines = workflow.proseLinesOf(n.id)
         val preview = shown?.let { (id, aspect) ->
             NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))
         }
@@ -386,19 +447,31 @@ fun layout(
         // Compose-free and unit-tested, and a `TextMeasurer` is neither. The
         // renderer clips to what it is given, so a long prompt ends in an
         // ellipsis rather than overflowing the node.
+        // ⚠⚠ **EVERY declared field, blank or not.** Showing only what was
+        // typed meant an empty negative simply vanished, so a node with one
+        // prompt filled in looked like a node that has one field -- and there
+        // was no way to see that the other exists without opening the
+        // inspector. Both captions always show; an empty box reads as empty.
         val prose = type?.prose
-            ?.mapNotNull { field -> n.params[field]?.takeIf { it.isNotBlank() }?.let { field to it } }
             ?.takeIf { it.isNotEmpty() }
+            ?.map { field -> field to n.params[field].orEmpty() }
             ?.let { fields ->
                 // ⚠ Wrapped against the node's own width at the drawn font size,
                 // so a WIDER node genuinely shows more -- which is what makes
                 // dragging the resize corner the way to "make it bigger".
                 val perLine = (previewWidth / Sizes.PROSE_CHAR_WIDTH).toInt().coerceAtLeast(8)
                 val lines = fields.sumOf { (_, v) ->
-                    // ⚠ +1 for the field's own caption line.
-                    1 + ((v.length + perLine - 1) / perLine).coerceIn(1, Sizes.PROSE_MAX_LINES)
+                    val wrapped = if (v.isEmpty()) 1
+                    else ((v.length + perLine - 1) / perLine).coerceAtLeast(1)
+                    // ⚠ Each field is a CAPTION line plus a box, and the box
+                    // never collapses below one line even when empty.
+                    1 + wrapped.coerceAtMost(perFieldLines)
                 }
-                NodeBox.Prose(fields, lines * Sizes.PROSE_LINE_HEIGHT)
+                NodeBox.Prose(
+                    fields,
+                    lines * Sizes.PROSE_LINE_HEIGHT + fields.size * Sizes.PROSE_BOX_PAD * 2,
+                    perFieldLines,
+                )
             }
         NodeBox(
             id = n.id,

@@ -59,7 +59,20 @@ sealed interface Gesture {
      * opposite things with the same finger, and a boolean would make every
      * `drag` branch ask which it was.
      */
-    data class ResizingNode(val id: String, val startWidth: Float, val from: Pt) : Gesture
+    data class ResizingNode(
+        val id: String,
+        val startWidth: Float,
+        val from: Pt,
+        /**
+         * ⭐ The node's prose line budget when the drag began, so a VERTICAL
+         * drag on the same corner grows the prompt boxes.
+         *
+         * ⚠ Lines rather than pixels, and from the START value like
+         * [startWidth] — accumulating per-event deltas drifts, and a node that
+         * ends a size different from where the finger is looks broken.
+         */
+        val startProseLines: Int = Sizes.PROSE_DEFAULT_LINES,
+    ) : Gesture
 }
 
 /** The whole interactive state of the canvas, and the rules for changing it. */
@@ -98,6 +111,16 @@ data class CanvasState(
      * be tested at the wrong place, and taps would land on nothing.
      */
     val previews: Map<String, Pair<String, Float>> = emptyMap(),
+    /**
+     * ⭐⭐ `node to field` while a prompt is being edited ON THE CANVAS, or null.
+     *
+     * ⚠⚠ The one place a real composable is floated over the drawn canvas.
+     * That is the option `docs/ROADMAP.md` weighed and set aside for the batch
+     * strip — and it is affordable HERE because it is exactly one field at a
+     * time, positioned once from a rect the layout already computes, rather
+     * than N of them that must all stay hit-testable while the canvas pans.
+     */
+    val editingProse: Pair<String, String>? = null,
     /**
      * True while a long press has put the canvas in multi-select.
      *
@@ -182,7 +205,9 @@ data class CanvasState(
             // ⚠ Does not select: see [selection]. Grabbing a corner is a resize,
             // not a request to enter multi-select.
             return copy(
-                gesture = Gesture.ResizingNode(box.id, workflow.widthOf(box.id), world),
+                gesture = Gesture.ResizingNode(
+                    box.id, workflow.widthOf(box.id), world, workflow.proseLinesOf(box.id),
+                ),
                 message = null,
             )
         }
@@ -272,8 +297,24 @@ data class CanvasState(
             // ⚠ From the gesture's START width and the total travel, not by
             // accumulating per-event deltas: accumulating drifts, and a node
             // that ends a size different from where the finger is looks broken.
+            // ⭐⭐ One corner, BOTH axes. Horizontal travel is the body width as
+            // it always was; vertical travel grows the prose boxes.
+            //
+            // ⚠⚠ Height is still never stored as a number. A node's height is
+            // derived (ports + picture + prose), and storing a pixel height
+            // beside that would let the two disagree — the exact reason `sizes`
+            // is width-only. What the drag sets is a LINE COUNT, which the
+            // derivation then uses. Asked for from the phone 2026-09-11.
             is Gesture.ResizingNode ->
-                copy(workflow = workflow.resized(g.id, g.startWidth + (world.x - g.from.x)))
+                copy(
+                    workflow = workflow
+                        .resized(g.id, g.startWidth + (world.x - g.from.x))
+                        .proseResized(
+                            g.id,
+                            g.startProseLines +
+                                ((world.y - g.from.y) / Sizes.PROSE_LINE_HEIGHT).toInt(),
+                        ),
+                )
 
             is Gesture.DraggingWire -> {
                 // ⭐ The refusal is computed WHILE the finger is down, so the
@@ -325,6 +366,16 @@ data class CanvasState(
             // the node opens the inspector. Tapping a preview to edit a prompt
             // is not what anyone means by tapping a picture.
             val box = boxes(types).firstOrNull { it.id == g.id }
+            // ⭐⭐ A tap on a PROMPT BOX edits that prompt, on the canvas.
+            //
+            // ⚠ Checked before the preview and before the inspector, because it
+            // is the most specific target: the box is inside the node, and
+            // falling through would open the sheet the user was avoiding.
+            box?.proseRects()?.firstOrNull { (_, top, bottom) ->
+                world.y in top..bottom
+            }?.let { (field, _, _) ->
+                return copy(gesture = Gesture.Idle, editingProse = g.id to field)
+            }
             val onPreview = box?.preview != null && world.y >= box.previewTop
             // ⚠⚠ …UNLESS the node is interactive, and the cropper is why. Its
             // picture is not something to look at, it is the control you frame

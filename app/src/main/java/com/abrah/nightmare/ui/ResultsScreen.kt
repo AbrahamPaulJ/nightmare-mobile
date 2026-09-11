@@ -901,23 +901,18 @@ private fun ResultCardHeader(
                     modifier = Modifier.size(20.dp),
                 )
             }
-            // ⚠ A filled button, not a bare icon: Open is the card's primary
-            // action and the one people came for. It keeps its label — the
-            // glyph joins it rather than replacing it, because an unlabelled
-            // graph icon is not self-evident.
+            // ⚠ The glyph REPLACES the label rather than joining it: the row
+            // is four controls on a phone, and a text button among three icons
+            // was the widest thing on the card. It stays a filled Button so it
+            // still reads as the card's primary action.
             Button(
                 onClick = onOpenFlow,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             ) {
                 Icon(
                     ShareFlowIcon,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.size(6.dp))
-                Text(
-                    stringResource(R.string.open_flow),
-                    style = MaterialTheme.typography.labelLarge,
+                    contentDescription = stringResource(R.string.open_flow),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }

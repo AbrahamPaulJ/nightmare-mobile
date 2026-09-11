@@ -509,8 +509,8 @@ internal fun NodeInspectorBody(
                             // lives in material-icons-EXTENDED, and pulling that
                             // artifact in for one outline is several MB of icons
                             // nothing else would use.
-                            tint = if (kept) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (kept) com.abrah.nightmare.ui.StarKept
+                            else com.abrah.nightmare.ui.StarIdle,
                         )
                     }
                 }

@@ -60,3 +60,18 @@ fun NightmareTheme(
         content = content,
     )
 }
+
+/**
+ * ⭐ The star that keeps a picture in Results.
+ *
+ * ⚠⚠ **A colour, not a second glyph.** `material-icons-core` has no outlined
+ * star and the extended set costs ~55 MB of dex for one, so the KEPT state is
+ * carried by tint instead — amber when kept, grey when not. Asked for from the
+ * phone, 2026-09-11.
+ *
+ * ⚠ Fixed values rather than theme roles: this pair must read the same on the
+ * light canvas, the dark canvas and the black fullscreen viewer, and a scheme
+ * colour would drift between them.
+ */
+val StarKept = androidx.compose.ui.graphics.Color(0xFFFFC107)
+val StarIdle = androidx.compose.ui.graphics.Color(0xFF9E9E9E)

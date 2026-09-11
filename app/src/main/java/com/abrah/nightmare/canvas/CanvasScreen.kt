@@ -63,6 +63,15 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
@@ -265,6 +274,67 @@ fun CanvasScreen(
                     onGesture = { liveOnState.value(it) },
                 ),
         )
+
+        // ⭐⭐ **Editing a prompt ON the canvas**, without the inspector.
+        //
+        // ⚠⚠ This is the one real composable floated over the drawn canvas.
+        // `docs/ROADMAP.md` weighed that approach for the batch strip and set
+        // it aside, and the reason it is affordable here is that it is exactly
+        // ONE field at a time: it is positioned once, from a rect the layout
+        // already computes, and it exists only while the keyboard is up. N
+        // floating widgets that must stay hit-testable through every pan and
+        // zoom is the thing that was too expensive, and this is not that.
+        //
+        // ⚠ Positioned from the node's own box, so it lands on the prompt it is
+        // editing. It is NOT clipped to the canvas transform -- it is a real
+        // field at a screen position, which is what lets the keyboard, the
+        // cursor and text selection all behave normally.
+        state.editingProse?.let { (nodeId, field) ->
+            val node = state.workflow.graph.byId[nodeId]
+            val nodeBox = layout(state.workflow, types, state.previews)
+                .firstOrNull { it.id == nodeId }
+            val rect = nodeBox?.proseRects()?.firstOrNull { it.first == field }
+            if (node != null && nodeBox != null && rect != null) {
+                val topLeft = state.viewport.toScreen(Pt(nodeBox.topLeft.x, rect.second))
+                val widthDp = (nodeBox.width * state.viewport.scale / density).dp
+                var text by remember(nodeId, field) {
+                    mutableStateOf(node.params[field].orEmpty())
+                }
+                val focus = remember(nodeId, field) { FocusRequester() }
+                LaunchedEffect(nodeId, field) { focus.requestFocus() }
+                val commit = {
+                    onEdit { st -> st.setParam(nodeId, field, text).copy(editingProse = null) }
+                }
+                // ⚠⚠ The scrim is FIRST, so it sits UNDER the field. Drawn
+                // after, it would cover the thing it exists to dismiss and the
+                // field could never be typed into.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(nodeId, field) { detectTapGestures { commit() } }
+                )
+                Box(Modifier.offset { IntOffset(topLeft.x.toInt(), topLeft.y.toInt()) }) {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        label = { Text(field) },
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        // ⚠ Prose wraps rather than scrolling sideways, same as
+                        // the inspector's field.
+                        minLines = 2,
+                        maxLines = 5,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        // ⚠⚠ Committed on Done AND on a tap outside. A prompt
+                        // typed and then lost to a stray tap is the worst
+                        // outcome an in-place editor can have.
+                        keyboardActions = KeyboardActions(onDone = { commit() }),
+                        modifier = Modifier
+                            .width(widthDp.coerceAtLeast(180.dp))
+                            .focusRequester(focus),
+                    )
+                }
+            }
+        }
 
         // ⚠ The old floating corner preview is GONE. A picture in the corner
         // belongs to no node, so with more than one image node on a canvas it
@@ -481,6 +551,7 @@ fun CanvasScreen(
                 onKeep = if (!viewedIsPhoto) {
                     { onKeepImage(id) }
                 } else null,
+                kept = isKept(id),
                 onDeleteOutput = if (!viewedIsPhoto && viewedNode != null) {
                     {
                         onClearImage(viewedNode)
@@ -1150,6 +1221,8 @@ private fun FullscreenImage(
     onShare: (() -> Unit)? = null,
     /** ⭐ Keep it in Results, with the graph that made it. */
     onKeep: (() -> Unit)? = null,
+    /** ⭐ Whether this picture is already in Results — the star's amber/grey state. */
+    kept: Boolean = false,
     /**
      * ⭐ Drop this render from the node that made it.
      *
@@ -1168,7 +1241,9 @@ private fun FullscreenImage(
 ) {
     var confirmingDelete by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
-    var kept by remember { mutableStateOf(false) }
+    // ⚠ Passed in now — see the star below. A local latch could not express
+    // un-starring, and could not know the picture was already kept.
+    
     // ⚠⚠ BACK CLOSES THE VIEWER. Without this the system back went to the
     // activity, which has no back stack -- so the one gesture every Android user
     // makes to leave a fullscreen picture QUIT THE APP, losing the canvas
@@ -1290,15 +1365,18 @@ private fun FullscreenImage(
                 }
             }
             onKeep?.let { keep ->
-                IconButton(onClick = { keep(); kept = true }) {
+                IconButton(onClick = keep) {
                     Icon(
                         Icons.Filled.Star,
-                        contentDescription = if (kept) "kept in Results" else "keep this and its flow",
-                        // ⚠ One glyph at two alphas rather than Star/StarBorder:
-                        // `material-icons-core` has no outlined star, and the
-                        // extended set costs ~55 MB of dex for it
-                        // (`app/build.gradle.kts`).
-                        tint = if (kept) Color.White else Color.White.copy(alpha = 0.45f),
+                        contentDescription =
+                            if (kept) "stop keeping this" else "keep this and its flow",
+                        // ⚠⚠ The REAL kept state, passed in, not a local latch.
+                        // This was `var kept` flipped to true on click: it never
+                        // went back, so un-starring left a filled star, and
+                        // reopening the viewer on an already-kept picture showed
+                        // an empty one. Reported from the phone 2026-09-11.
+                        tint = if (kept) com.abrah.nightmare.ui.StarKept
+                        else com.abrah.nightmare.ui.StarIdle,
                     )
                 }
             }

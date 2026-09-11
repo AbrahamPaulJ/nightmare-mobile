@@ -135,9 +135,12 @@ class RenameNodeTest {
         val boxes = layout(state().workflow, NODE_TYPES)
         val prompt = boxes.first { it.id == "text" }
         assertNotNull("the prompt node has no prose block", prompt.prose)
+        // ⚠⚠ BOTH captions, even though `negative` is blank here. Showing only
+        // what was typed made an empty field vanish, so a node with one prompt
+        // filled in looked like a node that HAS one field -- and nothing said
+        // the other existed without opening the inspector.
         assertEquals(
-            "both prompts are declared, but only the non-blank one is shown",
-            listOf("prompt"),
+            listOf("prompt", "negative"),
             prompt.prose!!.fields.map { it.first },
         )
         // ⚠ The body block ADDS height, the same way a picture does.
@@ -148,11 +151,47 @@ class RenameNodeTest {
         )
     }
 
-    /** ⚠ A node with nothing typed shows no block at all, rather than an empty one. */
+    /**
+     * ⚠ A node with NOTHING typed still shows both boxes, empty.
+     *
+     * ⚠⚠ That is the point: the boxes are what tell a user the node has two
+     * fields. An empty node that drew nothing was indistinguishable from one
+     * with no text fields at all.
+     */
     @Test
-    fun anEmptyPromptDrawsNoBlock() {
+    fun anEmptyPromptStillShowsBothBoxes() {
         val g = Graph(listOf(Node("text", "sd.clip_encode", mapOf("prompt" to "", "negative" to ""))))
         val boxes = layout(Workflow(g, mapOf("text" to Pt(0f, 0f))), NODE_TYPES)
-        assertNull(boxes.first().prose)
+        val prose = boxes.first().prose
+        assertNotNull(prose)
+        assertEquals(listOf("prompt", "negative"), prose!!.fields.map { it.first })
+        assertEquals(listOf("", ""), prose.fields.map { it.second })
+    }
+
+    /**
+     * ⭐⭐ Dragging the node taller gives the PROMPTS the room, not the padding.
+     *
+     * ⚠ Height is never stored as a number — `proseLines` is a LINE COUNT the
+     * derivation consumes, for the same reason `sizes` is width-only: two
+     * stored dimensions can disagree, and a derived one cannot.
+     */
+    @Test
+    fun draggingTallerGivesTheProseMoreLines() {
+        val long = "a ".repeat(400)
+        val g = Graph(listOf(Node("text", "sd.clip_encode", mapOf("prompt" to long, "negative" to ""))))
+        val short = Workflow(g, mapOf("text" to Pt(0f, 0f)))
+        val tall = short.proseResized("text", Sizes.PROSE_MAX_LINES)
+        val a = layout(short, NODE_TYPES).first()
+        val b = layout(tall, NODE_TYPES).first()
+        assertTrue("a taller node did not get a taller body", b.height > a.height)
+        assertEquals(Sizes.PROSE_MAX_LINES, b.prose!!.maxLines)
+    }
+
+    /** ⚠ Clamped, so a drag cannot make a node taller than the canvas. */
+    @Test
+    fun theLineCountIsClamped() {
+        val w = Workflow(Graph(emptyList()), emptyMap())
+        assertEquals(1, w.proseResized("n", -5).proseLinesOf("n"))
+        assertEquals(Sizes.PROSE_MAX_LINES, w.proseResized("n", 999).proseLinesOf("n"))
     }
 }
