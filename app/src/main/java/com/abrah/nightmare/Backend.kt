@@ -463,6 +463,23 @@ object Ops {
          * re-encoded, so what the UNet sees is exactly what the node produced.
          */
         condHandle: String? = null,
+        /**
+         * ⭐ `w:h` on a fixed-canvas family (SDXL, Anima), or null.
+         *
+         * ⚠⚠ **A request field, not a context-key field.** It costs no
+         * relaunch: `RequestParser.hpp` keeps the forced 1024² canvas and sets
+         * `aspect_pad_inpaint`, which paints a centered rectangle of this shape
+         * and masks the rest. ⚠ It needs a VAE encoder present, because the
+         * synthetic black canvas is encoded as the inpaint base latent --
+         * `SDXL_REQUIRED` lists `vae_encoder.bin` for that reason, and this app
+         * never passes `--no_img2img`.
+         *
+         * ⚠⚠ **The crop back out does NOT happen on this path.** `opSample`
+         * returns the latent before `generate()` reaches its own `cropCenter`,
+         * so what comes back is a full-canvas latent with the target rectangle
+         * painted inside it. [VaeDecodeNode] cuts it out after the decode.
+         */
+        aspect: String? = null,
         onProgress: (Progress) -> Unit = {},
     ): Result<Sampled> {
         val body = JSONObject()
@@ -475,6 +492,7 @@ object Ops {
             .put("height", height)
             .put("scheduler", scheduler)
             .apply {
+                if (aspect != null) put("aspect_ratio", aspect)
                 if (condHandle != null) put("cond_handle", condHandle)
                 if (latentHandle != null) {
                     put("latent_handle", latentHandle)

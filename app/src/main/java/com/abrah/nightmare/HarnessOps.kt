@@ -149,6 +149,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "model_install" -> installModel(arg)
             "model_delete" -> deleteModel(arg)
             "model_use" -> useModel(arg)
+            "resolutions" -> listResolutions()
+            "res_use" -> useResolution(arg)
             "model_scan" -> scanModels()
             "model_import" -> importModels()
             "latent_blend" -> latentBlend()
@@ -174,7 +176,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * ⇒ The size comes from the model, exactly as it does for a real node.
      */
     private fun ctxKey(extra: Map<String, String> = emptyMap()): Map<String, String> {
-        val res = SelectedModel.spec.native
+        // ⚠ The SELECTED size, not the model's native one. Once resolution is a
+        // live knob those differ, and a fixture pinned to native would launch
+        // the backend at the user's size and then ask it for the model's -- the
+        // exact mismatch this function was written to stop.
+        val res = SelectedModel.res
         return mapOf(
             "model" to SelectedModel.id,
             "width" to res.width.toString(),
@@ -374,6 +380,59 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // window, and the open graph is a view-model field. The divergence it
         // leaves is self-healing, because the next restore adopts the model the
         // GRAPH names (`adoptGraphModel`) rather than the one this set.
+    }
+
+    /**
+     * ⭐ What sizes the selected model can serve, and which one is chosen.
+     *
+     * ⚠ Discovered from the patch files on disk
+     * ([ModelSpec.availableResolutions]), so this op is also how you find out
+     * that an archive shipped fewer patches than expected -- the row simply is
+     * not there, and nothing else would say so.
+     */
+    fun listResolutions() {
+        val spec = SelectedModel.spec
+        if (spec.fixedCanvas) {
+            say("${spec.label} renders a fixed ${spec.native} and crops to shape:")
+            for (a in ModelCatalog.ASPECTS) {
+                val t = ModelCatalog.aspectTarget(a, spec.native) ?: spec.native
+                say("  ${a.padEnd(5)} $t")
+            }
+            return
+        }
+        val all = spec.availableResolutions(ctx)
+        say("${spec.label}: ${all.size} resolution${if (all.size == 1) "" else "s"}")
+        for (r in all) {
+            val patch = r.patchName?.let { n ->
+                if (java.io.File(spec.dir(ctx), n).exists()) n else "$n MISSING"
+            } ?: "base unet.bin"
+            say("  ${if (r == SelectedModel.res) "*" else " "} ${r.toString().padEnd(9)} $patch")
+        }
+    }
+
+    /**
+     * ⚠ Takes `WxH` — `--es arg 768x512`. It sets the selection and stops a
+     * backend launched for another size, exactly as [useModel] does for a
+     * model; the size is the same kind of launch-bound field.
+     */
+    suspend fun useResolution(arg: String?) {
+        val want = arg?.let { Res.fromLabel(it) }
+        if (want == null) { say("res_use needs --es arg <WxH>, e.g. 768x512", bad = true); return }
+        val spec = SelectedModel.spec
+        val ok = spec.availableResolutions(ctx)
+        if (want !in ok) {
+            say("${spec.label} cannot render $want -- it serves ${ok.joinToString(", ")}", bad = true)
+            return
+        }
+        val was = SelectedModel.res
+        SelectedModel.setRes(ctx, want)
+        say("resolution $want")
+        // ⚠ Same reasoning as [useModel]: `--patch` binds at launch, so a
+        // process started at the old size will not reload into the new one.
+        if (was != want && Backend.get("/health").code == 200) {
+            say("  stopping the backend -- it was launched at $was")
+            stopBackend()
+        }
     }
 
     suspend fun health() {
@@ -664,19 +723,48 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * Keeping that only in the view model made this op test a path no user
      * takes -- the same front-end drift `model_use` had.
      */
-    suspend fun ensureBackend(): Boolean {
-        if (Backend.get("/health").code == 200) return true
-        val spec = ModelCatalog.byId(SelectedModel.id)
+    /**
+     * ⚠⚠ **`/health` is not the question any more.** It answers 200 from a
+     * process launched at ANY resolution, so once `--patch` is on the launch
+     * line a healthy backend can still be the wrong one -- and the failure is
+     * silent, because `/vae_decode` against graphs of another size decodes
+     * plausible garbage rather than erroring.
+     *
+     * ⇒ Serving AND launched for the key we want. Anything else is a kill and
+     * a relaunch, which costs 2.3-5 s (`docs/ARCHITECTURE.md` §4) and is
+     * announced rather than silent: it is about a whole render, and a user who
+     * is not told will read it as the app having hung.
+     */
+    suspend fun ensureBackend(want: ContextKey? = null): Boolean {
+        val target = want ?: ContextKey(
+            ModelCatalog.backendTypeOf(SelectedModel.id),
+            SelectedModel.id,
+            SelectedModel.res.width,
+            SelectedModel.res.height,
+        )
+        if (Backend.get("/health").code == 200) {
+            val have = BackendProcess.launchedKey
+            // ⚠ A null launch key with a live /health is a backend this app did
+            // not start -- a leftover from a previous process, or one launched
+            // by hand during development. It cannot be verified, so it is
+            // replaced rather than trusted.
+            if (have == target) return true
+            say(
+                if (have == null) "the running backend was not started by this app -- relaunching"
+                else "the backend is serving $have but this graph needs $target -- relaunching"
+            )
+            stopBackend()
+        }
+        val spec = ModelCatalog.byId(target.model)
         if (spec == null || !spec.installed(ctx)) {
             say("no model installed -- open Models and download one", bad = true)
             return false
         }
-        say("starting the backend for the first render…")
-        return launchBackend()
+        say("starting the backend for ${target.model} at ${target.width}x${target.height}…")
+        return launchBackend(target)
     }
 
     suspend fun canvasRun() {
-        if (!ensureBackend()) return
         // ⭐⭐ The user's OWN canvas, not a fixture.
         //
         // ⚠⚠ This ran `defaultWorkflow()` — a hardcoded three-node txt2img —
@@ -695,6 +783,22 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }.getOrNull() ?: com.abrah.nightmare.canvas.defaultWorkflow()
         say("canvas: ${wf.graph.nodes.size} nodes, " +
             "${nodeTypes().size} types available")
+        // ⚠⚠ Launch for the key the GRAPH names, not for the selection. This op
+        // reads the autosave straight off disk, so it bypasses the adoption
+        // [HarnessViewModel.adoptGraphModel] does when a workflow is opened --
+        // a saved graph at 768² would otherwise be run against a backend
+        // launched at whatever the picker last said.
+        val want = try {
+            val types = nodeTypes()
+            val m = contextKeyModels(wf.graph, types).singleOrNull()
+            val res = contextKeyResolutions(wf.graph, types).singleOrNull()
+            if (m != null && res != null) {
+                ContextKey(ModelCatalog.backendTypeOf(m), m, res.width, res.height)
+            } else null
+        } catch (e: Throwable) {
+            null
+        }
+        if (!ensureBackend(want)) return
         val r = runWorkflow(wf, onNode = { n ->
             say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} " +
                 "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
@@ -2211,10 +2315,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * between "started" and "serving", and reporting the former as the latter
      * is how a first request lands on a socket nobody is listening to.
      */
-    suspend fun launchBackend(): Boolean {
+    suspend fun launchBackend(want: ContextKey? = null): Boolean {
         val models = BackendProcess.modelsDir(ctx)
         say("models dir: ${models.absolutePath}")
-        when (val r = BackendProcess.start(ctx, modelId = SelectedModel.id, port = Backend.PORT)) {
+        val modelId = want?.model ?: SelectedModel.id
+        val res = want?.let { Res(it.width, it.height) } ?: SelectedModel.res
+        when (val r = BackendProcess.start(
+            ctx, modelId = modelId, port = Backend.PORT, res = res,
+        )) {
             is BackendProcess.Start.Failed -> {
                 say("start failed -- ${r.why}", bad = true)
                 drainBackendLog()

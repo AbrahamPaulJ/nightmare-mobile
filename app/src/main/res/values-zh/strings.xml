@@ -86,6 +86,10 @@
     <string name="remove">移除</string>
     <string name="use">使用</string>
     <string name="in_use">使用中</string>
+    <string name="resolution">分辨率</string>
+    <string name="shape">比例</string>
+    <string name="resolution_reloads">不同尺寸即不同图谱 — 下次运行时后端会重新加载。</string>
+    <string name="shape_is_free">此模型仅渲染单一尺寸并裁剪成比例，无需重新加载。</string>
     <string name="unsupported">不支持</string>
     <string name="installed_mb">已安装 · %1$d MB</string>
     <string name="not_installed_mb">未安装  需下载 %1$d MB</string>

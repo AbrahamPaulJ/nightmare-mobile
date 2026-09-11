@@ -633,8 +633,34 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 // conditional here would be a second place that knows what
                 // `isCustom` means, and it is one cheap `exists()` per file.
                 missing = if (here) emptyList() else spec.missing(ctx),
+                // ⚠ Only for an INSTALLED model: before install there are no
+                // patch files to scan, so the answer would be "one size" for
+                // every SD 1.5 checkpoint and the card would promise less than
+                // the archive delivers.
+                resolutions = if (here) spec.availableResolutions(ctx) else emptyList(),
+                resolution = if (spec.id == SelectedModel.id) SelectedModel.res else null,
+                // ⚠ Read off the GRAPH, not a global: aspect is a node param
+                // and the canvas is authoritative, exactly as `model` is
+                // (`docs/MODELS.md` §4). A second source of truth here would
+                // show a chip that disagreed with what the sampler will send.
+                aspect = if (spec.id == SelectedModel.id) currentAspect() else null,
             )
         }
+    }
+
+    /**
+     * The aspect the OPEN graph names, or the default when it names none.
+     *
+     * ⚠ Guarded like [adoptGraphModel]'s read: resolving node types builds the
+     * QuickJS runtime and can throw for reasons that have nothing to do with
+     * the shape of the picture. A models list that failed to draw because a
+     * plugin is broken would be a bad trade.
+     */
+    private fun currentAspect(): String = try {
+        canvas.workflow.graph.nodes.firstNotNullOfOrNull { it.params["aspect"] }
+            ?: ModelCatalog.DEFAULT_ASPECT
+    } catch (e: Throwable) {
+        ModelCatalog.DEFAULT_ASPECT
     }
 
     /**
@@ -890,11 +916,91 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // same reason when a graph is replaced wholesale; a model switch
         // rewrites every backend node's size, which is the same kind of event.
         previewSigs.clear()
-        retargetCanvas(spec)
+        retargetCanvas(spec, SelectedModel.res)
         if (backend == BackendState.UP) {
             say("  stopping the backend -- it was launched for the previous model")
             stopBackend()
         }
+        refreshModels()
+    }
+
+    /**
+     * ⭐⭐ Change the render size for the WHOLE graph.
+     *
+     * ⚠⚠ **The same act as choosing a model, and it must do the same things.**
+     * `--patch` binds at backend launch beside `--type` and `--model_dir`
+     * (`docs/ARCHITECTURE.md` §4), so a resolution is a third of the context
+     * key, not a knob: it rewrites every backend node, it invalidates the
+     * running process, and it costs a relaunch of 2.3-5 s on the next Run.
+     * Doing less than [selectModel] does here would leave the graph and the
+     * process disagreeing about the size, which decodes plausible garbage
+     * rather than failing.
+     *
+     * ⚠⚠ `previewSigs.clear()` is NOT tidiness. DreamUI hit this on its first
+     * non-square inpaint: cropping at one resolution and generating at another
+     * left the painter holding a bitmap of the OLD size, which then went to a
+     * backend that sizes its buffers from the request and **died with SIGSEGV
+     * writing past them** (`GenerateViewModel.setResolution`). Every derived
+     * picture on this canvas is the wrong shape the instant this returns, and a
+     * signature is only rechecked when a node's params changed — which is a
+     * race against the derivation that changes them.
+     */
+    fun selectResolution(res: Res) {
+        val ctx = getApplication<Application>()
+        if (res == SelectedModel.res) return
+        val spec = SelectedModel.spec
+        val ok = spec.availableResolutions(ctx)
+        if (res !in ok) {
+            say(
+                "${spec.label} cannot render $res -- it serves ${ok.joinToString(", ")}",
+                bad = true,
+            )
+            return
+        }
+        SelectedModel.setRes(ctx, res)
+        say("resolution set to $res")
+        // ⚠ The last run was at the OLD size, so its timings and its "done" no
+        // longer describe this canvas -- exactly as after a model switch.
+        clearRunLog()
+        previewSigs.clear()
+        retargetCanvas(spec, res)
+        if (backend == BackendState.UP) {
+            say("  stopping the backend -- it was launched at ${BackendProcess.launchedKey?.let { "${it.width}x${it.height}" } ?: "another size"}")
+            stopBackend()
+        }
+        // ⚠ The chip that was tapped reads its selected state off this list.
+        refreshModels()
+    }
+
+    /**
+     * ⭐ Change the output shape on a fixed-canvas family.
+     *
+     * ⚠⚠ Deliberately **not** [selectResolution], though the user experiences
+     * both as "what shape is my picture". `aspect_ratio` is a request field: it
+     * paints a centered rectangle into the 1024² canvas the process is already
+     * running (`ModelCatalog.aspectTarget`), so it costs **no relaunch**, does
+     * not touch the context key, and must not stop the backend. Conflating the
+     * two would spend 2.3-5 s to change a crop.
+     *
+     * ⚠ Previews still go: every derived picture downstream is a different
+     * shape now, which is the same staleness a resolution change causes.
+     */
+    fun selectAspect(aspect: String) {
+        val spec = SelectedModel.spec
+        if (!spec.fixedCanvas) {
+            say("${spec.label} renders real resolutions -- pick one of those instead", bad = true)
+            return
+        }
+        val graph = canvas.workflow.graph
+        val changes = aspectRetarget(graph, typesFor(graph), aspect)
+        if (changes.isEmpty()) return
+        editCanvas { s -> changes.entries.fold(s) { acc, (id, p) -> acc.setParams(id, p) } }
+        previewSigs.clear()
+        val target = ModelCatalog.aspectTarget(aspect, spec.native)
+        say("aspect $aspect -- ${target ?: spec.native} on ${changes.size} node" +
+            (if (changes.size == 1) "" else "s"))
+        // ⚠ Same reason as [selectResolution]: the chip's selected state is
+        // read back off `modelRows`, which reads it off the graph.
         refreshModels()
     }
 
@@ -929,20 +1035,44 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // for reasons that have nothing to do with the model. Losing the user's
         // restored graph to a question about which checkpoint it wants would be
         // far worse than leaving the selection where it was.
-        val named = try {
-            contextKeyModels(w.graph, typesFor(w.graph))
+        val types = try {
+            typesFor(w.graph)
         } catch (e: Throwable) {
             return
         }
-        val id = named.singleOrNull() ?: return
-        if (id == SelectedModel.id) return
-        val spec = ModelCatalog.byId(id) ?: return
+        val named = contextKeyModels(w.graph, types)
+        // ⚠⚠ **The resolution is adopted too, and on its own.** A saved graph
+        // stores `width`/`height` on every backend node, so opening one at 768²
+        // while 512² is selected would launch the backend with the wrong
+        // `--patch` and render the user's graph against it -- the same silent
+        // wrong-size failure adopting the MODEL exists to prevent, and it does
+        // not need the model to differ to happen.
+        val id = named.singleOrNull()
+        val res = contextKeyResolutions(w.graph, types).singleOrNull()
         val ctx = getApplication<Application>()
-        SelectedModel.set(ctx, id)
-        say("this workflow uses ${spec.label} -- selected it")
+        val spec = id?.let { ModelCatalog.byId(it) }
+        val modelMoved = spec != null && id != SelectedModel.id
+        // ⚠ Read against the graph's model, not the selected one -- on a model
+        // switch the sizes that are legal change with it.
+        val resMoved = res != null && res != SelectedModel.res &&
+            res in (spec ?: SelectedModel.spec).availableResolutions(ctx)
+        if (!modelMoved && !resMoved) return
+
+        if (modelMoved) {
+            SelectedModel.set(ctx, id!!)
+            say("this workflow uses ${spec!!.label} -- selected it")
+        }
+        // ⚠ AFTER the model, because [SelectedModel.set] re-resolves the
+        // resolution per model and would otherwise overwrite this.
+        if (resMoved) {
+            SelectedModel.setRes(ctx, res!!)
+            say("this workflow renders at $res -- selected it")
+        }
         clearRunLog()
+        // ⚠ Derived pictures are the previous size, exactly as in [selectModel].
+        previewSigs.clear()
         if (backend == BackendState.UP) {
-            say("  stopping the backend -- it was launched for the previous model")
+            say("  stopping the backend -- it was launched for the previous context")
             stopBackend()
         }
         refreshModels()
@@ -968,10 +1098,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * the autosave, the derived crop sizes and the preview refresh for free. A
      * captured snapshot here would revert whatever the user did since.
      */
-    private fun retargetCanvas(spec: ModelSpec) {
+    private fun retargetCanvas(spec: ModelSpec, res: Res = spec.native) {
         val graph = canvas.workflow.graph
         val types = typesFor(graph)
-        val changes = contextKeyRetarget(graph, types, spec)
+        val changes = contextKeyRetarget(graph, types, spec, res)
         if (changes.isNotEmpty()) {
             editCanvas { s -> changes.entries.fold(s) { acc, (id, p) -> acc.setParams(id, p) } }
             say("  retargeted ${changes.size} node${if (changes.size == 1) "" else "s"} on the canvas")

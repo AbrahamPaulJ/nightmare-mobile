@@ -252,6 +252,8 @@ fun HarnessScreen(
                     onCancel = vm::cancelModelInstall,
                     onDelete = vm::deleteModel,
                     onSelect = vm::selectModel,
+                    onSelectResolution = vm::selectResolution,
+                    onSelectAspect = vm::selectAspect,
                     onImport = { name ->
                         importName = name
                         // ⚠ Two MIME types. A zip arrives as

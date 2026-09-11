@@ -77,7 +77,8 @@ class ExecutorTest {
         override suspend fun sample(
             steps: Int, cfg: Double, seed: Int,
             width: Int, height: Int, latentHandle: String?, denoise: Double,
-            scheduler: String, condHandle: String, onProgress: (Ops.Progress) -> Unit,
+            scheduler: String, condHandle: String, aspect: String?,
+            onProgress: (Ops.Progress) -> Unit,
         ): Ops.Result<Ops.Sampled> {
             samples++
             lastScheduler = scheduler
@@ -370,7 +371,8 @@ class ExecutorTest {
             override suspend fun sample(
                 steps: Int, cfg: Double, seed: Int,
                 width: Int, height: Int, latentHandle: String?, denoise: Double,
-                scheduler: String, condHandle: String, onProgress: (Ops.Progress) -> Unit,
+                scheduler: String, condHandle: String, aspect: String?,
+            onProgress: (Ops.Progress) -> Unit,
             ): Ops.Result<Ops.Sampled> = Ops.Result.Err(500, "QNN execute failed: 1002")
         }
         val g = Graph(listOf(text(), sampler("s", 42), decoder("d", "s")))

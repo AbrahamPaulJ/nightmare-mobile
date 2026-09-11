@@ -108,6 +108,11 @@
     <string name="remove">Remove</string>
     <string name="use">Use</string>
     <string name="in_use">In use</string>
+    <!-- The output shape controls on the model in use. -->
+    <string name="resolution">Resolution</string>
+    <string name="shape">Shape</string>
+    <string name="resolution_reloads">A different size is a different graph — the backend reloads on the next Run.</string>
+    <string name="shape_is_free">This model renders one size and crops to shape. No reload.</string>
     <string name="unsupported">Unsupported</string>
     <string name="installed_mb">installed · %1$d MB</string>
     <string name="not_installed_mb">not installed  %1$d MB download</string>

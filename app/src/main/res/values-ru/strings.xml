@@ -86,6 +86,10 @@
     <string name="remove">Убрать</string>
     <string name="use">Выбрать</string>
     <string name="in_use">Используется</string>
+    <string name="resolution">Разрешение</string>
+    <string name="shape">Форма</string>
+    <string name="resolution_reloads">Другой размер — другой граф: бэкенд перезагрузится при следующем запуске.</string>
+    <string name="shape_is_free">Эта модель рендерит один размер и обрезает его. Без перезагрузки.</string>
     <string name="unsupported">Не поддерживается</string>
     <string name="installed_mb">установлено · %1$d МБ</string>
     <string name="not_installed_mb">не установлено  загрузка %1$d МБ</string>

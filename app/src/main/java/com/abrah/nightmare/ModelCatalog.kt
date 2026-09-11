@@ -38,6 +38,65 @@ enum class Runtime { NPU, CPU }
  */
 data class Res(val width: Int, val height: Int) {
     override fun toString() = "${width}x$height"
+
+    val isSquare: Boolean get() = width == height
+
+    /** Pixels, so a list of these sorts by cost. */
+    val area: Int get() = width * height
+
+    /** width / height, for anything that has to match the output's shape. */
+    val aspect: Float get() = width.toFloat() / height.toFloat()
+
+    /**
+     * ⭐ The zstd patch this resolution needs, or **null for the base 512²**
+     * that `unet.bin` already is.
+     *
+     * ⚠ Matches what the conversion pipeline emits, and the two forms are not
+     * interchangeable: `768.patch` for a square, `512x768.patch` for a
+     * rectangle (`npuconvert/export.sh`). ⚠⚠ Per width AND height — handing a
+     * portrait build the square patch is a graph of the wrong shape, and the
+     * backend does not check.
+     */
+    val patchName: String?
+        get() = when {
+            this == ModelCatalog.SD15_NPU_RES -> null
+            isSquare -> "$width.patch"
+            else -> "${width}x$height.patch"
+        }
+
+    companion object {
+        /** `768.patch` and `512x768.patch` respectively. */
+        private val SQUARE_PATCH = Regex("""^(\d+)\.patch$""")
+        private val RECT_PATCH = Regex("""^(\d+)x(\d+)\.patch$""")
+
+        /**
+         * The inverse of [toString] — `"768x512"` back to a [Res].
+         *
+         * ⚠ Shared by the chips and by the `res_use` harness op so a size typed
+         * on a command line and one tapped on screen cannot parse differently.
+         */
+        fun fromLabel(s: String): Res? {
+            val p = s.split("x")
+            if (p.size != 2) return null
+            val w = p[0].trim().toIntOrNull() ?: return null
+            val h = p[1].trim().toIntOrNull() ?: return null
+            return if (w > 0 && h > 0) Res(w, h) else null
+        }
+
+        /** Parses a patch filename back into a resolution, or null when it is not one. */
+        fun fromPatch(name: String): Res? {
+            SQUARE_PATCH.matchEntire(name)?.let { m ->
+                val n = m.groupValues[1].toIntOrNull() ?: return null
+                return Res(n, n)
+            }
+            RECT_PATCH.matchEntire(name)?.let { m ->
+                val w = m.groupValues[1].toIntOrNull() ?: return null
+                val h = m.groupValues[2].toIntOrNull() ?: return null
+                return Res(w, h)
+            }
+            return null
+        }
+    }
 }
 
 /**
@@ -260,6 +319,73 @@ data class ModelSpec(
 
     fun installed(context: Context): Boolean = missing(context).isEmpty()
 
+    /**
+     * Whether this model's `unet.bin` is a 512 base that resolution patches
+     * apply to.
+     *
+     * ⚠ SDXL's graphs are compiled at a fixed 1024 and ship no patches at all;
+     * ControlNet is a frozen 512 graph. Only the SD 1.5 NPU builds take one.
+     */
+    val servesPatches: Boolean
+        get() = backendType == ModelCatalog.SD15_NPU
+
+    /**
+     * ⭐ Families whose graphs are frozen at one square size and which reach a
+     * non-1:1 output through [ModelCatalog.aspectTarget] instead of a patch.
+     *
+     * ⚠ The backend's own condition is `sdxl || anima`, and it *forces* the
+     * canvas for both — so this is the set for which a size widget is a lie and
+     * an aspect chip is the truth.
+     */
+    val fixedCanvas: Boolean
+        get() = family == Family.SDXL || family == Family.ANIMA
+
+    /**
+     * ⭐⭐ The patch file [res] needs, or null when it needs none.
+     *
+     * ⚠⚠ **Null is ambiguous on its own and the caller must not treat it as
+     * "fine, carry on".** It means either "this is the 512 base" or "this model
+     * takes no patches" — both legitimate — but a patch that is *wanted and
+     * absent* must NOT reach here as null. [missingPatch] is the question a
+     * launch has to ask; upstream and DreamUI both answer it with a warning and
+     * a silent fall back to 512, which is the same wrong-size-reported-as-success
+     * shape `SDXL_NPU_RES` documents.
+     */
+    fun patchFor(context: Context, res: Res): File? {
+        if (!servesPatches) return null
+        val name = res.patchName ?: return null
+        return File(dir(context), name).takeIf { it.exists() }
+    }
+
+    /** The patch [res] needs and does not have, or null when the launch can proceed. */
+    fun missingPatch(context: Context, res: Res): String? {
+        if (!servesPatches) return null
+        val name = res.patchName ?: return null
+        return name.takeIf { !File(dir(context), it).exists() }
+    }
+
+    /**
+     * ⭐ The resolutions this model can actually serve **right now**.
+     *
+     * ⚠⚠ **Discovered from the files on disk, not declared.** Offering a size
+     * whose patch is absent would launch the backend against a `unet.bin` that
+     * cannot serve it, and upstream's answer to that is a silent 512. A
+     * checkpoint whose archive shipped fewer patches therefore offers fewer
+     * sizes instead of offering one that fails — the same reasoning
+     * [DeviceProbe]-gated builds use, applied to graph shapes.
+     *
+     * ⚠ Before install this is just [native]: there are no files to scan yet.
+     */
+    fun availableResolutions(context: Context): List<Res> {
+        if (!servesPatches) return resolutions
+        val found = dir(context).listFiles().orEmpty()
+            .filter { it.isFile }
+            .mapNotNull { Res.fromPatch(it.name) }
+        return (listOf(ModelCatalog.SD15_NPU_RES) + found)
+            .distinct()
+            .sortedWith(compareBy({ it.area }, { it.width }))
+    }
+
     /** What this model occupies on disk, or 0 when it is not installed. */
     fun bytesOnDisk(context: Context): Long =
         dir(context).walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -291,6 +417,58 @@ object ModelCatalog {
      */
     const val SDXL_NPU = "sdxl"
     val SDXL_NPU_RES = Res(1024, 1024)
+
+    /**
+     * ⭐⭐ Non-square output on a family whose graphs are frozen at 1024.
+     *
+     * ⚠⚠ **`aspect_ratio` is a DIFFERENT FEATURE from resolution, wearing a
+     * similar name** (`docs/ROADMAP.md` §Resolution). A resolution patch
+     * changes what the UNet graph *is* and binds at launch; this changes
+     * nothing about the graph. The backend renders the full 1024² canvas and
+     * reaches a non-1:1 output by inpainting a centered rectangle into it
+     * (`RequestParser.hpp`, `aspect_pad_inpaint`), then cropping that rectangle
+     * back out. ⇒ It is a REQUEST field: no patch, no relaunch, and **it is not
+     * part of the context key**.
+     *
+     * ⚠ `1:1` is the identity and is deliberately first: the backend ignores an
+     * `aspect_ratio` whose terms are equal, so sending it is the same as
+     * sending nothing.
+     */
+    val ASPECTS = listOf("1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16")
+
+    const val DEFAULT_ASPECT = "1:1"
+
+    /**
+     * ⚠⚠ **A SECOND COPY of arithmetic that lives in C++, and it has to be
+     * exact.** `RequestParser.hpp` computes the target rectangle and
+     * `Pipeline.hpp` crops to it; on the decomposed op path the crop never runs
+     * (see [VaeDecodeNode]), so the app repeats the sum to know what to cut.
+     * The two drifting apart is an off-centre or wrongly-sized picture with
+     * nothing reporting it.
+     *
+     * ⇒ Mirrors the backend line for line: long edge pinned to the canvas, the
+     * short edge floored to a multiple of 8, a floor of 8, and **equal terms
+     * meaning "no crop"** — the C++ guards on `!(rw == rh)`.
+     *
+     * Returns null when [ratio] is not `w:h`, has a non-positive term, or is
+     * square. All three are "render the plain canvas", which is what the
+     * backend does with them too.
+     */
+    fun aspectTarget(ratio: String, canvas: Res): Res? {
+        val colon = ratio.indexOf(':').takeIf { it >= 0 } ?: return null
+        val rw = ratio.substring(0, colon).trim().toIntOrNull() ?: return null
+        val rh = ratio.substring(colon + 1).trim().toIntOrNull() ?: return null
+        if (rw <= 0 || rh <= 0 || rw == rh) return null
+        // ⚠ `canvas.width` on both branches, matching the C++ literal 1024 --
+        // the backend forces a SQUARE canvas for these families, so there is
+        // only one edge length in play.
+        val edge = canvas.width
+        return if (rw >= rh) {
+            Res(edge, (((edge.toDouble() * rh) / rw).toInt() / 8 * 8).coerceAtLeast(8))
+        } else {
+            Res((((edge.toDouble() * rw) / rh).toInt() / 8 * 8).coerceAtLeast(8), edge)
+        }
+    }
 
     /**
      * ⭐⭐ The samplers the backend implements, and the ONLY legal values of a
@@ -649,9 +827,31 @@ object SelectedModel {
 
     private const val PREFS = "nightmare"
     private const val KEY = "model"
+    private const val KEY_RES = "resolution"
 
     @Volatile
     var id: String = V1_MODEL
+        private set
+
+    /**
+     * ⭐⭐ The resolution every backend node on a new graph is sized to — the
+     * `width`/`height` thirds of the [ContextKey], chosen graph-wide rather
+     * than per node.
+     *
+     * ⚠⚠ **Graph-wide on purpose.** §5.2 pins ONE context key per graph, and
+     * `--patch` binds at backend launch exactly as `--type` and `--model_dir`
+     * do. A per-node size widget would make the executor's "needs 2 backend
+     * contexts" refusal a normal-path experience for something the user chose
+     * deliberately; picking it beside the model instead means [contextKeyRetarget]
+     * rewrites every node at once and the graph still names one key. The pin is
+     * untouched.
+     *
+     * ⚠ Stored per MODEL, not globally: 768x512 is meaningful on SD 1.5 and
+     * impossible on SDXL, so one shared value would follow the user across a
+     * family switch into a size that model cannot serve.
+     */
+    @Volatile
+    var res: Res = ModelCatalog.SD15_NPU_RES
         private set
 
     /**
@@ -677,14 +877,54 @@ object SelectedModel {
      */
     fun load(context: Context) {
         CustomModels.scan(context)
-        val stored = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val stored = prefs.getString(KEY, null)
         id = stored?.takeIf { ModelCatalog.byId(it) != null } ?: V1_MODEL
+        res = readRes(context, prefs.getString(resKey(id), null))
     }
 
     fun set(context: Context, newId: String) {
         require(ModelCatalog.byId(newId) != null) { "unknown model \"$newId\"" }
         id = newId
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY, newId).apply()
+        // ⚠⚠ The resolution MUST be re-resolved here and not carried over. The
+        // previous model's size may be one this one cannot serve at all -- every
+        // SDXL size but 1024² , or a patch this checkpoint's archive did not
+        // ship -- and a stale value would reach `--patch` as a file that is not
+        // there. Re-reading per model is what makes [setRes] safe to be dumb.
+        res = readRes(context, prefs.getString(resKey(newId), null))
+    }
+
+    /**
+     * ⚠ Refuses a size the model cannot serve, rather than storing it and
+     * failing at launch. The caller has [ModelSpec.availableResolutions] and
+     * this is the backstop for a stored value that has gone stale -- a model
+     * re-downloaded from a build with fewer patches, say.
+     */
+    fun setRes(context: Context, newRes: Res) {
+        val ok = spec.availableResolutions(context)
+        require(newRes in ok) {
+            "\"${spec.label}\" cannot render $newRes -- it serves ${ok.joinToString(", ")}"
+        }
+        res = newRes
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY, newId).apply()
+            .putString(resKey(id), "${newRes.width}x${newRes.height}").apply()
+    }
+
+    private fun resKey(modelId: String) = "$KEY_RES.$modelId"
+
+    /**
+     * ⚠ Falls back to the model's native size whenever the stored string is
+     * absent, malformed, or names a resolution this install can no longer
+     * serve. All three are the same answer and none is an error.
+     */
+    private fun readRes(context: Context, stored: String?): Res {
+        val native = spec.native
+        val parts = stored?.split("x") ?: return native
+        val w = parts.getOrNull(0)?.toIntOrNull() ?: return native
+        val h = parts.getOrNull(1)?.toIntOrNull() ?: return native
+        val want = Res(w, h)
+        return if (want in spec.availableResolutions(context)) want else native
     }
 }
