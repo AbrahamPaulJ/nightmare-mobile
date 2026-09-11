@@ -13,16 +13,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.OutlinedButton
@@ -41,9 +37,7 @@ import com.abrah.nightmare.Family
 import com.abrah.nightmare.ModelInstaller
 import com.abrah.nightmare.UpscalerBuild
 import com.abrah.nightmare.UpscalerSpec
-import com.abrah.nightmare.ModelCatalog
 import com.abrah.nightmare.ModelSpec
-import com.abrah.nightmare.Res
 
 /**
  * What the model list needs to draw one row.
@@ -94,27 +88,6 @@ data class ModelRow(
      * button, so the list would be noise.
      */
     val missing: List<String> = emptyList(),
-    /**
-     * ⭐⭐ The sizes this model can actually serve, **discovered from the patch
-     * files on disk** ([ModelSpec.availableResolutions]).
-     *
-     * ⚠ Passed in rather than read here, for the same reason [installed] and
-     * [missing] are: this screen has to stay renderable from a finished state so
-     * a preview and a golden can draw it, and a `listFiles()` inside a
-     * composable is neither.
-     *
-     * ⚠ Empty, or a single entry, draws no chips — there is nothing to choose.
-     */
-    val resolutions: List<Res> = emptyList(),
-    /** Which of [resolutions] is in use. Only meaningful while [selected]. */
-    val resolution: Res? = null,
-    /**
-     * ⭐ For a fixed-canvas family (SDXL, Anima) the choice is a SHAPE, not a
-     * size: the graph renders 1024² whatever happens and a ratio crops it
-     * (`ModelCatalog.aspectTarget`). ⚠ A different feature from [resolutions]
-     * wearing a similar name — this one costs no backend relaunch.
-     */
-    val aspect: String? = null,
 )
 
 /**
@@ -134,14 +107,6 @@ fun ModelsScreen(
     onDelete: (ModelSpec) -> Unit,
     onSelect: (ModelSpec) -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * ⭐ Change the render size of the model in use. ⚠ Defaulted to a no-op so
-     * a preview and a golden can draw this screen without one, exactly as
-     * [onImport] is.
-     */
-    onSelectResolution: (Res) -> Unit = {},
-    /** The same for a fixed-canvas family, where the choice is a ratio. */
-    onSelectAspect: (String) -> Unit = {},
     /**
      * ⭐ Import a checkpoint the user already has, as a zip.
      *
@@ -277,8 +242,7 @@ fun ModelsScreen(
                     )
                 }
                 items(shown, key = { it.spec.id }) { row ->
-                    ModelCard(row, busy, onInstall, onCancel, { deleting = it }, onSelect,
-                        onSelectResolution, onSelectAspect)
+                    ModelCard(row, busy, onInstall, onCancel, { deleting = it }, onSelect)
                 }
             }
         }
@@ -467,8 +431,6 @@ private fun ModelCard(
     onCancel: () -> Unit,
     onDelete: (ModelSpec) -> Unit,
     onSelect: (ModelSpec) -> Unit,
-    onSelectResolution: (Res) -> Unit,
-    onSelectAspect: (String) -> Unit,
 ) {
     Card(
         Modifier.fillMaxWidth(),
@@ -558,13 +520,6 @@ private fun ModelCard(
                 }
                 ModelAction(row, busy, onInstall, onCancel, onDelete, onSelect)
             }
-            // ⚠ Only on the model IN USE. These write to the open canvas, and a
-            // size chip on a checkpoint that is not loaded would either do
-            // nothing or silently switch models -- both worse than not offering
-            // it. ⚠ And only when there is more than one thing to pick.
-            if (row.selected && row.installed) {
-                OutputShape(row, busy, onSelectResolution, onSelectAspect)
-            }
             val p = row.progress
             if (p != null) {
                 // ⚠ Indeterminate during extraction: the unpacked size is not
@@ -580,98 +535,6 @@ private fun ModelCard(
                 }
             }
         }
-    }
-}
-
-/**
- * ⭐⭐ What shape this model will produce — the one control for two mechanisms
- * that a user experiences as the same question.
- *
- * ⚠⚠ **They are not the same thing and the copy must not pretend they are.**
- * A resolution is a different UNet graph: `--patch` binds at backend launch
- * beside `--type` and `--model_dir`, so choosing one rewrites every node's
- * context key and costs a relaunch of 2.3-5 s on the next Run — about a whole
- * render (`docs/ARCHITECTURE.md` §4). An aspect changes nothing about the
- * graph: the family renders its fixed square and the app crops the rectangle
- * out (`ModelCatalog.aspectTarget`), so it is free and instant.
- *
- * ⇒ Each says its own cost underneath, because a user who is not told will read
- * a 5 s relaunch as the app having hung.
- */
-@Composable
-private fun OutputShape(
-    row: ModelRow,
-    busy: Boolean,
-    onSelectResolution: (Res) -> Unit,
-    onSelectAspect: (String) -> Unit,
-) {
-    val fixed = row.spec.fixedCanvas
-    val options: List<String> =
-        if (fixed) ModelCatalog.ASPECTS else row.resolutions.map { it.toString() }
-    // ⚠ Nothing to choose is not an empty control, it is no control. An SD 1.5
-    // model whose archive shipped no patches has exactly one size, and a lone
-    // chip that cannot be unselected is furniture.
-    if (options.size <= 1) return
-    val current = if (fixed) (row.aspect ?: ModelCatalog.DEFAULT_ASPECT) else row.resolution?.toString()
-
-    Column(Modifier.padding(top = 10.dp)) {
-        Text(
-            if (fixed) stringResource(R.string.shape) else stringResource(R.string.resolution),
-            style = MaterialTheme.typography.labelLarge,
-        )
-        // ⚠ A horizontally scrolling Row, not a FlowRow: it is the idiom
-        // `NodeInspector.ChoiceRow` already uses for exactly this -- a set of
-        // chips too wide for a phone -- and it needs no experimental opt-in.
-        // Seven resolutions do not fit 411dp, and wrapping them onto three
-        // lines would push the Download buttons off a short screen.
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            for (o in options) {
-                FilterChip(
-                    selected = o == current,
-                    onClick = {
-                        if (fixed) onSelectAspect(o)
-                        else Res.fromLabel(o)?.let(onSelectResolution)
-                    },
-                    enabled = !busy,
-                    // ⚠⚠ **The selected chip needs a colour the CARD does not
-                    // already have.** `FilterChip`'s default selected container
-                    // is `secondaryContainer`, which is exactly what the in-use
-                    // card is painted — and this control only ever draws on the
-                    // in-use card. The first golden showed the chosen size as
-                    // bare text floating between two outlined neighbours, with
-                    // nothing to say it was the selected one.
-                    // ⚠ `primary`, matching the Run button, so "chosen" looks
-                    // the same here as it does everywhere else in the app.
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                    label = {
-                        Text(
-                            // ⭐ An aspect chip shows the ratio AND what it
-                            // actually produces. "16:9" alone hides that this
-                            // is a CROP of a fixed canvas -- the picture is not
-                            // bigger, it is shorter -- and a user who expected
-                            // more pixels would only find out by measuring one.
-                            if (fixed) {
-                                ModelCatalog.aspectTarget(o, row.spec.native)
-                                    ?.let { "$o  $it" } ?: "$o  ${row.spec.native}"
-                            } else o
-                        )
-                    },
-                )
-            }
-        }
-        Text(
-            if (fixed) stringResource(R.string.shape_is_free)
-            else stringResource(R.string.resolution_reloads),
-            style = LogTextStyle,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
     }
 }
 

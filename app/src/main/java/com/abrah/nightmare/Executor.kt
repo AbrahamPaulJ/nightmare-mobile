@@ -432,7 +432,7 @@ fun backendContextKey(node: Node) = ContextKey(
 fun contextKeyModels(graph: Graph, types: Map<String, NodeType>): List<String> =
     graph.nodes.mapNotNull { n ->
         val t = types[n.type] ?: return@mapNotNull null
-        if (t.widgets.none { it.name == "model" && it.locked == CONTEXT_KEY_LOCK }) null
+        if (t.widgets.none { it.name == "model" && it.contextKey }) null
         else n.params["model"]
     }.distinct()
 
@@ -451,8 +451,8 @@ fun contextKeyModels(graph: Graph, types: Map<String, NodeType>): List<String> =
 fun contextKeyResolutions(graph: Graph, types: Map<String, NodeType>): List<Res> =
     graph.nodes.mapNotNull { n ->
         val t = types[n.type] ?: return@mapNotNull null
-        val locked = t.widgets.filter { it.locked == CONTEXT_KEY_LOCK }.map { it.name }.toSet()
-        if ("width" !in locked || "height" !in locked) return@mapNotNull null
+        val keyed = t.widgets.filter { it.contextKey }.map { it.name }.toSet()
+        if ("width" !in keyed || "height" !in keyed) return@mapNotNull null
         val w = n.params["width"]?.toIntOrNull() ?: return@mapNotNull null
         val h = n.params["height"]?.toIntOrNull() ?: return@mapNotNull null
         Res(w, h)
@@ -496,8 +496,8 @@ fun contextKeyRetarget(
     val out = LinkedHashMap<String, Map<String, String>>()
     for (n in graph.nodes) {
         val t = types[n.type] ?: continue
-        val locked = t.widgets.filter { it.locked == CONTEXT_KEY_LOCK }.map { it.name }.toSet()
-        val change = wanted.filterKeys { it in locked && n.params[it] != wanted[it] }
+        val keyed = t.widgets.filter { it.contextKey }.map { it.name }.toSet()
+        val change = wanted.filterKeys { it in keyed && n.params[it] != wanted[it] }
         if (change.isNotEmpty()) out[n.id] = change
     }
     return out
@@ -626,10 +626,16 @@ object SampleNode : NodeType {
         // knobs: changing either costs a backend relaunch, and v1 pins one key
         // for the whole graph. They are listed so the inspector can show them,
         // and the executor still refuses a graph that needs two.
-        Widget("model", "string", SelectedModel.id, locked = CONTEXT_KEY_LOCK),
+        Widget("model", "string", SelectedModel.id, locked = CONTEXT_KEY_LOCK, contextKey = true),
         *aspectWidget(),
-        Widget("width", "int", SelectedModel.res.width.toString(), locked = CONTEXT_KEY_LOCK),
-        Widget("height", "int", SelectedModel.res.height.toString(), locked = CONTEXT_KEY_LOCK),
+        // ⚠⚠ contextKey but NOT locked: a size is chosen ON a node now, and
+        // choosing it rewrites every other backend node in the graph
+        // ([contextKeyRetarget]) rather than leaving two keys behind. The
+        // inspector replaces this pair with ONE chip row of the sizes the
+        // model's patches actually make reachable -- a free number field would
+        // let a user type 640, which has no patch and fails at launch.
+        Widget("width", "int", SelectedModel.res.width.toString(), contextKey = true),
+        Widget("height", "int", SelectedModel.res.height.toString(), contextKey = true),
     )
 
     override fun contextKey(node: Node) = backendContextKey(node)
@@ -695,9 +701,15 @@ object VaeDecodeNode : NodeType {
     override val outputs = listOf(Port("image", "IMAGE"))
     override val category = "latent"
     override val widgets get() = listOf(
-        Widget("model", "string", SelectedModel.id, locked = CONTEXT_KEY_LOCK),
-        Widget("width", "int", SelectedModel.res.width.toString(), locked = CONTEXT_KEY_LOCK),
-        Widget("height", "int", SelectedModel.res.height.toString(), locked = CONTEXT_KEY_LOCK),
+        Widget("model", "string", SelectedModel.id, locked = CONTEXT_KEY_LOCK, contextKey = true),
+        // ⚠⚠ contextKey but NOT locked: a size is chosen ON a node now, and
+        // choosing it rewrites every other backend node in the graph
+        // ([contextKeyRetarget]) rather than leaving two keys behind. The
+        // inspector replaces this pair with ONE chip row of the sizes the
+        // model's patches actually make reachable -- a free number field would
+        // let a user type 640, which has no patch and fails at launch.
+        Widget("width", "int", SelectedModel.res.width.toString(), contextKey = true),
+        Widget("height", "int", SelectedModel.res.height.toString(), contextKey = true),
         // ⚠ Declared here as well as on the sampler because THIS node is where
         // the crop happens -- see [run]. [aspectRetarget] keeps the two equal.
         *aspectWidget(),
@@ -923,9 +935,15 @@ object VaeEncodeNode : NodeType {
     override val outputs = listOf(Port("latent", "LATENT"))
     override val category = "latent"
     override val widgets get() = listOf(
-        Widget("model", "string", SelectedModel.id, locked = CONTEXT_KEY_LOCK),
-        Widget("width", "int", SelectedModel.res.width.toString(), locked = CONTEXT_KEY_LOCK),
-        Widget("height", "int", SelectedModel.res.height.toString(), locked = CONTEXT_KEY_LOCK),
+        Widget("model", "string", SelectedModel.id, locked = CONTEXT_KEY_LOCK, contextKey = true),
+        // ⚠⚠ contextKey but NOT locked: a size is chosen ON a node now, and
+        // choosing it rewrites every other backend node in the graph
+        // ([contextKeyRetarget]) rather than leaving two keys behind. The
+        // inspector replaces this pair with ONE chip row of the sizes the
+        // model's patches actually make reachable -- a free number field would
+        // let a user type 640, which has no patch and fails at launch.
+        Widget("width", "int", SelectedModel.res.width.toString(), contextKey = true),
+        Widget("height", "int", SelectedModel.res.height.toString(), contextKey = true),
         // ⚠ A VAE latent is mean + std * noise, so the seed is what makes the
         // same image encode to the same latent -- and therefore what lets the
         // executor cache anything downstream of it.
@@ -1374,9 +1392,15 @@ object LatentBlendNode : NodeType {
         // ⚠ The context key, exactly as on the sampler: a blend is done by the
         // backend against the model it was launched with, so it cannot be the
         // one node in a graph that names a different one.
-        Widget("model", "string", SelectedModel.id, locked = CONTEXT_KEY_LOCK),
-        Widget("width", "int", SelectedModel.res.width.toString(), locked = CONTEXT_KEY_LOCK),
-        Widget("height", "int", SelectedModel.res.height.toString(), locked = CONTEXT_KEY_LOCK),
+        Widget("model", "string", SelectedModel.id, locked = CONTEXT_KEY_LOCK, contextKey = true),
+        // ⚠⚠ contextKey but NOT locked: a size is chosen ON a node now, and
+        // choosing it rewrites every other backend node in the graph
+        // ([contextKeyRetarget]) rather than leaving two keys behind. The
+        // inspector replaces this pair with ONE chip row of the sizes the
+        // model's patches actually make reachable -- a free number field would
+        // let a user type 640, which has no patch and fails at launch.
+        Widget("width", "int", SelectedModel.res.width.toString(), contextKey = true),
+        Widget("height", "int", SelectedModel.res.height.toString(), contextKey = true),
     )
 
     override fun contextKey(node: Node) = backendContextKey(node)

@@ -10,6 +10,8 @@ import com.abrah.nightmare.MaskOp
 import com.abrah.nightmare.MaskState
 import com.abrah.nightmare.MaskStrokeData
 import com.abrah.nightmare.NODE_TYPES
+import com.abrah.nightmare.Res
+import com.abrah.nightmare.V1_MODEL
 import com.abrah.nightmare.SizeDemand
 import com.abrah.nightmare.Node
 import com.abrah.nightmare.sources
@@ -468,6 +470,72 @@ class CanvasScreenshotTest {
                 ),
                 type = NODE_TYPES["sd.sample"],
                 onSetParam = { _, _, _ -> },
+                onDelete = {},
+            )
+        }
+    }
+
+    /**
+     * ⭐⭐ The render size, on the node — the control this whole feature is.
+     *
+     * ⚠⚠ **A golden is the only thing that sees this.** It lives in a
+     * `ModalBottomSheet`, so it is invisible to a screenshot of the canvas
+     * behind it, and it is driven headlessly by `res_use` — which exercises
+     * every part of the feature EXCEPT the composable. That is the exact shape
+     * `docs/UI.md` §5 collects: fully verified on device, never once drawn.
+     *
+     * ⚠ Seven resolutions is past `CHIP_LIMIT`, so this pins the DROPDOWN
+     * form. Chips would become a scrolling strip that can hide the current
+     * value, which is a control that conceals its own state.
+     *
+     * ⚠ `width`/`height` must NOT also appear as two number fields below it.
+     */
+    @Test
+    fun theSamplerOffersTheRenderSize() = shoot("inspector-resolution") {
+        Surface(Modifier.fillMaxSize()) {
+            NodeInspectorBody(
+                nodeId = "sample",
+                node = Node(
+                    "sample", "sd.sample",
+                    params = mapOf(
+                        "steps" to "20", "cfg" to "7.5", "scheduler" to "dpm",
+                        "model" to V1_MODEL, "width" to "768", "height" to "512",
+                    ),
+                ),
+                type = NODE_TYPES["sd.sample"],
+                onSetParam = { _, _, _ -> },
+                // ⚠ Passed in, never read from SelectedModel: on the JVM there is
+                // no model directory to scan, so the real cache holds one entry
+                // and this golden would pin an empty control.
+                resolutions = listOf(
+                    Res(512, 512), Res(512, 768), Res(768, 512), Res(768, 768),
+                    Res(768, 1024), Res(1024, 768), Res(1024, 1024),
+                ),
+                onDelete = {},
+            )
+        }
+    }
+
+    /**
+     * ⚠ A model that serves ONE size draws no size control at all — a lone
+     * option that cannot be unselected is furniture, and it would sit on every
+     * backend node of every graph.
+     */
+    @Test
+    fun oneSizeMeansNoSizeControl() = shoot("inspector-resolution-single") {
+        Surface(Modifier.fillMaxSize()) {
+            NodeInspectorBody(
+                nodeId = "sample",
+                node = Node(
+                    "sample", "sd.sample",
+                    params = mapOf(
+                        "steps" to "20", "cfg" to "7.5", "scheduler" to "dpm",
+                        "model" to V1_MODEL, "width" to "512", "height" to "512",
+                    ),
+                ),
+                type = NODE_TYPES["sd.sample"],
+                onSetParam = { _, _, _ -> },
+                resolutions = listOf(Res(512, 512)),
                 onDelete = {},
             )
         }

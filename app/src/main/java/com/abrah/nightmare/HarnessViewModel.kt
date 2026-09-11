@@ -611,6 +611,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠ The upscalers ride along: this is the app's "re-read the disk"
         // entry point and a second one would be a second thing to forget.
         refreshUpscalers()
+        // ⚠ …and so does the reachable-size cache, for exactly that reason. A
+        // download that has just landed brings six patch files with it, and the
+        // size chips read a cache rather than the disk ([SelectedModel.refresh]).
+        SelectedModel.refresh(ctx)
         // ⚠⚠ Rescan first. A custom model directory is normally copied onto the
         // phone WHILE the app is running (adb, a file manager, a share), so the
         // catalogue read on the next line is stale by construction unless this
@@ -633,35 +637,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 // conditional here would be a second place that knows what
                 // `isCustom` means, and it is one cheap `exists()` per file.
                 missing = if (here) emptyList() else spec.missing(ctx),
-                // ⚠ Only for an INSTALLED model: before install there are no
-                // patch files to scan, so the answer would be "one size" for
-                // every SD 1.5 checkpoint and the card would promise less than
-                // the archive delivers.
-                resolutions = if (here) spec.availableResolutions(ctx) else emptyList(),
-                resolution = if (spec.id == SelectedModel.id) SelectedModel.res else null,
-                // ⚠ Read off the GRAPH, not a global: aspect is a node param
-                // and the canvas is authoritative, exactly as `model` is
-                // (`docs/MODELS.md` §4). A second source of truth here would
-                // show a chip that disagreed with what the sampler will send.
-                aspect = if (spec.id == SelectedModel.id) currentAspect() else null,
             )
         }
     }
 
-    /**
-     * The aspect the OPEN graph names, or the default when it names none.
-     *
-     * ⚠ Guarded like [adoptGraphModel]'s read: resolving node types builds the
-     * QuickJS runtime and can throw for reasons that have nothing to do with
-     * the shape of the picture. A models list that failed to draw because a
-     * plugin is broken would be a bad trade.
-     */
-    private fun currentAspect(): String = try {
-        canvas.workflow.graph.nodes.firstNotNullOfOrNull { it.params["aspect"] }
-            ?: ModelCatalog.DEFAULT_ASPECT
-    } catch (e: Throwable) {
-        ModelCatalog.DEFAULT_ASPECT
-    }
 
     /**
      * Imports a picked zip as a custom checkpoint, then selects it.
@@ -947,8 +926,21 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun selectResolution(res: Res) {
         val ctx = getApplication<Application>()
-        if (res == SelectedModel.res) return
         val spec = SelectedModel.spec
+        // ⚠⚠ **Not `if (res == SelectedModel.res) return`.** That guard was right
+        // while the only way to choose a size was the model card, where the
+        // selection WAS the state. The knob is on a node now, and the graph is
+        // authoritative (`docs/MODELS.md` §4) -- so a workflow opened at 768x512
+        // while the selection says 512x512 must still be retargetable back to
+        // 512x512, and an early return keyed on the selection alone would
+        // silently refuse exactly that. ⇒ Bail only when the selection AND every
+        // node already agree, which is the real "nothing to do".
+        val graphAgrees = runCatching {
+            contextKeyRetarget(
+                canvas.workflow.graph, typesFor(canvas.workflow.graph), spec, res,
+            ).isEmpty()
+        }.getOrDefault(false)
+        if (res == SelectedModel.res && graphAgrees) return
         val ok = spec.availableResolutions(ctx)
         if (res !in ok) {
             say(

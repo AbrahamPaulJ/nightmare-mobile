@@ -164,6 +164,76 @@ class ResolutionTest {
         assertEquals(backendContextKey(square), backendContextKey(wide))
     }
 
+    // ---- the knob itself -------------------------------------------------
+
+    /** Every node that names a checkpoint, i.e. everything that forces a launch. */
+    private val backendNodes
+        get() = NODE_TYPES.values.filter { t -> t.widgets.any { it.name == "model" && it.contextKey } }
+
+    /**
+     * ⭐⭐ **The size is editable and the model is not**, on every backend node.
+     *
+     * ⚠⚠ This pair is the whole reason [Widget.contextKey] exists as a field of
+     * its own. Both knobs are bound at backend launch, so a single flag once
+     * meant both "rewrite this graph-wide" and "the user may not touch it" —
+     * and unlocking the size would have quietly dropped it out of
+     * [contextKeyRetarget], leaving a graph with two context keys and no way
+     * back by hand. The two properties are asserted together here so they
+     * cannot drift apart again.
+     */
+    @Test
+    fun sizeIsEditableAndModelIsNotOnEveryBackendNode() {
+        assertTrue("no backend nodes found", backendNodes.isNotEmpty())
+        for (t in backendNodes) {
+            val w = t.widgets.associateBy { it.name }
+            for (axis in listOf("width", "height")) {
+                val k = w[axis] ?: error("${t.name} has no \"$axis\"")
+                assertTrue("${t.name}.$axis must stay a context key", k.contextKey)
+                assertNull("${t.name}.$axis must be editable now", k.locked)
+            }
+            assertEquals(
+                "${t.name}.model must stay locked",
+                CONTEXT_KEY_LOCK, w["model"]?.locked,
+            )
+        }
+    }
+
+    /**
+     * ⚠ The retarget is driven by the widget declaration, so a node carrying a
+     * param merely NAMED `width` must not be rewritten. That property was free
+     * while the filter was `locked == CONTEXT_KEY_LOCK`; it has to survive the
+     * move to [Widget.contextKey].
+     */
+    @Test
+    fun aPlainParamCalledWidthIsNotRetargeted() {
+        val g = Graph(
+            listOf(
+                Node("text", "sd.clip_encode", mapOf("prompt" to "x", "negative" to "")),
+                // ⚠ `image.crop` really does carry sizes — `out_w`/`out_h` — and
+                // they are consumer-derived, never context-key. It is the exact
+                // node a name-matching retarget would corrupt.
+                Node("frame", "image.crop", mapOf("out_w" to "512", "out_h" to "512")),
+            )
+        )
+        val spec = ModelCatalog.byId(V1_MODEL)!!
+        assertTrue(contextKeyRetarget(g, NODE_TYPES, spec, Res(768, 512)).isEmpty())
+        assertTrue(contextKeyResolutions(g, NODE_TYPES).isEmpty())
+    }
+
+    /**
+     * ⚠⚠ `image.crop` and `image.mask` stay `sizedByConsumer` — the cropper
+     * FOLLOWS the render size, it does not drive it. `Framing.kt` resolves
+     * demand backwards to a fixed point, and inverting that direction is what
+     * the "cropper drives" option would have cost.
+     */
+    @Test
+    fun theCropperFollowsRatherThanDrives() {
+        assertTrue(NODE_TYPES.getValue("image.crop").sizedByConsumer)
+        assertTrue(NODE_TYPES.getValue("image.mask").sizedByConsumer)
+        // ⚠ …and it carries no context key, so it never forces a launch.
+        assertNull(NODE_TYPES.getValue("image.crop").contextKey(Node("c", "image.crop")))
+    }
+
     // ---- retargeting -----------------------------------------------------
 
     private fun graph() = Graph(

@@ -252,8 +252,6 @@ fun HarnessScreen(
                     onCancel = vm::cancelModelInstall,
                     onDelete = vm::deleteModel,
                     onSelect = vm::selectModel,
-                    onSelectResolution = vm::selectResolution,
-                    onSelectAspect = vm::selectAspect,
                     onImport = { name ->
                         importName = name
                         // ⚠ Two MIME types. A zip arrives as
@@ -411,6 +409,8 @@ fun HarnessScreen(
             // dragged crop rect, both on sheet dismissal.
             onEdit = vm::editCanvas,
             onEditMask = vm::editMask,
+            onSetResolution = vm::selectResolution,
+            onSetAspect = vm::selectAspect,
             validateWorkflowName = vm::workflowNameError,
             onClearImage = vm::clearImage,
             onSaveImage = vm::saveImage,

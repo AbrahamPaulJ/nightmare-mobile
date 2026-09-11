@@ -79,9 +79,22 @@ sealed interface Value {
  */
 const val V1_MODEL = "absolutereality"
 
-/** Shared reason text, so all three context-key knobs explain themselves alike. */
+/**
+ * Why `model` cannot be typed into.
+ *
+ * ⚠⚠ **It used to lock all three context-key knobs; now it locks only this
+ * one.** `width`/`height` became editable on the node (they are still
+ * [Widget.contextKey], and choosing one rewrites the whole graph), so a reason
+ * that said "bound when the backend launches" on a knob the user can change
+ * would be describing the wrong thing. The model is still not editable here:
+ * changing it means a different catalogue entry, a different download, and a
+ * different set of reachable sizes.
+ *
+ * ⚠ It names WHERE to change it. A lock with no way out is the state
+ * `contextKeyRetarget` was written to rescue people from.
+ */
 const val CONTEXT_KEY_LOCK =
-    "bound when the backend launches -- v1 pins one context for the whole graph"
+    "bound when the backend launches -- open Models to change the checkpoint"
 
 /**
  * `(type, model, resolution)` -- the three things bound at BACKEND LAUNCH
@@ -155,6 +168,22 @@ data class Widget(
      * not be the last: a plugin manifest can declare one too.
      */
     val options: List<String>? = null,
+    /**
+     * ⭐⭐ This knob is one third of the [ContextKey] — it is bound at BACKEND
+     * LAUNCH, not sent with a request.
+     *
+     * ⚠⚠ **Separate from [locked], and it has to be.** The two used to be the
+     * same thing: `contextKeyRetarget` found the knobs to rewrite by filtering
+     * on `locked == CONTEXT_KEY_LOCK`, which was exact only while every
+     * context-key knob happened to be uneditable. `width`/`height` are editable
+     * now and `model` is not, so a single flag can no longer mean both "the
+     * user may not touch this" and "this must be rewritten graph-wide".
+     *
+     * ⚠ Declared by the WIDGET rather than matched by name, so a plugin node
+     * that declares its own context-key knobs is retargeted too, and a node
+     * that merely happens to carry a param called `width` is not.
+     */
+    val contextKey: Boolean = false,
 ) {
     /** True for the kinds that want a numeric keyboard rather than a text one. */
     val numeric: Boolean get() = type == "int" || type == "float"

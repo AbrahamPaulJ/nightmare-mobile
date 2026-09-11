@@ -101,6 +101,9 @@ fun NodeInspector(
         { _, _ -> },
     onDelete: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** ⭐ Graph-wide, not per-node — see [NodeInspectorBody.onSetResolution]. */
+    onSetResolution: (com.abrah.nightmare.Res) -> Unit = {},
+    onSetAspect: (String) -> Unit = {},
     imageFor: (String) -> ImageBitmap? = { null },
     onViewFullscreen: (String) -> Unit = {},
     /**
@@ -142,6 +145,12 @@ fun NodeInspector(
             }
         NodeInspectorBody(
             nodeId, node, type, onSetParam, onSetParams, onEditMask, onDelete,
+            // ⚠ Read HERE, like `demand` above and for the same reason: the body
+            // must stay a function of its arguments so the goldens can render
+            // it, and this list is a cached disk scan.
+            resolutions = com.abrah.nightmare.SelectedModel.resolutions,
+            onSetResolution = onSetResolution,
+            onSetAspect = onSetAspect,
             preview = shownId?.let(imageFor),
             onViewFullscreen = { shownId?.let(onViewFullscreen) },
             cropSource = if (node.type == "image.crop") sourceId?.let(imageFor) else null,
@@ -187,6 +196,33 @@ internal fun NodeInspectorBody(
     onEditMask: (node: String, (com.abrah.nightmare.MaskState) -> com.abrah.nightmare.MaskState) -> Unit =
         { _, _ -> },
     onDelete: (String) -> Unit,
+    /**
+     * ⭐⭐ The sizes the selected model can actually render, for the size chips
+     * on a context-key node.
+     *
+     * ⚠⚠ **Passed in, never read from [SelectedModel] here.** This body is what
+     * the goldens render and it must stay a function of its arguments; the list
+     * is also a disk scan behind a cache, which has no business inside a
+     * recomposition. ⚠ Fewer than two entries draws no control — a lone chip
+     * that cannot be unselected is furniture.
+     */
+    resolutions: List<com.abrah.nightmare.Res> = emptyList(),
+    /**
+     * ⭐ Choose the render size. **Not [onSetParam]**: a size is a third of the
+     * [ContextKey], so choosing one rewrites every backend node in the graph
+     * rather than this node alone (`HarnessViewModel.selectResolution`).
+     * Writing it per-node would leave a graph naming two keys, which the
+     * executor refuses.
+     */
+    onSetResolution: (com.abrah.nightmare.Res) -> Unit = {},
+    /**
+     * ⭐ Choose the output shape on a fixed-canvas family. Graph-wide for the
+     * same reason as [onSetResolution], though for a different one underneath:
+     * the sampler uses the ratio to place the rectangle it paints and the
+     * decoder uses it to cut that rectangle out, so the two disagreeing crops
+     * the wrong region of a correctly rendered picture.
+     */
+    onSetAspect: (String) -> Unit = {},
     /** The picture this node is showing, if any. */
     preview: ImageBitmap? = null,
     onViewFullscreen: () -> Unit = {},
@@ -480,8 +516,53 @@ internal fun NodeInspectorBody(
         // outright, because there is nothing left to choose.
         val sized = demand as? SizeDemand.Exactly
         val conflict = demand as? SizeDemand.Conflict
+
+        // ⭐⭐ **The render size, as ONE control where the node carries two
+        // params.** `width` and `height` stay separate params -- that is what a
+        // saved workflow stores and what `backendContextKey` reads -- but they
+        // are never two knobs to a person: nobody wants 768 wide and 512 tall
+        // as independent choices, because only the PAIRS a patch file exists
+        // for can be rendered at all.
+        //
+        // ⚠⚠ Chips of the reachable sizes, never number fields. A typed 640
+        // has no `640.patch`, and `BackendProcess.start` would refuse the launch
+        // -- correctly, but only after the user had already committed to it.
+        val sizeKnob = type?.widgets.orEmpty()
+            .count { it.contextKey && (it.name == "width" || it.name == "height") } == 2
+        if (sizeKnob && resolutions.size > 1) {
+            val current = com.abrah.nightmare.Res(
+                node.params["width"]?.toIntOrNull() ?: 0,
+                node.params["height"]?.toIntOrNull() ?: 0,
+            ).toString()
+            val labels = resolutions.map { it.toString() }
+            // ⚠ Same threshold as every other choice in this sheet: past four,
+            // chips become a scrolling strip that can hide the current value.
+            // Seven resolutions is exactly the case that motivated the rule.
+            if (labels.size > CHIP_LIMIT) {
+                ChoiceDropdown(
+                    label = stringResource(R.string.resolution),
+                    hint = stringResource(R.string.resolution_reloads),
+                    options = labels,
+                    current = current,
+                    onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
+                )
+            } else {
+                ChoiceRow(
+                    label = stringResource(R.string.resolution),
+                    hint = stringResource(R.string.resolution_reloads),
+                    options = labels,
+                    current = current,
+                    onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
+                )
+            }
+        }
+
         for (w in widgets) {
             if (w.name == picked) continue
+            // ⚠ Drawn above as one size control, or not at all. A node whose
+            // model serves a single size has nothing to choose, and two locked
+            // number fields saying 512 would be noise on every node in the graph.
+            if (sizeKnob && (w.name == "width" || w.name == "height")) continue
             // ⚠ Already drawn, under the framing view it belongs to.
             if (w === padWidget) continue
             if (w.name == "aspect" && sized != null) continue
@@ -494,6 +575,14 @@ internal fun NodeInspectorBody(
             // ⭐ A short fixed set of values is a row of chips, not a text box
             // that accepts "Black", "mirrored" and a typo that fails at Run.
             val options = w.options
+            // ⚠⚠ `aspect` is graph-wide, every other chip row is per-node. The
+            // sampler places the rectangle and the decoder cuts it out, so two
+            // nodes holding different ratios crops the wrong region of a
+            // correctly rendered picture -- with nothing to report it, because
+            // both nodes did exactly what they were told.
+            val pick: (String) -> Unit =
+                if (w.name == "aspect") ({ v -> onSetAspect(v) })
+                else ({ v -> onSetParam(nodeId, w.name, v) })
             if (options != null) {
                 // ⚠⚠ Chips do not scale. `pad` has two values and reads as a
                 // pair of buttons; `scheduler` has NINE, which becomes a
@@ -506,7 +595,7 @@ internal fun NodeInspectorBody(
                         hint = w.hint,
                         options = options,
                         current = node.params[w.name] ?: w.default.orEmpty(),
-                        onPick = { onSetParam(nodeId, w.name, it) },
+                        onPick = { pick(it) },
                     )
                 } else {
                     ChoiceRow(
@@ -514,7 +603,7 @@ internal fun NodeInspectorBody(
                         hint = w.hint,
                         options = options,
                         current = node.params[w.name] ?: w.default.orEmpty(),
-                        onPick = { onSetParam(nodeId, w.name, it) },
+                        onPick = { pick(it) },
                     )
                 }
                 // ⚠ `scheduler` is batchable and is NOT a range — its popup is

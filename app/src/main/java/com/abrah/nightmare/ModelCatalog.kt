@@ -855,6 +855,29 @@ object SelectedModel {
         private set
 
     /**
+     * ⭐ The sizes the selected model can serve, **cached**.
+     *
+     * ⚠⚠ Cached because [ModelSpec.availableResolutions] reads the disk and the
+     * places that need this list have no [Context]: the size chips are built
+     * from a `NodeType.widgets` getter and drawn by a composable that must stay
+     * a function of its arguments so the goldens can render it. Reading
+     * `listFiles()` from either would be a disk hit inside a recomposition.
+     *
+     * ⚠ Refreshed wherever the answer can change — [load], [set], and after an
+     * install or a delete ([refresh]). A stale list offers a size whose patch is
+     * gone, and `BackendProcess.start` then refuses the launch by name, which is
+     * the right failure but a late one.
+     */
+    @Volatile
+    var resolutions: List<Res> = listOf(ModelCatalog.SD15_NPU_RES)
+        private set
+
+    /** ⚠ Call after anything that adds or removes files in a model directory. */
+    fun refresh(context: Context) {
+        resolutions = spec.availableResolutions(context)
+    }
+
+    /**
      * The catalogue entry in use -- family, native resolution and `--type`.
      *
      * ⚠ Never null: [load] and [set] both refuse an id [ModelCatalog] does not
@@ -881,6 +904,7 @@ object SelectedModel {
         val stored = prefs.getString(KEY, null)
         id = stored?.takeIf { ModelCatalog.byId(it) != null } ?: V1_MODEL
         res = readRes(context, prefs.getString(resKey(id), null))
+        refresh(context)
     }
 
     fun set(context: Context, newId: String) {
@@ -894,6 +918,7 @@ object SelectedModel {
         // ship -- and a stale value would reach `--patch` as a file that is not
         // there. Re-reading per model is what makes [setRes] safe to be dumb.
         res = readRes(context, prefs.getString(resKey(newId), null))
+        refresh(context)
     }
 
     /**

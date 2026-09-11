@@ -151,6 +151,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "model_use" -> useModel(arg)
             "resolutions" -> listResolutions()
             "res_use" -> useResolution(arg)
+            "aspect" -> aspectProbe(arg)
             "model_scan" -> scanModels()
             "model_import" -> importModels()
             "latent_blend" -> latentBlend()
@@ -2203,6 +2204,85 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * is what makes the pass falsifiable; 5 ran means the prune is too broad,
      * 5 cached means residency is not consulted at all.
      */
+    /**
+     * ⭐⭐ Prove the aspect crop on a fixed-canvas family, end to end.
+     *
+     * ⚠⚠ **The one part of the shape feature a fixture could not otherwise
+     * reach.** `aspect_ratio` changes nothing the other ops look at: the
+     * context key is the same, the launch line is the same, and `/sample`
+     * returns a full-canvas latent either way. What differs is only the SIZE of
+     * the picture [VaeDecodeNode] cuts out of it — so the check is the decoded
+     * dimensions, compared against [ModelCatalog.aspectTarget], which is itself
+     * the app's copy of arithmetic that lives in C++.
+     *
+     * ⇒ A disagreement here is the drift that copy exists to make visible, and
+     * it is invisible to every other op and to every JVM test (which can only
+     * check the app's copy against itself).
+     *
+     * `--es arg 16:9`
+     */
+    suspend fun aspectProbe(arg: String?) {
+        val spec = SelectedModel.spec
+        if (!spec.fixedCanvas) {
+            say("aspect needs a fixed-canvas model (SDXL/Anima); ${spec.label} is ${spec.family.label}",
+                bad = true)
+            return
+        }
+        val ratio = arg ?: ModelCatalog.DEFAULT_ASPECT
+        val want = ModelCatalog.aspectTarget(ratio, spec.native)
+        if (want == null && ratio != ModelCatalog.DEFAULT_ASPECT) {
+            say("\"$ratio\" is not a w:h ratio this app would crop for", bad = true)
+            return
+        }
+        if (!ensureBackend()) return
+        val expect = want ?: spec.native
+        say("aspect $ratio on ${spec.label}: expecting $expect out of ${spec.native}")
+        val g = Graph(
+            listOf(
+                textNode(),
+                Node(
+                    "sample", "sd.sample",
+                    params = ctxKey(
+                        mapOf("steps" to FIXTURE_STEPS, "cfg" to "7.5", "seed" to "42",
+                              "aspect" to ratio)
+                    ),
+                    inputs = sources("cond" to "text"),
+                ),
+                Node(
+                    "decode", "sd.vae_decode",
+                    // ⚠ The SAME ratio on the decoder. That is the pairing
+                    // `aspectRetarget` enforces on a real graph, and writing it
+                    // by hand here is what makes this fixture a test of the crop
+                    // rather than of the retarget.
+                    params = ctxKey(mapOf("aspect" to ratio)),
+                    inputs = sources("latent" to "sample"),
+                ),
+            )
+        )
+        // ⚠ `executor.run`, not `runWorkflow`: the latter rolls a `seed = 0`
+        // into a fresh one, and this fixture pins 42 so two runs of it are
+        // comparable.
+        val r = executor.run(
+            g,
+            onProgress = { _, step, total -> sink.progress(step to total) },
+            onNode = { n ->
+                say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} " +
+                    "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+            },
+        )
+        sink.progress(null)
+        if (r.error != null) { say("aspect: refused -- ${r.error}", bad = true); return }
+        val out = r.outputs["decode"] as? Value.Image
+        if (out == null) { say("aspect: no image came out", bad = true); return }
+        images.get(out.id)?.let { sink.image(it) }
+        if (out.w == expect.width && out.h == expect.height) {
+            say("aspect $ratio -> ${out.w}x${out.h} ✓ matches ${expect}")
+        } else {
+            say("aspect $ratio -> ${out.w}x${out.h} but expected $expect -- " +
+                "the app's aspectTarget and the backend disagree", bad = true)
+        }
+    }
+
     suspend fun runGraph() {
         executor.cache.clear()
         val a = pass("A cold", demoGraph(42, 7), expectRan = 5, expectCached = 0)

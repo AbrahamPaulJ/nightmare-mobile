@@ -163,6 +163,18 @@ fun CanvasScreen(
      * node and handing it over as an absolute loses any stroke made since.
      * `HarnessViewModel.editMask` has the measurement.
      */
+    /**
+     * ⭐⭐ Set the render size for the WHOLE graph, from the node the user
+     * happened to open.
+     *
+     * ⚠ Not an `onEdit` transform like [onSetParam] is: a size change also
+     * stops a backend launched at the old one, re-derives every framed crop and
+     * moves the remembered default for new nodes — none of which a pure
+     * `CanvasState` edit can do. `HarnessViewModel.selectResolution` owns it.
+     */
+    onSetResolution: (com.abrah.nightmare.Res) -> Unit = {},
+    /** ⭐ The same for a fixed-canvas family, where the choice is a ratio. */
+    onSetAspect: (String) -> Unit = {},
     onEditMask: (node: String, (com.abrah.nightmare.MaskState) -> com.abrah.nightmare.MaskState) -> Unit =
         { _, _ -> },
     /**
@@ -394,6 +406,8 @@ fun CanvasScreen(
         onSetParam = { node, name, value -> onEdit { s -> s.setParam(node, name, value) } },
         onSetParams = { node, values -> onEdit { s -> s.setParams(node, values) } },
         onEditMask = onEditMask,
+        onSetResolution = onSetResolution,
+        onSetAspect = onSetAspect,
         onDelete = { id -> onEdit { s -> s.removeNode(id) } },
         onDismiss = { onEdit { s -> s.closeInspector() } },
     )

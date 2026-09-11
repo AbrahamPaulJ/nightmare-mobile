@@ -109,63 +109,6 @@ class ModelsScreenshotTest {
         )
     }
 
-    /**
-     * ⭐⭐ The output-shape chips on the model in use — an SD 1.5 checkpoint with
-     * all seven resolution patches present.
-     *
-     * ⚠⚠ **Seven chips do not fit 411dp**, which is the whole reason this
-     * golden exists: the row scrolls horizontally rather than wrapping, and a
-     * wrap would push the Download buttons of every row below it down a line.
-     * `docs/UI.md` §5 records that goldens are where this kind of overflow is
-     * meant to be caught and were not being.
-     *
-     * ⚠ The list is passed in explicitly rather than scanned off disk: a
-     * Robolectric test has no model directory, so [ModelSpec.availableResolutions]
-     * would honestly report one size and this golden would pin an empty control.
-     */
-    @Test
-    fun theResolutionChipsOnTheModelInUse() = shoot("models-resolutions") {
-        ModelsScreen(
-            rows = rows(installed = setOf(V1_MODEL), selected = V1_MODEL).map {
-                if (it.spec.id != V1_MODEL) it else it.copy(
-                    resolutions = listOf(
-                        Res(512, 512), Res(512, 768), Res(768, 512), Res(768, 768),
-                        Res(768, 1024), Res(1024, 768), Res(1024, 1024),
-                    ),
-                    resolution = Res(768, 512),
-                )
-            },
-            busy = false, error = null,
-            onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
-        )
-    }
-
-    /**
-     * ⭐ The same control on a FIXED-CANVAS family, where it is a different
-     * feature: SDXL has no patches, so the choice is a ratio that crops the
-     * 1024² canvas and costs no reload.
-     *
-     * ⚠ Each chip shows the ratio AND the size it yields, because "16:9" alone
-     * hides that the picture gets shorter rather than wider — and the caption
-     * underneath must say "no reload" where the SD 1.5 one says the opposite.
-     */
-    @Test
-    fun theAspectChipsOnAFixedCanvasModel() = shoot("models-aspects") {
-        val xl = ModelCatalog.all.first { it.family == Family.SDXL }
-        ModelsScreen(
-            // ⚠ SDXL rows ONLY, and deliberately: the family sub-tabs are built
-            // from the rows present and `SwipeTabs` owns its own page, so a
-            // mixed list opens on SD 1.5 and this golden would pin a screen
-            // with no SDXL card on it at all. That is what the first recording
-            // did.
-            rows = rows(installed = setOf(xl.id), selected = xl.id)
-                .filter { it.spec.family == Family.SDXL }
-                .map { if (it.spec.id != xl.id) it else it.copy(aspect = "16:9") },
-            busy = false, error = null,
-            onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
-        )
-    }
-
     /** ⚠ Busy: every other action is disabled while a gigabyte is in flight. */
     @Test
     fun downloading() = shoot("models-downloading") {
