@@ -30,17 +30,24 @@ QNN, SDXL, text to image, img2img, inpainting, no cloud, private.
 - **Real decomposition.** `encode_text`, `sample`, `vae_encode`, `vae_decode` and
   `latent_blend` are separate nodes. Conditionings and latents move between them as handles
   that never cross the wire, so a 512 image costs about 40 bytes of JSON instead of 780 KB.
-- **Recipes to start from.** Text to image, image to image, and inpainting where you paint
-  the area to redo.
+- **Recipes to start from.** Text to image, image to image, upscale a photo, and inpainting
+  where you paint the area to redo.
 - **Batching.** Arm `seed`, `steps`, `cfg`, `denoise` or `scheduler` on the sampler and Run
   sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph
   that produced it.
 - **Upscalers.** RealESRGAN x4plus anime and 4x UltraSharp V2 Lite, loaded per request so
   they cost no process restart.
+- **Pick your size.** SD 1.5 renders any resolution its checkpoint ships a patch for — 512²
+  up to 1024², portrait and landscape; SDXL crops its fixed 1024² canvas to the shape you
+  choose.
 - **Bring your own model.** Fifteen checkpoints in the catalogue, or import a converted one
   as a zip. The app carries every HTP architecture tier and picks the build your chip can
   actually load.
 - **Bring your own nodes.** A manifest and a script, no toolchain, no app release.
+- **English, 中文 and Русский.** The interface follows your phone's language. Adding another
+  is a file drop — copy `app/src/main/res/values/strings.xml` into a `values-<code>/`
+  folder and translate it; no code changes. ⚠ Model prompts are never translated: SD 1.5
+  reads English tags, so a translated prompt would render something else.
 - **Offline and private.** Nothing is uploaded, there is no account, and no prompt or
   picture leaves the phone. The only thing that ever does is a file you explicitly share.
 

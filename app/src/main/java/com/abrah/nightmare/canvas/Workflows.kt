@@ -101,7 +101,14 @@ fun defaultWorkflow(): Workflow = Workflow(
     // line of its own, and 96 then cleared it by 3dp at the default zoom --
     // which is not clearance, it is a coincidence. Chrome height and node
     // positions are independent numbers that have to be re-checked together.
-    mapOf("prompt" to Pt(24f, 120f), "sample" to Pt(24f, 300f), "decode" to Pt(24f, 560f)),
+    // ⚠⚠ The gap under `prompt` is 240, not 180. A prompt node carries its two
+    // prompt boxes in its BODY now, so it stands ~205 tall where it used to be
+    // ~128 -- and at the old spacing the sampler was drawn straight through it.
+    // Caught by the golden, 2026-09-11.
+    // ⚠ These are the only stacked positions that matter: every other recipe
+    // puts the prompt node in a SECOND COLUMN, where its height cannot collide
+    // with the pixel chain beside it.
+    mapOf("prompt" to Pt(24f, 120f), "sample" to Pt(24f, 360f), "decode" to Pt(24f, 620f)),
 )
 
 /**
