@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -764,19 +766,14 @@ private fun ResultCard(
                 onSave = onSave,
                 onShareFlow = onShareFlow,
                 onOpenFlow = onOpenFlow,
+                // ⭐ Copyable, and on the action row rather than its own.
+                // [SeedRow] is the SAME control the inspector and the viewer
+                // use — not a second copy button. No `onLock` here: locking
+                // writes onto the OPEN canvas, and a result in a list is not
+                // necessarily from the graph that is open.
+                seed = result.seed?.toString(),
             )
-            // ⭐ Copyable, because a seed is only useful if you can put it
-            // somewhere. Asked for from the phone, 2026-09-11.
-            //
-            // ⚠ [SeedRow] is the SAME control the node inspector and the
-            // fullscreen viewer already use, not a second copy button. The
-            // three had to agree on what "copy the seed" does anyway, and this
-            // one deliberately passes no `onLock`: locking a seed writes it
-            // onto the sampler of the OPEN canvas, and a result in a list is
-            // not necessarily from the graph that is open.
-            result.seed?.let { seed ->
-                Row { com.abrah.nightmare.canvas.SeedRow(seed = seed.toString()) }
-            }
+
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -826,20 +823,44 @@ private fun ResultCardHeader(
     onSave: () -> Unit,
     onShareFlow: () -> Unit,
     onOpenFlow: () -> Unit,
+    /**
+     * ⭐ The seed, shown INLINE with the actions rather than on a row of its
+     * own. Null on a batch — a group has one seed per picture, so a single
+     * value there would name one of eight.
+     */
+    seed: String? = null,
 ) {
+    // ⚠⚠ **Three rows, not five.** The card was title / label / meta /
+    // actions / seed stacked, which on a phone meant a handful of results filled
+    // the screen with mostly chrome. Reported from the phone 2026-09-11 ("way
+    // too much space per card").
+    // ⇒ The count and the metadata share the first line, and the seed shares
+    // the action row.
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall)
-        Text(label, style = LogTextStyle, maxLines = 2)
-        Text(
-            meta,
-            style = LogTextStyle,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                "  $meta",
+                style = LogTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(label, style = LogTextStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Row(
             Modifier.fillMaxWidth().padding(top = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.End),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // ⚠⚠ The seed sits at the START and a weighted spacer pushes the
+            // actions right, so the buttons land in the SAME place whether or
+            // not there is a seed — a batch card has none, and right-aligning
+            // the group would otherwise make the two card kinds disagree.
+            if (seed != null) {
+                com.abrah.nightmare.canvas.SeedRow(seed = seed)
+            }
+            Spacer(Modifier.weight(1f))
             IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                 Icon(
                     Icons.Filled.Delete,

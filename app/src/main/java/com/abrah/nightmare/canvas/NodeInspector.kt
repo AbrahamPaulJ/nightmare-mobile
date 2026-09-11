@@ -670,8 +670,17 @@ internal fun NodeInspectorBody(
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.weight(1f))
+                        // ⚠ The REAL armed state, not a hardcoded null. It is
+                        // always null on this path today -- an armed knob is
+                        // drawn by the branch above and never reaches here --
+                        // but writing the literal made that ordering
+                        // load-bearing and invisible, and the icon would have
+                        // lied the moment the branches moved.
                         if (com.abrah.nightmare.BatchParams.isBatchable(node.type, w.name)) {
-                            BatchToggle(armed = null, onClick = { batching = w })
+                            BatchToggle(
+                                armed = com.abrah.nightmare.BatchParams.armed(node, w.name),
+                                onClick = { batching = w },
+                            )
                         }
                     }
                     continue
@@ -785,6 +794,8 @@ internal fun NodeInspectorBody(
             // to one rendering path instead of to the thing it acts on.
             Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
+            // ⚠ The two fields that hold sentences rather than a value.
+            val isProse = w.name == "prompt" || w.name == "negative"
             OutlinedTextField(
                 // ⚠ The manifest default when the graph carries nothing, so
                 // the field shows what the node will actually RUN with
@@ -821,7 +832,16 @@ internal fun NodeInspectorBody(
                 },
                 // ⚠ Only Text Encode has these now, and a prompt is the one
                 // field people paste paragraphs into.
-                singleLine = w.name != "prompt" && w.name != "negative",
+                singleLine = !isProse,
+                // ⚠⚠ **minLines, not just `singleLine = false`.** Without a floor
+                // the box OPENS one line tall and grows as you type, which reads
+                // as a single-line field that happens to wrap — you cannot see
+                // the prompt you already have without scrolling inside it. Three
+                // lines up front makes it a text area; eight caps it so a long
+                // negative cannot push the rest of the sheet off screen.
+                // Asked for from the phone, 2026-09-11.
+                minLines = if (isProse) 3 else 1,
+                maxLines = if (isProse) 8 else 1,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = if (w.numeric) KeyboardType.Number else KeyboardType.Text,
                 ),

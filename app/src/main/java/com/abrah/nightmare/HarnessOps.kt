@@ -736,7 +736,22 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * announced rather than silent: it is about a whole render, and a user who
      * is not told will read it as the app having hung.
      */
-    suspend fun ensureBackend(want: ContextKey? = null): Boolean {
+    suspend fun ensureBackend(
+        want: ContextKey? = null,
+        /**
+         * ⭐⭐ This graph names NO context key, so it needs a server but no
+         * checkpoint — an upscale-only flow, or any all-app-side graph that
+         * still calls an endpoint.
+         *
+         * ⚠⚠ Launching the ordinary way for one of those kept a ~1.2 GB SD
+         * pipeline resident for nothing, which is what made the load readout
+         * name a model the flow was not using. `--upscale` allocates its own
+         * QNN context per request on TOP of whatever is resident, so this is
+         * also the memory that an upscale-after-t2i had to find.
+         */
+        noModel: Boolean = false,
+    ): Boolean {
+        if (noModel) return ensureUpscaleServer()
         val target = want ?: ContextKey(
             ModelCatalog.backendTypeOf(SelectedModel.id),
             SelectedModel.id,
@@ -789,9 +804,16 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // [HarnessViewModel.adoptGraphModel] does when a workflow is opened --
         // a saved graph at 768² would otherwise be run against a backend
         // launched at whatever the picker last said.
+        var namesNoKey = false
         val want = try {
             val types = nodeTypes()
-            val m = contextKeyModels(wf.graph, types).singleOrNull()
+            val models = contextKeyModels(wf.graph, types)
+            // ⚠⚠ EMPTY is a different answer from "could not resolve one".
+            // A graph naming two models also yields a null `want`, and launching
+            // a model-free server for THAT would replace a clear refusal
+            // ("needs 2 backend contexts") with a confusing one.
+            namesNoKey = models.isEmpty()
+            val m = models.singleOrNull()
             val res = contextKeyResolutions(wf.graph, types).singleOrNull()
             if (m != null && res != null) {
                 ContextKey(ModelCatalog.backendTypeOf(m), m, res.width, res.height)
@@ -799,7 +821,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         } catch (e: Throwable) {
             null
         }
-        if (!ensureBackend(want)) return
+        // ⚠ No context key means no checkpoint is needed — an upscale-only or
+        // all-app-side graph gets a server with no model loaded.
+        if (!ensureBackend(want, noModel = namesNoKey)) return
         val r = runWorkflow(wf, onNode = { n ->
             say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} " +
                 "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
@@ -2395,13 +2419,36 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * between "started" and "serving", and reporting the former as the latter
      * is how a first request lands on a socket nobody is listening to.
      */
-    suspend fun launchBackend(want: ContextKey? = null): Boolean {
+    /**
+     * A server with no diffusion model, for a graph that names no context key.
+     *
+     * ⚠ A process holding a CHECKPOINT also serves `/upscale` perfectly well,
+     * so one that is already up is left alone rather than torn down: the user
+     * would pay a relaunch to free memory they may be about to need again. Only
+     * an absent backend is started this way.
+     */
+    private suspend fun ensureUpscaleServer(): Boolean {
+        if (Backend.get("/health").code == 200) {
+            if (!BackendProcess.upscalerServer) {
+                say("this graph needs no checkpoint; the backend already up is holding one")
+            }
+            return true
+        }
+        say("starting an upscale-only backend -- this graph needs no checkpoint…")
+        return launchBackend(upscalerOnly = true)
+    }
+
+    suspend fun launchBackend(
+        want: ContextKey? = null,
+        upscalerOnly: Boolean = false,
+    ): Boolean {
         val models = BackendProcess.modelsDir(ctx)
         say("models dir: ${models.absolutePath}")
         val modelId = want?.model ?: SelectedModel.id
         val res = want?.let { Res(it.width, it.height) } ?: SelectedModel.res
         when (val r = BackendProcess.start(
             ctx, modelId = modelId, port = Backend.PORT, res = res,
+            upscalerOnly = upscalerOnly,
         )) {
             is BackendProcess.Start.Failed -> {
                 say("start failed -- ${r.why}", bad = true)

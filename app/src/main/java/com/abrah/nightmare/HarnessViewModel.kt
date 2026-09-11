@@ -361,7 +361,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠ Only when the backend is actually UP. A checkpoint sitting on disk
         // is not "resident", and saying so would make the readout describe the
         // catalogue rather than the machine.
-        val spec = if (backend == BackendState.UP) ModelCatalog.byId(SelectedModel.id) else null
+        //
+        // ⚠⚠ **Read off the LAUNCH KEY, not off [SelectedModel].** The selection
+        // is what the next graph would use; the launch key is what this process
+        // actually has in memory, and they differ constantly — an upscale-only
+        // graph holds no checkpoint at all, yet the readout named the t2i model
+        // that merely happened to be selected. Reported from the phone
+        // 2026-09-11. A process launched in `--upscaler_mode` has no model, so
+        // `launchedKey` is null and the line correctly says nothing is held.
+        val spec = BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }
         load = CanvasLoad(
             ramFreeBytes = mi.availMem,
             ramTotalBytes = mi.totalMem,
@@ -2358,8 +2366,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // screen to launch it -- which is what the app required until now.
         // ⚠ Shared with the headless op via HarnessOps, so the two front ends
         // cannot drift on the one path a user actually takes.
-        if (!ops.ensureBackend()) {
-            runError = if (ModelCatalog.byId(SelectedModel.id)?.installed(getApplication()) != true) {
+        // ⚠ A graph naming no context key (upscale-only, or all app-side) needs
+        // a server but NOT a checkpoint. Launching one the ordinary way held
+        // ~1.2 GB of SD pipeline for nothing -- and made the load readout name a
+        // model the flow was not using.
+        val namesNoKey = runCatching {
+            contextKeyModels(canvas.workflow.graph, typesFor(canvas.workflow.graph)).isEmpty()
+        }.getOrDefault(false)
+        if (!ops.ensureBackend(noModel = namesNoKey)) {
+            runError = if (!namesNoKey &&
+                ModelCatalog.byId(SelectedModel.id)?.installed(getApplication()) != true) {
                 "no model installed -- open Models and download one"
             } else {
                 "the backend would not start -- see the harness log"

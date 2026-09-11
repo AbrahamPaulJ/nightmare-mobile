@@ -46,7 +46,7 @@ fun defaultWorkflow(): Workflow = Workflow(
             // this node is where a user types, and it is first in the chain
             // because it is the first thing they will want to change.
             Node(
-                "text", "sd.clip_encode",
+                "prompt", "sd.clip_encode",
                 params = mapOf(
                     "prompt" to "a cat on grass",
                     "negative" to "blurry, lowres",
@@ -83,7 +83,7 @@ fun defaultWorkflow(): Workflow = Workflow(
                     // render is worth reproducing.
                     "seed" to "0",
                 ),
-                inputs = sources("cond" to "text"),
+                inputs = sources("cond" to "prompt"),
             ),
             Node(
                 "decode", "sd.vae_decode",
@@ -101,7 +101,7 @@ fun defaultWorkflow(): Workflow = Workflow(
     // line of its own, and 96 then cleared it by 3dp at the default zoom --
     // which is not clearance, it is a coincidence. Chrome height and node
     // positions are independent numbers that have to be re-checked together.
-    mapOf("text" to Pt(24f, 120f), "sample" to Pt(24f, 300f), "decode" to Pt(24f, 560f)),
+    mapOf("prompt" to Pt(24f, 120f), "sample" to Pt(24f, 300f), "decode" to Pt(24f, 560f)),
 )
 
 /**
@@ -112,6 +112,19 @@ fun defaultWorkflow(): Workflow = Workflow(
  * not been handed one, which is every device but the developer's.
  */
 data class Recipe(val id: String, val label: String, val about: String, val build: () -> Workflow)
+
+/**
+ * ⚠ The text node is called **`prompt`**, not `text`.
+ *
+ * A node's id is its title on the canvas, and "text" named the DATA TYPE where
+ * every other node in these recipes is named for its job (`sample`, `decode`,
+ * `frame`, `mask`). The thing a person is looking for when they open one of
+ * these is where to type the prompt. The user's call, 2026-09-11.
+ *
+ * ⚠ Recipes only. A saved workflow keeps whatever ids it was written with, and
+ * a node dragged from the palette is still named from its TYPE
+ * (`clip_encode`) -- renaming that is a separate change to `nodeLabel`.
+ */
 
 /**
  * ⭐ The recommended workflows.
@@ -180,7 +193,7 @@ fun inpaintWorkflow(): Workflow = Workflow(
         listOf(
             Node("photo", "image.load", params = mapOf("uri" to "")),
             Node(
-                "text", "sd.clip_encode",
+                "prompt", "sd.clip_encode",
                 params = mapOf(
                     "prompt" to "masterpiece, best quality, highly detailed,",
                     "negative" to "blurry, lowres",
@@ -206,7 +219,7 @@ fun inpaintWorkflow(): Workflow = Workflow(
             Node(
                 "sample", "sd.sample",
                 params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to "0.85"),
-                inputs = sources("cond" to "text", "latent" to "encode"),
+                inputs = sources("cond" to "prompt", "latent" to "encode"),
             ),
             // ⚠⚠ `base` is the ORIGINAL and `repaint` is the sampled one. The
             // mask's white area is where `repaint` shows through; the other way
@@ -231,7 +244,7 @@ fun inpaintWorkflow(): Workflow = Workflow(
         "blend" to Pt(24f, 1060f), "decode" to Pt(24f, 1330f),
         // Second column: the prompt and the mask, the two things a user
         // actually touches, level with the chain they join.
-        "text" to Pt(250f, 120f), "mask" to Pt(250f, 560f),
+        "prompt" to Pt(250f, 120f), "mask" to Pt(250f, 560f),
     ),
 )
 
@@ -254,7 +267,7 @@ fun img2imgWorkflow(): Workflow = Workflow(
             // second column for that reason -- stacked into the middle of the
             // pixel chain it would read as a step the picture passes through.
             Node(
-                "text", "sd.clip_encode",
+                "prompt", "sd.clip_encode",
                 params = mapOf(
                     "prompt" to "masterpiece, best quality, highly detailed,",
                     "negative" to "blurry, lowres",
@@ -278,7 +291,7 @@ fun img2imgWorkflow(): Workflow = Workflow(
                     // property of THIS recipe, not of the checkpoint.
                     "seed" to "0", "denoise" to "0.6",
                 ),
-                inputs = sources("cond" to "text", "latent" to "encode"),
+                inputs = sources("cond" to "prompt", "latent" to "encode"),
             ),
             Node(
                 "decode", "sd.vae_decode",
@@ -293,7 +306,7 @@ fun img2imgWorkflow(): Workflow = Workflow(
         "sample" to Pt(24f, 790f), "decode" to Pt(24f, 1130f),
         // Second column, level with the photo: the two branches start side by
         // side and meet at the sampler.
-        "text" to Pt(250f, 120f),
+        "prompt" to Pt(250f, 120f),
     ),
 )
 
@@ -318,6 +331,11 @@ fun upscaleWorkflow(): Workflow = Workflow(
             // ⚠ Whole, uncropped. There is no size to match here -- unlike the
             // sampler recipes, an upscaler takes whatever it is given.
             Node("photo", "image.load", params = mapOf("uri" to "")),
+            // ⚠ **No `image.output` after it.** The upscale node shows its own
+            // result and carries save/share/keep like any node with a picture,
+            // so a terminal node would be a third box doing nothing the second
+            // one does not. `image.output` earns its place only where a graph
+            // needs an explicit save toggle.
             Node(
                 "enlarge", "image.upscale",
                 // ⚠ No `upscaler` param written: the node's own default is the
@@ -325,16 +343,10 @@ fun upscaleWorkflow(): Workflow = Workflow(
                 // here would name a file a fresh install does not have.
                 inputs = sources("image" to "photo"),
             ),
-            Node(
-                "out", "image.output",
-                params = mapOf("save" to "false", "name" to "upscaled"),
-                inputs = sources("image" to "enlarge"),
-            ),
         )
     ),
     positions = mapOf(
         "photo" to Pt(24f, 40f),
         "enlarge" to Pt(24f, 300f),
-        "out" to Pt(24f, 560f),
     ),
 )
