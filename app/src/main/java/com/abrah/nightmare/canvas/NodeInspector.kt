@@ -31,6 +31,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Checkbox
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -51,6 +53,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.graphics.ImageBitmap
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
@@ -61,6 +64,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import com.abrah.nightmare.ModelCatalog
 import com.abrah.nightmare.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -584,6 +588,94 @@ internal fun NodeInspectorBody(
                 if (w.name == "aspect") ({ v -> onSetAspect(v) })
                 else ({ v -> onSetParam(nodeId, w.name, v) })
             if (options != null) {
+                // ⭐⭐ **An armed CHOICE says what it will sweep, exactly as an
+                // armed slider does.**
+                //
+                // ⚠⚠ A slider replaced itself with "Batching 4 values: …" when
+                // armed, but a chips/dropdown knob kept rendering its single
+                // parked value with only the toggle icon changing state — so
+                // `scheduler`, the one batchable knob that is a CHOICE, showed
+                // no armed status and never said which samplers were picked.
+                // Reported from the phone 2026-09-11. A control parked on one
+                // value under a batch that will run four is two answers to
+                // "what will this run with", and the parked one is wrong.
+                val armedChoice = if (
+                    com.abrah.nightmare.BatchParams.isBatchable(node.type, w.name)
+                ) com.abrah.nightmare.BatchParams.armed(node, w.name) else null
+                if (armedChoice != null) {
+                    val picked = com.abrah.nightmare.BatchParams.valuesOf(w.name, armedChoice)
+                        // ⚠ Named, not raw: the sweep list must read the same
+                        // way the picker above it does, or the user sees
+                        // "dpm_sde_karras" listed for a sampler they chose as
+                        // "DPM++ 2M SDE".
+                        .map { if (w.name == "scheduler") ModelCatalog.schedulerLabel(it) else it }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(w.name, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Batching " + picked.size + " values: " +
+                                    picked.joinToString(", "),
+                                style = LogTextStyle,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        BatchToggle(armed = armedChoice, onClick = { batching = w })
+                    }
+                    continue
+                }
+                // ⭐⭐ **The sampler is FIVE names and a Karras toggle**, not nine
+                // raw ids — `local-dream`'s own presentation, and the upstream
+                // this project follows (`CLAUDE.md`). The four `_karras` values
+                // are the same four samplers with Karras sigmas, so listing them
+                // separately asked the user to scan `dpm_sde_karras` out of a
+                // dropdown to find a thing they know as "DPM++ 2M SDE".
+                // ⚠ The stored param is untouched — still one of the nine wire
+                // values, so a saved workflow and a bug report carry what the
+                // backend actually receives.
+                if (w.name == "scheduler") {
+                    val cur = node.params[w.name] ?: w.default.orEmpty()
+                    val (base, karras) = ModelCatalog.splitScheduler(cur)
+                    ChoiceDropdown(
+                        label = w.name,
+                        hint = w.hint,
+                        options = ModelCatalog.SAMPLERS.map { it.second },
+                        current = ModelCatalog.SAMPLERS.firstOrNull { it.first == base }?.second
+                            ?: base,
+                        onPick = { label ->
+                            val id = ModelCatalog.SAMPLERS.first { it.second == label }.first
+                            pick(ModelCatalog.joinScheduler(id, karras))
+                        },
+                    )
+                    // ⚠ Disabled rather than hidden for LCM: a checkbox that
+                    // vanishes reads as a bug, where a greyed one with the
+                    // sampler's name beside it says the variant does not exist.
+                    // ⚠⚠ And it must not merely be greyed — the VALUE has to drop
+                    // too, or switching to LCM with Karras armed would send
+                    // `lcm_karras`, which the backend's comparison chain does
+                    // not know and silently renders as `dpm`.
+                    val canKarras = ModelCatalog.karrasSupported(base)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = karras && canKarras,
+                            enabled = canKarras,
+                            onCheckedChange = { on ->
+                                pick(ModelCatalog.joinScheduler(base, on))
+                            },
+                        )
+                        Text(
+                            if (canKarras) stringResource(R.string.karras_sigmas)
+                            else stringResource(R.string.karras_unavailable),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (canKarras) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (com.abrah.nightmare.BatchParams.isBatchable(node.type, w.name)) {
+                            BatchToggle(armed = null, onClick = { batching = w })
+                        }
+                    }
+                    continue
+                }
                 // ⚠⚠ Chips do not scale. `pad` has two values and reads as a
                 // pair of buttons; `scheduler` has NINE, which becomes a
                 // horizontally-scrolling strip where the current value can be
@@ -817,6 +909,9 @@ internal fun NodeInspectorBody(
  */
 private const val CHIP_LIMIT = 4
 
+/** Below this, a [Widget.fine] knob keeps two decimals. The distilled-model band. */
+private const val FINE_EDGE = 2f
+
 /**
  * One value out of a list too long for chips.
  *
@@ -885,7 +980,12 @@ private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) 
     // ⚠ Decimals follow the RANGE, not the type. One decimal is right for cfg
     // over 1..20 and useless for feather over 0..0.2, where every value a user
     // can pick rounds to "0.0" — which reads as a slider that does nothing.
-    val decimals = if (max - min <= 1f) 2 else 1
+    // ⚠ Decimals follow the VALUE for a [Widget.fine] knob: two below 2.0,
+    // where a distilled model lives and 1.02 differs visibly from 1.2, and one
+    // above it, where nobody is choosing between 7.4 and 7.45.
+    fun decimalsAt(v: Float) =
+        if (widget.fine) (if (v < FINE_EDGE) 2 else 1)
+        else if (max - min <= 1f) 2 else 1
     // ⚠ Falls back to the DEFAULT, not to `min`: a param that failed to parse
     // is a bug, and pinning the slider to the low end of the range would
     // quietly change what the node renders with.
@@ -893,16 +993,36 @@ private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) 
         ?: widget.default?.toFloatOrNull()
         ?: min
     val shown = value.coerceIn(min, max)
+    // ⭐⭐ A [Widget.fine] slider is NOT linear in its value: the track position
+    // is the square root of the normalised value, so the bottom of the range
+    // gets far more travel. On cfg 1..20 that turns the 1.0-2.0 band from 5% of
+    // the track into ~23% -- enough to land 1.02 on with a finger, which is the
+    // whole point of the request.
+    //
+    // ⚠ Monotonic and exactly invertible, so the thumb sits where the value
+    // says it does; a piecewise mapping would have a visible kink at the joint.
+    // ⚠ The VALUE written to the graph is unchanged by any of this -- the
+    // curve is presentation, and the param stays a plain number.
+    fun toTrack(v: Float): Float =
+        if (!widget.fine || max <= min) v
+        else min + (max - min) * sqrt(((v - min) / (max - min)).coerceIn(0f, 1f))
+    fun fromTrack(t: Float): Float {
+        if (!widget.fine || max <= min) return t
+        val n = ((t - min) / (max - min)).coerceIn(0f, 1f)
+        return min + (max - min) * n * n
+    }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
             "${widget.name}   " +
-                if (isInt) shown.roundToInt().toString() else fixed(shown, decimals),
+                if (isInt) shown.roundToInt().toString()
+                else fixed(shown, decimalsAt(shown)),
             style = MaterialTheme.typography.bodyMedium,
         )
         Slider(
-            value = shown,
-            onValueChange = {
-                onSet(if (isInt) it.roundToInt().toString() else fixed(it, decimals))
+            value = toTrack(shown),
+            onValueChange = { t ->
+                val v = fromTrack(t)
+                onSet(if (isInt) v.roundToInt().toString() else fixed(v, decimalsAt(v)))
             },
             valueRange = min..max,
             // ⚠⚠ CONTINUOUS, even for an int knob — the snapping is done in

@@ -488,6 +488,15 @@ data class CanvasState(
                 graph = workflow.graph.copy(nodes = workflow.graph.nodes + node),
                 positions = workflow.positions + (id to at),
             ),
+            // ⚠⚠ **A NEW node must never inherit a picture.** [freeId] hands back
+            // the lowest unused name, so deleting `upscale` and adding another
+            // one gets the id `upscale` straight back -- and the preview map is
+            // keyed by id, so the new node opened showing the DELETED node's
+            // last output. Reported from the phone 2026-09-11: a freshly
+            // dropped upscale node already had an old render on it.
+            // ⚠ Belt and braces with [removeNode], which now drops it too. This
+            // one also covers an id freed by any other route.
+            previews = previews - id,
             editing = id,
             showPalette = false,
             message = null,
@@ -506,6 +515,9 @@ data class CanvasState(
             graph = workflow.graph.without(id),
             positions = workflow.positions - id,
         ),
+        // ⚠ The picture goes with the node. Leaving it behind makes the map
+        // grow forever, and worse, hands it to the next node that takes this id.
+        previews = previews - id,
         selection = selection - id,
         editing = if (editing == id) null else editing,
         // ⚠ A picked wire that ended on this node no longer exists.

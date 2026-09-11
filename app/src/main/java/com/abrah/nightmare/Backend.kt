@@ -198,6 +198,42 @@ object Backend {
     data class SseEvent(val name: String, val data: String, val atMs: Long)
 
     /**
+     * ⭐⭐ The streaming request in flight, so a Run can be CANCELLED.
+     *
+     * ⚠⚠ **Cancelling the coroutine is not enough and never was.** The SSE
+     * loop sits in a blocking `readLine()` on a socket; coroutine cancellation
+     * does not interrupt that, so the read would keep going until the backend
+     * finished the render anyway — a Cancel button that stopped the UI and
+     * nothing else.
+     *
+     * ⇒ Cancel DISCONNECTS. The backend then fails its next `sink.write` and
+     * aborts the sample itself: *"Client disconnected, sample aborted"*
+     * (`main.cpp`), which its own comment calls the only way to stop a render,
+     * because `opSample()` holds the generation mutex throughout.
+     *
+     * ⚠ One slot is enough: the backend serialises every op behind that mutex,
+     * so there is never more than one stream open.
+     */
+    @Volatile
+    private var inFlight: HttpURLConnection? = null
+
+    /**
+     * Stop the streaming request, if any. Safe to call when there is none.
+     *
+     * ⚠ The read throws as a result — that is the POINT, and the caller must
+     * treat the resulting failure as a cancellation rather than as a backend
+     * error.
+     */
+    fun abortInFlight(): Boolean {
+        val c = inFlight ?: return false
+        // ⚠ On the caller's thread, not the reader's: `disconnect()` is what
+        // makes the blocked `readLine()` return.
+        runCatching { c.disconnect() }
+        inFlight = null
+        return true
+    }
+
+    /**
      * Read a `text/event-stream` response, calling [onEvent] as each frame
      * ARRIVES.
      *
@@ -237,6 +273,7 @@ object Backend {
             setRequestProperty("Accept", "text/event-stream")
             setRequestProperty("Accept-Encoding", "identity")
         }
+        inFlight = conn
         try {
             conn.outputStream.use { it.write(json.toByteArray()) }
             val code = conn.responseCode
@@ -279,6 +316,9 @@ object Backend {
         } catch (e: Exception) {
             Response(-1, e.javaClass.simpleName + ": " + (e.message ?: "no message"), sinceMs())
         } finally {
+            // ⚠ Clear the slot before disconnecting, and only if it is still
+            // OURS: [abortInFlight] may already have replaced or nulled it.
+            if (inFlight === conn) inFlight = null
             conn.disconnect()
         }
     }

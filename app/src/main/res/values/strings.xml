@@ -108,6 +108,11 @@
     <string name="remove">Remove</string>
     <string name="use">Use</string>
     <string name="in_use">In use</string>
+    <string name="cancel_run">Cancel</string>
+    <string name="importing_model">Importing %1$s…</string>
+    <string name="importing_working">reading the archive</string>
+    <string name="karras_sigmas">Karras sigmas</string>
+    <string name="karras_unavailable">Karras sigmas (not available for LCM)</string>
     <!-- The output shape controls on the model in use. -->
     <string name="resolution">Resolution</string>
     <string name="shape">Shape</string>

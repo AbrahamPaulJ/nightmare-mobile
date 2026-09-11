@@ -116,6 +116,13 @@ fun ModelsScreen(
      */
     onImport: ((name: String) -> Unit)? = null,
     /**
+     * ⭐ The name of an import in flight, or null. Drawn as a banner ABOVE the
+     * family tabs — an imported model has no row to hang progress on until the
+     * scan finds it, which is exactly why nothing was visible before.
+     */
+    importing: String? = null,
+    importProgress: ModelInstaller.Progress? = null,
+    /**
      * ⭐⭐ The second KIND of model — see `Upscalers.kt`. Empty renders no tab
      * at all, which is what a preview and a golden with no catalogue want.
      */
@@ -144,6 +151,42 @@ fun ModelsScreen(
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 8.dp),
             )
+        }
+        // ⭐ "Something is happening", for the one case with no row to say so.
+        if (importing != null) {
+            Card(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                ),
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text(
+                        stringResource(R.string.importing_model, importing),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        // ⚠ The PHASE, not a percentage: a zip's uncompressed
+                        // size is unknown until it is read, so there is no
+                        // honest percentage to show during the unpack.
+                        importProgress?.phase ?: stringResource(R.string.importing_working),
+                        style = LogTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // ⚠ Indeterminate whenever the total is unknown, which is
+                    // most of an import. A bar parked at 100% through a minute
+                    // of unpacking reads as a hang.
+                    val p = importProgress
+                    if (p != null && p.total > 0) {
+                        LinearProgressIndicator(
+                            progress = { p.fraction },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        )
+                    } else {
+                        LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+                    }
+                }
+            }
         }
         // ⭐⭐ One sub-tab per FAMILY, swipeable.
         //

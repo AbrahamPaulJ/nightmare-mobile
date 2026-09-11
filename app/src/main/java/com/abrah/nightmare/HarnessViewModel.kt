@@ -598,6 +598,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Non-null while an install is running; the id being fetched. */
     private var installing by mutableStateOf<String?>(null)
+
+    /**
+     * ⭐⭐ The import in flight, for the banner that says one is happening.
+     *
+     * ⚠⚠ **Exposed separately because the model ROW cannot show it.** A row's
+     * progress is matched as `spec.id == installing`, and during an import
+     * there IS no spec: the directory is still being written and
+     * [CustomModels.scan] has not seen it, so the row the progress belongs to
+     * does not exist until the work is already finished. The bar was plumbed
+     * end to end and rendered nowhere — reported from the phone 2026-09-11 as
+     * "no idea if importing is in progress".
+     *
+     * ⚠ A DOWNLOAD is unaffected: its row is a catalogue entry that exists
+     * before, during and after, which is exactly why this was never noticed.
+     */
+    val importing: String? get() = installing?.takeIf { ModelCatalog.byId(it) == null }
+
+    /** The phase/bytes of [importing], or null. */
+    val importProgress: ModelInstaller.Progress? get() = if (importing != null) installProgress else null
     @Volatile private var cancelInstall = false
     private var installProgress by mutableStateOf<ModelInstaller.Progress?>(null)
 
@@ -779,6 +798,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshUpscalers() {
         val ctx = getApplication<Application>()
+        // ⚠ The node's dropdown reads a cache, not the disk -- refresh it here,
+        // where the disk is being read anyway, or a just-downloaded upscaler
+        // stays invisible to every upscale node until the app restarts.
+        UpscalerCatalog.refresh(ctx)
         upscalerRows = UpscalerCatalog.ALL.map { spec ->
             val here = spec.installed(ctx)
             com.abrah.nightmare.ui.UpscalerRow(
@@ -2483,12 +2506,54 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         const val PREVIEW_TAG = "NmPreview"
     }
 
+    /**
+     * ⭐⭐ The job a Cancel button stops. Null when nothing is running.
+     *
+     * ⚠ Held rather than derived from `busy`, because cancelling needs the Job
+     * itself and `busy` is only a flag.
+     */
+    private var runJob: kotlinx.coroutines.Job? = null
+
+    /** True while a run is in flight and can be stopped. */
+    val canCancel: Boolean get() = busy
+
+    /**
+     * ⭐⭐ Stop the run in progress. **Completed nodes keep their outputs**, so
+     * pressing Run again resumes from the cache rather than redoing them — the
+     * executor's cache is untouched by this, exactly as it is by a node that
+     * fails.
+     *
+     * ⚠⚠ **The disconnect is what actually stops the NPU**, not the job
+     * cancellation. The sampler's SSE loop is a blocking socket read that
+     * coroutine cancellation cannot interrupt, so without
+     * [Backend.abortInFlight] this would stop the UI and leave the render
+     * running to completion. The backend notices the dead socket on its next
+     * progress write and aborts (`main.cpp`, "Client disconnected").
+     *
+     * ⚠ Order matters: disconnect FIRST so the read is already unblocked when
+     * the job is cancelled, then cancel so nothing downstream of it runs.
+     */
+    fun cancelRun() {
+        if (!busy) return
+        say("cancelling…")
+        Backend.abortInFlight()
+        runJob?.cancel()
+    }
+
     private fun run(label: String, block: suspend () -> Unit) {
         if (busy) { say("$label ignored -- already running", bad = true); return }
         busy = true
-        viewModelScope.launch {
+        runJob = viewModelScope.launch {
             try {
                 block()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // ⚠⚠ Caught SEPARATELY and rethrown. The broad `Throwable` below
+                // would otherwise swallow a cancellation and report it as a
+                // crash -- and a coroutine that eats its own CancellationException
+                // leaves the scope believing the job is still alive.
+                runError = "cancelled"
+                say("$label cancelled")
+                throw e
             } catch (e: Throwable) {
                 // ⚠⚠ Throwable, not Exception. `UnsatisfiedLinkError` from a
                 // missing native library is an ERROR, so it slipped past the
@@ -2499,6 +2564,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 say("$label threw ${e.javaClass.simpleName}: ${e.message}", bad = true)
             } finally {
                 busy = false
+                runJob = null
             }
         }
     }

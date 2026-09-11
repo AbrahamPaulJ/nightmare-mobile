@@ -85,6 +85,10 @@ class MainActivity : ComponentActivity() {
         // against it. Loading late would render the first graph against the
         // previous selection.
         SelectedModel.load(this)
+        // ⚠ Before NODE_TYPES is touched: the upscale node's default and its
+        // dropdown read this cache, and an empty one makes a new node default to
+        // an upscaler that may not be installed.
+        UpscalerCatalog.refresh(this)
         // ⚠ Before setContent: the theme decides the FIRST frame, and loading it
         // afterwards means a flash of the wrong palette on every cold start.
         Prefs.load(this)
@@ -252,6 +256,8 @@ fun HarnessScreen(
                     onCancel = vm::cancelModelInstall,
                     onDelete = vm::deleteModel,
                     onSelect = vm::selectModel,
+                    importing = vm.importing,
+                    importProgress = vm.importProgress,
                     onImport = { name ->
                         importName = name
                         // ⚠ Two MIME types. A zip arrives as
@@ -409,6 +415,7 @@ fun HarnessScreen(
             // dragged crop rect, both on sheet dismissal.
             onEdit = vm::editCanvas,
             onEditMask = vm::editMask,
+            onCancelRun = vm::cancelRun,
             onSetResolution = vm::selectResolution,
             onSetAspect = vm::selectAspect,
             validateWorkflowName = vm::workflowNameError,

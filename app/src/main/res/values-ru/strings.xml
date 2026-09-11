@@ -86,6 +86,11 @@
     <string name="remove">Убрать</string>
     <string name="use">Выбрать</string>
     <string name="in_use">Используется</string>
+    <string name="cancel_run">Отмена</string>
+    <string name="importing_model">Импорт %1$s…</string>
+    <string name="importing_working">чтение архива</string>
+    <string name="karras_sigmas">Сигмы Karras</string>
+    <string name="karras_unavailable">Сигмы Karras (недоступно для LCM)</string>
     <string name="resolution">Разрешение</string>
     <string name="shape">Форма</string>
     <string name="resolution_reloads">Другой размер — другой граф: бэкенд перезагрузится при следующем запуске.</string>

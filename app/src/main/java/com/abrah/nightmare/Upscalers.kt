@@ -143,6 +143,30 @@ object UpscalerCatalog {
     fun installed(context: Context): List<UpscalerSpec> = ALL.filter { it.installed(context) }
 
     /**
+     * ⭐⭐ The installed ids, **cached**, for the node's dropdown.
+     *
+     * ⚠⚠ Cached for the same reason `SelectedModel.resolutions` is: a
+     * `NodeType.widgets` getter has no [Context], so it cannot ask the disk —
+     * and [UpscaleNode] was therefore defaulting to `ALL.first()` and offering
+     * every published upscaler whether or not it was on the device. On this
+     * phone that is `upscaler_anime`, which is NOT installed, so a freshly
+     * dropped upscale node was pre-set to a file that does not exist and failed
+     * the moment it ran. Reported from the phone 2026-09-11 ("I get an error if
+     * I just connect an image to upscale").
+     *
+     * ⚠ Empty until [refresh] runs. Callers fall back to [ALL] so the control
+     * is never blank; the node's own run() still names what is missing.
+     */
+    @Volatile
+    var installedIds: List<String> = emptyList()
+        private set
+
+    /** ⚠ Call whenever an upscaler is downloaded or deleted. */
+    fun refresh(context: Context) {
+        installedIds = installed(context).map { it.id }
+    }
+
+    /**
      * ⚠ The absolute path, or null when it is not installed. Null is the node's
      * cue to fail with a sentence naming the upscaler rather than to hand the
      * backend a path that is not there — QNN's own error for a missing context

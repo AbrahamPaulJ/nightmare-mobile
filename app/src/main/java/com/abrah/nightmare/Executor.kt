@@ -618,7 +618,10 @@ object SampleNode : NodeType {
         // -- measured on device 2026-09-10. A checkpoint that says nothing gets
         // ModelCatalog.DEFAULT_STEPS/DEFAULT_CFG, which are these same numbers.
         Widget("steps", "int", SelectedModel.spec.steps.toString(), 1.0, 50.0),
-        Widget("cfg", "float", SelectedModel.spec.cfg.toString(), 1.0, 20.0),
+        // ⚠ `fine`: the slider weights its travel toward 1.0 and keeps two
+        // decimals there, because a distilled checkpoint lives between 1.0 and
+        // 2.0 and a linear 1..20 track gives that band 5% of its length.
+        Widget("cfg", "float", SelectedModel.spec.cfg.toString(), 1.0, 20.0, fine = true),
         // ⭐ 0 rolls a new seed on every Run. A fixed seed is what makes a
         // render reproducible; 0 is what makes Run mean "give me another one"
         // instead of returning the cached picture unchanged.
@@ -1496,15 +1499,24 @@ object UpscaleNode : NodeType {
     const val UPSCALER = "upscaler"
 
     override val widgets get() = listOf(
-        // ⚠⚠ The OPTIONS are the installed set, read at call time, so the
-        // dropdown cannot offer a file that is not on the device. ⚠ The list can
-        // legitimately be EMPTY — that is a fresh install with no upscaler
-        // fetched, and [run] says so by name rather than handing the backend a
-        // path of "".
+        // ⚠⚠ The OPTIONS are the INSTALLED set, so the dropdown cannot offer a
+        // file that is not on the device -- and the DEFAULT is the first of
+        // them.
+        //
+        // ⚠⚠ This comment used to say exactly that while the code read
+        // `ALL.first()` and `ALL.map`, which are not the same thing: on a phone
+        // with only the realistic upscaler fetched, a freshly dropped node was
+        // pre-set to `upscaler_anime` and failed the instant it ran. The list is
+        // a cached disk scan ([UpscalerCatalog.installedIds]) because a widgets
+        // getter has no Context.
+        //
+        // ⚠ Falls back to [UpscalerCatalog.ALL] when nothing is installed --
+        // that is a fresh install, and a control with no options at all says
+        // less than one whose [run] names what to download.
         Widget(
             UPSCALER, "string",
-            UpscalerCatalog.ALL.first().id,
-            options = UpscalerCatalog.ALL.map { it.id },
+            (UpscalerCatalog.installedIds.firstOrNull() ?: UpscalerCatalog.ALL.first().id),
+            options = UpscalerCatalog.installedIds.ifEmpty { UpscalerCatalog.ALL.map { it.id } },
             hint = "which upscaler weights to use -- install them under Models",
         ),
     )

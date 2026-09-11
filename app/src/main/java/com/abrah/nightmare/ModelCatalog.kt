@@ -490,6 +490,59 @@ object ModelCatalog {
     )
 
     /**
+     * ⭐⭐ The FIVE samplers, named the way every other SD tool names them.
+     *
+     * ⚠⚠ Nine wire values, five samplers: the other four are the same sampler
+     * with Karras sigmas. `local-dream`'s own picker presents them exactly this
+     * way (`AdvancedSettingsDialog.kt`: five entries plus a Karras toggle), and
+     * it is the upstream to follow (`CLAUDE.md`). A flat list of nine raw ids
+     * made the user scan `dpm_sde_karras` out of a dropdown to find a thing
+     * they know as "DPM++ 2M SDE".
+     *
+     * ⚠ The stored param is UNCHANGED — still one of [SCHEDULERS]. This is
+     * presentation only, so a saved workflow, a plugin manifest and a bug report
+     * all still carry the wire value.
+     *
+     * ⚠ Order is `local-dream`'s, not alphabetical: the default first.
+     */
+    val SAMPLERS: List<Pair<String, String>> = listOf(
+        "dpm" to "DPM++ 2M",
+        "dpm_sde" to "DPM++ 2M SDE",
+        "euler_a" to "Euler A",
+        "euler" to "Euler",
+        "lcm" to "LCM",
+    )
+
+    /**
+     * ⚠ LCM has no Karras variant — the backend's comparison chain has no
+     * `lcm_karras`, and an unknown string falls through to `dpm` in SILENCE.
+     * Upstream guards the same case (`karrasSupported = baseId != "lcm"`).
+     */
+    fun karrasSupported(base: String) = base != "lcm"
+
+    /** `"dpm_sde_karras"` -> `("dpm_sde", true)`. */
+    fun splitScheduler(value: String): Pair<String, Boolean> {
+        val karras = value.endsWith("_karras")
+        val base = if (karras) value.removeSuffix("_karras") else value
+        // ⚠ An unrecognised base falls back to the default rather than being
+        // passed through: the backend would silently treat it as `dpm`, and a
+        // picker showing nothing selected is how that stays invisible.
+        return if (SAMPLERS.any { it.first == base }) base to karras
+        else DEFAULT_SCHEDULER to false
+    }
+
+    /** The inverse. ⚠ Drops Karras where the sampler has no such variant. */
+    fun joinScheduler(base: String, karras: Boolean): String =
+        if (karras && karrasSupported(base)) base + "_karras" else base
+
+    /** How a wire value should read on screen, e.g. `"DPM++ 2M SDE Karras"`. */
+    fun schedulerLabel(value: String): String {
+        val (base, karras) = splitScheduler(value)
+        val name = SAMPLERS.firstOrNull { it.first == base }?.second ?: base
+        return if (karras) "$name Karras" else name
+    }
+
+    /**
      * ⚠⚠ **The backend's own default** — `RequestParser.hpp` reads
      * `json.value("scheduler", "dpm")`. Named here so the app's default and the
      * backend's cannot drift: before the `scheduler` field was sent at all,

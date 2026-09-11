@@ -95,6 +95,8 @@ fun CanvasScreen(
      */
     onGesture: (CanvasState) -> Unit,
     onRun: () -> Unit,
+    /** ⭐ Stop the run in flight. Null hides the affordance (previews, goldens). */
+    onCancelRun: (() -> Unit)? = null,
     /** ⭐ Open the Batch sheet. See `BatchSheet.kt`. */
     onBatch: () -> Unit = {},
     /** ⭐ Which run of how many, while a sweep is going. Null when it is not. */
@@ -335,6 +337,7 @@ fun CanvasScreen(
             state = state,
             busy = busy,
             onRun = onRun,
+            onCancelRun = onCancelRun,
             onBatch = onBatch,
             batchProgress = batchProgress,
             onCancelBatch = onCancelBatch,
@@ -768,6 +771,7 @@ private fun RunBar(
     state: CanvasState,
     busy: Boolean,
     onRun: () -> Unit,
+    onCancelRun: (() -> Unit)? = null,
     onBatch: () -> Unit,
     /** ⭐ Which run of how many, while a sweep is going. Null when it is not. */
     batchProgress: Pair<Int, Int>? = null,
@@ -884,11 +888,30 @@ private fun RunBar(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Button(
-                onClick = onRun,
-                enabled = !busy,
-                shape = RoundedCornerShape(12.dp),
-            ) { Text(stringResource(if (busy) R.string.running else R.string.run), fontWeight = FontWeight.Medium) }
+            // ⭐⭐ Run BECOMES Cancel while a render is in flight, rather than
+            // sitting there greyed out beside a new button.
+            //
+            // ⚠ A disabled Run was the only thing the bar said during a 24 s
+            // SDXL sample, which reads as "the app is stuck" — and there was no
+            // way to stop a render you had already decided was wrong.
+            // ⚠⚠ Completed nodes keep their outputs, so this is cheap to press:
+            // Run again resumes from the cache.
+            if (busy && onCancelRun != null) {
+                Button(
+                    onClick = onCancelRun,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
+                ) { Text(stringResource(R.string.cancel_run), fontWeight = FontWeight.Medium) }
+            } else {
+                Button(
+                    onClick = onRun,
+                    enabled = !busy,
+                    shape = RoundedCornerShape(12.dp),
+                ) { Text(stringResource(if (busy) R.string.running else R.string.run), fontWeight = FontWeight.Medium) }
+            }
             // ⚠⚠ **No Batch button.** It opened a second way to build a sweep,
             // and there is only one now: arm a knob from its own node. The run
             // bar already says what is armed and Run already sweeps when it is

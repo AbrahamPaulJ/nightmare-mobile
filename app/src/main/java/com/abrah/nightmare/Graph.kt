@@ -184,6 +184,23 @@ data class Widget(
      * that merely happens to carry a param called `width` is not.
      */
     val contextKey: Boolean = false,
+    /**
+     * ⭐⭐ This knob needs PRECISION at the bottom of its range, so the slider
+     * weights its travel there and keeps two decimals there.
+     *
+     * ⚠⚠ Written for `cfg`, and the reason is distilled checkpoints: LCM,
+     * Turbo and Lightning models live between 1.0 and 2.0, where the difference
+     * between 1.02 and 1.2 is visible and the difference between 7 and 8 is
+     * not. A plain linear 1..20 slider gives that whole band **5% of the
+     * track** — about 18dp on a phone — so the values that matter most are the
+     * ones a finger cannot land on. Asked for from the phone, 2026-09-11
+     * ("add decimal cfg i.e. 1.002, 1.02").
+     *
+     * ⚠ Opt-in rather than inferred from the range: `denoise` is 0..1 and
+     * wants its travel spread evenly, and guessing from the numbers would have
+     * curved it too.
+     */
+    val fine: Boolean = false,
 ) {
     /** True for the kinds that want a numeric keyboard rather than a text one. */
     val numeric: Boolean get() = type == "int" || type == "float"

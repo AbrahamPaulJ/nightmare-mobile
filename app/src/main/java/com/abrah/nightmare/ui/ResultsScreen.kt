@@ -753,16 +753,30 @@ private fun ResultCard(
             ResultCardHeader(
                 title = "1 picture",
                 label = result.label,
+                // ⚠ The seed has left this line — it is its own control below,
+                // because it is the one piece of metadata people want to TAKE
+                // rather than read.
                 meta = listOfNotNull(
                     result.model,
                     "${result.width}×${result.height}",
-                    result.seed?.let { "seed $it" },
                 ).joinToString("  "),
                 onDelete = onDelete,
                 onSave = onSave,
                 onShareFlow = onShareFlow,
                 onOpenFlow = onOpenFlow,
             )
+            // ⭐ Copyable, because a seed is only useful if you can put it
+            // somewhere. Asked for from the phone, 2026-09-11.
+            //
+            // ⚠ [SeedRow] is the SAME control the node inspector and the
+            // fullscreen viewer already use, not a second copy button. The
+            // three had to agree on what "copy the seed" does anyway, and this
+            // one deliberately passes no `onLock`: locking a seed writes it
+            // onto the sampler of the OPEN canvas, and a result in a list is
+            // not necessarily from the graph that is open.
+            result.seed?.let { seed ->
+                Row { com.abrah.nightmare.canvas.SeedRow(seed = seed.toString()) }
+            }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

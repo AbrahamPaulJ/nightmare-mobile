@@ -16,7 +16,11 @@ import com.abrah.nightmare.sources
  * family. `docs/MODELS.md` §3 step 3.
  */
 private fun ctxKeyParams(): Map<String, String> {
-    val res = SelectedModel.spec.native
+    // ⚠ The SELECTED size, not the model's native one. A recipe builds NEW
+    // nodes, and a new node is born at the size the user last chose for this
+    // checkpoint (`SelectedModel.res`) -- opening a recipe at 512 while the
+    // picker said 768x512 would silently retarget their whole graph back.
+    val res = SelectedModel.res
     return mapOf(
         "model" to SelectedModel.id,
         "width" to res.width.toString(),
@@ -125,6 +129,12 @@ val RECIPES: List<Recipe> = listOf(
         "img2img", "Image to image",
         "A photo from the gallery: frame it, then re-imagine it at the strength you choose.",
         ::img2imgWorkflow,
+    ),
+    Recipe(
+        "upscale", "Upscale a photo",
+        "A picture from the gallery, enlarged 4x. No checkpoint involved — " +
+            "the upscaler is its own small model, installed under Models.",
+        ::upscaleWorkflow,
     ),
     Recipe(
         "inpaint", "Inpaint — paint an area to redo",
@@ -284,5 +294,47 @@ fun img2imgWorkflow(): Workflow = Workflow(
         // Second column, level with the photo: the two branches start side by
         // side and meet at the sampler.
         "text" to Pt(250f, 120f),
+    ),
+)
+
+/**
+ * ⭐⭐ Enlarge a picture, and nothing else.
+ *
+ * ⚠⚠ **No sampler, no checkpoint, no [ContextKey] at all.** An upscaler binds
+ * nothing at backend launch — `/upscale` builds its own QNN context from the
+ * weight file per request and frees it after — so this graph pins the process
+ * to nothing and runs beside any model. That is also why an upscaler never
+ * appears as a "resident" model in the load readout: there is nothing resident
+ * to report.
+ *
+ * ⚠ It exists because wiring a photo straight into an upscale node by hand was
+ * the obvious thing to try and gave no clue what was missing: the node needs an
+ * upscaler INSTALLED (Models → Upscalers) and an `image.output` to land in.
+ * Asked for from the phone, 2026-09-11.
+ */
+fun upscaleWorkflow(): Workflow = Workflow(
+    Graph(
+        listOf(
+            // ⚠ Whole, uncropped. There is no size to match here -- unlike the
+            // sampler recipes, an upscaler takes whatever it is given.
+            Node("photo", "image.load", params = mapOf("uri" to "")),
+            Node(
+                "enlarge", "image.upscale",
+                // ⚠ No `upscaler` param written: the node's own default is the
+                // first INSTALLED one, read at call time, and pinning a literal
+                // here would name a file a fresh install does not have.
+                inputs = sources("image" to "photo"),
+            ),
+            Node(
+                "out", "image.output",
+                params = mapOf("save" to "false", "name" to "upscaled"),
+                inputs = sources("image" to "enlarge"),
+            ),
+        )
+    ),
+    positions = mapOf(
+        "photo" to Pt(24f, 40f),
+        "enlarge" to Pt(24f, 300f),
+        "out" to Pt(24f, 560f),
     ),
 )
