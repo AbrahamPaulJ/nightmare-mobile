@@ -301,9 +301,6 @@ fun HarnessScreen(
                 val flowPicker = rememberLauncherForActivityResult(
                     androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
                 ) { uri -> if (uri != null) vm.importWorkflow(uri) }
-                val packPicker = rememberLauncherForActivityResult(
-                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-                ) { uri -> if (uri != null) vm.importPlugin(uri) }
                 WorkflowsScreen(
                     recipes = com.abrah.nightmare.canvas.RECIPES,
                     saved = vm.savedWorkflows,
@@ -320,9 +317,6 @@ fun HarnessScreen(
                     // with nothing on screen explaining why.
                     onImportFlow = {
                         flowPicker.launch(arrayOf("application/json", "application/octet-stream"))
-                    },
-                    onImportPack = {
-                        packPicker.launch(arrayOf("application/zip", "application/octet-stream"))
                     },
                 )
             },
@@ -455,6 +449,15 @@ fun HarnessScreen(
     // ⚠ Back returns to the canvas rather than quitting -- the same hole the
     // fullscreen viewer had, and the reason every over-canvas screen handles it.
     BackHandler { vm.setCanvasVisible(true) }
+    // ⚠ Declared HERE now, not on the Flows tab: a node pack is code and is
+    // installed from Settings → Community, beside the page that explains what a
+    // pack may and may not do. `ui/WorkflowsScreen.kt` has the reasoning.
+    // ⚠ Two MIME types, as every other picker in this app does: plenty of
+    // providers hand a zip over as `application/octet-stream`, and filtering on
+    // the exact type greys out the file the user came for.
+    val packPicker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) vm.importPlugin(uri) }
     com.abrah.nightmare.ui.SettingsScreen(
         tab = vm.settingsTab,
         onTab = vm::switchSettingsTab,
@@ -462,6 +465,9 @@ fun HarnessScreen(
         theme = vm.theme,
         onTheme = vm::chooseTheme,
         diagnostics = { HarnessPane(vm) },
+        onImportPack = {
+            packPicker.launch(arrayOf("application/zip", "application/octet-stream"))
+        },
     )
 }
 

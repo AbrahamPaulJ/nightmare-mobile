@@ -67,7 +67,6 @@ fun WorkflowsScreen(
     /** ⭐ Hand a saved flow to another app, as importable JSON. */
     onShareSaved: (String) -> Unit = {},
     onImportFlow: (() -> Unit)? = null,
-    onImportPack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // ⚠ The name being edited, and the one being deleted. Local: an
@@ -192,7 +191,13 @@ fun WorkflowsScreen(
             // tab is opened to pick a flow, many times a session, and a card
             // about importing sat above the thing every visit is for. The
             // user's call, 2026-09-10.
-            if (onImportFlow != null || onImportPack != null) {
+            // ⚠⚠ **Flows only.** Importing a NODE PACK moved to Settings, at the
+            // user's call 2026-09-11: a flow is inert data that the app can
+            // refuse to open, where a pack is CODE with no validation gate yet
+            // (`docs/ARCHITECTURE.md` §8c). Two actions that differ that much in
+            // consequence do not belong on one card, and this tab is the one a
+            // person visits to run something.
+            if (onImportFlow != null) {
                 item {
                     Card(Modifier.fillMaxWidth()) {
                         Column(
@@ -209,21 +214,6 @@ fun WorkflowsScreen(
                                 onImportFlow?.let {
                                     OutlinedButton(onClick = it) { Text(stringResource(R.string.flows_import_flow)) }
                                 }
-                                onImportPack?.let {
-                                    OutlinedButton(onClick = it) { Text(stringResource(R.string.flows_import_pack)) }
-                                }
-                            }
-                            // ⚠⚠ Said where the tap happens, not in a doc. There
-                            // is no validation gate on an imported pack yet
-                            // (`docs/ARCHITECTURE.md` §8c): the sandbox stops it
-                            // reaching the network or the disk, nothing stops it
-                            // looping forever.
-                            if (onImportPack != null) {
-                                Text(
-                                    stringResource(R.string.flows_import_warning),
-                                    style = LogTextStyle,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
                             }
                         }
                     }

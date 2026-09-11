@@ -158,6 +158,22 @@ object Sizes {
     /** Tall enough for the busier side, plus a little body. */
     fun nodeHeight(inputs: Int, outputs: Int): Float =
         HEADER_HEIGHT + PORT_TOP + maxOf(inputs, outputs, 1) * PORT_SPACING + BODY_PADDING
+
+    /**
+     * ⭐⭐ How far down the last PORT actually reaches — the anchor for a body
+     * block, as opposed to [nodeHeight]'s minimum body.
+     *
+     * ⚠⚠ [nodeHeight] reserves a whole [PORT_SPACING] *past* the last port so
+     * an empty node is not a sliver. For a node that HAS a body that reservation
+     * is pure slack, and it showed up as a gap: a prompt node drew `cond` at 74
+     * and its first prompt 66 further down, with nothing in between. Reported
+     * from the phone 2026-09-11 ("too much top space above prompt").
+     *
+     * ⇒ A body block starts just below the last port row instead.
+     */
+    fun portsExtent(inputs: Int, outputs: Int): Float =
+        HEADER_HEIGHT + PORT_TOP + (maxOf(inputs, outputs, 1) - 1) * PORT_SPACING +
+            PORT_RADIUS + BODY_PADDING
 }
 
 /** A node laid out: where it is, how big, and where its ports are. */
@@ -419,7 +435,8 @@ fun layout(
         val type = types[n.type]
         val pos = workflow.positions[n.id] ?: Pt(0f, 0f)
         val width = workflow.widthOf(n.id)
-        val ports = Sizes.nodeHeight(type?.inputs?.size ?: 0, type?.outputs?.size ?: 0)
+        val nIn = type?.inputs?.size ?: 0
+        val nOut = type?.outputs?.size ?: 0
         val shown = previews[n.id]
         // ⚠ The picture is inset from both edges, so its width is the node's
         // width less the padding -- using the full width would draw it over the
@@ -488,7 +505,11 @@ fun layout(
             node = n,
             topLeft = pos,
             width = width,
-            height = ports +
+            // ⚠ A node with a BODY anchors it just under the last port
+            // ([Sizes.portsExtent]); one without keeps [Sizes.nodeHeight]'s
+            // minimum, so an empty node is still a comfortable box.
+            height = (if (prose != null) Sizes.portsExtent(nIn, nOut)
+                else Sizes.nodeHeight(nIn, nOut)) +
                 (preview?.let { it.height + Sizes.BODY_PADDING } ?: 0f) +
                 (prose?.let { it.height + Sizes.BODY_PADDING } ?: 0f),
             preview = preview,
