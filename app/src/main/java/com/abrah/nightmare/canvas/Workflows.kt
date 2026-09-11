@@ -337,7 +337,7 @@ fun upscaleWorkflow(): Workflow = Workflow(
             // one does not. `image.output` earns its place only where a graph
             // needs an explicit save toggle.
             Node(
-                "enlarge", "image.upscale",
+                "upscale", "image.upscale",
                 // ⚠ No `upscaler` param written: the node's own default is the
                 // first INSTALLED one, read at call time, and pinning a literal
                 // here would name a file a fresh install does not have.
@@ -347,6 +347,6 @@ fun upscaleWorkflow(): Workflow = Workflow(
     ),
     positions = mapOf(
         "photo" to Pt(24f, 40f),
-        "enlarge" to Pt(24f, 300f),
+        "upscale" to Pt(24f, 300f),
     ),
 )

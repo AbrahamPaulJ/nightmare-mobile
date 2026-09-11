@@ -86,6 +86,8 @@
     <string name="remove">移除</string>
     <string name="use">使用</string>
     <string name="in_use">使用中</string>
+    <string name="rename_node">节点名称</string>
+    <string name="run_starting">正在启动…</string>
     <string name="cancel_run">取消</string>
     <string name="importing_model">正在导入 %1$s…</string>
     <string name="importing_working">正在读取压缩包</string>

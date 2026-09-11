@@ -888,18 +888,33 @@ private fun ResultCardHeader(
             // genuinely different things to send — one is a JPEG for a friend,
             // the other is a graph they can run — and collapsing them into one
             // control would make the app choose which the user meant.
+            // ⚠⚠ **The glyphs swapped, 2026-09-11 at the user's request.**
+            // Sharing a flow is still sharing, so it takes the ordinary share
+            // arrow everyone already reads as "send this somewhere"; the
+            // node-graph glyph moved to OPEN, where it names the thing being
+            // opened rather than the act of sending it.
             IconButton(onClick = onShareFlow, modifier = Modifier.size(36.dp)) {
                 Icon(
-                    ShareFlowIcon,
+                    ShareIcon,
                     contentDescription = "share the flow that made it",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp),
                 )
             }
+            // ⚠ A filled button, not a bare icon: Open is the card's primary
+            // action and the one people came for. It keeps its label — the
+            // glyph joins it rather than replacing it, because an unlabelled
+            // graph icon is not self-evident.
             Button(
                 onClick = onOpenFlow,
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             ) {
+                Icon(
+                    ShareFlowIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.size(6.dp))
                 Text(
                     stringResource(R.string.open_flow),
                     style = MaterialTheme.typography.labelLarge,

@@ -108,6 +108,8 @@
     <string name="remove">Remove</string>
     <string name="use">Use</string>
     <string name="in_use">In use</string>
+    <string name="rename_node">Node name</string>
+    <string name="run_starting">starting…</string>
     <string name="cancel_run">Cancel</string>
     <string name="importing_model">Importing %1$s…</string>
     <string name="importing_working">reading the archive</string>

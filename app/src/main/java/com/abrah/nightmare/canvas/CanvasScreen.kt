@@ -201,6 +201,8 @@ fun CanvasScreen(
     onShareImage: (String) -> Unit = {},
     /** ⭐ Keep a rendered image AND the flow that made it, in Results. */
     onKeepImage: (String) -> Unit = {},
+    /** ⭐ Is this picture already kept? Drives the star's filled/outline state. */
+    isKept: (String) -> Boolean = { false },
     /** ⭐ Drop a render from the node that made it. */
     onClearOutput: (String) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -403,6 +405,7 @@ fun CanvasScreen(
         onSaveImage = onSaveImage,
         onShareImage = onShareImage,
         onKeepImage = onKeepImage,
+        isKept = isKept,
         onClearOutput = onClearOutput,
         imageFor = imageFor,
         onViewFullscreen = { id -> onEdit { s -> s.copy(editing = null, viewing = id) } },
@@ -411,6 +414,9 @@ fun CanvasScreen(
         onEditMask = onEditMask,
         onSetResolution = onSetResolution,
         onSetAspect = onSetAspect,
+        // ⚠ A pure state edit, like every other canvas change: renameNode
+        // rewires the graph and moves every id-keyed map with it.
+        onRename = { from, to -> onEdit { s -> s.renameNode(from, to) } },
         onDelete = { id -> onEdit { s -> s.removeNode(id) } },
         onDismiss = { onEdit { s -> s.closeInspector() } },
     )

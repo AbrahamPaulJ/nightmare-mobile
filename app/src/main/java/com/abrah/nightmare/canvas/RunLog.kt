@@ -408,6 +408,17 @@ fun RunLogPanel(
                     state.now != null && state.step != null && state.step.second > 0 ->
                         "${state.now}  ${state.step.first * 100 / state.step.second}%"
                     state.now != null -> "${state.now}…"
+                    // ⚠⚠ **A run that has STARTED but has no node yet is not
+                    // "done".** `now` is null both before the first node begins
+                    // and after the last one ends, and this arm read the second
+                    // meaning into both -- so pressing Run showed "done"
+                    // immediately, for as long as it took to get going. That
+                    // gap is not small: it covers `ensureBackend()`, which
+                    // launches the backend and waits for /health, 4-5 s cold.
+                    // Reported from the phone 2026-09-11.
+                    // ⚠ `totalMs` is what separates them: it is written only
+                    // when the run finishes.
+                    state.running && state.totalMs == null -> stringResource(R.string.run_starting)
                     // ⚠ Named as finished rather than left showing the last
                     // node, or a completed run reads as one still in progress.
                     else -> "done"

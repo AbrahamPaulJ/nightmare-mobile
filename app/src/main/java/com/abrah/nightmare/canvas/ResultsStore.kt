@@ -19,6 +19,20 @@ import java.io.File
 data class Result(
     val id: String,
     val savedAt: Long,
+    /**
+     * ⭐⭐ The [ImageStore] id of the picture this was kept FROM, so the star
+     * that kept it can be un-starred.
+     *
+     * ⚠⚠ A [Result] id is `"r" + currentTimeMillis`, which says nothing about
+     * which picture it holds — so nothing could answer "is this one already
+     * kept?" and the star was a one-way action. The image id IS a content
+     * address (`img_<rgb_sha>`), so it identifies the pixels rather than the
+     * moment.
+     *
+     * ⚠ Null for a result kept before this field existed. Those cannot be
+     * un-starred from the node; they are still deletable from Results.
+     */
+    val imageId: String? = null,
     /** ⚠ May be null for a result kept before its sampler had rolled. */
     val seed: String?,
     val model: String?,
@@ -84,6 +98,8 @@ class ResultsStore(private val dir: File) {
      */
     fun keep(
         bitmap: Bitmap,
+        /** ⚠ See [Result.imageId] — what makes the star a toggle. */
+        imageId: String?,
         workflow: Workflow,
         types: Map<String, NodeType>,
         seed: String?,
@@ -102,11 +118,12 @@ class ResultsStore(private val dir: File) {
         }
 
         val r = Result(
-            id, System.currentTimeMillis(), seed, model, prompt,
+            id, System.currentTimeMillis(), imageId, seed, model, prompt,
             bitmap.width, bitmap.height, batchId, batchLabel,
         )
         val json = JSONObject()
             .put("savedAt", r.savedAt)
+            .put("imageId", r.imageId ?: JSONObject.NULL)
             .put("seed", r.seed ?: JSONObject.NULL)
             .put("model", r.model ?: JSONObject.NULL)
             .put("prompt", r.prompt ?: JSONObject.NULL)
@@ -166,6 +183,7 @@ class ResultsStore(private val dir: File) {
                     Result(
                         id = id,
                         savedAt = j.optLong("savedAt", f.lastModified()),
+                        imageId = j.optString("imageId").takeIf { it.isNotBlank() && it != "null" },
                         seed = j.optString("seed").takeIf { it.isNotBlank() && it != "null" },
                         model = j.optString("model").takeIf { it.isNotBlank() && it != "null" },
                         prompt = j.optString("prompt").takeIf { it.isNotBlank() && it != "null" },

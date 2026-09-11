@@ -504,6 +504,48 @@ data class CanvasState(
     }
 
     /**
+     * ⭐⭐ Rename a node. Its id IS its name on the canvas.
+     *
+     * ⚠⚠ **An id is not a label — it is what every wire points at.** So this
+     * is not a cosmetic edit: every `inputs` [Source] naming the old id has to
+     * move with it, and so does its entry in each of the maps keyed by id
+     * (positions, sizes, previews, selection, the open inspector). Renaming the
+     * node alone would silently disconnect the graph.
+     *
+     * ⚠ Refused, unchanged, when the new name is blank, already taken, or
+     * contains [Source.SEP] — `topoSort` refuses an id with a ':' by name,
+     * because the wire format reads the tail as a port.
+     */
+    fun renameNode(from: String, to: String): CanvasState {
+        val name = to.trim()
+        if (name == from) return this
+        if (name.isEmpty() || com.abrah.nightmare.Source.SEP in name) return this
+        if (workflow.graph.byId[name] != null) return this
+        if (workflow.graph.byId[from] == null) return this
+
+        val nodes = workflow.graph.nodes.map { n ->
+            val renamed = if (n.id == from) n.copy(id = name) else n
+            // ⚠ Every wire, on every node -- not just the renamed one's own.
+            val rewired = renamed.inputs.mapValues { (_, src) ->
+                if (src.node == from) src.copy(node = name) else src
+            }
+            if (rewired == renamed.inputs) renamed else renamed.copy(inputs = rewired)
+        }
+        fun <V> Map<String, V>.moveKey(): Map<String, V> =
+            if (!containsKey(from)) this else (this - from) + (name to getValue(from))
+        return copy(
+            workflow = Workflow(
+                graph = workflow.graph.copy(nodes = nodes),
+                positions = workflow.positions.moveKey(),
+                sizes = workflow.sizes.moveKey(),
+            ),
+            previews = previews.moveKey(),
+            selection = if (from in selection) selection - from + name else selection,
+            editing = if (editing == from) name else editing,
+        )
+    }
+
+    /**
      * Delete a node.
      *
      * ⚠ Clears the selection and the inspector along with it. A sheet left open

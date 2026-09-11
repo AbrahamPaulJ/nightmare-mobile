@@ -42,6 +42,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,6 +113,8 @@ fun NodeInspector(
     onEditMask: (node: String, (com.abrah.nightmare.MaskState) -> com.abrah.nightmare.MaskState) -> Unit =
         { _, _ -> },
     onDelete: (String) -> Unit,
+    /** ⭐ Rename a node — see [NodeInspectorBody.onRename]. */
+    onRename: (from: String, to: String) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
     /** ⭐ Graph-wide, not per-node — see [NodeInspectorBody.onSetResolution]. */
     onSetResolution: (com.abrah.nightmare.Res) -> Unit = {},
@@ -123,6 +134,7 @@ fun NodeInspector(
     /** ⭐ Hand a node's picture to another app. */
     onShareImage: (String) -> Unit = {},
     onKeepImage: (String) -> Unit = {},
+    isKept: (String) -> Boolean = { false },
     onClearOutput: (String) -> Unit = {},
 ) {
     val nodeId = state.editing ?: return
@@ -149,6 +161,7 @@ fun NodeInspector(
             }
         NodeInspectorBody(
             nodeId, node, type, onSetParam, onSetParams, onEditMask, onDelete,
+            onRename = onRename,
             // ⚠ Read HERE, like `demand` above and for the same reason: the body
             // must stay a function of its arguments so the goldens can render
             // it, and this list is a cached disk scan.
@@ -168,6 +181,7 @@ fun NodeInspector(
             onShareImage = { previewId?.let(onShareImage) },
             onKeepImage = previewId?.takeIf { node.type != "image.load" }
                 ?.let { id -> { onKeepImage(id) } },
+            kept = previewId?.let(isKept) == true,
             onClearOutput = previewId?.takeIf { node.type != "image.load" }
                 ?.let { { onClearOutput(nodeId) } },
             demand = demand,
@@ -200,6 +214,12 @@ internal fun NodeInspectorBody(
     onEditMask: (node: String, (com.abrah.nightmare.MaskState) -> com.abrah.nightmare.MaskState) -> Unit =
         { _, _ -> },
     onDelete: (String) -> Unit,
+    /**
+     * ⭐ Rename a node. **Not a param write** -- the id is what every wire
+     * points at, so this goes through `CanvasState.renameNode`, which moves
+     * every wire, position, size and preview with it.
+     */
+    onRename: (from: String, to: String) -> Unit = { _, _ -> },
     /**
      * ⭐⭐ The sizes the selected model can actually render, for the size chips
      * on a context-key node.
@@ -239,6 +259,8 @@ internal fun NodeInspectorBody(
     /** ⭐ Hand this node's picture to another app. */
     onShareImage: () -> Unit = {},
     onKeepImage: (() -> Unit)? = null,
+    /** ⚠ Filled star when true. The action toggles, so the icon must say which way. */
+    kept: Boolean = false,
     onClearOutput: (() -> Unit)? = null,
     /**
      * What the graph demands of this node's output, for a node whose size is
@@ -261,6 +283,9 @@ internal fun NodeInspectorBody(
     // ⚠ Local: an unanswered confirm is not something to persist, same as every
     // other one in the app.
     var confirmingDelete by remember { mutableStateOf(false) }
+    // ⚠ Null when not renaming. Keyed on the node so opening another node's
+    // sheet cannot leave a half-typed name from the last one behind.
+    var renaming by remember(nodeId) { mutableStateOf<TextFieldValue?>(null) }
 
     Column(
         Modifier
@@ -276,12 +301,62 @@ internal fun NodeInspectorBody(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            Text(nodeId, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-            Text(
-                node.type,
-                style = LogTextStyle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // ⭐⭐ **Double-tap the name to rename the node.**
+            //
+            // ⚠ A node's id is its title on the canvas, and it was fixed at
+            // creation: `freeId` hands out `upscale`, `upscale2`, so a graph of
+            // six nodes read as a list of TYPES rather than of steps. Asked for
+            // from the phone 2026-09-11.
+            //
+            // ⚠⚠ The whole name is SELECTED when the field opens, so the first
+            // keystroke replaces it -- renaming `clip_encode` to `prompt` should
+            // not begin with deleting eleven characters. That is what the
+            // `TextRange(0, length)` does.
+            //
+            // ⚠ DOUBLE tap, not single: the title sits above a sheet people
+            // scroll, and a rename opening on a stray touch would put a keyboard
+            // over the knobs they were reaching for.
+            val editingName = renaming
+            if (editingName == null) {
+                Text(
+                    nodeId,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 20.sp,
+                    modifier = Modifier.pointerInput(nodeId) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                renaming = TextFieldValue(nodeId, TextRange(0, nodeId.length))
+                            }
+                        )
+                    },
+                )
+                Text(
+                    node.type,
+                    style = LogTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                val focus = remember { FocusRequester() }
+                // ⚠ Requested once the field EXISTS. Asking before it is
+                // composed does nothing, and the user gets a selected field with
+                // no keyboard.
+                LaunchedEffect(Unit) { focus.requestFocus() }
+                OutlinedTextField(
+                    value = editingName,
+                    onValueChange = { renaming = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.rename_node)) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    // ⚠⚠ Commit through [onRename], never as a param write: the
+                    // id is what every wire points at, so renaming the node
+                    // alone would disconnect the graph.
+                    keyboardActions = KeyboardActions(onDone = {
+                        onRename(nodeId, editingName.text)
+                        renaming = null
+                    }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                )
+            }
         }
 
         // ⭐⭐ The crop node's real interface. Its four params are the rectangle;
@@ -358,6 +433,8 @@ internal fun NodeInspectorBody(
         // ⚠ Which knob's batch popup is open, or null. Local: an unanswered
         // popup is not something to persist.
         var batching by remember(nodeId) { mutableStateOf<Widget?>(null) }
+        // ⚠ Null when not renaming. Keyed on the node so opening another
+        // node's sheet cannot leave a half-typed name from the last one.
 
         val widgets = type?.widgets.orEmpty()
         // ⚠ Only when there is a frame to explain: on a `crop` with no input
@@ -421,8 +498,19 @@ internal fun NodeInspectorBody(
                     IconButton(onClick = keep) {
                         Icon(
                             Icons.Filled.Star,
-                            contentDescription = "keep this and its flow",
-                            tint = MaterialTheme.colorScheme.primary,
+                            contentDescription =
+                                if (kept) "stop keeping this" else "keep this and its flow",
+                            // ⚠⚠ The TINT carries the state, because the action is
+                            // a TOGGLE now and a star that looked the same
+                            // before and after gave no clue that a second tap
+                            // would undo it -- or that the first had done
+                            // anything.
+                            // ⚠ Tint rather than an outline glyph: `StarBorder`
+                            // lives in material-icons-EXTENDED, and pulling that
+                            // artifact in for one outline is several MB of icons
+                            // nothing else would use.
+                            tint = if (kept) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

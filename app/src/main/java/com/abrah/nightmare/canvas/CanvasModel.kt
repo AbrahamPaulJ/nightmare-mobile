@@ -86,6 +86,21 @@ object Sizes {
     const val PORT_HIT_RADIUS = 26f
 
     /**
+     * ⭐ Prose in a node body — see [NodeBox.Prose].
+     *
+     * ⚠ [PROSE_CHAR_WIDTH] is an APPROXIMATION of one monospace character at
+     * the drawn size, used only to guess how many lines the text will take.
+     * `layout()` is Compose-free and unit-tested, so it cannot measure; the
+     * renderer clips to whatever this predicts, which makes an under-estimate
+     * an ellipsis rather than an overflow.
+     */
+    const val PROSE_CHAR_WIDTH = 6.2f
+    const val PROSE_LINE_HEIGHT = 15f
+
+    /** ⚠ A cap, so one pasted paragraph cannot make a node taller than the canvas. */
+    const val PROSE_MAX_LINES = 6
+
+    /**
      * ⚠ Smaller than a port's, deliberately. A wire passes THROUGH the space
      * around a node, so a fat hit radius would swallow taps meant for the node
      * behind it — and a wire is tested after nodes for the same reason.
@@ -133,9 +148,19 @@ data class NodeBox(
      * being squeezed into the node.
      */
     val preview: Preview? = null,
+    /** ⭐ Text drawn in the body — a prompt node's prompts. Null for every other node. */
+    val prose: Prose? = null,
 ) {
     /** The area a preview occupies, and the drag target that resizes it. */
     data class Preview(val imageId: String, val height: Float)
+
+    /**
+     * The text a node shows in its body, as (field name, value) pairs.
+     *
+     * ⚠ [height] is computed from a LINE COUNT rather than measured — see
+     * [layout]. The renderer clips to it.
+     */
+    data class Prose(val fields: List<Pair<String, String>>, val height: Float)
 
     /** ⚠ Bottom-right, and hit BEFORE the body so a resize is not read as a drag. */
     val resizeCorner get() = Pt(right, bottom)
@@ -144,6 +169,10 @@ data class NodeBox(
         kotlin.math.hypot(p.x - right, p.y - bottom) <= Sizes.RESIZE_HIT
 
     val previewTop get() = bottom - (preview?.height ?: 0f) - Sizes.BODY_PADDING
+
+    /** ⚠ Above the picture when a node somehow has both; today nothing does. */
+    val proseTop get() = previewTop - (prose?.height ?: 0f) -
+        (if (prose != null) Sizes.BODY_PADDING else 0f)
 
     val right get() = topLeft.x + width
     val bottom get() = topLeft.y + height
@@ -339,14 +368,49 @@ fun layout(
         val preview = shown?.let { (id, aspect) ->
             NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))
         }
+        // ⭐⭐ **Prose in the body**, for a node whose whole content is text.
+        //
+        // ⚠⚠ A prompt node had nothing to show: its ports carry a
+        // conditioning, so the canvas drew a box with one output and a name,
+        // and the only way to see what it SAID was to open the inspector. Asked
+        // for from the phone 2026-09-11 ("see both prompts on it").
+        //
+        // ⚠ It uses the SAME mechanism a picture does -- a body block that
+        // adds height -- rather than a new one. That is also why this does not
+        // break the deferral in `docs/ROADMAP.md` §"Batch results INSIDE the
+        // node": that one needs N TAPPABLE thumbnails, and hit-testing against
+        // the viewport transform is the hard part. Text is drawn and never hit,
+        // so it needs none of it.
+        //
+        // ⚠ The height is counted in LINES here, not measured: this function is
+        // Compose-free and unit-tested, and a `TextMeasurer` is neither. The
+        // renderer clips to what it is given, so a long prompt ends in an
+        // ellipsis rather than overflowing the node.
+        val prose = type?.prose
+            ?.mapNotNull { field -> n.params[field]?.takeIf { it.isNotBlank() }?.let { field to it } }
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { fields ->
+                // ⚠ Wrapped against the node's own width at the drawn font size,
+                // so a WIDER node genuinely shows more -- which is what makes
+                // dragging the resize corner the way to "make it bigger".
+                val perLine = (previewWidth / Sizes.PROSE_CHAR_WIDTH).toInt().coerceAtLeast(8)
+                val lines = fields.sumOf { (_, v) ->
+                    // ⚠ +1 for the field's own caption line.
+                    1 + ((v.length + perLine - 1) / perLine).coerceIn(1, Sizes.PROSE_MAX_LINES)
+                }
+                NodeBox.Prose(fields, lines * Sizes.PROSE_LINE_HEIGHT)
+            }
         NodeBox(
             id = n.id,
             type = type,
             node = n,
             topLeft = pos,
             width = width,
-            height = ports + (preview?.let { it.height + Sizes.BODY_PADDING } ?: 0f),
+            height = ports +
+                (preview?.let { it.height + Sizes.BODY_PADDING } ?: 0f) +
+                (prose?.let { it.height + Sizes.BODY_PADDING } ?: 0f),
             preview = preview,
+            prose = prose,
         )
     }
 

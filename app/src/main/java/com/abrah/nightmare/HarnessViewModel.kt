@@ -1507,6 +1507,45 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * flow that makes the seed-1 one. The stored flow is the whole reason
      * Results is more than a gallery.
      */
+    /**
+     * ⭐⭐ Is this picture already kept? Drives the star's filled/outline state.
+     *
+     * ⚠ Matched on [Result.imageId], a content address, so the SAME pixels
+     * re-rendered from a cache still read as kept.
+     */
+    fun isKept(imageId: String): Boolean = kept.any { it.imageId == imageId }
+
+    /**
+     * ⭐⭐ Star, or UN-star. A second tap removes what the first kept.
+     *
+     * ⚠⚠ The star was one-way: tapping it again filed a SECOND copy of the
+     * same picture, so a mis-tap could only be undone by going to Results and
+     * deleting it. Asked for from the phone, 2026-09-11.
+     *
+     * ⚠ Removes every result naming this image, not just the first — a
+     * duplicate kept before this existed should not survive the un-star and
+     * leave the state looking unchanged.
+     */
+    fun toggleKeepResult(
+        imageId: String,
+        flow: com.abrah.nightmare.canvas.Workflow? = null,
+        batchId: String? = null,
+        batchLabel: String = "",
+    ) {
+        val existing = kept.filter { it.imageId == imageId }
+        if (existing.isEmpty()) {
+            keepResult(imageId, flow, batchId, batchLabel)
+            return
+        }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            existing.forEach { runCatching { results.delete(it.id) } }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                say("un-starred")
+                refreshResults()
+            }
+        }
+    }
+
     fun keepResult(
         imageId: String,
         flow: com.abrah.nightmare.canvas.Workflow? = null,
@@ -1530,7 +1569,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val r = runCatching {
                 results.keep(
-                    bmp, workflow, types, seed, SelectedModel.spec.label, prompt,
+                    bmp, imageId, workflow, types, seed, SelectedModel.spec.label, prompt,
                     batchId, batchLabel,
                 )
             }

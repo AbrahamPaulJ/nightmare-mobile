@@ -86,6 +86,8 @@
     <string name="remove">Убрать</string>
     <string name="use">Выбрать</string>
     <string name="in_use">Используется</string>
+    <string name="rename_node">Имя узла</string>
+    <string name="run_starting">запуск…</string>
     <string name="cancel_run">Отмена</string>
     <string name="importing_model">Импорт %1$s…</string>
     <string name="importing_working">чтение архива</string>

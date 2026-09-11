@@ -423,6 +423,53 @@ private fun DrawScope.drawNode(
         drawText(subtitle, topLeft = Offset(tl.x + inset, tl.y + pad + title.size.height))
     }
 
+    // ⭐⭐ The node's own text, drawn in its body.
+    //
+    // ⚠ Display only -- never hit-tested. That is what makes this cheap where
+    // the batch thumbnail strip is not (`docs/ROADMAP.md`): a tappable body
+    // needs hit-testing against the same viewport transform the pan/zoom uses,
+    // and text needs none of it. Editing stays in the inspector.
+    box.prose?.let { prose ->
+        var y = viewport.toScreen(Pt(box.topLeft.x, box.proseTop)).y
+        val bodyW = (w - 2 * Sizes.BODY_PADDING * viewport.scale)
+            .toInt().coerceAtLeast(1)
+        for ((field, value) in prose.fields) {
+            // ⚠ The field's own caption, so `prompt` and `negative` are told
+            // apart. Without it two blocks of text sit under each other with
+            // nothing saying which is which -- and the negative reads as a
+            // continuation of the prompt.
+            val cap = measurer.measure(
+                field,
+                TextStyle(
+                    color = CanvasColors.label,
+                    fontSize = (9f * textZoom).sp,
+                    fontFamily = FontFamily.Monospace,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                constraints = Constraints(maxWidth = bodyW),
+            )
+            drawText(cap, topLeft = Offset(tl.x + inset, y))
+            y += cap.size.height
+            // ⚠⚠ A POSITIVE constraint, always -- the `maxWidth(-40)` crash
+            // that took a golden out on 2026-09-08 came from letting drawText
+            // derive its own near the canvas edge.
+            val body = measurer.measure(
+                value,
+                TextStyle(
+                    color = CanvasColors.title,
+                    fontSize = (10f * textZoom).sp,
+                    fontFamily = FontFamily.Monospace,
+                ),
+                maxLines = Sizes.PROSE_MAX_LINES,
+                overflow = TextOverflow.Ellipsis,
+                constraints = Constraints(maxWidth = bodyW),
+            )
+            drawText(body, topLeft = Offset(tl.x + inset, y))
+            y += body.size.height + Sizes.BODY_PADDING * viewport.scale * 0.5f
+        }
+    }
+
     // ⚠ A port name is dropped only when two of them would collide: the rows
     // are PORT_SPACING apart in world units, and at a low enough zoom a floored
     // font is taller than that gap.

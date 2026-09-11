@@ -37,7 +37,7 @@ class ResultsStoreTest {
     @Test
     fun aKeptResultGivesBackItsFlow() {
         val s = store()
-        val r = s.keep(bitmap(), defaultWorkflow(), NODE_TYPES, "12345", "AbsoluteReality", "a cat")
+        val r = s.keep(bitmap(), "img_test", defaultWorkflow(), NODE_TYPES, "12345", "AbsoluteReality", "a cat")
         assertEquals("12345", r.seed)
         assertEquals("a cat", r.prompt)
 
@@ -59,9 +59,9 @@ class ResultsStoreTest {
     fun listingIsNewestFirstAndSurvivesRestart() {
         val dir = tmp.newFolder()
         ResultsStore(dir).also {
-            it.keep(bitmap(), defaultWorkflow(), NODE_TYPES, "1", "m", "first")
+            it.keep(bitmap(), "img_test", defaultWorkflow(), NODE_TYPES, "1", "m", "first")
             Thread.sleep(5)
-            it.keep(bitmap(), defaultWorkflow(), NODE_TYPES, "2", "m", "second")
+            it.keep(bitmap(), "img_test", defaultWorkflow(), NODE_TYPES, "2", "m", "second")
         }
         // ⚠ A NEW store over the same directory: nothing may live only in memory.
         val all = ResultsStore(dir).all()
@@ -74,7 +74,7 @@ class ResultsStoreTest {
     fun aResultWithNoImageIsNotListed() {
         val dir = tmp.newFolder()
         val s = ResultsStore(dir)
-        val r = s.keep(bitmap(), defaultWorkflow(), NODE_TYPES, "1", "m", "p")
+        val r = s.keep(bitmap(), "img_test", defaultWorkflow(), NODE_TYPES, "1", "m", "p")
         assertTrue(s.imageFile(r.id).delete())
         assertTrue("a result with no picture must not be listed", s.all().isEmpty())
     }
@@ -84,7 +84,7 @@ class ResultsStoreTest {
     fun brokenMetadataIsSkippedRatherThanThrowing() {
         val dir = tmp.newFolder()
         val s = ResultsStore(dir)
-        s.keep(bitmap(), defaultWorkflow(), NODE_TYPES, "1", "m", "good")
+        s.keep(bitmap(), "img_test", defaultWorkflow(), NODE_TYPES, "1", "m", "good")
         java.io.File(dir, "rbroken.json").writeText("{ not json")
         java.io.File(dir, "rbroken.png").writeText("not a png")
         val all = s.all()
@@ -95,7 +95,7 @@ class ResultsStoreTest {
     @Test
     fun forgettingRemovesBothHalves() {
         val s = store()
-        val r = s.keep(bitmap(), defaultWorkflow(), NODE_TYPES, "1", "m", "p")
+        val r = s.keep(bitmap(), "img_test", defaultWorkflow(), NODE_TYPES, "1", "m", "p")
         s.delete(r.id)
         assertTrue(s.all().isEmpty())
         assertNull(s.flow(r.id))
@@ -117,7 +117,7 @@ class ResultsStoreTest {
     fun theStoredFlowIsKilobytes() {
         val dir = tmp.newFolder()
         val s = ResultsStore(dir)
-        val r = s.keep(bitmap(512, 512), defaultWorkflow(), NODE_TYPES, "1", "m", "p")
+        val r = s.keep(bitmap(512, 512), "img_test", defaultWorkflow(), NODE_TYPES, "1", "m", "p")
         val meta = java.io.File(dir, "${r.id}.json").length()
         assertTrue("metadata was $meta bytes, expected a few KB", meta in 1..8_000)
     }
@@ -126,7 +126,7 @@ class ResultsStoreTest {
     @Test
     fun thumbnailsAreSmallerThanTheOriginal() {
         val s = store()
-        val r = s.keep(bitmap(1024, 1024), defaultWorkflow(), NODE_TYPES, "1", "m", "p")
+        val r = s.keep(bitmap(1024, 1024), "img_test", defaultWorkflow(), NODE_TYPES, "1", "m", "p")
         val thumb = s.thumbnail(r.id, maxEdge = 128)
         assertNotNull(thumb)
         assertTrue("thumb was ${thumb!!.width}px", thumb.width <= 256)

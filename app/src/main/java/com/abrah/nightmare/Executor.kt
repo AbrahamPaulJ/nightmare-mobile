@@ -313,6 +313,19 @@ interface NodeType {
     val sizedByConsumer: Boolean get() = false
 
     /**
+     * ⭐⭐ Param names whose VALUES this node shows in its body on the canvas.
+     *
+     * ⚠ For a node whose whole content is text. A prompt node's ports carry a
+     * conditioning, so without this the canvas can only draw a box with a name
+     * and the only way to see what it says is to open the inspector.
+     *
+     * ⚠ Declared by the TYPE rather than matched by name, so a plugin node that
+     * holds prose gets the same treatment and one that merely has a `prompt`
+     * param does not.
+     */
+    val prose: List<String> get() = emptyList()
+
+    /**
      * The params as the node will actually be run with, defaults filled in.
      *
      * ⚠⚠ The CACHE KEY is computed from this, not from what the user typed. A
@@ -910,6 +923,10 @@ object LoadImageNode : NodeType {
  * canvas can SHOW conditioning as a wire, not that it saves time.
  */
 object TextEncodeNode : NodeType {
+    // ⚠ Both prompts, in the order they are read. The negative is second
+    // because it is the one people check rather than compose.
+    override val prose = listOf("prompt", "negative")
+
     /** ⚠ Reaches the backend, so never run for a preview. [NodeType.appSide]. */
     override val appSide = false
     override val name = "sd.clip_encode"
