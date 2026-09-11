@@ -82,11 +82,12 @@
     <string name="community_experimental">Experimental. The plugin format can still change between versions, and there is no validation gate on an imported pack yet, so import packs the way you would run any other code you did not write.</string>
 
     <!-- Flows. -->
-    <string name="flows_import">Import</string>
-    <string name="flows_import_note">a flow someone sent you (.json), or a pack of nodes (.zip)</string>
-    <string name="flows_import_flow">Flow</string>
-    <string name="flows_import_pack">Nodes</string>
-    <string name="flows_import_warning">⚠ a pack runs its own code — import ones you trust</string>
+    <string name="flows_import">Import a flow</string>
+    <string name="flows_import_note">A .json flow someone shared. It opens on the canvas.</string>
+    <string name="flows_import_flow">Import</string>
+    <string name="flows_import_pack">Import a node pack</string>
+    <string name="pack_import_note">A .zip of JavaScript nodes. They appear in the palette beside the built-ins.</string>
+    <string name="flows_import_warning">⚠ A pack runs its own code. Import only ones you trust.</string>
     <string name="flows_recommended">Recommended</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>

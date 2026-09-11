@@ -382,43 +382,19 @@ private fun ImportCard(busy: Boolean, onImport: (String) -> Unit) {
     var naming by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
 
-    // ⚠⚠ Deliberately NOT the same surface as a model row. This card is an
-    // ACTION sitting in a list of things; drawn identically it reads as a
-    // sixteenth checkpoint called "Import a checkpoint", which is exactly how it
-    // went unnoticed at the bottom. The outline and the tinted ground say "this
-    // one is different" without shouting.
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "Import a checkpoint",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    // ⚠ Says what the app CANNOT do, because the alternative is
-                    // a user picking a `.safetensors` and reading "not a
-                    // checkpoint" without knowing why. Conversion is a PC step
-                    // and there is no runtime compiler on the NPU.
-                    "A zip of QNN model files, converted on a PC. " +
-                        "SD 1.5 or SDXL — it works out which.",
-                    style = LogTextStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Button(onClick = { name = ""; naming = true }, enabled = !busy) { Text("Import") }
-        }
-    }
+    // ⚠ [ImportCallout] owns the look; this file owns the naming dialog that
+    // follows. The three importers in the app share one card shape.
+    ImportCallout(
+        title = "Import a checkpoint",
+        body =
+            // ⚠ Says what the app CANNOT do, because the alternative is a user
+            // picking a `.safetensors` and reading "not a checkpoint" without
+            // knowing why. Conversion is a PC step and there is no runtime
+            // compiler on the NPU.
+            "A zip of QNN model files, converted on a PC. SD 1.5 or SDXL — it works out which.",
+        enabled = !busy,
+        onImport = { name = ""; naming = true },
+    )
 
     if (naming) {
         val trimmed = name.trim()

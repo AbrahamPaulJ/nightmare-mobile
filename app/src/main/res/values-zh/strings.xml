@@ -64,7 +64,7 @@
 
     <string name="flows_import">导入</string>
     <string name="flows_import_note">别人发给你的流程（.json），或一个节点包（.zip）</string>
-    <string name="flows_import_flow">流程</string>
+    <string name="flows_import_flow">导入</string>
     <string name="flows_import_pack">节点</string>
     <string name="flows_import_warning">⚠ 节点包会运行自己的代码 — 请只导入你信任的包</string>
     <string name="flows_recommended">推荐</string>

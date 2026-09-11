@@ -199,24 +199,23 @@ fun WorkflowsScreen(
             // person visits to run something.
             if (onImportFlow != null) {
                 item {
-                    Card(Modifier.fillMaxWidth()) {
-                        Column(
-                            Modifier.fillMaxWidth().padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(stringResource(R.string.flows_import), style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                stringResource(R.string.flows_import_note),
-                                style = LogTextStyle,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                onImportFlow?.let {
-                                    OutlinedButton(onClick = it) { Text(stringResource(R.string.flows_import_flow)) }
-                                }
-                            }
-                        }
-                    }
+                    // ⚠⚠ **Flows only.** Importing a NODE PACK moved to Settings,
+                    // at the user's call 2026-09-11: a flow is inert data that
+                    // the app can refuse to open, where a pack is CODE with no
+                    // validation gate yet (`docs/ARCHITECTURE.md` §8c). Two
+                    // actions that differ that much in consequence do not belong
+                    // on one card, and this tab is the one a person visits to
+                    // run something.
+                    // ⚠ [ImportCallout] is the SAME card Models and Settings
+                    // draw. It used to be a plain card with two bare buttons
+                    // labelled "Flow" and "Nodes" — labels that only parsed
+                    // while they sat side by side.
+                    ImportCallout(
+                        title = stringResource(R.string.flows_import),
+                        body = stringResource(R.string.flows_import_note),
+                        buttonLabel = stringResource(R.string.flows_import_flow),
+                        onImport = onImportFlow,
+                    )
                 }
             }
         }

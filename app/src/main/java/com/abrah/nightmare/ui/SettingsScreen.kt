@@ -190,25 +190,18 @@ private fun CommunityPage(onImportPack: (() -> Unit)? = null) {
         // (`docs/ARCHITECTURE.md` §8c). Until the validation gate exists, the
         // honest place to say so is where the tap happens.
         onImportPack?.let { importPack ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(
-                    Modifier.fillMaxWidth().padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        stringResource(R.string.flows_import_pack),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        stringResource(R.string.flows_import_warning),
-                        style = LogTextStyle,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    OutlinedButton(onClick = importPack) {
-                        Text(stringResource(R.string.flows_import_pack))
-                    }
-                }
-            }
+            // ⚠⚠ The warning is not a footnote. A pack is code: the QuickJS
+            // sandbox stops it reaching the network or the disk, and nothing
+            // stops it looping forever or allocating until the app dies
+            // (`docs/ARCHITECTURE.md` §8c). Until the validation gate exists,
+            // the honest place to say so is where the tap happens.
+            // ⚠ [ImportCallout] is the SAME card Models and Flows draw.
+            ImportCallout(
+                title = stringResource(R.string.flows_import_pack),
+                body = stringResource(R.string.pack_import_note),
+                warning = stringResource(R.string.flows_import_warning),
+                onImport = importPack,
+            )
         }
         Section(R.string.community_files_title, R.string.community_files_body)
         // ⚠ The op table is the reference an author actually keeps coming back

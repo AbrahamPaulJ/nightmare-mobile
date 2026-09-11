@@ -898,14 +898,62 @@ internal fun NodeInspectorBody(
             // editing another knob does not drag the keyboard back up.
             val wanted = w.name == focusField
             val fieldFocus = remember(w.name) { FocusRequester() }
+            val current = node.params[w.name] ?: w.default.orEmpty()
+            // ⭐⭐ **The cursor starts at the END of the text, not the start.**
+            //
+            // ⚠⚠ A plain `String` value carries no selection, so focusing one
+            // puts the caret at offset 0 — tap a prompt on the canvas and you
+            // are typing in FRONT of what is already there, which is never what
+            // anyone means. Reported from the phone, 2026-09-11.
+            //
+            // ⚠ A [TextFieldValue] is the only way to say where the caret goes,
+            // and it is used ONLY for the field being focused: every other field
+            // here stays a plain String, because a locally-held TextFieldValue
+            // stops reflecting a param written from outside (the image picker
+            // sets `uri`, a model switch rewrites `steps`).
+            val seeded = remember(nodeId, w.name) {
+                mutableStateOf(TextFieldValue(current, TextRange(current.length)))
+            }
             if (wanted) {
                 LaunchedEffect(nodeId, w.name) { fieldFocus.requestFocus() }
             }
+            if (wanted) {
+                OutlinedTextField(
+                    value = seeded.value,
+                    onValueChange = { v ->
+                        seeded.value = v
+                        if (why == null) {
+                            onSetParam(
+                                nodeId, w.name,
+                                if (v.text.isBlank() && w.numeric) w.default.orEmpty() else v.text,
+                            )
+                        }
+                    },
+                    readOnly = why != null,
+                    enabled = why == null,
+                    label = { Text(if (why != null) "${w.name}  (locked)" else w.name) },
+                    supportingText = {
+                        Text(
+                            why ?: w.hint.orEmpty(),
+                            style = LogTextStyle,
+                            color = if (why != null) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    singleLine = !isProse,
+                    minLines = if (isProse) 3 else 1,
+                    maxLines = if (isProse) 8 else 1,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (w.numeric) KeyboardType.Number else KeyboardType.Text,
+                    ),
+                    modifier = Modifier.fillMaxWidth().focusRequester(fieldFocus),
+                )
+            } else {
             OutlinedTextField(
                 // ⚠ The manifest default when the graph carries nothing, so
                 // the field shows what the node will actually RUN with
                 // rather than an empty box that means "0.5".
-                value = node.params[w.name] ?: w.default.orEmpty(),
+                value = current,
                 onValueChange = {
                     // ⚠⚠ An emptied NUMERIC field writes its default rather
                     // than "", because "" is not a number: `seed` blank made
@@ -950,10 +998,9 @@ internal fun NodeInspectorBody(
                 keyboardOptions = KeyboardOptions(
                     keyboardType = if (w.numeric) KeyboardType.Number else KeyboardType.Text,
                 ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(if (wanted) Modifier.focusRequester(fieldFocus) else Modifier),
+                modifier = Modifier.fillMaxWidth(),
             )
+            }
             }
             if (batchable) {
                 BatchToggle(
