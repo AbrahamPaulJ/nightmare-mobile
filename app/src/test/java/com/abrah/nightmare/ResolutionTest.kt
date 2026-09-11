@@ -136,6 +136,40 @@ class ResolutionTest {
         }
     }
 
+    /**
+     * ⚠⚠ **A stale `aspect` on an SD 1.5 node must be IGNORED, not obeyed.**
+     *
+     * Reported from the phone, 2026-09-11: a decode came back **432x768** —
+     * 768 with a 9:16 left over from an SDXL session applied to it. The backend
+     * only reads `aspect_ratio` for `sdxl`/`anima`, so it had rendered a full
+     * frame while the app cropped it anyway; the picture was a crop of
+     * something nothing had padded.
+     *
+     * ⚠ The param is deliberately still THERE — `applyDefaults` keeps undeclared
+     * params, which is what restores the user's choice if they switch back. The
+     * fix is at the point of use.
+     */
+    @Test
+    fun aStaleAspectIsIgnoredOnAFixedSizeFamily() {
+        val sd15 = Node(
+            "s", "sd.sample",
+            mapOf("model" to V1_MODEL, "width" to "768", "height" to "768", "aspect" to "9:16"),
+        )
+        assertNull("SD 1.5 must ignore a leftover aspect", nodeAspect(sd15))
+
+        // ⭐ …and a fixed-canvas family must still honour it, or the guard has
+        // simply broken the feature instead of scoping it.
+        val xl = ModelCatalog.all.first { it.family == Family.SDXL }
+        val sdxl = Node(
+            "s", "sd.sample",
+            mapOf("model" to xl.id, "width" to "1024", "height" to "1024", "aspect" to "9:16"),
+        )
+        assertEquals("9:16", nodeAspect(sdxl))
+
+        // ⚠ An unknown model names no family, so it acts on nothing.
+        assertNull(nodeAspect(Node("s", "sd.sample", mapOf("model" to "gone", "aspect" to "9:16"))))
+    }
+
     // ---- the context key -------------------------------------------------
 
     /**

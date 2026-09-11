@@ -412,6 +412,29 @@ fun aspectRetarget(
     return out
 }
 
+/**
+ * ⭐⭐ The `aspect` this node should actually act on, or **null**.
+ *
+ * ⚠⚠ **A leftover `aspect` param is normal and must be ignored, not obeyed.**
+ * The chip is only DECLARED by a fixed-canvas family ([aspectWidget]), but a
+ * param already written stays in `node.params` when the graph is retargeted to
+ * SD 1.5 — that is `applyDefaults`' rule, and it is right, because switching
+ * back should restore the user's choice. What was wrong was ACTING on it:
+ * `RequestParser.hpp` only reads `aspect_ratio` for `sdxl`/`anima`, so on SD 1.5
+ * the backend rendered a full frame while the app cropped it anyway. Reported
+ * from the phone 2026-09-11 as a decode of **432x768** — 768 with a stale 9:16
+ * applied to it.
+ *
+ * ⚠ Keyed on the node's OWN `model`, never [SelectedModel]: the graph is
+ * authoritative (`docs/MODELS.md` §4), and this must agree with what the
+ * SAMPLER sent for the same node.
+ */
+fun nodeAspect(node: Node): String? {
+    val spec = ModelCatalog.byId(node.params["model"].orEmpty()) ?: return null
+    if (!spec.fixedCanvas) return null
+    return node.params["aspect"]
+}
+
 fun backendContextKey(node: Node) = ContextKey(
     ModelCatalog.backendTypeOf(node.str("model")),
     node.str("model"),
@@ -677,7 +700,7 @@ object SampleNode : NodeType {
             // malformed) resolves to null, which is exactly what the backend
             // does with equal terms -- so the two agree on "no aspect" without
             // the app having to know that.
-            aspect = node.params["aspect"]
+            aspect = nodeAspect(node)
                 ?.takeIf { ModelCatalog.aspectTarget(it, Res(node.int("width"), node.int("height"))) != null },
             // ⚠ No previews from the executor yet. They cost a VAE decode per
             // stride (measured by the `preview` op), so turning them on is a
@@ -751,7 +774,7 @@ object VaeDecodeNode : NodeType {
                 val full = ctx.images.decode(r.value.png)
                     ?: throw OpFailure("vae_decode", 200,
                         "returned ${r.value.png.size} B that would not decode as an image")
-                val target = node.params["aspect"]
+                val target = nodeAspect(node)
                     ?.let { ModelCatalog.aspectTarget(it, Res(w, h)) }
                 if (target == null || (target.width == full.width && target.height == full.height)) {
                     // ⭐ The backend already hashed these pixels, so its rgb_sha
@@ -767,7 +790,7 @@ object VaeDecodeNode : NodeType {
                 // that comment warns about.
                 if (target.width > full.width || target.height > full.height) {
                     throw OpFailure("vae_decode", 200,
-                        "aspect ${node.params["aspect"]} wants ${target.width}x${target.height} " +
+                        "aspect ${nodeAspect(node)} wants ${target.width}x${target.height} " +
                             "out of a ${full.width}x${full.height} canvas")
                 }
                 val cropped = cropCenter(full, target.width, target.height)
