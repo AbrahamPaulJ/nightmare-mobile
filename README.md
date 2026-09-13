@@ -20,6 +20,10 @@ pick one in the app and it downloads on first use.
 Stable Diffusion 1.5 and SDXL run locally on a Snapdragon NPU, offline. You draw a graph,
 press Run, and the picture appears on the node that made it. Everything stays on the phone.
 
+If it is useful to you, you can
+[buy me a coffee](https://buymeacoffee.com/abrahampaulj). Entirely optional — the app is free,
+works offline, and asks for nothing.
+
 ⚠ **Video is narrower than pictures.** It needs a Snapdragon 8 Elite or newer (Hexagon v79
 and up) and an 8.6 GB download. The app decides by *running* a small real model on your chip
 rather than by checking its name, so it will tell you before you spend the bytes.
@@ -187,3 +191,11 @@ Full text in [LICENSE](LICENSE); attribution and third party components in [NOTI
 
 The Qualcomm AI Runtime libraries the app needs at runtime are covered by Qualcomm's own
 terms, which this licence does not override. They are not in this repository.
+
+## Support
+
+[buymeacoffee.com/abrahampaulj](https://buymeacoffee.com/abrahampaulj)
+
+Tips are welcome and change nothing: the app stays free, offline and CC BY-NC, and nothing is
+gated behind them. A donation is not a purchase of the software and does not grant commercial
+rights the licence withholds.
