@@ -50,6 +50,21 @@ data class Result(
     val batchId: String? = null,
     /** ⭐ What made this item different, e.g. `cfg 7.5`. Empty when it is alone. */
     val batchLabel: String = "",
+    /**
+     * ⭐⭐ The kept CLIP, when this result came from a video graph — and null
+     * for every picture.
+     *
+     * ⚠⚠ A COPY in the results directory, not the path the graph produced.
+     * That one is in `cacheDir/video/`, which Android clears whenever it wants
+     * to, so a starred clip would play until the first time the phone got
+     * short of space and then silently be a still. The PNG beside it is kept
+     * for exactly the same reason.
+     *
+     * ⚠ The PNG is still written and is still the poster: the card in the tab
+     * is a grid of thumbnails, and decoding a frame out of an MP4 to draw one
+     * would be work for a picture that already exists.
+     */
+    val videoPath: String? = null,
 ) {
     val label: String get() = prompt?.take(60)?.ifBlank { null } ?: "no prompt"
 }
@@ -84,7 +99,20 @@ class ResultsStore(private val dir: File) {
     private fun png(id: String) = File(dir, "$id.png")
     private fun meta(id: String) = File(dir, "$id.json")
 
+    /** ⚠ See [Result.videoPath] — absent for every picture result. */
+    private fun mp4(id: String) = File(dir, "$id.mp4")
+
     fun imageFile(id: String): File = png(id)
+
+    /**
+     * ⭐ The kept CLIP, or null when this result is an ordinary picture.
+     *
+     * ⚠⚠ One `stat`, and the same answer [all] derives. Reading it out of
+     * [all] instead costs a directory scan and a JSON parse per result, which
+     * a caller in a loop over a selection pays once per item — and the file is
+     * the fact here, exactly as [Result.videoPath] says.
+     */
+    fun clipFile(id: String): File? = mp4(id).takeIf { it.isFile }
 
     /**
      * Keeps [bitmap] and the graph that made it.
@@ -108,6 +136,16 @@ class ResultsStore(private val dir: File) {
         /** ⭐ Non-null when this is one item of a sweep. See [Result.batchId]. */
         batchId: String? = null,
         batchLabel: String = "",
+        /**
+         * ⭐ The MP4 this result was made from, copied in beside the PNG.
+         *
+         * ⚠ ~1-2 MB for a 2 s clip against ~2.6 MB for the picture beside it,
+         * so keeping it costs about what keeping the still already did. ⚠ A
+         * copy that FAILS does not fail the keep: a result with a poster and a
+         * flow is still worth having, and a clip is the one part of it the
+         * gallery may already hold.
+         */
+        video: File? = null,
     ): Result {
         dir.mkdirs()
         val id = "r" + System.currentTimeMillis()
@@ -117,9 +155,13 @@ class ResultsStore(private val dir: File) {
             tmpPng.copyTo(png(id), overwrite = true); tmpPng.delete()
         }
 
+        if (video != null && video.isFile) {
+            runCatching { video.copyTo(mp4(id), overwrite = true) }
+        }
         val r = Result(
             id, System.currentTimeMillis(), imageId, seed, model, prompt,
             bitmap.width, bitmap.height, batchId, batchLabel,
+            videoPath = mp4(id).takeIf { it.isFile }?.path,
         )
         val json = JSONObject()
             .put("savedAt", r.savedAt)
@@ -191,6 +233,10 @@ class ResultsStore(private val dir: File) {
                         height = j.optInt("height"),
                         batchId = j.optString("batchId").takeIf { it.isNotBlank() && it != "null" },
                         batchLabel = j.optString("batchLabel"),
+                        // ⚠ Read off the DISK rather than out of the metadata:
+                        // the file is the fact, and a `hasVideo` flag in the
+                        // JSON could outlive the clip it names.
+                        videoPath = mp4(id).takeIf { it.isFile }?.path,
                     )
                 } catch (e: Exception) {
                     null
@@ -270,6 +316,15 @@ class ResultsStore(private val dir: File) {
                 ?.takeIf { it.inputs.containsKey("latent") }
                 ?.let { p["denoise"]?.let { d -> out += "denoise" to d } }
         }
+        // ⭐ …and the video recipe, which keeps its prompt on the sampler and
+        // names no checkpoint at all. ⚠ Listed here rather than in a second
+        // details function: a kept clip is a kept result like any other.
+        g.nodes.firstOrNull { it.type == "nd.clip_encode" }?.params?.let { p ->
+            p["prompt"]?.takeIf { it.isNotBlank() }?.let { out += "prompt" to it }
+            out += "size" to if (p["upscale"].equals("false", true)) "512×320" else "1024×640"
+            out += "frames" to "49"
+            p["seed"]?.takeIf { it != "0" }?.let { out += "seed" to it }
+        }
         out += "nodes" to g.nodes.size.toString()
         return out
     }
@@ -277,6 +332,9 @@ class ResultsStore(private val dir: File) {
     fun delete(id: String) {
         png(id).delete()
         meta(id).delete()
+        // ⚠ The clip too, or un-starring a video leaves the biggest half of it
+        // on disk with nothing left pointing at it.
+        mp4(id).delete()
     }
 
     /** Bytes on disk, for a line that tells the user what this is costing. */

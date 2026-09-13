@@ -381,6 +381,35 @@ fun ResultViewer(
             userScrollEnabled = scale <= 1.01f,
         ) { page ->
             val item = items[page]
+            // ⭐⭐ A kept CLIP plays, exactly as it does in the canvas viewer.
+            //
+            // ⚠⚠ No zoom and no pinch on this page: the player is a
+            // `SurfaceView` and `graphicsLayer` moves its frame without moving
+            // the surface. The pager still swipes, because a clip page never
+            // zooms and the pager is only disabled while zoomed.
+            //
+            // ⚠ `videoPath` is the COPY in the results directory
+            // ([Result.videoPath]), so a clip starred three launches ago still
+            // plays -- the one the graph produced is in `cacheDir`.
+            val clip = item.videoPath
+            if (clip != null) {
+                com.abrah.nightmare.ui.ClipPlayer(
+                    path = clip,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                )
+                // ⚠ Tap to close still works over the player: the pointer input
+                // sits on a transparent box above it rather than on the surface.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(page) {
+                            detectTapGestures(onTap = { onDismiss() })
+                        }
+                )
+                return@HorizontalPager
+            }
             imageFor(item.id)?.let { bmp ->
                 Image(
                     bitmap = bmp,
@@ -753,7 +782,11 @@ private fun ResultCard(
     ) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ResultCardHeader(
-                title = "1 picture",
+                // ⚠ A kept clip and a kept picture are the same card, and
+                // nothing on it said which -- the thumbnail is a poster frame,
+                // which looks exactly like a render. The card says so, and the
+                // badge on the thumbnail below says it again where the tap is.
+                title = if (result.videoPath != null) "1 clip" else "1 picture",
                 label = result.label,
                 // ⚠ The seed has left this line — it is its own control below,
                 // because it is the one piece of metadata people want to TAKE
@@ -779,23 +812,36 @@ private fun ResultCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 thumbnail?.let {
-                    Image(
-                        bitmap = it,
-                        contentDescription = stringResource(R.string.cd_open_fullscreen),
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .border(
-                                1.dp,
-                                MaterialTheme.colorScheme.outlineVariant,
-                                RoundedCornerShape(6.dp),
+                    Box(contentAlignment = Alignment.Center) {
+                        Image(
+                            bitmap = it,
+                            contentDescription = stringResource(R.string.cd_open_fullscreen),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outlineVariant,
+                                    RoundedCornerShape(6.dp),
+                                )
+                                .combinedClickable(
+                                    onClick = { if (selecting) onLongPress() else onView() },
+                                    onLongClick = onLongPress,
+                                ),
+                        )
+                        // ⚠ Drawn OVER the poster and not clickable: the tap
+                        // target is the picture underneath, so a badge that ate
+                        // the touch would make the one thumbnail that plays the
+                        // one thumbnail that cannot be opened.
+                        if (result.videoPath != null) {
+                            Text(
+                                "▶",
+                                color = androidx.compose.ui.graphics.Color.White,
+                                fontSize = 20.sp,
                             )
-                            .combinedClickable(
-                                onClick = { if (selecting) onLongPress() else onView() },
-                                onLongClick = onLongPress,
-                            ),
-                    )
+                        }
+                    }
                 }
             }
         }

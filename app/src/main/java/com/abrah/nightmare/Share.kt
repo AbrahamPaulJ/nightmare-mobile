@@ -6,7 +6,7 @@ import androidx.core.content.FileProvider
 import java.io.File
 
 /**
- * ⭐⭐ **Sending a picture or a flow to another app.**
+ * ⭐⭐ **Sending a picture, a clip or a flow to another app.**
  *
  * ⚠⚠ Through a [FileProvider], not a `file://` URI. Android has refused raw
  * file URIs across app boundaries since API 24 — `FileUriExposedException`,
@@ -51,6 +51,26 @@ object Share {
         val f = File(staging(context), sanitise(name) + ".png")
         f.writeBytes(png)
         send(context, uriFor(context, f), "image/png", "Share picture")
+    }
+
+    /**
+     * ⭐⭐ Hand a CLIP to whatever the user picks.
+     *
+     * ⚠⚠ **The MP4, not the poster.** Every surface that shows a clip used to
+     * share the still behind it, which is the same complaint the play-on-the-
+     * node work answered — *"i see just output first frame"*
+     * (`docs/NEODRAGON.md` §7c). A 2 s clip is ~300 KB, so there is no size
+     * argument for sending the frame instead.
+     *
+     * ⚠ Copied into the staging directory like everything else here. The
+     * graph's own MP4 lives in `cacheDir/video/`, which no provider path
+     * covers, and a kept one lives in app-private `files/results/`, which no
+     * provider path covers either.
+     */
+    fun video(context: Context, file: File, name: String) {
+        val f = File(staging(context), sanitise(name) + ".mp4")
+        file.copyTo(f, overwrite = true)
+        send(context, uriFor(context, f), "video/mp4", "Share clip")
     }
 
     /**

@@ -63,6 +63,16 @@ app/src/main/assets/qnnlibs/
 # Our CMakeLists and JNI bridge beside it ARE committed.
 app/src/main/cpp/third_party/
 
+# ⚠ The QNN headers libnmqnn.so is built against -- QAIRT SDK material with its
+# own redistribution terms, fetched by tools/fetch_qnn_headers.ps1. `nmqnn.cpp`
+# and the CMakeLists beside them ARE committed.
+app/src/main/cpp/include/
+
+# ⚠ The NPU canary (tools/stage_neodragon.ps1). Build output of ../Neodragon's
+# conversion pipeline, and a `.bin` the rule above would catch anyway -- named
+# here so the reason is recorded rather than inferred.
+app/src/main/assets/npu/
+
 # Dev docs stay out of the published tree (the user's call, 2026-09-10). The
 # ones already in history are left alone; nothing NEW is added.
 docs/DEVICES.md

@@ -660,13 +660,42 @@ fun seedFor(
         val id = queue.removeFirst()
         if (!seen.add(id)) continue
         val node = graph.byId[id] ?: continue
-        if (node.type == "sd.sample") {
+        if (com.abrah.nightmare.isSampler(node.type)) {
             ROLLED_SEED.find(detailFor(id).orEmpty())?.let { return it.groupValues[1] }
             return node.params["seed"]?.trim()?.takeIf { it.isNotBlank() && it != "0" }
         }
         node.inputs.values.forEach { queue.addLast(it.node) }
     }
     return null
+}
+
+/**
+ * ⭐⭐ WHICH nodes loop their clip — **the end of the video chain, and only it.**
+ *
+ * ⚠⚠ Every node holding a [com.abrah.nightmare.Value.Video] used to animate, so
+ * the shipped recipe played the same two seconds twice: once on the sampler and
+ * once on the output node wired straight off it. Two copies of one clip is
+ * not two answers to anything, it is the same answer drawn twice at 12 Hz, and
+ * the sampler is the wrong place for it — a sampler's job is to be the knobs.
+ * Reported from the phone, 2026-09-12: *"why is the video sampler playing the
+ * output? it shouldnt"*.
+ *
+ * ⚠ Defined by the GRAPH rather than by node type: a
+ * sampler with nothing wired off it IS the end of the chain and still loops, so
+ * deleting the output node does not leave a graph that plays nothing. That also
+ * keeps a contributor's own video node working without being named here.
+ *
+ * ⚠ [videos] is keyed by node id and outlives the nodes in it — a clip stays in
+ * the map after its node is deleted — so ids the graph no longer knows are
+ * dropped rather than reported as terminal.
+ */
+fun clipNodes(
+    graph: com.abrah.nightmare.Graph,
+    videos: Map<String, String>,
+): Set<String> {
+    if (videos.isEmpty()) return emptySet()
+    val consumed = graph.nodes.flatMapTo(mutableSetOf()) { n -> n.inputs.values.map { it.node } }
+    return videos.keys.filterTo(mutableSetOf()) { it in graph.byId && it !in consumed }
 }
 
 /**
@@ -683,7 +712,7 @@ fun samplerFor(graph: com.abrah.nightmare.Graph, nodeId: String): String? {
         val id = queue.removeFirst()
         if (!seen.add(id)) continue
         val node = graph.byId[id] ?: continue
-        if (node.type == "sd.sample") return id
+        if (com.abrah.nightmare.isSampler(node.type)) return id
         node.inputs.values.forEach { queue.addLast(it.node) }
     }
     return null
@@ -693,13 +722,40 @@ fun samplerFor(graph: com.abrah.nightmare.Graph, nodeId: String): String? {
 private val ROLLED_SEED = Regex("""^seed (\d+)""")
 
 /**
+ * ⭐⭐ A type whose stripped name is not what the thing is CALLED.
+ *
+ * `sd.clip_encode` names the op — it is CLIP, it produces a conditioning — and
+ * "clip_encode" is what a person reading the palette has to decode before they
+ * find the box they type their prompt into. Every recipe already names that node
+ * `prompt` ([RECIPES]), so the palette, the node header and the id a dragged node
+ * is born with were the last three places still saying the op's name. The user's
+ * call, 2026-09-12.
+ *
+ * ⚠⚠ A label, NOT a rename: the type string stays `sd.clip_encode` in every
+ * saved file, every plugin manifest and the inspector's header
+ * (`docs/ARCHITECTURE.md` §5.3). Renaming the TYPE to make it read well on a node
+ * header is choosing an identifier for the wrong reason, and it would break a
+ * manifest that already depends on it.
+ *
+ * ⚠ One entry, not a table of nine. The other eight built-ins strip to the word
+ * they are already called in the docs and the recipes (`sample`, `crop`, `mask`,
+ * `upscale`); paraphrasing those too would put a second vocabulary between the
+ * palette and every doc that discusses them.
+ */
+private val LABEL_OVERRIDES = mapOf("sd.clip_encode" to "prompt")
+
+/**
  ⭐ What a node type is CALLED on screen, as opposed to what it is identified by.
  *
- * ⚠⚠ The two parted company when the built-ins were namespaced: `sd.clip_encode`
+ * ⚠⚠ The two parted company when the built-ins were namespaced: `sd.sample`
  * is the stable id a workflow file and a plugin manifest write down, and
- * `clip_encode` is what fits on a node header. ⚠ It strips a plugin's id the
+ * `sample` is what fits on a node header. ⚠ It strips a plugin's id the
  * same way (`com.example.pack:Thing` -> `Thing`), which is what this replaced --
  * so there is now ONE rule for both instead of a `substringAfterLast(':')`
  * copied into the palette, the canvas and the id generator.
+ *
+ * ⚠ [LABEL_OVERRIDES] first, so a type whose stripped name reads as jargon can
+ * be given the word the rest of the app uses for it.
  */
-val String.nodeLabel: String get() = substringAfterLast(':').substringAfterLast('.')
+val String.nodeLabel: String
+    get() = LABEL_OVERRIDES[this] ?: substringAfterLast(':').substringAfterLast('.')

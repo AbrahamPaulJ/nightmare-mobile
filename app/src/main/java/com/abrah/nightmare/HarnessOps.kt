@@ -156,8 +156,253 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "model_import" -> importModels()
             "latent_blend" -> latentBlend()
             "plugin_latent" -> pluginLatentGraph()
+            // ⭐ The in-process NPU runner, on the phone, with nothing else
+            // required: no backend process, no checkpoint, no 8.5 GB download.
+            "npu_canary" -> npuCanary()
+            // ⭐ The whole video recipe, headless. `--es arg "a dog running"`.
+            "npu_video" -> npuVideo(arg)
+            // ⭐⭐ What the video path is still missing, and fetching it.
+            "video_models" -> videoModels()
+            "video_install" -> videoInstall()
+            // ⭐ Image to video: animate the newest saved picture.
+            "npu_i2v" -> npuI2v(arg)
             else -> say("unknown intent op \"$op\"", bad = true)
         }
+    }
+
+    // ---- the NPU runner (docs/NEODRAGON.md) ------------------------------
+
+    /**
+     * ⭐⭐ Does this phone run a QNN context binary **in our own process**?
+     *
+     * ⚠⚠ This is the first milestone of the video port and it deliberately
+     * proves the thing that could sink it, before anything is built on top: the
+     * app already reaches the NPU through a separate PROCESS
+     * (`libstable_diffusion_core.so`), and `../Neodragon` measured that an
+     * executable exec'd out of an APK is denied the Hexagon fastrpc device.
+     * In-process `dlopen` is the route that works — but "works in Neodragon's
+     * app" is not "works in this one", and the difference is one `am` command.
+     *
+     * ⚠ It reports the SNR, not just pass/fail. A canary that loads and returns
+     * garbage is the failure mode that matters (fp16 with no fp32 upcast in the
+     * layer norm), and a bare "ok" would hide it.
+     */
+    /**
+     * ⭐⭐ What this device has of the video path, in bytes rather than files.
+     *
+     * ⚠ A file count reads as nearly-done when the one absent graph is 1.5 GB
+     * of a 8.5 GB set, which is the number a user actually waits on.
+     */
+    /**
+     * ⭐⭐ **Image to video, driven for the first time.**
+     *
+     * ⚠⚠ The port has existed since the node was written and nothing in this
+     * app had ever supplied it — `docs/NEODRAGON.md` §7, *"i2v is wired but
+     * never run"*. A port whose only evidence is that it compiles is a port
+     * that has not been tested.
+     *
+     * ⚠ It takes the newest picture in `Pictures/Nightmare`, so the fixture is
+     * something this app made. `Video.bitmapToChw` centre-crops and scales, so
+     * the photo's own size does not matter.
+     *
+     * ⚠⚠ It also exercises the CHEAPER path: with an image supplied, SSD1B
+     * never runs and `clipl` / `ssd1bunet` / `ssd1bvaedec` (1.68 GB) are never
+     * required to be present at all. A device missing exactly those three
+     * should still be able to run this, which is the claim
+     * [com.abrah.nightmare.npu.VideoSampleNode.FIRST_FRAME_ONLY] makes.
+     */
+    private suspend fun npuI2v(arg: String?) {
+        val uri = newestSavedImage()
+        if (uri == null) {
+            say("i2v: nothing in Pictures/${ImageSaver.FOLDER} yet -- run `save_image` first",
+                bad = true)
+            return
+        }
+        say("i2v: animating $uri")
+        // ⚠ The same recipe a person gets, not a hand-built variant — only the
+        // photo is substituted, so this op tests what the Flows tab ships.
+        val w0 = com.abrah.nightmare.canvas.imageToVideoWorkflow()
+        val g = w0.graph.copy(
+            nodes = w0.graph.nodes.map {
+                when {
+                    it.type == "image.load" -> it.copy(params = it.params + ("uri" to uri))
+                    it.type == "nd.clip_encode" && !arg.isNullOrBlank() ->
+                        it.copy(params = it.params + ("prompt" to arg))
+                    else -> it
+                }
+            }
+        )
+        // ⚠ `runWorkflow`, the same entry the canvas uses — it is what rolls
+        // `seed = 0` BEFORE the cache key is computed, and a bare `Executor.run`
+        // here would be served the first clip on every later run.
+        val r = runWorkflow(
+            com.abrah.nightmare.canvas.Workflow(g, emptyMap()),
+            onNode = { n ->
+                say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} " +
+                    "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+            },
+        )
+        if (r.error != null) {
+            say("i2v: refused -- ${r.error}", bad = true)
+            return
+        }
+        val clip = r.outputs["decode"] as? com.abrah.nightmare.Value.Video
+        if (clip == null) {
+            say("i2v: the graph produced no clip", bad = true)
+            return
+        }
+        say("i2v: ${clip.frames} frames ${clip.w}x${clip.h} from a still")
+    }
+
+    private fun videoModels() {
+        val vi = com.abrah.nightmare.npu.VideoInstaller
+        val have = vi.installedBytes(ctx)
+        val missing = vi.missing(ctx)
+        val assets = vi.missingAssets(ctx)
+        say(
+            "video models: %.2f/%.2f GB".format(have / 1e9, vi.totalBytes / 1e9) +
+                "  (${missing.size} graph(s) missing, ${assets.size} host weight(s) missing)"
+        )
+        if (missing.isNotEmpty()) say("  graphs: ${missing.joinToString()}")
+        if (assets.isNotEmpty()) say("  weights: ${assets.joinToString()}")
+        if (vi.isComplete(ctx)) say("video: ready")
+    }
+
+    /**
+     * ⭐⭐ Fetch every missing graph from the public repo.
+     *
+     * ⚠⚠ **8.5 GB.** `CLAUDE.md` says to check Wi-Fi before a large push and
+     * that applies far more here than to an APK; the op reports the plan and
+     * the connection before it starts rather than after.
+     */
+    private suspend fun videoInstall() {
+        val vi = com.abrah.nightmare.npu.VideoInstaller
+        val missing = vi.missing(ctx)
+        val assets = vi.missingAssets(ctx)
+        if (missing.isEmpty() && assets.isEmpty()) {
+            say("video: already complete -- nothing to download")
+            return
+        }
+        say("video: fetching ${missing.size} graph(s) and ${assets.size} weight file(s)")
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                var lastPct = -1
+                vi.install(ctx, { p ->
+                    val pct = (p.fraction * 100).toInt()
+                    // ⚠ Throttled to whole percent: `fetch` reports per MB and
+                    // 8500 log lines is not a progress report.
+                    if (pct != lastPct) {
+                        lastPct = pct
+                        sink.progress(pct to 100)
+                        if (pct % 5 == 0) say("  ${p.phase} -- $pct%")
+                    }
+                })
+            }.fold(
+                onSuccess = { say("video: install complete") },
+                onFailure = { say("video install: ${it.message}", bad = true) },
+            )
+            sink.progress(null)
+        }
+    }
+
+    private fun npuCanary() {
+        val runner = com.abrah.nightmare.npu.QnnRunner(ctx)
+        say("npu: ${com.abrah.nightmare.DeviceProbe.caps()}")
+        val t0 = System.currentTimeMillis()
+        val r = com.abrah.nightmare.npu.NpuCanary.run(ctx, runner)
+        val ms = System.currentTimeMillis() - t0
+        when (r) {
+            is com.abrah.nightmare.npu.NpuCanary.Result.Ok ->
+                say("npu canary OK -- ${"%.2f".format(r.snrDb)} dB in $ms ms")
+            is com.abrah.nightmare.npu.NpuCanary.Result.Unsupported ->
+                say("npu canary REFUSED in $ms ms -- ${r.detail}", bad = true)
+            is com.abrah.nightmare.npu.NpuCanary.Result.Fp16Suspect ->
+                say("npu canary ran but fp16 is suspect: ${"%.2f".format(r.snrDb)} dB", bad = true)
+            is com.abrah.nightmare.npu.NpuCanary.Result.Inconclusive ->
+                say("npu canary inconclusive in $ms ms -- ${r.detail}", bad = true)
+        }
+        say("  downloads allowed: ${r.canDownload}")
+        // ⚠ Released, not left resident: this op can be run repeatedly while
+        // something else holds memory, and a canary is not worth 58 KB of it.
+        runner.releaseAll()
+    }
+
+    /**
+     * ⭐⭐ The `Text to video` recipe, end to end, with nothing on screen.
+     *
+     * ⚠⚠ Through the EXECUTOR and the real recipe, not by calling the pipeline
+     * directly — the same rule [canvasRun] is built on. An op that drove
+     * `Video.generate` itself would prove the port works and prove nothing
+     * about the graph the user actually runs: the node's model check, its
+     * content-addressed file name, the wire into `video.output` and the poster
+     * frame are all things only the graph exercises.
+     *
+     * ⚠ **No backend is started.** This graph names no context key, which is the
+     * property that makes the video path independent of the checkpoint picker;
+     * starting a server here would hide a regression in exactly that.
+     */
+    private suspend fun npuVideo(arg: String?) {
+        val ctxDir = com.abrah.nightmare.npu.NpuFiles.ctxDir(ctx)
+        val wf0 = com.abrah.nightmare.canvas.textToVideoWorkflow()
+        // ⚠ The prompt is overridable so a second run differs visibly; the seed
+        // stays whatever the recipe says (0 = roll), because a fixed one here
+        // would make every run return the CACHED clip and report success for a
+        // pipeline that never ran.
+        // ⚠⚠ That is exactly what `seed = 0` ITSELF did until 2026-09-12: the
+        // roll happened inside the node, after the cache key had hashed "0", so
+        // two runs of this op returned one clip. `runRolled` rolls it now.
+        // ⚠ `save = true` is FORCED here and the recipe ships it true as well,
+        // so this line is belt and braces rather than an override -- it is what
+        // keeps the op honest if the default ever moves back.
+        val wf = com.abrah.nightmare.canvas.Workflow(
+            wf0.graph.copy(
+                nodes = wf0.graph.nodes.map {
+                    when {
+                        // ⭐ `--es arg "a dog running|12345"` pins the seed, which is
+                        // what makes two builds COMPARABLE: without it every run
+                        // rolls and no numerical change can be told from a new
+                        // seed. Used to prove the phase extraction was identical.
+                        it.type == "nd.clip_encode" && !arg.isNullOrBlank() ->
+                            it.copy(params = it.params + ("prompt" to arg.substringBefore('|')))
+                        // ⚠⚠ BOTH seeded nodes, or pinning one still leaves the
+                        // other rolling and the clip is not reproducible.
+                        it.type in com.abrah.nightmare.SAMPLER_TYPES &&
+                            !arg.isNullOrBlank() &&
+                            arg.substringAfter('|', "").isNotBlank() ->
+                            it.copy(params = it.params + ("seed" to arg.substringAfter('|')))
+                        else -> it
+                    }
+                }
+            ),
+            wf0.positions,
+        )
+        val have = ctxDir.listFiles()?.count { it.isFile } ?: 0
+        say("video: $have context binaries in $ctxDir")
+        val missing = com.abrah.nightmare.npu.NpuFiles.missing(
+            ctx, com.abrah.nightmare.npu.Video.requiredModels()
+        )
+        if (missing.isNotEmpty()) say("  missing: ${missing.joinToString()}", bad = true)
+        val missingAssets = com.abrah.nightmare.npu.NpuFiles.missingAssets(ctx)
+        if (missingAssets.isNotEmpty()) say("  missing weights: ${missingAssets.joinToString()}", bad = true)
+
+        val t0 = System.currentTimeMillis()
+        val r = runWorkflow(wf, onNode = { n ->
+            say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} " +
+                "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+        })
+        if (r.error != null) {
+            say("video: refused -- ${r.error}", bad = true)
+            return
+        }
+        val clip = r.outputs["decode"] as? Value.Video
+        if (clip == null) {
+            say("video: the graph produced no clip", bad = true)
+            return
+        }
+        say("video: ${clip.frames} frames ${clip.w}x${clip.h} in " +
+            "${(System.currentTimeMillis() - t0) / 1000} s")
+        say("  ${clip.path} (${java.io.File(clip.path).length() / 1024} KB)")
+        images.get(clip.posterId)?.let { sink.image(it) }
     }
 
     // ---- models ----------------------------------------------------------
@@ -601,7 +846,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onProgress: (String, Int, Int) -> Unit = { _, _, _ -> },
         /** ⭐ Which node is being reached — what the canvas's run log names. */
         onStart: (String, String) -> Unit = { _, _ -> },
-    ): GraphRun = runRolled(workflow, onNode, onProgress, onStart)
+        /** ⭐ A node narrating itself while it runs. [com.abrah.nightmare.NodeCtx.say]. */
+        onLog: (String, String) -> Unit = { _, _ -> },
+    ): GraphRun = runRolled(workflow, onNode, onProgress, onStart, onLog)
 
     /**
      * ⭐ Rolls every `seed = 0` before running, then executes.
@@ -612,9 +859,17 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * CACHED latent and the roll would change nothing -- the exact complaint
      * ("Run gives the same picture") in a subtler form.
      *
-     * ⚠ Only `sample`. `vae_encode`'s seed is what makes the same image encode
-     * to the same latent, which is what lets everything downstream of it cache;
-     * rolling that one would make every img2img graph full price every Run.
+     * ⚠ Only a [SAMPLER_TYPES] node. `vae_encode`'s seed is what makes the same
+     * image encode to the same latent, which is what lets everything downstream
+     * of it cache; rolling that one would make every img2img graph full price
+     * every Run.
+     *
+     * ⚠⚠ **`nd.video_sample` is one of them, and leaving it out was the bug the
+     * paragraph above predicted.** It rolled its own seed INSIDE `run` — after
+     * the cache key had been computed from `seed = 0` — so the second Run of a
+     * video graph was served the first clip and the roll changed nothing.
+     * Reported from the phone, 2026-09-12: *"video player seed 0 is cached, it
+     * should be random"*.
      *
      * ⚠ The user's graph is NOT modified -- a rolled copy is run, so the node
      * still reads 0 and still rolls next time.
@@ -624,7 +879,27 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onNode: (NodeRun) -> Unit,
         onProgress: (String, Int, Int) -> Unit,
         onStart: (String, String) -> Unit = { _, _ -> },
+        onLog: (String, String) -> Unit = { _, _ -> },
     ): GraphRun {
+        // ⚠⚠⚠ **Consumer-derived sizes are settled HERE, before anything
+        // runs.** `image.crop` carries no `out_w`/`out_h` of its own — they are
+        // derived from whatever consumes it — and until 2026-09-13 that
+        // derivation happened ONLY on a canvas edit. A recipe opened and Run
+        // without touching anything, or any graph built by a harness op, reached
+        // the executor with an underived crop and the node passed its input
+        // through unchanged. Measured on the image-to-video recipe: the crop ran
+        // in 4 ms and emitted the photo at 1024x640 where the encoder wanted
+        // 512x320.
+        //
+        // ⚠ It did not FAIL, which is why it needed measuring rather than
+        // reasoning about: `Video.bitmapToChw` centre-crops as a backstop, so the
+        // render succeeded and simply ignored the user's framing.
+        //
+        // ⇒ One place, on the path every Run takes.
+        val settled = runCatching {
+            workflow.copy(graph = com.abrah.nightmare.deriveSizes(workflow.graph, nodeTypes()))
+        }.getOrDefault(workflow)
+        @Suppress("NAME_SHADOWING") val workflow = settled
         // ⚠⚠ Checked BEFORE the sampling, because a size mismatch renders
         // successfully and looks like a quality problem — see [sizeMismatches].
         for (why in sizeMismatches(workflow.graph, nodeTypes())) {
@@ -632,9 +907,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         val rolled = mutableMapOf<String, Int>()
         val nodes = workflow.graph.nodes.map { n ->
-            val wantsRoll = n.type == "sd.sample" &&
-                (n.params["seed"] ?: SampleNode.widgets.first { it.name == "seed" }.default).orEmpty()
-                    .trim().toIntOrNull() == 0
+            // ⚠ The DEFAULT comes from the node's own type, not from
+            // `SampleNode`: two samplers declare a `seed` widget and hardcoding
+            // one of them would read the wrong default for the other.
+            val seedDefault = nodeTypes()[n.type]?.widgets
+                ?.firstOrNull { it.name == "seed" }?.default
+            val wantsRoll = isSampler(n.type) &&
+                (n.params["seed"] ?: seedDefault).orEmpty().trim().toIntOrNull() == 0
             if (!wantsRoll) return@map n
             // ⚠ Never 0, or the next run would read it back as "roll again" if
             // this value were ever written into a workflow.
@@ -651,6 +930,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             onProgress = { id, step, total ->
                 sink.progress(step to total)
                 onProgress(id, step, total)
+            },
+            // ⭐ A node narrating itself reaches BOTH front ends: the harness log
+            // (so `--es op npu_video` shows the same lines the canvas does) and
+            // the caller's own sink.
+            onLog = { id, text ->
+                say("  $text")
+                onLog(id, text)
             },
             // ⚠ The rolled seed is shown on the node, or a user watching a
             // picture change every Run has no way to learn WHICH seed made the

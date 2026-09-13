@@ -476,6 +476,57 @@ class CanvasScreenshotTest {
     }
 
     /**
+     * ⭐⭐⭐ **A `bool` knob is a CHECKBOX**, and this golden is the only
+     * thing that sees it.
+     *
+     * ⚠⚠ Every `bool` in the app rendered as a TEXT FIELD until
+     * 2026-09-12 — the inspector's widget loop had no branch for the type, so
+     * `upscale` and `save` fell through to the box at the bottom of it and
+     * asked people to type the word `true` on a phone keyboard. `True` and a
+     * typo both read as false, and nothing said so until a Run that quietly
+     * wrote nothing. Reported from the phone in exactly those terms.
+     *
+     * ⚠ The video sampler because it carries BOTH shapes that were wrong: a
+     * `bool` (`upscale`) and a `seed` that must stay a text field, beside a
+     * prose `prompt`. ⚠ `upscale` is unset here on purpose — the box must
+     * draw CHECKED from the widget's own default, or it lies about what the
+     * node will run with.
+     */
+    @Test
+    fun aBoolKnobIsACheckbox() = shoot("inspector-video-sample") {
+        Surface(Modifier.fillMaxSize()) {
+            NodeInspectorBody(
+                nodeId = "video",
+                node = Node(
+                    "video", "nd.video_sample",
+                    params = mapOf("prompt" to "a cat walking through tall grass", "seed" to "0"),
+                ),
+                type = NODE_TYPES["nd.video_sample"],
+                onSetParam = { _, _, _ -> },
+                onDelete = {},
+            )
+        }
+    }
+
+    /**
+     * ⚠ `video.output`'s `save` is the other half of the checkbox story: it
+     * defaults TRUE where `image.output`'s defaults false, so this pins a
+     * ticked box drawn from a param the node does not carry.
+     */
+    @Test
+    fun theVideoOutputSavesByDefault() = shoot("inspector-video-output") {
+        Surface(Modifier.fillMaxSize()) {
+            NodeInspectorBody(
+                nodeId = "save",
+                node = Node("save", "video.output"),
+                type = NODE_TYPES["video.output"],
+                onSetParam = { _, _, _ -> },
+                onDelete = {},
+            )
+        }
+    }
+
+    /**
      * ⭐⭐ The render size, on the node — the control this whole feature is.
      *
      * ⚠⚠ **A golden is the only thing that sees this.** It lives in a

@@ -659,16 +659,48 @@ object ModelCatalog {
         File(context.getExternalFilesDir(null), "downloads")
 
     // ---- prompts ---------------------------------------------------------
-    // Model parameters rather than UI copy, and deliberately the same values
-    // DreamUI uses, so a picture that differs between the two apps is a
-    // difference in the RUNTIME rather than in what was asked for.
+    // ⭐⭐ Model parameters rather than UI copy, and **`local-dream`'s own, id
+    // for id** (`../LocalDream/local-dream/.../data/Model.kt`, `codeDefaults`).
+    //
+    // ⚠⚠ These were DreamUI's until 2026-09-12, and DreamUI had collapsed
+    // upstream's per-model text into two shared negatives and one anime prompt
+    // — a simplification that costs exactly what CLAUDE.md warns DreamUI's
+    // simplifications cost. It did not show while nothing READ them; now a new
+    // graph opens on this text, so a checkpoint tuned for chibi opening on a
+    // generic "detailed face" prompt is what the user sees first. The user's
+    // call, 2026-09-12: copy upstream verbatim.
+    //
+    // ⚠ Verbatim also means a picture that differs from local-dream's on the
+    // same checkpoint is a difference in the RUNTIME rather than in what was
+    // asked for — the reason the old ones were copied from DreamUI unchanged.
 
-    private const val NEG_PHOTO =
-        "cartoon, anime, illustration, painting, drawing, lowres, bad anatomy, worst quality, low quality"
+    /** ⚠ Upstream's one anime negative, shared by its three SD 1.5 anime models and Illustrious. */
     private const val NEG_ANIME =
-        "lowres, bad anatomy, bad hands, text, error, missing fingers, worst quality, low quality, jpeg artifacts"
+        "lowres, bad anatomy, bad hands, missing fingers, extra fingers, " +
+            "bad arms, missing legs, missing arms, poorly drawn face, bad face, " +
+            "fused face, cloned face, three crus, fused feet, fused thigh, " +
+            "extra crus, ugly fingers, horn, realistic photo, huge eyes, worst face, " +
+            "2girl, long fingers, disconnected limbs,"
+
+    /** ⚠ AnythingV5 and CuteYukiMix share it upstream; QteaMix does NOT (it is chibi). */
     private const val P_ANIME_GIRL =
-        "masterpiece, best quality, 1girl, solo, detailed face, soft shading,"
+        "masterpiece, best quality, 1girl, solo, cute, white hair,"
+    private const val P_QTEA =
+        "chibi, best quality, 1girl, solo, cute, pink hair,"
+
+    // ⚠ A negative per photographic checkpoint, not one shared constant: upstream
+    // gives AbsoluteReality 22 tags about photo realism and ChilloutMix a shorter
+    // list about skin. Collapsing them was DreamUI's loss, not a tidy-up.
+    private const val NEG_ABSOLUTE =
+        "worst quality, low quality, normal quality, poorly drawn, lowres, " +
+            "low resolution, signature, watermarks, ugly, out of focus, error, " +
+            "blurry, unclear photo, bad photo, unrealistic, semi realistic, " +
+            "pixelated, cartoon, anime, cgi, drawing, 2d, 3d, censored, duplicate,"
+    private const val NEG_CHILLOUT =
+        "paintings, cartoon, anime, lowres, bad anatomy, bad hands, text, error, " +
+            "missing fingers, extra digit, cropped, worst quality, low quality, " +
+            "normal quality, jpeg artifacts, signature, watermark, username, " +
+            "skin spots, acnes, skin blemishes"
 
     /**
      * ⭐⭐ **Every checkpoint the app knows about** — ours plus the user's.
@@ -735,7 +767,7 @@ object ModelCatalog {
             V1_MODEL, "AbsoluteReality", "AbsoluteReality",
             1_054_661_172L, 1_059_732_796L, 993_451_663L,
             prompt = "masterpiece, best quality, ultra-detailed, realistic, 8k, a cat on grass,",
-            negative = NEG_PHOTO,
+            negative = NEG_ABSOLUTE,
         ),
         sd15(
             "anythingv5", "AnythingV5", "AnythingV5",
@@ -747,7 +779,7 @@ object ModelCatalog {
             1_069_856_038L, 1_073_617_353L, 1_007_485_231L,
             prompt = "RAW photo, best quality, realistic, photo-realistic, masterpiece, " +
                 "1girl, upper body, facing front, portrait, white shirt",
-            negative = NEG_PHOTO,
+            negative = NEG_CHILLOUT,
         ),
         sd15(
             "cuteyukimix", "CuteYukiMix", "CuteYukiMix",
@@ -757,21 +789,38 @@ object ModelCatalog {
         sd15(
             "qteamix", "QteaMix", "QteaMix",
             1_056_615_116L, 1_061_160_208L, 995_347_176L,
-            prompt = P_ANIME_GIRL, negative = NEG_ANIME,
+            prompt = P_QTEA, negative = NEG_ANIME,
         ),
     )
 
     // ---- SDXL ------------------------------------------------------------
 
     /**
-     * ⚠ Deliberately the same prompt DreamUI ships for every SDXL checkpoint.
-     * A picture that differs between the two apps is then a difference in the
-     * RUNTIME rather than in what was asked for, which is the whole reason the
-     * SD 1.5 prompts above were copied verbatim too.
+     * ⚠ The fallback for the eight of the ten with **no upstream entry** —
+     * DreamUI's own list, so this is DreamUI's prompt, unchanged.
+     *
+     * ⚠⚠ It is a fallback rather than the SDXL prompt: the two ids upstream
+     * also publishes take upstream's text ([P_CYBERREALISTIC], [P_ILLUSTRIOUS]),
+     * per the SD 1.5 rule above. Inventing one per checkpoint for the other
+     * eight would be guessing at what their authors wanted, which is the thing
+     * `config.json` exists to stop us doing.
      */
     private const val P_SDXL =
         "masterpiece, best quality, highly detailed, " +
             "a majestic cat sitting on a windowsill at sunset,"
+
+    // ⭐ Two of the ten ARE upstream models, and upstream gives each its own
+    // text. ⚠ CyberRealistic's negative is already [NEG_GENERAL] byte for byte,
+    // so only the prompt differs; Illustrious is an anime checkpoint and takes
+    // the anime negative, which is why the shared SDXL default cannot serve it.
+    private const val P_CYBERREALISTIC =
+        "masterpiece, best quality, " +
+            "a majestic cat sitting on a windowsill at sunset,"
+    private const val P_ILLUSTRIOUS =
+        "1girl, solo, blue twintails, very long hair, bangs, blue eyes, jewelry, " +
+            "necklace, hair bow, off-shoulder white frilled dress, bare shoulders, " +
+            "collarbone, underwater, floating hair, reaching towards viewer, " +
+            "air bubbles, blue theme, blurry foreground, masterpiece"
     private const val NEG_GENERAL =
         "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, " +
             "fewer digits, cropped, worst quality, low quality, normal quality, " +
@@ -790,7 +839,13 @@ object ModelCatalog {
      * are the backend's problem and never the graph's. That is the payoff of
      * the handle rule in `docs/ARCHITECTURE.md` §3.
      */
-    private fun sdxl(id: String, label: String, archive: String, bytes: Long) = ModelSpec(
+    private fun sdxl(
+        id: String, label: String, archive: String, bytes: Long,
+        // ⚠ Defaulted rather than required: eight of the ten have no upstream
+        // entry to copy from, and inventing a prompt per checkpoint is guessing.
+        prompt: String = P_SDXL,
+        negative: String = NEG_GENERAL,
+    ) = ModelSpec(
         id = id,
         label = label,
         // ⚠⚠ ONE build, and that is the whole SDXL device story: xororz
@@ -799,8 +854,8 @@ object ModelCatalog {
         // `buildFor` correctly answers null rather than offering 3.5 GB the
         // chip would reject at load.
         builds = listOf(Build(SDXL_TIER, archive, bytes, minArch = 75, minVtcmMb = 8)),
-        prompt = P_SDXL,
-        negative = NEG_GENERAL,
+        prompt = prompt,
+        negative = negative,
         family = Family.SDXL,
         backendType = SDXL_NPU,
         // ⚠⚠ Forced by the backend, not chosen here -- see [SDXL_NPU_RES].
@@ -827,8 +882,16 @@ object ModelCatalog {
         sdxl("sdxl_juggernaut", "Juggernaut XL", "juggernaut_qnn2.28$SDXL_TIER.zip", 3_747_687_306L),
         sdxl("sdxl_realvis", "RealVis XL v5", "realvis_xl_v5_qnn2.28$SDXL_TIER.zip", 3_499_694_289L),
         sdxl("sdxl_epicrealism", "epiCRealism XL", "epic_realism_qnn2.28$SDXL_TIER.zip", 3_502_991_005L),
-        sdxl("sdxl_cyberrealistic", "CyberRealistic v10", "cyber_realistic_v10_qnn2.28$SDXL_TIER.zip", 3_745_235_842L),
-        sdxl("sdxl_illustrious", "Illustrious v16", "illustrious_v16_qnn2.28$SDXL_TIER.zip", 3_726_876_852L),
+        sdxl(
+            "sdxl_cyberrealistic", "CyberRealistic v10",
+            "cyber_realistic_v10_qnn2.28$SDXL_TIER.zip", 3_745_235_842L,
+            prompt = P_CYBERREALISTIC,
+        ),
+        sdxl(
+            "sdxl_illustrious", "Illustrious v16",
+            "illustrious_v16_qnn2.28$SDXL_TIER.zip", 3_726_876_852L,
+            prompt = P_ILLUSTRIOUS, negative = NEG_ANIME,
+        ),
         sdxl("sdxl_animagine", "Animagine v4", "animagine_v4_qnn2.28$SDXL_TIER.zip", 3_752_469_362L),
         sdxl("sdxl_pony", "Pony Diffusion v6 XL", "ponydiffusion_v6xl_qnn2.28$SDXL_TIER.zip", 3_725_876_252L),
         sdxl("sdxl_novaanime", "NovaAnime v19", "novaanime_v19_qnn2.28$SDXL_TIER.zip", 3_732_162_768L),

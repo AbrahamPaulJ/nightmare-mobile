@@ -187,7 +187,9 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     // names. `migrateSamplerPrompts` matches on the sampler's type, so running
     // it against a file still saying `sample` would either need both spellings
     // or silently skip the repair.
-    val migrated = migrateSamplerPrompts(nodes.map(::migrateType), positions)
+    val migrated = dropOutputNodes(
+        migrateVideoSampler(migrateSamplerPrompts(nodes.map(::migrateType), positions))
+    )
 
     val requiresJson = root.optJSONArray("requires")
     val requires = (0 until (requiresJson?.length() ?: 0)).map {
@@ -272,6 +274,186 @@ private val RENAMED = mapOf(
  * with no `prompt` param is already current, and synthesising an empty Text
  * Encode for it would add a node the user never had.
  */
+/**
+ * ⭐⭐⭐ **The fused video sampler, decomposed** — so every graph saved before
+ * 2026-09-13 still opens and still runs.
+ *
+ * `nd.video_sample` was one node carrying a prompt, a seed and an `upscale`
+ * checkbox, optionally fed an `image`, and usually wired to a `video.output`
+ * that only held a `save` switch. It is now five nodes with the prompt on a
+ * WIRE, exactly as `sd.sample` is (`docs/NEODRAGON.md` §8).
+ *
+ * ```
+ *   nd.video_sample(prompt, seed, upscale) [← image] → video.output(save)
+ * becomes
+ *   nd.clip_encode(prompt) ─cond─┐
+ *     └frame_cond→ nd.first_frame(seed) → nd.vae_encode ─latent─┐
+ *                                                            └→ nd.sample(seed)
+ *                                                                  ↓
+ *                                                            nd.vae_decode(upscale)
+ * ```
+ *
+ * ⚠⚠ **The wired `image` wins.** When one is connected the first-frame half
+ * is not created at all — that is what the graph SAID, and inventing an SSD1B
+ * branch beside it would make a saved image-to-video flow quietly generate its
+ * own first frame and ignore the picture.
+ *
+ * ⚠⚠ **`video.output` disappears and its `save` is not preserved**, because
+ * there is nothing left for it to switch: `nd.vae_decode` is terminal and draws
+ * its own clip, and Save/Share on it write the MP4 (§7). A node whose only
+ * widget had become a no-op is worse than no node.
+ *
+ * ⚠ NOT a format bump, for the same reason as [migrateSamplerPrompts]: the
+ * file's SHAPE is unchanged, and bumping would make every saved workflow fail
+ * to open rather than be repaired.
+ *
+ * ⚠⚠ A migrated graph gives a DIFFERENT clip for the same seed. The fused
+ * node threaded one `Random` through every phase; these each start their own.
+ * Nothing here was ever bit-reproducible, but it is the reason a user's saved
+ * seed will not reproduce their old clip.
+ */
+/**
+ * ⭐⭐ **`image.output` is gone, so a graph that has one loses it** — and
+ * whatever read it is re-pointed at what fed it.
+ *
+ * The node returned its input unchanged and existed only to hold a `save`
+ * switch. Every terminal node draws its own result and carries save / share /
+ * star, so the switch had nothing left to do; no shipped recipe contained one.
+ *
+ * ⚠⚠ Dropped rather than left as an unknown type: an unknown type fails the
+ * whole graph with "unknown type \"image.output\"", which is a saved workflow
+ * that simply will not open. ⚠ Its `save` is not honoured on the way out —
+ * there is no longer anything to honour it with.
+ */
+private fun dropOutputNodes(
+    input: Pair<List<Node>, Map<String, Pt>>,
+): Pair<List<Node>, Map<String, Pt>> {
+    val (nodes, positions) = input
+    val doomed = nodes.filter { it.type == "image.output" }
+    if (doomed.isEmpty()) return input
+    // What each dropped node was fed by; a consumer of it now reads that.
+    val feeds = doomed.associate { it.id to it.inputs.values.firstOrNull() }
+    val pos = positions.toMutableMap()
+    doomed.forEach { pos.remove(it.id) }
+    val kept = nodes.filterNot { it.type == "image.output" }.map { n ->
+        val rewired = n.inputs.mapNotNull { (port, src) ->
+            if (src.node !in feeds) port to src else feeds[src.node]?.let { port to it }
+        }.toMap()
+        if (rewired == n.inputs) n else n.copy(inputs = rewired)
+    }
+    return kept to pos
+}
+
+private fun migrateVideoSampler(
+    input: Pair<List<Node>, Map<String, Pt>>,
+): Pair<List<Node>, Map<String, Pt>> {
+    val (nodes, positions) = input
+    if (nodes.none { it.type == "nd.video_sample" }) return input
+
+    val taken = nodes.map { it.id }.toMutableSet()
+    fun free(base: String): String {
+        var id = base
+        var i = 2
+        while (id in taken) id = "$base$i".also { i++ }
+        taken += id
+        return id
+    }
+
+    val out = mutableListOf<Node>()
+    val pos = positions.toMutableMap()
+    // Old sampler id -> the node that now produces its VIDEO, so a `video.output`
+    // wired to it can be dropped and anything else re-pointed.
+    val replacedBy = mutableMapOf<String, String>()
+
+    for (n in nodes) {
+        if (n.type != "nd.video_sample") {
+            out += n
+            continue
+        }
+        val at = positions[n.id] ?: Pt(0f, 0f)
+        val step = Sizes.NODE_WIDTH + 36f
+        val hasImage = "image" in n.inputs
+        val seed = n.params["seed"] ?: "0"
+
+        val promptId = free("${n.id}_prompt")
+        out += Node(
+            promptId, "nd.clip_encode",
+            params = mapOf("prompt" to n.params["prompt"].orEmpty()),
+        )
+        pos[promptId] = Pt(at.x + step, at.y)
+
+        // ⚠ The picture: the user's own if one was wired, otherwise a first
+        // frame generated from the prompt's OTHER conditioning.
+        val imageSource: Source
+        if (hasImage) {
+            imageSource = n.inputs.getValue("image")
+        } else {
+            val frameId = free("${n.id}_frame")
+            out += Node(
+                frameId, "nd.first_frame",
+                params = mapOf("seed" to seed),
+                inputs = mapOf("cond" to Source(promptId, "frame_cond")),
+            )
+            pos[frameId] = Pt(at.x + step, at.y + 220f)
+            imageSource = Source(frameId)
+        }
+
+        val encId = free("${n.id}_encode")
+        out += Node(encId, "nd.vae_encode", inputs = mapOf("image" to imageSource))
+        pos[encId] = Pt(at.x + step, at.y + 440f)
+
+        // ⚠ The sampler KEEPS the old node's id, so anything else in the graph
+        // that named it still resolves — and so the run log says what the user
+        // expects.
+        out += Node(
+            n.id, "nd.sample",
+            params = mapOf("seed" to seed),
+            inputs = mapOf(
+                "cond" to Source(promptId, "cond"),
+                "latent" to Source(encId),
+            ),
+        )
+
+        val decId = free("${n.id}_decode")
+        out += Node(
+            decId, "nd.vae_decode",
+            // ⚠ `upscale` moves to the decoder, which is where it always
+            // happened — QuickSRNet runs per frame inside the streaming decode.
+            params = mapOf("upscale" to (n.params["upscale"] ?: "true")),
+            inputs = mapOf("latent" to Source(n.id)),
+        )
+        pos[decId] = Pt(at.x + step, at.y + 660f)
+        replacedBy[n.id] = decId
+    }
+
+    if (replacedBy.isEmpty()) return out to pos
+
+    // ⚠⚠ Drop every `video.output` fed by a migrated sampler, and re-point
+    // anything ELSE that read one at the decoder. A node left wired to
+    // `nd.sample` expecting a VIDEO would refuse at the drop: that port makes a
+    // VIDEO_LATENT now.
+    val doomed = out.filter { o ->
+        o.type == "video.output" && o.inputs.values.any { it.node in replacedBy }
+    }.map { it.id }.toSet()
+    val kept = out.filterNot { it.id in doomed }
+    doomed.forEach { pos.remove(it) }
+    return kept.map { o ->
+        val rewired = o.inputs.mapValues { (_, src) ->
+            when {
+                src.node in doomed -> {
+                    // it read the output node; the decoder makes that value now
+                    val sampler = out.first { it.id == src.node }
+                        .inputs.values.first().node
+                    Source(replacedBy.getValue(sampler))
+                }
+                src.node in replacedBy && src.port == null -> Source(replacedBy.getValue(src.node))
+                else -> src
+            }
+        }
+        if (rewired == o.inputs) o else o.copy(inputs = rewired)
+    } to pos
+}
+
 private fun migrateSamplerPrompts(
     nodes: List<Node>,
     positions: Map<String, Pt>,

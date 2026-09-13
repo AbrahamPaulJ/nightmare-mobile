@@ -51,6 +51,58 @@ sealed interface Value {
     }
 
     /**
+     * ⭐⭐ A video: an MP4 on disk, plus one frame to look at.
+     *
+     * ⚠⚠ **A file, not 49 bitmaps.** At 640×1024 ARGB a frame is 2.6 MB, so a
+     * clip held in memory is ~128 MB — and [NodeCache] would pin it for the life
+     * of the canvas. The generator encodes straight to H.264 in cacheDir and
+     * this carries the path; 49 frames become ~1 MB that nothing has to keep on
+     * the heap.
+     *
+     * ⚠ [posterId] is frame 0 in the [ImageStore], and it is what the canvas
+     * draws on the node. Exactly ONE frame enters that store: it is bounded at
+     * twelve entries, so a clip that put all its frames there would evict every
+     * other node's picture.
+     */
+    data class Video(
+        val path: String,
+        val frames: Int,
+        val w: Int,
+        val h: Int,
+        val posterId: String,
+    ) : Value {
+        // ⚠ The FILE NAME, which the producer makes a content address (a hash of
+        // everything the clip was generated from). The path is not usable: it
+        // carries a cache directory that differs between installs, so two
+        // identical clips would look different to a downstream key.
+        override fun address() = path.substringAfterLast('/')
+        override fun describe() = "video ${frames}f ${w}x$h"
+
+        /** ⚠ Valid only while the store still holds it, like any [Image]. */
+        val poster get() = Image(posterId, w, h)
+    }
+
+    /**
+     * ⭐⭐ A bundle of float tensors held app-side —
+     * [com.abrah.nightmare.npu.TensorStore].
+     *
+     * ⚠⚠ **Not a [Handle], and the difference is the process.** A `Handle`
+     * names a tensor in the BACKEND, and the executor proves it is still alive
+     * by asking `GET /handles`. These live in this process, produced and
+     * consumed by `libnmqnn.so`, and there is no server to ask — so liveness
+     * is a lookup in the store.
+     *
+     * @param kind `video_cond` or `video_latent`. ⚠ It is what the PORT type
+     *   maps to, and the two must not be merged into one name: a conditioning
+     *   wired into a latent port is a graph that would run and produce
+     *   confident nonsense.
+     */
+    data class Tensors(val id: String, val kind: String) : Value {
+        override fun address() = id
+        override fun describe() = kind.replace('_', ' ')
+    }
+
+    /**
      * The content address this value contributes to a DOWNSTREAM node's key.
      *
      * ⚠ Never the producing node's id: two nodes that computed the same thing
@@ -61,6 +113,21 @@ sealed interface Value {
     fun address(): String
 
     fun describe(): String
+}
+
+/**
+ * ⭐ The frame a UI should draw for this value, or null when there is nothing to
+ * look at.
+ *
+ * ⚠ It exists so the canvas, the results store and the harness do not each
+ * acquire their own `when` over [Value] — a video is a picture as far as every
+ * one of them is concerned, and the day it stopped being one was the day four
+ * call sites would have had to be found.
+ */
+fun Value.previewImage(): Value.Image? = when (this) {
+    is Value.Image -> this
+    is Value.Video -> poster
+    else -> null
 }
 
 /**
@@ -237,6 +304,32 @@ data class Source(val node: String, val port: String? = null) {
 }
 
 /**
+ * ⭐⭐ The node types that ROLL A SEED — the one list, so nothing can know about
+ * half of them.
+ *
+ * ⚠⚠ It exists because `"sd.sample"` was written as a literal in six places
+ * that each mean "the sampler": the pre-run roll (`HarnessOps.runRolled`), the
+ * seed shown on a picture and the node a lock writes it to
+ * (`canvas.seedFor`/`canvas.samplerFor`), the run bar's lock button, and the
+ * seed filed with a kept result. `nd.video_sample` matched none of them, so a
+ * video graph rolled nothing (`seed 0` hashed to `"0"` and the executor served
+ * the CACHED clip — the exact failure `runRolled`'s own comment describes),
+ * showed no seed, and offered no lock. Reported from the phone, 2026-09-12.
+ *
+ * ⚠ Matched by TYPE, not by "has a widget called seed": `sd.vae_encode` carries
+ * one and rolling it would make every img2img graph full price every Run — the
+ * distinction `runRolled` already drew and the reason this is a list rather
+ * than a predicate over widgets.
+ */
+// ⚠⚠ `nd.first_frame` rolls too: it has its own seed and generates the
+// picture the clip starts from, so a graph whose frame seed never rolled
+// would animate the same still every Run.
+val SAMPLER_TYPES = setOf("sd.sample", "nd.sample", "nd.first_frame")
+
+/** ⚠ See [SAMPLER_TYPES] — never compare against one of those strings directly. */
+fun isSampler(type: String): Boolean = type in SAMPLER_TYPES
+
+/**
  * Builds a [Node.inputs] map from the compact wire spelling.
  *
  * ⚠ Each value goes through [Source.parse], so `"sample"` is the sole output and
@@ -398,6 +491,16 @@ private const val SEP = '\u001F'
  * depend on map iteration order, which is stable right up until it is not, and
  * an undelimited concatenation collides (`a=1,b=2` against `a=1b=2`).
  */
+/**
+ * ⚠⚠ One cache entry per OUTPUT PORT of a node.
+ *
+ * [cacheKey] already covers the type, version, params and inputs — everything
+ * that decides what a node produces. The port name is what distinguishes the
+ * two things it produced FROM each other, and without it a two-output node's
+ * second value would overwrite its first.
+ */
+fun portKey(nodeKey: String, port: String): String = "$nodeKey#$port"
+
 fun cacheKey(
     type: String,
     version: String,

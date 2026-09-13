@@ -104,6 +104,7 @@ object CanvasColors {
         "latent" -> Color(0xFF7BC7FF)
         "image" -> Color(0xFF7BFFB0)
         "mask" -> Color(0xFFFFD37B)
+        "video" -> Color(0xFFFF7BD4)
         else -> Color(0xFF8A8A9A)
     }
 
@@ -111,6 +112,19 @@ object CanvasColors {
         "LATENT" -> Color(0xFF7BC7FF)
         "IMAGE" -> Color(0xFF7BFFB0)
         "COND" -> Color(0xFFFFB07B)
+        // ⚠ A pink of its own rather than IMAGE's green: a VIDEO port does not
+        // accept an image wire and the canvas refuses the drop, so two ports
+        // that mean different things must not look alike.
+        "VIDEO" -> Color(0xFFFF7BD4)
+        // ⚠⚠ The video path's own conditioning and latent. They are NOT
+        // `COND`/`LATENT` — those live in the backend process — so they must
+        // not look like them either: a port that refuses a wire while looking
+        // identical to one that accepts it reads as a bug.
+        // ⚠ Kin to their SD counterparts (a warmer orange, a deeper blue) so
+        // the family is legible without the two being confusable.
+        "VIDEO_COND" -> Color(0xFFFF9E5C)
+        "FRAME_COND" -> Color(0xFFFFC98A)
+        "VIDEO_LATENT" -> Color(0xFF5C9EFF)
         else -> Color(0xFF8A8A9A)
     }
 }
@@ -144,6 +158,21 @@ fun GraphCanvas(
     previews: Map<String, Pair<String, Float>> = emptyMap(),
     /** Resolves an image id to pixels. Null while the bitmap is not resident. */
     imageFor: (String) -> ImageBitmap? = { null },
+    /**
+     * ⭐⭐ The frame a node holding a CLIP should draw right now, by node id.
+     *
+     * ⚠⚠ It takes the node id, not an image id, because the answer changes
+     * with time and an id cannot: a looping thumbnail is the same node showing
+     * a different picture twelve times a second. The caller owns the clock.
+     *
+     * ⚠ Reading an animated [androidx.compose.runtime.State] inside this
+     * lambda is what redraws the canvas — a draw scope records its state reads
+     * and invalidates on change, so no explicit invalidation is needed here.
+     *
+     * ⚠ Null for every ordinary node, which then draws its [imageFor] picture
+     * exactly as before.
+     */
+    clipFrameFor: (String) -> ImageBitmap? = { null },
 
 ) {
     val measurer = rememberTextMeasurer()
@@ -197,7 +226,7 @@ fun GraphCanvas(
             // exactly how a "pop out" stops reading as one.
             for (box in boxes.sortedBy { if (it.id in selected) 1 else 0 }) {
                 drawNode(box, vp, viewport.scale, measurer, box.id in selected,
-                    status[box.id], imageFor)
+                    status[box.id], imageFor, clipFrameFor)
             }
 
             // ⭐⭐ The picked wire's controls, LAST, so they sit over every node
@@ -241,6 +270,7 @@ private fun DrawScope.drawNode(
     selected: Boolean,
     status: NodeStatus?,
     imageFor: (String) -> ImageBitmap?,
+    clipFrameFor: (String) -> ImageBitmap? = { null },
 ) {
     val tl = viewport.toScreen(box.topLeft)
     val w = box.width * viewport.scale
@@ -300,7 +330,10 @@ private fun DrawScope.drawNode(
     // ⭐ The picture the node is showing, drawn INSIDE its body at the image's
     // own aspect ratio (the box was laid out to fit it, so no stretch).
     box.preview?.let { p ->
-        val bmp = imageFor(p.imageId)
+        // ⭐ A clip's current frame wins over its poster. ⚠ The poster is still
+        // the fallback, so a node whose loop has been evicted (or whose process
+        // restarted) shows the still rather than the empty placeholder.
+        val bmp = clipFrameFor(box.id) ?: imageFor(p.imageId)
         val pad = Sizes.BODY_PADDING * viewport.scale
         val top = viewport.toScreen(Pt(box.topLeft.x, box.previewTop))
         val pw = w - 2 * pad

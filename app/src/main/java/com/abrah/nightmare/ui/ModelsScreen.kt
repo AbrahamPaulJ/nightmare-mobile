@@ -63,6 +63,38 @@ data class UpscalerRow(
     val onDisk: Long = 0,
 )
 
+/**
+ * ⭐⭐ The video models, as one row — because they are one decision.
+ *
+ * ⚠⚠ **A THIRD kind of model**, next to a checkpoint and an upscaler, and
+ * it gets its own tab for the same reason they do. It is not a family: there
+ * is no launch contract, nothing to "Use", no `--type`, and the catalogue
+ * cannot describe it at all ([com.abrah.nightmare.npu.NpuFiles]).
+ *
+ * ⚠ **One row for 13 files**, not thirteen. They are useless individually —
+ * the pipeline maps all of them — so thirteen cards would be thirteen
+ * decisions a user cannot make separately.
+ *
+ * @param supported null while the canary has not run; false means this chip
+ *   refused a real context binary and the download would be wasted.
+ */
+data class VideoRow(
+    val installedBytes: Long,
+    val totalBytes: Long,
+    /** ⚠ Graphs, not host weights — [weightsMissing] is the other half. */
+    val missing: List<String>,
+    /**
+     * ⚠ The host-side weights, which download with the graphs since
+     * 2026-09-13 — they are 0.7% of the bytes and the app cannot render a
+     * frame without them, so [VideoInstaller] fetches them FIRST.
+     */
+    val weightsMissing: List<String>,
+    val supported: Boolean? = null,
+    val progress: ModelInstaller.Progress? = null,
+) {
+    val complete: Boolean get() = missing.isEmpty() && weightsMissing.isEmpty()
+}
+
 data class ModelRow(
     val spec: ModelSpec,
     /**
@@ -129,6 +161,19 @@ fun ModelsScreen(
     upscalers: List<UpscalerRow> = emptyList(),
     onInstallUpscaler: (UpscalerSpec) -> Unit = {},
     onDeleteUpscaler: (UpscalerSpec) -> Unit = {},
+    /**
+     * ⭐⭐ The video models. Null renders no tab at all — which is what a
+     * preview, a golden, and a phone whose chip cannot run them all want.
+     */
+    video: VideoRow? = null,
+    onInstallVideo: () -> Unit = {},
+    onDeleteVideo: () -> Unit = {},
+    /**
+     * ⚠⚠ Asked for by the TAB, not at app start: it runs the canary, which
+     * brings the whole QNN backend up and costs seconds on a cold app. A user
+     * who never opens this tab never pays for it.
+     */
+    onProbeVideo: () -> Unit = {},
 ) {
     // ⚠⚠ The confirm is intercepted HERE rather than inside the card, so the
     // card stays a dumb row and there is exactly one place that can delete a
@@ -207,9 +252,16 @@ fun ModelsScreen(
         // checkpoint but had no Use button would read as a broken checkpoint.
         val hasUpscalers = upscalers.isNotEmpty()
         SwipeTabs(
-            labels = families.map { it.label } + if (hasUpscalers) listOf(stringResource(R.string.upscalers)) else emptyList(),
+            labels = families.map { it.label } +
+                (if (hasUpscalers) listOf(stringResource(R.string.upscalers)) else emptyList()) +
+                (if (video != null) listOf(stringResource(R.string.video)) else emptyList()),
             modifier = Modifier.padding(top = 8.dp),
         ) { page ->
+            // ⚠ LAST, after the upscalers, so adding it moved no existing index.
+            if (video != null && page == families.size + (if (hasUpscalers) 1 else 0)) {
+                VideoModelsTab(video, busy, onInstallVideo, onCancel, onDeleteVideo, onProbeVideo)
+                return@SwipeTabs
+            }
             if (hasUpscalers && page == families.size) {
                 LazyColumn(
                     Modifier.fillMaxWidth().padding(top = 10.dp),
@@ -614,6 +666,120 @@ private fun ModelAction(
  * upscaler globally, a flow's Upscale node names one. That absence is a design
  * decision; the rest was an oversight.
  */
+/**
+ * ⭐⭐ One card for the whole video download.
+ *
+ * ⚠⚠ **Bytes, not files.** "12 of 13" reads as nearly done when the absent
+ * one is 1.5 GB of 8.5, and the bytes are what the user is actually waiting
+ * for.
+ */
+@Composable
+private fun VideoModelsTab(
+    row: VideoRow,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onCancel: () -> Unit,
+    onDelete: () -> Unit,
+    onProbe: () -> Unit,
+) {
+    // ⚠ Once, when the tab is first composed. [HarnessViewModel.probeVideoSupport]
+    // is itself idempotent, so a pager pre-composing this page costs one call.
+    androidx.compose.runtime.LaunchedEffect(Unit) { onProbe() }
+    LazyColumn(
+        Modifier.fillMaxWidth().padding(top = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            Text(
+                stringResource(R.string.video_models_note),
+                style = LogTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        item {
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.video_models),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                if (row.complete) {
+                                    stringResource(R.string.installed_mb, mb(row.installedBytes))
+                                } else {
+                                    stringResource(
+                                        R.string.video_of_total,
+                                        mb(row.installedBytes), mb(row.totalBytes),
+                                    )
+                                },
+                                style = LogTextStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                // ⚠⚠ The canary's verdict, in the one place a
+                                // user is about to spend 8.5 GB. It runs a real
+                                // context binary rather than consulting a chip
+                                // list — `docs/DEVICES.md` §2.
+                                when (row.supported) {
+                                    false -> stringResource(R.string.cannot_run_it)
+                                    else -> stringResource(R.string.video_about)
+                                },
+                                style = LogTextStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        when {
+                            row.progress != null ->
+                                OutlinedButton(onClick = onCancel) {
+                                    Text(stringResource(R.string.cancel))
+                                }
+                            row.supported == false ->
+                                OutlinedButton(onClick = {}, enabled = false) {
+                                    Text(stringResource(R.string.unsupported))
+                                }
+                            row.missing.isEmpty() -> OutlinedButton(
+                                onClick = onDelete,
+                                enabled = !busy,
+                            ) { Text(stringResource(R.string.delete)) }
+                            else -> Button(
+                                onClick = onInstall,
+                                enabled = !busy,
+                            ) { Text(stringResource(R.string.download)) }
+                        }
+                    }
+                    val p = row.progress
+                    if (p != null) {
+                        if (p.total > 0) {
+                            LinearProgressIndicator(
+                                progress = { p.fraction },
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            )
+                        } else {
+                            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+                        }
+                        Text(
+                            p.phase,
+                            style = LogTextStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun UpscalerCard(
     row: UpscalerRow,

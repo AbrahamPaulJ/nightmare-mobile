@@ -270,6 +270,10 @@ fun HarnessScreen(
                     upscalers = vm.upscalerRows,
                     onInstallUpscaler = vm::installUpscaler,
                     onDeleteUpscaler = vm::deleteUpscaler,
+                    video = vm.videoRow,
+                    onInstallVideo = vm::installVideoModels,
+                    onDeleteVideo = vm::deleteVideoModels,
+                    onProbeVideo = vm::probeVideoSupport,
                 )
             },
             results = {
@@ -394,8 +398,34 @@ fun HarnessScreen(
                 // null when no process is up, and then the selected name is
                 // still the honest thing to show — marked idle so it is not
                 // read as "loaded".
-                val name = l.resident ?: vm.modelLabel
-                val holding = if (l.resident != null) "holding $name" else "$name (idle)"
+                // ⭐⭐⭐ The IN-PROCESS NPU wins the line while it is holding
+                // something, because it is the thing actually running.
+                //
+                // ⚠⚠ Without this the bar described a video render as
+                // "AbsoluteReality (idle)" — naming an SD checkpoint that was
+                // not involved, and calling the machine idle while 13 context
+                // binaries were mapped on the NPU. Reported from the phone,
+                // 2026-09-13: *"why is the video model not shown in the top bar,
+                // it just shows sd1.5 model as idle"*. The two routes to the NPU
+                // are independent (`docs/NEODRAGON.md` §3), so the readout has
+                // to ask both rather than assume the server is the only one.
+                val holding = when {
+                    // Something is mapped on the NPU right now.
+                    l.npuGraphs > 0 ->
+                        "holding ${com.abrah.nightmare.npu.NpuFiles.LABEL}" +
+                            "  ·  ${l.npuGraphs} graph" + (if (l.npuGraphs == 1) "" else "s")
+                    // A backend process is up with a checkpoint in it.
+                    l.resident != null -> "holding ${l.resident}"
+                    // ⭐⭐ Nothing is loaded — so name what the OPEN FLOW would
+                    // use, not what the picker happens to be set to. A video
+                    // flow does not touch a checkpoint, and saying
+                    // "QteaMix (idle)" over a t2v graph described a model that
+                    // will never be loaded by anything on the canvas.
+                    !l.graphNeedsCheckpoint ->
+                        if (l.graphIsVideo) "${com.abrah.nightmare.npu.NpuFiles.LABEL} (idle)"
+                        else "no checkpoint needed"
+                    else -> "${vm.modelLabel} (idle)"
+                }
                 "$holding  ·  $free/$total GB free"
             },
             onModels = { vm.setModelsVisible(true) },

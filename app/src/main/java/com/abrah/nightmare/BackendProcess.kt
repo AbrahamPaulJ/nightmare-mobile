@@ -71,12 +71,41 @@ object BackendProcess {
     /**
      * Unpacks `assets/qnnlibs` into `filesDir/qnnruntime`.
      *
-     * ⚠ Re-copies every time rather than skipping when the directory exists.
-     * A stale runtime dir after a backend upgrade is a genuinely nasty failure:
-     * the mismatch shows up as a QNN context that refuses to load, pointing at
-     * the model rather than at the libs. 33 MB of copying is cheap next to that.
+     * ⚠ Re-copies rather than skipping when the directory exists. A stale
+     * runtime dir after a backend upgrade is a genuinely nasty failure: the
+     * mismatch shows up as a QNN context that refuses to load, pointing at the
+     * model rather than at the libs. 33 MB of copying is cheap next to that.
+     *
+     * ⚠⚠⚠ **But it copies through a temp file and a rename, and it does the
+     * work ONCE PER PROCESS — because these same libraries are `dlopen`'d into
+     * THIS process by `libnmqnn.so`, and rewriting a mapped `.so` in place is
+     * fatal.** `FileOutputStream` opens with `O_TRUNC`, and truncating a file
+     * makes the kernel zap every page of every mapping of it — COW'd pages
+     * included. That throws away the linker's load-bias fixups in
+     * `.got.plt`, so the next call into the library reads a slot holding
+     * PLT0's *link-time* address and branches into an unmapped page:
+     *
+     *     signal 11 (SIGSEGV), SEGV_MAPERR, fault addr 0x3d37b0 (== .plt)
+     *     x16 = base+0x3e8ff0 (inside .got.plt)   x17 = 0x3d37b0
+     *     #01 libQnnSystem.so   #03 NativeQnn_load
+     *
+     * ⚠⚠ That was the "a context binary can only be loaded once per process"
+     * blocker, and it was never about QNN, deserialisation or memory: it is
+     * this function, called a second time by the second `QnnRunner`. Whichever
+     * of the five libs is called into first after the rewrite is the one that
+     * appears to crash, which is why the fault moved between `libQnnSystem`
+     * and `libQnnHtp` and looked like two bugs. `docs/NEODRAGON.md` §5b.
+     *
+     * ⇒ **Never truncate a file this process may have mapped.** A rename swaps
+     * the directory entry and leaves the old inode intact for whoever has it
+     * open, which is exactly the semantics needed here.
      */
+    @Volatile
+    private var runtimeUnpacked: File? = null
+
+    @Synchronized
     fun prepareRuntime(context: Context): File {
+        runtimeUnpacked?.let { return it }
         val dir = File(context.filesDir, RUNTIME_DIR).apply { mkdirs() }
         val all = context.assets.list("qnnlibs").orEmpty().toList()
         check(all.isNotEmpty()) {
@@ -92,13 +121,18 @@ object BackendProcess {
         val names = DeviceProbe.runtimeLibs(all)
         for (n in names) {
             val dst = File(dir, n)
+            val tmp = File(dir, "$n.tmp")
             context.assets.open("qnnlibs/$n").use { input ->
-                dst.outputStream().use { input.copyTo(it) }
+                tmp.outputStream().use { input.copyTo(it) }
             }
-            dst.setReadable(true, false)
-            dst.setExecutable(true, false)
+            tmp.setReadable(true, false)
+            tmp.setExecutable(true, false)
+            // ⚠ `File.renameTo` is `rename(2)` here -- same directory, same
+            // filesystem -- so it is atomic and never truncates `dst`.
+            check(tmp.renameTo(dst)) { "cannot replace ${dst.absolutePath}" }
         }
         Log.i(TAG, "runtime: ${names.size}/${all.size} libs (${DeviceProbe.caps()}) in ${dir.absolutePath}")
+        runtimeUnpacked = dir
         return dir
     }
 

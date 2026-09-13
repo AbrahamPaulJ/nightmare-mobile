@@ -12,7 +12,12 @@
 # rather than failing 200 lines later with "no such file".
 
 cmake_minimum_required(VERSION 3.22.1)
-project(nmjs C)
+
+# ⚠ TWO languages and TWO libraries out of one CMakeLists: `nmjs` is the QuickJS
+# plugin runtime (C) and `nmqnn` is the in-process NPU runner (C++). They share
+# nothing but this file -- deliberately, so that a phone with no NPU work to do
+# still loads only the one it needs, and so a failure in either names itself.
+project(nightmare C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -56,3 +61,36 @@ target_compile_options(nmjs PRIVATE
 
 find_library(log-lib log)
 target_link_libraries(nmjs ${log-lib})
+
+
+# ---------------------------------------------------------------------------
+# libnmqnn.so -- the in-process NPU runner (docs/NEODRAGON.md)
+# ---------------------------------------------------------------------------
+#
+# ⚠ The headers are FETCHED, not committed, exactly as QuickJS is:
+# tools/fetch_qnn_headers.ps1 copies them out of the QAIRT SDK, which has its
+# own redistribution terms. The check below says so rather than failing a
+# hundred lines later inside a vendor header.
+set(QNN_INC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+if(NOT EXISTS ${QNN_INC}/QNN/QnnBackend.h)
+    message(FATAL_ERROR
+        "QNN headers are missing from ${QNN_INC}.
+"
+        "Run tools/fetch_qnn_headers.ps1 first (they are fetched, not committed).")
+endif()
+
+add_library(nmqnn SHARED nmqnn.cpp)
+
+# ⚠ Both roots. `nmqnn.cpp` includes "QNN/QnnBackend.h", while the SDK's own
+# sub-headers include their siblings unqualified ("QnnCommon.h" from
+# HTP/QnnHtpDevice.h) -- so the QNN directory has to be on the path too.
+target_include_directories(nmqnn PRIVATE ${QNN_INC} ${QNN_INC}/QNN)
+
+# ⚠⚠ NOTHING QNN is linked. The backend is dlopen'd at runtime from
+# `filesDir/qnnruntime` (`BackendProcess.prepareRuntime`), which is where the
+# app already unpacks this device's arch trio -- so ONE libnmqnn.so serves every
+# HTP arch, and a build machine needs no QNN .so at all.
+target_link_libraries(nmqnn android log dl)
+
+target_compile_options(nmqnn PRIVATE -O2 -fvisibility=hidden -Wall)

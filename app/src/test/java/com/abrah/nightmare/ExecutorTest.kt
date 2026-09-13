@@ -613,7 +613,7 @@ class ExecutorTest {
      * the producer, and reads like a bug in the wiring the user just drew.
      */
     @Test
-    fun aSecondOutputIsRefusedAsUnbuiltRatherThanBlocking() = runBlocking {
+    fun aSecondOutputIsReadByName() = runBlocking {
         val g = Graph(
             listOf(
                 text(),
@@ -623,10 +623,13 @@ class ExecutorTest {
             )
         )
         val r = withSplit().run(g)
-        val why = r.error ?: ""
-        assertTrue(why, "multi-output execution is not built" in why)
-        assertTrue(why, "\"b\"" in why)
-        assertTrue("nothing ran", r.runs.isEmpty())
+        // ✅ Multi-output EXECUTES now ([NodeType.runPorts]), so the graph that
+        // used to be refused wholesale is one that runs. The refusal it
+        // replaced said "multi-output execution is not built"; keeping the test
+        // as an assertion about that sentence would have pinned the limitation
+        // rather than the behaviour.
+        assertEquals(r.error, null, r.error)
+        assertTrue("the decoder must have run", r.runs.any { it.id == "d" })
     }
 
     /**
@@ -765,6 +768,13 @@ class ExecutorTest {
             when (v) {
                 is Value.Handle -> false
                 is Value.Image -> v.id in liveImages
+                // ⚠ A clip is kept while its FILE exists, not while its poster
+                // frame is in the store -- see the executor's own prune.
+                is Value.Video -> java.io.File(v.path).isFile
+                // ⚠⚠ A video conditioning or latent is kept while the app-side
+                // store still holds it. Not a backend question: these never
+                // leave this process ([Value.Tensors]).
+                is Value.Tensors -> v.id in com.abrah.nightmare.npu.TensorStore
             }
         })
         assertNull(c.get("h"))

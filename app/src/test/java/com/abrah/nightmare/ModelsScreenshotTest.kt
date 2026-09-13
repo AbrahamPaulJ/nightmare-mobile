@@ -119,6 +119,52 @@ class ModelsScreenshotTest {
         )
     }
 
+    /**
+     * ⭐⭐ The VIDEO tab — the third kind of model.
+     *
+     * ⚠ `rows = emptyList()` is not laziness: with no checkpoint families and
+     * no upscalers, the video tab IS page 0, so this renders it without
+     * teaching `SwipeTabs` to start on a chosen page. It also happens to be a
+     * real state — a phone that downloaded the video models and no checkpoint.
+     */
+    @Test
+    fun videoModelsNotInstalled() = shoot("models-video") {
+        ModelsScreen(
+            rows = emptyList(), busy = false, error = null,
+            onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
+            video = com.abrah.nightmare.ui.VideoRow(
+                installedBytes = 0,
+                totalBytes = 8_596_825_402L,
+                missing = listOf("clipg", "mmdit_s0fs"),
+                weightsMissing = emptyList(),
+                supported = true,
+            ),
+        )
+    }
+
+    /**
+     * ⚠ Part-way through, with the host-side weights already down.
+     *
+     * ⚠⚠ They are fetched FIRST although they are 0.7% of the bytes: the app
+     * cannot render a frame without them, so a cancel at 99% must not leave
+     * 8.5 GB on disk that still cannot make a video.
+     */
+    @Test
+    fun videoModelsPartlyDownloaded() = shoot("models-video-weights") {
+        ModelsScreen(
+            rows = emptyList(), busy = true, error = null,
+            onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
+            video = com.abrah.nightmare.ui.VideoRow(
+                installedBytes = 1_460_000_000L,
+                totalBytes = 8_596_825_402L,
+                missing = listOf("clipg", "mmdit_s0fs", "mmdit_s1fs"),
+                weightsMissing = emptyList(),
+                supported = true,
+                progress = ModelInstaller.Progress("downloading clipg", 1_460_000_000L, 8_596_825_402L),
+            ),
+        )
+    }
+
     /** A failed install has to say why — "size mismatch" is the common one. */
     @Test
     fun withAnError() = shoot("models-error") {

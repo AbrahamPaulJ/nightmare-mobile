@@ -187,6 +187,34 @@ class NodeCtx(
     val images: ImageStore,
     val android: android.content.Context? = null,
     val onProgress: (Ops.Progress) -> Unit,
+    /**
+     * ⭐⭐ A line of narration, WHILE the node runs.
+     *
+     * ⚠⚠ [onProgress] cannot carry this and should not be made to: a fraction
+     * says how far along something is, and what a person waiting 25 s wants is
+     * *what is happening*. The video node spends its first seconds mapping 3 GB
+     * of context binaries — a phase with no steps to count, where a percentage
+     * is honestly 0 and a name is honestly "loading the text encoders".
+     *
+     * ⚠ Defaulted to a no-op, so every node with nothing to narrate and every
+     * existing construction of this class is unchanged.
+     */
+    val say: (String) -> Unit = {},
+    /**
+     * ⭐⭐ Which of THIS node's output ports something downstream actually
+     * reads.
+     *
+     * ⚠⚠ It exists for one real cost: `nd.clip_encode` produces two
+     * conditionings, and the one the first frame needs requires `clipl`
+     * (234 MB) to be mapped and executed. In an image-to-video graph nothing
+     * consumes it, and paying for it anyway would undo the saving that makes
+     * i2v the cheaper path (`docs/NEODRAGON.md` §8).
+     *
+     * ⚠ Empty means "nothing downstream", which is the honest answer for a
+     * terminal node — a node must still produce its primary output, because
+     * that is what the canvas draws.
+     */
+    val wanted: Set<String> = emptySet(),
 )
 
 /**
@@ -336,16 +364,39 @@ interface NodeType {
     fun effectiveParams(node: Node): Map<String, String> = applyDefaults(widgets, node)
 
     suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value
+
+    /**
+     * ⭐⭐ Every output port this node produces — the general form of [run].
+     *
+     * ⚠⚠ Defaulted to "[run]'s value, under the first port", so every
+     * single-output node in the app is unchanged and none of them had to be
+     * touched. A type that genuinely makes two things overrides THIS and lets
+     * [run] delegate to it.
+     *
+     * ⚠ The executor caches per PORT, so a two-output node whose consumers
+     * were added one at a time does not recompute the half it already had.
+     */
+    suspend fun runPorts(
+        ctx: NodeCtx,
+        node: Node,
+        inputs: Map<String, Value>,
+        // ⚠⚠ `firstOrNull`, not `first`: a SINK declares no outputs at all
+        // (`save_image`), and its value is still recorded -- under a name no
+        // wire can spell -- so the sink keeps appearing in `GraphRun.outputs`
+        // while staying unwireable. `first()` here crashed every sink in the
+        // app the moment multi-output landed.
+    ): Map<String, Value> =
+        mapOf(outputs.firstOrNull()?.name.orEmpty() to run(ctx, node, inputs))
 }
 
 /**
  * ⚠ Throws rather than defaulting. A missing widget is a malformed graph, and a
  * default here would render something plausible that the user did not ask for.
  */
-private fun Node.str(name: String): String =
+internal fun Node.str(name: String): String =
     params[name] ?: throw IllegalArgumentException("node \"$id\": missing param \"$name\"")
 
-private fun Node.int(name: String): Int =
+internal fun Node.int(name: String): Int =
     str(name).toIntOrNull()
         ?: throw IllegalArgumentException("node \"$id\": param \"$name\" is not an int: ${params[name]}")
 
@@ -574,6 +625,70 @@ fun modelRecipeRetarget(
             "scheduler" to spec.scheduler,
         )
         val change = wanted.filterKeys { it in has && n.params[it] != wanted[it] }
+        if (change.isNotEmpty()) out[n.id] = change
+    }
+    return out
+}
+
+/**
+ * ⭐⭐ The new model's STARTER PROMPT, written onto the graph -- but only over
+ * text the app itself put there.
+ *
+ * ⚠⚠ **This is the one retarget that must not overwrite the user.**
+ * [modelRecipeRetarget] overwrites `steps`/`cfg` by design, because asking for
+ * a checkpoint is asking for its published recipe. A prompt is the opposite:
+ * it is the sentence the user came to write, and a model switch that erased it
+ * would be the worst kind of data loss -- silent, and on the one field nothing
+ * else in the app can reconstruct.
+ *
+ * ⚠ So "untouched" is decided by VALUE, not by tracking edits: a field is the
+ * app's to rewrite when it is blank or still carries some catalogue model's own
+ * prompt, which is exactly the set of strings this function and the recipes
+ * ever write. Anything else was typed by a person and is left alone. That is
+ * `local-dream`'s `!prefs.hasSaved` rule without the per-model store -- a graph
+ * is not a screen, and the text lives in the file rather than in preferences.
+ *
+ * ⚠ Both fields or neither, and keyed on the node declaring BOTH widgets --
+ * the CLIP-encode shape. A plugin node with a lone `prompt` string widget means
+ * something else by it.
+ */
+/**
+ * ⚠⚠ The literals the RECIPES carried before they read the model — app-written
+ * text that predates [ModelSpec.prompt] being consumed at all.
+ *
+ * Without them the feature looks broken on the one graph everybody has: the
+ * canvas autosave was built from a recipe that hardcoded these, so every
+ * existing canvas would read as "the user typed this" and never pick up a
+ * checkpoint's own prompt. ⚠ The risk is the mirror image and it is small: a
+ * user who deliberately kept `a cat on grass` loses it on a model switch, and
+ * can type it back. ⚠ Frozen — never extend this with a value the app still
+ * writes, or the untouched test stops meaning anything.
+ */
+private val LEGACY_RECIPE_TEXT = setOf(
+    "a cat on grass",
+    "blurry, lowres",
+    "masterpiece, best quality, highly detailed,",
+)
+
+fun modelPromptRetarget(
+    graph: Graph,
+    types: Map<String, NodeType>,
+    spec: ModelSpec,
+): Map<String, Map<String, String>> {
+    val out = LinkedHashMap<String, Map<String, String>>()
+    // ⚠ Every model's, not just the previously selected one: A -> B -> C must
+    // still recognise A's prompt as ours. ⚠ `all` rather than `builtIn`, so an
+    // imported model's `config.json` prompt counts too.
+    val ours = ModelCatalog.all.flatMap { listOf(it.prompt, it.negative) }.toSet() +
+        "" + LEGACY_RECIPE_TEXT
+    val wanted = mapOf("prompt" to spec.prompt, "negative" to spec.negative)
+    for (n in graph.nodes) {
+        val t = types[n.type] ?: continue
+        val has = t.widgets.map { it.name }.toSet()
+        if (!has.containsAll(wanted.keys)) continue
+        val change = wanted.filterKeys { k ->
+            n.params[k].orEmpty() in ours && n.params[k] != wanted[k]
+        }
         if (change.isNotEmpty()) out[n.id] = change
     }
     return out
@@ -938,18 +1053,34 @@ object TextEncodeNode : NodeType {
      * ⭐ The ONLY place a prompt is written. [SampleNode] used to carry a copy
      * and ignore it whenever this node was wired; it no longer has one.
      *
-     * ⚠ Empty defaults rather than none. A node added from the palette must
-     * arrive with every param present, or it fails with "missing param" -- an
-     * error about the app rather than about the empty prompt the user can
-     * plainly see. The backend refuses an empty prompt by name, which is the
-     * message that actually helps.
+     * ⚠ A default rather than none. A node added from the palette must arrive
+     * with every param present, or it fails with "missing param" -- an error
+     * about the app rather than about the empty prompt the user can plainly
+     * see.
+     *
+     * ⭐⭐ **And the default is the CHECKPOINT's, not a literal** -- the same
+     * rule [SampleNode] applies to `steps`/`cfg`/`scheduler`, extended to the
+     * two fields upstream carries beside them ([ModelSpec.prompt]). A prompt
+     * style is the thing a checkpoint's author knows and we cannot guess: an
+     * anime model and a photographic one want opposite negatives, and the app
+     * shipped the catalogue's per-model text while showing every new node an
+     * empty box. ⭐ `local-dream`'s `Model.codeDefaults` + `config.json`, which
+     * DreamUI dropped for one hardcoded prompt. The user's ask, 2026-09-12.
+     *
+     * ⚠ An IMPORTED model's is empty unless its own `config.json` says
+     * otherwise ([CustomModels.Config]) -- deliberately. We know nothing about
+     * a checkpoint someone brought, and handing it a built-in's prompt would
+     * bias it toward a model it is not.
      */
-    override val widgets = listOf(
+    override val widgets get() = listOf(
         Widget(
-            "prompt", "string", "",
+            "prompt", "string", SelectedModel.spec.prompt,
             hint = "what to draw -- the sampler reads it through the cond wire",
         ),
-        Widget("negative", "string", "", hint = "what to keep out of the picture"),
+        Widget(
+            "negative", "string", SelectedModel.spec.negative,
+            hint = "what to keep out of the picture",
+        ),
     )
 
     override fun contextKey(node: Node): ContextKey? = null
@@ -1056,7 +1187,9 @@ object OutputNode : NodeType {
             ?: throw IllegalArgumentException(
                 "node \"${node.id}\": input \"image\" is not connected"
             )
-        if (node.params["save"]?.lowercase() != "true") return image
+        // ⚠ `effectiveParams`, so an unset knob reads its declared default
+        // rather than being false by accident. See [VideoOutputNode].
+        if (!effectiveParams(node)["save"].equals("true", ignoreCase = true)) return image
 
         val png = ctx.images.png(image.id)
             ?: throw IllegalStateException(
@@ -1609,7 +1742,23 @@ object UpscaleNode : NodeType {
 val NODE_TYPES: Map<String, NodeType> =
     listOf(
         LoadImageNode, CropNode, MaskNode, UpscaleNode, TextEncodeNode, SampleNode,
-        VaeDecodeNode, VaeEncodeNode, LatentBlendNode, OutputNode,
+        VaeDecodeNode, VaeEncodeNode, LatentBlendNode,
+        // ⭐ The video path (docs/NEODRAGON.md). ⚠ Listed here like any other
+        // built-in ON PURPOSE: it reaches the NPU in-process rather than
+        // through the backend server, and a registry that made that visible
+        // would be leaking a transport detail into the palette.
+        //
+        // ⚠⚠⚠ **`nd.video_sample`, `video.output` and `image.output` are GONE**,
+        // 2026-09-13. The first was one node doing five jobs; the other two
+        // existed only to hold a `save` switch, and every terminal node draws
+        // its own result and carries save/share/star. `WorkflowIo` rebuilds a
+        // saved graph that names any of them, so nothing a user kept fails to
+        // open. `docs/NEODRAGON.md` §8.
+        com.abrah.nightmare.npu.VideoClipEncodeNode,
+        com.abrah.nightmare.npu.VideoFirstFrameNode,
+        com.abrah.nightmare.npu.VideoVaeEncodeNode,
+        com.abrah.nightmare.npu.VideoSampleSplitNode,
+        com.abrah.nightmare.npu.VideoVaeDecodeNode,
     ).associateBy { it.name }
 
 /**
@@ -1707,6 +1856,14 @@ class Executor(
          * did nothing (`docs/UI.md` §5).
          */
         onStart: (nodeId: String, type: String) -> Unit = { _, _ -> },
+        /**
+         * ⭐ A node's own narration, forwarded live — see [NodeCtx.say].
+         *
+         * ⚠ Fired from whatever thread the node runs on, which for a long node
+         * is an IO worker. Compose state takes writes off the main thread and
+         * the rest of this app already relies on that.
+         */
+        onLog: (nodeId: String, text: String) -> Unit = { _, _ -> },
     ): GraphRun {
         val t0 = System.nanoTime()
         fun sinceMs() = (System.nanoTime() - t0) / 1_000_000
@@ -1747,21 +1904,15 @@ class Executor(
                     return GraphRun(emptyList(), emptyMap(), sinceMs(),
                         "node \"${n.id}\" input \"$port\" names output \"${src.port}\" on " +
                             "\"${src.node}\", which has $have")
-                } else if (src.port != from.outputs.first().name) {
-                    // ⚠⚠ The format can address a second output; the RUNTIME
-                    // cannot produce one yet -- `NodeType.run` returns a single
-                    // value, so only the first port is ever filled. Refused here,
-                    // statically and by name, because the alternative is a node
-                    // that sits at BLOCKED "waiting on sp" forever and blames the
-                    // consumer for a limitation of the producer.
-                    // ⇒ Lifting this is `run` returning a port map (and the cache
-                    // holding one). It changes no file on disk, which is why the
-                    // wire format went first.
-                    return GraphRun(emptyList(), emptyMap(), sinceMs(),
-                        "node \"${n.id}\" input \"$port\" wants output \"${src.port}\" of " +
-                            "\"${src.node}\", but a node still produces only its first " +
-                            "(\"${from.outputs.first().name}\") -- multi-output execution is not built")
                 }
+                // ✅ A NON-FIRST port is legal now. It used to be refused here
+                // because `NodeType.run` returned one value, so only the first
+                // port was ever filled -- the wire format could address a second
+                // output and the runtime could not produce one. [NodeType.runPorts]
+                // closed that gap on 2026-09-13, which is what `nd.clip_encode`'s
+                // two conditionings needed (`docs/NEODRAGON.md` §8). The branch
+                // above still catches a port the type does not declare, which is
+                // the only thing left that can be wrong here.
             }
         }
 
@@ -1810,6 +1961,17 @@ class Executor(
             when (v) {
                 is Value.Handle -> v.id in resident
                 is Value.Image -> v.id in images
+                // ⚠⚠ A clip is kept while its FILE is there, not while its
+                // poster frame is. The poster lives in a store bounded at
+                // twelve, so keying on it would drop a perfectly good 2 s
+                // render as soon as a dozen other nodes had drawn something --
+                // and re-rendering it costs 25 s.
+                is Value.Video -> java.io.File(v.path).isFile
+                // ⚠⚠ A store lookup, not a backend question: these never
+                // leave this process ([Value.Tensors]). ⚠ The store is bounded
+                // at four because a video latent is tens of MB, so an eviction
+                // here is ordinary and means "run that node again".
+                is Value.Tensors -> v.id in com.abrah.nightmare.npu.TensorStore
             }
         }
 
@@ -1860,33 +2022,57 @@ class Executor(
             // ⚠ A node with a side effect is never served from the cache, and
             // never put into it either -- storing it would only invite a later
             // change to start trusting it.
-            val hit = if (type.cacheable) cache.get(key) else null
-            if (hit != null) {
-                values[node.id] = mutableMapOf(outName(node.id) to hit)
-                val r = NodeRun(node.id, node.type, Outcome.CACHED, 0, hit.describe())
+            // ⭐⭐ Which ports anything downstream reads — see [NodeCtx.wanted].
+            // Computed from the graph, which is the only thing that knows.
+            val wanted = order.flatMap { c -> c.inputs.values.filter { it.node == node.id } }
+                .mapTo(mutableSetOf()) { it.port ?: outName(node.id) }
+            val ports = type.outputs.map { it.name }
+            // ⚠⚠ Cached per OUTPUT PORT. A two-output node whose consumers were
+            // wired one at a time must not recompute the half it already has,
+            // and a flat per-node entry cannot express "I have `cond` but not
+            // `frame_cond`".
+            val hits = if (type.cacheable) {
+                ports.mapNotNull { portName ->
+                    cache.get(portKey(key, portName))?.let { portName to it }
+                }.toMap()
+            } else {
+                emptyMap()
+            }
+            // ⚠ Everything downstream wants, plus the PRIMARY port, must be
+            // present. The primary is the one the canvas draws, so a hit that
+            // lacked it would leave the node blank.
+            val need = (wanted + ports.take(1)).filter { it in ports }
+            if (hits.isNotEmpty() && need.isNotEmpty() && need.all { it in hits }) {
+                values[node.id] = hits.toMutableMap()
+                val shown = hits[outName(node.id)] ?: hits.values.first()
+                val r = NodeRun(node.id, node.type, Outcome.CACHED, 0, shown.describe())
                 runs += r; onNode(r)
                 continue
             }
 
             val n0 = System.nanoTime()
             val r = try {
-                val ctx = NodeCtx(host, images, android) { p ->
-                    onProgress(node.id, p.step, p.total)
-                }
+                val ctx = NodeCtx(
+                    host, images, android,
+                    onProgress = { p -> onProgress(node.id, p.step, p.total) },
+                    say = { line -> onLog(node.id, line) },
+                    wanted = wanted,
+                )
                 // ⚠⚠ The node is run with the SAME params the key was computed
                 // from. Keying on the effective values but running on the
                 // written ones is the classic way a cache starts serving a
                 // result the node never produced -- and it would only show up
                 // once a widget had a default, which is to say once plugins
                 // existed.
-                val v = type.run(ctx, node.copy(params = params), inputs)
-                if (type.cacheable) cache.put(key, v)
-                // ⚠ `run` still returns ONE value, and a single-output type is
-                // the only kind that exists. The wire format now addresses a
-                // port, which is the part a saved workflow locks in; widening
-                // `run` to a port map costs nothing later because it changes no
-                // file on disk. Do it when a node type actually needs two.
-                values[node.id] = mutableMapOf(outName(node.id) to v)
+                val produced = type.runPorts(ctx, node.copy(params = params), inputs)
+                if (type.cacheable) {
+                    produced.forEach { (portName, pv) -> cache.put(portKey(key, portName), pv) }
+                }
+                values[node.id] = produced.toMutableMap()
+                // ⚠ The PRIMARY port is what the run line shows. A node that made
+                // two things describes the one the canvas draws, not an
+                // arbitrary map entry.
+                val v = produced[outName(node.id)] ?: produced.values.first()
                 NodeRun(node.id, node.type, Outcome.RAN,
                     (System.nanoTime() - n0) / 1_000_000, v.describe())
             } catch (e: Exception) {
@@ -1897,6 +2083,15 @@ class Executor(
             }
             runs += r; onNode(r)
         }
+
+        // ⚠⚠⚠ **The video runner is released HERE, once, when the graph is
+        // done** — not per node. Residency across node boundaries is the whole
+        // reason the split is affordable: `clipg` costs 1897 ms to map and 40 ms
+        // to run, and two phases need it. ⚠ Holding it past the run is what put
+        // ~7.5 GB of context in one process and got the app killed
+        // (`docs/NEODRAGON.md` §8), so it is released however the run ended —
+        // including a node that threw.
+        com.abrah.nightmare.npu.VideoRunner.releaseAll()
 
         return GraphRun(
             runs = runs,

@@ -343,10 +343,61 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         /** The checkpoint the RUNNING backend was launched with, or null. */
         val resident: String?,
         val residentBytes: Long,
+        /**
+         * ⭐⭐ How many context binaries the IN-PROCESS runner is holding.
+         *
+         * ⚠ A second, independent route to the NPU — see
+         * [com.abrah.nightmare.npu.QnnRunner.Resident] for why [resident] alone
+         * could never describe a video render.
+         */
+        val npuGraphs: Int = 0,
+        /**
+         * ⭐⭐ Whether the graph ON THE CANVAS names a checkpoint at all.
+         *
+         * ⚠⚠ False for a video flow, and for an upscale-only one. Without
+         * this the bar named whichever SD checkpoint happened to be selected
+         * and marked it `(idle)` — which is true of that checkpoint and
+         * describes nothing the open flow will do. Reported from the phone,
+         * 2026-09-13: *"in t2v flow top bar says qteamix (idle)"*.
+         *
+         * ⚠ The same test the RUN path already makes before launching a
+         * backend with no model ([contextKeyModels]); it was simply never
+         * asked by the readout.
+         */
+        val graphNeedsCheckpoint: Boolean = true,
+        /** ⚠ A checkpoint-free graph that reaches the NPU in-process. */
+        val graphIsVideo: Boolean = false,
     )
+
+    /**
+     * ⚠⚠ Memoised on the set of node TYPES, because [refreshLoad] runs every
+     * two seconds and resolving node types can build the QuickJS runtime for a
+     * graph that names a pack. The answer cannot change without a type
+     * appearing or disappearing.
+     */
+    private var keyNeedCacheFor: Set<String>? = null
+    private var keyNeedCached: Pair<Boolean, Boolean> = true to false
 
     var load by mutableStateOf<CanvasLoad?>(null)
         private set
+
+    /** @return (needs a checkpoint, is a video graph). ⚠ Memoised — see above. */
+    private fun graphCheckpointNeed(): Pair<Boolean, Boolean> {
+        val graph = canvas.workflow.graph
+        val types = graph.nodes.mapTo(mutableSetOf()) { it.type }
+        if (types == keyNeedCacheFor) return keyNeedCached
+        val answer = runCatching {
+            val needs = contextKeyModels(graph, typesFor(graph)).isNotEmpty()
+            // ⚠ By DOMAIN, not by a list of type names: `<domain>.<name>` is
+            // the contract a plugin depends on (`ARCHITECTURE.md` §5.3), so a
+            // contributor's own `nd.*` node is covered without an entry here.
+            val video = graph.nodes.any { it.type.startsWith("nd.") }
+            needs to video
+        }.getOrDefault(true to false)
+        keyNeedCacheFor = types
+        keyNeedCached = answer
+        return answer
+    }
 
     /**
      * ⚠ Cheap: one `ActivityManager` call and a `File.length()`. It is polled
@@ -370,11 +421,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // 2026-09-11. A process launched in `--upscaler_mode` has no model, so
         // `launchedKey` is null and the line correctly says nothing is held.
         val spec = BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }
+        val needs = graphCheckpointNeed()
         load = CanvasLoad(
             ramFreeBytes = mi.availMem,
             ramTotalBytes = mi.totalMem,
             resident = spec?.label,
             residentBytes = spec?.bytesOnDisk(ctx) ?: 0L,
+            // ⭐⭐ The OTHER route to the NPU. ⚠ Cheap in the same way the rest
+            // of this is: a map size behind a lock, no file and no IPC.
+            npuGraphs = com.abrah.nightmare.npu.QnnRunner.Resident.count(),
+            graphNeedsCheckpoint = needs.first,
+            graphIsVideo = needs.second,
         )
     }
 
@@ -638,6 +695,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠ The upscalers ride along: this is the app's "re-read the disk"
         // entry point and a second one would be a second thing to forget.
         refreshUpscalers()
+        // ⚠ …and the video models, for the same reason. ⚠⚠ `probeVideoSupport`
+        // is NOT called here: it starts the QNN backend, which is seconds, and
+        // this runs every time the library opens. The tab asks for it itself.
+        refreshVideoModels()
         // ⚠ …and so does the reachable-size cache, for exactly that reason. A
         // download that has just landed brings six patch files with it, and the
         // size chips read a cache rather than the disk ([SelectedModel.refresh]).
@@ -804,6 +865,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     var upscalerRows by mutableStateOf<List<com.abrah.nightmare.ui.UpscalerRow>>(emptyList())
         private set
 
+    /**
+     * ⚠ A sentinel for [installing], which is a MODEL id everywhere else. The
+     * video models share the one-download-at-a-time latch with the checkpoints
+     * deliberately: one progress bar, and no way to start 8.5 GB and 3.5 GB
+     * into the same field.
+     */
+    private val VIDEO_INSTALL_ID = "\u0000video"
+
     fun refreshUpscalers() {
         val ctx = getApplication<Application>()
         // ⚠ The node's dropdown reads a cache, not the disk -- refresh it here,
@@ -820,6 +889,116 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 onDisk = if (here) spec.bytesOnDisk(ctx) else 0,
             )
         }
+    }
+
+    /**
+     * ⭐⭐ The video models as one row. Null until [refreshVideoModels] runs.
+     *
+     * ⚠ Null also hides the tab, which is what a device that has never run
+     * the canary should show — rather than an 8.5 GB Download button beside a
+     * question nobody has asked yet.
+     */
+    var videoRow by mutableStateOf<com.abrah.nightmare.ui.VideoRow?>(null)
+        private set
+
+    /**
+     * ⚠ The canary's verdict, remembered for the session. It brings the whole
+     * QNN backend up, so it is seconds on a cold app and must not run on every
+     * tab change.
+     */
+    private var videoSupported: Boolean? = null
+
+    fun refreshVideoModels() {
+        val ctx = getApplication<Application>()
+        val vi = com.abrah.nightmare.npu.VideoInstaller
+        videoRow = com.abrah.nightmare.ui.VideoRow(
+            installedBytes = vi.installedBytes(ctx),
+            totalBytes = vi.totalBytes,
+            missing = vi.missing(ctx),
+            // ⚠ The INSTALLER's check, which is size-aware — `NpuFiles`'s only
+            // asks whether the file exists, which is the right question for a
+            // render and the wrong one for a download that may have truncated.
+            weightsMissing = vi.missingAssets(ctx),
+            supported = videoSupported,
+            progress = if (installing == VIDEO_INSTALL_ID) installProgress else null,
+        )
+    }
+
+    /**
+     * ⭐⭐ Ask the chip before offering the download — by RUNNING a context
+     * binary, not by reading a chip name (`docs/DEVICES.md` §2).
+     *
+     * ⚠ Off the main thread and once per session; it starts the QNN backend.
+     */
+    fun probeVideoSupport() {
+        if (videoSupported != null) return
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val r = runCatching {
+                com.abrah.nightmare.npu.NpuCanary.run(
+                    ctx, com.abrah.nightmare.npu.QnnRunner(ctx),
+                )
+            }.getOrNull()
+            viewModelScope.launch {
+                // ⚠⚠ Permissive, matching `NpuCanary.canDownload`: only a REAL
+                // refusal blocks a phone. A check that could not run must not
+                // lock out a device that would have worked.
+                videoSupported = r?.canDownload ?: true
+                refreshVideoModels()
+            }
+        }
+    }
+
+    fun installVideoModels() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        val vi = com.abrah.nightmare.npu.VideoInstaller
+        installing = VIDEO_INSTALL_ID
+        cancelInstall = false
+        modelError = null
+        busy = true
+        installProgress = ModelInstaller.Progress("starting", 0, vi.totalBytes)
+        refreshVideoModels()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                vi.install(
+                    ctx,
+                    onProgress = { p ->
+                        viewModelScope.launch { installProgress = p; refreshVideoModels() }
+                    },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch { say("installed the video models") }
+            } catch (e: ModelInstaller.Cancelled) {
+                // ⚠ Not an error: every completed file is kept and the next
+                // attempt resumes from it.
+                viewModelScope.launch { say("download cancelled -- what arrived is kept", bad = true) }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    modelError = e.message ?: e.javaClass.simpleName
+                    say("video install -- $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    busy = false
+                    refreshVideoModels()
+                }
+            }
+        }
+    }
+
+    /**
+     * ⚠⚠ Deletes the GRAPHS only, never the host-side weights. Those cannot
+     * be re-downloaded (`docs/NEODRAGON.md` §6), so removing them would take
+     * something the user may have no way to get back.
+     */
+    fun deleteVideoModels() {
+        val dir = com.abrah.nightmare.npu.NpuFiles.ctxDir(getApplication())
+        val n = dir.listFiles()?.count { it.isFile && it.delete() } ?: 0
+        say("deleted $n video graph(s)")
+        refreshVideoModels()
     }
 
     fun installUpscaler(spec: UpscalerSpec) {
@@ -1148,6 +1327,23 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     " -- set on ${recipe.size} node" + (if (recipe.size == 1) "" else "s")
             )
         }
+        // ⭐⭐ …and its starter PROMPT, on any text node still holding ours.
+        //
+        // ⚠⚠ Unlike the recipe above, this one never overwrites a sentence the
+        // user typed -- [modelPromptRetarget] rewrites only a blank field or one
+        // still carrying a catalogue model's own text. A model switch that ate
+        // someone's prompt would be the worst trade in the app.
+        val prompts = modelPromptRetarget(canvas.workflow.graph, types, spec)
+        if (prompts.isNotEmpty()) {
+            editCanvas { s -> prompts.entries.fold(s) { acc, (id, p) -> acc.setParams(id, p) } }
+            // ⚠ Named, like the numbers above: the text on a node changing with
+            // no explanation is exactly what makes an app feel unreliable.
+            say(
+                "  its starter prompt written to ${prompts.size} node" +
+                    (if (prompts.size == 1) "" else "s") +
+                    " -- anything you typed is left alone"
+            )
+        }
         // ⚠⚠ Report the DERIVED sizes, because this is where they go wrong and
         // the failure is otherwise silent until a render comes out smeared.
         //
@@ -1329,10 +1525,57 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         ).show()
     }
 
+    /**
+     * ⭐⭐ The CLIP a node's picture is the poster of, or null.
+     *
+     * ⚠⚠ Reversed out of [CanvasState.previews] rather than asked of the
+     * caller. Every save/share surface is keyed by an **image** id — the
+     * fullscreen viewer keeps `viewing` a plain image id on purpose, and the
+     * inspector passes the same one — so making them clip-aware from the UI
+     * side would have meant threading a node id through three composables and
+     * the goldens that render them. The map that answers it is already here.
+     *
+     * ⚠⚠⚠ **[clipNodes] decides, exactly as it does for what animates.**
+     * The `VIDEO` value flows sampler → output, so every node on the chain
+     * holds the same path — and an earlier cut of this let ANY of them share
+     * it, on the reasoning that they all name the same file. That is not what
+     * the user sees: they see a node showing a still that sends a video.
+     * Reported from the phone, 2026-09-13: *"i still don't get why the sample
+     * in fullscreen/share is showing the video output"*. ⇒ The END of the
+     * chain owns the clip for every purpose — looping, fullscreen, Save and
+     * Share — and an upstream node saves and shares its own still.
+     *
+     * ⚠⚠ `isFile`, not merely non-null. The graph's MP4 is in
+     * `cacheDir/video/` and Android clears that whenever it likes, so the path
+     * outliving the file is the ordinary case rather than the odd one.
+     */
+    private fun clipForImage(imageId: String): java.io.File? {
+        // ⚠⚠⚠ **SEVERAL nodes share one poster id, and picking the first is
+        // a bug.** `Value.Video.previewImage()` hands back the same poster for
+        // every node the clip flows through, so a t2v graph records BOTH the
+        // sampler and the output node in `previews` under one image id.
+        // `firstOrNull` then returned whichever the map happened to hold first
+        // — usually the sampler — which [clipNodes] correctly rejects, and Save
+        // and Share fell back to the still ON THE OUTPUT NODE, where they had
+        // been working. Reported from the phone, 2026-09-13.
+        // ⇒ Ask for the node that OWNS the clip, not for any node showing its
+        // poster.
+        val owners = com.abrah.nightmare.canvas.clipNodes(canvas.workflow.graph, canvas.videos)
+        val node = canvas.previews.entries
+            .filter { it.value.first == imageId }
+            .map { it.key }
+            .firstOrNull { it in owners } ?: return null
+        return canvas.videos[node]?.let { java.io.File(it) }?.takeIf { it.isFile }
+    }
+
     fun saveImage(imageId: String) {
         val ctx = getApplication<Application>()
+        // ⭐⭐ A clip saves as the CLIP. Writing the poster PNG while the user
+        // is watching it move is the "poster frame is not a video" complaint in
+        // a second place — `docs/NEODRAGON.md` §7c.
+        val clip = clipForImage(imageId)
         val png = ops.images.png(imageId)
-        if (png == null) {
+        if (clip == null && png == null) {
             // ⚠ Toasted too: every OUTCOME of a save is announced the same
             // way, or the one that fails is the one nobody hears about.
             say("that picture is no longer in memory -- Run again to remake it", bad = true)
@@ -1341,12 +1584,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val name = "nightmare-" + System.currentTimeMillis()
-            val where = runCatching { ImageSaver.savePng(ctx, png, name) }
+            val where = runCatching {
+                if (clip != null) {
+                    com.abrah.nightmare.npu.VideoWriter
+                        .publish(ctx, clip, name + ".mp4").toString()
+                } else {
+                    ImageSaver.savePng(ctx, png!!, name)
+                }
+            }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
+                val what = if (clip != null) "clip" else "picture"
                 where.fold(
-                    onSuccess = { say("saved to $it"); toast("Saved to the gallery") },
+                    onSuccess = {
+                        say("saved " + what + " to " + it)
+                        toast(
+                            if (clip != null) "Clip saved to the gallery"
+                            else "Saved to the gallery"
+                        )
+                    },
                     onFailure = {
-                        say("could not save -- ${it.message}", bad = true)
+                        say("could not save the " + what + " -- ${it.message}", bad = true)
                         toast("Could not save: " + it.message)
                     },
                 )
@@ -1559,18 +1816,38 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         val kept = flow ?: canvas.workflow
         val graph = kept.graph
-        val sampler = graph.nodes.firstOrNull { it.type == "sd.sample" }
+        // ⚠ Any sampler -- see [com.abrah.nightmare.SAMPLER_TYPES]. A kept clip
+        // filed no seed at all while `sd.sample` was the only type matched here.
+        val sampler = graph.nodes.firstOrNull { com.abrah.nightmare.isSampler(it.type) }
         val seed = sampler?.id?.let { id ->
             com.abrah.nightmare.canvas.seedFor(graph, id) { canvasStatus[it]?.detail }
         }
+        // ⚠ The video sampler carries its prompt itself; every picture recipe
+        // puts it on a `clip_encode`. Neither graph has both.
         val prompt = graph.nodes.firstOrNull { it.type == "sd.clip_encode" }?.params?.get("prompt")
+            ?: graph.nodes.firstOrNull { it.type == "nd.clip_encode" }?.params?.get("prompt")
         val workflow = kept
         val types = nodeTypes
+        // ⭐⭐ The CLIP behind this poster, when there is one.
+        //
+        // ⚠⚠ Matched through `previews`, not by node type: `canvas.videos` is
+        // keyed by node id and `imageId` is a poster, so the join is "which
+        // node is showing this picture, and did that node make a clip". Any
+        // other route would star the wrong graph's video when two are open.
+        // ⚠ Only from the LIVE canvas: a `flow` passed in is a graph, and a
+        // graph has no rendered output to keep.
+        val clip = if (flow == null) {
+            canvas.videos.entries
+                .firstOrNull { (id, _) -> canvas.previews[id]?.first == imageId }
+                ?.value?.let { java.io.File(it) }
+        } else {
+            null
+        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val r = runCatching {
                 results.keep(
                     bmp, imageId, workflow, types, seed, SelectedModel.spec.label, prompt,
-                    batchId, batchLabel,
+                    batchId, batchLabel, video = clip,
                 )
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -1719,11 +1996,22 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * different from what they chose to send.
      */
     fun shareResultImage(id: String) {
+        // ⭐⭐ A kept CLIP shares as the MP4. ⚠ Unlike the graph's copy this
+        // one lives in `files/results/` and does not evaporate — keeping it
+        // there is the whole reason `ResultsStore` copies it ([Result.videoPath]).
+        keptClip(id)?.let { clip ->
+            runCatching { Share.video(getApplication(), clip, "nightmare-" + id) }
+                .onFailure { toast("Could not share: " + it.message) }
+            return
+        }
         val png = results.fullBytes(id)
         if (png == null) { toast("That picture is missing"); return }
         runCatching { Share.image(getApplication(), png, "nightmare-" + id) }
             .onFailure { toast("Could not share: " + it.message) }
     }
+
+    /** ⚠ See [clipForImage] for why the FILE decides, not a stored flag. */
+    private fun keptClip(id: String): java.io.File? = results.clipFile(id)
 
     /**
      * ⭐⭐ Share the FLOW that made a result, as the same JSON a saved workflow
@@ -1766,12 +2054,19 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * keeping it first.
      */
     fun shareNodeImage(imageId: String) {
+        val name = "nightmare-" + imageId.take(12)
+        // ⭐⭐ The clip, when this node made one — see [clipForImage].
+        clipForImage(imageId)?.let { clip ->
+            runCatching { Share.video(getApplication(), clip, name) }
+                .onFailure { toast("Could not share: " + it.message) }
+            return
+        }
         val png = ops.images.png(imageId)
         if (png == null) {
             toast("That picture is no longer in memory — Run again")
             return
         }
-        runCatching { Share.image(getApplication(), png, "nightmare-" + imageId.take(12)) }
+        runCatching { Share.image(getApplication(), png, name) }
             .onFailure { toast("Could not share: " + it.message) }
     }
 
@@ -1780,20 +2075,37 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             var ok = 0
+            // ⭐ Counted apart so the toast can say what actually landed. A
+            // selection can hold both, and "Saved 5" when three of them were
+            // clips does not tell the user which folder to look in.
+            var clips = 0
             var lastError: String? = null
             for (id in ids) {
-                val png = results.fullBytes(id) ?: continue
+                // ⭐⭐ Each item saves in its own kind — see [saveImage].
+                val clip = keptClip(id)
+                val png = if (clip == null) results.fullBytes(id) ?: continue else null
                 runCatching {
-                    ImageSaver.savePng(ctx, png, "nightmare-" + id)
+                    if (clip != null) {
+                        com.abrah.nightmare.npu.VideoWriter
+                            .publish(ctx, clip, "nightmare-" + id + ".mp4")
+                    } else {
+                        ImageSaver.savePng(ctx, png!!, "nightmare-" + id)
+                    }
                 }.fold(
-                    onSuccess = { ok++ },
+                    onSuccess = { ok++; if (clip != null) clips++ },
                     onFailure = { lastError = it.message },
                 )
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 if (ok > 0) {
-                    toast("Saved " + ok + " to the gallery")
-                    say("saved " + ok + " to the gallery")
+                    val what = when {
+                        clips == 0 -> "" + ok
+                        clips == ok -> "" + ok + (if (ok == 1) " clip" else " clips")
+                        else -> "" + (ok - clips) + " + " + clips +
+                            (if (clips == 1) " clip" else " clips")
+                    }
+                    toast("Saved " + what + " to the gallery")
+                    say("saved " + what + " to the gallery")
                 } else {
                     toast("Could not save: " + (lastError ?: "nothing to save"))
                     say("could not save -- " + lastError, bad = true)
@@ -1998,7 +2310,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // question was never answered.
         previewSigs.putAll(wanted)
         val shown = wanted.keys.mapNotNull { id ->
-            (r.outputs[id] as? Value.Image)?.let { img ->
+            (r.outputs[id]?.previewImage())?.let { img ->
                 id to (img.id to img.w.toFloat() / img.h.coerceAtLeast(1))
             }
         }
@@ -2318,7 +2630,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // ⚠ Previews follow the LAST run, so the canvas shows where the
             // sweep got to rather than freezing on the first picture.
             val shown = r.outputs.mapNotNull { (id, v) ->
-                (v as? Value.Image)?.let { img ->
+                (v.previewImage())?.let { img ->
                     id to (img.id to (img.w.toFloat() / img.h.coerceAtLeast(1)))
                 }
             }.toMap()
@@ -2331,7 +2643,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // outputs map" — map order is not graph order, and a sweep that
             // collected the crop instead of the render would look like the
             // sampler doing nothing.
-            (r.outputs[terminal] as? Value.Image)?.let { img ->
+            (r.outputs[terminal]?.previewImage())?.let { img ->
                 keepResult(
                     img.id,
                     flow = canvas.workflow.copy(graph = graph),
@@ -2450,6 +2762,23 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 canvasStatus[id] = NodeStatus(progress = step to total)
                 runLog = runLog.copy(now = id, step = step to total)
             },
+            // ⭐⭐ A long node's own narration, live in the panel.
+            //
+            // ⚠⚠ Reported from the phone 2026-09-12: the video node ran for 25 s
+            // with the panel showing one name and 0%, because the pipeline's
+            // stage lines only ever reached logcat. A percentage that sits at
+            // zero while three gigabytes are mapped is not wrong, it is just not
+            // an answer to "is this doing anything".
+            //
+            // ⚠ Appended, not trimmed here: the panel already renders only its
+            // last MAX_LINES and scrolls, so a second cap in the state would
+            // throw away history the panel is capable of showing.
+            onLog = { id, text ->
+                runLog = runLog.copy(
+                    lines = runLog.lines + com.abrah.nightmare.canvas.RunLine(id, text),
+                    now = id,
+                )
+            },
         )
         // ⚠ `startedAtMs = 0` stops the panel's ticking clock; `totalMs` is what
         // it shows instead, so the cost of the run survives the run.
@@ -2466,11 +2795,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠ Aspect ratio included: the canvas lays a node out around the
         // picture's own shape so the preview is never stretched.
         val shown = r.outputs.mapNotNull { (id, v) ->
-            (v as? Value.Image)?.let { img ->
+            (v.previewImage())?.let { img ->
                 id to (img.id to (img.w.toFloat() / img.h.coerceAtLeast(1)))
             }
         }.toMap()
         if (shown.isNotEmpty()) canvas = canvas.copy(previews = canvas.previews + shown)
+        // ⭐ …and the clips, so the node that made one can offer to play it.
+        // ⚠ Kept beside the previews rather than inside them: a poster is a
+        // picture like any other, and the clip is the thing it is a still OF.
+        val clips = r.outputs.mapNotNull { (id, v) ->
+            (v as? Value.Video)?.let { id to it.path }
+        }.toMap()
+        if (clips.isNotEmpty()) canvas = canvas.copy(videos = canvas.videos + clips)
 
         r.error?.let {
             runError = it

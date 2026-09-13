@@ -21,8 +21,20 @@
          The adaptive pair in mipmap-anydpi-v26 is what Android 8+ actually
          draws, and its foreground layer is composed with a far larger margin
          than the square icon because the launcher masks the outer ~17% away. -->
+    <!-- ⚠ largeHeap raises the JAVA heap ceiling from this device's 256m
+         growth limit to 512m. `../Neodragon` sets it, and this app carries a
+         canvas, a picture store and a result store where that one held a single
+         screen.
+         ⚠⚠ It does NOT make the video path's 49 frames cheaper, and saying so
+         would be the comfortable wrong answer: since Android 8 a Bitmap's
+         pixels live in the NATIVE heap, so ~128 MB of decoded frames is
+         untouched by this setting. The clip is encoded and the frames dropped
+         as soon as the node returns; streaming them into the encoder instead of
+         holding all 49 is the real fix and is not built.
+         docs/NEODRAGON.md -->
     <application
         android:allowBackup="false"
+        android:largeHeap="true"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -31,6 +43,37 @@
         tools:targetApi="31"
         xmlns:tools="http://schemas.android.com/tools"
         android:usesCleartextTraffic="true">
+        <!-- ⚠⚠⚠ THE HEXAGON DSP IS REACHED THROUGH A VENDOR LIBRARY, AND FROM
+             targetSdk 31 AN APP MUST NAME IT HERE.
+
+             `libQnnHtpV79Stub.so` (the fastrpc client side of the HTP backend)
+             has a DT_NEEDED on `libcdsprpc.so`, which lives in /vendor/lib64.
+             It is listed in this device's /vendor/etc/public.libraries.txt, so
+             it is linkable in principle; without the declaration below the app
+             classloader namespace refuses it outright. Measured on device
+             2026-09-12:
+
+                 dlopen failed: library "libcdsprpc.so" not found:
+                   needed by libQnnHtpV79Stub.so in namespace clns-9
+                 /vendor/lib64/libcdsprpc.so is not accessible for the
+                   namespace "clns-9"
+
+             which surfaces four layers up as the far less useful
+             "Failed to load skel, error: 4000" / deviceCreate failure. Note it
+             blames the SKEL and the missing file is the STUB.
+
+             ⚠ This affects the IN-PROCESS NPU runner only (libnmqnn.so,
+             docs/NEODRAGON.md). The backend SERVER is a separate process
+             launched with its own LD_LIBRARY_PATH and was never subject to the
+             app namespace, which is why the NPU has always worked here for SD
+             while the in-process path could not initialise at all.
+
+             ⚠ required="false" on both: a device with no Hexagon DSP should
+             still install and run every CPU and app-side node. The canary
+             (npu/NpuCanary.kt) is what decides whether NPU work is offered. -->
+        <uses-native-library android:name="libcdsprpc.so" android:required="false" />
+        <uses-native-library android:name="libadsprpc.so" android:required="false" />
+
         <!-- ⭐ Sharing a picture or a flow to another app.
              ⚠ Android has refused raw `file://` URIs across app boundaries
              since API 24, so a share hands out a `content://` URI with a

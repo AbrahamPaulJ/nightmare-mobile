@@ -72,6 +72,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
@@ -238,6 +240,50 @@ fun CanvasScreen(
             .background(CanvasColors.background)
             .onSizeChanged { canvasSize = it },
     ) {
+        // ⭐⭐ **The loop's clock.** One ticker for the whole screen, driving both
+        // the thumbnails on the canvas and the one in the open sheet.
+        //
+        // ⚠⚠ It only runs while a clip is actually on the canvas. A permanent
+        // 12 Hz invalidation would redraw every node, every wire and the grid
+        // forever on a graph that has no video in it at all — on battery, for
+        // nothing. `state.videos.isEmpty()` is the whole condition.
+        //
+        // ⚠ `withFrameMillis` rather than `delay`: it ties the tick to the
+        // display's own frame callback, so the loop pauses with the window
+        // instead of waking a backgrounded app twelve times a second.
+        // ⚠ The TERMINAL clips only -- see [clipNodes]. A sampler feeding an
+        // output node draws its poster still and lets the end of the chain play.
+        // ⚠ Remembered: this walks every node's inputs, and it is read from a
+        // draw scope that runs at 12 Hz while a clip is on the canvas.
+        val playing = remember(state.workflow.graph, state.videos) {
+            clipNodes(state.workflow.graph, state.videos)
+        }
+        val animate = playing.isNotEmpty()
+        var clipTick by remember { mutableIntStateOf(0) }
+        LaunchedEffect(animate) {
+            if (!animate) return@LaunchedEffect
+            var last = 0L
+            while (true) {
+                withFrameMillis { now ->
+                    if (now - last >= 1000L / com.abrah.nightmare.ClipStore.FPS) {
+                        last = now
+                        clipTick++
+                    }
+                }
+            }
+        }
+
+        // ⚠ Reads `clipTick` INSIDE the lambda, which is what makes the canvas
+        // redraw — a draw scope records its state reads. Hoisting the frame out
+        // here would animate nothing.
+        val clipFrameFor: (String) -> androidx.compose.ui.graphics.ImageBitmap? = { id ->
+            state.videos[id]?.takeIf { id in playing }?.let { path ->
+                com.abrah.nightmare.ClipStore.get(path)?.let { f ->
+                    f[clipTick % f.size]
+                }
+            }
+        }
+
         GraphCanvas(
             workflow = state.workflow,
             types = types,
@@ -249,6 +295,7 @@ fun CanvasScreen(
             pending = state.pending,
             previews = state.previews,
             imageFor = imageFor,
+            clipFrameFor = clipFrameFor,
             modifier = Modifier
                 .fillMaxSize()
                 .canvasGestures(
@@ -368,14 +415,22 @@ fun CanvasScreen(
             // ⚠ The FIRST sampler. A graph with two has two seeds and no single
             // answer; the row names the one Run reaches first and leaves the
             // rest to the inspector rather than lying about either.
-            seed = state.workflow.graph.nodes.firstOrNull { it.type == "sd.sample" }?.let { n ->
+            // ⚠⚠ ANY sampler ([com.abrah.nightmare.SAMPLER_TYPES]), not just
+            // `sd.sample`: the text-to-video recipe rolls a seed like every
+            // other recipe and had no lock at all, so a clip worth keeping
+            // could not be asked for again. Reported from the phone, 2026-09-12.
+            seed = state.workflow.graph.nodes.firstOrNull {
+                com.abrah.nightmare.isSampler(it.type)
+            }?.let { n ->
                 SeedState(
                     value = n.params["seed"]?.trim()?.takeIf { it.isNotEmpty() && it != "0" },
                     lastRolled = seedFor(state.workflow.graph, n.id) { status[it]?.detail },
                 )
             },
             onToggleSeed = {
-                state.workflow.graph.nodes.firstOrNull { it.type == "sd.sample" }?.let { n ->
+                state.workflow.graph.nodes.firstOrNull {
+                    com.abrah.nightmare.isSampler(it.type)
+                }?.let { n ->
                     val pinned = n.params["seed"]?.trim()?.takeIf { it.isNotEmpty() && it != "0" }
                     if (pinned != null) {
                         onEdit { st -> st.setParam(n.id, "seed", "0") }
@@ -463,6 +518,37 @@ fun CanvasScreen(
             FullscreenImage(
                 bmp,
                 onDismiss = { onEdit { s -> s.copy(viewing = null) } },
+                // ⭐⭐ The clip, when the node being viewed is the one that OWNS
+                // it. ⚠ Found through `viewedNode` rather than carried in
+                // `viewing`, for the reason the block above gives: `viewing`
+                // stays a plain image id and nothing has to keep two halves in
+                // step.
+                //
+                // ⚠⚠⚠ **Filtered by [clipNodes], exactly as the canvas and the
+                // sheet are.** Without the filter, opening the SAMPLER full
+                // screen played the finished video — and once Save and Share
+                // learned about clips, the sampler shared it too. Reported from
+                // the phone, 2026-09-13: *"i still don't get why the sample in
+                // fullscreen/share is showing the video output"*. The `VIDEO`
+                // value flows sampler → output so every node on the chain holds
+                // the same path; `clipNodes` picking the END is the ONE rule
+                // that decides what a node shows, saves and sends, and a
+                // surface that opts out of it is a surface that disagrees with
+                // the three that do.
+                // ⚠⚠ Resolved from the image id AGAIN rather than from
+                // `viewedNode`, and not for tidiness: several nodes share one
+                // poster (the clip flows sampler → output and both record it),
+                // so `viewedNode` is whichever the map yielded first and may
+                // not be the one that owns the clip. Asking for the OWNER is
+                // the same question `HarnessViewModel.clipForImage` asks, and
+                // the two must agree or the button and the picture disagree.
+                videoPath = clipNodes(state.workflow.graph, state.videos).let { owners ->
+                    state.previews.entries
+                        .filter { it.value.first == id }
+                        .map { it.key }
+                        .firstOrNull { it in owners }
+                        ?.let { state.videos[it] }
+                },
                 seed = viewedNode?.let { n ->
                     seedFor(state.workflow.graph, n) { status[it]?.detail }
                 },
@@ -1156,6 +1242,19 @@ private fun SelectionBar(
 private fun FullscreenImage(
     image: ImageBitmap,
     onDismiss: () -> Unit,
+    /**
+     * ⭐⭐ The MP4 to PLAY here instead of drawing [image], when this node made
+     * a clip.
+     *
+     * ⚠⚠ [image] is still required and is still the poster: the file can be
+     * gone (it lives in `cacheDir`, which Android may clear) and a viewer that
+     * then showed nothing would be worse than one showing the first frame.
+     * [com.abrah.nightmare.ui.ClipPlayer] draws nothing for a missing file, so
+     * the still behind it is what remains.
+     *
+     * ⚠ Zoom is OFF while a clip is playing — see the gesture block below.
+     */
+    videoPath: String? = null,
     /** The seed that made it, when a sampler upstream has one. */
     seed: String? = null,
     /** Non-null only for a picture the user CHOSE, i.e. a `load_image` node. */
@@ -1218,7 +1317,14 @@ private fun FullscreenImage(
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.94f))
             .onSizeChanged { box = it }
-            .pointerInput(Unit) {
+            // ⚠⚠ **No pinch-zoom on a clip.** The player is a `SurfaceView`;
+            // scaling one through `graphicsLayer` moves the frame and leaves
+            // the video surface where it was, which draws the clip in the wrong
+            // place at the wrong size with nothing on screen explaining it. The
+            // picture keeps every gesture it had.
+            .then(
+                if (videoPath != null) Modifier
+                else Modifier.pointerInput(Unit) {
                 detectTransformGestures { centroid, pan, zoom, _ ->
                     val next = (scale * zoom).coerceIn(1f, 8f)
                     // ⚠⚠ The point under the fingers STAYS under the fingers.
@@ -1231,7 +1337,8 @@ private fun FullscreenImage(
                     scale = next
                     offset = clamp(moved, next)
                 }
-            }
+                }
+            )
             .pointerInput(Unit) {
                 detectTapGestures(
                     // ⚠ Double tap is the fast way in and the fast way out. A
@@ -1256,6 +1363,17 @@ private fun FullscreenImage(
             },
         contentAlignment = Alignment.Center,
     ) {
+        // ⭐⭐ A clip PLAYS here; a picture is drawn. ⚠ Same box, same padding
+        // and the same action row underneath, because it is the same viewer —
+        // Save, Share, Keep and the seed all mean what they meant, and a
+        // second fullscreen built for video would be a second place for them
+        // to drift.
+        if (videoPath != null) {
+            com.abrah.nightmare.ui.ClipPlayer(
+                path = videoPath,
+                modifier = Modifier.fillMaxSize().padding(12.dp),
+            )
+        } else {
         Image(
             bitmap = image,
             contentDescription = "the picture, full screen",
@@ -1272,6 +1390,7 @@ private fun FullscreenImage(
                     translationY = offset.y
                 },
         )
+        }
         Row(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -1293,7 +1412,15 @@ private fun FullscreenImage(
                 IconButton(onClick = { save(); saved = true }) {
                     Icon(
                         if (saved) Icons.Filled.Check else com.abrah.nightmare.ui.SaveIcon,
-                        contentDescription = if (saved) "saved to the gallery" else "save to the gallery",
+                        // ⚠ Names what it will actually write. Save and Share
+                        // hand over the MP4 when this node made one
+                        // (`HarnessViewModel.clipForImage`), so a label saying
+                        // "picture" would describe the poster, not the file.
+                        contentDescription = when {
+                            saved -> "saved to the gallery"
+                            videoPath != null -> "save this clip to the gallery"
+                            else -> "save to the gallery"
+                        },
                         tint = Color.White,
                     )
                 }
@@ -1305,7 +1432,8 @@ private fun FullscreenImage(
                 IconButton(onClick = share) {
                     Icon(
                         com.abrah.nightmare.ui.ShareIcon,
-                        contentDescription = "share this picture",
+                        contentDescription =
+                            if (videoPath != null) "share this clip" else "share this picture",
                         tint = Color.White,
                     )
                 }

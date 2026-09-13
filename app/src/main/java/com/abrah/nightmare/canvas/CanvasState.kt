@@ -112,6 +112,19 @@ data class CanvasState(
      */
     val previews: Map<String, Pair<String, Float>> = emptyMap(),
     /**
+     * ⭐⭐ Node id -> the MP4 a video node produced.
+     *
+     * ⚠⚠ Separate from [previews] because a clip is not a picture: the canvas
+     * draws the POSTER (which is in `previews` like any other image) and this is
+     * the only route to the thing the poster is a still OF. Without it a video
+     * node is indistinguishable from a node that made one picture — reported
+     * from the phone as *"i dont see output as video"*.
+     *
+     * ⚠ A path, not a handle. The file outlives the run and the process; the
+     * `ImageStore` entry beside it does not.
+     */
+    val videos: Map<String, String> = emptyMap(),
+    /**
      * ⭐⭐ The field the inspector should open FOCUSED on, with the keyboard up.
      *
      * ⚠⚠ Set by a tap on a prompt box on the canvas. Typing in place was

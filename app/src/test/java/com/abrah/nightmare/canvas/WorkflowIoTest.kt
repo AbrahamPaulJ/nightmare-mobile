@@ -452,4 +452,96 @@ class WorkflowIoTest {
         override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
             throw UnsupportedOperationException("io only")
     }
+
+    /**
+     * ⭐⭐⭐ **A graph saved with the FUSED video sampler still opens, and
+     * still runs.**
+     *
+     * ⚠⚠ This is the case that decides whether deleting a node type is safe.
+     * `nd.video_sample` was one node doing five jobs; a saved workflow naming it
+     * would otherwise fail with `unknown type "nd.video_sample"`, which is a
+     * file the user cannot open at all — the worst outcome available.
+     */
+    @Test
+    fun aSavedFusedVideoSamplerBecomesTheDecomposedChain() {
+        val old = """
+            {"format":1,"nodes":[
+              {"id":"video","type":"nd.video_sample",
+               "params":{"prompt":"a fox","seed":"77","upscale":"false"},"inputs":{}},
+              {"id":"save","type":"video.output",
+               "params":{"save":"true"},"inputs":{"video":"video"}}
+            ],"positions":{"video":{"x":10,"y":20},"save":{"x":10,"y":300}}}
+        """.trimIndent()
+        val g = workflowFromJson(old).workflow.graph
+
+        // ⚠ Nothing from the old world survives as a TYPE.
+        assertTrue(g.nodes.none { it.type == "nd.video_sample" || it.type == "video.output" })
+        // ⚠⚠ The sampler KEEPS its id, so anything else naming it still
+        // resolves and the run log says what the user expects.
+        assertEquals("nd.sample", g.byId.getValue("video").type)
+        assertEquals("77", g.byId.getValue("video").params["seed"])
+
+        val prompt = g.nodes.first { it.type == "nd.clip_encode" }
+        assertEquals("a fox", prompt.params["prompt"])
+        // ⚠ The two conditionings go to their own consumers, BY NAME.
+        assertEquals(
+            Source(prompt.id, "cond"),
+            g.byId.getValue("video").inputs["cond"],
+        )
+        val frame = g.nodes.first { it.type == "nd.first_frame" }
+        assertEquals(Source(prompt.id, "frame_cond"), frame.inputs["cond"])
+        assertEquals("77", frame.params["seed"])
+
+        // ⚠ `upscale` moves to the decoder, which is where it always happened.
+        val decode = g.nodes.first { it.type == "nd.vae_decode" }
+        assertEquals("false", decode.params["upscale"])
+
+        // ⚠⚠ And every node type in the result is one this build knows, or
+        // the graph opens and then refuses to run.
+        g.nodes.forEach { assertNotNull(it.type, NODE_TYPES[it.type]) }
+    }
+
+    /**
+     * ⚠⚠ A saved IMAGE-to-video graph keeps its picture. The wired `image`
+     * WINS: inventing an SSD1B first frame beside it would make the flow
+     * silently generate its own still and ignore the photo the user chose.
+     */
+    @Test
+    fun aSavedImageToVideoGraphKeepsItsPicture() {
+        val old = """
+            {"format":1,"nodes":[
+              {"id":"photo","type":"image.load","params":{},"inputs":{}},
+              {"id":"video","type":"nd.video_sample",
+               "params":{"prompt":"drift","seed":"3"},
+               "inputs":{"image":"photo"}}
+            ],"positions":{}}
+        """.trimIndent()
+        val g = workflowFromJson(old).workflow.graph
+        // No first frame at all -- the photo is the first frame.
+        assertTrue(g.nodes.none { it.type == "nd.first_frame" })
+        val enc = g.nodes.first { it.type == "nd.vae_encode" }
+        assertEquals(Source("photo"), enc.inputs["image"])
+    }
+
+    /**
+     * ⚠⚠ `image.output` is gone too, and a graph that had one loses it
+     * rather than failing to open. It returned its input unchanged, so anything
+     * reading it is re-pointed at what fed it.
+     */
+    @Test
+    fun aSavedImageOutputIsDroppedAndItsReadersRewired() {
+        val old = """
+            {"format":1,"nodes":[
+              {"id":"src","type":"image.load","params":{},"inputs":{}},
+              {"id":"out","type":"image.output",
+               "params":{"save":"true"},"inputs":{"image":"src"}},
+              {"id":"up","type":"image.upscale","params":{},
+               "inputs":{"image":"out"}}
+            ],"positions":{}}
+        """.trimIndent()
+        val g = workflowFromJson(old).workflow.graph
+        assertTrue(g.nodes.none { it.type == "image.output" })
+        // ⚠ The consumer now reads what the output node was reading.
+        assertEquals(Source("src"), g.byId.getValue("up").inputs["image"])
+    }
 }

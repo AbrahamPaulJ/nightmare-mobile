@@ -127,6 +127,11 @@
     <string name="cannot_run_it">this device cannot run it</string>
     <string name="upscalers">Upscalers</string>
     <string name="upscalers_note">8-24 MB each. Add an Upscale node to a flow to use one.</string>
+    <string name="video">Video</string>
+    <string name="video_models">Neodragon (video)</string>
+    <string name="video_models_note">One download of 8.6 GB, in 21 parts. It resumes, so a dropped connection costs only the file it was on.</string>
+    <string name="video_about">Text to video on the NPU. No backend, no checkpoint.</string>
+    <string name="video_of_total">%1$d of %2$d MB</string>
 
     <!-- Mask editor. -->
     <string name="cd_paint">Paint</string>

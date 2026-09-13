@@ -55,6 +55,78 @@ class ResultsStoreTest {
         )
     }
 
+    /**
+     * ⭐⭐ **A starred CLIP keeps the MP4**, not just its poster frame.
+     *
+     * ⚠⚠ The copy is the point. The file the graph produced lives in
+     * `cacheDir/video/`, which Android clears whenever it is short of space —
+     * so a result pointing at it would play until the first time that happened
+     * and then silently be a still, with nothing saying why. The PNG beside it
+     * has always been copied for the same reason.
+     */
+    @Test
+    fun aKeptClipCopiesItsMp4AndForgetsItOnDelete() {
+        val dir = tmp.newFolder()
+        val s = ResultsStore(dir)
+        // ⚠ Bytes, not a real MP4: this pins the COPY, and decoding one
+        // would be testing the platform's muxer instead.
+        val src = tmp.newFile("clip.mp4").apply { writeBytes(ByteArray(2048) { 7 }) }
+        val r = s.keep(
+            bitmap(), "img_clip", defaultWorkflow(), NODE_TYPES, "1", "m", "a cat",
+            video = src,
+        )
+        assertNotNull("a kept clip must carry its own copy", r.videoPath)
+        assertEquals(2048L, java.io.File(r.videoPath!!).length())
+        // ⚠ Read back off DISK on the next launch, not out of the metadata.
+        assertNotNull(ResultsStore(dir).all().first().videoPath)
+
+        // ⚠ …and un-starring takes the biggest half with it. A stranded MP4
+        // is the one thing here that costs megabytes.
+        s.delete(r.id)
+        assertTrue("the clip must go with the result", !java.io.File(r.videoPath).isFile)
+        // ⚠ The source is the graph's, not ours: deleting a result must
+        // never reach back into what produced it.
+        assertTrue("the graph's own copy is not ours to delete", src.isFile)
+    }
+
+    /**
+     * ⭐⭐ [ResultsStore.clipFile] is what Save and Share ask before they
+     * decide whether they are handing over an MP4 or a PNG.
+     *
+     * ⚠⚠ It must agree with [Result.videoPath] and it must answer from the
+     * FILE: a result whose clip has been deleted underneath it has to say so,
+     * or Share stages a copy of nothing and the user gets an empty MP4.
+     */
+    @Test
+    fun clipFileAnswersForSaveAndShare() {
+        val dir = tmp.newFolder()
+        val s = ResultsStore(dir)
+        val src = tmp.newFile("share.mp4").apply { writeBytes(ByteArray(1024) { 3 }) }
+        val clip = s.keep(
+            bitmap(), "img_clip", defaultWorkflow(), NODE_TYPES, "1", "m", "a fox",
+            video = src,
+        )
+        val picture = s.keep(bitmap(), "img_pic", defaultWorkflow(), NODE_TYPES, "2", "m", "a cat")
+
+        assertEquals(clip.videoPath, s.clipFile(clip.id)?.path)
+        assertEquals(1024L, s.clipFile(clip.id)!!.length())
+        assertNull("a picture must not offer a clip", s.clipFile(picture.id))
+        assertNull("an id that was never kept has no clip", s.clipFile("nope"))
+
+        // ⚠⚠ The file is the fact. Deleting it must flip the answer, so Save
+        // falls back to the poster instead of writing a zero-byte video.
+        java.io.File(clip.videoPath!!).delete()
+        assertNull("a clip whose file is gone is not a clip", s.clipFile(clip.id))
+    }
+
+    /** ⚠ A picture result carries no clip, and must not invent an empty one. */
+    @Test
+    fun aKeptPictureHasNoClip() {
+        val s = store()
+        val r = s.keep(bitmap(), "img_test", defaultWorkflow(), NODE_TYPES, "1", "m", "a cat")
+        assertNull(r.videoPath)
+    }
+
     @Test
     fun listingIsNewestFirstAndSurvivesRestart() {
         val dir = tmp.newFolder()

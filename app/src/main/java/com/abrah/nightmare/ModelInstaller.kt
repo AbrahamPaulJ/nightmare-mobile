@@ -115,20 +115,41 @@ object ModelInstaller {
         dest: File,
         onProgress: (Progress) -> Unit,
         isCancelled: () -> Boolean,
+    ) = fetch(spec.url(build), dest, build.bytes, "downloading " + spec.label, onProgress, isCancelled)
+
+    /**
+     * ⭐⭐ One resumable, size-checked GET — the only downloader in the app.
+     *
+     * ⚠⚠ Lifted out of [download] rather than copied for the video models
+     * ([com.abrah.nightmare.npu.VideoInstaller]). The resume rules below are the
+     * part that is easy to get subtly wrong — a `200` answering a `Range`
+     * request appends a whole file onto a partial one and produces a file of
+     * the right LENGTH made of the wrong bytes — and two copies of that
+     * reasoning is one copy that eventually stops matching.
+     *
+     * @param bytes the expected size. ⚠⚠ **THE integrity check**: nothing here
+     *   publishes a checksum, and a truncated body arrives as a perfectly
+     *   successful read.
+     */
+    fun fetch(
+        url: String,
+        dest: File,
+        bytes: Long,
+        label: String,
+        onProgress: (Progress) -> Unit,
+        isCancelled: () -> Boolean = { false },
     ) {
-        if (dest.exists() && dest.length() == build.bytes) {
+        if (dest.exists() && dest.length() == bytes) {
             Log.i(TAG, "already downloaded: ${dest.name}")
             return
         }
-        val label = "downloading ${spec.label}"
         var from = if (dest.exists()) dest.length() else 0L
         // A partial LONGER than the target is not a partial; it is junk.
-        if (from > build.bytes) {
+        if (from > bytes) {
             dest.delete()
             from = 0L
         }
 
-        val url = spec.url(build)
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 30_000
             readTimeout = 60_000
@@ -155,23 +176,20 @@ object ModelInstaller {
                         since += n
                         // Throttled: every chunk would be thousands of updates a second.
                         if (since >= 1 shl 20) {
-                            onProgress(Progress(label, written, build.bytes))
+                            onProgress(Progress(label, written, bytes))
                             since = 0
                         }
                     }
-                    onProgress(Progress(label, written, build.bytes))
+                    onProgress(Progress(label, written, bytes))
                 }
             }
         } finally {
             conn.disconnect()
         }
 
-        // ⚠⚠ THE integrity check. There is no published checksum, and a
-        // truncated body arrives as a successful read — this is the only thing
-        // between a dropped connection and a model that fails at first render.
-        if (dest.length() != build.bytes) {
+        if (dest.length() != bytes) {
             throw IOException(
-                "size mismatch for ${dest.name}: ${dest.length()} != ${build.bytes}"
+                "size mismatch for ${dest.name}: ${dest.length()} != $bytes"
             )
         }
     }

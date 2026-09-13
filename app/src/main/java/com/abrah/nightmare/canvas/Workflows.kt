@@ -29,6 +29,28 @@ private fun ctxKeyParams(): Map<String, String> {
 }
 
 /**
+ * ⭐⭐ The prompt node's text: the SELECTED checkpoint's own, never a literal.
+ *
+ * ⚠⚠ A recipe carried `"a cat on grass"` for txt2img and a bare quality tag
+ * for the other two, which is a prompt tuned for whatever model happened to be
+ * selected the day it was typed. The catalogue has carried a per-model prompt
+ * and negative since it was written (`ModelCatalog.ModelSpec.prompt`, copied
+ * from upstream) and nothing read them: an anime checkpoint opened on a
+ * photographic prompt with a photographic negative. The user's ask, 2026-09-12.
+ *
+ * ⚠ A function, per build, for the reason [ctxKeyParams] is one: it reads
+ * [SelectedModel].
+ *
+ * ⚠ An imported model's is empty unless its `config.json` says otherwise --
+ * see [com.abrah.nightmare.TextEncodeNode]'s widgets, which default the same
+ * way for a node dragged from the palette.
+ */
+private fun promptParams(): Map<String, String> = mapOf(
+    "prompt" to SelectedModel.spec.prompt,
+    "negative" to SelectedModel.spec.negative,
+)
+
+/**
  * The workflow the app opens with.
  *
  * ⚠⚠ ONE definition, two callers: the canvas screen's Run button and the
@@ -45,13 +67,7 @@ fun defaultWorkflow(): Workflow = Workflow(
             // ⭐ THE prompt. The sampler has none (docs/ARCHITECTURE.md §3), so
             // this node is where a user types, and it is first in the chain
             // because it is the first thing they will want to change.
-            Node(
-                "prompt", "sd.clip_encode",
-                params = mapOf(
-                    "prompt" to "a cat on grass",
-                    "negative" to "blurry, lowres",
-                ),
-            ),
+            Node("prompt", "sd.clip_encode", params = promptParams()),
             Node(
                 "sample", "sd.sample",
                 params = ctxKeyParams() + mapOf(
@@ -128,9 +144,10 @@ data class Recipe(val id: String, val label: String, val about: String, val buil
  * `frame`, `mask`). The thing a person is looking for when they open one of
  * these is where to type the prompt. The user's call, 2026-09-11.
  *
- * ⚠ Recipes only. A saved workflow keeps whatever ids it was written with, and
- * a node dragged from the palette is still named from its TYPE
- * (`clip_encode`) -- renaming that is a separate change to `nodeLabel`.
+ * ⚠ A saved workflow keeps whatever ids it was written with. ✅ But a node
+ * dragged from the palette is born `prompt` too since 2026-09-12 — its id comes
+ * from the type's LABEL, and `sd.clip_encode` is labelled `prompt`
+ * (`LABEL_OVERRIDES`).
  */
 
 /**
@@ -155,6 +172,26 @@ val RECIPES: List<Recipe> = listOf(
         "A picture from the gallery, enlarged 4x. No checkpoint involved — " +
             "the upscaler is its own small model, installed under Models.",
         ::upscaleWorkflow,
+    ),
+    Recipe(
+        "t2v", "Text to video",
+        // ⚠ 1024x640, the way round it actually COMES OUT. `../Neodragon`'s docs
+        // say "320x512 -> 640x1024" in (height, width) order, and repeating that
+        // here would have told the user a portrait clip and handed them a
+        // landscape one. Measured on device 2026-09-12: 49 frames, 1024x640.
+        "A prompt in, a 2 second clip out — 49 frames at 1024x640, on the NPU. " +
+            "Needs the video models installed; it does not use your checkpoint.",
+        ::textToVideoWorkflow,
+    ),
+    Recipe(
+        "i2v", "Image to video",
+        // ⚠ The speed is the SELLING point and it is measured, not guessed:
+        // 20.6 s against t2v's 24.6 s on device 2026-09-13, because SSD1B never
+        // runs. ⚠⚠ It also needs 1.68 GB fewer models, which matters to
+        // someone deciding what to download.
+        "A photo from the gallery, brought to life — 49 frames at 1024x640. " +
+            "Faster than text to video, and it needs three fewer models.",
+        ::imageToVideoWorkflow,
     ),
     Recipe(
         "inpaint", "Inpaint — paint an area to redo",
@@ -199,13 +236,7 @@ fun inpaintWorkflow(): Workflow = Workflow(
     Graph(
         listOf(
             Node("photo", "image.load", params = mapOf("uri" to "")),
-            Node(
-                "prompt", "sd.clip_encode",
-                params = mapOf(
-                    "prompt" to "masterpiece, best quality, highly detailed,",
-                    "negative" to "blurry, lowres",
-                ),
-            ),
+            Node("prompt", "sd.clip_encode", params = promptParams()),
             Node(
                 "frame", "image.crop",
                 params = mapOf("x" to "0.0", "y" to "0.0", "w" to "1.0", "h" to "1.0"),
@@ -273,13 +304,7 @@ fun img2imgWorkflow(): Workflow = Workflow(
             // the sampler directly and never touches the photo. Placed in a
             // second column for that reason -- stacked into the middle of the
             // pixel chain it would read as a step the picture passes through.
-            Node(
-                "prompt", "sd.clip_encode",
-                params = mapOf(
-                    "prompt" to "masterpiece, best quality, highly detailed,",
-                    "negative" to "blurry, lowres",
-                ),
-            ),
+            Node("prompt", "sd.clip_encode", params = promptParams()),
             Node(
                 "frame", "image.crop",
                 params = mapOf("x" to "0.0", "y" to "0.0", "w" to "1.0", "h" to "1.0", "out" to "512"),
@@ -355,5 +380,130 @@ fun upscaleWorkflow(): Workflow = Workflow(
     positions = mapOf(
         "photo" to Pt(24f, 40f),
         "upscale" to Pt(24f, 300f),
+    ),
+)
+
+/**
+ * ⭐⭐ Prompt → a 2 second clip. `docs/NEODRAGON.md`.
+ *
+ * ⚠⚠ **No [ctxKeyParams], and that is the point.** Every other recipe pins the
+ * graph's one `(type, model, resolution)` key; this one names no checkpoint at
+ * all, because the video path loads its own QNN context binaries in-process and
+ * binds nothing at backend launch (`docs/ARCHITECTURE.md` §5.2). ⇒ It runs with
+ * no backend server up, and the model chip in the top bar is irrelevant to it —
+ * which is worth knowing before someone reports that it "ignored" their model.
+ *
+ * ⚠ Two nodes, not five. The sampler is FUSED for the same reason `sd.sample`
+ * is; what earns a node here is the edge — the clip is a value, so saving it is
+ * a separate, optional act.
+ *
+ * ⭐⭐ `save` starts TRUE, unlike every picture recipe — the clip lives in
+ * `cacheDir` until it is written out, and Android clears that without asking.
+ * See [com.abrah.nightmare.npu.VideoOutputNode].
+ *
+ * ⭐ The seed is rolled by `HarnessOps.runRolled` like every other sampler's
+ * ([com.abrah.nightmare.SAMPLER_TYPES]), so Run gives a new clip and the run
+ * bar's lock pins the one you liked.
+ */
+/**
+ * ⭐⭐ **Image to video** — the decomposed path, fed a picture instead of
+ * making one.
+ *
+ * ⚠⚠ The ONLY difference from [textToVideoWorkflow] is where the picture
+ * comes from: `image.crop` instead of `nd.first_frame`. That is the same
+ * substitution img2img already makes against `sd.vae_encode`, and it is why
+ * i2v needs no flag, no optional port and no special node.
+ *
+ * ⭐ It is also the CHEAPER path, measurably: SSD1B never runs (~4 s and
+ * 614 MB), and because nothing wires `frame_cond` the prompt node never loads
+ * `clipl` either. Three of the thirteen models are not needed at all.
+ *
+ * ⚠⚠ The crop is not optional and not decoration. `image.load` promises no
+ * size, `nd.vae_encode` needs exactly 512x320, and
+ * [com.abrah.nightmare.sizeRefusal] refuses that wire at the drop — the same
+ * rule that already stands between a photo and `sd.vae_encode`. The crop's
+ * `out_w`/`out_h` are DERIVED and locked, so nobody types a size anywhere.
+ */
+fun imageToVideoWorkflow(): Workflow = Workflow(
+    Graph(
+        listOf(
+            Node(
+                "prompt", "nd.clip_encode",
+                // ⚠ A MOTION prompt, not a subject one: the subject is the
+                // photo. "a cat walking" against a picture of a harbour is the
+                // instruction fighting the image it was given.
+                params = mapOf("prompt" to "gentle camera push in, subtle motion"),
+            ),
+            Node("photo", "image.load"),
+            // ⚠ No out_w/out_h: derived from `nd.vae_encode` and drawn locked.
+            Node("frame", "image.crop", inputs = sources("image" to "photo")),
+            Node("encode", "nd.vae_encode", inputs = sources("image" to "frame")),
+            Node(
+                "sample", "nd.sample",
+                params = mapOf("seed" to "0"),
+                // ⚠ `cond` by NAME: the prompt node makes two, and a bare wire
+                // would mean its first.
+                inputs = sources("cond" to "prompt:cond", "latent" to "encode"),
+            ),
+            Node(
+                "decode", "nd.vae_decode",
+                params = mapOf("upscale" to "true"),
+                inputs = sources("latent" to "sample"),
+            ),
+        )
+    ),
+    mapOf(
+        "prompt" to Pt(24f, 120f), "photo" to Pt(24f, 430f),
+        "frame" to Pt(24f, 640f), "encode" to Pt(24f, 950f),
+        "sample" to Pt(24f, 1160f), "decode" to Pt(24f, 1370f),
+    ),
+)
+
+/**
+ * ⭐⭐ **Text to video** — prompt in, a clip out, in the shape of every other
+ * recipe here.
+ *
+ * ⚠⚠ The prompt is a **wire**, not a widget on the sampler, exactly as
+ * `sd.sample` has no prompt and takes `sd.clip_encode` → `cond`. The prompt
+ * node makes TWO conditionings because the first frame and the MMDiT genuinely
+ * need different tensors (`docs/NEODRAGON.md` §8); both are wired here, which
+ * is what makes this the more expensive of the two video recipes.
+ *
+ * ⚠ `nd.vae_decode` is terminal and draws its own clip, so there is no output
+ * node — the same reason the upscale recipe has none.
+ */
+fun textToVideoWorkflow(): Workflow = Workflow(
+    Graph(
+        listOf(
+            Node(
+                "prompt", "nd.clip_encode",
+                params = mapOf("prompt" to "a cat walking through tall grass, cinematic"),
+            ),
+            Node(
+                "frame", "nd.first_frame",
+                params = mapOf("seed" to "0"),
+                inputs = sources("cond" to "prompt:frame_cond"),
+            ),
+            Node("encode", "nd.vae_encode", inputs = sources("image" to "frame")),
+            Node(
+                "sample", "nd.sample",
+                params = mapOf("seed" to "0"),
+                inputs = sources("cond" to "prompt:cond", "latent" to "encode"),
+            ),
+            Node(
+                "decode", "nd.vae_decode",
+                params = mapOf("upscale" to "true"),
+                inputs = sources("latent" to "sample"),
+            ),
+        )
+    ),
+    // ⚠ 120 for the top row, for the reason [defaultWorkflow] gives: the canvas
+    // top bar floats over the graph and is two rows tall. ⚠⚠ 310 between them,
+    // not 240: the prompt node carries its text in its BODY like `sd.clip_encode`
+    // does, so it stands taller than a plain node.
+    mapOf(
+        "prompt" to Pt(24f, 120f), "frame" to Pt(24f, 430f),
+        "encode" to Pt(24f, 640f), "sample" to Pt(24f, 850f),
+        "decode" to Pt(24f, 1060f),
     ),
 )

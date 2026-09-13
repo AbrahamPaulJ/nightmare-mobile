@@ -51,6 +51,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -180,6 +182,23 @@ fun NodeInspector(
             onSaveImage = previewId?.takeIf { node.type != "image.load" }
                 ?.let { id -> { onSaveImage(id) } },
             onShareImage = { previewId?.let(onShareImage) },
+            // ⭐⭐ The clip's frames, so the sheet loops what the node loops.
+            //
+            // ⚠⚠ This replaced a ▶ Play button that handed the MP4 to an
+            // external player. The user's call, 2026-09-12: a node graph shows
+            // you what a node made, and leaving the app to find out is not that.
+            // ⭐ Tapping the still opens the FULLSCREEN player
+            // ([com.abrah.nightmare.ui.ClipPlayer]) -- the loop is the preview,
+            // the player is the watch. The MP4 that `video.output` writes to
+            // Movies/Nightmare is where a clip goes to be KEPT, not to be seen.
+            // ⚠ Same rule as the canvas ([clipNodes]): the END of the video
+            // chain loops, everything upstream of it shows its poster. One rule
+            // in both places, or the sheet and the node disagree about what a
+            // node made.
+            clip = state.videos[nodeId]
+                ?.takeIf { nodeId in clipNodes(state.workflow.graph, state.videos) }
+                ?.let(com.abrah.nightmare.ClipStore::get),
+            hasClip = nodeId in clipNodes(state.workflow.graph, state.videos),
             onKeepImage = previewId?.takeIf { node.type != "image.load" }
                 ?.let { id -> { onKeepImage(id) } },
             kept = previewId?.let(isKept) == true,
@@ -267,6 +286,25 @@ internal fun NodeInspectorBody(
     onSaveImage: (() -> Unit)? = null,
     /** ⭐ Hand this node's picture to another app. */
     onShareImage: () -> Unit = {},
+    /**
+     * ⭐ The frames to loop instead of [preview], when this node made a clip.
+     *
+     * ⚠ Null for every other node, and null is not "no picture": the poster in
+     * [preview] still draws. A clip whose frames have been evicted from
+     * [com.abrah.nightmare.ClipStore] falls back to its still rather than to a
+     * hole.
+     */
+    clip: List<androidx.compose.ui.graphics.ImageBitmap>? = null,
+    /**
+     * ⭐ Whether this node's Save and Share act on the CLIP.
+     *
+     * ⚠ The same [clipNodes] rule as [clip], and separate from it only
+     * because [clip]'s frames can be evicted from `ClipStore` while the MP4 is
+     * still there — a sheet falling back to the poster must still SAVE the
+     * clip. ⚠⚠ Never a broader rule than [clip]'s: a node that shows a still
+     * and shares a video is the bug this pair was reported for.
+     */
+    hasClip: Boolean = clip != null,
     onKeepImage: (() -> Unit)? = null,
     /** ⚠ Filled star when true. The action toggles, so the icon must say which way. */
     kept: Boolean = false,
@@ -492,14 +530,19 @@ internal fun NodeInspectorBody(
                 IconButton(onClick = { onShareImage() }) {
                     Icon(
                         com.abrah.nightmare.ui.ShareIcon,
-                        contentDescription = "share this picture",
+                        // ⚠ Same rule as the viewer's row — a clip shares as
+                        // the MP4, so the label must not promise a picture.
+                        contentDescription =
+                            if (hasClip) "share this clip" else "share this picture",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 IconButton(onClick = { onSaveImage() }) {
                     Icon(
                         com.abrah.nightmare.ui.SaveIcon,
-                        contentDescription = "save to the gallery",
+                        contentDescription =
+                            if (hasClip) "save this clip to the gallery"
+                            else "save to the gallery",
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -542,9 +585,30 @@ internal fun NodeInspectorBody(
         // controls off the screen. It still appears on the node ON THE CANVAS,
         // where it is the only thing that shows what the node produces.
         // Asked for from the phone, 2026-09-10.
-        preview?.takeIf { cropSource == null && maskSource == null }?.let {
+        preview?.takeIf { cropSource == null && maskSource == null }?.let { still ->
+            // ⭐⭐ A clip loops here exactly as it does on the node.
+            //
+            // ⚠ Its OWN ticker rather than one shared with the canvas: the sheet
+            // is a separate window over a canvas that may be scrolled away, and
+            // a clock hoisted to the screen would keep the hidden one redrawing.
+            // ⚠ Keyed on the clip, so opening a different node restarts it at
+            // frame 0 instead of wherever the last one happened to be.
+            var frame by remember(clip) { mutableIntStateOf(0) }
+            LaunchedEffect(clip) {
+                if (clip == null) return@LaunchedEffect
+                var last = 0L
+                while (true) {
+                    withFrameMillis { now ->
+                        if (now - last >= 1000L / com.abrah.nightmare.ClipStore.FPS) {
+                            last = now
+                            frame++
+                        }
+                    }
+                }
+            }
+            val shown = clip?.let { f -> f[frame % f.size] } ?: still
             Image(
-                bitmap = it,
+                bitmap = shown,
                 contentDescription = "this node's image",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
@@ -827,6 +891,46 @@ internal fun NodeInspectorBody(
                 (w.name == "out_w" || w.name == "out_h") && conflict != null ->
                     "two consumers disagree -- ${conflict.reason()}"
                 else -> w.locked
+            }
+            // ⭐⭐⭐ **A `bool` is a CHECKBOX.** It had no branch at all, so
+            // every one in the app fell through to the text field at the bottom
+            // of this loop — a number-less keyboard and the word `true` to type
+            // by hand, where a typo (`True`, `ture`) reads as false and nothing
+            // says so until the Run that quietly did not save. Reported from
+            // the phone, 2026-09-12, about `video.output`'s `save` and
+            // `nd.video_sample`'s `upscale`; `image.output`'s `save` had the
+            // same field and the same trap.
+            //
+            // ⚠ The DEFAULT decides an unset param, not `false`: `video.output`
+            // ships `save = true`, and a box drawn unchecked over a node that
+            // will in fact save is a control lying about its own state.
+            // ⚠ Written lowercase, the one spelling every `run` compares against.
+            if (w.type == "bool") {
+                val on = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = on,
+                        enabled = why == null,
+                        onCheckedChange = { v ->
+                            if (why == null) onSetParam(nodeId, w.name, v.toString())
+                        },
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (why != null) "${w.name}  (locked)" else w.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        (why ?: w.hint)?.let {
+                            Text(
+                                it,
+                                style = LogTextStyle,
+                                color = if (why != null) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                continue
             }
             // ⭐⭐ A knob with BOTH bounds is a slider, not a text field.
             //

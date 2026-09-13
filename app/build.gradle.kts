@@ -51,16 +51,22 @@ android {
         // a minor bump per push, which is what the rule exists to stop. The
         // minor moves only when a release is called a release. ⚠ versionCode
         // stays a plain incrementing integer; Android requires that.
-        versionCode = 128
-        versionName = "1.4.13"
+        versionCode = 158
+        versionName = "1.4.43"
         ndk { abiFilters += "arm64-v8a" }
 
-        // The plugin runtime, built from source. ⚠ arm64 only, like everything
-        // else here: the NPU path has no other target, and building quickjs.c
-        // (2.1 MB of C) four times for ABIs that can never run a model is pure
-        // build time.
+        // The plugin runtime and the NPU runner, both built from source.
+        // ⚠ arm64 only, like everything else here: the NPU path has no other
+        // target, and building quickjs.c (2.1 MB of C) four times for ABIs that
+        // can never run a model is pure build time.
+        //
+        // ⚠⚠ `c++_static`, not `none`. It was `none` while the only native code
+        // was `nmjs.c` (C, no STL); `nmqnn.cpp` uses std::string/vector/mutex
+        // and does not compile without one. ⭐ STATIC rather than shared so the
+        // STL is linked into libnmqnn.so and no `libc++_shared.so` has to be
+        // packaged -- libnmjs.so is C and links none of it either way.
         externalNativeBuild {
-            cmake { arguments += "-DANDROID_STL=none" }
+            cmake { arguments += "-DANDROID_STL=c++_static" }
         }
     }
 
