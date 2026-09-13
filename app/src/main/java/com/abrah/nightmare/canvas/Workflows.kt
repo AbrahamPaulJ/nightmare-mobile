@@ -124,8 +124,48 @@ fun defaultWorkflow(): Workflow = Workflow(
     // ⚠ These are the only stacked positions that matter: every other recipe
     // puts the prompt node in a SECOND COLUMN, where its height cannot collide
     // with the pixel chain beside it.
-    mapOf("prompt" to Pt(24f, 120f), "sample" to Pt(24f, 360f), "decode" to Pt(24f, 620f)),
+    diagonal("prompt", "sample", "decode"),
 )
+
+/**
+ * ⭐⭐ **Every recipe on a DIAGONAL, so a wire only ever goes forward.**
+ *
+ * ⚠⚠ Asked for from the phone, 2026-09-13: *"go in a diagonal top to bottom
+ * so that wires only go forward"*. Two arrangements were tried first and both
+ * were wrong the same way — a single column made a node that feeds two others
+ * send a wire the length of the graph across everything between, and moving
+ * the feeder into a second column merely turned those wires BACKWARDS, leftward
+ * into the column they came from.
+ *
+ * ⚠⚠⚠ **[STEP_X] is at least [Sizes.NODE_WIDTH], and that is the whole
+ * trick.** An output port sits on a node's right edge and an input on the next
+ * one's left edge, so a step NARROWER than a node puts the destination's left
+ * edge to the left of the source's right edge — the wire runs backwards even
+ * though the node is further right. At 210 against a 190-wide node, every wire
+ * leaves an edge and arrives at one 20 units further right.
+ *
+ * ⚠ It also means two nodes can never overlap, whatever their heights: their
+ * x-ranges are disjoint. So [STEP_Y] is chosen for readability alone, and a
+ * node that grows a picture or a prose box cannot collide with a neighbour —
+ * which is what the hand-tuned column spacings kept having to be re-tuned for.
+ *
+ * ⚠⚠ [ids] must be in TOPOLOGICAL order, feeders first. That is what makes
+ * the wires forward; the diagonal only makes it visible. A recipe that lists
+ * them wrongly draws a backward wire and says so immediately, which is the
+ * point of laying them out this way rather than by hand.
+ */
+private fun diagonal(vararg ids: String): Map<String, Pt> =
+    ids.mapIndexed { i, id ->
+        id to Pt(24f + i * STEP_X, TOP + i * STEP_Y)
+    }.toMap()
+
+/** ⚠ The canvas top bar FLOATS over the graph and is two rows tall. */
+private const val TOP = 120f
+
+/** ⚠ ≥ [Sizes.NODE_WIDTH] (190), or the wires run backwards. See [diagonal]. */
+private const val STEP_X = 210f
+
+private const val STEP_Y = 220f
 
 /**
  * A graph a user can start from.
@@ -276,14 +316,9 @@ fun inpaintWorkflow(): Workflow = Workflow(
         )
     ),
     // ⚠ 120 for the top row, for the reason [defaultWorkflow] gives.
-    mapOf(
-        "photo" to Pt(24f, 120f), "frame" to Pt(24f, 330f),
-        "encode" to Pt(24f, 560f), "sample" to Pt(24f, 790f),
-        "blend" to Pt(24f, 1060f), "decode" to Pt(24f, 1330f),
-        // Second column: the prompt and the mask, the two things a user
-        // actually touches, level with the chain they join.
-        "prompt" to Pt(250f, 120f), "mask" to Pt(250f, 560f),
-    ),
+    // ⚠ Topological, feeders first: `mask` before `blend`, `prompt` before
+    // `sample`. A recipe that lists them wrongly draws a backward wire.
+    diagonal("prompt", "photo", "frame", "encode", "mask", "sample", "blend", "decode"),
 )
 
 /**
@@ -333,13 +368,7 @@ fun img2imgWorkflow(): Workflow = Workflow(
         )
     ),
     // ⚠ 120 for the top row, for the reason [defaultWorkflow] gives.
-    mapOf(
-        "photo" to Pt(24f, 120f), "frame" to Pt(24f, 330f), "encode" to Pt(24f, 560f),
-        "sample" to Pt(24f, 790f), "decode" to Pt(24f, 1130f),
-        // Second column, level with the photo: the two branches start side by
-        // side and meet at the sampler.
-        "prompt" to Pt(250f, 120f),
-    ),
+    diagonal("prompt", "photo", "frame", "encode", "sample", "decode"),
 )
 
 /**
@@ -380,10 +409,7 @@ fun upscaleWorkflow(): Workflow = Workflow(
     // ⚠⚠ 120, not 40. The canvas top bar FLOATS over the graph and is two
     // rows tall, so a node at 40 opens half-hidden behind it — every other
     // recipe starts at 120 and this one did not.
-    positions = mapOf(
-        "photo" to Pt(24f, 120f),
-        "upscale" to Pt(24f, 400f),
-    ),
+    positions = diagonal("photo", "upscale"),
 )
 
 /**
@@ -461,12 +487,7 @@ fun imageToVideoWorkflow(): Workflow = Workflow(
     // prompt travel the length of the graph, across every node in between.
     // ⚠ The prompt is level with the node it feeds, so its wire is one short
     // horizontal hop rather than a diagonal down the whole canvas.
-    mapOf(
-        "photo" to Pt(24f, 120f), "frame" to Pt(24f, 360f),
-        "encode" to Pt(24f, 600f), "sample" to Pt(24f, 840f),
-        "decode" to Pt(24f, 1080f),
-        "prompt" to Pt(250f, 840f),
-    ),
+    diagonal("prompt", "photo", "frame", "encode", "sample", "decode"),
 )
 
 /**
@@ -517,9 +538,5 @@ fun textToVideoWorkflow(): Workflow = Workflow(
     // Sitting between its consumers, each wire is one hop: up-left to `frame`,
     // down-left to `sample`, and neither crosses a node because the left
     // column is empty at that row.
-    mapOf(
-        "frame" to Pt(24f, 120f), "encode" to Pt(24f, 420f),
-        "sample" to Pt(24f, 660f), "decode" to Pt(24f, 900f),
-        "prompt" to Pt(250f, 420f),
-    ),
+    diagonal("prompt", "frame", "encode", "sample", "decode"),
 )

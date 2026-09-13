@@ -702,10 +702,47 @@ data class CanvasState(
      * saved view exists to fix.
      */
     fun withView(view: SavedView?) = copy(
-        viewport = view?.let { Viewport(it.offset, it.scale) } ?: Viewport(),
+        viewport = view?.let { Viewport(it.offset, it.scale) } ?: fitted(),
         zoomLocked = view?.zoomLocked ?: false,
         panLocked = view?.panLocked ?: false,
     )
+
+    /**
+     * ⭐⭐ A viewport that FRAMES the graph, for a flow that recorded none.
+     *
+     * ⚠⚠ [withView] used to hand back a default [Viewport] here, on the
+     * stated assumption that "a recipe's nodes are laid out near the origin".
+     * That stopped being true the moment the recipes went diagonal so their
+     * wires could run forward (`Workflows.diagonal`): an eight-node inpaint is
+     * ~1470 units wide, and a default viewport opened it showing the first two
+     * nodes and a lot of grid.
+     *
+     * ⚠ Width only. A phone canvas scrolls vertically without complaint — that
+     * is the gesture people already make — but a node off the RIGHT edge is one
+     * nobody knows is there. ⇒ Fit the width, leave the top where it is.
+     *
+     * ⚠ Clamped to the same 0.25..1 band a pinch can reach, and never zoomed
+     * IN: a two-node graph magnified to fill the screen looks broken.
+     */
+    private fun fitted(): Viewport {
+        val xs = workflow.positions.values.map { it.x }
+        if (xs.isEmpty()) return Viewport()
+        val widest = xs.max() + Sizes.NODE_WIDTH + REFERENCE_MARGIN
+        val scale = (REFERENCE_WIDTH / widest).coerceIn(0.25f, 1f)
+        return Viewport(Pt(0f, 0f), scale)
+    }
+
+    private companion object {
+        /**
+         * ⚠⚠ A REFERENCE width in world units, not the real viewport — this
+         * class is Compose-free and unit-tested, so it cannot measure the
+         * screen. It is a phone's short edge at 1x, which is what the canvas
+         * was laid out against; a tablet simply gets a little more margin than
+         * it needed, which is the harmless direction to be wrong in.
+         */
+        const val REFERENCE_WIDTH = 1100f
+        const val REFERENCE_MARGIN = 48f
+    }
 
     /**
      * The single selected node, when there is exactly one.
