@@ -31,8 +31,37 @@ object Backend {
     const val PORT = 8189
     private const val BASE = "http://127.0.0.1:$PORT"
 
-    /** Milliseconds. Generous: a cold backend takes 4-5 s to answer /health. */
+    /**
+     * Milliseconds. Generous: a cold backend takes 4-5 s to answer /health.
+     *
+     * ⚠⚠ **A PROBE timeout, and only that.** It is the right number for
+     * "is the server there", and it was the wrong one for every call that does
+     * model work — see [STAGE_TIMEOUT_MS].
+     */
     private const val TIMEOUT_MS = 6_000
+
+    /**
+     * ⭐⭐ Milliseconds for a call that may have to **LOAD A STAGE** first.
+     *
+     * ⚠⚠⚠ **`--lowram` makes a request into a disk read.** Every SDXL
+     * checkpoint launches with it (`BackendProcess`), and it "loads and
+     * releases each stage instead of holding the pipeline resident" — so
+     * `/encode_text` on SDXL is not an inference, it is *load two text
+     * encoders, run them, release them*. Against [TIMEOUT_MS] that call had six
+     * seconds to read ~1.4 GB off flash.
+     *
+     * ⚠⚠ Reported 2026-09-13: *"with the sdxlbase model the first run always
+     * works and the second fails"* — `encode_text failed http -1 --
+     * SocketTimeoutException`, with the run bar reading **6.2 s**, which is
+     * [TIMEOUT_MS] to the tenth. The first run is fast because the encoders are
+     * still resident from launch; the sampler then releases them to fit the
+     * 1024² UNet, so the SECOND run's encode has to fetch them back.
+     *
+     * ⚠ Not a retry and not a tuning knob: the work genuinely takes this long
+     * on a cold stage, and failing at six seconds reports a timeout for
+     * something that was going to succeed.
+     */
+    private const val STAGE_TIMEOUT_MS = 120_000
 
     /**
      * Milliseconds BETWEEN stream frames, not for the whole response. A sample
@@ -44,6 +73,16 @@ object Backend {
     data class Response(val code: Int, val body: String, val millis: Long)
 
     suspend fun get(path: String): Response = request("GET", path, null)
+
+    /**
+     * ⭐ A PROBE — "is the server there", answered or not in six seconds.
+     *
+     * ⚠⚠ The short timeout belongs HERE and nowhere else. `/health` and
+     * `/handles` answer from memory, so waiting two minutes on one would turn
+     * "the backend died" into a two-minute hang. Every other endpoint may be
+     * loading a stage; see [STAGE_TIMEOUT_MS].
+     */
+    suspend fun probe(path: String): Response = request("GET", path, null, TIMEOUT_MS)
 
     suspend fun post(path: String, json: String): Response = request("POST", path, json)
 
@@ -67,8 +106,10 @@ object Backend {
             val started = System.nanoTime()
             val conn = (URL("$BASE$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
+                // ⚠ CONNECT stays short -- reaching a local socket is instant or
+                // it is broken. Only the READ waits on a stage load.
                 connectTimeout = TIMEOUT_MS
-                readTimeout = TIMEOUT_MS
+                readTimeout = STAGE_TIMEOUT_MS
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
             }
@@ -166,13 +207,25 @@ object Backend {
      * swallows a 404 into an exception message loses the status code, and the
      * status code is usually the whole finding.
      */
-    private suspend fun request(method: String, path: String, body: String?): Response =
+    private suspend fun request(
+        method: String,
+        path: String,
+        body: String?,
+        /**
+         * ⚠⚠ Defaults to [STAGE_TIMEOUT_MS], not [TIMEOUT_MS]. Every endpoint
+         * that reaches this can do model work under `--lowram`; the probes pass
+         * the short one explicitly, which is the safe way round — a new
+         * endpoint added without thinking about it gets the patient timeout
+         * rather than a spurious six-second failure.
+         */
+        readTimeoutMs: Int = STAGE_TIMEOUT_MS,
+    ): Response =
         withContext(Dispatchers.IO) {
             val started = System.nanoTime()
             val conn = (URL("$BASE$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = method
                 connectTimeout = TIMEOUT_MS
-                readTimeout = TIMEOUT_MS
+                readTimeout = readTimeoutMs
                 if (body != null) {
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json")
@@ -634,7 +687,7 @@ object Ops {
      * as a wrong kind.
      */
     suspend fun handles(): Set<String>? {
-        val r = Backend.get("/handles")
+        val r = Backend.probe("/handles")
         if (r.code != 200) return null
         return try {
             val arr = JSONObject(r.body).getJSONArray("handles")

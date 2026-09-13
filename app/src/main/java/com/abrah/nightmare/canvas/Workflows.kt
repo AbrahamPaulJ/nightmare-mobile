@@ -377,9 +377,12 @@ fun upscaleWorkflow(): Workflow = Workflow(
             ),
         )
     ),
+    // ⚠⚠ 120, not 40. The canvas top bar FLOATS over the graph and is two
+    // rows tall, so a node at 40 opens half-hidden behind it — every other
+    // recipe starts at 120 and this one did not.
     positions = mapOf(
-        "photo" to Pt(24f, 40f),
-        "upscale" to Pt(24f, 300f),
+        "photo" to Pt(24f, 120f),
+        "upscale" to Pt(24f, 400f),
     ),
 )
 
@@ -452,10 +455,17 @@ fun imageToVideoWorkflow(): Workflow = Workflow(
             ),
         )
     ),
+    // ⚠⚠ **The chain runs down column one; the prompt sits in column two**,
+    // which is what [img2imgWorkflow] and [inpaintWorkflow] already do with
+    // their own `prompt` and `mask`. A single column made every wire from the
+    // prompt travel the length of the graph, across every node in between.
+    // ⚠ The prompt is level with the node it feeds, so its wire is one short
+    // horizontal hop rather than a diagonal down the whole canvas.
     mapOf(
-        "prompt" to Pt(24f, 120f), "photo" to Pt(24f, 430f),
-        "frame" to Pt(24f, 640f), "encode" to Pt(24f, 950f),
-        "sample" to Pt(24f, 1160f), "decode" to Pt(24f, 1370f),
+        "photo" to Pt(24f, 120f), "frame" to Pt(24f, 360f),
+        "encode" to Pt(24f, 600f), "sample" to Pt(24f, 840f),
+        "decode" to Pt(24f, 1080f),
+        "prompt" to Pt(250f, 840f),
     ),
 )
 
@@ -498,12 +508,18 @@ fun textToVideoWorkflow(): Workflow = Workflow(
         )
     ),
     // ⚠ 120 for the top row, for the reason [defaultWorkflow] gives: the canvas
-    // top bar floats over the graph and is two rows tall. ⚠⚠ 310 between them,
-    // not 240: the prompt node carries its text in its BODY like `sd.clip_encode`
-    // does, so it stands taller than a plain node.
+    // top bar floats over the graph and is two rows tall.
+    //
+    // ⚠⚠ **The prompt is in column two, level with `sample`** — the house
+    // layout, the same as [img2imgWorkflow]'s. It is the only node here that
+    // feeds TWO others, and putting it at the top of a single column made both
+    // of its wires run the full height of the graph across everything between.
+    // Sitting between its consumers, each wire is one hop: up-left to `frame`,
+    // down-left to `sample`, and neither crosses a node because the left
+    // column is empty at that row.
     mapOf(
-        "prompt" to Pt(24f, 120f), "frame" to Pt(24f, 430f),
-        "encode" to Pt(24f, 640f), "sample" to Pt(24f, 850f),
-        "decode" to Pt(24f, 1060f),
+        "frame" to Pt(24f, 120f), "encode" to Pt(24f, 420f),
+        "sample" to Pt(24f, 660f), "decode" to Pt(24f, 900f),
+        "prompt" to Pt(250f, 420f),
     ),
 )

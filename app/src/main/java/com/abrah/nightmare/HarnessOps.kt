@@ -621,7 +621,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // ⚠ The UI path does this too (`HarnessViewModel.selectModel`); the two
         // front ends share this file precisely so they cannot drift, and this
         // op having omitted it was that drift.
-        if (was != spec.id && Backend.get("/health").code == 200) {
+        if (was != spec.id && Backend.probe("/health").code == 200) {
             say("  stopping the backend -- it was launched for $was")
             stopBackend()
         }
@@ -679,14 +679,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         say("resolution $want")
         // ⚠ Same reasoning as [useModel]: `--patch` binds at launch, so a
         // process started at the old size will not reload into the new one.
-        if (was != want && Backend.get("/health").code == 200) {
+        if (was != want && Backend.probe("/health").code == 200) {
             say("  stopping the backend -- it was launched at $was")
             stopBackend()
         }
     }
 
     suspend fun health() {
-        val r = Backend.get("/health")
+        val r = Backend.probe("/health")
         when {
             r.code == 200 -> {
                 sink.backend(BackendState.UP)
@@ -1048,7 +1048,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             SelectedModel.res.width,
             SelectedModel.res.height,
         )
-        if (Backend.get("/health").code == 200) {
+        if (Backend.probe("/health").code == 200) {
             val have = BackendProcess.launchedKey
             // ⚠ A null launch key with a live /health is a backend this app did
             // not start -- a leftover from a previous process, or one launched
@@ -2841,7 +2841,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         var down = false
         repeat(10) {
             if (!down) {
-                if (Backend.get("/health").code != 200) down = true
+                if (Backend.probe("/health").code != 200) down = true
                 else kotlinx.coroutines.delay(500)
             }
         }
@@ -2870,7 +2870,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * an absent backend is started this way.
      */
     private suspend fun ensureUpscaleServer(): Boolean {
-        if (Backend.get("/health").code == 200) {
+        if (Backend.probe("/health").code == 200) {
             if (!BackendProcess.upscalerServer) {
                 say("this graph needs no checkpoint; the backend already up is holding one")
             }
@@ -2902,7 +2902,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 var up = false
                 repeat(45) {
                     if (!up) {
-                        if (Backend.get("/health").code == 200) {
+                        if (Backend.probe("/health").code == 200) {
                             up = true
                             sink.backend(BackendState.UP)
                             say("serving after ~${it + 1}s")
