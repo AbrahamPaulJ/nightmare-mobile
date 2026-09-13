@@ -24,9 +24,15 @@ If it is useful to you, you can
 [buy me a coffee](https://buymeacoffee.com/abrahampaulj). Entirely optional — the app is free,
 works offline, and asks for nothing.
 
-⚠ **Video is narrower than pictures.** It needs a Snapdragon 8 Elite or newer (Hexagon v79
-and up) and an 8.6 GB download. The app decides by *running* a small real model on your chip
-rather than by checking its name, so it will tell you before you spend the bytes.
+⚠ **Video is much narrower than pictures, and needs ~8.6 GB of models.** It runs only on a
+**Snapdragon 8 Elite (gen 4) or 8 Elite Gen 5 (gen 5)** — nothing older. It has been verified
+on **gen 4 only**; gen 5 should work, because a compiled model runs on the architecture it was
+built for and every newer one, but no gen 5 device has ever executed it. The app decides by
+*running* a small real model on your chip rather than by reading its name, so it tells you
+before you spend the 8.6 GB.
+
+⚠ None of that applies to pictures. Text to image, image to image, inpainting and upscaling
+run on far more phones and need none of those models.
 
 **Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile
 Stable Diffusion, local image generation, on device video generation, node editor,
@@ -38,7 +44,8 @@ img2img, inpainting, no cloud, private.
 - **A canvas built for a phone.** Big ports, snap to connect, pinch to zoom, a node palette
   in a sheet. Not a desktop editor shrunk down.
 - **Text to video, on the NPU.** A prompt in, 49 frames at 1024x640 out — about two seconds
-  of clip in about 25 seconds. **Image to video** animates a photo instead, and is the faster
+  of clip in about 25 seconds on a gen 4. ⚠ See the requirements above: ~8.6 GB of models and
+  an 8 Elite or 8 Elite Gen 5, verified on gen 4 only. **Image to video** animates a photo instead, and is the faster
   of the two. The clip loops on the node that made it and plays full screen.
 - **Real decomposition.** `encode_text`, `sample`, `vae_encode`, `vae_decode` and
   `latent_blend` are separate nodes, and the video path is built the same way — its prompt,
