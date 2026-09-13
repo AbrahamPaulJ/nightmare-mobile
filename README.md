@@ -1,9 +1,10 @@
 # Nightmare Mobile
 
-**A ComfyUI style node graph for Stable Diffusion on Android, running entirely on device.**
+**A ComfyUI style node graph for Stable Diffusion — and now video — on Android, running
+entirely on device.**
 
-Local text to image, image to image and inpainting on the Qualcomm Hexagon NPU. No server,
-no account, no cloud, no network. Built on LocalDream's NPU backend.
+Local text to image, image to image, inpainting and **text to video** on the Qualcomm Hexagon
+NPU. No server, no account, no cloud, no network. Built on LocalDream's NPU backend.
 
 <p align="center">
   <img src="media/ui.gif" width="270" alt="A ComfyUI style node graph running Stable Diffusion on an Android phone">
@@ -19,19 +20,29 @@ pick one in the app and it downloads on first use.
 Stable Diffusion 1.5 and SDXL run locally on a Snapdragon NPU, offline. You draw a graph,
 press Run, and the picture appears on the node that made it. Everything stays on the phone.
 
+⚠ **Video is narrower than pictures.** It needs a Snapdragon 8 Elite or newer (Hexagon v79
+and up) and an 8.6 GB download. The app decides by *running* a small real model on your chip
+rather than by checking its name, so it will tell you before you spend the bytes.
+
 **Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile
-Stable Diffusion, local image generation, node editor, Qualcomm Hexagon NPU, Snapdragon,
-QNN, SDXL, text to image, img2img, inpainting, no cloud, private.
+Stable Diffusion, local image generation, on device video generation, node editor,
+Qualcomm Hexagon NPU, Snapdragon, QNN, SDXL, text to image, text to video, image to video,
+img2img, inpainting, no cloud, private.
 
 ## What it does
 
 - **A canvas built for a phone.** Big ports, snap to connect, pinch to zoom, a node palette
   in a sheet. Not a desktop editor shrunk down.
+- **Text to video, on the NPU.** A prompt in, 49 frames at 1024x640 out — about two seconds
+  of clip in about 25 seconds. **Image to video** animates a photo instead, and is the faster
+  of the two. The clip loops on the node that made it and plays full screen.
 - **Real decomposition.** `encode_text`, `sample`, `vae_encode`, `vae_decode` and
-  `latent_blend` are separate nodes. Conditionings and latents move between them as handles
-  that never cross the wire, so a 512 image costs about 40 bytes of JSON instead of 780 KB.
-- **Recipes to start from.** Text to image, image to image, upscale a photo, and inpainting
-  where you paint the area to redo.
+  `latent_blend` are separate nodes, and the video path is built the same way — its prompt,
+  first frame, encode, sampler and decoder are five nodes you can rewire. Conditionings and
+  latents move between them as handles that never cross the wire, so a 512 image costs about
+  40 bytes of JSON instead of 780 KB.
+- **Recipes to start from.** Text to image, image to image, upscale a photo, inpainting where
+  you paint the area to redo, and both video flows.
 - **Batching.** Arm `seed`, `steps`, `cfg`, `denoise` or `scheduler` on the sampler and Run
   sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph
   that produced it.
@@ -42,7 +53,8 @@ QNN, SDXL, text to image, img2img, inpainting, no cloud, private.
   choose.
 - **Bring your own model.** Fifteen checkpoints in the catalogue, or import a converted one
   as a zip. The app carries every HTP architecture tier and picks the build your chip can
-  actually load.
+  actually load. The video models are their own download under Models, resumable per file
+  because 8.6 GB over a phone connection will be interrupted.
 - **Bring your own nodes.** A manifest and a script, no toolchain, no app release.
 - **English, 中文 and Русский.** The interface follows your phone's language. Adding another
   is a file drop — copy `app/src/main/res/values/strings.xml` into a `values-<code>/`
@@ -152,8 +164,16 @@ backend, and it stays the simpler way to generate a picture on a phone. Its mask
 brush behaviour and batch strip are ported here rather than reinvented, on purpose: someone
 who has both installed should not have to learn the same tool twice.
 
+The video is not ours either. It is
+[Neodragon](https://huggingface.co/Qualcomm-AI-Research/Neodragon) by Qualcomm AI Research,
+released under BSD-3-Clause-Clear with additional terms on the model card. The pyramidal
+schedule, the autoregressive MMDiT loop and the streaming VAE decode are theirs; the NPU
+conversions this app runs were made from their weights. Its first frame comes from
+[SSD-1B](https://huggingface.co/segmind/SSD-1B) by Segmind, Apache 2.0.
+
 What is new here is the graph. Pipelines were decomposed into ops, latents and conditionings
-became handles, and node types became something a contributor can add without an app release.
+became handles, node types became something a contributor can add without an app release, and
+the video path was taken apart into the same kind of nodes as the picture one.
 
 ## Licence
 

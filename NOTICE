@@ -61,6 +61,26 @@ Real-ESRGAN x4plus anime 6B, 4x UltraSharpV2 Lite
     Upscaler weights, converted and published by xororz.
     Downloaded by the app at the user's request; not included here.
 
+Neodragon
+    Qualcomm AI Research
+    https://huggingface.co/Qualcomm-AI-Research/Neodragon
+    BSD-3-Clause-Clear, with additional terms on the model card (the repo is
+    tagged both "bsd-3-clause-clear" and "other" -- read it before
+    redistributing the weights). The text to video model. The pipeline this app
+    implements -- the pyramidal schedule, the autoregressive MMDiT loop and
+    the streaming VAE decode -- follows their work; the NPU conversions it
+    runs were made from their weights. Downloaded by the app at the user's
+    request; not included here.
+
+SSD-1B
+    Segmind
+    https://huggingface.co/segmind/SSD-1B
+    Apache 2.0. Generates the first frame a video is animated from.
+
+CLIP, DistilT5
+    Text encoders used by the video path, converted for the NPU.
+    Downloaded by the app at the user's request; not included here.
+
 
 NON-COMMERCIAL
 --------------
