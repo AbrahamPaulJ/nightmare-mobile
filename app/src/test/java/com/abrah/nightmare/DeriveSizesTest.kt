@@ -166,4 +166,32 @@ class DeriveSizesTest {
         val g = deriveSizes(retargeted(inpaintWorkflow(), 1024), NODE_TYPES)
         assertEquals(emptyList<String>(), sizeMismatches(g, NODE_TYPES))
     }
+
+    /**
+     * ⭐⭐⭐ **Nothing asking for a size must not ERASE one.**
+     *
+     * ⚠⚠ `image.upscale` takes whatever it is given, so a crop feeding one
+     * has no demand on it — and [deriveSizes] used to write 0 in that case, on
+     * every canvas edit, so such a crop could never hold a size. Measured
+     * 2026-09-13: a crop set to 1024x1024 emitted its 4096² input unchanged.
+     *
+     * ⚠ A CONFLICT still resolves to 0; that is deliberate and different.
+     */
+    @Test
+    fun noDemandLeavesAnExplicitCropSizeAlone() {
+        val g = Graph(
+            listOf(
+                Node("photo", "image.load"),
+                Node(
+                    "square", "image.crop",
+                    params = mapOf("out_w" to "1024", "out_h" to "1024"),
+                    inputs = sources("image" to "photo"),
+                ),
+                Node("up", "image.upscale", inputs = sources("image" to "square")),
+            )
+        )
+        val out = deriveSizes(g, NODE_TYPES)
+        assertEquals("1024", out.byId.getValue("square").params["out_w"])
+        assertEquals("1024", out.byId.getValue("square").params["out_h"])
+    }
 }

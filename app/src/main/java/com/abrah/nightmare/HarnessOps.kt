@@ -138,6 +138,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "save_image" -> saveImage()
             // ⭐ The reported upscale-save bug, isolated. `--es arg 4096`.
             "save_big" -> saveBig(arg)
+            // ⭐⭐ …and the REAL flow: a picture upscaled, then saved.
+            "save_upscaled" -> saveUpscaled(arg)
             "vae_roundtrip" -> vaeRoundTrip()
             "img2img" -> img2img()
             "graph_img2img" -> graphImg2Img()
@@ -1606,13 +1608,19 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             android.graphics.Bitmap.createBitmap(
                 edge, edge, android.graphics.Bitmap.Config.ARGB_8888,
             ).also { b ->
-                val c = android.graphics.Canvas(b)
-                val paint = android.graphics.Paint()
-                for (i in 0 until 16) {
-                    paint.color = android.graphics.Color.rgb(i * 16, 255 - i * 16, 128)
-                    c.drawRect(
-                        0f, (edge / 16f) * i, edge.toFloat(), (edge / 16f) * (i + 1), paint,
-                    )
+                // ⚠⚠⚠ **NOISE, not stripes.** The first version of this drew 16
+                // flat bands, which PNG-compressed to 74 KB — so it "passed"
+                // while testing nothing: the whole question is whether a
+                // 30-40 MB encode survives, and a fixture that compresses to
+                // nothing cannot ask it. `CLAUDE.md`: check the fixture is
+                // representative first.
+                val rng = java.util.Random(7)
+                val row = IntArray(edge)
+                for (y in 0 until edge) {
+                    for (x in 0 until edge) {
+                        row[x] = 0xFF shl 24 or (rng.nextInt() and 0xFFFFFF)
+                    }
+                    b.setPixels(row, 0, edge, 0, y, edge, 1)
                 }
             }
         } catch (e: Throwable) {
@@ -1626,6 +1634,70 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         saveLikeTheButton("big", id)
         say("save_big: heap ${(rt.totalMemory() - rt.freeMemory()) shr 20}/" +
             "${rt.maxMemory() shr 20} MB at the end")
+    }
+
+    /**
+     * ⭐⭐ **The reported flow, as close as this device can get it**: a real
+     * picture, upscaled, then saved exactly as the node's button saves it.
+     *
+     * ⚠⚠ The report says SDXL, and no SDXL checkpoint is installed here — but
+     * the claim under test is about the SIZE the upscaler produces, not about
+     * which model made its input. So the input is squared off at 1024 first,
+     * which is what an SDXL render is, and the upscaler takes it from there.
+     *
+     * ⚠ [saveBig] already showed the SAVE survives a 4096² incompressible
+     * picture through the byte path, so if this also passes the bug is
+     * somewhere the harness cannot see — which is a real finding and needs
+     * saying rather than patching around.
+     */
+    private suspend fun saveUpscaled(arg: String?) {
+        val uri = newestSavedImage()
+        if (uri == null) {
+            say("save_upscaled: nothing in Pictures/${ImageSaver.FOLDER} yet", bad = true)
+            return
+        }
+        val which = arg?.takeIf { it.isNotBlank() } ?: "upscaler_realistic"
+        say("save_upscaled: $which on $uri")
+        // ⚠ An upscale-only backend: no checkpoint, because this graph names
+        // no context key. Same launch the upscale recipe takes.
+        if (!ensureBackend(noModel = true)) {
+            say("save_upscaled: no backend", bad = true)
+            return
+        }
+        val g = Graph(
+            listOf(
+                Node("photo", "image.load", params = mapOf("uri" to uri)),
+                // ⚠ Explicit: nothing downstream DERIVES a size for a crop here,
+                // because `image.upscale` takes whatever it is given.
+                Node(
+                    "square", "image.crop",
+                    params = mapOf("out_w" to "1024", "out_h" to "1024"),
+                    inputs = sources("image" to "photo"),
+                ),
+                Node(
+                    "upscale", "image.upscale",
+                    params = mapOf(UpscaleNode.UPSCALER to which),
+                    inputs = sources("image" to "square"),
+                ),
+            )
+        )
+        val r = runWorkflow(
+            com.abrah.nightmare.canvas.Workflow(g, emptyMap()),
+            onNode = { n ->
+                say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} " +
+                    "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+            },
+        )
+        if (r.error != null) {
+            say("save_upscaled: refused -- ${r.error}", bad = true)
+            return
+        }
+        val img = r.outputs["upscale"]?.previewImage()
+        if (img == null) {
+            say("save_upscaled: the upscaler produced no picture", bad = true)
+            return
+        }
+        saveLikeTheButton("upscale", img.id)
     }
 
     suspend fun saveImage() {

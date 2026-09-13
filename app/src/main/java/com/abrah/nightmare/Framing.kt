@@ -248,9 +248,22 @@ fun deriveSizes(graph: Graph, types: Map<String, NodeType>): Graph {
             // ⚠ A conflict resolves to 0 -- "promise nothing" -- rather than to
             // one of the two answers. Picking would render a plausible picture
             // for one branch and a wrong one for the other, silently.
+            //
+            // ⚠⚠⚠ **[SizeDemand.None] is NOT a conflict, and must not zero a
+            // size the user set.** Nothing downstream ASKING for a size is the
+            // ordinary state of a crop in front of `image.upscale`, which takes
+            // whatever it is given -- and this used to overwrite an explicit
+            // `out_w`/`out_h` with 0 on every canvas edit, so such a crop could
+            // not hold a size at all. Measured 2026-09-13: a crop set to
+            // 1024x1024 emitted its 4096² input unchanged.
+            //
+            // ⇒ No demand means leave it alone. A stale size after the consumer
+            // is deleted is visible and editable; a silently discarded one is
+            // neither.
             val (w, h) = when (demand) {
                 is SizeDemand.Exactly -> demand.width to demand.height
-                else -> 0 to 0
+                is SizeDemand.Conflict -> 0 to 0
+                else -> continue
             }
             val node = next.byId[n.id] ?: continue
             if (node.params["out_w"] == w.toString() && node.params["out_h"] == h.toString()) {
