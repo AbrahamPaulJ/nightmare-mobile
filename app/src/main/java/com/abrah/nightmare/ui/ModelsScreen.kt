@@ -184,6 +184,11 @@ fun ModelsScreen(
     // without a confirm at all while the checkpoint beside it had one — the
     // inconsistency the phone reported.
     var deletingUpscaler by remember { mutableStateOf<UpscalerSpec?>(null) }
+    // ⚠⚠⚠ …and the same for the video models, which is the BIGGEST delete in
+    // the app and shipped without one. A checkpoint asks before costing a ~1 GB
+    // re-download and an upscaler asks before costing 24 MB; this threw away
+    // 8.6 GB on a single tap. Reported from the phone, 2026-09-13.
+    var deletingVideo by remember { mutableStateOf(false) }
 
     // ⚠ No header and no `statusBarsPadding` any more: [LibraryScreen] owns
     // both, because this screen is now a TAB rather than a whole screen. A
@@ -259,7 +264,11 @@ fun ModelsScreen(
         ) { page ->
             // ⚠ LAST, after the upscalers, so adding it moved no existing index.
             if (video != null && page == families.size + (if (hasUpscalers) 1 else 0)) {
-                VideoModelsTab(video, busy, onInstallVideo, onCancel, onDeleteVideo, onProbeVideo)
+                VideoModelsTab(
+                    video, busy, onInstallVideo, onCancel,
+                    onConfirmDelete = { deletingVideo = true },
+                    onProbe = onProbeVideo,
+                )
                 return@SwipeTabs
             }
             if (hasUpscalers && page == families.size) {
@@ -368,6 +377,34 @@ fun ModelsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { deletingUpscaler = null }) { Text("Keep") }
+            },
+        )
+    }
+
+    if (deletingVideo && video != null) {
+        AlertDialog(
+            onDismissRequest = { deletingVideo = false },
+            title = { Text(stringResource(R.string.video_delete_title)) },
+            text = {
+                Text(
+                    // ⚠⚠ The number is the whole point of the dialog. "Frees
+                    // 8198 MB" and "getting it back is an 8198 MB download" are
+                    // the same figure said twice on purpose — the second is the
+                    // one that stops the tap.
+                    stringResource(
+                        R.string.video_delete_body,
+                        mb(video.installedBytes), mb(video.totalBytes),
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteVideo()
+                    deletingVideo = false
+                }) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingVideo = false }) { Text("Keep") }
             },
         )
     }
@@ -679,7 +716,8 @@ private fun VideoModelsTab(
     busy: Boolean,
     onInstall: () -> Unit,
     onCancel: () -> Unit,
-    onDelete: () -> Unit,
+    /** ⚠ ASKS first — see [deletingVideo]. Never deletes on the tap. */
+    onConfirmDelete: () -> Unit,
     onProbe: () -> Unit,
 ) {
     // ⚠ Once, when the tab is first composed. [HarnessViewModel.probeVideoSupport]
@@ -715,10 +753,25 @@ private fun VideoModelsTab(
                                 style = MaterialTheme.typography.titleMedium,
                             )
                             Text(
-                                if (row.complete) {
-                                    stringResource(R.string.installed_mb, mb(row.installedBytes))
-                                } else {
-                                    stringResource(
+                                // ⚠⚠⚠ While downloading, the LIVE byte count — not
+                                // [VideoRow.installedBytes], which counts only
+                                // files already whole. A 1.4 GB file in flight
+                                // contributes nothing to it, so the number sat
+                                // frozen at 295 MB for twenty minutes while
+                                // `clipg` came down and the download looked
+                                // dead. Reported by a user, 2026-09-13:
+                                // *"progress stopping at 295 mb"*.
+                                //
+                                // ⚠ 295 MiB is exactly the eight host weights
+                                // plus `cliplp`, which is the file before it.
+                                when {
+                                    row.progress != null -> stringResource(
+                                        R.string.video_of_total,
+                                        mb(row.progress.done), mb(row.progress.total),
+                                    )
+                                    row.complete ->
+                                        stringResource(R.string.installed_mb, mb(row.installedBytes))
+                                    else -> stringResource(
                                         R.string.video_of_total,
                                         mb(row.installedBytes), mb(row.totalBytes),
                                     )
@@ -749,7 +802,7 @@ private fun VideoModelsTab(
                                     Text(stringResource(R.string.unsupported))
                                 }
                             row.missing.isEmpty() -> OutlinedButton(
-                                onClick = onDelete,
+                                onClick = onConfirmDelete,
                                 enabled = !busy,
                             ) { Text(stringResource(R.string.delete)) }
                             else -> Button(

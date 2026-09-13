@@ -132,6 +132,8 @@
     <string name="video_models_note">One download of 8.6 GB, in 21 parts. It resumes, so a dropped connection costs only the file it was on.</string>
     <string name="video_about">Text to video on the NPU. No backend, no checkpoint.</string>
     <string name="video_of_total">%1$d of %2$d MB</string>
+    <string name="video_delete_title">Delete the video models?</string>
+    <string name="video_delete_body">Frees %1$d MB. Getting them back is a %2$d MB download. Every video flow will refuse to run until you install them again.</string>
 
     <!-- Mask editor. -->
     <string name="cd_paint">Paint</string>

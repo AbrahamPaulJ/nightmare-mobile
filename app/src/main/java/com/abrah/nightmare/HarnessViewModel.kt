@@ -678,7 +678,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * ⚠ A DOWNLOAD is unaffected: its row is a catalogue entry that exists
      * before, during and after, which is exactly why this was never noticed.
      */
-    val importing: String? get() = installing?.takeIf { ModelCatalog.byId(it) == null }
+    val importing: String? get() = installing
+        // ⚠⚠⚠ **"Not in the catalogue" is not the same as "an import".**
+        // This derived an import from the ABSENCE of a catalogue entry, which
+        // was true of exactly one thing when it was written. The video models
+        // then started sharing [installing] as the one-download-at-a-time latch
+        // under a sentinel id that is deliberately in no catalogue — so an
+        // 8.6 GB DOWNLOAD lit the "Importing …" banner. Reported from the
+        // phone, 2026-09-13: *"why does it say importing when i download"*.
+        // ⇒ Name the thing that is not an import, rather than inferring it.
+        ?.takeIf { it != VIDEO_INSTALL_ID && ModelCatalog.byId(it) == null }
 
     /** The phase/bytes of [importing], or null. */
     val importProgress: ModelInstaller.Progress? get() = if (importing != null) installProgress else null
@@ -964,7 +973,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 vi.install(
                     ctx,
                     onProgress = { p ->
-                        viewModelScope.launch { installProgress = p; refreshVideoModels() }
+                        // ⚠⚠ The row's progress FIELD only — not a full
+                        // [refreshVideoModels], which lists the context
+                        // directory and stats 21 files. That ran once per
+                        // megabyte, so an 8.6 GB install did it ~8,600 times,
+                        // each on the main thread.
+                        viewModelScope.launch {
+                            installProgress = p
+                            videoRow = videoRow?.copy(progress = p)
+                        }
                     },
                     isCancelled = { cancelInstall },
                 )
