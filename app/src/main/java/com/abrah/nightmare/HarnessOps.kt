@@ -136,6 +136,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "canvas_run" -> canvasRun()
             "workflow_io" -> workflowRoundTrip()
             "save_image" -> saveImage()
+            // ⭐ The reported upscale-save bug, isolated. `--es arg 4096`.
+            "save_big" -> saveBig(arg)
             "vae_roundtrip" -> vaeRoundTrip()
             "img2img" -> img2img()
             "graph_img2img" -> graphImg2Img()
@@ -1546,18 +1548,92 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * one would silently save nothing and the user would press Run twice for one
      * picture. The count of files before and after is the evidence.
      */
+    /**
+     * ⭐⭐ **Exactly what the node's Save button does**, so a failure here is
+     * the failure a user reported rather than a different code path that
+     * happens to save a file.
+     *
+     * ⚠⚠ `HarnessViewModel.saveImage` reads the store's PNG and hands it to
+     * [ImageSaver]; both halves are attempted here and reported separately,
+     * because "no PNG" and "MediaStore refused" are different bugs with the
+     * same toast.
+     */
+    private fun saveLikeTheButton(what: String, imageId: String) {
+        val bmp = images.get(imageId)
+        say("  $what: ${bmp?.width}x${bmp?.height} in the store")
+        val png = try {
+            images.png(imageId)
+        } catch (e: Throwable) {
+            // ⚠⚠ Throwable, not Exception: encoding a 4096² PNG is where an
+            // OutOfMemoryError would land, and an Error slipping past a catch
+            // is how this would look like "nothing happened".
+            say("  $what: PNG encode threw ${e.javaClass.simpleName}: ${e.message}", bad = true)
+            null
+        }
+        if (png == null) {
+            say("  $what: no PNG bytes -- this is what the button reports as " +
+                "\"no longer in memory\"", bad = true)
+            return
+        }
+        say("  $what: ${png.size / 1024} KB of PNG")
+        try {
+            val uri = ImageSaver.savePng(ctx, png, "harness-$what")
+            say("  $what: saved to $uri")
+        } catch (e: Throwable) {
+            say("  $what: MediaStore threw ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    /**
+     * ⭐⭐ **The reported bug, isolated**: *"for sdxl after upscale, save to
+     * gallery doesn't work from the upscale node, but it works from the result
+     * tab after starring"*.
+     *
+     * ⚠⚠ It does NOT render anything. An SDXL upscale is 1024² → **4096²**,
+     * and the question is whether the SAVE path survives a picture that size —
+     * not whether the upscaler works, which it demonstrably does since the
+     * picture reaches Results. So a bitmap of exactly that size goes into the
+     * same store and through the same two calls. ⚠ Results works by reading a
+     * PNG off disk that was written at STAR time, which is why it is not
+     * evidence that this path works.
+     *
+     * @param arg the long edge, default 4096. `--es arg 2048` is the SD 1.5 case.
+     */
+    private fun saveBig(arg: String?) {
+        val edge = arg?.toIntOrNull() ?: 4096
+        say("save_big: making a ${edge}x$edge bitmap (${(edge.toLong() * edge * 4) shr 20} MB)")
+        val bmp = try {
+            android.graphics.Bitmap.createBitmap(
+                edge, edge, android.graphics.Bitmap.Config.ARGB_8888,
+            ).also { b ->
+                val c = android.graphics.Canvas(b)
+                val paint = android.graphics.Paint()
+                for (i in 0 until 16) {
+                    paint.color = android.graphics.Color.rgb(i * 16, 255 - i * 16, 128)
+                    c.drawRect(
+                        0f, (edge / 16f) * i, edge.toFloat(), (edge / 16f) * (i + 1), paint,
+                    )
+                }
+            }
+        } catch (e: Throwable) {
+            say("save_big: could not even allocate it -- ${e.javaClass.simpleName}", bad = true)
+            return
+        }
+        val rt = java.lang.Runtime.getRuntime()
+        say("save_big: heap ${(rt.totalMemory() - rt.freeMemory()) shr 20}/" +
+            "${rt.maxMemory() shr 20} MB after the bitmap")
+        val id = images.put(bmp)
+        saveLikeTheButton("big", id)
+        say("save_big: heap ${(rt.totalMemory() - rt.freeMemory()) shr 20}/" +
+            "${rt.maxMemory() shr 20} MB at the end")
+    }
+
     suspend fun saveImage() {
-        val wf = com.abrah.nightmare.canvas.defaultWorkflow()
-        val withOutput = com.abrah.nightmare.canvas.Workflow(
-            graph = Graph(
-                wf.graph.nodes + Node(
-                    "out", "image.output",
-                    params = mapOf("save" to "true", "name" to "smoke"),
-                    inputs = sources("image" to "decode"),
-                )
-            ),
-            positions = wf.positions + ("out" to com.abrah.nightmare.canvas.Pt(24f, 560f)),
-        )
+        // ⚠⚠ `image.output` is gone (2026-09-13) — every terminal node draws
+        // its own result and carries save/share/star, so the switch had nothing
+        // left to do. This op therefore exercises what the BUTTON does, which
+        // is the path a user actually takes and the one they reported broken.
+        val withOutput = com.abrah.nightmare.canvas.defaultWorkflow()
 
         val before = countSaved()
         say("save_image: ${before} file(s) in Pictures/${ImageSaver.FOLDER} before")
@@ -1571,21 +1647,29 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             return
         }
 
+        // ⚠ The decode's own picture, saved the way the node's Save button
+        // saves it: the store's PNG bytes through [ImageSaver].
+        val img = first.outputs["decode"]?.previewImage()
+        if (img == null) {
+            say("save_image: the decode produced no picture", bad = true)
+            return
+        }
+        saveLikeTheButton("decode", img.id)
+
         val second = runWorkflow(withOutput)
-        val outRun = second.runs.firstOrNull { it.id == "out" }
-        say("  second run: ran ${second.ran}, cached ${second.cached}; " +
-            "out was ${outRun?.outcome?.name?.lowercase()}")
+        say("  second run: ran ${second.ran}, cached ${second.cached}")
 
         val after = countSaved()
         say("save_image: ${after} file(s) after two runs")
+        // ⚠⚠ ONE file, not two: the save is now a BUTTON, pressed once, rather
+        // than a node with a side effect that fired on every Run. That the
+        // second run adds nothing is the point -- it is what deleting
+        // `image.output` was for.
         when {
-            outRun?.outcome != Outcome.RAN ->
-                say("  FAIL the Output node was ${outRun?.outcome} on the second run -- a " +
-                    "node with a side effect must not be cached", bad = true)
-            after == before + 2 ->
-                say("  ok   two runs wrote two files, and the sampler stayed cached")
+            after == before + 1 ->
+                say("  ok   the button wrote one file, and a second Run added none")
             else ->
-                say("  FAIL expected ${before + 2} files, found $after", bad = true)
+                say("  FAIL expected ${before + 1} files, found $after", bad = true)
         }
     }
 

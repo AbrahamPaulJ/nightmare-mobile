@@ -54,6 +54,20 @@ object Share {
     }
 
     /**
+     * ⭐⭐ Share a BITMAP by streaming it — prefer this. See
+     * [com.abrah.nightmare.ImageSaver.saveBitmap] for why: encoding a 4096²
+     * picture into a `ByteArray` first costs ~80 MB of heap to write a file
+     * that is written incrementally anyway.
+     */
+    fun image(context: Context, bitmap: android.graphics.Bitmap, name: String) {
+        val f = File(staging(context), sanitise(name) + ".png")
+        f.outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        send(context, uriFor(context, f), "image/png", "Share picture")
+    }
+
+    /**
      * ⭐⭐ Hand a CLIP to whatever the user picks.
      *
      * ⚠⚠ **The MP4, not the poster.** Every surface that shows a clip used to

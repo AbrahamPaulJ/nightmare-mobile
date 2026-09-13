@@ -68,6 +68,48 @@ data class BatchSpec(val axes: List<BatchAxis> = emptyList()) {
         return out
     }
 
+    /**
+     * ⭐⭐ **A seed sweep is N RANDOM seeds, not seeds 1..N.**
+     *
+     * ⚠⚠ Reported by a user, 2026-09-13: *"seed sweep shouldn't be from 1-10
+     * as he did the same sweep twice and got same result"*. Ten seeds that are
+     * literally 1..10 are the same ten pictures every time, so the second sweep
+     * tells you nothing the first did not.
+     *
+     * ⚠⚠⚠ **This does not undo the 2026-09-10 change, and it must not.**
+     * The seed was once swept "by count", and the values were N placeholder
+     * ZEROS that `runRolled` turned into fresh seeds inside each iteration.
+     * That was unreproducible in the way that matters: every card was labelled
+     * `seed 0`, so a picture you liked named no seed you could pin. ⇒ The
+     * seeds are rolled HERE, once, and written into the axis — so a sweep is
+     * fresh every time AND every card carries the real seed that made it.
+     *
+     * ⚠ The COUNT is preserved, so [runCount] is the same before and after and
+     * the number shown to the user before they spend the renders is honest.
+     *
+     * ⚠ Distinct seeds: drawing the same one twice would spend a render to
+     * produce a duplicate of another card.
+     */
+    fun rollSeeds(rng: java.util.Random = java.util.Random()): BatchSpec {
+        if (axes.none { it.param == "seed" }) return this
+        return copy(
+            axes = axes.map { a ->
+                if (a.param != "seed") {
+                    a
+                } else {
+                    val seen = LinkedHashSet<String>()
+                    // ⚠ Positive and inside Int range: a seed is written back as
+                    // a param string and read with `toLongOrNull`, and a
+                    // negative one reads as a flag to anyone scanning the card.
+                    while (seen.size < a.values.size) {
+                        seen += (rng.nextInt(Int.MAX_VALUE - 1) + 1).toString()
+                    }
+                    a.copy(values = seen.toList())
+                }
+            }
+        )
+    }
+
     /** How each run differs, for a log line and a Results label. */
     fun labelFor(overrides: Map<String, Map<String, String>>): String =
         axes.mapNotNull { a -> overrides[a.nodeId]?.get(a.param)?.let { "${a.param} $it" } }

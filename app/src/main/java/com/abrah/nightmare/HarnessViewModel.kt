@@ -1574,8 +1574,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // is watching it move is the "poster frame is not a video" complaint in
         // a second place — `docs/NEODRAGON.md` §7c.
         val clip = clipForImage(imageId)
-        val png = ops.images.png(imageId)
-        if (clip == null && png == null) {
+        // ⚠⚠ The BITMAP, not `images.png(...)`. The bytes form builds two
+        // full copies in the heap and then caches a third in the store; at
+        // SDXL-upscale size that is what stopped this working while Results —
+        // which streams — kept working. [ImageSaver.saveBitmap].
+        val bmp = ops.images.get(imageId)
+        if (clip == null && bmp == null) {
             // ⚠ Toasted too: every OUTCOME of a save is announced the same
             // way, or the one that fails is the one nobody hears about.
             say("that picture is no longer in memory -- Run again to remake it", bad = true)
@@ -1589,7 +1593,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     com.abrah.nightmare.npu.VideoWriter
                         .publish(ctx, clip, name + ".mp4").toString()
                 } else {
-                    ImageSaver.savePng(ctx, png!!, name)
+                    ImageSaver.saveBitmap(ctx, bmp!!, name)
                 }
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -2061,12 +2065,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 .onFailure { toast("Could not share: " + it.message) }
             return
         }
-        val png = ops.images.png(imageId)
-        if (png == null) {
+        // ⚠⚠ The bitmap, for the reason [saveImage] gives.
+        val bmp = ops.images.get(imageId)
+        if (bmp == null) {
             toast("That picture is no longer in memory — Run again")
             return
         }
-        runCatching { Share.image(getApplication(), png, name) }
+        runCatching { Share.image(getApplication(), bmp, name) }
             .onFailure { toast("Could not share: " + it.message) }
     }
 
@@ -2083,13 +2088,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             for (id in ids) {
                 // ⭐⭐ Each item saves in its own kind — see [saveImage].
                 val clip = keptClip(id)
-                val png = if (clip == null) results.fullBytes(id) ?: continue else null
+                // ⚠⚠ The FILE, streamed — not `fullBytes`, which pulls ~40 MB
+                // into the heap for a 4096² upscale to copy bytes it never
+                // looks at. Same defect as `ImageStore.png()`, same fix.
+                val file = if (clip == null) results.pngFile(id) ?: continue else null
                 runCatching {
                     if (clip != null) {
                         com.abrah.nightmare.npu.VideoWriter
                             .publish(ctx, clip, "nightmare-" + id + ".mp4")
                     } else {
-                        ImageSaver.savePng(ctx, png!!, "nightmare-" + id)
+                        ImageSaver.savePngFile(ctx, file!!, "nightmare-" + id)
                     }
                 }.fold(
                     onSuccess = { ok++; if (clip != null) clips++ },
@@ -2563,7 +2571,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * four samplers and one of everything upstream.
      */
     fun runBatch(spec: BatchSpec) = run("batch") {
-        val combos = spec.expand()
+        // ⭐⭐ **Seeds are rolled HERE, once per sweep**, and written into the
+        // axis before anything expands. ⚠ Once, and at the start: expanding a
+        // spec whose values were random per call would give a different seed to
+        // the count preview than to the run, and a different one again to each
+        // iteration's label. ⚠ The count is unchanged, so the number the user
+        // was shown before pressing Run is still the number of renders.
+        // [BatchSpec.rollSeeds] has the two user reports this answers.
+        val rolled = spec.rollSeeds()
+        val combos = rolled.expand()
         if (combos.isEmpty()) {
             runError = "nothing to sweep -- check the values"
             return@run
@@ -2609,7 +2625,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val graph = overrides.entries.fold(canvas.workflow.graph) { g, (id, params) ->
                 g.withParams(id, params)
             }
-            val label = spec.labelFor(overrides)
+            val label = rolled.labelFor(overrides)
             say("  run ${i + 1}/${combos.size}  $label")
             val r = ops.runWorkflow(
                 canvas.workflow.copy(graph = graph),

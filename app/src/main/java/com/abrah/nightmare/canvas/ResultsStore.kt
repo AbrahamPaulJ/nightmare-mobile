@@ -269,6 +269,16 @@ class ResultsStore(private val dir: File) {
      */
     fun fullBytes(id: String): ByteArray? = png(id).takeIf { it.isFile }?.readBytes()
 
+    /**
+     * ⭐ The kept PNG as a FILE, for a caller that can stream it.
+     *
+     * ⚠⚠ [fullBytes] reads the whole picture into the heap, which is ~40 MB
+     * for a 4096² upscale — the same defect as `ImageStore.png()`, in the
+     * other direction. A save or a share only ever copies these bytes, so
+     * nothing needs them in memory. [com.abrah.nightmare.ImageSaver.saveBitmap].
+     */
+    fun pngFile(id: String): File? = png(id).takeIf { it.isFile }
+
     fun full(id: String): Bitmap? = png(id).takeIf { it.isFile }?.let {
         BitmapFactory.decodeFile(it.path)
     }

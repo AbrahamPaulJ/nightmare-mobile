@@ -1,6 +1,7 @@
 package com.abrah.nightmare
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -109,5 +110,82 @@ class BatchTest {
         // ⚠ A million iterations is one keystroke away, on a phone.
         assertEquals(emptyList<String>(), BatchValues.parse("1..100000"))
         assertEquals(emptyList<String>(), BatchValues.parse("1..10 by 0.001"))
+    }
+
+    /**
+     * ⭐⭐⭐ **A seed sweep must not be the same sweep twice.**
+     *
+     * ⚠⚠ Reported by a user, 2026-09-13: seeds 1..10 run twice gave the same
+     * ten pictures, so the second sweep said nothing. ⇒ [BatchSpec.rollSeeds].
+     */
+    @Test
+    fun twoSweepsDrawDifferentSeeds() {
+        val spec = BatchSpec(listOf(BatchAxis("s", "seed", listOf("1", "2", "3", "4", "5"))))
+        val a = spec.rollSeeds().axes.first().values
+        val b = spec.rollSeeds().axes.first().values
+        assertNotEquals("a second sweep must not repeat the first", a, b)
+        // ⚠ …and neither is the literal 1..5 that was reported.
+        assertNotEquals(listOf("1", "2", "3", "4", "5"), a)
+    }
+
+    /**
+     * ⚠⚠ **The COUNT survives**, or the number of renders shown to the user
+     * before they press Run is a lie.
+     */
+    @Test
+    fun rollingSeedsKeepsTheRunCount() {
+        val spec = BatchSpec(
+            listOf(
+                BatchAxis("s", "seed", listOf("1", "2", "3")),
+                BatchAxis("s", "cfg", listOf("7.0", "8.0")),
+            )
+        )
+        val rolled = spec.rollSeeds()
+        assertEquals(spec.runCount, rolled.runCount)
+        assertEquals(6, rolled.runCount)
+        // ⚠ Only the seed axis moves; a cfg sweep is a cfg sweep.
+        assertEquals(listOf("7.0", "8.0"), rolled.axes[1].values)
+    }
+
+    /**
+     * ⚠⚠⚠ **Distinct**, or the sweep spends a render to make a duplicate of
+     * another card.
+     */
+    @Test
+    fun rolledSeedsAreDistinct() {
+        val spec = BatchSpec(listOf(BatchAxis("s", "seed", List(10) { "$it" })))
+        val v = spec.rollSeeds().axes.first().values
+        assertEquals(10, v.size)
+        assertEquals(10, v.toSet().size)
+        // ⚠ Positive: a seed is read back with `toLongOrNull` and a negative
+        // one reads as a flag to anyone scanning the card.
+        v.forEach { assertTrue(it, it.toLong() > 0) }
+    }
+
+    /**
+     * ⭐⭐ **Every card is labelled with the seed that MADE it** — which is
+     * the half the 2026-09-10 report was about, and the half a "count of
+     * placeholder zeros" got wrong.
+     */
+    @Test
+    fun eachRunIsLabelledWithItsRealSeed() {
+        val rolled = BatchSpec(listOf(BatchAxis("s", "seed", listOf("1", "2", "3")))).rollSeeds()
+        val labels = rolled.expand().map { rolled.labelFor(it) }
+        assertEquals(3, labels.toSet().size)
+        labels.forEach { l ->
+            assertTrue(l, l.startsWith("seed "))
+            assertTrue(l, l.removePrefix("seed ").toLong() > 0)
+        }
+        // ⚠ The label names a seed the run ACTUALLY used, not one from the spec
+        // the user typed.
+        val used = rolled.expand().map { it.getValue("s").getValue("seed") }
+        assertEquals(rolled.axes.first().values, used)
+    }
+
+    /** ⚠ A sweep with no seed axis is untouched. */
+    @Test
+    fun aSweepWithoutSeedsIsUnchanged() {
+        val spec = BatchSpec(listOf(BatchAxis("s", "cfg", listOf("7.0", "8.0"))))
+        assertEquals(spec, spec.rollSeeds())
     }
 }

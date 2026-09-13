@@ -82,10 +82,11 @@ object BatchParams {
             // ⚠ 0.05 across 0..1: twentieths. Finer than that is below what a
             // denoise visibly changes, and 0..1 by 0.01 is 101 renders.
             "denoise" -> Sweep(0.0, 1.0, 0.05, false)
-            // ⚠⚠ Seeds 1..10, whole numbers. Small deliberately: a seed has no
-            // magnitude, so the numbers themselves mean nothing — what matters
-            // is that there are several of them and that the same sweep gives
-            // the same pictures again.
+            // ⚠⚠ **1..10 is a COUNT here, not the seeds themselves.** A seed
+            // has no magnitude, so the slider's numbers never meant anything;
+            // what the user is choosing is HOW MANY. [BatchSpec.rollSeeds]
+            // replaces these ten values with ten random seeds when the sweep
+            // starts, so a second sweep is not the same ten pictures.
             SEED -> Sweep(1.0, 10.0, 1.0, true)
             else -> {
                 val lo = widgetMin ?: 0.0
@@ -97,15 +98,24 @@ object BatchParams {
     const val SEED = "seed"
 
     /**
-     * ⚠⚠ **Nothing is swept by "count" any more.** The seed was, briefly: its
-     * values were N placeholder zeros that `runRolled` turned into fresh random
-     * seeds per iteration. That worked, but it made every card's label useless
-     * ("seed 0" ×5) and it made a sweep unreproducible — rerunning gave five
-     * different pictures again. ⇒ The seed is an ordinary RANGE now (the user's
-     * call, 2026-09-10): seeds 1..5 are seeds 1, 2, 3, 4 and 5, the same five
-     * pictures every time, each card labelled with the seed that made it.
+     * ⚠⚠ **The seed is swept by COUNT, and the count is all the slider
+     * means.** Two user reports pulled in opposite directions and the answer
+     * has to satisfy both:
+     *
+     * - 2026-09-10: swept "by count", the values were N placeholder ZEROS that
+     *   `runRolled` turned into fresh seeds inside each iteration. Every card
+     *   was labelled `seed 0`, so a picture you liked named no seed to pin.
+     * - 2026-09-13: swept as the literal range 1..10, the same sweep twice
+     *   gives the same ten pictures, which is not what a seed sweep is for.
+     *
+     * ⇒ [BatchSpec.rollSeeds] rolls real seeds ONCE when the sweep starts and
+     * writes them into the axis. Fresh every sweep, and every card labelled
+     * with the seed that actually made it.
+     *
+     * ⚠ This returns true so the UI can say "how many", and nothing else
+     * depends on it — the spec grammar and the slider are unchanged.
      */
-    fun isCount(param: String) = false
+    fun isCount(param: String) = param == SEED
 
     /**
      * ⚠⚠ **Two is the smallest sweep.** One value is not a batch — it is the
