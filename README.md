@@ -7,7 +7,7 @@ Local text to image, image to image, inpainting and **text to video** on the Qua
 NPU. No server, no account, no cloud, no network. Built on LocalDream's NPU backend.
 
 <p align="center">
-  <img src="media/ui.gif" width="270" alt="A ComfyUI style node graph running Stable Diffusion on an Android phone">
+  <img src="media/workflows.png" alt="Text to image, image to image and image to video, each as a node graph on an Android phone">
 </p>
 
 > **Early and experimental.** It works, and it has been run on exactly one phone.
@@ -19,10 +19,6 @@ pick one in the app and it downloads on first use.
 
 Stable Diffusion 1.5 and SDXL run locally on a Snapdragon NPU, offline. You draw a graph,
 press Run, and the picture appears on the node that made it. Everything stays on the phone.
-
-If it is useful to you, you can
-[buy me a coffee](https://buymeacoffee.com/abrahampaulj). Entirely optional — the app is free,
-works offline, and asks for nothing.
 
 ⚠ **Video is much narrower than pictures, and needs ~8.6 GB of models.** It runs only on a
 **Snapdragon 8 Elite (gen 4) or 8 Elite Gen 5 (gen 5)** — nothing older. It has been verified

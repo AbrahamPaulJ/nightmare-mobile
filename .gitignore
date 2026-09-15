@@ -100,6 +100,7 @@ docs/DEVICES.md
 # someone to edit it and wonder why nothing changed.
 icon-source.png
 
-# ⚠ The raw screen capture. `media/ui.gif` is the committed one; the mp4 is the
-# thing it was made from and is three times the size for no benefit in a README.
+# ⚠ The raw screen captures. `media/workflows.png` is the committed one; the
+# video it was cut from is three times the size for no benefit in a README.
 media/*.mp4
+media/*.gif
