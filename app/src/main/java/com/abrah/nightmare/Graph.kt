@@ -20,6 +20,15 @@ import java.security.MessageDigest
  * ⭐ Handles, not buffers (docs/ARCHITECTURE.md §6). A conditioning is 473 KB
  * and a latent 64 KB; the graph moves ids and the host moves the bytes.
  */
+/**
+ * ⚠ Here rather than beside [cacheKey]'s digest because [Value.Prompt] is the
+ * only value that has to address ITSELF -- every other one is addressed by a
+ * store that hashed the bytes already.
+ */
+internal fun sha256(text: String): String =
+    MessageDigest.getInstance("SHA-256").digest(text.toByteArray())
+        .joinToString("") { "%02x".format(it) }.take(32)
+
 sealed interface Value {
 
     /**
@@ -45,7 +54,17 @@ sealed interface Value {
      * the store is bounded — so the executor checks it is still held before
      * trusting a cached one.
      */
-    data class Image(val id: String, val w: Int, val h: Int) : Value {
+    data class Image(
+        val id: String,
+        val w: Int,
+        val h: Int,
+        /**
+         * ⭐ Where this picture was CUT from, when it was — set by `image.crop`
+         * and `image.mask_crop`, read by `image.paste` to put a patch back.
+         * Null for everything else. [Region] says why it is rects, not ids.
+         */
+        val region: Region? = null,
+    ) : Value {
         override fun address() = id
         override fun describe() = "image ${w}x$h $id"
     }
@@ -80,6 +99,38 @@ sealed interface Value {
 
         /** ⚠ Valid only while the store still holds it, like any [Image]. */
         val poster get() = Image(posterId, w, h)
+    }
+
+    /**
+     * ⭐⭐ What a person typed: positive and negative, as TEXT.
+     *
+     * ⚠⚠ **Not a conditioning, and that is the whole point**
+     * (docs/ARCHITECTURE.md §5.7). A COND is encoded BY a checkpoint and belongs
+     * to it, so one prompt node could never feed two samplers on two models —
+     * which is exactly what chaining across checkpoints needs. The encode moved
+     * INSIDE the sampler, where the model is known.
+     *
+     * ⚠ A value rather than a handle, unlike every other type here: the text is
+     * ~100 bytes, there is no store for it to go stale in, and the thing it
+     * would address is cheaper to carry than to look up. ⚠ The 129 ms encode is
+     * not lost — the backend content-addresses conditionings, so the same text
+     * encoded twice is 0–2 ms (§3).
+     */
+    data class Prompt(val positive: String, val negative: String) : Value {
+        // ⚠ The two halves are separated by a byte neither can contain.
+        // Without it a prompt "ab" with no negative and a prompt "a" with
+        // negative "b" address identically, and the cache would serve one
+        // node's picture for the other's.
+        override fun address() = sha256(positive + '\u0000' + negative)
+        // ⚠⚠ SHORT, and it says that it is short. It took 40 characters and
+        // stopped, with no mark — so a run log line read as the whole prompt,
+        // wrapped over two rows of the panel, and pushed the timings that the
+        // log exists for off the side. Reported from the phone, 2026-09-15.
+        // ⚠ An ellipsis only when something was actually cut: a prompt that
+        // fits must not be made to look truncated.
+        override fun describe() =
+            positive.ifBlank { return@describe "(no prompt)" }
+                .let { if (it.length <= PROMPT_BRIEF) it else it.take(PROMPT_BRIEF).trimEnd(' ', ',') + "…" }
     }
 
     /**
@@ -161,7 +212,7 @@ const val V1_MODEL = "absolutereality"
  * `contextKeyRetarget` was written to rescue people from.
  */
 const val CONTEXT_KEY_LOCK =
-    "bound when the backend launches -- open Models to change the checkpoint"
+    "bound when the backend launches — open Models to change the checkpoint"
 
 /**
  * `(type, model, resolution)` -- the three things bound at BACKEND LAUNCH
@@ -324,7 +375,95 @@ data class Source(val node: String, val port: String? = null) {
 // ⚠⚠ `nd.first_frame` rolls too: it has its own seed and generates the
 // picture the clip starts from, so a graph whose frame seed never rolled
 // would animate the same still every Run.
-val SAMPLER_TYPES = setOf("sd.sample", "nd.sample", "nd.first_frame")
+/**
+ * ⭐⭐ The four SD sampler types, as a SET.
+ *
+ * ⚠⚠ The fork of 2026-09-15 (capability × family, `docs/ARCHITECTURE.md` §5.7)
+ * turned every `type == "sd.sample"` into a membership test. A rule that still
+ * compares one string works on SD 1.5 and silently does nothing on SDXL — which
+ * is the shape of bug that renders fine and is wrong.
+ */
+/**
+ * ⭐⭐⭐ **The LAST-NODE rule** — a node is "last" when nothing of its own KIND
+ * is downstream of it.
+ *
+ * The user's rule, 2026-09-15, and it settles two questions with one predicate:
+ *
+ * | applied to | means |
+ * |---|---|
+ * | a sampler | only this one may arm a batch sweep |
+ * | an output | only this one carries save / star / download, and feeds Results |
+ *
+ * ⚠⚠ **Why the LAST sampler and not any.** Sweeping an earlier one re-runs
+ * everything downstream of it, so ten seeds on a two-sampler chain is twenty
+ * renders — a control that does not say so is a control that hides a
+ * twenty-minute job behind one tap.
+ *
+ * ⭐ It handles BRANCHES without a special case, which is why it is stated as
+ * "of its own kind" rather than "the last node in the graph". Two chains that
+ * each end in an output have two last outputs, and each owns its own branch —
+ * the user's call: *allow it; the sweep and Results use the branch you armed*.
+ * A rule phrased as "the single furthest-downstream node" would have had no
+ * answer there.
+ *
+ * ⚠ Cycles cannot reach here — `topoSort` refuses them by name — but the walk
+ * is bounded anyway, because this runs while a sheet is OPENING and a graph
+ * that will not run must still open.
+ */
+fun isLastOfKind(graph: Graph, nodeId: String, kind: (Node) -> Boolean): Boolean {
+    val consumers = graph.nodes
+        .flatMap { n -> n.inputs.values.map { it.node to n.id } }
+        .groupBy({ it.first }, { it.second })
+    val seen = mutableSetOf(nodeId)
+    val queue = ArrayDeque(consumers[nodeId].orEmpty())
+    var hops = 0
+    while (queue.isNotEmpty() && hops++ < 256) {
+        val id = queue.removeFirst()
+        if (!seen.add(id)) continue
+        val n = graph.byId[id] ?: continue
+        if (kind(n)) return false
+        queue.addAll(consumers[id].orEmpty())
+    }
+    return true
+}
+
+/** ⭐ May this sampler arm a sweep? Only the last one in its chain may. */
+fun canSweep(graph: Graph, nodeId: String): Boolean {
+    val node = graph.byId[nodeId] ?: return false
+    if (!isSampler(node.type)) return false
+    return isLastOfKind(graph, nodeId) { isSampler(it.type) }
+}
+
+/** ⭐ Does this output node own its branch's picture actions and Results entry? */
+fun isLastOutput(graph: Graph, nodeId: String): Boolean {
+    val node = graph.byId[nodeId] ?: return false
+    if (node.type != "core.output") return false
+    return isLastOfKind(graph, nodeId) { it.type == "core.output" }
+}
+
+/**
+ * ⚠ How much of a prompt a one-line readout shows. A run-log row is one line
+ * beside a node id and a duration; 28 characters is what fits beside them on a
+ * 411dp phone, and the rest is on the node itself where it can be read.
+ */
+const val PROMPT_BRIEF = 28
+
+val SD_SAMPLER_TYPES = setOf("sd15.sample", "sdxl.sample", "sd15.inpaint", "sdxl.inpaint")
+
+/** ⚠ The two that carry a mask, its editor and the paste back. */
+val SD_INPAINT_TYPES = setOf("sd15.inpaint", "sdxl.inpaint")
+
+val SAMPLER_TYPES = SD_SAMPLER_TYPES + setOf("nd.sample")
+
+/**
+ * ⭐ Every node that FRAMES a picture it was given — the four SD samplers and
+ * the video one.
+ *
+ * ⚠ The inspector draws a framing view for these and the canvas shows their
+ * framed input; `image.crop` is framing too but is its own node, so it is added
+ * where that matters rather than here.
+ */
+val FRAMING_TYPES = SD_SAMPLER_TYPES + setOf("nd.sample")
 
 /** ⚠ See [SAMPLER_TYPES] — never compare against one of those strings directly. */
 fun isSampler(type: String): Boolean = type in SAMPLER_TYPES

@@ -20,7 +20,7 @@ class FramingTest {
 
     private fun graph(vararg n: Node) = Graph(n.toList())
 
-    private val photo = Node("photo", "image.load", mapOf("uri" to "/a.png"))
+    private val photo = Node("photo", "core.image", mapOf("uri" to "/a.png"))
     private val frame = Node("frame", "image.crop", inputs = sources("image" to "photo"))
     private fun encode(id: String, w: Int = 512, h: Int = 512, from: String = "frame") = Node(
         id, "sd.vae_encode",

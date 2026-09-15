@@ -25,6 +25,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +67,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.abrah.nightmare.canvas.Result
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 
 /**
  * ⭐⭐ Pictures the user kept, each with the graph that made it.
@@ -85,6 +91,9 @@ fun ResultsScreen(
      */
     groups: List<ResultGroup>,
     results: List<Result>,
+    /** ⭐ Whether the Favourites chip is the one selected. */
+    favouritesOnly: Boolean = false,
+    onFavouritesOnly: (Boolean) -> Unit = {},
     /**
      * ⭐⭐ Ids the user has long-pressed into a selection. Empty means normal
      * browsing — the mode is the SET being non-empty rather than a flag, so
@@ -105,6 +114,8 @@ fun ResultsScreen(
     onSaveGroup: (ResultGroup) -> Unit = {},
     /** ⭐ Hand the FLOW that made it to another app, as importable JSON. */
     onShareFlow: (Result) -> Unit = {},
+    /** ⭐ Star or un-star one result — the same flag the canvas's star sets. */
+    onToggleFavourite: (Result) -> Unit = {},
     /** ⚠ Thumbnails are decoded lazily by the caller and may not be ready yet. */
     thumbnailFor: (String) -> ImageBitmap?,
     onOpenFlow: (Result) -> Unit,
@@ -176,17 +187,62 @@ fun ResultsScreen(
                 IconButton(onClick = { deletingSelection = true }) {
                     Icon(
                         Icons.Filled.Delete,
-                        contentDescription = "forget the selected pictures",
+                        contentDescription = "delete the selected pictures",
                         tint = MaterialTheme.colorScheme.error,
                     )
                 }
             }
         }
+        // ⭐⭐ **All / Favourites** — the filter the star earned when it stopped
+        // BEING the keep (2026-09-15). Before that every result was starred by
+        // definition and there was nothing to filter by.
+        //
+        // ⚠⚠ ALWAYS shown. It was hidden until something was starred, which was
+        // a deadlock in practice: there was no star on a row to star WITH, so
+        // the chips never appeared and the feature looked missing. Reported
+        // 2026-09-15 — *"results tab doesn't have the favourites filter"*. ⇒ A
+        // visible chip that filters to nothing is a chip that teaches you what
+        // the star is for.
+        run {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (fav in listOf(false, true)) {
+                    val on = favouritesOnly == fav
+                    Surface(
+                        onClick = { onFavouritesOnly(fav) },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (on) MaterialTheme.colorScheme.secondaryContainer
+                            else Color.Transparent,
+                        border = if (on) null else BorderStroke(
+                            1.dp, MaterialTheme.colorScheme.outlineVariant,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            if (fav) "Favourites" else "All",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (on) MaterialTheme.colorScheme.onSecondaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        )
+                    }
+                }
+            }
+        }
+        // ⚠ A GROUP survives the filter when any of its items is starred: a
+        // batch is one card, and hiding it because only three of ten are
+        // favourites would lose the three.
+        val shown =
+            if (favouritesOnly) groups.filter { g -> g.items.any { it.favourite } } else groups
         LazyColumn(
             Modifier.fillMaxWidth().padding(top = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(groups, key = { it.items.first().id }) { g ->
+            items(shown, key = { it.items.first().id }) { g ->
                 if (g.isBatch) {
                     BatchCard(
                         group = g,
@@ -226,82 +282,44 @@ fun ResultsScreen(
                         onDelete = { deleting = r },
                         onSave = { onSave(r) },
                         onShareFlow = { onShareFlow(r) },
+                        onToggleFavourite = onToggleFavourite,
                     )
                 }
             }
         }
     }
 
+    // ⚠ Every delete here asks through [ConfirmDelete], and says DELETE: it was
+    // "Forget" on this screen alone, a fourth verb for the one action (the
+    // user's call, 2026-09-15 — one word). `docs/UI.md` §8.2.
     deletingBatch?.let { g ->
-        AlertDialog(
-            onDismissRequest = { deletingBatch = null },
-            title = { Text("Forget this batch?") },
-            text = {
-                Text(
-                    "All ${g.size} pictures and the flows that made them go, and " +
-                        "this cannot be undone.\n\nCopies saved to the gallery are " +
-                        "not affected."
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { onDeleteGroup(g); deletingBatch = null },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) { Text("Forget ${g.size}") }
-            },
-            dismissButton = {
-                TextButton(onClick = { deletingBatch = null }) { Text("Cancel") }
-            },
+        ConfirmDelete(
+            title = "Delete this batch?",
+            body = "All ${g.size} pictures and the flows that made them go, and " +
+                "this cannot be undone.\n\nCopies saved to the gallery are not affected.",
+            confirmLabel = "Delete ${g.size}",
+            onConfirm = { onDeleteGroup(g) },
+            onDismiss = { deletingBatch = null },
         )
     }
 
     if (deletingSelection) {
-        AlertDialog(
-            onDismissRequest = { deletingSelection = false },
-            title = { Text("Forget ${selected.size} pictures?") },
-            text = {
-                Text(
-                    "Each picture and the flow that made it both go, and this " +
-                        "cannot be undone.\n\nCopies saved to the gallery are not " +
-                        "affected."
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { deletingSelection = false; onDeleteSelected() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) { Text("Forget ${selected.size}") }
-            },
-            dismissButton = {
-                TextButton(onClick = { deletingSelection = false }) { Text("Cancel") }
-            },
+        ConfirmDelete(
+            title = "Delete ${selected.size} pictures?",
+            body = "Each picture and the flow that made it both go, and this " +
+                "cannot be undone.\n\nCopies saved to the gallery are not affected.",
+            confirmLabel = "Delete ${selected.size}",
+            onConfirm = onDeleteSelected,
+            onDismiss = { deletingSelection = false },
         )
     }
 
     deleting?.let { r ->
-        AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text("Forget this one?") },
-            text = {
-                Text(
-                    "The picture and the flow that made it both go, and this cannot be " +
-                        "undone.\n\nA copy you saved to the gallery is not affected.",
-                    style = LogTextStyle,
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { onDelete(r); deleting = null },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) { Text("Forget") }
-            },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        ConfirmDelete(
+            title = "Delete this picture?",
+            body = RESULT_DELETE_BODY,
+            onConfirm = { onDelete(r) },
+            onDismiss = { deleting = null },
         )
     }
 }
@@ -337,6 +355,8 @@ fun ResultViewer(
     onSave: (Result) -> Unit = {},
     /** ⭐ Hand this picture to another app. */
     onShare: (Result) -> Unit = {},
+    /** ⭐ Star it from the viewer — where a favourite is usually decided. */
+    onToggleFavourite: ((Result) -> Unit)? = null,
 ) {
     val pager = androidx.compose.foundation.pager.rememberPagerState(
         initialPage = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
@@ -539,7 +559,7 @@ fun ResultViewer(
             IconButton(onClick = { confirmingDelete = true }) {
                 Icon(
                     Icons.Filled.Delete,
-                    contentDescription = stringResource(R.string.cd_forget_result),
+                    contentDescription = stringResource(R.string.cd_delete_result),
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
@@ -547,17 +567,47 @@ fun ResultViewer(
             // this app remembering the flow, saving is a PNG anyone else can
             // open — and a picture worth looking at full screen is exactly
             // where someone wants that.
+            // ⚠ The DOWNLOAD glyph: the floppy means "keep in Results"
+            // everywhere since 2026-09-15 and this writes to the gallery.
+            IconButton(onClick = { onSave(current) }) {
+                Icon(
+                    com.abrah.nightmare.ui.DownloadIcon,
+                    contentDescription = "save to the gallery",
+                    tint = androidx.compose.ui.graphics.Color.White,
+                )
+            }
+            onToggleFavourite?.let { toggle ->
+                IconButton(onClick = { toggle(current) }) {
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription = if (current.favourite) {
+                            "remove from favourites"
+                        } else {
+                            "add to favourites"
+                        },
+                        tint = if (current.favourite) com.abrah.nightmare.ui.StarKept
+                            else androidx.compose.ui.graphics.Color.White,
+                    )
+                }
+            }
+            // ⭐⭐ The seed, WITH its copy button — [SeedRow], the same control
+            // the inspector and the canvas viewer use.
+            //
+            // ⚠⚠ It was missing here and the seed was only prose inside the
+            // info panel, so the one screen where a person decides "I want this
+            // one again" was the one screen they could not copy it from.
+            // Reported 2026-09-15. ⚠ No `onLock`: locking writes onto the OPEN
+            // canvas, and a result in a list is not necessarily from that graph.
+            current.seed?.let { seed ->
+                com.abrah.nightmare.canvas.SeedRow(
+                    seed = seed,
+                    tint = androidx.compose.ui.graphics.Color.White,
+                )
+            }
             IconButton(onClick = { onShare(current) }) {
                 Icon(
                     ShareIcon,
                     contentDescription = "share this picture",
-                    tint = androidx.compose.ui.graphics.Color.White,
-                )
-            }
-            IconButton(onClick = { onSave(current) }) {
-                Icon(
-                    SaveIcon,
-                    contentDescription = "save to the gallery",
                     tint = androidx.compose.ui.graphics.Color.White,
                 )
             }
@@ -610,27 +660,12 @@ fun ResultViewer(
         }
 
         if (confirmingDelete) {
-            AlertDialog(
-                onDismissRequest = { confirmingDelete = false },
-                title = { Text("Forget this one?") },
-                text = {
-                    Text(
-                        "The picture and the flow that made it both go, and this " +
-                            "cannot be undone.\n\nA copy you saved to the gallery is " +
-                            "not affected."
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { confirmingDelete = false; onDelete(current) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                        ),
-                    ) { Text("Forget") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") }
-                },
+            // ⚠ The SAME body as the card's confirm — one constant, not two copies.
+            ConfirmDelete(
+                title = "Delete this picture?",
+                body = RESULT_DELETE_BODY,
+                onConfirm = { onDelete(current) },
+                onDismiss = { confirmingDelete = false },
             )
         }
     }
@@ -684,7 +719,7 @@ private fun BatchCard(
             ResultCardHeader(
                 title = "${group.size} pictures",
                 label = cover.label,
-                meta = listOfNotNull(cover.model, "${cover.width}×${cover.height}")
+                meta = listOfNotNull(cover.model, "${cover.width}x${cover.height}")
                     .joinToString("  "),
                 onDelete = { onDelete(group) },
                 onSave = onSave,
@@ -767,6 +802,8 @@ private fun ResultCard(
     selecting: Boolean = false,
     onSave: () -> Unit = {},
     onShareFlow: () -> Unit = {},
+    /** ⭐ Star this result — the flag the Favourites chip filters on. */
+    onToggleFavourite: (Result) -> Unit = {},
 ) {
     Card(
         Modifier
@@ -793,7 +830,7 @@ private fun ResultCard(
                 // rather than read.
                 meta = listOfNotNull(
                     result.model,
-                    "${result.width}×${result.height}",
+                    "${result.width}x${result.height}",
                 ).joinToString("  "),
                 onDelete = onDelete,
                 onSave = onSave,
@@ -805,6 +842,8 @@ private fun ResultCard(
                 // writes onto the OPEN canvas, and a result in a list is not
                 // necessarily from the graph that is open.
                 seed = result.seed?.toString(),
+                onToggleFavourite = { onToggleFavourite(result) },
+                favourite = result.favourite,
             )
 
             Row(
@@ -875,6 +914,9 @@ private fun ResultCardHeader(
      * value there would name one of eight.
      */
     seed: String? = null,
+    /** ⭐ Star this one, or null on a surface that cannot. */
+    onToggleFavourite: (() -> Unit)? = null,
+    favourite: Boolean = false,
 ) {
     // ⚠⚠ **Three rows, not five.** The card was title / label / meta /
     // actions / seed stacked, which on a phone meant a handful of results filled
@@ -903,24 +945,48 @@ private fun ResultCardHeader(
             // actions right, so the buttons land in the SAME place whether or
             // not there is a seed — a batch card has none, and right-aligning
             // the group would otherwise make the two card kinds disagree.
+            // ⚠⚠ COMPACT here, and it has to be: the card row is five controls
+            // on a phone now, and the full seed pill pushed the Open button off
+            // the edge the moment the star joined it. Reported 2026-09-15.
+            // ⇒ The number and its copy button, no container and no "seed"
+            // caption — the row it sits in already says what it is.
             if (seed != null) {
-                com.abrah.nightmare.canvas.SeedRow(seed = seed)
+                com.abrah.nightmare.canvas.SeedRow(seed = seed, compact = true)
             }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                 Icon(
                     Icons.Filled.Delete,
-                    contentDescription = stringResource(R.string.cd_forget_result),
+                    contentDescription = stringResource(R.string.cd_delete_result),
                     tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(18.dp),
                 )
             }
-            IconButton(onClick = onSave, modifier = Modifier.size(36.dp)) {
+            // ⭐⭐ The STAR — the flag the Favourites chip filters on. Here as
+            // well as on the canvas, because a picture is usually decided to be
+            // a favourite when it is being looked at in the list, not at the
+            // moment it was made.
+            onToggleFavourite?.let { toggle ->
+                IconButton(onClick = toggle, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription =
+                            if (favourite) "remove from favourites" else "add to favourites",
+                        tint = if (favourite) com.abrah.nightmare.ui.StarKept
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+            // ⚠ The DOWNLOAD glyph, not the floppy: the disk means "keep in
+            // Results" everywhere since 2026-09-15, and this button has always
+            // written to the gallery. `PictureActions` has the table.
+            IconButton(onClick = onSave, modifier = Modifier.size(32.dp)) {
                 Icon(
-                    SaveIcon,
+                    com.abrah.nightmare.ui.DownloadIcon,
                     contentDescription = "save to the gallery",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(18.dp),
                 )
             }
             // ⚠⚠ **No picture-share on the CARD.** On a batch it shared the
@@ -939,29 +1005,36 @@ private fun ResultCardHeader(
             // arrow everyone already reads as "send this somewhere"; the
             // node-graph glyph moved to OPEN, where it names the thing being
             // opened rather than the act of sending it.
-            IconButton(onClick = onShareFlow, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = onShareFlow, modifier = Modifier.size(32.dp)) {
                 Icon(
                     ShareIcon,
                     contentDescription = "share the flow that made it",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(18.dp),
                 )
             }
             // ⚠ The glyph REPLACES the label rather than joining it: the row
             // is four controls on a phone, and a text button among three icons
             // was the widest thing on the card. It stays a filled Button so it
             // still reads as the card's primary action.
+            // ⚠ Tighter padding: the row gained the star, and the primary
+            // button is the one that must not be the thing pushed off the edge.
             Button(
                 onClick = onOpenFlow,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
             ) {
                 Icon(
                     ShareFlowIcon,
                     contentDescription = stringResource(R.string.open_flow),
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
     }
 }
 
+
+/** ⚠ One body for deleting one result, wherever it is asked from. */
+private const val RESULT_DELETE_BODY =
+    "The picture and the flow that made it both go, and this cannot be undone.\n\n" +
+        "A copy you saved to the gallery is not affected."

@@ -424,9 +424,51 @@ private fun round3(v: Float) = (Math.round(v * 1000f) / 1000f).toString()
  * the corners of — is the model this editor deliberately replaced, and having
  * both would mean two gesture languages in one view (`docs/UI.md` §5).
  */
-fun cropAspect(node: com.abrah.nightmare.Node, srcW: Int, srcH: Int): Float {
+/**
+ * ⭐ The size the framing will be emitted at — `out_w`/`out_h` on `image.crop`,
+ * the RENDER size on the fused sampler.
+ *
+ * ⚠⚠ One function because two surfaces read it: the editor sizes its viewport
+ * from this and [cropAspect] shapes the frame from it. Two spellings of "what
+ * size is this crop for" would eventually disagree, and the symptom is a frame
+ * whose shape is not the shape of the picture it produces.
+ */
+/**
+ * ⚠⚠⚠ **Ask the node TYPE first.** A framing view has to be the shape of
+ * what the node will actually feed its encoder, and two of the three ways to
+ * know that are params — `out_w`/`out_h` on a crop node, `width`/`height` on an
+ * SD sampler. The **video sampler has neither**: its frame size is a property of
+ * the compiled QNN context (`VideoStructure.frameSize`, 512x320) and appears in
+ * no param, so this fell through to "no idea" and [cropAspect] used the source
+ * photo's own aspect. The image-to-video cropper was therefore whatever shape
+ * the user's photo was, and the 512x320 the sampler wants was taken by a
+ * centre-crop afterwards — silently, on a frame they thought they had chosen.
+ * Reported from the phone, 2026-09-15.
+ *
+ * ⚠ [com.abrah.nightmare.NodeType.framesTo] is where a node states it, so a
+ * plugin node that frames gets the same treatment without a case added here.
+ */
+fun framingOutSize(
+    node: com.abrah.nightmare.Node,
+    type: com.abrah.nightmare.NodeType? = null,
+): Pair<Int, Int> {
+    type?.framesTo(node)?.let { return it }
     val ow = node.params["out_w"]?.toIntOrNull() ?: 0
     val oh = node.params["out_h"]?.toIntOrNull() ?: 0
+    if (ow > 0 && oh > 0) return ow to oh
+    // The sampler frames FOR its own render, so that is the size it emits at.
+    val w = node.params["width"]?.toIntOrNull() ?: 0
+    val h = node.params["height"]?.toIntOrNull() ?: 0
+    return if (w > 0 && h > 0) w to h else 0 to 0
+}
+
+fun cropAspect(
+    node: com.abrah.nightmare.Node,
+    srcW: Int,
+    srcH: Int,
+    type: com.abrah.nightmare.NodeType? = null,
+): Float {
+    val (ow, oh) = framingOutSize(node, type)
     if (ow > 0 && oh > 0) return ow.toFloat() / oh
     val chosen = node.params["aspect"].orEmpty()
     val parts = chosen.split(':')

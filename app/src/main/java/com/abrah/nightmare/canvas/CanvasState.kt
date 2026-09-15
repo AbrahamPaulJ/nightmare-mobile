@@ -161,6 +161,21 @@ data class CanvasState(
     /** The image id being shown fullscreen, or null. */
     val viewing: String? = null,
     /**
+     * ⭐⭐⭐ WHICH node's picture is open — recorded at the tap, never inferred.
+     *
+     * ⚠⚠ [viewing] is an IMAGE id, and an image id is a CONTENT address: a
+     * sampler whose framing is the whole photo at the render size produces
+     * pixels identical to the photo, so both nodes' previews are the SAME id.
+     * Looking the node back up by that id then picks whichever comes first in
+     * the map — and on 2026-09-15 that put the photo node's pick/bin buttons
+     * over a sampler's preview, seen in a screenshot.
+     *
+     * ⇒ The tap knows the node. Recording it is the fix; deriving it is the bug
+     * `docs/ARCHITECTURE.md` §5.6 names — *filter by the rule, then pick, never
+     * pick then test*.
+     */
+    val viewingNode: String? = null,
+    /**
      * ⭐ Pinch is ignored while this is on; two fingers still pan.
      *
      * ⚠ A canvas is worked at one zoom for long stretches -- framing a crop,
@@ -250,6 +265,23 @@ data class CanvasState(
         // through the space around a node, and a tap that landed on a wire
         // instead of the node it runs behind would be maddening.
         wireAt(bs, world)?.let { w ->
+            // ⭐⭐ A wire BETWEEN two selected nodes drags the group, exactly as
+            // a selected node does. Asked for 2026-09-15 — *"moved as a group by
+            // dragging any part (nodes/wires)"*.
+            //
+            // ⚠ Both ends must be in the selection. A wire with one end outside
+            // it belongs as much to the node that is not selected, and dragging
+            // it would move half of what the user is looking at.
+            if (multiSelect && w.from.node in selection && w.toNode in selection) {
+                val anchor = workflow.positions[w.from.node]
+                if (anchor != null) {
+                    return copy(
+                        gesture = Gesture.DraggingNode(w.from.node, world - anchor),
+                        wire = null,
+                        message = null,
+                    )
+                }
+            }
             return copy(
                 // ⚠ [onWire] so the release does not immediately un-pick it:
                 // this press is what SELECTED the wire, and the background tap
@@ -305,9 +337,34 @@ data class CanvasState(
             // ⚠ Through [pan], which is what marks the gesture as having moved.
             is Gesture.Panning -> pan(screenDelta)
 
+            // ⭐⭐⭐ **A selected node drags the whole selection with it.**
+            //
+            // Asked for 2026-09-15. Multi-select could delete a group and run a
+            // group but not MOVE one, so rearranging four nodes meant four
+            // drags and losing the arrangement between them.
+            //
+            // ⚠⚠ Every node moves by the same DELTA, not to the same place: the
+            // grabbed node follows the finger exactly (`world - g.grab`, as it
+            // always did) and the others keep their offsets from it. Moving them
+            // all to the pointer would stack them.
+            //
+            // ⚠ Only when the grabbed node is IN the selection. Dragging an
+            // unselected node while a selection exists moves that one node —
+            // otherwise a stray drag would shift work the user had arranged and
+            // forgotten they had selected.
             is Gesture.DraggingNode ->
                 copy(
-                    workflow = workflow.moved(g.id, world - g.grab),
+                    workflow = if (g.id in selection && selection.size > 1) {
+                        // ⚠ The delta is where the grabbed node WOULD land less
+                        // where it is now, so the group follows the finger at the
+                        // grabbed node's own rate.
+                        workflow.movedBy(
+                            selection,
+                            (world - g.grab) - (workflow.positions[g.id] ?: (world - g.grab)),
+                        )
+                    } else {
+                        workflow.moved(g.id, world - g.grab)
+                    },
                     gesture = g.copy(moved = true),
                 )
 
@@ -406,7 +463,7 @@ data class CanvasState(
             // gesture landing on the wrong surface, and it was reported as
             // exactly that from the phone.
             return if (onPreview && box!!.type?.interactive != true) {
-                copy(gesture = Gesture.Idle, viewing = box.preview!!.imageId)
+                copy(gesture = Gesture.Idle, viewing = box.preview!!.imageId, viewingNode = box.id)
             } else {
                 copy(gesture = Gesture.Idle, editing = g.id, focusField = null)
             }
@@ -725,10 +782,21 @@ data class CanvasState(
      * IN: a two-node graph magnified to fill the screen looks broken.
      */
     private fun fitted(): Viewport {
-        val xs = workflow.positions.values.map { it.x }
-        if (xs.isEmpty()) return Viewport()
-        val widest = xs.max() + Sizes.NODE_WIDTH + REFERENCE_MARGIN
-        val scale = (REFERENCE_WIDTH / widest).coerceIn(0.25f, 1f)
+        val pts = workflow.positions.values
+        if (pts.isEmpty()) return Viewport()
+        // ⚠⚠ [Sizes.PROSE_NODE_WIDTH], not [Sizes.NODE_WIDTH]. The right-most
+        // node in every recipe is the OUTPUT, and an output is 380 wide since
+        // 2026-09-15 — measuring it at 190 left the last node half off-screen,
+        // which is the exact failure this function exists to prevent.
+        val widest = pts.maxOf { it.x } + Sizes.PROSE_NODE_WIDTH
+        val scale = ((REFERENCE_WIDTH - REFERENCE_MARGIN) / widest).coerceIn(0.25f, 1f)
+        // ⚠⚠ **Offset stays ZERO, and clearing the top bar is the LAYOUT's job**
+        // (`Workflows.TOP`). It is tempting to push the graph down by an offset
+        // here; it cannot be done correctly, because `Viewport.offset` is in
+        // device PIXELS while everything else in this class is dp —
+        // `forDevice` scales `scale` and leaves `offset` alone — and this class
+        // cannot see the density. A recipe's `TOP` is in world units, so
+        // `TOP * scale` is a dp clearance on every device: the density cancels.
         return Viewport(Pt(0f, 0f), scale)
     }
 
@@ -736,12 +804,34 @@ data class CanvasState(
         /**
          * ⚠⚠ A REFERENCE width in world units, not the real viewport — this
          * class is Compose-free and unit-tested, so it cannot measure the
-         * screen. It is a phone's short edge at 1x, which is what the canvas
-         * was laid out against; a tablet simply gets a little more margin than
-         * it needed, which is the harmless direction to be wrong in.
+         * screen. It is a phone's short edge in dp — and world units ARE dp
+         * (`Viewport.forDevice`), so the two are directly comparable.
+         *
+         * ⚠⚠ It said **1100** until 2026-09-15, which is not any phone's
+         * short edge and made this function a no-op: every recipe came out at
+         * scale ~0.75 or clamped to 1, and a four-node flow 1600 units wide
+         * was drawn 1200dp wide on a 411dp screen. The user had to pinch out
+         * by hand every time a flow was opened, and that is what "all nodes
+         * fit on the screen" was asking for.
+         *
+         * ⚠⚠⚠ **360, not this phone's 411**, and that is the second
+         * correction of the same day — *"i fking told u it shd fit screen"*.
+         * 411dp is the S25 Ultra at its DEFAULT display size; Android's screen
+         * -zoom setting raises the density, which lowers the dp width, and a
+         * fit computed against the developer's own untouched phone overflows
+         * on anybody who made their UI bigger. 360 is the long-standing
+         * baseline width and covers that. ⚠ A wider screen gets more margin
+         * than it needed, which is the harmless direction to be wrong in; a
+         * narrower one loses a node off the edge, which is not.
          */
-        const val REFERENCE_WIDTH = 1100f
-        const val REFERENCE_MARGIN = 48f
+        const val REFERENCE_WIDTH = 360f
+
+        /**
+         * ⚠ A margin in the same dp, subtracted before the fit rather than
+         * added to the content — so it is a real gap on screen and not a few
+         * world units that shrink with everything else.
+         */
+        const val REFERENCE_MARGIN = 32f
     }
 
     /**

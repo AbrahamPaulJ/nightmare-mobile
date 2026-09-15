@@ -79,12 +79,7 @@ fun WorkflowsScreen(
     // double it, and a second header would sit under the tab row.
     Column(modifier.fillMaxSize()) {
         if (error != null) {
-            Text(
-                error,
-                style = LogTextStyle,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            ErrorNotice(error, Modifier.padding(top = 8.dp))
         }
 
         LazyColumn(
@@ -119,7 +114,7 @@ fun WorkflowsScreen(
                         // ⚠ And it names where Save actually IS: this screen no
                         // longer has one, so copy pointing at a button on this
                         // screen would send the user looking for it here.
-                        "Nothing saved yet — build a graph on the canvas, then press Save there.",
+                        "Nothing saved yet — build a flow on the canvas, then press Save there.",
                         style = LogTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -164,8 +159,11 @@ fun WorkflowsScreen(
                             // button accepts — so what you send is what someone
                             // else can open, with no second format.
                             IconButton(onClick = { onShareSaved(w.name) }) {
+                                // ⚠ The share ARROW. The node-graph glyph means
+                                // OPEN a flow (Results, the user's swap
+                                // 2026-09-11) — here it meant Share, one tab away.
                                 Icon(
-                                    com.abrah.nightmare.ui.ShareFlowIcon,
+                                    com.abrah.nightmare.ui.ShareIcon,
                                     contentDescription = "share \"${w.name}\"",
                                 )
                             }
@@ -225,26 +223,22 @@ fun WorkflowsScreen(
         NameDialog(
             title = "Rename \"$from\"",
             initial = from,
-            confirm = "rename",
+            confirm = "Rename",
             onDismiss = { renaming = null },
             onConfirm = { onRenameSaved(from, it); renaming = null },
         )
     }
 
     deleting?.let { name ->
-        AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text("Delete \"$name\"?") },
-            text = { Text("This cannot be undone.", style = LogTextStyle) },
-            confirmButton = {
-                Button(
-                    onClick = { onDeleteSaved(name); deleting = null },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) { Text("Delete") }
-            },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        ConfirmDelete(
+            title = "Delete \"$name\"?",
+            // ⚠ Names what goes and what does not (`docs/UI.md` §7.5) — "this
+            // cannot be undone" alone is the ceremony that rule forbids.
+            body = "The saved flow goes and cannot be brought back. Pictures kept in " +
+                "Results keep their own copy of the flow that made them, and the " +
+                "canvas is not touched.",
+            onConfirm = { onDeleteSaved(name) },
+            onDismiss = { deleting = null },
         )
     }
 }

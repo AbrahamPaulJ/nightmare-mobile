@@ -204,7 +204,7 @@ fun sizeRefusal(
 
     val promise = runCatching { producerType.outputSize(producer) }.getOrNull()
         ?: return "$toNode needs ${want.first}x${want.second} and $fromNode " +
-            "cannot promise a size -- put a Crop between them"
+            "cannot promise a size — put a Crop between them"
     if (promise != want) {
         return "$toNode needs ${want.first}x${want.second}, " +
             "$fromNode makes ${promise.first}x${promise.second}"
@@ -296,6 +296,36 @@ fun deriveSizes(graph: Graph, types: Map<String, NodeType>): Graph {
  * wants to render something odd should be allowed to. What must not happen is
  * rendering it and saying nothing.
  */
+/**
+ * ⭐⭐⭐ Nodes that made a picture with nowhere to send it.
+ *
+ * ⚠⚠ Since 2026-09-15 a renderer does not draw its own result
+ * ([NodeType.showsResult]), so a graph whose sampler reaches no `core.output`
+ * would run for 24 seconds and show the user nothing at all. ⇒ Refused BEFORE
+ * the run, by name, with the fix in the sentence.
+ *
+ * ⚠ It walks forward rather than checking "is there an output node anywhere":
+ * a graph with two branches and one output node must still be refused for the
+ * branch that has none.
+ */
+fun rendersNowhere(graph: Graph, types: Map<String, NodeType>): List<String> {
+    val consumers = graph.nodes.flatMap { n -> n.inputs.values.map { it.node to n.id } }
+        .groupBy({ it.first }, { it.second })
+
+    fun reachesAnOutput(id: String, seen: MutableSet<String>): Boolean {
+        if (!seen.add(id)) return false
+        val t = types[graph.byId[id]?.type]
+        // A sink that takes a picture IS the destination.
+        if (t != null && t.outputs.isEmpty() && t.inputs.any { it.type == "IMAGE" || it.type == "MEDIA" }) return true
+        return consumers[id].orEmpty().any { reachesAnOutput(it, seen) }
+    }
+
+    return graph.nodes
+        .filter { types[it.type]?.showsResult == false }
+        .filterNot { reachesAnOutput(it.id, mutableSetOf()) }
+        .map { it.id }
+}
+
 fun sizeMismatches(graph: Graph, types: Map<String, NodeType>): List<String> {
     val out = mutableListOf<String>()
     for (n in graph.nodes) {

@@ -152,7 +152,7 @@ class ResolutionTest {
     @Test
     fun aStaleAspectIsIgnoredOnAFixedSizeFamily() {
         val sd15 = Node(
-            "s", "sd.sample",
+            "s", "sd15.sample",
             mapOf("model" to V1_MODEL, "width" to "768", "height" to "768", "aspect" to "9:16"),
         )
         assertNull("SD 1.5 must ignore a leftover aspect", nodeAspect(sd15))
@@ -161,13 +161,13 @@ class ResolutionTest {
         // simply broken the feature instead of scoping it.
         val xl = ModelCatalog.all.first { it.family == Family.SDXL }
         val sdxl = Node(
-            "s", "sd.sample",
+            "s", "sd15.sample",
             mapOf("model" to xl.id, "width" to "1024", "height" to "1024", "aspect" to "9:16"),
         )
         assertEquals("9:16", nodeAspect(sdxl))
 
         // ⚠ An unknown model names no family, so it acts on nothing.
-        assertNull(nodeAspect(Node("s", "sd.sample", mapOf("model" to "gone", "aspect" to "9:16"))))
+        assertNull(nodeAspect(Node("s", "sd15.sample", mapOf("model" to "gone", "aspect" to "9:16"))))
     }
 
     // ---- the context key -------------------------------------------------
@@ -191,7 +191,7 @@ class ResolutionTest {
     @Test
     fun anAspectIsNotPartOfTheContextKey() {
         val square = Node(
-            "s", "sd.sample",
+            "s", "sd15.sample",
             mapOf("model" to V1_MODEL, "width" to "1024", "height" to "1024", "aspect" to "1:1"),
         )
         val wide = square.copy(params = square.params + ("aspect" to "16:9"))
@@ -274,7 +274,7 @@ class ResolutionTest {
         listOf(
             Node("text", "sd.clip_encode", mapOf("prompt" to "a cat", "negative" to "")),
             Node(
-                "sample", "sd.sample",
+                "sample", "sd15.sample",
                 mapOf("model" to V1_MODEL, "width" to "512", "height" to "512"),
                 sources("cond" to "text"),
             ),

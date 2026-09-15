@@ -82,7 +82,7 @@ class CanvasTouchTest {
 
     private val oneNode = CanvasState(
         Workflow(
-            com.abrah.nightmare.Graph(listOf(Node("s", "sd.sample"))),
+            com.abrah.nightmare.Graph(listOf(Node("s", "sd15.sample"))),
             mapOf("s" to Pt(40f, 60f)),
         )
     )

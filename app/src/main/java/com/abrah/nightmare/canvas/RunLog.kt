@@ -337,7 +337,7 @@ fun RunLogPanel(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "Batching " + a.count + " " + a.param +
+                            "Batching " + a.count + " " + a.param.knobWord +
                                 (if (a.values.isEmpty()) "" else ": " + a.values.joinToString(", ")),
                             style = LogTextStyle,
                             color = MaterialTheme.colorScheme.primary,
@@ -351,7 +351,7 @@ fun RunLogPanel(
                         ) {
                             Icon(
                                 Icons.Filled.Close,
-                                contentDescription = "release the " + a.param + " batch",
+                                contentDescription = "release the " + a.param.knobWord + " batch",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(14.dp),
                             )

@@ -132,7 +132,7 @@ fun BatchSheet(
                         FilterChip(
                             selected = on,
                             onClick = { picked = c },
-                            label = { Text("${c.first}  ${c.second}", fontSize = 12.sp) },
+                            label = { Text("${c.first}  ${c.second.knobWord}", fontSize = 12.sp) },
                             shape = RoundedCornerShape(10.dp),
                         )
                     }

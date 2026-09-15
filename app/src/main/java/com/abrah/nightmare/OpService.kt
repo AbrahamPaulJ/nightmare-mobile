@@ -81,12 +81,12 @@ class OpService : Service() {
 
         val op = intent?.getStringExtra(MainActivity.EXTRA_OP)
         if (op == null) {
-            Log.w(TAG, "OpService started with no \"op\" extra -- nothing to run")
+            Log.w(TAG, "OpService started with no \"op\" extra — nothing to run")
             stopSelf(startId)
             return START_NOT_STICKY
         }
         if (!busy.compareAndSet(false, true)) {
-            Log.w(TAG, "op $op ignored -- already running")
+            Log.w(TAG, "op $op ignored — already running")
             // ⚠ Does NOT stopSelf here: the op already in flight owns the
             // service's life, and stopping on the rejected command would kill
             // it mid-render.

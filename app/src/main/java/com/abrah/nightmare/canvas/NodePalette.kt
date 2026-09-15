@@ -66,7 +66,12 @@ fun NodePalette(
             // ⚠ Sorted, and grouped by category. An unordered map means the
             // palette reshuffles between runs, and muscle memory is most of
             // what makes a node editor fast.
-            val byCategory = types.values.sortedBy { it.name }.groupBy { it.category }
+            // ⚠ `hidden` types still RUN — they are the set §5.7 replaces, kept
+            // alive for one build to compare against. They must not be offered.
+            val byCategory = types.values
+                .filterNot { it.hidden }
+                .sortedBy { it.name }
+                .groupBy { it.category }
             for (category in byCategory.keys.sorted()) {
                 Text(
                     category,
@@ -103,7 +108,18 @@ private fun PaletteRow(type: NodeType, onPick: (NodeType) -> Unit) {
                 .background(CanvasColors.forCategory(type.category))
         )
         Column(Modifier.weight(1f)) {
-            Text(type.name.nodeLabel, fontWeight = FontWeight.Medium)
+            // ⚠ [NodeType.paletteName], not the stripped type: four samplers
+            // strip to two pairs of identical words (docs/ARCHITECTURE.md §5.7).
+            Text(type.paletteName, fontWeight = FontWeight.Medium)
+            // ⭐ One line saying what it is FOR. A palette of eight nodes whose
+            // names are all verbs needs it more than a palette of eighty.
+            if (type.about.isNotBlank()) {
+                Text(
+                    type.about,
+                    style = LogTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             // ⚠ The qualified name, so two packs shipping a `Resize` are
             // distinguishable in the one place the user picks between them.
             if (type.name.contains(':')) {

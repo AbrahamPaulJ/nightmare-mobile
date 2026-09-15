@@ -78,7 +78,7 @@ abstract class VideoNode : NodeType {
             throw IllegalStateException(
                 "node \"${node.id}\": ${missing.size} video model(s) not on this device " +
                     "(${missing.take(3).joinToString()}${if (missing.size > 3) ", …" else ""}) " +
-                    "-- install them under Models > Video"
+                    "— install them under Models > Video"
             )
         }
         val weights = NpuFiles.missingAssets(a)
@@ -200,7 +200,7 @@ object VideoClipEncodeNode : VideoNode() {
                 "frame_cond",
             )
         } else {
-            Log.i(TAG, "frame_cond unwired -- clipl not loaded")
+            Log.i(TAG, "frame_cond unwired — clipl not loaded")
         }
         out
     }
@@ -223,7 +223,7 @@ object VideoFirstFrameNode : VideoNode() {
     override val outputs = listOf(Port("image", "IMAGE"))
 
     override val widgets = listOf(
-        Widget("seed", "int", "0", hint = "0 = a new picture every Run."),
+        Widget("seed", "int", "0", hint = "0 = a new first frame every Run. Type the seed shown on the node to get that one back."),
     )
 
     /** ⚠ It makes exactly the size the video path animates. */
@@ -239,7 +239,7 @@ object VideoFirstFrameNode : VideoNode() {
                 )
             val b = TensorStore.get(h.id)
                 ?: throw IllegalStateException(
-                    "node \"${node.id}\": that conditioning has been evicted -- Run again"
+                    "node \"${node.id}\": that conditioning has been evicted — Run again"
                 )
             val seed = node.params["seed"]?.toLongOrNull() ?: 0L
             val used = if (seed == 0L) System.currentTimeMillis() else seed
@@ -270,7 +270,7 @@ object VideoVaeEncodeNode : VideoNode() {
     override val outputs = listOf(Port("latent", "VIDEO_LATENT"))
 
     override val widgets = listOf(
-        Widget("seed", "int", "0", hint = "the VAE samples, so this changes the frame slightly."),
+        Widget("seed", "int", "0", hint = "encoding noise, not the clip seed — it changes the result only slightly, so leave it fixed. The sample node's seed is the one that matters."),
     )
 
     override fun requiredInputSize(node: Node, port: String): Pair<Int, Int>? =
@@ -320,7 +320,7 @@ object VideoSampleSplitNode : VideoNode() {
     override val outputs = listOf(Port("latent", "VIDEO_LATENT"))
 
     override val widgets = listOf(
-        Widget("seed", "int", "0", hint = "0 = a new clip every Run."),
+        Widget("seed", "int", "0", hint = "0 = a new clip every Run. Type the seed shown on the node to get that one back."),
     )
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
@@ -336,10 +336,10 @@ object VideoSampleSplitNode : VideoNode() {
                     "node \"${node.id}\": input \"latent\" is not connected"
                 )
             val cb = TensorStore.get(ch.id) ?: throw IllegalStateException(
-                "node \"${node.id}\": that conditioning has been evicted -- Run again"
+                "node \"${node.id}\": that conditioning has been evicted — Run again"
             )
             val lb = TensorStore.get(lh.id) ?: throw IllegalStateException(
-                "node \"${node.id}\": that latent has been evicted -- Run again"
+                "node \"${node.id}\": that latent has been evicted — Run again"
             )
             val seed = node.params["seed"]?.toLongOrNull() ?: 0L
             val used = if (seed == 0L) System.currentTimeMillis() else seed
@@ -383,6 +383,9 @@ object VideoSampleSplitNode : VideoNode() {
  * them back — paying an encode and a decode to move a checkbox.
  */
 object VideoVaeDecodeNode : VideoNode() {
+    /** ⚠⚠ It RENDERS the clip, so the clip belongs to `core.output` like every
+     * other result ([NodeType.showsResult]). One rule, no exceptions. */
+    override val showsResult = false
     override val name = "nd.vae_decode"
     override val version = "1"
     override val inputs = listOf(Port("latent", "VIDEO_LATENT"))
@@ -404,7 +407,7 @@ object VideoVaeDecodeNode : VideoNode() {
                     "node \"${node.id}\": input \"latent\" is not connected"
                 )
             val lb = TensorStore.get(lh.id) ?: throw IllegalStateException(
-                "node \"${node.id}\": that latent has been evicted -- Run again"
+                "node \"${node.id}\": that latent has been evicted — Run again"
             )
             val v = Video(a, runner(ctx, node)) { ctx.say(it.trim()); Log.i("ndVaeDecode", it) }
             ctx.say("decoding")

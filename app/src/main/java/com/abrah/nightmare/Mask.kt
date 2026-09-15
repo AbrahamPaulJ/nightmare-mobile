@@ -352,13 +352,13 @@ object MaskRaster {
     }
 
     /** Distance seed: 0 on painted pixels, "far" elsewhere. */
-    private fun seed(pixels: IntArray, w: Int, h: Int): IntArray {
+    fun seed(pixels: IntArray, w: Int, h: Int): IntArray {
         val far = Int.MAX_VALUE / 4
         return IntArray(pixels.size) { if ((pixels[it] and 0xFF) >= 128) 0 else far }
     }
 
     /** Two-pass 3-4 chamfer distance transform, in place. */
-    private fun chamfer(dist: IntArray, w: Int, h: Int) {
+    fun chamfer(dist: IntArray, w: Int, h: Int) {
         fun at(x: Int, y: Int) = dist[y * w + x]
         for (y in 0 until h) {
             for (x in 0 until w) {
@@ -386,7 +386,7 @@ object MaskRaster {
         }
     }
 
-    private fun smoothstep(t: Float): Float = t * t * (3f - 2f * t)
+    fun smoothstep(t: Float): Float = t * t * (3f - 2f * t)
 
     /**
      * The mask as a translucent tint for drawing OVER the photo.

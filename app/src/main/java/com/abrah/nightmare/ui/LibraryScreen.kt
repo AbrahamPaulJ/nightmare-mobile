@@ -19,6 +19,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -164,6 +165,19 @@ fun SwipeTabs(
                 }
             }
         }
-        HorizontalPager(state = state, modifier = Modifier.fillMaxWidth()) { i -> page(i) }
+        // ⚠⚠ **`key(i)`, or a page inherits the scroll of the one before it.**
+        // A pager REUSES composition slots between pages, so the `LazyListState`
+        // a `LazyColumn` remembers is handed to whichever page lands in that
+        // slot next. Swiping from a scrolled checkpoint list to the two-row
+        // Upscalers tab composed it at the old offset, which then clamped to 0
+        // — the list visibly started halfway down and snapped to the top.
+        // Reported from the phone 2026-09-15.
+        //
+        // ⚠ Keyed for EVERY page, not just the short one: the same reuse makes
+        // any two tabs of unequal length do it, and the upscalers tab is only
+        // where it is most obvious.
+        HorizontalPager(state = state, modifier = Modifier.fillMaxWidth()) { i ->
+            key(i) { page(i) }
+        }
     }
 }

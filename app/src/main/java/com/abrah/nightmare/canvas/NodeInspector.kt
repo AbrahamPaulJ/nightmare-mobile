@@ -1,5 +1,6 @@
 package com.abrah.nightmare.canvas
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,6 +91,10 @@ import com.abrah.nightmare.Widget
 import com.abrah.nightmare.SizeDemand
 import com.abrah.nightmare.requiredOutputSize
 import com.abrah.nightmare.ui.LogTextStyle
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 
 /**
  * The knobs of one node, as a bottom sheet.
@@ -121,6 +126,10 @@ fun NodeInspector(
     /** ⭐ Graph-wide, not per-node — see [NodeInspectorBody.onSetResolution]. */
     onSetResolution: (com.abrah.nightmare.Res) -> Unit = {},
     onSetAspect: (String) -> Unit = {},
+    /** ⭐ Whether THIS node may arm a sweep — the last-node rule. */
+    canSweep: Boolean = true,
+    installedModels: List<CheckpointChoice> = emptyList(),
+    onSetModel: (String, String) -> Unit = { _, _ -> },
     imageFor: (String) -> ImageBitmap? = { null },
     onViewFullscreen: (String) -> Unit = {},
     /**
@@ -135,6 +144,10 @@ fun NodeInspector(
     onSaveImage: (String) -> Unit = {},
     /** ⭐ Hand a node's picture to another app. */
     onShareImage: (String) -> Unit = {},
+    onStarImage: (String) -> Unit = {},
+    isFavourite: (String) -> Boolean = { false },
+    keepDisabledReason: String? = null,
+    onDisabledKeep: ((String) -> Unit)? = null,
     onKeepImage: (String) -> Unit = {},
     isKept: (String) -> Boolean = { false },
     onClearOutput: (String) -> Unit = {},
@@ -151,6 +164,11 @@ fun NodeInspector(
         val previewId = shownId
         // ⚠ A crop is framed against its INPUT, not its output. Showing the
         // node's own result would be showing the crop that has already happened.
+        // ⚠ Every node that is not an output still acts on its own picture —
+        // the rule is about which OUTPUT owns a branch, not about muting
+        // everything that holds pixels.
+        val actsOnItsPicture = node.type != "core.output" ||
+            com.abrah.nightmare.isLastOutput(state.workflow.graph, nodeId)
         val sourceId = node.inputs["image"]?.node?.let { state.previews[it]?.first }
         // ⭐⭐ What the graph demands of this node, read HERE rather than
         // computed in the body: the body is what the goldens render, and it must
@@ -171,15 +189,28 @@ fun NodeInspector(
             resolutions = com.abrah.nightmare.SelectedModel.resolutions,
             onSetResolution = onSetResolution,
             onSetAspect = onSetAspect,
+            canSweep = com.abrah.nightmare.canSweep(state.workflow.graph, nodeId),
+            installedModels = installedModels,
+            onSetModel = onSetModel,
             preview = shownId?.let(imageFor),
             onViewFullscreen = { shownId?.let(onViewFullscreen) },
-            cropSource = if (node.type == "image.crop") sourceId?.let(imageFor) else null,
+            // ⭐⭐ The framing and the painting live on the SAMPLER now
+            // (docs/ARCHITECTURE.md §5.7), so the two editors are drawn for it
+            // as well as for the nodes they came from.
+            //
+            // ⚠⚠ Moving the params without moving the editors is what shipped
+            // 1.4.54 with no way to paint a mask by hand — the storage and the
+            // interface are one change, not two.
+            cropSource = if (node.type in FRAMES) sourceId?.let(imageFor) else null,
             // ⚠ Same upstream picture, different job: the cropper FRAMES it,
-            // the mask editor is PAINTED on it.
-            maskSource = if (node.type == "image.mask") sourceId?.let(imageFor) else null,
+            // the mask editor is PAINTED on it. ⚠⚠ Both are the PHOTO, not the
+            // framed crop: the node rasterises a painting at the source's size
+            // and puts it through the same framing, so re-framing a shot moves
+            // the picture and the strokes together.
+            maskSource = if (node.type in PAINTS) sourceId?.let(imageFor) else null,
             // ⚠ Only for a node that HAS a picture and did not make it from a
             // photo the user chose: a `load_image` already has swap/remove.
-            onSaveImage = previewId?.takeIf { node.type != "image.load" }
+            onSaveImage = previewId?.takeIf { node.type != "core.image" }
                 ?.let { id -> { onSaveImage(id) } },
             onShareImage = { previewId?.let(onShareImage) },
             // ⭐⭐ The clip's frames, so the sheet loops what the node loops.
@@ -199,10 +230,26 @@ fun NodeInspector(
                 ?.takeIf { nodeId in clipNodes(state.workflow.graph, state.videos) }
                 ?.let(com.abrah.nightmare.ClipStore::get),
             hasClip = nodeId in clipNodes(state.workflow.graph, state.videos),
-            onKeepImage = previewId?.takeIf { node.type != "image.load" }
+            // ⭐⭐⭐ **The LAST-node rule**, the other half: an output node owns
+            // save / star / download only when no other output is downstream of
+            // it (`isLastOfKind`). In `sample → output → … → output` the first
+            // one displays and the second one acts, so there is one answer to
+            // "which picture does starring keep".
+            //
+            // ⚠ A BRANCHING graph has two last outputs and both act — each owns
+            // its own branch. The user's call: allow it, and let the branch the
+            // sweep was armed on decide what Results collects.
+            onKeepImage = previewId
+                ?.takeIf { node.type != "core.image" && actsOnItsPicture }
                 ?.let { id -> { onKeepImage(id) } },
+            onStarImage = previewId
+                ?.takeIf { node.type != "core.image" && actsOnItsPicture }
+                ?.let { id -> { onStarImage(id) } },
             kept = previewId?.let(isKept) == true,
-            onClearOutput = previewId?.takeIf { node.type != "image.load" }
+            favourite = previewId?.let(isFavourite) == true,
+            keepDisabledReason = keepDisabledReason,
+            onDisabledKeep = onDisabledKeep,
+            onClearOutput = previewId?.takeIf { node.type != "core.image" }
                 ?.let { { onClearOutput(nodeId) } },
             demand = demand,
             seed = seedFor(state.workflow.graph, nodeId) { status[it]?.detail },
@@ -210,6 +257,95 @@ fun NodeInspector(
         )
     }
 }
+
+/**
+ * ⭐ The node types whose inspector draws a FRAMING view, and the ones that
+ * draw a PAINTING view.
+ *
+ * ⚠⚠ Sets rather than `==`, because the answer stopped being one type on
+ * 2026-09-15: the fused sampler frames and paints as well (§5.7). FOUR places
+ * ask this question — the two editors and the two "nothing wired yet" notes —
+ * and they must all ask the same list.
+ */
+/**
+ * ⭐⭐⭐ Knobs the fused sampler hides, because nothing they do could apply.
+ *
+ * `docs/ARCHITECTURE.md` §5.7: the rework moved ten nodes of complexity into one
+ * node, and the bill for that lands in this sheet. Fifteen knobs in a column,
+ * four of them meaningless until a photo is wired, is a worse interface than the
+ * ten nodes were.
+ *
+ * ⚠⚠ Hidden, never disabled. A greyed control still costs a line and still
+ * invites a tap; the honest version of "this cannot apply" is an absence, and
+ * the knob returns the moment the wire that gives it meaning is drawn.
+ *
+ * ⚠⚠⚠ **The rectangle is hidden on EVERY node that draws a framing view**,
+ * which is [FRAMES] and not just the SD samplers. `image.crop` was excused on
+ * the reasoning that there "the rectangle IS the node's whole content" — which
+ * was a reason to keep the numbers when the crop node had no editor, and stopped
+ * being one the day it got the same [CropEditor] the samplers have. So `x`, `y`,
+ * `Width`, `Height` and a **"Crop locked" checkbox** sat under the picture on
+ * the crop node and on the video sampler, restating the control above them and
+ * duplicating the padlock in the section title. Reported from the phone,
+ * 2026-09-15: *"dont expose X, Y, Width, Height etc for all croppers. and why
+ * tf is there a Crop locked checkbox?"*.
+ *
+ * ⚠⚠ It is the N−1-of-N rule again (`docs/ARCHITECTURE.md` §5.6): one
+ * surface honoured the rule, the others did not, and the ones that did not are
+ * where the finger went.
+ */
+private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
+    // ⚠ The framing rectangle and the mask ops belong to their EDITOR, on every
+    // node that draws one — asked first, because the checks below are about the
+    // sampler's own conditional knobs.
+    if (node.type in FRAMES &&
+        name in setOf("x", "y", "w", "h", com.abrah.nightmare.CropNode.LOCKED)
+    ) return true
+    if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
+
+    if (node.type !in com.abrah.nightmare.SD_SAMPLER_TYPES) return false
+    val hasImage = node.inputs["image"] != null
+    val painted = !node.params[com.abrah.nightmare.MaskNode.OPS].isNullOrBlank()
+    // ⚠ A `sample` type declares none of the mask widgets, so this branch never
+    // fires for one — it is the inpaint types that need the conditional.
+    val hasMask = painted || node.inputs["mask"] != null
+    return when (name) {
+        // ⚠ Nothing to start FROM, so nothing to soften. `start_from`, `pad` and
+        // `encode_seed` are not listed because the sampler no longer declares
+        // them at all (2026-09-15) — hiding a widget that does not exist is a
+        // rule nobody can check.
+        "denoise" -> !hasImage
+        // The mask half only exists once something is painted or wired.
+        com.abrah.nightmare.SdSampler.MASK_ON,
+        com.abrah.nightmare.MaskCropNode.ONLY_MASKED,
+        com.abrah.nightmare.PasteNode.STITCH,
+        "grow", "feather",
+        -> !hasMask
+        else -> false
+    }
+}
+
+/**
+ * ⭐⭐ One installed checkpoint, as the node's picker needs it.
+ *
+ * ⚠⚠ The FAMILY is carried, not looked up. It decides which chip the entry
+ * sits under and what the field's label says, and a picker that re-derived it
+ * from `ModelCatalog` would be a second place that knows what family an
+ * IMPORTED model is — which is inferred from its files
+ * (`docs/MODELS.md` §3b) and is exactly the kind of answer that must have one
+ * home.
+ */
+data class CheckpointChoice(
+    val id: String,
+    val label: String,
+    val family: com.abrah.nightmare.Family,
+)
+
+private val FRAMES = setOf("image.crop") + com.abrah.nightmare.FRAMING_TYPES
+
+// ⚠⚠ Only the INPAINT types paint. That is the whole point of the fork: an
+// image-to-image node was being handed a mask editor it has no use for.
+private val PAINTS = setOf("image.mask") + com.abrah.nightmare.SD_INPAINT_TYPES
 
 /**
  * What the sheet contains — everything except the sheet.
@@ -275,6 +411,10 @@ internal fun NodeInspectorBody(
      * the wrong region of a correctly rendered picture.
      */
     onSetAspect: (String) -> Unit = {},
+    /** ⭐ Whether THIS node may arm a sweep — the last-node rule. */
+    canSweep: Boolean = true,
+    installedModels: List<CheckpointChoice> = emptyList(),
+    onSetModel: (String, String) -> Unit = { _, _ -> },
     /** The picture this node is showing, if any. */
     preview: ImageBitmap? = null,
     onViewFullscreen: () -> Unit = {},
@@ -305,6 +445,12 @@ internal fun NodeInspectorBody(
      * and shares a video is the bug this pair was reported for.
      */
     hasClip: Boolean = clip != null,
+    /** ⭐ The STAR: keep it AND flag it. [PictureActions]. */
+    onStarImage: (() -> Unit)? = null,
+    favourite: Boolean = false,
+    /** ⚠ Non-null when autosave already keeps every Run — the disk is dimmed. */
+    keepDisabledReason: String? = null,
+    onDisabledKeep: ((String) -> Unit)? = null,
     onKeepImage: (() -> Unit)? = null,
     /** ⚠ Filled star when true. The action toggles, so the icon must say which way. */
     kept: Boolean = false,
@@ -409,9 +555,60 @@ internal fun NodeInspectorBody(
         // ⭐⭐ The crop node's real interface. Its four params are the rectangle;
         // the number fields below stay, because they are what a workflow stores
         // and because typing an exact value is sometimes the point.
+        // ⭐⭐⭐ **The checkpoint, FIRST.** The user's call, 2026-09-15 — and it
+        // is the right place: which model a sampler runs decides what every knob
+        // below it means (a distilled checkpoint's cfg 1.5 against a stock 7.5),
+        // what sizes are reachable, and whether the graph pays for a relaunch.
+        // Buried under Steps and CFG it read as one more knob.
+        // ⚠⚠ No `installedModels.isNotEmpty()` gate. A sampler ALWAYS has a
+        // checkpoint field: with nothing installed it shows the model the node
+        // names, marked "· not installed", which is the one state where a user
+        // most needs to be told something rather than shown nothing. That gate
+        // is also what made the field vanish entirely on a cold start
+        // ([HarnessViewModel.init]) — an empty list and "no models" were
+        // indistinguishable.
+        if (node.type in com.abrah.nightmare.SD_SAMPLER_TYPES) {
+            CheckpointPicker(
+                installed = installedModels,
+                currentId = node.params["model"].orEmpty(),
+                onPick = { onSetModel(nodeId, it) },
+            )
+        }
+
+        val canSweepHere = canSweep
+        val cropLocked = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)[
+            com.abrah.nightmare.CropNode.LOCKED
+        ].equals("true", ignoreCase = true)
         cropSource?.let { src ->
-            val outW = node.params["out_w"]?.toIntOrNull() ?: 0
-            val outH = node.params["out_h"]?.toIntOrNull() ?: 0
+            val (outW, outH) = framingOutSize(node, type)
+            // ⭐⭐ A TITLE over each editor. Reported 2026-09-15: with framing and
+            // painting both on one node, two picture-sized controls sat one
+            // above the other with nothing saying which was which.
+            //
+            // ⚠ The lock lives IN the title row rather than loose beside the
+            // picture — the same reason [SeedRow] encloses its own lock: an icon
+            // with no visible subject reads as "lock the app".
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Crop", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                IconButton(onClick = {
+                    onSetParam(nodeId, com.abrah.nightmare.CropNode.LOCKED, (!cropLocked).toString())
+                }) {
+                    // ⚠⚠⚠ **A LOCK, not a tick.** One glyph, one meaning — and
+                    // the tick was already taken: on the picture actions it says
+                    // "this IS kept", a STATE. Using it here for "click to
+                    // lock", an ACTION, made the same mark mean two different
+                    // things two inches apart. Reported 2026-09-15, and it was
+                    // the right call — the app already has a lock that means
+                    // exactly this ([SeedRow] pins a seed with it), so the crop
+                    // uses the same pair: open padlock to lock, closed to unlock.
+                    Icon(
+                        if (cropLocked) Icons.Filled.Lock else com.abrah.nightmare.ui.LockOpenIcon,
+                        contentDescription =
+                            if (cropLocked) "unlock the crop to change it" else "lock this crop",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             CropEditor(
                 source = src,
                 rect = cropRectOf(node),
@@ -419,9 +616,14 @@ internal fun NodeInspectorBody(
                 // individually ran the canvas-update-and-autosave path four
                 // times per pointer event, and the concurrent saves that came
                 // out of that are what crashed the app mid-drag.
-                onChange = { r -> onSetParams(nodeId, r.asParams().toMap()) },
+                // ⚠ A locked crop ignores the gesture entirely. Disabling the
+                // WRITE rather than the view keeps the picture visible — the
+                // framing is still the thing you look at while painting.
+                onChange = { r ->
+                    if (!cropLocked) onSetParams(nodeId, r.asParams().toMap())
+                },
                 outW = outW,
-                aspect = cropAspect(node, src.width, src.height),
+                aspect = cropAspect(node, src.width, src.height, type),
                 padBlur = node.params[CropNode.PAD] == CropNode.PAD_BLUR,
             )
             // ⭐⭐ The photo is too small for what is being asked of it, said
@@ -431,22 +633,47 @@ internal fun NodeInspectorBody(
             // the pipeline needs".
             if (CropGeometry.needsPadding(src.width, src.height, outW, outH)) {
                 Text(
-                    "this picture is ${src.width}×${src.height}, smaller than the " +
-                        "${outW}×$outH being asked for — the bars are padding, not a crop. " +
+                    "this picture is ${src.width}x${src.height}, smaller than the " +
+                        "${outW}x$outH being asked for — the bars are padding, not a crop. " +
                         "Enlarging it instead would only make it soft.",
                     style = LogTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
-                if (outW > 0) "drag to move · pinch to zoom · out ${outW}×$outH"
+                if (outW > 0) "drag to move · pinch to zoom · out ${outW}x$outH"
                 else "drag to move · pinch to zoom · the frame is the output, at its own size",
                 style = LogTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         // ⭐⭐ The mask node's real interface.
-        maskSource?.let { src ->
+        maskSource?.let { raw ->
+            Text("Mask", style = MaterialTheme.typography.titleSmall)
+            // ⭐⭐⭐ **Painted on the FRAMED picture, and it follows the crop.**
+            //
+            // Asked for 2026-09-15: *"mask should track the crop and update
+            // instantly when crop changes."* The node already rasterises a
+            // painting at the SOURCE's size and puts it through the same
+            // framing the picture gets ([SdSampler.run]), so the strokes follow
+            // by construction — what was missing was the editor showing the
+            // same view the model will see.
+            //
+            // ⚠ `remember` on the rect as well as the picture: re-framing must
+            // re-cut this immediately, and re-cutting on every recomposition
+            // would run a bitmap draw on every frame of an unrelated gesture.
+            val rect = cropRectOf(node)
+            val src = if (node.type !in com.abrah.nightmare.SD_INPAINT_TYPES) raw else {
+                remember(raw, rect) {
+                    val (outW, outH) = framingOutSize(node, type)
+                    CropNode.render(
+                        raw.asAndroidBitmap(),
+                        rect.x, rect.y, rect.w, rect.h,
+                        outW, outH,
+                        node.params[CropNode.PAD],
+                    ).first.asImageBitmap()
+                }
+            }
             MaskToolbar(
                 nodeId = nodeId,
                 node = node,
@@ -454,7 +681,9 @@ internal fun NodeInspectorBody(
                 onEditMask = onEditMask,
             )
         }
-        if (maskSource == null && node.type == "image.mask") {
+        // ⚠ The sampler frames AND paints, so an empty one would print two
+        // notes that say "wire a picture in" — the framing one below covers both.
+        if (maskSource == null && node.type in PAINTS && node.type !in com.abrah.nightmare.SD_SAMPLER_TYPES) {
             Text(
                 "no picture to paint on yet — wire an image into this node, and " +
                     "the picture appears here as soon as it can be worked out.",
@@ -462,7 +691,14 @@ internal fun NodeInspectorBody(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (cropSource == null && node.type == "image.crop") {
+        if (cropSource == null && node.type in FRAMES) {
+            // ⚠ One sentence for the sampler, naming BOTH things the picture
+            // would unlock, because one node does both jobs now.
+            // ⚠ Nothing for a sampler. An empty framing view on a node with no
+            // picture wired is self-evident — the input port above it is visibly
+            // unconnected — and the sentence explaining it was instructions for
+            // a thing the user had not tried to do yet.
+            if (node.type in com.abrah.nightmare.SD_SAMPLER_TYPES) Unit else
             // ⚠ Says WHY there is no framing view. It no longer says "press Run
             // once": the input is resolved on demand when it can be
             // (`HarnessViewModel.resolveInputPreview`), so the only cases left
@@ -496,7 +732,7 @@ internal fun NodeInspectorBody(
         // numbers, which is nowhere near the thing it changes.
         padWidget?.let { w ->
             ChoiceRow(
-                label = w.name,
+                label = w.name.knobLabel,
                 hint = w.hint,
                 options = w.options.orEmpty(),
                 current = node.params[w.name] ?: w.default.orEmpty(),
@@ -525,56 +761,25 @@ internal fun NodeInspectorBody(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                // ⭐ Share sits beside Save here too — same set, same order,
-                // on every surface that shows one picture (`docs/UI.md` §5).
-                IconButton(onClick = { onShareImage() }) {
-                    Icon(
-                        com.abrah.nightmare.ui.ShareIcon,
-                        // ⚠ Same rule as the viewer's row — a clip shares as
-                        // the MP4, so the label must not promise a picture.
-                        contentDescription =
-                            if (hasClip) "share this clip" else "share this picture",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                IconButton(onClick = { onSaveImage() }) {
-                    Icon(
-                        com.abrah.nightmare.ui.SaveIcon,
-                        contentDescription =
-                            if (hasClip) "save this clip to the gallery"
-                            else "save to the gallery",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                onKeepImage?.let { keep ->
-                    IconButton(onClick = keep) {
-                        Icon(
-                            Icons.Filled.Star,
-                            contentDescription =
-                                if (kept) "stop keeping this" else "keep this and its flow",
-                            // ⚠⚠ The TINT carries the state, because the action is
-                            // a TOGGLE now and a star that looked the same
-                            // before and after gave no clue that a second tap
-                            // would undo it -- or that the first had done
-                            // anything.
-                            // ⚠ Tint rather than an outline glyph: `StarBorder`
-                            // lives in material-icons-EXTENDED, and pulling that
-                            // artifact in for one outline is several MB of icons
-                            // nothing else would use.
-                            tint = if (kept) com.abrah.nightmare.ui.StarKept
-                            else com.abrah.nightmare.ui.StarIdle,
-                        )
-                    }
-                }
-                onClearOutput?.let { clear ->
-                    IconButton(onClick = clear) {
-                        Icon(
-                            Icons.Filled.Delete,
-                            contentDescription = "clear this picture",
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
+                // ⭐ The SAME row the fullscreen viewer draws, in the same order,
+                // with the same confirm on the bin (`docs/UI.md` §8.3). ⚠ This
+                // bin used to clear on the tap while the viewer's asked.
+                PictureActions(
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    deleteTint = MaterialTheme.colorScheme.error,
+                    isClip = hasClip,
+                    onDelete = onClearOutput,
+                    onKeep = onKeepImage,
+                    onDownload = { onSaveImage() },
+                    onShare = { onShareImage() },
+                    onStar = onStarImage,
+                    kept = kept,
+                    favourite = favourite,
+                    keepDisabledReason = keepDisabledReason,
+                    onDisabledKeep = onDisabledKeep,
+                    starKeptTint = com.abrah.nightmare.ui.StarKept,
+                    starIdleTint = com.abrah.nightmare.ui.StarIdle,
+                )
             }
         }
         // ⚠⚠ …and NOT on a `mask` node either, for the same reason plus a
@@ -666,7 +871,7 @@ internal fun NodeInspectorBody(
         // than redundant: a hand-typed `content://media/.../258620` is a
         // valid-looking string that resolves to nothing, or to somebody else's
         // picture.
-        val picked = if (node.type == "image.load") "uri" else null
+        val picked = if (node.type == "core.image") "uri" else null
         if (picked != null) {
             ImagePicker(
                 current = node.params[picked].orEmpty(),
@@ -700,30 +905,33 @@ internal fun NodeInspectorBody(
                 node.params["height"]?.toIntOrNull() ?: 0,
             ).toString()
             val labels = resolutions.map { it.toString() }
-            // ⚠ Same threshold as every other choice in this sheet: past four,
-            // chips become a scrolling strip that can hide the current value.
-            // Seven resolutions is exactly the case that motivated the rule.
-            if (labels.size > CHIP_LIMIT) {
-                ChoiceDropdown(
-                    label = stringResource(R.string.resolution),
-                    hint = stringResource(R.string.resolution_reloads),
-                    options = labels,
-                    current = current,
-                    onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
-                )
-            } else {
-                ChoiceRow(
-                    label = stringResource(R.string.resolution),
-                    hint = stringResource(R.string.resolution_reloads),
-                    options = labels,
-                    current = current,
-                    onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
-                )
-            }
+            // ⚠ [Chooser] owns the chips-or-dropdown rule; seven resolutions is
+            // one of the cases that motivated it.
+            Chooser(
+                label = stringResource(R.string.resolution),
+                hint = stringResource(R.string.resolution_reloads),
+                options = labels,
+                current = current,
+                onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
+            )
         }
+
+        // ⭐⭐⭐ **The LAST-node rule** (`isLastOfKind`): only the last sampler
+        // in a chain may arm a sweep. Sweeping an earlier one re-runs everything
+        // downstream, so ten seeds on a two-sampler chain is twenty renders —
+        // a control that does not say so hides a twenty-minute job behind a tap.
+        //
+        // ⚠ ONE function, asked by all four places that draw a sweep control.
+        // Four copies of "is this batchable" would disagree the first time one
+        // of them learned about chains, which is exactly what just happened.
+        fun sweepable(param: String): Boolean =
+            com.abrah.nightmare.BatchParams.isBatchable(node.type, param) && canSweepHere
 
         for (w in widgets) {
             if (w.name == picked) continue
+            // ⭐⭐⭐ **A knob that cannot matter is not drawn** — §5.7, and the
+            // price of fusing ten nodes into one.
+            if (hiddenKnob(node, w.name)) continue
             // ⚠ Drawn above as one size control, or not at all. A node whose
             // model serves a single size has nothing to choose, and two locked
             // number fields saying 512 would be noise on every node in the graph.
@@ -731,6 +939,15 @@ internal fun NodeInspectorBody(
             // ⚠ Already drawn, under the framing view it belongs to.
             if (w === padWidget) continue
             if (w.name == "aspect" && sized != null) continue
+            // ⭐⭐⭐ The CHECKPOINT is a picker, not a locked string. Every
+            // installed model; picking one from another family swaps this node's
+            // TYPE with it, which is safe because the four types declare the
+            // same ports (docs/ARCHITECTURE.md §5.7).
+            //
+            // ⚠ Only on a sampler. `model` is a param on the legacy nodes too,
+            // where it stays locked — they are deleted, not re-plumbed.
+            // ⚠ Drawn at the TOP of the sheet, not here — see below.
+            if (w.name == "model" && node.type in com.abrah.nightmare.SD_SAMPLER_TYPES) continue
             // ⚠⚠ The mask's ops string is never worth typing. `crop` keeps its
             // four number fields beside the framing view because an exact
             // rectangle is sometimes the point; a list of stroke coordinates
@@ -761,7 +978,7 @@ internal fun NodeInspectorBody(
                 // value under a batch that will run four is two answers to
                 // "what will this run with", and the parked one is wrong.
                 val armedChoice = if (
-                    com.abrah.nightmare.BatchParams.isBatchable(node.type, w.name)
+                    sweepable(w.name)
                 ) com.abrah.nightmare.BatchParams.armed(node, w.name) else null
                 if (armedChoice != null) {
                     val picked = com.abrah.nightmare.BatchParams.valuesOf(w.name, armedChoice)
@@ -772,7 +989,7 @@ internal fun NodeInspectorBody(
                         .map { if (w.name == "scheduler") ModelCatalog.schedulerLabel(it) else it }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(w.name, style = MaterialTheme.typography.bodyMedium)
+                            Text(w.name.knobLabel, style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 "Batching " + picked.size + " values: " +
                                     picked.joinToString(", "),
@@ -797,7 +1014,7 @@ internal fun NodeInspectorBody(
                     val cur = node.params[w.name] ?: w.default.orEmpty()
                     val (base, karras) = ModelCatalog.splitScheduler(cur)
                     ChoiceDropdown(
-                        label = w.name,
+                        label = w.name.knobLabel,
                         hint = w.hint,
                         options = ModelCatalog.SAMPLERS.map { it.second },
                         current = ModelCatalog.SAMPLERS.firstOrNull { it.first == base }?.second
@@ -837,7 +1054,7 @@ internal fun NodeInspectorBody(
                         // but writing the literal made that ordering
                         // load-bearing and invisible, and the icon would have
                         // lied the moment the branches moved.
-                        if (com.abrah.nightmare.BatchParams.isBatchable(node.type, w.name)) {
+                        if (sweepable(w.name)) {
                             BatchToggle(
                                 armed = com.abrah.nightmare.BatchParams.armed(node, w.name),
                                 onClick = { batching = w },
@@ -849,28 +1066,18 @@ internal fun NodeInspectorBody(
                 // ⚠⚠ Chips do not scale. `pad` has two values and reads as a
                 // pair of buttons; `scheduler` has NINE, which becomes a
                 // horizontally-scrolling strip where the current value can be
-                // off-screen — a control that hides its own state. Past four,
-                // a dropdown shows the selection and nothing else.
-                if (options.size > CHIP_LIMIT) {
-                    ChoiceDropdown(
-                        label = w.name,
-                        hint = w.hint,
-                        options = options,
-                        current = node.params[w.name] ?: w.default.orEmpty(),
-                        onPick = { pick(it) },
-                    )
-                } else {
-                    ChoiceRow(
-                        label = w.name,
-                        hint = w.hint,
-                        options = options,
-                        current = node.params[w.name] ?: w.default.orEmpty(),
-                        onPick = { pick(it) },
-                    )
-                }
+                // off-screen — a control that hides its own state. [Chooser] is
+                // where that is decided, for every choice in this sheet.
+                Chooser(
+                    label = w.name.knobLabel,
+                    hint = w.hint,
+                    options = options,
+                    current = node.params[w.name] ?: w.default.orEmpty(),
+                    onPick = { pick(it) },
+                )
                 // ⚠ `scheduler` is batchable and is NOT a range — its popup is
                 // a multi-select over these same options.
-                if (com.abrah.nightmare.BatchParams.isBatchable(node.type, w.name)) {
+                if (sweepable(w.name)) {
                     BatchToggle(
                         armed = com.abrah.nightmare.BatchParams.armed(node, w.name),
                         onClick = { batching = w },
@@ -889,7 +1096,7 @@ internal fun NodeInspectorBody(
             val why = when {
                 (w.name == "out_w" || w.name == "out_h") && sized != null -> sized.reason()
                 (w.name == "out_w" || w.name == "out_h") && conflict != null ->
-                    "two consumers disagree -- ${conflict.reason()}"
+                    "two consumers disagree — ${conflict.reason()}"
                 else -> w.locked
             }
             // ⭐⭐⭐ **A `bool` is a CHECKBOX.** It had no branch at all, so
@@ -917,15 +1124,15 @@ internal fun NodeInspectorBody(
                     )
                     Column(Modifier.weight(1f)) {
                         Text(
-                            if (why != null) "${w.name}  (locked)" else w.name,
+                            if (why != null) "${w.name.knobLabel}  (locked)" else w.name.knobLabel,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         (why ?: w.hint)?.let {
                             Text(
                                 it,
                                 style = LogTextStyle,
-                                color = if (why != null) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -944,7 +1151,7 @@ internal fun NodeInspectorBody(
             // same reason the seed lock lives in the run bar: the control
             // belongs next to the thing it changes, not in a separate sheet
             // where you have to already know the feature exists.
-            val batchable = com.abrah.nightmare.BatchParams.isBatchable(node.type, w.name)
+            val batchable = sweepable(w.name)
             val armedSpec = if (batchable) {
                 com.abrah.nightmare.BatchParams.armed(node, w.name)
             } else null
@@ -957,7 +1164,7 @@ internal fun NodeInspectorBody(
                 val vals = com.abrah.nightmare.BatchParams.valuesOf(w.name, armedSpec)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(w.name, style = MaterialTheme.typography.bodyMedium)
+                        Text(w.name.knobLabel, style = MaterialTheme.typography.bodyMedium)
                         Text(
                             "Batching " + vals.size + " values: " + vals.joinToString(", "),
                             style = LogTextStyle,
@@ -1035,13 +1242,13 @@ internal fun NodeInspectorBody(
                     },
                     readOnly = why != null,
                     enabled = why == null,
-                    label = { Text(if (why != null) "${w.name}  (locked)" else w.name) },
+                    label = { Text(if (why != null) "${w.name.knobLabel}  (locked)" else w.name.knobLabel) },
                     supportingText = {
                         Text(
                             why ?: w.hint.orEmpty(),
                             style = LogTextStyle,
-                            color = if (why != null) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     },
                     singleLine = !isProse,
@@ -1075,7 +1282,7 @@ internal fun NodeInspectorBody(
                 },
                 readOnly = why != null,
                 enabled = why == null,
-                label = { Text(if (why != null) "${w.name}  (locked)" else w.name) },
+                label = { Text(if (why != null) "${w.name.knobLabel}  (locked)" else w.name.knobLabel) },
                 supportingText = {
                     val range = if (w.min != null && w.max != null) {
                         "  ${w.min}..${w.max}"
@@ -1083,8 +1290,8 @@ internal fun NodeInspectorBody(
                     Text(
                         why ?: w.hint ?: (w.type + range),
                         style = LogTextStyle,
-                        color = if (why != null) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 },
                 // ⚠ Only Text Encode has these now, and a prompt is the one
@@ -1137,37 +1344,17 @@ internal fun NodeInspectorBody(
         // action in the app already asks -- multi-select delete, a saved flow,
         // a model -- and this was the one that did not. `docs/UI.md` §5.
         TextButton(onClick = { confirmingDelete = true }) {
-            Text("delete node", color = MaterialTheme.colorScheme.error)
+            Text("Delete node", color = MaterialTheme.colorScheme.error)
         }
     }
 
     if (confirmingDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmingDelete = false },
-            // ⚠ Names the node, exactly as the canvas's own confirm does: the
-            // sheet is covering the node it is asking about.
-            title = { Text("Delete \"$nodeId\"?") },
-            text = {
-                Text(
-                    "Every wire into or out of it goes too, and this cannot be undone.",
-                    style = LogTextStyle,
-                )
-            },
-            confirmButton = {
-                Button(
-                    // ⚠ Closed BEFORE the delete. `onDelete` closes the sheet
-                    // this dialog belongs to, and leaving the flag set would
-                    // re-open it over the canvas asking about a node that is
-                    // already gone.
-                    onClick = { confirmingDelete = false; onDelete(nodeId) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") }
-            },
+        // ⚠ Closed BEFORE the delete (ConfirmDelete dismisses first): `onDelete`
+        // closes the sheet this dialog belongs to.
+        ConfirmDeleteNodes(
+            ids = listOf(nodeId),
+            onConfirm = { onDelete(nodeId) },
+            onDismiss = { confirmingDelete = false },
         )
     }
 }
@@ -1189,6 +1376,129 @@ private const val CHIP_LIMIT = 4
 
 /** Below this, a [Widget.fine] knob keeps two decimals. The distilled-model band. */
 private const val FINE_EDGE = 2f
+
+/**
+ * ⭐⭐⭐ **Which checkpoint this sampler runs** — one dropdown, its list
+ * grouped under family headings.
+ *
+ * ⚠⚠⚠ **There is no filter and no browsing state, and that is the point.**
+ * A family chip strip beside the field was tried twice and failed twice, in
+ * opposite directions:
+ *
+ * | shipped | what broke |
+ * |---|---|
+ * | chip filters the list, field keeps showing the node's model | tap SDXL, field still reads "AbsoluteReality" over a list of SDXL models |
+ * | chip picks that family's first checkpoint | tapping a chip fires the switch dialog, *"as if a dropdown item was chosen"* |
+ * | chip browses, field follows, a line says "not applied" | still two controls, still two states, still wrong |
+ *
+ * ⇒ The user's call, 2026-09-16: *"lets not do chips just do dropdown that
+ * shows by family"*. A grouped menu has **one** state — the node's `model`
+ * param — so there is nothing to keep in step: the family is a HEADING over
+ * rows, not a control with an opinion of its own. Every failure above came from
+ * a second control that could disagree with the first.
+ *
+ * ⚠ The LABEL still names the family the node is set to, per the user's call on
+ * the closed field. ⚠ No hint underneath: the cost of a second checkpoint is
+ * said once, in the run bar, in the units that matter ("2 model loads this run
+ * — about 7 s") and at the moment it applies.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun CheckpointPicker(
+    installed: List<CheckpointChoice>,
+    currentId: String,
+    onPick: (String) -> Unit,
+) {
+    val here = installed.firstOrNull { it.id == currentId }
+    // ⚠⚠ Families in the CATALOGUE's order, not in whatever order the installs
+    // happened to land — SD 1.5 before SDXL, every time this sheet opens.
+    val families = com.abrah.nightmare.Family.entries
+        .mapNotNull { f -> installed.filter { it.family == f }.takeIf { it.isNotEmpty() }?.let { f to it } }
+    var open by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+        OutlinedTextField(
+            value = here?.label ?: currentId,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Checkpoint" + (here?.family?.let { " · ${it.label}" } ?: "")) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for ((family, models) in families) {
+                // ⚠⚠ A HEADING, not a menu item — `enabled = false` so it cannot
+                // be tapped and reads as a section rather than as a checkpoint
+                // that happens to be unavailable.
+                // ⚠ Only when there is more than one family: a single "SD 1.5"
+                // heading over every row labels nothing.
+                if (families.size > 1) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                family.label,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        onClick = {},
+                        enabled = false,
+                    )
+                }
+                for (m in models) {
+                    DropdownMenuItem(
+                        text = { Text(m.label) },
+                        onClick = { onPick(m.id); open = false },
+                    )
+                }
+            }
+            // ⚠⚠ The node's OWN checkpoint is listed even when it is not
+            // installed. [installed] is installed-only, and a picker that cannot
+            // show the value it is set to reads as blank on exactly the graph
+            // that needs explaining — one saved against a model since deleted.
+            // ⚠ Not clickable: picking it again would refuse with the reason,
+            // which is a refusal the user did not ask for.
+            if (here == null && currentId.isNotBlank()) {
+                DropdownMenuItem(
+                    text = { Text("$currentId · not installed") },
+                    onClick = {},
+                    enabled = false,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * ⭐⭐⭐ **One value out of a list — and the ONE place that decides how.**
+ *
+ * ⚠⚠⚠ The [CHIP_LIMIT] rule existed and was written out by hand at each
+ * call site, which is the shape CLAUDE.md warns about: *two hand-rolled lookups
+ * will stop agreeing*. They did. Two call sites branched on it and the THIRD —
+ * the checkpoint picker — called [ChoiceRow] directly with **fifteen**
+ * checkpoints in it, so the control that decides what the sampler runs was a
+ * horizontally-scrolling strip of chips inside a vertically-scrolling sheet,
+ * which could hide its own current value and fought the sheet for the gesture.
+ * Reported from the phone, 2026-09-15, as *"the checkpoint picker is broken"*.
+ *
+ * ⚠ So the branch lives HERE and nothing outside this file chooses a control.
+ */
+@Composable
+private fun Chooser(
+    label: String,
+    hint: String?,
+    options: List<String>,
+    current: String,
+    onPick: (String) -> Unit,
+) {
+    if (options.size > CHIP_LIMIT) {
+        ChoiceDropdown(label, hint, options, current, onPick)
+    } else {
+        ChoiceRow(label, hint, options, current, onPick)
+    }
+}
 
 /**
  * One value out of a list too long for chips.
@@ -1291,7 +1601,7 @@ private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) 
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
-            "${widget.name}   " +
+            "${widget.name.knobLabel}   " +
                 if (isInt) shown.roundToInt().toString()
                 else fixed(shown, decimalsAt(shown)),
             style = MaterialTheme.typography.bodyMedium,
@@ -1602,7 +1912,7 @@ private fun BatchDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sweep " + widget.name) },
+        title = { Text("Sweep " + widget.name.knobWord) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
@@ -1735,7 +2045,9 @@ private fun ChoiceRow(
     onPick: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // ⚠ The same label style as a slider's (`bodyMedium`), not the hint's:
+        // a knob's name reads alike whichever control draws it (§7.4).
+        Text(label, style = MaterialTheme.typography.bodyMedium)
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1744,7 +2056,9 @@ private fun ChoiceRow(
                 FilterChip(
                     selected = o == current,
                     onClick = { onPick(o) },
-                    label = { Text(o, fontSize = 12.sp) },
+                    // ⚠ A chip is pressed, so it is Capitalised (§7.1). The VALUE
+                    // written stays `black` — only what is drawn changes.
+                    label = { Text(o.replaceFirstChar { it.uppercase() }, fontSize = 12.sp) },
                     shape = RoundedCornerShape(10.dp),
                     colors = FilterChipDefaults.filterChipColors(),
                 )
@@ -1875,13 +2189,23 @@ internal fun ImageActions(onPick: () -> Unit, onClear: () -> Unit, tint: Color? 
  */
 @Composable
 internal fun SeedRow(
-    seed: String,
+    /** ⚠ Null = "rolls a new one each Run" — the row still shows, saying so. */
+    seed: String?,
     tint: Color? = null,
     /**
      * ⭐ Pin this seed onto the sampler, so the next Run makes the same picture.
      * Null when there is nothing to pin or it is pinned already.
      */
     onLock: (() -> Unit)? = null,
+    /**
+     * ⭐⭐ Compact — the number and its copy button, no container, no caption.
+     *
+     * ⚠ For a row that is already crowded: the Results card carries five
+     * controls beside this, and the full pill pushed the primary button off the
+     * edge. ⚠ The caption is dropped rather than the copy button, because the
+     * button is the reason the seed is on screen at all.
+     */
+    compact: Boolean = false,
 ) {
     val clipboard = LocalClipboardManager.current
     // ⚠⚠ ONE bordered container around the number and both of its actions.
@@ -1892,7 +2216,7 @@ internal fun SeedRow(
     // the association structural rather than something the user has to infer
     // from adjacency. Reported from the phone 2026-09-10.
     Row(
-        Modifier
+        if (compact) Modifier else Modifier
             .clip(RoundedCornerShape(10.dp))
             .background(
                 (tint ?: MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.12f)
@@ -1902,16 +2226,24 @@ internal fun SeedRow(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
-            "seed $seed",
+            when {
+                seed == null -> "seed random"
+                compact -> seed
+                else -> "seed $seed"
+            },
             style = LogTextStyle,
             color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        IconButton(onClick = { clipboard.setText(AnnotatedString(seed)) }) {
-            Icon(
-                painterResource(R.drawable.ic_copy),
-                contentDescription = "copy the seed",
-                tint = tint ?: MaterialTheme.colorScheme.primary,
-            )
+        // ⚠ No copy button when there is no number: a button that copies the
+        // word "random" is worse than no button.
+        seed?.let { value ->
+            IconButton(onClick = { clipboard.setText(AnnotatedString(value)) }) {
+                Icon(
+                    painterResource(R.drawable.ic_copy),
+                    contentDescription = "copy the seed",
+                    tint = tint ?: MaterialTheme.colorScheme.primary,
+                )
+            }
         }
         onLock?.let {
             IconButton(onClick = it) {

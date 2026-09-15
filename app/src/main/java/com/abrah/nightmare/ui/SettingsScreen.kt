@@ -160,9 +160,10 @@ private fun ThemePage(theme: Prefs.Theme, onTheme: (Prefs.Theme) -> Unit) {
 /**
  * ⭐⭐ **Everything a node author needs, in the app.**
  *
- * ⚠⚠ It is not a link with a sentence over it. The repository is PRIVATE, so a
- * link is a dead end for anyone but the owner until it goes public, and a
- * contributor reading this on a phone cannot open a repo anyway. ⇒ The page
+ * ⚠⚠ It is not a link with a sentence over it. A contributor reading this on a
+ * phone cannot usefully browse a repo, and the page must work with no network.
+ * (It used to also say the repo was private; it has been public since
+ * 2026-09-11 and the string said otherwise until 2026-09-15.) ⇒ The page
  * carries the two files, the host op surface, the handles rule, how widgets are
  * declared, and the ceiling. The README says the same things; this is the copy
  * that works with no network and no access.

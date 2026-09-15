@@ -3,245 +3,187 @@ package com.abrah.nightmare.canvas
 import com.abrah.nightmare.Graph
 import com.abrah.nightmare.NODE_TYPES
 import com.abrah.nightmare.Node
-import com.abrah.nightmare.Source
 import com.abrah.nightmare.SAMPLER_TYPES
+import com.abrah.nightmare.Source
 import com.abrah.nightmare.isSampler
 import com.abrah.nightmare.sources
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * ⭐⭐ The video recipe's canvas behaviour — the three things a user on the
- * phone reported on 2026-09-12, each pinned so it cannot come back.
+ * ⭐⭐⭐ The video flows — **one sampler, three nodes**, 2026-09-15.
  *
- * ⚠ The pipeline itself is not testable here (it needs an NPU); what IS
- * testable is every decision made ABOUT a clip on the way to and from it, and
- * all three bugs lived there rather than in the render.
+ * ⚠⚠ This file used to pin the FIVE-node split of 2026-09-13
+ * (`nd.clip_encode` → `nd.first_frame` → `nd.vae_encode` → `nd.sample` →
+ * `nd.vae_decode`). The user reversed it: text-to-video and image-to-video are
+ * now the same shape as text-to-image and image-to-image, and the only
+ * difference between them is whether a photo is wired.
+ *
+ * ⚠ What that cost, recorded here because it was a deliberate trade: the first
+ * frame is no longer a node you can look at or re-roll before paying ~20 s for
+ * the clip. It is made inside the sampler.
  */
 class VideoGraphTest {
 
     private val t2v = textToVideoWorkflow()
+    private val i2v = imageToVideoWorkflow()
 
-    /**
-     * ⭐⭐ **Only the END of the video chain loops.** [clipNodes].
-     *
-     * ⚠ The sampler and the output both hold the same `VIDEO` value, so both
-     * animated — the same two seconds drawn twice at 12 Hz, once under the
-     * knobs that made it. *"why is the video sampler playing the output? it
-     * shouldnt"*.
-     */
     @Test
-    fun onlyTheEndOfTheChainLoopsItsClip() {
-        val videos = mapOf("sample" to "/x/clip.mp4", "decode" to "/x/clip.mp4")
-        assertEquals(setOf("decode"), clipNodes(t2v.graph, videos))
-    }
-
-    /**
-     * ⚠ A sampler with nothing wired off it IS the end of the chain, so
-     * deleting the output node must not leave a graph that plays nothing. That
-     * is why the rule is the GRAPH rather than `type == "video.output"`.
-     */
-    @Test
-    fun aLoneSamplerStillLoops() {
-        val g = Graph(listOf(Node("decode", "nd.vae_decode")))
-        assertEquals(setOf("decode"), clipNodes(g, mapOf("decode" to "/x/clip.mp4")))
-    }
-
-    /**
-     * ⭐⭐ **The i2v crop sizes ITSELF from the sampler**, exactly as the
-     * img2img recipe's crop sizes itself from `sd.vae_encode`.
-     *
-     * ⚠ 512x320 is the ENCODE size. The clip comes out 1024x640 because
-     * `upscale` doubles it afterwards — a crop that followed the OUTPUT size
-     * would hand the VAE an image four times too large.
-     */
-    @Test
-    fun theImageToVideoCropDerivesItsOwnSize() {
-        val w = imageToVideoWorkflow()
-        val demand = com.abrah.nightmare.requiredOutputSize(w.graph, NODE_TYPES, "frame")
+    fun textToVideoIsPromptSamplerOutput() {
         assertEquals(
-            com.abrah.nightmare.SizeDemand.Exactly(512, 320, listOf("encode")),
-            demand,
+            listOf("output", "prompt", "video"),
+            t2v.graph.nodes.map { it.id }.sorted(),
         )
-        // ⚠ Nothing types the size: the node carries no out_w/out_h at all.
-        val crop = w.graph.byId.getValue("frame")
-        assertTrue("the crop must not hardcode a size", "out_w" !in crop.params)
+        val v = t2v.graph.byId.getValue("video")
+        assertEquals("nd.sample", v.type)
+        assertEquals(Source("prompt"), v.inputs["prompt"])
+        // ⭐ No photo: the sampler makes its own first frame.
+        assertNull("text to video wires no picture", v.inputs["image"])
     }
 
     /**
-     * ⭐⭐⭐ **A photo may not be wired straight into the sampler**, and the
-     * refusal has to name the fix.
-     *
-     * ⚠⚠ `image.load` hands the photo on whole and promises no size, so the
-     * pair is a graph a user can draw, that looks entirely reasonable, and
-     * that can only fail. It is the same rule that already stands between a
-     * photo and `sd.vae_encode` — declaring `requiredInputSize` is what buys
-     * it, with no video-specific code in the canvas.
+     * ⭐⭐ **i2v is t2v with a photo wired, and nothing else.** No crop node
+     * either — the sampler frames what it is given, the same rule the image path
+     * follows (docs/ARCHITECTURE.md §5.7).
      */
     @Test
-    fun aPhotoStraightIntoTheSamplerIsRefused() {
-        val g = Graph(
-            listOf(
-                Node("photo", "image.load"),
-                Node("encode", "nd.vae_encode"),
-            )
-        )
-        val why = com.abrah.nightmare.sizeRefusal(g, NODE_TYPES, "photo", "encode", "image")
-        assertNotNull("a photo promises no size, so this wire must be refused", why)
-        assertTrue("the refusal must name the fix, got: " + why, why!!.contains("Crop"))
+    fun imageToVideoIsTextToVideoWithAPhotoWired() {
+        val v = i2v.graph.byId.getValue("video")
+        assertEquals("nd.sample", v.type)
+        assertEquals(Source("photo"), v.inputs["image"])
+        assertEquals("core.image", i2v.graph.byId.getValue("photo").type)
+        assertTrue("no crop node stands in front of it any more",
+            i2v.graph.nodes.none { it.type == "image.crop" })
     }
 
-    /**
-     * ⭐⭐⭐ **One poster, several nodes — the owner is the one that matters.**
-     *
-     * ⚠⚠ `Value.Video.previewImage()` hands back the SAME poster for every
-     * node the clip flows through, so a t2v graph records both the sampler and
-     * the output node in `previews` under one image id. Anything that reverses
-     * that map to find "the node for this picture" gets an arbitrary answer.
-     *
-     * ⚠⚠⚠ That is not hypothetical: taking the first match broke Save and
-     * Share on the OUTPUT node — they found the sampler, [clipNodes] correctly
-     * said it does not own the clip, and both silently fell back to the still.
-     * Reported from the phone, 2026-09-13. ⇒ Filter the candidates by
-     * [clipNodes] instead of picking one and then testing it.
-     */
+    /** ⚠ Both flows end where every other one does. */
     @Test
-    fun thePosterIsSharedSoTheOWNERMustBeChosen() {
-        val poster = "img_poster"
-        // Exactly the shape `HarnessViewModel` builds: both nodes, one poster.
-        val previews = linkedMapOf("sample" to poster, "decode" to poster)
-        val videos = mapOf("sample" to "/x/clip.mp4", "decode" to "/x/clip.mp4")
-        val owners = clipNodes(t2v.graph, videos)
-
-        // ⚠ The BROKEN lookup, kept as the control: it answers "video", which
-        // is not an owner — so a filter applied after it yields nothing.
-        val firstMatch = previews.entries.first { it.value == poster }.key
-        assertEquals("sample", firstMatch)
-        assertTrue("the control must NOT be an owner", firstMatch !in owners)
-
-        // ⚠ The fixed lookup: filter first, then take one.
-        val owner = previews.entries
-            .filter { it.value == poster }
-            .map { it.key }
-            .firstOrNull { it in owners }
-        assertEquals("decode", owner)
+    fun bothEndInAnOutputNode() {
+        for (w in listOf(t2v, i2v)) {
+            val out = w.graph.nodes.single { it.type == "core.output" }
+            assertEquals(Source("video"), out.inputs["media"])
+        }
     }
 
     /**
-     * ⚠ `videos` outlives the nodes in it — a clip stays in the map after its
-     * node is deleted — so an id the graph no longer knows is not terminal, it
-     * is gone.
-     */
-    @Test
-    fun aClipFromADeletedNodeIsDropped() {
-        val videos = mapOf("decode" to "/x/clip.mp4", "ghost" to "/x/old.mp4")
-        assertEquals(setOf("decode"), clipNodes(t2v.graph, videos))
-    }
-
-    /**
-     * ⭐⭐ **The video sampler IS a sampler**, which is what makes its seed roll
-     * (`HarnessOps.runRolled`), its number show on the picture it made
-     * ([seedFor]), and the run bar offer a lock ([samplerFor]).
-     *
-     * ⚠⚠ It was in none of them: `seed = 0` hashed to `"0"`, so the executor
-     * served the CACHED clip and every Run after the first returned the same
-     * two seconds. *"video player seed 0 is cached, it should be random"*.
+     * ⭐ The video sampler ROLLS A SEED, so `seed: random` and the lock apply to
+     * it exactly as they do to an SD one.
      */
     @Test
     fun theVideoSamplerIsASampler() {
         assertTrue(isSampler("nd.sample"))
-        assertTrue(isSampler("sd.sample"))
-        // ⭐⭐ `nd.first_frame` too: it has its OWN seed and makes the picture
-        // the clip starts from, so a graph whose frame seed never rolled would
-        // animate the same still on every Run.
-        assertTrue(isSampler("nd.first_frame"))
-        // ⚠ NOT `vae_encode`: its seed is what lets everything downstream cache.
-        assertFalse(isSampler("sd.vae_encode"))
-        assertFalse(isSampler("nd.vae_decode"))
-        assertEquals(SAMPLER_TYPES.size, 3)
+        assertTrue(isSampler("sd15.sample"))
+        assertTrue(isSampler("sdxl.inpaint"))
+        // ⚠ NOT the prompt or the output: neither has a seed to roll.
+        assertTrue(!isSampler("core.prompt"))
+        assertTrue(!isSampler("core.output"))
+        // ⚠ Five: four SD samplers plus the one video sampler. Asserted by
+        // NUMBER so adding a type without deciding whether it rolls a seed fails
+        // here rather than silently.
+        assertEquals(5, SAMPLER_TYPES.size)
     }
 
-    /** ⚠ The run bar reads the first sampler in the graph; t2v has to have one. */
     @Test
     fun theVideoRecipeOffersASeedLock() {
-        val seeded = t2v.graph.nodes.filter { isSampler(it.type) }.map { it.id }
-        assertEquals(listOf("frame", "sample"), seeded.sorted())
-        // ⚠ Rolled, not pinned: 0 is what makes Run give a new clip.
-        t2v.graph.nodes.filter { isSampler(it.type) }
-            .forEach { assertEquals("0", it.params["seed"]) }
-        // ⚠⚠ The lock writes onto the node the clip came FROM, walking up from
-        // the output the user was looking at — which is the MMDiT sampler, not
-        // the first frame. `samplerFor` takes the nearest one upstream.
-        assertEquals("sample", samplerFor(t2v.graph, "decode"))
+        assertEquals(listOf("video"), t2v.graph.nodes.filter { isSampler(it.type) }.map { it.id })
     }
 
     /**
-     * ⭐⭐ **An unset `bool` reads its DECLARED default**, in the node body as
-     * well as in the inspector.
+     * ⭐⭐ It FITS a photo rather than demanding a size — so a picture wires
+     * straight in and no crop node is required between them.
      *
-     * ⚠⚠ The node this was written for is gone, and the rule is not: a
-     * `video.output` dropped from the palette carried no params at all, drew a
-     * ticked box and wrote nothing, because its body read
-     * `params["save"] != "true"`. `upscale` on the decoder is the same shape and
-     * would fail the same way.
+     * ⚠⚠ It used to declare 512x320, which made `Framing` lock a crop in front
+     * of it and REFUSE a direct wire. That refusal is what the crop node existed
+     * for, and both are gone.
      */
     @Test
-    fun anUnsetBoolReadsItsDefault() {
+    fun aPhotoWiresStraightIntoTheSampler() {
+        val g = Graph(
+            listOf(
+                Node("photo", "core.image"),
+                Node("video", "nd.sample", inputs = sources("image" to "photo")),
+            )
+        )
+        assertNull(
+            "a photo must wire straight in now",
+            com.abrah.nightmare.sizeRefusal(g, NODE_TYPES, "photo", "video", "image"),
+        )
+    }
+
+    /**
+     * ⭐⭐⭐ **The framing view is 512x320, whatever shape the photo is.**
+     *
+     * ⚠⚠ The video sampler's frame size is a property of its compiled QNN
+     * context and appears in NO param — no `out_w`/`out_h` like a crop node, no
+     * `width`/`height` like an SD sampler. `framingOutSize` guessed from those
+     * two, found neither, and `cropAspect` fell through to the SOURCE photo's
+     * aspect: the image-to-video cropper was the shape of whatever the user
+     * picked, and `Video.bitmapToChw` then centre-cropped a different rectangle
+     * than the one they had dragged. Reported from the phone, 2026-09-15.
+     */
+    @Test
+    fun theVideoSamplerFramesToItsOwnFrameSize() {
+        val node = i2v.graph.byId.getValue("video")
+        val type = NODE_TYPES.getValue("nd.sample")
         assertEquals(
-            "true",
-            com.abrah.nightmare.npu.VideoVaeDecodeNode
-                .effectiveParams(Node("decode", "nd.vae_decode"))["upscale"],
+            com.abrah.nightmare.npu.VideoStructure.frameSize,
+            framingOutSize(node, type),
         )
+        // ⚠ A PORTRAIT source, because that is the case the old fallback got
+        // wrong in the most visible way.
+        assertEquals(512f / 320f, cropAspect(node, 1080, 1920, type), 1e-4f)
+        // ⚠⚠ The control: without the type it still answers the photo's shape.
+        // Kept so this test cannot pass for the wrong reason.
+        assertEquals(1080f / 1920f, cropAspect(node, 1080, 1920, null), 1e-4f)
+    }
+
+    // --- what loops a clip ---------------------------------------------------
+
+    @Test
+    fun onlyTheEndOfTheChainLoopsItsClip() {
+        // ⚠ The OUTPUT node: a renderer no longer shows its own result, so the
+        // end of the chain is where the clip is sent, not where it was made.
+        val videos = mapOf("video" to "/x/clip.mp4", "output" to "/x/clip.mp4")
+        assertEquals(setOf("output"), clipNodes(t2v.graph, videos))
+    }
+
+    @Test
+    fun aClipFromADeletedNodeIsDropped() {
+        val videos = mapOf("output" to "/x/clip.mp4", "ghost" to "/x/old.mp4")
+        assertEquals(setOf("output"), clipNodes(t2v.graph, videos))
     }
 
     /**
-     * ⭐⭐ **The recipe is the decomposed chain**, and its shape is the thing
-     * most likely to drift: a node added or a wire moved changes what
-     * [clipNodes] calls terminal, which the first test cannot see on its own.
+     * ⭐⭐⭐ Several nodes share one poster id, so "which node owns this
+     * picture" must FILTER by the rule and then pick — never pick and then
+     * test. `docs/ARCHITECTURE.md` §5.6 has the bug this shape prevents.
      *
-     * ⚠⚠ `cond` and `frame_cond` are named PORTS. A bare wire would mean the
-     * prompt node's first output, so the first frame would be conditioned on
-     * the MMDiT's tensors — a graph that runs and produces confident nonsense.
+     * ⚠⚠ This test used to hand-roll the answer it was checking, which made it
+     * a test of the test. It now calls [clipOwner], the function the app calls
+     * — which is the point, because the bug came back on 2026-09-15 in a
+     * hand-rolled copy in the KEEP path while this file stayed green.
      */
     @Test
-    fun theTextToVideoRecipeIsTheDecomposedChain() {
-        val g = t2v.graph
-        assertEquals(
-            listOf("decode", "encode", "frame", "prompt", "sample"),
-            g.nodes.map { it.id }.sorted(),
-        )
-        assertEquals(Source("prompt", "frame_cond"), g.byId.getValue("frame").inputs["cond"])
-        assertEquals(Source("frame"), g.byId.getValue("encode").inputs["image"])
-        assertEquals(Source("prompt", "cond"), g.byId.getValue("sample").inputs["cond"])
-        assertEquals(Source("encode"), g.byId.getValue("sample").inputs["latent"])
-        assertEquals(Source("sample"), g.byId.getValue("decode").inputs["latent"])
+    fun thePosterIsSharedSoTheOwnerMustBeChosen() {
+        val poster = "img_poster"
+        val previews = linkedMapOf("video" to (poster to 1f), "output" to (poster to 1f))
+        val videos = mapOf("video" to "/x/clip.mp4", "output" to "/x/clip.mp4")
+
+        // ⚠ The BROKEN lookup, kept as the control: it answers "video", which is
+        // not an owner — so a caller using it falls back to the still.
+        val firstMatch = previews.entries.first { it.value.first == poster }.key
+        assertEquals("video", firstMatch)
+        assertTrue("the control must NOT be an owner", firstMatch !in clipNodes(t2v.graph, videos))
+
+        assertEquals("output", clipOwner(t2v.graph, previews, videos, poster))
     }
 
-    /**
-     * ⭐⭐ **Image to video differs from text to video in ONE wire.**
-     *
-     * ⚠ That is the claim the whole design rests on: i2v is not a flag, an
-     * optional port or a special node — it is `image.crop` where
-     * `nd.first_frame` would be, the same substitution img2img already makes.
-     *
-     * ⚠⚠ And nothing wires `frame_cond`, which is what lets the prompt node
-     * skip `clipl` entirely.
-     */
+    /** ⚠ A poster no node owns answers null rather than a wrong node. */
     @Test
-    fun imageToVideoIsTextToVideoWithTheFrameSwapped() {
-        val g = imageToVideoWorkflow().graph
-        assertEquals(Source("frame"), g.byId.getValue("encode").inputs["image"])
-        assertEquals("image.crop", g.byId.getValue("frame").type)
-        // the rest of the chain is identical
-        assertEquals(Source("prompt", "cond"), g.byId.getValue("sample").inputs["cond"])
-        assertEquals(Source("encode"), g.byId.getValue("sample").inputs["latent"])
-        assertEquals(Source("sample"), g.byId.getValue("decode").inputs["latent"])
-        assertTrue(
-            "nothing may read frame_cond, or clipl loads for nothing",
-            g.nodes.none { n -> n.inputs.values.any { it.port == "frame_cond" } },
-        )
+    fun aPosterFromAPictureGraphOwnsNoClip() {
+        val previews = mapOf("output" to ("img_still" to 1f))
+        assertNull(clipOwner(t2v.graph, previews, emptyMap(), "img_still"))
     }
 }

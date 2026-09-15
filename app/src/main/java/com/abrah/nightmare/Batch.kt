@@ -202,11 +202,29 @@ object BatchValues {
  * more than one. A graph with two unconsumed image nodes has no single answer,
  * and choosing silently is how a sweep collects the wrong picture for twenty
  * minutes — the exact failure shape `Framing.SizeDemand.Conflict` exists for.
+ *
+ * ⚠⚠⚠ **A SINK counts, and forgetting that broke every recipe at once.** When
+ * `core.output` came back on 2026-09-15 (docs/ARCHITECTURE.md §5.7) every
+ * shipped recipe ended in a node that declares NO outputs and whose producer is
+ * therefore consumed — so "the last IMAGE output nothing consumes" matched
+ * nothing at all, and a sweep of the default workflow would have refused with
+ * "no terminal image node". ⇒ A node that TAKES a picture and returns nowhere
+ * is the end of the chain by definition, which is the same rule stated from the
+ * other side.
  */
 fun terminalImageNodes(graph: Graph, types: Map<String, NodeType>): List<String> {
     val consumed = graph.nodes.flatMap { n -> n.inputs.values.map { it.node } }.toSet()
+    fun makesAPicture(t: NodeType?) = t?.outputs?.any { it.type == "IMAGE" } == true
+    fun isASink(t: NodeType?) =
+        t != null && t.outputs.isEmpty() &&
+            t.inputs.any { it.type == "IMAGE" || it.type == "MEDIA" }
+    val sinks = graph.nodes.filter { isASink(types[it.type]) }
+    // ⚠ Sinks WIN when there are any: a graph with an output node has said which
+    // picture it is for, and collecting some other unconsumed branch beside it
+    // would be answering a question the user already answered.
+    if (sinks.isNotEmpty()) return sinks.map { it.id }
     return graph.nodes
-        .filter { n -> types[n.type]?.outputs?.any { it.type == "IMAGE" } == true }
+        .filter { makesAPicture(types[it.type]) }
         .filter { it.id !in consumed }
         .map { it.id }
 }

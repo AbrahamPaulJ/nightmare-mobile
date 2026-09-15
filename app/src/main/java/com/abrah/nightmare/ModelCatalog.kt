@@ -11,11 +11,66 @@ import java.io.File
  * interchangeable in a graph; two families are not, because `sd.sample` on an
  * SDXL model is a different `--type` and therefore a different [ContextKey].
  */
-enum class Family(val label: String) {
-    SD15("SD 1.5"),
-    SDXL("SDXL"),
-    ANIMA("Anima"),
+enum class Family(
+    val label: String,
+    /**
+     * ⭐⭐⭐ **A general-purpose starter prompt for the whole family**, and the
+     * fallback for any checkpoint that carries none of its own.
+     *
+     * ⚠⚠ **No SUBJECT in it.** Every per-model prompt in this file names one
+     * — "a cat on grass", "1girl, solo, cute, white hair" — because upstream
+     * wrote them as demos of a checkpoint's style. That is right for a
+     * checkpoint we know and wrong as a default: a person who came to draw
+     * something has to delete a cat before they can start. These are quality
+     * tags only, so the box is finished by typing what you want.
+     *
+     * ⚠ It does NOT replace [ModelSpec.prompt] — a checkpoint's own text is
+     * still what that checkpoint opens on ([ModelSpec.starterPrompt]), and the
+     * upstream-verbatim rule above is untouched. This fills the two gaps that
+     * rule leaves: an IMPORTED model, whose prompt is empty by design, and the
+     * user asking for a neutral starting point. The user's ask, 2026-09-15.
+     */
+    val prompt: String,
+    val negative: String,
+) {
+    SD15("SD 1.5", GP_SD15, GP_SD15_NEG),
+    SDXL("SDXL", GP_SDXL, GP_SDXL_NEG),
+    // ⚠ Anima ships no checkpoint yet; it is SDXL-shaped, so it starts there
+    // rather than with a family default invented for nothing to use it.
+    ANIMA("Anima", GP_SDXL, GP_SDXL_NEG),
 }
+
+// ---- the general-purpose prompts --------------------------------------------
+// ⚠ Top-level rather than inside [ModelCatalog]: [Family] is declared above it
+// and an enum's constructor arguments must be compile-time constants it can see.
+
+/**
+ * ⚠ SD 1.5 reads TAGS, not sentences — this is a tag list by design, and it is
+ * the shape every per-model SD 1.5 prompt in this file has.
+ */
+private const val GP_SD15 =
+    "masterpiece, best quality, ultra-detailed, sharp focus, 8k,"
+
+/**
+ * ⚠ The union of what the per-model SD 1.5 negatives agree on, with anything
+ * style-specific dropped — no "cartoon, anime" (that belongs to the
+ * photographic checkpoints) and no "realistic photo" (that belongs to the anime
+ * ones). A general negative that fights half the catalogue is not general.
+ */
+private const val GP_SD15_NEG =
+    "worst quality, low quality, normal quality, lowres, blurry, out of focus, " +
+        "jpeg artifacts, signature, watermark, text, error, bad anatomy, " +
+        "bad hands, missing fingers, extra digit, cropped,"
+
+/** ⚠ SDXL needs fewer quality tags than SD 1.5 — it was trained on captions. */
+private const val GP_SDXL =
+    "masterpiece, best quality, highly detailed, sharp focus,"
+
+/** ⚠ Upstream's own general SDXL negative, which eight of the ten already use. */
+private const val GP_SDXL_NEG =
+    "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, " +
+        "fewer digits, cropped, worst quality, low quality, normal quality, " +
+        "jpeg artifacts, signature, watermark, username, blurry,"
 
 /**
  * Where a model runs.
@@ -269,6 +324,22 @@ data class ModelSpec(
 ) {
     /** ⚠ [resolutions] is never empty; the constructor default is one entry. */
     val native: Res get() = resolutions.first()
+
+    /**
+     * ⭐⭐ **What a new prompt node opens on for this checkpoint** — its own
+     * text, or its family's general-purpose one when it has none.
+     *
+     * ⚠⚠ Every reader of [prompt] as a STARTING POINT wants this one.
+     * [prompt] is raw catalogue data and is empty for an imported model, which
+     * is how an import ended up opening a blank prompt box while every built-in
+     * opened on upstream's text. ⚠ [modelPromptRetarget] still reads [prompt]
+     * as well, because it has to recognise the OLD text to decide whether it may
+     * overwrite it.
+     */
+    val starterPrompt: String get() = prompt.ifBlank { family.prompt }
+
+    /** ⚠ See [starterPrompt]; both fields answer the same way or neither does. */
+    val starterNegative: String get() = negative.ifBlank { family.negative }
 
     /**
      * ⭐⭐ The best build this phone can actually load, or **null** when it can
@@ -805,9 +876,12 @@ object ModelCatalog {
      * eight would be guessing at what their authors wanted, which is the thing
      * `config.json` exists to stop us doing.
      */
-    private const val P_SDXL =
-        "masterpiece, best quality, highly detailed, " +
-            "a majestic cat sitting on a windowsill at sunset,"
+    // ⚠⚠ It is the FAMILY default now, not a prompt of its own. It used to
+    // append "a majestic cat sitting on a windowsill at sunset," — a subject
+    // this project invented for eight checkpoints whose authors said nothing,
+    // which is the guessing the paragraph above says not to do, and a cat the
+    // user had to delete before typing. The user's ask, 2026-09-15.
+    private const val P_SDXL = GP_SDXL
 
     // ⭐ Two of the ten ARE upstream models, and upstream gives each its own
     // text. ⚠ CyberRealistic's negative is already [NEG_GENERAL] byte for byte,
@@ -821,10 +895,9 @@ object ModelCatalog {
             "necklace, hair bow, off-shoulder white frilled dress, bare shoulders, " +
             "collarbone, underwater, floating hair, reaching towards viewer, " +
             "air bubbles, blue theme, blurry foreground, masterpiece"
-    private const val NEG_GENERAL =
-        "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, " +
-            "fewer digits, cropped, worst quality, low quality, normal quality, " +
-            "jpeg artifacts, signature, watermark, username, blurry,"
+    // ⚠ ONE home: this is byte-for-byte [Family.SDXL]'s general negative, so it
+    // is that constant rather than a second copy of it.
+    private const val NEG_GENERAL = GP_SDXL_NEG
 
     /**
      * One of xororz's SDXL checkpoints.
@@ -1046,7 +1119,7 @@ object SelectedModel {
     fun setRes(context: Context, newRes: Res) {
         val ok = spec.availableResolutions(context)
         require(newRes in ok) {
-            "\"${spec.label}\" cannot render $newRes -- it serves ${ok.joinToString(", ")}"
+            "\"${spec.label}\" cannot render $newRes — it serves ${ok.joinToString(", ")}"
         }
         res = newRes
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

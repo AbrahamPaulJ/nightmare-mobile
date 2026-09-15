@@ -72,11 +72,13 @@ class VideoDeleteConfirmTest {
     }
 
     @Test
-    fun keepingCancelsIt() {
+    fun cancellingKeepsIt() {
         screen()
         rule.onNodeWithText("Delete").performClick()
-        rule.onNodeWithText("Keep").performClick()
-        assertEquals("Keep must not delete", 0, deletes)
+        // ⚠ `Cancel`, as every confirm in the app says since the design review
+        // (`ConfirmDelete`) — this one alone said `Keep`.
+        rule.onNodeWithText("Cancel").performClick()
+        assertEquals("Cancel must not delete", 0, deletes)
     }
 
     @Test

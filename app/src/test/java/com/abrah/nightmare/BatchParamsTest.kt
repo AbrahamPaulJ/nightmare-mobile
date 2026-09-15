@@ -29,8 +29,8 @@ class BatchParamsTest {
         val withBatch = armed("cfg" to "1..9 by 2").byId.getValue("sample")
         val inputs = emptyMap<String, Value>()
         assertEquals(
-            cacheKey("sd.sample", "1", SampleNode.effectiveParams(plain), inputs),
-            cacheKey("sd.sample", "1", SampleNode.effectiveParams(withBatch), inputs),
+            cacheKey("sd15.sample", "1", SampleNode.effectiveParams(plain), inputs),
+            cacheKey("sd15.sample", "1", SampleNode.effectiveParams(withBatch), inputs),
         )
     }
 
@@ -41,8 +41,8 @@ class BatchParamsTest {
         val b = inpaintWorkflow().graph.withParam("sample", "steps", "31").byId.getValue("sample")
         val inputs = emptyMap<String, Value>()
         assertTrue(
-            cacheKey("sd.sample", "1", SampleNode.effectiveParams(a), inputs) !=
-                cacheKey("sd.sample", "1", SampleNode.effectiveParams(b), inputs)
+            cacheKey("sd15.sample", "1", SampleNode.effectiveParams(a), inputs) !=
+                cacheKey("sd15.sample", "1", SampleNode.effectiveParams(b), inputs)
         )
     }
 
@@ -105,10 +105,10 @@ class BatchParamsTest {
     @Test
     fun onlyTheAllowedParamsAreBatchable() {
         for (p in listOf("seed", "steps", "cfg", "denoise", "scheduler")) {
-            assertTrue(p, BatchParams.isBatchable("sd.sample", p))
+            assertTrue(p, BatchParams.isBatchable("sd15.sample", p))
         }
         for (p in listOf("model", "width", "height")) {
-            assertTrue(p, !BatchParams.isBatchable("sd.sample", p))
+            assertTrue(p, !BatchParams.isBatchable("sd15.sample", p))
         }
         assertTrue(!BatchParams.isBatchable("image.crop", "x"))
     }

@@ -1,7 +1,7 @@
 package com.abrah.nightmare
 
-import com.abrah.nightmare.canvas.img2imgWorkflow
-import com.abrah.nightmare.canvas.inpaintWorkflow
+import com.abrah.nightmare.canvas.Workflow
+import com.abrah.nightmare.canvas.Pt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,8 +19,37 @@ import org.junit.Test
  *
  * Reported from the phone as "switching to SDXL always degrades the output",
  * and no sampler setting could have fixed it.
+ *
+ * ⚠⚠ **The fixtures are built HERE, not read from a recipe** — since
+ * 2026-09-15 no shipped SD recipe has a derived chain at all: the fused sampler
+ * fits what it is given (docs/ARCHITECTURE.md §5.7). The machinery still runs
+ * for the video path, and a user can still build this shape by hand, so the
+ * regression stays guarded by a graph of the shape rather than by whichever
+ * recipe happened to have it.
  */
 class DeriveSizesTest {
+
+    /** `photo → frame → …` at [size], in the shape the inpaint recipe had. */
+    private fun chain(size: Int, twoLinks: Boolean): Workflow {
+        val ctx = mapOf("model" to "m", "width" to size.toString(), "height" to size.toString())
+        val nodes = mutableListOf(
+            Node("photo", "core.image", mapOf("uri" to "/a.png")),
+            Node("frame", "image.crop", mapOf("x" to "0.0", "y" to "0.0", "w" to "1.0", "h" to "1.0"),
+                sources("image" to "photo")),
+        )
+        if (twoLinks) {
+            nodes += Node("mask", "image.mask", mapOf("ops" to "", "grow" to "0.0", "feather" to "0.02"),
+                sources("image" to "frame"))
+            nodes += Node("cut", "image.mask_crop", mapOf("only_masked" to "true"),
+                sources("image" to "frame", "mask" to "mask"))
+            nodes += Node("enc", "sd.vae_encode", ctx + mapOf("seed" to "42"),
+                sources("image" to "cut:image"))
+        } else {
+            nodes += Node("enc", "sd.vae_encode", ctx + mapOf("seed" to "42"),
+                sources("image" to "frame"))
+        }
+        return Workflow(Graph(nodes), nodes.associate { it.id to Pt(0f, 0f) })
+    }
 
     /** Point every backend node at [size], as a model switch does. */
     private fun retargeted(w: com.abrah.nightmare.canvas.Workflow, size: Int) =
@@ -41,8 +70,8 @@ class DeriveSizesTest {
 
     /** ⭐ One link. This always worked, and must keep working. */
     @Test
-    fun img2imgCropTakesItsSizeFromTheEncoder() {
-        val g = deriveSizes(retargeted(img2imgWorkflow(), 1024), NODE_TYPES)
+    fun aCropTakesItsSizeFromTheEncoder() {
+        val g = deriveSizes(retargeted(chain(1024, twoLinks = false), 1024), NODE_TYPES)
         assertEquals("1024", g.byId["frame"]!!.params["out_w"])
         assertEquals("1024", g.byId["frame"]!!.params["out_h"])
     }
@@ -63,10 +92,12 @@ class DeriveSizesTest {
      * exactly "switch to SDXL and the output is degraded".
      */
     @Test
-    fun inpaintSettlesAfterAModelSwitch() {
+    fun aTwoLinkChainSettlesAfterAModelSwitch() {
         // As the canvas actually is before the switch: derived, at 512.
-        val at512 = deriveSizes(retargeted(inpaintWorkflow(), 512), NODE_TYPES)
-        assertEquals("512", at512.byId["mask"]!!.params["out_w"])
+        val at512 = deriveSizes(retargeted(chain(512, twoLinks = true), 512), NODE_TYPES)
+        // ⚠ Since "Only masked" (2026-09-15) the render size stops at `cut`:
+        // the frame and the mask keep their own pixels for the paste back.
+        assertEquals("512", at512.byId["cut"]!!.params["out_w"])
 
         // The switch: every backend node is retargeted, the derived ones are not.
         val switched = Graph(
@@ -79,20 +110,21 @@ class DeriveSizesTest {
             }
         )
         val settled = deriveSizes(switched, NODE_TYPES)
-        assertEquals("the mask must follow the blend", "1024", settled.byId["mask"]!!.params["out_w"])
         assertEquals(
-            "the crop must agree with BOTH consumers, not give up",
-            "1024", settled.byId["frame"]!!.params["out_w"],
+            "the cut must agree with BOTH consumers, not give up",
+            "1024", settled.byId["cut"]!!.params["out_w"],
         )
-        assertEquals("1024", settled.byId["frame"]!!.params["out_h"])
+        assertEquals("1024", settled.byId["cut"]!!.params["out_h"])
+        assertEquals("the frame must not be sized", null, settled.byId["frame"]!!.params["out_w"])
+        assertEquals("the mask must not be sized", null, settled.byId["mask"]!!.params["out_w"])
     }
 
     /** ⚠ …and at 512, so this is about settling rather than about one number. */
     @Test
-    fun inpaintSettlesAt512Too() {
-        val g = deriveSizes(retargeted(inpaintWorkflow(), 512), NODE_TYPES)
-        assertEquals("512", g.byId["mask"]!!.params["out_w"])
-        assertEquals("512", g.byId["frame"]!!.params["out_w"])
+    fun aTwoLinkChainSettlesAt512Too() {
+        val g = deriveSizes(retargeted(chain(512, twoLinks = true), 512), NODE_TYPES)
+        assertEquals("512", g.byId["cut"]!!.params["out_w"])
+        assertEquals("512", g.byId["cut"]!!.params["out_h"])
     }
 
     /**
@@ -103,7 +135,7 @@ class DeriveSizesTest {
      */
     @Test
     fun nothingIsLeftPromisingNothing() {
-        val at512 = deriveSizes(retargeted(inpaintWorkflow(), 512), NODE_TYPES)
+        val at512 = deriveSizes(retargeted(chain(512, twoLinks = true), 512), NODE_TYPES)
         val switched = Graph(
             at512.nodes.map { n ->
                 if (n.params.containsKey("width")) {
@@ -126,7 +158,7 @@ class DeriveSizesTest {
     /** ⚠ Settling is idempotent: a second call must change nothing. */
     @Test
     fun derivingTwiceIsTheSameAsOnce() {
-        val once = deriveSizes(retargeted(inpaintWorkflow(), 1024), NODE_TYPES)
+        val once = deriveSizes(retargeted(chain(1024, twoLinks = true), 1024), NODE_TYPES)
         val twice = deriveSizes(once, NODE_TYPES)
         assertEquals(
             once.nodes.map { it.id to it.params },
@@ -146,7 +178,7 @@ class DeriveSizesTest {
     fun anUnsettledGraphSaysWhichNodeIsWrong() {
         // A graph deliberately left stale: the model wants 1024, the crop says 512.
         val stale = Graph(
-            retargeted(img2imgWorkflow(), 1024).nodes.map { n ->
+            retargeted(chain(1024, twoLinks = false), 1024).nodes.map { n ->
                 if (n.id == "frame") {
                     n.copy(params = n.params + mapOf("out_w" to "512", "out_h" to "512"))
                 } else {
@@ -163,7 +195,7 @@ class DeriveSizesTest {
     /** ⚠ …and a settled graph says nothing, or the warning is noise. */
     @Test
     fun aSettledGraphReportsNothing() {
-        val g = deriveSizes(retargeted(inpaintWorkflow(), 1024), NODE_TYPES)
+        val g = deriveSizes(retargeted(chain(1024, twoLinks = true), 1024), NODE_TYPES)
         assertEquals(emptyList<String>(), sizeMismatches(g, NODE_TYPES))
     }
 
@@ -181,7 +213,7 @@ class DeriveSizesTest {
     fun noDemandLeavesAnExplicitCropSizeAlone() {
         val g = Graph(
             listOf(
-                Node("photo", "image.load"),
+                Node("photo", "core.image"),
                 Node(
                     "square", "image.crop",
                     params = mapOf("out_w" to "1024", "out_h" to "1024"),

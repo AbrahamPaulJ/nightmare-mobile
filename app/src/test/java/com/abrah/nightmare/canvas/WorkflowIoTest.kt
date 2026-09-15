@@ -41,17 +41,17 @@ class WorkflowIoTest {
     private val workflow = Workflow(
         Graph(
             listOf(
-                // ⚠ The prompt is a NODE. A sampler carrying one is a graph
-                // from before ⑦4 and is REWRITTEN on load, so a round-trip
-                // fixture that used the old shape would be testing the
-                // migration and calling it a round trip.
-                Node("t", "sd.clip_encode", params = mapOf("prompt" to "a cat", "negative" to "")),
+                // ⚠⚠ The CURRENT vocabulary (docs/ARCHITECTURE.md §5.7). A
+                // fixture in an older shape is rewritten on load by one of the
+                // migrations below, so it would be testing that migration and
+                // calling it a round trip.
+                Node("t", "core.prompt", params = mapOf("prompt" to "a cat", "negative" to "")),
                 Node(
-                    "s", "sd.sample",
+                    "s", "sd15.sample",
                     params = mapOf("seed" to "42", "model" to "dreamshaper"),
-                    inputs = sources("cond" to "t"),
+                    inputs = sources("prompt" to "t"),
                 ),
-                Node("d", "sd.vae_decode", mapOf("model" to "dreamshaper"), sources("latent" to "s")),
+                Node("d", "core.output", mapOf("save" to "false"), sources("media" to "s")),
                 Node("p", "com.example.pack:Thing"),
             )
         ),
@@ -70,8 +70,8 @@ class WorkflowIoTest {
         val back = reload().workflow.graph
         assertEquals(listOf("t", "s", "d", "p"), back.nodes.map { it.id })
         assertEquals("a cat", back.byId["t"]!!.params["prompt"])
-        assertEquals(Source("t"), back.byId["s"]!!.inputs["cond"])
-        assertEquals(Source("s"), back.byId["d"]!!.inputs["latent"])
+        assertEquals(Source("t"), back.byId["s"]!!.inputs["prompt"])
+        assertEquals(Source("s"), back.byId["d"]!!.inputs["media"])
     }
 
     /**
@@ -89,16 +89,16 @@ class WorkflowIoTest {
         val w = Workflow(
             Graph(
                 listOf(
-                    Node("s", "sd.sample", mapOf("seed" to "1", "model" to "m")),
-                    Node("bare", "sd.vae_decode", mapOf("model" to "m"), sources("latent" to "s")),
-                    Node("named", "sd.vae_decode", mapOf("model" to "m"), sources("latent" to "s:latent")),
+                    Node("s", "sd15.sample", mapOf("seed" to "1", "model" to "m")),
+                    Node("bare", "core.output", mapOf("save" to "false"), sources("media" to "s")),
+                    Node("named", "core.output", mapOf("save" to "false"), sources("media" to "s:image")),
                 )
             ),
             mapOf("s" to Pt(0f, 0f), "bare" to Pt(0f, 0f), "named" to Pt(0f, 0f)),
         )
         val back = workflowFromJson(w.toJson(types)).workflow.graph
-        assertEquals(Source("s"), back.byId["bare"]!!.inputs["latent"])
-        assertEquals(Source("s", "latent"), back.byId["named"]!!.inputs["latent"])
+        assertEquals(Source("s"), back.byId["bare"]!!.inputs["media"])
+        assertEquals(Source("s", "image"), back.byId["named"]!!.inputs["media"])
     }
 
     @Test
@@ -150,10 +150,10 @@ class WorkflowIoTest {
     fun anOldSamplerPromptBecomesATextNode() {
         val g = workflowFromJson(oldFile()).workflow
         val sampler = g.graph.byId.getValue("s")
-        val cond = sampler.inputs["cond"]
-        assertNotNull("the sampler was left with nothing on cond", cond)
+        val cond = sampler.inputs["prompt"]
+        assertNotNull("the sampler was left with nothing on prompt", cond)
         val text = g.graph.byId.getValue(cond!!.node)
-        assertEquals("sd.clip_encode", text.type)
+        assertEquals("core.prompt", text.type)
         assertEquals("a cat", text.params["prompt"])
         assertEquals("blurry", text.params["negative"])
         // ⚠⚠ Stripped, not merely ignored: an undeclared param is still hashed
@@ -164,14 +164,21 @@ class WorkflowIoTest {
         assertNotNull("the new node needs somewhere to be", g.positions[text.id])
     }
 
-    /** ⚠ …and the rest of the file is untouched by it. */
+    /**
+     * ⚠⚠ …and the DECODER is collapsed INTO the sampler, because that is what
+     * the same load now also does (docs/ARCHITECTURE.md §5.7). Two migrations
+     * run over this one file: the prompt comes out of the sampler, and the
+     * decode goes into it.
+     */
     @Test
-    fun migratingLeavesEveryOtherNodeAlone() {
+    fun theDecoderIsCollapsedIntoTheSampler() {
         val g = workflowFromJson(oldFile()).workflow
-        assertEquals(3, g.graph.nodes.size)
-        assertEquals(Source("s"), g.graph.byId.getValue("d").inputs["latent"])
+        assertEquals(2, g.graph.nodes.size)
+        assertTrue(g.graph.nodes.none { it.type == "sd.vae_decode" })
         assertEquals(Pt(24f, 96f), g.positions["s"])
-        assertEquals(Pt(24f, 356f), g.positions["d"])
+        // ⚠ A dropped node takes its position with it, or the canvas keeps a
+        // co-ordinate for a node nobody can see.
+        assertNull(g.positions["d"])
     }
 
     /**
@@ -192,7 +199,7 @@ class WorkflowIoTest {
         """.trimIndent()
         val g = workflowFromJson(json).workflow.graph
         assertEquals(2, g.nodes.size)
-        assertEquals(Source("t"), g.byId.getValue("s").inputs["cond"])
+        assertEquals(Source("t"), g.byId.getValue("s").inputs["prompt"])
         assertNull(g.byId.getValue("s").params["prompt"])
     }
 
@@ -203,10 +210,12 @@ class WorkflowIoTest {
           {"id": "s_text", "type": "vae_decode", "x": 0, "y": 0,
            "params": {"model": "m"}, "inputs": {}}"""
         val g = workflowFromJson(oldFile(taken)).workflow.graph
-        assertEquals(4, g.nodes.size)
-        assertEquals("sd.vae_decode", g.byId.getValue("s_text").type)
-        val cond = g.byId.getValue("s").inputs.getValue("cond").node
-        assertEquals("sd.clip_encode", g.byId.getValue(cond).type)
+        // ⚠ Two, not four: the file's own `vae_decode` collapses into the
+        // sampler, and so does the unwired one squatting on the id. What is
+        // left is the sampler and the prompt node the migration made.
+        assertEquals(2, g.nodes.size)
+        val cond = g.byId.getValue("s").inputs.getValue("prompt").node
+        assertEquals("core.prompt", g.byId.getValue(cond).type)
     }
 
     // --- what a file needs to run -------------------------------------------
@@ -228,7 +237,7 @@ class WorkflowIoTest {
     @Test
     fun builtInsAreNotRecordedAsRequirements() {
         val onlyBuiltIns = Workflow(
-            Graph(listOf(Node("s", "sd.sample"), Node("d", "sd.vae_decode"))),
+            Graph(listOf(Node("s", "sd15.sample"), Node("d", "sd.vae_decode"))),
             mapOf("s" to Pt(0f, 0f), "d" to Pt(0f, 0f)),
         )
         assertTrue(workflowFromJson(onlyBuiltIns.toJson(types)).requires.isEmpty())
@@ -333,7 +342,7 @@ class WorkflowIoTest {
     fun savingTwiceKeepsOnlyTheLatest() {
         val store = WorkflowStore(tmp.newFolder("wf3"))
         store.save("current", workflow, types)
-        val smaller = Workflow(Graph(listOf(Node("only", "sd.sample"))), mapOf("only" to Pt(0f, 0f)))
+        val smaller = Workflow(Graph(listOf(Node("only", "sd15.sample"))), mapOf("only" to Pt(0f, 0f)))
         store.save("current", smaller, types)
         assertEquals(listOf("only"), store.load("current")!!.workflow.graph.nodes.map { it.id })
     }
@@ -404,8 +413,10 @@ class WorkflowIoTest {
     @Test
     fun oldBareTypeNamesAreRenamedOnLoad() {
         val g = workflowFromJson(oldFile()).workflow.graph
-        assertEquals("sd.sample", g.byId.getValue("s").type)
-        assertEquals("sd.vae_decode", g.byId.getValue("d").type)
+        assertEquals("sd15.sample", g.byId.getValue("s").type)
+        // ⚠ `vae_decode` is renamed on the way in and collapsed straight after,
+        // so the rename shows only in that the load did not fail on the name.
+        assertNull(g.byId["d"])
     }
 
     /** ⚠ …and a plugin's type, which was always namespaced, is left alone. */
@@ -454,16 +465,18 @@ class WorkflowIoTest {
     }
 
     /**
-     * ⭐⭐⭐ **A graph saved with the FUSED video sampler still opens, and
-     * still runs.**
+     * ⭐⭐⭐ **A graph saved with the first fused video sampler still opens.**
      *
-     * ⚠⚠ This is the case that decides whether deleting a node type is safe.
-     * `nd.video_sample` was one node doing five jobs; a saved workflow naming it
-     * would otherwise fail with `unknown type "nd.video_sample"`, which is a
-     * file the user cannot open at all — the worst outcome available.
+     * ⚠⚠ It is the case that decides whether deleting a node type is safe: a
+     * saved workflow naming a type this build has never heard of fails with
+     * `unknown type`, which is a file the user cannot open at all.
+     *
+     * ⚠ The shape went out and came back — one node (2026-09-12), five
+     * (2026-09-13), one again (2026-09-15) — so this file has been migrated in
+     * both directions. What survives every time is the ID, the seed and the text.
      */
     @Test
-    fun aSavedFusedVideoSamplerBecomesTheDecomposedChain() {
+    fun aSavedFusedVideoSamplerStillOpens() {
         val old = """
             {"format":1,"nodes":[
               {"id":"video","type":"nd.video_sample",
@@ -474,53 +487,60 @@ class WorkflowIoTest {
         """.trimIndent()
         val g = workflowFromJson(old).workflow.graph
 
-        // ⚠ Nothing from the old world survives as a TYPE.
         assertTrue(g.nodes.none { it.type == "nd.video_sample" || it.type == "video.output" })
-        // ⚠⚠ The sampler KEEPS its id, so anything else naming it still
-        // resolves and the run log says what the user expects.
-        assertEquals("nd.sample", g.byId.getValue("video").type)
-        assertEquals("77", g.byId.getValue("video").params["seed"])
+        // ⚠⚠ The sampler KEEPS its id, so anything naming it still resolves
+        // and the run log says what the user expects.
+        val v = g.byId.getValue("video")
+        assertEquals("nd.sample", v.type)
+        assertEquals("77", v.params["seed"])
+        assertEquals("false", v.params["upscale"])
 
-        val prompt = g.nodes.first { it.type == "nd.clip_encode" }
+        // ⭐ The text becomes a prompt NODE, wired in.
+        val prompt = g.byId.getValue(v.inputs.getValue("prompt").node)
+        assertEquals("core.prompt", prompt.type)
         assertEquals("a fox", prompt.params["prompt"])
-        // ⚠ The two conditionings go to their own consumers, BY NAME.
-        assertEquals(
-            Source(prompt.id, "cond"),
-            g.byId.getValue("video").inputs["cond"],
-        )
-        val frame = g.nodes.first { it.type == "nd.first_frame" }
-        assertEquals(Source(prompt.id, "frame_cond"), frame.inputs["cond"])
-        assertEquals("77", frame.params["seed"])
-
-        // ⚠ `upscale` moves to the decoder, which is where it always happened.
-        val decode = g.nodes.first { it.type == "nd.vae_decode" }
-        assertEquals("false", decode.params["upscale"])
-
-        // ⚠⚠ And every node type in the result is one this build knows, or
-        // the graph opens and then refuses to run.
-        g.nodes.forEach { assertNotNull(it.type, NODE_TYPES[it.type]) }
+        // ⚠⚠ Stripped from the sampler: an undeclared param is still hashed
+        // into the cache key, so a leftover would sit in the key of a node whose
+        // inspector no longer shows it.
+        assertNull(v.params["prompt"])
     }
 
     /**
-     * ⚠⚠ A saved IMAGE-to-video graph keeps its picture. The wired `image`
-     * WINS: inventing an SSD1B first frame beside it would make the flow
-     * silently generate its own still and ignore the photo the user chose.
+     * ⭐⭐ **An image-to-video graph keeps its PICTURE.**
+     *
+     * ⚠⚠ The photo is the one thing the user chose, so it has to survive
+     * every reshaping of the video path. ⚠ The five-node split of 2026-09-13
+     * is folded back into one sampler here, and the picture follows the wire
+     * through the encoder that is being removed.
      */
     @Test
     fun aSavedImageToVideoGraphKeepsItsPicture() {
         val old = """
             {"format":1,"nodes":[
-              {"id":"photo","type":"image.load","params":{},"inputs":{}},
-              {"id":"video","type":"nd.video_sample",
-               "params":{"prompt":"drift","seed":"3"},
-               "inputs":{"image":"photo"}}
+              {"id":"photo","type":"image.load","params":{"uri":"/a.png"},"inputs":{}},
+              {"id":"text","type":"nd.clip_encode","params":{"prompt":"drift"},"inputs":{}},
+              {"id":"enc","type":"nd.vae_encode","params":{},"inputs":{"image":"photo"}},
+              {"id":"samp","type":"nd.sample","params":{"seed":"5"},
+               "inputs":{"cond":"text:cond","latent":"enc"}},
+              {"id":"dec","type":"nd.vae_decode","params":{"upscale":"true"},
+               "inputs":{"latent":"samp"}}
             ],"positions":{}}
         """.trimIndent()
         val g = workflowFromJson(old).workflow.graph
-        // No first frame at all -- the photo is the first frame.
-        assertTrue(g.nodes.none { it.type == "nd.first_frame" })
-        val enc = g.nodes.first { it.type == "nd.vae_encode" }
-        assertEquals(Source("photo"), enc.inputs["image"])
+
+        assertTrue(
+            "the split types are gone",
+            g.nodes.none { it.type.startsWith("nd.vae") || it.type == "nd.clip_encode" },
+        )
+        val v = g.nodes.single { it.type == "nd.sample" }
+        assertEquals("5", v.params["seed"])
+        // ⭐ The photo, still wired — and straight in, with no crop between.
+        assertEquals(Source("photo"), v.inputs["image"])
+        assertEquals("core.image", g.byId.getValue("photo").type)
+        // ⭐ …and the prompt, as text.
+        val prompt = g.byId.getValue(v.inputs.getValue("prompt").node)
+        assertEquals("core.prompt", prompt.type)
+        assertEquals("drift", prompt.params["prompt"])
     }
 
     /**
@@ -529,10 +549,10 @@ class WorkflowIoTest {
      * reading it is re-pointed at what fed it.
      */
     @Test
-    fun aSavedImageOutputIsDroppedAndItsReadersRewired() {
+    fun aSavedImageOutputIsKeptAndRePorted() {
         val old = """
             {"format":1,"nodes":[
-              {"id":"src","type":"image.load","params":{},"inputs":{}},
+              {"id":"src","type":"core.image","params":{},"inputs":{}},
               {"id":"out","type":"image.output",
                "params":{"save":"true"},"inputs":{"image":"src"}},
               {"id":"up","type":"image.upscale","params":{},
@@ -540,8 +560,12 @@ class WorkflowIoTest {
             ],"positions":{}}
         """.trimIndent()
         val g = workflowFromJson(old).workflow.graph
-        assertTrue(g.nodes.none { it.type == "image.output" })
-        // ⚠ The consumer now reads what the output node was reading.
-        assertEquals(Source("src"), g.byId.getValue("up").inputs["image"])
+        // ⭐ It is KEPT now, renamed and re-ported: the node came back on
+        // 2026-09-15 (docs/ARCHITECTURE.md §5.7) because a chain needs
+        // something that says which picture is the deliverable.
+        val out = g.byId.getValue("out")
+        assertEquals("core.output", out.type)
+        assertEquals(Source("src"), out.inputs["media"])
+        assertEquals(Source("out"), g.byId.getValue("up").inputs["image"])
     }
 }

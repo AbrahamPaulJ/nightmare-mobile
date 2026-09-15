@@ -65,18 +65,29 @@ object VideoSampleNode : NodeType {
      * a two-node graph where the interesting text is hidden behind a sheet is a
      * worse first screen than one extra inch of node.
      */
-    override val prose = listOf("prompt")
-    override val name = "nd.video_sample"
-    override val version = "1"
-    override val inputs = listOf(Port("image", "IMAGE"))
+    override val name = "nd.sample"
+    override val version = "2"
+
+    /**
+     * ⚠⚠ The prompt is a WIRE, like every other sampler's — `core.prompt` feeds
+     * it, and the two conditionings this needs are made inside. ⚠ `image` is
+     * optional and decides the flow: wired it is image-to-video, unwired the
+     * node generates its own first frame. The user's call, 2026-09-15 — one
+     * sampler for both, no first-frame node.
+     */
+    override val inputs = listOf(Port("prompt", "PROMPT"), Port("image", "IMAGE"))
     override val outputs = listOf(Port("video", "VIDEO"))
-    override val category = "video"
+
+    /** ⚠ `generate`, with the SD samplers: it is the same job on other weights. */
+    override val category = "generate"
+
+    override val paletteName = "video"
+    override val about = "a prompt, or a prompt and a photo, into a 2 second clip"
+
+    /** ⚠⚠ The clip belongs to `core.output`, like every other result (§5.7). */
+    override val showsResult = false
 
     override val widgets get() = listOf(
-        Widget(
-            "prompt", "string", "a cat walking through tall grass, cinematic",
-            hint = "what to animate",
-        ),
         // ⭐ 0 rolls a new clip every Run, like the sampler's seed and for the
         // same reason. ⚠ It is NOT bit-reproducible against the desktop
         // reference — java.util.Random is a different stream from torch's — so
@@ -92,6 +103,16 @@ object VideoSampleNode : NodeType {
             // frames actually come out. Neodragon's docs use (h, w).
             hint = "2x to 1024x640 with QuickSRNet. Off renders 512x320 and is a little faster.",
         ),
+        // ⭐⭐ The framing, exactly as the SD samplers carry it — `image.crop`'s
+        // own param names, so `CropEditor` drives this node too with no second
+        // spelling. ⚠ The crop NODE is gone from the i2v recipe: the sampler
+        // fits whatever it is given, which is the rule the image path already
+        // follows (docs/ARCHITECTURE.md §5.7).
+        Widget("x", "float", "0.0", 0.0, 1.0, hint = "drag the frame on the picture"),
+        Widget("y", "float", "0.0", 0.0, 1.0),
+        Widget("w", "float", "1.0", 0.0, 1.0),
+        Widget("h", "float", "1.0", 0.0, 1.0),
+        Widget(com.abrah.nightmare.CropNode.LOCKED, "bool", "false"),
     )
 
     /**
@@ -122,8 +143,23 @@ object VideoSampleNode : NodeType {
      * follow that knob — wiring the crop to the output size would hand the VAE
      * an image four times too large.
      */
-    override fun requiredInputSize(node: Node, port: String): Pair<Int, Int>? =
-        if (port == "image") VideoStructure.frameSize else null
+    /**
+     * ⚠⚠ **Null — it demands nothing and FITS what it is given**, the same rule
+     * the SD samplers adopted on 2026-09-15. It used to declare 512x320, which
+     * made `Framing` lock a crop node in front of it and refuse a photo wired
+     * straight in. That crop node is gone; the framing is four params on this
+     * node and the same [com.abrah.nightmare.CropNode.render] does the work.
+     */
+    override fun requiredInputSize(node: Node, port: String): Pair<Int, Int>? = null
+
+    /**
+     * ⭐⭐ …but it does FRAME to an exact size, and this is the only place that
+     * says so — 512x320 is a property of the compiled context, not of a param.
+     * Without it the framing view in the inspector took the shape of whatever
+     * photo was wired, and `Video.bitmapToChw`'s centre-crop then took a
+     * different rectangle than the one the user dragged.
+     */
+    override fun framesTo(node: Node): Pair<Int, Int> = VideoStructure.frameSize
 
     /**
      * ⚠⚠⚠ **`Dispatchers.IO`, and it is NOT a tidy-up.**
@@ -154,7 +190,11 @@ object VideoSampleNode : NodeType {
         // otherwise surfaces 20 s in as "Create From Binary failure", which
         // names neither the file nor the fact that it was never downloaded.
         val seed = node.params["seed"]?.toLongOrNull() ?: 0L
-        val prompt = node.str("prompt")
+        val prompt = (inputs["prompt"] as? Value.Prompt)?.positive
+            ?: throw IllegalArgumentException(
+                "node \"${node.id}\": nothing is wired into \"prompt\" — " +
+                    "drag a Prompt node out of the palette and connect it"
+            )
         val source = inputs["image"] as? Value.Image
         val needed = if (source != null) Video.requiredModels() - FIRST_FRAME_ONLY else Video.requiredModels()
         val missing = NpuFiles.missing(android, needed)
@@ -162,7 +202,7 @@ object VideoSampleNode : NodeType {
             throw IllegalStateException(
                 "node \"${node.id}\": ${missing.size} video model(s) not on this device " +
                     "(${missing.take(3).joinToString()}${if (missing.size > 3) ", …" else ""}) " +
-                    "-- they live in ${NpuFiles.ctxDir(android)}"
+                    "— they live in ${NpuFiles.ctxDir(android)}"
             )
         }
         val missingAssets = NpuFiles.missingAssets(android)
@@ -176,11 +216,21 @@ object VideoSampleNode : NodeType {
         // from, because that name becomes the value's address and therefore
         // part of every downstream cache key. A timestamp there would make two
         // identical clips look different to `video.output`.
+        // ⭐⭐ Framed HERE, to the encoder's own size, by the same function the
+        // framing view draws with. ⚠ `Video.bitmapToChw` still centre-crops as
+        // a backstop; this is what lets the USER pick the shot instead.
         val bitmap: Bitmap? = source?.let { img ->
-            ctx.images.get(img.id)
+            val src = ctx.images.get(img.id)
                 ?: throw IllegalStateException(
                     "node \"${node.id}\": image ${img.id} is no longer in the store"
                 )
+            val p = effectiveParams(node)
+            fun f(k: String, d: Float) = p[k]?.toFloatOrNull() ?: d
+            com.abrah.nightmare.CropNode.render(
+                src, f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f),
+                VideoStructure.frameSize.first, VideoStructure.frameSize.second,
+                com.abrah.nightmare.CropNode.PAD_BLACK,
+            ).first
         }
         // ⚠ Through `effectiveParams`, not `params[...]`: an unset knob must
         // read its DECLARED default, and comparing against "false" to mean
@@ -253,7 +303,7 @@ object VideoSampleNode : NodeType {
                 Log.i(TAG, "  $stage $i/$n")
             }
             frames = r.frames
-            ctx.say("${frames.size} frames in ${"%.1f".format(r.seconds)} s -- encoding")
+            ctx.say("${frames.size} frames in ${"%.1f".format(r.seconds)} s — encoding")
             Log.i(TAG, "video: ${frames.size} frames in ${"%.1f".format(r.seconds)} s")
         } finally {
             // ⚠⚠ ALWAYS. Three MMDiT contexts are ~4.6 GB of mappings; leaving
@@ -407,7 +457,7 @@ object VideoOutputNode : NodeType {
             )
         val file = File(video.path)
         check(file.isFile) {
-            "node \"${node.id}\": the clip is gone from ${file.parent} -- run the sampler again"
+            "node \"${node.id}\": the clip is gone from ${file.parent} — run the sampler again"
         }
         val stem = node.params["name"].orEmpty().ifBlank { "nightmare" }
         VideoWriter.publish(android, file, "${stem}_${System.currentTimeMillis()}.mp4") {

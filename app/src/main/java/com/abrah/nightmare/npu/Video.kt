@@ -153,7 +153,7 @@ class Video(
         // re-derived. Checked here, loudly, rather than trusted.
         check(VideoStructure.frameSize == vs.getInt("video_width") to vs.getInt("video_height")) {
             "video_structure.json says ${vs.getInt("video_width")}x${vs.getInt("video_height")} " +
-                "but the node declares ${VideoStructure.frameSize} -- every image.crop " +
+                "but the node declares ${VideoStructure.frameSize} — every image.crop " +
                 "feeding a video sampler is now the wrong size"
         }
         val img = bitmapToChw(bmp, vs.getInt("video_width"), vs.getInt("video_height"))

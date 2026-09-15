@@ -56,6 +56,36 @@ val SaveIcon: ImageVector by lazy {
 }
 
 /**
+ * ⭐⭐ The DOWNLOAD glyph — an arrow into a tray.
+ *
+ * ⚠⚠ It exists because the disk changed jobs on 2026-09-15. The floppy used
+ * to write a PNG to the gallery, which is a download wearing a save icon —
+ * reported as confusing, and it was: the same glyph meant "export" here and
+ * "keep" everywhere else in the app. ⇒ [SaveIcon] now KEEPS a picture in
+ * Results and this one exports it, which is what each glyph already looks like.
+ *
+ * ⚠ Material's own `file_download` outline at 24x24, so it lines up with the
+ * rest of the row without per-icon padding.
+ */
+val DownloadIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Download",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).run {
+        addPath(
+            pathData = PathParser().parsePathString(
+                "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
+            ).toNodes(),
+            fill = SolidColor(Color.White),
+        )
+        build()
+    }
+}
+
+/**
  * An OPEN padlock — the released half of the seed lock.
  *
  * ⚠⚠ It must read as the same object as `Icons.Filled.Lock` with the shackle

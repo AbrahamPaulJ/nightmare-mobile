@@ -25,7 +25,7 @@ class CanvasGeometryTest {
     private val workflow = Workflow(
         Graph(
             listOf(
-                Node("s", "sd.sample", mapOf("model" to "m", "width" to "512", "height" to "512")),
+                Node("s", "sd15.sample", mapOf("model" to "m", "width" to "512", "height" to "512")),
                 Node("d", "sd.vae_decode", mapOf("model" to "m"), sources("latent" to "s")),
             )
         ),

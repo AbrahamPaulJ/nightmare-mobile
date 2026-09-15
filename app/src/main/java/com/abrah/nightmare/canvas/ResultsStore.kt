@@ -65,6 +65,18 @@ data class Result(
      * would be work for a picture that already exists.
      */
     val videoPath: String? = null,
+    /**
+     * ⭐⭐ Starred — the Favourites filter in the Results tab.
+     *
+     * ⚠⚠ **Separate from being kept, and that is the whole point of the icon
+     * change of 2026-09-15.** The disk keeps a picture; the star keeps it AND
+     * flags it. Before this the star WAS the keep, so "in Results" and
+     * "favourite" were one fact and there was nothing to filter by.
+     *
+     * ⚠ Defaults false, so every result kept before this field existed reads
+     * back as an ordinary one rather than as a favourite.
+     */
+    val favourite: Boolean = false,
 ) {
     val label: String get() = prompt?.take(60)?.ifBlank { null } ?: "no prompt"
 }
@@ -115,6 +127,31 @@ class ResultsStore(private val dir: File) {
     fun clipFile(id: String): File? = mp4(id).takeIf { it.isFile }
 
     /**
+     * ⭐⭐ Star or un-star a result that is already kept.
+     *
+     * ⚠⚠ It rewrites the metadata in place rather than deleting and re-keeping:
+     * the PNG, the clip and the FLOW are the expensive parts and none of them
+     * changes. ⚠ Returns the new state so a caller can draw the star without
+     * re-listing the whole directory.
+     *
+     * ⚠ Silently false for an id that is not kept — starring something that is
+     * not there is not an error, it is a no-op the UI can ignore.
+     */
+    fun setFavourite(id: String, on: Boolean): Boolean {
+        val f = meta(id)
+        if (!f.isFile) return false
+        return try {
+            val j = org.json.JSONObject(f.readText()).put("favourite", on)
+            val tmp = File(dir, "$id.json.tmp")
+            tmp.writeText(j.toString())
+            if (!tmp.renameTo(f)) { tmp.copyTo(f, overwrite = true); tmp.delete() }
+            on
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
      * Keeps [bitmap] and the graph that made it.
      *
      * ⚠ Written to temp files and renamed, the same as [WorkflowStore.save] and
@@ -146,9 +183,25 @@ class ResultsStore(private val dir: File) {
          * gallery may already hold.
          */
         video: File? = null,
+        /** ⭐ True when the STAR kept this rather than the disk. */
+        favourite: Boolean = false,
     ): Result {
         dir.mkdirs()
-        val id = "r" + System.currentTimeMillis()
+        // ⚠⚠⚠ **A millisecond is not unique, and a batch keeps in a tight loop.**
+        // `"r" + currentTimeMillis()` alone collided whenever two results were
+        // kept inside the same millisecond: the second silently overwrote the
+        // first's PNG and metadata, and `clipFile` then handed a picture the
+        // other result's MP4. Found 2026-09-15 by a test that had been green for
+        // days — timing, not logic, decided whether it failed.
+        //
+        // ⚠ A suffix rather than nanoTime: the id is a FILE NAME and it sorts,
+        // so it has to stay readable and monotonic. The loop is bounded by how
+        // many results share one millisecond, which is single digits.
+        var id = "r" + System.currentTimeMillis()
+        var n = 1
+        while (png(id).exists() || meta(id).exists()) {
+            id = "r" + System.currentTimeMillis() + "_" + n++
+        }
         val tmpPng = File(dir, "$id.png.tmp")
         tmpPng.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         if (!tmpPng.renameTo(png(id))) {
@@ -162,6 +215,7 @@ class ResultsStore(private val dir: File) {
             id, System.currentTimeMillis(), imageId, seed, model, prompt,
             bitmap.width, bitmap.height, batchId, batchLabel,
             videoPath = mp4(id).takeIf { it.isFile }?.path,
+            favourite = favourite,
         )
         val json = JSONObject()
             .put("savedAt", r.savedAt)
@@ -175,6 +229,7 @@ class ResultsStore(private val dir: File) {
             // an absent key means "not a batch" or "an older file".
             .put("batchId", r.batchId ?: JSONObject.NULL)
             .put("batchLabel", r.batchLabel)
+            .put("favourite", r.favourite)
             // ⭐ The graph, as the same JSON a saved workflow uses — so
             // reopening a result is exactly reopening a workflow, with no
             // second format to keep in step.
@@ -233,6 +288,7 @@ class ResultsStore(private val dir: File) {
                         height = j.optInt("height"),
                         batchId = j.optString("batchId").takeIf { it.isNotBlank() && it != "null" },
                         batchLabel = j.optString("batchLabel"),
+                        favourite = j.optBoolean("favourite", false),
                         // ⚠ Read off the DISK rather than out of the metadata:
                         // the file is the fact, and a `hasVideo` flag in the
                         // JSON could outlive the clip it names.
@@ -312,9 +368,9 @@ class ResultsStore(private val dir: File) {
             p["prompt"]?.takeIf { it.isNotBlank() }?.let { out += "prompt" to it }
             p["negative"]?.takeIf { it.isNotBlank() }?.let { out += "negative" to it }
         }
-        g.nodes.firstOrNull { it.type == "sd.sample" }?.params?.let { p ->
+        g.nodes.firstOrNull { it.type in com.abrah.nightmare.SD_SAMPLER_TYPES }?.params?.let { p ->
             p["model"]?.let { out += "model" to it }
-            val size = listOfNotNull(p["width"], p["height"]).joinToString("×")
+            val size = listOfNotNull(p["width"], p["height"]).joinToString("x")
             if (size.isNotBlank()) out += "size" to size
             p["steps"]?.let { out += "steps" to it }
             p["cfg"]?.let { out += "cfg" to it }
@@ -322,7 +378,7 @@ class ResultsStore(private val dir: File) {
             p["seed"]?.takeIf { it != "0" }?.let { out += "seed" to it }
             // ⚠ Only when a latent is wired: on txt2img it is not read, and
             // showing it would imply it did something.
-            g.nodes.firstOrNull { it.type == "sd.sample" }
+            g.nodes.firstOrNull { it.type in com.abrah.nightmare.SD_SAMPLER_TYPES }
                 ?.takeIf { it.inputs.containsKey("latent") }
                 ?.let { p["denoise"]?.let { d -> out += "denoise" to d } }
         }
@@ -331,7 +387,7 @@ class ResultsStore(private val dir: File) {
         // details function: a kept clip is a kept result like any other.
         g.nodes.firstOrNull { it.type == "nd.clip_encode" }?.params?.let { p ->
             p["prompt"]?.takeIf { it.isNotBlank() }?.let { out += "prompt" to it }
-            out += "size" to if (p["upscale"].equals("false", true)) "512×320" else "1024×640"
+            out += "size" to if (p["upscale"].equals("false", true)) "512x320" else "1024x640"
             out += "frames" to "49"
             p["seed"]?.takeIf { it != "0" }?.let { out += "seed" to it }
         }

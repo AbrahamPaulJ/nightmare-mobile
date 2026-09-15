@@ -107,7 +107,7 @@ class ImageStore(private val limit: Int = 12) {
         )
     }
 
-    private companion object {
+    companion object {
         /**
          * ⚠ Hashes the PIXELS, not the PNG. Two encoders can produce different
          * bytes for the same image (and Android's own encoder is free to change
@@ -122,6 +122,21 @@ class ImageStore(private val limit: Int = 12) {
          * correctly-cached image of the wrong shape with nothing raising an
          * error. Found by ImageStoreTest.shapeIsPartOfTheAddress.
          */
+        /**
+         * ⭐ PNG bytes for a bitmap that is NOT in the store, and must not be.
+         *
+         * ⚠⚠ The fused sampler makes three or four intermediates per run (the
+         * framed photo, the mask, the cut of each). Putting them in the store to
+         * get at their bytes would evict every other node's picture from a
+         * cache bounded at twelve — the canvas would go blank around whichever
+         * node was rendering.
+         */
+        fun encodePng(bitmap: Bitmap): ByteArray {
+            val out = ByteArrayOutputStream(64 * 1024)
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            return out.toByteArray()
+        }
+
         fun hashPixels(bitmap: Bitmap): String {
             // ⚠ A HARDWARE-config bitmap has no readable pixels at all and
             // throws here. Nothing in this app makes one today, so this is a

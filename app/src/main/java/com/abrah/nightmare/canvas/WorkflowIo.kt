@@ -2,6 +2,9 @@ package com.abrah.nightmare.canvas
 
 import com.abrah.nightmare.Graph
 import com.abrah.nightmare.CropNode
+import com.abrah.nightmare.MaskCropNode
+import com.abrah.nightmare.MaskNode
+import com.abrah.nightmare.PasteNode
 import com.abrah.nightmare.Node
 import com.abrah.nightmare.NodeType
 import com.abrah.nightmare.Source
@@ -187,9 +190,10 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     // names. `migrateSamplerPrompts` matches on the sampler's type, so running
     // it against a file still saying `sample` would either need both spellings
     // or silently skip the repair.
-    val migrated = dropOutputNodes(
-        migrateVideoSampler(migrateSamplerPrompts(nodes.map(::migrateType), positions))
-    )
+    val migrated = collapseSamplers(
+        reviveOutputNodes(
+        collapseVideoChain(migrateSamplerPrompts(nodes.map(::migrateType), positions))
+    ))
 
     val requiresJson = root.optJSONArray("requires")
     val requires = (0 until (requiresJson?.length() ?: 0)).map {
@@ -243,13 +247,26 @@ private fun migrateType(node: Node): Node {
 }
 
 private val RENAMED = mapOf(
-    "sample" to "sd.sample",
-    "encode_text" to "sd.clip_encode",
+    // ⚠ `sample` -> a FAMILY-specific type; [samplerTypeFor] does it, not this map.
     "vae_encode" to "sd.vae_encode",
     "vae_decode" to "sd.vae_decode",
-    "load_image" to "image.load",
     "crop" to "image.crop",
-    "output" to "image.output",
+    // ⚠ The first fused video node, back under the name it now has.
+    "nd.video_sample" to "nd.sample",
+    // ⭐⭐ The three generalised nodes of docs/ARCHITECTURE.md §5.7. They belong
+    // to no family -- one prompt node serves SD and video, one output node takes
+    // a picture or a clip -- so `core.` is the domain that says so.
+    // ⚠ `sd.clip_encode` is renamed here and REWIRED in [collapseSamplers]: its
+    // consumer's port changes from `cond` to `prompt`, which a rename cannot do.
+    "encode_text" to "core.prompt",
+    "sd.clip_encode" to "core.prompt",
+    "load_image" to "core.image",
+    "image.load" to "core.image",
+    "output" to "core.output",
+    "image.output" to "core.output",
+    // ⚠ The clip's own output node, back — `core.output` takes either, so the
+    // two that were deleted on 2026-09-13 land on the one that replaced them.
+    "video.output" to "core.output",
 )
 
 /**
@@ -313,159 +330,162 @@ private val RENAMED = mapOf(
  * seed will not reproduce their old clip.
  */
 /**
- * ⭐⭐ **`image.output` is gone, so a graph that has one loses it** — and
- * whatever read it is re-pointed at what fed it.
+ * ⭐⭐ **The output node came BACK**, and an old one is repaired rather than
+ * dropped.
  *
- * The node returned its input unchanged and existed only to hold a `save`
- * switch. Every terminal node draws its own result and carries save / share /
- * star, so the switch had nothing left to do; no shipped recipe contained one.
+ * It was deleted on 2026-09-13 as a node whose only widget had become a no-op,
+ * and un-deleted on 2026-09-15 (`docs/ARCHITECTURE.md` §5.7) because chaining
+ * gave it back a job: in `sampler → sampler → output` it marks the deliverable.
+ * ⇒ The pass that used to DELETE these now fixes them up.
  *
- * ⚠⚠ Dropped rather than left as an unknown type: an unknown type fails the
- * whole graph with "unknown type \"image.output\"", which is a saved workflow
- * that simply will not open. ⚠ Its `save` is not honoured on the way out —
- * there is no longer anything to honour it with.
+ * ⚠ Two things change under it: the port is `media` rather than `image`, since
+ * it takes a clip too; and `save` defaults to true now, so a file that never
+ * carried the param is pinned to **false** on the way in. An old graph that was
+ * not writing files must not start writing them because a default moved.
  */
-private fun dropOutputNodes(
+private fun reviveOutputNodes(
     input: Pair<List<Node>, Map<String, Pt>>,
 ): Pair<List<Node>, Map<String, Pt>> {
     val (nodes, positions) = input
-    val doomed = nodes.filter { it.type == "image.output" }
-    if (doomed.isEmpty()) return input
-    // What each dropped node was fed by; a consumer of it now reads that.
-    val feeds = doomed.associate { it.id to it.inputs.values.firstOrNull() }
-    val pos = positions.toMutableMap()
-    doomed.forEach { pos.remove(it.id) }
-    val kept = nodes.filterNot { it.type == "image.output" }.map { n ->
-        val rewired = n.inputs.mapNotNull { (port, src) ->
-            if (src.node !in feeds) port to src else feeds[src.node]?.let { port to it }
-        }.toMap()
-        if (rewired == n.inputs) n else n.copy(inputs = rewired)
-    }
-    return kept to pos
+    if (nodes.none { it.type == "core.output" }) return input
+    return nodes.map { n ->
+        if (n.type != "core.output") n
+        else n.copy(
+            params = if ("save" in n.params) n.params else n.params + ("save" to "false"),
+            // ⚠ BOTH old ports: `image.output` took `image` and `video.output`
+            // took `video`, and the one node that replaced them takes `media`.
+            inputs = n.inputs.mapKeys { (port, _) ->
+                if (port == "image" || port == "video") "media" else port
+            },
+        )
+    } to positions
 }
 
-private fun migrateVideoSampler(
+/**
+ * ⭐⭐⭐ **The five video nodes collapse back into one** — 2026-09-15.
+ *
+ * `nd.clip_encode` → `nd.first_frame` → `nd.vae_encode` → `nd.sample` →
+ * `nd.vae_decode` was the shape from 2026-09-13. It is now one `nd.sample`
+ * taking a `core.prompt` and an optional photo, so every graph saved in between
+ * has to be folded up.
+ *
+ * ⚠⚠ The function this replaces did the OPPOSITE — it expanded a saved fused
+ * node into five — and leaving it would have rewritten every old graph into
+ * nodes that no longer exist. A migration that emits a shape the app cannot run
+ * is worse than none: the file opens and then fails at Run.
+ *
+ * ⚠ The PHOTO survives and the first frame does not: a graph whose encoder was
+ * fed by a crop or a photo was image-to-video, and that picture is the one thing
+ * the user chose. A `nd.first_frame` upstream means it was text-to-video, and
+ * the new node makes its own.
+ */
+private fun collapseVideoChain(
     input: Pair<List<Node>, Map<String, Pt>>,
 ): Pair<List<Node>, Map<String, Pt>> {
     val (nodes, positions) = input
-    if (nodes.none { it.type == "nd.video_sample" }) return input
-
-    val taken = nodes.map { it.id }.toMutableSet()
-    fun free(base: String): String {
-        var id = base
-        var i = 2
-        while (id in taken) id = "$base$i".also { i++ }
-        taken += id
-        return id
+    val old = setOf(
+        "nd.clip_encode", "nd.first_frame", "nd.vae_encode", "nd.vae_decode",
+    )
+    val split = nodes.filter { it.type in old }
+    // ⭐⭐ The FIRST fused node carried its prompt as a PARAM. Renamed to
+    // `nd.sample` by [RENAMED], it then had text nothing reads and an unwired
+    // prompt port — so the text is lifted into a `core.prompt` beside it, the
+    // same act [migrateSamplerPrompts] performs for the SD sampler.
+    val strays = nodes.filter {
+        it.type == "nd.sample" && "prompt" in it.params && "prompt" !in it.inputs
     }
-
-    val out = mutableListOf<Node>()
-    val pos = positions.toMutableMap()
-    // Old sampler id -> the node that now produces its VIDEO, so a `video.output`
-    // wired to it can be dropped and anything else re-pointed.
-    val replacedBy = mutableMapOf<String, String>()
-
-    for (n in nodes) {
-        if (n.type != "nd.video_sample") {
-            out += n
-            continue
-        }
-        val at = positions[n.id] ?: Pt(0f, 0f)
-        val step = Sizes.NODE_WIDTH + 36f
-        val hasImage = "image" in n.inputs
-        val seed = n.params["seed"] ?: "0"
-
-        val promptId = free("${n.id}_prompt")
-        out += Node(
-            promptId, "nd.clip_encode",
-            params = mapOf("prompt" to n.params["prompt"].orEmpty()),
-        )
-        pos[promptId] = Pt(at.x + step, at.y)
-
-        // ⚠ The picture: the user's own if one was wired, otherwise a first
-        // frame generated from the prompt's OTHER conditioning.
-        val imageSource: Source
-        if (hasImage) {
-            imageSource = n.inputs.getValue("image")
-        } else {
-            val frameId = free("${n.id}_frame")
-            out += Node(
-                frameId, "nd.first_frame",
-                params = mapOf("seed" to seed),
-                inputs = mapOf("cond" to Source(promptId, "frame_cond")),
+    if (split.isEmpty() && strays.isEmpty()) return input
+    if (split.isEmpty()) {
+        val taken = nodes.map { it.id }.toMutableSet()
+        val out = mutableListOf<Node>()
+        val pos = positions.toMutableMap()
+        for (n in nodes) {
+            if (n !in strays) { out += n; continue }
+            var id = "${'$'}{n.id}_text"
+            var i = 2
+            while (id in taken) id = "${'$'}{n.id}_text${'$'}{i++}"
+            taken += id
+            out += Node(id, "core.prompt", mapOf(
+                "prompt" to n.params["prompt"].orEmpty(),
+                "negative" to n.params["negative"].orEmpty(),
+            ))
+            out += n.copy(
+                params = n.params - "prompt" - "negative",
+                inputs = n.inputs + ("prompt" to Source(id)),
             )
-            pos[frameId] = Pt(at.x + step, at.y + 220f)
-            imageSource = Source(frameId)
+            val at = positions[n.id] ?: Pt(0f, 0f)
+            pos[id] = Pt(at.x + Sizes.NODE_WIDTH + 36f, at.y)
         }
+        return out to pos
+    }
+    val byId = nodes.associateBy { it.id }
 
-        val encId = free("${n.id}_encode")
-        out += Node(encId, "nd.vae_encode", inputs = mapOf("image" to imageSource))
-        pos[encId] = Pt(at.x + step, at.y + 440f)
-
-        // ⚠ The sampler KEEPS the old node's id, so anything else in the graph
-        // that named it still resolves — and so the run log says what the user
-        // expects.
-        out += Node(
-            n.id, "nd.sample",
-            params = mapOf("seed" to seed),
-            inputs = mapOf(
-                "cond" to Source(promptId, "cond"),
-                "latent" to Source(encId),
-            ),
-        )
-
-        val decId = free("${n.id}_decode")
-        out += Node(
-            decId, "nd.vae_decode",
-            // ⚠ `upscale` moves to the decoder, which is where it always
-            // happened — QuickSRNet runs per frame inside the streaming decode.
-            params = mapOf("upscale" to (n.params["upscale"] ?: "true")),
-            inputs = mapOf("latent" to Source(n.id)),
-        )
-        pos[decId] = Pt(at.x + step, at.y + 660f)
-        replacedBy[n.id] = decId
+    // The prompt node the text used to live on becomes `core.prompt`.
+    val text = nodes.firstOrNull { it.type == "nd.clip_encode" }
+    val promptNode = text?.let {
+        Node(it.id, "core.prompt", mapOf(
+            "prompt" to it.params["prompt"].orEmpty(),
+            "negative" to it.params["negative"].orEmpty(),
+        ))
     }
 
-    if (replacedBy.isEmpty()) return out to pos
-
-    // ⚠⚠ Drop every `video.output` fed by a migrated sampler, and re-point
-    // anything ELSE that read one at the decoder. A node left wired to
-    // `nd.sample` expecting a VIDEO would refuse at the drop: that port makes a
-    // VIDEO_LATENT now.
-    val doomed = out.filter { o ->
-        o.type == "video.output" && o.inputs.values.any { it.node in replacedBy }
-    }.map { it.id }.toSet()
-    val kept = out.filterNot { it.id in doomed }
-    doomed.forEach { pos.remove(it) }
-    return kept.map { o ->
-        val rewired = o.inputs.mapValues { (_, src) ->
-            when {
-                src.node in doomed -> {
-                    // it read the output node; the decoder makes that value now
-                    val sampler = out.first { it.id == src.node }
-                        .inputs.values.first().node
-                    Source(replacedBy.getValue(sampler))
-                }
-                src.node in replacedBy && src.port == null -> Source(replacedBy.getValue(src.node))
-                else -> src
+    /** Walk up past the dead types to whatever real picture fed them. */
+    fun photoFor(start: Source?): Source? {
+        var cur = start
+        var hops = 0
+        while (cur != null && hops++ < 32) {
+            val n = byId[cur.node] ?: return null
+            when (n.type) {
+                // ⚠ A first frame means there was no photo — the clip started
+                // from one the app generated.
+                "nd.first_frame" -> return null
+                "nd.vae_encode" -> cur = n.inputs["image"]
+                // ⚠ The crop node stays a node; it is the picture.
+                else -> return Source(n.id)
             }
         }
-        if (rewired == o.inputs) o else o.copy(inputs = rewired)
-    } to pos
+        return null
+    }
+
+    val sampler = nodes.firstOrNull { it.type == "nd.sample" }
+    val encode = nodes.firstOrNull { it.type == "nd.vae_encode" }
+    val decode = nodes.firstOrNull { it.type == "nd.vae_decode" }
+    val fused = Node(
+        id = sampler?.id ?: decode?.id ?: "video",
+        type = "nd.sample",
+        params = (sampler?.params.orEmpty()) +
+            (decode?.params?.filterKeys { it == "upscale" } ?: emptyMap()),
+        inputs = buildMap {
+            promptNode?.let { put("prompt", Source(it.id)) }
+            photoFor(encode?.inputs?.get("image"))?.let { put("image", it) }
+        },
+    )
+
+    val gone = split.map { it.id }.toSet() + setOfNotNull(sampler?.id) - fused.id
+    val kept = nodes.filterNot { it.id in gone || it.id == fused.id || it.type == "nd.clip_encode" }
+        .map { n ->
+            // ⚠ Anything reading the old decode now reads the fused node.
+            n.copy(inputs = n.inputs.mapValues { (_, src) ->
+                if (src.node in gone || src.node == decode?.id) Source(fused.id) else src
+            })
+        }
+    val out = listOfNotNull(promptNode) + kept + fused
+    val pos = positions.filterKeys { id -> out.any { it.id == id } }
+    return out to (pos + (fused.id to (positions[fused.id] ?: Pt(24f, 420f))))
 }
 
 private fun migrateSamplerPrompts(
     nodes: List<Node>,
     positions: Map<String, Pt>,
 ): Pair<List<Node>, Map<String, Pt>> {
-    if (nodes.none { it.type == "sd.sample" && ("prompt" in it.params || "negative" in it.params) }) {
+    if (nodes.none { isOldSamplerType(it.type) && ("prompt" in it.params || "negative" in it.params) }) {
         return nodes to positions
     }
     val taken = nodes.map { it.id }.toMutableSet()
     val out = mutableListOf<Node>()
     val pos = positions.toMutableMap()
     for (n in nodes) {
-        val stale = n.type == "sd.sample" && ("prompt" in n.params || "negative" in n.params)
+        val stale = isOldSamplerType(n.type) && ("prompt" in n.params || "negative" in n.params)
         if (!stale) {
             out += n
             continue
@@ -482,8 +502,12 @@ private fun migrateSamplerPrompts(
         var i = 2
         while (id in taken) id = "${n.id}_text$i".also { i++ }
         taken += id
+        // ⚠⚠ `core.prompt`, not the node this migration was written against:
+        // [collapseSamplers] runs straight after and would have to undo it.
+        // A migration that emits a shape another migration rewrites is two
+        // passes disagreeing about the same file.
         out += Node(
-            id, "sd.clip_encode",
+            id, "core.prompt",
             params = mapOf(
                 "prompt" to n.params["prompt"].orEmpty(),
                 "negative" to n.params["negative"].orEmpty(),
@@ -639,3 +663,181 @@ class WorkflowStore(private val dir: File) {
 
 /** One of the user's saved graphs, for the Workflows list. */
 data class SavedWorkflow(val name: String, val savedAt: Long)
+
+/**
+ * ⭐⭐⭐ **Sixteen node types became seven, and every saved flow still opens.**
+ *
+ * `docs/ARCHITECTURE.md` §5.7. The exact inverse of [migrateVideoSampler],
+ * which expanded one fused node into five — this folds ten back into one:
+ *
+ * ```
+ *   clip_encode ─cond─┐
+ *   photo ─ crop ─ mask ─ cut ─ vae_encode ─ sample ─ blend ─ vae_decode ─ paste
+ * becomes
+ *   prompt ─┐
+ *   photo ──┴─ sample            (the mask, the cut, the blend and the paste
+ *                                 are now params and toggles ON the sampler)
+ * ```
+ *
+ * ⚠⚠ **`sd.sample` means two different things**, and that is the one hazard
+ * here: an old file's `sd.sample` is the node that took a COND and returned a
+ * LATENT; the live one takes a PROMPT and returns an IMAGE. They are told apart
+ * by SHAPE, not by name — an old sampler has a `cond` or a `latent` input and
+ * the new one has neither. ⇒ [isLegacySampler]. A version number could not have
+ * answered this: the file's format did not change.
+ *
+ * ⚠ NOT a format bump, for the reason [migrateSamplerPrompts] gives: the file's
+ * SHAPE is unchanged, and bumping would make every saved workflow fail to open
+ * rather than be repaired.
+ *
+ * ⚠⚠ Best-effort, the user's call 2026-09-15. The shipped recipe shapes come
+ * back exactly; anything else keeps every node that still exists and is rewired
+ * THROUGH the ones that do not ([PASSTHROUGH]) rather than being refused.
+ */
+private fun collapseSamplers(
+    input: Pair<List<Node>, Map<String, Pt>>,
+): Pair<List<Node>, Map<String, Pt>> {
+    val (nodes, positions) = input
+    if (nodes.none { isLegacySampler(it) || it.type in PASSTHROUGH }) return input
+    val byId = nodes.associateBy { it.id }
+
+    /** Walk up a chain of the types that are about to disappear. */
+    fun upstream(from: Source?, vararg through: String): Node? {
+        var n = from?.let { byId[it.node] } ?: return null
+        while (n.type in through) {
+            val next = n.inputs[PASSTHROUGH[n.type]] ?: return n
+            n = byId[next.node] ?: return n
+        }
+        return n
+    }
+
+    val folded = nodes.map { node ->
+        if (!isLegacySampler(node)) return@map node
+        val params = node.params.toMutableMap()
+        val inputs = mutableMapOf<String, Source>()
+
+        // The prompt: an `sd.clip_encode` becomes `core.prompt` in place, so the
+        // wire only changes which PORT it lands on.
+        node.inputs["cond"]?.let { inputs["prompt"] = Source(it.node) }
+
+        // The picture: whatever fed the encoder, seen through the mask nodes.
+        val encoder = node.inputs["latent"]?.let { byId[it.node] }
+        val cut = encoder?.inputs?.get("image")?.let { byId[it.node] }
+        val photo = upstream(
+            encoder?.inputs?.get("image"),
+            "sd.vae_encode", "image.mask_crop", "image.mask",
+        )
+        if (photo != null) inputs["image"] = Source(photo.id)
+
+        // ⭐ The mask, the cut and the paste become params on this node. Each is
+        // read off the node that used to hold it, so a user's painting, their
+        // "only masked" and their "stitch" all survive.
+        if (cut?.type == "image.mask_crop") {
+            cut.params[MaskCropNode.ONLY_MASKED]?.let { params[MaskCropNode.ONLY_MASKED] = it }
+            cut.inputs["mask"]?.let { byId[it.node] }?.takeIf { it.type == "image.mask" }?.let { m ->
+                m.params[MaskNode.OPS]?.let { params[MaskNode.OPS] = it }
+                m.params["grow"]?.let { params["grow"] = it }
+                m.params["feather"]?.let { params["feather"] = it }
+            }
+        }
+        nodes.firstOrNull { it.type == "image.paste" }
+            ?.params?.get(PasteNode.STITCH)?.let { params[PasteNode.STITCH] = it }
+        // ⚠ The encoder's seed, under the name the fused node gives it. Dropping
+        // it would re-encode the source to a different latent and change a
+        // picture the user had reproduced from a seed.
+        encoder?.params?.get("seed")?.let { params["encode_seed"] = it }
+
+        // ⚠ The type changes here too: one `sd.sample` becomes one of four,
+        // and whether it is an inpaint is knowable only from what was folded in.
+        node.copy(
+            type = samplerTypeFor(node, inpaint = MaskNode.OPS in params),
+            params = params,
+            inputs = inputs,
+        )
+    }
+
+    // ⚠⚠ Now drop what is gone and rewire THROUGH it — the same act
+    // the pass above replaced performs, generalised: each dead type declares
+    // input a consumer should be re-pointed at.
+    val alive = folded.filterNot { it.type in PASSTHROUGH }
+    val aliveIds = alive.map { it.id }.toSet()
+    val liveById = folded.associateBy { it.id }
+
+    fun resolve(s: Source): Source? {
+        var cur: Source? = s
+        var hops = 0
+        while (cur != null && cur.node !in aliveIds) {
+            // ⚠ Bounded: a hand-edited file can name a cycle, and this walk runs
+            // while OPENING a workflow — a graph that will not run must still open.
+            if (hops++ > 64) return null
+            val n = liveById[cur.node] ?: return null
+            cur = n.inputs[PASSTHROUGH[n.type]]
+        }
+        return cur?.let { Source(it.node, it.port?.takeIf { p -> p != "image" && p != "mask" }) }
+    }
+
+    val rewired = alive.map { n ->
+        n.copy(inputs = n.inputs.mapNotNull { (port, src) -> resolve(src)?.let { port to it } }.toMap())
+    }
+    return rewired to positions.filterKeys { it in aliveIds }
+}
+
+/**
+ * ⚠⚠ An old `sd.sample`, told apart from the live one by its PORTS.
+ *
+ * The type string is the same and the file records nothing else that could
+ * separate them. The old node's inputs were `cond` and `latent`; the new one's
+ * are `prompt`, `image` and `mask`, so a single `cond` or `latent` wire is
+ * proof. ⚠ An old sampler with NOTHING wired is indistinguishable and is left
+ * alone — it could not render either way, and inventing a prompt for it would
+ * add a node the user never had.
+ */
+private fun isLegacySampler(node: Node): Boolean =
+    isOldSamplerType(node.type) && ("cond" in node.inputs || "latent" in node.inputs)
+
+/**
+ * ⚠⚠ Both spellings a file may carry for the sampler that existed before the
+ * fork: `sample` (pre-namespace) and `sd.sample` (post-namespace, pre-fork).
+ *
+ * ⚠ `sample` is NOT in [RENAMED] any more, because a rename maps one name to
+ * one name and this one maps to FOUR — the family decides which
+ * ([samplerTypeFor]). Leaving it in the map would have renamed it to a type
+ * that no longer exists.
+ */
+private fun isOldSamplerType(type: String): Boolean =
+    type == "sd.sample" || type == "sample"
+
+/**
+ * ⭐⭐ Which of the four types an old `sd.sample` becomes.
+ *
+ * ⚠⚠ The FAMILY comes from the checkpoint the node already names, never from
+ * whatever is selected today: a saved SDXL flow opened while an SD 1.5 model is
+ * picked must still be an SDXL flow. ⚠ An unknown id (a deleted custom model)
+ * falls back to SD 1.5 rather than refusing the file — a graph that will not
+ * run must still open.
+ *
+ * ⚠ The CAPABILITY comes from the graph's shape: a mask node or painted `ops`
+ * anywhere upstream means it was an inpaint.
+ */
+private fun samplerTypeFor(node: Node, inpaint: Boolean): String {
+    val fam = com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())?.family
+        ?: com.abrah.nightmare.Family.SD15
+    return com.abrah.nightmare.SdSampler.typeFor(fam, inpaint)
+}
+
+/**
+ * The one input a consumer should be re-pointed at when this type disappears —
+ * "the picture that went in comes out".
+ *
+ * ⚠ `sd.latent_blend` passes through `repaint`, not `base`: the blend's job was
+ * to let the sampled latent show through the mask, and the fused node does that
+ * internally, so the thing downstream wanted was always the render.
+ */
+private val PASSTHROUGH = mapOf(
+    "sd.vae_encode" to "image",
+    "sd.vae_decode" to "latent",
+    "sd.latent_blend" to "repaint",
+    "image.mask_crop" to "image",
+    "image.mask" to "image",
+    "image.paste" to "patch",
+)

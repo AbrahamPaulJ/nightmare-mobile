@@ -250,12 +250,18 @@ fun HarnessScreen(
                 }
                 ModelsScreen(
                     rows = vm.modelRows,
-                    busy = vm.busy,
+                    // ⚠ The OR: this screen's buttons mean "the app is doing
+                    // something long", which is what [working] is for.
+                    busy = vm.working,
                     error = vm.modelError,
                     onInstall = vm::installModel,
                     onCancel = vm::cancelModelInstall,
                     onDelete = vm::deleteModel,
-                    onSelect = vm::selectModel,
+                    onSelect = vm::askUse,
+                    pendingUse = vm.pendingUse,
+                    recipes = com.abrah.nightmare.canvas.RECIPES,
+                    onConfirmUse = vm::confirmUse,
+                    onCancelUse = vm::cancelUse,
                     importing = vm.importing,
                     importProgress = vm.importProgress,
                     onImport = { name ->
@@ -280,6 +286,9 @@ fun HarnessScreen(
                 com.abrah.nightmare.ui.ResultsScreen(
                     groups = vm.keptGroups,
                     results = vm.kept,
+                    favouritesOnly = vm.favouritesOnly,
+                    onFavouritesOnly = vm::showFavouritesOnly,
+                    onToggleFavourite = vm::toggleResultFavourite,
                     thumbnailFor = vm::thumbnailFor,
                     onOpenFlow = { vm.openResultFlow(it.id) },
                     onView = { vm.viewResult(it) },
@@ -309,7 +318,7 @@ fun HarnessScreen(
                     recipes = com.abrah.nightmare.canvas.RECIPES,
                     saved = vm.savedWorkflows,
                     error = vm.workflowError,
-                    onOpenRecipe = { vm.openWorkflow(it.build()) },
+                    onOpenRecipe = vm::openRecipe,
                     onOpenSaved = vm::openSaved,
                     onDeleteSaved = vm::deleteSaved,
                     onRenameSaved = vm::renameWorkflow,
@@ -332,6 +341,7 @@ fun HarnessScreen(
             if (vm.viewingSet.isNotEmpty()) {
                 BackHandler { vm.closeResult() }
                 com.abrah.nightmare.ui.ResultViewer(
+                    onToggleFavourite = vm::toggleResultFavourite,
                     items = vm.viewingSet,
                     startIndex = vm.viewingIndex,
                     // ⚠ The FULL picture, not the list thumbnail: this is the
@@ -422,9 +432,33 @@ fun HarnessScreen(
                     // "QteaMix (idle)" over a t2v graph described a model that
                     // will never be loaded by anything on the canvas.
                     !l.graphNeedsCheckpoint ->
-                        if (l.graphIsVideo) "${com.abrah.nightmare.npu.NpuFiles.LABEL} (idle)"
-                        else "no checkpoint needed"
-                    else -> "${vm.modelLabel} (idle)"
+                        if (l.graphIsVideo) {
+                            // ⚠ Not "(idle)" while a clip is rendering: the
+                            // contexts are mapped a few seconds in, and the
+                            // window before that was described as idle.
+                            com.abrah.nightmare.npu.NpuFiles.LABEL +
+                                if (l.running) " (loading…)" else " (idle)"
+                        } else "no checkpoint needed"
+                    // ⭐⭐⭐ Nothing resident — so name what THIS GRAPH will load.
+                    //
+                    // ⚠⚠ It said `vm.modelLabel`, the global picker. Since a node
+                    // can carry its own checkpoint (2026-09-15) that is simply a
+                    // different question, and changing a sampler's model left the
+                    // bar naming the old one. `graphModels` is the graph's own
+                    // answer; the rule is the one the branch above already
+                    // follows.
+                    else -> {
+                        val names = l.graphModels
+                        val head = names.firstOrNull() ?: vm.modelLabel
+                        // ⚠ A graph may name TWO checkpoints now, and the bar has
+                        // one line. Say the first and how many more, rather than
+                        // picking one and implying it is the only one.
+                        val more = if (names.size > 1) " +${names.size - 1}" else ""
+                        // ⚠ "loading…" rather than "(idle)" while a run is in
+                        // flight — a backend launch is 2.3-5 s and the poll is
+                        // every 2 s, so the launch window read as idle.
+                        head + more + if (l.running) " (loading…)" else " (idle)"
+                    }
                 }
                 "$holding  ·  $free/$total GB free"
             },
@@ -447,10 +481,43 @@ fun HarnessScreen(
             onSaveImage = vm::saveImage,
             onShareImage = vm::shareNodeImage,
             onKeepImage = vm::toggleKeepResult,
+            // ⭐ Same action, one flag different — [PictureActions] has the table.
+            onStarImage = { id -> vm.toggleKeepResult(id, favourite = true) },
+            isFavourite = { id -> vm.isFavourite(id) },
+            keepDisabledReason = vm.keepDisabledReason,
+            onDisabledKeep = { why -> vm.say(why) },
             isKept = vm::isKept,
             onClearOutput = vm::clearOutput,
             onSave = vm::saveWorkflowAs,
             savedAs = vm.currentWorkflowName,
+            suggestedName = vm.suggestedFlowName(),
+            // ⚠⚠⚠ **INSTALLED only** — downloaded or imported, nothing else.
+            //
+            // ⚠⚠ This is a REVERSAL, and both halves were the user's call on the
+            // same day. It first listed every catalogue entry with the absent
+            // ones labelled `· not installed`, so that someone looking for SDXL
+            // could tell a missing FEATURE from a missing MODEL. With fifteen
+            // checkpoints and two installed, that made a picker where thirteen
+            // of fifteen entries were refusals — asked for as *"only show
+            // downloaded/imported models thank you very much"*, 2026-09-15.
+            //
+            // ⚠ What that reasoning was protecting is now carried by the Models
+            // tab, which lists the whole catalogue and is one tap away; a node's
+            // picker is for choosing between what the phone can actually run.
+            installedModels = vm.modelRows
+                .filter { it.installed }
+                .map {
+                    com.abrah.nightmare.canvas.CheckpointChoice(
+                        it.spec.id, it.spec.label, it.spec.family,
+                    )
+                },
+            onSetModel = vm::setNodeModel,
+            plannedLoads = vm.plannedLoads,
+            pendingSwap = vm.pendingSwap,
+            onConfirmSwap = { swap, takeRecipe, takePrompt ->
+                vm.applyNodeModel(swap.nodeId, swap.spec, swap.newType, takeRecipe, takePrompt)
+            },
+            onCancelSwap = vm::cancelSwap,
         )
         // ⚠ A dialog, so it draws OVER the canvas rather than replacing it: the
         // question it answers ("why did that fail on my phone") is asked while
@@ -511,7 +578,7 @@ fun HarnessScreen(
 private fun HarnessPane(vm: HarnessViewModel) {
     HarnessContent(
         state = vm.backend,
-        busy = vm.busy,
+        busy = vm.working,
         log = vm.log,
         image = vm.image,
         onStart = vm::startBackend,
@@ -832,7 +899,7 @@ private fun PreviewUp() = NightmareTheme {
         state = BackendState.UP, busy = false,
         log = listOf(
             LogLine("12:04:11", "/health 200 in 71 ms"),
-            LogLine("12:04:09", "encode_text -- not wired yet (step 2.1)", bad = true),
+            LogLine("12:04:09", "encode_text — not wired yet (step 2.1)", bad = true),
         ),
         image = null,
         onStart = {}, onStop = {},
@@ -853,7 +920,7 @@ private fun PreviewDown() = NightmareTheme {
             LogLine("12:04:11", "  no backend on :8085. Stage and launch one first.", bad = true),
             LogLine(
                 "12:04:11",
-                "/health unreachable after 6001 ms -- ConnectException: failed to " +
+                "/health unreachable after 6001 ms — ConnectException: failed to " +
                     "connect to /127.0.0.1 (port 8085) after 6000ms",
                 bad = true,
             ),
@@ -889,7 +956,7 @@ private fun PreviewSampling() = NightmareTheme {
     HarnessContent(
         state = BackendState.UP, busy = true,
         log = listOf(
-            LogLine("12:04:12", "sample: 20 steps, seed 42 -- streaming"),
+            LogLine("12:04:12", "sample: 20 steps, seed 42 — streaming"),
         ),
         image = null,
         onStart = {}, onStop = {},

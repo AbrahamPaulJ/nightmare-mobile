@@ -25,8 +25,8 @@ class CanvasStateTest {
 
     private val graph = Graph(
         listOf(
-            Node("s", "sd.sample", mapOf("model" to "m", "width" to "512", "height" to "512")),
-            Node("d", "sd.vae_decode", mapOf("model" to "m")),
+            Node("s", "sd15.sample", mapOf("model" to "m", "width" to "512", "height" to "512")),
+            Node("d", "core.output", mapOf("save" to "false")),
         )
     )
 
@@ -254,14 +254,14 @@ class CanvasStateTest {
     @Test
     fun settingAParamLeavesLayoutAndWiringAlone() {
         val wired = state.copy(
-            workflow = state.workflow.copy(graph = graph.connected("d", "latent", "s"))
+            workflow = state.workflow.copy(graph = graph.connected("d", "media", "s"))
         )
         val next = wired.setParam("s", "seed", "77")
         assertEquals(wired.workflow.positions, next.workflow.positions)
         // ⚠ Bare: this wire was made by `connected(.., "s")`, not by the canvas,
         // so it names no output port. That IS the sole-output spelling, and a
         // param edit must not quietly resolve it into something else.
-        assertEquals(Source("s"), next.workflow.graph.byId["d"]!!.inputs["latent"])
+        assertEquals(Source("s"), next.workflow.graph.byId["d"]!!.inputs["media"])
     }
 
     /**
@@ -270,7 +270,7 @@ class CanvasStateTest {
      */
     @Test
     fun anEditChangesTheCacheKey() {
-        val type = types.getValue("sd.sample")
+        val type = types.getValue("sd15.sample")
         val before = com.abrah.nightmare.cacheKey(
             "sample", type.version, type.effectiveParams(graph.byId.getValue("s")), emptyMap(),
         )
@@ -285,9 +285,9 @@ class CanvasStateTest {
 
     @Test
     fun addingANodePlacesItAndOpensItsInspector() {
-        val next = state.addNode(types.getValue("sd.vae_decode"), Pt(100f, 200f))
+        val next = state.addNode(types.getValue("core.output"), Pt(100f, 200f))
         val added = next.workflow.graph.nodes.last()
-        assertEquals("sd.vae_decode", added.type)
+        assertEquals("core.output", added.type)
         assertEquals(Pt(100f, 200f), next.workflow.positions[added.id])
         assertEquals(added.id, next.editing)
         // ⚠ …and does not put the canvas into multi-select on the way.
@@ -301,8 +301,8 @@ class CanvasStateTest {
      */
     @Test
     fun aSecondNodeOfTheSameTypeGetsItsOwnId() {
-        val once = state.addNode(types.getValue("sd.vae_decode"), Pt(0f, 0f))
-        val twice = once.addNode(types.getValue("sd.vae_decode"), Pt(0f, 0f))
+        val once = state.addNode(types.getValue("core.output"), Pt(0f, 0f))
+        val twice = once.addNode(types.getValue("core.output"), Pt(0f, 0f))
         val ids = twice.workflow.graph.nodes.map { it.id }
         assertEquals(ids.size, ids.toSet().size)
     }
@@ -314,9 +314,9 @@ class CanvasStateTest {
      */
     @Test
     fun anAddedNodeCarriesItsDefaults() {
-        val next = state.addNode(types.getValue("sd.sample"), Pt(0f, 0f))
+        val next = state.addNode(types.getValue("sd15.sample"), Pt(0f, 0f))
         val added = next.workflow.graph.nodes.last()
-        for (w in types.getValue("sd.sample").widgets) {
+        for (w in types.getValue("sd15.sample").widgets) {
             assertNotNull("no value for ${w.name}", added.params[w.name])
         }
     }
@@ -329,7 +329,7 @@ class CanvasStateTest {
     @Test
     fun removingANodeAlsoRemovesTheWiresIntoIt() {
         val wired = state.copy(
-            workflow = state.workflow.copy(graph = graph.connected("d", "latent", "s"))
+            workflow = state.workflow.copy(graph = graph.connected("d", "media", "s"))
         )
         val next = wired.removeNode("s")
         assertNull(next.workflow.graph.byId["s"])
@@ -355,7 +355,7 @@ class CanvasStateTest {
 
     @Test
     fun theGraphStillSortsAfterAnAddAndARemove() {
-        val next = state.addNode(types.getValue("sd.vae_decode"), Pt(0f, 0f)).removeNode("s")
+        val next = state.addNode(types.getValue("core.output"), Pt(0f, 0f)).removeNode("s")
         assertTrue(
             "the graph no longer sorts: ${(com.abrah.nightmare.topoSort(next.workflow.graph) as? com.abrah.nightmare.Order.Broken)?.why}",
             com.abrah.nightmare.topoSort(next.workflow.graph) is com.abrah.nightmare.Order.Ok,
@@ -373,7 +373,7 @@ class CanvasStateTest {
     @Test
     fun aCompletedWireLandsInTheGraph() {
         val next = wire("s", 0, "d", 0)
-        assertEquals(Source("s", "latent"), next.workflow.graph.byId["d"]!!.inputs["latent"])
+        assertEquals(Source("s", "image"), next.workflow.graph.byId["d"]!!.inputs["media"])
         assertEquals(Gesture.Idle, next.gesture)
         assertNull(next.message)
     }
@@ -388,7 +388,7 @@ class CanvasStateTest {
         val start = box("d").inputPort(0)
         val end = box("s").outputPort(0)
         val next = state.press(start, types).drag(end, Pt(0f, 0f), types).release(end, types)
-        assertEquals(Source("s", "latent"), next.workflow.graph.byId["d"]!!.inputs["latent"])
+        assertEquals(Source("s", "image"), next.workflow.graph.byId["d"]!!.inputs["media"])
     }
 
     /** ⭐ The refusal is computed while the finger is down, not on release. */
@@ -492,14 +492,14 @@ class CanvasStateTest {
     /** ⚠ One wire per input: a second drop replaces rather than adds. */
     @Test
     fun connectingAnOccupiedInputReplacesTheWire() {
-        val g = graph.connected("d", "latent", "s").connected("d", "latent", "d2")
-        assertEquals(Source("d2"), g.byId["d"]!!.inputs["latent"])
+        val g = graph.connected("d", "media", "s").connected("d", "media", "d2")
+        assertEquals(Source("d2"), g.byId["d"]!!.inputs["media"])
         assertEquals(1, g.byId["d"]!!.inputs.size)
     }
 
     @Test
     fun disconnectingRemovesOnlyThatPort() {
-        val g = graph.connected("d", "latent", "s").disconnected("d", "latent")
+        val g = graph.connected("d", "media", "s").disconnected("d", "media")
         assertTrue(g.byId["d"]!!.inputs.isEmpty())
     }
 
@@ -606,7 +606,7 @@ class CanvasStateTest {
     fun tappingAnInteractiveNodesPictureOpensItsEditor() {
         val cropGraph = Graph(
             listOf(
-                Node("photo", "image.load", mapOf("uri" to "/x.png")),
+                Node("photo", "core.image", mapOf("uri" to "/x.png")),
                 Node("frame", "image.crop", inputs = sources("image" to "photo")),
             )
         )
@@ -709,7 +709,7 @@ class CanvasStateTest {
     fun aPhotoWiredStraightIntoAnEncoderIsRefusedAtTheDrop() {
         val g = Graph(
             listOf(
-                Node("photo", "image.load", mapOf("uri" to "/a.png")),
+                Node("photo", "core.image", mapOf("uri" to "/a.png")),
                 Node(
                     "enc", "sd.vae_encode",
                     mapOf("model" to "m", "width" to "512", "height" to "512", "seed" to "1"),
@@ -750,15 +750,107 @@ class CanvasStateTest {
      * ⚠⚠ …and NO saved view means a FRESH one, never the view the user happened
      * to be at. Carrying the old offset over is exactly what opened a workflow
      * onto blank space.
+     *
+     * ⚠ "Fresh" is a view that FRAMES the graph, not `Viewport()` — this used
+     * to assert the identity viewport and passed only because the fit was a
+     * no-op (`REFERENCE_WIDTH` was 1100 against a 411dp screen).
      */
     @Test
-    fun noSavedViewMeansTheDefaultOneNotTheCurrent() {
+    fun noSavedViewMeansAFittedOneNotTheCurrent() {
         val somewhere = state.copy(
             viewport = Viewport(Pt(-4000f, 2500f), 0.4f), panLocked = true,
         )
         val back = somewhere.withView(null)
-        assertEquals(Viewport(), back.viewport)
+        assertTrue("the stale offset must not survive", back.viewport.offset.x == 0f)
+        assertTrue("nor the stale zoom", back.viewport.scale != 0.4f)
         assertTrue(!back.panLocked)
+    }
+
+    /**
+     * ⭐⭐ **Every node of a recipe lands on the screen**, which is the whole
+     * job of the fit — asked for from the phone, 2026-09-15: *"all nodes fit on
+     * the screen"*.
+     *
+     * ⚠⚠ The right-most node is the OUTPUT and an output is 380 wide. Measuring
+     * it at [Sizes.NODE_WIDTH] (190) put its right half past the edge, which is
+     * a node nobody knows is there.
+     */
+    @Test
+    fun aFittedViewPutsEveryRecipeOnScreen() {
+        // ⚠⚠ 360, the NARROW baseline `fitted` targets — not this phone's
+        // 411. Android's screen-zoom setting raises the density and so lowers
+        // the dp width, and a layout checked only against the developer's own
+        // untouched phone overflows for anyone who made their UI bigger.
+        val screen = 360f
+        for (recipe in RECIPES) {
+            val w = recipe.build()
+            val v = CanvasState(w).withView(null).viewport
+            val right = w.positions.values.maxOf { it.x } + Sizes.PROSE_NODE_WIDTH
+            assertTrue(
+                "${recipe.id}: right edge at ${v.toScreen(Pt(right, 0f)).x}dp on a ${screen}dp screen",
+                v.toScreen(Pt(right, 0f)).x <= screen,
+            )
+            // ⚠ …and the first row below the top bar rather than behind it.
+            val top = w.positions.values.minOf { it.y }
+            // ⚠ Clear of a THREE-row top bar (tabs + flow name + load line),
+            // which is ~125dp. The clearance is `TOP * scale`, so it is dp on
+            // every device — the density cancels.
+            assertTrue(
+                "${recipe.id}: top row at ${v.toScreen(Pt(0f, top)).y}dp, under the bar",
+                v.toScreen(Pt(0f, top)).y >= 130f,
+            )
+        }
+    }
+
+    /**
+     * ⭐⭐⭐ **The feeders share a column and the wires never cross** — the
+     * layout the user arranged by hand and asked every recipe to copy.
+     *
+     * ⚠⚠ The crossing this rules out is specific: `prompt` and `photo` both
+     * feed the renderer, whose `prompt` port sits ABOVE its `image` port. Put
+     * the two feeders in different columns — which is what a diagonal does —
+     * and one wire has to pass the other.
+     */
+    @Test
+    fun theFeedersShareAColumnInPortOrder() {
+        for (recipe in RECIPES) {
+            val w = recipe.build()
+            val feeders = w.graph.nodes
+                .filter { it.type == "core.prompt" || it.type == "core.image" }
+                .map { it.id }
+            val xs = feeders.map { w.positions.getValue(it).x }.toSet()
+            assertEquals("${recipe.id}: feeders must share one column", 1, xs.size)
+
+            // ⚠ A renderer's feeders, top to bottom, in the renderer's port order.
+            val worker = w.graph.nodes.first { n -> n.inputs.keys.any { it in setOf("prompt", "image") } }
+            val ys = types.getValue(worker.type).inputs
+                .map { it.name }
+                .mapNotNull { worker.inputs[it] }
+                .map { w.positions.getValue(it.node).y }
+            assertEquals("${recipe.id}: wires cross", ys.sorted(), ys)
+        }
+    }
+
+    /**
+     * ⚠⚠ And every wire still points FORWARD: a source's right edge is left of
+     * its destination's left edge. This is what the diagonal was for, and losing
+     * it would be the cost of columns done wrong.
+     */
+    @Test
+    fun everyRecipeWireRunsForward() {
+        for (recipe in RECIPES) {
+            val w = recipe.build()
+            for (n in w.graph.nodes) for ((port, src) in n.inputs) {
+                val from = w.positions.getValue(src.node)
+                val to = w.positions.getValue(n.id)
+                val width = types[w.graph.byId.getValue(src.node).type]?.defaultWidth
+                    ?: Sizes.NODE_WIDTH
+                assertTrue(
+                    "${recipe.id}: ${src.node} -> ${n.id}.$port runs backwards",
+                    from.x + width <= to.x,
+                )
+            }
+        }
     }
 
     // --- which seed made the picture ----------------------------------------
@@ -766,7 +858,7 @@ class CanvasStateTest {
     /** A decoder wired to a sampler, which is every txt2img graph. */
     private val decoded = Graph(
         listOf(
-            Node("s", "sd.sample", mapOf("seed" to "77")),
+            Node("s", "sd15.sample", mapOf("seed" to "77")),
             Node("d", "sd.vae_decode", inputs = sources("latent" to "s")),
         )
     )
@@ -790,7 +882,7 @@ class CanvasStateTest {
     fun aRolledSeedWinsOverTheZeroThatAskedForIt() {
         val rolling = Graph(
             listOf(
-                Node("s", "sd.sample", mapOf("seed" to "0")),
+                Node("s", "sd15.sample", mapOf("seed" to "0")),
                 Node("d", "sd.vae_decode", inputs = sources("latent" to "s")),
             )
         )
@@ -806,7 +898,7 @@ class CanvasStateTest {
     fun aLoadedPhotoHasNoSeed() {
         val photo = Graph(
             listOf(
-                Node("src", "image.load"),
+                Node("src", "core.image"),
                 Node("c", "image.crop", inputs = sources("image" to "src")),
             )
         )
@@ -882,7 +974,7 @@ class CanvasStateTest {
             Workflow(
                 Graph(
                     listOf(
-                        Node("s", "sd.sample", mapOf("model" to "m", "width" to "512", "height" to "512")),
+                        Node("s", "sd15.sample", mapOf("model" to "m", "width" to "512", "height" to "512")),
                         Node("d", "sd.vae_decode", mapOf("model" to "m"), sources("latent" to "s")),
                     )
                 ),
@@ -917,7 +1009,7 @@ class CanvasStateTest {
 
     private val wiredGraph = Graph(
         listOf(
-            Node("s", "sd.sample", mapOf("model" to "m", "width" to "512", "height" to "512")),
+            Node("s", "sd15.sample", mapOf("model" to "m", "width" to "512", "height" to "512")),
             Node("d", "sd.vae_decode", mapOf("model" to "m"), sources("latent" to "s")),
         )
     )
@@ -1015,7 +1107,7 @@ class CanvasStateTest {
     fun aCropBetweenThemMakesTheWireLegal() {
         val g = Graph(
             listOf(
-                Node("photo", "image.load", mapOf("uri" to "/a.png")),
+                Node("photo", "core.image", mapOf("uri" to "/a.png")),
                 Node("frame", "image.crop", inputs = sources("image" to "photo")),
                 Node(
                     "enc", "sd.vae_encode",

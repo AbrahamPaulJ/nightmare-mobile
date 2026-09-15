@@ -47,7 +47,7 @@
     <string name="theme_light">浅色</string>
     <string name="theme_canvas_note">画布始终以深色绘制 — 它有自己的配色</string>
     <string name="community_title">自制节点</string>
-    <string name="community_intro">一个节点由两个文件组成：一份声明其端口与参数的清单，和一段运行它的脚本。打包成 zip 后从「流程」导入，或把文件夹推送到本应用的插件目录。无需工具链、无需编译、无需新版本。</string>
+    <string name="community_intro">一个节点由两个文件组成：一份声明其端口与参数的清单，和一段运行它的脚本。打包成 zip 后在上方导入节点包，或把文件夹推送到本应用的插件目录。无需工具链、无需编译、无需新版本。</string>
     <string name="community_files_title">这两个文件</string>
     <string name="community_files_body">node.json 声明包 id、节点类型、输入与输出、控件，以及需要哪些宿主操作权限。\n\nindex.js 调用 __nm.register(&lt;pack&gt;:&lt;Type&gt;, { run: fn })。你的 run(ctx, inputs, widgets) 返回最后一个宿主操作的结果。</string>
     <string name="community_ops_title">ctx.host 可调用的操作</string>
@@ -59,13 +59,14 @@
     <string name="community_cannot_title">目前还不能做什么</string>
     <string name="community_cannot_body">宿主没有运行模型的操作，因此节点无法做分割、检测或估计。那属于下一层级，尚未实现。\n\n脚本运行在 QuickJS 沙箱中，权限默认拒绝，因此插件包无法访问网络或你的文件。但目前还没有对运行时长的限制。</string>
     <string name="community_reference">参考</string>
-    <string name="community_repo">github.com/AbrahamPaulJ/nightmare-mobile\n\nexamples/ 目录中有四个可用的示例包，从单一操作的封装到含两个节点的工具包。README 涵盖与本页相同的内容，并附完整清单。\n\n该仓库目前为私有，只有获得访问权限后链接才有效。</string>
+    <string name="community_repo">github.com/AbrahamPaulJ/nightmare-mobile\n\nexamples/ 目录中有四个可用的示例包，从单一操作的封装到含两个节点的工具包。README 涵盖与本页相同的内容，并附完整清单。</string>
     <string name="community_experimental">实验性。插件格式在版本之间仍可能变动，且导入的包尚无校验机制，请像对待任何来路不明的代码那样谨慎导入。</string>
 
-    <string name="flows_import">导入</string>
-    <string name="flows_import_note">别人发给你的流程（.json），或一个节点包（.zip）</string>
+    <string name="flows_import">导入流程</string>
+    <string name="flows_import_note">别人发给你的流程（.json）。它会在画布上打开。</string>
     <string name="flows_import_flow">导入</string>
-    <string name="flows_import_pack">节点</string>
+    <string name="flows_import_pack">导入节点包</string>
+    <string name="pack_import_note">一个 JavaScript 节点的 .zip 包。它们会出现在调色板中，与内置节点并列。</string>
     <string name="flows_import_warning">⚠ 节点包会运行自己的代码 — 请只导入你信任的包</string>
     <string name="flows_recommended">推荐</string>
     <string name="save">保存</string>
@@ -77,13 +78,12 @@
 
     <string name="open_flow">打开流程</string>
     <string name="close">关闭</string>
-    <string name="cd_forget_result">删除这一张</string>
+    <string name="cd_delete_result">删除这一张</string>
     <string name="cd_open_fullscreen">点击全屏查看</string>
 
     <string name="download">下载</string>
     <string name="download_mb">下载 %1$d MB</string>
     <string name="delete">删除</string>
-    <string name="remove">移除</string>
     <string name="use">使用</string>
     <string name="in_use">使用中</string>
     <string name="rename_node">节点名称</string>
@@ -99,7 +99,9 @@
     <string name="shape_is_free">此模型仅渲染单一尺寸并裁剪成比例，无需重新加载。</string>
     <string name="unsupported">不支持</string>
     <string name="installed_mb">已安装 · %1$d MB</string>
-    <string name="not_installed_mb">未安装  需下载 %1$d MB</string>
+    <string name="in_use_mb">使用中 · %1$d MB</string>
+    <string name="incomplete_missing">不完整 · 缺少 %1$s</string>
+    <string name="not_installed_mb">未安装 · 需下载 %1$d MB</string>
     <string name="cannot_run_it">本机无法运行</string>
     <string name="upscalers">放大模型</string>
     <string name="upscalers_note">每个 8-24 MB。在流程中添加放大节点即可使用。</string>

@@ -189,18 +189,11 @@ class MaskTest {
         assertFalse(st.isEmpty)
     }
 
-    /** ⚠ The recipe must wire `base`/`repaint`/`mask` the right way round. */
-    @Test
-    fun theInpaintRecipeWiresBlendCorrectly() {
-        val g = com.abrah.nightmare.canvas.inpaintWorkflow().graph
-        val blend = g.byId["blend"]!!
-        assertEquals("encode", blend.inputs["base"]?.node)
-        assertEquals("sample", blend.inputs["repaint"]?.node)
-        assertEquals("mask", blend.inputs["mask"]?.node)
-        // ⚠⚠ base is the ORIGINAL. Wiring the sampled latent here replaces
-        // everything except what was painted — a plausible picture, silently
-        // wrong.
-        assertEquals("frame", g.byId["encode"]!!.inputs["image"]?.node)
-        assertEquals("frame", g.byId["mask"]!!.inputs["image"]?.node)
-    }
+    /**
+     * ⚠⚠ **Moved 2026-09-15**, not deleted: the thing it protects — base is the
+     * SOURCE and repaint is the RENDER, and swapping them replaces the region
+     * you meant to keep — is now an argument order inside one node rather than a
+     * wire on the canvas. ⇒
+     * [com.abrah.nightmare.FusedSamplerTest.theBlendTakesTheSourceAsBaseAndTheRenderAsRepaint].
+     */
 }

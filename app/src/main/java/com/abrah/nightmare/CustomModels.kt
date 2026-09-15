@@ -365,11 +365,11 @@ object CustomModels {
                     "ok   ${spec.id} -> ${spec.family.label} ${spec.native}, " +
                         "${spec.bytesOnDisk(context) shr 20} MB"
                 } else {
-                    "warn ${spec.id} incomplete -- missing ${missing.joinToString()}"
+                    "warn ${spec.id} incomplete — missing ${missing.joinToString()}"
                 }
             } catch (e: Exception) {
                 // ⚠ The zip is KEPT on failure so a retry needs no second push.
-                "FAIL $name -- ${e.message}"
+                "FAIL $name — ${e.message}"
             }
         }
     }

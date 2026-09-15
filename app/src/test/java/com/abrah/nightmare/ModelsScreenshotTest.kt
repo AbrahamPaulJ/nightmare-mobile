@@ -75,7 +75,7 @@ class ModelsScreenshotTest {
             selected = spec.id == selected,
             progress = if (spec.id == downloading && build != null) {
                 ModelInstaller.Progress(
-                    "downloading ${spec.label}", (build.bytes * fraction).toLong(), build.bytes,
+                    "downloading", (build.bytes * fraction).toLong(), build.bytes,
                 )
             } else {
                 null
@@ -171,7 +171,8 @@ class ModelsScreenshotTest {
         ModelsScreen(
             rows = rows(installed = setOf(V1_MODEL), selected = V1_MODEL),
             busy = false,
-            error = "size mismatch for QteaMix_qnn2.28_8gen2.zip: 913410048 != 1056615116",
+            error = "the download stopped short — 871 of 1007 MB arrived " +
+                "(QteaMix_qnn2.28_8gen2.zip). Download again to resume.",
             onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
         )
     }

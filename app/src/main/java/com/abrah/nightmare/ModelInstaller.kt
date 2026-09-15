@@ -115,7 +115,7 @@ object ModelInstaller {
         dest: File,
         onProgress: (Progress) -> Unit,
         isCancelled: () -> Boolean,
-    ) = fetch(spec.url(build), dest, build.bytes, "downloading " + spec.label, onProgress, isCancelled)
+    ) = fetch(spec.url(build), dest, build.bytes, "downloading", onProgress, isCancelled)
 
     /**
      * ⭐⭐ One resumable, size-checked GET — the only downloader in the app.
@@ -188,8 +188,12 @@ object ModelInstaller {
         }
 
         if (dest.length() != bytes) {
+            // ⚠ Said for a PERSON — it reaches the Models screen verbatim. It
+            // printed `size mismatch for X.zip: 913410048 != 1056615116` until the
+            // design review, 2026-09-15; the file name stays for the harness log.
             throw IOException(
-                "size mismatch for ${dest.name}: ${dest.length()} != $bytes"
+                "the download stopped short — ${dest.length() shr 20} of ${bytes shr 20} MB " +
+                    "arrived (${dest.name}). Download again to resume."
             )
         }
     }

@@ -22,7 +22,7 @@ class PreviewSigTest {
     /** photo -> frame -> encode: two free nodes and one that needs the backend. */
     private val graph = Graph(
         listOf(
-            Node("photo", "image.load", mapOf("uri" to "/a.png")),
+            Node("photo", "core.image", mapOf("uri" to "/a.png")),
             Node("frame", "image.crop", mapOf("w" to "0.5"), sources("image" to "photo")),
             Node(
                 "encode", "sd.vae_encode",
@@ -94,7 +94,7 @@ class PreviewSigTest {
     @Test
     fun rewiringMovesTheSignature() {
         val other = graph.copy(
-            nodes = graph.nodes + Node("photo2", "image.load", mapOf("uri" to "/c.png"))
+            nodes = graph.nodes + Node("photo2", "core.image", mapOf("uri" to "/c.png"))
         )
         val before = previewSig(freeAncestry(other, "frame", types)!!)
         val after = previewSig(
@@ -152,7 +152,7 @@ class PreviewSigTest {
     fun anUpscaleIsNeverRunForAPreview() {
         val g = Graph(
             listOf(
-                Node("photo", "image.load", mapOf("uri" to "/a.png")),
+                Node("photo", "core.image", mapOf("uri" to "/a.png")),
                 Node("up", "image.upscale", mapOf("upscaler" to "upscaler_anime"),
                     sources("image" to "photo")),
             )
@@ -175,7 +175,7 @@ class PreviewSigTest {
     fun theOutputNodeIsNotAPreviewTarget() {
         val g = Graph(
             listOf(
-                Node("photo", "image.load", mapOf("uri" to "/a.png")),
+                Node("photo", "core.image", mapOf("uri" to "/a.png")),
                 Node("out", "image.output", mapOf("save" to "true"), sources("image" to "photo")),
             )
         )

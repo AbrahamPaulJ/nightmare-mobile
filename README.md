@@ -45,15 +45,24 @@ img2img, inpainting, no cloud, private.
   in a sheet. Not a desktop editor shrunk down.
 - **Text to video, on the NPU.** A prompt in, 49 frames at 1024x640 out — about two seconds
   of clip in about 25 seconds on a gen 4. ⚠ See the requirements above: ~8.6 GB of models and
-  an 8 Elite or 8 Elite Gen 5, verified on gen 4 only. **Image to video** animates a photo instead, and is the faster
-  of the two. The clip loops on the node that made it and plays full screen.
-- **Real decomposition.** `encode_text`, `sample`, `vae_encode`, `vae_decode` and
-  `latent_blend` are separate nodes, and the video path is built the same way — its prompt,
-  first frame, encode, sampler and decoder are five nodes you can rewire. Conditionings and
-  latents move between them as handles that never cross the wire, so a 512 image costs about
-  40 bytes of JSON instead of 780 KB.
-- **Recipes to start from.** Text to image, image to image, upscale a photo, inpainting where
-  you paint the area to redo, and both video flows.
+  an 8 Elite or 8 Elite Gen 5, verified on gen 4 only. **Image to video** animates a photo
+  instead, and is the faster of the two — same three nodes, with a photo wired in. The clip
+  loops on the node that made it and plays full screen.
+- **Seven node types, not seventy.** A flow is `prompt → sample → output`, plus a photo
+  where one is wanted. Cropping, masking, encoding, sampling, blending and decoding happen
+  **inside** the sampler, because there is no runtime compiler on an NPU and nobody can
+  recombine the inside of a pipeline anyway — so the whole process is one node. Inpainting
+  used to be ten nodes and is four.
+- **The ops are still decomposed underneath.** `encode_text`, `vae_encode`, `sample`,
+  `latent_blend` and `vae_decode` are separate endpoints, and conditionings and latents move
+  between them as handles that never cross the wire — a 512 image costs about 40 bytes of
+  JSON instead of 780 KB. A plugin reaches the ops; a person reaches the nodes.
+- **Two checkpoints in one graph.** Each sampler carries its own, and the executor orders the
+  run to minimise backend relaunches — finish everything under the model already loaded, then
+  switch. The run bar says what the relaunches will cost before you press Run.
+- **Recipes to start from.** Text to image, image to image, inpainting where you paint the
+  area to redo, upscale a photo, and both video flows — each laid out so no wire crosses and
+  the whole graph fits the screen when it opens.
 - **Batching.** Arm `seed`, `steps`, `cfg`, `denoise` or `scheduler` on the sampler and Run
   sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph
   that produced it.
@@ -62,8 +71,10 @@ img2img, inpainting, no cloud, private.
 - **Pick your size.** SD 1.5 renders any resolution its checkpoint ships a patch for — 512²
   up to 1024², portrait and landscape; SDXL crops its fixed 1024² canvas to the shape you
   choose.
-- **Bring your own model.** Fifteen checkpoints in the catalogue, or import a converted one
-  as a zip. The app carries every HTP architecture tier and picks the build your chip can
+- **Bring your own model.** Fifteen checkpoints in the catalogue — five SD 1.5 and ten SDXL
+  — or import a converted one as a zip. Each sampler has its own checkpoint picker, grouped
+  by family, listing what is actually on the phone; switching family rewrites that node and
+  keeps every wire. The app carries every HTP architecture tier and picks the build your chip can
   actually load. The video models are their own download under Models, resumable per file
   because 8.6 GB over a phone connection will be interrupted.
 - **Bring your own nodes.** A manifest and a script, no toolchain, no app release.

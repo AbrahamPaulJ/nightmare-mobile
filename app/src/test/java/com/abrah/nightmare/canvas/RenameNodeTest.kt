@@ -25,7 +25,7 @@ class RenameNodeTest {
         val g = Graph(
             listOf(
                 Node("text", "sd.clip_encode", mapOf("prompt" to "a cat", "negative" to "")),
-                Node("sample", "sd.sample", mapOf("model" to "m"), sources("cond" to "text")),
+                Node("sample", "sd15.sample", mapOf("model" to "m"), sources("cond" to "text")),
                 Node("decode", "sd.vae_decode", mapOf("model" to "m"), sources("latent" to "sample")),
             )
         )
@@ -169,55 +169,94 @@ class RenameNodeTest {
     }
 
     /**
-     * ⭐⭐ Dragging the node taller gives the PROMPTS the room, not the padding.
+     * ⭐⭐ The drag decides the height, and it starts from the text's own.
      *
-     * ⚠ Height is never stored as a number — `proseLines` is a LINE COUNT the
-     * derivation consumes, for the same reason `sizes` is width-only: two
-     * stored dimensions can disagree, and a derived one cannot.
+     * ⚠⚠ A box HUGS its content ([Workflow.proseLinesOf]) and the drag raises
+     * that as a FLOOR, so dragging taller always grows it. The default went to
+     * the maximum briefly on 2026-09-15 and came back: at the max every box was
+     * twelve lines whatever it held, which is the empty space the same user had
+     * asked to remove an hour earlier.
      */
     @Test
-    fun draggingTallerGivesTheProseMoreLines() {
-        val long = "a ".repeat(400)
-        val g = Graph(listOf(Node("text", "sd.clip_encode", mapOf("prompt" to long, "negative" to ""))))
-        val short = Workflow(g, mapOf("text" to Pt(0f, 0f)))
-        val tall = short.proseResized("text", Sizes.PROSE_MAX_LINES)
-        val a = layout(short, NODE_TYPES).first()
+    fun draggingTallerGrowsTheProse() {
+        val g = Graph(listOf(Node("text", "core.prompt", mapOf("prompt" to "a cat", "negative" to ""))))
+        val small = Workflow(g, mapOf("text" to Pt(0f, 0f)))
+        val tall = small.proseResized("text", Sizes.PROSE_MAX_LINES)
+        val a = layout(small, NODE_TYPES).first()
         val b = layout(tall, NODE_TYPES).first()
-        assertTrue("a taller node did not get a taller body", b.height > a.height)
+        assertTrue("dragging taller did not grow the body", b.height > a.height)
         assertEquals(Sizes.PROSE_MAX_LINES, b.prose!!.maxLines)
     }
 
     /**
-     * ⭐⭐ A SHORT prompt's box still grows with the drag.
+     * ⭐⭐⭐ **A long prompt is shown in FULL, whatever the drag says.**
      *
-     * ⚠⚠ This is the regression that made "vertical resize not working" true:
-     * the box height was `min(wrapped, budget)`, so a one-line prompt pinned it
-     * to one line and raising the budget changed nothing. Every box is the
-     * budget's height now, whatever it holds.
+     * The user's call, 2026-09-15: *"don't hide them with '…', it should always
+     * be fully visible."* A prompt is what a person reads before deciding to
+     * press Run, and the ellipsis hid exactly the tail that says which prompt
+     * this is.
+     *
+     * ⚠⚠ So the stored line count is a FLOOR the drag raises, not a ceiling it
+     * clamps to — and a prompt needing more lines than [Sizes.PROSE_MAX_LINES]
+     * gets them. The node grows past the drag ceiling on purpose; the canvas pans.
      */
     @Test
-    fun aShortPromptsBoxStillGrowsWithTheDrag() {
-        val g = Graph(listOf(Node("t", "sd.clip_encode", mapOf("prompt" to "hi", "negative" to ""))))
+    fun aLongPromptIsNeverEllipsised() {
+        val long = "a ".repeat(400)
+        val g = Graph(listOf(Node("text", "core.prompt", mapOf("prompt" to long, "negative" to ""))))
+        val box = layout(Workflow(g, mapOf("text" to Pt(0f, 0f))), NODE_TYPES).first()
+        val lines = box.prose!!.maxLines
+        val usable = box.width - 2 * Sizes.BODY_PADDING - 2 * Sizes.PROSE_BOX_PAD
+        val charsPerLine = (usable / (Sizes.PROSE_FONT_SP * 0.6f)).toInt()
+        assertTrue(
+            "${long.length} chars at $charsPerLine per line does not fit in $lines",
+            lines * charsPerLine >= long.length,
+        )
+        assertTrue(
+            "it must exceed the drag ceiling rather than clamp to it",
+            lines > Sizes.PROSE_MAX_LINES,
+        )
+    }
+
+    /**
+     * ⚠⚠ A SHORT prompt's box follows the drag too — the regression that made
+     * "vertical resize not working" true was a box pinned to its content.
+     */
+    @Test
+    fun aShortPromptsBoxStillFollowsTheDrag() {
+        val g = Graph(listOf(Node("t", "core.prompt", mapOf("prompt" to "hi", "negative" to ""))))
         val small = Workflow(g, mapOf("t" to Pt(0f, 0f)))
         val big = small.proseResized("t", 6)
         val a = layout(small, NODE_TYPES).first()
         val b = layout(big, NODE_TYPES).first()
-        assertTrue("a two-character prompt did not grow when dragged", b.height > a.height)
+        assertTrue("a two-character prompt ignored the drag", b.height > a.height)
     }
 
     /**
-     * ⚠⚠ Both boxes are the SAME height whatever they hold, so neither is a
-     * thin strip to aim a finger at — and a tap is what opens the prompt.
+     * ⭐⭐ **Each box hugs its OWN text** — the user's call, 2026-09-15:
+     * *"don't show empty space of the textbox, only the text parts."*
+     *
+     * ⚠⚠ This reverses "both boxes are the SAME height", which existed so
+     * neither was a thin strip to aim a finger at — and a tap is what opens the
+     * field. That constraint survives as [Sizes.PROSE_MIN_LINES]: an EMPTY box
+     * keeps a tap target, a full one is no longer padded to match it.
      */
     @Test
-    fun bothBoxesAreTheSameHeight() {
+    fun eachBoxHugsItsOwnText() {
         val g = Graph(
-            listOf(Node("t", "sd.clip_encode", mapOf("prompt" to "a ".repeat(200), "negative" to "")))
+            listOf(Node("t", "core.prompt", mapOf("prompt" to "a ".repeat(200), "negative" to "")))
         )
         val rects = layout(Workflow(g, mapOf("t" to Pt(0f, 0f))), NODE_TYPES).first().proseRects()
         assertEquals(2, rects.size)
         val heights = rects.map { it.third - it.second }
-        assertEquals(heights[0], heights[1], 0.01f)
+        assertTrue(
+            "the long prompt must be taller than the empty negative",
+            heights[0] > heights[1],
+        )
+        assertTrue(
+            "an empty box must still be a tap target",
+            heights[1] >= Sizes.PROSE_MIN_LINES * Sizes.PROSE_LINE_HEIGHT,
+        )
     }
 
     /** ⚠ The rects do not overlap, or a tap would open the wrong field. */

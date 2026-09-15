@@ -33,7 +33,7 @@ class WorkflowStoreTest {
     @Test
     fun aSavedWorkflowComesBackWithEverythingOnIt() {
         val s = store()
-        val resized = graph.resized("sample", 420f).moved("decode", Pt(77f, 88f))
+        val resized = graph.resized("sample", 420f).moved("output", Pt(77f, 88f))
         s.save("my flow", resized, types)
 
         val back = s.load("my flow")!!.workflow
@@ -44,7 +44,7 @@ class WorkflowStoreTest {
             resized.graph.byId["sample"]!!.inputs,
             back.graph.byId["sample"]!!.inputs,
         )
-        assertEquals(Pt(77f, 88f), back.positions["decode"])
+        assertEquals(Pt(77f, 88f), back.positions["output"])
         assertEquals(420f, back.widthOf("sample"), 0.5f)
     }
 

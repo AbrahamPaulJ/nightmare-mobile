@@ -273,7 +273,7 @@ class HostSurface(
         val group = op.substringBefore('.')
         if (group !in plugin.permissions) {
             throw Denied(
-                "plugin ${plugin.id} called \"$op\" without the \"$group\" permission -- " +
+                "plugin ${plugin.id} called \"$op\" without the \"$group\" permission — " +
                     "add it to \"permissions\" in node.json"
             )
         }
@@ -339,7 +339,7 @@ class HostSurface(
         require(id.isNotEmpty()) { "missing \"$field\" handle" }
         return images.get(id)
             ?: throw IllegalArgumentException(
-                "unknown image handle \"$id\" -- it may have been evicted from the store"
+                "unknown image handle \"$id\" — it may have been evicted from the store"
             )
     }
 

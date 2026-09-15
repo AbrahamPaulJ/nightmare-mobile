@@ -170,6 +170,21 @@ class ExecutorTest {
      * graphs here share ONE, which is both the cheap shape and the one that
      * exercises a COND handle fanning out to two consumers.
      */
+    /**
+     * ⚠⚠ **The LEGACY vocabulary, deliberately** — `sd.clip_encode` →
+     * `sd.sample_legacy` → `sd.vae_decode`, the three types the fused sampler
+     * replaced on 2026-09-15 (docs/ARCHITECTURE.md §5.7).
+     *
+     * What this class tests is the EXECUTOR's contract — what it caches, what it
+     * prunes, what it re-runs after a backend restart — and that contract is not
+     * changing. The old shapes are the only ones that can still express half of
+     * it: a backend HANDLE never crosses a wire in the new set, so
+     * "the samplers re-ran and the decoders did not" has no fused equivalent.
+     *
+     * ⚠ They are registered and running for exactly one build. When they are
+     * deleted, the tests that survive the deletion move to [FusedSamplerTest]
+     * and the ones whose premise went with the handles are deleted with a reason.
+     */
     private fun text(id: String = "text", prompt: String = "a cat on grass") =
         Node(id, "sd.clip_encode", mapOf("prompt" to prompt, "negative" to "blurry"))
 
@@ -181,7 +196,7 @@ class ExecutorTest {
         cond: String = "text",
     ) =
         Node(
-            id = id, type = "sd.sample",
+            id = id, type = "sd.sample_legacy",
             params = mapOf(
                 "model" to model,
                 "steps" to "8", "cfg" to "7.5", "seed" to seed.toString(),
@@ -294,8 +309,38 @@ class ExecutorTest {
     }
 
     /** v1 pins one context key; a second one is refused, not scheduled. */
+    /**
+     * ⭐⭐⭐ Two checkpoints in one graph are **SCHEDULED**, not refused —
+     * 2026-09-15 (docs/ARCHITECTURE.md §4). The executor groups the graph by
+     * key and relaunches once between the groups.
+     *
+     * ⚠⚠ A runner with no way to switch still refuses, by name and BEFORE
+     * anything runs — half a graph rendered against the wrong checkpoint is the
+     * silent failure the whole key mechanism exists to prevent.
+     */
     @Test
-    fun aGraphNeedingTwoBackendContextsIsRefused() = runBlocking {
+    fun twoBackendContextsAreScheduled() = runBlocking {
+        val g = Graph(
+            listOf(
+                text(),
+                sampler("sample_a", 42), decoder("decode_a", "sample_a"),
+                sampler("sample_b", 7, model = "absolutereality"),
+                decoder("decode_b", "sample_b", model = "absolutereality"),
+            )
+        )
+        val loads = mutableListOf<ContextKey>()
+        val host = FakeHost()
+        val r = Executor(host, switchKey = { k -> loads += k; true }).run(g)
+        assertNull(r.error)
+        // ⭐ ONE switch, not three: both samplers on a checkpoint run together.
+        assertEquals(2, loads.size)
+        assertEquals(2, loads.map { it.model }.distinct().size)
+        assertEquals(5, r.ran)
+    }
+
+    /** ⚠ …and with no way to switch, it refuses before running anything. */
+    @Test
+    fun twoContextsWithNoSwitcherAreRefused() = runBlocking {
         val g = Graph(
             listOf(
                 text(),
@@ -307,14 +352,8 @@ class ExecutorTest {
         val host = FakeHost()
         val r = Executor(host).run(g)
         assertNotNull(r.error)
-        // ⚠⚠ The message must name the MODELS, not our roadmap. "the process
-        // scheduler is v1.1" is true and useless to someone holding a phone:
-        // it describes what we have not built rather than what their graph
-        // says, and the `model` params are LOCKED, so the mixture can only have
-        // come from the app letting the selection drift under a saved graph.
-        assertTrue(r.error!!, r.error!!.contains("dreamshaper"))
-        assertTrue(r.error!!, r.error!!.contains("absolutereality"))
-        assertTrue(r.error!!, r.error!!.contains("open Models"))
+        assertTrue(r.error!!, r.error!!.contains("2 checkpoints"))
+        assertTrue(r.runs.isEmpty())
         assertEquals(0, host.samples)
     }
 
@@ -327,10 +366,15 @@ class ExecutorTest {
                 sampler("sample_b", 7, size = 768), decoder("decode_b", "sample_b", size = 768),
             )
         )
-        val r = Executor(FakeHost()).run(g)
-        assertNotNull(r.error)
-        assertTrue(r.error!!, r.error!!.contains("512x512"))
-        assertTrue(r.error!!, r.error!!.contains("768x768"))
+        // ⚠⚠ Resolution is half the context key, so two sizes need two
+        // launches exactly as two checkpoints do — and are scheduled the same
+        // way since 2026-09-15. Chaining 512 into 768 is the commoner case of
+        // the two (`docs/ARCHITECTURE.md` §4).
+        val loads = mutableListOf<ContextKey>()
+        val r = Executor(FakeHost(), switchKey = { k -> loads += k; true }).run(g)
+        assertNull(r.error)
+        assertEquals(2, loads.size)
+        assertEquals(listOf(512, 768), loads.map { it.width })
     }
 
     @Test
@@ -775,6 +819,9 @@ class ExecutorTest {
                 // store still holds it. Not a backend question: these never
                 // leave this process ([Value.Tensors]).
                 is Value.Tensors -> v.id in com.abrah.nightmare.npu.TensorStore
+                // ⚠ The text itself, so there is nothing for it to go stale
+                // against -- no store, no server.
+                is Value.Prompt -> true
             }
         })
         assertNull(c.get("h"))
@@ -852,6 +899,24 @@ class ExecutorTest {
         c.put("i", Value.Image("img_gone", 512, 512))
         assertEquals(1, c.prune { false })
         assertNull(c.get("i"))
+    }
+
+    /**
+     * ⭐⭐ **A run-log line shows a LITTLE of the prompt and says it is a
+     * little.** It took 40 characters and stopped with no mark, so the row read
+     * as the whole prompt, wrapped over two lines of the panel and pushed the
+     * timings the log exists for off the side. Reported 2026-09-15.
+     */
+    @Test
+    fun aPromptReadsShortAndSaysSo() {
+        val long = Value.Prompt("masterpiece, best quality, ultra-detailed, sharp focus, 8k,", "")
+        assertTrue("it must be cut", long.describe().length <= PROMPT_BRIEF + 1)
+        assertTrue("and say that it was", long.describe().endsWith("…"))
+
+        // ⚠ …and a prompt that FITS must not be made to look truncated.
+        val short = Value.Prompt("a cat", "")
+        assertEquals("a cat", short.describe())
+        assertEquals("(no prompt)", Value.Prompt("", "").describe())
     }
 }
 

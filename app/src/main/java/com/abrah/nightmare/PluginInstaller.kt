@@ -54,7 +54,7 @@ object PluginInstaller {
         pluginsDir.mkdirs()
         if (!pluginsDir.isDirectory || !pluginsDir.canWrite()) {
             throw Refused(
-                "cannot write to ${pluginsDir.absolutePath} -- installing needs it " +
+                "cannot write to ${pluginsDir.absolutePath} — installing needs it " +
                     "app-writable (chmod a+rwX), unlike merely reading pushed packs"
             )
         }

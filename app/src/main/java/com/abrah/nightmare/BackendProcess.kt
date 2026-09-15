@@ -109,7 +109,7 @@ object BackendProcess {
         val dir = File(context.filesDir, RUNTIME_DIR).apply { mkdirs() }
         val all = context.assets.list("qnnlibs").orEmpty().toList()
         check(all.isNotEmpty()) {
-            "no qnnlibs in assets -- run tools/stage_backend.ps1 before building"
+            "no qnnlibs in assets — run tools/stage_backend.ps1 before building"
         }
         // ⚠⚠ ONLY this device's arch trio, plus the two shared libraries. The
         // APK carries all six arches (~150 MB) because `libQnnHtp.so` dispatches
@@ -186,7 +186,7 @@ object BackendProcess {
                 val exe = File(nativeDir, EXECUTABLE)
                 if (!exe.exists()) {
                     return@withContext Start.Failed(
-                        "backend binary missing from $nativeDir -- " +
+                        "backend binary missing from $nativeDir — " +
                             "run tools/stage_backend.ps1 and rebuild"
                     )
                 }
@@ -196,7 +196,7 @@ object BackendProcess {
                 // upscale-only server has none by definition.
                 if (!upscalerOnly && !model.isDirectory) {
                     return@withContext Start.Failed(
-                        "no model at ${model.absolutePath} -- push one there first"
+                        "no model at ${model.absolutePath} — push one there first"
                     )
                 }
 
@@ -227,7 +227,7 @@ object BackendProcess {
                 // catalogue assumed.
                 if (!upscalerOnly) spec?.missingPatch(context, res)?.let { name ->
                     return@withContext Start.Failed(
-                        "$modelId cannot render $res -- ${File(model, name).absolutePath} is missing. " +
+                        "$modelId cannot render $res — ${File(model, name).absolutePath} is missing. " +
                             "Re-download the model, or pick a size it ships a patch for"
                     )
                 }

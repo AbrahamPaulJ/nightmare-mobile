@@ -302,4 +302,53 @@ class ModelCatalogTest {
         )
         assertEquals(Res(1024, 1024), spec.native)
     }
+
+    // ---- the general-purpose prompts ------------------------------------
+
+    /**
+     * ⭐⭐⭐ **No checkpoint opens on a blank prompt box.** That is the whole
+     * point of [Family.prompt], and the case it was added for is the one with
+     * no catalogue entry at all — an IMPORTED model, whose own text is empty
+     * by design ([CustomModels]).
+     */
+    @Test
+    fun everyCheckpointHasSomethingToStartFrom() {
+        for (spec in ModelCatalog.all + ModelCatalog.all.first().copy(prompt = "", negative = "")) {
+            assertTrue("${spec.id} opens on nothing", spec.starterPrompt.isNotBlank())
+            assertTrue("${spec.id} has no negative", spec.starterNegative.isNotBlank())
+        }
+    }
+
+    /**
+     * ⚠⚠ A checkpoint's OWN text still wins. The family default is a fallback,
+     * not a replacement — the upstream-verbatim rule of 2026-09-12 stands.
+     */
+    @Test
+    fun aCheckpointsOwnPromptBeatsTheFamilyDefault() {
+        val anime = ModelCatalog.byId("anythingv5")!!
+        assertEquals(anime.prompt, anime.starterPrompt)
+        assertTrue("it must not be the generic one", anime.starterPrompt != Family.SD15.prompt)
+    }
+
+    /**
+     * ⚠⚠⚠ **No SUBJECT in a general-purpose prompt**, which is the property
+     * that makes it general. The SDXL default used to append "a majestic cat
+     * sitting on a windowsill at sunset," to eight checkpoints whose authors
+     * said nothing — a cat the user had to delete before typing.
+     *
+     * ⚠ Tested as "no `a <noun>` phrase", which is crude and is the shape every
+     * subject in this file happens to have; it is a tripwire for someone
+     * pasting a demo prompt in here, not a grammar.
+     */
+    @Test
+    fun theFamilyDefaultsNameNoSubject() {
+        for (f in Family.entries) {
+            for (text in listOf(f.prompt, f.negative)) {
+                assertTrue(
+                    "${f.name} names a subject: $text",
+                    Regex("\ba (cat|girl|man|woman|dog|photo of)\b").find(text) == null,
+                )
+            }
+        }
+    }
 }

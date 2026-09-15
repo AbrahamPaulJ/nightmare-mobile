@@ -276,7 +276,7 @@ class PluginNodeType(
             ?: throw IllegalStateException("node type $name declares no outputs")
         val id = res.optString(port.name)
         require(id.isNotEmpty()) {
-            "node \"${node.id}\" returned no \"${port.name}\" -- got ${out.take(80)}"
+            "node \"${node.id}\" returned no \"${port.name}\" — got ${out.take(80)}"
         }
         return when (port.type) {
             "IMAGE" -> {

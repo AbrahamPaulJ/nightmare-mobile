@@ -45,7 +45,7 @@
     <string name="batch_runs">%1$d runs</string>
     <string name="batch_one_run">1 run</string>
     <string name="batch_kept">every run is kept in Results, with the flow that made it</string>
-    <string name="batch_nothing_to_sweep">nothing on this canvas can be swept yet — add a Sampler, or a node with a number you can vary</string>
+    <string name="batch_nothing_to_sweep">nothing on this canvas can be swept yet — add a sample node, or a node with a number you can vary</string>
     <string name="batch_run_n">Run %1$d</string>
     <string name="batch_progress">batch %1$d of %2$d</string>
     <string name="batch_stop">Stop after this one</string>
@@ -60,7 +60,7 @@
     <string name="theme_light">Light</string>
     <string name="theme_canvas_note">the canvas is drawn dark either way — its palette is its own</string>
     <string name="community_title">Bring your own nodes</string>
-    <string name="community_intro">A node is two files: a manifest that declares its ports and knobs, and a script that runs it. Zip them and import from Flows, or push the folder to this app\'s plugin directory. No toolchain, no compile step, no new version of the app.</string>
+    <string name="community_intro">A node is two files: a manifest that declares its ports and knobs, and a script that runs it. Zip them and import the pack above, or push the folder to this app\'s plugin directory. No toolchain, no compile step, no new version of the app.</string>
 
     <string name="community_files_title">The two files</string>
     <string name="community_files_body">node.json declares the pack id, the node type, its inputs and outputs, its widgets, and which host ops it needs permission for.\n\nindex.js calls __nm.register(&lt;pack&gt;:&lt;Type&gt;, { run: fn }). Your run(ctx, inputs, widgets) returns whatever the last host op returned.</string>
@@ -78,7 +78,7 @@
     <string name="community_cannot_body">There is no host op that runs a model, so a node cannot segment, detect or estimate anything. That is the next tier and it is not built.\n\nScripts run in a QuickJS sandbox and permissions are denied by default, so a pack cannot reach the network or your files. Nothing yet bounds how long one may run.</string>
 
     <string name="community_reference">Reference</string>
-    <string name="community_repo">github.com/AbrahamPaulJ/nightmare-mobile\n\nThe examples/ folder has four working packs, from a one op wrapper to a two node toolkit. The README covers the same ground as this page with the full manifest.\n\nThe repository is private for now, so the link only works if you have been given access.</string>
+    <string name="community_repo">github.com/AbrahamPaulJ/nightmare-mobile\n\nThe examples/ folder has four working packs, from a one op wrapper to a two node toolkit. The README covers the same ground as this page with the full manifest.</string>
     <string name="community_experimental">Experimental. The plugin format can still change between versions, and there is no validation gate on an imported pack yet, so import packs the way you would run any other code you did not write.</string>
 
     <!-- Flows. -->
@@ -91,7 +91,7 @@
     <string name="flows_recommended">Recommended</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
-    <string name="save_workflow">Save this workflow</string>
+    <string name="save_workflow">Save this flow</string>
     <string name="save_workflow_named">Save \"%1$s\"</string>
     <string name="name">Name</string>
     <string name="save_replaces">this replaces the saved copy</string>
@@ -99,14 +99,13 @@
     <!-- Results. -->
     <string name="open_flow">Open flow</string>
     <string name="close">Close</string>
-    <string name="cd_forget_result">Forget this one</string>
+    <string name="cd_delete_result">Delete this picture</string>
     <string name="cd_open_fullscreen">Tap to see it full screen</string>
 
     <!-- Models and upscalers. -->
     <string name="download">Download</string>
     <string name="download_mb">Download %1$d MB</string>
     <string name="delete">Delete</string>
-    <string name="remove">Remove</string>
     <string name="use">Use</string>
     <string name="in_use">In use</string>
     <string name="rename_node">Node name</string>
@@ -123,15 +122,17 @@
     <string name="shape_is_free">This model renders one size and crops to shape. No reload.</string>
     <string name="unsupported">Unsupported</string>
     <string name="installed_mb">installed · %1$d MB</string>
-    <string name="not_installed_mb">not installed  %1$d MB download</string>
+    <string name="in_use_mb">in use · %1$d MB</string>
+    <string name="incomplete_missing">incomplete · missing %1$s</string>
+    <string name="not_installed_mb">not installed · %1$d MB download</string>
     <string name="cannot_run_it">this device cannot run it</string>
     <string name="upscalers">Upscalers</string>
     <string name="upscalers_note">8-24 MB each. Add an Upscale node to a flow to use one.</string>
     <string name="video">Video</string>
     <string name="video_models">Neodragon (video)</string>
-    <string name="video_models_note">One download of 8.6 GB, in 21 parts. It resumes, so a dropped connection costs only the file it was on.</string>
-    <string name="video_about">Text to video on the NPU. No backend, no checkpoint.</string>
-    <string name="video_of_total">%1$d of %2$d MB</string>
+    <string name="video_models_note">One download of %1$s GB, in 21 parts. It resumes, so a dropped connection costs only the file it was on.</string>
+    <string name="video_about">Text and image to video on the NPU. No backend, no checkpoint.</string>
+    <string name="mb_of_total">%1$d of %2$d MB</string>
     <string name="video_delete_title">Delete the video models?</string>
     <string name="video_delete_body">Frees %1$d MB. Getting them back is a %2$d MB download. Every video flow will refuse to run until you install them again.</string>
 
@@ -141,7 +142,7 @@
     <string name="cd_undo_stroke">Undo the last stroke</string>
     <string name="cd_invert_mask">Invert the mask</string>
     <string name="cd_clear_mask">Clear the mask</string>
-    <string name="mask_brush_px">brush  %1$d px</string>
+    <string name="mask_brush_px">Brush  %1$d px</string>
     <string name="mask_paint_hint">paint over what you want REPAINTED · pinch to zoom</string>
     <string name="mask_covered">%1$d%% covered · the red area is what gets repainted</string>
     <plurals name="kept_in_results">

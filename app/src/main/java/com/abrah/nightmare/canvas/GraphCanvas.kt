@@ -100,6 +100,13 @@ object CanvasColors {
 
     /** Deterministic per category, so a shared screenshot means the same thing everywhere. */
     fun forCategory(category: String?): Color = when (category) {
+        // ⭐ The four of docs/ARCHITECTURE.md §5.7, in the order a flow runs.
+        "source" -> Color(0xFF7BFFB0)
+        "generate" -> Color(0xFFB07BFF)
+        "edit" -> Color(0xFFFFD37B)
+        "output" -> Color(0xFF7BC7FF)
+        // ⚠ The old categories, still worn by the hidden legacy types and by
+        // the video nodes until they are reworked too.
         "sampling" -> Color(0xFFB07BFF)
         "latent" -> Color(0xFF7BC7FF)
         "image" -> Color(0xFF7BFFB0)
@@ -112,6 +119,12 @@ object CanvasColors {
         "LATENT" -> Color(0xFF7BC7FF)
         "IMAGE" -> Color(0xFF7BFFB0)
         "COND" -> Color(0xFFFFB07B)
+        // ⭐ Text, not a conditioning — and a colour of its own, because a
+        // PROMPT wire and a COND wire accept different things (§5.7).
+        "PROMPT" -> Color(0xFFFFB07B)
+        // ⚠ The one port that takes either a picture or a clip, so it may not
+        // look like only one of them.
+        "MEDIA" -> Color(0xFFCFCFE0)
         // ⚠ A pink of its own rather than IMAGE's green: a VIDEO port does not
         // accept an image wire and the canvas refuses the drop, so two ports
         // that mean different things must not look alike.
@@ -404,6 +417,20 @@ private fun DrawScope.drawNode(
     // cause is handled where it happens instead: every label is measured against
     // the room it has, ellipsised into it, and dropped only when there is none.
     val textZoom = maxOf(zoom, LABEL_MIN_ZOOM)
+    /**
+     * ⭐ How many DRAWN lines fit in a box allotted [world] world-lines.
+     *
+     * ⚠ Below [LABEL_MIN_ZOOM] a drawn line is taller than a world line, so
+     * fewer fit; at or above it the two agree and this returns [world]
+     * unchanged. ⚠ Never zero — a box must show something, even if it is one
+     * ellipsised line.
+     */
+    fun fitLines(world: Int, perWorldLinePx: Float): Int {
+        if (perWorldLinePx <= 0f) return world
+        val drawnPx = Sizes.PROSE_LINE_HEIGHT * viewport.scale * (textZoom / zoom)
+        if (drawnPx <= perWorldLinePx) return world
+        return ((world * perWorldLinePx) / drawnPx).toInt().coerceAtLeast(1)
+    }
     val pad = 8f * viewport.scale
     val inset = 12f * viewport.scale
     // ⚠⚠ Never negative, and never zero. `drawText(measurer, string, ...)`
@@ -430,8 +457,6 @@ private fun DrawScope.drawNode(
         maxLines = 1,
         constraints = Constraints(maxWidth = room),
     )
-    drawText(title, topLeft = Offset(tl.x + inset, tl.y + pad))
-
     // ⚠ The type sits INSIDE the header, under the title. In the body it
     // shared a line with the first port's label, and those two are at the same
     // height by construction -- body padding could never separate them.
@@ -450,10 +475,19 @@ private fun DrawScope.drawNode(
         maxLines = 1,
         constraints = Constraints(maxWidth = room),
     )
-    if (pad + title.size.height + subtitle.size.height <=
-        Sizes.HEADER_HEIGHT * viewport.scale
-    ) {
+    // ⚠⚠ …and dropped when it would only REPEAT the title. `prompt / prompt`
+    // and `sample / sample` are a line saying nothing twice; the type earns the
+    // line where the id does not already say it (`frame / crop`, a renamed
+    // `a / sample`). The user's call in the design review, 2026-09-15.
+    val showType = box.node.type.nodeLabel != box.node.id &&
+        pad + title.size.height + subtitle.size.height <= headerH
+    if (showType) {
+        drawText(title, topLeft = Offset(tl.x + inset, tl.y + pad))
         drawText(subtitle, topLeft = Offset(tl.x + inset, tl.y + pad + title.size.height))
+    } else {
+        // ⚠ Alone, the title is CENTRED in the stripe: left at the top it sat
+        // over an empty band where the type line used to be.
+        drawText(title, topLeft = Offset(tl.x + inset, tl.y + (headerH - title.size.height) / 2f))
     }
 
     // ⭐⭐ The node's own text, drawn in its body — each field in its own BOX
@@ -474,10 +508,17 @@ private fun DrawScope.drawNode(
             .toInt().coerceAtLeast(1)
         val boxPad = Sizes.PROSE_BOX_PAD * viewport.scale
         // ⚠ The node's own line budget -- what the vertical resize sets.
-        val maxLines = prose.maxLines
-        for ((field, value) in prose.fields) {
+        // ⚠⚠ PER FIELD since 2026-09-15 — each box is its own text's height, so
+        // a one-line negative no longer sits in a box sized for a paragraph.
+        // `CanvasModel.proseRects` computes the same numbers for the hit test.
+        // ⚠ One world line, in screen pixels — what the BOX allots per line.
+        val boxLineHeightPx = Sizes.PROSE_LINE_HEIGHT * viewport.scale
+        for ((i, pair) in prose.fields.withIndex()) {
+            val (field, value) = pair
+            val maxLines = prose.lines.getOrElse(i) { prose.maxLines }
             val cap = measurer.measure(
-                field,
+                // ⚠ The inspector's label for the same field (`knobLabel`).
+                field.knobLabel,
                 TextStyle(
                     color = CanvasColors.label,
                     fontSize = (9f * textZoom).sp,
@@ -500,10 +541,26 @@ private fun DrawScope.drawNode(
                 value.ifBlank { "—" },
                 TextStyle(
                     color = if (value.isBlank()) CanvasColors.label else CanvasColors.title,
-                    fontSize = (10f * textZoom).sp,
+                    fontSize = (Sizes.PROSE_FONT_SP * textZoom).sp,
                     fontFamily = FontFamily.Monospace,
                 ),
-                maxLines = maxLines,
+                // ⚠⚠⚠ **Clamped to what FITS AT THIS ZOOM, not to the line
+                // count the layout worked out.**
+                //
+                // `textZoom` has a readability FLOOR (`LABEL_MIN_ZOOM`): text
+                // stops shrinking when you zoom out but the node does not. So
+                // below that floor the drawn lines are taller than the world
+                // units the box was sized in, and N lines of text no longer fit
+                // in a box built for N — the text drew straight through the
+                // bottom of the node. Reported at max zoom-out, 2026-09-15.
+                //
+                // ⚠ The layout cannot fix this: node heights must be
+                // zoom-INDEPENDENT or the whole graph would reflow as you
+                // pinch. ⇒ It is handled where it happens, exactly as the label
+                // ellipsis above it is — and the user asked for the ellipsis
+                // here: *"if there's overflow from the box in zoom-out you can
+                // use …"*.
+                maxLines = fitLines(maxLines, boxLineHeightPx),
                 overflow = TextOverflow.Ellipsis,
                 constraints = Constraints(maxWidth = inner),
             )
