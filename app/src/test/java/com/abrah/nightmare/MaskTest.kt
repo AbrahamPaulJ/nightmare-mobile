@@ -189,6 +189,107 @@ class MaskTest {
         assertFalse(st.isEmpty)
     }
 
+    // ---- painted on the frame, stored on the photo ------------------------
+
+    /**
+     * ⭐⭐⭐ **The bug of 2026-09-16: the crop was applied to the mask TWICE.**
+     *
+     * The editor shows the framed picture, so a stroke leaves it normalised to
+     * the FRAME; [SdSampler] rasterises the stored mask at the PHOTO's size and
+     * then puts it through the same crop. Without [MaskFraming] in between, a
+     * dab on the eyes was stored as if it had been painted on the whole photo
+     * and then slid down by the frame's own offset — it came out on the lips,
+     * and nothing failed.
+     *
+     * ⚠ This is the end-to-end statement of it: paint at the frame's centre,
+     * store, re-frame, and the dab must be back at the frame's centre.
+     */
+    @Test
+    fun aStrokePaintedOnTheFrameLandsThereAfterTheCropIsApplied() {
+        // A frame well off centre, as a crop on a face would be.
+        val fx = 0.2f; val fy = 0.1f; val fw = 0.5f; val fh = 0.5f
+        val painted = MaskStrokeData(listOf(0.5f to 0.5f), 0.2f)
+
+        val stored = MaskState(listOf(MaskOp.Stroke(MaskFraming.toSource(painted, fx, fy, fw, fh))))
+        // What the sampler does: rasterise on the photo, then crop.
+        val onPhoto = MaskRaster.rasterise(stored, 256, 256)
+        val inFrame = android.graphics.Bitmap.createBitmap(
+            onPhoto,
+            (fx * 256).toInt(), (fy * 256).toInt(), (fw * 256).toInt(), (fh * 256).toInt(),
+        )
+        fun lum(x: Float, y: Float) = inFrame.getPixel(
+            (x * inFrame.width).toInt().coerceIn(0, inFrame.width - 1),
+            (y * inFrame.height).toInt().coerceIn(0, inFrame.height - 1),
+        ) and 0xFF
+
+        assertTrue("the dab should be at the frame's centre, was ${lum(0.5f, 0.5f)}", lum(0.5f, 0.5f) > 200)
+        // ⚠ The control: where the un-converted stroke used to land. (0.5,0.5)
+        // stored raw lands at ((0.5-0.2)/0.5, (0.5-0.1)/0.5) = (0.6, 0.8).
+        assertTrue("and nowhere near where the bug put it, was ${lum(0.6f, 0.8f)}", lum(0.6f, 0.8f) < 40)
+    }
+
+    /** ⚠ The brush is a fraction of the WIDTH, so it shrinks with the frame. */
+    @Test
+    fun theBrushIsConvertedWithThePoints() {
+        val s = MaskFraming.toSource(MaskStrokeData(listOf(0.5f to 0.5f), 0.2f), 0.2f, 0.1f, 0.5f, 0.5f)
+        assertEquals(0.1f, s.radiusFrac, 1e-4f)
+        assertEquals(0.45f, s.points[0].first, 1e-4f)
+        assertEquals(0.35f, s.points[0].second, 1e-4f)
+    }
+
+    /** ⚠ Both directions, or the editor draws the stored mask in the wrong place. */
+    @Test
+    fun theFrameConversionRoundTrips() {
+        val state = MaskState(
+            listOf(
+                MaskOp.Stroke(stroke(0.1f to 0.2f, 0.9f to 0.8f, r = 0.12f)),
+                MaskOp.Invert,
+                MaskOp.Erase(stroke(0.5f to 0.5f, r = 0.05f)),
+            ),
+            growFrac = 0.01f,
+            featherFrac = 0.04f,
+        )
+        val shown = MaskFraming.toFrame(state, 0.25f, 0.3f, 0.4f, 0.6f)
+        val back = shown.ops.map { op ->
+            when (op) {
+                is MaskOp.Invert -> op
+                is MaskOp.Stroke -> MaskOp.Stroke(MaskFraming.toSource(op.stroke, 0.25f, 0.3f, 0.4f, 0.6f))
+                is MaskOp.Erase -> MaskOp.Erase(MaskFraming.toSource(op.stroke, 0.25f, 0.3f, 0.4f, 0.6f))
+            }
+        }
+        state.ops.forEachIndexed { i, op ->
+            when (op) {
+                is MaskOp.Invert -> assertTrue("invert survives", back[i] is MaskOp.Invert)
+                is MaskOp.Stroke -> {
+                    val r = (back[i] as MaskOp.Stroke).stroke
+                    assertEquals(op.stroke.radiusFrac, r.radiusFrac, 1e-4f)
+                    op.stroke.points.forEachIndexed { j, (x, y) ->
+                        assertEquals(x, r.points[j].first, 1e-4f)
+                        assertEquals(y, r.points[j].second, 1e-4f)
+                    }
+                }
+                is MaskOp.Erase -> {
+                    val r = (back[i] as MaskOp.Erase).stroke
+                    assertEquals(op.stroke.points[0].first, r.points[0].first, 1e-4f)
+                }
+            }
+        }
+        // ⚠ Grow and feather are width fractions too: a preview that left them
+        // alone would show a softer edge than the render by the crop's factor.
+        assertEquals(0.025f, shown.growFrac, 1e-4f)
+        assertEquals(0.1f, shown.featherFrac, 1e-4f)
+    }
+
+    /** ⚠ The whole picture is the identity — an `image.mask` converts nothing. */
+    @Test
+    fun theWholePictureIsTheIdentity() {
+        val s = stroke(0.3f to 0.7f, r = 0.09f)
+        val there = MaskFraming.toSource(s, 0f, 0f, 1f, 1f)
+        assertEquals(0.3f, there.points[0].first, 1e-6f)
+        assertEquals(0.7f, there.points[0].second, 1e-6f)
+        assertEquals(0.09f, there.radiusFrac, 1e-6f)
+    }
+
     /**
      * ⚠⚠ **Moved 2026-09-15**, not deleted: the thing it protects — base is the
      * SOURCE and repaint is the RENDER, and swapping them replaces the region

@@ -81,6 +81,17 @@ data class CropRect(val x: Float, val y: Float, val w: Float, val h: Float) {
             abs(w - o.w) < 2e-3f && abs(h - o.h) < 2e-3f
 
     companion object {
+        /**
+         * The whole picture, unframed — the identity crop.
+         *
+         * ⚠ Named rather than written out at each call site: a mask editor on a
+         * node that does no framing still has to say WHICH picture its strokes
+         * are normalised against ([com.abrah.nightmare.MaskFraming]), and
+         * `CropRect(0f, 0f, 1f, 1f)` sprinkled around says it four numbers at a
+         * time.
+         */
+        val WHOLE = CropRect(0f, 0f, 1f, 1f)
+
         /** ⚠ 5%: below this a pinch can zoom past anything useful. */
         const val MIN = 0.05f
 

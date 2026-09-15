@@ -2805,8 +2805,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         val state = com.abrah.nightmare.MaskState.decode(ops0).copy(
                             growFrac = f("grow", 0f), featherFrac = f("feather", 0.02f),
                         )
+                        // ⚠⚠ `bmp` is the FRAMED picture and the mask is stored
+                        // against the PHOTO, so it is converted here exactly as
+                        // the editor converts it ([MaskFraming]). Rasterising
+                        // the stored ops straight into a framed bitmap draws
+                        // the painting the crop's own offset away from where it
+                        // will be repainted — the 2026-09-16 bug, as a preview.
                         val mask = com.abrah.nightmare.MaskRaster.rasterise(
-                            state, bmp.width, bmp.height,
+                            com.abrah.nightmare.MaskFraming.toFrame(
+                                state, f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f),
+                            ),
+                            bmp.width, bmp.height,
                         )
                         val out = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
                         android.graphics.Canvas(out).drawBitmap(

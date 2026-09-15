@@ -167,6 +167,82 @@ data class MaskState(
     }
 }
 
+/**
+ * ⭐⭐⭐ **A mask is STORED in the photo's coordinates and PAINTED on the framed
+ * one.** This is the conversion between the two, and it is the whole of it.
+ *
+ * ⚠⚠ Both halves are wanted and they are not the same space:
+ *  - **Stored in the photo's** terms, so re-framing a shot moves the picture and
+ *    the strokes together and a painted eye stays on the eye. The alternative
+ *    ties a painting to whatever the crop happened to be when it was made.
+ *  - **Painted on the framed** one, because that is the view the model sees —
+ *    asked for 2026-09-15 as *"mask should track the crop"*.
+ *
+ * ⚠⚠⚠ Before this existed nothing converted, and NOTHING FAILED: a stroke
+ * painted on the frame was stored as if it had been painted on the whole photo,
+ * and [SdSampler] then put it through the crop a SECOND time. The repaint landed
+ * further down the picture by exactly the frame's offset — eyes came out as lips
+ * (reported 2026-09-16). ⇒ The editor's picture and the editor's coordinates are
+ * one change, not two.
+ *
+ * [x], [y], [w], [h] are the crop's own params: the frame in fractions of the
+ * source, read exactly as [CropGeometry.frameOf] reads them. The whole picture
+ * is `0, 0, 1, 1`, and every function here is then the identity.
+ *
+ * ⚠ A frame may hang OUTSIDE the photo (the padded case), so a converted point
+ * may fall outside 0..1. That is correct and the rasteriser clips it; clamping
+ * here would bend a stroke back inside a frame the user deliberately overhung.
+ */
+object MaskFraming {
+
+    /**
+     * A stroke painted on the frame, in the SOURCE's coordinates.
+     *
+     * ⚠ `radiusFrac` is a fraction of the WIDTH everywhere ([MaskRaster.drawStroke]),
+     * so it scales by [w] alone — the same factor the x axis takes. A frame whose
+     * pixel aspect differs from the picture it renders to would need two, but that
+     * is the stretch case that distorts the photo too.
+     */
+    fun toSource(s: MaskStrokeData, x: Float, y: Float, w: Float, h: Float): MaskStrokeData =
+        if (w <= 0f || h <= 0f) s
+        else MaskStrokeData(
+            s.points.map { (u, v) -> (x + u * w) to (y + v * h) },
+            s.radiusFrac * w,
+        )
+
+    /** The inverse of [toSource]: a stored stroke as the frame sees it. */
+    fun toFrame(s: MaskStrokeData, x: Float, y: Float, w: Float, h: Float): MaskStrokeData =
+        if (w <= 0f || h <= 0f) s
+        else MaskStrokeData(
+            s.points.map { (px, py) -> ((px - x) / w) to ((py - y) / h) },
+            s.radiusFrac / w,
+        )
+
+    /**
+     * The whole stored mask as the frame sees it — what the editor draws over
+     * the framed picture.
+     *
+     * ⚠ `grow` and `feather` are width fractions like the brush, so they scale
+     * with it; leaving them alone would preview a softer edge than the render
+     * produces by the crop's own factor. ⚠ [MaskOp.Invert] is pointwise, so it
+     * survives the mapping untouched — inverting then cropping is cropping then
+     * inverting.
+     */
+    fun toFrame(state: MaskState, x: Float, y: Float, w: Float, h: Float): MaskState =
+        if (w <= 0f || h <= 0f) state
+        else state.copy(
+            ops = state.ops.map { op ->
+                when (op) {
+                    is MaskOp.Invert -> op
+                    is MaskOp.Stroke -> MaskOp.Stroke(toFrame(op.stroke, x, y, w, h))
+                    is MaskOp.Erase -> MaskOp.Erase(toFrame(op.stroke, x, y, w, h))
+                }
+            },
+            growFrac = state.growFrac / w,
+            featherFrac = state.featherFrac / w,
+        )
+}
+
 object MaskRaster {
 
     /**

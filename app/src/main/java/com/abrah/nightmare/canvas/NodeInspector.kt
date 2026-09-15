@@ -203,10 +203,12 @@ fun NodeInspector(
             // interface are one change, not two.
             cropSource = if (node.type in FRAMES) sourceId?.let(imageFor) else null,
             // ⚠ Same upstream picture, different job: the cropper FRAMES it,
-            // the mask editor is PAINTED on it. ⚠⚠ Both are the PHOTO, not the
-            // framed crop: the node rasterises a painting at the source's size
-            // and puts it through the same framing, so re-framing a shot moves
-            // the picture and the strokes together.
+            // the mask editor is PAINTED on it. ⚠⚠ Both arrive as the PHOTO —
+            // the mask is STORED in the photo's coordinates, so re-framing a
+            // shot moves the picture and the strokes together. ⚠⚠⚠ The body
+            // then paints on the FRAMED crop and converts at that boundary
+            // ([MaskFraming]); it is not a second opinion about which picture
+            // this is.
             maskSource = if (node.type in PAINTS) sourceId?.let(imageFor) else null,
             // ⚠ Only for a node that HAS a picture and did not make it from a
             // photo the user chose: a `load_image` already has swap/remove.
@@ -653,17 +655,28 @@ internal fun NodeInspectorBody(
             // ⭐⭐⭐ **Painted on the FRAMED picture, and it follows the crop.**
             //
             // Asked for 2026-09-15: *"mask should track the crop and update
-            // instantly when crop changes."* The node already rasterises a
-            // painting at the SOURCE's size and puts it through the same
-            // framing the picture gets ([SdSampler.run]), so the strokes follow
-            // by construction — what was missing was the editor showing the
-            // same view the model will see.
+            // instantly when crop changes."* The node rasterises a painting at
+            // the SOURCE's size and puts it through the same framing the picture
+            // gets ([SdSampler.run]), so the strokes follow the subject — and
+            // the editor shows the view the model will see.
+            //
+            // ⚠⚠⚠ Which means the picture below and the coordinates the strokes
+            // are stored in are DIFFERENT SPACES, and [MaskFraming] is the only
+            // thing that reconciles them. Showing the framed picture without it
+            // made the sampler apply the crop to the mask a SECOND time: the
+            // repaint landed the frame's own offset further down the photo, and
+            // it still rendered (2026-09-16).
+            //
+            // ⚠ ONE decision about which space this is — `frame` and the picture
+            // are computed from it together, never tested for separately.
             //
             // ⚠ `remember` on the rect as well as the picture: re-framing must
             // re-cut this immediately, and re-cutting on every recomposition
             // would run a bitmap draw on every frame of an unrelated gesture.
             val rect = cropRectOf(node)
-            val src = if (node.type !in com.abrah.nightmare.SD_INPAINT_TYPES) raw else {
+            val framed = node.type in com.abrah.nightmare.SD_INPAINT_TYPES
+            val frame = if (framed) rect else CropRect.WHOLE
+            val src = if (!framed) raw else {
                 remember(raw, rect) {
                     val (outW, outH) = framingOutSize(node, type)
                     CropNode.render(
@@ -678,6 +691,7 @@ internal fun NodeInspectorBody(
                 nodeId = nodeId,
                 node = node,
                 source = src,
+                frame = frame,
                 onEditMask = onEditMask,
             )
         }
@@ -1644,6 +1658,12 @@ private fun MaskToolbar(
     node: com.abrah.nightmare.Node,
     source: ImageBitmap,
     /**
+     * ⚠⚠ Where [source] sits on the picture the mask is STORED against — the
+     * crop for an inpaint sampler, [CropRect.WHOLE] for a bare `image.mask`.
+     * Every stroke crosses this boundary in both directions ([MaskFraming]).
+     */
+    frame: CropRect,
+    /**
      * ⚠⚠ A TRANSFORM, not a setter. See `HarnessViewModel.editMask`: writing an
      * absolute ops string computed from `node` is what made fast painting drop
      * strokes, because `node` is whatever the last recomposition captured.
@@ -1662,7 +1682,14 @@ private fun MaskToolbar(
     // range `0.02f..0.25f`, shown as `brush * 2 * 512` px.
     var radius by remember { mutableStateOf(BRUSH_DEFAULT) }
 
-    val state = com.abrah.nightmare.MaskNode.stateOf(node)
+    // ⚠ The stored mask is in the PHOTO's coordinates; the editor works in
+    // [source]'s. Converting here rather than inside [MaskEditor] keeps that
+    // component honest — it paints on the picture it is given, in that
+    // picture's terms, and knows nothing about crops.
+    val stored = com.abrah.nightmare.MaskNode.stateOf(node)
+    val state = remember(stored, frame) {
+        com.abrah.nightmare.MaskFraming.toFrame(stored, frame.x, frame.y, frame.w, frame.h)
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MaskEditor(
@@ -1670,7 +1697,12 @@ private fun MaskToolbar(
             state = state,
             tool = tool,
             brushRadiusFrac = radius,
-            onStroke = { stroke ->
+            onStroke = { painted ->
+                // ⚠⚠ Back into the PHOTO's coordinates before it is stored, or
+                // the sampler re-frames a stroke that was already framed.
+                val stroke = com.abrah.nightmare.MaskFraming.toSource(
+                    painted, frame.x, frame.y, frame.w, frame.h,
+                )
                 val op = if (tool == MaskTool.BRUSH) {
                     com.abrah.nightmare.MaskOp.Stroke(stroke)
                 } else {
