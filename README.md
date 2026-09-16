@@ -21,11 +21,11 @@ Stable Diffusion 1.5, SDXL and Anima run locally on a Snapdragon NPU, offline. Y
 press Run, and the picture appears on the node that made it. Everything stays on the phone.
 
 ⚠ **Video is much narrower than pictures, and needs ~8.6 GB of models.** It runs only on a
-**Snapdragon 8 Elite (gen 4) or 8 Elite Gen 5 (gen 5)** — nothing older. It has been verified
-on **gen 4 only**; gen 5 should work, because a compiled model runs on the architecture it was
-built for and every newer one, but no gen 5 device has ever executed it. The app decides by
+**Snapdragon 8 Elite (gen 4) or 8 Elite Gen 5 (gen 5)** — nothing older, because a compiled
+model runs on the architecture it was built for and every newer one. The app decides by
 *running* a small real model on your chip rather than by reading its name, so it tells you
-before you spend the 8.6 GB.
+before you spend the 8.6 GB — and on a phone that cannot, video is hidden everywhere rather
+than offered and then failing.
 
 ⚠ None of that applies to pictures. Text to image, image to image, inpainting and upscaling
 run on far more phones and need none of those models.
@@ -33,15 +33,16 @@ run on far more phones and need none of those models.
 **Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile
 Stable Diffusion, local image generation, on device video generation, node editor,
 Qualcomm Hexagon NPU, Snapdragon, QNN, SDXL, Anima, text to image, text to video, image to video,
-img2img, inpainting, no cloud, private.
+img2img, inpainting, Segment Anything, SAM 2.1, npuforge, safetensors to QNN, on device model
+conversion, no cloud, private.
 
 ## What it does
 
 - **A canvas built for a phone.** Big ports, snap to connect, pinch to zoom, a node palette
   in a sheet. Not a desktop editor shrunk down.
 - **Text to video, on the NPU.** A prompt in, 49 frames at 1024x640 out — about two seconds
-  of clip in about 25 seconds on a gen 4. ⚠ See the requirements above: ~8.6 GB of models and
-  an 8 Elite or 8 Elite Gen 5, verified on gen 4 only. **Image to video** animates a photo
+  of clip in about 25 seconds on an 8 Elite. ⚠ See the requirements above: ~8.6 GB of models
+  and an 8 Elite or 8 Elite Gen 5. **Image to video** animates a photo
   instead, and is the faster of the two — same three nodes, with a photo wired in. The clip
   loops on the node that made it and plays full screen.
 - **Eight node types, not seventy.** A flow is `prompt → generate → output`, plus a photo
@@ -70,7 +71,9 @@ img2img, inpainting, no cloud, private.
   up to 1024², portrait and landscape; SDXL and Anima crop their fixed 1024² canvas to the
   shape you choose.
 - **Bring your own model.** Twenty-four checkpoints in the catalogue — five SD 1.5, ten SDXL
-  and nine Anima — or import a converted one as a zip. ⚠ Anima is 8 Gen 3 or newer, ~4.3 GB
+  and nine Anima — or import a converted one as a zip, including SDXL converted by
+  **[npuforge](https://github.com/AbrahamPaulJ/npuforge)**, which turns an SD safetensors
+  checkpoint into a QNN model **on the phone itself, with no PC involved**. ⚠ Anima is 8 Gen 3 or newer, ~4.3 GB
   per checkpoint, and slow: about 80 s a picture on an 8 Elite, and Android may stop it
   while other apps are busy. Each sampler has its own checkpoint picker, grouped
   by family, listing what is actually on the phone; switching family rewrites that node and
