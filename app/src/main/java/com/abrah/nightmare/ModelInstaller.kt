@@ -27,6 +27,14 @@ object ModelInstaller {
     private const val TAG = "ModelInstaller"
     private const val BUFFER = 1 shl 16
 
+    /**
+     * ⚠ How often [fetch] reports progress, at most. 150 ms is ~7 updates a
+     * second: faster than a person reads a percentage and slower than the
+     * display refreshes, so nothing is gained by a smaller number and the cost
+     * is paid on the main thread.
+     */
+    private const val TICK_MS = 150L
+
     /** Progress, in the shape a UI can render without knowing the phases. */
     data class Progress(val phase: String, val done: Long, val total: Long) {
         val fraction: Float get() = if (total <= 0) 0f else (done.toFloat() / total).coerceIn(0f, 1f)
@@ -40,7 +48,7 @@ object ModelInstaller {
      * ⚠ Blocking. Call it off the main thread; the callers here are coroutines
      * on `Dispatchers.IO`.
      *
-     * @param onProgress called from the worker thread, throttled to ~1 MB.
+     * @param onProgress called from the worker thread, at most every [TICK_MS].
      * @param isCancelled polled during IO so a cancel takes effect promptly
      *   rather than at the end of a gigabyte.
      */
@@ -166,18 +174,23 @@ object ModelInstaller {
                 java.io.FileOutputStream(dest, append).use { output ->
                     val buf = ByteArray(BUFFER)
                     var written = from
-                    var since = 0L
+                    var last = 0L
                     while (true) {
                         if (isCancelled()) throw Cancelled()
                         val n = input.read(buf)
                         if (n < 0) break
                         output.write(buf, 0, n)
                         written += n
-                        since += n
-                        // Throttled: every chunk would be thousands of updates a second.
-                        if (since >= 1 shl 20) {
+                        // ⚠⚠ Throttled on TIME, not bytes. Every chunk would be
+                        // thousands of updates a second — but so was the 1 MB
+                        // rule this replaced, because it scales with the
+                        // CONNECTION: at 60 MB/s it fires 60 times a second, and
+                        // each one crosses to the main thread. A bar cannot show
+                        // more than the display refreshes anyway.
+                        val now = android.os.SystemClock.uptimeMillis()
+                        if (now - last >= TICK_MS) {
+                            last = now
                             onProgress(Progress(label, written, bytes))
-                            since = 0
                         }
                     }
                     onProgress(Progress(label, written, bytes))

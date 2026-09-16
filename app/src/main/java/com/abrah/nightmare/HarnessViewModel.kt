@@ -758,6 +758,35 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     private var installProgress by mutableStateOf<ModelInstaller.Progress?>(null)
 
     /**
+     * ⭐⭐ The ONE place a download's progress reaches the UI: the field, plus
+     * the single row that is downloading.
+     *
+     * ⚠⚠ **Never a `refresh*()` from here.** Those re-read the DISK — 24 specs'
+     * required files, a recursive `walkTopDown` per installed model, the video
+     * directory listed once per graph, `CustomModels.scan` — roughly 500 stats,
+     * on the main thread. `installModel` called `refreshModels()` per progress
+     * tick, so a 4.3 GB Anima download ran that ~4,300 times and the whole app
+     * (and the system's input dispatch) stuttered for the length of the
+     * download. Reported from the phone, 2026-09-17.
+     *
+     * ⚠ [com.abrah.nightmare.npu.VideoInstaller]'s caller already had this fix
+     * and the other three installers did not — the rule was honoured in one
+     * place of four. ⇒ All four call this now.
+     */
+    private fun tickProgress(p: ModelInstaller.Progress) {
+        installProgress = p
+        val id = installing ?: return
+        when {
+            id == VIDEO_INSTALL_ID -> videoRow = videoRow?.copy(progress = p)
+            id == SEGMENTER_INSTALL_ID -> segmenterRow = segmenterRow?.copy(progress = p)
+            modelRows.any { it.spec.id == id } ->
+                modelRows = modelRows.map { if (it.spec.id == id) it.copy(progress = p) else it }
+            upscalerRows.any { it.spec.id == id } ->
+                upscalerRows = upscalerRows.map { if (it.spec.id == id) it.copy(progress = p) else it }
+        }
+    }
+
+    /**
      * ⚠ Reads the disk on every call. The alternative is a cache that has to be
      * invalidated by install, delete and cancel alike -- and the one that gets
      * missed shows a model as installed after it was removed.
@@ -850,7 +879,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         ctx.contentResolver.openInputStream(uri)
                             ?: throw java.io.IOException("cannot read the picked file")
                     },
-                    onProgress = { p -> installProgress = p },
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
                     isCancelled = { cancelInstall },
                 )
                 val missing = spec.missing(ctx)
@@ -902,7 +931,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         // ⚠ Hopped to the main thread: this fires from the
                         // download loop, and Compose state written off it is a
                         // race that shows up as a frozen bar rather than a crash.
-                        viewModelScope.launch { installProgress = p; refreshModels() }
+                        viewModelScope.launch { tickProgress(p) }
                     },
                     isCancelled = { cancelInstall },
                 )
@@ -1059,17 +1088,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 vi.install(
                     ctx,
-                    onProgress = { p ->
-                        // ⚠⚠ The row's progress FIELD only — not a full
-                        // [refreshVideoModels], which lists the context
-                        // directory and stats 21 files. That ran once per
-                        // megabyte, so an 8.6 GB install did it ~8,600 times,
-                        // each on the main thread.
-                        viewModelScope.launch {
-                            installProgress = p
-                            videoRow = videoRow?.copy(progress = p)
-                        }
-                    },
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
                     isCancelled = { cancelInstall },
                 )
                 viewModelScope.launch { say("installed the video models") }
@@ -1124,7 +1143,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 UpscalerCatalog.install(
                     ctx, spec, build,
                     onProgress = { p ->
-                        viewModelScope.launch { installProgress = p; refreshUpscalers() }
+                        viewModelScope.launch { tickProgress(p) }
                     },
                     isCancelled = { cancelInstall },
                 )
@@ -1372,7 +1391,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 com.abrah.nightmare.segment.Segmenter.install(
                     ctx,
-                    onProgress = { p -> viewModelScope.launch { installProgress = p; refreshSegmenter() } },
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
                     isCancelled = { cancelInstall },
                 )
                 viewModelScope.launch { say("installed ${com.abrah.nightmare.segment.Segmenter.LABEL}") }
