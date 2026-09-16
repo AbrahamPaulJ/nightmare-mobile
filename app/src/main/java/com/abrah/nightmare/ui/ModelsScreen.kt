@@ -57,6 +57,20 @@ import androidx.compose.ui.graphics.Color
  * one file), and no family. Three fields that would always be dead is what a
  * separate type costs less than.
  */
+/**
+ * ⭐ One download on the Tools tab — today only the segmenter
+ * (`docs/SEGMENTER.md`). ⚠ Its own tab, the user's call 2026-09-16: it is not a
+ * checkpoint and has no Use button, and a row among checkpoints without one
+ * would read as a broken checkpoint (the upscalers' reasoning).
+ */
+data class ToolRow(
+    val label: String,
+    val bytes: Long,
+    val installed: Boolean,
+    val onDisk: Long = 0,
+    val progress: ModelInstaller.Progress? = null,
+)
+
 data class UpscalerRow(
     val spec: UpscalerSpec,
     /** ⚠ Null when no published tier loads on this HTP — the card must say so. */
@@ -186,6 +200,10 @@ fun ModelsScreen(
      * who never opens this tab never pays for it.
      */
     onProbeVideo: () -> Unit = {},
+    /** ⭐ The Tools tab. Null renders no tab, as for [video]. */
+    segmenter: ToolRow? = null,
+    onInstallSegmenter: () -> Unit = {},
+    onDeleteSegmenter: () -> Unit = {},
 ) {
     // ⚠⚠ The confirm is intercepted HERE rather than inside the card, so the
     // card stays a dumb row and there is exactly one place that can delete a
@@ -275,6 +293,7 @@ fun ModelsScreen(
     // re-download and an upscaler asks before costing 24 MB; this threw away
     // 8.6 GB on a single tap. Reported from the phone, 2026-09-13.
     var deletingVideo by remember { mutableStateOf(false) }
+    var deletingSegmenter by remember { mutableStateOf(false) }
 
     // ⚠ No header and no `statusBarsPadding` any more: [LibraryScreen] owns
     // both, because this screen is now a TAB rather than a whole screen. A
@@ -340,9 +359,29 @@ fun ModelsScreen(
         SwipeTabs(
             labels = families.map { it.label } +
                 (if (hasUpscalers) listOf(stringResource(R.string.upscalers)) else emptyList()) +
-                (if (video != null) listOf(stringResource(R.string.video)) else emptyList()),
+                (if (video != null) listOf(stringResource(R.string.video)) else emptyList()) +
+                (if (segmenter != null) listOf(stringResource(R.string.tools)) else emptyList()),
             modifier = Modifier.padding(top = 8.dp),
         ) { page ->
+            // ⚠ LAST again, after Video, so adding it moved no existing index.
+            if (segmenter != null &&
+                page == families.size + (if (hasUpscalers) 1 else 0) + (if (video != null) 1 else 0)
+            ) {
+                LazyColumn(
+                    Modifier.fillMaxWidth().padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    item {
+                        Text(
+                            stringResource(R.string.tools_note),
+                            style = LogTextStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    item { ToolCard(segmenter, busy, onInstallSegmenter, onCancel) { deletingSegmenter = true } }
+                }
+                return@SwipeTabs
+            }
             // ⚠ LAST, after the upscalers, so adding it moved no existing index.
             if (video != null && page == families.size + (if (hasUpscalers) 1 else 0)) {
                 VideoModelsTab(
@@ -416,6 +455,12 @@ fun ModelsScreen(
                     Text(
                         when (family) {
                             Family.SD15 -> "About 1 GB each. Use Wi-Fi."
+                            // ⚠ Measured 2026-09-16 on an 11.4 GB phone: 6.4 s a
+                            // step, and killed by Android while other apps were
+                            // in use. Said here, before 4 GB is downloaded.
+                            Family.ANIMA -> "About 4.3 GB each, and ~9 GB free while it " +
+                                "unpacks. Slow: about 80 s a picture. Close other apps " +
+                                "while it renders. Use Wi-Fi."
                             // ⚠ The free-space figure is the one that surprises:
                             // the archive and its unpacked copy are both on disk
                             // at once, so a 3.5 GB download needs ~7.5 GB free.
@@ -448,6 +493,17 @@ fun ModelsScreen(
                 "you install it again.",
             onConfirm = { onDeleteUpscaler(spec) },
             onDismiss = { deletingUpscaler = null },
+        )
+    }
+
+    if (deletingSegmenter && segmenter != null) {
+        ConfirmDelete(
+            title = "Delete ${segmenter.label}?",
+            body = "Frees ${mb(segmenter.onDisk)} MB. Getting it back is a " +
+                "${mb(segmenter.bytes)} MB download. Any flow with a tapped mask " +
+                "will refuse to run until you install it again.",
+            onConfirm = onDeleteSegmenter,
+            onDismiss = { deletingSegmenter = false },
         )
     }
 
@@ -520,7 +576,7 @@ private fun ImportCard(busy: Boolean, onImport: (String) -> Unit) {
             // picking a `.safetensors` and reading "not a checkpoint" without
             // knowing why. Conversion is a PC step and there is no runtime
             // compiler on the NPU.
-            "A zip of QNN model files, converted on a PC. SD 1.5 or SDXL — it works out which.",
+            "A zip of QNN model files, converted on a PC. SD 1.5, SDXL or Anima — it works out which.",
         enabled = !busy,
         onImport = { name = ""; naming = true },
     )
@@ -528,7 +584,10 @@ private fun ImportCard(busy: Boolean, onImport: (String) -> Unit) {
     if (naming) {
         val trimmed = name.trim()
         val reserved = trimmed.isNotEmpty() && com.abrah.nightmare.CustomModels.isReserved(trimmed)
-        val ok = com.abrah.nightmare.CustomModels.isValidName(trimmed) && !reserved
+        // ⭐ EMPTY is allowed: the zip's own file name is used
+        // ([com.abrah.nightmare.CustomModels.nameFromFile]). Asked for 2026-09-16.
+        val ok = trimmed.isEmpty() ||
+            (com.abrah.nightmare.CustomModels.isValidName(trimmed) && !reserved)
         AlertDialog(
             onDismissRequest = { naming = false },
             title = { Text("Name it") },
@@ -547,6 +606,8 @@ private fun ImportCard(busy: Boolean, onImport: (String) -> Unit) {
                             // ⚠ Warns BEFORE the picker, not after the copy: an
                             // import is gigabytes, and finding out afterwards
                             // that the name is permanent is finding out too late.
+                            trimmed.isEmpty() -> "Leave it empty to use the zip's file name. " +
+                                "It becomes the folder name and the id saved into every workflow."
                             else -> "This becomes the folder name and the id saved " +
                                 "into every workflow that uses it."
                         },
@@ -812,6 +873,33 @@ private fun UpscalerCard(
             row.build == null ->
                 OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.unsupported)) }
             else -> Button(onClick = { onInstall(row.spec) }, enabled = !busy) { Text(stringResource(R.string.download)) }
+        }
+    }
+}
+
+/** ⚠ [UpscalerCard]'s shape: no Use, one action, the shared [DownloadCard]. */
+@Composable
+private fun ToolCard(
+    row: ToolRow,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onCancel: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    DownloadCard(
+        title = row.label,
+        emphasised = false,
+        status = if (row.installed) stringResource(R.string.installed_mb, mb(row.onDisk))
+        else stringResource(R.string.not_installed_mb, mb(row.bytes)),
+        detail = stringResource(R.string.segmenter_about),
+        progress = row.progress,
+    ) {
+        when {
+            row.progress != null ->
+                OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+            row.installed ->
+                OutlinedButton(onClick = onDelete, enabled = !busy) { Text(stringResource(R.string.delete)) }
+            else -> Button(onClick = onInstall, enabled = !busy) { Text(stringResource(R.string.download)) }
         }
     }
 }

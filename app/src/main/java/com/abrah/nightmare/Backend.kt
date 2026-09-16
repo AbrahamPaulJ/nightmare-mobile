@@ -67,8 +67,14 @@ object Backend {
      * Milliseconds BETWEEN stream frames, not for the whole response. A sample
      * emits one every ~130 ms; the slack is for the first frame, which waits on
      * CLIP, and for a cold NPU step.
+     *
+     * ⚠⚠ Raised from 30 s for Anima, 2026-09-16. Under `--lowram` its first
+     * frame waits on the Qwen encoder AND both ~2 GB DiT halves being mapped,
+     * then one 6.4 s step: ~26 s on an idle phone, and the DiT load alone took
+     * 24 s on a busy one. [STAGE_TIMEOUT_MS] is the same stage cost, so it is
+     * the same number.
      */
-    private const val SSE_READ_TIMEOUT_MS = 30_000
+    private const val SSE_READ_TIMEOUT_MS = STAGE_TIMEOUT_MS
 
     data class Response(val code: Int, val body: String, val millis: Long)
 

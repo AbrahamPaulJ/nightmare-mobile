@@ -31,6 +31,7 @@ object BackendProcess {
     const val EXECUTABLE = "libstable_diffusion_core.so"
     private const val RUNTIME_DIR = "qnnruntime"
 
+    @Volatile
     private var process: Process? = null
 
     /** Newest-first, same convention as the harness log. */
@@ -325,20 +326,46 @@ object BackendProcess {
             // ⚠ A crashed backend has no launch key. Leaving the last one set
             // would make [ensureBackend] believe the right process is up and
             // skip the relaunch that is the whole point of recording it.
-            launchedKey = null
-            upscalerServer = false
+            // ⚠⚠⚠ **But only if THIS is still the process.** The monitor of a
+            // process [stop] killed fires AFTER the relaunch that replaced it,
+            // and clearing then wiped the NEW process's key — so every later
+            // Run saw "a backend this app did not start", killed it and
+            // started again, twice per Run. Measured on the phone 2026-09-16:
+            // `[exited 143]` logged 60 ms after the new `exec:`. It only showed
+            // when a NODE switched checkpoint, because that is the one path
+            // where stop and start are milliseconds apart; the Models tab stops
+            // the backend seconds before the next Run launches.
+            synchronized(this@BackendProcess) {
+                if (process === p) {
+                    process = null
+                    launchedKey = null
+                    upscalerServer = false
+                }
+            }
             say("[exited $code]")
         }.apply { isDaemon = true; name = "backend-monitor" }.start()
     }
 
     fun stop() {
-        process?.let {
+        val p = synchronized(this) {
+            val was = process
+            process = null
+            launchedKey = null
+            upscalerServer = false
+            was
+        }
+        p?.let {
             say("[stopping]")
             it.destroy()
+            // ⚠ Wait for it to be GONE before anyone relaunches: until then it
+            // still holds the port, and a `/health` probe could be answered by
+            // the process being killed. Bounded, and escalated, so a wedged
+            // backend cannot hang the caller.
+            if (!it.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
+                it.destroyForcibly()
+                it.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
+            }
         }
-        process = null
-        launchedKey = null
-        upscalerServer = false
     }
 
     private fun say(line: String) {

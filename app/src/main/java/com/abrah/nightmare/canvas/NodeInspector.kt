@@ -1,6 +1,13 @@
 package com.abrah.nightmare.canvas
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -122,6 +129,13 @@ fun NodeInspector(
     onDelete: (String) -> Unit,
     /** ⭐ Rename a node — see [NodeInspectorBody.onRename]. */
     onRename: (from: String, to: String) -> Unit = { _, _ -> },
+    /**
+     * ⭐ A tap with the mask editor's Tap tool, in the PHOTO's coordinates —
+     * `HarnessViewModel.tapMask`. The last argument reports back: null, or a
+     * sentence to show.
+     */
+    onTapMask: (node: String, x: Float, y: Float, done: (String?) -> Unit) -> Unit =
+        { _, _, _, done -> done(null) },
     onDismiss: () -> Unit,
     /** ⭐ Graph-wide, not per-node — see [NodeInspectorBody.onSetResolution]. */
     onSetResolution: (com.abrah.nightmare.Res) -> Unit = {},
@@ -155,6 +169,14 @@ fun NodeInspector(
     val nodeId = state.editing ?: return
     val node = state.workflow.graph.byId[nodeId] ?: return
     val type = types[node.type]
+    // ⚠ A retry for the install that happened after launch: the first checkpoint
+    // is what brings a vocabulary to a phone that had none. A no-op once loaded.
+    val appCtx = LocalContext.current.applicationContext
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.abrah.nightmare.PromptTokens.ensureLoaded(appCtx)
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -182,6 +204,7 @@ fun NodeInspector(
         NodeInspectorBody(
             nodeId, node, type, onSetParam, onSetParams, onEditMask, onDelete,
             onRename = onRename,
+            onTapMask = onTapMask,
             // ⚠ Read HERE, like `demand` above and for the same reason: the body
             // must stay a function of its arguments so the goldens can render
             // it, and this list is a cached disk scan.
@@ -190,6 +213,9 @@ fun NodeInspector(
             onSetResolution = onSetResolution,
             onSetAspect = onSetAspect,
             canSweep = com.abrah.nightmare.canSweep(state.workflow.graph, nodeId),
+            // ⚠ Read HERE for the same reason: what a prompt is measured
+            // against depends on what it is WIRED into.
+            promptBudget = com.abrah.nightmare.PromptTokens.budgetFor(state.workflow.graph, nodeId),
             installedModels = installedModels,
             onSetModel = onSetModel,
             preview = shownId?.let(imageFor),
@@ -304,13 +330,17 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         name in setOf("x", "y", "w", "h", com.abrah.nightmare.CropNode.LOCKED)
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
+    // ⭐ An inpaint node's grow and feather are drawn IN the Mask tab of its
+    // popup, under the picture they change — never loose in the knob list
+    // (the user's call, 2026-09-17).
+    if (node.type in com.abrah.nightmare.SD_INPAINT_TYPES && (name == "grow" || name == "feather")) return true
 
     if (node.type !in com.abrah.nightmare.SD_SAMPLER_TYPES) return false
     val hasImage = node.inputs["image"] != null
     val painted = !node.params[com.abrah.nightmare.MaskNode.OPS].isNullOrBlank()
     // ⚠ A `sample` type declares none of the mask widgets, so this branch never
     // fires for one — it is the inpaint types that need the conditional.
-    val hasMask = painted || node.inputs["mask"] != null
+    val hasMask = painted
     return when (name) {
         // ⚠ Nothing to start FROM, so nothing to soften. `start_from`, `pad` and
         // `encode_seed` are not listed because the sampler no longer declares
@@ -318,7 +348,6 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         // rule nobody can check.
         "denoise" -> !hasImage
         // The mask half only exists once something is painted or wired.
-        com.abrah.nightmare.SdSampler.MASK_ON,
         com.abrah.nightmare.MaskCropNode.ONLY_MASKED,
         com.abrah.nightmare.PasteNode.STITCH,
         "grow", "feather",
@@ -343,11 +372,11 @@ data class CheckpointChoice(
     val family: com.abrah.nightmare.Family,
 )
 
-private val FRAMES = setOf("image.crop") + com.abrah.nightmare.FRAMING_TYPES
+private val FRAMES = com.abrah.nightmare.FRAMES_PICTURE_TYPES
 
 // ⚠⚠ Only the INPAINT types paint. That is the whole point of the fork: an
 // image-to-image node was being handed a mask editor it has no use for.
-private val PAINTS = setOf("image.mask") + com.abrah.nightmare.SD_INPAINT_TYPES
+private val PAINTS = com.abrah.nightmare.PAINTS_PICTURE_TYPES
 
 /**
  * What the sheet contains — everything except the sheet.
@@ -378,6 +407,13 @@ internal fun NodeInspectorBody(
      * every wire, position, size and preview with it.
      */
     onRename: (from: String, to: String) -> Unit = { _, _ -> },
+    /**
+     * ⭐ A tap with the mask editor's Tap tool, in the PHOTO's coordinates —
+     * `HarnessViewModel.tapMask`. The last argument reports back: null, or a
+     * sentence to show.
+     */
+    onTapMask: (node: String, x: Float, y: Float, done: (String?) -> Unit) -> Unit =
+        { _, _, _, done -> done(null) },
     /**
      * ⭐⭐ Open with this field focused and the keyboard up — set by a tap on
      * that prompt's box on the canvas.
@@ -415,6 +451,8 @@ internal fun NodeInspectorBody(
     onSetAspect: (String) -> Unit = {},
     /** ⭐ Whether THIS node may arm a sweep — the last-node rule. */
     canSweep: Boolean = true,
+    /** ⭐ What this node's prose is counted against — [com.abrah.nightmare.PromptTokens.budgetFor]. */
+    promptBudget: com.abrah.nightmare.PromptTokens.Budget? = null,
     installedModels: List<CheckpointChoice> = emptyList(),
     onSetModel: (String, String) -> Unit = { _, _ -> },
     /** The picture this node is showing, if any. */
@@ -474,6 +512,8 @@ internal fun NodeInspectorBody(
      */
     seed: String? = null,
     onClearImage: () -> Unit = {},
+    /** ⚠ For a golden only: draw the inpaint popup's tab INLINE, since a Dialog is a window a screenshot cannot reach. */
+    inlinePopupTab: Int? = null,
 ) {
     // ⚠ Local: an unanswered confirm is not something to persist, same as every
     // other one in the app.
@@ -578,122 +618,167 @@ internal fun NodeInspectorBody(
         }
 
         val canSweepHere = canSweep
-        val cropLocked = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)[
+        // ⭐ An inpaint node edits its crop and mask in a popup, and has no crop lock.
+        val popup = node.type in com.abrah.nightmare.SD_INPAINT_TYPES
+        val cropLocked = !popup && com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)[
             com.abrah.nightmare.CropNode.LOCKED
         ].equals("true", ignoreCase = true)
-        cropSource?.let { src ->
-            val (outW, outH) = framingOutSize(node, type)
-            // ⭐⭐ A TITLE over each editor. Reported 2026-09-15: with framing and
-            // painting both on one node, two picture-sized controls sat one
-            // above the other with nothing saying which was which.
-            //
-            // ⚠ The lock lives IN the title row rather than loose beside the
-            // picture — the same reason [SeedRow] encloses its own lock: an icon
-            // with no visible subject reads as "lock the app".
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Crop", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                IconButton(onClick = {
-                    onSetParam(nodeId, com.abrah.nightmare.CropNode.LOCKED, (!cropLocked).toString())
-                }) {
-                    // ⚠⚠⚠ **A LOCK, not a tick.** One glyph, one meaning — and
-                    // the tick was already taken: on the picture actions it says
-                    // "this IS kept", a STATE. Using it here for "click to
-                    // lock", an ACTION, made the same mark mean two different
-                    // things two inches apart. Reported 2026-09-15, and it was
-                    // the right call — the app already has a lock that means
-                    // exactly this ([SeedRow] pins a seed with it), so the crop
-                    // uses the same pair: open padlock to lock, closed to unlock.
-                    Icon(
-                        if (cropLocked) Icons.Filled.Lock else com.abrah.nightmare.ui.LockOpenIcon,
-                        contentDescription =
-                            if (cropLocked) "unlock the crop to change it" else "lock this crop",
-                        tint = MaterialTheme.colorScheme.primary,
+        // ⭐⭐ The framing and the painting as PANELS, drawn inline on every node
+        // but an inpaint one — which shows them as two small previews that open
+        // one popup ([InpaintEditors]). The user's call, 2026-09-17: two
+        // picture-sized editors stacked in a scrolling sheet fought the sheet
+        // for every drag, and a Dialog is its own window with no sheet under it.
+        val cropPanel: @Composable () -> Unit = {
+            cropSource?.let { src ->
+                val (outW, outH) = framingOutSize(node, type)
+                // ⭐⭐ A TITLE over each editor. Reported 2026-09-15: with framing and
+                // painting both on one node, two picture-sized controls sat one
+                // above the other with nothing saying which was which.
+                //
+                // ⚠ The lock lives IN the title row rather than loose beside the
+                // picture — the same reason [SeedRow] encloses its own lock: an icon
+                // with no visible subject reads as "lock the app".
+                // ⚠ Not in the inpaint popup: its tab already says Crop, and the
+                // popup has no lock at all (the user's call, 2026-09-17).
+                if (!popup) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Crop", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+                        onSetParam(nodeId, com.abrah.nightmare.CropNode.LOCKED, (!cropLocked).toString())
+                    }) {
+                        // ⚠⚠⚠ **A LOCK, not a tick.** One glyph, one meaning — and
+                        // the tick was already taken: on the picture actions it says
+                        // "this IS kept", a STATE. Using it here for "click to
+                        // lock", an ACTION, made the same mark mean two different
+                        // things two inches apart. Reported 2026-09-15, and it was
+                        // the right call — the app already has a lock that means
+                        // exactly this ([SeedRow] pins a seed with it), so the crop
+                        // uses the same pair: open padlock to lock, closed to unlock.
+                        Icon(
+                            if (cropLocked) Icons.Filled.Lock else com.abrah.nightmare.ui.LockOpenIcon,
+                            contentDescription =
+                                if (cropLocked) "unlock the crop to change it" else "lock this crop",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                CropEditor(
+                    source = src,
+                    rect = cropRectOf(node),
+                    // ⚠⚠ ONE write per gesture, not four. Setting the params
+                    // individually ran the canvas-update-and-autosave path four
+                    // times per pointer event, and the concurrent saves that came
+                    // out of that are what crashed the app mid-drag.
+                    // ⚠ A locked crop ignores the gesture entirely. Disabling the
+                    // WRITE rather than the view keeps the picture visible — the
+                    // framing is still the thing you look at while painting.
+                    onChange = { r ->
+                        if (!cropLocked) onSetParams(nodeId, r.asParams().toMap())
+                    },
+                    // ⚠ …and takes no gesture, so a drag over the frame scrolls the sheet.
+                    interactive = !cropLocked,
+                    outW = outW,
+                    aspect = cropAspect(node, src.width, src.height, type),
+                    padBlur = node.params[CropNode.PAD] == CropNode.PAD_BLUR,
+                )
+                // ⭐⭐ The photo is too small for what is being asked of it, said
+                // plainly. This is the ONE state where bars appear, and a user who
+                // has not been told will read them as a bug in the cropper rather
+                // than as the honest answer to "this picture has fewer pixels than
+                // the pipeline needs".
+                if (CropGeometry.needsPadding(src.width, src.height, outW, outH)) {
+                    Text(
+                        "this picture is ${src.width}x${src.height}, smaller than the " +
+                            "${outW}x$outH being asked for — the bars are padding, not a crop. " +
+                            "Enlarging it instead would only make it soft.",
+                        style = LogTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-            CropEditor(
-                source = src,
-                rect = cropRectOf(node),
-                // ⚠⚠ ONE write per gesture, not four. Setting the params
-                // individually ran the canvas-update-and-autosave path four
-                // times per pointer event, and the concurrent saves that came
-                // out of that are what crashed the app mid-drag.
-                // ⚠ A locked crop ignores the gesture entirely. Disabling the
-                // WRITE rather than the view keeps the picture visible — the
-                // framing is still the thing you look at while painting.
-                onChange = { r ->
-                    if (!cropLocked) onSetParams(nodeId, r.asParams().toMap())
-                },
-                outW = outW,
-                aspect = cropAspect(node, src.width, src.height, type),
-                padBlur = node.params[CropNode.PAD] == CropNode.PAD_BLUR,
-            )
-            // ⭐⭐ The photo is too small for what is being asked of it, said
-            // plainly. This is the ONE state where bars appear, and a user who
-            // has not been told will read them as a bug in the cropper rather
-            // than as the honest answer to "this picture has fewer pixels than
-            // the pipeline needs".
-            if (CropGeometry.needsPadding(src.width, src.height, outW, outH)) {
                 Text(
-                    "this picture is ${src.width}x${src.height}, smaller than the " +
-                        "${outW}x$outH being asked for — the bars are padding, not a crop. " +
-                        "Enlarging it instead would only make it soft.",
+                    if (cropLocked) "locked · unlock to move or zoom" + (if (outW > 0) " · out ${outW}x$outH" else "")
+                    else if (outW > 0) "drag to move · pinch to zoom · out ${outW}x$outH"
+                    else "drag to move · pinch to zoom · the frame is the output, at its own size",
                     style = LogTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            Text(
-                if (outW > 0) "drag to move · pinch to zoom · out ${outW}x$outH"
-                else "drag to move · pinch to zoom · the frame is the output, at its own size",
-                style = LogTextStyle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        // ⭐⭐ The mask node's real interface.
-        maskSource?.let { raw ->
-            Text("Mask", style = MaterialTheme.typography.titleSmall)
-            // ⭐⭐⭐ **Painted on the FRAMED picture, and it follows the crop.**
-            //
-            // Asked for 2026-09-15: *"mask should track the crop and update
-            // instantly when crop changes."* The node rasterises a painting at
-            // the SOURCE's size and puts it through the same framing the picture
-            // gets ([SdSampler.run]), so the strokes follow the subject — and
-            // the editor shows the view the model will see.
-            //
-            // ⚠⚠⚠ Which means the picture below and the coordinates the strokes
-            // are stored in are DIFFERENT SPACES, and [MaskFraming] is the only
-            // thing that reconciles them. Showing the framed picture without it
-            // made the sampler apply the crop to the mask a SECOND time: the
-            // repaint landed the frame's own offset further down the photo, and
-            // it still rendered (2026-09-16).
-            //
-            // ⚠ ONE decision about which space this is — `frame` and the picture
-            // are computed from it together, never tested for separately.
-            //
-            // ⚠ `remember` on the rect as well as the picture: re-framing must
-            // re-cut this immediately, and re-cutting on every recomposition
-            // would run a bitmap draw on every frame of an unrelated gesture.
-            val rect = cropRectOf(node)
-            val framed = node.type in com.abrah.nightmare.SD_INPAINT_TYPES
-            val frame = if (framed) rect else CropRect.WHOLE
-            val src = if (!framed) raw else {
-                remember(raw, rect) {
-                    val (outW, outH) = framingOutSize(node, type)
-                    CropNode.render(
-                        raw.asAndroidBitmap(),
-                        rect.x, rect.y, rect.w, rect.h,
-                        outW, outH,
-                        node.params[CropNode.PAD],
-                    ).first.asImageBitmap()
+                if (popup) {
+                    type?.widgets?.firstOrNull { it.name == CropNode.PAD }?.let { w ->
+                        ChoiceRow(
+                            label = w.name.knobLabel,
+                            hint = w.hint,
+                            options = w.options.orEmpty(),
+                            current = node.params[w.name] ?: w.default.orEmpty(),
+                            onPick = { onSetParam(nodeId, w.name, it) },
+                        )
+                    }
                 }
             }
-            MaskToolbar(
-                nodeId = nodeId,
+        }
+        val maskPanel: @Composable () -> Unit = {
+            // ⭐⭐ The mask node's real interface.
+            maskSource?.let { raw ->
+                if (!popup) Text("Mask", style = MaterialTheme.typography.titleSmall)
+                // ⭐⭐⭐ **Painted on the FRAMED picture, and it follows the crop.**
+                //
+                // Asked for 2026-09-15: *"mask should track the crop and update
+                // instantly when crop changes."* The node rasterises a painting at
+                // the SOURCE's size and puts it through the same framing the picture
+                // gets ([SdSampler.run]), so the strokes follow the subject — and
+                // the editor shows the view the model will see.
+                //
+                // ⚠⚠⚠ Which means the picture below and the coordinates the strokes
+                // are stored in are DIFFERENT SPACES, and [MaskFraming] is the only
+                // thing that reconciles them. Showing the framed picture without it
+                // made the sampler apply the crop to the mask a SECOND time: the
+                // repaint landed the frame's own offset further down the photo, and
+                // it still rendered (2026-09-16).
+                //
+                // ⚠ ONE decision about which space this is — `frame` and the picture
+                // are computed from it together, never tested for separately.
+                //
+                // ⚠ `remember` on the rect as well as the picture: re-framing must
+                // re-cut this immediately, and re-cutting on every recomposition
+                // would run a bitmap draw on every frame of an unrelated gesture.
+                val rect = cropRectOf(node)
+                val framed = node.type in com.abrah.nightmare.SD_INPAINT_TYPES
+                val frame = if (framed) rect else CropRect.WHOLE
+                val src = if (!framed) raw else {
+                    val outSize = framingOutSize(node, type)
+                    remember(raw, rect, outSize, node.params[CropNode.PAD]) {
+                        val (outW, outH) = outSize
+                        CropNode.render(
+                            raw.asAndroidBitmap(),
+                            rect.x, rect.y, rect.w, rect.h,
+                            outW, outH,
+                            node.params[CropNode.PAD],
+                        ).first.asImageBitmap()
+                    }
+                }
+                MaskToolbar(
+                    nodeId = nodeId,
+                    node = node,
+                    source = src,
+                    photo = raw,
+                    frame = frame,
+                    onEditMask = onEditMask,
+                    onTapMask = onTapMask,
+                    type = type,
+                    onSetParam = { k, v -> onSetParam(nodeId, k, v) },
+                )
+            }
+        }
+        if (popup && cropSource != null) {
+            InpaintEditors(
                 node = node,
-                source = src,
-                frame = frame,
-                onEditMask = onEditMask,
+                type = type,
+                photo = cropSource,
+                cropPanel = cropPanel,
+                maskPanel = maskPanel,
+                inlineTab = inlinePopupTab,
             )
+        } else {
+            cropPanel()
+            maskPanel()
         }
         // ⚠ The sampler frames AND paints, so an empty one would print two
         // notes that say "wire a picture in" — the framing one below covers both.
@@ -739,12 +824,15 @@ internal fun NodeInspectorBody(
         val padWidget = if (cropSource != null) {
             widgets.firstOrNull { it.name == CropNode.PAD }
         } else null
+        // ⚠ On an inpaint node the chooser is drawn IN the Crop tab of its popup
+        // (the user's call, 2026-09-17), so not here as well.
+        val padHere = padWidget?.takeIf { !popup }
         // ⭐⭐ The pad chooser sits DIRECTLY under the framing view, because it
         // answers a question the framing view has just raised: the bars appear
         // as soon as the frame runs off the picture, and "black or mirrored" is
         // then the next thing you want. It used to be near the bottom, under the
         // numbers, which is nowhere near the thing it changes.
-        padWidget?.let { w ->
+        padHere?.let { w ->
             ChoiceRow(
                 label = w.name.knobLabel,
                 hint = w.hint,
@@ -848,7 +936,9 @@ internal fun NodeInspectorBody(
         // ask for it again. ⚠ Beside a COPY, because the thing you do with a
         // ten-digit number is paste it into the sampler, and retyping it off a
         // screen by hand is how you get a different picture and no idea why.
-        if (preview != null && seed != null) SeedRow(seed)
+        // ⚠⚠ On the OUTPUT node only — the one place a result is shown
+        // (§5.7). An inpaint node carried it too (the user, 2026-09-17).
+        if (preview != null && seed != null && node.type == "core.output") SeedRow(seed)
 
         // ⭐ The popup for whichever knob's BAT icon was tapped.
         batching?.let { w ->
@@ -1027,15 +1117,24 @@ internal fun NodeInspectorBody(
                 if (w.name == "scheduler") {
                     val cur = node.params[w.name] ?: w.default.orEmpty()
                     val (base, karras) = ModelCatalog.splitScheduler(cur)
+                    // ⚠⚠ Only the samplers THIS node's family distinguishes —
+                    // [ModelCatalog.schedulersFor]. Anima offers two, and no
+                    // Karras: the widget's options say so, and the picker reads
+                    // them rather than the catalogue-wide list.
+                    val allowed = w.options ?: ModelCatalog.SCHEDULERS
+                    val samplers = ModelCatalog.SAMPLERS.filter { (id, _) ->
+                        allowed.any { ModelCatalog.splitScheduler(it).first == id }
+                    }
+                    val karrasOffered = allowed.any { it.endsWith("_karras") }
                     ChoiceDropdown(
                         label = w.name.knobLabel,
                         hint = w.hint,
-                        options = ModelCatalog.SAMPLERS.map { it.second },
-                        current = ModelCatalog.SAMPLERS.firstOrNull { it.first == base }?.second
-                            ?: base,
+                        options = samplers.map { it.second },
+                        current = samplers.firstOrNull { it.first == base }?.second
+                            ?: ModelCatalog.schedulerLabel(cur),
                         onPick = { label ->
-                            val id = ModelCatalog.SAMPLERS.first { it.second == label }.first
-                            pick(ModelCatalog.joinScheduler(id, karras))
+                            val id = samplers.first { it.second == label }.first
+                            pick(ModelCatalog.joinScheduler(id, karras && karrasOffered))
                         },
                     )
                     // ⚠ Disabled rather than hidden for LCM: a checkbox that
@@ -1047,14 +1146,14 @@ internal fun NodeInspectorBody(
                     // not know and silently renders as `dpm`.
                     val canKarras = ModelCatalog.karrasSupported(base)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
+                        if (karrasOffered) Checkbox(
                             checked = karras && canKarras,
                             enabled = canKarras,
                             onCheckedChange = { on ->
                                 pick(ModelCatalog.joinScheduler(base, on))
                             },
                         )
-                        Text(
+                        if (karrasOffered) Text(
                             if (canKarras) stringResource(R.string.karras_sigmas)
                             else stringResource(R.string.karras_unavailable),
                             style = MaterialTheme.typography.bodyMedium,
@@ -1256,7 +1355,7 @@ internal fun NodeInspectorBody(
                     },
                     readOnly = why != null,
                     enabled = why == null,
-                    label = { Text(if (why != null) "${w.name.knobLabel}  (locked)" else w.name.knobLabel) },
+                    label = { ProseLabel(w.name, why, if (isProse) com.abrah.nightmare.PromptTokens.count(if (wanted) seeded.value.text else current, promptBudget) else null) },
                     supportingText = {
                         Text(
                             why ?: w.hint.orEmpty(),
@@ -1296,7 +1395,7 @@ internal fun NodeInspectorBody(
                 },
                 readOnly = why != null,
                 enabled = why == null,
-                label = { Text(if (why != null) "${w.name.knobLabel}  (locked)" else w.name.knobLabel) },
+                label = { ProseLabel(w.name, why, if (isProse) com.abrah.nightmare.PromptTokens.count(if (wanted) seeded.value.text else current, promptBudget) else null) },
                 supportingText = {
                     val range = if (w.min != null && w.max != null) {
                         "  ${w.min}..${w.max}"
@@ -1644,6 +1743,246 @@ private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) 
 }
 
 /**
+ * ⭐⭐ An inpaint node's two editors: CROP and MASK as two small previews under
+ * their names, each opening ONE popup with the two as side-by-side tabs and a
+ * close button. The user's call, 2026-09-17.
+ *
+ * ⚠⚠ A `Dialog`, not more of the sheet: the sheet scrolls and drags, and every
+ * drag on a picture-sized editor inside it was a fight over who owns the finger.
+ * A dialog is its own window with nothing under it to steal a gesture.
+ *
+ * ⚠ The popup is a FIXED height, so switching tabs does not resize it under the
+ * finger — the same bug the Add node sheet had.
+ *
+ * ⚠ The previews are the same draws the editors make: the framed picture, and
+ * that picture with the mask over it ([MaskFraming], taps from the cache).
+ */
+@Composable
+private fun InpaintEditors(
+    node: com.abrah.nightmare.Node,
+    type: NodeType?,
+    photo: ImageBitmap,
+    cropPanel: @Composable () -> Unit,
+    maskPanel: @Composable () -> Unit,
+    inlineTab: Int? = null,
+) {
+    var open by remember { mutableStateOf<Int?>(inlineTab) }
+    val rect = cropRectOf(node)
+    val ops = node.params[com.abrah.nightmare.MaskNode.OPS].orEmpty()
+    val grow = node.params["grow"]
+    val feather = node.params["feather"]
+    val (outW0, outH0) = framingOutSize(node, type)
+    val pad = node.params[CropNode.PAD]
+    // ⚠⚠ Keyed on the render SIZE and the padding too — keyed on the photo and
+    // rect alone, a resolution change left both previews at the old shape.
+    val framed = remember(photo, rect, outW0, outH0, pad) {
+        val (outW, outH) = outW0 to outH0
+        CropNode.render(
+            photo.asAndroidBitmap(), rect.x, rect.y, rect.w, rect.h, outW, outH, node.params[CropNode.PAD],
+        ).first
+    }
+    val masked = remember(framed, ops, grow, feather) {
+        val stored = com.abrah.nightmare.MaskNode.stateOf(node)
+        if (stored.isEmpty) return@remember framed.asImageBitmap()
+        val photoBmp = photo.asAndroidBitmap()
+        val state = com.abrah.nightmare.MaskFraming.toFrame(
+            com.abrah.nightmare.MaskTaps.resolve(stored) { x, y ->
+                com.abrah.nightmare.segment.Segmenter.cached(photoBmp, x, y)?.candidates
+            },
+            rect.x, rect.y, rect.w, rect.h,
+        )
+        val out = framed.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+        val overlay = com.abrah.nightmare.MaskRaster.overlay(state, out.width, out.height, com.abrah.nightmare.MaskRaster.OVERLAY_RGB)
+        android.graphics.Canvas(out).drawBitmap(
+            overlay, 0f, 0f,
+            android.graphics.Paint().apply { alpha = com.abrah.nightmare.MaskRaster.OVERLAY_ALPHA },
+        )
+        out.asImageBitmap()
+    }
+    val labels = listOf("Crop", "Mask")
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        listOf(framed.asImageBitmap(), masked).forEachIndexed { i, thumb ->
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(labels[i], style = MaterialTheme.typography.titleSmall)
+                androidx.compose.foundation.Image(
+                    bitmap = thumb,
+                    contentDescription = "edit the ${labels[i].lowercase()}",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // ⭐ The RESOLUTION's shape, not a fixed strip (2026-09-17).
+                        .aspectRatio(
+                            if (outW0 > 0 && outH0 > 0) outW0.toFloat() / outH0
+                            else framed.width.toFloat() / framed.height.coerceAtLeast(1),
+                        )
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { open = i },
+                )
+            }
+        }
+    }
+    val tab = open ?: return
+    val body: @Composable () -> Unit = {
+        InpaintPopupBody(tab, labels, onTab = { open = it }, onClose = { open = null }, cropPanel, maskPanel)
+    }
+    if (inlineTab != null) {
+        Box(Modifier.fillMaxWidth().height(760.dp)) { body() }
+        return
+    }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { open = null },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        androidx.compose.material3.Surface(
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .padding(horizontal = 12.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+        ) { body() }
+    }
+}
+
+/**
+ * ⭐ The popup's content: the two tabs side by side, a close button, and the
+ * tab's panel — its picture CENTRED in the width, the controls under it.
+ */
+@Composable
+private fun InpaintPopupBody(
+    tab: Int,
+    labels: List<String>,
+    onTab: (Int) -> Unit,
+    onClose: () -> Unit,
+    cropPanel: @Composable () -> Unit,
+    maskPanel: @Composable () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // ⭐ Two tabs SIDE BY SIDE, each half the row, in the pill style
+            // of [com.abrah.nightmare.ui.SwipeTabs].
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                labels.forEachIndexed { i, label ->
+                    val on = tab == i
+                    androidx.compose.material3.Surface(
+                        onClick = { onTab(i) },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (on) MaterialTheme.colorScheme.secondaryContainer
+                        else androidx.compose.ui.graphics.Color.Transparent,
+                        border = if (on) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (on) MaterialTheme.colorScheme.onSecondaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                        )
+                    }
+                }
+            }
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = "close")
+            }
+        }
+        Column(
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            // ⚠ The EDITORS centre themselves (window-fit, [CropEditor]); the
+            // text under them stays left-aligned like every other sheet.
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (tab == 0) cropPanel() else maskPanel()
+        }
+    }
+}
+
+private enum class MaskParam(val label: String) { SIZE("Size"), GROW("Grow"), FEATHER("Feather") }
+
+/**
+ * ⭐⭐ DreamUI's shared mask slider: a dropdown naming the parameter, the track,
+ * and the value in pixels at 512 (`radius * 2 * 512` for a brush, as DreamUI).
+ *
+ * ⚠ The list is keyed on the OPTIONS, not the tool — brush and eraser share
+ * theirs, so switching between them keeps the selection.
+ */
+@Composable
+private fun MaskParamSlider(
+    tool: MaskTool,
+    brush: Float,
+    onBrush: (Float) -> Unit,
+    grow: Float,
+    growMax: Float,
+    onGrow: ((Float) -> Unit)?,
+    feather: Float,
+    featherMax: Float,
+    onFeather: ((Float) -> Unit)?,
+) {
+    val options = when (tool) {
+        MaskTool.BRUSH, MaskTool.ERASE -> listOfNotNull(MaskParam.SIZE, MaskParam.FEATHER.takeIf { onFeather != null })
+        MaskTool.TAP -> listOfNotNull(MaskParam.GROW.takeIf { onGrow != null }, MaskParam.FEATHER.takeIf { onFeather != null })
+    }
+    if (options.isEmpty()) return
+    var param by remember(options) { mutableStateOf(options.first()) }
+    var menu by remember { mutableStateOf(false) }
+    val (range, value) = when (param) {
+        MaskParam.SIZE -> BRUSH_MIN..BRUSH_MAX to brush
+        MaskParam.GROW -> 0f..growMax to grow
+        MaskParam.FEATHER -> 0f..featherMax to feather
+    }
+    val shown = when (param) {
+        MaskParam.SIZE -> "${(brush * 2 * 512).roundToInt()} px"
+        MaskParam.GROW -> "${(grow * 512).roundToInt()} px"
+        MaskParam.FEATHER -> "${(feather * 512).roundToInt()} px"
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box {
+            TextButton(
+                onClick = { menu = true },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
+            ) {
+                Text(param.label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Icon(
+                    androidx.compose.material.icons.Icons.Filled.ArrowDropDown,
+                    contentDescription = "choose what the slider sets",
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                for (o in options) {
+                    DropdownMenuItem(text = { Text(o.label) }, onClick = { param = o; menu = false })
+                }
+            }
+        }
+        Slider(
+            value = value.coerceIn(range.start, range.endInclusive),
+            onValueChange = { v ->
+                when (param) {
+                    MaskParam.SIZE -> onBrush(v)
+                    MaskParam.GROW -> onGrow?.invoke(v)
+                    MaskParam.FEATHER -> onFeather?.invoke(v)
+                }
+            },
+            valueRange = range,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            shown,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            modifier = Modifier.width(56.dp),
+        )
+    }
+}
+
+/**
  * The mask editor plus the three controls it needs: brush or eraser, brush
  * size, and undo/clear.
  *
@@ -1663,6 +2002,12 @@ private fun MaskToolbar(
      * Every stroke crosses this boundary in both directions ([MaskFraming]).
      */
     frame: CropRect,
+    /** ⚠ The WHOLE photo the mask is stored against — what a tap segments. */
+    photo: ImageBitmap,
+    onTapMask: (node: String, x: Float, y: Float, done: (String?) -> Unit) -> Unit,
+    /** ⭐ For the shared slider's grow and feather, which are the node's params. */
+    type: NodeType? = null,
+    onSetParam: (String, String) -> Unit = { _, _ -> },
     /**
      * ⚠⚠ A TRANSFORM, not a setter. See `HarnessViewModel.editMask`: writing an
      * absolute ops string computed from `node` is what made fast painting drop
@@ -1687,9 +2032,35 @@ private fun MaskToolbar(
     // component honest — it paints on the picture it is given, in that
     // picture's terms, and knows nothing about crops.
     val stored = com.abrah.nightmare.MaskNode.stateOf(node)
-    val state = remember(stored, frame) {
-        com.abrah.nightmare.MaskFraming.toFrame(stored, frame.x, frame.y, frame.w, frame.h)
+    // ⭐⭐ Tapped regions first, in the PHOTO's space, then framed like strokes.
+    // ⚠ From the cache synchronously — a tap made this session is there — and
+    // off the main thread for the rest (a reopened flow: up to a second a photo).
+    val seg = com.abrah.nightmare.segment.Segmenter
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val photoBmp = photo.asAndroidBitmap()
+    fun framed(resolved: com.abrah.nightmare.MaskState) =
+        com.abrah.nightmare.MaskFraming.toFrame(resolved, frame.x, frame.y, frame.w, frame.h)
+    val quick = remember(stored, frame, photo) {
+        framed(com.abrah.nightmare.MaskTaps.resolve(stored) { x, y -> seg.cached(photoBmp, x, y)?.candidates })
     }
+    var full by remember(stored, frame, photo) { mutableStateOf<com.abrah.nightmare.MaskState?>(null) }
+    if (com.abrah.nightmare.MaskTaps.hasTaps(stored) && seg.installed) {
+        androidx.compose.runtime.LaunchedEffect(stored, frame, photo) {
+            full = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                runCatching {
+                    framed(com.abrah.nightmare.MaskTaps.resolve(stored) { x, y ->
+                        seg.segment(context, photoBmp, x, y)?.candidates
+                    })
+                }.getOrNull()
+            }
+        }
+    }
+    val state = full ?: quick
+    // ⭐ The Tap tool exists only while a segmenter is WIRED (`docs/SEGMENTER.md` §1).
+    val canTap = node.inputs["segmenter"] != null
+    if (!canTap && tool == MaskTool.TAP) tool = MaskTool.BRUSH
+    var tapping by remember { mutableStateOf(false) }
+    var tapNote by remember { mutableStateOf<String?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MaskEditor(
@@ -1697,6 +2068,17 @@ private fun MaskToolbar(
             state = state,
             tool = tool,
             brushRadiusFrac = radius,
+            onTap = { u, v ->
+                if (!tapping) {
+                    tapping = true
+                    tapNote = null
+                    // ⚠ Frame → photo, the same crossing a stroke makes.
+                    onTapMask(nodeId, frame.x + u * frame.w, frame.y + v * frame.h) { note ->
+                        tapping = false
+                        tapNote = note
+                    }
+                }
+            },
             onStroke = { painted ->
                 // ⚠⚠ Back into the PHOTO's coordinates before it is stored, or
                 // the sampler re-frames a stroke that was already framed.
@@ -1746,6 +2128,21 @@ private fun MaskToolbar(
                 },
                 shape = RoundedCornerShape(10.dp),
             )
+            // ⭐ DreamUI's Tap tool, beside the brush — and only when wired.
+            if (canTap) {
+                FilterChip(
+                    selected = tool == MaskTool.TAP,
+                    onClick = { tool = MaskTool.TAP },
+                    label = {
+                        Icon(
+                            com.abrah.nightmare.ui.TapObjectIcon,
+                            contentDescription = stringResource(R.string.cd_tap_object),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                )
+            }
             // ⚠⚠ ICONS, and DreamUI's icons — undo, invert, clear. These were
             // two TEXT buttons and no invert at all, though `MaskOp.Invert` has
             // been in the model and handled by the compositor the whole time.
@@ -1792,12 +2189,38 @@ private fun MaskToolbar(
         // ⚠ PIXELS at 512, exactly as DreamUI reads it out: `radius * 2 * 512`
         // is the stroke's diameter on the reference edge. A percentage of an
         // edge nobody can see is not a number anyone can carry between the two.
-        Text(stringResource(R.string.mask_brush_px, (radius * 2 * 512).roundToInt()), style = LogTextStyle)
-        Slider(
-            value = radius,
-            onValueChange = { radius = it },
-            valueRange = BRUSH_MIN..BRUSH_MAX,
-            modifier = Modifier.fillMaxWidth(),
+        // ⭐ What a tap is doing, or why it did nothing — a tap that silently
+        // selects nothing is DreamUI's "the tap is ignored" report.
+        if (tool == MaskTool.TAP || tapNote != null) {
+            Text(
+                when {
+                    tapping -> stringResource(R.string.mask_tap_working)
+                    tapNote != null -> tapNote!!
+                    else -> stringResource(R.string.mask_tap_hint)
+                },
+                style = LogTextStyle,
+                color = if (tapNote != null && !tapping) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // ⭐⭐ ONE slider with a dropdown of what it sets, and the list follows
+        // the TOOL — DreamUI's `MaskParamSlider` (the user's call, 2026-09-17).
+        // Brush and eraser share Size + Feather, so switching between them
+        // mid-mask does not snap the slider off what was being adjusted; Tap
+        // offers Grow + Feather.
+        val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
+        val growW = type?.widgets?.firstOrNull { it.name == "grow" }
+        val featherW = type?.widgets?.firstOrNull { it.name == "feather" }
+        MaskParamSlider(
+            tool = tool,
+            brush = radius,
+            onBrush = { radius = it },
+            grow = live["grow"]?.toFloatOrNull() ?: 0f,
+            growMax = growW?.max?.toFloat() ?: 0.2f,
+            onGrow = if (growW == null) null else { v -> onSetParam("grow", fixed(v, 3)) },
+            feather = live["feather"]?.toFloatOrNull() ?: 0f,
+            featherMax = featherW?.max?.toFloat() ?: 0.2f,
+            onFeather = if (featherW == null) null else { v -> onSetParam("feather", fixed(v, 3)) },
         )
         Text(
             // ⚠⚠ Says the convention out loud. White-takes-repaint is the one
@@ -2299,3 +2722,24 @@ internal fun SeedRow(
 private const val BRUSH_DEFAULT = 0.08f
 private const val BRUSH_MIN = 0.02f
 private const val BRUSH_MAX = 0.25f
+
+/**
+ * ⭐ A field's label, with the token count beside it when the field is prose —
+ * `local-dream`'s `PromptCountLabel`, `Prompt 23/77`.
+ *
+ * ⚠⚠ ONE function for both text-field branches above (the focused one and the
+ * plain one): a label added to one rendering branch and not the other is the
+ * bug `docs/UI.md` §7.4 records three times.
+ */
+@Composable
+private fun ProseLabel(name: String, why: String?, count: com.abrah.nightmare.PromptTokens.Count?) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(if (why != null) "${name.knobLabel}  (locked)" else name.knobLabel)
+        if (count != null) {
+            Text(
+                "  ${count.label}",
+                color = if (count.over) MaterialTheme.colorScheme.error else Color.Unspecified,
+            )
+        }
+    }
+}

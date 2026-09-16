@@ -81,9 +81,12 @@ fun PictureActions(
     var confirming by remember { mutableStateOf(false) }
     val what = if (isClip) "clip" else "picture"
 
+    // ⚠⚠ **CLEAR, not delete** (the user's call, 2026-09-17): on a node this
+    // empties the node; the picture is gone only if nothing else holds it. An
+    // AUTOSAVED History copy goes with it; a hand-kept one stays.
     onDelete?.let {
         IconButton(onClick = { confirming = true }) {
-            Icon(Icons.Filled.Delete, contentDescription = "delete this $what", tint = deleteTint)
+            Icon(Icons.Filled.Delete, contentDescription = "clear this $what", tint = deleteTint)
         }
     }
     // ⭐ 💾 Keep — into Results, with the flow that made it.
@@ -158,11 +161,12 @@ fun PictureActions(
 
     if (confirming && onDelete != null) {
         ConfirmDelete(
-            title = "Delete this $what?",
+            title = "Clear this $what?",
+            confirmLabel = "Clear",
             // ⚠ Says whether there is another copy — the render is often the only one.
             body = "The node goes back to empty. " + when {
                 downloaded -> "You saved it to the gallery, so that copy stays."
-                kept -> "It is kept in Results, so that copy stays."
+                kept -> "If autosave kept it, it goes from History too; a copy you kept or starred stays."
                 else -> "It has NOT been saved to the gallery, and Run will make a " +
                     "different one unless the seed is locked."
             },

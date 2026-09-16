@@ -95,6 +95,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 fun CanvasScreen(
     state: CanvasState,
     types: Map<String, NodeType>,
+    /** ⭐ What Add node offers — [types] less anything this phone cannot run (VideoGate). */
+    paletteTypes: Map<String, NodeType> = types,
     status: Map<String, NodeStatus>,
     busy: Boolean,
     image: ImageBitmap?,
@@ -213,6 +215,9 @@ fun CanvasScreen(
     onSetAspect: (String) -> Unit = {},
     onEditMask: (node: String, (com.abrah.nightmare.MaskState) -> com.abrah.nightmare.MaskState) -> Unit =
         { _, _ -> },
+    /** ⭐ The mask editor's Tap tool — `HarnessViewModel.tapMask`. */
+    onTapMask: (node: String, x: Float, y: Float, done: (String?) -> Unit) -> Unit =
+        { _, _, _, done -> done(null) },
     /**
      * ⭐ Why a workflow name will not do, or null — `WorkflowStore.validName`.
      * ⚠ Passed IN rather than duplicated here: two copies of a naming rule
@@ -525,6 +530,7 @@ fun CanvasScreen(
         onSetParam = { node, name, value -> onEdit { s -> s.setParam(node, name, value) } },
         onSetParams = { node, values -> onEdit { s -> s.setParams(node, values) } },
         onEditMask = onEditMask,
+        onTapMask = onTapMask,
         onSetResolution = onSetResolution,
         onSetAspect = onSetAspect,
         // ⚠ A pure state edit, like every other canvas change: renameNode
@@ -716,7 +722,7 @@ fun CanvasScreen(
 
     if (state.showPalette) {
         NodePalette(
-            types = types,
+            types = paletteTypes,
             onPick = { type ->
                 // The middle of what is on screen, in world units.
                 val centre = state.viewport.forDevice(density).toWorld(

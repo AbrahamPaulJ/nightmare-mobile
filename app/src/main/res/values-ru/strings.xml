@@ -69,6 +69,7 @@
     <string name="pack_import_note">Пакет узлов на JavaScript (.zip). Они появятся в палитре рядом со встроенными.</string>
     <string name="flows_import_warning">⚠ Пакет выполняет собственный код. Импортируйте только те, которым доверяете.</string>
     <string name="flows_recommended">Рекомендуемые</string>
+    <string name="flows_saved">Сохранённые</string>
     <string name="save">Сохранить</string>
     <string name="cancel">Отмена</string>
     <string name="save_workflow">Сохранить эту схему</string>
@@ -120,4 +121,10 @@
         <item quantity="many">%1$d изображений сохранено в Результаты</item>
         <item quantity="other">%1$d изображений сохранено в Результаты</item>
     </plurals>
+    <string name="cd_tap_object">Выбрать объект</string>
+    <string name="mask_tap_working">Ищем объект…</string>
+    <string name="mask_tap_hint">Коснитесь объекта, чтобы выбрать его. Ещё раз — больше, и ещё раз — снять выбор.</string>
+    <string name="tools">Инструменты</string>
+    <string name="tools_note">Небольшие помощники, работающие на процессоре телефона. Подключите к схеме, чтобы использовать.</string>
+    <string name="segmenter_about">Коснитесь объекта в маске Inpaint, чтобы выбрать его. Подключите узел Segment model к Inpaint.</string>
 </resources>

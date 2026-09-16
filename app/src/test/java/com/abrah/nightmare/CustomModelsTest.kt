@@ -89,6 +89,22 @@ class CustomModelsTest {
     }
 
     /**
+     * ⭐ Anima from its first DiT half — and with ITS recipe when the import
+     * carries no `config.json`, because the backend default (`dpm`, 20, 7.5)
+     * is not neutral on a turbo checkpoint, it burns.
+     */
+    @Test
+    fun animaIsRecognisedFromItsSplitDit() {
+        onDisk("mine", ModelCatalog.ANIMA_REQUIRED)
+        val spec = CustomModels.scan(ctx).single()
+        assertEquals(Family.ANIMA, spec.family)
+        assertEquals(ModelCatalog.ANIMA_NPU, spec.backendType)
+        assertEquals(ModelCatalog.ANIMA_NPU_RES, spec.native)
+        assertTrue("Anima needs --lowram", spec.lowram)
+        assertEquals(Triple("euler", 10, 1.0), Triple(spec.scheduler, spec.steps, spec.cfg))
+    }
+
+    /**
      * ⭐⭐ The property the marker designs cannot offer: a half-extracted
      * directory is unclassifiable, never MISclassified.
      */
@@ -476,5 +492,36 @@ class CustomModelsTest {
         val lines = CustomModels.importInbox(ctx)
         assertTrue(lines.single(), lines.single().startsWith("FAIL"))
         assertTrue(zip.exists())
+    }
+
+    // ---- an import the user did not name ------------------------------------
+
+    @Test fun anEmptyNameTakesTheZipsFileName() =
+        assertEquals("waiNSFW_v140", CustomModels.nameFromFile("waiNSFW_v140.zip", emptySet()))
+
+    @Test fun aDerivedNameIsMadeSafe() {
+        assertEquals("my_model_v2", CustomModels.nameFromFile("my model:v2.ZIP", emptySet()))
+        assertTrue(CustomModels.isValidName(CustomModels.nameFromFile("..hidden.zip", emptySet())))
+    }
+
+    /** ⚠ An import DELETES a directory of the same name, so a derived name never reuses one. */
+    @Test fun aDerivedNameNeverReplacesAModel() {
+        assertEquals("qteamix_2", CustomModels.nameFromFile("qteamix.zip", setOf("qteamix")))
+        assertEquals("mine_3", CustomModels.nameFromFile("mine.zip", setOf("mine", "mine_2")))
+    }
+
+    @Test fun noFileNameStillGivesAName() =
+        assertEquals("imported", CustomModels.nameFromFile(null, emptySet()))
+
+    /** ⭐ An npuforge SDXL export says its 231-token contract in `qnn_context.txt`. */
+    @Test fun anNpuforgeSdxlReadsItsLongContext() {
+        onDisk("forge", ModelCatalog.SDXL_REQUIRED)
+        File(root(), "forge/qnn_context.txt").writeText("231_masked_v1\n")
+        assertEquals(231, CustomModels.scan(ctx).single().promptTokens)
+    }
+
+    @Test fun aPcSdxlStaysAt77() {
+        onDisk("pc", ModelCatalog.SDXL_REQUIRED)
+        assertEquals(77, CustomModels.scan(ctx).single().promptTokens)
     }
 }

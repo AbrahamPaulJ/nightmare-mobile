@@ -22,7 +22,7 @@ import android.content.Context
  * the MMDiT needs that mask, because it is what makes the padded text positions
  * invisible in the joint attention.
  */
-class T5Tokenizer(ctx: Context) {
+class T5Tokenizer private constructor() {
 
     private val pieces = ArrayList<String>(32100)
     private val scores = ArrayList<Float>(32100)
@@ -32,14 +32,8 @@ class T5Tokenizer(ctx: Context) {
     /** Longest piece in the vocabulary, so the lattice never scans further than needed. */
     private var maxPieceLen = 1
 
-    companion object {
-        const val PAD_ID = 0
-        const val EOS_ID = 1
-        const val MAX_LEN = 128
-        private const val SPACE = '▁'      // Metaspace replacement
-    }
-
-    init {
+    /** The video path's copy — `t5_unigram.tsv` from its host-side assets. */
+    constructor(ctx: Context) : this() {
         NpuFiles.asset(ctx, "t5_unigram.tsv").bufferedReader().useLines { lines ->
             for (line in lines) {
                 if (line.isEmpty()) continue
@@ -47,14 +41,44 @@ class T5Tokenizer(ctx: Context) {
                 if (tab < 0) continue
                 val key = line.substring(0, tab)
                 if (key == "unk_id") { unkId = line.substring(tab + 1).trim().toInt(); continue }
-                val piece = if (key == "\\t") "\t" else key
-                index[piece] = pieces.size
-                pieces.add(piece)
-                scores.add(line.substring(tab + 1).toFloat())
-                if (piece.length > maxPieceLen) maxPieceLen = piece.length
+                add(if (key == "\\t") "\t" else key, line.substring(tab + 1).toFloat())
             }
         }
         check(pieces.size > 30000) { "t5_unigram.tsv looks truncated: ${pieces.size}" }
+    }
+
+    private fun add(piece: String, score: Float) {
+        index[piece] = pieces.size
+        pieces.add(piece)
+        scores.add(score)
+        if (piece.length > maxPieceLen) maxPieceLen = piece.length
+    }
+
+    companion object {
+        const val PAD_ID = 0
+        const val EOS_ID = 1
+        const val MAX_LEN = 128
+        private const val SPACE = '▁'      // Metaspace replacement
+
+        /**
+         * ⭐ An Anima checkpoint's `tokenizer_t5.json` (HF Unigram).
+         *
+         * ⚠ Its 32100 pieces and scores are IDENTICAL to `t5_unigram.tsv`,
+         * checked entry for entry 2026-09-16 — so this and the video copy count
+         * the same. Null for anything that is not a Unigram model.
+         */
+        fun fromTokenizerJson(file: java.io.File): T5Tokenizer? {
+            val model = org.json.JSONObject(file.readText()).optJSONObject("model") ?: return null
+            if (model.optString("type") != "Unigram") return null
+            val vocab = model.getJSONArray("vocab")
+            return T5Tokenizer().apply {
+                unkId = model.optInt("unk_id", 2)
+                for (k in 0 until vocab.length()) {
+                    val row = vocab.getJSONArray(k)
+                    add(row.getString(0), row.getDouble(1).toFloat())
+                }
+            }.takeIf { it.pieces.size > 30000 }
+        }
     }
 
     /**

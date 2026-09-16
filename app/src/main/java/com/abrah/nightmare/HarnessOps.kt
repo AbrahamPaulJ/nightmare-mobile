@@ -112,6 +112,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // checkpoint is needed; this is the layer that already knows how to
             // start one and wait for /health.
             switchKey = { key -> ensureBackend(key) },
+            loadedKey = { BackendProcess.launchedKey },
         )
     }
 
@@ -178,6 +179,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "npu_i2v" -> npuI2v(arg)
             "inpaint" -> inpaint(arg)
             "inpaint_ab" -> inpaintAb()
+            // ⭐ Tap to select, headless (docs/SEGMENTER.md §5).
+            // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
+            "segmenter_install" -> segmenterInstall()
+            "segment" -> segmentProbe(arg)
             else -> say("unknown intent op \"$op\"", bad = true)
         }
     }
@@ -1311,6 +1316,25 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         return launchBackend(target)
     }
 
+    /**
+     * ⭐⭐ Bring the backend up for THIS graph — the one pre-run launch, shared by
+     * the Run button, the sweep and the headless op so they cannot drift.
+     *
+     * ⚠⚠ The key is [launchKeyFor]'s: the first the schedule reaches, starting
+     * from what is loaded. Never the global selection — that is the bug it
+     * replaced (a relaunch on every Run whenever a node named a different
+     * checkpoint). ⚠ A graph naming no key gets a server with no model.
+     */
+    suspend fun ensureBackendFor(
+        graph: Graph,
+        /** ⚠ The caller's registry — the VM avoids building the plugin host for a plugin-free graph. */
+        types: Map<String, NodeType> = nodeTypes(),
+    ): Boolean {
+        val namesNoKey = runCatching { contextKeyModels(graph, types).isEmpty() }.getOrDefault(false)
+        if (namesNoKey) return ensureBackend(noModel = true)
+        return ensureBackend(launchKeyFor(graph, types, BackendProcess.launchedKey))
+    }
+
     suspend fun canvasRun() {
         // ⭐⭐ The user's OWN canvas, not a fixture.
         //
@@ -1335,26 +1359,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // [HarnessViewModel.adoptGraphModel] does when a workflow is opened --
         // a saved graph at 768² would otherwise be run against a backend
         // launched at whatever the picker last said.
-        var namesNoKey = false
-        val want = try {
-            val types = nodeTypes()
-            val models = contextKeyModels(wf.graph, types)
-            // ⚠⚠ EMPTY is a different answer from "could not resolve one".
-            // A graph naming two models also yields a null `want`, and launching
-            // a model-free server for THAT would replace a clear refusal
-            // ("needs 2 backend contexts") with a confusing one.
-            namesNoKey = models.isEmpty()
-            val m = models.singleOrNull()
-            val res = contextKeyResolutions(wf.graph, types).singleOrNull()
-            if (m != null && res != null) {
-                ContextKey(ModelCatalog.backendTypeOf(m), m, res.width, res.height)
-            } else null
-        } catch (e: Throwable) {
-            null
-        }
-        // ⚠ No context key means no checkpoint is needed — an upscale-only or
-        // all-app-side graph gets a server with no model loaded.
-        if (!ensureBackend(want, noModel = namesNoKey)) return
+        if (!ensureBackendFor(wf.graph)) return
         val r = runWorkflow(wf, onNode = { n ->
             say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} " +
                 "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
@@ -2037,6 +2042,87 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // downloader left a 0-byte file and no clue; an IOException and an
             // SSLException want opposite fixes.
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    private suspend fun segmenterInstall() {
+        val seg = com.abrah.nightmare.segment.Segmenter
+        say("segmenter_install: ${seg.LABEL}, ${seg.BYTES} B")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                seg.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+            }
+            say("  ok   ${seg.bytesOnDisk(ctx)} B at ${seg.dir(ctx).absolutePath}")
+        } catch (e: Throwable) {
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    /**
+     * ⭐⭐ One tap, measured and LOOKED at: the trunk and decode times, each
+     * candidate written as a PNG to pull, and a second segment of the same point
+     * byte-compared against the first (determinism is what storing a tap as a
+     * point relies on — `docs/SEGMENTER.md` §3).
+     *
+     * ⚠ The second segment goes through a FRESH model (`close()` first), or the
+     * cache would answer it and the comparison would prove nothing.
+     */
+    private suspend fun segmentProbe(arg: String?) {
+        val seg = com.abrah.nightmare.segment.Segmenter
+        val parts = arg.orEmpty().split(",")
+        val x = parts.getOrNull(0)?.toFloatOrNull() ?: 0.5f
+        val y = parts.getOrNull(1)?.toFloatOrNull() ?: 0.5f
+        val path = parts.getOrNull(2)
+        if (!seg.isInstalled(ctx)) {
+            say("segment: not installed — run segmenter_install", bad = true)
+            return
+        }
+        val photo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            if (path != null) android.graphics.BitmapFactory.decodeFile(path)
+            else newestSavedImage()?.let { uri ->
+                ctx.contentResolver.openInputStream(android.net.Uri.parse(uri))
+                    ?.use { android.graphics.BitmapFactory.decodeStream(it) }
+            }
+        }
+        if (photo == null) {
+            say("segment: no photo (${path ?: "nothing in Pictures/${ImageSaver.FOLDER}"})", bad = true)
+            return
+        }
+        say("segment: ${photo.width}x${photo.height} at $x,$y")
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            seg.close()
+            val t0 = System.nanoTime()
+            val a = seg.segment(ctx, photo, x, y)
+            val ms = (System.nanoTime() - t0) / 1_000_000
+            if (a == null) {
+                say("  miss — nothing contains the tap ($ms ms, open + trunk + decode)", bad = true)
+                return@withContext
+            }
+            val out = java.io.File(ctx.getExternalFilesDir(null), "segment").apply { mkdirs() }
+            fun bytes(b: android.graphics.Bitmap): ByteArray =
+                java.nio.ByteBuffer.allocate(b.rowBytes * b.height).also { b.copyPixelsToBuffer(it) }.array()
+            a.candidates.forEachIndexed { i, c ->
+                // ⚠ As a black/white mask, the way the sampler will see it.
+                val m = com.abrah.nightmare.MaskRaster.rasterise(
+                    com.abrah.nightmare.MaskState(listOf(com.abrah.nightmare.MaskOp.Placed(c))),
+                    photo.width, photo.height,
+                )
+                java.io.File(out, "cand$i.png").outputStream().use {
+                    m.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }
+                val cover = bytes(c).count { (it.toInt() and 0xFF) >= 128 } * 100f / (c.width * c.height)
+                say("  cand$i ${c.width}x${c.height} covers ${"%.1f".format(cover)}%" +
+                    if (i == a.default) "  <- default" else "")
+            }
+            say("  first tap $ms ms (open + trunk + decode); PNGs in ${out.absolutePath}")
+            val t1 = System.nanoTime()
+            seg.segment(ctx, photo, x + 0.0004f, y) // cache miss, same photo: trunk kept
+            say("  second point ${(System.nanoTime() - t1) / 1_000_000} ms (trunk cached)")
+            seg.close()
+            val b = seg.segment(ctx, photo, x, y)
+            val same = b != null && b.default == a.default && b.candidates.size == a.candidates.size &&
+                a.candidates.indices.all { bytes(a.candidates[it]).contentEquals(bytes(b.candidates[it])) }
+            say("  deterministic across a fresh model: $same", bad = !same)
         }
     }
 
@@ -2944,25 +3030,31 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (!ensureBackend()) return
         val expect = want ?: spec.native
         say("aspect $ratio on ${spec.label}: expecting $expect out of ${spec.native}")
+        // ⚠⚠ The CURRENT node set — a prompt into the selected family's fused
+        // sampler, which crops its own decode. This op still built the
+        // pre-rework `sd.clip_encode -> sd15.sample(cond) -> sd.vae_decode`
+        // graph after §5.7 and refused before sampling ("nothing is wired into
+        // prompt"), so the one check of aspectTarget against the C++ had not run
+        // since the fusion. Found 2026-09-16.
+        // ⚠ 20 steps, not FIXTURE_STEPS: at 8 an SDXL render is speckle, and this
+        // op is also where an imported SDXL export gets LOOKED at.
         val g = Graph(
             listOf(
-                textNode(),
                 Node(
-                    "sample", com.abrah.nightmare.SdSampler.SD15.name,
-                    params = ctxKey(
-                        mapOf("steps" to FIXTURE_STEPS, "cfg" to "7.5", "seed" to "42",
-                              "aspect" to ratio)
+                    "prompt", "core.prompt",
+                    params = mapOf(
+                        "prompt" to "a lighthouse on a cliff at sunset, photograph",
+                        "negative" to "blurry, lowres",
                     ),
-                    inputs = sources("cond" to "text"),
                 ),
                 Node(
-                    "decode", "sd.vae_decode",
-                    // ⚠ The SAME ratio on the decoder. That is the pairing
-                    // `aspectRetarget` enforces on a real graph, and writing it
-                    // by hand here is what makes this fixture a test of the crop
-                    // rather than of the retarget.
-                    params = ctxKey(mapOf("aspect" to ratio)),
-                    inputs = sources("latent" to "sample"),
+                    "sample",
+                    com.abrah.nightmare.SdSampler.typeFor(spec.family, inpaint = false),
+                    params = ctxKey(
+                        mapOf("steps" to "20", "cfg" to spec.cfg.toString(), "seed" to "42",
+                              "scheduler" to spec.scheduler, "aspect" to ratio)
+                    ),
+                    inputs = sources("prompt" to "prompt"),
                 ),
             )
         )
@@ -2979,9 +3071,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         )
         sink.progress(null)
         if (r.error != null) { say("aspect: refused — ${r.error}", bad = true); return }
-        val out = r.outputs["decode"] as? Value.Image
+        val out = r.outputs["sample"] as? Value.Image
         if (out == null) { say("aspect: no image came out", bad = true); return }
-        images.get(out.id)?.let { sink.image(it) }
+        images.get(out.id)?.let { bmp ->
+            sink.image(bmp)
+            // ⭐ Pullable, so a render from this op can be LOOKED at, not only sized.
+            java.io.File(ctx.getExternalFilesDir(null), "aspect_probe.png").outputStream()
+                .use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
         if (out.w == expect.width && out.h == expect.height) {
             say("aspect $ratio -> ${out.w}x${out.h} ✓ matches ${expect}")
         } else {
@@ -3078,7 +3175,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * check has to prove the old process is gone, not that a process is there.
      */
     suspend fun restartBackend(): Boolean {
-        BackendProcess.stop()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
         var down = false
         repeat(10) {
             if (!down) {
@@ -3162,8 +3259,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
     }
 
-    fun stopBackend() {
-        BackendProcess.stop()
+    suspend fun stopBackend() {
+        // ⚠ IO: [BackendProcess.stop] now waits for the process to exit, and
+        // this is reached from the main thread.
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
         sink.backend(BackendState.DOWN)
         say("backend stopped")
     }

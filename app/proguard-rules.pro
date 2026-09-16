@@ -34,3 +34,10 @@
     native <methods>;
 }
 -keep class com.abrah.nightmare.npu.NativeQnn { *; }
+
+# ⚠⚠ ONNX Runtime (the segmenter, docs/SEGMENTER.md). Its native library calls
+# back into these classes by name — the same R8 blind spot as nmjs.c above.
+# DreamUI's rules, unchanged.
+-keep class ai.onnxruntime.** { *; }
+-keepclassmembers class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**

@@ -69,6 +69,7 @@
     <string name="pack_import_note">一个 JavaScript 节点的 .zip 包。它们会出现在调色板中，与内置节点并列。</string>
     <string name="flows_import_warning">⚠ 节点包会运行自己的代码 — 请只导入你信任的包</string>
     <string name="flows_recommended">推荐</string>
+    <string name="flows_saved">已保存</string>
     <string name="save">保存</string>
     <string name="cancel">取消</string>
     <string name="save_workflow">保存此工作流</string>
@@ -117,4 +118,10 @@
     <plurals name="kept_in_results">
         <item quantity="other">已将 %1$d 张图片保存到结果</item>
     </plurals>
+    <string name="cd_tap_object">选择物体</string>
+    <string name="mask_tap_working">正在查找物体…</string>
+    <string name="mask_tap_hint">点按物体即可选中。再点一次选中更多，再点一次取消选择。</string>
+    <string name="tools">工具</string>
+    <string name="tools_note">在手机 CPU 上运行的小助手。接入流程即可使用。</string>
+    <string name="segmenter_about">在 Inpaint 蒙版中点按物体即可选中。将 Segment model 节点接入 Inpaint。</string>
 </resources>

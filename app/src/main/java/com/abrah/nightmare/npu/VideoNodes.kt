@@ -81,7 +81,14 @@ object VideoSampleNode : NodeType {
     /** ⚠ `generate`, with the SD samplers: it is the same job on other weights. */
     override val category = "generate"
 
-    override val paletteName = "video"
+    /** ⚠ Beside the SD card's `Image` in the Generate tab — [com.abrah.nightmare.SdSampler.paletteName]. */
+    override val paletteName = "Video"
+
+    /** ⭐ Named by what it is doing — the same rule as the SD nodes' [titleFor]. */
+    override fun titleFor(node: com.abrah.nightmare.Node): String =
+        if (node.inputs["image"] != null) "Image to video" else "Text to video"
+
+    override val defaultId = "video"
     override val about = "a prompt, or a prompt and a photo, into a 2 second clip"
 
     /** ⚠⚠ The clip belongs to `core.output`, like every other result (§5.7). */

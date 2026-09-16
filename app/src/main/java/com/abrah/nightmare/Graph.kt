@@ -154,6 +154,18 @@ sealed interface Value {
     }
 
     /**
+     * ⭐ A CAPABILITY, not data — what `mask.segment_model` puts on its wire.
+     *
+     * ⚠ Wiring it is the whole point (`docs/SEGMENTER.md` §1): it makes the Tap
+     * tool appear in the inpaint editor. The regions themselves travel as taps
+     * in the mask param, so the value carries nothing and addresses by [kind].
+     */
+    data class Capability(val kind: String) : Value {
+        override fun address() = kind
+        override fun describe() = kind
+    }
+
+    /**
      * The content address this value contributes to a DOWNSTREAM node's key.
      *
      * ⚠ Never the producing node's id: two nodes that computed the same thing
@@ -448,10 +460,13 @@ fun isLastOutput(graph: Graph, nodeId: String): Boolean {
  */
 const val PROMPT_BRIEF = 28
 
-val SD_SAMPLER_TYPES = setOf("sd15.sample", "sdxl.sample", "sd15.inpaint", "sdxl.inpaint")
+val SD_SAMPLER_TYPES = setOf(
+    "sd15.sample", "sdxl.sample", "anima.sample",
+    "sd15.inpaint", "sdxl.inpaint", "anima.inpaint",
+)
 
-/** ⚠ The two that carry a mask, its editor and the paste back. */
-val SD_INPAINT_TYPES = setOf("sd15.inpaint", "sdxl.inpaint")
+/** ⚠ The ones that carry a mask, its editor and the paste back. */
+val SD_INPAINT_TYPES = setOf("sd15.inpaint", "sdxl.inpaint", "anima.inpaint")
 
 val SAMPLER_TYPES = SD_SAMPLER_TYPES + setOf("nd.sample")
 
@@ -464,6 +479,19 @@ val SAMPLER_TYPES = SD_SAMPLER_TYPES + setOf("nd.sample")
  * where that matters rather than here.
  */
 val FRAMING_TYPES = SD_SAMPLER_TYPES + setOf("nd.sample")
+
+/**
+ * ⭐ Every node holding a FRAMING of a picture it was handed — the `x/y/w/h`
+ * rect and its lock. ⚠ One home: the inspector draws a framing view for exactly
+ * these, and [Graph.withNewPicture] resets exactly these.
+ */
+val FRAMES_PICTURE_TYPES = setOf("image.crop") + FRAMING_TYPES
+
+/**
+ * ⭐ Every node holding a PAINTING on a picture it was handed.
+ * ⚠⚠ Only the INPAINT samplers — an image-to-image node has no mask editor.
+ */
+val PAINTS_PICTURE_TYPES = setOf("image.mask") + SD_INPAINT_TYPES
 
 /** ⚠ See [SAMPLER_TYPES] — never compare against one of those strings directly. */
 fun isSampler(type: String): Boolean = type in SAMPLER_TYPES
@@ -524,6 +552,37 @@ data class Graph(val nodes: List<Node>) {
     fun withParams(nodeId: String, values: Map<String, String>) = copy(
         nodes = nodes.map { if (it.id == nodeId) it.copy(params = it.params + values) else it }
     )
+
+    /**
+     * ⭐⭐ A new picture on [nodeId] — and every framing and painting downstream
+     * of it forgotten.
+     *
+     * ⚠⚠ Both are stored NORMALISED to the picture they were made on, so they
+     * survive a new photo as numbers and mean nothing on it: a crop around a
+     * face lands on a wall, a mask painted over a hand lands on the sky. Asked
+     * for 2026-09-16, *"choosing a new image should reset the crop and the mask,
+     * for all nodes"* — so DOWNSTREAM, not only the next node: a crop feeding an
+     * inpaint sampler is framing the same new photo.
+     *
+     * ⚠ The LOCK goes too. It protected a framing that no longer exists, and a
+     * lock left on the default rect would refuse the first drag on the new one.
+     * `grow`/`feather`/padding stay — those are settings, not content.
+     */
+    fun withNewPicture(nodeId: String, uri: String): Graph {
+        val framing = setOf("x", "y", "w", "h", CropNode.LOCKED)
+        return copy(nodes = nodes.map { n ->
+            when {
+                n.id == nodeId -> n.copy(params = n.params + ("uri" to uri))
+                !dependsOn(n.id, nodeId) -> n
+                else -> {
+                    var drop = emptySet<String>()
+                    if (n.type in FRAMES_PICTURE_TYPES) drop = drop + framing
+                    if (n.type in PAINTS_PICTURE_TYPES) drop = drop + MaskNode.OPS
+                    if (drop.isEmpty()) n else n.copy(params = n.params - drop)
+                }
+            }
+        })
+    }
 
     /**
      * Remove a node, and every wire that pointed at it.

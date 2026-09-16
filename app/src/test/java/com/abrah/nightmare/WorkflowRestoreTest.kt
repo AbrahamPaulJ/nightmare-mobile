@@ -169,7 +169,7 @@ class WorkflowRestoreTest {
         val vm = HarnessViewModel(app)
         vm.restoreWorkflow()
         settle()
-        assertTrue("sample" in vm.canvas.workflow.graph.byId)
+        assertTrue("generate" in vm.canvas.workflow.graph.byId)
     }
 
     // ---- the two latches ---------------------------------------------------

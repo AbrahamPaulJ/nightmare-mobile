@@ -89,15 +89,25 @@ class MainActivity : ComponentActivity() {
         // dropdown read this cache, and an empty one makes a new node default to
         // an upscaler that may not be installed.
         UpscalerCatalog.refresh(this)
+        com.abrah.nightmare.segment.Segmenter.refresh(this)
+        // ⭐ The video gate's remembered answer, before anything composes, so a
+        // phone that cannot run video never draws a Video card for one frame.
+        com.abrah.nightmare.npu.VideoGate.load(this, BuildConfig.VERSION_CODE)
         // ⚠ Before setContent: the theme decides the FIRST frame, and loading it
         // afterwards means a flash of the wrong palette on every cold start.
         Prefs.load(this)
+        // ⚠ Off the main thread: the first load parses a ~3.6 MB tokenizer.json.
+        // Nothing waits on it — the counts appear when it lands.
+        val appCtx = applicationContext
+        Thread { PromptTokens.ensureLoaded(appCtx) }.start()
         takeOp(intent)
         setContent {
             // ⚠⚠ Read from the view model, not from `Prefs` directly: the object
             // is a plain singleton with no Compose state, so a write to it would
             // change the value and recompose nothing.
             val vm: HarnessViewModel = viewModel()
+            // ⭐ Ask the chip once, at first launch (the user's call, 2026-09-17).
+            androidx.compose.runtime.LaunchedEffect(Unit) { vm.probeVideoSupport() }
             NightmareTheme(
                 darkTheme = when (vm.theme) {
                     Prefs.Theme.DARK -> true
@@ -244,8 +254,8 @@ fun HarnessScreen(
                     androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
                 ) { uri ->
                     // ⚠ Null is a CANCEL, not a failure. Saying nothing is right.
-                    if (uri != null && importName.isNotEmpty()) {
-                        vm.importModel(uri, importName)
+                    if (uri != null) {
+                        vm.importModel(uri, importName.ifEmpty { vm.importNameFor(uri) })
                     }
                 }
                 ModelsScreen(
@@ -276,7 +286,10 @@ fun HarnessScreen(
                     upscalers = vm.upscalerRows,
                     onInstallUpscaler = vm::installUpscaler,
                     onDeleteUpscaler = vm::deleteUpscaler,
-                    video = vm.videoRow,
+                    segmenter = vm.segmenterRow,
+                    onInstallSegmenter = vm::installSegmenter,
+                    onDeleteSegmenter = vm::deleteSegmenter,
+                    video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
                     onInstallVideo = vm::installVideoModels,
                     onDeleteVideo = vm::deleteVideoModels,
                     onProbeVideo = vm::probeVideoSupport,
@@ -304,6 +317,15 @@ fun HarnessScreen(
                     onSave = { vm.saveResultsToGallery(listOf(it.id)) },
                     onSaveGroup = { g -> vm.saveResultsToGallery(g.items.map { it.id }) },
                     onShareFlow = { vm.shareResultFlow(it.id) },
+                    imageFor = vm::resultImage,
+                    detailsFor = vm::detailsOf,
+                    onUpscale = { r, u -> vm.upscaleResult(r.id, u) },
+                    upscalers = vm.upscalerRows,
+                    onInstallUpscaler = vm::installUpscaler,
+                    upscaling = vm.upscalingResult,
+                    onShareResults = { ids, asFlow -> vm.shareResults(ids, asFlow) },
+                    onToast = vm::toast,
+                    onStarSelected = vm::starSelectedResults,
                 )
             },
             flows = {
@@ -315,7 +337,10 @@ fun HarnessScreen(
                     androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
                 ) { uri -> if (uri != null) vm.importWorkflow(uri) }
                 WorkflowsScreen(
-                    recipes = com.abrah.nightmare.canvas.RECIPES,
+                    recipes = com.abrah.nightmare.canvas.RECIPES.filter {
+                        !com.abrah.nightmare.npu.VideoGate.hidden ||
+                            it.id !in com.abrah.nightmare.npu.VideoGate.VIDEO_RECIPES
+                    },
                     saved = vm.savedWorkflows,
                     error = vm.workflowError,
                     onOpenRecipe = vm::openRecipe,
@@ -360,6 +385,7 @@ fun HarnessScreen(
     }
 
     if (vm.showCanvas) {
+        vm.missingModel?.let { m -> MissingModelDialog(m, vm) }
         // ⭐⭐ Every picture the graph can make without the NPU, kept current
         // as the user works -- the chosen photo on `load_image`, the framed one
         // on `crop`. ⚠ The trigger lives in `HarnessViewModel.updateCanvas`
@@ -370,6 +396,10 @@ fun HarnessScreen(
         CanvasScreen(
             state = vm.canvas,
             types = vm.nodeTypes,
+            // ⭐ Video hidden from Add node where the chip refused it (VideoGate).
+            paletteTypes = if (com.abrah.nightmare.npu.VideoGate.hidden) {
+                vm.nodeTypes.filterKeys { it != com.abrah.nightmare.npu.VideoGate.VIDEO_TYPE }
+            } else vm.nodeTypes,
             status = vm.canvasStatus,
             busy = vm.busy,
             image = vm.image,
@@ -473,6 +503,7 @@ fun HarnessScreen(
             // dragged crop rect, both on sheet dismissal.
             onEdit = vm::editCanvas,
             onEditMask = vm::editMask,
+            onTapMask = vm::tapMask,
             onCancelRun = vm::cancelRun,
             onSetResolution = vm::selectResolution,
             onSetAspect = vm::selectAspect,
@@ -574,6 +605,81 @@ fun HarnessScreen(
  * ⚠ Split out so `SettingsScreen` can take it as a slot and stay free of the
  * view model -- the same shape `LibraryScreen` uses for its tabs.
  */
+/**
+ * ⭐⭐ A Run stopped because a flow names a checkpoint that is not here — asked
+ * ON the canvas, with the download in the popup (the user's call, 2026-09-17).
+ *
+ * ⚠ Stays open through the download and becomes a Run button when the model
+ * lands; Hide lets the download continue with the popup closed.
+ */
+@Composable
+private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessViewModel) {
+    val bytes = vm.missingBytes(m)
+    val size = if (bytes >= 1L shl 30) String.format(java.util.Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
+    else "${bytes shr 20} MB"
+    val progress = vm.missingProgress
+    val done = vm.missingInstalled
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { vm.dismissMissingModel() },
+        title = {
+            Text(if (done) "${m.label} is ready" else "This flow needs a model")
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    when {
+                        done -> "Downloaded. Run the flow now?"
+                        m is HarnessViewModel.MissingModel.Checkpoint && m.substitute && m.wanted.isNotBlank() ->
+                            "\"${m.wanted}\" is not on this phone and has no download — it was " +
+                                "imported somewhere else. Download ${m.label} ($size) and use it " +
+                                "for this flow instead?"
+                        m is HarnessViewModel.MissingModel.Segment ->
+                            "${m.label} is not installed — this flow's Segment model node needs it. " +
+                                "Download it ($size)?"
+                        else -> "${m.label} is not installed. Download it ($size)?"
+                    }
+                )
+                if (progress != null) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { progress.fraction },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "${progress.done shr 20} of ${progress.total shr 20} MB · ${progress.phase}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else if (!done) {
+                    Text("Use Wi-Fi.", style = MaterialTheme.typography.bodySmall)
+                }
+                vm.modelError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            when {
+                done -> androidx.compose.material3.Button(onClick = {
+                    vm.dismissMissingModel()
+                    vm.runCanvasOrBatch()
+                }) { Text("Run") }
+                progress != null -> androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) {
+                    Text("Hide")
+                }
+                else -> androidx.compose.material3.Button(onClick = { vm.downloadMissingModel() }) {
+                    Text("Download")
+                }
+            }
+        },
+        dismissButton = {
+            if (progress != null) {
+                androidx.compose.material3.TextButton(onClick = { vm.cancelModelInstall(); vm.dismissMissingModel() }) {
+                    Text("Cancel download")
+                }
+            } else if (!done) {
+                androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) { Text("Not now") }
+            }
+        },
+    )
+}
+
 @Composable
 private fun HarnessPane(vm: HarnessViewModel) {
     HarnessContent(

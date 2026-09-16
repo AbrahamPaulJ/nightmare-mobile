@@ -141,6 +141,29 @@ val ClearLayersIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
             "1.81 1.81L12 19.09l-7.37-5.73L3 14.63l9 7 4.95-3.85L21.73 23 23 21.73 3.27 1z")
 }
 
+/**
+ * ⭐ The pointing hand — DreamUI's Tap tool (`Icons.Default.TouchApp`), drawn
+ * from its path because `material-icons-extended` is deliberately absent.
+ */
+val TapObjectIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("TouchApp",
+        "M9 11.24V7.5C9 6.12 10.12 5 11.5 5S14 6.12 14 7.5v3.74c1.21-.81 2-2.18 " +
+            "2-3.74C16 5.01 13.99 3 11.5 3S7 5.01 7 7.5c0 1.56.79 2.93 2 3.74zm9.84 " +
+            "4.63l-4.54-2.26c-.17-.07-.35-.11-.54-.11H13v-6c0-.83-.67-1.5-1.5-1.5S10 " +
+            "6.67 10 7.5v10.74l-3.43-.72c-.08-.01-.15-.03-.24-.03-.31 0-.59.13-.79.33l-.79.8 " +
+            "4.94 4.94c.27.27.65.44 1.06.44h6.79c.75 0 1.33-.55 1.44-1.28l.75-5.27c.01-.07.02-.14.02-.2 " +
+            "0-.62-.38-1.16-.91-1.38z")
+}
+
+/** ⭐ Enlarge — Material's PhotoSizeSelectLarge, DreamUI's upscale glyph. */
+val UpscaleIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("PhotoSizeSelectLarge",
+        "M21 15h2v2h-2v-2zm0-4h2v2h-2v-2zm2 8h-2v2c1 0 2-1 2-2zM13 3h2v2h-2V3zm8 " +
+            "4h2v2h-2V7zm0-4v2h2c0-1-1-2-2-2zM1 7h2v2H1V7zm16-4h2v2h-2V3zm0 16h2v2h-2v-2zM3 " +
+            "3C2 3 1 4 1 5h2V3zm6 0h2v2H9V3zM5 3h2v2H5V3zm-4 8v8c0 1.1.9 2 2 2h12V11H1zm2 " +
+            "8l2.5-3.21 1.79 2.15 2.5-3.22L13 19H3z")
+}
+
 /** ⚠ One builder for the three above: a 24dp viewport and a single filled path. */
 private fun materialIcon(name: String, path: String): ImageVector =
     ImageVector.Builder(

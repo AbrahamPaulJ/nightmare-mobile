@@ -82,138 +82,146 @@ fun WorkflowsScreen(
             ErrorNotice(error, Modifier.padding(top = 8.dp))
         }
 
-        LazyColumn(
-            Modifier.fillMaxWidth().padding(top = 12.dp).navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            item { Section(stringResource(R.string.flows_recommended)) }
-            items(recipes, key = { "r-${it.id}" }) { r ->
-                // ⭐ The CARD opens it. An "Open" button beside a row whose
-                // only purpose is to be opened is a second target for one
-                // intent -- and on a phone the card is the bigger, easier one.
-                Card(
-                    Modifier.fillMaxWidth().clickable { onOpenRecipe(r) },
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                        Text(r.label, style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            r.about,
-                            style = LogTextStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-
-            item { Section("Saved") }
-            if (saved.isEmpty()) {
-                item {
-                    Text(
-                        // ⚠ Says how, not just that it is empty. "No saved
-                        // workflows" tells a user nothing they cannot see.
-                        // ⚠ And it names where Save actually IS: this screen no
-                        // longer has one, so copy pointing at a button on this
-                        // screen would send the user looking for it here.
-                        "Nothing saved yet — build a flow on the canvas, then press Save there.",
-                        style = LogTextStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            items(saved, key = { "s-${it.name}" }) { w ->
-                // ⭐ Tap the card to open, as with a recipe above.
-                //
-                // ⚠⚠ The rename and delete icons stay ICONS inside it and keep
-                // their own click targets. Delete already asks first, which is
-                // what makes a destructive control safe to sit on a surface
-                // that is itself tappable -- it deleted a workflow on a single
-                // mis-tap once, and that is the fix that has to hold here.
-                Card(
-                    Modifier.fillMaxWidth().clickable { onOpenSaved(w.name) },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    ),
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            w.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Normal,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+        // ⭐⭐ Recommended and Saved as SUB-TABS — the same pills Models uses
+        // for its families ([SwipeTabs]), the user's call 2026-09-17. One list
+        // with two section headings put every saved flow below every recipe,
+        // so the list a returning user wants was always the one scrolled to.
+        SwipeTabs(
+            labels = listOf(
+                stringResource(R.string.flows_recommended),
+                stringResource(R.string.flows_saved),
+            ),
+            modifier = Modifier.padding(top = 8.dp),
+        ) { page ->
+            LazyColumn(
+                Modifier.fillMaxWidth().padding(top = 10.dp).navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (page == 0) {
+                    items(recipes, key = { "r-${it.id}" }) { r ->
+                        // ⭐ The CARD opens it. An "Open" button beside a row whose
+                        // only purpose is to be opened is a second target for one
+                        // intent -- and on a phone the card is the bigger, easier one.
+                        Card(
+                            Modifier.fillMaxWidth().clickable { onOpenRecipe(r) },
                         ) {
-                            // ⭐ Rename. A saved graph accumulates meaning as it
-                            // is worked on, and the name chosen in the first
-                            // thirty seconds is rarely the one that fits.
-                            IconButton(onClick = { renaming = w.name }) {
-                                Icon(Icons.Filled.Create, contentDescription = "rename \"${w.name}\"")
-                            }
-                            // ⭐ Share the flow as the same JSON the Import
-                            // button accepts — so what you send is what someone
-                            // else can open, with no second format.
-                            IconButton(onClick = { onShareSaved(w.name) }) {
-                                // ⚠ The share ARROW. The node-graph glyph means
-                                // OPEN a flow (Results, the user's swap
-                                // 2026-09-11) — here it meant Share, one tab away.
-                                Icon(
-                                    com.abrah.nightmare.ui.ShareIcon,
-                                    contentDescription = "share \"${w.name}\"",
-                                )
-                            }
-                            // ⚠⚠ Behind a confirm now. This deleted a workflow on
-                            // a single mis-tap, next to "open", with no undo and
-                            // no trace on disk.
-                            IconButton(onClick = { deleting = w.name }) {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    contentDescription = "delete \"${w.name}\"",
-                                    tint = MaterialTheme.colorScheme.error,
+                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                Text(r.label, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    r.about,
+                                    style = LogTextStyle,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
                     }
+                } else {
+                    if (saved.isEmpty()) {
+                        item {
+                            Text(
+                                // ⚠ Says how, not just that it is empty. "No saved
+                                // workflows" tells a user nothing they cannot see.
+                                // ⚠ And it names where Save actually IS: this screen no
+                                // longer has one, so copy pointing at a button on this
+                                // screen would send the user looking for it here.
+                                "Nothing saved yet — build a flow on the canvas, then press Save there.",
+                                style = LogTextStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    items(saved, key = { "s-${it.name}" }) { w ->
+                        // ⭐ Tap the card to open, as with a recipe.
+                        //
+                        // ⚠⚠ The rename and delete icons stay ICONS inside it and keep
+                        // their own click targets. Delete already asks first, which is
+                        // what makes a destructive control safe to sit on a surface
+                        // that is itself tappable -- it deleted a workflow on a single
+                        // mis-tap once, and that is the fix that has to hold here.
+                        Card(
+                            Modifier.fillMaxWidth().clickable { onOpenSaved(w.name) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    w.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Normal,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    // ⭐ Rename. A saved graph accumulates meaning as it
+                                    // is worked on, and the name chosen in the first
+                                    // thirty seconds is rarely the one that fits.
+                                    IconButton(onClick = { renaming = w.name }) {
+                                        Icon(Icons.Filled.Create, contentDescription = "rename \"${w.name}\"")
+                                    }
+                                    // ⭐ Share the flow as the same JSON the Import
+                                    // button accepts — so what you send is what someone
+                                    // else can open, with no second format.
+                                    IconButton(onClick = { onShareSaved(w.name) }) {
+                                        // ⚠ The share ARROW. The node-graph glyph means
+                                        // OPEN a flow (Results, the user's swap
+                                        // 2026-09-11) — here it meant Share, one tab away.
+                                        Icon(
+                                            com.abrah.nightmare.ui.ShareIcon,
+                                            contentDescription = "share \"${w.name}\"",
+                                        )
+                                    }
+                                    // ⚠⚠ Behind a confirm now. This deleted a workflow on
+                                    // a single mis-tap, next to "open", with no undo and
+                                    // no trace on disk.
+                                    IconButton(onClick = { deleting = w.name }) {
+                                        Icon(
+                                            Icons.Filled.Delete,
+                                            contentDescription = "delete \"${w.name}\"",
+                                            tint = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-            }
-            // ⭐⭐ Import LAST, under the saved flows.
-            //
-            // ⚠ It was FIRST, on the Models tab's reasoning that someone who
-            // already has a file is not browsing ours. That is true of a
-            // CHECKPOINT — a rare, deliberate act — and wrong here: the Flows
-            // tab is opened to pick a flow, many times a session, and a card
-            // about importing sat above the thing every visit is for. The
-            // user's call, 2026-09-10.
-            // ⚠⚠ **Flows only.** Importing a NODE PACK moved to Settings, at the
-            // user's call 2026-09-11: a flow is inert data that the app can
-            // refuse to open, where a pack is CODE with no validation gate yet
-            // (`docs/ARCHITECTURE.md` §8c). Two actions that differ that much in
-            // consequence do not belong on one card, and this tab is the one a
-            // person visits to run something.
-            if (onImportFlow != null) {
-                item {
-                    // ⚠⚠ **Flows only.** Importing a NODE PACK moved to Settings,
-                    // at the user's call 2026-09-11: a flow is inert data that
-                    // the app can refuse to open, where a pack is CODE with no
-                    // validation gate yet (`docs/ARCHITECTURE.md` §8c). Two
-                    // actions that differ that much in consequence do not belong
-                    // on one card, and this tab is the one a person visits to
-                    // run something.
-                    // ⚠ [ImportCallout] is the SAME card Models and Settings
-                    // draw. It used to be a plain card with two bare buttons
-                    // labelled "Flow" and "Nodes" — labels that only parsed
-                    // while they sat side by side.
-                    ImportCallout(
-                        title = stringResource(R.string.flows_import),
-                        body = stringResource(R.string.flows_import_note),
-                        buttonLabel = stringResource(R.string.flows_import_flow),
-                        onImport = onImportFlow,
-                    )
+                // ⭐⭐ Import LAST, and on BOTH sub-tabs (the user's call,
+                // 2026-09-17), so it is where the thumb looks whichever list is
+                // showing.
+                //
+                // ⚠ It was FIRST, on the Models tab's reasoning that someone who
+                // already has a file is not browsing ours. That is true of a
+                // CHECKPOINT — a rare, deliberate act — and wrong here: the Flows
+                // tab is opened to pick a flow, many times a session, and a card
+                // about importing sat above the thing every visit is for. The
+                // user's call, 2026-09-10.
+                if (onImportFlow != null) {
+                    item {
+                        // ⚠⚠ **Flows only.** Importing a NODE PACK moved to Settings,
+                        // at the user's call 2026-09-11: a flow is inert data that
+                        // the app can refuse to open, where a pack is CODE with no
+                        // validation gate yet (`docs/ARCHITECTURE.md` §8c). Two
+                        // actions that differ that much in consequence do not belong
+                        // on one card, and this tab is the one a person visits to
+                        // run something.
+                        // ⚠ [ImportCallout] is the SAME card Models and Settings
+                        // draw. It used to be a plain card with two bare buttons
+                        // labelled "Flow" and "Nodes" — labels that only parsed
+                        // while they sat side by side.
+                        ImportCallout(
+                            title = stringResource(R.string.flows_import),
+                            body = stringResource(R.string.flows_import_note),
+                            buttonLabel = stringResource(R.string.flows_import_flow),
+                            onImport = onImportFlow,
+                        )
+                    }
                 }
             }
         }
@@ -276,15 +284,5 @@ private fun NameDialog(
             ) { Text(confirm) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-@Composable
-private fun Section(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 8.dp),
     )
 }

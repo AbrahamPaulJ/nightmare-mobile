@@ -196,7 +196,8 @@ class ModelCatalogTest {
         for (spec in ModelCatalog.all) {
             assertTrue(
                 "${spec.id} --type ${spec.backendType}",
-                spec.backendType in listOf("sd15npu", "sdxl"),
+                // ⚠ `anima` since 2026-09-16 — `main.cpp` has built it all along.
+                spec.backendType in listOf("sd15npu", "sdxl", "anima"),
             )
             assertTrue("${spec.id} has no required files", spec.requiredFiles.isNotEmpty())
             assertTrue("${spec.id} has no resolution", spec.resolutions.isNotEmpty())
@@ -350,5 +351,27 @@ class ModelCatalogTest {
                 )
             }
         }
+    }
+
+    /**
+     * ⭐ Anima is catalogued with its AUTHOR's recipe — read off all nine
+     * archives' `config.json` on 2026-09-16 — and only the samplers its backend
+     * tells apart. A turbo checkpoint on 20 steps / cfg 7.5 / `dpm` burns.
+     */
+    @Test
+    fun animaCarriesItsPublishedRecipe() {
+        assertEquals(9, ModelCatalog.animaModels.size)
+        for (spec in ModelCatalog.animaModels) {
+            assertEquals(Family.ANIMA, spec.family)
+            assertEquals("anima", spec.backendType)
+            assertEquals(Triple("euler", 10, 1.0), Triple(spec.scheduler, spec.steps, spec.cfg))
+            assertEquals(75, spec.minHtpArch)
+            assertTrue(spec.lowram)
+            assertTrue("unet_part1.bin" in spec.requiredFiles)
+            assertTrue(spec.url(spec.best!!).startsWith("https://huggingface.co/xororz/anima-qnn/"))
+        }
+        assertEquals(listOf("euler", "euler_a"), ModelCatalog.schedulersFor(Family.ANIMA))
+        assertEquals("anima.sample", SdSampler.typeFor(Family.ANIMA, inpaint = false))
+        assertEquals("anima.inpaint", SdSampler.typeFor(Family.ANIMA, inpaint = true))
     }
 }

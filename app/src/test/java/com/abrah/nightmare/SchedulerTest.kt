@@ -112,4 +112,40 @@ class SchedulerTest {
         assertEquals(order.size, out.size)
         assertTopological(out)
     }
+
+    /**
+     * ⭐⭐ Work under the key that is ALREADY loaded runs first — a two-checkpoint
+     * graph whose second checkpoint is up does not open by switching away.
+     */
+    @Test
+    fun theLoadedKeyGoesFirst() {
+        val order = listOf(n("a1"), n("b1"))
+        val keyOf = keyed("a1" to a, "b1" to b)
+        assertEquals(listOf("b1", "a1"), scheduleByKey(order, keyOf, start = b).map { it.id })
+    }
+
+    /**
+     * ⚠⚠ The pre-run launch is for the NODE's checkpoint, never a global one.
+     * Launching for the selection made every Run start twice — once for the
+     * selected model, once more for the sampler's. Reported 2026-09-16.
+     */
+    @Test
+    fun theLaunchKeyIsTheFirstTheScheduleReaches() {
+        val keyed = object : NodeType {
+            override val name = "t"
+            override val version = "1"
+            override val category = "misc"
+            override val inputs = emptyList<Port>()
+            override val outputs = listOf(Port("out", "IMAGE"))
+            override fun contextKey(node: Node) = when (node.id) { "a1" -> a; "b1" -> b; else -> null }
+            override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
+                throw UnsupportedOperationException("schedule only")
+        }
+        val types = mapOf("t" to keyed)
+        val g = Graph(listOf(n("p"), n("b1", "p"), n("a1", "p")))
+        assertEquals(b, launchKeyFor(g, types, loaded = null))
+        assertEquals(a, launchKeyFor(g, types, loaded = a))
+        assertEquals(null, launchKeyFor(Graph(listOf(n("p"))), types, loaded = null))
+    }
 }
+

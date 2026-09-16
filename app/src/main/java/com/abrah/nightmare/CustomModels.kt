@@ -62,6 +62,17 @@ object CustomModels {
     private const val SDXL_MARK = "clip_2.mnn"
 
     /**
+     * ⚠ Anima's first DiT half. Absent from SD 1.5 and SDXL, which ship one
+     * `unet.bin`. ⚠⚠ Not `tokenizer_t5.json` alone and not the upstream `ANIMA`
+     * marker file: a marker is a claim (see the class note), a 2 GB graph is not.
+     */
+    private const val ANIMA_MARK = "unet_part1.bin"
+
+    /** ⚠ npuforge's graph-contract marker, beside the weights. */
+    const val LONG_CONTEXT_FILE = "qnn_context.txt"
+    const val LONG_CONTEXT_231 = "231_masked_v1"
+
+    /**
      * The scan result, as a process-global.
      *
      * ⚠ Same reasoning as [SelectedModel]: [ModelCatalog] is a static object
@@ -133,16 +144,23 @@ object CustomModels {
      * half-copied tree with no CLIP file yet is not something to describe.
      */
     private fun specFor(dir: File): ModelSpec? {
-        val sdxl = File(dir, SDXL_MARK).isFile
-        val sd15 = File(dir, SD15_MARK).isFile
-        // ⚠ Both present is not a family, it is a mixed directory — someone
+        val found = listOfNotNull(
+            Family.SD15.takeIf { File(dir, SD15_MARK).isFile },
+            Family.SDXL.takeIf { File(dir, SDXL_MARK).isFile },
+            Family.ANIMA.takeIf { File(dir, ANIMA_MARK).isFile },
+        )
+        // ⚠ Two present is not a family, it is a mixed directory — someone
         // unpacked two archives into one place. Refusing beats picking one.
-        if (sdxl == sd15) {
-            if (sdxl) Log.w(TAG, "skipping '${dir.name}': has both $SD15_MARK and $SDXL_MARK")
+        if (found.size != 1) {
+            if (found.size > 1) Log.w(TAG, "skipping '${dir.name}': markers for ${found.joinToString()}")
             return null
         }
-        val cfg = Config.read(dir)
-        return if (sdxl) customSpec(dir, cfg, Family.SDXL) else customSpec(dir, cfg, Family.SD15)
+        val spec = customSpec(dir, Config.read(dir), found.single())
+        // ⭐ npuforge SDXL: 3x77 tokens (`backend-patches/005`). Read, never assumed.
+        val long = spec.family == Family.SDXL && runCatching {
+            File(dir, LONG_CONTEXT_FILE).readText().contains(LONG_CONTEXT_231)
+        }.getOrDefault(false)
+        return if (long) spec.copy(promptTokens = 231) else spec
     }
 
     /**
@@ -164,23 +182,35 @@ object CustomModels {
         // ⚠ The backend's default when the archive says nothing, which is
         // today's behaviour for every model -- so adding this field changes no
         // existing import's output until its author declares otherwise.
-        scheduler = cfg.scheduler ?: ModelCatalog.DEFAULT_SCHEDULER,
-        steps = cfg.steps ?: ModelCatalog.DEFAULT_STEPS,
-        cfg = cfg.cfg ?: ModelCatalog.DEFAULT_CFG,
+        // ⚠⚠ …except for Anima, where the backend default is WRONG rather than
+        // neutral: every published Anima checkpoint is turbo (`euler`, 10, cfg
+        // 1 in all nine `config.json`s), and `dpm` is not even a sampler there.
+        scheduler = cfg.scheduler?.takeIf { it in ModelCatalog.schedulersFor(family) }
+            ?: if (family == Family.ANIMA) "euler" else ModelCatalog.DEFAULT_SCHEDULER,
+        steps = cfg.steps ?: if (family == Family.ANIMA) 10 else ModelCatalog.DEFAULT_STEPS,
+        cfg = cfg.cfg ?: if (family == Family.ANIMA) 1.0 else ModelCatalog.DEFAULT_CFG,
         family = family,
-        backendType = if (family == Family.SDXL) ModelCatalog.SDXL_NPU else ModelCatalog.SD15_NPU,
-        resolutions = listOf(
-            if (family == Family.SDXL) ModelCatalog.SDXL_NPU_RES else ModelCatalog.SD15_NPU_RES,
-        ),
-        requiredFiles = if (family == Family.SDXL) {
-            ModelCatalog.SDXL_REQUIRED
-        } else {
-            ModelCatalog.SD15_REQUIRED
+        backendType = when (family) {
+            Family.SD15 -> ModelCatalog.SD15_NPU
+            Family.SDXL -> ModelCatalog.SDXL_NPU
+            Family.ANIMA -> ModelCatalog.ANIMA_NPU
         },
-        // ⚠ Not a preference: SDXL's UNet does not fit beside its VAE and two
-        // encoders at 1024², and the backend needs telling regardless of where
-        // the files came from.
-        lowram = family == Family.SDXL,
+        resolutions = listOf(
+            when (family) {
+                Family.SD15 -> ModelCatalog.SD15_NPU_RES
+                Family.SDXL -> ModelCatalog.SDXL_NPU_RES
+                Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
+            },
+        ),
+        requiredFiles = when (family) {
+            Family.SD15 -> ModelCatalog.SD15_REQUIRED
+            Family.SDXL -> ModelCatalog.SDXL_REQUIRED
+            Family.ANIMA -> ModelCatalog.ANIMA_REQUIRED
+        },
+        // ⚠ Not a preference: SDXL's UNet and Anima's two DiT halves do not fit
+        // beside their encoders at 1024², and the backend needs telling
+        // regardless of where the files came from.
+        lowram = family != Family.SD15,
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which
         // HTP it was compiled for — `QnnSystemContext` gives the IO contract
         // and nothing else — so any number here would be invented. A built-in
@@ -228,6 +258,34 @@ object CustomModels {
         name.isNotBlank() &&
             name.none { it == '/' || it == '\\' || it == ':' } &&
             !name.startsWith(".")
+
+    /**
+     * ⭐ The name an import takes when the user left the box EMPTY — the zip's own
+     * file name. Asked for 2026-09-16.
+     *
+     * ⚠ Made safe by the same rule [isValidName] checks (no separators, no
+     * leading dot), and numbered past anything [taken] — a built-in id or a
+     * model already on disk — because [import] DELETES an existing directory of
+     * that name before unpacking. A typed name is the user's explicit choice; a
+     * derived one must never silently replace a model.
+     *
+     * ⚠ A provider can report no name, or `document.zip`; both still give a
+     * usable id rather than a refusal.
+     */
+    fun nameFromFile(displayName: String?, taken: Set<String>): String {
+        val base = displayName.orEmpty()
+            .substringAfterLast('/')
+            .let { if (it.endsWith(".zip", ignoreCase = true)) it.dropLast(4) else it }
+            .map { if (it == '/' || it == '\\' || it == ':' || it.isWhitespace()) '_' else it }
+            .joinToString("")
+            .trimStart('.')
+            .trim('_')
+            .ifBlank { "imported" }
+        if (base !in taken) return base
+        var n = 2
+        while ("${base}_$n" in taken) n++
+        return "${base}_$n"
+    }
 
     /** Whether [name] would shadow a catalogue entry. */
     fun isReserved(name: String): Boolean = ModelCatalog.builtIn.any { it.id == name }
@@ -321,7 +379,8 @@ object CustomModels {
             // whose CLIP file is nested deeper than one directory, and the user
             // can tell those apart only if told what was looked for.
             throw IOException(
-                "not a checkpoint: no $SD15_MARK (SD 1.5) or $SDXL_MARK (SDXL) in the archive",
+                "not a checkpoint: no $SD15_MARK (SD 1.5), $SDXL_MARK (SDXL) or " +
+                    "$ANIMA_MARK (Anima) in the archive",
             )
         }
         scan(context)

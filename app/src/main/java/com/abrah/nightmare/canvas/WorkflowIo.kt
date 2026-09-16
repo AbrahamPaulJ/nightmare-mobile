@@ -237,7 +237,13 @@ fun workflowFromJson(json: String): LoadedWorkflow {
  * namespaced, which is the pattern this brings the built-ins in line with.
  */
 private fun migrateType(node: Node): Node {
-    val renamed = RENAMED[node.type]?.let { node.copy(type = it) } ?: node
+    val renamed0 = RENAMED[node.type]?.let { node.copy(type = it) } ?: node
+    // ⚠⚠ The inpaint types lost their `mask` PORT (2026-09-17, the user's call):
+    // the painting is the mask. A saved wire into it is dropped rather than left
+    // pointing at a port nothing declares.
+    val renamed = if (renamed0.type in com.abrah.nightmare.SD_INPAINT_TYPES && "mask" in renamed0.inputs) {
+        renamed0.copy(inputs = renamed0.inputs - "mask")
+    } else renamed0
     // ⚠⚠ …and `crop`'s mirrored padding became a BLURRED mirror, under a new
     // value. Left as `mirror` it would name a fill the node no longer produces,
     // and the chip in the inspector would offer a word for something else.
@@ -253,6 +259,8 @@ private val RENAMED = mapOf(
     "crop" to "image.crop",
     // ⚠ The first fused video node, back under the name it now has.
     "nd.video_sample" to "nd.sample",
+    // ⚠ The segmenter node's first name, for one day (docs/SEGMENTER.md).
+    "mask.select_object" to "mask.segment_model",
     // ⭐⭐ The three generalised nodes of docs/ARCHITECTURE.md §5.7. They belong
     // to no family -- one prompt node serves SD and video, one output node takes
     // a picture or a clip -- so `core.` is the domain that says so.

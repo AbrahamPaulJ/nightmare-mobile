@@ -100,6 +100,27 @@ object Share {
         send(context, uriFor(context, f), "application/json", "Share flow")
     }
 
+    /**
+     * ⭐ Several files in ONE share — a History selection (2026-09-17).
+     * [entries] are file names with extensions and a writer for each.
+     */
+    fun many(context: Context, entries: List<Pair<String, (File) -> Unit>>, mime: String, title: String) {
+        val dir = staging(context)
+        val uris = ArrayList<android.net.Uri>()
+        for ((name, write) in entries) {
+            val f = File(dir, sanitise(name.substringBeforeLast('.')) + "." + name.substringAfterLast('.'))
+            write(f)
+            uris += uriFor(context, f)
+        }
+        if (uris.size == 1) return send(context, uris[0], mime, title)
+        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = mime
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
     private fun send(context: Context, uri: android.net.Uri, mime: String, title: String) {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mime

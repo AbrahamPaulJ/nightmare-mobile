@@ -238,8 +238,11 @@ object UpscalerCatalog {
      * server ignored the `Range` header and is sending the WHOLE file —
      * appending that produces a file of the right length made of the wrong
      * bytes. Restart cleanly instead.
+     *
+     * ⚠ `internal`: the segmenter's archive (`segment/Segmenter.kt`) is fetched
+     * through this too, rather than through a third copy.
      */
-    private fun download(
+    internal fun download(
         url: String,
         dest: File,
         expected: Long,

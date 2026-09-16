@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +26,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -123,6 +126,22 @@ fun ResultsScreen(
     onDelete: (Result) -> Unit,
     onDiskBytes: Long,
     modifier: Modifier = Modifier,
+    /** ⭐ The picture at size for the big preview. Falls back to the thumbnail. */
+    imageFor: (String) -> ImageBitmap? = thumbnailFor,
+    /** ⭐ Info — what made it, from the stored flow. */
+    detailsFor: (Result) -> List<Pair<String, String>> = { emptyList() },
+    /** ⭐ Upscale with an installed upscaler; the enlarged picture becomes a new item. */
+    onUpscale: (Result, String) -> Unit = { _, _ -> },
+    upscalers: List<UpscalerRow> = emptyList(),
+    onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
+    /** ⭐ Non-null while an upscale runs, naming it. */
+    upscaling: String? = null,
+    /** ⭐ Share these results as pictures/clips (false) or as their flows (true). */
+    onShareResults: (Collection<String>, Boolean) -> Unit = { _, _ -> },
+    /** ⭐ A short refusal or notice, as a toast. */
+    onToast: (String) -> Unit = {},
+    /** ⭐ Star or un-star every selected result — no confirm, it is undoable. */
+    onStarSelected: () -> Unit = {},
 ) {
     // ⚠ One dialog for the whole list, not one per card — the same reason the
     // models screen hoists its delete confirm.
@@ -132,161 +151,343 @@ fun ResultsScreen(
     var deletingSelection by remember { mutableStateOf(false) }
     var deletingBatch by remember { mutableStateOf<ResultGroup?>(null) }
 
+    // ⚠ The picture in the big frame, per tab. Null shows the newest.
+    var shownId by remember { mutableStateOf<String?>(null) }
+    var info by remember { mutableStateOf<Result?>(null) }
+    var upscalingPick by remember { mutableStateOf<Result?>(null) }
+    var confirmingDownload by remember { mutableStateOf(false) }
+    /** ⭐ The ids a Share popup is asking about — one, or the selection. */
+    var sharing by remember { mutableStateOf<List<String>?>(null) }
+
     Column(modifier.fillMaxSize()) {
         if (results.isEmpty()) {
-            // ⚠⚠ Says HOW to fill it. An empty list that only says it is empty
-            // leaves the user to discover the star on the fullscreen viewer by
-            // accident, and most never will.
+            // ⚠⚠ Says HOW to fill it.
             Text(
-                "Nothing kept yet.\n\nRun something, tap the picture to open it, " +
-                    "and press the star. The graph that made it is kept too, so you can " +
-                    "reopen the whole flow later — not just look at the picture.",
+                "Nothing kept yet.\n\nRun something and press the star or the disk. " +
+                    "The graph that made it is kept too, so you can reopen the whole " +
+                    "flow later — not just look at the picture.",
                 style = LogTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 16.dp),
             )
             return@Column
         }
-        Text(
-            // ⚠ Says the cost. These live in app-private storage and go with an
-            // uninstall, which a user keeping favourites deserves to know before
-            // there are two hundred of them.
-            "${results.size} kept · ${onDiskBytes shr 20} MB · " +
-                "reopening a flow replaces what is on the canvas",
-            style = LogTextStyle,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-        // ⭐⭐ The selection bar, top right, and ONLY while something is
-        // selected. A permanently visible "select all / delete" pair is a
-        // destructive control sitting over a gallery with nothing chosen —
-        // long press is what asks for it, so long press is what reveals it.
-        if (selected.isNotEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically,
+        val all = groups.flatMap { it.items }
+        val items = if (favouritesOnly) all.filter { it.favourite } else all
+        val selecting = selected.isNotEmpty()
+
+        // ⭐⭐ A PERSISTENT notice while an upscale runs — a toast is gone in
+        // seconds and an upscale is not (the user's call, 2026-09-17).
+        upscaling?.let { what ->
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             ) {
-                Text(
-                    "${selected.size} selected",
-                    style = LogTextStyle,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = onSelectAll) { Text("All") }
-                // ⭐ Save to the gallery, from the selection. ⚠ "None" is gone:
-                // clearing is what BACK already does, and a row of three words
-                // beside a destructive icon is where a mis-tap lives.
-                IconButton(onClick = onSaveSelected) {
-                    Icon(
-                        SaveIcon,
-                        contentDescription = "save the selected pictures to the gallery",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        Modifier.size(16.dp), strokeWidth = 2.dp,
                     )
-                }
-                IconButton(onClick = { deletingSelection = true }) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "delete the selected pictures",
-                        tint = MaterialTheme.colorScheme.error,
+                    Text(
+                        "Upscaling with $what… it appears here as a new result.",
+                        style = LogTextStyle,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
             }
         }
-        // ⭐⭐ **All / Favourites** — the filter the star earned when it stopped
-        // BEING the keep (2026-09-15). Before that every result was starred by
-        // definition and there was nothing to filter by.
-        //
-        // ⚠⚠ ALWAYS shown. It was hidden until something was starred, which was
-        // a deadlock in practice: there was no star on a row to star WITH, so
-        // the chips never appeared and the feature looked missing. Reported
-        // 2026-09-15 — *"results tab doesn't have the favourites filter"*. ⇒ A
-        // visible chip that filters to nothing is a chip that teaches you what
-        // the star is for.
-        run {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                for (fav in listOf(false, true)) {
-                    val on = favouritesOnly == fav
-                    Surface(
-                        onClick = { onFavouritesOnly(fav) },
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (on) MaterialTheme.colorScheme.secondaryContainer
-                            else Color.Transparent,
-                        border = if (on) null else BorderStroke(
-                            1.dp, MaterialTheme.colorScheme.outlineVariant,
-                        ),
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(
-                            if (fav) "Favourites" else "All",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (on) MaterialTheme.colorScheme.onSecondaryContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+
+        // ⭐ All / Favourites — pills you TAP (the user's call, 2026-09-17: the
+        // swipe belongs to the picture, which walks between results).
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            for (fav in listOf(false, true)) {
+                val on = favouritesOnly == fav
+                Surface(
+                    onClick = { onFavouritesOnly(fav) },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (on) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                    border = if (on) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Text(
+                        if (fav) "Favourites" else "All",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = if (on) MaterialTheme.colorScheme.onSecondaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        }
+        if (items.isEmpty()) {
+            Text(
+                "Nothing starred yet — press the star on a picture to find it here.",
+                style = LogTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            return@Column
+        }
+
+        // ⭐⭐ The big frame SWIPES between results, and the grid follows it
+        // (the user's call, 2026-09-17). ⚠ Two effects, one per direction, each
+        // a no-op when the other side already agrees — so they cannot chase.
+        val shownIndex = items.indexOfFirst { it.id == shownId }.coerceAtLeast(0)
+        val pager = androidx.compose.foundation.pager.rememberPagerState(
+            initialPage = shownIndex, pageCount = { items.size },
+        )
+        LaunchedEffect(pager.settledPage, items.size) {
+            items.getOrNull(pager.settledPage)?.let { if (it.id != shownId) shownId = it.id }
+        }
+        LaunchedEffect(shownIndex) {
+            if (pager.currentPage != shownIndex) pager.animateScrollToPage(shownIndex)
+        }
+        val shown = items.getOrNull(pager.currentPage) ?: items.first()
+
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = pager,
+            key = { items[it].id },
+            modifier = Modifier.fillMaxWidth().weight(1.1f).padding(top = 10.dp),
+        ) { i ->
+            val r = items[i]
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                val clip = r.videoPath
+                // ⭐⭐ A clip PLAYS in the big frame, looping — the same player the
+                // fullscreen viewer uses. ⚠ Only the page in view, so a swipe
+                // does not leave players running off-screen.
+                if (clip != null && i == pager.currentPage) {
+                    com.abrah.nightmare.ui.ClipPlayer(
+                        path = clip,
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
+                    )
+                    Box(
+                        Modifier.fillMaxSize().clickable {
+                            if (selecting) onToggleSelect(r) else onView(r)
+                        },
+                    )
+                } else {
+                    (imageFor(r.id) ?: thumbnailFor(r.id))?.let { bmp ->
+                        Image(
+                            bitmap = bmp,
+                            contentDescription = stringResource(R.string.cd_open_fullscreen),
+                            // ⚠ Fit, not Crop: the honest view, edges included.
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { if (selecting) onToggleSelect(r) else onView(r) },
                         )
                     }
                 }
             }
         }
-        // ⚠ A GROUP survives the filter when any of its items is starred: a
-        // batch is one card, and hiding it because only three of ten are
-        // favourites would lose the three.
-        val shown =
-            if (favouritesOnly) groups.filter { g -> g.items.any { it.favourite } } else groups
-        LazyColumn(
-            Modifier.fillMaxWidth().padding(top = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(shown, key = { it.items.first().id }) { g ->
-                if (g.isBatch) {
-                    BatchCard(
-                        group = g,
-                        thumbnailFor = thumbnailFor,
-                        onOpenFlow = onOpenFlow,
-                        onView = onView,
-                        onDelete = { deletingBatch = it },
-                        // ⚠ A batch is selected as ONE thing: its cover's id
-                        // stands for the group, and the view model expands it.
-                        isSelected = g.cover.id in selected,
-                        onToggleSelect = { onToggleSelect(g.cover) },
-                        selecting = selected.isNotEmpty(),
-                        // ⚠⚠ ONE call with every id, not N calls of one.
-                        // `saveResultsToGallery` toasts once naming the count;
-                        // ten separate calls queued ten identical "Saved 1"
-                        // toasts, of which Android shows about one — so saving
-                        // a batch looked like saving a single picture. Reported
-                        // from the phone, 2026-09-10.
-                        onSave = { onSaveGroup(g) },
-                        onShareFlow = onShareFlow,
+
+        // ⭐⭐ ONE action row. While selecting it BECOMES the selection's row —
+        // no second bar at the top (the user's call, 2026-09-17).
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val onSurface = MaterialTheme.colorScheme.onSurface
+            if (selecting) {
+                Text(
+                    "${selected.size} selected",
+                    style = LogTextStyle,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+                Spacer(Modifier.weight(1f))
+                // ⚠ 40dp targets (DreamUI's own minimum) so six controls and the
+                // count fit one row on a 360dp phone without pushing any off.
+                val small = Modifier.size(40.dp)
+                TextButton(onClick = onSelectAll, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("All") }
+                // ⭐ Star the selection — no confirm, a star is one tap to undo.
+                val allStarred = all.filter { it.id in selected }.let { sel -> sel.isNotEmpty() && sel.all { it.favourite } }
+                IconButton(onClick = onStarSelected, modifier = small) {
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription = if (allStarred) "unstar the selected" else "star the selected",
+                        tint = if (allStarred) StarKept else StarIdle,
                     )
-                } else {
-                    val r = g.items.first()
-                    ResultCard(
-                        result = r,
-                        thumbnail = thumbnailFor(r.id),
-                        onOpenFlow = { onOpenFlow(r) },
-                        // ⚠⚠ In a selection, a TAP toggles rather than opens.
-                        // Opening a picture from inside a selection is how a
-                        // long-press-then-tap loses the whole selection.
-                        onView = {
-                            if (selected.isEmpty()) onView(r) else onToggleSelect(r)
-                        },
-                        onLongPress = { onToggleSelect(r) },
-                        isSelected = r.id in selected,
-                        selecting = selected.isNotEmpty(),
-                        onDelete = { deleting = r },
-                        onSave = { onSave(r) },
-                        onShareFlow = { onShareFlow(r) },
-                        onToggleFavourite = onToggleFavourite,
+                }
+                IconButton(onClick = { deletingSelection = true }, modifier = small) {
+                    Icon(Icons.Filled.Delete, contentDescription = "delete the selected", tint = MaterialTheme.colorScheme.error)
+                }
+                IconButton(onClick = { confirmingDownload = true }, modifier = small) {
+                    Icon(DownloadIcon, contentDescription = "save the selected to the gallery", tint = onSurface)
+                }
+                IconButton(onClick = { sharing = selected.toList() }, modifier = small) {
+                    Icon(ShareIcon, contentDescription = "share the selected", tint = onSurface)
+                }
+                IconButton(onClick = onClearSelection, modifier = small) {
+                    Icon(Icons.Filled.Close, contentDescription = "stop selecting", tint = onSurface)
+                }
+            } else {
+                IconButton(onClick = { deleting = shown }) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = stringResource(R.string.cd_delete_result),
+                        tint = MaterialTheme.colorScheme.error,
                     )
+                }
+                IconButton(onClick = { onToggleFavourite(shown) }) {
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription = if (shown.favourite) "remove from favourites" else "add to favourites",
+                        tint = if (shown.favourite) StarKept else StarIdle,
+                    )
+                }
+                IconButton(onClick = { onSave(shown) }) {
+                    Icon(DownloadIcon, contentDescription = "save to the gallery", tint = onSurface)
+                }
+                IconButton(onClick = { sharing = listOf(shown.id) }) {
+                    Icon(ShareIcon, contentDescription = "share", tint = onSurface)
+                }
+                // ⚠ Always SHOWN, refusing by name (the user's call, 2026-09-17):
+                // a button that vanishes on a clip teaches nothing.
+                IconButton(onClick = {
+                    when {
+                        upscaling != null -> onToast("Already upscaling with $upscaling")
+                        shown.videoPath != null -> onToast("Upscale works on pictures, not clips")
+                        maxOf(shown.width, shown.height) > UPSCALE_MAX_EDGE ->
+                            onToast(
+                                "Too big to upscale: ${shown.width}x${shown.height}. Pictures up to " +
+                                    "$UPSCALE_MAX_EDGE px on the long edge only (4x would pass ${UPSCALE_MAX_EDGE * 4} px)."
+                            )
+                        else -> upscalingPick = shown
+                    }
+                }) {
+                    Icon(
+                        UpscaleIcon, contentDescription = "upscale this picture",
+                        tint = onSurface.copy(alpha = if (upscaling == null) 1f else 0.38f),
+                    )
+                }
+                IconButton(onClick = { info = shown }) {
+                    Icon(Icons.Filled.Info, contentDescription = "what made this picture", tint = onSurface)
+                }
+                Spacer(Modifier.weight(1f))
+                // ⚠ The flow ICON in the filled button, as it always was — not a
+                // word (the user, 2026-09-17).
+                Button(
+                    onClick = { onOpenFlow(shown) },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Icon(ShareFlowIcon, contentDescription = stringResource(R.string.open_flow), modifier = Modifier.size(20.dp))
                 }
             }
         }
+        Text(
+            listOfNotNull(
+                shown.prompt?.takeIf { it.isNotBlank() },
+                "${results.size} kept · ${onDiskBytes shr 20} MB",
+            ).joinToString(" · "),
+            style = LogTextStyle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        // ⭐ The grid — small previews. Tap shows it above; long-press selects,
+        // and while selecting a tap toggles.
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(88.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 6.dp),
+        ) {
+            items(items.size, key = { items[it].id }) { i ->
+                val r = items[i]
+                HistoryThumb(
+                    thumb = thumbnailFor(r.id),
+                    inFrame = r.id == shown.id,
+                    picked = r.id in selected,
+                    favourite = r.favourite,
+                    isClip = r.videoPath != null,
+                    onClick = { if (selecting) onToggleSelect(r) else shownId = r.id },
+                    onLongClick = { onToggleSelect(r) },
+                )
+            }
+        }
+    }
+
+    info?.let { r -> ResultInfoDialog(detailsFor(r)) { info = null } }
+
+    upscalingPick?.let { r ->
+        AlertDialog(
+            onDismissRequest = { upscalingPick = null },
+            title = { Text("Upscale") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "The enlarged picture is kept as a new item; this one stays.",
+                        style = LogTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    for (u in upscalers) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(u.spec.label)
+                                Text(u.spec.about, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                            }
+                            when {
+                                u.installed -> Button(onClick = { upscalingPick = null; onUpscale(r, u.spec.id) }) { Text("Use") }
+                                u.progress != null -> Text("${u.progress.done shr 20} / ${u.progress.total shr 20} MB", style = LogTextStyle)
+                                u.build != null -> OutlinedButton(onClick = { onInstallUpscaler(u.spec) }) {
+                                    Text("${u.build.bytes shr 20} MB")
+                                }
+                                else -> Text(stringResource(R.string.cannot_run_it), style = LogTextStyle)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { upscalingPick = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+
+    // ⭐⭐ Share asks WHAT — the picture or the flow that made it — and, for a
+    // selection, says how many (the user's call, 2026-09-17).
+    sharing?.let { ids ->
+        val n = ids.size
+        AlertDialog(
+            onDismissRequest = { sharing = null },
+            title = { Text(if (n > 1) "Share $n" else "Share") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { sharing = null; onShareResults(ids, false) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (n > 1) "Share $n images" else "Share image") }
+                    OutlinedButton(
+                        onClick = { sharing = null; onShareResults(ids, true) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (n > 1) "Share $n workflows" else "Share workflow") }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { sharing = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+
+    if (confirmingDownload) {
+        AlertDialog(
+            onDismissRequest = { confirmingDownload = false },
+            title = { Text("Save ${selected.size} to the gallery?") },
+            text = {
+                Text(
+                    "Each is written to Pictures/${com.abrah.nightmare.ImageSaver.FOLDER} as a full-size " +
+                        "file — a large selection can take a while and a lot of space."
+                )
+            },
+            confirmButton = {
+                Button(onClick = { confirmingDownload = false; onSaveSelected() }) { Text("Save ${selected.size}") }
+            },
+            dismissButton = { TextButton(onClick = { confirmingDownload = false }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
 
     // ⚠ Every delete here asks through [ConfirmDelete], and says DELETE: it was
@@ -623,41 +824,19 @@ fun ResultViewer(
             // `FullscreenImage`: `onTap = { if (scale <= 1.01f) onDismiss() }`).
             // Two fullscreen viewers in one app must not be left with two
             // different ways out.
-            Button(onClick = { onOpenFlow(current) }) {
-                Text(stringResource(R.string.open_flow))
+            // ⚠⚠ The flow ICON in the filled button, as on the Results row —
+            // never the words (the user, 2026-09-17, twice).
+            Button(
+                onClick = { onOpenFlow(current) },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            ) {
+                Icon(ShareFlowIcon, contentDescription = stringResource(R.string.open_flow), modifier = Modifier.size(20.dp))
             }
         }
 
-        // ⭐ The params, as a sheet over the picture — opened deliberately,
-        // closed by tapping anywhere.
-        if (showInfo) {
-            Column(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp, start = 12.dp, end = 12.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { showInfo = false }
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                for ((k, v) in detailsFor(current)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            k,
-                            style = LogTextStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(width = 92.dp, height = 20.dp),
-                        )
-                        Text(v, style = LogTextStyle)
-                    }
-                }
-            }
-        }
+        // ⭐ The SAME info dialog the Results row opens — one function, so the two
+        // cannot drift (`docs/ARCHITECTURE.md` §5.6).
+        if (showInfo) ResultInfoDialog(detailsFor(current)) { showInfo = false }
 
         if (confirmingDelete) {
             // ⚠ The SAME body as the card's confirm — one constant, not two copies.
@@ -1038,3 +1217,112 @@ private fun ResultCardHeader(
 private const val RESULT_DELETE_BODY =
     "The picture and the flow that made it both go, and this cannot be undone.\n\n" +
         "A copy you saved to the gallery is not affected."
+
+/** ⭐ One small preview in History's grid. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun HistoryThumb(
+    thumb: ImageBitmap?,
+    inFrame: Boolean,
+    picked: Boolean,
+    favourite: Boolean,
+    isClip: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(
+                width = if (picked || inFrame) 2.dp else 0.dp,
+                color = if (picked) MaterialTheme.colorScheme.primary
+                else if (inFrame) MaterialTheme.colorScheme.outline else Color.Transparent,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+    ) {
+        thumb?.let {
+            Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        // ⭐ A clip is a STILL here with a play mark — only the big frame plays.
+        if (isClip) {
+            Box(
+                Modifier
+                    .align(Alignment.Center)
+                    .size(30.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                    contentDescription = "a clip",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        if (favourite) {
+            Icon(
+                Icons.Filled.Star,
+                contentDescription = null,
+                tint = StarKept,
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(14.dp),
+            )
+        }
+        if (picked) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
+        }
+    }
+}
+
+/**
+ * ⭐⭐ What made a result — small type so most flows fit without scrolling, and
+ * ONE copy button for the whole text (the user's call, 2026-09-17: a copy per
+ * row was clutter; what people paste is the lot).
+ */
+@Composable
+fun ResultInfoDialog(details: List<Pair<String, String>>, onClose: () -> Unit) {
+    val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+    val all = details.joinToString("\n") { (k, v) -> "$k: $v" }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Info") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                for ((k, v) in details) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            k,
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(78.dp),
+                        )
+                        Text(v, fontSize = 11.sp, lineHeight = 14.sp)
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(all)) }) {
+                Icon(CopyIcon, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.size(6.dp))
+                Text("Copy all")
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+    )
+}
+
+/**
+ * ⚠ The longest edge Results will upscale. The upscalers are 4x, so this caps
+ * the output at 6144 px — ~150 MB of pixels held while the PNG is written,
+ * which is where a phone starts refusing the allocation.
+ */
+const val UPSCALE_MAX_EDGE = 1536

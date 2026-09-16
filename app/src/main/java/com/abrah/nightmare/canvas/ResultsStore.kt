@@ -77,6 +77,13 @@ data class Result(
      * back as an ordinary one rather than as a favourite.
      */
     val favourite: Boolean = false,
+    /**
+     * ⭐ Kept by the output node's AUTOSAVE rather than by a person. ⚠ Only these
+     * are deleted when the picture is Cleared from the node (the user's call,
+     * 2026-09-17) — something kept or starred by hand was a decision, and a
+     * Clear on the canvas must not undo it. Defaults false for older files.
+     */
+    val auto: Boolean = false,
 ) {
     val label: String get() = prompt?.take(60)?.ifBlank { null } ?: "no prompt"
 }
@@ -185,6 +192,8 @@ class ResultsStore(private val dir: File) {
         video: File? = null,
         /** ⭐ True when the STAR kept this rather than the disk. */
         favourite: Boolean = false,
+        /** ⭐ True when AUTOSAVE kept it. See [Result.auto]. */
+        auto: Boolean = false,
     ): Result {
         dir.mkdirs()
         // ⚠⚠⚠ **A millisecond is not unique, and a batch keeps in a tight loop.**
@@ -216,6 +225,7 @@ class ResultsStore(private val dir: File) {
             bitmap.width, bitmap.height, batchId, batchLabel,
             videoPath = mp4(id).takeIf { it.isFile }?.path,
             favourite = favourite,
+            auto = auto,
         )
         val json = JSONObject()
             .put("savedAt", r.savedAt)
@@ -230,6 +240,7 @@ class ResultsStore(private val dir: File) {
             .put("batchId", r.batchId ?: JSONObject.NULL)
             .put("batchLabel", r.batchLabel)
             .put("favourite", r.favourite)
+            .put("auto", r.auto)
             // ⭐ The graph, as the same JSON a saved workflow uses — so
             // reopening a result is exactly reopening a workflow, with no
             // second format to keep in step.
@@ -289,6 +300,7 @@ class ResultsStore(private val dir: File) {
                         batchId = j.optString("batchId").takeIf { it.isNotBlank() && it != "null" },
                         batchLabel = j.optString("batchLabel"),
                         favourite = j.optBoolean("favourite", false),
+                        auto = j.optBoolean("auto", false),
                         // ⚠ Read off the DISK rather than out of the metadata:
                         // the file is the fact, and a `hasVideo` flag in the
                         // JSON could outlive the clip it names.

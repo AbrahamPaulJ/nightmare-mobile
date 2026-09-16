@@ -237,6 +237,12 @@ for d, px in [("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144),
     small.save(f"{RES}/mipmap-{d}/ic_launcher_round.png")
     print(f"  {d} {px}px")
 
+# ⭐ The in-app logo (the Library header). ⚠ A PNG in drawable-nodpi, because the
+# launcher icon is adaptive XML on every supported API and Compose cannot paint that.
+os.makedirs(f"{RES}/drawable-nodpi", exist_ok=True)
+icon.resize((192, 192), Image.LANCZOS).save(f"{RES}/drawable-nodpi/brand_logo.png")
+print("  brand_logo 192px")
+
 os.makedirs(f"{RES}/mipmap-anydpi-v26", exist_ok=True)
 for name in ("ic_launcher", "ic_launcher_round"):
     with open(f"{RES}/mipmap-anydpi-v26/{name}.xml", "w", encoding="utf-8") as f:

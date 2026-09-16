@@ -79,10 +79,12 @@ class VideoGraphTest {
         // ⚠ NOT the prompt or the output: neither has a seed to roll.
         assertTrue(!isSampler("core.prompt"))
         assertTrue(!isSampler("core.output"))
-        // ⚠ Five: four SD samplers plus the one video sampler. Asserted by
-        // NUMBER so adding a type without deciding whether it rolls a seed fails
-        // here rather than silently.
-        assertEquals(5, SAMPLER_TYPES.size)
+        // ⚠ Seven: six SD samplers (three families × sample/inpaint) plus the
+        // one video sampler. Asserted by NUMBER so adding a type without
+        // deciding whether it rolls a seed fails here rather than silently.
+        // ⚠ Anima's two DO roll: they are the same [SdSampler] class.
+        assertTrue(isSampler("anima.sample"))
+        assertEquals(7, SAMPLER_TYPES.size)
     }
 
     @Test

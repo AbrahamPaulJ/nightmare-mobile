@@ -50,8 +50,8 @@ class ResultsStoreTest {
             back!!.workflow.graph.nodes.map { it.id }.toSet(),
         )
         assertEquals(
-            defaultWorkflow().graph.byId["sample"]!!.inputs.keys,
-            back.workflow.graph.byId["sample"]!!.inputs.keys,
+            defaultWorkflow().graph.byId["generate"]!!.inputs.keys,
+            back.workflow.graph.byId["generate"]!!.inputs.keys,
         )
     }
 

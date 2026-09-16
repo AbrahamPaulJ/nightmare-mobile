@@ -284,6 +284,12 @@ data class NodeBox(
          * only the text parts."*
          */
         val lines: List<Int> = fields.map { maxLines },
+        /**
+         * ⭐ The token count for each field, in the order of [fields] — null
+         * where none can be given. ⚠ The inspector's field reads the SAME
+         * [com.abrah.nightmare.PromptTokens.count], so the two never disagree.
+         */
+        val counts: List<com.abrah.nightmare.PromptTokens.Count?> = fields.map { null },
     )
 
     /** ⚠ Bottom-right, and hit BEFORE the body so a resize is not read as a drag. */
@@ -613,11 +619,13 @@ fun layout(
                 // change*.
                 val per = fields.map { (_, value) -> linesFor(value) }
                 val lines = fields.size + per.sum()
+                val budget = com.abrah.nightmare.PromptTokens.budgetFor(workflow.graph, n.id)
                 NodeBox.Prose(
                     fields,
                     lines * Sizes.PROSE_LINE_HEIGHT + fields.size * Sizes.PROSE_BOX_PAD * 2,
                     perFieldLines,
                     per,
+                    fields.map { (_, value) -> com.abrah.nightmare.PromptTokens.count(value, budget) },
                 )
             }
         NodeBox(

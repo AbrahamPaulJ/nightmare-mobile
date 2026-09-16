@@ -65,9 +65,9 @@ class PictureActionsTest {
     @Test
     fun theBinAsksRatherThanDeleting() {
         row()
-        rule.onNodeWithContentDescription("delete this picture").performClick()
+        rule.onNodeWithContentDescription("clear this picture").performClick()
         assertEquals("the bin must ask, not delete", 0, deletes)
-        rule.onNodeWithText("Delete this picture?").assertExists()
+        rule.onNodeWithText("Clear this picture?").assertExists()
         // ⚠ The body says whether a copy survives — the cost, not ceremony.
         rule.onNodeWithText("NOT been saved", substring = true).assertExists()
     }
@@ -75,7 +75,7 @@ class PictureActionsTest {
     @Test
     fun cancelKeepsIt() {
         row()
-        rule.onNodeWithContentDescription("delete this picture").performClick()
+        rule.onNodeWithContentDescription("clear this picture").performClick()
         rule.onNodeWithText("Cancel").performClick()
         assertEquals(0, deletes)
     }
@@ -83,8 +83,8 @@ class PictureActionsTest {
     @Test
     fun confirmingDeletes() {
         row()
-        rule.onNodeWithContentDescription("delete this picture").performClick()
-        rule.onNodeWithText("Delete").performClick()
+        rule.onNodeWithContentDescription("clear this picture").performClick()
+        rule.onNodeWithText("Clear").performClick()
         assertEquals(1, deletes)
     }
 
@@ -96,7 +96,7 @@ class PictureActionsTest {
             .mapNotNull { it.config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull() }
         assertEquals(
             listOf(
-                "delete this picture",
+                "clear this picture",
                 // ⭐ The disk KEEPS and the arrow DOWNLOADS since 2026-09-15 —
                 // the two glyphs swapped jobs because the floppy was doing an
                 // export. [PictureActions] has the table.

@@ -65,6 +65,52 @@ class MaskTest {
         assertEquals(0.4f, s.points[1].second, 0.0005f)
     }
 
+    // ---- tapped regions (docs/SEGMENTER.md) -------------------------------
+
+    /** ⭐ A tap is stored as its POINT and candidate, beside strokes, in order. */
+    @Test
+    fun aTapSurvivesEncodingAndDecoding() {
+        val original = MaskState(listOf(dab(), MaskOp.Tap(0.25f, 0.75f, 2), MaskOp.Invert))
+        val back = MaskState.decode(original.encode())
+        assertEquals(3, back.ops.size)
+        assertEquals(MaskOp.Tap(0.25f, 0.75f, 2), back.ops[1])
+        assertTrue(back.ops[2] is MaskOp.Invert)
+    }
+
+    /** ⚠ A resolved region is memory only — it must never reach the saved string. */
+    @Test
+    fun aPlacedRegionIsNeverStored() {
+        val alpha = android.graphics.Bitmap.createBitmap(4, 4, android.graphics.Bitmap.Config.ALPHA_8)
+        val text = MaskState(listOf(MaskOp.Placed(alpha), dab())).encode()
+        assertEquals(1, MaskState.decode(text).ops.size)
+        assertFalse(text.startsWith(";"))
+    }
+
+    /** ⚠⚠ Unresolved, a tap draws NOTHING — the sampler must resolve or refuse. */
+    @Test
+    fun anUnresolvedTapRastersToNothing() {
+        assertEquals(0, luminanceAt(MaskState(listOf(MaskOp.Tap(0.5f, 0.5f, 0))), 0.5f, 0.5f))
+    }
+
+    /** ⭐ Resolved, the region paints white where it covers, and moves with the frame. */
+    @Test
+    fun aResolvedTapPaintsItsRegionAndFollowsTheFrame() {
+        // A region covering the LEFT half of the photo.
+        val alpha = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
+        for (y in 0 until 8) for (x in 0 until 4) alpha.setPixel(x, y, android.graphics.Color.WHITE)
+        val resolved = MaskTaps.resolve(MaskState(listOf(MaskOp.Tap(0.2f, 0.5f, 5)))) { _, _ -> listOf(alpha) }
+        assertTrue(resolved.ops.single() is MaskOp.Placed)
+        assertEquals(255, luminanceAt(resolved, 0.2f, 0.5f))
+        assertEquals(0, luminanceAt(resolved, 0.8f, 0.5f))
+        assertTrue(MaskTaps.covers(alpha, 0.2f, 0.5f))
+        assertFalse(MaskTaps.covers(alpha, 0.8f, 0.5f))
+        // Framed on the photo's middle half: the region's edge (0.5) lands at 0.5
+        // of the frame too, and 0.3 of the frame is 0.4 of the photo — covered.
+        val framed = MaskFraming.toFrame(resolved, 0.25f, 0.25f, 0.5f, 0.5f)
+        assertEquals(255, luminanceAt(framed, 0.3f, 0.5f))
+        assertEquals(0, luminanceAt(framed, 0.7f, 0.5f))
+    }
+
     @Test
     fun anEmptyMaskRoundTrips() {
         assertTrue(MaskState.decode(MaskState().encode()).isEmpty)
@@ -255,6 +301,7 @@ class MaskTest {
                 is MaskOp.Invert -> op
                 is MaskOp.Stroke -> MaskOp.Stroke(MaskFraming.toSource(op.stroke, 0.25f, 0.3f, 0.4f, 0.6f))
                 is MaskOp.Erase -> MaskOp.Erase(MaskFraming.toSource(op.stroke, 0.25f, 0.3f, 0.4f, 0.6f))
+                else -> op
             }
         }
         state.ops.forEachIndexed { i, op ->
@@ -272,6 +319,7 @@ class MaskTest {
                     val r = (back[i] as MaskOp.Erase).stroke
                     assertEquals(op.stroke.points[0].first, r.points[0].first, 1e-4f)
                 }
+                else -> Unit
             }
         }
         // ⚠ Grow and feather are width fractions too: a preview that left them

@@ -32,12 +32,12 @@ enum class Family(
      */
     val prompt: String,
     val negative: String,
+    /** ⚠ For ids — a new node is `sdxl_inpaint`, never `SDXL Inpaint` with a space. */
+    val slug: String,
 ) {
-    SD15("SD 1.5", GP_SD15, GP_SD15_NEG),
-    SDXL("SDXL", GP_SDXL, GP_SDXL_NEG),
-    // ⚠ Anima ships no checkpoint yet; it is SDXL-shaped, so it starts there
-    // rather than with a family default invented for nothing to use it.
-    ANIMA("Anima", GP_SDXL, GP_SDXL_NEG),
+    SD15("SD 1.5", GP_SD15, GP_SD15_NEG, "sd15"),
+    SDXL("SDXL", GP_SDXL, GP_SDXL_NEG, "sdxl"),
+    ANIMA("Anima", GP_ANIMA, GP_ANIMA_NEG, "anima"),
 }
 
 // ---- the general-purpose prompts --------------------------------------------
@@ -65,6 +65,21 @@ private const val GP_SD15_NEG =
 /** ⚠ SDXL needs fewer quality tags than SD 1.5 — it was trained on captions. */
 private const val GP_SDXL =
     "masterpiece, best quality, highly detailed, sharp focus,"
+
+/**
+ * ⚠ The quality prefix every published Anima checkpoint's own `config.json`
+ * opens with — `masterpiece, best quality, score_7` — without the demo that
+ * follows it (a girl holding a sign), for the no-subject reason above.
+ */
+private const val GP_ANIMA = "masterpiece, best quality, score_7,"
+
+/**
+ * ⚠⚠ Unread at the published cfg of 1 — every Anima `config.json` says so in
+ * its own words. It is here for a user who raises cfg, where it starts to matter.
+ */
+private const val GP_ANIMA_NEG =
+    "worst quality, low quality, lowres, blurry, jpeg artifacts, bad anatomy, " +
+        "bad hands, extra fingers, watermark, signature, text,"
 
 /** ⚠ Upstream's own general SDXL negative, which eight of the ten already use. */
 private const val GP_SDXL_NEG =
@@ -321,6 +336,13 @@ data class ModelSpec(
      * wording rather than the "you imported this" wording.
      */
     val isCustom: Boolean = false,
+    /**
+     * ⭐ How many CLIP tokens the UNet reads: 77, or 231 for an npuforge SDXL
+     * export (`qnn_context.txt` = `231_masked_v1` — three 77-token chunks and an
+     * attention mask; `backend-patches/005`). Only the prompt COUNT reads it:
+     * the backend detects the contract from the same file on its own.
+     */
+    val promptTokens: Int = 77,
 ) {
     /** ⚠ [resolutions] is never empty; the constructor default is one entry. */
     val native: Res get() = resolutions.first()
@@ -490,6 +512,13 @@ object ModelCatalog {
     val SDXL_NPU_RES = Res(1024, 1024)
 
     /**
+     * ⭐ The same pair for Anima. ⚠ 1024 is forced by the backend exactly as it
+     * is for SDXL — `RequestParser.hpp` guards on `sdxl || anima`.
+     */
+    const val ANIMA_NPU = "anima"
+    val ANIMA_NPU_RES = Res(1024, 1024)
+
+    /**
      * ⭐⭐ Non-square output on a family whose graphs are frozen at 1024.
      *
      * ⚠⚠ **`aspect_ratio` is a DIFFERENT FEATURE from resolution, wearing a
@@ -559,6 +588,19 @@ object ModelCatalog {
         "euler", "euler_karras", "euler_a", "euler_a_karras",
         "lcm",
     )
+
+    /**
+     * ⭐⭐ The samplers a FAMILY's backend actually distinguishes.
+     *
+     * ⚠⚠ Anima's `makeScheduler` reads exactly one bit: `euler` is the
+     * deterministic flow-match sampler and EVERY other string is the ancestral
+     * one. Offering the nine SD ids there would be eight names for one sampler,
+     * and Karras means nothing on flow-match. ⇒ Two, named for what they do.
+     */
+    fun schedulersFor(family: Family): List<String> = when (family) {
+        Family.ANIMA -> listOf("euler", "euler_a")
+        else -> SCHEDULERS
+    }
 
     /**
      * ⭐⭐ The FIVE samplers, named the way every other SD tool names them.
@@ -645,6 +687,7 @@ object ModelCatalog {
      */
     const val SD15_BASE_URL = "https://huggingface.co/xororz/sd-qnn/resolve/main/"
     const val SDXL_BASE_URL = "https://huggingface.co/xororz/sdxl-qnn/resolve/main/"
+    const val ANIMA_BASE_URL = "https://huggingface.co/xororz/anima-qnn/resolve/main/"
 
     /**
      * ⚠ Every checkpoint is published as `_8gen1` / `_8gen2` / `_min`, and we
@@ -721,6 +764,20 @@ object ModelCatalog {
         "clip.mnn", "pos_emb.bin", "token_emb.bin",
         "clip_2.mnn", "clip_2.mnn.weight", "pos_emb_2.bin", "token_emb_2.bin",
         "unet.bin", "vae_decoder.bin", "vae_encoder.bin",
+    )
+
+    /**
+     * ⭐ What `--type anima` needs — the backend's own list (`main.cpp`,
+     * `createPipeline`), plus `vae_encoder.bin` for the reason SDXL's has it.
+     *
+     * ⚠⚠ `tokenizer.json` here is QWEN's, not CLIP's; `tokenizer_t5.json` is what
+     * the prompt is counted against. ⚠ No `pos_emb.bin` — the Qwen encoder uses
+     * RoPE — and no patches: the DiT is compiled at 1024.
+     */
+    val ANIMA_REQUIRED = listOf(
+        "tokenizer.json", "tokenizer_t5.json", "token_emb.bin",
+        "clip.bin", "unet_part1.bin", "unet_part2.bin",
+        "vae_decoder.bin", "vae_encoder.bin",
     )
 
     fun root(context: Context): File = File(context.getExternalFilesDir(null), "models")
@@ -807,7 +864,7 @@ object ModelCatalog {
      * id here is skipped by the scan, because [byId] returns the first match
      * and a shadowed built-in would point its downloads at the user's files.
      */
-    val builtIn: List<ModelSpec> get() = sd15Models + sdxlModels
+    val builtIn: List<ModelSpec> get() = sd15Models + sdxlModels + animaModels
 
     /** ⚠ Kept as its own list so a family can be counted, filtered and tested. */
     /**
@@ -968,6 +1025,55 @@ object ModelCatalog {
         sdxl("sdxl_animagine", "Animagine v4", "animagine_v4_qnn2.28$SDXL_TIER.zip", 3_752_469_362L),
         sdxl("sdxl_pony", "Pony Diffusion v6 XL", "ponydiffusion_v6xl_qnn2.28$SDXL_TIER.zip", 3_725_876_252L),
         sdxl("sdxl_novaanime", "NovaAnime v19", "novaanime_v19_qnn2.28$SDXL_TIER.zip", 3_732_162_768L),
+    )
+
+    /**
+     * ⭐ One of xororz's Anima checkpoints — `xororz/anima-qnn`.
+     *
+     * ⚠⚠ The defaults are READ, not chosen: all nine archives' `config.json`
+     * were fetched by range request on 2026-09-16 and every one says `euler`,
+     * 10 steps, cfg 1 — they are TURBO (distilled) checkpoints, where 20 steps
+     * at 7.5 does not fail but burns. Measured on the phone the same day:
+     * 4 steps is visibly hazy, 8 matched 10 on the one prompt that finished
+     * (`docs/MODELS.md` §8). ⇒ The author's 10 stands.
+     *
+     * ⚠ The PROMPT is not copied: all nine ship the same demo (a girl holding a
+     * sign that reads "My phone is burning!"), so they take the family's.
+     */
+    private fun anima(id: String, label: String, archive: String, bytes: Long) = ModelSpec(
+        id = id,
+        label = label,
+        // ⚠ `_8gen3` only, like SDXL — a v75 context, so nothing older can load it.
+        builds = listOf(Build(SDXL_TIER, archive, bytes, minArch = 75, minVtcmMb = 8)),
+        prompt = "",
+        negative = "",
+        family = Family.ANIMA,
+        backendType = ANIMA_NPU,
+        resolutions = listOf(ANIMA_NPU_RES),
+        baseUrl = ANIMA_BASE_URL,
+        requiredFiles = ANIMA_REQUIRED,
+        tier = SDXL_TIER,
+        minHtpArch = 75,
+        // ⚠⚠ Two ~2 GB DiT halves, a 1.2 GB Qwen encoder and a 16-channel VAE:
+        // upstream defaults `anima_lowram` ON, and on an 11.4 GB phone even that
+        // was killed while the phone was in use (`docs/MODELS.md` §8).
+        lowram = true,
+        scheduler = "euler",
+        steps = 10,
+        cfg = 1.0,
+    )
+
+    /** ⚠ All nine xororz publishes, in the repo's order; sizes off the HF listing. */
+    val animaModels: List<ModelSpec> = listOf(
+        anima("anima_base", "Anima Base v1 Turbo", "anima_base_v1_turbo_qnn2.28$SDXL_TIER.zip", 4_290_828_128L),
+        anima("anima_yume", "AnimaYume v1 Turbo", "animayume_v1_turbo_qnn2.28$SDXL_TIER.zip", 4_287_096_388L),
+        anima("anima_cyberrealistic", "CyberRealistic v3 Turbo", "cyberrealistic_v3_turbo_qnn2.28$SDXL_TIER.zip", 4_853_683_064L),
+        anima("anima_miaomiao", "MiaoMiao v1.4 Turbo", "miaomiao_v1.4_turbo_qnn2.28$SDXL_TIER.zip", 4_299_044_507L),
+        anima("anima_novaanime25", "NovaAnime v2.5 Turbo", "novaanime_v2.5_turbo_qnn2.28$SDXL_TIER.zip", 4_290_744_025L),
+        anima("anima_novaanime3", "NovaAnime v3 Turbo", "novaanime_v3_turbo_qnn2.28$SDXL_TIER.zip", 4_292_018_537L),
+        anima("anima_rin_flanime", "Rin FlAnime v1 Turbo", "rin_flanime_v1_turbo_qnn2.28$SDXL_TIER.zip", 4_854_654_219L),
+        anima("anima_sam_realistic", "SAM Anima Realistic v2.3 Turbo", "sam_anima_realistic_v2.3_turbo_qnn2.28$SDXL_TIER.zip", 4_290_163_015L),
+        anima("anima_wai", "WAI Anima v1 Turbo", "wai_anima_v1_turbo_qnn2.28$SDXL_TIER.zip", 4_281_870_655L),
     )
 
     fun byId(id: String): ModelSpec? = all.firstOrNull { it.id == id }

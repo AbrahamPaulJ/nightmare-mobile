@@ -89,6 +89,7 @@
     <string name="pack_import_note">A .zip of JavaScript nodes. They appear in the palette beside the built-ins.</string>
     <string name="flows_import_warning">⚠ A pack runs its own code. Import only ones you trust.</string>
     <string name="flows_recommended">Recommended</string>
+    <string name="flows_saved">Saved</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
     <string name="save_workflow">Save this flow</string>
@@ -149,4 +150,10 @@
         <item quantity="one">%1$d picture saved to Results</item>
         <item quantity="other">%1$d pictures saved to Results</item>
     </plurals>
+    <string name="cd_tap_object">Select an object</string>
+    <string name="mask_tap_working">Finding the object…</string>
+    <string name="mask_tap_hint">Tap an object to select it. Tap it again for more of it, and once more to let it go.</string>
+    <string name="tools">Tools</string>
+    <string name="tools_note">Small helpers that run on the phone\'s CPU. Wire one into a flow to use it.</string>
+    <string name="segmenter_about">Tap an object in an Inpaint mask to select it. Wire a Segment model node into Inpaint.</string>
 </resources>

@@ -819,6 +819,7 @@ class ExecutorTest {
                 // store still holds it. Not a backend question: these never
                 // leave this process ([Value.Tensors]).
                 is Value.Tensors -> v.id in com.abrah.nightmare.npu.TensorStore
+                is Value.Capability -> true
                 // ⚠ The text itself, so there is nothing for it to go stale
                 // against -- no store, no server.
                 is Value.Prompt -> true

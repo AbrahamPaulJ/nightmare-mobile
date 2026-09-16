@@ -551,7 +551,18 @@ data class CanvasState(
      * downstream of it, which is the whole point of editing a prompt.
      */
     fun setParam(nodeId: String, name: String, value: String) = copy(
-        workflow = workflow.copy(graph = workflow.graph.withParam(nodeId, name, value)),
+        workflow = workflow.copy(
+            graph =
+                // ⭐ A DIFFERENT picture resets the framing and painting on it —
+                // here, so the inspector's picker and the fullscreen viewer's
+                // (and anything added later) cannot disagree. [Graph.withNewPicture].
+                // ⚠ Not on a clear: an emptied node still shows the old framing
+                // for the photo it may be given back.
+                if (name == "uri" && value.isNotBlank() &&
+                    workflow.graph.byId[nodeId]?.params?.get("uri") != value
+                ) workflow.graph.withNewPicture(nodeId, value)
+                else workflow.graph.withParam(nodeId, name, value),
+        ),
     )
 
     /** ⚠ One revision for a tuple that means one thing. [Graph.withParams]. */
@@ -607,7 +618,7 @@ data class CanvasState(
      * is exactly the surprise this change removed.
      */
     fun addNode(type: NodeType, at: Pt): CanvasState {
-        val id = workflow.graph.freeId(type.name.nodeLabel.lowercase())
+        val id = workflow.graph.freeId(type.defaultId ?: type.name.nodeLabel.lowercase())
         val node = com.abrah.nightmare.Node(
             id = id,
             type = type.name,

@@ -139,19 +139,6 @@ class FusedSamplerTest {
         assertEquals("repaint must be the SAMPLED latent", host.lastSampleHandle, host.blendB)
     }
 
-    /** ⭐ The other switch: the painting survives being turned off. */
-    @Test
-    fun maskOffRendersTheWholeFrameAndKeepsThePainting() = runBlocking {
-        val host = RecordingHost()
-        val g = graph(photo = photoFile(), params = painted + (SdSampler.MASK_ON to "false"))
-        val r = exec(host).run(g)
-        assertNull(r.error)
-        assertEquals("nothing to blend when the mask is off", 0, host.blends)
-        // ⚠ Still on the node: turning the mask off must not erase the strokes,
-        // or "off" is indistinguishable from "start again".
-        assertEquals("s0.3:0.5,0.5~0,0.02", g.byId.getValue("sample").params[MaskNode.OPS])
-    }
-
     /**
      * ⭐⭐ It FITS whatever it is given — the rule that retired `sizeRefusal`
      * for the image path. A 96x96 photo into a 64x64 model is not an error.

@@ -117,7 +117,16 @@ class LoadReadoutTest {
     @Test
     fun aRunIsNeverIdle() {
         val vm = HarnessViewModel(app)
-        vm.openWorkflow(graphOn("qteamix"))
+        // ⚠ A flow that needs NO checkpoint: since 2026-09-17 a Run naming one
+        // that is not installed stops at the download popup before it starts
+        // (`HarnessViewModel.modelsPresentOrAsk`), and nothing is installed here.
+        // ⚠ …and no UPSCALER either — the popup asks for those too.
+        vm.openWorkflow(
+            Workflow(
+                Graph(listOf(Node("photo", "core.image", mapOf("uri" to "")))),
+                mapOf("photo" to Pt(0f, 0f)),
+            )
+        )
         vm.refreshLoad()
         assertNotNull(vm.load)
         assertTrue("nothing has started yet", vm.load?.running == false)
@@ -127,5 +136,38 @@ class LoadReadoutTest {
             "the readout must know a run started, without waiting for the 2s poll",
             vm.load?.running == true,
         )
+    }
+
+    /**
+     * ⭐ A Run on a checkpoint that is not on the phone ASKS — the popup on the
+     * canvas (2026-09-17) — instead of launching a backend against a missing
+     * directory. A catalogue model offers itself; nothing runs.
+     */
+    @Test
+    fun aMissingCheckpointAsksToDownloadIt() {
+        val vm = HarnessViewModel(app)
+        vm.openWorkflow(graphOn("qteamix"))
+        vm.runCanvas()
+        val m = vm.missingModel as? HarnessViewModel.MissingModel.Checkpoint
+        assertNotNull("the run must stop at the download question", m)
+        assertEquals("qteamix", m!!.offer.id)
+        assertTrue(!m.substitute)
+        assertTrue(vm.load?.running != true)
+    }
+
+    /**
+     * ⭐ A flow with a Segment model node asks for the SEGMENTER when it is not
+     * installed — the case that ran straight past the popup (2026-09-17).
+     */
+    @Test
+    fun aMissingSegmenterAsksToo() {
+        val vm = HarnessViewModel(app)
+        val w = com.abrah.nightmare.canvas.upscaleWorkflow().let { wf ->
+            wf.copy(graph = Graph(wf.graph.nodes + Node("segment_model", "mask.segment_model")))
+        }
+        vm.openWorkflow(w)
+        vm.runCanvas()
+        val m = vm.missingModel
+        assertTrue("got $m", m is HarnessViewModel.MissingModel.Segment)
     }
 }

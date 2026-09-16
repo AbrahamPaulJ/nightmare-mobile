@@ -7,6 +7,7 @@ import com.abrah.nightmare.ui.ModelRow
 import com.abrah.nightmare.ui.ModelsScreen
 import com.abrah.nightmare.ui.NightmareTheme
 import com.github.takahirom.roborazzi.captureRoboImage
+import androidx.compose.ui.graphics.asImageBitmap
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -261,5 +262,49 @@ class ModelsScreenshotTest {
             error = null,
             onOpenRecipe = {}, onOpenSaved = {}, onDeleteSaved = {},
         )
+    }
+
+    /** ⚠ The selection row at 360dp: count, All and six icons must fit ONE row. */
+    @Test
+    @Config(qualifiers = "w360dp-h780dp-xxhdpi")
+    fun historySelectingNarrow() = history(name = "history-selecting-360", selected = setOf("r1", "r2", "r3"))
+
+    /** ⭐ History — the big preview over the grid (DreamUI's layout, 2026-09-17). */
+    @Test
+    fun history() = history(name = "history", selected = emptySet())
+
+    private fun history(name: String, selected: Set<String>) {
+        val colours = listOf(0xFF3A6EA5.toInt(), 0xFFA53A6E.toInt(), 0xFF6EA53A.toInt(), 0xFFA5873A.toInt())
+        fun pic(c: Int): androidx.compose.ui.graphics.ImageBitmap {
+            val b = android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888)
+            b.eraseColor(c)
+            return b.asImageBitmap()
+        }
+        val items = (0 until 9).map { i ->
+            com.abrah.nightmare.canvas.Result(
+                id = "r$i", savedAt = i.toLong(), seed = "12$i", model = "qteamix",
+                prompt = "a cat on grass, number $i", width = 512, height = 512,
+                favourite = i % 3 == 0,
+            )
+        }
+        val thumbs = items.associate { it.id to pic(colours[items.indexOf(it) % colours.size]) }
+        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+            NightmareTheme(darkTheme = true) {
+                LibraryScreen(
+                    tab = LibraryTab.RESULTS, onTab = {}, onClose = {},
+                    models = {}, flows = {},
+                    results = {
+                        com.abrah.nightmare.ui.ResultsScreen(
+                            groups = items.map { com.abrah.nightmare.canvas.ResultGroup(null, listOf(it)) },
+                            results = items,
+                            thumbnailFor = { thumbs[it] },
+                            onOpenFlow = {}, onView = {}, onDelete = {},
+                            onDiskBytes = 42L shl 20,
+                            selected = selected,
+                        )
+                    },
+                )
+            }
+        }
     }
 }

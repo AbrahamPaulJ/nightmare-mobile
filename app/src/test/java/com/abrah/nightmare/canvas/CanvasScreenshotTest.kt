@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.Graph
 import com.abrah.nightmare.MaskNode
 import com.abrah.nightmare.MaskOp
@@ -940,6 +941,82 @@ class CanvasScreenshotTest {
             )
         }
     }
+}
+
+/**
+ * ⭐ The Add node sheet, each tab — a fixed height and one full-width card a row
+ * (2026-09-17). Its own class so the palette can be shot without the canvas.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w411dp-h891dp-xxhdpi")
+class PaletteScreenshotTest {
+    private fun shootTab(tab: Int, name: String) =
+        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+            NightmareTheme(darkTheme = true) {
+                Surface(Modifier.fillMaxSize()) {
+                    NodePaletteContent(NODE_TYPES, onPick = {}, height = 660.dp, initialTab = tab)
+                }
+            }
+        }
+
+    @Test fun common() = shootTab(0, "palette-common")
+    @Test fun generate() = shootTab(1, "palette-generate")
+    @Test fun inpaint() = shootTab(2, "palette-inpaint")
+}
+
+/**
+ * ⭐ An inpaint node's sheet: Crop and Mask as two previews (2026-09-17), and
+ * the segment model node whose model is a locked fact.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w411dp-h891dp-xxhdpi")
+class InpaintInspectorScreenshotTest {
+    @Test fun cropAndMaskArePreviews() = shoot("inspector-inpaint", null)
+    /** ⭐ The popup's two tabs — the picture must sit in the same place in both. */
+    @Test fun popupCropTab() = shoot("inpaint-popup-crop", 0)
+    @Test fun popupMaskTab() = shoot("inpaint-popup-mask", 1)
+
+    private fun shoot(name: String, tab: Int?) =
+        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+            NightmareTheme(darkTheme = true) {
+                Surface(Modifier.fillMaxSize()) {
+                    NodeInspectorBody(
+                        nodeId = "inpaint",
+                        node = Node(
+                            "inpaint", "sd15.inpaint",
+                            params = mapOf(
+                                "x" to "0.1", "y" to "0.1", "w" to "0.8", "h" to "0.8",
+                                "width" to "512", "height" to "512", "model" to "absolutereality",
+                                MaskNode.OPS to MaskState(
+                                    listOf(MaskOp.Stroke(MaskStrokeData(listOf(0.3f to 0.35f, 0.6f to 0.6f), 0.09f)))
+                                ).encode(),
+                            ),
+                            inputs = sources("image" to "photo", "segmenter" to "segment_model"),
+                        ),
+                        type = NODE_TYPES["sd15.inpaint"],
+                        onSetParam = { _, _, _ -> },
+                        onDelete = {},
+                        cropSource = stripeSource(300, 220),
+                        maskSource = stripeSource(300, 220),
+                        inlinePopupTab = tab,
+                    )
+                }
+            }
+        }
+}
+
+/** [CanvasScreenshotTest]'s synthetic source, for the classes beside it. */
+private fun stripeSource(w: Int, h: Int): androidx.compose.ui.graphics.ImageBitmap {
+    val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    val c = android.graphics.Canvas(bmp)
+    val p = android.graphics.Paint()
+    for (i in 0 until 8) {
+        p.color = if (i % 2 == 0) 0xFF3A6EA5.toInt() else 0xFF7FB2E5.toInt()
+        c.drawRect(0f, h * i / 8f, w.toFloat(), h * (i + 1) / 8f, p)
+    }
+    return bmp.asImageBitmap()
 }
 
 /** A stand-in for a loaded plugin's node type — the real one needs QuickJS. */

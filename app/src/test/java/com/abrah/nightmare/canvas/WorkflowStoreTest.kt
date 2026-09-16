@@ -33,19 +33,19 @@ class WorkflowStoreTest {
     @Test
     fun aSavedWorkflowComesBackWithEverythingOnIt() {
         val s = store()
-        val resized = graph.resized("sample", 420f).moved("output", Pt(77f, 88f))
+        val resized = graph.resized("generate", 420f).moved("output", Pt(77f, 88f))
         s.save("my flow", resized, types)
 
         val back = s.load("my flow")!!.workflow
         assertEquals(resized.graph.nodes.map { it.id }, back.graph.nodes.map { it.id })
         // ⭐ Params, wiring, position AND width -- the whole point of the button.
-        assertEquals("0.6", back.graph.byId["sample"]!!.params["denoise"])
+        assertEquals("0.6", back.graph.byId["generate"]!!.params["denoise"])
         assertEquals(
-            resized.graph.byId["sample"]!!.inputs,
-            back.graph.byId["sample"]!!.inputs,
+            resized.graph.byId["generate"]!!.inputs,
+            back.graph.byId["generate"]!!.inputs,
         )
         assertEquals(Pt(77f, 88f), back.positions["output"])
-        assertEquals(420f, back.widthOf("sample"), 0.5f)
+        assertEquals(420f, back.widthOf("generate"), 0.5f)
     }
 
     @Test

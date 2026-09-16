@@ -84,7 +84,7 @@ fun defaultWorkflow(): Workflow = Workflow(
             // First in the chain because it is the first thing anyone changes.
             Node("prompt", "core.prompt", params = promptParams()),
             Node(
-                "sample", samplerType(),
+                "generate", samplerType(),
                 params = ctxKeyParams() + mapOf(
                     // ⚠⚠ **No `steps` here, deliberately** -- the node's own
                     // default (20) applies, which is DreamUI's default too.
@@ -119,12 +119,12 @@ fun defaultWorkflow(): Workflow = Workflow(
             // ⭐ The end of the flow: it shows the picture and keeps it. The
             // sampler draws its own render too -- this is what says "THIS one is
             // the deliverable", which is what it is for in a chain.
-            Node("output", "core.output", inputs = sources("media" to "sample")),
+            Node("output", "core.output", inputs = sources("media" to "generate")),
         )
     ),
     // ⚠ One feeder, so the prompt sits alone in the left column and the
     // sampler hangs just under it. [flowLayout] owns every number.
-    flowLayout("prompt", "sample", "output"),
+    flowLayout("prompt", "generate", "output"),
 )
 
 /**
@@ -192,6 +192,18 @@ private fun flowLayout(vararg ids: String): Map<String, Pt> {
  * two numbers were never re-checked together.
  */
 private const val TOP = 500f
+
+/**
+ * ⭐ [positions] moved so the graph's top-left node sits where a recipe's first
+ * node does — so the fit [CanvasState.withView] gives a recipe frames it too.
+ * ⚠ Layout only; wires and params are untouched.
+ */
+fun layoutAtRecipeOrigin(positions: Map<String, com.abrah.nightmare.canvas.Pt>): Map<String, com.abrah.nightmare.canvas.Pt> {
+    if (positions.isEmpty()) return positions
+    val dx = LEFT - positions.values.minOf { it.x }
+    val dy = TOP - positions.values.minOf { it.y }
+    return positions.mapValues { (_, p) -> com.abrah.nightmare.canvas.Pt(p.x + dx, p.y + dy) }
+}
 
 private const val LEFT = 24f
 
@@ -336,7 +348,7 @@ val RECIPES: List<Recipe> = listOf(
  * ⭐ **A recipe is a starting point, not a machine.** This one and
  * [img2imgWorkflow] build the same graph; what makes it an inpaint is the mask
  * and the denoise, and a user can turn one into the other by painting or by
- * flipping `mask_on` — without rewiring anything.
+ * clearing the mask — without rewiring anything.
  *
  * ⚠ `denoise` 0.85 rather than img2img's 0.6: inside the mask the point is to
  * make something new, and the surroundings come back from the blend regardless.
@@ -347,18 +359,26 @@ fun inpaintWorkflow(): Workflow = Workflow(
         listOf(
             Node("prompt", "core.prompt", params = promptParams()),
             Node("photo", "core.image", params = mapOf("uri" to "")),
+            // ⭐ Wired by default (the user's call, 2026-09-17, reversing "no new
+            // recipe" of the day before): the Tap tool is the easy way to mask, and
+            // a person should not have to know a node exists to find it. Without
+            // the model installed the tool says where to get it.
+            Node(
+                "segment_model", "mask.segment_model",
+                params = mapOf(com.abrah.nightmare.SelectObjectNode.MODEL to com.abrah.nightmare.segment.Segmenter.LABEL),
+            ),
             // ⭐ Tap the node, then Mask, to paint. The framing lives here too —
             // there is no crop node in the chain any more, because the sampler
             // fits whatever it is given.
             Node(
-                "sample", samplerType(inpaint = true),
+                "inpaint", samplerType(inpaint = true),
                 params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to "0.85"),
-                inputs = sources("prompt" to "prompt", "image" to "photo"),
+                inputs = sources("prompt" to "prompt", "image" to "photo", "segmenter" to "segment_model"),
             ),
-            Node("output", "core.output", inputs = sources("media" to "sample")),
+            Node("output", "core.output", inputs = sources("media" to "inpaint")),
         )
     ),
-    flowLayout("prompt", "photo", "sample", "output"),
+    flowLayout("prompt", "photo", "segment_model", "inpaint", "output"),
 )
 
 /**
@@ -378,17 +398,17 @@ fun img2imgWorkflow(): Workflow = Workflow(
             Node("prompt", "core.prompt", params = promptParams()),
             Node("photo", "core.image", params = mapOf("uri" to "")),
             Node(
-                "sample", samplerType(),
+                "generate", samplerType(),
                 // ⚠ No `steps`/`cfg`: the model supplies both (see
                 // [defaultWorkflow]). `denoise` stays — it is a property of THIS
                 // recipe, not of the checkpoint.
                 params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to "0.6"),
                 inputs = sources("prompt" to "prompt", "image" to "photo"),
             ),
-            Node("output", "core.output", inputs = sources("media" to "sample")),
+            Node("output", "core.output", inputs = sources("media" to "generate")),
         )
     ),
-    flowLayout("prompt", "photo", "sample", "output"),
+    flowLayout("prompt", "photo", "generate", "output"),
 )
 
 

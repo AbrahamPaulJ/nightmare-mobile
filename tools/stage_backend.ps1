@@ -1,4 +1,4 @@
-# Stage the built backend and the QNN runtime into the app.
+﻿# Stage the built backend and the QNN runtime into the app.
 #
 # Both destinations are GITIGNORED and must stay that way: the executable is
 # built from backend-src/ (CC BY-NC lineage) and the QNN libs come from the
@@ -48,9 +48,23 @@ $want = @("libQnnHtp.so", "libQnnSystem.so")
 foreach ($a in $arches) {
     $want += @("libQnnHtp$a.so", "libQnnHtp${a}Stub.so", "libQnnHtp${a}Skel.so")
 }
+# ⚠⚠ The RUNTIME is QAIRT 2.50, while the SDK the backend is BUILT against is
+# 2.49 (backend-src/CMakeLists.txt). A QNN runtime loads context binaries from
+# its own version and OLDER, never newer -- and npuforge's SDXL exports are
+# 2.50 builds, which 2.49 refuses with "Using newer context binary on old SDK"
+# (2026-09-16). Measured the same day: the backend built on 2.49 headers runs
+# on these libraries and renders a 2.28 SD 1.5 and a 2.28 SDXL checkpoint
+# BIT-IDENTICAL to 2.49.
+# ⚠ Only the SDK installer needs an account, so this set was taken from
+# local-dream 2.8.1's own APK (assets/qnnlibs, all 20 files report
+# v2.50.0.260828221209). Set $env:NM_QNN_RUNTIME to stage a different set.
+$runtime = if ($env:NM_QNN_RUNTIME) { $env:NM_QNN_RUNTIME } else {
+    Join-Path (Split-Path -Parent $root) "LocalDream\qairt-runtime\2.50.0.260828221209"
+}
+if (-not (Test-Path $runtime)) { throw "QNN runtime not found: $runtime" }
 $total = 0
 foreach ($n in $want) {
-    $src = Join-Path $built "qnnlibs\$n"
+    $src = Join-Path $runtime $n
     if (-not (Test-Path $src)) { throw "missing QNN lib: $src" }
     Copy-Item $src (Join-Path $assets $n) -Force
     $total += (Get-Item $src).Length

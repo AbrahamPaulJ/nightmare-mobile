@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -51,8 +51,8 @@ android {
         // a minor bump per push, which is what the rule exists to stop. The
         // minor moves only when a release is called a release. ⚠ versionCode
         // stays a plain incrementing integer; Android requires that.
-        versionCode = 197
-        versionName = "1.4.82"
+        versionCode = 211
+        versionName = "1.4.96"
         ndk { abiFilters += "arm64-v8a" }
 
         // The plugin runtime and the NPU runner, both built from source.
@@ -186,6 +186,11 @@ dependencies {
     // generated vector classes and costs ~55 MB of dex on its own (measured
     // above) whether or not a single icon is referenced. Add individual icons,
     // or the base `material-icons-core`, if one is actually needed.
+
+    // ⭐ Tap to select (`docs/SEGMENTER.md`): SAM 2.1 on ORT's CPU build, as
+    // DreamUI. NOT onnxruntime-android-qnn — QNN cannot create an HTP device on
+    // this SoC through ORT, and the split graph costs 28 ms a tap on the CPU.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

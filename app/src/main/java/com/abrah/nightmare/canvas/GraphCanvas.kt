@@ -103,6 +103,8 @@ object CanvasColors {
         // ⭐ The four of docs/ARCHITECTURE.md §5.7, in the order a flow runs.
         "source" -> Color(0xFF7BFFB0)
         "generate" -> Color(0xFFB07BFF)
+        // ⚠ Its own hue since inpaint became its own palette section (2026-09-16).
+        "inpaint" -> Color(0xFFFF9B7B)
         "edit" -> Color(0xFFFFD37B)
         "output" -> Color(0xFF7BC7FF)
         // ⚠ The old categories, still worn by the hidden legacy types and by
@@ -125,6 +127,8 @@ object CanvasColors {
         // ⚠ The one port that takes either a picture or a clip, so it may not
         // look like only one of them.
         "MEDIA" -> Color(0xFFCFCFE0)
+        // ⭐ The segmenter capability — the inpaint hue, since that is all it feeds.
+        "SEGMENTER" -> Color(0xFFFF9B7B)
         // ⚠ A pink of its own rather than IMAGE's green: a VIDEO port does not
         // accept an image wire and the canvas refuses the drop, so two ports
         // that mean different things must not look alike.
@@ -464,8 +468,11 @@ private fun DrawScope.drawNode(
     // than drawn over the first port's name. The title is the half that
     // survives: a node's id is what you are looking for, and its type is
     // readable from the stripe colour and the ports.
+    // ⭐ The node's own title when its type gives one (`SDXL Inpaint`), so the
+    // canvas says what the node DOES rather than the type's id.
+    val typeLabel = box.type?.titleFor(box.node) ?: box.node.type.nodeLabel
     val subtitle = measurer.measure(
-        box.node.type.nodeLabel,
+        typeLabel,
         TextStyle(
             color = CanvasColors.label,
             fontSize = (10f * textZoom).sp,
@@ -479,7 +486,7 @@ private fun DrawScope.drawNode(
     // and `sample / sample` are a line saying nothing twice; the type earns the
     // line where the id does not already say it (`frame / crop`, a renamed
     // `a / sample`). The user's call in the design review, 2026-09-15.
-    val showType = box.node.type.nodeLabel != box.node.id &&
+    val showType = typeLabel != box.node.id &&
         pad + title.size.height + subtitle.size.height <= headerH
     if (showType) {
         drawText(title, topLeft = Offset(tl.x + inset, tl.y + pad))
@@ -529,6 +536,22 @@ private fun DrawScope.drawNode(
                 constraints = Constraints(maxWidth = bodyW),
             )
             drawText(cap, topLeft = Offset(tl.x + inset, y))
+            // ⭐ The token count, right-aligned on the caption row — where
+            // `local-dream` puts it beside the field's label.
+            prose.counts.getOrNull(i)?.let { c ->
+                val tag = measurer.measure(
+                    c.label,
+                    TextStyle(
+                        color = if (c.over) CanvasColors.failed else CanvasColors.label,
+                        fontSize = (9f * textZoom).sp,
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    maxLines = 1,
+                )
+                if (tag.size.width + cap.size.width < bodyW) {
+                    drawText(tag, topLeft = Offset(tl.x + inset + bodyW - tag.size.width, y))
+                }
+            }
             y += cap.size.height
 
             // ⚠⚠ A POSITIVE constraint, always -- the `maxWidth(-40)` crash
@@ -540,7 +563,10 @@ private fun DrawScope.drawNode(
                 // has a line's height and reads as "empty" instead of "broken".
                 value.ifBlank { "—" },
                 TextStyle(
-                    color = if (value.isBlank()) CanvasColors.label else CanvasColors.title,
+                    // ⚠ Grey too when the field is LOCKED — a value you cannot
+                    // change (`mask.segment_model`'s one model) reads as a fact.
+                    color = if (value.isBlank() || box.type?.widgets?.firstOrNull { it.name == field }?.locked != null)
+                        CanvasColors.label else CanvasColors.title,
                     fontSize = (Sizes.PROSE_FONT_SP * textZoom).sp,
                     fontFamily = FontFamily.Monospace,
                 ),

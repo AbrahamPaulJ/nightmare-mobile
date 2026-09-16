@@ -12,15 +12,15 @@ import android.content.Context
  * of mistake that yields a plausible but subtly wrong conditioning vector, so the pad id
  * is passed in explicitly rather than defaulted.
  */
-class ClipTokenizer(ctx: Context) {
+class ClipTokenizer(
+    private val vocab: Map<String, Int>,
+    private val ranks: Map<Pair<String, String>, Int>,
+    private val bos: Int = BOS_ID,
+    private val eos: Int = EOS_ID,
+) {
 
-    private val vocab: Map<String, Int>
-    private val ranks: Map<Pair<String, String>, Int>
-    private val byteEncoder: Map<Int, Char>
+    private val byteEncoder: Map<Int, Char> = bytesToUnicode()
     private val cache = HashMap<String, List<String>>()
-
-    private val bos = AppAssets.config.getInt("bos_id")
-    private val eos = AppAssets.config.getInt("eos_id")
 
     /** CLIP's pre-tokenizer: contractions, letter runs, single digits, symbol runs. */
     private val pattern = Regex(
@@ -29,24 +29,59 @@ class ClipTokenizer(ctx: Context) {
         RegexOption.IGNORE_CASE
     )
 
-    init {
-        val vjson = NpuFiles.asset(ctx, "clip_vocab.json").bufferedReader().readText()
-        val obj = org.json.JSONObject(vjson)
-        val v = HashMap<String, Int>(obj.length())
-        val keys = obj.keys()
-        while (keys.hasNext()) { val k = keys.next(); v[k] = obj.getInt(k) }
-        vocab = v
-
-        val r = HashMap<Pair<String, String>, Int>()
+    /** The video path's copy — `clip_vocab.json` + `clip_merges.txt` from its assets. */
+    constructor(ctx: Context) : this(
+        vocabFromJson(org.json.JSONObject(
+            NpuFiles.asset(ctx, "clip_vocab.json").bufferedReader().readText())),
         NpuFiles.asset(ctx, "clip_merges.txt").bufferedReader().useLines { lines ->
             // The first line is a version banner; CLIP uses merges 1..49152.
-            lines.drop(1).forEachIndexed { i, line ->
-                val p = line.trim().split(' ')
-                if (p.size == 2) r[p[0] to p[1]] = i
+            ranksFrom(lines.drop(1).map { it.trim().split(' ') })
+        },
+        AppAssets.config.getInt("bos_id"),
+        AppAssets.config.getInt("eos_id"),
+    )
+
+    companion object {
+        const val BOS_ID = 49406
+        const val EOS_ID = 49407
+
+        /**
+         * ⭐ A checkpoint's own HuggingFace `tokenizer.json`.
+         *
+         * ⚠ Its vocab and merges are the SAME as the video assets' — verified
+         * equal entry for entry, 2026-09-16 — and every SD 1.5 and SDXL archive
+         * ships this file, so a prompt can be counted on a phone that never
+         * installed video. ⚠⚠ Null for anything that is not CLIP BPE: Anima's
+         * `tokenizer.json` is Qwen's, and counting against it would be wrong
+         * without saying so.
+         */
+        fun fromTokenizerJson(file: java.io.File): ClipTokenizer? {
+            val model = org.json.JSONObject(file.readText()).optJSONObject("model") ?: return null
+            if (model.optString("type") != "BPE" ||
+                model.optString("end_of_word_suffix") != "</w>") return null
+            val vocab = vocabFromJson(model.getJSONObject("vocab"))
+            if (vocab["<|endoftext|>"] != EOS_ID) return null
+            val merges = model.getJSONArray("merges")
+            // ⚠ Two spellings exist: `["a", "b"]` (newer) and `"a b"` (older).
+            val pairs = (0 until merges.length()).asSequence().map { i ->
+                merges.optJSONArray(i)?.let { listOf(it.getString(0), it.getString(1)) }
+                    ?: merges.getString(i).split(' ')
             }
+            return ClipTokenizer(vocab, ranksFrom(pairs))
         }
-        ranks = r
-        byteEncoder = bytesToUnicode()
+
+        private fun vocabFromJson(obj: org.json.JSONObject): Map<String, Int> {
+            val v = HashMap<String, Int>(obj.length())
+            val keys = obj.keys()
+            while (keys.hasNext()) { val k = keys.next(); v[k] = obj.getInt(k) }
+            return v
+        }
+
+        private fun ranksFrom(pairs: Sequence<List<String>>): Map<Pair<String, String>, Int> {
+            val r = HashMap<Pair<String, String>, Int>()
+            pairs.forEachIndexed { i, p -> if (p.size == 2) r[p[0] to p[1]] = i }
+            return r
+        }
     }
 
     /**

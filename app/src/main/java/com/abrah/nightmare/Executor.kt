@@ -259,6 +259,30 @@ interface NodeType {
     val about: String get() = ""
 
     /**
+     * ⭐⭐ Which palette CARD this type belongs on, and the chip that picks it.
+     *
+     * ⚠ Types sharing a [paletteGroup] draw as ONE card whose chips are their
+     * [paletteVariant]s — three families of the same job are one thing a person
+     * wants, not three rows (the user's call, 2026-09-16). Defaults to the type
+     * name with no variant, so every other node and every plugin is its own card.
+     */
+    val paletteGroup: String get() = name
+    val paletteVariant: String? get() = null
+
+    /**
+     * ⭐⭐ What a node of this type is called ON THE CANVAS, given how it is wired —
+     * `SDXL Inpaint`, `SD 1.5 Image to image`. Null for the stripped type name.
+     *
+     * ⚠⚠ The user's call, 2026-09-16: *"remove the word sample all around"* and
+     * name a node by its family and what it is doing. The TYPE id (`sdxl.sample`)
+     * is what a saved flow and a manifest depend on and does not change.
+     */
+    fun titleFor(node: Node): String? = null
+
+    /** ⭐ The id a NEW node of this type is given, before [Graph.freeId] numbers it. Null for the stripped name. */
+    val defaultId: String? get() = null
+
+    /**
      * ⭐⭐ How wide a NEW node of this type is, in world units, or null for the
      * ordinary 190.
      *
@@ -828,6 +852,11 @@ fun modelPromptRetarget(
 fun scheduleByKey(
     order: List<Node>,
     keyOf: (Node) -> ContextKey?,
+    /**
+     * ⭐ The key the backend ALREADY holds, when one does. Work under it runs
+     * first, so a graph naming the loaded checkpoint never starts by leaving it.
+     */
+    start: ContextKey? = null,
 ): List<Node> {
     if (order.size < 2) return order
     val keys = order.associate { it.id to keyOf(it) }
@@ -838,9 +867,9 @@ fun scheduleByKey(
     val done = mutableSetOf<String>()
     val left = order.toMutableList()
     val out = ArrayList<Node>(order.size)
-    // ⚠ Starts null, so the FIRST key is chosen by the same rule as every other
-    // switch rather than by whichever node happens to be first.
-    var current: ContextKey? = null
+    // ⚠ Starts at what is loaded, or null — then the FIRST key is chosen by the
+    // same rule as every other switch rather than by whichever node is first.
+    var current: ContextKey? = start
 
     while (left.isNotEmpty()) {
         val ready = left.filter { done.containsAll(deps.getValue(it.id)) }
@@ -864,6 +893,29 @@ fun scheduleByKey(
             .entries.maxByOrNull { it.value }?.key
     }
     return out
+}
+
+/**
+ * ⭐⭐ The context key a Run must LAUNCH with: the first one [scheduleByKey]
+ * will reach. Null when the graph names none, or cannot be ordered.
+ *
+ * ⚠⚠ Launching for anything else is a wasted start. Run used to launch for the
+ * GLOBAL selection, so a sampler naming another checkpoint paid a start for the
+ * selected model and then a relaunch for its own — on every Run, because the
+ * next Run launched the selection again. Reported from the phone, 2026-09-16:
+ * *"its always starting the model on every run"*.
+ *
+ * ⚠ [loaded] is passed through for the same reason the executor passes it: a
+ * two-checkpoint graph should begin with whichever one is already up.
+ */
+fun launchKeyFor(graph: Graph, types: Map<String, NodeType>, loaded: ContextKey?): ContextKey? {
+    val order = (topoSort(graph) as? Order.Ok)?.nodes ?: return null
+    fun keyOf(n: Node) = try {
+        types[n.type]?.contextKey(n)
+    } catch (e: IllegalArgumentException) {
+        null
+    }
+    return scheduleByKey(order, ::keyOf, loaded).firstNotNullOfOrNull(::keyOf)
 }
 
 /**
@@ -2121,8 +2173,13 @@ object UpscaleNode : NodeType {
     override val version = "1"
     override val inputs = listOf(Port("image", "IMAGE"))
     override val outputs = listOf(Port("image", "IMAGE"))
-    /** ⚠ `generate`: it has its own model, like a sampler. */
-    override val category = "generate"
+    /**
+     * ⚠ `edit`, beside crop — it was `generate` for having its own model, like a
+     * sampler. The user's call, 2026-09-17: it is one picture in and one out
+     * whatever made the picture, so it belongs with the light, family-agnostic
+     * nodes in the palette's Common tab ([com.abrah.nightmare.canvas.paletteTabs]).
+     */
+    override val category = "edit"
     /** ⚠ Reaches the backend, so never run for a preview. [NodeType.appSide]. */
     override val appSide = false
 
@@ -2223,7 +2280,8 @@ val NODE_TYPES: Map<String, NodeType> = (
     listOf(
         // ⭐⭐⭐ The set of docs/ARCHITECTURE.md §5.7 — what a person wires.
         PromptNode, LoadImageNode, CropNode, UpscaleNode, MediaOutputNode,
-        // ⭐ Four SD samplers: one class, two arguments of difference.
+        // ⭐ Six SD samplers (three families × sample/inpaint): one class, two
+        // arguments of difference.
         // docs/ARCHITECTURE.md §5.7 has why the fork is capability AND family.
     ) + SdSampler.ALL + listOf(
         // ⚠⚠ The ten it replaces, `hidden` and running, for ONE build: long
@@ -2249,6 +2307,8 @@ val NODE_TYPES: Map<String, NodeType> = (
         // no longer a node you can see before the clip; that is the cost, and it
         // was accepted to make t2v and i2v the same three nodes as t2i and i2i.
         com.abrah.nightmare.npu.VideoSampleNode,
+        // ⭐ Tap to select — wired into an inpaint node (docs/SEGMENTER.md).
+        SelectObjectNode,
     )).associateBy { it.name }
 
 /**
@@ -2341,6 +2401,12 @@ class Executor(
      * wrong one.
      */
     private val switchKey: (suspend (ContextKey) -> Boolean)? = null,
+    /**
+     * ⚠ What the backend holds as a run begins, for [scheduleByKey] to start
+     * from. Must be the SAME answer [launchKeyFor] was given, or the pre-run
+     * launch and the schedule disagree and pay a relaunch between them.
+     */
+    private val loadedKey: () -> ContextKey? = { null },
 ) {
 
     suspend fun run(
@@ -2439,7 +2505,7 @@ class Executor(
         // (`scheduleByKey` returns its input), so there is one path rather than
         // a fast one and a scheduled one that could diverge.
         val scheduled = try {
-            scheduleByKey(order) { nodeTypes.getValue(it.id).contextKey(it) }
+            scheduleByKey(order, { nodeTypes.getValue(it.id).contextKey(it) }, loadedKey())
         } catch (e: IllegalArgumentException) {
             return GraphRun(emptyList(), emptyMap(), sinceMs(), e.message ?: "bad params")
         }
@@ -2484,6 +2550,7 @@ class Executor(
                 // ⚠ Never stale: it is the text itself, not a handle to
                 // something a store or a server might have dropped.
                 is Value.Prompt -> true
+                is Value.Capability -> true
             }
         }
 

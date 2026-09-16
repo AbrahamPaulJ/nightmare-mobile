@@ -143,17 +143,38 @@ class SdSampler(
     override val inputs = listOfNotNull(
         Port("prompt", "PROMPT"),
         Port("image", "IMAGE"),
-        // ⚠⚠ Absent entirely on a `sample` type — not present-and-ignored. A
-        // port that accepts a wire and then does nothing with it is the shape
-        // that makes a graph render confident nonsense.
-        if (inpaint) Port("mask", "IMAGE") else null,
+        // ⚠⚠ **No `mask` port** — removed 2026-09-17 at the user's call. The
+        // mask is painted or tapped in the node's own editor; a wired mask was a
+        // second way to supply it that nobody used and every inpaint node paid
+        // a port row for. `WorkflowIo.migrateType` drops an old saved wire.
+        // ⭐ Tap to select (`docs/SEGMENTER.md`): wiring `mask.segment_model`
+        // here is what shows the Tap tool. ⚠ Added while no flow depends on the
+        // port list — a port cannot be added after one does (§7).
+        if (inpaint) Port("segmenter", SelectObjectNode.PORT_TYPE) else null,
     )
     override val outputs = listOf(Port("image", "IMAGE"))
-    override val category = "generate"
+    /** ⚠ Inpaint is its OWN palette section (the user's call, 2026-09-16). */
+    override val category = if (inpaint) "inpaint" else "generate"
 
-    /** ⚠ The FAMILY is the whole reason there are four of these. */
-    override val paletteName =
-        (if (inpaint) "inpaint" else "sample") + " · " + family.label
+    /**
+     * ⭐ One palette card per JOB, a chip per family — [NodeType.paletteGroup].
+     * ⚠ No "sample" anywhere a person reads it (the user's call, 2026-09-16),
+     * and no "Text / image to" either (2026-09-17): the tab already says
+     * Generate, and in a half-width card "Text / image to video" cut off to
+     * read exactly like this one — the video card looked missing.
+     */
+    override val paletteName = if (inpaint) "Inpaint" else "Image"
+    override val paletteGroup = if (inpaint) "sd.inpaint" else "sd.generate"
+    override val paletteVariant = family.label
+
+    /** ⭐ `SDXL Inpaint`, or `SD 1.5 Text to image` until a photo is wired in. */
+    override fun titleFor(node: Node): String = family.label + " " + when {
+        inpaint -> "Inpaint"
+        node.inputs["image"] != null -> "Image to image"
+        else -> "Text to image"
+    }
+
+    override val defaultId = family.slug + if (inpaint) "_inpaint" else "_generate"
 
     override val about = if (inpaint) {
         "paint an area of a photo and re-imagine only that"
@@ -171,7 +192,6 @@ class SdSampler(
         const val START_FROM = "start_from"
         const val FROM_NOISE = "noise"
         const val FROM_IMAGE = "image"
-        const val MASK_ON = "mask_on"
 
         /**
          * ⚠⚠ The VAE encode's noise, FIXED. It is what makes one picture encode
@@ -185,7 +205,9 @@ class SdSampler(
         val SDXL = SdSampler("sdxl.sample", Family.SDXL, inpaint = false)
         val SD15_INPAINT = SdSampler("sd15.inpaint", Family.SD15, inpaint = true)
         val SDXL_INPAINT = SdSampler("sdxl.inpaint", Family.SDXL, inpaint = true)
-        val ALL = listOf(SD15, SDXL, SD15_INPAINT, SDXL_INPAINT)
+        val ANIMA = SdSampler("anima.sample", Family.ANIMA, inpaint = false)
+        val ANIMA_INPAINT = SdSampler("anima.inpaint", Family.ANIMA, inpaint = true)
+        val ALL = listOf(SD15, SDXL, ANIMA, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
 
         /**
          * ⭐⭐ The type a graph should use for [family] and [inpaint] — the one
@@ -209,16 +231,33 @@ class SdSampler(
         if (SelectedModel.spec.family == family) SelectedModel.id
         else ModelCatalog.all.firstOrNull { it.family == family }?.id ?: SelectedModel.id
 
+    private fun defaultSpec(): ModelSpec = ModelCatalog.byId(defaultModel()) ?: SelectedModel.spec
+
     private fun defaultRes(): Res =
         if (SelectedModel.spec.family == family) SelectedModel.res
         else ModelCatalog.all.firstOrNull { it.family == family }?.native ?: SelectedModel.res
 
-    override val widgets get() = listOf(
+    /**
+     * ⭐ On an INPAINT node, denoise, only-masked and stitch come FIRST — they
+     * are what the inpaint is, and the user asked for them above Steps
+     * (2026-09-17). ⚠ Order only; every widget is the same declaration.
+     */
+    override val widgets get() = baseWidgets().let { ws ->
+        if (!inpaint) ws else {
+            val front = listOf("denoise", MaskCropNode.ONLY_MASKED, PasteNode.STITCH)
+            front.mapNotNull { n -> ws.firstOrNull { it.name == n } } + ws.filterNot { it.name in front }
+        }
+    }
+
+    private fun baseWidgets() = listOf(
         // ⚠⚠ Defaults from the MODEL, not from a literal. A distilled checkpoint
         // publishes something like 10 steps at cfg 1.5, and this app's 20/7.5
         // renders it burnt rather than failing — measured on device 2026-09-10.
-        Widget("steps", "int", SelectedModel.spec.steps.toString(), 1.0, 50.0),
-        Widget("cfg", "float", SelectedModel.spec.cfg.toString(), 1.0, 20.0, fine = true),
+        // ⚠⚠ …from THIS FAMILY's model, not the global selection. A new Anima
+        // node dragged out while SD 1.5 is selected took SD's 20 steps / cfg 7.5
+        // and `dpm`, and a turbo checkpoint does not fail on those, it burns.
+        Widget("steps", "int", defaultSpec().steps.toString(), 1.0, 50.0),
+        Widget("cfg", "float", defaultSpec().cfg.toString(), 1.0, 20.0, fine = true),
         // ⭐ 0 rolls a new seed on every Run, so Run means "give me another one"
         // rather than returning the cached picture unchanged.
         Widget(
@@ -228,8 +267,8 @@ class SdSampler(
         // ⚠ Read only when a picture is wired AND `start_from` is `image`.
         Widget("denoise", "float", "0.6", 0.0, 1.0),
         Widget(
-            "scheduler", "string", SelectedModel.spec.scheduler,
-            options = ModelCatalog.SCHEDULERS,
+            "scheduler", "string", defaultSpec().scheduler,
+            options = ModelCatalog.schedulersFor(family),
             hint = "the sampler; a distilled model usually needs the one its author published",
         ),
         // ⚠⚠ **No `start from` knob.** The user's call, 2026-09-15: *"start from
@@ -239,9 +278,11 @@ class SdSampler(
         // seconds of SSD1B generating a first frame, and wrong here, where the
         // alternative is nothing at all. A knob whose value the wire already
         // states is a second place for the same fact to live.
-        // ⚠ The same switch for the painting, so inpaint ↔ full re-render costs
-        // no rewiring AND does not erase what was painted.
-        *(if (inpaint) arrayOf(Widget(MASK_ON, "bool", "true", hint = "use the area you painted")) else emptyArray()),
+        // ⚠⚠ **No `mask on` switch either** — removed 2026-09-16 at the user's
+        // ask (*"whats even the point of it?"*). It predates the capability fork:
+        // while one node served both jobs it turned inpaint into a full render.
+        // Now an inpaint node with its mask off IS the `sample` node, so the
+        // switch was a second way to reach a type that already exists.
         // ⭐⭐ The framing, normalised 0..1 of the source — and under
         // `image.crop`'s OWN param names, so [cropRectOf], [CropRect.asParams]
         // and [CropEditor] work on this node with no second spelling to keep in
@@ -254,10 +295,16 @@ class SdSampler(
         // ⚠ Drawn as the tick/pencil in the Crop title row, never as a checkbox
         // in the knob list ([hiddenKnob]).
         Widget(CropNode.LOCKED, "bool", "false"),
-        // ⚠ No `pad` chip either: it only does anything when the photo has
-        // fewer pixels than the render, which is rare, and it was a two-option
-        // row sitting in front of everyone for the case that is not theirs.
-        // `image.crop` still offers it — that node IS the framing.
+        // ⭐ The padding choice `image.crop` has — black bars or the picture's
+        // own edges blurred — for when the frame runs off the photo. ⚠ It was
+        // left off as "rare"; the user asked for it back in the inpaint Crop tab
+        // (2026-09-17). ⚠ The FRAME only: the mask is always padded black,
+        // because black is "not masked".
+        Widget(
+            CropNode.PAD, "string", CropNode.PAD_BLACK,
+            options = listOf(CropNode.PAD_BLACK, CropNode.PAD_BLUR),
+            hint = "what fills the frame where it runs off the photo",
+        ),
         // ⭐ The painting itself — `image.mask`'s params, moved. ⚠ A real param
         // rather than editor state, because it is what a saved workflow stores.
         // ⚠⚠ Declared ONLY on an inpaint type: an undeclared param is still
@@ -308,7 +355,7 @@ class SdSampler(
      */
     override fun outputSize(node: Node): Pair<Int, Int>? {
         val p = effectiveParams(node)
-        if (inpaint && p[MaskNode.OPS].orEmpty().isNotBlank() && p[MASK_ON].equals("true", true)) return null
+        if (inpaint && p[MaskNode.OPS].orEmpty().isNotBlank()) return null
         return (p["width"]?.toIntOrNull() ?: 0) to (p["height"]?.toIntOrNull() ?: 0)
     }
 
@@ -354,15 +401,32 @@ class SdSampler(
                 "node \"${node.id}\": image ${photo.id} is no longer in the store"
             )
 
-        // ⭐⭐ Is there a mask? Either painted here or wired in — the wire wins.
-        val painted = MaskState.decode(p[MaskNode.OPS]).copy(
+        // ⭐⭐ Is there a mask? Painted (or tapped) here — there is no mask wire.
+        val stored = MaskState.decode(p[MaskNode.OPS]).copy(
             growFrac = num("grow").toFloat(),
             featherFrac = num("feather").toFloat(),
         )
-        val wired = inputs["mask"] as? Value.Image
-        // ⚠ `inpaint` first: a `sample` type has no mask port and no painting
-        // params, so there is nothing here to be true.
-        val masking = inpaint && flag(MASK_ON) && (wired != null || !painted.isEmpty)
+        // ⭐⭐ Tapped regions become geometry here, against the SAME photo the
+        // taps were made on. ⚠⚠ Refused by name when they cannot be — the
+        // missing-model case, read the way a missing checkpoint reads
+        // (`docs/SEGMENTER.md` §3, the user's call 2026-09-16). Rendering
+        // without the mask would repaint the wrong area confidently.
+        val painted = if (!MaskTaps.hasTaps(stored)) stored else {
+            val android = ctx.android
+            if (android == null || !com.abrah.nightmare.segment.Segmenter.isInstalled(android)) {
+                throw IllegalStateException(
+                    "node \"${node.id}\": this mask was tapped — download " +
+                        "${com.abrah.nightmare.segment.Segmenter.LABEL} in Models, Tools"
+                )
+            }
+            ctx.say("finding the objects you tapped")
+            MaskTaps.resolve(stored) { x, y ->
+                com.abrah.nightmare.segment.Segmenter.segment(android, src, x, y)?.candidates
+            }
+        }
+        // ⚠ `inpaint` first: a `sample` type has no painting params, so there is
+        // nothing here to be true.
+        val masking = inpaint && !painted.isEmpty
 
         // ⚠⚠ The framed photo. With a mask it keeps its OWN pixels, because the
         // patch is pasted back into it at the end and a frame already reduced to
@@ -375,9 +439,7 @@ class SdSampler(
         val (frame, _) = CropNode.render(
             src, fx, fy, fw, fh,
             if (masking) 0 else w, if (masking) 0 else h,
-            // ⚠ Black bars when a photo is too small for the frame. The blurred
-            // fill is `image.crop`'s to offer; this node does not ask.
-            CropNode.PAD_BLACK,
+            p[CropNode.PAD] ?: CropNode.PAD_BLACK,
         )
 
         if (!masking) {
@@ -400,8 +462,7 @@ class SdSampler(
         // loses nothing but memory.
         val cap = (MaskNode.NO_DEMAND_MAX_EDGE.toFloat() / maxOf(src.width, src.height))
             .coerceAtMost(1f)
-        val maskSrc = wired?.let { ctx.images.get(it.id) }
-            ?: MaskRaster.rasterise(
+        val maskSrc = MaskRaster.rasterise(
                 painted,
                 (src.width * cap).toInt().coerceAtLeast(1),
                 (src.height * cap).toInt().coerceAtLeast(1),

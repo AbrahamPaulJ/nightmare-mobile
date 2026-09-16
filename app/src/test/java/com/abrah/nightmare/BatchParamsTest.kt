@@ -12,7 +12,7 @@ class BatchParamsTest {
     private fun armed(vararg pairs: Pair<String, String>): Graph {
         var g = inpaintWorkflow().graph
         for ((param, spec) in pairs) {
-            g = g.withParam("sample", BatchParams.keyFor(param), spec)
+            g = g.withParam("inpaint", BatchParams.keyFor(param), spec)
         }
         return g
     }
@@ -25,8 +25,8 @@ class BatchParamsTest {
      */
     @Test
     fun armingDoesNotChangeTheCacheKey() {
-        val plain = inpaintWorkflow().graph.byId.getValue("sample")
-        val withBatch = armed("cfg" to "1..9 by 2").byId.getValue("sample")
+        val plain = inpaintWorkflow().graph.byId.getValue("inpaint")
+        val withBatch = armed("cfg" to "1..9 by 2").byId.getValue("inpaint")
         val inputs = emptyMap<String, Value>()
         assertEquals(
             cacheKey("sd15.sample", "1", SampleNode.effectiveParams(plain), inputs),
@@ -37,8 +37,8 @@ class BatchParamsTest {
     /** ⚠ …but a REAL param change still must. The guard above must not be a hole. */
     @Test
     fun anOrdinaryParamStillChangesTheCacheKey() {
-        val a = inpaintWorkflow().graph.byId.getValue("sample")
-        val b = inpaintWorkflow().graph.withParam("sample", "steps", "31").byId.getValue("sample")
+        val a = inpaintWorkflow().graph.byId.getValue("inpaint")
+        val b = inpaintWorkflow().graph.withParam("inpaint", "steps", "31").byId.getValue("inpaint")
         val inputs = emptyMap<String, Value>()
         assertTrue(
             cacheKey("sd15.sample", "1", SampleNode.effectiveParams(a), inputs) !=
@@ -50,7 +50,7 @@ class BatchParamsTest {
     fun armedAxesAreFoundOnTheGraph() {
         val axes = BatchParams.axesOf(armed("cfg" to "1..9 by 2"))
         assertEquals(1, axes.size)
-        assertEquals("sample", axes[0].nodeId)
+        assertEquals("inpaint", axes[0].nodeId)
         assertEquals("cfg", axes[0].param)
         assertEquals(listOf("1", "3", "5", "7", "9"), axes[0].values)
         assertEquals(5, BatchParams.runCount(armed("cfg" to "1..9 by 2")))

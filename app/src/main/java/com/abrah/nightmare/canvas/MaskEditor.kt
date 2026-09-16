@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -43,7 +44,7 @@ import com.abrah.nightmare.MaskStrokeData
 import kotlin.math.pow
 
 /** Translucent red, so the photo stays visible under what you are painting. */
-private const val MASK_OVERLAY_RGB = 0xFF3B30
+private const val MASK_OVERLAY_RGB = MaskRaster.OVERLAY_RGB
 private const val MASK_ALPHA = 0.55f
 
 /** ⚠ The overlay is rasterised at this edge, then scaled — not at screen size. */
@@ -58,15 +59,18 @@ private const val MAX_ZOOM = 6f
  */
 private const val PINCH_GAIN = 1.6f
 
-/** Whether a stroke adds coverage or takes it away. */
-enum class MaskTool { BRUSH, ERASE }
+/**
+ * Whether a stroke adds coverage or takes it away — or, with a segmenter wired,
+ * whether a touch SELECTS the object under it (`docs/SEGMENTER.md`).
+ */
+enum class MaskTool { BRUSH, ERASE, TAP }
 
 /**
  * ⭐⭐ Paint an inpaint mask over [source] with a finger.
  *
- * Ported from DreamUI's `ui/MaskCanvas.kt`, minus the tap-to-segment mode (it
- * decodes a SAM 2.1 output, which is Tier 1 and does not exist here) and the
- * zoom-out crop's checkerboard padding (no outset crop here). ⚠ Every comment
+ * Ported from DreamUI's `ui/MaskCanvas.kt`, minus the zoom-out crop's
+ * checkerboard padding (no outset crop here). Its tap-to-segment mode is
+ * [MaskTool.TAP], which reports the point and leaves segmenting to the caller. ⚠ Every comment
  * below marked with a bug is one DreamUI already paid for; none of it is
  * defensive programming.
  *
@@ -84,6 +88,8 @@ fun MaskEditor(
     /** ⚠ Called ONCE per finished stroke, never per pointer event. See below. */
     onStroke: (MaskStrokeData) -> Unit,
     modifier: Modifier = Modifier,
+    /** ⭐ [MaskTool.TAP]: where the finger went down, normalised to [source]. */
+    onTap: (Float, Float) -> Unit = { _, _ -> },
 ) {
     // ⚠ The in-progress stroke lives in LOCAL state so dragging stays smooth
     // without a round trip through the view model on every pointer sample.
@@ -134,9 +140,19 @@ fun MaskEditor(
     }
     DisposableEffect(overlay) { onDispose { overlay?.recycle() } }
 
+    // ⚠⚠ Fit the WINDOW and centre, by [CropEditor]'s own rule and constants —
+    // it filled the width alone, so in the inpaint popup the Mask tab drew the
+    // picture a different size and position from the Crop tab (2026-09-17).
+    val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+    val cap = (screenH * HEIGHT_SHARE).coerceAtLeast(MIN_FRAME)
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier.fillMaxWidth(),
+        contentAlignment = androidx.compose.ui.Alignment.Center,
+    ) {
+    val frameW = minOf(maxWidth, cap * aspect)
     Box(
-        modifier
-            .fillMaxWidth()
+        Modifier
+            .width(frameW)
             // ⚠⚠ The painter must be the shape of the IMAGE, not a square.
             // A hardcoded 1f lets ContentScale.Fit letterbox a 768x512 photo
             // inside a square box while the Canvas still spans the whole square
@@ -218,7 +234,11 @@ fun MaskEditor(
                         }
                     }
 
-                    if (painting && live.isNotEmpty()) {
+                    if (tool == MaskTool.TAP) {
+                        // ⚠ The DOWN point, not where a wobbling finger lifted:
+                        // it is what the user aimed at. A pinch is not a tap.
+                        if (painting && live.isNotEmpty()) onTap(live.first().x, live.first().y)
+                    } else if (painting && live.isNotEmpty()) {
                         // ⚠⚠ ONE write, at the END of the gesture. A widget that
                         // emits per pointer event runs the canvas-update-and-
                         // autosave path dozens of times a second, and the
@@ -287,7 +307,7 @@ fun MaskEditor(
                     )
                 }
 
-                if (live.isNotEmpty()) {
+                if (live.isNotEmpty() && tool != MaskTool.TAP) {
                     // ⚠ WIDTH, not min(width, height): radiusFrac is
                     // width-relative everywhere else, so measuring the preview
                     // against the short edge draws a landscape brush a third
@@ -322,5 +342,6 @@ fun MaskEditor(
                 }
             }
         }
+    }
     }
 }

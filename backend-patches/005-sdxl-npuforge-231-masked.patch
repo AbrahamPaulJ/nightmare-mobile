@@ -1,0 +1,303 @@
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -2,7 +2,11 @@
+ #define PIPELINESDXL_HPP
+ 
+ #include <MNN/Interpreter.hpp>
++#include <algorithm>
+ #include <cstdint>
++#include <filesystem>
++#include <fstream>
++#include <vector>
+ #include <cstdlib>
+ #include <memory>
+ #include <stdexcept>
+@@ -28,7 +32,11 @@
+         unet_path_(std::move(unet_path)),
+         vae_decoder_path_(std::move(vae_decoder_path)),
+         vae_encoder_path_(std::move(vae_encoder_path)),
+-        lowram_(lowram) {}
++        lowram_(lowram),
++        long_ctx_(readLongContext(model_dir)) {
++    if (long_ctx_)
++      QNN_INFO("SDXL long context: 231_masked_v1 (3x77 tokens + mask)");
++  }
+ 
+   ~PipelineSdxl() override { releaseClips(); }
+ 
+@@ -136,12 +144,31 @@
+   bool vaeTilingSupported() const override { return true; }
+   int vaeTilePixelSize() const override { return 1024; }
+ 
++  // 231 for an npuforge `231_masked_v1` UNet, else xororz's 77. Every buffer
++  // (Conditioning, the prompt cache, the /encode_text handle) is sized from
++  // this, so the whole pipeline follows it.
++  int textSeqLen() const override { return long_ctx_ ? kLongSeq : 77; }
++
+   void encodeText(const ProcessedPromptPair &prompts, bool need_negative,
+                   bool need_positive, Conditioning &cond) override {
+     if (lowram_) loadClipsIfNeeded();
+     if (!clip_interpreter_ || !clip2_interpreter_)
+       throw std::runtime_error("SDXL CLIP interpreters not initialized!");
+ 
++    if (long_ctx_) {
++      if (need_negative)
++        runChunkedClip(prompts.negative_embeddings,
++                       prompts.negative_embeddings_2, prompts.ids.data(),
++                       cond.negHidden(), cond.negPooled());
++      if (need_positive)
++        runChunkedClip(prompts.positive_embeddings,
++                       prompts.positive_embeddings_2,
++                       prompts.ids.data() + kLongSeq, cond.posHidden(),
++                       cond.posPooled());
++      if (lowram_) releaseClips();
++      return;
++    }
++
+     if (need_negative) {
+       runDualClip(prompts.negative_embeddings, prompts.negative_embeddings_2,
+                   prompts.ids.data(), cond.negHidden(), cond.negPooled());
+@@ -186,6 +213,26 @@
+     float *latents_in = const_cast<float *>(latents_batch2);
+     float *time_ids = cond.time_ids.data();
+ 
++    if (long_ctx_) {
++      std::vector<float> neg_mask = chunkMask(cond.negHidden());
++      std::vector<float> pos_mask = chunkMask(cond.posHidden());
++      if (!skip_uncond &&
++          StatusCode::SUCCESS != unet_->executeUnetGraphsSDXLMasked(
++                                     latents_in, ts, cond.negHidden(), kLongSeq,
++                                     neg_mask.data(), cond.negPooled(),
++                                     time_ids, out_batch2))
++        throw std::runtime_error(
++            "QNN UNET SDXL (231 masked) exec failed (uncond)");
++      if (StatusCode::SUCCESS !=
++          unet_->executeUnetGraphsSDXLMasked(
++              latents_in + single_latent_size, ts, cond.posHidden(), kLongSeq,
++              pos_mask.data(), cond.posPooled(), time_ids + 6,
++              out_batch2 + single_latent_size))
++        throw std::runtime_error(
++            "QNN UNET SDXL (231 masked) exec failed (cond)");
++      return;
++    }
++
+     if (!skip_uncond &&
+         StatusCode::SUCCESS != unet_->executeUnetGraphsSDXL(
+                                    latents_in, ts, cond.negHidden(),
+@@ -379,12 +426,60 @@
+            text_embedding_size_2 * sizeof(float));
+   }
+ 
++  static constexpr int kLongSeq = 231;
++
++  // npuforge marks its SDXL graph contract in the model directory.
++  static bool readLongContext(const std::string &model_dir) {
++    std::ifstream f(std::filesystem::path(model_dir) / "qnn_context.txt");
++    std::string line;
++    return f && std::getline(f, line) &&
++           line.find("231_masked_v1") != std::string::npos;
++  }
++
++  // Each chunk through both encoders; a chunk the prompt does not reach
++  // (ids[77*c] != BOS) stays zero. Pooled comes from the FIRST chunk.
++  void runChunkedClip(const std::vector<float> &emb1,
++                      const std::vector<float> &emb2, const int *ids,
++                      float *out_hidden, float *out_pooled) {
++    const size_t hid = text_embedding_size + text_embedding_size_2;
++    std::fill(out_hidden, out_hidden + kLongSeq * hid, 0.0f);
++    std::vector<float> pooled(text_embedding_size_2);
++    for (int c = 0; c < kLongSeq / 77; c++) {
++      if (ids[77 * c] != 49406) continue;
++      std::vector<float> e1(emb1.begin() + 77 * c * text_embedding_size,
++                            emb1.begin() + 77 * (c + 1) * text_embedding_size);
++      std::vector<float> e2(
++          emb2.begin() + 77 * c * text_embedding_size_2,
++          emb2.begin() + 77 * (c + 1) * text_embedding_size_2);
++      runDualClip(e1, e2, ids + 77 * c, out_hidden + 77 * c * hid,
++                  c == 0 ? out_pooled : pooled.data());
++    }
++  }
++
++  // 1 for every row of a chunk the prompt used, 0 for an unused one. Derived
++  // from the hidden state rather than carried beside it, so a conditioning
++  // restored from the prompt cache or an /encode_text handle (hidden + pooled
++  // only) gets the right mask too.
++  static std::vector<float> chunkMask(const float *hidden) {
++    const size_t hid = text_embedding_size + text_embedding_size_2;
++    std::vector<float> mask(kLongSeq, 0.0f);
++    for (int c = 0; c < kLongSeq / 77; c++) {
++      bool any = false;
++      for (size_t i = 0; i < 77 * hid && !any; i++)
++        any = hidden[77 * c * hid + i] != 0.0f;
++      if (any)
++        std::fill(mask.begin() + 77 * c, mask.begin() + 77 * (c + 1), 1.0f);
++    }
++    return mask;
++  }
++
+   const std::string clip_path_;
+   const std::string clip2_path_;
+   const std::string unet_path_;
+   const std::string vae_decoder_path_;
+   const std::string vae_encoder_path_;
+   const bool lowram_;
++  const bool long_ctx_;
+ 
+   MNN::Interpreter *clip_interpreter_ = nullptr;
+   MNN::Interpreter *clip2_interpreter_ = nullptr;
+--- a/src/QnnModel.hpp
++++ b/src/QnnModel.hpp
+@@ -451,6 +451,44 @@
+     return returnStatus;
+   }
+ 
++  // npuforge `231_masked_v1` SDXL UNet: sample [1,4,H,W], timestamp int32 [1],
++  // encoder_hidden_states [1,seq,2048], encoder_attention_mask [1,seq],
++  // text_embeds [1,1280], time_ids [1,6] -> output. Bound BY NAME: its input
++  // ORDER differs from xororz's graphs (the mask comes first), and the
++  // positional binding below would feed the wrong tensors without an error.
++  StatusCode executeUnetGraphsSDXLMasked(float *sample, int timestep,
++                                         float *encoder_hidden_states,
++                                         int seq_len, float *mask,
++                                         float *text_embeds, float *time_ids,
++                                         float *out_sample) {
++    if (!ensureIoTensors()) return StatusCode::FAILURE;
++    auto graphInfo = (*m_graphsInfo)[0];
++    const size_t latent_elems = 4 * (size_t)sample_width * sample_height;
++    const size_t hid = text_embedding_size + text_embedding_size_2;
++    Qnn_Tensor_t *ts =
++        findTensor(inputs, graphInfo.numInputTensors, "timestamp");
++    if (!ts) {
++      QNN_ERROR("sdxl masked unet: missing input 'timestamp'");
++      return StatusCode::FAILURE;
++    }
++    static_cast<int32_t *>(QNN_TENSOR_GET_CLIENT_BUF(*ts).data)[0] = timestep;
++    if (!writeNamedFloat(graphInfo, "sample", sample, latent_elems) ||
++        !writeNamedFloat(graphInfo, "encoder_hidden_states",
++                         encoder_hidden_states, (size_t)seq_len * hid) ||
++        !writeNamedFloat(graphInfo, "encoder_attention_mask", mask, seq_len) ||
++        !writeNamedFloat(graphInfo, "text_embeds", text_embeds,
++                         text_embedding_size_2) ||
++        !writeNamedFloat(graphInfo, "time_ids", time_ids, 6))
++      return StatusCode::FAILURE;
++    if (!runGraph(graphInfo, "sdxl masked unet")) return StatusCode::FAILURE;
++    Qnn_Tensor_t *o =
++        findTensor(outputs, graphInfo.numOutputTensors, "output");
++    if (!o) o = &outputs[0];
++    memcpy(out_sample, QNN_TENSOR_GET_CLIENT_BUF(*o).data,
++           latent_elems * sizeof(float));
++    return StatusCode::SUCCESS;
++  }
++
+   StatusCode executeUnetGraphsSDXL(float *sample, int timestep,
+                                    float *encoder_hidden_states,
+                                    float *text_embeds, float *time_ids,
+--- a/src/TextEncoder.hpp
++++ b/src/TextEncoder.hpp
+@@ -183,8 +183,106 @@
+     return tokenizer_->Decode(ids);
+   }
+ 
++  // SDXL LONG context (npuforge `231_masked_v1`): the prompt is split into
++  // CHUNKS of 77 -- each its own BOS + up to 75 tokens + EOS/pad, with its own
++  // position embeddings -- concatenated to max_len (a multiple of 77). Each
++  // chunk is laid out exactly as processWeightedPrompt's 77-token one.
++  // A chunk the prompt does not reach stays all-zero and its ids[77*k] is 0,
++  // not BOS: that is how encodeText and the UNet mask tell it is unused.
++  ProcessedPrompt processChunkedPrompt(const std::string &prompt_text,
++                                       int max_len) {
++    const int chunks = max_len / 77;
++    const int dim1 = 768;
++    const int dim2 = text_embedding_size_2;
++
++    struct Tok {
++      int id;
++      float weight;
++      const float *emb1;
++      const float *emb2;
++    };
++    std::vector<Tok> content;
++    auto tokens = promptProcessor_.process(prompt_text);
++    for (const auto &token : tokens) {
++      if (token.is_embedding) {
++        int n = 0;
++        if (!token.embedding_data.empty())
++          n = token.embedding_data.size() / dim1;
++        else if (!token.embedding_data_2.empty())
++          n = token.embedding_data_2.size() / dim2;
++        for (int i = 0; i < n; i++) {
++          content.push_back(
++              {49407, token.weight,
++               token.embedding_data.empty()
++                   ? nullptr
++                   : token.embedding_data.data() + i * dim1,
++               token.embedding_data_2.empty()
++                   ? nullptr
++                   : token.embedding_data_2.data() + i * dim2});
++        }
++      } else {
++        for (int tid : tokenizer_->Encode(token.text))
++          content.push_back({tid, token.weight, nullptr, nullptr});
++      }
++    }
++    const int used =
++        std::max(1, std::min(chunks, (int)((content.size() + 74) / 75)));
++
++    ProcessedPrompt result;
++    result.ids.assign(max_len, 0);
++    result.ids_2.assign(max_len, 0);
++    result.weighted_embeddings.assign((size_t)max_len * dim1, 0.0f);
++    result.weighted_embeddings_2.assign((size_t)max_len * dim2, 0.0f);
++
++    for (int c = 0; c < used; c++) {
++      std::vector<float> e1(77 * dim1, 0.0f), e2(77 * dim2, 0.0f);
++      std::vector<int> ids{49406};
++      std::vector<float> weights{1.0f};
++      for (int k = 0; k < 75; k++) {
++        size_t at = (size_t)c * 75 + k;
++        if (at >= content.size()) break;
++        const Tok &t = content[at];
++        int pos = (int)ids.size();
++        if (t.emb1)
++          for (int j = 0; j < dim1; j++)
++            e1[pos * dim1 + j] = t.emb1[j] * t.weight;
++        if (t.emb2)
++          for (int j = 0; j < dim2; j++)
++            e2[pos * dim2 + j] = t.emb2[j] * t.weight;
++        ids.push_back(t.id);
++        weights.push_back(t.weight);
++      }
++      while (ids.size() < 77) {
++        ids.push_back(49407);
++        weights.push_back(1.0f);
++      }
++      std::vector<int> ids2 = ids;
++      for (int i = 1; i < 77; i++) {
++        if (ids2[i] == 49407) {
++          for (int k = i + 1; k < 77; k++) ids2[k] = 0;
++          break;
++        }
++      }
++      if (!token_emb_.empty() && !pos_emb_.empty())
++        applyTokenAndPosEmb(ids, weights, token_emb_, pos_emb_, dim1, 77, e1);
++      if (!token_emb_2_.empty() && !pos_emb_2_.empty())
++        applyTokenAndPosEmb(ids2, weights, token_emb_2_, pos_emb_2_, dim2, 77,
++                            e2);
++
++      std::copy(ids.begin(), ids.end(), result.ids.begin() + 77 * c);
++      std::copy(ids2.begin(), ids2.end(), result.ids_2.begin() + 77 * c);
++      std::copy(e1.begin(), e1.end(),
++                result.weighted_embeddings.begin() + (size_t)77 * c * dim1);
++      std::copy(e2.begin(), e2.end(),
++                result.weighted_embeddings_2.begin() + (size_t)77 * c * dim2);
++    }
++    return result;
++  }
++
+   ProcessedPrompt processWeightedPrompt(const std::string &prompt_text,
+                                         int max_len = 77) {
++    if (sdxl_ && max_len > 77 && max_len % 77 == 0)
++      return processChunkedPrompt(prompt_text, max_len);
+     ProcessedPrompt result;
+ 
+     auto tokens = promptProcessor_.process(prompt_text);

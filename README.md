@@ -17,7 +17,7 @@ NPU. No server, no account, no cloud, no network. Built on LocalDream's NPU back
 Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU. Models are not in the APK;
 pick one in the app and it downloads on first use.
 
-Stable Diffusion 1.5 and SDXL run locally on a Snapdragon NPU, offline. You draw a graph,
+Stable Diffusion 1.5, SDXL and Anima run locally on a Snapdragon NPU, offline. You draw a graph,
 press Run, and the picture appears on the node that made it. Everything stays on the phone.
 
 ⚠ **Video is much narrower than pictures, and needs ~8.6 GB of models.** It runs only on a
@@ -32,7 +32,7 @@ run on far more phones and need none of those models.
 
 **Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile
 Stable Diffusion, local image generation, on device video generation, node editor,
-Qualcomm Hexagon NPU, Snapdragon, QNN, SDXL, text to image, text to video, image to video,
+Qualcomm Hexagon NPU, Snapdragon, QNN, SDXL, Anima, text to image, text to video, image to video,
 img2img, inpainting, no cloud, private.
 
 ## What it does
@@ -44,11 +44,13 @@ img2img, inpainting, no cloud, private.
   an 8 Elite or 8 Elite Gen 5, verified on gen 4 only. **Image to video** animates a photo
   instead, and is the faster of the two — same three nodes, with a photo wired in. The clip
   loops on the node that made it and plays full screen.
-- **Seven node types, not seventy.** A flow is `prompt → sample → output`, plus a photo
+- **Eight node types, not seventy.** A flow is `prompt → generate → output`, plus a photo
   where one is wanted. Cropping, masking, encoding, sampling, blending and decoding happen
   **inside** the sampler, because there is no runtime compiler on an NPU and nobody can
   recombine the inside of a pipeline anyway — so the whole process is one node. Inpainting
-  used to be ten nodes and is four.
+  used to be ten nodes and is four. **Tap to select**: the Inpaint flow comes with a
+  Segment model node wired in and tap what you want redone — Segment Anything 2.1 on the phone's CPU, an 87 MB
+  download under Models, Tools.
 - **The ops are still decomposed underneath.** `encode_text`, `vae_encode`, `sample`,
   `latent_blend` and `vae_decode` are separate endpoints, and conditionings and latents move
   between them as handles that never cross the wire — a 512 image costs about 40 bytes of
@@ -65,10 +67,12 @@ img2img, inpainting, no cloud, private.
 - **Upscalers.** RealESRGAN x4plus anime and 4x UltraSharp V2 Lite, loaded per request so
   they cost no process restart.
 - **Pick your size.** SD 1.5 renders any resolution its checkpoint ships a patch for — 512²
-  up to 1024², portrait and landscape; SDXL crops its fixed 1024² canvas to the shape you
-  choose.
-- **Bring your own model.** Fifteen checkpoints in the catalogue — five SD 1.5 and ten SDXL
-  — or import a converted one as a zip. Each sampler has its own checkpoint picker, grouped
+  up to 1024², portrait and landscape; SDXL and Anima crop their fixed 1024² canvas to the
+  shape you choose.
+- **Bring your own model.** Twenty-four checkpoints in the catalogue — five SD 1.5, ten SDXL
+  and nine Anima — or import a converted one as a zip. ⚠ Anima is 8 Gen 3 or newer, ~4.3 GB
+  per checkpoint, and slow: about 80 s a picture on an 8 Elite, and Android may stop it
+  while other apps are busy. Each sampler has its own checkpoint picker, grouped
   by family, listing what is actually on the phone; switching family rewrites that node and
   keeps every wire. The app carries every HTP architecture tier and picks the build your chip can
   actually load. The video models are their own download under Models, resumable per file
@@ -152,8 +156,9 @@ Widgets are declared, not drawn. Give a number `min` and `max` and you get a sli
 `options` and you get a dropdown or a row of chips, add a `hint` and it appears under the
 control. An author picks values, never widgets, so no pack invents its own controls.
 
-**What a node cannot do yet.** There is no host op that runs a model, so a node cannot
-segment, detect or estimate anything. That is the next tier and it is not built. Scripts run
+**What a node cannot do yet.** There is no host op that runs a model, so a plugin cannot
+segment, detect or estimate anything — the built-in segmenter is not reachable from a script.
+That is the next tier and it is not built. Scripts run
 in a QuickJS sandbox with permissions denied by default, but nothing yet bounds how long one
 may run, so treat an imported pack the way you would treat any other code you did not write.
 
