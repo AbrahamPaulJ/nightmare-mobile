@@ -350,9 +350,10 @@ val RECIPES: List<Recipe> = listOf(
  * and the denoise, and a user can turn one into the other by painting or by
  * clearing the mask — without rewiring anything.
  *
- * ⚠ `denoise` 0.85 rather than img2img's 0.6: inside the mask the point is to
- * make something new, and the surroundings come back from the blend regardless.
- * A low denoise here reads as "the mask did nothing".
+ * ⚠ `denoise` 0.65, the same as image to image — the user's call, 2026-09-17,
+ * replacing an inpaint-only 0.85 ("inside the mask the point is to make
+ * something new"). ⚠ If a painted area reads as "the mask did nothing", this is
+ * the knob to raise.
  */
 fun inpaintWorkflow(): Workflow = Workflow(
     Graph(
@@ -372,7 +373,7 @@ fun inpaintWorkflow(): Workflow = Workflow(
             // fits whatever it is given.
             Node(
                 "inpaint", samplerType(inpaint = true),
-                params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to "0.85"),
+                params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to "0.65"),
                 inputs = sources("prompt" to "prompt", "image" to "photo", "segmenter" to "segment_model"),
             ),
             Node("output", "core.output", inputs = sources("media" to "inpaint")),
@@ -402,7 +403,7 @@ fun img2imgWorkflow(): Workflow = Workflow(
                 // ⚠ No `steps`/`cfg`: the model supplies both (see
                 // [defaultWorkflow]). `denoise` stays — it is a property of THIS
                 // recipe, not of the checkpoint.
-                params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to "0.6"),
+                params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to "0.65"),
                 inputs = sources("prompt" to "prompt", "image" to "photo"),
             ),
             Node("output", "core.output", inputs = sources("media" to "generate")),

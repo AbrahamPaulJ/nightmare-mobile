@@ -1,5 +1,5 @@
 --- ../LocalDream/local-dream/app/src/main/cpp/src/main.cpp	2026-08-21 16:35:42.952070300 +0930
-+++ backend-src/src/main.cpp	2026-09-08 14:56:39.668194800 +0930
++++ backend-src/src/main.cpp	2026-09-17 15:24:14.859382900 +0930
 @@ -1,10 +1,13 @@
  #include <algorithm>
  #include <chrono>
@@ -22,7 +22,7 @@
  #include "TextEncoder.hpp"
  #include "Upscaler.hpp"
  
-@@ -484,6 +488,736 @@
+@@ -484,6 +488,746 @@
  // new request arriving while an aborted one is still winding down).
  static std::mutex g_generation_mutex;
  
@@ -295,6 +295,16 @@
 +          req->init_latents = it->second.data;
 +        }
 +        req->img2img = true;
++        // ⚠⚠ A supplied latent is a REAL picture, never the synthetic aspect
++        // canvas. The parser sees no "image" field, so with `aspect_ratio` it
++        // takes this for txt2img and sets aspect_pad_synthetic_base -- and
++        // generate() then overwrites the aspect rectangle with pure noise,
++        // throwing the photo away. On a fixed-canvas family every non-1:1
++        // img2img and inpaint came back as a texture with nothing of the input
++        // in it (reported 2026-09-17, 2:3). The aspect MASK stays: it is what
++        // keeps the bars around the rectangle fixed, exactly as /generate does
++        // for a user image.
++        req->aspect_pad_synthetic_base = false;
 +        // ⚠ Defaulted to 0.6 rather than to 1.0. denoise 1.0 renoises
 +        // completely, which is txt2img with extra steps -- a caller that forgot
 +        // the field would get a result with no trace of the image they supplied
@@ -759,7 +769,7 @@
  static void registerGenerateEndpoint(httplib::Server &svr, Pipeline *pipeline) {
    svr.Post("/generate", [pipeline](const httplib::Request &request,
                                     httplib::Response &res) {
-@@ -891,6 +1625,8 @@
+@@ -891,6 +1635,8 @@
    });
  
    if (pipeline) registerGenerateEndpoint(svr, pipeline.get());

@@ -137,8 +137,8 @@ fun NodeInspector(
     onTapMask: (node: String, x: Float, y: Float, done: (String?) -> Unit) -> Unit =
         { _, _, _, done -> done(null) },
     onDismiss: () -> Unit,
-    /** ⭐ Graph-wide, not per-node — see [NodeInspectorBody.onSetResolution]. */
-    onSetResolution: (com.abrah.nightmare.Res) -> Unit = {},
+    /** ⭐ Per node — see [NodeInspectorBody.onSetResolution]. */
+    onSetResolution: (node: String, com.abrah.nightmare.Res) -> Unit = { _, _ -> },
     onSetAspect: (String) -> Unit = {},
     /** ⭐ Whether THIS node may arm a sweep — the last-node rule. */
     canSweep: Boolean = true,
@@ -158,6 +158,8 @@ fun NodeInspector(
     onSaveImage: (String) -> Unit = {},
     /** ⭐ Hand a node's picture to another app. */
     onShareImage: (String) -> Unit = {},
+    /** ⭐ Send a node's picture into a flow. */
+    onSendImage: (String) -> Unit = {},
     onStarImage: (String) -> Unit = {},
     isFavourite: (String) -> Boolean = { false },
     keepDisabledReason: String? = null,
@@ -191,7 +193,9 @@ fun NodeInspector(
         // everything that holds pixels.
         val actsOnItsPicture = node.type != "core.output" ||
             com.abrah.nightmare.isLastOutput(state.workflow.graph, nodeId)
-        val sourceId = node.inputs["image"]?.node?.let { state.previews[it]?.first }
+        // ⚠⚠ [CanvasState.pictureInto] — a sampler upstream is read by what it
+        // RENDERED, not by its preview (its framed input).
+        val sourceId = state.pictureInto(nodeId, types)
         // ⭐⭐ What the graph demands of this node, read HERE rather than
         // computed in the body: the body is what the goldens render, and it must
         // stay a function of its arguments.
@@ -209,8 +213,20 @@ fun NodeInspector(
             // must stay a function of its arguments so the goldens can render
             // it, and this list is a cached disk scan.
             focusField = state.focusField,
-            resolutions = com.abrah.nightmare.SelectedModel.resolutions,
-            onSetResolution = onSetResolution,
+            cropRequest = state.cropRequest,
+            cropRequestTab = state.cropRequestTab,
+            // ⚠⚠ THIS node's model, never the top bar's — they differ as soon as
+            // a sampler's checkpoint is picked on the node. `remember`ed on the
+            // id so the directory scan runs once per model, not per frame.
+            resolutions = run {
+                val modelId = node.params["model"].orEmpty()
+                remember(modelId) {
+                    com.abrah.nightmare.ModelCatalog.byId(modelId)
+                        ?.let { com.abrah.nightmare.SelectedModel.resolutionsOf(appCtx, it) }
+                        ?: com.abrah.nightmare.SelectedModel.resolutions
+                }
+            },
+            onSetResolution = { onSetResolution(nodeId, it) },
             onSetAspect = onSetAspect,
             canSweep = com.abrah.nightmare.canSweep(state.workflow.graph, nodeId),
             // ⚠ Read HERE for the same reason: what a prompt is measured
@@ -241,6 +257,7 @@ fun NodeInspector(
             onSaveImage = previewId?.takeIf { node.type != "core.image" }
                 ?.let { id -> { onSaveImage(id) } },
             onShareImage = { previewId?.let(onShareImage) },
+            onSendImage = { previewId?.let(onSendImage) },
             // ⭐⭐ The clip's frames, so the sheet loops what the node loops.
             //
             // ⚠⚠ This replaced a ▶ Play button that handed the MP4 to an
@@ -334,6 +351,11 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // popup, under the picture they change — never loose in the knob list
     // (the user's call, 2026-09-17).
     if (node.type in com.abrah.nightmare.SD_INPAINT_TYPES && (name == "grow" || name == "feather")) return true
+    // ⭐ No Pad on image-to-image (asked for 2026-09-17): it cannot pad
+    // ([com.abrah.nightmare.PadRule.NEVER]), so the choice of fill cannot matter.
+    if (name == com.abrah.nightmare.CropNode.PAD &&
+        com.abrah.nightmare.padRuleFor(node.type) == com.abrah.nightmare.PadRule.NEVER
+    ) return true
 
     if (node.type !in com.abrah.nightmare.SD_SAMPLER_TYPES) return false
     val hasImage = node.inputs["image"] != null
@@ -423,7 +445,7 @@ internal fun NodeInspectorBody(
      */
     focusField: String? = null,
     /**
-     * ⭐⭐ The sizes the selected model can actually render, for the size chips
+     * ⭐⭐ The sizes THIS NODE's model can actually render, for the size chips
      * on a context-key node.
      *
      * ⚠⚠ **Passed in, never read from [SelectedModel] here.** This body is what
@@ -434,11 +456,13 @@ internal fun NodeInspectorBody(
      */
     resolutions: List<com.abrah.nightmare.Res> = emptyList(),
     /**
-     * ⭐ Choose the render size. **Not [onSetParam]**: a size is a third of the
-     * [ContextKey], so choosing one rewrites every backend node in the graph
-     * rather than this node alone (`HarnessViewModel.selectResolution`).
-     * Writing it per-node would leave a graph naming two keys, which the
-     * executor refuses.
+     * ⭐ Choose THIS node's render size (`HarnessViewModel.setNodeResolution`).
+     * **Not [onSetParam]**: a size is a third of the [ContextKey], so the pick
+     * is checked against the node's model and every derived picture is
+     * invalidated. ⚠⚠ Per node since the executor schedules keys instead of
+     * refusing a graph with two (`docs/ARCHITECTURE.md` §4) — it used to
+     * rewrite the whole graph against the TOP BAR's model, which refused every
+     * size an SD 1.5 node offered while SDXL was selected.
      */
     onSetResolution: (com.abrah.nightmare.Res) -> Unit = {},
     /**
@@ -466,6 +490,8 @@ internal fun NodeInspectorBody(
     onSaveImage: (() -> Unit)? = null,
     /** ⭐ Hand this node's picture to another app. */
     onShareImage: () -> Unit = {},
+    /** ⭐ Send this node's picture into a flow. */
+    onSendImage: () -> Unit = {},
     /**
      * ⭐ The frames to loop instead of [preview], when this node made a clip.
      *
@@ -514,6 +540,9 @@ internal fun NodeInspectorBody(
     onClearImage: () -> Unit = {},
     /** ⚠ For a golden only: draw the inpaint popup's tab INLINE, since a Dialog is a window a screenshot cannot reach. */
     inlinePopupTab: Int? = null,
+    /** ⭐ [CanvasState.cropRequest] — open the Crop popup when it names this node. */
+    cropRequest: Pair<String, Int>? = null,
+    cropRequestTab: Int = 0,
 ) {
     // ⚠ Local: an unanswered confirm is not something to persist, same as every
     // other one in the app.
@@ -618,8 +647,11 @@ internal fun NodeInspectorBody(
         }
 
         val canSweepHere = canSweep
-        // ⭐ An inpaint node edits its crop and mask in a popup, and has no crop lock.
-        val popup = node.type in com.abrah.nightmare.SD_INPAINT_TYPES
+        // ⭐ An SD sampler edits its crop (and, on inpaint, its mask) in a popup,
+        // and has no crop lock. ⚠ Image-to-image too since 2026-09-17, the user's
+        // call: "i2i should have crop window similar to inpaint, without the lock".
+        val popup = node.type in com.abrah.nightmare.SD_SAMPLER_TYPES
+        val padRule = com.abrah.nightmare.padRuleFor(node.type)
         val cropLocked = !popup && com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)[
             com.abrah.nightmare.CropNode.LOCKED
         ].equals("true", ignoreCase = true)
@@ -628,7 +660,65 @@ internal fun NodeInspectorBody(
         // one popup ([InpaintEditors]). The user's call, 2026-09-17: two
         // picture-sized editors stacked in a scrolling sheet fought the sheet
         // for every drag, and a Dialog is its own window with no sheet under it.
+        // ⚠ A size the graph fixed is not a knob. It is still SHOWN -- a
+        // locked field with a reason is how this app already explains the
+        // context-key params -- but the shape chooser beside it is hidden
+        // outright, because there is nothing left to choose.
+        val sized = demand as? SizeDemand.Exactly
+        val conflict = demand as? SizeDemand.Conflict
+
+        // ⭐⭐ **The render size, as ONE control where the node carries two
+        // params.** `width` and `height` stay separate params -- that is what a
+        // saved workflow stores and what `backendContextKey` reads -- but they
+        // are never two knobs to a person: nobody wants 768 wide and 512 tall
+        // as independent choices, because only the PAIRS a patch file exists
+        // for can be rendered at all.
+        //
+        // ⚠⚠ Chips of the reachable sizes, never number fields. A typed 640
+        // has no `640.patch`, and `BackendProcess.start` would refuse the launch
+        // -- correctly, but only after the user had already committed to it.
+        val sizeKnob = type?.widgets.orEmpty()
+            .count { it.contextKey && (it.name == "width" || it.name == "height") } == 2
+        // ⭐⭐ ONE composable, drawn in the sheet AND at the top of the crop
+        // popup (asked for 2026-09-17) — two copies of the size control would
+        // stop agreeing the first time one of them learned something.
+        val sizePanel: @Composable () -> Unit = {
+            if (sizeKnob && resolutions.size > 1) {
+                val current = com.abrah.nightmare.Res(
+                    node.params["width"]?.toIntOrNull() ?: 0,
+                    node.params["height"]?.toIntOrNull() ?: 0,
+                ).toString()
+                // ⚠ [Chooser] owns the chips-or-dropdown rule; seven resolutions
+                // is one of the cases that motivated it.
+                Chooser(
+                    label = stringResource(R.string.resolution),
+                    hint = stringResource(R.string.resolution_reloads),
+                    options = resolutions.map { it.toString() },
+                    current = current,
+                    onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
+                )
+            }
+            // ⭐ The ASPECT, in the same place — it is the size control of a
+            // fixed-canvas family, which has one resolution and so draws none.
+            type?.widgets.orEmpty().firstOrNull { it.name == "aspect" }?.takeIf { sized == null }?.let { w ->
+                Chooser(
+                    label = w.name.knobLabel,
+                    hint = w.hint,
+                    options = w.options.orEmpty(),
+                    current = node.params[w.name] ?: w.default.orEmpty(),
+                    // ⚠⚠ Graph-wide on a SAMPLER only ([onSetAspect]); a crop
+                    // node's `aspect` is its own frame shape, its own vocabulary.
+                    onPick = {
+                        if (node.type in com.abrah.nightmare.SD_SAMPLER_TYPES) onSetAspect(it)
+                        else onSetParam(nodeId, w.name, it)
+                    },
+                )
+            }
+        }
         val cropPanel: @Composable () -> Unit = {
+            // ⭐ The size first, in the crop window too — the frame's shape is
+            // decided by it, so it is changed where the frame is.
+            if (popup) sizePanel()
             cropSource?.let { src ->
                 val (outW, outH) = framingOutSize(node, type)
                 // ⭐⭐ A TITLE over each editor. Reported 2026-09-15: with framing and
@@ -678,14 +768,20 @@ internal fun NodeInspectorBody(
                     interactive = !cropLocked,
                     outW = outW,
                     aspect = cropAspect(node, src.width, src.height, type),
-                    padBlur = node.params[CropNode.PAD] == CropNode.PAD_BLUR,
+                    padBlur = padRule != com.abrah.nightmare.PadRule.NEVER &&
+                        node.params[CropNode.PAD] == CropNode.PAD_BLUR,
+                    rule = padRule,
                 )
                 // ⭐⭐ The photo is too small for what is being asked of it, said
                 // plainly. This is the ONE state where bars appear, and a user who
                 // has not been told will read them as a bug in the cropper rather
                 // than as the honest answer to "this picture has fewer pixels than
                 // the pipeline needs".
-                if (CropGeometry.needsPadding(src.width, src.height, outW, outH)) {
+                // ⚠ Only under that rule: an image-to-image node never pads, and on
+                // an inpaint node bars are a choice (outpaint), not a shortfall.
+                if (padRule == com.abrah.nightmare.PadRule.WHEN_TOO_SMALL &&
+                    CropGeometry.needsPadding(src.width, src.height, outW, outH)
+                ) {
                     Text(
                         "this picture is ${src.width}x${src.height}, smaller than the " +
                             "${outW}x$outH being asked for — the bars are padding, not a crop. " +
@@ -701,7 +797,7 @@ internal fun NodeInspectorBody(
                     style = LogTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (popup) {
+                if (popup && padRule != com.abrah.nightmare.PadRule.NEVER) {
                     type?.widgets?.firstOrNull { it.name == CropNode.PAD }?.let { w ->
                         ChoiceRow(
                             label = w.name.knobLabel,
@@ -760,6 +856,11 @@ internal fun NodeInspectorBody(
                     source = src,
                     photo = raw,
                     frame = frame,
+                    // ⭐ OUTPAINT padding, locked and drawn blue — the same test
+                    // the sampler masks it by ([com.abrah.nightmare.CropGeometry.photoInFrame]).
+                    padding = if (padRule == com.abrah.nightmare.PadRule.OUTPAINT) {
+                        com.abrah.nightmare.CropGeometry.photoInFrame(rect.x, rect.y, rect.w, rect.h)
+                    } else null,
                     onEditMask = onEditMask,
                     onTapMask = onTapMask,
                     type = type,
@@ -767,6 +868,10 @@ internal fun NodeInspectorBody(
                 )
             }
         }
+        // ⭐⭐ ABOVE the crop and mask (asked for 2026-09-17): the size decides
+        // the shape of both, so it is chosen before them, not scrolled past.
+        sizePanel()
+
         if (popup && cropSource != null) {
             InpaintEditors(
                 node = node,
@@ -775,6 +880,9 @@ internal fun NodeInspectorBody(
                 cropPanel = cropPanel,
                 maskPanel = maskPanel,
                 inlineTab = inlinePopupTab,
+                paints = node.type in com.abrah.nightmare.SD_INPAINT_TYPES,
+                openCrop = cropRequest?.takeIf { it.first == nodeId }?.second,
+                openTab = cropRequestTab,
             )
         } else {
             cropPanel()
@@ -825,8 +933,9 @@ internal fun NodeInspectorBody(
             widgets.firstOrNull { it.name == CropNode.PAD }
         } else null
         // ⚠ On an inpaint node the chooser is drawn IN the Crop tab of its popup
-        // (the user's call, 2026-09-17), so not here as well.
-        val padHere = padWidget?.takeIf { !popup }
+        // (the user's call, 2026-09-17), so not here as well — and never on an
+        // image-to-image node, which cannot pad at all ([com.abrah.nightmare.PadRule.NEVER]).
+        val padHere = padWidget?.takeIf { !popup && padRule != com.abrah.nightmare.PadRule.NEVER }
         // ⭐⭐ The pad chooser sits DIRECTLY under the framing view, because it
         // answers a question the framing view has just raised: the bars appear
         // as soon as the frame runs off the picture, and "black or mirrored" is
@@ -874,6 +983,7 @@ internal fun NodeInspectorBody(
                     onKeep = onKeepImage,
                     onDownload = { onSaveImage() },
                     onShare = { onShareImage() },
+                    onSendTo = { onSendImage() },
                     onStar = onStarImage,
                     kept = kept,
                     favourite = favourite,
@@ -984,42 +1094,6 @@ internal fun NodeInspectorBody(
             )
         }
 
-        // ⚠ A size the graph fixed is not a knob. It is still SHOWN -- a
-        // locked field with a reason is how this app already explains the
-        // context-key params -- but the shape chooser beside it is hidden
-        // outright, because there is nothing left to choose.
-        val sized = demand as? SizeDemand.Exactly
-        val conflict = demand as? SizeDemand.Conflict
-
-        // ⭐⭐ **The render size, as ONE control where the node carries two
-        // params.** `width` and `height` stay separate params -- that is what a
-        // saved workflow stores and what `backendContextKey` reads -- but they
-        // are never two knobs to a person: nobody wants 768 wide and 512 tall
-        // as independent choices, because only the PAIRS a patch file exists
-        // for can be rendered at all.
-        //
-        // ⚠⚠ Chips of the reachable sizes, never number fields. A typed 640
-        // has no `640.patch`, and `BackendProcess.start` would refuse the launch
-        // -- correctly, but only after the user had already committed to it.
-        val sizeKnob = type?.widgets.orEmpty()
-            .count { it.contextKey && (it.name == "width" || it.name == "height") } == 2
-        if (sizeKnob && resolutions.size > 1) {
-            val current = com.abrah.nightmare.Res(
-                node.params["width"]?.toIntOrNull() ?: 0,
-                node.params["height"]?.toIntOrNull() ?: 0,
-            ).toString()
-            val labels = resolutions.map { it.toString() }
-            // ⚠ [Chooser] owns the chips-or-dropdown rule; seven resolutions is
-            // one of the cases that motivated it.
-            Chooser(
-                label = stringResource(R.string.resolution),
-                hint = stringResource(R.string.resolution_reloads),
-                options = labels,
-                current = current,
-                onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
-            )
-        }
-
         // ⭐⭐⭐ **The LAST-node rule** (`isLastOfKind`): only the last sampler
         // in a chain may arm a sweep. Sweeping an earlier one re-runs everything
         // downstream, so ten seeds on a two-sampler chain is twenty renders —
@@ -1042,7 +1116,8 @@ internal fun NodeInspectorBody(
             if (sizeKnob && (w.name == "width" || w.name == "height")) continue
             // ⚠ Already drawn, under the framing view it belongs to.
             if (w === padWidget) continue
-            if (w.name == "aspect" && sized != null) continue
+            // ⚠ Drawn above, beside the resolution — or not at all when the graph fixed the size.
+            if (w.name == "aspect") continue
             // ⭐⭐⭐ The CHECKPOINT is a picker, not a locked string. Every
             // installed model; picking one from another family swaps this node's
             // TYPE with it, which is safe because the four types declare the
@@ -1061,14 +1136,9 @@ internal fun NodeInspectorBody(
             // ⭐ A short fixed set of values is a row of chips, not a text box
             // that accepts "Black", "mirrored" and a typo that fails at Run.
             val options = w.options
-            // ⚠⚠ `aspect` is graph-wide, every other chip row is per-node. The
-            // sampler places the rectangle and the decoder cuts it out, so two
-            // nodes holding different ratios crops the wrong region of a
-            // correctly rendered picture -- with nothing to report it, because
-            // both nodes did exactly what they were told.
-            val pick: (String) -> Unit =
-                if (w.name == "aspect") ({ v -> onSetAspect(v) })
-                else ({ v -> onSetParam(nodeId, w.name, v) })
+            // ⚠ `aspect` never reaches here — it is graph-wide ([onSetAspect])
+            // and drawn above; every chip row in this loop is per-node.
+            val pick: (String) -> Unit = { v -> onSetParam(nodeId, w.name, v) }
             if (options != null) {
                 // ⭐⭐ **An armed CHOICE says what it will sweep, exactly as an
                 // armed slider does.**
@@ -1765,8 +1835,16 @@ private fun InpaintEditors(
     cropPanel: @Composable () -> Unit,
     maskPanel: @Composable () -> Unit,
     inlineTab: Int? = null,
+    /** ⚠ False on image-to-image: the Crop editor alone, no Mask tab. */
+    paints: Boolean = true,
+    /** ⭐ A request to open the popup ([CanvasState.cropRequest]'s count). */
+    openCrop: Int? = null,
+    /** ⭐ …on this tab — 1 (Mask) only where there is one. */
+    openTab: Int = 0,
 ) {
     var open by remember { mutableStateOf<Int?>(inlineTab) }
+    // ⚠ Keyed on the COUNT: fires once per request, not on every recomposition.
+    if (openCrop != null) LaunchedEffect(openCrop) { open = if (paints) openTab else 0 }
     val rect = cropRectOf(node)
     val ops = node.params[com.abrah.nightmare.MaskNode.OPS].orEmpty()
     val grow = node.params["grow"]
@@ -1781,27 +1859,35 @@ private fun InpaintEditors(
             photo.asAndroidBitmap(), rect.x, rect.y, rect.w, rect.h, outW, outH, node.params[CropNode.PAD],
         ).first
     }
+    // ⭐ OUTPAINT padding — the same test the sampler and the editor use.
+    val padding = if (!paints) null
+    else com.abrah.nightmare.CropGeometry.photoInFrame(rect.x, rect.y, rect.w, rect.h)
     val masked = remember(framed, ops, grow, feather) {
         val stored = com.abrah.nightmare.MaskNode.stateOf(node)
-        if (stored.isEmpty) return@remember framed.asImageBitmap()
-        val photoBmp = photo.asAndroidBitmap()
-        val state = com.abrah.nightmare.MaskFraming.toFrame(
-            com.abrah.nightmare.MaskTaps.resolve(stored) { x, y ->
-                com.abrah.nightmare.segment.Segmenter.cached(photoBmp, x, y)?.candidates
-            },
-            rect.x, rect.y, rect.w, rect.h,
-        )
+        if (stored.isEmpty && padding == null) return@remember framed.asImageBitmap()
         val out = framed.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
-        val overlay = com.abrah.nightmare.MaskRaster.overlay(state, out.width, out.height, com.abrah.nightmare.MaskRaster.OVERLAY_RGB)
-        android.graphics.Canvas(out).drawBitmap(
-            overlay, 0f, 0f,
-            android.graphics.Paint().apply { alpha = com.abrah.nightmare.MaskRaster.OVERLAY_ALPHA },
-        )
+        val canvas = android.graphics.Canvas(out)
+        if (!stored.isEmpty) {
+            val photoBmp = photo.asAndroidBitmap()
+            val state = com.abrah.nightmare.MaskFraming.toFrame(
+                com.abrah.nightmare.MaskTaps.resolve(stored) { x, y ->
+                    com.abrah.nightmare.segment.Segmenter.cached(photoBmp, x, y)?.candidates
+                },
+                rect.x, rect.y, rect.w, rect.h,
+            )
+            val overlay = com.abrah.nightmare.MaskRaster.overlay(state, out.width, out.height, com.abrah.nightmare.MaskRaster.OVERLAY_RGB)
+            canvas.drawBitmap(
+                overlay, 0f, 0f,
+                android.graphics.Paint().apply { alpha = com.abrah.nightmare.MaskRaster.OVERLAY_ALPHA },
+            )
+        }
+        // ⚠ The padding as the editor draws it: blue bands over what is not photo.
+        padding?.let { com.abrah.nightmare.MaskRaster.paintPadding(out, it, PADDING_ALPHA) }
         out.asImageBitmap()
     }
-    val labels = listOf("Crop", "Mask")
+    val labels = if (paints) listOf("Crop", "Mask") else listOf("Crop")
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        listOf(framed.asImageBitmap(), masked).forEachIndexed { i, thumb ->
+        listOf(framed.asImageBitmap(), masked).take(labels.size).forEachIndexed { i, thumb ->
             Column(
                 Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -1824,6 +1910,10 @@ private fun InpaintEditors(
                 )
             }
         }
+        // ⚠⚠ The SAME half width on image-to-image. Drawn full width, its one
+        // Crop preview looked exactly like the inline crop editor it replaced,
+        // and read as "no popup" on the phone (2026-09-17).
+        if (!paints) Spacer(Modifier.weight(1f))
     }
     val tab = open ?: return
     val body: @Composable () -> Unit = {
@@ -2004,6 +2094,8 @@ private fun MaskToolbar(
     frame: CropRect,
     /** ⚠ The WHOLE photo the mask is stored against — what a tap segments. */
     photo: ImageBitmap,
+    /** ⭐ OUTPAINT: the photo's extent in [source]; the rest is locked padding. */
+    padding: com.abrah.nightmare.Frame? = null,
     onTapMask: (node: String, x: Float, y: Float, done: (String?) -> Unit) -> Unit,
     /** ⭐ For the shared slider's grow and feather, which are the node's params. */
     type: NodeType? = null,
@@ -2068,6 +2160,7 @@ private fun MaskToolbar(
             state = state,
             tool = tool,
             brushRadiusFrac = radius,
+            padding = padding,
             onTap = { u, v ->
                 if (!tapping) {
                     tapping = true

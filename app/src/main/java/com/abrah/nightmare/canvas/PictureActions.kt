@@ -73,6 +73,11 @@ fun PictureActions(
      */
     keepDisabledReason: String? = null,
     onDisabledKeep: ((String) -> Unit)? = null,
+    /**
+     * ⭐ SEND TO a flow ([com.abrah.nightmare.ui.SendToDialog]), after share.
+     * ⚠ Null on a clip: no flow takes a video as its input.
+     */
+    onSendTo: (() -> Unit)? = null,
 ) {
     var downloaded by remember { mutableStateOf(false) }
     // ⚠ Survives recomposition, resets with the surface — which is right: a new
@@ -144,6 +149,11 @@ fun PictureActions(
     onShare?.let { share ->
         IconButton(onClick = share) {
             Icon(com.abrah.nightmare.ui.ShareIcon, contentDescription = "share this $what", tint = tint)
+        }
+    }
+    onSendTo?.takeIf { !isClip }?.let { send ->
+        IconButton(onClick = send) {
+            Icon(com.abrah.nightmare.ui.SendToIcon, contentDescription = "send this picture to a flow", tint = tint)
         }
     }
     onStar?.let { star ->

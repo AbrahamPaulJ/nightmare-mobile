@@ -60,6 +60,8 @@ data class LoadedWorkflow(
     val requires: List<Requirement>,
     /** ⚠ Null for a file written before views were saved. The caller frames it. */
     val view: SavedView? = null,
+    /** ⭐ What opening it CHANGED (a deleted node type rebuilt away), to be said out loud. */
+    val notes: List<String> = emptyList(),
 )
 
 class WorkflowFormatError(message: String) : Exception(message)
@@ -190,10 +192,13 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     // names. `migrateSamplerPrompts` matches on the sampler's type, so running
     // it against a file still saying `sample` would either need both spellings
     // or silently skip the repair.
-    val migrated = collapseSamplers(
+    val collapsed = collapseSamplers(
         reviveOutputNodes(
         collapseVideoChain(migrateSamplerPrompts(nodes.map(::migrateType), positions))
     ))
+    // ⚠ LAST: every node it looks for has its current name and shape by now.
+    val notes = mutableListOf<String>()
+    val migrated = migrateCropNodes(collapsed, notes)
 
     val requiresJson = root.optJSONArray("requires")
     val requires = (0 until (requiresJson?.length() ?: 0)).map {
@@ -213,8 +218,50 @@ fun workflowFromJson(json: String): LoadedWorkflow {
         )
     }
     return LoadedWorkflow(
-        Workflow(Graph(migrated.first), migrated.second, sizes, proseLines), requires, view,
+        Workflow(Graph(migrated.first), migrated.second, sizes, proseLines), requires, view, notes,
     )
+}
+
+/**
+ * ⭐⭐ `image.crop` was DELETED (2026-09-17, the user's call): no flow used it,
+ * and the samplers frame their own input (docs/ARCHITECTURE.md §5.7). A saved
+ * flow naming one is rebuilt without it:
+ *
+ * - a crop feeding a node that FRAMES (a sampler, the video node) hands it its
+ *   framing and padding — unless that node already holds a framing of its own,
+ *   which is the one the user set there;
+ * - every consumer is rewired to the crop's input, so the picture still arrives;
+ * - the crop is removed, and [notes] says so — a node vanishing silently from a
+ *   flow someone saved is the surprise this avoids.
+ *
+ * ⚠ A crop with nothing wired into it leaves its consumers unwired, which is
+ * what it gave them anyway.
+ */
+private fun migrateCropNodes(
+    input: Pair<List<Node>, Map<String, Pt>>,
+    notes: MutableList<String>,
+): Pair<List<Node>, Map<String, Pt>> {
+    val (nodes, positions) = input
+    val crops = nodes.filter { it.type == "image.crop" }.associateBy { it.id }
+    if (crops.isEmpty()) return input
+    val framing = listOf("x", "y", "w", "h")
+    val out = nodes.filter { it.id !in crops }.map { n ->
+        var params = n.params
+        val inputs = n.inputs.mapNotNull { (port, src) ->
+            val crop = crops[src.node] ?: return@mapNotNull port to src
+            if (port == "image" && n.type in com.abrah.nightmare.FRAMING_TYPES &&
+                framing.none { it in n.params }
+            ) {
+                params = params + crop.params.filterKeys { it in framing || it == CropNode.PAD }
+            }
+            crop.inputs["image"]?.let { port to Source(it.node, it.port) }
+        }.toMap()
+        n.copy(params = params, inputs = inputs)
+    }
+    notes += "removed the crop node" + (if (crops.size == 1) " " else "s ") +
+        crops.keys.joinToString(", ") { "\"$it\"" } +
+        " — crop nodes no longer exist; the framing moved onto the node each fed"
+    return out to positions.filterKeys { it !in crops }
 }
 
 /**
@@ -244,9 +291,8 @@ private fun migrateType(node: Node): Node {
     val renamed = if (renamed0.type in com.abrah.nightmare.SD_INPAINT_TYPES && "mask" in renamed0.inputs) {
         renamed0.copy(inputs = renamed0.inputs - "mask")
     } else renamed0
-    // ⚠⚠ …and `crop`'s mirrored padding became a BLURRED mirror, under a new
-    // value. Left as `mirror` it would name a fill the node no longer produces,
-    // and the chip in the inspector would offer a word for something else.
+    // ⚠⚠ …and a crop's mirrored padding became a BLURRED mirror, under a new
+    // value — kept, because [migrateCropNodes] hands the crop's padding on.
     return if (renamed.type == "image.crop" && renamed.params[CropNode.PAD] == "mirror") {
         renamed.copy(params = renamed.params + (CropNode.PAD to CropNode.PAD_BLUR))
     } else renamed
@@ -256,6 +302,7 @@ private val RENAMED = mapOf(
     // ⚠ `sample` -> a FAMILY-specific type; [samplerTypeFor] does it, not this map.
     "vae_encode" to "sd.vae_encode",
     "vae_decode" to "sd.vae_decode",
+    // ⚠ `crop` -> `image.crop`, which is itself deleted: [migrateCropNodes].
     "crop" to "image.crop",
     // ⚠ The first fused video node, back under the name it now has.
     "nd.video_sample" to "nd.sample",

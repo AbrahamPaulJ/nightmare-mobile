@@ -914,33 +914,6 @@ class CanvasScreenshotTest {
         }
     }
 
-    /**
-     * ⭐⭐ The cropper's sheet when the graph has decided its size: `out_w`
-     * and `out_h` locked and SAYING WHO decided, the shape chooser gone because
-     * there is nothing left to choose, and the padding mode as chips rather than
-     * a text box that would accept "Black" and fail at Run.
-     */
-    @Test
-    fun aCropSizedByItsConsumer() = shoot("inspector-crop-sized") {
-        Surface(Modifier.fillMaxSize()) {
-            NodeInspectorBody(
-                nodeId = "frame",
-                node = Node(
-                    "frame", "image.crop",
-                    params = mapOf(
-                        "x" to "0.1", "y" to "0.1", "w" to "0.6", "h" to "0.6",
-                        "out_w" to "512", "out_h" to "512", "pad" to "black",
-                    ),
-                    inputs = sources("image" to "photo"),
-                ),
-                type = NODE_TYPES["image.crop"],
-                onSetParam = { _, _, _ -> },
-                onDelete = {},
-                cropSource = stripes(300, 220),
-                demand = SizeDemand.Exactly(512, 512, listOf("encode")),
-            )
-        }
-    }
 }
 
 /**
@@ -1000,6 +973,43 @@ class InpaintInspectorScreenshotTest {
                         onDelete = {},
                         cropSource = stripeSource(300, 220),
                         maskSource = stripeSource(300, 220),
+                        inlinePopupTab = tab,
+                    )
+                }
+            }
+        }
+}
+
+/**
+ * ⭐⭐ The IMAGE-TO-IMAGE sampler's sheet and crop popup — the same shape as
+ * inpaint's, one tab. ⚠ Added 2026-09-17 after the popup was reported missing
+ * on i2i: no golden drew an i2i sheet with a picture, so nothing showed it.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w411dp-h891dp-xxhdpi")
+class Img2ImgInspectorScreenshotTest {
+    @Test fun cropIsAPreview() = shoot("inspector-i2i", null)
+    @Test fun popupCropTab() = shoot("i2i-popup-crop", 0)
+
+    private fun shoot(name: String, tab: Int?) =
+        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+            NightmareTheme(darkTheme = true) {
+                Surface(Modifier.fillMaxSize()) {
+                    NodeInspectorBody(
+                        nodeId = "sample",
+                        node = Node(
+                            "sample", "sd15.sample",
+                            params = mapOf(
+                                "x" to "0.1", "y" to "0.1", "w" to "0.8", "h" to "0.8",
+                                "width" to "512", "height" to "512", "model" to "absolutereality",
+                            ),
+                            inputs = sources("image" to "photo", "prompt" to "prompt"),
+                        ),
+                        type = NODE_TYPES["sd15.sample"],
+                        onSetParam = { _, _, _ -> },
+                        onDelete = {},
+                        cropSource = stripeSource(300, 220),
                         inlinePopupTab = tab,
                     )
                 }

@@ -99,27 +99,6 @@ class FramingTest {
         assertNull(sizeRefusal(graph(photo, frame, encode("enc")), types, "frame", "enc", "image"))
     }
 
-    /**
-     * ⚠⚠ …but not into a SECOND encoder that wants something else. One node
-     * cannot make two sizes, and refusing the wire that would create the
-     * contradiction is kinder than letting the graph hold one and finding out at
-     * Run which branch lost.
-     */
-    @Test
-    fun aCropMayNotBeAskedForTwoDifferentSizes() {
-        // ⚠ The graph as it is WHILE THE FINGER IS DOWN: `b` exists but its wire
-        // has not landed. That is the state `CanvasState.refusal` reasons about,
-        // and refusing here is what stops the conflict ever existing.
-        val b = Node(
-            "b", "sd.vae_encode",
-            mapOf("model" to V1_MODEL, "width" to "768", "height" to "768", "seed" to "1"),
-        )
-        val g = graph(photo, frame, encode("a"), b)
-        val why = sizeRefusal(g, types, "frame", "b", "image")
-        assertNotNull(why)
-        assertTrue("should name both sizes: $why", why!!.contains("768") && why.contains("512"))
-    }
-
     /** ⚠ Re-dropping the wire that is already there is not a conflict with itself. */
     @Test
     fun rewiringTheSameConsumerIsNotAConflict() {

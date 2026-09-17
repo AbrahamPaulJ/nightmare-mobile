@@ -346,6 +346,120 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissPendingOpen() { pendingOpen = null }
 
+    /**
+     * ⭐ What opening a saved flow CHANGED in it — a deleted node type rebuilt
+     * away ([com.abrah.nightmare.canvas.LoadedWorkflow.notes]) — logged and
+     * toasted, never silent.
+     */
+    private fun sayNotes(loaded: com.abrah.nightmare.canvas.LoadedWorkflow) {
+        loaded.notes.forEach { say(it); toast(it) }
+    }
+
+    // ---- send a picture into a flow -------------------------------------
+
+    /**
+     * ⭐⭐ Where a picture can be SENT (asked for 2026-09-17): an image input of
+     * the flow on the canvas, a built-in flow that takes a picture, or a saved
+     * flow that does. ⚠ The picture is already COPIED to [file] — a result can
+     * be deleted and a canvas render evicted, and the flow it lands in must keep
+     * reading it.
+     */
+    data class SendChoices(
+        val file: java.io.File,
+        /** Every `core.image` node of the canvas flow, by id — the user picks one. */
+        val current: List<String>,
+        val recipes: List<com.abrah.nightmare.canvas.Recipe>,
+        val saved: List<String>,
+    )
+
+    var pendingSend by mutableStateOf<SendChoices?>(null)
+        private set
+
+    fun cancelSend() { pendingSend = null }
+
+    /** ⭐ From the canvas: a picture in the image store. */
+    fun offerSendImage(imageId: String) =
+        offerSend { f -> ops.images.get(imageId)?.let { bmp ->
+            f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        } != null }
+
+    /** ⭐ From Results: the kept PNG. */
+    fun offerSendResult(resultId: String) =
+        offerSend { f -> results.pngFile(resultId)?.let { it.copyTo(f, overwrite = true); true } ?: false }
+
+    private fun offerSend(write: (java.io.File) -> Boolean) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val dir = java.io.File(getApplication<Application>().filesDir, "sent").apply { mkdirs() }
+            val file = java.io.File(dir, "sent_${System.currentTimeMillis()}.png")
+            if (!runCatching { write(file) }.getOrDefault(false)) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) { toast("That picture could not be read") }
+                return@launch
+            }
+            fun takesPicture(g: Graph) = g.nodes.any { it.type == "core.image" }
+            val recipes = com.abrah.nightmare.canvas.RECIPES
+                .filter { !com.abrah.nightmare.npu.VideoGate.hidden || it.id !in com.abrah.nightmare.npu.VideoGate.VIDEO_RECIPES }
+                .filter { r -> runCatching { takesPicture(r.build().graph) }.getOrDefault(false) }
+            val saved = store.saved().map { it.name }
+                .filter { n -> runCatching { store.load(n)?.workflow?.graph?.let(::takesPicture) }.getOrNull() == true }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                pendingSend = SendChoices(
+                    file = file,
+                    current = canvas.workflow.graph.nodes.filter { it.type == "core.image" }.map { it.id },
+                    recipes = recipes,
+                    saved = saved,
+                )
+            }
+        }
+    }
+
+    /**
+     * ⭐ Put the sent picture on [nodeId] of the canvas flow. ⚠ Through
+     * `setParam("uri")`, the same door the gallery picker uses — so the framing
+     * resets and a sampler it feeds fits itself and opens its crop
+     * ([markNewPictures]), exactly as if the photo had been picked.
+     */
+    fun sendToCurrent(nodeId: String) {
+        val s = pendingSend ?: return
+        pendingSend = null
+        closeResult()
+        closeLibrary()
+        editCanvas { it.setParam(nodeId, "uri", s.file.absolutePath) }
+        say("sent the picture to $nodeId")
+    }
+
+    /** ⭐ Open a built-in flow with the picture on its first image input. */
+    fun sendToRecipe(r: com.abrah.nightmare.canvas.Recipe) {
+        val s = pendingSend ?: return
+        pendingSend = null
+        guardedOpen(r.label) {
+            closeResult()
+            openRecipeNow(r)
+            closeLibrary()
+            placeSent(s.file)
+        }
+    }
+
+    /** ⭐ Open a saved flow with the picture on its first image input. */
+    fun sendToSaved(name: String) {
+        val s = pendingSend ?: return
+        pendingSend = null
+        val loaded = store.load(name) ?: run { workflowError = "\"$name\" is gone"; return }
+        guardedOpen(name) {
+            closeResult()
+            openWorkflow(loaded.workflow, loaded.view)
+            currentWorkflowName = name
+            sayNotes(loaded)
+            closeLibrary()
+            placeSent(s.file)
+        }
+    }
+
+    private fun placeSent(file: java.io.File) {
+        val target = canvas.workflow.graph.nodes.firstOrNull { it.type == "core.image" } ?: return
+        editCanvas { it.setParam(target.id, "uri", file.absolutePath) }
+        say("sent the picture to ${target.id}")
+    }
+
     // ---- what the device is carrying -------------------------------------
 
     /**
@@ -549,6 +663,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 openWorkflow(loaded.workflow, loaded.view)
                 currentWorkflowName = name
                 say("opened \"$name\"")
+                sayNotes(loaded)
             }
         } catch (e: Exception) {
             workflowError = "could not open \"$name\" — ${e.message}"
@@ -602,6 +717,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                             currentWorkflowName = name
                             closeLibrary()
                             say("imported \"$name\"")
+                            sayNotes(loaded)
                         }
                     },
                     onFailure = {
@@ -1542,16 +1658,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * ⭐⭐ Change the render size for the WHOLE graph.
+     * ⭐⭐ Change ONE node's render size.
      *
-     * ⚠⚠ **The same act as choosing a model, and it must do the same things.**
-     * `--patch` binds at backend launch beside `--type` and `--model_dir`
-     * (`docs/ARCHITECTURE.md` §4), so a resolution is a third of the context
-     * key, not a knob: it rewrites every backend node, it invalidates the
-     * running process, and it costs a relaunch of 2.3-5 s on the next Run.
-     * Doing less than [selectModel] does here would leave the graph and the
-     * process disagreeing about the size, which decodes plausible garbage
-     * rather than failing.
+     * ⚠⚠ **Per node, checked against THAT node's model.** This used to rewrite
+     * the whole graph against the top bar's model — right while a graph named
+     * one key, wrong since the model became a per-node choice and the executor
+     * schedules keys (`docs/ARCHITECTURE.md` §4, "resolution — per-node too").
+     * With SDXL in the top bar it refused every size an SD 1.5 node offered.
+     *
+     * ⚠ No backend stop: the executor relaunches for a key it does not hold
+     * ([scheduleByKey]), the same way it moves between two checkpoints.
      *
      * ⚠⚠ `previewSigs.clear()` is NOT tidiness. DreamUI hit this on its first
      * non-square inpaint: cropping at one resolution and generating at another
@@ -1562,24 +1678,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * signature is only rechecked when a node's params changed — which is a
      * race against the derivation that changes them.
      */
-    fun selectResolution(res: Res) {
+    fun setNodeResolution(nodeId: String, res: Res) {
         val ctx = getApplication<Application>()
-        val spec = SelectedModel.spec
-        // ⚠⚠ **Not `if (res == SelectedModel.res) return`.** That guard was right
-        // while the only way to choose a size was the model card, where the
-        // selection WAS the state. The knob is on a node now, and the graph is
-        // authoritative (`docs/MODELS.md` §4) -- so a workflow opened at 768x512
-        // while the selection says 512x512 must still be retargetable back to
-        // 512x512, and an early return keyed on the selection alone would
-        // silently refuse exactly that. ⇒ Bail only when the selection AND every
-        // node already agree, which is the real "nothing to do".
-        val graphAgrees = runCatching {
-            contextKeyRetarget(
-                canvas.workflow.graph, typesFor(canvas.workflow.graph), spec, res,
-            ).isEmpty()
-        }.getOrDefault(false)
-        if (res == SelectedModel.res && graphAgrees) return
-        val ok = spec.availableResolutions(ctx)
+        val node = canvas.workflow.graph.byId[nodeId] ?: return
+        val spec = ModelCatalog.byId(node.params["model"].orEmpty()) ?: SelectedModel.spec
+        val w = res.width.toString()
+        val h = res.height.toString()
+        if (node.params["width"] == w && node.params["height"] == h) return
+        val ok = SelectedModel.resolutionsOf(ctx, spec)
         if (res !in ok) {
             say(
                 "${spec.label} cannot render $res — it serves ${ok.joinToString(", ")}",
@@ -1587,17 +1693,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             )
             return
         }
-        SelectedModel.setRes(ctx, res)
-        say("resolution set to $res")
-        // ⚠ The last run was at the OLD size, so its timings and its "done" no
-        // longer describe this canvas -- exactly as after a model switch.
-        clearRunLog()
+        editCanvas { s -> s.setParams(nodeId, mapOf("width" to w, "height" to h)) }
+        say("$nodeId: resolution set to $res")
         previewSigs.clear()
-        retargetCanvas(spec, res)
-        if (backend == BackendState.UP) {
-            say("  stopping the backend — it was launched at ${BackendProcess.launchedKey?.let { "${it.width}x${it.height}" } ?: "another size"}")
-            stopBackend()
-        }
         // ⚠ The chip that was tapped reads its selected state off this list.
         refreshModels()
     }
@@ -1616,16 +1714,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * shape now, which is the same staleness a resolution change causes.
      */
     fun selectAspect(aspect: String) {
-        val spec = SelectedModel.spec
-        if (!spec.fixedCanvas) {
-            say("${spec.label} renders real resolutions — pick one of those instead", bad = true)
-            return
-        }
+        // ⚠⚠ No check against the TOP BAR's model. The chip is only declared by
+        // a fixed-canvas family's type ([aspectWidget]) and [aspectRetarget]
+        // writes only nodes that declare it, so a selection of SD 1.5 must not
+        // refuse the chip on an SDXL node (2026-09-17).
         val graph = canvas.workflow.graph
         val changes = aspectRetarget(graph, typesFor(graph), aspect)
         if (changes.isEmpty()) return
         editCanvas { s -> changes.entries.fold(s) { acc, (id, p) -> acc.setParams(id, p) } }
         previewSigs.clear()
+        val spec = changes.keys.firstNotNullOfOrNull { id ->
+            ModelCatalog.byId(graph.byId[id]?.params?.get("model").orEmpty())
+        } ?: SelectedModel.spec
         val target = ModelCatalog.aspectTarget(aspect, spec.native)
         say("aspect $aspect — ${target ?: spec.native} on ${changes.size} node" +
             (if (changes.size == 1) "" else "s"))
@@ -1845,7 +1945,243 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * correct: it threads its own state for the duration of one gesture and
      * publishes each step immediately (`CanvasGestures.kt`).
      */
-    fun editCanvas(change: (CanvasState) -> CanvasState) = updateCanvas(refitFramings(canvas, change(canvas)))
+    fun editCanvas(change: (CanvasState) -> CanvasState) {
+        val before = canvas
+        val after = paintedOnGenerated(before, refitFramings(before, change(before)))
+        markNewPictures(before, after)
+        updateCanvas(after)
+    }
+
+    /**
+     * ⭐⭐⭐ **Painting on a GENERATED picture pins it** (`docs/ARCHITECTURE.md`,
+     * "Chains through a node a person must act on").
+     *
+     * ⚠⚠ A mask is coordinates on ONE picture. With a sampler upstream rolling
+     * a new seed each Run, the next Run made a different picture and repainted
+     * the old coordinates on it — a plausible render of the wrong area. ⇒ When
+     * the painting changes: every random seed upstream is LOCKED to the one that
+     * made what is on screen, and the picture is recorded
+     * ([MaskNode.PAINTED_ON]) so a change made some other way — a prompt edit —
+     * stops the node by name instead.
+     * ⚠ Only for a generated picture: a photo is fixed already.
+     */
+    private fun paintedOnGenerated(before: CanvasState, after: CanvasState): CanvasState {
+        var out = after
+        val graph = after.workflow.graph
+        for (n in graph.nodes) {
+            if (n.type !in com.abrah.nightmare.SD_INPAINT_TYPES) continue
+            val ops = n.params[com.abrah.nightmare.MaskNode.OPS].orEmpty()
+            if (before.workflow.graph.byId[n.id]?.params?.get(com.abrah.nightmare.MaskNode.OPS).orEmpty() == ops) continue
+            val up = n.inputs["image"]?.node ?: continue
+            if (com.abrah.nightmare.canvas.samplerFor(graph, up) == null) continue
+            if (ops.isBlank()) {
+                out = out.setParams(n.id, mapOf(com.abrah.nightmare.MaskNode.PAINTED_ON to ""))
+                continue
+            }
+            after.pictureInto(n.id, nodeTypes)?.let { pic ->
+                out = out.setParams(n.id, mapOf(com.abrah.nightmare.MaskNode.PAINTED_ON to pic))
+            }
+            // Every sampler upstream, not only the nearest: a chain of two
+            // rolls two seeds, and either one changes the picture.
+            val seen = mutableSetOf<String>()
+            val queue = ArrayDeque(listOf(up))
+            while (queue.isNotEmpty()) {
+                val id = queue.removeFirst()
+                if (!seen.add(id)) continue
+                val s = graph.byId[id] ?: continue
+                if (com.abrah.nightmare.isSampler(s.type) &&
+                    s.params["seed"]?.trim().orEmpty().let { it.isEmpty() || it == "0" }
+                ) {
+                    com.abrah.nightmare.canvas.seedFor(graph, id) { canvasStatus[it]?.detail }?.let { rolled ->
+                        out = out.setParams(id, mapOf("seed" to rolled))
+                        say("$id: seed locked at $rolled — ${n.id} is painted on its picture")
+                    }
+                }
+                s.inputs.values.forEach { queue.addLast(it.node) }
+            }
+        }
+        return out
+    }
+
+    /**
+     * ⭐⭐ Samplers whose photo was just REPLACED, waiting for the new picture to
+     * arrive: sampler id -> the preview image id it showed before, so the OLD
+     * picture still in the preview map is never mistaken for the new one.
+     */
+    private val pendingAutoFrame = mutableMapOf<String, String?>()
+
+    /**
+     * ⭐ A new photo on a `core.image` marks every SD sampler it feeds — the
+     * user's call, 2026-09-17: a new image opens the crop window with the
+     * size and framing already fitted to it. ⚠ Only a DIFFERENT, non-blank uri.
+     */
+    private fun markNewPictures(before: CanvasState, after: CanvasState) {
+        for (n in after.workflow.graph.nodes) {
+            if (n.type != "core.image") continue
+            val uri = n.params["uri"].orEmpty()
+            if (uri.isBlank() || before.workflow.graph.byId[n.id]?.params?.get("uri") == uri) continue
+            for (s in after.workflow.graph.nodes) {
+                if (s.type in com.abrah.nightmare.SD_SAMPLER_TYPES && s.inputs["image"]?.node == n.id) {
+                    pendingAutoFrame[s.id] = before.previews[n.id]?.first
+                }
+            }
+        }
+    }
+
+    /**
+     * ⭐⭐ The size and framing a sampler gets for [photo] — asked for 2026-09-17:
+     * *"default the res/aspect ratio smartly depending on input image ratio
+     * (closest match)"*, then the whole photo framed ([wholePhotoFraming]).
+     *
+     * ⚠ Closest by LOG ratio (DreamUI's `pickResolutionFor`), so 2:3 and 3:2
+     * are equally far from 1:1. ⚠ SD 1.5 picks among the sizes ITS model serves;
+     * a fixed-canvas family picks an aspect, written on THIS node only. ⚠ A tie
+     * keeps the size the node already has.
+     */
+    private fun autoFraming(node: Node, photo: android.graphics.Bitmap): Map<String, String> =
+        autoFraming(node, photo.width, photo.height)
+
+    private fun autoFraming(node: Node, photoW: Int, photoH: Int): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        val spec = ModelCatalog.byId(node.params["model"].orEmpty())
+        val photoAspect = photoW.toFloat() / photoH.coerceAtLeast(1)
+        fun far(a: Float) = kotlin.math.abs(kotlin.math.ln(a / photoAspect))
+        if (spec != null && spec.fixedCanvas) {
+            val best = ModelCatalog.ASPECTS.minWith(compareBy(
+                { r -> r.split(':').let { far(it[0].toFloat() / it[1].toFloat()) } },
+                { r -> if (r == node.params["aspect"]) 0 else 1 },
+            ))
+            out["aspect"] = best
+        } else if (spec != null) {
+            val cur = Res(node.params["width"]?.toIntOrNull() ?: 0, node.params["height"]?.toIntOrNull() ?: 0)
+            SelectedModel.resolutionsOf(getApplication(), spec).minWithOrNull(compareBy(
+                { r -> far(r.width.toFloat() / r.height) },
+                { r -> if (r == cur) 0 else 1 },
+            ))?.let { best ->
+                out["width"] = best.width.toString()
+                out["height"] = best.height.toString()
+            }
+        }
+        val sized = node.copy(params = node.params + out)
+        val (fw, fh) = com.abrah.nightmare.canvas.framingOutSize(sized, nodeTypes[node.type])
+        if (fw > 0 && fh > 0) {
+            out.putAll(
+                com.abrah.nightmare.canvas.wholePhotoFraming(
+                    photoW, photoH, fw.toFloat() / fh, com.abrah.nightmare.padRuleFor(node.type),
+                ).asParams().toMap()
+            )
+        }
+        return out
+    }
+
+    /**
+     * ⭐ Run the pending auto-frames whose NEW photo has arrived: fit the size
+     * and framing, open that sampler's sheet and its crop popup.
+     */
+    /**
+     * ⭐⭐ A run stopped at a node waiting on a PERSON ([NeedsInput]): say why,
+     * FIT it to the picture that was just made, and open its CROP tab on that
+     * picture (the user's call, 2026-09-17: frame first, then paint).
+     * ⚠ Not [runError]: nothing failed. ⚠ The same [autoFraming] a new photo
+     * gets. Only a node with nothing painted waits for this reason, so there is
+     * no painting for the refit to move. ⚠ ONE function for the single run and
+     * the sweep, which is the only way the two stay alike.
+     */
+    private fun stopForPerson(r: GraphRun) {
+        val (id, why) = r.waiting ?: return
+        say("$id: $why")
+        toast(why)
+        val node = canvas.workflow.graph.byId[id]
+        val made = canvas.pictureInto(id, nodeTypes)?.let { ops.images.get(it) }
+        var next = canvas
+        if (node != null && made != null && node.params[com.abrah.nightmare.MaskNode.OPS].isNullOrBlank()) {
+            next = next.setParams(id, autoFraming(node, made))
+        }
+        canvas = next.copy(
+            editing = id,
+            cropRequest = id to ((canvas.cropRequest?.second ?: 0) + 1),
+            cropRequestTab = 0,
+        )
+        saveWorkflow()
+    }
+
+    /**
+     * ⭐⭐ Image-to-image fed a GENERATED picture, fitted to it BEFORE the run
+     * (the user's call, 2026-09-17: "fit automatically").
+     *
+     * ⚠⚠ Before, not during: a resolution is part of the backend's launch key,
+     * which is decided before the first node runs — a sampler cannot change its
+     * size mid-graph. The picture's SHAPE is knowable in advance from the node
+     * that makes it ([predictedAspect]), and the shape is all the fit needs.
+     * ⚠ Only when that shape CHANGED since the last fit ([com.abrah.nightmare.FITTED_TO]), so a
+     * framing adjusted by hand afterwards survives every later Run.
+     * ⚠ Inpaint is not fitted here — it waits for a person and is fitted then
+     * ([stopForPerson]), on the real picture.
+     */
+    private fun fitChainedImageToImage() {
+        val graph = canvas.workflow.graph
+        var next = canvas
+        for (n in graph.nodes) {
+            if (n.type !in com.abrah.nightmare.SD_SAMPLER_TYPES || n.type in com.abrah.nightmare.SD_INPAINT_TYPES) continue
+            val up = n.inputs["image"]?.node ?: continue
+            if (nodeTypes[graph.byId[up]?.type]?.showsResult != false) continue
+            val aspect = predictedAspect(graph, up) ?: continue
+            val tag = "%.3f".format(java.util.Locale.ROOT, aspect)
+            if (n.params[com.abrah.nightmare.FITTED_TO] == tag) continue
+            val fit = autoFraming(n, (aspect * 1000).toInt(), 1000)
+            next = next.setParams(n.id, fit + (com.abrah.nightmare.FITTED_TO to tag))
+            say("${n.id}: fitted to the picture ${up} will make (${tag})")
+        }
+        if (next !== canvas) { canvas = next; saveWorkflow() }
+    }
+
+    /**
+     * ⭐ The width/height ratio of the picture [id] will produce, from its
+     * settings alone — or null when that is not knowable before it runs.
+     */
+    private fun predictedAspect(graph: Graph, id: String, depth: Int = 0): Float? {
+        if (depth > 16) return null
+        val n = graph.byId[id] ?: return null
+        val t = nodeTypes[n.type] ?: return null
+        fun input() = n.inputs["image"]?.node?.let { predictedAspect(graph, it, depth + 1) }
+        return when {
+            n.type in com.abrah.nightmare.SD_INPAINT_TYPES &&
+                n.params[com.abrah.nightmare.PasteNode.STITCH].equals("true", true) -> input()
+            n.type in com.abrah.nightmare.SD_SAMPLER_TYPES ->
+                t.framesTo(n)?.takeIf { it.first > 0 && it.second > 0 }?.let { it.first.toFloat() / it.second }
+            n.type == "image.upscale" -> input()
+            n.type == "core.image" ->
+                previewsAspect(n.id)
+            else -> com.abrah.nightmare.canvas.framingOutSize(n, t)
+                .takeIf { it.first > 0 && it.second > 0 }?.let { it.first.toFloat() / it.second }
+        }
+    }
+
+    private fun previewsAspect(id: String): Float? = canvas.previews[id]?.second
+
+    /** ⭐ Node id -> the picture it produced in [r], for [CanvasState.rendered]. */
+    private fun renderedBy(r: GraphRun): Map<String, String> =
+        r.outputs.mapNotNull { (id, v) -> v.previewImage()?.let { id to it.id } }.toMap()
+
+    private fun applyPendingAutoFrames() {
+        if (pendingAutoFrame.isEmpty()) return
+        for ((sid, oldImage) in pendingAutoFrame.toMap()) {
+            val s = canvas.workflow.graph.byId[sid]
+            if (s == null) { pendingAutoFrame.remove(sid); continue }
+            val srcId = canvas.pictureInto(sid, nodeTypes) ?: continue
+            if (srcId == oldImage) continue
+            val photo = ops.images.get(srcId) ?: continue
+            pendingAutoFrame.remove(sid)
+            val params = autoFraming(s, photo)
+            canvas = canvas.setParams(sid, params).copy(
+                editing = sid,
+                cropRequest = sid to ((canvas.cropRequest?.second ?: 0) + 1),
+                cropRequestTab = 0,
+            )
+            say("$sid: fitted to the new picture — ${params.filterKeys { it in setOf("width", "height", "aspect") }.values.joinToString("x")}")
+            saveWorkflow()
+        }
+    }
 
     /**
      * ⭐⭐ Every framing whose OUTPUT SHAPE an edit changed, refitted to the new
@@ -1871,9 +2207,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             if (oldSize == newSize || newSize.first <= 0 || newSize.second <= 0) continue
             val rect = com.abrah.nightmare.canvas.cropRectOf(n)
             if (rect != com.abrah.nightmare.canvas.cropRectOf(old)) continue
-            val src = n.inputs["image"]?.node
-                ?.let { after.previews[it]?.first }
-                ?.let { ops.images.get(it) } ?: continue
+            val src = after.pictureInto(n.id, nodeTypes)?.let { ops.images.get(it) } ?: continue
             val fitted = com.abrah.nightmare.canvas.refitToAspect(
                 rect, src.width, src.height, newSize.first.toFloat() / newSize.second,
             )
@@ -1937,9 +2271,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun tapMask(nodeId: String, x: Float, y: Float, done: (String?) -> Unit) {
         val ctx = getApplication<Application>()
         val node = canvas.workflow.graph.byId[nodeId] ?: return done(null)
-        val photo = node.inputs["image"]?.node
-            ?.let { canvas.previews[it]?.first }
-            ?.let { ops.images.get(it) }
+        val photo = canvas.pictureInto(nodeId, nodeTypes)?.let { ops.images.get(it) }
             ?: return done("no picture to select in yet — choose one on the image node")
         if (!com.abrah.nightmare.segment.Segmenter.isInstalled(ctx)) {
             return done("download ${com.abrah.nightmare.segment.Segmenter.LABEL} in Models, Tools, to tap objects")
@@ -2007,7 +2339,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         editCanvas { s -> s.setParam(nodeId, "uri", "") }
         val graph = canvas.workflow.graph
         fun downstream(id: String) = id == nodeId || graph.dependsOn(id, nodeId)
-        canvas = canvas.copy(previews = canvas.previews.filterKeys { !downstream(it) })
+        canvas = canvas.copy(
+            previews = canvas.previews.filterKeys { !downstream(it) },
+            rendered = canvas.rendered.filterKeys { !downstream(it) },
+        )
         previewSigs.keys.retainAll { !downstream(it) }
     }
 
@@ -2030,7 +2365,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             dropped.forEach { results.delete(it.id) }
             refreshResults()
         }
-        canvas = canvas.copy(previews = canvas.previews.filterKeys { !downstream(it) })
+        canvas = canvas.copy(
+            previews = canvas.previews.filterKeys { !downstream(it) },
+            rendered = canvas.rendered.filterKeys { !downstream(it) },
+        )
         previewSigs.keys.retainAll { !downstream(it) }
         // ⚠ The executor's cache is deliberately NOT dropped. With `seed = 0`
         // the next Run rolls a new seed, so the key differs and a fresh picture
@@ -2220,7 +2558,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⇒ Nothing in the UI ever ADDS or removes a preview -- only
         // [resolvePreviews] and the Run do -- so the invariant is simply that
         // this map does not travel through the composition at all.
-        canvas = next.copy(previews = canvas.previews)
+        canvas = next.copy(
+            previews = canvas.previews,
+            // ⚠ The VM's, for the same reason as previews.
+            rendered = canvas.rendered,
+            // ⚠ The crop request is the VM's too, for the same reason: it is set
+            // when a picture ARRIVES, between two frames, and a pointer event
+            // carrying the last frame's copy would erase it. ⚠ Closing the sheet
+            // still clears it.
+            cropRequest = if (next.editing == null) null else canvas.cropRequest ?: next.cropRequest,
+        )
         // ⚠⚠ …or when only the VIEW moved. A pan changes no node, so the graph
         // was saved and the viewport was not -- and a cold start then reopened
         // the user's own workflow onto empty space, which is the bug the saved
@@ -2401,10 +2748,31 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val negative: String = "",
         /** `20 steps, cfg 7.5, dpmpp` when the checkpoint publishes different ones. */
         val recipe: String? = null,
+        /**
+         * ⭐ The radios' starting answers: what the user chose LAST time
+         * (asked for 2026-09-17), "take theirs" until they have chosen once.
+         */
+        val takePromptDefault: Boolean = true,
+        val takeRecipeDefault: Boolean = true,
     )
 
     var pendingSwap by mutableStateOf<ModelSwap?>(null)
         private set
+
+    private val swapPrefs get() =
+        getApplication<Application>().getSharedPreferences("nightmare", android.content.Context.MODE_PRIVATE)
+
+    /**
+     * ⭐ The dialog's confirm: remember both answers, then apply. ⚠ Only a
+     * choice the dialog SHOWED is remembered — a row it hid had no answer.
+     */
+    fun confirmSwap(swap: ModelSwap, takeRecipe: Boolean, takePrompt: Boolean) {
+        swapPrefs.edit().apply {
+            if (swap.recipe != null) putBoolean(SWAP_TAKE_RECIPE, takeRecipe)
+            if (swap.promptNode != null) putBoolean(SWAP_TAKE_PROMPT, takePrompt)
+        }.apply()
+        applyNodeModel(swap.nodeId, swap.spec, swap.newType, takeRecipe, takePrompt)
+    }
 
     fun cancelSwap() { pendingSwap = null }
 
@@ -2494,6 +2862,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             prompt = spec.starterPrompt,
             negative = spec.starterNegative,
             recipe = recipe,
+            takePromptDefault = swapPrefs.getBoolean(SWAP_TAKE_PROMPT, true),
+            takeRecipeDefault = swapPrefs.getBoolean(SWAP_TAKE_RECIPE, true),
         )
         // ⚠ Nothing to ask → nothing is asked. Picking a second SD 1.5
         // checkpoint whose recipe matches rewrites one param, and a dialog for
@@ -2551,6 +2921,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (params["scheduler"] !in ModelCatalog.schedulersFor(spec.family)) {
             params["scheduler"] = spec.scheduler
         }
+        // ⭐⭐ The whole photo in view for the NEW shape (the user's call,
+        // 2026-09-17) — fitted and padded on inpaint, filling the frame on
+        // image-to-image ([com.abrah.nightmare.canvas.wholePhotoFraming]).
+        // ⚠ Only when the picture is in memory to measure; the crop popup then
+        // opens on it, below.
+        val photo = canvas.pictureInto(nodeId, nodeTypes)?.let { ops.images.get(it) }
+        if (photo != null) {
+            params.putAll(autoFraming(node.copy(type = newType, params = params), photo))
+        }
         val promptId = if (takePrompt) promptFeeding(nodeId)?.id else null
         val next = Graph(
             g.nodes.map {
@@ -2564,7 +2943,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         )
-        canvas = canvas.copy(workflow = canvas.workflow.copy(graph = next))
+        canvas = canvas.copy(
+            workflow = canvas.workflow.copy(graph = next),
+            // ⭐ Open the crop on the new framing — only when there is a picture.
+            cropRequest = if (photo != null) nodeId to ((canvas.cropRequest?.second ?: 0) + 1)
+            else canvas.cropRequest,
+            cropRequestTab = 0,
+        )
         // ⚠⚠ At once, not at the next 2 s tick. The top bar names what the
         // graph will load, and a readout that lags a deliberate change by two
         // seconds is read as not having taken it.
@@ -2787,6 +3172,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             closeLibrary()
             openedResultName = name
             say("opened \"" + name + "\"")
+            sayNotes(loaded)
         }
     }
 
@@ -3293,28 +3679,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * in the store because the node upstream previewed it.
      */
     private fun applyFramedPreviews() {
+        // ⭐ First: a sampler waiting on a new photo is fitted to it, so the
+        // preview below is drawn from the fitted framing, not the old one.
+        applyPendingAutoFrames()
         val graph = canvas.workflow.graph
         val shown = graph.nodes
             .filter { it.type in com.abrah.nightmare.FRAMING_TYPES }
             .mapNotNull { n ->
-                val srcId = n.inputs["image"]?.node?.let { canvas.previews[it]?.first }
-                    ?: return@mapNotNull null
+                val srcId = canvas.pictureInto(n.id, nodeTypes) ?: return@mapNotNull null
                 val src = ops.images.get(srcId) ?: return@mapNotNull null
                 val p = com.abrah.nightmare.applyDefaults(nodeTypes[n.type]?.widgets.orEmpty(), n)
                 fun f(k: String, d: Float) = p[k]?.toFloatOrNull() ?: d
                 runCatching {
-                    // ⚠ The video sampler frames to the ENCODER's size, which is
-                    // not a param on it — an SD sampler's comes from its own
-                    // width/height.
-                    val outW: Int
-                    val outH: Int
-                    if (n.type == "nd.sample") {
-                        outW = com.abrah.nightmare.npu.VideoStructure.frameSize.first
-                        outH = com.abrah.nightmare.npu.VideoStructure.frameSize.second
-                    } else {
-                        outW = p["width"]?.toIntOrNull() ?: 0
-                        outH = p["height"]?.toIntOrNull() ?: 0
-                    }
+                    // ⚠⚠ `framingOutSize` — the SAME function the crop editor,
+                    // the mask editor and the sampler's own cut ask. This read
+                    // width/height directly, so on SDXL with a 2:3 aspect the
+                    // node (and its fullscreen view) showed a 1:1 framing while
+                    // every editor showed 2:3 (reported 2026-09-17). The video
+                    // sampler's encoder size comes through `framesTo` as well.
+                    val (outW, outH) = com.abrah.nightmare.canvas.framingOutSize(n, nodeTypes[n.type])
                     var bmp = com.abrah.nightmare.CropNode.render(
                         src, f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f),
                         outW, outH, p[com.abrah.nightmare.CropNode.PAD] ?: com.abrah.nightmare.CropNode.PAD_BLACK,
@@ -3353,10 +3736,27 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         )
                         bmp = out
                     }
+                    // ⭐ …and the OUTPAINT padding in blue, as the editors show it.
+                    if (com.abrah.nightmare.padRuleFor(n.type) == com.abrah.nightmare.PadRule.OUTPAINT) {
+                        com.abrah.nightmare.CropGeometry.photoInFrame(f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f))
+                            ?.let { pad ->
+                                if (!bmp.isMutable) bmp = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                                com.abrah.nightmare.MaskRaster.paintPadding(bmp, pad)
+                            }
+                    }
                     n.id to (ops.images.put(bmp) to bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
                 }.getOrNull()
             }
-        if (shown.isNotEmpty()) canvas = canvas.copy(previews = canvas.previews + shown)
+        // ⚠⚠ …and a framing node with NOTHING coming in shows nothing. This only
+        // ever added, so an inpaint rewired to an un-run generate node kept the
+        // photo it had framed before (reported 2026-09-17).
+        val empty = graph.nodes
+            .filter { it.type in com.abrah.nightmare.FRAMING_TYPES && canvas.pictureInto(it.id, nodeTypes) == null }
+            .map { it.id }
+            .toSet()
+        if (shown.isNotEmpty() || empty.any { it in canvas.previews }) {
+            canvas = canvas.copy(previews = canvas.previews.filterKeys { it !in empty } + shown)
+        }
     }
 
     private suspend fun resolvePreviews(ids: List<String>) {
@@ -3534,6 +3934,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 canvas.copy(workflow = loaded.workflow, selection = emptySet(), editing = null)
                     .withView(loaded.view)
             )
+            sayNotes(loaded)
             // ⭐ The photo a restored `load_image` points at is on the node
             // before the user touches anything. A cold start used to open on a
             // graph of empty boxes until something was run.
@@ -3673,6 +4074,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * four samplers and one of everything upstream.
      */
     fun runBatch(spec: BatchSpec) = run("batch") {
+        fitChainedImageToImage()
         // ⭐⭐ **Seeds are rolled HERE, once per sweep**, and written into the
         // axis before anything expands. ⚠ Once, and at the start: expanding a
         // spec whose values were random per call would give a different seed to
@@ -3754,6 +4156,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }.toMap()
             if (shown.isNotEmpty()) canvas = canvas.copy(previews = canvas.previews + shown)
+            canvas = canvas.copy(rendered = canvas.rendered + renderedBy(r))
 
             // ⭐⭐ Every run is KEPT, with what made it different in the label.
             // A sweep whose outputs were not collected would be eight renders
@@ -3774,6 +4177,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
 
+            // ⚠⚠ A node waiting on a PERSON stops the sweep too: every further
+            // run would stop at the same node, having re-made its upstream.
+            if (r.waiting != null) {
+                stopForPerson(r)
+                say("batch: stopped — ${r.waiting.first} is waiting for you")
+                break
+            }
             if (r.error != null) {
                 // ⚠ Stops the sweep. Eight runs that all fail the same way is
                 // eight times the wait for one message.
@@ -3866,6 +4276,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun runCanvas() = run("canvas") {
+        fitChainedImageToImage()
         canvasStatus.clear()
         runError = null
         // ⚠ `elapsedRealtime`, not `currentTimeMillis`: a clock correction
@@ -3980,6 +4391,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
         }.toMap()
         if (shown.isNotEmpty()) canvas = canvas.copy(previews = canvas.previews + shown)
+        // ⭐⭐ …and what EVERY node rendered, shown or not ([CanvasState.rendered]).
+        canvas = canvas.copy(rendered = canvas.rendered + renderedBy(r))
         // ⭐ …and the clips, so the node that made one can offer to play it.
         // ⚠ Kept beside the previews rather than inside them: a poster is a
         // picture like any other, and the clip is the thing it is a still OF.
@@ -4010,6 +4423,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             runError = it
             say("canvas: $it", bad = true)
         }
+        // ⭐⭐ A node WAITING on a person ([NeedsInput]): say why, FIT it to the
+        // picture that was just made, and open its CROP tab on that picture
+        // (the user's call, 2026-09-17: frame first, then paint). ⚠ Not
+        // [runError]: nothing failed.
+        // ⚠ The same [autoFraming] a new photo gets — the resolution or aspect
+        // closest to the GENERATED picture's shape, then the whole of it framed.
+        // ⚠ Only a node with nothing painted waits for this reason, so there is
+        // no painting for the refit to move.
+        stopForPerson(r)
         // ⚠ A graph can complete with a FAILED node and no graph-level error;
         // saying nothing then is the same silence in a different disguise.
         if (r.error == null) {
@@ -4078,6 +4500,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun notWired(op: String, step: String) = say("$op — not wired yet ($step)", bad = true)
 
     private companion object {
+        /** ⭐ The model-swap dialog's last answers ([confirmSwap]). */
+        const val SWAP_TAKE_PROMPT = "swap_take_prompt"
+
+        const val SWAP_TAKE_RECIPE = "swap_take_recipe"
+
         /** ⚠ DreamUI's 10/512 — the grow a first tap gives an ungrown mask. */
         const val TAP_GROW = 10f / 512f
 

@@ -22,6 +22,9 @@ import org.robolectric.RobolectricTestRunner
  * ⇒ These assert the CALLS the node makes, not the pixels it returns.
  */
 @RunWith(RobolectricTestRunner::class)
+// ⚠⚠ NATIVE, or every Canvas draw is a no-op and a pixel check reads 0 —
+// which passes "this should be black" for nothing (found 2026-09-17).
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
 class FusedSamplerTest {
 
     @get:Rule
@@ -219,6 +222,176 @@ class FusedSamplerTest {
         assertEquals(2, host.encodesText)
         assertEquals(1, host.distinctConds.size)
     }
+
+    /**
+     * ⭐⭐ The aspect chip belongs to the node's FAMILY, not to the top bar.
+     *
+     * ⚠⚠ Reported from the phone 2026-09-17 as "switching a node to SD 1.5
+     * does not change it": the node had switched, but with SDXL selected in the
+     * top bar its inspector still drew SDXL's aspect chip instead of SD 1.5's
+     * resolutions. Checked both ways round, so a declaration that ignored the
+     * family entirely fails one of them.
+     */
+    /**
+     * ⭐⭐ An SDXL aspect frames the ASPECT's rectangle and encodes it centred
+     * on the 1024² canvas — upstream's `padBitmapToCanvas`.
+     *
+     * ⚠⚠ Reported 2026-09-17: the crop and mask stayed square on SDXL while the
+     * backend kept only the middle band, so the framing chosen was not the one
+     * rendered. Checked by PIXEL: the band above the rectangle must be black
+     * and its middle the photo, which a square encode fails.
+     */
+    @Test
+    fun anSdxlAspectEncodesTheFrameCentredOnTheCanvas() = runBlocking {
+        val sdxl = ModelCatalog.all.first { it.family == Family.SDXL }.id
+        val host = RecordingHost()
+        val g = graph(
+            photo = photoFile(),
+            type = SdSampler.SDXL.name,
+            params = mapOf("model" to sdxl, "width" to "1024", "height" to "1024", "aspect" to "16:9"),
+        )
+        assertEquals(1024 to 576, SdSampler.SDXL.framesTo(g.byId.getValue("sample")))
+        assertNull(exec(host).run(g).error)
+        val png = host.lastEncodePng!!
+        val enc = android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size)
+        assertEquals(1024, enc.width)
+        assertEquals(1024, enc.height)
+        // (1024 - 576) / 2 = 224 rows of black above the frame.
+        assertEquals("above the aspect rectangle is canvas", 0, enc.getPixel(512, 100) and 0xFFFFFF)
+        assertEquals("inside it is the photo", 0x3366AA, enc.getPixel(512, 512) and 0xFFFFFF)
+    }
+
+    /**
+     * ⭐⭐ OUTPAINT: a frame hanging off the photo is MASKED there with nothing
+     * painted at all — DreamUI's `protect`, and the reason Run is not a plain
+     * image-to-image that repaints invented edges as if they were content.
+     */
+    @Test
+    fun aPaddedInpaintFrameMasksThePaddingWithNothingPainted() = runBlocking {
+        val host = RecordingHost()
+        val r = exec(host).run(
+            graph(
+                photo = photoFile(),
+                params = mapOf("x" to "-0.2", "y" to "-0.2", "w" to "1.4", "h" to "1.4"),
+            )
+        )
+        assertNull(r.error)
+        assertEquals("the padding alone is a mask", 1, host.blends)
+        val png = host.lastBlendMask!!
+        val m = android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size)
+        assertEquals("a padded corner is repainted", 0xFF, m.getPixel(1, 1) and 0xFF)
+        assertEquals("the photo's middle is kept", 0, m.getPixel(m.width / 2, m.height / 2) and 0xFF)
+    }
+
+    /**
+     * ⭐⭐ "Stitch to original" pastes into the whole PHOTO. ⚠ Lost in the fusion
+     * and reported 2026-09-17: the toggle was read by nothing. The control is
+     * the same half-frame without it, which must stay frame-sized.
+     */
+    @Test
+    fun stitchPastesIntoTheWholePhoto() = runBlocking {
+        val half = painted + mapOf("x" to "0.25", "y" to "0.25", "w" to "0.5", "h" to "0.5")
+        val off = exec(RecordingHost()).run(graph(photo = photoFile(), params = half))
+        val on = exec(RecordingHost()).run(
+            graph(photo = photoFile2(), params = half + (PasteNode.STITCH to "true"))
+        )
+        assertNull(off.error)
+        assertNull(on.error)
+        val a = off.outputs["sample"] as Value.Image
+        val b = on.outputs["sample"] as Value.Image
+        assertEquals("without stitch: the frame", 48 to 48, a.w to a.h)
+        assertEquals("with stitch: the photo", 96 to 96, b.w to b.h)
+    }
+
+    private fun photoFile2(): String {
+        val f = tmp.newFile("photo2.png")
+        f.writeBytes(solidPng(96, 96, 0xFF3366AA.toInt()))
+        return f.absolutePath
+    }
+
+    // --- a chain through a node a person must act on --------------------------
+
+    /** generate -> inpaint, the chain the rules below are about. */
+    private fun chain(inpaintParams: Map<String, String> = emptyMap()) = Graph(
+        listOf(
+            Node("prompt", "core.prompt", mapOf("prompt" to "a cat", "negative" to "")),
+            Node(
+                "gen", SdSampler.SD15.name,
+                mapOf("model" to "m", "width" to "64", "height" to "64", "steps" to "4", "seed" to "1"),
+                sources("prompt" to "prompt"),
+            ),
+            Node(
+                "inp", SdSampler.SD15_INPAINT.name,
+                mapOf("model" to "m", "width" to "64", "height" to "64", "steps" to "4", "seed" to "1") + inpaintParams,
+                sources("prompt" to "prompt", "image" to "gen"),
+            ),
+        )
+    )
+
+    /**
+     * ⭐⭐ Nothing painted on a GENERATED picture: the render upstream is made,
+     * and the inpaint WAITS — no error, and nothing repainted. The control is a
+     * PHOTO with nothing painted, which still runs as it always has.
+     */
+    @Test
+    fun anInpaintOnAGeneratedPictureWaitsToBePainted() = runBlocking {
+        val host = RecordingHost()
+        val r = exec(host).run(chain())
+        assertNull("waiting is not an error", r.error)
+        assertEquals("inp", r.waiting?.first)
+        assertEquals(Outcome.BLOCKED, r.runs.first { it.id == "inp" }.outcome)
+        assertEquals("the picture upstream is made", Outcome.RAN, r.runs.first { it.id == "gen" }.outcome)
+        assertEquals("only the generate sampled", 1, host.samples)
+
+        val photo = exec(RecordingHost()).run(graph(photo = photoFile()))
+        assertNull("a photo with nothing painted still runs", photo.waiting)
+    }
+
+    /**
+     * ⭐⭐ Painted on one picture, handed another: WAIT by name. Painted on the
+     * picture that arrives: run. Both in one test, so each is the other's control.
+     */
+    @Test
+    fun aMaskPaintedOnADifferentPictureWaits() = runBlocking {
+        val first = exec(RecordingHost()).run(chain())
+        val made = (first.outputs["gen"] as Value.Image).id
+        val stroke = MaskNode.OPS to "s0.3:0.5,0.5~0,0.02"
+
+        val stale = exec(RecordingHost()).run(chain(mapOf(stroke, MaskNode.PAINTED_ON to "img_somethingelse")))
+        assertEquals("inp", stale.waiting?.first)
+        assertTrue(stale.waiting!!.second.contains("changed"))
+
+        val host = RecordingHost()
+        val fresh = exec(host).run(chain(mapOf(stroke, MaskNode.PAINTED_ON to made)))
+        assertNull(fresh.waiting)
+        assertNull(fresh.error)
+        assertEquals("the inpaint repainted", 1, host.blends)
+    }
+
+    /** ⭐ DreamUI's rule, per kind: inpaint may pad, image-to-image never. */
+    @Test
+    fun onlyInpaintMayPad() {
+        assertEquals(PadRule.OUTPAINT, padRuleFor(SdSampler.SDXL_INPAINT.name))
+        assertEquals(PadRule.NEVER, padRuleFor(SdSampler.SD15.name))
+        assertEquals(PadRule.WHEN_TOO_SMALL, padRuleFor("image.crop"))
+    }
+
+    @Test
+    fun theAspectChipFollowsTheNodesFamilyNotTheSelection() {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val sdxl = ModelCatalog.all.first { it.family == Family.SDXL }.id
+        fun declaresAspect(t: SdSampler) = t.widgets.any { it.name == "aspect" }
+        try {
+            SelectedModel.set(ctx, sdxl)
+            assertEquals(false, declaresAspect(SdSampler.SD15))
+            assertTrue(declaresAspect(SdSampler.SDXL))
+            SelectedModel.set(ctx, V1_MODEL)
+            assertTrue(declaresAspect(SdSampler.SDXL_INPAINT))
+            assertEquals(false, declaresAspect(SdSampler.SD15_INPAINT))
+        } finally {
+            SelectedModel.set(ctx, V1_MODEL)
+        }
+    }
 }
 
 /**
@@ -243,6 +416,8 @@ private class RecordingHost : OpHost {
     var lastSeed: Int? = null
     var blendA: String? = null
     var blendB: String? = null
+    var lastEncodePng: ByteArray? = null
+    var lastBlendMask: ByteArray? = null
 
     override suspend fun residentHandles(): Set<String> = resident.toSet()
 
@@ -259,6 +434,7 @@ private class RecordingHost : OpHost {
     ): Ops.Result<Ops.Sampled> {
         encodes++
         lastEncodeSize = width to height
+        lastEncodePng = png
         val id = "lat_enc_" + listOf(png.size, seed, width, height).joinToString("|")
             .hashCode().toUInt().toString(16)
         lastEncodeHandle = id
@@ -289,6 +465,7 @@ private class RecordingHost : OpHost {
         blends++
         blendA = a
         blendB = b
+        lastBlendMask = maskPng
         val id = "lat_mix_" + listOf(a, b).joinToString("|").hashCode().toUInt().toString(16)
         resident += id
         return Ops.Result.Ok(Ops.Blended(id, "sha_$id", "mask_sha", 50L))

@@ -222,6 +222,19 @@ fun HarnessScreen(
         )
     }
 
+    // ⭐ Send a picture into a flow — from the canvas viewer or Results, so drawn
+    // here, above both. ⚠ Before the unsaved-flow confirm in the view model's
+    // order of events: choosing a flow here may raise that one next.
+    vm.pendingSend?.let { s ->
+        com.abrah.nightmare.ui.SendToDialog(
+            choices = s,
+            onCurrent = vm::sendToCurrent,
+            onRecipe = vm::sendToRecipe,
+            onSaved = vm::sendToSaved,
+            onDismiss = vm::cancelSend,
+        )
+    }
+
     // ⚠ Checked BEFORE the canvas: the models screen is reachable from both,
     // and a user who has no model at all needs it before either is any use.
     // ⭐⭐ ONE library screen, two tabs. Models and Flows were separate full
@@ -326,6 +339,7 @@ fun HarnessScreen(
                     onShareResults = { ids, asFlow -> vm.shareResults(ids, asFlow) },
                     onToast = vm::toast,
                     onStarSelected = vm::starSelectedResults,
+                    onSendTo = { vm.offerSendResult(it.id) },
                 )
             },
             flows = {
@@ -378,6 +392,7 @@ fun HarnessScreen(
                     onDelete = { r -> vm.deleteResult(r.id) },
                     onSave = { r -> vm.saveResultsToGallery(listOf(r.id)) },
                     onShare = { r -> vm.shareResultImage(r.id) },
+                    onSendTo = { r -> vm.offerSendResult(r.id) },
                 )
             }
         }
@@ -505,12 +520,13 @@ fun HarnessScreen(
             onEditMask = vm::editMask,
             onTapMask = vm::tapMask,
             onCancelRun = vm::cancelRun,
-            onSetResolution = vm::selectResolution,
+            onSetResolution = vm::setNodeResolution,
             onSetAspect = vm::selectAspect,
             validateWorkflowName = vm::workflowNameError,
             onClearImage = vm::clearImage,
             onSaveImage = vm::saveImage,
             onShareImage = vm::shareNodeImage,
+            onSendImage = vm::offerSendImage,
             onKeepImage = vm::toggleKeepResult,
             // ⭐ Same action, one flag different — [PictureActions] has the table.
             onStarImage = { id -> vm.toggleKeepResult(id, favourite = true) },
@@ -545,9 +561,7 @@ fun HarnessScreen(
             onSetModel = vm::setNodeModel,
             plannedLoads = vm.plannedLoads,
             pendingSwap = vm.pendingSwap,
-            onConfirmSwap = { swap, takeRecipe, takePrompt ->
-                vm.applyNodeModel(swap.nodeId, swap.spec, swap.newType, takeRecipe, takePrompt)
-            },
+            onConfirmSwap = vm::confirmSwap,
             onCancelSwap = vm::cancelSwap,
         )
         // ⚠ A dialog, so it draws OVER the canvas rather than replacing it: the

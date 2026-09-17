@@ -485,7 +485,16 @@ val FRAMING_TYPES = SD_SAMPLER_TYPES + setOf("nd.sample")
  * rect and its lock. ⚠ One home: the inspector draws a framing view for exactly
  * these, and [Graph.withNewPicture] resets exactly these.
  */
-val FRAMES_PICTURE_TYPES = setOf("image.crop") + FRAMING_TYPES
+// ⚠ `image.crop` was here until it was deleted (2026-09-17); the samplers and the
+// video node are every framing node now.
+val FRAMES_PICTURE_TYPES = FRAMING_TYPES
+
+/**
+ * ⭐ The incoming picture SHAPE a sampler was last auto-fitted to
+ * (`HarnessViewModel.fitChainedImageToImage`). ⚠ Forgotten with the framing, so a
+ * different source is fitted afresh.
+ */
+const val FITTED_TO = "fitted_to"
 
 /**
  * ⭐ Every node holding a PAINTING on a picture it was handed.
@@ -568,18 +577,26 @@ data class Graph(val nodes: List<Node>) {
      * lock left on the default rect would refuse the first drag on the new one.
      * `grow`/`feather`/padding stay — those are settings, not content.
      */
-    fun withNewPicture(nodeId: String, uri: String): Graph {
-        val framing = setOf("x", "y", "w", "h", CropNode.LOCKED)
+    fun withNewPicture(nodeId: String, uri: String): Graph =
+        withParam(nodeId, "uri", uri).forgettingPictureWork { dependsOn(it, nodeId) }
+
+    /**
+     * ⭐⭐ The ONE place a framing and a painting are forgotten — for every node
+     * [which] selects that holds one.
+     *
+     * ⚠⚠ Two doors reach it: a new photo ([withNewPicture]) and a picture input
+     * WIRED to a different source ([connected]). Only the first existed, so an
+     * inpaint rewired from a photo to a generate node kept the mask painted on the
+     * photo — it looked inherited from the new source (reported 2026-09-17).
+     */
+    private fun forgettingPictureWork(which: (String) -> Boolean): Graph {
+        val framing = setOf("x", "y", "w", "h", CropNode.LOCKED, FITTED_TO)
         return copy(nodes = nodes.map { n ->
-            when {
-                n.id == nodeId -> n.copy(params = n.params + ("uri" to uri))
-                !dependsOn(n.id, nodeId) -> n
-                else -> {
-                    var drop = emptySet<String>()
-                    if (n.type in FRAMES_PICTURE_TYPES) drop = drop + framing
-                    if (n.type in PAINTS_PICTURE_TYPES) drop = drop + MaskNode.OPS
-                    if (drop.isEmpty()) n else n.copy(params = n.params - drop)
-                }
+            if (!which(n.id)) n else {
+                var drop = emptySet<String>()
+                if (n.type in FRAMES_PICTURE_TYPES) drop = drop + framing
+                if (n.type in PAINTS_PICTURE_TYPES) drop = drop + MaskNode.OPS + MaskNode.PAINTED_ON
+                if (drop.isEmpty()) n else n.copy(params = n.params - drop)
             }
         })
     }
@@ -592,11 +609,20 @@ data class Graph(val nodes: List<Node>) {
      * one node would break a graph the user can still see, at a node they did
      * not touch, and only when they pressed Run.
      */
-    fun without(nodeId: String) = copy(
-        nodes = nodes
-            .filterNot { it.id == nodeId }
-            .map { it.copy(inputs = it.inputs.filterValues { up -> up.node != nodeId }) }
-    )
+    fun without(nodeId: String): Graph {
+        // ⚠ A node whose PICTURE came from [nodeId] loses the framing and
+        // painting made on it — with the source gone they point at nothing, and
+        // wiring a new source in afterwards would otherwise inherit them.
+        val readers = nodes.filter { it.inputs["image"]?.node == nodeId }.map { it.id }.toSet()
+        val base = if (readers.isEmpty()) this else forgettingPictureWork { id ->
+            id in readers || readers.any { r -> dependsOn(id, r) }
+        }
+        return base.copy(
+            nodes = base.nodes
+                .filterNot { it.id == nodeId }
+                .map { it.copy(inputs = it.inputs.filterValues { up -> up.node != nodeId }) }
+        )
+    }
 
     /**
      * A node id that is free, based on [base].
@@ -617,9 +643,18 @@ data class Graph(val nodes: List<Node>) {
      * hit-tests each output dot separately, so dropping the port here is what
      * used to make two outputs indistinguishable once the wire existed.
      */
-    fun connected(toNode: String, port: String, from: Source) = copy(
-        nodes = nodes.map { if (it.id == toNode) it.copy(inputs = it.inputs + (port to from)) else it }
-    )
+    fun connected(toNode: String, port: String, from: Source): Graph {
+        val was = byId[toNode]?.inputs?.get(port)
+        val wired = copy(
+            nodes = nodes.map { if (it.id == toNode) it.copy(inputs = it.inputs + (port to from)) else it }
+        )
+        // ⭐⭐ A DIFFERENT picture coming in forgets the framing and painting on
+        // it and everything downstream — the new-photo rule, for a rewire.
+        // ⚠ Only a real change of source: the first wire into an empty port has
+        // nothing to forget, and re-dropping the same wire must not wipe a mask.
+        if (port != "image" || was == null || was == from) return wired
+        return wired.forgettingPictureWork { it == toNode || wired.dependsOn(it, toNode) }
+    }
 
     /** Convenience for the common single-output case and for tests. */
     fun connected(toNode: String, port: String, fromNode: String) =
@@ -633,9 +668,16 @@ data class Graph(val nodes: List<Node>) {
      * many — "delete the wire from X" would take out a fan-out the user never
      * touched. That is also why `WireRef` is keyed this way.
      */
-    fun disconnected(toNode: String, port: String) = copy(
-        nodes = nodes.map { if (it.id == toNode) it.copy(inputs = it.inputs - port) else it }
-    )
+    fun disconnected(toNode: String, port: String): Graph {
+        val had = byId[toNode]?.inputs?.containsKey(port) == true
+        // ⚠ Forgotten BEFORE the wire goes, while "downstream" still means it.
+        val base = if (port == "image" && had) {
+            forgettingPictureWork { it == toNode || dependsOn(it, toNode) }
+        } else this
+        return base.copy(
+            nodes = base.nodes.map { if (it.id == toNode) it.copy(inputs = it.inputs - port) else it }
+        )
+    }
 
     /**
      * Does [node] read [maybeUpstream], directly or through any chain?

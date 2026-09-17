@@ -178,7 +178,6 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ Image to video: animate the newest saved picture.
             "npu_i2v" -> npuI2v(arg)
             "inpaint" -> inpaint(arg)
-            "inpaint_ab" -> inpaintAb()
             // ⭐ Tap to select, headless (docs/SEGMENTER.md §5).
             // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
             "segmenter_install" -> segmenterInstall()
@@ -365,143 +364,6 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         dump("sample", r.outputs["sample"])
         say("inpaint: stitch=$stitch — pictures in ${dir.absolutePath}")
-    }
-
-    /**
-     * ⭐⭐⭐ **The fused sampler against the ten nodes it replaced, one seed.**
-     *
-     * `docs/ARCHITECTURE.md` §5.7 claims the fusion moved no pixels. That claim
-     * is only checkable while BOTH paths exist, which is the whole reason the
-     * old types are still registered (`NodeType.hidden`) for this one build.
-     *
-     * ⚠⚠ Generation is seed-reproducible, so a single-run A/B is valid — but
-     * only if every input is pinned: the same photo, the same mask, the same
-     * seed, the same encode seed, the same denoise. Anything left to a default
-     * on one side and written on the other makes the comparison meaningless.
-     *
-     * ⚠ It reports the mean absolute difference per channel rather than
-     * pass/fail. Two paths that agree exactly give 0.0; a small non-zero is a
-     * real answer (the VAE round trip is not bit-exact across a different call
-     * order) and a large one means the fusion changed the picture.
-     */
-    private suspend fun inpaintAb() {
-        val pushed = java.io.File(ctx.getExternalFilesDir(null), "inpaint/source.jpg")
-        val uri = if (pushed.canRead()) pushed.absolutePath else newestSavedImage()
-        if (uri == null) {
-            say("inpaint_ab: no source picture", bad = true)
-            return
-        }
-        val mask = MaskState(
-            ops = listOf(
-                MaskOp.Stroke(MaskStrokeData(listOf(0.30f to 0.35f, 0.38f to 0.40f), 0.04f)),
-            ),
-        )
-        val ops = mask.encode()
-        val types = nodeTypes()
-        val model = SelectedModel.id
-        val res = SelectedModel.res
-        val ctxParams = mapOf(
-            "model" to model,
-            "width" to res.width.toString(), "height" to res.height.toString(),
-        )
-        val seed = "4242"
-        val denoise = "0.85"
-
-        // --- the NEW graph: four nodes -----------------------------------
-        val fresh = Graph(
-            listOf(
-                Node("prompt", "core.prompt", mapOf("prompt" to "a cat", "negative" to "blurry")),
-                Node("photo", "core.image", mapOf("uri" to uri)),
-                Node(
-                    "sample", com.abrah.nightmare.SdSampler.SD15.name,
-                    ctxParams + mapOf(
-                        "seed" to seed, "denoise" to denoise, "steps" to "8", "cfg" to "7.5",
-                        MaskNode.OPS to ops, "encode_seed" to "42",
-                        MaskCropNode.ONLY_MASKED to "true", PasteNode.STITCH to "false",
-                    ),
-                    sources("prompt" to "prompt", "image" to "photo"),
-                ),
-            )
-        )
-
-        // --- the OLD graph: the ten it replaced ---------------------------
-        val legacy = deriveSizes(
-            Graph(
-                listOf(
-                    Node("prompt", "sd.clip_encode", mapOf("prompt" to "a cat", "negative" to "blurry")),
-                    Node("photo", "core.image", mapOf("uri" to uri)),
-                    Node("frame", "image.crop",
-                        mapOf("x" to "0.0", "y" to "0.0", "w" to "1.0", "h" to "1.0"),
-                        sources("image" to "photo")),
-                    Node("mask", "image.mask",
-                        mapOf(MaskNode.OPS to ops, "grow" to "0.0", "feather" to "0.02"),
-                        sources("image" to "frame")),
-                    Node("cut", "image.mask_crop", mapOf(MaskCropNode.ONLY_MASKED to "true"),
-                        sources("image" to "frame", "mask" to "mask")),
-                    Node("encode", "sd.vae_encode", ctxParams + mapOf("seed" to "42"),
-                        sources("image" to "cut:image")),
-                    Node("old", "sd.sample_legacy",
-                        ctxParams + mapOf(
-                            "seed" to seed, "denoise" to denoise, "steps" to "8", "cfg" to "7.5",
-                        ),
-                        sources("cond" to "prompt", "latent" to "encode")),
-                    Node("blend", "sd.latent_blend", ctxParams,
-                        sources("base" to "encode", "repaint" to "old", "mask" to "cut:mask")),
-                    Node("decode", "sd.vae_decode", ctxParams, sources("latent" to "blend")),
-                    Node("paste", "image.paste", mapOf(PasteNode.STITCH to "false"),
-                        sources(
-                            "patch" to "decode", "cut" to "cut:image", "mask" to "cut:mask",
-                            "frame" to "frame", "original" to "photo",
-                        )),
-                )
-            ),
-            types,
-        )
-
-        val key = ContextKey(ModelCatalog.backendTypeOf(model), model, res.width, res.height)
-        if (!ensureBackend(key)) {
-            say("inpaint_ab: no backend", bad = true)
-            return
-        }
-
-        suspend fun run(label: String, g: Graph, want: String): android.graphics.Bitmap? {
-            val r = runWorkflow(com.abrah.nightmare.canvas.Workflow(g, emptyMap()))
-            if (r.error != null) {
-                say("$label: refused — ${r.error}", bad = true)
-                return null
-            }
-            say("$label: ${r.ran} ran, ${r.cached} cached, ${r.totalMs} ms")
-            val img = r.outputs[want] as? Value.Image
-                ?: return null.also { say("$label: no picture on \"$want\"", bad = true) }
-            say("  $label -> ${img.w}x${img.h}")
-            return images.get(img.id)
-        }
-
-        // ⚠ The OLD one first, so the fused run cannot be served a cond or a
-        // latent the legacy graph left resident and call it agreement.
-        val a = run("old(10 nodes)", legacy, "paste") ?: return
-        val b = run("new(3 nodes) ", fresh, "sample") ?: return
-
-        if (a.width != b.width || a.height != b.height) {
-            say("DIFFERENT SIZE: ${a.width}x${a.height} vs ${b.width}x${b.height}", bad = true)
-            return
-        }
-        var sum = 0L
-        var worst = 0
-        for (y in 0 until a.height) {
-            for (x in 0 until a.width) {
-                val pa = a.getPixel(x, y)
-                val pb = b.getPixel(x, y)
-                for (sh in intArrayOf(16, 8, 0)) {
-                    val d = kotlin.math.abs(((pa shr sh) and 0xFF) - ((pb shr sh) and 0xFF))
-                    sum += d
-                    if (d > worst) worst = d
-                }
-            }
-        }
-        val mean = sum.toDouble() / (a.width.toLong() * a.height * 3)
-        say("A/B: mean |diff| %.3f / 255, worst %d".format(mean, worst))
-        say(if (mean < 1.0) "A/B: the fusion moved no pixels worth seeing" else "A/B: THE PICTURE CHANGED")
     }
 
     private fun videoModels() {
@@ -1132,7 +994,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onLog: (String, String) -> Unit = { _, _ -> },
     ): GraphRun {
         // ⚠⚠⚠ **Consumer-derived sizes are settled HERE, before anything
-        // runs.** `image.crop` carries no `out_w`/`out_h` of its own — they are
+        // runs.** A consumer-sized node (`image.crop` until its deletion on 2026-09-17; the legacy mask nodes) carries no `out_w`/`out_h` of its own — they are
         // derived from whatever consumes it — and until 2026-09-13 that
         // derivation happened ONLY on a canvas edit. A recipe opened and Run
         // without touching anything, or any graph built by a harness op, reached
@@ -1896,6 +1758,22 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * somewhere the harness cannot see — which is a real finding and needs
      * saying rather than patching around.
      */
+    /** ⚠ The photo at [uri] centre-cropped to 1024², as a file a `core.image` can read. */
+    private fun square1024(uri: String): String {
+        val bytes = if (uri.startsWith("content://")) {
+            ctx.contentResolver.openInputStream(android.net.Uri.parse(uri))!!.use { it.readBytes() }
+        } else java.io.File(uri).readBytes()
+        val src = images.decode(bytes, LoadImageNode.MAX_EDGE)!!
+        val side = minOf(src.width, src.height).toFloat()
+        val (sq, _) = CropNode.render(
+            src, (src.width - side) / 2f / src.width, (src.height - side) / 2f / src.height,
+            side / src.width, side / src.height, 1024, 1024, CropNode.PAD_BLACK,
+        )
+        val f = java.io.File(ctx.cacheDir, "save_upscaled_square.png")
+        f.outputStream().use { sq.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return f.absolutePath
+    }
+
     private suspend fun saveUpscaled(arg: String?) {
         val uri = newestSavedImage()
         if (uri == null) {
@@ -1912,18 +1790,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         val g = Graph(
             listOf(
-                Node("photo", "core.image", params = mapOf("uri" to uri)),
-                // ⚠ Explicit: nothing downstream DERIVES a size for a crop here,
-                // because `image.upscale` takes whatever it is given.
-                Node(
-                    "square", "image.crop",
-                    params = mapOf("out_w" to "1024", "out_h" to "1024"),
-                    inputs = sources("image" to "photo"),
-                ),
+                // ⚠ Squared to 1024 BEFORE the graph, as an SDXL render is — the
+                // `image.crop` node that did it in-graph was deleted 2026-09-17.
+                Node("photo", "core.image", params = mapOf("uri" to square1024(uri))),
                 Node(
                     "upscale", "image.upscale",
                     params = mapOf(UpscaleNode.UPSCALER to which),
-                    inputs = sources("image" to "square"),
+                    inputs = sources("image" to "photo"),
                 ),
             )
         )
@@ -3085,6 +2958,59 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("aspect $ratio -> ${out.w}x${out.h} but expected $expect — " +
                 "the app's aspectTarget and the backend disagree", bad = true)
         }
+
+        // ⭐⭐ …then IMAGE-TO-IMAGE at the same aspect, fed that render.
+        //
+        // ⚠⚠ The 2026-09-17 bug: `/sample` with a latent AND an aspect threw the
+        // picture away (`backend-patches/README.md`, 003), and every size check
+        // above still passed. So this measures CONTENT: the i2i output against its
+        // own input. ⚠ The control is the same input MIRRORED — an unrelated
+        // picture of identical statistics. A kept photo scores well below it; the
+        // bug scored like it.
+        val src = images.get(out.id) ?: return
+        val file = java.io.File(ctx.cacheDir, "aspect_i2i_src.png")
+        file.outputStream().use { src.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val gi = Graph(
+            listOf(
+                g.nodes[0],
+                Node("photo", "core.image", params = mapOf("uri" to file.absolutePath)),
+                Node(
+                    "i2i",
+                    com.abrah.nightmare.SdSampler.typeFor(spec.family, inpaint = false),
+                    params = ctxKey(
+                        mapOf("steps" to "20", "cfg" to spec.cfg.toString(), "seed" to "7",
+                              "scheduler" to spec.scheduler, "aspect" to ratio, "denoise" to "0.5")
+                    ),
+                    inputs = sources("prompt" to "prompt", "image" to "photo"),
+                ),
+            )
+        )
+        val ri = executor.run(gi, onProgress = { _, s, t -> sink.progress(s to t) })
+        sink.progress(null)
+        val o = (ri.outputs["i2i"] as? Value.Image)?.let { images.get(it.id) }
+        if (ri.error != null || o == null) { say("aspect i2i: failed — ${ri.error}", bad = true); return }
+        java.io.File(ctx.getExternalFilesDir(null), "aspect_i2i.png").outputStream()
+            .use { o.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        if (o.width != src.width || o.height != src.height) {
+            say("aspect i2i -> ${o.width}x${o.height}, input was ${src.width}x${src.height}", bad = true)
+            return
+        }
+        fun meanDiff(a: Bitmap, b: Bitmap, mirror: Boolean): Double {
+            var sum = 0L
+            var n = 0L
+            for (y in 0 until a.height step 4) for (x in 0 until a.width step 4) {
+                val p = a.getPixel(x, y)
+                val q = b.getPixel(if (mirror) a.width - 1 - x else x, y)
+                for (sh in intArrayOf(0, 8, 16)) sum += kotlin.math.abs(((p shr sh) and 0xFF) - ((q shr sh) and 0xFF))
+                n += 3
+            }
+            return sum.toDouble() / n
+        }
+        val kept = meanDiff(o, src, mirror = false)
+        val control = meanDiff(src, src, mirror = true)
+        say("aspect i2i $ratio: |output - input| ${"%.1f".format(kept)}, control (input vs mirrored) ${"%.1f".format(control)}")
+        if (kept < control * 0.6) say("aspect i2i ✓ the photo survived")
+        else say("aspect i2i ✗ the output is no closer to the input than an unrelated picture", bad = true)
     }
 
     suspend fun runGraph() {

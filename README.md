@@ -45,7 +45,7 @@ conversion, no cloud, private.
   and an 8 Elite or 8 Elite Gen 5. **Image to video** animates a photo
   instead, and is the faster of the two — same three nodes, with a photo wired in. The clip
   loops on the node that made it and plays full screen.
-- **Eight node types, not seventy.** A flow is `prompt → generate → output`, plus a photo
+- **Seven node types, not seventy.** A flow is `prompt → generate → output`, plus a photo
   where one is wanted. Cropping, masking, encoding, sampling, blending and decoding happen
   **inside** the sampler, because there is no runtime compiler on an NPU and nobody can
   recombine the inside of a pipeline anyway — so the whole process is one node. Inpainting

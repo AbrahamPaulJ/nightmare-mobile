@@ -23,7 +23,7 @@ class PaletteTest {
 
     /** ⚠ The light, family-agnostic nodes, in the order a flow is built. */
     @Test fun commonHoldsTheAgnosticNodes() = assertEquals(
-        listOf("core.image", "core.prompt", "image.crop", "image.upscale", "core.output"),
+        listOf("core.image", "core.prompt", "image.upscale", "core.output"),
         sections.getValue("common").map { it.single().name },
     )
 

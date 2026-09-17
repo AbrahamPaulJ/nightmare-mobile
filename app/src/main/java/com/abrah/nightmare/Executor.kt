@@ -27,6 +27,18 @@ package com.abrah.nightmare
 /** What happened to one node in one run. */
 enum class Outcome { RAN, CACHED, FAILED, BLOCKED }
 
+/**
+ * ⭐⭐ A node that cannot run until a PERSON does something — thrown, not
+ * returned, and reported as [Outcome.BLOCKED] with no graph error.
+ *
+ * ⚠⚠ The chaining rule (`docs/ARCHITECTURE.md`, "Chains through a node a person
+ * must act on"): an inpaint fed a GENERATED picture has nothing to repaint
+ * until someone paints on that picture, so everything upstream runs and is
+ * cached, this node stops with the reason, and the next Run carries on.
+ * ⚠ Not a failure: nothing went wrong, and a red run bar would say it had.
+ */
+class NeedsInput(message: String) : Exception(message)
+
 data class NodeRun(
     val id: String,
     val type: String,
@@ -48,6 +60,8 @@ data class GraphRun(
      * identical to one that never asked.
      */
     val prunedHandles: Int = 0,
+    /** ⭐ The first node that stopped for a person ([NeedsInput]) — its id and why. */
+    val waiting: Pair<String, String>? = null,
 ) {
     val ran get() = runs.count { it.outcome == Outcome.RAN }
     val cached get() = runs.count { it.outcome == Outcome.CACHED }
@@ -215,6 +229,12 @@ class NodeCtx(
      * that is what the canvas draws.
      */
     val wanted: Set<String> = emptySet(),
+    /**
+     * ⭐ The types of every node upstream of this one. ⚠ For the chaining rule
+     * ([NeedsInput]): an inpaint must know whether its picture was GENERATED,
+     * which is a fact about the graph, not about the pixels.
+     */
+    val ancestorTypes: Set<String> = emptySet(),
 )
 
 /**
@@ -542,13 +562,19 @@ private fun Node.dbl(name: String): Double =
  */
 /** ⚠ `internal`: the fused sampler declares the same knob, and a second
  * copy of "which families crop to shape" is the drift `aspectAgrees` stops. */
-internal fun aspectWidget(): Array<Widget> =
-    if (!SelectedModel.spec.fixedCanvas) emptyArray()
+/*
+ * ⚠⚠ [spec] is the model of the TYPE declaring it — `SdSampler` passes its own
+ * family's. Reading the top-bar selection here gave an SD 1.5 node an aspect
+ * chip whenever SDXL was selected, which read as "the model switch did nothing"
+ * (2026-09-17). The legacy types still default to the selection.
+ */
+internal fun aspectWidget(spec: ModelSpec = SelectedModel.spec): Array<Widget> =
+    if (!spec.fixedCanvas) emptyArray()
     else arrayOf(
         Widget(
             "aspect", "string", ModelCatalog.DEFAULT_ASPECT,
             options = ModelCatalog.ASPECTS,
-            hint = "this family renders a fixed ${SelectedModel.spec.native} and crops to shape — " +
+            hint = "this family renders a fixed ${spec.native} and crops to shape — " +
                 "it costs no reload, but a wider picture is not a bigger one",
         )
     )
@@ -574,7 +600,11 @@ fun aspectRetarget(
     val out = LinkedHashMap<String, Map<String, String>>()
     for (n in graph.nodes) {
         val t = types[n.type] ?: continue
-        if (t.widgets.none { it.name == "aspect" }) continue
+        // ⚠⚠ Only the FIXED-CANVAS aspect ([aspectWidget]'s vocabulary):
+        // `image.crop` declares an `aspect` of its own, and a ratio written there
+        // from a sampler's chip would re-frame a crop nobody touched.
+        val w = t.widgets.firstOrNull { it.name == "aspect" } ?: continue
+        if (w.options != ModelCatalog.ASPECTS) continue
         if (n.params["aspect"] == aspect) continue
         out[n.id] = mapOf("aspect" to aspect)
     }
@@ -986,7 +1016,7 @@ object SampleNode : NodeType {
         // ⚠ Only read when `latent` is connected. 1.0 renoises completely,
         // which is txt2img with extra steps -- the backend defaults to 0.6 for
         // the same reason.
-        Widget("denoise", "float", "0.6", 0.0, 1.0),
+        Widget("denoise", "float", "0.65", 0.0, 1.0),
         // ⭐⭐ The sampler. ⚠⚠ This node did not send one until 2026-09-10, so
         // every render this app ever made used the backend's `dpm` default --
         // including checkpoints whose author published a different one. On a
@@ -1211,7 +1241,8 @@ class OpFailure(op: String, val code: Int, val body: String) :
  */
 object LoadImageNode : NodeType {
     override val name = "core.image"
-    override val version = "2"
+    // ⚠ 3: pictures are decoded UPRIGHT now (EXIF orientation, `ImageStore.decode`).
+    override val version = "3"
     override val inputs = emptyList<Port>()
     override val outputs = listOf(Port("image", "IMAGE"))
     /** ⚠ `source`, with the prompt: it is where a flow STARTS, not a pixel op. */
@@ -1458,65 +1489,19 @@ object OutputNode : NodeType {
 }
 
 /**
- * ⭐⭐ Choose the framing, instead of having it chosen for you — and produce
- * exactly the shape whatever comes next demands.
+ * ⭐⭐ Framing, as pixels — the helpers every framing node uses.
+ *
+ * ⚠⚠ **No longer a node.** `image.crop` was deleted 2026-09-17 at the user's call:
+ * no flow used it and the samplers frame their own input (§5.7). What survived is
+ * what the SAMPLERS are made of — [render], the padding choices and the lock — so
+ * the name stays on the one implementation of a crop rather than moving to a new
+ * one. `WorkflowIo.migrateCropNodes` rebuilds a saved flow that still names one.
  *
  * ⚠ The rect is NORMALISED (0..1 of the source). Pixel coordinates would be
  * wrong the moment the same graph was pointed at a photo of a different size,
  * which is exactly what a saved workflow does.
- *
- * ⭐⭐ **`out_w`/`out_h` are DERIVED from the consumer**, written into the
- * node's params by the canvas and shown locked with the reason
- * (`OutputSize.kt`). The node itself stays a pure function of what it holds, so
- * a headless run produces exactly what the editor showed and the cache key
- * already covers the size. Unwired, both are 0 and the output is the framed
- * region at its **own pixels** — nothing is resampled that nobody asked to be.
- *
- * ⚠⚠ The frame may extend OUTSIDE the picture, but only when the picture
- * cannot fill it without being enlarged — a 300² photo asked for 512². Then
- * [PAD] decides what the bars are: black, or the picture's own edges mirrored.
- * Upscaling silently to fit was the alternative, and it turns a small photo into
- * a soft one with nothing on screen saying why.
  */
-object CropNode : NodeType {
-    override val name = "image.crop"
-    // ⚠ Bumped: `mirror` became a blurred `blur`, so every cached crop from the
-    // old code is a picture this node would no longer produce.
-    override val version = "3"
-    override val inputs = listOf(Port("image", "IMAGE"))
-    override val outputs = listOf(Port("image", "IMAGE"))
-    /**
-     * ⭐ `edit` — the one node left whose job is to DECIDE something about a
-     * picture. ⚠ It is no longer how a photo is made to fit: the sampler fits
-     * whatever it is given (§5.7). This is how a framing is chosen once and fed
-     * to two branches.
-     */
-    override val category = "edit"
-    // ⭐ Its picture is its interface, so a tap on the node's preview opens the
-    // framing view rather than the fullscreen viewer.
-    override val interactive = true
-    override val sizedByConsumer = true
-
-    /**
-     * ⚠⚠ **NOT cached — and the reason it was turned off turned out to be
-     * WRONG. This node was never the problem.**
-     *
-     * It was disabled to mitigate "after a model switch the render is wrong
-     * until the crop is touched at all". That was a real symptom with a cause
-     * two components away: `/vae_encode` ran the VAE encoder against the
-     * backend's process-global IO dimensions, which nothing on that endpoint's
-     * path ever assigned, so the first encode after a launch read past the end
-     * of its own buffers and returned a latent of heap garbage. Touching the
-     * crop "fixed" it only because a `/sample` had run by then, and a sample is
-     * what sets those globals. `backend-patches/README.md`, "The op endpoints
-     * inherit the process's GLOBAL IO dimensions", has the whole measurement.
-     *
-     * ⇒ Kept off for now because it costs 4-9 ms at 1024 against a 15-25 s
-     * sample and changing it proves nothing, but it is **no longer justified**
-     * and `notes/PROGRESS.md` says so. ⚠ Do not cite this flag as evidence of
-     * anything about crop correctness.
-     */
-    override val cacheable = false
+object CropNode {
 
     /** How the bars are filled when the picture cannot fill the frame. */
     const val PAD_BLACK = "black"
@@ -1557,47 +1542,6 @@ object CropNode : NodeType {
 
     /** ⚠ A ceiling on a derived-from-nothing output, so a silly rect cannot OOM. */
     const val MAX_OUT = 8192
-
-    override val widgets = listOf(
-        Widget("x", "float", "0.0", 0.0, 1.0, hint = "drag the frame on the picture above"),
-        Widget("y", "float", "0.0", 0.0, 1.0),
-        Widget("w", "float", "1.0", 0.0, 1.0),
-        Widget("h", "float", "1.0", 0.0, 1.0),
-        // ⚠ 0 means "the framed pixels, unscaled". The canvas overwrites both
-        // and locks them the moment this node feeds something that demands a
-        // size, so the number a user sees is the number that will be produced.
-        Widget(
-            "out_w", "int", "0", 0.0, MAX_OUT.toDouble(),
-            hint = "0 = the framed region at its own size",
-        ),
-        Widget("out_h", "int", "0", 0.0, MAX_OUT.toDouble()),
-        // ⚠ Only meaningful while nothing downstream demands a size; when one
-        // does, the shape IS that size and the canvas hides this. "source" is
-        // the photo's own shape, so an unwired crop opens on the whole picture
-        // rather than a square guess.
-        Widget(
-            "aspect", "string", "source",
-            options = listOf("source", "1:1", "4:3", "3:4", "16:9", "9:16"),
-            hint = "the shape of the frame, while nothing downstream fixes it",
-        ),
-        Widget(
-            PAD, "string", PAD_BLACK, options = listOf(PAD_BLACK, PAD_BLUR),
-            hint = "only used when the picture is too small to fill the frame",
-        ),
-    )
-
-    override fun contextKey(node: Node): ContextKey? = null
-
-    /**
-     * ⚠ A promise only when there is one to make. With `out_w`/`out_h` at 0 the
-     * output is whatever the frame happens to cover, which is exactly the "I
-     * cannot say" that must not be wired into a size-critical input.
-     */
-    override fun outputSize(node: Node): Pair<Int, Int>? {
-        val w = node.params["out_w"]?.toIntOrNull() ?: 0
-        val h = node.params["out_h"]?.toIntOrNull() ?: 0
-        return if (w > 0 && h > 0) w to h else null
-    }
 
     /**
      * ⭐⭐ The framing, as pixels — and the ONLY implementation of it.
@@ -1666,27 +1610,6 @@ object CropNode : NodeType {
         }
         return bmp to rect
     }
-
-    override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
-        val image = inputs["image"] as? Value.Image
-            ?: throw IllegalArgumentException("node \"${node.id}\": input \"image\" is not connected")
-        val src = ctx.images.get(image.id)
-            ?: throw IllegalStateException("node \"${node.id}\": image ${image.id} is no longer in the store")
-        val (bmp, rect) = render(
-            src,
-            node.dbl("x").toFloat(), node.dbl("y").toFloat(),
-            node.dbl("w").toFloat(), node.dbl("h").toFloat(),
-            node.params["out_w"]?.toIntOrNull() ?: 0,
-            node.params["out_h"]?.toIntOrNull() ?: 0,
-            node.params[PAD],
-        )
-        // ⭐ Says where it came from, so `image.paste` can stitch a patch back
-        // into the photo this frame was cut from.
-        return Value.Image(
-            ctx.images.put(bmp), bmp.width, bmp.height,
-            region = Region(rect.left, rect.top, rect.right, rect.bottom, src.width, src.height, image.region),
-        )
-    }
 }
 
 /**
@@ -1710,6 +1633,29 @@ fun cropCenter(
     val x = (src.width - w) / 2
     val y = (src.height - h) / 2
     return android.graphics.Bitmap.createBitmap(src, x, y, w, h)
+}
+
+/**
+ * ⭐⭐ [cropCenter]'s inverse: [src] centred on a black [w]x[h] canvas.
+ *
+ * ⚠⚠ How a fixed-canvas family is handed a non-square picture. The backend
+ * renders the whole 1024² canvas and keeps only the centred aspect rectangle
+ * (`RequestParser.hpp`, `aspect_pad_inpaint`), so the picture and the mask must
+ * sit in exactly that rectangle — upstream's `padBitmapToCanvas` does the same.
+ * ⚠ The SAME truncating offset as [cropCenter], or the cut would come back a
+ * pixel off the place it was put.
+ */
+fun padToCanvas(
+    src: android.graphics.Bitmap,
+    w: Int,
+    h: Int,
+): android.graphics.Bitmap {
+    if (w == src.width && h == src.height) return src
+    val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(out)
+    canvas.drawColor(android.graphics.Color.BLACK)
+    canvas.drawBitmap(src, ((w - src.width) / 2).toFloat(), ((h - src.height) / 2).toFloat(), null)
+    return out
 }
 
 /**
@@ -1759,6 +1705,15 @@ object MaskNode : NodeType {
 
     /** The whole mask, as one string. ⚠ See [MaskState.encode]. */
     const val OPS = "ops"
+
+    /**
+     * ⭐⭐ The image id of the GENERATED picture the mask was last painted on,
+     * written with every stroke (`HarnessViewModel.editCanvas`). ⚠ An inpaint
+     * whose incoming picture no longer matches stops by name rather than
+     * repainting the same coordinates on a different picture ([NeedsInput]).
+     * Blank for a photo: a new photo already clears the painting.
+     */
+    const val PAINTED_ON = "painted_on"
 
     /** ⚠ The longest edge rasterised when nothing downstream demands a size. */
     const val NO_DEMAND_MAX_EDGE = 2048
@@ -2279,7 +2234,7 @@ object UpscaleNode : NodeType {
 val NODE_TYPES: Map<String, NodeType> = (
     listOf(
         // ⭐⭐⭐ The set of docs/ARCHITECTURE.md §5.7 — what a person wires.
-        PromptNode, LoadImageNode, CropNode, UpscaleNode, MediaOutputNode,
+        PromptNode, LoadImageNode, UpscaleNode, MediaOutputNode,
         // ⭐ Six SD samplers (three families × sample/inpaint): one class, two
         // arguments of difference.
         // docs/ARCHITECTURE.md §5.7 has why the fork is capability AND family.
@@ -2568,6 +2523,7 @@ class Executor(
         fun outName(nodeId: String) = nodeTypes.getValue(nodeId).outputs.firstOrNull()?.name.orEmpty()
         fun resolve(src: Source): Value? = values[src.node]?.get(src.port ?: outName(src.node))
         var stopped: String? = null
+        var waiting: Pair<String, String>? = null
 
         // ⚠ Tracks what the BACKEND holds, so a group boundary is a change of
         // key rather than "this node names one".
@@ -2663,6 +2619,7 @@ class Executor(
                     onProgress = { p -> onProgress(node.id, p.step, p.total) },
                     say = { line -> onLog(node.id, line) },
                     wanted = wanted,
+                    ancestorTypes = ancestorTypes(node.id, order),
                 )
                 // ⚠⚠ The node is run with the SAME params the key was computed
                 // from. Keying on the effective values but running on the
@@ -2681,6 +2638,10 @@ class Executor(
                 val v = produced[outName(node.id)] ?: produced.values.first()
                 NodeRun(node.id, node.type, Outcome.RAN,
                     (System.nanoTime() - n0) / 1_000_000, v.describe())
+            } catch (e: NeedsInput) {
+                // ⭐ Waiting on a person — BLOCKED, and no graph error.
+                waiting = waiting ?: (node.id to (e.message ?: "needs you"))
+                NodeRun(node.id, node.type, Outcome.BLOCKED, 0, e.message ?: "needs you")
             } catch (e: Exception) {
                 stopped = stopped ?: "${node.id}: ${e.message}"
                 NodeRun(node.id, node.type, Outcome.FAILED,
@@ -2709,6 +2670,25 @@ class Executor(
             totalMs = sinceMs(),
             error = stopped,
             prunedHandles = pruned,
+            waiting = waiting,
         )
+    }
+
+    /**
+     * ⭐ The TYPES of every node upstream of [id] — what [NodeCtx.ancestorTypes]
+     * carries, so a node can ask "was my picture generated" without the graph.
+     */
+    private fun ancestorTypes(id: String, order: List<Node>): Set<String> {
+        val byId = order.associateBy { it.id }
+        val out = mutableSetOf<String>()
+        val seen = mutableSetOf<String>()
+        val queue = ArrayDeque(byId[id]?.inputs?.values?.map { it.node }.orEmpty())
+        while (queue.isNotEmpty()) {
+            val n = byId[queue.removeFirst()] ?: continue
+            if (!seen.add(n.id)) continue
+            out += n.type
+            n.inputs.values.forEach { queue.addLast(it.node) }
+        }
+        return out
     }
 }

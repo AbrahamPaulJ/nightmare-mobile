@@ -262,10 +262,11 @@ class ResolutionTest {
      */
     @Test
     fun theCropperFollowsRatherThanDrives() {
-        assertTrue(NODE_TYPES.getValue("image.crop").sizedByConsumer)
         assertTrue(NODE_TYPES.getValue("image.mask").sizedByConsumer)
         // ⚠ …and it carries no context key, so it never forces a launch.
-        assertNull(NODE_TYPES.getValue("image.crop").contextKey(Node("c", "image.crop")))
+        assertNull(NODE_TYPES.getValue("image.mask").contextKey(Node("c", "image.mask")))
+        // ⚠ `image.crop` is gone (2026-09-17) — the samplers frame their own input.
+        assertNull(NODE_TYPES["image.crop"])
     }
 
     // ---- retargeting -----------------------------------------------------
@@ -372,7 +373,10 @@ class ResolutionTest {
      */
     @Test
     fun anAspectIsWrittenToEveryNodeThatDeclaresIt() {
-        val declaring = NODE_TYPES.filterValues { t -> t.widgets.any { it.name == "aspect" } }.keys
+        // ⚠ The FIXED-CANVAS aspect only: `image.crop` has an `aspect` of its own.
+        val declaring = NODE_TYPES.filterValues { t ->
+            t.widgets.any { it.name == "aspect" && it.options == ModelCatalog.ASPECTS }
+        }.keys
         val changes = aspectRetarget(graph(), NODE_TYPES, "16:9")
         // ⚠ Guarded: the chip only exists on a fixed-canvas family, and the
         // default selection is SD 1.5. The assertion is that the set of nodes

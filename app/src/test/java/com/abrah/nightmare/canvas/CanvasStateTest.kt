@@ -497,6 +497,70 @@ class CanvasStateTest {
         assertEquals(1, g.byId["d"]!!.inputs.size)
     }
 
+    /**
+     * ⭐⭐ A painting belongs to ONE picture. Reported 2026-09-17: an inpaint
+     * rewired from a photo to a generate node kept the photo's mask. Every way
+     * the picture source changes — a new wire, a removed wire, a deleted source —
+     * forgets it; re-dropping the SAME wire is the control, and must keep it.
+     */
+    @Test
+    fun aDifferentPictureSourceForgetsTheMaskAndFraming() {
+        val painted = mapOf(
+            com.abrah.nightmare.MaskNode.OPS to "s0.3:0.5,0.5~0,0.02",
+            "x" to "0.2", "y" to "0.2", "w" to "0.5", "h" to "0.5",
+        )
+        val g = Graph(
+            listOf(
+                Node("photo", "core.image", mapOf("uri" to "a.png")),
+                Node("gen", "sd15.sample"),
+                Node("inp", "sd15.inpaint", painted, sources("image" to "photo")),
+            )
+        )
+        fun keptMask(x: Graph) = x.byId["inp"]!!.params[com.abrah.nightmare.MaskNode.OPS] != null
+        fun keptFrame(x: Graph) = x.byId["inp"]!!.params["x"] != null
+
+        val same = g.connected("inp", "image", "photo")
+        assertTrue("the same wire again keeps the painting", keptMask(same) && keptFrame(same))
+
+        val rewired = g.connected("inp", "image", "gen")
+        assertTrue("a new source forgets the painting", !keptMask(rewired) && !keptFrame(rewired))
+
+        val unwired = g.disconnected("inp", "image")
+        assertTrue("an unplugged picture forgets it", !keptMask(unwired))
+
+        val deleted = g.without("photo")
+        assertTrue("a deleted source forgets it", !keptMask(deleted))
+        // …so wiring a new one in afterwards inherits nothing — the reported path.
+        assertTrue(!keptMask(deleted.connected("inp", "image", "gen")))
+    }
+
+    /**
+     * ⭐⭐ The picture going INTO a node, by the upstream's kind — both bugs of
+     * 2026-09-17 in one test:
+     *  - a PHOTO is read by its preview, so a newly picked one beats the last
+     *    Run's output (the cropper had opened on the old photo);
+     *  - a RENDERER is read only by what it rendered, so before its first Run an
+     *    inpaint fed by it gets nothing — not the generate node's own input.
+     */
+    @Test
+    fun thePictureIntoANodeFollowsTheUpstreamsKind() {
+        val g = Graph(
+            listOf(
+                Node("photo", "core.image", mapOf("uri" to "b.png")),
+                Node("gen", "sd15.sample", inputs = sources("image" to "photo")),
+                Node("inp", "sd15.inpaint", inputs = sources("image" to "gen")),
+            )
+        )
+        val s = CanvasState(Workflow(g, emptyMap())).copy(
+            previews = mapOf("photo" to ("img_new" to 1f), "gen" to ("img_framed_photo" to 1f)),
+            rendered = mapOf("photo" to "img_old"),
+        )
+        assertEquals("a new photo beats the last Run", "img_new", s.pictureInto("gen", types))
+        assertNull("an un-run renderer hands on nothing", s.pictureInto("inp", types))
+        val ran = s.copy(rendered = s.rendered + ("gen" to "img_generated"))
+        assertEquals("…and its render once it has run", "img_generated", ran.pictureInto("inp", types))
+    }
+
     @Test
     fun disconnectingRemovesOnlyThatPort() {
         val g = graph.connected("d", "media", "s").disconnected("d", "media")
@@ -607,7 +671,7 @@ class CanvasStateTest {
         val cropGraph = Graph(
             listOf(
                 Node("photo", "core.image", mapOf("uri" to "/x.png")),
-                Node("frame", "image.crop", inputs = sources("image" to "photo")),
+                Node("frame", "image.mask", inputs = sources("image" to "photo")),
             )
         )
         val st = CanvasState(
@@ -1102,32 +1166,4 @@ class CanvasStateTest {
         assertTrue(after.gesture is Gesture.DraggingNode)
     }
 
-    /** ⭐ …and with a crop between them the same drop is allowed. */
-    @Test
-    fun aCropBetweenThemMakesTheWireLegal() {
-        val g = Graph(
-            listOf(
-                Node("photo", "core.image", mapOf("uri" to "/a.png")),
-                Node("frame", "image.crop", inputs = sources("image" to "photo")),
-                Node(
-                    "enc", "sd.vae_encode",
-                    mapOf("model" to "m", "width" to "512", "height" to "512", "seed" to "1"),
-                ),
-            )
-        )
-        val st = CanvasState(
-            Workflow(
-                g,
-                mapOf("photo" to Pt(0f, 0f), "frame" to Pt(300f, 0f), "enc" to Pt(700f, 0f)),
-            )
-        )
-        val boxes = layout(st.workflow, types)
-        val from = boxes.first { it.id == "frame" }.outputPort(0)
-        val to = boxes.first { it.id == "enc" }.inputPort(0)
-        val after = st.press(from, types).drag(to, Pt(1f, 0f), types).release(to, types)
-        assertEquals(
-            Source("frame", "image"),
-            after.workflow.graph.byId["enc"]!!.inputs["image"],
-        )
-    }
 }

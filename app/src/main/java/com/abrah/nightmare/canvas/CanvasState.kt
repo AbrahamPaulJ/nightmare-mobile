@@ -112,6 +112,16 @@ data class CanvasState(
      */
     val previews: Map<String, Pair<String, Float>> = emptyMap(),
     /**
+     * ⭐⭐ Node id -> the image id it RENDERED on the last Run — including the
+     * nodes that do not SHOW their result ([com.abrah.nightmare.NodeType.showsResult]).
+     *
+     * ⚠⚠ Why it is not [previews]: a sampler's preview is its framed INPUT, and
+     * a text-to-image sampler has none, so a node wired to a sampler found no
+     * picture there or the wrong one — the inpaint editor had nothing to paint
+     * on in a generate → inpaint chain (found 2026-09-17). ⇒ [pictureInto].
+     */
+    val rendered: Map<String, String> = emptyMap(),
+    /**
      * ⭐⭐ Node id -> the MP4 a video node produced.
      *
      * ⚠⚠ Separate from [previews] because a clip is not a picture: the canvas
@@ -138,6 +148,18 @@ data class CanvasState(
      * jump the keyboard up again.
      */
     val focusField: String? = null,
+    /**
+     * ⭐ A request to open a sampler's CROP popup: the node, and a count so the
+     * same node asked twice is two requests. Set when a model is picked on the
+     * node (asked for 2026-09-17) — the framing was just reset for the new shape,
+     * and that is the moment to look at it.
+     *
+     * ⚠ Cleared with the inspector, or reopening the sheet by any other route
+     * would pop the crop open again.
+     */
+    val cropRequest: Pair<String, Int>? = null,
+    /** ⭐ Which tab [cropRequest] opens: 0 Crop, 1 Mask (a paused inpaint asks for Mask). */
+    val cropRequestTab: Int = 0,
     /**
      * True while a long press has put the canvas in multi-select.
      *
@@ -570,7 +592,33 @@ data class CanvasState(
         workflow = workflow.copy(graph = workflow.graph.withParams(nodeId, values)),
     )
 
-    fun closeInspector() = copy(editing = null, focusField = null)
+    fun closeInspector() = copy(editing = null, focusField = null, cropRequest = null)
+
+    /**
+     * ⭐⭐ The picture coming INTO [nodeId] on [port] — what its upstream
+     * RENDERED when it renders, what it shows otherwise.
+     *
+     * ⚠⚠ THE one lookup. The editors, the canvas preview, the auto-fit and the
+     * paint-time rules all ask "which picture is going in", and five hand-rolled
+     * `previews[up]` reads gave the wrong answer for a sampler upstream.
+     */
+    fun pictureInto(
+        nodeId: String,
+        types: Map<String, NodeType>,
+        port: String = "image",
+    ): String? {
+        val up = workflow.graph.byId[nodeId]?.inputs?.get(port)?.node ?: return null
+        val upType = workflow.graph.byId[up]?.type ?: return null
+        // ⚠⚠ By the upstream's KIND, never "rendered, else preview", which was
+        // wrong both ways (reported 2026-09-17):
+        //  - a RENDERER before its first Run has nothing to hand on. Falling back
+        //    to its preview passed its framed INPUT through, so an inpaint fed by
+        //    a generate node showed the generate node's photo.
+        //  - anything else is read by what it shows NOW. A photo's last-Run
+        //    output outranked its new preview, so picking another photo after a
+        //    run opened the cropper on the old one.
+        return if (types[upType]?.showsResult == false) rendered[up] else previews[up]?.first
+    }
 
     /**
      * ⭐ Long press on a node: enter multi-select with it chosen.

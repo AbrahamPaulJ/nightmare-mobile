@@ -86,6 +86,30 @@ val DownloadIcon: ImageVector by lazy {
 }
 
 /**
+ * ⭐ SEND TO a flow — Material's `input`: an arrow going INTO a frame, which
+ * is what happens to the picture (asked for 2026-09-17). ⚠ Not the share arrow:
+ * share hands it to another APP, this puts it into one of ours.
+ */
+val SendToIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "SendTo",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).run {
+        addPath(
+            pathData = PathParser().parsePathString(
+                "M21 3.01H3c-1.1 0-2 .9-2 2V9h2V4.99h18v14.03H3V15H1v4.01c0 1.1.9 1.98 2 " +
+                    "1.98h18c1.1 0 2-.88 2-1.98v-14c0-1.11-.9-2-2-2zM11 16l4-4-4-4v3H1v2h10v3z"
+            ).toNodes(),
+            fill = SolidColor(Color.White),
+        )
+        build()
+    }
+}
+
+/**
  * An OPEN padlock — the released half of the seed lock.
  *
  * ⚠⚠ It must read as the same object as `Icons.Filled.Lock` with the shackle

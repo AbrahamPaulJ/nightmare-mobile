@@ -39,7 +39,7 @@ class WorkflowStoreTest {
         val back = s.load("my flow")!!.workflow
         assertEquals(resized.graph.nodes.map { it.id }, back.graph.nodes.map { it.id })
         // ⭐ Params, wiring, position AND width -- the whole point of the button.
-        assertEquals("0.6", back.graph.byId["generate"]!!.params["denoise"])
+        assertEquals("0.65", back.graph.byId["generate"]!!.params["denoise"])
         assertEquals(
             resized.graph.byId["generate"]!!.inputs,
             back.graph.byId["generate"]!!.inputs,

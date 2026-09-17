@@ -269,6 +269,14 @@ class ModelsScreenshotTest {
     @Config(qualifiers = "w360dp-h780dp-xxhdpi")
     fun historySelectingNarrow() = history(name = "history-selecting-360", selected = setOf("r1", "r2", "r3"))
 
+    /**
+     * ⚠ The BROWSING row at 360dp: seven icons and Open must fit ONE row — it
+     * gained Send to on 2026-09-17, and nothing checked the narrow phone.
+     */
+    @Test
+    @Config(qualifiers = "w360dp-h780dp-xxhdpi")
+    fun historyNarrow() = history(name = "history-360", selected = emptySet())
+
     /** ⭐ History — the big preview over the grid (DreamUI's layout, 2026-09-17). */
     @Test
     fun history() = history(name = "history", selected = emptySet())

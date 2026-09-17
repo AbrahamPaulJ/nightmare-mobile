@@ -68,8 +68,8 @@ enum class MaskTool { BRUSH, ERASE, TAP }
 /**
  * ⭐⭐ Paint an inpaint mask over [source] with a finger.
  *
- * Ported from DreamUI's `ui/MaskCanvas.kt`, minus the zoom-out crop's
- * checkerboard padding (no outset crop here). Its tap-to-segment mode is
+ * Ported from DreamUI's `ui/MaskCanvas.kt`. Its zoom-out padding is drawn BLUE
+ * rather than checkerboard ([padding]), because here it is locked mask. Its tap-to-segment mode is
  * [MaskTool.TAP], which reports the point and leaves segmenting to the caller. ⚠ Every comment
  * below marked with a bug is one DreamUI already paid for; none of it is
  * defensive programming.
@@ -90,6 +90,13 @@ fun MaskEditor(
     modifier: Modifier = Modifier,
     /** ⭐ [MaskTool.TAP]: where the finger went down, normalised to [source]. */
     onTap: (Float, Float) -> Unit = { _, _ -> },
+    /**
+     * ⭐⭐ OUTPAINT: the photo's extent in [source], as fractions — everything
+     * outside it is padding, drawn BLUE over the painting. ⚠ Display only: it is
+     * `MaskRaster.forcePadding` on the sampler's mask that makes it masked and
+     * un-erasable, so a stroke here can neither add to it nor take it away.
+     */
+    padding: com.abrah.nightmare.Frame? = null,
 ) {
     // ⚠ The in-progress stroke lives in LOCAL state so dragging stays smooth
     // without a round trip through the view model on every pointer sample.
@@ -341,6 +348,9 @@ fun MaskEditor(
                     }
                 }
             }
+            // ⭐ The locked padding, ABOVE the painting and inside the zoom layer
+            // so it moves with the picture.
+            padding?.let { p -> Canvas(Modifier.fillMaxSize()) { drawPadding(p) } }
         }
     }
     }

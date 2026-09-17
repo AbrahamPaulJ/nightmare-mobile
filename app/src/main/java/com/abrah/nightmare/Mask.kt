@@ -324,6 +324,54 @@ object MaskRaster {
     const val OVERLAY_ALPHA = 140
 
     /**
+     * ⭐ The colour of OUTPAINT padding — masked, and locked (2026-09-17). Blue
+     * so it reads as a different thing from the red a finger painted: it cannot
+     * be erased. ⚠ DreamUI's segment-palette blue.
+     */
+    const val PADDING_RGB = 0x2FB8FF
+
+    /**
+     * ⭐⭐ Everything outside [photo] forced WHITE, whatever the painting left
+     * there — DreamUI's `forcePadding`.
+     *
+     * ⚠⚠ Enforced HERE, on the mask the model receives, rather than by refusing
+     * input: the eraser, undo, invert and clear can each take mask away, and a
+     * rule repeated in four places is missed in one. Outside the photo there is
+     * nothing to keep. ⚠ [photo] is in fractions of [base]; mutates it.
+     */
+    /**
+     * ⭐ The padding as it is DISPLAYED: translucent blue bands outside [photo]
+     * (fractions of [base]), drawn into [base]. ⚠ ONE function for the canvas
+     * node's preview and the inspector's thumbnail; the Compose editors draw
+     * the same bands with `drawPadding` at the same colour and strength.
+     */
+    fun paintPadding(base: Bitmap, photo: Frame, alpha: Float = 0.55f) {
+        val paint = android.graphics.Paint().apply {
+            color = 0xFF000000.toInt() or PADDING_RGB
+            this.alpha = (alpha * 255).toInt()
+        }
+        bands(base, photo, paint)
+    }
+
+    private fun bands(base: Bitmap, photo: Frame, paint: android.graphics.Paint) {
+        val w = base.width.toFloat()
+        val h = base.height.toFloat()
+        val l = photo.left * w
+        val t = photo.top * h
+        val r = photo.right * w
+        val b = photo.bottom * h
+        val canvas = android.graphics.Canvas(base)
+        canvas.drawRect(0f, 0f, w, t, paint)
+        canvas.drawRect(0f, b, w, h, paint)
+        canvas.drawRect(0f, t, l, b, paint)
+        canvas.drawRect(r, t, w, b, paint)
+    }
+
+    fun forcePadding(base: Bitmap, photo: Frame) {
+        bands(base, photo, android.graphics.Paint().apply { color = android.graphics.Color.WHITE })
+    }
+
+    /**
      * ⚠ 3-4 chamfer weights: an integer distance transform, straight vs
      * diagonal. Distances therefore come back in **thirds of a pixel**.
      */

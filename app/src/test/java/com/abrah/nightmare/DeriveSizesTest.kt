@@ -68,14 +68,6 @@ class DeriveSizesTest {
             }
         )
 
-    /** ⭐ One link. This always worked, and must keep working. */
-    @Test
-    fun aCropTakesItsSizeFromTheEncoder() {
-        val g = deriveSizes(retargeted(chain(1024, twoLinks = false), 1024), NODE_TYPES)
-        assertEquals("1024", g.byId["frame"]!!.params["out_w"])
-        assertEquals("1024", g.byId["frame"]!!.params["out_h"])
-    }
-
     /**
      * ⭐⭐ TWO links, **on a graph that was already settled at another size** —
      * which is the case that regressed and the only one that reproduces it.
@@ -164,32 +156,6 @@ class DeriveSizesTest {
             once.nodes.map { it.id to it.params },
             twice.nodes.map { it.id to it.params },
         )
-    }
-
-    /**
-     * ⭐⭐ A mismatch is REPORTED, not silently rendered.
-     *
-     * ⚠⚠ This is the guard the whole session argued for. A crop that promises
-     * nothing still renders — the sampler runs, the decoder returns a picture —
-     * and what the user sees is a smear they blame on the model. Three wrong
-     * diagnoses came out of that before anyone checked the sizes.
-     */
-    @Test
-    fun anUnsettledGraphSaysWhichNodeIsWrong() {
-        // A graph deliberately left stale: the model wants 1024, the crop says 512.
-        val stale = Graph(
-            retargeted(chain(1024, twoLinks = false), 1024).nodes.map { n ->
-                if (n.id == "frame") {
-                    n.copy(params = n.params + mapOf("out_w" to "512", "out_h" to "512"))
-                } else {
-                    n
-                }
-            }
-        )
-        val why = sizeMismatches(stale, NODE_TYPES)
-        assertEquals(1, why.size)
-        assertTrue(why[0], why[0].contains("frame"))
-        assertTrue(why[0], why[0].contains("1024"))
     }
 
     /** ⚠ …and a settled graph says nothing, or the warning is noise. */

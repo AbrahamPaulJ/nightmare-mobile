@@ -202,15 +202,13 @@ fun CanvasScreen(
      * `HarnessViewModel.editMask` has the measurement.
      */
     /**
-     * ⭐⭐ Set the render size for the WHOLE graph, from the node the user
-     * happened to open.
+     * ⭐⭐ Set ONE node's render size.
      *
-     * ⚠ Not an `onEdit` transform like [onSetParam] is: a size change also
-     * stops a backend launched at the old one, re-derives every framed crop and
-     * moves the remembered default for new nodes — none of which a pure
-     * `CanvasState` edit can do. `HarnessViewModel.selectResolution` owns it.
+     * ⚠ Not an `onEdit` transform like [onSetParam] is: the size is checked
+     * against the node's model and every derived picture is re-derived — which
+     * a pure `CanvasState` edit cannot do. `HarnessViewModel.setNodeResolution`.
      */
-    onSetResolution: (com.abrah.nightmare.Res) -> Unit = {},
+    onSetResolution: (node: String, com.abrah.nightmare.Res) -> Unit = { _, _ -> },
     /** ⭐ The same for a fixed-canvas family, where the choice is a ratio. */
     onSetAspect: (String) -> Unit = {},
     onEditMask: (node: String, (com.abrah.nightmare.MaskState) -> com.abrah.nightmare.MaskState) -> Unit =
@@ -238,6 +236,8 @@ fun CanvasScreen(
     onSaveImage: (String) -> Unit = {},
     /** ⭐ Hand a node's picture to another app. */
     onShareImage: (String) -> Unit = {},
+    /** ⭐ Send a node's picture into a flow ([com.abrah.nightmare.ui.SendToDialog]). */
+    onSendImage: (String) -> Unit = {},
     /** ⭐ Keep a rendered image AND the flow that made it, in Results. */
     onStarImage: (String) -> Unit = {},
     /** ⚠ Whether the picture behind an id is FLAGGED — the star's tint. */
@@ -447,25 +447,26 @@ fun CanvasScreen(
             runError = runError,
             runLog = runLog,
             onCloseRunLog = onCloseRunLog,
-            // ⚠ The FIRST sampler. A graph with two has two seeds and no single
-            // answer; the row names the one Run reaches first and leaves the
-            // rest to the inspector rather than lying about either.
             // ⚠⚠ ANY sampler ([com.abrah.nightmare.SAMPLER_TYPES]), not just
             // `sd.sample`: the text-to-video recipe rolls a seed like every
             // other recipe and had no lock at all, so a clip worth keeping
             // could not be asked for again. Reported from the phone, 2026-09-12.
-            seed = state.workflow.graph.nodes.firstOrNull {
+            // ⭐⭐ EVERY sampler, in graph order — one lock each (2026-09-17). The
+            // label only appears when there is more than one to tell apart.
+            seeds = state.workflow.graph.nodes.filter {
                 com.abrah.nightmare.isSampler(it.type)
-            }?.let { n ->
-                SeedState(
-                    value = n.params["seed"]?.trim()?.takeIf { it.isNotEmpty() && it != "0" },
-                    lastRolled = seedFor(state.workflow.graph, n.id) { status[it]?.detail },
-                )
+            }.let { samplers ->
+                samplers.map { n ->
+                    SeedState(
+                        value = n.params["seed"]?.trim()?.takeIf { it.isNotEmpty() && it != "0" },
+                        lastRolled = seedFor(state.workflow.graph, n.id) { status[it]?.detail },
+                        nodeId = n.id,
+                        label = n.id.takeIf { samplers.size > 1 },
+                    )
+                }
             },
-            onToggleSeed = {
-                state.workflow.graph.nodes.firstOrNull {
-                    com.abrah.nightmare.isSampler(it.type)
-                }?.let { n ->
+            onToggleSeed = { id ->
+                state.workflow.graph.byId[id]?.let { n ->
                     val pinned = n.params["seed"]?.trim()?.takeIf { it.isNotEmpty() && it != "0" }
                     if (pinned != null) {
                         onEdit { st -> st.setParam(n.id, "seed", "0") }
@@ -504,6 +505,7 @@ fun CanvasScreen(
         onClearImage = onClearImage,
         onSaveImage = onSaveImage,
         onShareImage = onShareImage,
+        onSendImage = onSendImage,
         onKeepImage = onKeepImage,
         isKept = isKept,
         installedModels = installedModels,
@@ -657,6 +659,13 @@ fun CanvasScreen(
                 // output: the whole point of a 4x is sending it somewhere.
                 onShare = if (!viewedIsInput) {
                     { onShareImage(id) }
+                } else null,
+                // ⭐ Send into a flow — the viewer closes, the choice pops up.
+                onSendTo = if (!viewedIsInput) {
+                    {
+                        onEdit { s -> s.copy(viewing = null, viewingNode = null) }
+                        onSendImage(id)
+                    }
                 } else null,
                 // ⭐⭐ Keep it, WITH the graph. ⚠ Distinct from the gallery
                 // button beside it and the difference is the whole point: the
@@ -997,8 +1006,8 @@ private fun RunBar(
      * an editor. This composable draws the bar; it does not know how a seed is
      * found or written.
      */
-    seed: SeedState? = null,
-    onToggleSeed: () -> Unit = {},
+    seeds: List<SeedState> = emptyList(),
+    onToggleSeed: (String) -> Unit = {},
     /** ⭐ Backend relaunches this graph will cost. 0 on a single-checkpoint one. */
     plannedLoads: Int = 0,
     modifier: Modifier = Modifier,
@@ -1025,9 +1034,7 @@ private fun RunBar(
         // than remembered: the lock IS the sampler's `seed` param, so there is
         // one copy of the fact and no way for the badge and the render to
         // disagree.
-        // ⚠ The FIRST sampler. A graph with two has two seeds and no single
-        // answer; the row would then be lying about one of them, so it names
-        // the one Run reaches first and leaves the rest to the inspector.
+        // ⚠ One per sampler, named when there are several — see the caller.
         RunLogPanel(
             runLog,
             onClose = onCloseRunLog,
@@ -1038,15 +1045,13 @@ private fun RunBar(
             // cannot tell "a new picture every Run" from "the same one" by
             // looking at the canvas, and that is the most confusing thing about
             // Run. `null` here means the graph has no sampler at all.
-            seed = seed,
+            seeds = seeds,
             onToggleSeed = onToggleSeed,
             // ⚠ The seed axis is pulled OUT of the chip row: it has its own
             // row already, and showing it twice would be two controls for one
-            // fact.
-            seedSweep = armedSweeps.firstOrNull { it.param == "seed" }?.count,
-            onReleaseSeedSweep = {
-                armedSweeps.firstOrNull { it.param == "seed" }?.let(onReleaseSweep)
-            },
+            // fact. ⚠ Per sampler, on that sampler's own seed chip.
+            seedSweeps = armedSweeps.filter { it.param == "seed" },
+            onReleaseSeedSweep = onReleaseSweep,
             armed = armedSweeps.filterNot { it.param == "seed" },
             onRelease = onReleaseSweep,
             batch = batchProgress,
@@ -1380,6 +1385,8 @@ private fun FullscreenImage(
     onSave: (() -> Unit)? = null,
     /** ⭐ Hand this picture to another app. Non-null wherever [onSave] is. */
     onShare: (() -> Unit)? = null,
+    /** ⭐ Send it into a flow. Non-null wherever [onShare] is. */
+    onSendTo: (() -> Unit)? = null,
     /** ⭐ Keep it in Results, with the graph that made it. */
     onKeep: (() -> Unit)? = null,
     /** ⭐ The STAR: keep it AND flag it Favourite. [PictureActions] has the table. */
@@ -1499,7 +1506,9 @@ private fun FullscreenImage(
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp)
+                // ⚠ Room above for the actions and below for the seed, so
+                // neither sits ON the picture (2026-09-17, "seed below image").
+                .then(if (chromeless) Modifier.padding(12.dp) else Modifier.padding(horizontal = 12.dp, vertical = VIEWER_CHROME))
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
@@ -1524,19 +1533,18 @@ private fun FullscreenImage(
         // after the buttons were removed — reported 2026-09-15, and it was the
         // same half-fix twice. A viewer over an INPUT shows the picture and
         // nothing else.
-        if (!chromeless) Column(
+        // ⭐⭐ CENTRED, and the seed BELOW the picture (the user's call,
+        // 2026-09-17): the row leaned right, and the seed sat in the action
+        // band where it read as one more button.
+        if (!chromeless) Row(
             Modifier
-                .align(Alignment.TopEnd)
+                .align(Alignment.TopCenter)
                 .statusBarsPadding()
                 // ⚠ `docs/UI.md` §7.2 — an inset is not padding.
                 .padding(top = 32.dp, end = 8.dp, bottom = 8.dp, start = 8.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-          Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
-          ) {
+        ) {
             // ⚠ White rather than the theme's colours: this row sits on the
             // picture, not on a surface, and a primary-tinted icon over an
             // arbitrary photo is a coin toss for contrast.
@@ -1555,6 +1563,7 @@ private fun FullscreenImage(
                 onKeep = onKeep,
                 onDownload = onSave,
                 onShare = onShare,
+                onSendTo = onSendTo,
                 onStar = onStar,
                 kept = kept,
                 favourite = favourite,
@@ -1563,7 +1572,15 @@ private fun FullscreenImage(
                 starKeptTint = com.abrah.nightmare.ui.StarKept,
                 starIdleTint = com.abrah.nightmare.ui.StarIdle,
             )
-          }
+        }
+        if (!chromeless) Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp, start = 8.dp, end = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             // ⚠ The lock goes INSIDE the seed's own container, not in the
             // loose row: a lock icon beside save and delete has no visible subject.
             // ⚠⚠ Shown whenever a SAMPLER is upstream, not only when a seed is
@@ -1587,6 +1604,12 @@ private fun FullscreenImage(
         }
     }
 }
+
+/**
+ * ⭐ The band a fullscreen viewer keeps clear above (actions) and below (seed)
+ * its picture. ⚠ Shared with `ResultViewer`, so both viewers frame alike.
+ */
+internal val VIEWER_CHROME = 96.dp
 
 /**
  * ⭐⭐ THE confirm for deleting nodes — from the run bar's selection and from the
@@ -1640,8 +1663,9 @@ private fun ModelSwapDialog(
     onConfirm: (com.abrah.nightmare.HarnessViewModel.ModelSwap, Boolean, Boolean) -> Unit,
     onCancel: () -> Unit,
 ) {
-    var takePrompt by remember(swap) { mutableStateOf(true) }
-    var takeRecipe by remember(swap) { mutableStateOf(true) }
+    // ⭐ Seeded with the user's LAST answers ([HarnessViewModel.confirmSwap]).
+    var takePrompt by remember(swap) { mutableStateOf(swap.takePromptDefault) }
+    var takeRecipe by remember(swap) { mutableStateOf(swap.takeRecipeDefault) }
     AlertDialog(
         onDismissRequest = onCancel,
         title = { Text("Switch to ${swap.spec.label}") },

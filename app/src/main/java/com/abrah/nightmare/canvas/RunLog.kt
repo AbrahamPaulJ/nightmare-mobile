@@ -67,7 +67,18 @@ data class RunLine(val id: String, val text: String, val bad: Boolean = false)
  * offer on a canvas that has not run yet, and the control must then be absent
  * rather than doing nothing.
  */
-data class SeedState(val value: String?, val lastRolled: String? = null)
+data class SeedState(
+    val value: String?,
+    val lastRolled: String? = null,
+    /** ⭐ The sampler this seed belongs to — what the lock writes. */
+    val nodeId: String = "",
+    /**
+     * ⭐ Its name on the row, or null when the graph has ONE sampler. ⚠ The node
+     * id, not "seed 1 / seed 2": ids are what the canvas shows, and a chain can
+     * have three (the user's call, 2026-09-17).
+     */
+    val label: String? = null,
+)
 
 /**
  * ⭐⭐ What the canvas shows WHILE it renders.
@@ -139,6 +150,7 @@ fun formatMs(ms: Long): String = when {
  * work and a panel floating on top of it hides the very nodes whose progress it
  * is describing.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun RunLogPanel(
     state: RunLogState,
@@ -168,12 +180,13 @@ fun RunLogPanel(
      * canvas, and that is the single most confusing thing about Run — so the
      * state is stated always, and the toggle is the same control either way.
      */
-    seed: SeedState? = null,
-    onToggleSeed: () -> Unit = {},
-    /** ⭐ How many seeds a sweep will roll, or null when seed is not armed. */
-    seedSweep: Int? = null,
+    seeds: List<SeedState> = emptyList(),
+    /** ⭐ Lock or release ONE sampler's seed, by node id. */
+    onToggleSeed: (String) -> Unit = {},
+    /** ⭐ The armed seed sweeps, by node — each shows on its own sampler's row. */
+    seedSweeps: List<ArmedSweep> = emptyList(),
     /** ⚠ A swept seed needs its own release — the lock toggle is hidden. */
-    onReleaseSeedSweep: () -> Unit = {},
+    onReleaseSeedSweep: (ArmedSweep) -> Unit = {},
     /**
      * ⭐⭐ The knobs armed for a sweep, as `node param values` triples.
      *
@@ -193,7 +206,7 @@ fun RunLogPanel(
     // ⚠ The seed row keeps this panel up with nothing else to report: it is a
     // property of the canvas rather than of the last run, and the panel is the
     // only thing above Run that persists between them.
-    if (state.idle && seed == null && armed.isEmpty() && batch == null) return
+    if (state.idle && seeds.isEmpty() && armed.isEmpty() && batch == null) return
 
     // ⚠⚠ A ticking clock, not a value pushed from the view model. The elapsed
     // time has to advance while NOTHING is happening -- an SDXL sampler emits
@@ -222,7 +235,15 @@ fun RunLogPanel(
         modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        seed?.let { st ->
+        // ⭐⭐ ONE lock PER SAMPLER (the user's call, 2026-09-17). ⚠ It was the
+        // first sampler only, so in generate -> inpaint the inpaint's own seed had
+        // no lock anywhere above Run. ⚠ Wrapping chips, not a column: two fit one
+        // line, and a third moves down instead of pushing Run off the screen.
+        if (seeds.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) { seeds.forEach { st ->
+        val seedSweep = seedSweeps.firstOrNull { it.nodeId == st.nodeId }?.count
         Row(
             Modifier
                 .clip(RoundedCornerShape(10.dp))
@@ -249,7 +270,7 @@ fun RunLogPanel(
                         seedSweep != null -> "Batching " + seedSweep + " seeds"
                         st.value != null -> "seed locked: ${st.value}"
                         else -> "seed: random"
-                    },
+                    }.let { t -> st.label?.let { "$it · $t" } ?: t },
                     style = LogTextStyle,
                     color = if (st.value != null) {
                         MaterialTheme.colorScheme.primary
@@ -265,7 +286,9 @@ fun RunLogPanel(
                 // actions must not share one glyph: releasing a sweep and
                 // locking a seed are opposites, and the row has space for one.
                 if (seedSweep != null) {
-                    IconButton(onClick = onReleaseSeedSweep, modifier = Modifier.size(28.dp)) {
+                    IconButton(onClick = {
+                        seedSweeps.firstOrNull { it.nodeId == st.nodeId }?.let(onReleaseSeedSweep)
+                    }, modifier = Modifier.size(28.dp)) {
                         Icon(
                             Icons.Filled.Close,
                             contentDescription = "release the seed sweep",
@@ -276,7 +299,7 @@ fun RunLogPanel(
                 }
                 if (seedSweep == null) {
                 IconButton(
-                    onClick = onToggleSeed,
+                    onClick = { onToggleSeed(st.nodeId) },
                     // ⚠ Shrunk from the 48dp default. A touch target that size
                     // sets the height of the whole row, which is what made this
                     // line cost vertical space above AND below the text.
@@ -300,7 +323,7 @@ fun RunLogPanel(
                 }
                 }
             }
-        }
+        } }
         // ⚠⚠ **Only when there is a run to describe.** Closing the panel clears
         // the state, but the seed row above is a property of the CANVAS rather
         // than of a run, so the panel stays up — and this row then rendered

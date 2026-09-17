@@ -1169,8 +1169,23 @@ object SelectedModel {
 
     /** ⚠ Call after anything that adds or removes files in a model directory. */
     fun refresh(context: Context) {
+        perModel.clear()
         resolutions = spec.availableResolutions(context)
     }
+
+    private val perModel = java.util.concurrent.ConcurrentHashMap<String, List<Res>>()
+
+    /**
+     * ⭐⭐ The sizes ANY model can serve, cached the same way as [resolutions].
+     *
+     * ⚠⚠ A sampler's size chips must come from ITS model, not from this
+     * selection. Since the model became a per-node choice (`ARCHITECTURE.md`
+     * §4) the two differ routinely, and reading [resolutions] showed an SD 1.5
+     * node the one size SDXL has — so no size chooser at all (2026-09-17).
+     * ⚠ Cleared by [refresh], which every install and delete already calls.
+     */
+    fun resolutionsOf(context: Context, spec: ModelSpec): List<Res> =
+        perModel.getOrPut(spec.id) { spec.availableResolutions(context) }
 
     /**
      * The catalogue entry in use -- family, native resolution and `--type`.

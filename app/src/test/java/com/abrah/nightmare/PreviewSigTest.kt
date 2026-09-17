@@ -23,7 +23,7 @@ class PreviewSigTest {
     private val graph = Graph(
         listOf(
             Node("photo", "core.image", mapOf("uri" to "/a.png")),
-            Node("frame", "image.crop", mapOf("w" to "0.5"), sources("image" to "photo")),
+            Node("frame", "image.mask", mapOf("w" to "0.5"), sources("image" to "photo")),
             Node(
                 "encode", "sd.vae_encode",
                 mapOf("model" to V1_MODEL, "width" to "512", "height" to "512", "seed" to "1"),
@@ -188,8 +188,8 @@ class PreviewSigTest {
      */
     @Test
     fun paramOrderIsNotPartOfTheSignature() {
-        val a = Node("n", "image.crop", linkedMapOf("x" to "0.1", "w" to "0.4"))
-        val b = Node("n", "image.crop", linkedMapOf("w" to "0.4", "x" to "0.1"))
+        val a = Node("n", "image.mask", linkedMapOf("x" to "0.1", "w" to "0.4"))
+        val b = Node("n", "image.mask", linkedMapOf("w" to "0.4", "x" to "0.1"))
         assertEquals(previewSig(listOf(a)), previewSig(listOf(b)))
     }
 }

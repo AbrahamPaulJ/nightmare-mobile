@@ -142,6 +142,8 @@ fun ResultsScreen(
     onToast: (String) -> Unit = {},
     /** ⭐ Star or un-star every selected result — no confirm, it is undoable. */
     onStarSelected: () -> Unit = {},
+    /** ⭐ Send the shown picture into a flow ([SendToDialog]). */
+    onSendTo: (Result) -> Unit = {},
 ) {
     // ⚠ One dialog for the whole list, not one per card — the same reason the
     // models screen hoists its delete confirm.
@@ -328,25 +330,36 @@ fun ResultsScreen(
                     Icon(Icons.Filled.Close, contentDescription = "stop selecting", tint = onSurface)
                 }
             } else {
-                IconButton(onClick = { deleting = shown }) {
+                // ⚠⚠ 40dp targets, as the selection row: with Send to added, seven
+                // 48dp icons pushed Open off a 360dp phone (golden `history-360`).
+                val small = Modifier.size(40.dp)
+                IconButton(onClick = { deleting = shown }, modifier = small) {
                     Icon(
                         Icons.Filled.Delete,
                         contentDescription = stringResource(R.string.cd_delete_result),
                         tint = MaterialTheme.colorScheme.error,
                     )
                 }
-                IconButton(onClick = { onToggleFavourite(shown) }) {
+                IconButton(onClick = { onToggleFavourite(shown) }, modifier = small) {
                     Icon(
                         Icons.Filled.Star,
                         contentDescription = if (shown.favourite) "remove from favourites" else "add to favourites",
                         tint = if (shown.favourite) StarKept else StarIdle,
                     )
                 }
-                IconButton(onClick = { onSave(shown) }) {
+                IconButton(onClick = { onSave(shown) }, modifier = small) {
                     Icon(DownloadIcon, contentDescription = "save to the gallery", tint = onSurface)
                 }
-                IconButton(onClick = { sharing = listOf(shown.id) }) {
+                IconButton(onClick = { sharing = listOf(shown.id) }, modifier = small) {
                     Icon(ShareIcon, contentDescription = "share", tint = onSurface)
+                }
+                // ⭐ Send into a flow, after share. ⚠ Shown on a clip too and
+                // refusing by name, as Upscale does beside it.
+                IconButton(onClick = {
+                    if (shown.videoPath != null) onToast("Only a picture can be sent into a flow")
+                    else onSendTo(shown)
+                }, modifier = small) {
+                    Icon(SendToIcon, contentDescription = "send this picture to a flow", tint = onSurface)
                 }
                 // ⚠ Always SHOWN, refusing by name (the user's call, 2026-09-17):
                 // a button that vanishes on a clip teaches nothing.
@@ -361,13 +374,13 @@ fun ResultsScreen(
                             )
                         else -> upscalingPick = shown
                     }
-                }) {
+                }, modifier = small) {
                     Icon(
                         UpscaleIcon, contentDescription = "upscale this picture",
                         tint = onSurface.copy(alpha = if (upscaling == null) 1f else 0.38f),
                     )
                 }
-                IconButton(onClick = { info = shown }) {
+                IconButton(onClick = { info = shown }, modifier = small) {
                     Icon(Icons.Filled.Info, contentDescription = "what made this picture", tint = onSurface)
                 }
                 Spacer(Modifier.weight(1f))
@@ -558,6 +571,8 @@ fun ResultViewer(
     onShare: (Result) -> Unit = {},
     /** ⭐ Star it from the viewer — where a favourite is usually decided. */
     onToggleFavourite: ((Result) -> Unit)? = null,
+    /** ⭐ Send this picture into a flow ([SendToDialog]). */
+    onSendTo: ((Result) -> Unit)? = null,
 ) {
     val pager = androidx.compose.foundation.pager.rememberPagerState(
         initialPage = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
@@ -638,7 +653,9 @@ fun ResultViewer(
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(8.dp)
+                        // ⚠ Clear of the actions above and the seed below —
+                        // the canvas viewer's band ([VIEWER_CHROME]).
+                        .padding(horizontal = 8.dp, vertical = com.abrah.nightmare.canvas.VIEWER_CHROME)
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
@@ -713,17 +730,31 @@ fun ResultViewer(
         // ⚠ Position in the set, only when there IS a set. "1 of 1" is noise.
         // ⚠⚠ BELOW the picture, not above it: at the top it sat in the same
         // band as the action row and read as a label for the buttons.
-        if (items.size > 1) {
-            Text(
-                "${pager.currentPage + 1} / ${items.size}" +
-                    current.batchLabel.let { if (it.isBlank()) "" else "   $it" },
-                style = LogTextStyle,
-                color = androidx.compose.ui.graphics.Color.White,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 16.dp),
-            )
+        // ⭐⭐ The seed WITH its copy button, BELOW the picture and centred —
+        // the canvas viewer's layout (the user's call, 2026-09-17). It sat in
+        // the action row, where it read as one more button.
+        androidx.compose.foundation.layout.Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            current.seed?.let { seed ->
+                com.abrah.nightmare.canvas.SeedRow(
+                    seed = seed,
+                    tint = androidx.compose.ui.graphics.Color.White,
+                )
+            }
+            if (items.size > 1) {
+                Text(
+                    "${pager.currentPage + 1} / ${items.size}" +
+                        current.batchLabel.let { if (it.isBlank()) "" else "   $it" },
+                    style = LogTextStyle,
+                    color = androidx.compose.ui.graphics.Color.White,
+                )
+            }
         }
 
         // ⚠⚠ The actions at the TOP, over the picture.
@@ -738,7 +769,7 @@ fun ResultViewer(
         // muscle memory safe between them.
         Row(
             Modifier
-                .align(Alignment.TopEnd)
+                .align(Alignment.TopCenter)
                 .statusBarsPadding()
                 // ⚠⚠ **`statusBarsPadding()` is not enough on its own.** It
                 // clears the status bar and leaves the row flush against it,
@@ -791,26 +822,26 @@ fun ResultViewer(
                     )
                 }
             }
-            // ⭐⭐ The seed, WITH its copy button — [SeedRow], the same control
-            // the inspector and the canvas viewer use.
-            //
-            // ⚠⚠ It was missing here and the seed was only prose inside the
-            // info panel, so the one screen where a person decides "I want this
-            // one again" was the one screen they could not copy it from.
-            // Reported 2026-09-15. ⚠ No `onLock`: locking writes onto the OPEN
-            // canvas, and a result in a list is not necessarily from that graph.
-            current.seed?.let { seed ->
-                com.abrah.nightmare.canvas.SeedRow(
-                    seed = seed,
-                    tint = androidx.compose.ui.graphics.Color.White,
-                )
-            }
+            // ⚠ The seed is drawn BELOW the picture now — see above. ⚠ Still no
+            // `onLock`: locking writes onto the OPEN canvas, and a result in a
+            // list is not necessarily from that graph.
             IconButton(onClick = { onShare(current) }) {
                 Icon(
                     ShareIcon,
                     contentDescription = "share this picture",
                     tint = androidx.compose.ui.graphics.Color.White,
                 )
+            }
+            // ⭐ Send into a flow, after share — [PictureActions]' order. ⚠ Not
+            // on a clip: no flow takes a video as its input.
+            onSendTo?.takeIf { current.videoPath == null }?.let { send ->
+                IconButton(onClick = { send(current) }) {
+                    Icon(
+                        SendToIcon,
+                        contentDescription = "send this picture to a flow",
+                        tint = androidx.compose.ui.graphics.Color.White,
+                    )
+                }
             }
             IconButton(onClick = { showInfo = !showInfo }) {
                 Icon(

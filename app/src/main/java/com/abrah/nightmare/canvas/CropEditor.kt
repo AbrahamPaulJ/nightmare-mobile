@@ -205,6 +205,12 @@ fun CropEditor(
      * phone is a thin strip of margin. Reported from the phone, 2026-09-16.
      */
     interactive: Boolean = true,
+    /**
+     * ⭐⭐ When the frame may leave the picture — [com.abrah.nightmare.padRuleFor].
+     * ⚠ On [com.abrah.nightmare.PadRule.OUTPAINT] the bars are drawn BLUE: they
+     * are masked and will be generated, not kept.
+     */
+    rule: com.abrah.nightmare.PadRule = com.abrah.nightmare.PadRule.WHEN_TOO_SMALL,
     modifier: Modifier = Modifier,
 ) {
     val onChangeNow by rememberUpdatedState(onChange)
@@ -233,7 +239,7 @@ fun CropEditor(
 
     fun clamp() {
         if (view.width <= 0f || view.height <= 0f) return
-        scale = max(scale, CropGeometry.minScale(view.width, view.height, pw, ph, outW))
+        scale = max(scale, CropGeometry.minScale(view.width, view.height, pw, ph, outW, rule))
         offset = CropView.clampOffset(
             view.width, view.height, pw, ph, scale, offset.x, offset.y,
         )
@@ -281,7 +287,7 @@ fun CropEditor(
         Canvas(
             Modifier
                 .fillMaxSize()
-                .then(if (!interactive) Modifier else Modifier.pointerInput(source, outW, aspect) {
+                .then(if (!interactive) Modifier else Modifier.pointerInput(source, outW, aspect, rule) {
                     detectTransformGestures { centroid, pan, zoom, _ ->
                         if (scale <= 0f) return@detectTransformGestures
                         // Zoom about the pinch centroid, so whatever is between
@@ -306,6 +312,13 @@ fun CropEditor(
                 view = size
                 frameFrom(rect)
                 emitted = current()
+                // ⚠⚠ A stored frame the rule does not allow — padding on an
+                // image-to-image node, from before the rule, or past the
+                // outpaint limit — is WRITTEN BACK as the clamped one. Showing
+                // the clamp while the node kept the old rect would render a
+                // framing the editor never showed.
+                val shown = emitted
+                if (interactive && shown != null && !shown.near(rect)) onChangeNow(shown)
             } else if (emitted?.near(rect) == false) {
                 // Changed from outside -- someone typed in the number fields.
                 frameFrom(rect)
@@ -327,6 +340,15 @@ fun CropEditor(
                 dstOffset = IntOffset(offset.x.roundToInt(), offset.y.roundToInt()),
                 dstSize = IntSize(iw, ih),
             )
+            // ⭐ Outpaint: the bars are the mask, so they are drawn as it will be.
+            if (rule == com.abrah.nightmare.PadRule.OUTPAINT) {
+                drawPadding(
+                    com.abrah.nightmare.Frame(
+                        offset.x / size.width, offset.y / size.height,
+                        (offset.x + iw) / size.width, (offset.y + ih) / size.height,
+                    ),
+                )
+            }
 
             // Thirds, the way every camera draws them. ⚠ Over the whole
             // viewport, because the whole viewport is the crop now -- there is
@@ -417,6 +439,34 @@ private fun DrawScope.drawMirroredEdges(
 
 private const val MAX_TILES = 81L
 
+/**
+ * ⭐⭐ Outpaint padding, drawn BLUE over everything outside [photo] (fractions
+ * of this draw area) — the crop editor, the mask editor and the mask preview
+ * all show it this way, so it is recognised as the same thing in each.
+ *
+ * ⚠ Bands rather than a clip, as `MaskRaster.forcePadding` writes them: any of
+ * the four can be empty when the frame hangs off one edge only.
+ */
+internal fun DrawScope.drawPadding(photo: com.abrah.nightmare.Frame, alpha: Float = PADDING_ALPHA) {
+    val l = (photo.left * size.width).coerceIn(0f, size.width)
+    val t = (photo.top * size.height).coerceIn(0f, size.height)
+    val r = (photo.right * size.width).coerceIn(0f, size.width)
+    val b = (photo.bottom * size.height).coerceIn(0f, size.height)
+    val c = Color(0xFF000000 or com.abrah.nightmare.MaskRaster.PADDING_RGB.toLong()).copy(alpha = alpha)
+    for ((x0, y0, x1y1) in listOf(
+        Triple(0f, 0f, Offset(size.width, t)),
+        Triple(0f, b, Offset(size.width, size.height)),
+        Triple(0f, t, Offset(l, b)),
+        Triple(r, t, Offset(size.width, b)),
+    )) {
+        if (x1y1.x - x0 <= 0f || x1y1.y - y0 <= 0f) continue
+        drawRect(c, topLeft = Offset(x0, y0), size = Size(x1y1.x - x0, x1y1.y - y0))
+    }
+}
+
+/** ⚠ Translucent, so the fill underneath (black or blurred) still reads. */
+internal const val PADDING_ALPHA = 0.55f
+
 /** ⚠ Ignores a malformed param rather than throwing: the sheet must still open. */
 fun cropRectOf(node: com.abrah.nightmare.Node): CropRect = CropRect(
     node.params["x"]?.toFloatOrNull() ?: 0f,
@@ -442,6 +492,29 @@ fun refitToAspect(r: CropRect, srcW: Int, srcH: Int, aspect: Float): CropRect {
     val cx = r.x + r.w / 2f
     val cy = r.y + r.h / 2f
     return CropRect(cx - w / 2f, cy - h / 2f, w, h)
+}
+
+/**
+ * ⭐⭐ The framing a node gets when its MODEL is picked — the whole photo in
+ * view (the user's call, 2026-09-17).
+ *
+ * ⚠⚠ Per [com.abrah.nightmare.PadRule]: an OUTPAINT node shows the ENTIRE photo
+ * and pads the short axis (the bands become blue, generated padding); a node that
+ * may NOT pad (image-to-image) takes the largest centred frame INSIDE the photo
+ * instead — the user's answer to "i2i covers instead". ⚠ Pure; tested without a
+ * device.
+ */
+fun wholePhotoFraming(
+    srcW: Int, srcH: Int, aspect: Float, rule: com.abrah.nightmare.PadRule,
+): CropRect {
+    if (srcW <= 0 || srcH <= 0 || aspect <= 0f) return CropRect.WHOLE
+    val photo = srcW.toFloat() / srcH
+    val wider = photo > aspect
+    val fit = rule == com.abrah.nightmare.PadRule.OUTPAINT
+    // ⚠ Normalised per axis: a frame `aspect` wide in PIXELS is
+    // `aspect / photo` wide relative to its own height in photo fractions.
+    val (w, h) = if (wider == fit) 1f to (photo / aspect) else (aspect / photo) to 1f
+    return CropRect((1f - w) / 2f, (1f - h) / 2f, w, h)
 }
 
 /** Rounded, so the params a workflow stores stay short and stable. */

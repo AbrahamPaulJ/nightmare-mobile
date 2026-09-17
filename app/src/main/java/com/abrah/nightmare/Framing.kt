@@ -88,12 +88,77 @@ object CropGeometry {
      */
     fun minScale(
         viewW: Float, viewH: Float, imgW: Float, imgH: Float, outW: Int,
+        rule: PadRule = PadRule.WHEN_TOO_SMALL,
     ): Float {
         if (imgW <= 0f || imgH <= 0f) return 1f
         val cover = maxOf(viewW / imgW, viewH / imgH)
-        if (outW <= 0) return cover
-        return minOf(cover, viewW / outW)
+        return when (rule) {
+            PadRule.NEVER -> cover
+            // ⭐ DreamUI's `padScale`: "the whole photo fits", then √2 further.
+            PadRule.OUTPAINT -> minOf(viewW / imgW, viewH / imgH) / OUTPAINT_LIMIT
+            PadRule.WHEN_TOO_SMALL -> if (outW <= 0) cover else minOf(cover, viewW / outW)
+        }
     }
+
+    /**
+     * ⭐⭐ How far past "the whole photo fits" an outpaint frame may reach, as a
+     * LINEAR factor — √2 per edge is **twice the photo's area**.
+     *
+     * ⚠ DreamUI's `PAD_LIMIT`, and its reasoning: past this the model is
+     * inventing more than it was given, and an inpaint checkpoint is not an
+     * outpainting one. ⚠ Linear, not area — 2.0 here would quadruple it.
+     */
+    val OUTPAINT_LIMIT = kotlin.math.sqrt(2f)
+
+    /**
+     * ⭐⭐ The part of a frame that is real photo, as FRACTIONS OF THE FRAME —
+     * or null when the frame lies wholly inside the photo.
+     *
+     * ⚠ DreamUI's `inPhotoFraction`, over this app's normalised rect (the photo
+     * is 0..1 on both axes). Wholly outside returns an EMPTY frame rather than
+     * null, so the caller treats all of it as padding rather than as none.
+     * ⚠ A rounding step of slack: the params are stored to three decimals, and
+     * a frame flush with an edge must not grow a sliver of padding.
+     */
+    fun photoInFrame(x: Float, y: Float, w: Float, h: Float): Frame? {
+        val eps = 2e-3f
+        if (w <= 0f || h <= 0f) return null
+        if (x >= -eps && y >= -eps && x + w <= 1f + eps && y + h <= 1f + eps) return null
+        val l = ((0f - x) / w).coerceIn(0f, 1f)
+        val t = ((0f - y) / h).coerceIn(0f, 1f)
+        val r = ((1f - x) / w).coerceIn(0f, 1f)
+        val b = ((1f - y) / h).coerceIn(0f, 1f)
+        if (r <= l || b <= t) return Frame(0f, 0f, 0f, 0f)
+        return Frame(l, t, r, b)
+    }
+}
+
+/**
+ * ⭐⭐ When a frame may hang off the photo — DreamUI's rule, per sampler kind
+ * (asked for 2026-09-17).
+ *
+ * ⚠⚠ Three answers, not a flag. DreamUI allows zoom-out ONLY for inpaint,
+ * because the bands become a generated region and a model with no mask has
+ * nothing to fill them with — on image-to-image they are bars of invented edge
+ * that nothing repaints. The video node keeps the older "only when the photo is
+ * too small" rule, which `image.crop` had until it was deleted (2026-09-17).
+ */
+enum class PadRule {
+    /** Bars only when the photo cannot fill the demanded size. The video node (and `image.crop`, until it was deleted). */
+    WHEN_TOO_SMALL,
+
+    /** Always cover the frame. Image-to-image. */
+    NEVER,
+
+    /** Zoom out to [CropGeometry.OUTPAINT_LIMIT]; the bars are masked. Inpaint. */
+    OUTPAINT,
+}
+
+/** ⚠ The ONE place a node type's [PadRule] is decided — editor and sampler both ask. */
+fun padRuleFor(type: String): PadRule = when (type) {
+    in SD_INPAINT_TYPES -> PadRule.OUTPAINT
+    in SD_SAMPLER_TYPES -> PadRule.NEVER
+    else -> PadRule.WHEN_TOO_SMALL
 }
 
 // ---------------------------------------------------------------------------

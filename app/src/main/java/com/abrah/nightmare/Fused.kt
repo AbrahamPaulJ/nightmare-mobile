@@ -200,6 +200,9 @@ class SdSampler(
          */
         const val ENCODE_SEED = 42
 
+        /** ⚠ The stitched picture's longest edge — a 4096 px photo plus outpaint stays bounded. */
+        const val STITCH_MAX_EDGE = 4096f
+
         /** ⭐ The four registrations. One class; two arguments of difference. */
         val SD15 = SdSampler("sd15.sample", Family.SD15, inpaint = false)
         val SDXL = SdSampler("sdxl.sample", Family.SDXL, inpaint = false)
@@ -265,7 +268,7 @@ class SdSampler(
             hint = "0 = a new picture every Run. Type the seed shown on the node to get that one back.",
         ),
         // ⚠ Read only when a picture is wired AND `start_from` is `image`.
-        Widget("denoise", "float", "0.6", 0.0, 1.0),
+        Widget("denoise", "float", "0.65", 0.0, 1.0),
         Widget(
             "scheduler", "string", defaultSpec().scheduler,
             options = ModelCatalog.schedulersFor(family),
@@ -334,7 +337,7 @@ class SdSampler(
         // a backend relaunch. They are the only three knobs here that are not
         // free.
         Widget("model", "string", defaultModel(), locked = CONTEXT_KEY_LOCK, contextKey = true),
-        *aspectWidget(),
+        *aspectWidget(defaultSpec()),
         Widget("width", "int", defaultRes().width.toString(), contextKey = true),
         Widget("height", "int", defaultRes().height.toString(), contextKey = true),
     )
@@ -355,9 +358,33 @@ class SdSampler(
      */
     override fun outputSize(node: Node): Pair<Int, Int>? {
         val p = effectiveParams(node)
-        if (inpaint && p[MaskNode.OPS].orEmpty().isNotBlank()) return null
+        if (inpaint && (p[MaskNode.OPS].orEmpty().isNotBlank() || paddingOf(p) != null)) return null
         return (p["width"]?.toIntOrNull() ?: 0) to (p["height"]?.toIntOrNull() ?: 0)
     }
+
+    /**
+     * ⭐⭐ The size the framing is cut to: the ASPECT's rectangle on a
+     * fixed-canvas family, the render size otherwise.
+     *
+     * ⚠⚠ Reported 2026-09-17: switching an inpaint node to SDXL left the crop
+     * and mask square while the output came back 16:9 — the editors framed the
+     * 1024² canvas and the backend kept only its middle band. The editors read
+     * this through `framingOutSize`, and [run] cuts to the same size, so what is
+     * framed is what is rendered.
+     */
+    override fun framesTo(node: Node): Pair<Int, Int> {
+        val w = node.params["width"]?.toIntOrNull() ?: 0
+        val h = node.params["height"]?.toIntOrNull() ?: 0
+        val t = nodeAspect(node)?.let { ModelCatalog.aspectTarget(it, Res(w, h)) }
+        return if (t != null) t.width to t.height else w to h
+    }
+
+    /** ⭐ The photo's extent inside an OUTPAINT frame, or null — [CropGeometry.photoInFrame]. */
+    private fun paddingOf(p: Map<String, String>): Frame? =
+        if (!inpaint) null else CropGeometry.photoInFrame(
+            p["x"]?.toFloatOrNull() ?: 0f, p["y"]?.toFloatOrNull() ?: 0f,
+            p["w"]?.toFloatOrNull() ?: 1f, p["h"]?.toFloatOrNull() ?: 1f,
+        )
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
         val p = effectiveParams(node)
@@ -406,6 +433,30 @@ class SdSampler(
             growFrac = num("grow").toFloat(),
             featherFrac = num("feather").toFloat(),
         )
+
+        // ⭐⭐⭐ **A chain through a node a person must act on**
+        // (`docs/ARCHITECTURE.md`, "Chains"). A GENERATED picture is not known
+        // until it is made, so:
+        //  - nothing painted on it yet  -> stop here and say so; upstream is
+        //    rendered and cached, and the next Run carries on;
+        //  - painted on a DIFFERENT one -> stop by name, never repaint the same
+        //    coordinates on a picture they were not drawn on.
+        // ⚠ A photo is fixed, so neither applies: a new photo clears the mask.
+        // ⚠ Padding alone is a legitimate mask — an outpaint needs no painting.
+        if (inpaint && ctx.ancestorTypes.any { isSampler(it) }) {
+            val padded = paddingOf(p) != null
+            if (stored.isEmpty && !padded) {
+                throw NeedsInput(
+                    "frame and paint the area to redo on the new picture, then Run again"
+                )
+            }
+            val on = p[MaskNode.PAINTED_ON].orEmpty()
+            if (!stored.isEmpty && on.isNotBlank() && on != photo.id) {
+                throw NeedsInput(
+                    "the picture you painted on has changed — repaint it, or undo the change upstream"
+                )
+            }
+        }
         // ⭐⭐ Tapped regions become geometry here, against the SAME photo the
         // taps were made on. ⚠⚠ Refused by name when they cannot be — the
         // missing-model case, read the way a missing checkpoint reads
@@ -424,9 +475,15 @@ class SdSampler(
                 com.abrah.nightmare.segment.Segmenter.segment(android, src, x, y)?.candidates
             }
         }
+        // ⭐⭐ OUTPAINT: a frame hanging off the photo is masked there whether or
+        // not anything was painted — DreamUI's `isEmpty` counts the padding too.
+        val padding = paddingOf(p)
         // ⚠ `inpaint` first: a `sample` type has no painting params, so there is
         // nothing here to be true.
-        val masking = inpaint && !painted.isEmpty
+        val masking = inpaint && (!painted.isEmpty || padding != null)
+        // ⭐⭐ The cut is the ASPECT's rectangle; the encode is the whole canvas
+        // with that rectangle centred in it ([framesTo], [padToCanvas]).
+        val (tw, th) = framesTo(node)
 
         // ⚠⚠ The framed photo. With a mask it keeps its OWN pixels, because the
         // patch is pasted back into it at the end and a frame already reduced to
@@ -436,15 +493,15 @@ class SdSampler(
         val fy = num("y").toFloat()
         val fw = num("w").toFloat()
         val fh = num("h").toFloat()
-        val (frame, _) = CropNode.render(
+        val (frame, frameRect) = CropNode.render(
             src, fx, fy, fw, fh,
-            if (masking) 0 else w, if (masking) 0 else h,
+            if (masking) 0 else tw, if (masking) 0 else th,
             p[CropNode.PAD] ?: CropNode.PAD_BLACK,
         )
 
         if (!masking) {
             ctx.say("re-imagining the picture")
-            val base = encode(ctx, frame, ENCODE_SEED, w, h)
+            val base = encode(ctx, padToCanvas(frame, w, h), ENCODE_SEED, w, h)
             val latent = sample(ctx, p, cond, base, w, h, aspect)
             return VaeDecodeNode.decode(ctx, latent, w, h, aspect)
         }
@@ -472,19 +529,23 @@ class SdSampler(
         val maskBmp = CropNode.render(
             maskSrc, fx, fy, fw, fh, frame.width, frame.height, CropNode.PAD_BLACK,
         ).first
+        // ⭐⭐ …and the padding forced white on top, so no eraser reaches it.
+        padding?.let { MaskRaster.forcePadding(maskBmp, it) }
 
         // ⭐⭐ "Only masked" — the render window is a crop around the painting,
         // so the detail lands where the finger was.
-        val cut = MaskCropNode.cut(frame, maskBmp, w, h, flag(MaskCropNode.ONLY_MASKED))
-        ctx.say("repainting the area you marked")
-        val base = encode(ctx, cut.image, ENCODE_SEED, w, h)
+        val cut = MaskCropNode.cut(frame, maskBmp, tw, th, flag(MaskCropNode.ONLY_MASKED))
+        ctx.say(if (painted.isEmpty) "filling the padding" else "repainting the area you marked")
+        val base = encode(ctx, padToCanvas(cut.image, w, h), ENCODE_SEED, w, h)
         val repainted = sample(ctx, p, cond, base, w, h, aspect)
 
         // ⚠⚠ `base` then `repainted`: the mask's WHITE area is where the new
         // pixels show through. The other way round replaces everything EXCEPT
         // what was painted — a plausible picture and a silent mistake.
+        // ⚠ On the CANVAS, black outside the aspect rectangle: that is the
+        // part the decode cuts away, so it keeps the base.
         val blended = when (
-            val r = ctx.host.latentBlend(base, repainted, ImageStore.encodePng(cut.mask))
+            val r = ctx.host.latentBlend(base, repainted, ImageStore.encodePng(padToCanvas(cut.mask, w, h)))
         ) {
             is Ops.Result.Ok -> r.value.handle
             is Ops.Result.Err -> throw OpFailure("latent_blend", r.code, r.body)
@@ -500,8 +561,61 @@ class SdSampler(
             cut.rect[0].toFloat(), cut.rect[1].toFloat(),
             (cut.rect[0] + cut.rect[2]).toFloat(), (cut.rect[1] + cut.rect[3]).toFloat(),
         )
-        val out = InpaintPixels.composite(frame, patchBmp, dst, cut.mask)
+        val out = if (!flag(PasteNode.STITCH)) {
+            InpaintPixels.composite(frame, patchBmp, dst, cut.mask)
+        } else {
+            stitch(src, frame, frameRect, patchBmp, dst, cut.mask)
+        }
         return Value.Image(ctx.images.put(out), out.width, out.height)
+    }
+
+    /**
+     * ⭐⭐ **"Stitch to original"** — the patch pasted back into the whole PHOTO,
+     * not into the frame.
+     *
+     * ⚠⚠ Lost when ten nodes were fused (§5.7): `image.paste` read the toggle,
+     * and the sampler kept the widget but always pasted into the frame, so the
+     * switch did nothing (reported 2026-09-17).
+     *
+     * ⚠ The canvas is the UNION of photo and frame, so an OUTPAINT frame
+     * extends the photo rather than having its new edges clipped away. The frame
+     * is drawn first (its padding fill under the region about to be repainted),
+     * the photo on top at its own quality, then the patch — [dst] carried from
+     * frame pixels into photo pixels through [frameRect].
+     * ⚠ Capped at [STITCH_MAX_EDGE], scaling everything alike.
+     */
+    private fun stitch(
+        photo: android.graphics.Bitmap,
+        frame: android.graphics.Bitmap,
+        frameRect: Frame,
+        patch: android.graphics.Bitmap,
+        dst: android.graphics.RectF,
+        mask: android.graphics.Bitmap,
+    ): android.graphics.Bitmap {
+        val ux0 = minOf(0f, frameRect.left)
+        val uy0 = minOf(0f, frameRect.top)
+        val ux1 = maxOf(photo.width.toFloat(), frameRect.right)
+        val uy1 = maxOf(photo.height.toFloat(), frameRect.bottom)
+        val k = minOf(1f, STITCH_MAX_EDGE / maxOf(ux1 - ux0, uy1 - uy0))
+        val base = android.graphics.Bitmap.createBitmap(
+            ((ux1 - ux0) * k).toInt().coerceAtLeast(1),
+            ((uy1 - uy0) * k).toInt().coerceAtLeast(1),
+            android.graphics.Bitmap.Config.ARGB_8888,
+        )
+        val canvas = android.graphics.Canvas(base)
+        val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+        fun place(l: Float, t: Float, r: Float, b: Float) =
+            android.graphics.RectF((l - ux0) * k, (t - uy0) * k, (r - ux0) * k, (b - uy0) * k)
+        canvas.drawBitmap(frame, null, place(frameRect.left, frameRect.top, frameRect.right, frameRect.bottom), paint)
+        canvas.drawBitmap(photo, null, place(0f, 0f, photo.width.toFloat(), photo.height.toFloat()), paint)
+        // Frame pixels -> photo pixels.
+        val sx = frameRect.width() / frame.width
+        val sy = frameRect.height() / frame.height
+        val into = place(
+            frameRect.left + dst.left * sx, frameRect.top + dst.top * sy,
+            frameRect.left + dst.right * sx, frameRect.top + dst.bottom * sy,
+        )
+        return InpaintPixels.composite(base, patch, into, mask)
     }
 
     /** ⚠ Never put in the store: [ImageStore.encodePng] says why. */
@@ -534,7 +648,7 @@ class SdSampler(
             width = w,
             height = h,
             latentHandle = latent,
-            denoise = p["denoise"]?.toDoubleOrNull() ?: 0.6,
+            denoise = p["denoise"]?.toDoubleOrNull() ?: 0.65,
             scheduler = p["scheduler"].orEmpty(),
             condHandle = cond,
             aspect = aspect,

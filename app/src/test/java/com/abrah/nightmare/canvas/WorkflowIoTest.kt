@@ -441,16 +441,30 @@ class WorkflowIoTest {
      * something else.
      */
     @Test
-    fun theOldMirrorPaddingBecomesBlur() {
+    fun aSavedCropNodeHandsItsFramingToTheSamplerAndGoes() {
+        // ⭐ `image.crop` was deleted 2026-09-17. A saved flow naming one (here
+        // under its oldest name, with the pre-blur padding) opens without it:
+        // the sampler it fed takes its framing and padding and reads the photo.
         val json = """
             {"format": 1, "nodes": [
+              {"id": "photo", "type": "core.image", "x": 0, "y": 0, "params": {"uri": "/a.png"}, "inputs": {}},
               {"id": "c", "type": "crop", "x": 0, "y": 0,
-               "params": {"pad": "mirror"}, "inputs": {}}
+               "params": {"pad": "mirror", "x": "0.1", "y": "0.2", "w": "0.5", "h": "0.5"},
+               "inputs": {"image": "photo"}},
+              {"id": "s", "type": "sd15.sample", "x": 0, "y": 0, "params": {}, "inputs": {"image": "c"}},
+              {"id": "u", "type": "image.upscale", "x": 0, "y": 0, "params": {}, "inputs": {"image": "c"}}
             ]}
         """.trimIndent()
-        val c = workflowFromJson(json).workflow.graph.byId.getValue("c")
-        assertEquals("image.crop", c.type)
-        assertEquals("blur", c.params["pad"])
+        val loaded = workflowFromJson(json)
+        val g = loaded.workflow.graph
+        assertEquals(null, g.byId["c"])
+        val s = g.byId.getValue("s")
+        assertEquals("photo", s.inputs["image"]?.node)
+        assertEquals("0.1", s.params["x"])
+        assertEquals("blur", s.params["pad"])
+        // ⚠ A consumer that does not frame is just rewired through.
+        assertEquals("photo", g.byId.getValue("u").inputs["image"]?.node)
+        assertEquals(1, loaded.notes.size)
     }
 
     private fun fake(name: String, version: String) = object : NodeType {

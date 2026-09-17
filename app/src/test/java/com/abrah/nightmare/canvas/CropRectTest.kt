@@ -138,6 +138,57 @@ class CropRectTest {
         assertTrue(s > 0f)
     }
 
+    /**
+     * ⭐⭐ DreamUI's outpaint floor: the whole photo FITS, then √2 further —
+     * twice its area. ⚠ Checked as area, because √2 read as an area factor is
+     * the easy mistake DreamUI's `PAD_LIMIT` comment warns about.
+     */
+    @Test
+    fun outpaintZoomsOutToTwiceThePhotosArea() {
+        val iw = 1600f
+        val ih = 1200f
+        val fit = minOf(vw / iw, vh / ih)
+        val floor = CropGeometry.minScale(vw, vh, iw, ih, 512, com.abrah.nightmare.PadRule.OUTPAINT)
+        assertEquals(2f, (fit / floor) * (fit / floor), 1e-3f)
+        // ⚠ …and image-to-image never pads, even for a photo too small to cover.
+        val never = CropGeometry.minScale(vw, vh, 300f, 400f, 512, com.abrah.nightmare.PadRule.NEVER)
+        assertEquals(maxOf(vw / 300f, vh / 400f), never, 1e-4f)
+    }
+
+    /**
+     * ⭐⭐ On a model switch: inpaint shows the WHOLE photo and pads, i2i fills
+     * the frame from inside the photo (the user's calls, 2026-09-17). Checked in
+     * PIXELS, since the rect is normalised per axis and a per-axis slip keeps
+     * the numbers plausible while changing the shape.
+     */
+    @Test
+    fun aModelSwitchFramesTheWholePhotoByTheNodesPadRule() {
+        val (sw, sh) = 1200 to 800          // a 3:2 photo
+        val aspect = 2f / 3f                // into a 2:3 frame
+        val fit = wholePhotoFraming(sw, sh, aspect, com.abrah.nightmare.PadRule.OUTPAINT)
+        assertEquals(aspect, (fit.w * sw) / (fit.h * sh), 1e-4f)
+        assertTrue("the whole photo is inside the frame", fit.x <= 0f && fit.y <= 0f && fit.x + fit.w >= 1f && fit.y + fit.h >= 1f)
+        assertEquals("the photo's width fills the frame's", 1f, fit.w, 1e-4f)
+
+        val cover = wholePhotoFraming(sw, sh, aspect, com.abrah.nightmare.PadRule.NEVER)
+        assertEquals(aspect, (cover.w * sw) / (cover.h * sh), 1e-4f)
+        assertTrue("the frame is inside the photo", cover.x >= 0f && cover.y >= 0f && cover.x + cover.w <= 1f && cover.y + cover.h <= 1f)
+        assertEquals("the photo's height fills the frame's", 1f, cover.h, 1e-4f)
+    }
+
+    /** ⭐ The photo's extent in a padded frame, as fractions of the frame. */
+    @Test
+    fun photoInFrameIsNullInsideAndFractionsOutside() {
+        assertEquals(null, CropGeometry.photoInFrame(0.1f, 0.1f, 0.5f, 0.5f))
+        // ⚠ Flush with the edges, to three decimals, is NOT padding.
+        assertEquals(null, CropGeometry.photoInFrame(0f, 0f, 1.001f, 1f))
+        val p = CropGeometry.photoInFrame(-0.2f, 0f, 1.4f, 1f)!!
+        assertEquals(0.2f / 1.4f, p.left, 1e-4f)
+        assertEquals(1.2f / 1.4f, p.right, 1e-4f)
+        assertEquals(0f, p.top, 1e-4f)
+        assertEquals(1f, p.bottom, 1e-4f)
+    }
+
     /** ⚠ …and the rect that describes it is allowed to hang over the edge. */
     @Test
     fun aPaddedRectMayReachOutsideTheImage() {
