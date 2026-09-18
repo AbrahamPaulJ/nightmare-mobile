@@ -913,6 +913,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // entry point and a second one would be a second thing to forget.
         refreshUpscalers()
         refreshSegmenter()
+        refreshEmbeddings()
         // ⚠ …and the video models, for the same reason. ⚠⚠ `probeVideoSupport`
         // is NOT called here: it starts the QNN backend, which is seconds, and
         // this runs every time the library opens. The tab asks for it itself.
@@ -1114,7 +1115,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // where the disk is being read anyway, or a just-downloaded upscaler
         // stays invisible to every upscale node until the app restarts.
         UpscalerCatalog.refresh(ctx)
-        upscalerRows = UpscalerCatalog.ALL.map { spec ->
+        // ⚠ + the imported ones (`UpscalerCatalog.scanned`), so a custom
+        // upscaler gets a row exactly like a catalogue one.
+        upscalerRows = UpscalerCatalog.allSpecs().map { spec ->
             val here = spec.installed(ctx)
             com.abrah.nightmare.ui.UpscalerRow(
                 spec = spec,
@@ -1534,6 +1537,82 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         refreshSegmenter()
     }
 
+    // ---- embeddings (textual inversion) -------------------------------------
+    //
+    // ⭐ App-side growback of upstream's Embedding Manager — the BACKEND never
+    // lost this (`docs/ARCHITECTURE.md`): `loadTextualInversions()` reads
+    // every `.safetensors` in [BackendProcess.embeddingsDir] at launch and
+    // matches a prompt token against a file's name, unmodified since the fork.
+
+    /** ⭐ The Tools tab's installed-embeddings list. */
+    var embeddingRows by mutableStateOf<List<com.abrah.nightmare.ui.EmbeddingRow>>(emptyList())
+        private set
+
+    fun refreshEmbeddings() {
+        val dir = BackendProcess.embeddingsDir(getApplication())
+        embeddingRows = dir.listFiles { f ->
+            f.isFile && f.extension.equals("safetensors", ignoreCase = true)
+        }.orEmpty()
+            .map { com.abrah.nightmare.ui.EmbeddingRow(it.name, it.length()) }
+            .sortedBy { it.name.lowercase() }
+    }
+
+    fun importEmbedding(uri: android.net.Uri) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val result = runCatching {
+                // ⚠⚠ **Validated by extension, matching upstream exactly** —
+                // `local-dream`'s own `importEmbedding` refuses a picked file
+                // whose name does not end `.safetensors` rather than silently
+                // renaming it. Asked for 2026-09-19: *"i hope u atleast used
+                // the same validation of their files as local dream does"* —
+                // it did not; this used to APPEND the extension onto whatever
+                // was picked, which would have happily copied in a `.jpg` and
+                // called it a `.safetensors`. ⚠ By the ORIGINAL display name,
+                // before it is sanitised to a bare filename below — sanitising
+                // first would let a name like "photo.jpg.safetensors" (an
+                // unlikely but possible provider quirk) pass a check it
+                // should not.
+                val displayName = uriDisplayName(uri).orEmpty()
+                require(displayName.endsWith(".safetensors", ignoreCase = true)) {
+                    "only .safetensors files are supported"
+                }
+                val dir = BackendProcess.embeddingsDir(ctx).apply { mkdirs() }
+                // ⚠⚠ `.name`, never the raw display name: a content provider's
+                // DISPLAY_NAME is untrusted text, and the same zip-slip shape
+                // `PluginInstaller` guards against (a name carrying `../`)
+                // would write outside [dir] if used as-is.
+                val safeName = java.io.File(displayName).name
+                    .ifBlank { "embedding_${System.currentTimeMillis()}.safetensors" }
+                val target = java.io.File(dir, safeName)
+                ctx.contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { input.copyTo(it) }
+                } ?: throw java.io.IOException("could not read that file")
+                safeName
+            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                result.fold(
+                    onSuccess = { name ->
+                        say("imported embedding $name")
+                        refreshEmbeddings()
+                    },
+                    onFailure = {
+                        modelError = "could not import that embedding — ${it.message}"
+                    },
+                )
+            }
+        }
+    }
+
+    fun deleteEmbedding(name: String) {
+        // ⚠ Same reason as the import path: never trust a name handed back to
+        // this function into a raw `File(dir, name)` without stripping it to
+        // its last segment first.
+        val f = java.io.File(BackendProcess.embeddingsDir(getApplication()), java.io.File(name).name)
+        if (f.delete()) say("deleted embedding $name")
+        refreshEmbeddings()
+    }
+
     /**
      * ⚠ No "is it selected" guard, unlike [deleteModel]: nothing global points
      * at an upscaler. A NODE may name one, and that node fails with a sentence
@@ -1545,6 +1624,51 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         UpscalerCatalog.delete(getApplication(), spec)
         say("deleted ${spec.label}")
         refreshUpscalers()
+    }
+
+    /**
+     * ⭐ Bring your own upscaler — a bare `.bin`, the same way a checkpoint
+     * is imported as a zip ([importModel]). Reported 2026-09-18.
+     *
+     * ⚠ Named from the provider's own file name, like [importNameFor] does
+     * for a checkpoint — a picked file rarely has a name a user would choose
+     * to type twice.
+     */
+    fun importUpscaler(uri: android.net.Uri) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val result = runCatching {
+                // ⚠ Validated by extension, same reasoning and the same fix
+                // as [importEmbedding] — there is no upstream reference for a
+                // custom upscaler (local-dream has none), so this applies the
+                // SAME rule for the same reason: a picked file with the wrong
+                // extension should be refused, not silently accepted under a
+                // name that implies it is something it is not.
+                val displayName = uriDisplayName(uri).orEmpty()
+                require(displayName.endsWith(".bin", ignoreCase = true)) {
+                    "only .bin files are supported"
+                }
+                val proposed = displayName.dropLast(4)
+                val name = java.io.File(proposed).name.let {
+                    if (UpscalerCatalog.isValidName(it)) it else "upscaler_${System.currentTimeMillis()}"
+                }
+                UpscalerCatalog.importCustom(ctx, name) {
+                    ctx.contentResolver.openInputStream(uri)
+                        ?: throw java.io.IOException("could not read that file")
+                }
+            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                result.fold(
+                    onSuccess = { spec ->
+                        say("imported upscaler ${spec.label}")
+                        refreshUpscalers()
+                    },
+                    onFailure = {
+                        modelError = "could not import that upscaler — ${it.message}"
+                    },
+                )
+            }
+        }
     }
 
     fun deleteModel(spec: ModelSpec) {
@@ -1833,8 +1957,42 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val types = typesFor(graph)
         val changes = contextKeyRetarget(graph, types, spec, res)
         if (changes.isNotEmpty()) {
-            editCanvas { s -> changes.entries.fold(s) { acc, (id, p) -> acc.setParams(id, p) } }
-            say("  retargeted ${changes.size} node${if (changes.size == 1) "" else "s"} on the canvas")
+            // ⚠⚠⚠ **The FAMILY moves WITH the model, here too.** A sampler's
+            // type is registered per family (`SdSampler.SD15`/`.SDXL`/`.ANIMA`
+            // — `Fused.kt`) and its title follows that fixed type, never the
+            // checkpoint actually named in `params["model"]`. `setNodeModel`'s
+            // per-node swap already migrates the type when the family changes
+            // (`SdSampler.typeFor`); this bulk path — "Use" on the Models tab,
+            // keeping the open canvas — rewrote every node's `model` param the
+            // SAME way but never touched `type`, so a node stayed titled
+            // "SD 1.5" with an SDXL checkpoint underneath it. Reported
+            // 2026-09-18 (screenshot: checkpoint "…_sdxl_lora", node title
+            // "SD 1.5", subtitle "sd15.sample").
+            val retitled = changes.keys.count { id ->
+                (types[graph.byId[id]?.type] as? SdSampler)?.family?.let { it != spec.family } == true
+            }
+            editCanvas { s ->
+                s.copy(
+                    workflow = s.workflow.copy(
+                        graph = Graph(
+                            s.workflow.graph.nodes.map { n ->
+                                val p = changes[n.id] ?: return@map n
+                                val sampler = types[n.type] as? SdSampler
+                                val newType = if (sampler != null && sampler.family != spec.family) {
+                                    SdSampler.typeFor(spec.family, sampler.inpaint)
+                                } else {
+                                    n.type
+                                }
+                                n.copy(type = newType, params = n.params + p)
+                            }
+                        )
+                    )
+                )
+            }
+            say(
+                "  retargeted ${changes.size} node${if (changes.size == 1) "" else "s"} on the canvas" +
+                    if (retitled > 0) " ($retitled retyped to ${spec.family.label})" else ""
+            )
         }
         // ⭐⭐ …and the checkpoint's own sampling recipe, WRITTEN DOWN.
         //
@@ -1949,6 +2107,24 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val before = canvas
         val after = paintedOnGenerated(before, refitFramings(before, change(before)))
         markNewPictures(before, after)
+        // ⚠⚠⚠ **A deleted node's id is free to be reused — [Graph.freeId] hands
+        // the lowest unused one straight back — so every VIEW-MODEL map keyed
+        // by node id has to lose that entry HERE, once, for every deletion
+        // path at once, or a "new" node opens wearing the last thing that id
+        // did. `CanvasState.removeNode`/`addNode` already do this for their
+        // OWN fields (`previews`, `rendered`, `beforePreviews`); these three
+        // live in the view model instead and were still missed, which is
+        // exactly the 2026-09-11 bug again on 2026-09-18 (a freshly dropped
+        // node showing a red FAILED border, or a picture belonging to a mask
+        // that node never painted) — reported furiously, and rightly, after
+        // the first fix shipped and did not cover them.
+        val gone = before.workflow.graph.nodes.map { it.id }.toSet() -
+            after.workflow.graph.nodes.map { it.id }.toSet()
+        for (id in gone) {
+            canvasStatus.remove(id)
+            pendingAutoFrame.remove(id)
+            previewSigs.remove(id)
+        }
         updateCanvas(after)
     }
 
@@ -2094,6 +2270,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val node = canvas.workflow.graph.byId[id]
         val made = canvas.pictureInto(id, nodeTypes)?.let { ops.images.get(it) }
         var next = canvas
+        // ⚠⚠ **No auto-fill.** Tried 2026-09-18 (a full mask written into
+        // [MaskNode.OPS] the moment this opened) and reverted the same day —
+        // *"lets not do the full masking thing for inpaint... if user doesnt
+        // mask just show error"*. `Fused.kt` now refuses ANY inpaint with
+        // nothing painted, always, with no fallback; this only fits the
+        // FRAME to the fresh picture so the editor opens on the right crop.
         if (node != null && made != null && node.params[com.abrah.nightmare.MaskNode.OPS].isNullOrBlank()) {
             next = next.setParams(id, autoFraming(node, made))
         }
@@ -2615,11 +2797,40 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val thumbs = mutableStateMapOf<String, ImageBitmap>()
 
+    /**
+     * ⚠⚠ Ids with a decode already in flight, so a LazyVerticalGrid
+     * recomposing the same item several times per scroll frame launches ONE
+     * coroutine per id, not one per composition.
+     */
+    private val thumbLoading = mutableSetOf<String>()
+
+    /**
+     * ⭐⭐ Async, off the main thread. Returns the cached bitmap immediately
+     * when there is one and null otherwise, kicking off a decode that fills
+     * `thumbs` (a `mutableStateMapOf`, so the write itself triggers the
+     * recomposition that shows the picture once it lands).
+     *
+     * ⚠⚠ This used to decode SYNCHRONOUSLY, inline, on whatever thread calls
+     * it — which for every caller is composition. Reported 2026-09-18 as
+     * still-visible lag after the pager's own decode was already fixed: the
+     * GRID was the other half, `BitmapFactory.decodeFile` twice per thumbnail
+     * (a bounds pass, then the real one) on the UI thread, once per new item
+     * scrolled into view. Small per call, but disk I/O on the thread that owns
+     * the frame budget is exactly the "something stupidly inefficient" this
+     * was asked to find.
+     */
     fun thumbnailFor(id: String): ImageBitmap? {
         thumbs[id]?.let { return it }
-        val bmp = results.thumbnail(id)?.asImageBitmap() ?: return null
-        thumbs[id] = bmp
-        return bmp
+        if (thumbLoading.add(id)) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val bmp = results.thumbnail(id)?.asImageBitmap()
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    thumbLoading.remove(id)
+                    if (bmp != null) thumbs[id] = bmp
+                }
+            }
+        }
+        return null
     }
 
     fun refreshResults() {
@@ -3438,15 +3649,50 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * app is slow" rather than as a missing cache.
      */
     private val fullImages = mutableStateMapOf<String, ImageBitmap>()
+    /** ⚠ Recency order for [fullImages] — oldest first. See [resultImage]. */
+    private val fullImageOrder = ArrayDeque<String>()
+    /** ⚠ Same purpose as [thumbLoading] — one decode in flight per id. */
+    private val fullImageLoading = mutableSetOf<String>()
 
+    /**
+     * ⚠⚠ Async, off the main thread — same reason and same shape as
+     * [thumbnailFor]. This is called inline from the pager's composition on
+     * every swipe, and a 2048px decode (`ResultsStore.full`) is still real
+     * work; doing it on the thread that owns the frame budget is what made
+     * paging through kept results feel slow even after the cache stopped
+     * thrashing. Reported 2026-09-18.
+     */
     fun resultImage(id: String): ImageBitmap? {
-        fullImages[id]?.let { return it }
-        val bmp = results.full(id)?.asImageBitmap() ?: return null
-        // ⚠ Bounded: a batch of ten 1024² bitmaps is 40 MB, and a user can walk
-        // through several batches without leaving the viewer.
-        if (fullImages.size > FULL_IMAGE_CACHE) fullImages.clear()
-        fullImages[id] = bmp
-        return bmp
+        fullImages[id]?.let {
+            // ⚠ Touch: this id is the most recently used now, not whenever it
+            // first decoded — otherwise swiping back and forth across exactly
+            // [FULL_IMAGE_CACHE] pictures evicts the one still on screen.
+            fullImageOrder.remove(id)
+            fullImageOrder.addLast(id)
+            return it
+        }
+        if (fullImageLoading.add(id)) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val bmp = results.full(id)?.asImageBitmap()
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    fullImageLoading.remove(id)
+                    if (bmp != null) {
+                        // ⚠⚠ Evict the SINGLE oldest entry, not the whole map.
+                        // `clear()` here used to wipe every cached bitmap the
+                        // moment a 13th distinct result was viewed, so paging
+                        // through more than a dozen kept pictures (or a batch)
+                        // re-decoded on almost every swipe.
+                        fullImageOrder.addLast(id)
+                        while (fullImages.size >= FULL_IMAGE_CACHE) {
+                            val oldest = fullImageOrder.removeFirstOrNull() ?: break
+                            fullImages.remove(oldest)
+                        }
+                        fullImages[id] = bmp
+                    }
+                }
+            }
+        }
+        return null
     }
 
     /** ⚠ Read per picture as it is swiped to, from that result's stored flow. */
@@ -3544,10 +3790,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun viewResult(r: com.abrah.nightmare.canvas.Result) {
         viewingResult = r
-        // ⚠ Full size here, not the thumbnail: this is the one place the
-        // picture is meant to be looked AT.
-        viewingResultImage = results.full(r.id)?.asImageBitmap()
-        viewingResultDetails = results.details(r.id)
+        viewingResultImage = null
+        viewingResultDetails = emptyList()
         // ⚠ The batch, in its own order, or every kept picture.
         val set = if (r.batchId != null) {
             keptGroups.firstOrNull { it.batchId == r.batchId }?.items ?: listOf(r)
@@ -3556,6 +3800,22 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewingSet = set
         viewingIndex = set.indexOfFirst { it.id == r.id }.coerceAtLeast(0)
+        // ⚠⚠ Off the main thread: `full()` decodes a PNG and `details()` reads
+        // and parses the stored workflow JSON, both file I/O, both used to run
+        // synchronously on the tap that opens this viewer.
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val bmp = results.full(r.id)?.asImageBitmap()
+            val details = results.details(r.id)
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                // ⚠ Only if still looking at the same result — a fast tap
+                // through several pictures must not let a slow earlier decode
+                // land on top of the one the user is now looking at.
+                if (viewingResult?.id == r.id) {
+                    viewingResultImage = bmp
+                    viewingResultDetails = details
+                }
+            }
+        }
     }
 
     fun closeResult() {
@@ -3756,6 +4016,35 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             .toSet()
         if (shown.isNotEmpty() || empty.any { it in canvas.previews }) {
             canvas = canvas.copy(previews = canvas.previews.filterKeys { it !in empty } + shown)
+        }
+        applyBeforeAfterPreviews(graph)
+    }
+
+    /**
+     * ⭐⭐ [CanvasState.beforePreviews] — what a before/after node (today only
+     * `image.upscale`) RECEIVED, so the canvas can show it alongside what the
+     * node MADE. Reported 2026-09-18: a generate → upscale chain showed
+     * nothing of the intermediate picture at all, because a renderer never
+     * draws its own result ([NodeType.showsResult]) and nothing else showed
+     * what fed the next node either.
+     *
+     * ⚠ Same shape as the `shown`/`empty` pair just above, and called from the
+     * same places for the same reason: [CanvasState.pictureInto] already
+     * resolves the right picture (`rendered[up]` for an upstream renderer),
+     * this only needs to run whenever [applyFramedPreviews] does.
+     */
+    private fun applyBeforeAfterPreviews(graph: Graph) {
+        val nodes = graph.nodes.filter { it.type == UpscaleNode.name }
+        val shown = nodes.mapNotNull { n ->
+            val id = canvas.pictureInto(n.id, nodeTypes) ?: return@mapNotNull null
+            val bmp = ops.images.get(id) ?: return@mapNotNull null
+            n.id to (id to bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
+        }.toMap()
+        val empty = nodes.filter { canvas.pictureInto(it.id, nodeTypes) == null }.map { it.id }.toSet()
+        if (shown.isNotEmpty() || empty.any { it in canvas.beforePreviews }) {
+            canvas = canvas.copy(
+                beforePreviews = canvas.beforePreviews.filterKeys { it !in empty } + shown,
+            )
         }
     }
 
@@ -4157,6 +4446,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }.toMap()
             if (shown.isNotEmpty()) canvas = canvas.copy(previews = canvas.previews + shown)
             canvas = canvas.copy(rendered = canvas.rendered + renderedBy(r))
+            // ⚠ Same reason as the ordinary Run path: a FRAMING node fed by a
+            // sampler in this sweep needs its canvas-box preview re-drawn now
+            // that `rendered` moved, or it stays stale until an unrelated edit.
+            applyFramedPreviews()
 
             // ⭐⭐ Every run is KEPT, with what made it different in the label.
             // A sweep whose outputs were not collected would be eight renders
@@ -4393,6 +4686,19 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (shown.isNotEmpty()) canvas = canvas.copy(previews = canvas.previews + shown)
         // ⭐⭐ …and what EVERY node rendered, shown or not ([CanvasState.rendered]).
         canvas = canvas.copy(rendered = canvas.rendered + renderedBy(r))
+        // ⚠⚠ **Re-frame downstream, now that `rendered` just moved.** A
+        // FRAMING node (i2i, inpaint) fed by a sampler upstream reads its
+        // picture through `pictureInto`, which resolves to `rendered[up]` for
+        // a renderer — but its CANVAS BOX preview is a cached bitmap in
+        // `canvas.previews`, written only by [applyFramedPreviews], and this
+        // Run just updated `rendered` through a DIFFERENT assignment than the
+        // one `updateCanvas` watches for that trigger. Without this, a chain
+        // like generate → inpaint left the downstream node's box showing
+        // whatever it had before this Run — stale or blank — until the next
+        // edit happened to call [refreshPreviews] on its own. Reported
+        // 2026-09-18. ⚠ Direct, not the debounced [refreshPreviews]: a Run
+        // already took real time, so there is nothing left to coalesce.
+        applyFramedPreviews()
         // ⭐ …and the clips, so the node that made one can offer to play it.
         // ⚠ Kept beside the previews rather than inside them: a poster is a
         // picture like any other, and the clip is the thing it is a still OF.

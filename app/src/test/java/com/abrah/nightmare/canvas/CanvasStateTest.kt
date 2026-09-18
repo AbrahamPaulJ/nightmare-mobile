@@ -1166,4 +1166,71 @@ class CanvasStateTest {
         assertTrue(after.gesture is Gesture.DraggingNode)
     }
 
+    // --- a new node must never inherit a picture -----------------------------
+    //
+    // ⭐⭐⭐ [Graph.freeId] hands back the LOWEST unused id, so deleting a node
+    // and adding one of the same type gets its exact id back — and every map
+    // in [CanvasState] keyed by node id has to lose that entry on the way out,
+    // or the "new" node opens wearing whatever the deleted one last showed.
+    // First fixed for [CanvasState.previews] 2026-09-11 with no test; [rendered]
+    // and [beforePreviews] were added later and missed it; reported again,
+    // furiously, 2026-09-18 — this pins all four so a fifth never repeats it.
+
+    private val upscaleType = com.abrah.nightmare.UpscaleNode
+
+    private fun withAPicture(id: String) = state.copy(
+        previews = mapOf(id to ("img_stale" to 1f)),
+        rendered = mapOf(id to "img_stale"),
+        beforePreviews = mapOf(id to ("img_stale_before" to 1f)),
+        videos = mapOf(id to "/stale.mp4"),
+    )
+
+    @Test
+    fun deletingANodeDropsItsPictureFromEveryMap() {
+        val withPic = withAPicture("s")
+        val after = withPic.removeNode("s")
+        assertTrue("s" !in after.previews)
+        assertTrue("s" !in after.rendered)
+        assertTrue("s" !in after.beforePreviews)
+        assertTrue("s" !in after.videos)
+    }
+
+    @Test
+    fun renamingANodeMovesItsPictureRatherThanLosingOrDuplicatingIt() {
+        val withPic = withAPicture("s")
+        val after = withPic.renameNode("s", "s2")
+        assertTrue("s" !in after.previews)
+        assertEquals("img_stale", after.rendered["s2"])
+        assertEquals("img_stale_before", after.beforePreviews["s2"]?.first)
+        assertEquals("/stale.mp4", after.videos["s2"])
+    }
+
+    /**
+     * ⭐⭐ The actual reported shape: delete an upscale node, add a new one —
+     * [Graph.freeId] hands the id straight back — and the new node must open
+     * with NOTHING in any of the four maps, not the deleted node's leftovers.
+     */
+    @Test
+    fun aFreshNodeReusingAFreedIdInheritsNothing() {
+        val withUpscale = state.copy(
+            workflow = state.workflow.copy(
+                graph = Graph(
+                    graph.nodes + Node("upscale", upscaleType.name, emptyMap()),
+                ),
+                positions = state.workflow.positions + ("upscale" to Pt(200f, 200f)),
+            ),
+        )
+        val withPic = withAPicture("upscale")
+        val deleted = withPic.removeNode("upscale")
+        assertTrue("freeId hands the id straight back", "upscale" !in deleted.workflow.graph.byId)
+
+        val recreated = deleted.addNode(upscaleType, Pt(200f, 200f))
+        val newId = recreated.workflow.graph.nodes.last().id
+        assertEquals("upscale", newId)
+        assertNull("no stale preview", recreated.previews[newId])
+        assertNull("no stale render", recreated.rendered[newId])
+        assertNull("no stale before/after", recreated.beforePreviews[newId])
+        assertNull("no stale clip", recreated.videos[newId])
+    }
+
 }

@@ -112,6 +112,21 @@ data class CanvasState(
      */
     val previews: Map<String, Pair<String, Float>> = emptyMap(),
     /**
+     * ⭐ Node id -> (image id, aspect ratio) for what a before/after node
+     * RECEIVED — [NodeBox.beforePreview], drawn above [NodeBox.preview].
+     * `image.upscale` only, for now.
+     *
+     * ⚠⚠ Same reason [previews] lives here and not only in the drawing layer:
+     * it changes a node's HEIGHT, so hit-testing (`boxes`) and drawing must
+     * agree on it or a resize corner and a tap land somewhere the node is not.
+     * Kept as its OWN map rather than folded into [previews], because the two
+     * answer different questions for the same node — what it MADE stays
+     * governed by [com.abrah.nightmare.NodeType.showsResult] (a renderer never
+     * shows its own render there), and this is a second, narrower exception on
+     * top of that rule, not a replacement for it.
+     */
+    val beforePreviews: Map<String, Pair<String, Float>> = emptyMap(),
+    /**
      * ⭐⭐ Node id -> the image id it RENDERED on the last Run — including the
      * nodes that do not SHOW their result ([com.abrah.nightmare.NodeType.showsResult]).
      *
@@ -219,7 +234,7 @@ data class CanvasState(
     val panLocked: Boolean = false,
 ) {
 
-    private fun boxes(types: Map<String, NodeType>) = layout(workflow, types, previews)
+    private fun boxes(types: Map<String, NodeType>) = layout(workflow, types, previews, beforePreviews)
 
     /**
      * A finger goes down at [world].
@@ -324,7 +339,11 @@ data class CanvasState(
     /** Which of a picked wire's controls is under [world], if any. */
     private fun wireButtonAt(bs: List<NodeBox>, world: Pt): WireButton? {
         val at = wireButtons(bs) ?: return null
-        val r = Sizes.WIRE_BUTTON_RADIUS
+        // ⚠ Grows past the base radius as the canvas zooms out, so the
+        // TAPPABLE area never shrinks below a comfortable size even though
+        // everything else world-anchored does. Must agree with what
+        // `drawWireButton` actually draws — see [Sizes.wireButtonRadius].
+        val r = Sizes.wireButtonRadius(viewport.scale)
         fun near(p: Pt) = kotlin.math.hypot(world.x - p.x, world.y - p.y) <= r
         if (!wireConfirming) return if (near(at.first)) WireButton.DELETE else null
         if (near(at.first)) return WireButton.CONFIRM
@@ -344,7 +363,7 @@ data class CanvasState(
         val w = wire ?: return null
         val ends = wires(bs).firstOrNull { it.first.id == w.id }?.second ?: return null
         val mid = wireMidpoint(ends.first, ends.second)
-        return mid to Pt(mid.x + Sizes.WIRE_BUTTON_GAP, mid.y)
+        return mid to Pt(mid.x + Sizes.wireButtonGap(viewport.scale), mid.y)
     }
 
     /**
@@ -685,7 +704,22 @@ data class CanvasState(
             // dropped upscale node already had an old render on it.
             // ⚠ Belt and braces with [removeNode], which now drops it too. This
             // one also covers an id freed by any other route.
+            //
+            // ⚠⚠⚠ **[rendered] and [beforePreviews] need the SAME clearing,
+            // and did not get it when they were added.** [pictureInto] reads
+            // `rendered[up]` for any renderer upstream, so a stale entry there
+            // leaks into whatever a REUSED id's new node feeds -- not just the
+            // reused node's own display. Reported 2026-09-18: an upscale node
+            // wired to inpaint showed the mask picture a PREVIOUS, deleted node
+            // had left behind under the same id, and a freshly dropped upscale
+            // node already had an old render on it (the 2026-09-11 bug, back,
+            // for the two maps this rule did not yet cover).
             previews = previews - id,
+            rendered = rendered - id,
+            beforePreviews = beforePreviews - id,
+            // ⚠ And the clip, for the same reason — a video node reusing a
+            // freed id must not inherit the poster's MP4 either.
+            videos = videos - id,
             editing = id,
             showPalette = false,
             message = null,
@@ -729,6 +763,9 @@ data class CanvasState(
                 sizes = workflow.sizes.moveKey(),
             ),
             previews = previews.moveKey(),
+            rendered = rendered.moveKey(),
+            beforePreviews = beforePreviews.moveKey(),
+            videos = videos.moveKey(),
             selection = if (from in selection) selection - from + name else selection,
             editing = if (editing == from) name else editing,
         )
@@ -748,7 +785,11 @@ data class CanvasState(
         ),
         // ⚠ The picture goes with the node. Leaving it behind makes the map
         // grow forever, and worse, hands it to the next node that takes this id.
+        // ⚠⚠ Same for [rendered], [beforePreviews] and [videos] — see [addNode]'s note.
         previews = previews - id,
+        rendered = rendered - id,
+        beforePreviews = beforePreviews - id,
+        videos = videos - id,
         selection = selection - id,
         editing = if (editing == id) null else editing,
         // ⚠ A picked wire that ended on this node no longer exists.

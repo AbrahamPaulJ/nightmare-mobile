@@ -173,6 +173,8 @@ fun GraphCanvas(
      * hit-testing, or a node is drawn one height and tapped at another.
      */
     previews: Map<String, Pair<String, Float>> = emptyMap(),
+    /** ⭐ What a before/after node RECEIVED. See [CanvasState.beforePreviews]. */
+    beforePreviews: Map<String, Pair<String, Float>> = emptyMap(),
     /** Resolves an image id to pixels. Null while the bitmap is not resident. */
     imageFor: (String) -> ImageBitmap? = { null },
     /**
@@ -198,7 +200,7 @@ fun GraphCanvas(
             // ⚠ Geometry in device pixels, fonts in sp. See Viewport.forDevice.
             val vp = viewport.forDevice(density)
             drawGrid(vp)
-            val boxes = layout(workflow, types, previews)
+            val boxes = layout(workflow, types, previews, beforePreviews)
             val byId = boxes.associateBy { it.id }
 
             // Edges first, so a node always sits on top of its own wires.
@@ -258,8 +260,12 @@ fun GraphCanvas(
                         // delete it. The cancel is offset, so the destructive tap
                         // repeats and the safe one is a deliberate move.
                         drawWireButton(mid, CanvasColors.ran, vp.scale, Glyph.TICK)
+                        // ⚠ Floored in device pixels via THIS scope's density,
+                        // same reasoning as `drawWireButton`'s own radius floor
+                        // — see `Sizes.WIRE_BUTTON_MIN_GAP_DP`.
+                        val gap = maxOf(Sizes.WIRE_BUTTON_GAP * vp.scale, Sizes.WIRE_BUTTON_MIN_GAP_DP * density)
                         drawWireButton(
-                            Pt(mid.x + Sizes.WIRE_BUTTON_GAP * vp.scale, mid.y),
+                            Pt(mid.x + gap, mid.y),
                             CanvasColors.label, vp.scale, Glyph.CROSS,
                         )
                     } else {
@@ -267,6 +273,62 @@ fun GraphCanvas(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * ⭐ One picture drawn inside a node's body, at [top] (world units) — shared by
+ * [NodeBox.preview] and [NodeBox.beforePreview] so the two draw identically
+ * and cannot drift apart. Extracted 2026-09-18 when the before/after preview
+ * was added ([NodeBox.beforePreview]).
+ */
+private fun DrawScope.drawPreviewImage(
+    box: NodeBox,
+    p: NodeBox.Preview,
+    top: Float,
+    tl: Pt,
+    w: Float,
+    viewport: Viewport,
+    imageFor: (String) -> ImageBitmap?,
+    clipFrameFor: (String) -> ImageBitmap?,
+) {
+    // ⭐ A clip's current frame wins over its poster. ⚠ The poster is still
+    // the fallback, so a node whose loop has been evicted (or whose process
+    // restarted) shows the still rather than the empty placeholder.
+    val bmp = clipFrameFor(box.id) ?: imageFor(p.imageId)
+    val pad = Sizes.BODY_PADDING * viewport.scale
+    val screenTop = viewport.toScreen(Pt(box.topLeft.x, top))
+    val pw = w - 2 * pad
+    val ph = p.height * viewport.scale
+    val r = androidx.compose.ui.geometry.CornerRadius(6f * viewport.scale, 6f * viewport.scale)
+    if (bmp == null) {
+        // ⚠ A placeholder rather than nothing: a node laid out with room for
+        // a picture and no picture in it reads as a broken render, when in
+        // fact the graph has simply not been run yet.
+        drawRoundRect(
+            color = CanvasColors.nodeStroke,
+            topLeft = Offset(tl.x + pad, screenTop.y),
+            size = Size(pw, ph),
+            cornerRadius = r,
+        )
+    } else {
+        clipPath(androidx.compose.ui.graphics.Path().apply {
+            addRoundRect(
+                androidx.compose.ui.geometry.RoundRect(
+                    Rect(tl.x + pad, screenTop.y, tl.x + pad + pw, screenTop.y + ph), r,
+                )
+            )
+        }) {
+            drawImage(
+                image = bmp,
+                srcOffset = androidx.compose.ui.unit.IntOffset.Zero,
+                srcSize = androidx.compose.ui.unit.IntSize(bmp.width, bmp.height),
+                dstOffset = androidx.compose.ui.unit.IntOffset(
+                    (tl.x + pad).toInt(), screenTop.y.toInt(),
+                ),
+                dstSize = androidx.compose.ui.unit.IntSize(pw.toInt(), ph.toInt()),
+            )
         }
     }
 }
@@ -346,45 +408,16 @@ private fun DrawScope.drawNode(
 
     // ⭐ The picture the node is showing, drawn INSIDE its body at the image's
     // own aspect ratio (the box was laid out to fit it, so no stretch).
+    //
+    // ⭐⭐ [box.beforePreview] draws the SAME way, directly above — what the
+    // node RECEIVED, where [box.preview] is what it MADE. Only a before/after
+    // node (`image.upscale` today) ever has one; every other node draws
+    // exactly as it did before this existed.
+    box.beforePreview?.let { p ->
+        drawPreviewImage(box, p, box.beforePreviewTop, tl, w, viewport, imageFor, clipFrameFor)
+    }
     box.preview?.let { p ->
-        // ⭐ A clip's current frame wins over its poster. ⚠ The poster is still
-        // the fallback, so a node whose loop has been evicted (or whose process
-        // restarted) shows the still rather than the empty placeholder.
-        val bmp = clipFrameFor(box.id) ?: imageFor(p.imageId)
-        val pad = Sizes.BODY_PADDING * viewport.scale
-        val top = viewport.toScreen(Pt(box.topLeft.x, box.previewTop))
-        val pw = w - 2 * pad
-        val ph = p.height * viewport.scale
-        val r = androidx.compose.ui.geometry.CornerRadius(6f * viewport.scale, 6f * viewport.scale)
-        if (bmp == null) {
-            // ⚠ A placeholder rather than nothing: a node laid out with room for
-            // a picture and no picture in it reads as a broken render, when in
-            // fact the graph has simply not been run yet.
-            drawRoundRect(
-                color = CanvasColors.nodeStroke,
-                topLeft = Offset(tl.x + pad, top.y),
-                size = Size(pw, ph),
-                cornerRadius = r,
-            )
-        } else {
-            clipPath(androidx.compose.ui.graphics.Path().apply {
-                addRoundRect(
-                    androidx.compose.ui.geometry.RoundRect(
-                        Rect(tl.x + pad, top.y, tl.x + pad + pw, top.y + ph), r,
-                    )
-                )
-            }) {
-                drawImage(
-                    image = bmp,
-                    srcOffset = androidx.compose.ui.unit.IntOffset.Zero,
-                    srcSize = androidx.compose.ui.unit.IntSize(bmp.width, bmp.height),
-                    dstOffset = androidx.compose.ui.unit.IntOffset(
-                        (tl.x + pad).toInt(), top.y.toInt(),
-                    ),
-                    dstSize = androidx.compose.ui.unit.IntSize(pw.toInt(), ph.toInt()),
-                )
-            }
-        }
+        drawPreviewImage(box, p, box.previewTop, tl, w, viewport, imageFor, clipFrameFor)
     }
 
     // ⚠ The resize corner, drawn so the handle is discoverable. Without a mark
@@ -661,11 +694,21 @@ private enum class Glyph { BIN, TICK, CROSS }
  *
  * ⚠⚠ Drawn on the canvas rather than composed as a button, because it has to
  * follow a curve through world space that only this layer knows. ⚠ Its hit-box
- * is `Sizes.WIRE_BUTTON_RADIUS` in `CanvasState`, and the two must agree — a
- * control drawn one size and tapped at another is the silent kind of broken.
+ * is `Sizes.WIRE_BUTTON_RADIUS`, floored the same way, in `CanvasState`, and
+ * the two must agree — a control drawn one size and tapped at another is the
+ * silent kind of broken. ⭐ Reported 2026-09-18: at a low zoom the radius
+ * shrank below anything a finger could aim at; see `Sizes.WIRE_BUTTON_MIN_SCREEN_DP`.
  */
 private fun DrawScope.drawWireButton(at: Pt, color: Color, scale: Float, glyph: Glyph) {
-    val r = Sizes.WIRE_BUTTON_RADIUS * scale
+    // ⚠⚠ Floored at [Sizes.WIRE_BUTTON_MIN_SCREEN_DP], converted through THIS
+    // scope's own `density` — [scale] here is already device pixels per world
+    // unit (`viewport.forDevice(density)`, in `drawNode`'s caller), so a floor
+    // in dp has to multiply by density too, not stand in for the whole term.
+    // `CanvasState.wireButtonAt` floors the same way but in WORLD units against
+    // the LOGICAL (pre-density) scale — see [Sizes.wireButtonRadius] — and the
+    // two must keep agreeing, or the circle drawn and the circle tapped are
+    // two different sizes again.
+    val r = maxOf(Sizes.WIRE_BUTTON_RADIUS * scale, Sizes.WIRE_BUTTON_MIN_SCREEN_DP * density)
     drawCircle(CanvasColors.background, radius = r, center = Offset(at.x, at.y))
     drawCircle(color, radius = r, center = Offset(at.x, at.y), style = Stroke(width = 2.5f))
     val k = r * 0.42f

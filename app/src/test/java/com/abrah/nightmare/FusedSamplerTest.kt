@@ -87,7 +87,10 @@ class FusedSamplerTest {
     @Test
     fun aPhotoWiredInIsImageToImage() = runBlocking {
         val host = RecordingHost()
-        val r = exec(host).run(graph(photo = photoFile()))
+        // ⚠ The plain `sample` type, not the default `inpaint` — this is
+        // testing generic photo-wiring, and since 2026-09-19 an inpaint with
+        // no mask refuses rather than falling back to a plain i2i render.
+        val r = exec(host).run(graph(photo = photoFile(), type = SdSampler.SD15.name))
         assertNull(r.error)
         assertEquals(1, host.encodes)
         // ⭐ …and the sampler started from what the encode produced.
@@ -149,7 +152,8 @@ class FusedSamplerTest {
     @Test
     fun aPhotoOfAnySizeIsFittedRatherThanRefused() = runBlocking {
         val host = RecordingHost()
-        val r = exec(host).run(graph(photo = photoFile(w = 123, h = 41)))
+        // ⚠ Plain `sample`, same reason as `aPhotoWiredInIsImageToImage`.
+        val r = exec(host).run(graph(photo = photoFile(w = 123, h = 41), type = SdSampler.SD15.name))
         assertNull("a photo of any shape must render", r.error)
         assertEquals(64, host.lastEncodeSize?.first)
         assertEquals(64, host.lastEncodeSize?.second)
@@ -330,8 +334,19 @@ class FusedSamplerTest {
 
     /**
      * ⭐⭐ Nothing painted on a GENERATED picture: the render upstream is made,
-     * and the inpaint WAITS — no error, and nothing repainted. The control is a
-     * PHOTO with nothing painted, which still runs as it always has.
+     * and the inpaint WAITS — no error, and nothing repainted.
+     *
+     * ⚠⚠ **The rule went through two wrong shapes in one day, 2026-09-18/19,
+     * before landing here.** First it skipped the wait and rendered a
+     * full-frame repaint unattended (wrong: the person still wants to be
+     * stopped). Then it kept the wait but pre-filled the mask editor with a
+     * full mask on open (also wrong, reverted the next day — *"lets not do
+     * the full masking thing for inpaint. instead if user doesnt mask just
+     * show error saying nothing masked, this should be always true for
+     * inpaint nodes"*). ⇒ Just the refusal, no auto-fill, and — the actual
+     * behaviour change this landed on — it now applies to a PHOTO with
+     * nothing painted too, which used to run as a plain re-render and is the
+     * second case in this test.
      */
     @Test
     fun anInpaintOnAGeneratedPictureWaitsToBePainted() = runBlocking {
@@ -344,7 +359,7 @@ class FusedSamplerTest {
         assertEquals("only the generate sampled", 1, host.samples)
 
         val photo = exec(RecordingHost()).run(graph(photo = photoFile()))
-        assertNull("a photo with nothing painted still runs", photo.waiting)
+        assertEquals("a photo with nothing painted now refuses too", "sample", photo.waiting?.first)
     }
 
     /**

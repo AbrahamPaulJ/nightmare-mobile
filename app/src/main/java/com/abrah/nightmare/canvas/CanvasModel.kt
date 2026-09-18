@@ -197,6 +197,35 @@ object Sizes {
     const val WIRE_BUTTON_RADIUS = 22f
 
     /**
+     * ⭐⭐ The SMALLEST a wire button may ever be on screen, in dp — a floor
+     * under [WIRE_BUTTON_RADIUS], which is a WORLD unit and so shrinks with
+     * every other world-anchored thing once the canvas is zoomed out.
+     *
+     * ⚠⚠ Reported 2026-09-18: at a low zoom the delete/tick/cross on a wire
+     * became too small to tap comfortably — [WIRE_BUTTON_RADIUS] scaling
+     * linearly with the viewport is right for a node's ports (a port must
+     * shrink with its node, or wiring at a wide-open view would be all
+     * targets and no graph) but wrong for a button meant to be pressed by a
+     * finger regardless of zoom.
+     *
+     * ⇒ [wireButtonRadius] is the ONE function both the draw
+     * (`GraphCanvas.drawWireButton`) and the hit test
+     * (`CanvasState.wireButtonAt`) call, so the visible circle and the tappable
+     * one can never disagree — the same discipline [WIRE_BUTTON_RADIUS]'s own
+     * sibling docs already require of it.
+     */
+    const val WIRE_BUTTON_MIN_SCREEN_DP = 22f
+
+    /**
+     * The wire button's radius in WORLD units at [scale] — grows as the
+     * canvas zooms out, past [WIRE_BUTTON_RADIUS], so that
+     * `wireButtonRadius(scale) * scale` (what actually reaches the screen)
+     * never drops below [WIRE_BUTTON_MIN_SCREEN_DP].
+     */
+    fun wireButtonRadius(scale: Float): Float =
+        maxOf(WIRE_BUTTON_RADIUS, WIRE_BUTTON_MIN_SCREEN_DP / scale.coerceAtLeast(0.001f))
+
+    /**
      * How far a selected node appears to rise off the canvas.
      *
      * ⚠⚠ Its shadow and halo only — the BODY does not move and does not grow.
@@ -210,6 +239,20 @@ object Sizes {
 
     /** ⚠ How far the cancel sits from the tick, centre to centre. */
     const val WIRE_BUTTON_GAP = 56f
+
+    /**
+     * ⭐ The floor under [WIRE_BUTTON_GAP], in dp — a bit over twice
+     * [WIRE_BUTTON_MIN_SCREEN_DP] so the tick and the cross keep a visible
+     * seam between them rather than merely stopping short of overlapping.
+     * Without this, flooring the two buttons' RADIUS alone (2026-09-18) would
+     * have fixed the tap target and broken the two apart into one smear at
+     * the same low zoom that made the fix necessary.
+     */
+    const val WIRE_BUTTON_MIN_GAP_DP = 50f
+
+    /** The gap between a wire's two buttons in WORLD units at [scale] — see [wireButtonRadius]. */
+    fun wireButtonGap(scale: Float): Float =
+        maxOf(WIRE_BUTTON_GAP, WIRE_BUTTON_MIN_GAP_DP / scale.coerceAtLeast(0.001f))
     const val BODY_PADDING = 14f
     const val CORNER = 14f
 
@@ -250,6 +293,15 @@ data class NodeBox(
      * being squeezed into the node.
      */
     val preview: Preview? = null,
+    /**
+     * ⭐ A SECOND picture, drawn ABOVE [preview] — what the node RECEIVED,
+     * where [preview] is what it MADE. Null for every node but a before/after
+     * one ([com.abrah.nightmare.UpscaleNode] today): a renderer never
+     * draws its own result on the canvas ([com.abrah.nightmare.NodeType.showsResult]),
+     * which is what left a chain like generate → upscale showing nothing of
+     * the intermediate at all. Reported 2026-09-18.
+     */
+    val beforePreview: Preview? = null,
     /** ⭐ Text drawn in the body — a prompt node's prompts. Null for every other node. */
     val prose: Prose? = null,
 ) {
@@ -300,9 +352,13 @@ data class NodeBox(
 
     val previewTop get() = bottom - (preview?.height ?: 0f) - Sizes.BODY_PADDING
 
-    /** ⚠ Above the picture when a node somehow has both; today nothing does. */
-    val proseTop get() = previewTop - (prose?.height ?: 0f) -
-        (if (prose != null) Sizes.BODY_PADDING else 0f)
+    /** ⭐ [beforePreview] sits directly above [preview], same padding rule. */
+    val beforePreviewTop get() = previewTop - (beforePreview?.height ?: 0f) -
+        (if (beforePreview != null) Sizes.BODY_PADDING else 0f)
+
+    /** ⚠ Above whichever picture is topmost — [beforePreview] when there is one. */
+    val proseTop get() = (if (beforePreview != null) beforePreviewTop else previewTop) -
+        (prose?.height ?: 0f) - (if (prose != null) Sizes.BODY_PADDING else 0f)
 
     /**
      * ⭐⭐ Where each prose box IS, in world units — `field to (top, bottom)`.
@@ -503,11 +559,14 @@ data class Viewport(val offset: Pt = Pt(0f, 0f), val scale: Float = 1f) {
  * @param previews node id -> the image it is showing and that image's aspect
  *   ratio (width / height). ⚠ Passed in rather than read here: the layout is
  *   Compose-free and unit-tested, and an `ImageBitmap` is neither.
+ * @param beforePreviews node id -> what it RECEIVED, same shape as [previews].
+ *   Only a before/after node ([NodeBox.beforePreview]) ever has an entry.
  */
 fun layout(
     workflow: Workflow,
     types: Map<String, NodeType>,
     previews: Map<String, Pair<String, Float>> = emptyMap(),
+    beforePreviews: Map<String, Pair<String, Float>> = emptyMap(),
 ): List<NodeBox> =
     workflow.graph.nodes.map { n ->
         val type = types[n.type]
@@ -516,6 +575,7 @@ fun layout(
         val nIn = type?.inputs?.size ?: 0
         val nOut = type?.outputs?.size ?: 0
         val shown = previews[n.id]
+        val shownBefore = beforePreviews[n.id]
         // ⚠ The picture is inset from both edges, so its width is the node's
         // width less the padding -- using the full width would draw it over the
         // node's rounded corners.
@@ -561,6 +621,9 @@ fun layout(
             .maxOfOrNull { linesFor(n.params[it].orEmpty()) }
             ?: workflow.proseLinesOf(n.id)
         val preview = shown?.let { (id, aspect) ->
+            NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))
+        }
+        val beforePreview = shownBefore?.let { (id, aspect) ->
             NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))
         }
         // ⭐⭐ **Prose in the body**, for a node whose whole content is text.
@@ -640,8 +703,10 @@ fun layout(
             height = (if (prose != null) Sizes.portsExtent(nIn, nOut)
                 else Sizes.nodeHeight(nIn, nOut)) +
                 (preview?.let { it.height + Sizes.BODY_PADDING } ?: 0f) +
+                (beforePreview?.let { it.height + Sizes.BODY_PADDING } ?: 0f) +
                 (prose?.let { it.height + Sizes.BODY_PADDING } ?: 0f),
             preview = preview,
+            beforePreview = beforePreview,
             prose = prose,
         )
     }

@@ -59,6 +59,9 @@
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
     <string name="theme_canvas_note">the canvas is drawn dark either way — its palette is its own</string>
+    <string name="battery_title">Keep rendering in the background</string>
+    <string name="battery_body">This phone\'s battery manager may stop the app while it is not on screen, which can end a render in progress or drop the model that was loaded. Allowing it to run unrestricted keeps that from happening.</string>
+    <string name="battery_allow">Allow in background</string>
     <string name="community_title">Bring your own nodes</string>
     <string name="community_intro">A node is two files: a manifest that declares its ports and knobs, and a script that runs it. Zip them and import the pack above, or push the folder to this app\'s plugin directory. No toolchain, no compile step, no new version of the app.</string>
 
@@ -129,6 +132,8 @@
     <string name="cannot_run_it">this device cannot run it</string>
     <string name="upscalers">Upscalers</string>
     <string name="upscalers_note">8-24 MB each. Add an Upscale node to a flow to use one.</string>
+    <string name="import_upscaler_title">Import an upscaler</string>
+    <string name="import_upscaler_body">A converted upscaler weight file (.bin). No arch check — it either loads or it doesn\'t.</string>
     <string name="video">Video</string>
     <string name="video_models">Neodragon (video)</string>
     <string name="video_models_note">One download of %1$s GB, in 21 parts. It resumes, so a dropped connection costs only the file it was on.</string>
@@ -156,4 +161,6 @@
     <string name="tools">Tools</string>
     <string name="tools_note">Small helpers that run on the phone\'s CPU. Wire one into a flow to use it.</string>
     <string name="segmenter_about">Tap an object in an Inpaint mask to select it. Wire a Segment model node into Inpaint.</string>
+    <string name="embeddings_title">Embeddings</string>
+    <string name="embeddings_body">A trained concept as a file, not a checkpoint — a .safetensors from Civitai or similar. Name it in a prompt to use it.</string>
 </resources>

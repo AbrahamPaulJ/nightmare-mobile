@@ -184,8 +184,20 @@ fun NodeInspector(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
-        val shownId = state.previews[nodeId]?.first
+        // ⭐⭐ Upscale is the one before/after exception to "a renderer's own
+        // result belongs to `core.output` alone" ([NodeType.showsResult]) — it
+        // shows what it MADE here too, not just what it received just above.
+        // Reported 2026-09-18: a generate → upscale chain showed neither
+        // picture anywhere until the node reached `core.output`.
+        val shownId = if (node.type == com.abrah.nightmare.UpscaleNode.name) {
+            state.rendered[nodeId]
+        } else {
+            state.previews[nodeId]?.first
+        }
         val previewId = shownId
+        // ⭐ The BEFORE half, same source the canvas box draws
+        // ([CanvasState.beforePreviews]) — so the sheet and the graph agree.
+        val beforeId = state.beforePreviews[nodeId]?.first
         // ⚠ A crop is framed against its INPUT, not its output. Showing the
         // node's own result would be showing the crop that has already happened.
         // ⚠ Every node that is not an output still acts on its own picture —
@@ -236,6 +248,9 @@ fun NodeInspector(
             onSetModel = onSetModel,
             preview = shownId?.let(imageFor),
             onViewFullscreen = { shownId?.let(onViewFullscreen) },
+            // ⭐ Upscale's BEFORE half — see [beforeId] above.
+            beforeImage = beforeId?.let(imageFor),
+            onViewBeforeFullscreen = { beforeId?.let(onViewFullscreen) },
             // ⭐⭐ The framing and the painting live on the SAMPLER now
             // (docs/ARCHITECTURE.md §5.7), so the two editors are drawn for it
             // as well as for the nodes they came from.
@@ -482,6 +497,13 @@ internal fun NodeInspectorBody(
     /** The picture this node is showing, if any. */
     preview: ImageBitmap? = null,
     onViewFullscreen: () -> Unit = {},
+    /**
+     * ⭐ What a before/after node RECEIVED (`image.upscale` only) — drawn
+     * ABOVE [preview], which for that same node type is what it MADE. See
+     * `CanvasState.beforePreviews`.
+     */
+    beforeImage: ImageBitmap? = null,
+    onViewBeforeFullscreen: () -> Unit = {},
     /** The picture a `crop` node is framing — its upstream image. */
     cropSource: ImageBitmap? = null,
     /** The picture an `image.mask` node is painted on — its upstream image. */
@@ -718,7 +740,14 @@ internal fun NodeInspectorBody(
         val cropPanel: @Composable () -> Unit = {
             // ⭐ The size first, in the crop window too — the frame's shape is
             // decided by it, so it is changed where the frame is.
-            if (popup) sizePanel()
+            // ⚠⚠ Only when the popup is actually the one drawing this: a
+            // txt2img sampler has `popup = true` (every SD_SAMPLER_TYPES node
+            // does) but no `cropSource`, so it never opens the popup and falls
+            // into the inline `cropPanel()` call below instead — which used to
+            // draw this SAME size control a second time, stacked under the one
+            // `sizePanel()` already drew unconditionally above. Reported
+            // 2026-09-18: "generate node shows 2 aspect ratio / resolution".
+            if (popup && cropSource != null) sizePanel()
             cropSource?.let { src ->
                 val (outW, outH) = framingOutSize(node, type)
                 // ⭐⭐ A TITLE over each editor. Reported 2026-09-15: with framing and
@@ -967,6 +996,31 @@ internal fun NodeInspectorBody(
         // another reads as a bug (`docs/UI.md`). These were built on the viewer
         // first and the sheet was forgotten, which is the failure that section
         // exists to prevent.
+        // ⭐⭐ Upscale's BEFORE half — what it received, directly above what it
+        // made below. The only before/after node today: a renderer's own
+        // result belongs to `core.output` alone ([NodeType.showsResult]), so
+        // nothing else showed the intermediate picture in a chain like
+        // generate → upscale. Reported 2026-09-18. ⚠ Tap opens it fullscreen
+        // too, the same as the picture below it.
+        beforeImage?.let { bmp ->
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Received",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Image(
+                    bitmap = bmp,
+                    contentDescription = "the picture this node received",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = minOf(180.dp, LocalConfiguration.current.screenHeightDp.dp * 0.3f))
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onViewBeforeFullscreen() },
+                )
+            }
+        }
         if (preview != null && cropSource == null && maskSource == null && onSaveImage != null) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1003,6 +1057,16 @@ internal fun NodeInspectorBody(
         // where it is the only thing that shows what the node produces.
         // Asked for from the phone, 2026-09-10.
         preview?.takeIf { cropSource == null && maskSource == null }?.let { still ->
+            // ⭐ Only labelled when there is a "Received" picture above it to
+            // read against — every other node with a preview still shows one
+            // plain, unlabelled picture, exactly as before.
+            if (beforeImage != null) {
+                Text(
+                    "Made",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             // ⭐⭐ A clip loops here exactly as it does on the node.
             //
             // ⚠ Its OWN ticker rather than one shared with the canvas: the sheet

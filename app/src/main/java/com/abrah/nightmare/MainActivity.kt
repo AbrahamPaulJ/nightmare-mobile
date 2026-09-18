@@ -271,6 +271,16 @@ fun HarnessScreen(
                         vm.importModel(uri, importName.ifEmpty { vm.importNameFor(uri) })
                     }
                 }
+                // ⚠ `.safetensors` has no registered MIME type, so providers
+                // hand it back as `application/octet-stream` at best — same
+                // reasoning as the zip picker above.
+                val embeddingPicker = rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                ) { uri -> if (uri != null) vm.importEmbedding(uri) }
+                // ⚠ Same reasoning: `.bin` has no registered MIME type either.
+                val upscalerPicker = rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                ) { uri -> if (uri != null) vm.importUpscaler(uri) }
                 ModelsScreen(
                     rows = vm.modelRows,
                     // ⚠ The OR: this screen's buttons mean "the app is doing
@@ -299,6 +309,9 @@ fun HarnessScreen(
                     upscalers = vm.upscalerRows,
                     onInstallUpscaler = vm::installUpscaler,
                     onDeleteUpscaler = vm::deleteUpscaler,
+                    onImportUpscaler = {
+                        upscalerPicker.launch(arrayOf("application/octet-stream", "*/*"))
+                    },
                     segmenter = vm.segmenterRow,
                     onInstallSegmenter = vm::installSegmenter,
                     onDeleteSegmenter = vm::deleteSegmenter,
@@ -306,6 +319,9 @@ fun HarnessScreen(
                     onInstallVideo = vm::installVideoModels,
                     onDeleteVideo = vm::deleteVideoModels,
                     onProbeVideo = vm::probeVideoSupport,
+                    embeddings = vm.embeddingRows,
+                    onImportEmbedding = { embeddingPicker.launch(arrayOf("application/octet-stream", "*/*")) },
+                    onDeleteEmbedding = vm::deleteEmbedding,
                 )
             },
             results = {
@@ -386,6 +402,10 @@ fun HarnessScreen(
                     // ⚠ The FULL picture, not the list thumbnail: this is the
                     // surface where the detail is the point.
                     imageFor = { id -> vm.resultImage(id) },
+                    // ⭐ Shown while the full decode is still in flight —
+                    // both are async now, so this fills the gap rather than
+                    // leaving a blank page for however long that takes.
+                    thumbnailFor = { id -> vm.thumbnailFor(id) },
                     detailsFor = vm::detailsOf,
                     onDismiss = { vm.closeResult() },
                     onOpenFlow = { r -> vm.closeResult(); vm.openResultFlow(r.id) },
@@ -600,6 +620,40 @@ fun HarnessScreen(
     val packPicker = rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) vm.importPlugin(uri) }
+    // ⭐ Settings' own copy of the embeddings import picker — see the Models
+    // tab's `embeddingPicker` for the same launcher and why it is declared
+    // per-screen rather than shared (each screen owns its own launcher, the
+    // existing pattern every picker in this file already follows).
+    val settingsEmbeddingPicker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) vm.importEmbedding(uri) }
+    // ⭐ Whether this app is exempt from Doze/App Standby battery
+    // optimisation — the belt-and-suspenders half of the background-kill fix
+    // ([BackendKeepAliveService]'s foreground service is the main one). Not a
+    // ViewModel field: it is OS state this app does not own, so it is read
+    // fresh from PowerManager rather than cached and drifting.
+    // ⚠ Re-read on RESUME, not just once: the only way it changes is the user
+    // granting it from the system dialog this screen launches, and that
+    // dialog closes back into this same Activity.
+    val appCtx = androidx.compose.ui.platform.LocalContext.current
+    var batteryUnrestricted by androidx.compose.runtime.remember {
+        mutableStateOf(
+            (appCtx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager)
+                .isIgnoringBatteryOptimizations(appCtx.packageName)
+        )
+    }
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                batteryUnrestricted =
+                    (appCtx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager)
+                        .isIgnoringBatteryOptimizations(appCtx.packageName)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     com.abrah.nightmare.ui.SettingsScreen(
         tab = vm.settingsTab,
         onTab = vm::switchSettingsTab,
@@ -610,6 +664,23 @@ fun HarnessScreen(
         onImportPack = {
             packPicker.launch(arrayOf("application/zip", "application/octet-stream"))
         },
+        batteryUnrestricted = batteryUnrestricted,
+        onRequestBatteryUnrestricted = {
+            // ⚠⚠ The DIRECT request, not just a link to the settings list —
+            // sideload distribution means the Play policy gating this intent
+            // does not apply (CLAUDE.md), and the whole point is to save the
+            // user from hunting through Battery settings for this app by name.
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                android.net.Uri.parse("package:${appCtx.packageName}"),
+            )
+            appCtx.startActivity(intent)
+        },
+        embeddings = vm.embeddingRows,
+        onImportEmbedding = {
+            settingsEmbeddingPicker.launch(arrayOf("application/octet-stream", "*/*"))
+        },
+        onDeleteEmbedding = vm::deleteEmbedding,
     )
 }
 

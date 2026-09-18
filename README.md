@@ -66,7 +66,8 @@ conversion, no cloud, private.
   sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph
   that produced it.
 - **Upscalers.** RealESRGAN x4plus anime and 4x UltraSharp V2 Lite, loaded per request so
-  they cost no process restart.
+  they cost no process restart — or bring your own converted `.bin`.
+- **Embeddings.** Import a textual-inversion `.safetensors` and name it in a prompt.
 - **Pick your size.** SD 1.5 renders any resolution its checkpoint ships a patch for — 512²
   up to 1024², portrait and landscape; SDXL and Anima crop their fixed 1024² canvas to the
   shape you choose.

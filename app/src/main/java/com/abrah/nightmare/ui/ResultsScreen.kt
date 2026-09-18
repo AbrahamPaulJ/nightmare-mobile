@@ -561,6 +561,13 @@ fun ResultViewer(
     items: List<Result>,
     startIndex: Int,
     imageFor: (String) -> ImageBitmap?,
+    /**
+     * ⭐ Shown while [imageFor] is still decoding (it loads async and returns
+     * null until it's ready) — same fallback shape as the big pager on
+     * [ResultsScreen]. Without it, swiping to a picture not yet in the cache
+     * showed a BLANK page for as long as the full-size decode took.
+     */
+    thumbnailFor: (String) -> ImageBitmap? = imageFor,
     detailsFor: (Result) -> List<Pair<String, String>>,
     onDismiss: () -> Unit,
     onOpenFlow: (Result) -> Unit,
@@ -646,7 +653,7 @@ fun ResultViewer(
                 )
                 return@HorizontalPager
             }
-            imageFor(item.id)?.let { bmp ->
+            (imageFor(item.id) ?: thumbnailFor(item.id))?.let { bmp ->
                 Image(
                     bitmap = bmp,
                     contentDescription = item.batchLabel.ifBlank { "the kept picture" },

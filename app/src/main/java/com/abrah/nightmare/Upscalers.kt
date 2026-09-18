@@ -138,9 +138,102 @@ object UpscalerCatalog {
         ),
     )
 
-    fun byId(id: String): UpscalerSpec? = ALL.firstOrNull { it.id == id }
+    /**
+     * ⭐⭐ Upscalers the user brought — imported from a bare `.bin`, the same
+     * way [CustomModels] handles a checkpoint, but far simpler: an upscaler
+     * IS one loose file, so there is no family to infer, only a name and the
+     * bytes. Reported 2026-09-18: *"i need allowing of importing upscalers
+     * like local dream"*.
+     *
+     * ⚠ Populated by [scanCustom], not cached across process death — same
+     * reasoning as [CustomModels.scanned]: the normal way one of these
+     * arrives is a copy made while the app is running.
+     */
+    @Volatile
+    var scanned: List<UpscalerSpec> = emptyList()
+        private set
 
-    fun installed(context: Context): List<UpscalerSpec> = ALL.filter { it.installed(context) }
+    /** Every upscaler this app knows about, built-in first. */
+    fun allSpecs(): List<UpscalerSpec> = ALL + scanned
+
+    /**
+     * Re-reads [BackendProcess.modelsDir] for directories that are a bare
+     * `upscaler.bin` and nothing this catalogue or [CustomModels] already
+     * claims.
+     *
+     * ⚠⚠ Skips a checkpoint's OWN directory, and skips a built-in upscaler's
+     * id — both share the same root as a plain `id -> directory` mapping, so
+     * a collision would otherwise shadow one with the other, exactly the trap
+     * [CustomModels.scan] guards against for checkpoints.
+     */
+    fun scanCustom(context: Context) {
+        val reserved = ALL.map { it.id }.toSet() + ModelCatalog.builtIn.map { it.id }.toSet()
+        scanned = BackendProcess.modelsDir(context).listFiles().orEmpty()
+            .filter { it.isDirectory && it.name !in reserved }
+            .mapNotNull { dir ->
+                val f = File(dir, FILE_NAME)
+                if (f.isFile && f.length() > 0) {
+                    UpscalerSpec(
+                        id = dir.name,
+                        label = dir.name,
+                        about = "Imported — ${dir.name}.",
+                        remoteDir = "",
+                        // ⚠ Empty, like a custom checkpoint's: there is no URL
+                        // that could produce this file, and an empty list is
+                        // what tells [UpscalerCard] there is no re-download
+                        // offer if it is ever deleted.
+                        builds = emptyList(),
+                    )
+                } else null
+            }
+            .sortedBy { it.label.lowercase() }
+    }
+
+    /** ⚠ A directory name: no separators, no leading dot, not empty — [CustomModels.isValidName]'s rule. */
+    fun isValidName(name: String): Boolean =
+        name.isNotBlank() && name.none { it == '/' || it == '\\' || it == ':' } && !name.startsWith(".")
+
+    /**
+     * Copies [open]'s bytes to `modelsDir/[name]/upscaler.bin` and rescans.
+     *
+     * ⚠ Blocking — call it off the main thread, same as [install].
+     */
+    fun importCustom(
+        context: Context,
+        name: String,
+        open: () -> InputStream,
+    ): UpscalerSpec {
+        require(isValidName(name)) { "\"$name\" is not a usable name" }
+        require(ALL.none { it.id == name }) { "\"$name\" is a built-in upscaler's name; pick another" }
+        require(ModelCatalog.builtIn.none { it.id == name }) {
+            "\"$name\" is a checkpoint's name; pick another"
+        }
+        val dir = File(BackendProcess.modelsDir(context), name).apply { mkdirs() }
+        val dest = File(dir, FILE_NAME)
+        val tmp = File(dir, "$FILE_NAME.part")
+        try {
+            open().use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            if (tmp.length() == 0L) throw IOException("that file was empty")
+            if (dest.exists()) dest.delete()
+            if (!tmp.renameTo(dest)) throw IOException("could not finish writing ${dest.name}")
+        } catch (e: Exception) {
+            dir.deleteRecursively()
+            throw e
+        }
+        scanCustom(context)
+        Log.i(TAG, "imported custom upscaler '$name' (${dest.length()} bytes)")
+        return scanned.first { it.id == name }
+    }
+
+    /** ⚠ Only for a CUSTOM one — a built-in goes through [delete] instead. */
+    fun deleteCustom(context: Context, id: String) {
+        File(BackendProcess.modelsDir(context), id).deleteRecursively()
+        scanCustom(context)
+    }
+
+    fun byId(id: String): UpscalerSpec? = allSpecs().firstOrNull { it.id == id }
+
+    fun installed(context: Context): List<UpscalerSpec> = allSpecs().filter { it.installed(context) }
 
     /**
      * ⭐⭐ The installed ids, **cached**, for the node's dropdown.
@@ -161,8 +254,9 @@ object UpscalerCatalog {
     var installedIds: List<String> = emptyList()
         private set
 
-    /** ⚠ Call whenever an upscaler is downloaded or deleted. */
+    /** ⚠ Call whenever an upscaler is downloaded, imported or deleted. */
     fun refresh(context: Context) {
+        scanCustom(context)
         installedIds = installed(context).map { it.id }
     }
 

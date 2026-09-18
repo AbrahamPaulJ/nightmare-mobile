@@ -328,6 +328,7 @@ fun CanvasScreen(
             status = status,
             pending = state.pending,
             previews = state.previews,
+            beforePreviews = state.beforePreviews,
             imageFor = imageFor,
             clipFrameFor = clipFrameFor,
             modifier = Modifier
@@ -583,7 +584,16 @@ fun CanvasScreen(
      * output. The user's call, 2026-09-15: *"in sample fullscreen view, don't
      * need any btns."*
      */
-    val viewedIsInput = viewedIsPhoto || viewedType in com.abrah.nightmare.SD_SAMPLER_TYPES
+    // ⚠⚠ …and the same for upscale's BEFORE picture: opened from the same
+    // inspector (`viewingNode` is whichever node's SHEET is open, not
+    // necessarily who owns the picture on screen), a "keep"/"delete" tap
+    // there must not act as though the picture it is looking at were
+    // upscale's own result — it is what fed it. Checked by IDENTITY against
+    // `beforePreviews`, not by node type alone, so upscale's AFTER picture
+    // (the same node, the other image id) still gets the action row.
+    val viewedIsInput = viewedIsPhoto || viewedType in com.abrah.nightmare.SD_SAMPLER_TYPES ||
+        (viewedType == com.abrah.nightmare.UpscaleNode.name &&
+            state.beforePreviews[viewedNode]?.first == state.viewing)
     // ⚠⚠ Hoisted OUT of the `let` below: `rememberImagePick` registers an
     // activity-result launcher, and a launcher registered inside a conditional
     // is registered and torn down as the condition flips -- which is exactly

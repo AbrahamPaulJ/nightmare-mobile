@@ -347,8 +347,29 @@ class ResultsStore(private val dir: File) {
      */
     fun pngFile(id: String): File? = png(id).takeIf { it.isFile }
 
-    fun full(id: String): Bitmap? = png(id).takeIf { it.isFile }?.let {
-        BitmapFactory.decodeFile(it.path)
+    /**
+     * ⚠⚠ Decoded at [maxEdge], same shape as [thumbnail] — NOT the raw file
+     * resolution. This is what the swipeable viewer shows, called inline from
+     * composition ([HarnessViewModel.resultImage]), and an upscaled result can
+     * reach 6144 px on its long edge: decoding that at native size is a
+     * multi-hundred-ms main-thread stall per picture, which is exactly what
+     * made the Results tab "very laggy" on a swipe. 2048 is comfortably above
+     * this phone's screen resolution even zoomed in, and [pngFile]/[fullBytes]
+     * still hand out the untouched file for a save or a share, so nothing
+     * downstream of THIS picture loses resolution.
+     */
+    fun full(id: String, maxEdge: Int = 2048): Bitmap? {
+        val f = png(id)
+        if (!f.isFile) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(f.path, bounds)
+        val longest = maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1)
+        var sample = 1
+        while (longest / sample > maxEdge) sample *= 2
+        return BitmapFactory.decodeFile(
+            f.path,
+            BitmapFactory.Options().apply { inSampleSize = sample },
+        )
     }
 
     /** ⭐ The graph that made [id], ready to put back on the canvas. */

@@ -434,22 +434,28 @@ class SdSampler(
             featherFrac = num("feather").toFloat(),
         )
 
-        // ⭐⭐⭐ **A chain through a node a person must act on**
-        // (`docs/ARCHITECTURE.md`, "Chains"). A GENERATED picture is not known
-        // until it is made, so:
-        //  - nothing painted on it yet  -> stop here and say so; upstream is
-        //    rendered and cached, and the next Run carries on;
-        //  - painted on a DIFFERENT one -> stop by name, never repaint the same
-        //    coordinates on a picture they were not drawn on.
-        // ⚠ A photo is fixed, so neither applies: a new photo clears the mask.
-        // ⚠ Padding alone is a legitimate mask — an outpaint needs no painting.
+        // ⭐⭐⭐ **An inpaint ALWAYS needs a mask — no exceptions, no silent
+        // fallback.** Rule changed 2026-09-19, at the user's ask, twice in one
+        // day: a first attempt made an empty mask mean "everything" and ran
+        // unattended; that was reverted because the person still wanted to be
+        // STOPPED and shown the editor. This is the second correction —
+        // *"lets not do the full masking thing for inpaint. instead if user
+        // doesnt mask just show error saying nothing masked, this should be
+        // always true for inpaint nodes"* — dropping the OLD rule too, which
+        // only refused when the picture came from a chain
+        // (`ctx.ancestorTypes.any { isSampler(it) }`) and silently ran a
+        // PHOTO-sourced inpaint with nothing painted as a plain re-render.
+        // ⚠ Padding is still the one exception: an outpaint frame hanging off
+        // the photo IS the mask, and needs no painting.
+        val padded = paddingOf(p) != null
+        if (inpaint && stored.isEmpty && !padded) {
+            throw NeedsInput("nothing masked — paint an area, then Run again")
+        }
+        // ⚠⚠ Still gated to a CHAINED picture, unlike the check above: a plain
+        // photo's mask is cleared the moment the photo changes
+        // ([Graph.withNewPicture]), so this state is only reachable when the
+        // picture is a GENERATED one that re-rendered under a painted mask.
         if (inpaint && ctx.ancestorTypes.any { isSampler(it) }) {
-            val padded = paddingOf(p) != null
-            if (stored.isEmpty && !padded) {
-                throw NeedsInput(
-                    "frame and paint the area to redo on the new picture, then Run again"
-                )
-            }
             val on = p[MaskNode.PAINTED_ON].orEmpty()
             if (!stored.isEmpty && on.isNotBlank() && on != photo.id) {
                 throw NeedsInput(

@@ -19,6 +19,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import com.abrah.nightmare.R
 import androidx.compose.ui.Alignment
@@ -69,6 +73,25 @@ fun SettingsScreen(
      * ⚠ Null hides it, so a preview and a golden render without a picker.
      */
     onImportPack: (() -> Unit)? = null,
+    /**
+     * ⭐ Whether this app is currently exempt from Doze/App Standby battery
+     * optimisation. Read fresh from `PowerManager` by the caller — this
+     * screen does not own OS state, only shows it.
+     */
+    batteryUnrestricted: Boolean = true,
+    /** ⭐ Opens the system's "allow background activity" prompt for this app. */
+    onRequestBatteryUnrestricted: () -> Unit = {},
+    /**
+     * ⭐ Textual-inversion embeddings — import/list/delete. Reported
+     * 2026-09-18: *"we dont have any way to load embeddings? local dream
+     * allows importing from settings"* — also reachable from Models → Tools
+     * (`ModelsScreen.EmbeddingRow`, the same list and the same callbacks),
+     * but that alone was not where this was looked for. Null hides the
+     * section, as for [onImportPack].
+     */
+    embeddings: List<EmbeddingRow>? = null,
+    onImportEmbedding: (() -> Unit)? = null,
+    onDeleteEmbedding: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // ⚠⚠⚠ **Laid out EXACTLY like [LibraryScreen], and the first version was
@@ -103,7 +126,10 @@ fun SettingsScreen(
             }
         }
         when (tab) {
-            SettingsTab.THEME -> ThemePage(theme, onTheme)
+            SettingsTab.THEME -> ThemePage(
+                theme, onTheme, batteryUnrestricted, onRequestBatteryUnrestricted,
+                embeddings, onImportEmbedding, onDeleteEmbedding,
+            )
             SettingsTab.COMMUNITY -> CommunityPage(onImportPack)
             // ⚠ The harness is passed in rather than built here so this file
             // stays free of the view model.
@@ -113,9 +139,21 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun ThemePage(theme: Prefs.Theme, onTheme: (Prefs.Theme) -> Unit) {
+private fun ThemePage(
+    theme: Prefs.Theme,
+    onTheme: (Prefs.Theme) -> Unit,
+    batteryUnrestricted: Boolean = true,
+    onRequestBatteryUnrestricted: () -> Unit = {},
+    embeddings: List<EmbeddingRow>? = null,
+    onImportEmbedding: (() -> Unit)? = null,
+    onDeleteEmbedding: ((String) -> Unit)? = null,
+) {
+    var deletingEmbedding by remember { mutableStateOf<String?>(null) }
+    // ⚠ Scrollable now that this page carries the battery card and a growing
+    // embeddings list on top of the three theme radios — it used to fit
+    // without scrolling, which is why nothing here scrolled before.
     Column(
-        Modifier.fillMaxWidth().padding(top = 10.dp),
+        Modifier.fillMaxWidth().padding(top = 10.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         // ⚠⚠ THREE choices, not a dark-mode switch. "Follow the system" cannot
@@ -154,6 +192,95 @@ private fun ThemePage(theme: Prefs.Theme, onTheme: (Prefs.Theme) -> Unit) {
                 }
             }
         }
+        // ⭐⭐ **Whether a render survives the app leaving the foreground.**
+        //
+        // ⚠⚠ A foreground service now holds this app's process priority up
+        // for as long as a checkpoint is resident (`BackendKeepAliveService`),
+        // which is the actual fix for a user report, 2026-09-18: the backend
+        // process died in the background roughly 4 times in 10, and the whole
+        // workflow reset on return. But on some OEMs — this device's Samsung
+        // One UI among them — a foreground service alone is not always
+        // enough against the battery manager's own app-level kill list, and
+        // this is the second, user-visible half of that fix: one tap to ask
+        // the OS not to restrict this app at all.
+        // ⚠ Shown only while NOT already exempt — once granted there is
+        // nothing to ask for, and a card that never goes away reads as
+        // unresolved even after the user said yes.
+        if (!batteryUnrestricted) {
+            Card(
+                Modifier.fillMaxWidth().padding(top = 10.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
+            ) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.battery_title),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        stringResource(R.string.battery_body),
+                        style = LogTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(onClick = onRequestBatteryUnrestricted) {
+                        Text(stringResource(R.string.battery_allow))
+                    }
+                }
+            }
+        }
+        // ⭐⭐ Embeddings — import / list / delete. Reported 2026-09-18: not
+        // found under Models → Tools (`ModelsScreen`'s own copy of this,
+        // `EmbeddingRow`), which is where local-dream's equivalent isn't, so
+        // it is repeated here too, over the SAME view-model state and the
+        // SAME callbacks. ⚠ Null hides it — a preview and a golden with no
+        // picker want nothing drawn, same convention as [onImportPack].
+        if (onImportEmbedding != null) {
+            Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ImportCallout(
+                    title = stringResource(R.string.embeddings_title),
+                    body = stringResource(R.string.embeddings_body),
+                    onImport = onImportEmbedding,
+                )
+                for (row in embeddings.orEmpty()) {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        ),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(row.name, style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    stringResource(R.string.installed_mb, row.bytes shr 20),
+                                    style = LogTextStyle,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (onDeleteEmbedding != null) {
+                                OutlinedButton(onClick = { deletingEmbedding = row.name }) {
+                                    Text(stringResource(R.string.delete))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    deletingEmbedding?.let { name ->
+        ConfirmDelete(
+            title = "Delete $name?",
+            body = "Any prompt naming it renders without that embedding — no error, " +
+                "just the ordinary tokens instead.",
+            onConfirm = { onDeleteEmbedding?.invoke(name) },
+            onDismiss = { deletingEmbedding = null },
+        )
     }
 }
 

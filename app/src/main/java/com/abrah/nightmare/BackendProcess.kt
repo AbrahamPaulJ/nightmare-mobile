@@ -34,6 +34,15 @@ object BackendProcess {
     @Volatile
     private var process: Process? = null
 
+    /**
+     * ⚠ Set from [start]'s `context`, read by [stop] and the monitor thread —
+     * both need one to drive [BackendKeepAliveService] and neither is handed
+     * one directly. `applicationContext`, so it outlives whichever Activity
+     * happened to call [start].
+     */
+    @Volatile
+    private var appContext: Context? = null
+
     /** Newest-first, same convention as the harness log. */
     val output = ArrayDeque<String>()
 
@@ -140,6 +149,16 @@ object BackendProcess {
     /** Where a model must live for the app to reach it. */
     fun modelsDir(context: Context): File =
         File(context.getExternalFilesDir(null), "models")
+
+    /**
+     * ⭐ Where a textual-inversion embedding must live for the backend to
+     * find it. `main.cpp` computes this itself as `parent_path().parent_path()`
+     * of `--model_dir`, i.e. two directories above `modelsDir/<modelId>/` —
+     * which lands here, a sibling of [modelsDir] rather than inside it. One
+     * embeddings directory serves every model, loaded fresh at every launch.
+     */
+    fun embeddingsDir(context: Context): File =
+        File(context.getExternalFilesDir(null), "embeddings")
 
     sealed interface Start {
         data object Ok : Start
@@ -288,6 +307,11 @@ object BackendProcess {
                     ModelCatalog.backendTypeOf(modelId), modelId, res.width, res.height,
                 )
                 upscalerServer = upscalerOnly
+                appContext = context.applicationContext
+                // ⭐⭐ Hold the process priority up for as long as this backend
+                // is resident — not just while a render is in flight. See
+                // [BackendKeepAliveService].
+                BackendKeepAliveService.start(context.applicationContext)
                 monitor(p)
                 Start.Ok
             } catch (e: Exception) {
@@ -340,6 +364,12 @@ object BackendProcess {
                     process = null
                     launchedKey = null
                     upscalerServer = false
+                    // ⚠ Same guard as the rest of this block: only when THIS
+                    // is still the live process. A relaunch already replaced
+                    // it and already re-started the keep-alive service for
+                    // the new one -- stopping it here would drop the priority
+                    // out from under a process that is still running.
+                    appContext?.let { BackendKeepAliveService.stop(it) }
                 }
             }
             say("[exited $code]")
@@ -354,6 +384,7 @@ object BackendProcess {
             upscalerServer = false
             was
         }
+        appContext?.let { BackendKeepAliveService.stop(it) }
         p?.let {
             say("[stopping]")
             it.destroy()
