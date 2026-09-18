@@ -53,8 +53,6 @@
     <!-- Settings. -->
     <string name="settings">Settings</string>
     <string name="settings_theme">Theme</string>
-    <string name="settings_community">Community</string>
-    <string name="settings_diagnostics">Diagnostics</string>
     <string name="theme_system">Follow the system</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
@@ -62,35 +60,11 @@
     <string name="battery_title">Keep rendering in the background</string>
     <string name="battery_body">This phone\'s battery manager may stop the app while it is not on screen, which can end a render in progress or drop the model that was loaded. Allowing it to run unrestricted keeps that from happening.</string>
     <string name="battery_allow">Allow in background</string>
-    <string name="community_title">Bring your own nodes</string>
-    <string name="community_intro">A node is two files: a manifest that declares its ports and knobs, and a script that runs it. Zip them and import the pack above, or push the folder to this app\'s plugin directory. No toolchain, no compile step, no new version of the app.</string>
-
-    <string name="community_files_title">The two files</string>
-    <string name="community_files_body">node.json declares the pack id, the node type, its inputs and outputs, its widgets, and which host ops it needs permission for.\n\nindex.js calls __nm.register(&lt;pack&gt;:&lt;Type&gt;, { run: fn }). Your run(ctx, inputs, widgets) returns whatever the last host op returned.</string>
-
-    <string name="community_ops_title">What ctx.host can call</string>
-    <string name="community_ops_body">image.info  width and height\nimage.resize  image, width, height\nimage.crop  image, x, y, width, height\nimage.new  width, height, color\nimage.composite  base, overlay, x, y, mask\nimage.blend  a, b, alpha\nimage.grayscale, image.invert  image\nlatent.blend  two latents and a mask image</string>
-
-    <string name="community_handles_title">Images are ids, not pixels</string>
-    <string name="community_handles_body">Inputs arrive as handles and host ops return handles. A 512 image crosses into your script as about 40 bytes of JSON rather than 780 KB, which is what makes the sandbox free. You never loop over pixels; you compose ops that do.</string>
-
-    <string name="community_widgets_title">Widgets are declared, not drawn</string>
-    <string name="community_widgets_body">Give a number min and max and you get a slider. Give it options and you get a dropdown, or a row of chips when there are four or fewer. Add a hint and it shows under the control.\n\nYou choose the values; the app chooses the control. That is deliberate, so no pack invents a control language of its own.</string>
-
-    <string name="community_cannot_title">What a node cannot do yet</string>
-    <string name="community_cannot_body">There is no host op that runs a model, so a node cannot segment, detect or estimate anything. That is the next tier and it is not built.\n\nScripts run in a QuickJS sandbox and permissions are denied by default, so a pack cannot reach the network or your files. Nothing yet bounds how long one may run.</string>
-
-    <string name="community_reference">Reference</string>
-    <string name="community_repo">github.com/AbrahamPaulJ/nightmare-mobile\n\nThe examples/ folder has four working packs, from a one op wrapper to a two node toolkit. The README covers the same ground as this page with the full manifest.</string>
-    <string name="community_experimental">Experimental. The plugin format can still change between versions, and there is no validation gate on an imported pack yet, so import packs the way you would run any other code you did not write.</string>
 
     <!-- Flows. -->
     <string name="flows_import">Import a flow</string>
     <string name="flows_import_note">A .json flow someone shared. It opens on the canvas.</string>
     <string name="flows_import_flow">Import</string>
-    <string name="flows_import_pack">Import a node pack</string>
-    <string name="pack_import_note">A .zip of JavaScript nodes. They appear in the palette beside the built-ins.</string>
-    <string name="flows_import_warning">⚠ A pack runs its own code. Import only ones you trust.</string>
     <string name="flows_recommended">Recommended</string>
     <string name="flows_saved">Saved</string>
     <string name="save">Save</string>

@@ -10,8 +10,8 @@ NPU. No server, no account, no cloud, no network. Built on LocalDream's NPU back
   <img src="media/workflows.png" alt="Text to image, image to image and image to video, each as a node graph on an Android phone">
 </p>
 
-> **Early and experimental.** It works, and it has been run on exactly one phone.
-> The plugin format can still change between versions.
+> **Early.** It works — text to image, image to image, inpainting and text to video all render
+> on device — but this is a young project from one developer, so expect rough edges.
 
 **[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)** —
 Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU. Models are not in the APK;
@@ -81,7 +81,6 @@ conversion, no cloud, private.
   keeps every wire. The app carries every HTP architecture tier and picks the build your chip can
   actually load. The video models are their own download under Models, resumable per file
   because 8.6 GB over a phone connection will be interrupted.
-- **Bring your own nodes.** A manifest and a script, no toolchain, no app release.
 - **English, 中文 and Русский.** The interface follows your phone's language. Adding another
   is a file drop — copy `app/src/main/res/values/strings.xml` into a `values-<code>/`
   folder and translate it; no code changes. ⚠ Model prompts are never translated: SD 1.5
@@ -89,82 +88,17 @@ conversion, no cloud, private.
 - **Offline and private.** Nothing is uploaded, there is no account, and no prompt or
   picture leaves the phone. The only thing that ever does is a file you explicitly share.
 
-## Writing a node
+## Writing a node (experimental)
 
-Two files. Nothing is compiled, and nothing needs a new version of the app.
+Contributors can add their own node without an app release: a JSON manifest plus a small
+JavaScript file, zipped and pushed to the app's plugin directory. No toolchain, no compile
+step. Four worked examples — from a one-op wrapper to a multi-node toolkit — are in
+[`examples/`](examples/).
 
-`node.json`
-
-```json
-{
-  "id": "com.example.center-square",
-  "version": "0.1.0",
-  "api": 1,
-  "nodes": [{
-    "type": "CenterSquare",
-    "category": "image",
-    "tier": 0,
-    "inputs":  [{ "name": "image", "type": "IMAGE" }],
-    "outputs": [{ "name": "image", "type": "IMAGE" }],
-    "widgets": [
-      { "name": "size", "type": "int", "default": 192, "min": 16, "max": 2048 }
-    ]
-  }],
-  "permissions": ["image"]
-}
-```
-
-`index.js`
-
-```js
-__nm.register('com.example.center-square:CenterSquare', {
-  run: function (ctx, inputs, widgets) {
-    var info = ctx.host('image.info', { image: inputs.image });
-    var side = Math.min(info.width, info.height);
-
-    var square = ctx.host('image.crop', {
-      image: inputs.image,
-      x: Math.floor((info.width  - side) / 2),
-      y: Math.floor((info.height - side) / 2),
-      width: side,
-      height: side
-    });
-
-    return ctx.host('image.resize', {
-      image: square.image,
-      width: parseInt(widgets.size, 10),
-      height: parseInt(widgets.size, 10)
-    });
-  }
-});
-```
-
-Zip the two files and import them from the Flows tab, or push the folder to the app's plugin
-directory. Four worked examples are in [`examples/`](examples/).
-
-**What a node can reach.** Inputs arrive as ids, never as pixels, and `ctx.host` is the whole
-surface:
-
-| op | takes |
-|---|---|
-| `image.info` | an image, returns width and height |
-| `image.resize` | image, width, height |
-| `image.crop` | image, x, y, width, height |
-| `image.new` | width, height, colour |
-| `image.composite` | base, overlay, x, y, optional mask |
-| `image.blend` | a, b, alpha |
-| `image.grayscale`, `image.invert` | an image |
-| `latent.blend` | two latents and a mask image |
-
-Widgets are declared, not drawn. Give a number `min` and `max` and you get a slider, give it
-`options` and you get a dropdown or a row of chips, add a `hint` and it appears under the
-control. An author picks values, never widgets, so no pack invents its own controls.
-
-**What a node cannot do yet.** There is no host op that runs a model, so a plugin cannot
-segment, detect or estimate anything — the built-in segmenter is not reachable from a script.
-That is the next tier and it is not built. Scripts run
-in a QuickJS sandbox with permissions denied by default, but nothing yet bounds how long one
-may run, so treat an imported pack the way you would treat any other code you did not write.
+This is early: the plugin format can still change between versions, there's no host op yet
+that lets a node run a model of its own, and an imported script should be treated like any
+other code you didn't write. Read an example in `examples/` for the manifest shape and the
+handful of image/latent ops a node can call.
 
 ## Building it
 

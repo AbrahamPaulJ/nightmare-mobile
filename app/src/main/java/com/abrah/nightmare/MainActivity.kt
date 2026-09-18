@@ -604,22 +604,15 @@ fun HarnessScreen(
         return
     }
 
-    // ⚠⚠ **The harness is now a TAB inside Settings**, not a screen of its own.
-    // The canvas's gear opens this; the wrench that used to open the harness
-    // directly is gone. `ui/SettingsScreen.kt` has the reasoning.
+    // ⚠⚠ **Settings is one page now** — Community and Diagnostics (the op
+    // harness) were removed 2026-09-19, at the user's ask: a pack still loads
+    // from `<externalFiles>/plugins/` with no UI, and the harness is a
+    // developer surface (`OpService` over adb) that never needed one either.
+    // `ui/SettingsScreen.kt` has the reasoning.
     //
     // ⚠ Back returns to the canvas rather than quitting -- the same hole the
     // fullscreen viewer had, and the reason every over-canvas screen handles it.
     BackHandler { vm.setCanvasVisible(true) }
-    // ⚠ Declared HERE now, not on the Flows tab: a node pack is code and is
-    // installed from Settings → Community, beside the page that explains what a
-    // pack may and may not do. `ui/WorkflowsScreen.kt` has the reasoning.
-    // ⚠ Two MIME types, as every other picker in this app does: plenty of
-    // providers hand a zip over as `application/octet-stream`, and filtering on
-    // the exact type greys out the file the user came for.
-    val packPicker = rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-    ) { uri -> if (uri != null) vm.importPlugin(uri) }
     // ⭐ Settings' own copy of the embeddings import picker — see the Models
     // tab's `embeddingPicker` for the same launcher and why it is declared
     // per-screen rather than shared (each screen owns its own launcher, the
@@ -655,15 +648,9 @@ fun HarnessScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     com.abrah.nightmare.ui.SettingsScreen(
-        tab = vm.settingsTab,
-        onTab = vm::switchSettingsTab,
         onClose = { vm.setCanvasVisible(true) },
         theme = vm.theme,
         onTheme = vm::chooseTheme,
-        diagnostics = { HarnessPane(vm) },
-        onImportPack = {
-            packPicker.launch(arrayOf("application/zip", "application/octet-stream"))
-        },
         batteryUnrestricted = batteryUnrestricted,
         onRequestBatteryUnrestricted = {
             // ⚠⚠ The DIRECT request, not just a link to the settings list —
@@ -684,12 +671,6 @@ fun HarnessScreen(
     )
 }
 
-/**
- * The op harness, as the Diagnostics tab draws it.
- *
- * ⚠ Split out so `SettingsScreen` can take it as a slot and stay free of the
- * view model -- the same shape `LibraryScreen` uses for its tabs.
- */
 /**
  * ⭐⭐ A Run stopped because a flow names a checkpoint that is not here — asked
  * ON the canvas, with the download in the popup (the user's call, 2026-09-17).
@@ -762,27 +743,6 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
                 androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) { Text("Not now") }
             }
         },
-    )
-}
-
-@Composable
-private fun HarnessPane(vm: HarnessViewModel) {
-    HarnessContent(
-        state = vm.backend,
-        busy = vm.working,
-        log = vm.log,
-        image = vm.image,
-        onStart = vm::startBackend,
-        onStop = vm::stopBackend,
-        onHealth = vm::checkBackend,
-        onEncodeText = vm::encodeText,
-        onVaeDecode = vm::vaeDecode,
-        onSample = vm::sample,
-        onGraph = vm::runGraph,
-        onOpenCanvas = { vm.setCanvasVisible(true) },
-        onOpenModels = { vm.setModelsVisible(true) },
-        progress = vm.progress,
-        onNotWired = vm::notWired,
     )
 }
 

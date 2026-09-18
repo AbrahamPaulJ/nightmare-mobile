@@ -40,34 +40,14 @@
 
     <string name="settings">设置</string>
     <string name="settings_theme">主题</string>
-    <string name="settings_community">社区</string>
-    <string name="settings_diagnostics">诊断</string>
     <string name="theme_system">跟随系统</string>
     <string name="theme_dark">深色</string>
     <string name="theme_light">浅色</string>
     <string name="theme_canvas_note">画布始终以深色绘制 — 它有自己的配色</string>
-    <string name="community_title">自制节点</string>
-    <string name="community_intro">一个节点由两个文件组成：一份声明其端口与参数的清单，和一段运行它的脚本。打包成 zip 后在上方导入节点包，或把文件夹推送到本应用的插件目录。无需工具链、无需编译、无需新版本。</string>
-    <string name="community_files_title">这两个文件</string>
-    <string name="community_files_body">node.json 声明包 id、节点类型、输入与输出、控件，以及需要哪些宿主操作权限。\n\nindex.js 调用 __nm.register(&lt;pack&gt;:&lt;Type&gt;, { run: fn })。你的 run(ctx, inputs, widgets) 返回最后一个宿主操作的结果。</string>
-    <string name="community_ops_title">ctx.host 可调用的操作</string>
-    <string name="community_ops_body">image.info  宽与高\nimage.resize  image, width, height\nimage.crop  image, x, y, width, height\nimage.new  width, height, color\nimage.composite  base, overlay, x, y, mask\nimage.blend  a, b, alpha\nimage.grayscale、image.invert  image\nlatent.blend  两个 latent 与一张遮罩图</string>
-    <string name="community_handles_title">图像是 id，不是像素</string>
-    <string name="community_handles_body">输入以句柄形式传入，宿主操作也返回句柄。一张 512 图像进入脚本时约为 40 字节 JSON，而非 780 KB，这正是沙箱几乎不耗成本的原因。你从不遍历像素，而是组合会处理像素的操作。</string>
-    <string name="community_widgets_title">控件是声明出来的，不是画出来的</string>
-    <string name="community_widgets_body">为数值指定 min 与 max 就得到滑块；指定 options 就得到下拉框，若不超过四项则是一排选项条。加上 hint，它会显示在控件下方。\n\n你选择取值，应用选择控件。这是有意为之，以免每个包各自发明一套控件。</string>
-    <string name="community_cannot_title">目前还不能做什么</string>
-    <string name="community_cannot_body">宿主没有运行模型的操作，因此节点无法做分割、检测或估计。那属于下一层级，尚未实现。\n\n脚本运行在 QuickJS 沙箱中，权限默认拒绝，因此插件包无法访问网络或你的文件。但目前还没有对运行时长的限制。</string>
-    <string name="community_reference">参考</string>
-    <string name="community_repo">github.com/AbrahamPaulJ/nightmare-mobile\n\nexamples/ 目录中有四个可用的示例包，从单一操作的封装到含两个节点的工具包。README 涵盖与本页相同的内容，并附完整清单。</string>
-    <string name="community_experimental">实验性。插件格式在版本之间仍可能变动，且导入的包尚无校验机制，请像对待任何来路不明的代码那样谨慎导入。</string>
 
     <string name="flows_import">导入流程</string>
     <string name="flows_import_note">别人发给你的流程（.json）。它会在画布上打开。</string>
     <string name="flows_import_flow">导入</string>
-    <string name="flows_import_pack">导入节点包</string>
-    <string name="pack_import_note">一个 JavaScript 节点的 .zip 包。它们会出现在调色板中，与内置节点并列。</string>
-    <string name="flows_import_warning">⚠ 节点包会运行自己的代码 — 请只导入你信任的包</string>
     <string name="flows_recommended">推荐</string>
     <string name="flows_saved">已保存</string>
     <string name="save">保存</string>

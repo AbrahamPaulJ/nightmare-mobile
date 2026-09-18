@@ -98,13 +98,6 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setCanvasVisible(on: Boolean) { showCanvas = on }
 
-    /** ⚠ Which Settings tab, hoisted exactly as [libraryTab] is — the two
-     *  screens are siblings and must behave the same way. */
-    var settingsTab by mutableStateOf(com.abrah.nightmare.ui.SettingsTab.THEME)
-        private set
-
-    fun switchSettingsTab(t: com.abrah.nightmare.ui.SettingsTab) { settingsTab = t }
-
     // ---- app settings ----------------------------------------------------
 
     /**
@@ -723,49 +716,6 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     onFailure = {
                         workflowError = "could not import that file — ${it.message}"
                     },
-                )
-            }
-        }
-    }
-
-    /**
-     * ⭐⭐ Import a PLUGIN PACK — the `.zip` `PluginInstaller` already accepts.
-     *
-     * ⚠⚠⚠ **There is no validation gate yet** (`docs/ARCHITECTURE.md` §8c).
-     * `PluginInstaller` bounds the ARCHIVE — entry count and total bytes, so a
-     * zip bomb cannot finish — and the QuickJS sandbox plus default-deny
-     * permissions stop a pack reaching the network or the disk. What nothing
-     * checks is BEHAVIOUR: a pack can loop forever or allocate until the app
-     * dies, and that reads to the user as "the app hung". ⇒ This is safe to
-     * offer for a pack you wrote; it is not yet safe as a way to run a
-     * stranger's code, and the Community tab says so.
-     */
-    fun importPlugin(uri: android.net.Uri) {
-        val ctx = getApplication<Application>()
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val result = runCatching {
-                // ⚠ Copied to a real File first: PluginInstaller works on the
-                // filesystem, and a content:// stream has no path.
-                val tmp = java.io.File(ctx.cacheDir, "import-${System.currentTimeMillis()}.zip")
-                ctx.contentResolver.openInputStream(uri)?.use { input ->
-                    tmp.outputStream().use { input.copyTo(it) }
-                } ?: throw java.io.IOException("could not read that file")
-                try {
-                    PluginInstaller.install(tmp, ops.pluginsDir(), ctx.cacheDir)
-                } finally {
-                    tmp.delete()
-                }
-            }
-            withContext(kotlinx.coroutines.Dispatchers.Main) {
-                result.fold(
-                    onSuccess = { dir ->
-                        say("installed the pack in ${dir.name}")
-                        // ⚠⚠ The node types are cached in a `by lazy`, so a pack
-                        // installed now is invisible until the process restarts.
-                        // Said out loud rather than left as "my node is missing".
-                        say("  ⚠ restart the app for its nodes to appear", bad = true)
-                    },
-                    onFailure = { workflowError = "could not import that pack — ${it.message}" },
                 )
             }
         }
