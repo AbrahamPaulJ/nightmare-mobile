@@ -151,6 +151,20 @@ object BackendProcess {
         File(context.getExternalFilesDir(null), "models")
 
     /**
+     * ⭐ The diagnostic override in `Download/nightmare-spillfill.txt` — a
+     * plain integer (bytes), or null when the file is absent or unreadable
+     * as one. See the note where it is read, in [start]'s `env`.
+     */
+    private fun readSpillFillOverride(context: Context): String? = runCatching {
+        File(
+            android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS,
+            ),
+            "nightmare-spillfill.txt",
+        ).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.toLongOrNull() != null }
+    }.getOrNull()
+
+    /**
      * ⭐ Where a textual-inversion embedding must live for the backend to
      * find it. `main.cpp` computes this itself as `parent_path().parent_path()`
      * of `--model_dir`, i.e. two directories above `modelsDir/<modelId>/` —
@@ -280,17 +294,40 @@ object BackendProcess {
                     // above.
                     if (!upscalerOnly && patch != null) { add("--patch"); add(patch.absolutePath) }
                 }
-                val env = mapOf(
-                    "LD_LIBRARY_PATH" to listOf(
-                        runtime.absolutePath,
-                        "/system/lib64",
-                        "/vendor/lib64",
-                        "/vendor/lib64/egl",
-                    ).joinToString(":"),
-                    "DSP_LIBRARY_PATH" to runtime.absolutePath,
-                )
+                val env = buildMap {
+                    put(
+                        "LD_LIBRARY_PATH",
+                        listOf(
+                            runtime.absolutePath,
+                            "/system/lib64",
+                            "/vendor/lib64",
+                            "/vendor/lib64/egl",
+                        ).joinToString(":"),
+                    )
+                    put("DSP_LIBRARY_PATH", runtime.absolutePath)
+                    // ⭐ A device-side diagnostic knob, reachable over adb with
+                    // no rebuild: `PipelineAnima.hpp`'s lowram path
+                    // (`loadUnetPartsIfNeeded`, the ONLY path this app ever
+                    // takes for Anima) shares a spill-fill buffer between
+                    // `unet_part1`/`unet_part2` sized from a HARDCODED constant
+                    // tuned on this project's own v79 device — `spillFillGroupBytes()`
+                    // already reads `LOCALDREAM_ANIMA_SPILL_FILL_BYTES` as an
+                    // override, unconditionally, but nothing ever SET it.
+                    // Reported 2026-09-18 (GitHub #2): `unet_part2` fails to
+                    // init on a v75 (SM8650) device -- plausibly because that
+                    // arch needs a different size. `adb shell "echo
+                    // <bytes> > /sdcard/Download/nightmare-spillfill.txt"`
+                    // lets someone try a different value with no APK change;
+                    // absent, this is a no-op and nothing here changes.
+                    readSpillFillOverride(context)?.let {
+                        put("LOCALDREAM_ANIMA_SPILL_FILL_BYTES", it)
+                    }
+                }
 
                 say("exec: ${cmd.joinToString(" ")}")
+                env["LOCALDREAM_ANIMA_SPILL_FILL_BYTES"]?.let {
+                    say("spill-fill override from Download/nightmare-spillfill.txt: $it bytes")
+                }
                 val p = ProcessBuilder(cmd).apply {
                     directory(File(nativeDir))
                     redirectErrorStream(true)
