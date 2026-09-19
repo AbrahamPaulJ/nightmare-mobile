@@ -591,7 +591,7 @@ fun CanvasScreen(
     // upscale's own result — it is what fed it. Checked by IDENTITY against
     // `beforePreviews`, not by node type alone, so upscale's AFTER picture
     // (the same node, the other image id) still gets the action row.
-    val viewedIsInput = viewedIsPhoto || viewedType in com.abrah.nightmare.SD_SAMPLER_TYPES ||
+    val viewedIsInput = viewedIsPhoto || viewedType in com.abrah.nightmare.IMAGE_SAMPLER_TYPES ||
         (viewedType == com.abrah.nightmare.UpscaleNode.name &&
             state.beforePreviews[viewedNode]?.first == state.viewing)
     // ⚠⚠ Hoisted OUT of the `let` below: `rememberImagePick` registers an
@@ -651,7 +651,7 @@ fun CanvasScreen(
                 // its pick and bin — choosing the picture IS what that viewer is
                 // for. The sampler's preview is a derived crop with nothing to
                 // act on.
-                chromeless = viewedType in com.abrah.nightmare.SD_SAMPLER_TYPES,
+                chromeless = viewedType in com.abrah.nightmare.IMAGE_SAMPLER_TYPES,
                 onPick = if (viewedIsPhoto) pickForViewed else null,
                 onClear = if (viewedIsPhoto && viewedNode != null) {
                     {

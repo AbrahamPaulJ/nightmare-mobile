@@ -194,18 +194,24 @@ object CustomModels {
             Family.SD15 -> ModelCatalog.SD15_NPU
             Family.SDXL -> ModelCatalog.SDXL_NPU
             Family.ANIMA -> ModelCatalog.ANIMA_NPU
+            // ⚠ Never detected on import (no marker names them); answered so
+            // the `when` stays exhaustive and a new family is a compile error.
+            Family.FLUX2 -> ModelCatalog.KLEIN
+            Family.ZIMAGE -> ModelCatalog.ZIMAGE
         },
         resolutions = listOf(
             when (family) {
                 Family.SD15 -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
+                Family.FLUX2, Family.ZIMAGE -> ModelCatalog.DIT_RES
             },
         ),
         requiredFiles = when (family) {
             Family.SD15 -> ModelCatalog.SD15_REQUIRED
             Family.SDXL -> ModelCatalog.SDXL_REQUIRED
             Family.ANIMA -> ModelCatalog.ANIMA_REQUIRED
+            Family.FLUX2, Family.ZIMAGE -> ModelCatalog.DIT_REQUIRED
         },
         // ⚠ Not a preference: SDXL's UNet and Anima's two DiT halves do not fit
         // beside their encoders at 1024², and the backend needs telling

@@ -647,6 +647,47 @@ class CanvasScreenshotTest {
     }
 
     /**
+     * ⭐⭐⭐ **The FLUX.2 node's sheet, which had none of this.**
+     *
+     * Reported 2026-09-19: the Flux node "doesn't maintain an ounce of
+     * consistency" with the SD ones. It had no checkpoint picker and no size
+     * control, because both are gated on things a DiT node is not — the picker
+     * on `IMAGE_SAMPLER_TYPES`, which the DiT registration never joined, and the
+     * size control on two [Widget.contextKey] size widgets, which a DiT node
+     * deliberately does not have. Its width and height turned up instead as two
+     * raw sliders at the bottom of the knob list.
+     *
+     * ⚠⚠ This golden pins all three halves of the fix at once: the checkpoint
+     * field is present, Shape and Resolution are drawn at the TOP in the slot
+     * every other family's size control uses, and `width`/`height` do NOT also
+     * appear as number fields below — the same duplicate the SD nodes were
+     * reported for on 2026-09-18.
+     *
+     * ⚠ Seven shapes is past `CHIP_LIMIT` (4), so Shape draws as a DROPDOWN —
+     * which is exactly what SDXL's seven-entry `aspect` chooser does, and is the
+     * point: both families now reach the same control through the same
+     * [Chooser] rule rather than through two hand-rolled layouts.
+     */
+    @Test
+    fun theFluxNodeReadsLikeAnSdOne() = shoot("inspector-dit-size") {
+        Surface(Modifier.fillMaxSize()) {
+            NodeInspectorBody(
+                nodeId = "generate",
+                node = Node(
+                    "generate", "flux2.sample",
+                    params = mapOf(
+                        "steps" to "4", "cfg" to "1.0", "seed" to "0",
+                        "model" to "flux2_klein_4b", "width" to "1792", "height" to "1024",
+                    ),
+                ),
+                type = NODE_TYPES["flux2.sample"],
+                onSetParam = { _, _, _ -> },
+                onDelete = {},
+            )
+        }
+    }
+
+    /**
      * ⚠ A model that serves ONE size draws no size control at all — a lone
      * option that cannot be unselected is furniture, and it would sit on every
      * backend node of every graph.

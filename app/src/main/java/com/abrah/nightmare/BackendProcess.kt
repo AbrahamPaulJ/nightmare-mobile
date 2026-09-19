@@ -29,6 +29,11 @@ object BackendProcess {
     private const val TAG = "BackendProcess"
     /** ⚠ Internal, not private: [DeviceProbe] runs the same binary with `--device_info`. */
     const val EXECUTABLE = "libstable_diffusion_core.so"
+
+    /** ⭐ The DiT engine the backend dlopens for FLUX.2 / Z-Image (upstream local-dream 3.0). */
+    const val DIT_ENGINE = "libdit_engine.so"
+    /** ⭐ Where its Hexagon skels ride in the APK — copied into the runtime dir. */
+    const val DIT_ASSETS = "ditlibs"
     private const val RUNTIME_DIR = "qnnruntime"
 
     @Volatile
@@ -141,6 +146,21 @@ object BackendProcess {
             // filesystem -- so it is atomic and never truncates `dst`.
             check(tmp.renameTo(dst)) { "cannot replace ${dst.absolutePath}" }
         }
+        // ⭐ The DiT engine's Hexagon skels (`libggml-htp-v79/v81.so`), beside
+        // the QNN ones on the DSP search path — upstream's `ditlibs`. FastRPC
+        // hands them to the DSP by bare name; nothing on the CPU loads them.
+        // ⚠ Absent from assets is not an error: a build staged without the
+        // engine simply cannot run a DiT model, and says so at launch.
+        for (n in context.assets.list(DIT_ASSETS).orEmpty()) {
+            val dst = File(dir, n)
+            val tmp = File(dir, "$n.tmp")
+            context.assets.open("$DIT_ASSETS/$n").use { input ->
+                tmp.outputStream().use { input.copyTo(it) }
+            }
+            tmp.setReadable(true, false)
+            tmp.setExecutable(true, false)
+            check(tmp.renameTo(dst)) { "cannot replace ${dst.absolutePath}" }
+        }
         Log.i(TAG, "runtime: ${names.size}/${all.size} libs (${DeviceProbe.caps()}) in ${dir.absolutePath}")
         runtimeUnpacked = dir
         return dir
@@ -244,6 +264,12 @@ object BackendProcess {
                 // client sends, so the mismatch renders the wrong size and
                 // reports success.
                 val spec = ModelCatalog.byId(modelId)
+                val dit = !upscalerOnly && spec?.isDit == true
+                if (dit && !File(nativeDir, DIT_ENGINE).isFile) {
+                    return@withContext Start.Failed(
+                        "the DiT engine ($DIT_ENGINE) is not in this build — it was staged without one"
+                    )
+                }
 
                 // ⚠⚠ **A missing patch is FATAL here, and that is a deliberate
                 // departure from both upstreams.** `local-dream`'s
@@ -277,7 +303,10 @@ object BackendProcess {
                         add("--type"); add(ModelCatalog.backendTypeOf(modelId))
                         add("--model_dir"); add(model.absolutePath)
                     }
-                    add("--lib_dir"); add(runtime.absolutePath)
+                    // ⭐ A DiT model dlopens `libdit_engine.so` out of --lib_dir,
+                    // and the engine ships as an APK native library — so for
+                    // those types it is the NATIVE dir (upstream BackendService).
+                    add("--lib_dir"); add(if (dit) nativeDir else runtime.absolutePath)
                     add("--port"); add(port.toString())
                     // ⚠⚠ Not a tuning knob. `--lowram` loads and releases each
                     // stage instead of holding the pipeline resident, and every
@@ -305,6 +334,18 @@ object BackendProcess {
                         ).joinToString(":"),
                     )
                     put("DSP_LIBRARY_PATH", runtime.absolutePath)
+                    // ⭐⭐ ggml-hexagon asks FastRPC for its skel by bare name, so
+                    // the runtime dir holding the skels AND the platform
+                    // defaults must both be on the DSP search path — dropping
+                    // the defaults leaves the skel unable to resolve what it
+                    // links against. Upstream's exact list.
+                    if (dit) {
+                        val dsp = listOf(
+                            runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",
+                        ).joinToString(";")
+                        put("ADSP_LIBRARY_PATH", dsp)
+                        put("DSP_LIBRARY_PATH", dsp)
+                    }
                     // ⭐ A device-side diagnostic knob, reachable over adb with
                     // no rebuild: `PipelineAnima.hpp`'s lowram path
                     // (`loadUnetPartsIfNeeded`, the ONLY path this app ever

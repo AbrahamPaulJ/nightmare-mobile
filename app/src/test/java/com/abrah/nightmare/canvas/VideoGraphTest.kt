@@ -1,6 +1,8 @@
 package com.abrah.nightmare.canvas
 
 import com.abrah.nightmare.Graph
+import com.abrah.nightmare.IMAGE_SAMPLER_TYPES
+import com.abrah.nightmare.INPAINT_TYPES
 import com.abrah.nightmare.NODE_TYPES
 import com.abrah.nightmare.Node
 import com.abrah.nightmare.SAMPLER_TYPES
@@ -79,12 +81,26 @@ class VideoGraphTest {
         // ⚠ NOT the prompt or the output: neither has a seed to roll.
         assertTrue(!isSampler("core.prompt"))
         assertTrue(!isSampler("core.output"))
-        // ⚠ Seven: six SD samplers (three families × sample/inpaint) plus the
-        // one video sampler. Asserted by NUMBER so adding a type without
-        // deciding whether it rolls a seed fails here rather than silently.
         // ⚠ Anima's two DO roll: they are the same [SdSampler] class.
         assertTrue(isSampler("anima.sample"))
-        assertEquals(7, SAMPLER_TYPES.size)
+        // ⭐⭐⭐ …and so do the two DiT families, since 2026-09-19. They did NOT
+        // until then, and this assertion is why the gap is worth a comment: the
+        // count was right at 7 and stayed right, because `SAMPLER_TYPES` was
+        // built from a LITERAL list that the DiT registration never joined. A
+        // type that is in no set at all does not move a count. ⇒ The sets are
+        // now read off [SdSampler.ALL] (`Graph.kt`), so this number moves when a
+        // sampler is registered — which is the failure this assertion was
+        // written to produce, and it did produce it on the very next edit.
+        assertTrue(isSampler("flux2.sample"))
+        assertTrue(isSampler("zimage.sample"))
+        // ⚠ Nine: eight image samplers (SD 1.5, SDXL and Anima × sample/inpaint,
+        // plus FLUX.2 and Z-Image, which have no inpaint type — their engine
+        // takes no mask) plus the one video sampler. Asserted by NUMBER so
+        // adding a type without deciding whether it rolls a seed fails here
+        // rather than silently.
+        assertEquals(9, SAMPLER_TYPES.size)
+        assertEquals(8, IMAGE_SAMPLER_TYPES.size)
+        assertEquals(3, INPAINT_TYPES.size)
     }
 
     @Test

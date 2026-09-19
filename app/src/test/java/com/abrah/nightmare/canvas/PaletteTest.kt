@@ -45,7 +45,10 @@ class PaletteTest {
     @Test fun threeFamiliesAreOneCard() {
         val generate = sections.getValue("generate")
         val sd = generate.single { card -> card.any { it.name == SdSampler.SDXL.name } }
-        assertEquals(listOf("sd15.sample", "sdxl.sample", "anima.sample"), sd.map { it.name })
+        assertEquals(
+            listOf("sd15.sample", "sdxl.sample", "anima.sample", "flux2.sample", "zimage.sample"),
+            sd.map { it.name },
+        )
     }
 
     /** ⚠ The port that makes the Tap tool appear exists only on the inpaint types. */

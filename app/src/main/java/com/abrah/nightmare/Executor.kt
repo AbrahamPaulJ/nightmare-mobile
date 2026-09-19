@@ -113,10 +113,24 @@ interface OpHost {
          * the context key, is unchanged (`ModelCatalog.aspectTarget`).
          */
         aspect: String? = null,
+        /** ⭐ An inpaint node's picture + mask, PNG — see `Ops.sample`. */
+        inpaintImage: ByteArray? = null,
+        inpaintMask: ByteArray? = null,
         onProgress: (Ops.Progress) -> Unit,
     ): Ops.Result<Ops.Sampled>
 
     suspend fun vaeDecode(latentHandle: String, width: Int, height: Int): Ops.Result<Ops.Decoded>
+
+    /**
+     * ⭐ The whole render in one call — see `Ops.generate`. Only the DiT
+     * families take this path. ⚠ Defaulted to a refusal so a host that does not
+     * serve it (every test fake written before it) says so by name.
+     */
+    suspend fun generate(
+        prompt: String, negative: String, steps: Int, cfg: Double, seed: Int,
+        width: Int, height: Int, imagePng: ByteArray?, denoise: Double,
+        onProgress: (Ops.Progress) -> Unit,
+    ): Ops.Result<Ops.Decoded> = Ops.Result.Err(501, "this host cannot run a whole-render model")
 
     /**
      * ⚠ **mask = 1 takes [b]**, matching `/generate`'s own per-step blend where
@@ -157,6 +171,7 @@ object BackendHost : OpHost {
         steps: Int, cfg: Double, seed: Int,
         width: Int, height: Int, latentHandle: String?, denoise: Double,
         scheduler: String, condHandle: String, aspect: String?,
+        inpaintImage: ByteArray?, inpaintMask: ByteArray?,
         onProgress: (Ops.Progress) -> Unit,
         // ⚠ Named, not positional. Ops.sample grew preview arguments BEFORE
         // onProgress, and a positional forward silently bound the callback to
@@ -173,11 +188,22 @@ object BackendHost : OpHost {
         prompt = "", negative = "", steps = steps, cfg = cfg, seed = seed,
         width = width, height = height, latentHandle = latentHandle, denoise = denoise,
         scheduler = scheduler, condHandle = condHandle, aspect = aspect,
+        inpaintImage = inpaintImage, inpaintMask = inpaintMask,
         onProgress = onProgress,
     )
 
     override suspend fun vaeDecode(latentHandle: String, width: Int, height: Int) =
         Ops.vaeDecode(latentHandle = latentHandle, width = width, height = height)
+
+    override suspend fun generate(
+        prompt: String, negative: String, steps: Int, cfg: Double, seed: Int,
+        width: Int, height: Int, imagePng: ByteArray?, denoise: Double,
+        onProgress: (Ops.Progress) -> Unit,
+    ) = Ops.generate(
+        prompt = prompt, negative = negative, steps = steps, cfg = cfg, seed = seed,
+        width = width, height = height, imagePng = imagePng, denoise = denoise,
+        onProgress = onProgress,
+    )
 
     override suspend fun latentBlend(a: String, b: String, maskPng: ByteArray) =
         Ops.latentBlend(a = a, b = b, maskPng = maskPng)
@@ -634,12 +660,19 @@ fun nodeAspect(node: Node): String? {
     return node.params["aspect"]
 }
 
-fun backendContextKey(node: Node) = ContextKey(
-    ModelCatalog.backendTypeOf(node.str("model")),
-    node.str("model"),
-    node.int("width"),
-    node.int("height"),
-)
+fun backendContextKey(node: Node): ContextKey {
+    // ⭐⭐ A DiT model's size is a REQUEST field, not a launch one: no patch,
+    // no graph compiled per shape. Keying on the node's width/height would
+    // relaunch the backend for every slider move, so it keys on the model's
+    // native size — one process serves every size.
+    val dit = ModelCatalog.byId(node.str("model"))?.takeIf { it.isDit }
+    return ContextKey(
+        ModelCatalog.backendTypeOf(node.str("model")),
+        node.str("model"),
+        dit?.native?.width ?: node.int("width"),
+        dit?.native?.height ?: node.int("height"),
+    )
+}
 
 /**
  * ⭐ The checkpoints this graph names, in order, without duplicates.

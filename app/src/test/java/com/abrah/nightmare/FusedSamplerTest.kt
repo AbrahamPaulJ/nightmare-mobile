@@ -2,7 +2,9 @@ package com.abrah.nightmare
 
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -143,6 +145,32 @@ class FusedSamplerTest {
         exec(host).run(graph(photo = photoFile(), params = painted))
         assertEquals("base must be the encoded SOURCE", host.lastEncodeHandle, host.blendA)
         assertEquals("repaint must be the SAMPLED latent", host.lastSampleHandle, host.blendB)
+    }
+
+    /**
+     * ⭐⭐ **An inpaint sends its picture and mask with `sample`** — the ones a
+     * 9-channel checkpoint conditions on — and they are the SAME bytes the
+     * encode and the blend got. The backend drops them for any other UNet
+     * (`backend-patches/006`), which is why the node never asks which kind of
+     * model is loaded. ⚠ A mask that differed from the blend's would make the
+     * model repaint one region while the blend keeps another.
+     */
+    @Test
+    fun anInpaintSendsItsPictureAndMaskToTheSampler() = runBlocking {
+        val host = RecordingHost()
+        assertNull(exec(host).run(graph(photo = photoFile(), params = painted)).error)
+        assertNotNull("a 9-channel model needs the picture", host.lastInpaintImage)
+        assertArrayEquals("the picture must be the one encoded", host.lastEncodePng, host.lastInpaintImage)
+        assertArrayEquals("the mask must be the one blended", host.lastBlendMask, host.lastInpaintMask)
+    }
+
+    /** ⚠ …and nothing else does: image-to-image has no mask to condition on. */
+    @Test
+    fun imageToImageSendsNoInpaintFields() = runBlocking {
+        val host = RecordingHost()
+        assertNull(exec(host).run(graph(photo = photoFile(), type = SdSampler.SD15.name)).error)
+        assertNull(host.lastInpaintImage)
+        assertNull(host.lastInpaintMask)
     }
 
     /**
@@ -424,6 +452,8 @@ private class RecordingHost : OpHost {
 
     val distinctConds = mutableSetOf<String>()
     var lastLatentHandle: String? = null
+    var lastInpaintImage: ByteArray? = null
+    var lastInpaintMask: ByteArray? = null
     var lastEncodeHandle: String? = null
     var lastSampleHandle: String? = null
     var lastEncodeSize: Pair<Int, Int>? = null
@@ -461,10 +491,13 @@ private class RecordingHost : OpHost {
         steps: Int, cfg: Double, seed: Int,
         width: Int, height: Int, latentHandle: String?, denoise: Double,
         scheduler: String, condHandle: String, aspect: String?,
+        inpaintImage: ByteArray?, inpaintMask: ByteArray?,
         onProgress: (Ops.Progress) -> Unit,
     ): Ops.Result<Ops.Sampled> {
         samples++
         lastLatentHandle = latentHandle
+        lastInpaintImage = inpaintImage
+        lastInpaintMask = inpaintMask
         lastScheduler = scheduler
         lastSeed = seed
         val id = "lat_" + listOf(condHandle, steps, cfg, seed, width, height, latentHandle.orEmpty())

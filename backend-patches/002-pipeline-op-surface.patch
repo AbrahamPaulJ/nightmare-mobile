@@ -1,6 +1,6 @@
 --- ../LocalDream/local-dream/app/src/main/cpp/src/Pipeline.hpp	2026-08-12 03:55:18.758259800 +0930
-+++ backend-src/src/Pipeline.hpp	2026-09-11 18:58:02.790212800 +0930
-@@ -1,1400 +1,1700 @@
++++ backend-src/src/Pipeline.hpp	2026-09-19 21:50:15.211365100 +0930
+@@ -1,1400 +1,1703 @@
 -#ifndef PIPELINE_HPP
 -#define PIPELINE_HPP
 -
@@ -1647,8 +1647,11 @@
 +
 +  // Mutates `req` only to release the decoded image buffer once it is no
 +  // longer needed (a ~190 MB allocation at ultrafix sizes).
-+  GenerationResult generate(GenerationRequest &req,
-+                            const ProgressCallback &progress_callback);
++  //
++  // Virtual for PipelineDit, whose engine owns the whole txt2img round trip
++  // and so replaces this instead of filling in the stage hooks below.
++  virtual GenerationResult generate(GenerationRequest &req,
++                                    const ProgressCallback &progress_callback);
 +
 +  // --- op surface (Nightmare) --------------------------------------------
 +  // A node graph needs the stage hooks individually, not just generate().

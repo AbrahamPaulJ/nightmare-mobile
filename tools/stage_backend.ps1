@@ -55,9 +55,12 @@ foreach ($a in $arches) {
 # (2026-09-16). Measured the same day: the backend built on 2.49 headers runs
 # on these libraries and renders a 2.28 SD 1.5 and a 2.28 SDXL checkpoint
 # BIT-IDENTICAL to 2.49.
-# ⚠ Only the SDK installer needs an account, so this set was taken from
-# local-dream 2.8.1's own APK (assets/qnnlibs, all 20 files report
-# v2.50.0.260828221209). Set $env:NM_QNN_RUNTIME to stage a different set.
+# ⚠ Only the SDK installer needs an account, so this set was taken from an
+# upstream APK's assets/qnnlibs. ⚠⚠ It is local-dream **3.0**'s set, NOT
+# 2.8.1's as this comment used to say: libQnnSystem.so here is byte-identical
+# to v3.0.0-alpha.1's (md5 f050e5d0…), while 2.8.1 ships a different, 2.4 MB
+# build (3f09fefd…) — checked 2026-09-19. Set $env:NM_QNN_RUNTIME to stage a
+# different set.
 $runtime = if ($env:NM_QNN_RUNTIME) { $env:NM_QNN_RUNTIME } else {
     Join-Path (Split-Path -Parent $root) "LocalDream\qairt-runtime\2.50.0.260828221209"
 }
@@ -71,6 +74,26 @@ foreach ($n in $want) {
 }
 Write-Output ("qnnlibs {0,9:N0} bytes across {1} files ({2} arches)" -f $total, $want.Count, $arches.Count)
 
+# ⭐ The DiT engine (FLUX.2 Klein / Z-Image): libdit_engine.so as a native lib,
+# its Hexagon skels as assets the app copies onto the DSP search path. Taken
+# from local-dream v3.0.0-alpha.1's APK, where upstream builds them from
+# stable-diffusion.cpp with the Hexagon SDK (not installed here). ⚠ Optional:
+# without them the app builds and every other family runs; a DiT model then
+# refuses at launch by name. Set $env:NM_DIT_ENGINE to a dir holding
+# lib/arm64-v8a/libdit_engine.so and assets/ditlibs/*.so.
+$dit = if ($env:NM_DIT_ENGINE) { $env:NM_DIT_ENGINE } else {
+    Join-Path (Split-Path -Parent $root) "LocalDream\ld3-apk\extracted"
+}
+$ditAssets = Join-Path $root "app\src\main\assets\ditlibs"
+if (Test-Path (Join-Path $dit "lib\arm64-v8a\libdit_engine.so")) {
+    Copy-Item (Join-Path $dit "lib\arm64-v8a\libdit_engine.so") (Join-Path $jni "libdit_engine.so") -Force
+    New-Item -ItemType Directory -Force $ditAssets | Out-Null
+    Copy-Item (Join-Path $dit "assets\ditlibs\*.so") $ditAssets -Force
+    Write-Output "dit engine staged from $dit"
+} else {
+    Write-Output "dit engine NOT staged (none at $dit) - DiT models will refuse at launch"
+}
+
 # ⚠ A stale copy is the failure this guards against, so print what landed.
 Write-Output "--- staged ---"
-Get-ChildItem $jni, $assets | ForEach-Object { "  {0,-28} {1,10:N0}" -f $_.Name, $_.Length }
+Get-ChildItem $jni, $assets, $ditAssets -ErrorAction SilentlyContinue | ForEach-Object { "  {0,-28} {1,10:N0}" -f $_.Name, $_.Length }

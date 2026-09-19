@@ -25,8 +25,15 @@ class ModelCatalogTest {
         // ⚠ Across EVERY tier, not just the preferred one: two entries sharing
         // a `_min` archive would download one model's weights under another's
         // name, and only on the phones that take that tier.
-        val archives = ModelCatalog.all.flatMap { m -> m.builds.map { it.archive } }
+        // ⚠ Not a plain-file package's build, which names no archive; its
+        // FILES are checked the same way below.
+        val archives = ModelCatalog.all.filter { it.files.isEmpty() }.flatMap { m -> m.builds.map { it.archive } }
         assertEquals("duplicate archive", archives.size, archives.toSet().size)
+        for (m in ModelCatalog.all.filter { it.files.isNotEmpty() }) {
+            assertEquals("${m.id}: duplicate file name", m.files.size, m.files.map { it.name }.toSet().size)
+            assertEquals("${m.id}: files must be exactly what the backend loads", m.requiredFiles.toSet(), m.files.map { it.name }.toSet())
+            assertTrue("${m.id}: DiT is v79+ only", m.builds.all { it.minArch >= 79 })
+        }
     }
 
     @Test
@@ -53,7 +60,7 @@ class ModelCatalogTest {
         // ⚠ `builtIn`, not `all`: this is about the archives WE publish, and an
         // imported model has none. `all` also varies with what is on the disk
         // of whoever is running the suite.
-        for (spec in ModelCatalog.builtIn) {
+        for (spec in ModelCatalog.builtIn.filter { it.files.isEmpty() }) {
             for (b in spec.builds) {
                 assertTrue("${b.archive} is not ${b.tier}", b.archive.endsWith("${b.tier}.zip"))
             }
@@ -73,9 +80,34 @@ class ModelCatalogTest {
             assertEquals("${spec.id} tier", ModelCatalog.SDXL_TIER, spec.best!!.tier)
             assertEquals("${spec.id} minArch", 75, spec.best!!.minArch)
         }
-        for (spec in ModelCatalog.sd15Models) {
+        // ⚠ xororz publishes all three tiers; our own conversions have no
+        // `_8gen1` (DreamUI never built one), so an 8 Gen 1 takes `_min` there.
+        for (spec in ModelCatalog.sd15Models.filter { it.backendType == ModelCatalog.SD15_NPU }) {
             assertEquals("${spec.id} tiers", 3, spec.builds.size)
+        }
+        // ⭐ Whatever the count, every build's gate states its tier's arch.
+        val archOf = mapOf(ModelCatalog.TIER to 73, ModelCatalog.TIER_8GEN1 to 69, ModelCatalog.TIER_MIN to 68)
+        for (spec in ModelCatalog.sd15Models) {
             assertEquals("${spec.id} tier", ModelCatalog.TIER, spec.best!!.tier)
+            for (b in spec.builds) assertEquals("${b.archive} minArch", archOf[b.tier], b.minArch)
+        }
+    }
+
+    /**
+     * ⚠⚠ A build's extra archives carry resolution patches, and a patch is a
+     * byte-diff against ONE `unet.bin` — so an extra must be cut for the SAME
+     * tier as the build that fetches it. An `_8gen2` patch on a `_min` install
+     * reconstructs garbage and is still discovered and offered as a size.
+     */
+    @Test
+    fun anExtraArchiveBelongsToItsBuildsTier() {
+        for (spec in ModelCatalog.builtIn) {
+            for (b in spec.builds) {
+                for ((name, bytes) in b.extras) {
+                    assertTrue("$name is not ${b.tier}", name.endsWith("${b.tier}.zip"))
+                    assertTrue("$name has no size", bytes > 0)
+                }
+            }
         }
     }
 
@@ -132,7 +164,9 @@ class ModelCatalogTest {
     /** ⚠ img2img is a graph edge here, so the encoder is required in BOTH families. */
     @Test
     fun everyFamilyRequiresTheVaeEncoder() {
-        for (spec in ModelCatalog.all) {
+        // ⚠ Not the DiT families: their engine carries its own VAE
+        // (`vae.safetensors`) and does image to image inside one call.
+        for (spec in ModelCatalog.all.filterNot { it.isDit }) {
             assertTrue(spec.id, "vae_encoder.bin" in spec.requiredFiles)
         }
     }
@@ -143,9 +177,17 @@ class ModelCatalogTest {
      */
     @Test
     fun eachFamilyFetchesFromItsOwnRepository() {
-        for (spec in ModelCatalog.sd15Models) {
+        // ⚠ xororz's SD 1.5 checkpoints. The 9-channel inpaint entry is OURS
+        // (DreamUI's conversion) and lives in its own repository — asserted
+        // below, so it cannot drift onto his URL and 404.
+        for (spec in ModelCatalog.sd15Models.filter { it.backendType == ModelCatalog.SD15_NPU }) {
             for (b in spec.builds) {
                 assertTrue(spec.url(b), spec.url(b).startsWith(ModelCatalog.SD15_BASE_URL))
+            }
+        }
+        for (spec in ModelCatalog.sd15Models.filter { it.backendType == ModelCatalog.SD15_NPU_INPAINT }) {
+            for (b in spec.builds) {
+                assertTrue(spec.url(b), !spec.url(b).startsWith(ModelCatalog.SD15_BASE_URL))
             }
         }
         for (spec in ModelCatalog.sdxlModels) {
@@ -174,13 +216,20 @@ class ModelCatalogTest {
 
     // ---- family, runtime, backend type, resolution ------------------------
 
-    /** Every SD 1.5 entry is still exactly that: one `--type`, one size. */
+    /**
+     * Every SD 1.5 entry is still exactly that: one size, and a `--type` from
+     * the SD 1.5 layout — plain, or with the 9-channel inpainting `conv_in`
+     * (2026-09-19), which the backend patches and serves the same way.
+     */
     @Test
     fun everySd15EntryIsSd15NpuAt512() {
         for (spec in ModelCatalog.sd15Models) {
             assertEquals("${spec.id} family", Family.SD15, spec.family)
             assertEquals("${spec.id} runtime", Runtime.NPU, spec.runtime)
-            assertEquals("${spec.id} --type", ModelCatalog.SD15_NPU, spec.backendType)
+            assertTrue(
+                "${spec.id} --type ${spec.backendType}",
+                spec.backendType in listOf(ModelCatalog.SD15_NPU, ModelCatalog.SD15_NPU_INPAINT),
+            )
             assertEquals("${spec.id} native size", Res(512, 512), spec.native)
             assertFalse("${spec.id} must not ask for --lowram", spec.lowram)
         }
@@ -197,7 +246,9 @@ class ModelCatalogTest {
             assertTrue(
                 "${spec.id} --type ${spec.backendType}",
                 // ⚠ `anima` since 2026-09-16 — `main.cpp` has built it all along.
-                spec.backendType in listOf("sd15npu", "sdxl", "anima"),
+                // ⚠ `sd15npu_inpaint` since 2026-09-19, the same way.
+                // ⚠ `klein`/`zimage` since 2026-09-19 (backend-patches/007).
+                spec.backendType in listOf("sd15npu", "sd15npu_inpaint", "sdxl", "anima", "klein", "zimage"),
             )
             assertTrue("${spec.id} has no required files", spec.requiredFiles.isNotEmpty())
             assertTrue("${spec.id} has no resolution", spec.resolutions.isNotEmpty())
@@ -230,6 +281,29 @@ class ModelCatalogTest {
 
     private fun caps(arch: Int, vtcm: Int) =
         DeviceProbe.Caps(arch = arch, vtcmMb = vtcm, measured = true, soc = "TEST")
+
+    /**
+     * ⭐⭐ AbsoluteReality Inpaint: the right build per phone, and the portrait
+     * patch ONLY with the build it was cut against. A `_min` install that got
+     * the `_8gen2` patch would offer 512×768 and render garbage at it; with no
+     * patch on disk, `availableResolutions` offers 512 alone.
+     */
+    @Test
+    fun theInpaintModelServesMinWithoutThePortraitPatch() {
+        val spec = ModelCatalog.byId("absreality_inpaint")!!
+        // 8 Elite / 8 Gen 3 / 8 Gen 2: the fast build, with 512×768.
+        for (arch in listOf(79, 75, 73)) {
+            val b = spec.buildFor(caps(arch, 8))!!
+            assertEquals("v$arch", ModelCatalog.TIER, b.tier)
+            assertEquals("v$arch patch", 1, b.extras.size)
+        }
+        // 8 Gen 1 (no `_8gen1` of ours), 8s Gen 3 (v73, small VTCM), 888: `_min`, 512 only.
+        for ((arch, vtcm) in listOf(69 to 8, 73 to 2, 68 to 2)) {
+            val b = spec.buildFor(caps(arch, vtcm))!!
+            assertEquals("v$arch/${vtcm}MB", ModelCatalog.TIER_MIN, b.tier)
+            assertTrue("v$arch/${vtcm}MB must fetch no patch", b.extras.isEmpty())
+        }
+    }
 
     /**
      * ⭐⭐ The whole point of the tiers. ⚠ Contexts run FORWARD ONLY, so an
@@ -316,7 +390,9 @@ class ModelCatalogTest {
     fun everyCheckpointHasSomethingToStartFrom() {
         for (spec in ModelCatalog.all + ModelCatalog.all.first().copy(prompt = "", negative = "")) {
             assertTrue("${spec.id} opens on nothing", spec.starterPrompt.isNotBlank())
-            assertTrue("${spec.id} has no negative", spec.starterNegative.isNotBlank())
+            // ⚠ Except a DiT model: distilled to cfg 1, it never reads a
+            // negative, and upstream ships both with an empty one.
+            if (!spec.isDit) assertTrue("${spec.id} has no negative", spec.starterNegative.isNotBlank())
         }
     }
 

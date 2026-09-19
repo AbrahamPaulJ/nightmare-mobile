@@ -365,14 +365,23 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // ⭐ An inpaint node's grow and feather are drawn IN the Mask tab of its
     // popup, under the picture they change — never loose in the knob list
     // (the user's call, 2026-09-17).
-    if (node.type in com.abrah.nightmare.SD_INPAINT_TYPES && (name == "grow" || name == "feather")) return true
+    if (node.type in com.abrah.nightmare.INPAINT_TYPES && (name == "grow" || name == "feather")) return true
     // ⭐ No Pad on image-to-image (asked for 2026-09-17): it cannot pad
     // ([com.abrah.nightmare.PadRule.NEVER]), so the choice of fill cannot matter.
     if (name == com.abrah.nightmare.CropNode.PAD &&
         com.abrah.nightmare.padRuleFor(node.type) == com.abrah.nightmare.PadRule.NEVER
     ) return true
 
-    if (node.type !in com.abrah.nightmare.SD_SAMPLER_TYPES) return false
+    if (node.type !in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) return false
+    // ⭐ A DiT sampler's size belongs to the shape + size pair at the top of the
+    // sheet, the same way every other family's does. Its `width`/`height` are
+    // ordinary params rather than [Widget.contextKey] ones, so nothing above
+    // hides them and they drew as two loose sliders under the size control that
+    // already sets them — the duplicate the 2026-09-18 report named on the SD
+    // nodes, re-made on this one.
+    if ((name == "width" || name == "height") &&
+        com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())?.isDit == true
+    ) return true
     val hasImage = node.inputs["image"] != null
     val painted = !node.params[com.abrah.nightmare.MaskNode.OPS].isNullOrBlank()
     // ⚠ A `sample` type declares none of the mask widgets, so this branch never
@@ -660,9 +669,13 @@ internal fun NodeInspectorBody(
         // is also what made the field vanish entirely on a cold start
         // ([HarnessViewModel.init]) — an empty list and "no models" were
         // indistinguishable.
-        if (node.type in com.abrah.nightmare.SD_SAMPLER_TYPES) {
+        if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
             CheckpointPicker(
-                installed = installedModels,
+                // ⚠ An INPAINT node never offers a DiT model: their engine
+                // takes no mask, so there is no inpaint type to switch to.
+                installed = if ((type as? com.abrah.nightmare.SdSampler)?.inpaint == true) {
+                    installedModels.filterNot { it.family.dit }
+                } else installedModels,
                 currentId = node.params["model"].orEmpty(),
                 onPick = { onSetModel(nodeId, it) },
             )
@@ -672,7 +685,7 @@ internal fun NodeInspectorBody(
         // ⭐ An SD sampler edits its crop (and, on inpaint, its mask) in a popup,
         // and has no crop lock. ⚠ Image-to-image too since 2026-09-17, the user's
         // call: "i2i should have crop window similar to inpaint, without the lock".
-        val popup = node.type in com.abrah.nightmare.SD_SAMPLER_TYPES
+        val popup = node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES
         val padRule = com.abrah.nightmare.padRuleFor(node.type)
         val cropLocked = !popup && com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)[
             com.abrah.nightmare.CropNode.LOCKED
@@ -704,20 +717,74 @@ internal fun NodeInspectorBody(
         // ⭐⭐ ONE composable, drawn in the sheet AND at the top of the crop
         // popup (asked for 2026-09-17) — two copies of the size control would
         // stop agreeing the first time one of them learned something.
+        // ⭐⭐⭐ **A DiT sampler's size, in the SAME slot and the same two
+        // controls every other family gets.** Reported 2026-09-19: the Flux node
+        // "doesn't maintain an ounce of consistency" with the SD ones, and this
+        // was the loudest part of it — `sizeKnob` above asks for two
+        // [Widget.contextKey] size widgets, which a DiT node deliberately does
+        // not have (its size costs no relaunch), so it fell through every branch
+        // here and its width and height turned up as two raw sliders loose in
+        // the knob list at the bottom of the sheet.
+        //
+        // ⚠⚠ The shape is [ModelCatalog.DIT_SHAPES], NOT [ModelCatalog.ASPECTS],
+        // and the two must not be merged however alike they read. An aspect chip
+        // on SDXL crops a frozen 1024² canvas and changes no dimension; a shape
+        // here CHOOSES the width and height the engine renders. Same word, two
+        // mechanisms — which is why this calls [onSetResolution] (a size) and
+        // never [onSetAspect] (a crop).
+        val ditSpec = com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())
+            ?.takeIf { it.isDit && node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES }
+        val ditPanel: @Composable () -> Unit = ditPanel@{
+            val spec = ditSpec ?: return@ditPanel
+            val cur = com.abrah.nightmare.Res(
+                node.params["width"]?.toIntOrNull() ?: spec.native.width,
+                node.params["height"]?.toIntOrNull() ?: spec.native.height,
+            )
+            val shape = com.abrah.nightmare.ModelCatalog.ditShapeOf(cur)
+            Chooser(
+                label = "Shape",
+                // ⚠ Says the one thing a person cannot see: this is free here,
+                // where on SDXL the same-looking control costs nothing either but
+                // on SD 1.5 the size below it costs a reload.
+                hint = "a DiT model renders any of these directly — no reload, and a wider picture is a bigger one",
+                options = com.abrah.nightmare.ModelCatalog.DIT_SHAPES.keys.toList(),
+                // ⚠ Empty, not a guess, when a saved flow names a pair no shape
+                // offers — [ditShapeOf] returns null and nothing is highlighted.
+                current = shape.orEmpty(),
+                onPick = { s ->
+                    com.abrah.nightmare.ModelCatalog.ditSizeFor(s, cur)?.let(onSetResolution)
+                },
+            )
+            // ⚠ The sizes of the CHOSEN shape, so the two controls can never
+            // disagree. With no shape matched the whole grid is offered, which
+            // is the only way back from a hand-written size.
+            val sizes = shape?.let { com.abrah.nightmare.ModelCatalog.DIT_SHAPES[it] }
+                ?: com.abrah.nightmare.ModelCatalog.DIT_SHAPES.values.flatten()
+            Chooser(
+                label = stringResource(R.string.resolution),
+                hint = null,
+                options = sizes.map { it.toString() },
+                current = cur.toString(),
+                onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
+                variesInLength = true,
+            )
+        }
         val sizePanel: @Composable () -> Unit = {
+            ditPanel()
             if (sizeKnob && resolutions.size > 1) {
                 val current = com.abrah.nightmare.Res(
                     node.params["width"]?.toIntOrNull() ?: 0,
                     node.params["height"]?.toIntOrNull() ?: 0,
                 ).toString()
-                // ⚠ [Chooser] owns the chips-or-dropdown rule; seven resolutions
-                // is one of the cases that motivated it.
+                // ⚠ [Chooser] owns the chips-or-dropdown rule — and a list whose
+                // length is the CHECKPOINT's is always a dropdown there.
                 Chooser(
                     label = stringResource(R.string.resolution),
                     hint = stringResource(R.string.resolution_reloads),
                     options = resolutions.map { it.toString() },
                     current = current,
                     onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
+                    variesInLength = true,
                 )
             }
             // ⭐ The ASPECT, in the same place — it is the size control of a
@@ -731,7 +798,7 @@ internal fun NodeInspectorBody(
                     // ⚠⚠ Graph-wide on a SAMPLER only ([onSetAspect]); a crop
                     // node's `aspect` is its own frame shape, its own vocabulary.
                     onPick = {
-                        if (node.type in com.abrah.nightmare.SD_SAMPLER_TYPES) onSetAspect(it)
+                        if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) onSetAspect(it)
                         else onSetParam(nodeId, w.name, it)
                     },
                 )
@@ -741,7 +808,7 @@ internal fun NodeInspectorBody(
             // ⭐ The size first, in the crop window too — the frame's shape is
             // decided by it, so it is changed where the frame is.
             // ⚠⚠ Only when the popup is actually the one drawing this: a
-            // txt2img sampler has `popup = true` (every SD_SAMPLER_TYPES node
+            // txt2img sampler has `popup = true` (every IMAGE_SAMPLER_TYPES node
             // does) but no `cropSource`, so it never opens the popup and falls
             // into the inline `cropPanel()` call below instead — which used to
             // draw this SAME size control a second time, stacked under the one
@@ -865,7 +932,7 @@ internal fun NodeInspectorBody(
                 // re-cut this immediately, and re-cutting on every recomposition
                 // would run a bitmap draw on every frame of an unrelated gesture.
                 val rect = cropRectOf(node)
-                val framed = node.type in com.abrah.nightmare.SD_INPAINT_TYPES
+                val framed = node.type in com.abrah.nightmare.INPAINT_TYPES
                 val frame = if (framed) rect else CropRect.WHOLE
                 val src = if (!framed) raw else {
                     val outSize = framingOutSize(node, type)
@@ -909,7 +976,7 @@ internal fun NodeInspectorBody(
                 cropPanel = cropPanel,
                 maskPanel = maskPanel,
                 inlineTab = inlinePopupTab,
-                paints = node.type in com.abrah.nightmare.SD_INPAINT_TYPES,
+                paints = node.type in com.abrah.nightmare.INPAINT_TYPES,
                 openCrop = cropRequest?.takeIf { it.first == nodeId }?.second,
                 openTab = cropRequestTab,
             )
@@ -919,7 +986,7 @@ internal fun NodeInspectorBody(
         }
         // ⚠ The sampler frames AND paints, so an empty one would print two
         // notes that say "wire a picture in" — the framing one below covers both.
-        if (maskSource == null && node.type in PAINTS && node.type !in com.abrah.nightmare.SD_SAMPLER_TYPES) {
+        if (maskSource == null && node.type in PAINTS && node.type !in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
             Text(
                 "no picture to paint on yet — wire an image into this node, and " +
                     "the picture appears here as soon as it can be worked out.",
@@ -934,7 +1001,7 @@ internal fun NodeInspectorBody(
             // picture wired is self-evident — the input port above it is visibly
             // unconnected — and the sentence explaining it was instructions for
             // a thing the user had not tried to do yet.
-            if (node.type in com.abrah.nightmare.SD_SAMPLER_TYPES) Unit else
+            if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) Unit else
             // ⚠ Says WHY there is no framing view. It no longer says "press Run
             // once": the input is resolved on demand when it can be
             // (`HarnessViewModel.resolveInputPreview`), so the only cases left
@@ -1190,7 +1257,7 @@ internal fun NodeInspectorBody(
             // ⚠ Only on a sampler. `model` is a param on the legacy nodes too,
             // where it stays locked — they are deleted, not re-plumbed.
             // ⚠ Drawn at the TOP of the sheet, not here — see below.
-            if (w.name == "model" && node.type in com.abrah.nightmare.SD_SAMPLER_TYPES) continue
+            if (w.name == "model" && node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) continue
             // ⚠⚠ The mask's ops string is never worth typing. `crop` keeps its
             // four number fields beside the framing view because an exact
             // rectangle is sometimes the point; a list of stroke coordinates
@@ -1739,8 +1806,16 @@ private fun Chooser(
     options: List<String>,
     current: String,
     onPick: (String) -> Unit,
+    /**
+     * ⚠⚠ True when the NUMBER of options depends on something else — the
+     * resolutions a checkpoint ships. Such a list is always a dropdown: under
+     * [CHIP_LIMIT] it flipped to chips for a model with two sizes and back for
+     * one with seven, on the same node (reported 2026-09-19, AbsoluteReality
+     * Inpaint). The checkpoint picker's rule, `docs/UI.md` §8.6.
+     */
+    variesInLength: Boolean = false,
 ) {
-    if (options.size > CHIP_LIMIT) {
+    if (variesInLength || options.size > CHIP_LIMIT) {
         ChoiceDropdown(label, hint, options, current, onPick)
     } else {
         ChoiceRow(label, hint, options, current, onPick)
@@ -1857,7 +1932,13 @@ private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) 
             value = toTrack(shown),
             onValueChange = { t ->
                 val v = fromTrack(t)
-                onSet(if (isInt) v.roundToInt().toString() else fixed(v, decimalsAt(v)))
+                // ⭐ A [Widget.step] snaps to its grid from `min` — 512, 768, …
+                val step = widget.step
+                onSet(
+                    if (isInt && step != null && step > 0) {
+                        (min + ((v - min) / step).roundToInt() * step).roundToInt().coerceIn(min.roundToInt(), max.roundToInt()).toString()
+                    } else if (isInt) v.roundToInt().toString() else fixed(v, decimalsAt(v))
+                )
             },
             valueRange = min..max,
             // ⚠⚠ CONTINUOUS, even for an int knob — the snapping is done in

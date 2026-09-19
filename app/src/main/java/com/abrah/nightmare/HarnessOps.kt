@@ -178,6 +178,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ Image to video: animate the newest saved picture.
             "npu_i2v" -> npuI2v(arg)
             "inpaint" -> inpaint(arg)
+            "t2i" -> t2i()
             // ⭐ Tap to select, headless (docs/SEGMENTER.md §5).
             // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
             "segmenter_install" -> segmenterInstall()
@@ -312,7 +313,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                         // pointed at `image.mask` this op silently rendered a
                         // plain img2img and called it an inpaint — the mask
                         // never reached anything.
-                        in com.abrah.nightmare.SD_SAMPLER_TYPES -> it.copy(
+                        in com.abrah.nightmare.IMAGE_SAMPLER_TYPES -> it.copy(
                             params = it.params + mapOf(
                                 MaskNode.OPS to mask.encode(),
                                 PasteNode.STITCH to stitch.toString(),
@@ -364,6 +365,62 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         dump("sample", r.outputs["sample"])
         say("inpaint: stitch=$stitch — pictures in ${dir.absolutePath}")
+    }
+
+    /**
+     * ⭐ Text-to-image on the SELECTED model, over a fixed prompt set at fixed
+     * seeds, each picture saved — so two checkpoints can be compared picture
+     * for picture (`model_use` one, `t2i`, `model_use` the other, `t2i`).
+     *
+     * ⚠ The prompt AND the negative are set here rather than taken from the
+     * model: a comparison where each side used its own starter negative would
+     * be measuring the negatives. Written 2026-09-19 to gate the 9-channel
+     * inpaint checkpoint's txt2img against its base before offering it.
+     */
+    private suspend fun t2i() {
+        val prompts = listOf(
+            "masterpiece, best quality, ultra-detailed, realistic, 8k, a cat on grass",
+            "portrait photo of an old sailor, wrinkled face, grey beard, dramatic light",
+            "a small red sports car parked on a city street at dusk, photorealistic",
+            "a cozy living room with a fireplace and bookshelves, warm light, detailed",
+            "a mountain lake at sunrise, mist over the water, pine forest",
+        )
+        val negative = "worst quality, low quality, blurry, lowres, bad anatomy, watermark, text"
+        val model = SelectedModel.id
+        val dir = java.io.File(ctx.getExternalFilesDir(null), "t2i").apply { mkdirs() }
+        val types = nodeTypes()
+        for ((i, prompt) in prompts.withIndex()) {
+            val w0 = com.abrah.nightmare.canvas.defaultWorkflow()
+            val g = deriveSizes(
+                w0.graph.copy(
+                    nodes = w0.graph.nodes.map {
+                        when {
+                            it.type == "core.prompt" ->
+                                it.copy(params = it.params + mapOf("prompt" to prompt, "negative" to negative))
+                            it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES ->
+                                it.copy(params = it.params + ("seed" to "12345"))
+                            else -> it
+                        }
+                    }
+                ),
+                types,
+            )
+            val key = contextKeyModels(g, types).singleOrNull()?.let { m ->
+                contextKeyResolutions(g, types).singleOrNull()?.let { res ->
+                    ContextKey(ModelCatalog.backendTypeOf(m), m, res.width, res.height)
+                }
+            }
+            if (!ensureBackend(key)) return say("t2i: no backend", bad = true)
+            val t0 = System.currentTimeMillis()
+            val r = runWorkflow(com.abrah.nightmare.canvas.Workflow(g, emptyMap()))
+            if (r.error != null) return say("t2i: refused — ${r.error}", bad = true)
+            val img = r.outputs.values.filterIsInstance<Value.Image>().lastOrNull()
+                ?: return say("t2i: no picture", bad = true)
+            val png = images.png(img.id) ?: return say("t2i: evicted", bad = true)
+            java.io.File(dir, "${model}_$i.png").writeBytes(png)
+            say("  t2i $model #$i  ${System.currentTimeMillis() - t0} ms")
+        }
+        say("t2i: $model done — pictures in ${dir.absolutePath}")
     }
 
     private fun videoModels() {
@@ -960,7 +1017,53 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onStart: (String, String) -> Unit = { _, _ -> },
         /** ⭐ A node narrating itself while it runs. [com.abrah.nightmare.NodeCtx.say]. */
         onLog: (String, String) -> Unit = { _, _ -> },
-    ): GraphRun = runRolled(workflow, onNode, onProgress, onStart, onLog)
+    ): GraphRun {
+        try {
+            return runRolled(workflow, onNode, onProgress, onStart, onLog)
+        } finally {
+            releaseBackendIfTooBig()
+        }
+    }
+
+    /**
+     * ⭐⭐⭐ **Give the backend back when this checkpoint cannot survive another
+     * render** — [Residency] has the measurements and why it is a footprint gate
+     * rather than a free-memory reading.
+     *
+     * ⚠⚠⚠ **Here, in [runWorkflow], and NOT in the view model's run wrapper**,
+     * which is where it was first put and where it did nothing. `OpService`
+     * calls `HarnessOps` straight, so the headless path never passes through
+     * that wrapper — the verification run looked exactly like the bug it was
+     * meant to prove fixed, and the fault was the CHECK. ⚠ The second half of
+     * the same mistake: `t2i` renders five pictures inside ONE op, so a release
+     * that only fired when the op ended would not have helped between them
+     * either. `runWorkflow` is the one place both front ends and every
+     * multi-render op agree on (the rule `onLog`'s note states two screens up).
+     *
+     * ⚠ `finally`, so a failed or cancelled run still hands the memory back —
+     * that is the moment it is most likely to be needed.
+     *
+     * ⚠ Reads the LAUNCH key, never [SelectedModel]: what is resident is what
+     * must be released, and an upscale-only process has no key and holds no
+     * checkpoint, so it is left alone.
+     */
+    private suspend fun releaseBackendIfTooBig() {
+        val model = BackendProcess.launchedKey?.model ?: return
+        val spec = ModelCatalog.byId(model) ?: return
+        val am = ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE)
+            as android.app.ActivityManager
+        val mi = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(mi)
+        // ⚠ What is on disk, not the catalogue's download size: an imported
+        // checkpoint has no `files` list, and this is the number the run bar
+        // already shows for the resident model.
+        val bytes = spec.bytesOnDisk(ctx)
+        if (!Residency.releaseAfterRun(bytes, mi.totalMem)) return
+        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            say(Residency.why(spec.label, bytes, mi.totalMem))
+            stopBackend()
+        }
+    }
 
     /**
      * ⭐ Rolls every `seed = 0` before running, then executes.
@@ -1059,7 +1162,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // MODEL rather than from anything written in the graph. This line
             // is the only place the four ever appear together.
             onNode = { n ->
-                val recipe = if (n.type in com.abrah.nightmare.SD_SAMPLER_TYPES) {
+                val recipe = if (n.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
                     workflow.graph.byId[n.id]
                         ?.let { runCatching { SampleNode.effectiveParams(it) }.getOrNull() }
                         ?.let { p ->

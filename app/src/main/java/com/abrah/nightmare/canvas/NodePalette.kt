@@ -2,7 +2,6 @@ package com.abrah.nightmare.canvas
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -156,7 +155,24 @@ private fun tabFor(category: String): String = when (category) {
 
 private val TAB_ORDER = listOf("common", "generate", "inpaint")
 private val CATEGORY_ORDER = listOf("source", "edit", "generate", "inpaint", "output")
-private val FAMILY_ORDER = listOf("SD 1.5", "SDXL", "Anima")
+/**
+ * ⚠⚠ Read off [com.abrah.nightmare.Family], never written out — the same
+ * correction as `IMAGE_SAMPLER_TYPES` (`Graph.kt`) and found in the same pass.
+ * It was `listOf("SD 1.5", "SDXL", "Anima")`, so when the two DiT families were
+ * registered their chips matched nothing, sorted to 99 and took whatever order
+ * the grouping map happened to hand back. The enum's declaration order IS the
+ * family order (`docs/MODELS.md` §7), so a new family is now placed by being
+ * declared rather than by being remembered here.
+ */
+private val FAMILY_ORDER = com.abrah.nightmare.Family.entries.map { it.label }
+
+/**
+ * ⚠ How far a chip's text sits below the chip's top edge — its 6.dp vertical
+ * padding. Nudging the card's name down by this puts it on the first chip
+ * line's baseline band, which is what a centred alignment used to do for free
+ * before the chips could wrap onto a second line.
+ */
+private val CHIP_CENTRE = 6.dp
 
 private fun tabTitle(tab: String): String = when (tab) {
     "common" -> "Common"
@@ -165,6 +181,8 @@ private fun tabTitle(tab: String): String = when (tab) {
     else -> tab.replaceFirstChar { it.uppercase() }
 }
 
+// ⚠ For the wrapping chip row below — the same opt-in `RunLog`'s seed chips use.
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun PaletteCard(card: List<NodeType>, onPick: (NodeType) -> Unit, modifier: Modifier) {
     val first = card.first()
@@ -182,10 +200,16 @@ private fun PaletteCard(card: List<NodeType>, onPick: (NodeType) -> Unit, modifi
     ) {
         // ⚠ Name and chips on ONE row: the name never wraps, and a card is the
         // same shape whether it offers one family or three.
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // ⚠⚠ Aligned to the TOP, not centred, since the chips learned to wrap.
+        // Centred, a two-line chip block pushed "Image" halfway down the card
+        // with a gap above it, reading as a label for nothing. The dot and the
+        // name are nudged down by [CHIP_CENTRE] instead, so they sit on the
+        // FIRST chip line and the name still reads as a heading over the rest.
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // The same hue the node will have on the canvas.
             Box(
                 Modifier
+                    .padding(top = CHIP_CENTRE + 5.dp)
                     .size(10.dp)
                     .clip(CircleShape)
                     .background(CanvasColors.forCategory(first.category))
@@ -195,12 +219,29 @@ private fun PaletteCard(card: List<NodeType>, onPick: (NodeType) -> Unit, modifi
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 softWrap = false,
+                modifier = Modifier.padding(top = CHIP_CENTRE),
             )
-            Spacer(Modifier.weight(1f))
+            if (card.size <= 1) Spacer(Modifier.weight(1f))
             if (card.size > 1) {
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                // ⭐⭐ **They WRAP; they used to scroll sideways.** With a fifth
+                // family registered (Z-Image, 2026-09-19) the Generate card's
+                // chip strip ran off the edge: FLUX.2 was cut through the middle
+                // and Z-Image was not on screen at all, behind a horizontal
+                // scroll with no affordance saying so. A picker that hides two
+                // of its five options is the "control that conceals its own
+                // state" this app already refuses elsewhere (`Chooser`'s
+                // chips-or-dropdown rule, `docs/UI.md` §8.6).
+                // ⚠ [Modifier.weight] is what bounds it — a FlowRow with no
+                // width to wrap inside behaves exactly like the Row it replaces.
+                // ⚠ The card is one line taller only when it has to be, so a
+                // one- or three-family card is the shape it always was.
+                // ⚠ [androidx.compose.foundation.layout.FlowRow] fully qualified,
+                // following `RunLog`'s seed chips — the one other place this app
+                // wraps chips.
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     for (variant in card) {
                         Surface(

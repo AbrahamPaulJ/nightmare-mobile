@@ -1,0 +1,38 @@
+--- ../LocalDream/local-dream/app/src/main/cpp/src/QnnRuntime.hpp	2026-08-08 21:44:07.032141400 +0930
++++ backend-src/src/QnnRuntime.hpp	2026-09-19 23:14:05.069013700 +0930
+@@ -27,17 +27,32 @@
+ inline bool g_initialized = false;
+ 
+ // Resolves libQnnHtp.so / libQnnSystem.so inside `lib_dir`.
++//
++// A DiT launch passes the APK's native library directory as --lib_dir, because
++// that is where libdit_engine.so lives, and the QNN runtime is unpacked
++// somewhere else entirely. LD_LIBRARY_PATH carries that other directory for
++// every launch, so when the absolute paths are not there we fall back to the
++// bare sonames and let the linker find them. Without this /upscale cannot build
++// a context inside a DiT or MNN process, which is every process that is up
++// while a FLUX.2 or Z-Image model is loaded.
+ inline bool init(const std::string &lib_dir) {
+   using namespace qnn::tools;
+   std::filesystem::path lib(lib_dir);
+-  g_backendPath = (lib / "libQnnHtp.so").string();
++  std::error_code ec;
++  const bool inDir = std::filesystem::exists(lib / "libQnnSystem.so", ec);
++  g_backendPath = inDir ? (lib / "libQnnHtp.so").string() : "libQnnHtp.so";
++  const std::string systemPath =
++      inDir ? (lib / "libQnnSystem.so").string() : "libQnnSystem.so";
+   dynamicloadutil::StatusCode status =
+-      dynamicloadutil::getQnnSystemFunctionPointers(
+-          (lib / "libQnnSystem.so").string(), &g_systemFuncs);
++      dynamicloadutil::getQnnSystemFunctionPointers(systemPath, &g_systemFuncs);
+   g_initialized = (status == dynamicloadutil::StatusCode::SUCCESS);
+   return g_initialized;
+ }
+ 
++// Whether init() has succeeded. /upscale builds its own context per request and
++// needs this even when the resident pipeline never touches QNN.
++inline bool initialized() { return g_initialized; }
++
+ inline std::unique_ptr<QnnModel> createModel(const std::string &modelPath,
+                                              const std::string &modelName) {
+   using namespace qnn::tools;

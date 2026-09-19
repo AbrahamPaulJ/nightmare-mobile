@@ -115,6 +115,11 @@ data class ResultGroup(val batchId: String?, val items: List<Result>) {
  */
 class ResultsStore(private val dir: File) {
 
+    private companion object {
+        /** ⚠ Process-wide, not per instance: two stores may share one directory. See [keep]. */
+        val KEEP_LOCK = Any()
+    }
+
     private fun png(id: String) = File(dir, "$id.png")
     private fun meta(id: String) = File(dir, "$id.json")
 
@@ -195,63 +200,83 @@ class ResultsStore(private val dir: File) {
         /** ⭐ True when AUTOSAVE kept it. See [Result.auto]. */
         auto: Boolean = false,
     ): Result {
-        dir.mkdirs()
-        // ⚠⚠⚠ **A millisecond is not unique, and a batch keeps in a tight loop.**
-        // `"r" + currentTimeMillis()` alone collided whenever two results were
-        // kept inside the same millisecond: the second silently overwrote the
-        // first's PNG and metadata, and `clipFile` then handed a picture the
-        // other result's MP4. Found 2026-09-15 by a test that had been green for
-        // days — timing, not logic, decided whether it failed.
-        //
-        // ⚠ A suffix rather than nanoTime: the id is a FILE NAME and it sorts,
-        // so it has to stay readable and monotonic. The loop is bounded by how
-        // many results share one millisecond, which is single digits.
-        var id = "r" + System.currentTimeMillis()
-        var n = 1
-        while (png(id).exists() || meta(id).exists()) {
-            id = "r" + System.currentTimeMillis() + "_" + n++
-        }
-        val tmpPng = File(dir, "$id.png.tmp")
-        tmpPng.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        if (!tmpPng.renameTo(png(id))) {
-            tmpPng.copyTo(png(id), overwrite = true); tmpPng.delete()
-        }
+        synchronized(KEEP_LOCK) {
+            dir.mkdirs()
+            // ⚠⚠⚠ **A millisecond is not unique, and a batch keeps in a tight loop.**
+            // `"r" + currentTimeMillis()` alone collided whenever two results were
+            // kept inside the same millisecond: the second silently overwrote the
+            // first's PNG and metadata, and `clipFile` then handed a picture the
+            // other result's MP4. Found 2026-09-15 by a test that had been green for
+            // days — timing, not logic, decided whether it failed.
+            //
+            // ⚠ A suffix rather than nanoTime: the id is a FILE NAME and it sorts,
+            // so it has to stay readable and monotonic. The loop is bounded by how
+            // many results share one millisecond, which is single digits.
+            //
+            // ⚠⚠⚠ **And the suffix only worked for keeps that run one after
+            // another.** Autosave keeps every output node of a Run, each on its
+            // own IO coroutine, so a flow with two outputs kept twice AT ONCE:
+            // both saw no `r<ms>.png` yet (each was still writing its `.tmp`),
+            // both chose the same id and compressed into the SAME
+            // `r<ms>.png.tmp`. The first rename filed a PNG of interleaved bytes
+            // that Skia refuses ("bad adaptive filter value") — a blank card —
+            // and the second found its tmp gone and lost its picture. Reported
+            // from a phone 2026-09-19 as "Results does not show the image",
+            // only ever with two output nodes.
+            //
+            // ⇒ Two guards: [KEEP_LOCK] serialises every keep in the process,
+            // and `createNewFile` CLAIMS the id atomically rather than asking
+            // whether it is free, so a second writer can never share a tmp
+            // name even if one ever bypasses the lock. ⚠ The claimed PNG is
+            // empty until the rename replaces it, which [all] never lists: a
+            // result is listed by its metadata, written last.
+            var id = "r" + System.currentTimeMillis()
+            var n = 1
+            while (meta(id).exists() || !png(id).createNewFile()) {
+                id = "r" + System.currentTimeMillis() + "_" + n++
+            }
+            val tmpPng = File(dir, "$id.png.tmp")
+            tmpPng.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            if (!tmpPng.renameTo(png(id))) {
+                tmpPng.copyTo(png(id), overwrite = true); tmpPng.delete()
+            }
 
-        if (video != null && video.isFile) {
-            runCatching { video.copyTo(mp4(id), overwrite = true) }
+            if (video != null && video.isFile) {
+                runCatching { video.copyTo(mp4(id), overwrite = true) }
+            }
+            val r = Result(
+                id, System.currentTimeMillis(), imageId, seed, model, prompt,
+                bitmap.width, bitmap.height, batchId, batchLabel,
+                videoPath = mp4(id).takeIf { it.isFile }?.path,
+                favourite = favourite,
+                auto = auto,
+            )
+            val json = JSONObject()
+                .put("savedAt", r.savedAt)
+                .put("imageId", r.imageId ?: JSONObject.NULL)
+                .put("seed", r.seed ?: JSONObject.NULL)
+                .put("model", r.model ?: JSONObject.NULL)
+                .put("prompt", r.prompt ?: JSONObject.NULL)
+                .put("width", r.width)
+                .put("height", r.height)
+                // ⚠ Written even when null, so a reader never has to guess whether
+                // an absent key means "not a batch" or "an older file".
+                .put("batchId", r.batchId ?: JSONObject.NULL)
+                .put("batchLabel", r.batchLabel)
+                .put("favourite", r.favourite)
+                .put("auto", r.auto)
+                // ⭐ The graph, as the same JSON a saved workflow uses — so
+                // reopening a result is exactly reopening a workflow, with no
+                // second format to keep in step.
+                .put("flow", workflow.toJson(types))
+                .toString()
+            val tmpMeta = File(dir, "$id.json.tmp")
+            tmpMeta.writeText(json)
+            if (!tmpMeta.renameTo(meta(id))) {
+                tmpMeta.copyTo(meta(id), overwrite = true); tmpMeta.delete()
+            }
+            return r
         }
-        val r = Result(
-            id, System.currentTimeMillis(), imageId, seed, model, prompt,
-            bitmap.width, bitmap.height, batchId, batchLabel,
-            videoPath = mp4(id).takeIf { it.isFile }?.path,
-            favourite = favourite,
-            auto = auto,
-        )
-        val json = JSONObject()
-            .put("savedAt", r.savedAt)
-            .put("imageId", r.imageId ?: JSONObject.NULL)
-            .put("seed", r.seed ?: JSONObject.NULL)
-            .put("model", r.model ?: JSONObject.NULL)
-            .put("prompt", r.prompt ?: JSONObject.NULL)
-            .put("width", r.width)
-            .put("height", r.height)
-            // ⚠ Written even when null, so a reader never has to guess whether
-            // an absent key means "not a batch" or "an older file".
-            .put("batchId", r.batchId ?: JSONObject.NULL)
-            .put("batchLabel", r.batchLabel)
-            .put("favourite", r.favourite)
-            .put("auto", r.auto)
-            // ⭐ The graph, as the same JSON a saved workflow uses — so
-            // reopening a result is exactly reopening a workflow, with no
-            // second format to keep in step.
-            .put("flow", workflow.toJson(types))
-            .toString()
-        val tmpMeta = File(dir, "$id.json.tmp")
-        tmpMeta.writeText(json)
-        if (!tmpMeta.renameTo(meta(id))) {
-            tmpMeta.copyTo(meta(id), overwrite = true); tmpMeta.delete()
-        }
-        return r
     }
 
     /**
@@ -401,7 +426,7 @@ class ResultsStore(private val dir: File) {
             p["prompt"]?.takeIf { it.isNotBlank() }?.let { out += "prompt" to it }
             p["negative"]?.takeIf { it.isNotBlank() }?.let { out += "negative" to it }
         }
-        g.nodes.firstOrNull { it.type in com.abrah.nightmare.SD_SAMPLER_TYPES }?.params?.let { p ->
+        g.nodes.firstOrNull { it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES }?.params?.let { p ->
             p["model"]?.let { out += "model" to it }
             val size = listOfNotNull(p["width"], p["height"]).joinToString("x")
             if (size.isNotBlank()) out += "size" to size
@@ -411,7 +436,7 @@ class ResultsStore(private val dir: File) {
             p["seed"]?.takeIf { it != "0" }?.let { out += "seed" to it }
             // ⚠ Only when a latent is wired: on txt2img it is not read, and
             // showing it would imply it did something.
-            g.nodes.firstOrNull { it.type in com.abrah.nightmare.SD_SAMPLER_TYPES }
+            g.nodes.firstOrNull { it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES }
                 ?.takeIf { it.inputs.containsKey("latent") }
                 ?.let { p["denoise"]?.let { d -> out += "denoise" to d } }
         }

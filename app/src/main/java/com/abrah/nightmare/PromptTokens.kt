@@ -167,7 +167,7 @@ object PromptTokens {
 
     private fun budgetOf(consumer: Node): Budget? = when {
         consumer.type == "nd.sample" -> Budget.CLIP_RAW
-        consumer.type in SD_SAMPLER_TYPES ->
+        consumer.type in IMAGE_SAMPLER_TYPES ->
             ModelCatalog.byId(consumer.params["model"].orEmpty())?.let(::specBudget)
                 ?: when {
                     consumer.type.startsWith("anima.") -> Budget.ANIMA
@@ -177,12 +177,18 @@ object PromptTokens {
         else -> null
     }
 
-    private fun specBudget(spec: ModelSpec): Budget =
+    private fun specBudget(spec: ModelSpec): Budget? =
         if (spec.promptTokens > 77) Budget.CLIP_LONG else familyBudget(spec.family)
 
-    private fun familyBudget(f: Family): Budget = when (f) {
+    /**
+     * ⚠ Null for the DiT families: they read the prompt WHOLE through a Qwen3
+     * text encoder (upstream counts it unchunked), and this counter has no Qwen
+     * vocabulary. No counter beats a CLIP number that means nothing there.
+     */
+    private fun familyBudget(f: Family): Budget? = when (f) {
         Family.SD15, Family.SDXL -> Budget.CLIP
         Family.ANIMA -> Budget.ANIMA
+        Family.FLUX2, Family.ZIMAGE -> null
     }
 }
 

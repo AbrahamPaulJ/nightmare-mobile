@@ -331,6 +331,12 @@ data class Widget(
      * curved it too.
      */
     val fine: Boolean = false,
+    /**
+     * ⭐ An `int` knob that may only land on multiples of this, counted from
+     * [min]. Written for the DiT families' width/height: the engine renders any
+     * size 512–2048, but only in 256-px steps (upstream's `DitResolution`).
+     */
+    val step: Int? = null,
 ) {
     /** True for the kinds that want a numeric keyboard rather than a text one. */
     val numeric: Boolean get() = type == "int" || type == "float"
@@ -388,7 +394,7 @@ data class Source(val node: String, val port: String? = null) {
 // picture the clip starts from, so a graph whose frame seed never rolled
 // would animate the same still every Run.
 /**
- * ⭐⭐ The four SD sampler types, as a SET.
+ * ⭐⭐ Every sampler that makes a PICTURE, as a SET.
  *
  * ⚠⚠ The fork of 2026-09-15 (capability × family, `docs/ARCHITECTURE.md` §5.7)
  * turned every `type == "sd.sample"` into a membership test. A rule that still
@@ -460,25 +466,37 @@ fun isLastOutput(graph: Graph, nodeId: String): Boolean {
  */
 const val PROMPT_BRIEF = 28
 
-val SD_SAMPLER_TYPES = setOf(
-    "sd15.sample", "sdxl.sample", "anima.sample",
-    "sd15.inpaint", "sdxl.inpaint", "anima.inpaint",
-)
+// ⚠⚠⚠ **Read off [SdSampler.ALL], never written out.** Rule changed 2026-09-19,
+// and the bug that changed it is the one this whole file warns about: the eight
+// names were a LITERAL here, and when the two DiT families were registered in
+// `Fused.kt` (2026-09-19) nobody added them. `flux2.sample` and `zimage.sample`
+// were then in no set at all, so a Flux node silently lost about twenty rules a
+// sampler has -- no checkpoint picker, no crop popup, no batch sweep, no
+// framing reset, no seed on its result, and, worst, **no seed roll**: `isSampler`
+// said no, seed 0 was never rolled, and the second Run served the CACHED
+// picture. That is verbatim the `nd.video_sample` failure described above,
+// re-made ten days later against a literal that was right when it was written.
+// ⇒ A registration is now the only place a sampler is declared. Adding one to
+// `SdSampler.ALL` is what puts it in these sets; there is nothing left to
+// forget.
+// ⚠ Renamed from `IMAGE_SAMPLER_TYPES` in the same edit: FLUX.2 and Z-Image are
+// not SD, and a name that says otherwise is how the next family gets left out.
+val IMAGE_SAMPLER_TYPES: Set<String> = SdSampler.ALL.map { it.name }.toSet()
 
 /** ⚠ The ones that carry a mask, its editor and the paste back. */
-val SD_INPAINT_TYPES = setOf("sd15.inpaint", "sdxl.inpaint", "anima.inpaint")
+val INPAINT_TYPES: Set<String> = SdSampler.ALL.filter { it.inpaint }.map { it.name }.toSet()
 
-val SAMPLER_TYPES = SD_SAMPLER_TYPES + setOf("nd.sample")
+val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample")
 
 /**
- * ⭐ Every node that FRAMES a picture it was given — the four SD samplers and
+ * ⭐ Every node that FRAMES a picture it was given — every image sampler and
  * the video one.
  *
  * ⚠ The inspector draws a framing view for these and the canvas shows their
  * framed input; `image.crop` is framing too but is its own node, so it is added
  * where that matters rather than here.
  */
-val FRAMING_TYPES = SD_SAMPLER_TYPES + setOf("nd.sample")
+val FRAMING_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample")
 
 /**
  * ⭐ Every node holding a FRAMING of a picture it was handed — the `x/y/w/h`
@@ -500,7 +518,7 @@ const val FITTED_TO = "fitted_to"
  * ⭐ Every node holding a PAINTING on a picture it was handed.
  * ⚠⚠ Only the INPAINT samplers — an image-to-image node has no mask editor.
  */
-val PAINTS_PICTURE_TYPES = setOf("image.mask") + SD_INPAINT_TYPES
+val PAINTS_PICTURE_TYPES = setOf("image.mask") + INPAINT_TYPES
 
 /** ⚠ See [SAMPLER_TYPES] — never compare against one of those strings directly. */
 fun isSampler(type: String): Boolean = type in SAMPLER_TYPES

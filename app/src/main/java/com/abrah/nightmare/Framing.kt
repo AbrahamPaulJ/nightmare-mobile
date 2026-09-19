@@ -156,8 +156,8 @@ enum class PadRule {
 
 /** ⚠ The ONE place a node type's [PadRule] is decided — editor and sampler both ask. */
 fun padRuleFor(type: String): PadRule = when (type) {
-    in SD_INPAINT_TYPES -> PadRule.OUTPAINT
-    in SD_SAMPLER_TYPES -> PadRule.NEVER
+    in INPAINT_TYPES -> PadRule.OUTPAINT
+    in IMAGE_SAMPLER_TYPES -> PadRule.NEVER
     else -> PadRule.WHEN_TOO_SMALL
 }
 

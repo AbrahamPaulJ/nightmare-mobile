@@ -528,6 +528,15 @@ fun ModelsScreen(
                             Family.ANIMA -> "About 4.3 GB each, and ~9 GB free while it " +
                                 "unpacks. Slow: about 80 s a picture. Close other apps " +
                                 "while it renders. Use Wi-Fi."
+                            // ⚠ Plain files straight into place, so no unpack
+                            // headroom — but only an 8 Elite or newer runs them.
+                            Family.FLUX2 -> "About 6.7 GB. 8 Elite or newer only. Any size " +
+                                "from 512 to 2048. Use Wi-Fi."
+                            // ⚠⚠ Said before 8.8 GB is downloaded: upstream's own
+                            // build crashes on the dev phone (8 Elite), and works
+                            // on some 8 Elite Gen 5 phones (the user, 2026-09-19).
+                            Family.ZIMAGE -> "About 8.8 GB. 8 Elite or newer only. Still " +
+                                "maturing: it crashes on some 8 Elite phones. Use Wi-Fi."
                             // ⚠ The free-space figure is the one that surprises:
                             // the archive and its unpacked copy are both on disk
                             // at once, so a 3.5 GB download needs ~7.5 GB free.

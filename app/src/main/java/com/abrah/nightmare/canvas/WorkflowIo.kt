@@ -288,7 +288,7 @@ private fun migrateType(node: Node): Node {
     // ⚠⚠ The inpaint types lost their `mask` PORT (2026-09-17, the user's call):
     // the painting is the mask. A saved wire into it is dropped rather than left
     // pointing at a port nothing declares.
-    val renamed = if (renamed0.type in com.abrah.nightmare.SD_INPAINT_TYPES && "mask" in renamed0.inputs) {
+    val renamed = if (renamed0.type in com.abrah.nightmare.INPAINT_TYPES && "mask" in renamed0.inputs) {
         renamed0.copy(inputs = renamed0.inputs - "mask")
     } else renamed0
     // ⚠⚠ …and a crop's mirrored padding became a BLURRED mirror, under a new

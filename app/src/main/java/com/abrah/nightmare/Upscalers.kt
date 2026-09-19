@@ -27,6 +27,14 @@ import java.net.URL
  * sampler.** `/upscale` is registered in `main.cpp` outside the `if (pipeline)`
  * guards and builds its QNN model from the path in the request header, so it
  * runs inside whichever backend is already up and costs no process transition
+ * ⚠⚠ …**as long as that process has a QNN runtime, which is not free.** It held
+ * for SD and SDXL and silently did not for FLUX.2: `main.cpp` initialised the
+ * QNN runtime only for a QNN pipeline, so inside a DiT process `/upscale` could
+ * not build its context and every upscale in the app failed — including one
+ * started from Results on a picture no DiT model made, because
+ * `HarnessOps.ensureUpscaleServer` reuses whatever is up. Fixed in
+ * `backend-patches/008`; the reason it is written here is that this comment is
+ * the claim that was wrong.
  * (`docs/ARCHITECTURE.md` §4). An upscaler is not a checkpoint the graph is
  * pinned to; it is a file a node names. ⚠ `--upscaler_mode` is unrelated — it
  * means "a server with NO diffusion model".

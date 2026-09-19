@@ -246,6 +246,20 @@ fun HarnessScreen(
         // back stack, so the system's default is "finish". Found on the
         // fullscreen viewer, 2026-09-09; these two had it just as badly.
         BackHandler { vm.closeLibrary() }
+        // ⭐⭐ Asked AT the first Download, not at launch: that is the
+        // moment the answer means something. Android 13+ drops every
+        // notification silently without it, and the shade is where a
+        // 4 GB download is watched once the screen is off.
+        val notifyAsk = rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+        ) { }
+        val notifyCtx = androidx.compose.ui.platform.LocalContext.current
+        val askToNotify: () -> Unit = {
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                notifyCtx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) notifyAsk.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
         LibraryScreen(
             tab = vm.libraryTab,
             onTab = vm::switchLibraryTab,
@@ -287,7 +301,7 @@ fun HarnessScreen(
                     // something long", which is what [working] is for.
                     busy = vm.working,
                     error = vm.modelError,
-                    onInstall = vm::installModel,
+                    onInstall = { askToNotify(); vm.installModel(it) },
                     onCancel = vm::cancelModelInstall,
                     onDelete = vm::deleteModel,
                     onSelect = vm::askUse,
@@ -307,16 +321,16 @@ fun HarnessScreen(
                         picker.launch(arrayOf("application/zip", "application/octet-stream"))
                     },
                     upscalers = vm.upscalerRows,
-                    onInstallUpscaler = vm::installUpscaler,
+                    onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
                     onDeleteUpscaler = vm::deleteUpscaler,
                     onImportUpscaler = {
                         upscalerPicker.launch(arrayOf("application/octet-stream", "*/*"))
                     },
                     segmenter = vm.segmenterRow,
-                    onInstallSegmenter = vm::installSegmenter,
+                    onInstallSegmenter = { askToNotify(); vm.installSegmenter() },
                     onDeleteSegmenter = vm::deleteSegmenter,
                     video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
-                    onInstallVideo = vm::installVideoModels,
+                    onInstallVideo = { askToNotify(); vm.installVideoModels() },
                     onDeleteVideo = vm::deleteVideoModels,
                     onProbeVideo = vm::probeVideoSupport,
                     embeddings = vm.embeddingRows,
@@ -347,10 +361,11 @@ fun HarnessScreen(
                     onSaveGroup = { g -> vm.saveResultsToGallery(g.items.map { it.id }) },
                     onShareFlow = { vm.shareResultFlow(it.id) },
                     imageFor = vm::resultImage,
+                    unreadable = vm::resultUnreadable,
                     detailsFor = vm::detailsOf,
                     onUpscale = { r, u -> vm.upscaleResult(r.id, u) },
                     upscalers = vm.upscalerRows,
-                    onInstallUpscaler = vm::installUpscaler,
+                    onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
                     upscaling = vm.upscalingResult,
                     onShareResults = { ids, asFlow -> vm.shareResults(ids, asFlow) },
                     onToast = vm::toast,
@@ -406,6 +421,7 @@ fun HarnessScreen(
                     // both are async now, so this fills the gap rather than
                     // leaving a blank page for however long that takes.
                     thumbnailFor = { id -> vm.thumbnailFor(id) },
+                    unreadable = vm::resultUnreadable,
                     detailsFor = vm::detailsOf,
                     onDismiss = { vm.closeResult() },
                     onOpenFlow = { r -> vm.closeResult(); vm.openResultFlow(r.id) },

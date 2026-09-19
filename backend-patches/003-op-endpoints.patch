@@ -1,5 +1,5 @@
 --- ../LocalDream/local-dream/app/src/main/cpp/src/main.cpp	2026-08-21 16:35:42.952070300 +0930
-+++ backend-src/src/main.cpp	2026-09-17 15:24:14.859382900 +0930
++++ backend-src/src/main.cpp	2026-09-19 23:14:11.662615000 +0930
 @@ -1,10 +1,13 @@
  #include <algorithm>
  #include <chrono>
@@ -14,7 +14,15 @@
  #include <string>
  #include <vector>
  
-@@ -24,6 +27,7 @@
+@@ -14,6 +17,7 @@
+ #include "MnnUtils.hpp"
+ #include "Pipeline.hpp"
+ #include "PipelineAnima.hpp"
++#include "PipelineDit.hpp"
+ #include "PipelineControlNet.hpp"
+ #include "PipelineControlNetInpaint.hpp"
+ #include "PipelineSd15Cpu.hpp"
+@@ -24,6 +28,7 @@
  #include "RequestParser.hpp"
  #include "SDUtils.hpp"
  #include "SafeTensor2MNN.hpp"
@@ -22,7 +30,107 @@
  #include "TextEncoder.hpp"
  #include "Upscaler.hpp"
  
-@@ -484,6 +488,746 @@
+@@ -72,7 +77,9 @@
+     kSdxl,
+     kAnima,
+     kControlNet,
+-    kSd15NpuControlInpaint
++    kSd15NpuControlInpaint,
++    kZImage,
++    kFlux2Klein
+   };
+ 
+   int port = 8081;
+@@ -93,10 +100,20 @@
+   bool device_info_mode = false;
+   // Non-empty selects the fp16 canary mode; holds the dir with the pair.
+   std::string fp16_probe_dir;
++  // Z-Image / FLUX.2 Klein (upstream local-dream 7bbdfb0): all three DiT
++  // modules on the Hexagon NPU, through libdit_engine.so.
++  std::string dit_backend = "diffusion=HTP0,te=HTP0,vae=HTP0";
++  std::string dit_params_backend;
++  int dit_threads = 4;
++  int dit_vae_tile_size = 64;
+ 
+   bool isSdxl() const { return type == ModelType::kSdxl; }
+   bool isAnima() const { return type == ModelType::kAnima; }
+   bool isMnn() const { return type == ModelType::kSd15Cpu; }
++  // DiT formats served by libdit_engine.so: no fixed canvas, no QNN contexts.
++  bool isDit() const {
++    return type == ModelType::kZImage || type == ModelType::kFlux2Klein;
++  }
+ };
+ 
+ static void showHelp() {
+@@ -111,7 +128,7 @@
+          "Modes:\n"
+          "  --type <type>          Model format: sd15cpu (MNN), sd15npu "
+          "(QNN), sd15npu_inpaint (QNN), sd15npu_control_inpaint (QNN), sdxl "
+-         "(QNN), anima (QNN), controlnet (QNN)\n"
++         "(QNN), anima (QNN), controlnet (QNN), zimage/klein (DiT engine)\n"
+          "  --upscaler_mode        Upscale-only server, no diffusion model\n"
+          "  --device_info          Print HTP vtcm/arch as JSON and exit "
+          "(needs --lib_dir only)\n"
+@@ -134,7 +151,9 @@
+          "  --listen_all           Listen on 0.0.0.0 instead of 127.0.0.1\n"
+          "  --no_img2img           Do not load the VAE encoder\n"
+          "  --use_v_pred           v-prediction model\n"
+-         "  --lowram               (sdxl/anima) load/release models per stage\n"
++         "  --lowram               (sdxl/anima) load/release models per stage;\n"
++         "                         (zimage/klein) stream the text encoder from "
++         "disk\n"
+          "  --anima_seq_dit        (anima+lowram) never keep both DiT halves "
+          "resident; for 12GB devices\n"
+          "  --clip_skip_2          (convert) export CLIP with skip 2\n"
+@@ -290,6 +309,10 @@
+     opts.type = ServerOptions::ModelType::kControlNet;
+   else if (typeStr == "sd15npu_control_inpaint")
+     opts.type = ServerOptions::ModelType::kSd15NpuControlInpaint;
++  else if (typeStr == "zimage")
++    opts.type = ServerOptions::ModelType::kZImage;
++  else if (typeStr == "klein")
++    opts.type = ServerOptions::ModelType::kFlux2Klein;
+   else
+     showHelpAndExit(typeStr.empty() ? "Missing --type"
+                                     : "Invalid --type: " + typeStr);
+@@ -345,6 +368,36 @@
+   const bool sdxl = opts.isSdxl();
+   const bool anima = opts.isAnima();
+ 
++  // Z-Image / FLUX.2-Klein: the engine reads the weights itself, so the core
++  // only checks that the package is complete and hands over the paths. The
++  // engine .so ships in the APK's native library directory, which the app
++  // passes as --lib_dir for these types; its FastRPC skels are copied from
++  // assets into the runtime directory on the DSP search path.
++  if (opts.isDit()) {
++    std::string dit_path = (dir / "dit.safetensors").string();
++    std::string llm_path = (dir / "llm.gguf").string();
++    std::string vae_path = (dir / "vae.safetensors").string();
++    for (const auto &p : {dit_path, llm_path, vae_path}) {
++      if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
++    }
++    if (opts.lib_dir.empty()) showHelpAndExit("Missing --lib_dir for DiT");
++    // The text encoder is a 4B LLM used once per request; streaming its
++    // parameters from disk trades a few seconds for the headroom the DiT
++    // itself needs on 12GB devices.
++    const std::string params_backend =
++        opts.lowram ? "te=disk" : opts.dit_params_backend;
++    const std::string engine_path =
++        (std::filesystem::path(opts.lib_dir) / "libdit_engine.so").string();
++    if (!std::filesystem::exists(engine_path))
++      showHelpAndExit("DiT engine not installed: " + engine_path);
++    return std::make_unique<PipelineDit>(
++        text_encoder, opts.model_dir, engine_path, dit_path, llm_path, vae_path,
++        opts.type == ServerOptions::ModelType::kZImage ? DIT_MODEL_Z_IMAGE
++                                                       : DIT_MODEL_FLUX2_KLEIN,
++        opts.dit_backend, params_backend, opts.dit_threads,
++        opts.dit_vae_tile_size);
++  }
++
+   // Anima: Qwen "CLIP" (clip.bin, QNN) + split DiT (unet_part1/2.bin) + 16-ch
+   // VAE. The Qwen text encoder uses RoPE internally, so there is no
+   // pos_emb.bin.
+@@ -484,6 +537,781 @@
  // new request arriving while an aborted one is still winding down).
  static std::mutex g_generation_mutex;
  
@@ -61,6 +169,27 @@
 +// ⚠ Takes g_generation_mutex itself; the caller must NOT already hold it.
 +static nlohmann::json sampleToHandle(Pipeline *pipeline, GenerationRequest &req,
 +                                     const ProgressCallback &progress) {
++  // ⚠⚠ A 9-channel inpaint's picture and mask change the result, so they are
++  // part of the key -- and hashed BEFORE the render, which may free img_data.
++  // Two inpaints of one latent through different masks are different pictures,
++  // and a key that ignored the mask would serve a stale latent that looks
++  // almost right. Only a user mask counts: /sample receives one only on the
++  // 9-channel path (`inpaint_mask`).
++  std::string inpaint_key;
++  if (req.user_supplied_mask) {
++    inpaint_key =
++        "mask" +
++        Sha256::hashHex(
++            std::string(
++                reinterpret_cast<const char *>(req.mask_data_full.data()),
++                req.mask_data_full.size() * sizeof(float)),
++            16) +
++        "masked" +
++        Sha256::hashHex(
++            std::string(reinterpret_cast<const char *>(req.img_data.data()),
++                        req.img_data.size() * sizeof(float)),
++            16);
++  }
 +  const auto t0 = std::chrono::steady_clock::now();
 +  GenerationResult out;
 +  {
@@ -112,6 +241,7 @@
 +               16) +
 +           "" + std::to_string(req.denoise_strength);
 +  }
++  key += inpaint_key;
 +  const std::string handle = "lat_" + Sha256::hashHex(key);
 +
 +  const std::string lat_hash = Sha256::hashHex(
@@ -258,6 +388,19 @@
 +                        request.get_param_value("stream") != "0";
 +    try {
 +      auto json = nlohmann::json::parse(request.body);
++      // ⭐⭐ `inpaint_image` / `inpaint_mask`: the picture and mask an inpaint
++      // node always sends, consumed ONLY by a 9-channel inpainting UNet, which
++      // takes them as conditioning (PipelineSd15Inpaint). Any other model drops
++      // them here, so its request is exactly the one it got before these
++      // fields existed and the app's latent_blend does the inpainting. The
++      // BACKEND decides, because it is the one that knows what its UNet takes
++      // (nightmare-mobile, 2026-09-19).
++      if (json.contains("inpaint_image") && pipeline->isInpaintModel()) {
++        json["image"] = json["inpaint_image"];
++        if (json.contains("inpaint_mask")) json["mask"] = json["inpaint_mask"];
++      }
++      json.erase("inpaint_image");
++      json.erase("inpaint_mask");
 +      auto req = std::make_shared<GenerationRequest>(parseGenerationRequest(
 +          json, pipeline->isSdxl(), pipeline->isAnima(),
 +          pipeline->isControlNet(), pipeline->supportsImg2Img(),
@@ -769,7 +912,66 @@
  static void registerGenerateEndpoint(httplib::Server &svr, Pipeline *pipeline) {
    svr.Post("/generate", [pipeline](const httplib::Request &request,
                                     httplib::Response &res) {
-@@ -891,6 +1635,8 @@
+@@ -668,6 +1496,14 @@
+             upscaler::upscaleWithMnn(process_image, process_width,
+                                      process_height, upscaler_path, use_opencl);
+       } else {
++        // Named separately from the failure below: "cannot open the file" and
++        // "this process has no QNN runtime" want different answers, and the one
++        // message for both sent a search after a file that was there all along.
++        if (!qnn_runtime::initialized()) {
++          throw std::runtime_error(
++              "this backend has no QNN runtime, so it cannot upscale: " +
++              upscaler_path);
++        }
+         tempUpscalerApp = qnn_runtime::createModel(upscaler_path, "upscaler");
+         if (!tempUpscalerApp) {
+           throw std::runtime_error("Failed to create upscaler model from: " +
+@@ -821,13 +1657,18 @@
+     }
+ 
+     pipeline = createPipeline(opts, *text_encoder);
+-    text_encoder->loadEmbeddingTables(opts.model_dir);
++    // The embedding tables and textual inversions belong to the CLIP encoders
++    // the core runs itself; a DiT package ships neither, and its text encoder
++    // lives inside the engine.
++    if (!opts.isDit()) text_encoder->loadEmbeddingTables(opts.model_dir);
+ 
+     // Textual-inversion embeddings live two levels above the model dir.
+     std::filesystem::path embeddingsPath =
+         std::filesystem::path(opts.model_dir).parent_path().parent_path() /
+         "embeddings";
+-    if (std::filesystem::exists(embeddingsPath)) {
++    if (opts.isDit()) {
++      // no-op: see above
++    } else if (std::filesystem::exists(embeddingsPath)) {
+       try {
+         text_encoder->loadTextualInversions(embeddingsPath.string());
+         QNN_INFO("Loaded %zu embeddings (SDXL=%d) from %s",
+@@ -863,10 +1704,21 @@
+                                  opts.nsfw_threshold);
+     }
+ 
+-    if (!opts.isMnn()) {
++    if (!opts.isMnn() && !opts.isDit()) {
+       if (opts.lib_dir.empty()) showHelpAndExit("Missing --lib_dir for QNN");
+       if (!qnn_runtime::init(opts.lib_dir))
+         showHelpAndExit("Failed get QNN system func ptrs.");
++    } else if (!opts.lib_dir.empty()) {
++      // An MNN or DiT pipeline runs no QNN graph of its own, but /upscale
++      // builds one per request inside whatever process is up -- and a QNN
++      // upscaler is the only kind this app installs. Skipping this left
++      // createModel() dlopen'ing an empty backend path, so every upscale in the
++      // app failed for as long as a FLUX.2 model was resident, including one
++      // started from Results on a picture no DiT model made.
++      // Not fatal: the pipeline itself does not need it, and a failure here
++      // must not stop a model that would otherwise render.
++      if (!qnn_runtime::init(opts.lib_dir))
++        QNN_WARN("QNN runtime unavailable; /upscale will not work this run");
+     }
+ 
+     if (!pipeline->initialize()) {
+@@ -891,6 +1743,8 @@
    });
  
    if (pipeline) registerGenerateEndpoint(svr, pipeline.get());

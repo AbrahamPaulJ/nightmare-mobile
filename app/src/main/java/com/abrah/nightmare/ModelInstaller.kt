@@ -64,15 +64,73 @@ object ModelInstaller {
         onProgress: (Progress) -> Unit,
         isCancelled: () -> Boolean = { false },
     ) {
+        // ⚠⚠⚠ ONE install per model, across every caller. The Models tab
+        // guards its own button, but the headless `model_install` op does not
+        // go through it — and on 2026-09-19 the two ran at once on FLUX, both
+        // appending to the same in-place `dit.safetensors`: 76 MB and then
+        // 115 MB of duplicated stream in the middle of a 3.9 GB file (head and
+        // tail both intact). The size check caught it; this stops it. A second
+        // caller fails at once rather than waiting behind a 7 GB download.
+        if (!inFlight.add(spec.id)) throw IOException("${spec.label} is already downloading")
+        try {
+            installOnce(context, spec, build, onProgress, isCancelled)
+        } finally {
+            inFlight.remove(spec.id)
+        }
+    }
+
+    /** ⚠ Model ids with an install running — see [install]. */
+    private val inFlight: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    private fun installOnce(
+        context: Context,
+        spec: ModelSpec,
+        build: Build,
+        onProgress: (Progress) -> Unit,
+        isCancelled: () -> Boolean,
+    ) {
         val modelDir = spec.dir(context).apply { mkdirs() }
         val cache = ModelCatalog.downloads(context).apply { mkdirs() }
+
+        // ⭐⭐ A plain-file package (the DiT families): each file fetched into
+        // the model dir under the name the backend expects, no zip, no extract.
+        // ⚠ Straight into place, resumably: a 4 GB file that had to be copied
+        // out of a download cache would need twice the space for no reason.
+        // A file already present at its full size is skipped by [fetch], which
+        // is what lets an interrupted 7 GB install pick up where it stopped.
+        if (spec.files.isNotEmpty()) {
+            val need = spec.files.sumOf { f ->
+                val have = File(modelDir, f.name).takeIf { it.isFile }?.length() ?: 0L
+                (f.bytes - have).coerceAtLeast(0L)
+            }
+            requireFreeSpace(modelDir, need)
+            // ⭐⭐ ONE bar for the whole package, not one per file. Per file, it
+            // ran to 100% on the 3.9 GB DiT and dropped to 0% for the next one
+            // — which reads as "it started over" (reported 2026-09-19).
+            // Upstream reports packageOffset + done against the package total
+            // for the same reason.
+            val total = spec.files.sumOf { it.bytes }
+            var before = 0L
+            for (f in spec.files) {
+                fetch(f.url, File(modelDir, f.name), f.bytes, "downloading", { p ->
+                    onProgress(Progress(p.phase, before + p.done, total))
+                }, isCancelled)
+                before += f.bytes
+            }
+            val missing = spec.missing(context)
+            if (missing.isNotEmpty()) {
+                throw IOException("install incomplete, still missing: ${missing.joinToString()}")
+            }
+            Log.i(TAG, "installed ${spec.id} (${spec.bytesOnDisk(context)} bytes)")
+            return
+        }
 
         // ⚠ The archive and its unpacked copy are both on disk at once, so the
         // requirement is roughly twice the download. Failing here beats dying
         // three quarters of the way through and leaving both behind.
         // ⚠⚠ For SDXL that is ~7.5 GB free for a 3.7 GB model, and this check
         // is the only thing that says so before an hour of downloading.
-        requireFreeSpace(cache, build.bytes * 2)
+        requireFreeSpace(cache, (build.bytes + build.extras.sumOf { it.second }) * 2)
 
         val zip = File(cache, build.archive)
         download(spec, build, zip, onProgress, isCancelled)
@@ -80,6 +138,17 @@ object ModelInstaller {
         // ⚠ Deleted on success only. A failed extract keeps the archive so a
         // retry resumes from the file rather than re-fetching a gigabyte.
         zip.delete()
+
+        // ⭐ The build's extra archives — resolution patches cut against THIS
+        // build's `unet.bin` ([Build.extras]) — into the same directory, where
+        // `availableResolutions` discovers them. ⚠ Same resumable, size-checked
+        // fetch as the model itself, and the same delete-on-success.
+        for ((name, bytes) in build.extras) {
+            val extra = File(cache, name)
+            fetch(spec.baseUrl + name, extra, bytes, "downloading", onProgress, isCancelled)
+            extract(spec, extra, modelDir, onProgress, isCancelled)
+            extra.delete()
+        }
 
         val missing = spec.missing(context)
         if (missing.isNotEmpty()) {
@@ -104,7 +173,10 @@ object ModelInstaller {
         // ⚠ EVERY tier's archive, not just the one we would pick today: a
         // half-finished download of a different tier is still gigabytes, and it
         // is invisible in the model directory.
-        for (b in spec.builds) File(ModelCatalog.downloads(context), b.archive).delete()
+        for (b in spec.builds) {
+            File(ModelCatalog.downloads(context), b.archive).delete()
+            for ((name, _) in b.extras) File(ModelCatalog.downloads(context), name).delete()
+        }
     }
 
     // ---- internals -------------------------------------------------------
@@ -204,9 +276,17 @@ object ModelInstaller {
             // ⚠ Said for a PERSON — it reaches the Models screen verbatim. It
             // printed `size mismatch for X.zip: 913410048 != 1056615116` until the
             // design review, 2026-09-15; the file name stays for the harness log.
+            // ⚠ LONGER than expected is not a short download and cannot be
+            // resumed — the next attempt discards it (see the top of [fetch]).
+            // Saying "resume" there promised a thing that does not happen.
             throw IOException(
-                "the download stopped short — ${dest.length() shr 20} of ${bytes shr 20} MB " +
-                    "arrived (${dest.name}). Download again to resume."
+                if (dest.length() > bytes) {
+                    "the download came out larger than expected (${dest.name}) and is " +
+                        "damaged. Download again — that file starts over."
+                } else {
+                    "the download stopped short — ${dest.length() shr 20} of ${bytes shr 20} MB " +
+                        "arrived (${dest.name}). Download again to resume."
+                }
             )
         }
     }

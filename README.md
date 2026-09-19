@@ -1,140 +1,158 @@
 # Nightmare Mobile
 
-**A ComfyUI style node graph for Stable Diffusion — and now video — on Android, running
-entirely on device.**
+**A node graph for image and video generation on Android, running entirely on the Qualcomm
+Hexagon NPU.**
 
-Local text to image, image to image, inpainting and **text to video** on the Qualcomm Hexagon
-NPU. No server, no account, no cloud, no network. Built on LocalDream's NPU backend.
+Text to image, image to image, inpainting, upscaling and text to video, all on the phone. No
+server, no account, no cloud, no network.
 
 <p align="center">
   <img src="media/workflows.png" alt="Text to image, image to image and image to video, each as a node graph on an Android phone">
 </p>
 
-> **Early.** It works — text to image, image to image, inpainting and text to video all render
-> on device — but this is a young project from one developer, so expect rough edges.
+**[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)**
 
-**[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)** —
-Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU. Models are not in the APK;
+Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU. Models are not in the APK:
 pick one in the app and it downloads on first use.
 
-Stable Diffusion 1.5, SDXL and Anima run locally on a Snapdragon NPU, offline. You draw a graph,
-press Run, and the picture appears on the node that made it. Everything stays on the phone.
-
-⚠ **Video is much narrower than pictures, and needs ~8.6 GB of models.** It runs only on a
-**Snapdragon 8 Elite (gen 4) or 8 Elite Gen 5 (gen 5)** — nothing older, because a compiled
-model runs on the architecture it was built for and every newer one. The app decides by
-*running* a small real model on your chip rather than by reading its name, so it tells you
-before you spend the 8.6 GB — and on a phone that cannot, video is hidden everywhere rather
-than offered and then failing.
-
-⚠ None of that applies to pictures. Text to image, image to image, inpainting and upscaling
-run on far more phones and need none of those models.
-
-**Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile
-Stable Diffusion, local image generation, on device video generation, node editor,
-Qualcomm Hexagon NPU, Snapdragon, QNN, SDXL, Anima, text to image, text to video, image to video,
-img2img, inpainting, Segment Anything, SAM 2.1, npuforge, safetensors to QNN, on device model
-conversion, no cloud, private.
+**Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile Stable
+Diffusion, local image generation, on device video generation, node editor, Qualcomm Hexagon
+NPU, Snapdragon, QNN, FLUX.2, Z-Image, SDXL, Anima, text to image, text to video, image to
+video, img2img, inpainting, Segment Anything, SAM 2.1, npuforge, safetensors to QNN, on device
+model conversion, no cloud, private.
 
 ## What it does
 
-- **A canvas built for a phone.** Big ports, snap to connect, pinch to zoom, a node palette
-  in a sheet. Not a desktop editor shrunk down.
-- **Text to video, on the NPU.** A prompt in, 49 frames at 1024x640 out — about two seconds
-  of clip in about 25 seconds on an 8 Elite. ⚠ See the requirements above: ~8.6 GB of models
-  and an 8 Elite or 8 Elite Gen 5. **Image to video** animates a photo
-  instead, and is the faster of the two — same three nodes, with a photo wired in. The clip
-  loops on the node that made it and plays full screen.
-- **Seven node types, not seventy.** A flow is `prompt → generate → output`, plus a photo
-  where one is wanted. Cropping, masking, encoding, sampling, blending and decoding happen
-  **inside** the sampler, because there is no runtime compiler on an NPU and nobody can
-  recombine the inside of a pipeline anyway — so the whole process is one node. Inpainting
-  used to be ten nodes and is four. **Tap to select**: the Inpaint flow comes with a
-  Segment model node wired in and tap what you want redone — Segment Anything 2.1 on the phone's CPU, an 87 MB
-  download under Models, Tools.
-- **The ops are still decomposed underneath.** `encode_text`, `vae_encode`, `sample`,
-  `latent_blend` and `vae_decode` are separate endpoints, and conditionings and latents move
-  between them as handles that never cross the wire — a 512 image costs about 40 bytes of
-  JSON instead of 780 KB. A plugin reaches the ops; a person reaches the nodes.
-- **Two checkpoints in one graph.** Each sampler carries its own, and the executor orders the
-  run to minimise backend relaunches — finish everything under the model already loaded, then
-  switch. The run bar says what the relaunches will cost before you press Run.
-- **Recipes to start from.** Text to image, image to image, inpainting where you paint the
-  area to redo, upscale a photo, and both video flows — each laid out so no wire crosses and
-  the whole graph fits the screen when it opens.
-- **Batching.** Arm `seed`, `steps`, `cfg`, `denoise` or `scheduler` on the sampler and Run
-  sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph
-  that produced it.
-- **Upscalers.** RealESRGAN x4plus anime and 4x UltraSharp V2 Lite, loaded per request so
-  they cost no process restart — or bring your own converted `.bin`.
-- **Embeddings.** Import a textual-inversion `.safetensors` and name it in a prompt.
-- **Pick your size.** SD 1.5 renders any resolution its checkpoint ships a patch for — 512²
-  up to 1024², portrait and landscape; SDXL and Anima crop their fixed 1024² canvas to the
-  shape you choose.
-- **Bring your own model.** Twenty-four checkpoints in the catalogue — five SD 1.5, ten SDXL
-  and nine Anima — or import a converted one as a zip, including SDXL converted by
-  **[npuforge](https://github.com/AbrahamPaulJ/npuforge)**, which turns an SD safetensors
-  checkpoint into a QNN model **on the phone itself, with no PC involved**. ⚠ Anima is 8 Gen 3 or newer, ~4.3 GB
-  per checkpoint, and slow: about 80 s a picture on an 8 Elite, and Android may stop it
-  while other apps are busy. Each sampler has its own checkpoint picker, grouped
-  by family, listing what is actually on the phone; switching family rewrites that node and
-  keeps every wire. The app carries every HTP architecture tier and picks the build your chip can
-  actually load. The video models are their own download under Models, resumable per file
-  because 8.6 GB over a phone connection will be interrupted.
-- **English, 中文 and Русский.** The interface follows your phone's language. Adding another
-  is a file drop — copy `app/src/main/res/values/strings.xml` into a `values-<code>/`
-  folder and translate it; no code changes. ⚠ Model prompts are never translated: SD 1.5
-  reads English tags, so a translated prompt would render something else.
-- **Offline and private.** Nothing is uploaded, there is no account, and no prompt or
-  picture leaves the phone. The only thing that ever does is a file you explicitly share.
+**A canvas built for a phone.** Big ports, snap to connect, pinch to zoom, and a node palette
+in a sheet. Draw a graph, press Run, and the picture appears on the node that made it.
+
+**Mix checkpoints in one graph.** Each generate node carries its own model, and the executor
+orders the run so each checkpoint loads once. Generate with FLUX.2 and then repaint part of the
+result with a dedicated inpainting checkpoint, in a single graph, with a single Run. The run
+bar tells you what the model switches will cost before you press it.
+
+**FLUX.2 Klein and Z-Image Turbo on the NPU.** Two DiT models, at any size from 512 to 2048,
+picked as a shape and a resolution. Changing the size costs no reload. Snapdragon 8 Elite or
+newer.
+
+**A real inpainting model.** AbsoluteReality Inpaint is a 9 channel checkpoint: the model sees
+the hole it is filling and the pixels around it, instead of repainting blind and being blended
+back afterwards. It sits among the SD 1.5 models and does text and image to image too.
+
+**Tap to select.** The Inpaint flow opens with a Segment model node wired in. Tap the thing you
+want redone and the mask follows its outline. That is Segment Anything 2.1, an 87 MB download,
+running on the phone's CPU.
+
+**Text to video.** A prompt in, 49 frames at 1024x640 out, about two seconds of clip in about
+25 seconds on an 8 Elite. Image to video animates a photo instead, using the same three nodes
+with a photo wired in. The clip loops on the node that made it and plays full screen. Needs a
+Snapdragon 8 Elite or 8 Elite Gen 5 and about 8.6 GB of models, and the app checks your chip by
+running a small real model on it rather than by reading its name.
+
+**Recipes to start from.** Text to image, image to image, inpainting, upscaling and both
+video flows, each laid out so no wire crosses and the whole graph fits the screen when
+it opens.
+
+**Batching.** Arm `seed`, `steps`, `cfg`, `denoise` or `scheduler` on a generate node and Run
+sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph that
+produced it, so a picture you like can be reopened as the flow that made it.
+
+**Upscalers.** RealESRGAN x4plus anime and 4x UltraSharp V2 Lite, loaded per request so they
+cost no restart, or bring your own converted `.bin`.
+
+**Twenty seven checkpoints, or bring your own.** Six SD 1.5, ten SDXL, nine Anima and two DiT
+in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
+[npuforge](https://github.com/AbrahamPaulJ/npuforge), which turns an SD safetensors checkpoint
+into a QNN model with no PC involved. Every generate node has its own checkpoint picker,
+grouped by family and listing what is actually installed; switching family rewrites that node
+and keeps every wire. The APK carries every Hexagon architecture tier and picks the build your
+chip can load.
+
+**Pick your size.** SD 1.5 renders any resolution its checkpoint ships a patch for, from 512
+square up to 1024, portrait and landscape. SDXL and Anima crop their fixed canvas to the shape
+you choose. The DiT models render the size you ask for directly.
+
+**Embeddings.** Import a textual inversion `.safetensors` and name it in a prompt.
+
+**English, Chinese and Russian.** The interface follows your phone's language. Adding another
+is a file drop: copy `app/src/main/res/values/strings.xml` into a `values-<code>/` folder and
+translate it, with no code changes.
+
+**Offline and private.** Nothing is uploaded, there is no account, and no prompt or picture
+leaves the phone. The only thing that ever does is a file you explicitly share.
+
+## Under the hood
+
+A generate node is one node to you, and several ops underneath. `encode_text`, `vae_encode`,
+`sample`, `latent_blend` and `vae_decode` are separate endpoints on the inference server, and
+conditionings and latents move between them as handles that never cross the wire, so a 512
+image costs about 40 bytes of JSON instead of 780 KB. A plugin reaches the ops; a person
+reaches the nodes.
+
+The node set is deliberately small. Cropping, masking, encoding, sampling, blending and
+decoding happen inside the generate node, because an NPU has no runtime compiler and the inside
+of a compiled pipeline cannot be recombined on the phone anyway. Inpainting used to take ten
+nodes and now takes four.
 
 ## Writing a node (experimental)
 
-Contributors can add their own node without an app release: a JSON manifest plus a small
-JavaScript file, zipped and pushed to the app's plugin directory. No toolchain, no compile
-step. Four worked examples — from a one-op wrapper to a multi-node toolkit — are in
+Contributors can add a node without an app release: a JSON manifest plus a small JavaScript
+file, zipped and pushed to the app's plugin directory. No toolchain and no compile step. Four
+worked examples, from a one op wrapper to a multi node toolkit, are in
 [`examples/`](examples/).
 
-This is early: the plugin format can still change between versions, there's no host op yet
+This is early. The plugin format can still change between versions, there is no host op yet
 that lets a node run a model of its own, and an imported script should be treated like any
-other code you didn't write. Read an example in `examples/` for the manifest shape and the
-handful of image/latent ops a node can call.
+other code you did not write. Read an example in `examples/` for the manifest shape and the
+image and latent ops a node can call.
 
 ## Building it
 
 JDK 17 and Android SDK 35.
 
 ```
-gradlew.bat assembleDebug
+gradlew assembleDebug
 ```
 
-The NPU backend is a native binary and the QNN runtime libraries are not in this repository.
+The NPU backend is a native binary, and the QNN runtime libraries are not in this repository.
 Without them the app builds and the canvas works, but nothing renders.
 
 ## Credits
 
-The NPU work is not ours. This app forks the C++ inference server from
+**The NPU work is not ours.** This app forks the C++ inference server from
 [xororz/local-dream](https://github.com/xororz/local-dream), which is where the QNN pipelines,
 the model conversions, the per chipset build tiers and the device gating all come from. The
-checkpoint and upscaler archives it downloads are published by the same author. Anyone
-interested in how Stable Diffusion runs on a Hexagon NPU at all should start there rather
-than here.
+checkpoint and upscaler archives the app downloads are published by the same author. Anyone
+interested in how Stable Diffusion runs on a Hexagon NPU at all should start there rather than
+here.
 
-[LocalDream](https://github.com/AbrahamPaulJ/dreamui) is the consumer app built on that
-backend, and it stays the simpler way to generate a picture on a phone. Its mask editor,
-brush behaviour and batch strip are ported here rather than reinvented, on purpose: someone
-who has both installed should not have to learn the same tool twice.
+**FLUX.2 and Z-Image run on work by [happyyzy](https://github.com/happyyzy/stable-diffusion.cpp).**
+The DiT engine is [leejet's stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
+with happyyzy's Hexagon optimisations for on device DiT inference, the same engine local-dream
+3.0 ships, and it is what makes these models usable on a phone at all. The Qwen3 text encoder
+and the DiT VAEs were converted by
+[zhiyuanasad](https://huggingface.co/zhiyuanasad/flux2_klein_adreno). The models themselves are
+[FLUX.2 klein 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8) by Black Forest
+Labs and [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) by Tongyi-MAI, with
+fp8 weights by [Kijai](https://huggingface.co/Kijai/Z-Image_comfy_fp8_scaled).
 
-The video is not ours either. It is
+**The video is not ours either.** It is
 [Neodragon](https://huggingface.co/Qualcomm-AI-Research/Neodragon) by Qualcomm AI Research,
 released under BSD-3-Clause-Clear with additional terms on the model card. The pyramidal
-schedule, the autoregressive MMDiT loop and the streaming VAE decode are theirs; the NPU
-conversions this app runs were made from their weights. Its first frame comes from
-[SSD-1B](https://huggingface.co/segmind/SSD-1B) by Segmind, Apache 2.0.
+schedule, the autoregressive MMDiT loop and the streaming VAE decode are theirs, and the NPU
+conversions this app runs were made from their weights. The first frame comes from
+[SSD-1B](https://huggingface.co/segmind/SSD-1B) by Segmind.
 
-What is new here is the graph. Pipelines were decomposed into ops, latents and conditionings
-became handles, node types became something a contributor can add without an app release, and
-the video path was taken apart into the same kind of nodes as the picture one.
+**AbsoluteReality Inpaint** is Lykon's inpainting checkpoint, converted for LocalDream.
+
+[LocalDream](https://github.com/AbrahamPaulJ/dreamui) is the consumer app built on the same
+backend, and it stays the simpler way to generate a picture on a phone. Its mask editor, brush
+behaviour and batch strip are ported here rather than reinvented, so that someone with both
+installed does not have to learn the same tool twice.
+
+What is new here is the graph: pipelines decomposed into ops, latents and conditionings as
+handles, node types a contributor can add without an app release, and the video path taken
+apart into the same kind of nodes as the picture one.
 
 ## Licence
 
@@ -146,8 +164,8 @@ Share it, fork it, build on it. Do not sell it or ship it inside something you s
 
 Full text in [LICENSE](LICENSE); attribution and third party components in [NOTICE](NOTICE).
 
-The Qualcomm AI Runtime libraries the app needs at runtime are covered by Qualcomm's own
-terms, which this licence does not override. They are not in this repository.
+The Qualcomm AI Runtime libraries the app needs at runtime are covered by Qualcomm's own terms,
+which this licence does not override. They are not in this repository.
 
 ## Support
 

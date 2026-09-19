@@ -58,6 +58,7 @@ claude-yolo.bat
 # them will recur. Don't.
 app/src/main/jniLibs/
 app/src/main/assets/qnnlibs/
+app/src/main/assets/ditlibs/
 
 # QuickJS is fetched, not vendored -- tools/fetch_quickjs.ps1 (pinned tag + sha256).
 # Our CMakeLists and JNI bridge beside it ARE committed.

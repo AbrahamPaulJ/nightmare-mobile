@@ -203,6 +203,83 @@ class ResolutionTest {
     /** Every node that names a checkpoint, i.e. everything that forces a launch. */
     private val backendNodes
         get() = NODE_TYPES.values.filter { t -> t.widgets.any { it.name == "model" && it.contextKey } }
+            // ⚠ Not the DiT samplers: their size is a REQUEST field — see
+            // `aDitSizeIsNotAContextKey` below.
+            .filterNot { (it as? SdSampler)?.family?.dit == true }
+
+    /**
+     * ⭐⭐ A DiT sampler's size costs no relaunch: sliders on the engine's grid,
+     * NOT context keys — and the context key ignores them ([backendContextKey]).
+     */
+    @Test
+    fun aDitSizeIsNotAContextKey() {
+        for (t in listOf(SdSampler.FLUX2, SdSampler.ZIMAGE)) {
+            val w = t.widgets.associateBy { it.name }
+            for (axis in listOf("width", "height")) {
+                val k = w.getValue(axis)
+                assertTrue("${t.name}.$axis must not relaunch", !k.contextKey)
+                assertEquals(ModelCatalog.DIT_STEP, k.step)
+                assertEquals(ModelCatalog.DIT_MIN.toDouble(), k.min)
+                assertEquals(ModelCatalog.DIT_MAX.toDouble(), k.max)
+            }
+            assertTrue("${t.name} has no scheduler: its engine hardcodes euler", "scheduler" !in w)
+        }
+        val a = Node("f", SdSampler.FLUX2.name, mapOf("model" to "flux2_klein_4b", "width" to "512", "height" to "2048"))
+        val b = Node("f", SdSampler.FLUX2.name, mapOf("model" to "flux2_klein_4b", "width" to "1536", "height" to "768"))
+        assertEquals("a resize must not change the context key", backendContextKey(a), backendContextKey(b))
+    }
+
+    /**
+     * ⭐⭐⭐ **Every size the shape control offers is EXACT and unique.**
+     *
+     * ⚠⚠ This is the assertion that decided the control's shape, 2026-09-19. The
+     * first design was aspect chips times a long-edge dropdown — the orthogonal
+     * pair, which is what SD's controls look like. It cannot be honest on this
+     * grid: with the short edge snapped to 256, `4:3` and `3:2` at a 1024 long
+     * edge both land on 1024x768, and `16:9` at 1024 lands on 1024x512, which is
+     * 2:1. Two chips producing one size, and a chip producing a shape it does
+     * not name. ⇒ The shapes name lists of pairs that really are that shape, and
+     * this test is what holds them to it.
+     *
+     * ⚠ `16:9` is the documented exception at 1.75 — there is no exact 16:9 pair
+     * on a 256 grid at all. The tolerance below is what admits it and nothing
+     * looser.
+     */
+    @Test
+    fun everyDitShapeIsExactAndOnTheGrid() {
+        val seen = mutableMapOf<Res, String>()
+        for ((shape, sizes) in ModelCatalog.DIT_SHAPES) {
+            val colon = shape.indexOf(':')
+            val rw = shape.substring(0, colon).toInt()
+            val rh = shape.substring(colon + 1).toInt()
+            assertTrue("$shape offers no size", sizes.isNotEmpty())
+            for (res in sizes) {
+                // ⚠ On the grid, both axes — the engine is handed these verbatim.
+                for (v in listOf(res.width, res.height)) {
+                    assertEquals("$shape $res is off the grid", v, ModelCatalog.ditSnap(v))
+                }
+                // ⚠ …and really that shape. 2% admits 16:9's 1792x1024 (1.75)
+                // and refuses every collision the orthogonal design produced.
+                val want = rw.toDouble() / rh
+                val got = res.width.toDouble() / res.height
+                assertTrue(
+                    "$shape $res is ${"%.3f".format(got)}, not ${"%.3f".format(want)}",
+                    kotlin.math.abs(got - want) / want <= 0.02,
+                )
+                // ⚠⚠ Unique across ALL shapes, or [ModelCatalog.ditShapeOf]
+                // cannot answer and the chips would highlight the wrong one.
+                assertEquals("$res is offered by two shapes", null, seen.put(res, shape))
+                assertEquals("$res must map back to $shape", shape, ModelCatalog.ditShapeOf(res))
+            }
+        }
+        // ⚠ A size no shape offers highlights nothing, rather than guessing.
+        assertEquals(null, ModelCatalog.ditShapeOf(Res(512, 2048)))
+        // ⭐ Picking a shape keeps the nearest AREA, so 1024² becomes 16:9's only
+        // pair rather than the smallest one in some other list.
+        assertEquals(Res(1792, 1024), ModelCatalog.ditSizeFor("16:9", Res(1024, 1024)))
+        assertEquals(Res(1024, 768), ModelCatalog.ditSizeFor("4:3", Res(1024, 1024)))
+        assertEquals(Res(2048, 1536), ModelCatalog.ditSizeFor("4:3", Res(2048, 2048)))
+    }
 
     /**
      * ⭐⭐ **The size is editable and the model is not**, on every backend node.

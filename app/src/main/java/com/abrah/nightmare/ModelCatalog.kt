@@ -4,6 +4,13 @@ import android.content.Context
 import java.io.File
 
 /**
+ * ⭐ One file of a plain-file model package: where it is published, what the
+ * backend expects it to be called, and its exact served size — THE integrity
+ * check, exactly as a zip's byte count is ([ModelInstaller.fetch]).
+ */
+data class RemoteFile(val url: String, val name: String, val bytes: Long)
+
+/**
  * ⭐ What a checkpoint IS, as opposed to which files it ships.
  *
  * ⚠ The family decides the **node vocabulary** and the native resolution, and
@@ -34,13 +41,51 @@ enum class Family(
     val negative: String,
     /** ⚠ For ids — a new node is `sdxl_inpaint`, never `SDXL Inpaint` with a space. */
     val slug: String,
+    /**
+     * ⭐⭐ Rendered WHOLE by `libdit_engine.so` (upstream local-dream 3.0): one
+     * `/generate` call, prompt and optional picture in, picture out. No
+     * conditioning or latent handles exist for it, no patches, no inpaint, and
+     * its size is a request field rather than a launch one.
+     */
+    val dit: Boolean = false,
 ) {
     SD15("SD 1.5", GP_SD15, GP_SD15_NEG, "sd15"),
     SDXL("SDXL", GP_SDXL, GP_SDXL_NEG, "sdxl"),
     ANIMA("Anima", GP_ANIMA, GP_ANIMA_NEG, "anima"),
+    FLUX2("FLUX.2", GP_DIT, GP_DIT_NEG, "flux2", dit = true),
+    ZIMAGE("Z-Image", GP_DIT, GP_DIT_NEG, "zimage", dit = true),
 }
 
 // ---- the general-purpose prompts --------------------------------------------
+
+/**
+ * ⚠ The DiT families read SENTENCES through a Qwen3 text encoder, not CLIP
+ * tags, and both published checkpoints are distilled to cfg 1 — where a
+ * negative prompt is not read at all. Upstream ships them with an empty one.
+ */
+private const val GP_DIT = "a detailed photo,"
+
+/**
+ * ⭐⭐ **A starting negative for the DiT families** — the user's ask,
+ * 2026-09-19, replacing the empty string that stood here because upstream ships
+ * one.
+ *
+ * ⚠⚠⚠ **It does nothing at cfg 1, and that is not a bug in it.** Both shipped
+ * checkpoints are guidance-distilled and open at cfg 1.0, where
+ * `stable-diffusion.cpp` skips the unconditional pass entirely — the text
+ * reaches the engine through `dit_gen_params.negative_prompt` and is never
+ * encoded. Raise cfg above 1 on the node and it starts being read, at roughly
+ * twice the time per step. ⇒ It is here so the box is not empty and so the knob
+ * works the moment it can, NOT because it changes today's default render. The
+ * decision was made knowing that (the user's call, asked and answered).
+ *
+ * ⚠ SENTENCE-shaped, not a CLIP tag list. Qwen3 reads prose, so `GP_SD15_NEG`'s
+ * comma-separated tags would be read as a sentence about commas — the same
+ * reason [GP_DIT] is a phrase rather than "masterpiece, best quality".
+ */
+private const val GP_DIT_NEG =
+    "blurry, low quality, distorted, deformed, watermark, text, oversaturated"
+
 // ⚠ Top-level rather than inside [ModelCatalog]: [Family] is declared above it
 // and an enum's constructor arguments must be compile-time constants it can see.
 
@@ -194,6 +239,17 @@ data class Build(
     /** The HTP arch this CONTEXT needs. A lower-arch device cannot load it. */
     val minArch: Int,
     val minVtcmMb: Int,
+    /**
+     * ⭐ Further archives extracted into the same model dir — archive name to
+     * served byte count, on the same base URL.
+     *
+     * ⚠⚠ Per BUILD, not per model, because what they carry is resolution
+     * patches: a patch is a byte-diff against ONE `unet.bin`, so an `_8gen2`
+     * patch reconstructs garbage against a `_min` install. Only the build it
+     * was cut from may fetch it, and [ModelSpec.availableResolutions] then
+     * discovers it from disk like any other patch.
+     */
+    val extras: List<Pair<String, Long>> = emptyList(),
 ) {
     fun runsOn(caps: DeviceProbe.Caps): Boolean =
         caps.arch >= minArch && caps.vtcmMb >= minVtcmMb
@@ -287,6 +343,14 @@ data class ModelSpec(
      * `--lowram`: load and release each stage rather than holding the whole
      * pipeline resident. ⚠ Not a preference — SDXL's UNet is ~3× SD 1.5's at
      * 1024², and DreamUI sets it on every SDXL checkpoint.
+     *
+     * ⚠⚠ **One flag, TWO meanings, decided by the family.** On a DiT package
+     * `main.cpp` does not stage anything — it turns this into the engine's
+     * `params_backend = "te=disk"`, which streams the text encoder's parameters
+     * off disk and holds the rest. Same word, same flag, different mechanism;
+     * what the two share is "this model does not fit resident on a 12 GB
+     * phone". ⇒ Read the branch in `createPipeline` before reasoning about what
+     * it costs for a given model.
      */
     val lowram: Boolean = false,
     /**
@@ -343,7 +407,17 @@ data class ModelSpec(
      * the backend detects the contract from the same file on its own.
      */
     val promptTokens: Int = 77,
+    /**
+     * ⭐⭐ A package of PLAIN FILES rather than a zip — the DiT families, whose
+     * weights are fetched from the repositories that publish them (upstream's
+     * `packageFiles`). Empty for everything else. When non-empty, the installer
+     * fetches these into the model dir and [builds] only gates the device.
+     */
+    val files: List<RemoteFile> = emptyList(),
 ) {
+    /** ⭐ Rendered by the DiT engine through `/generate` — see [Family.dit]. */
+    val isDit: Boolean get() = family.dit
+
     /** ⚠ [resolutions] is never empty; the constructor default is one entry. */
     val native: Res get() = resolutions.first()
 
@@ -391,6 +465,12 @@ data class ModelSpec(
     /** Required files that are absent — i.e. why the backend cannot start. */
     fun missing(context: Context): List<String> {
         val d = dir(context)
+        // ⚠⚠ A plain-file package is downloaded IN PLACE, so an interrupted
+        // download leaves a real file of the right name and the wrong size.
+        // Existence alone would call a half-fetched 4 GB DiT installed.
+        if (files.isNotEmpty()) {
+            return files.filter { File(d, it.name).length() != it.bytes }.map { it.name }
+        }
         return requiredFiles.filter { !File(d, it).exists() }
     }
 
@@ -417,10 +497,12 @@ data class ModelSpec(
      * apply to.
      *
      * ⚠ SDXL's graphs are compiled at a fixed 1024 and ship no patches at all;
-     * ControlNet is a frozen 512 graph. Only the SD 1.5 NPU builds take one.
+     * ControlNet is a frozen 512 graph. Only the SD 1.5 NPU builds take one —
+     * the 9-channel inpaint UNet included, which the backend patches exactly
+     * as it does `sd15npu`.
      */
     val servesPatches: Boolean
-        get() = backendType == ModelCatalog.SD15_NPU
+        get() = backendType == ModelCatalog.SD15_NPU || backendType == ModelCatalog.SD15_NPU_INPAINT
 
     /**
      * ⭐ Families whose graphs are frozen at one square size and which reach a
@@ -470,6 +552,14 @@ data class ModelSpec(
      * ⚠ Before install this is just [native]: there are no files to scan yet.
      */
     fun availableResolutions(context: Context): List<Res> {
+        // ⭐⭐ A DiT model serves every pair on its grid and needs no file for
+        // any of them: the size is a request field, not a `--patch`
+        // ([backendContextKey]). ⚠ [native] is untouched — it stays
+        // [ModelCatalog.DIT_RES], because that is what the context key is
+        // pinned to and what a new node is born at. This is only the list of
+        // sizes the SIZE CONTROL may offer, which for every other family is
+        // discovered and here is declared.
+        if (isDit) return ModelCatalog.DIT_SHAPES.values.flatten()
         if (!servesPatches) return resolutions
         val found = dir(context).listFiles().orEmpty()
             .filter { it.isFile }
@@ -496,6 +586,14 @@ object ModelCatalog {
     val SD15_NPU_RES = Res(512, 512)
 
     /**
+     * ⭐ An SD 1.5 checkpoint whose UNet takes 9 channels — [SD15_NPU]'s layout
+     * with an inpainting `conv_in`. ⚠ A different `--type`, so a different
+     * context key: a graph mixing it with a plain SD 1.5 model relaunches
+     * between them like any two checkpoints.
+     */
+    const val SD15_NPU_INPAINT = "sd15npu_inpaint"
+
+    /**
      * The same pair for SDXL, named once for the same reason.
      *
      * ⚠⚠ 1024 is **not** a default that can be overridden: the backend forces
@@ -517,6 +615,88 @@ object ModelCatalog {
      */
     const val ANIMA_NPU = "anima"
     val ANIMA_NPU_RES = Res(1024, 1024)
+
+    /** ⭐ The DiT engine's `--type`s (backend-patches/007). */
+    const val KLEIN = "klein"
+    const val ZIMAGE = "zimage"
+    /** ⚠ The size a NEW node starts at, and the context key's constant size. */
+    val DIT_RES = Res(1024, 1024)
+    /** ⭐ Upstream's `DitResolution`: any size 512–2048, in 256-px steps. */
+    const val DIT_MIN = 512
+    const val DIT_MAX = 2048
+    const val DIT_STEP = 256
+
+    /**
+     * ⭐ The grid, as ONE function — the sampler snaps a request to it and the
+     * size control below only ever offers values already on it.
+     *
+     * ⚠ It lived as a local `snap` inside `SdSampler.runDit`, which made the
+     * control and the render two places that each decided what a legal DiT size
+     * is. Two such places stop agreeing, and the symptom is a picture that comes
+     * back a different size from the one the sheet says.
+     */
+    fun ditSnap(v: Int): Int =
+        (((v - DIT_MIN) + DIT_STEP / 2) / DIT_STEP * DIT_STEP + DIT_MIN)
+            .coerceIn(DIT_MIN, DIT_MAX)
+
+    /**
+     * ⭐⭐⭐ **A DiT family's size vocabulary: a shape, then a size within it.**
+     *
+     * ⚠⚠⚠ **This is NOT [aspectTarget] and must never be routed through it.**
+     * That one means "render the square canvas the graph is frozen at, then crop
+     * to this ratio", which is what SDXL and Anima do and what
+     * [ModelSpec.fixedCanvas] gates. A DiT model has no fixed canvas — it
+     * renders whatever width and height it is handed — so here the shape
+     * *chooses* the width and height and there is no crop at all.
+     *
+     * ⚠⚠ **Every pair below is EXACT on the 256-px grid, and that is why the
+     * control is a list rather than an aspect chip times a size dropdown.**
+     * Measured while building it, 2026-09-19: an orthogonal pair cannot be
+     * honest here. With the short edge snapped to the grid, `4:3` and `3:2` both
+     * land on 1024x768 at a 1024 long edge — two chips, one output — and `16:9`
+     * at 1024 lands on 1024x512, which is 2:1 and not what the chip says. The
+     * grid is too coarse for a nominal ratio to survive it. ⇒ The shape names a
+     * list of pairs that really have that shape, and the sizes offered differ
+     * per shape because the grid genuinely offers different ones.
+     *
+     * ⚠ `16:9` is the one approximation, and it is 1792x1024 = 1.75 against
+     * 1.778 — under 2%, which no eye finds and no arithmetic here pretends is
+     * exact. There is no 16:9 pair on this grid at all; the alternative was
+     * dropping the shape people most want a wallpaper in.
+     */
+    val DIT_SHAPES: Map<String, List<Res>> = linkedMapOf(
+        "1:1" to listOf(Res(512, 512), Res(768, 768), Res(1024, 1024), Res(1280, 1280), Res(1536, 1536), Res(2048, 2048)),
+        "4:3" to listOf(Res(1024, 768), Res(2048, 1536)),
+        "3:4" to listOf(Res(768, 1024), Res(1536, 2048)),
+        "3:2" to listOf(Res(768, 512), Res(1536, 1024)),
+        "2:3" to listOf(Res(512, 768), Res(1024, 1536)),
+        "16:9" to listOf(Res(1792, 1024)),
+        "9:16" to listOf(Res(1024, 1792)),
+    )
+
+    /**
+     * ⭐ The shape [res] belongs to, or null when a saved flow names a pair no
+     * shape offers (512x2048, say).
+     *
+     * ⚠ Null rather than a nearest guess: the chips then show nothing selected,
+     * which is the honest reading of "this size is not one of these". Silently
+     * highlighting the closest chip would make the next tap look like a no-op.
+     */
+    fun ditShapeOf(res: Res): String? =
+        DIT_SHAPES.entries.firstOrNull { res in it.value }?.key
+
+    /**
+     * ⭐ The size to move to when a shape is picked — the one nearest in AREA to
+     * what the node already renders, so switching 1024x1024 to `16:9` gives
+     * 1792x1024 rather than the smallest pair in the list.
+     */
+    fun ditSizeFor(shape: String, current: Res): Res? {
+        val options = DIT_SHAPES[shape] ?: return null
+        val area = current.width.toLong() * current.height
+        return options.minByOrNull { kotlin.math.abs(it.width.toLong() * it.height - area) }
+    }
+    /** ⭐ What the backend checks for in a DiT package dir (`main.cpp`) — plus the tokenizer it loads for every type. */
+    val DIT_REQUIRED = listOf("dit.safetensors", "llm.gguf", "vae.safetensors", "tokenizer.json")
 
     /**
      * ⭐⭐ Non-square output on a family whose graphs are frozen at 1024.
@@ -597,8 +777,11 @@ object ModelCatalog {
      * one. Offering the nine SD ids there would be eight names for one sampler,
      * and Karras means nothing on flow-match. ⇒ Two, named for what they do.
      */
-    fun schedulersFor(family: Family): List<String> = when (family) {
-        Family.ANIMA -> listOf("euler", "euler_a")
+    fun schedulersFor(family: Family): List<String> = when {
+        family == Family.ANIMA -> listOf("euler", "euler_a")
+        // ⚠ The DiT engine hardcodes euler (`PipelineDit`); the sampler node
+        // draws no scheduler knob for these families at all.
+        family.dit -> listOf("euler")
         else -> SCHEDULERS
     }
 
@@ -819,6 +1002,9 @@ object ModelCatalog {
     // ⚠ A negative per photographic checkpoint, not one shared constant: upstream
     // gives AbsoluteReality 22 tags about photo realism and ChilloutMix a shorter
     // list about skin. Collapsing them was DreamUI's loss, not a tidy-up.
+    /** ⚠ Shared by AbsoluteReality and its inpainting checkpoint — one text, two entries. */
+    private const val P_ABSOLUTE = "masterpiece, best quality, ultra-detailed, realistic, 8k, a cat on grass,"
+
     private const val NEG_ABSOLUTE =
         "worst quality, low quality, normal quality, poorly drawn, lowres, " +
             "low resolution, signature, watermarks, ugly, out of focus, error, " +
@@ -864,7 +1050,7 @@ object ModelCatalog {
      * id here is skipped by the scan, because [byId] returns the first match
      * and a shadowed built-in would point its downloads at the user's files.
      */
-    val builtIn: List<ModelSpec> get() = sd15Models + sdxlModels + animaModels
+    val builtIn: List<ModelSpec> get() = sd15Models + sdxlModels + animaModels + ditModels
 
     /** ⚠ Kept as its own list so a family can be counted, filtered and tested. */
     /**
@@ -890,13 +1076,61 @@ object ModelCatalog {
         negative = negative,
     )
 
+    /**
+     * ⭐⭐ `Lykon/absolute-reality-1.6525-inpainting` — a 9-channel inpainting
+     * UNet, listed among the SD 1.5 models as an ordinary checkpoint (the
+     * user's call, 2026-09-19). An inpaint node naming it gets true inpainting,
+     * where the model SEES the hole it fills; any other node gets the whole
+     * frame repainted, i.e. text- and image-to-image. The backend decides from
+     * its UNet (`backend-patches/006`), so nothing in the UI asks.
+     *
+     * ⚠⚠ The QAIRT **2.28** rebuild (`fix228c`), from DreamUI, and ONLY that
+     * one: measured equal to the 2.49 build in quality (`extreme_frac` 0.0318
+     * vs 0.0304 at 512², 0.0576 vs 0.0579 at 512×768) and it carries no fp16
+     * stamp, so it is the build meant to load on the chips 2.49 is refused by
+     * (`../LocalDream/docs/MODEL-SUPPORT.md` §4). ⚠ Proven on v79 only — no
+     * chip that genuinely lacks fp16 has loaded it yet.
+     *
+     * ⚠ Sizes: `_8gen2` is 512 + 512×768 (the portrait patch is its own 5.8 MB
+     * archive, cut against THIS `unet.bin`). `_min` is 512 alone — its patches
+     * exist but measured 10.8 min per image, so they are not published. 768×512
+     * is built and quality-equal but withheld at 21.7 s against 9.3 s on 2.49.
+     *
+     * ⚠ Self-contained: its CLIP and VAE are NOT xororz's AbsoluteReality's
+     * (0/196 and 0/248 tensors bit-identical, measured in DreamUI), so nothing
+     * is shared with that entry.
+     */
+    private val absrealityInpaint = ModelSpec(
+        id = "absreality_inpaint",
+        label = "AbsoluteReality Inpaint",
+        builds = listOf(
+            Build(
+                TIER, "AbsoluteRealityInpaint_qnn2.28fix228c$TIER.zip", 1_232_146_314L, ARCH_8GEN2, 8,
+                extras = listOf("AbsoluteRealityInpaint_qnn2.28fix228c_res512x768$TIER.zip" to 5_841_671L),
+            ),
+            // ⚠ No `_8gen1`: only xororz publishes that tier, so an 8 Gen 1
+            // takes `_min` here, as it does in DreamUI.
+            Build(TIER_MIN, "AbsoluteRealityInpaint_qnn2.28fix228c$TIER_MIN.zip", 1_298_100_138L, ARCH_MIN, 2),
+        ),
+        // ⚠ Its BASE's starter text, not DreamUI's negative-only entry. There it
+        // was an inpaint-only model; here it also does text to image, and an
+        // empty prompt cleared the box when a node was switched onto it.
+        prompt = P_ABSOLUTE,
+        negative = NEG_ABSOLUTE,
+        backendType = SD15_NPU_INPAINT,
+        baseUrl = "https://huggingface.co/AbrahamPJ/absolutereality-inpainting-qnn/resolve/main/",
+    )
+
     val sd15Models: List<ModelSpec> = listOf(
         sd15(
             V1_MODEL, "AbsoluteReality", "AbsoluteReality",
             1_054_661_172L, 1_059_732_796L, 993_451_663L,
-            prompt = "masterpiece, best quality, ultra-detailed, realistic, 8k, a cat on grass,",
+            prompt = P_ABSOLUTE,
             negative = NEG_ABSOLUTE,
         ),
+        // ⭐ Directly under its base, where someone looking for AbsoluteReality
+        // finds both (the user's call, 2026-09-19).
+        absrealityInpaint,
         sd15(
             "anythingv5", "AnythingV5", "AnythingV5",
             1_057_820_237L, 1_061_290_117L, 995_100_213L,
@@ -1074,6 +1308,106 @@ object ModelCatalog {
         anima("anima_rin_flanime", "Rin FlAnime v1 Turbo", "rin_flanime_v1_turbo_qnn2.28$SDXL_TIER.zip", 4_854_654_219L),
         anima("anima_sam_realistic", "SAM Anima Realistic v2.3 Turbo", "sam_anima_realistic_v2.3_turbo_qnn2.28$SDXL_TIER.zip", 4_290_163_015L),
         anima("anima_wai", "WAI Anima v1 Turbo", "wai_anima_v1_turbo_qnn2.28$SDXL_TIER.zip", 4_281_870_655L),
+    )
+
+    // ---- DiT (FLUX.2 Klein, Z-Image) -------------------------------------
+
+    private const val HF = "https://huggingface.co/"
+
+    /**
+     * ⚠ The Qwen3 tokenizer both packages carry — the backend loads a
+     * `tokenizer.json` from every model dir at startup, and `/tokenize` counts
+     * the prompt with it. Byte-identical in both upstream sources.
+     */
+    private val DIT_TOKENIZER_BYTES = 11_422_654L
+
+    /**
+     * ⭐⭐ One DiT package: four plain files from the repositories that publish
+     * them, never rehosted — upstream local-dream 3.0's `packageFiles`, verbatim
+     * URLs, sizes read from the served Content-Length (2026-09-19).
+     *
+     * ⚠⚠ **v79 and newer only** (8 Elite, 8 Elite Gen 5). The engine ships
+     * Hexagon skels for v79/v81 alone; upstream gates on SM8750+, which is the
+     * same set of phones as this arch gate. ⚠ One pseudo-build carries the gate
+     * and the total size — there is no archive to fetch.
+     */
+    private fun dit(
+        id: String, label: String, family: Family, type: String, steps: Int,
+        files: List<RemoteFile>,
+        /**
+         * ⭐⭐ On a DiT package `--lowram` does ONE thing, and it is not what it
+         * does for SDXL: `main.cpp` turns it into the engine's
+         * `params_backend = "te=disk"`, which streams the text encoder's
+         * parameters from disk instead of holding them resident. It does not
+         * load and release stages.
+         *
+         * ⚠ So it is a property of the MODEL's SIZE against this class of
+         * phone, which is why it is a per-entry argument rather than a family
+         * flag: FLUX.2 Klein fits without it and Z-Image does not.
+         */
+        lowram: Boolean = false,
+    ) = ModelSpec(
+        lowram = lowram,
+        id = id,
+        label = label,
+        builds = listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, 79, 8)),
+        // ⚠ Upstream's own starter prompt for both checkpoints.
+        prompt = "a lovely cat wearing black sunglasses, studio photo,",
+        negative = "",
+        family = family,
+        backendType = type,
+        resolutions = listOf(DIT_RES),
+        requiredFiles = files.map { it.name },
+        scheduler = "euler",
+        steps = steps,
+        cfg = 1.0,
+        files = files,
+    )
+
+    /** ⚠ The tier label a DiT build reports — it is a device gate, not an archive. */
+    const val TIER_DIT = "_v79"
+
+    val ditModels: List<ModelSpec> = listOf(
+        dit(
+            "flux2_klein_4b", "FLUX.2 Klein 4B", Family.FLUX2, KLEIN, steps = 4,
+            files = listOf(
+                RemoteFile(HF + "black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors", "dit.safetensors", 4_070_624_520L),
+                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/llm.gguf", "llm.gguf", 2_262_670_048L),
+                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
+                RemoteFile(HF + "Qwen/Qwen3-4B/resolve/main/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
+            ),
+        ),
+        // ⭐⭐⭐ **`lowram` because it does not FIT, measured 2026-09-19.** This
+        // entry used to carry a note saying Z-Image "crashes on the dev phone
+        // (8 Elite) in upstream LocalDream too … not broken, not yet mature",
+        // which was inference from upstream's reports rather than a reading of
+        // ours. The log says something narrower and actionable: it is not a
+        // crash at all. The engine loads, prints
+        //
+        //   total params memory size = 8193.44MB
+        //   text_encoders 2158.46MB | diffusion_model 5874.97MB | vae 160.00MB
+        //   weights will be prepared lazily
+        //
+        // takes the request, and ~4 s into preparing those weights **lmkd**
+        // reclaims the app — `oom_score_adj 0`, foreground, and it takes
+        // whatever else is running down with it. No tombstone, no `F DEBUG`
+        // block. 8.2 GB of weights on an 11.7 GB phone.
+        //
+        // ⚠⚠ **The RESOLUTION is not the lever**, which is the trap here: the
+        // report was "512x512 crashed", and 512 cannot help because the model
+        // size is fixed and only activations scale. `te=disk` drops the text
+        // encoder to ~6.0 GB resident — about FLUX.2 Klein's footprint, and
+        // that one renders on this phone.
+        dit(
+            "z_image_turbo", "Z-Image Turbo", Family.ZIMAGE, ZIMAGE, steps = 8,
+            lowram = true,
+            files = listOf(
+                RemoteFile(HF + "Kijai/Z-Image_comfy_fp8_scaled/resolve/main/z-image-turbo_fp8_scaled_e4m3fn_KJ.safetensors", "dit.safetensors", 6_158_115_074L),
+                RemoteFile(HF + "zhiyuanasad/z_image_turbo_adreno/resolve/main/llm.gguf", "llm.gguf", 2_262_670_048L),
+                RemoteFile(HF + "zhiyuanasad/z_image_turbo_adreno/resolve/main/vae.safetensors", "vae.safetensors", 335_304_388L),
+                RemoteFile(HF + "Tongyi-MAI/Z-Image-Turbo/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
+            ),
+        ),
     )
 
     fun byId(id: String): ModelSpec? = all.firstOrNull { it.id == id }

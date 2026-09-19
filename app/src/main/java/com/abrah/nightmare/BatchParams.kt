@@ -50,7 +50,7 @@ object BatchParams {
     val ALLOWED: Map<String, List<String>> =
         // ⚠ Every SD sampler, not one of them: a sweep offered on SD 1.5 and
         // missing on SDXL would look like a broken screen rather than a rule.
-        SD_SAMPLER_TYPES.associateWith { listOf("seed", "steps", "cfg", "denoise", "scheduler") }
+        IMAGE_SAMPLER_TYPES.associateWith { listOf("seed", "steps", "cfg", "denoise", "scheduler") }
 
     /**
      * ⭐⭐ **How a knob is swept, per knob.** This is what makes the popup

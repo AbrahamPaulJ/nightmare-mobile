@@ -141,6 +141,46 @@ class ResultsStoreTest {
         assertEquals("second", all[0].prompt)
     }
 
+    /**
+     * ⭐⭐ **Keeps that run AT ONCE each get their own result, and every PNG
+     * decodes.**
+     *
+     * ⚠⚠ Autosave keeps every output node of a Run on its own coroutine, so a
+     * flow with two outputs kept twice concurrently. Both picked the same
+     * millisecond id and compressed into one `.png.tmp`: one result with a PNG
+     * Skia refused (a blank card) and one "could not keep it". Seen on a phone
+     * 2026-09-19. ⚠ The earlier same-millisecond test ran its keeps one after
+     * another, which is exactly why it never saw this.
+     */
+    @Test
+    fun concurrentKeepsNeverShareAFile() {
+        val dir = tmp.newFolder()
+        val s = ResultsStore(dir)
+        val n = 6
+        val start = java.util.concurrent.CountDownLatch(1)
+        val errors = java.util.Collections.synchronizedList(mutableListOf<Throwable>())
+        val threads = (0 until n).map { i ->
+            Thread {
+                try {
+                    start.await()
+                    s.keep(bitmap(256, 256), "img_$i", defaultWorkflow(), NODE_TYPES, "$i", "m", "p$i")
+                } catch (t: Throwable) {
+                    errors += t
+                }
+            }.apply { start() }
+        }
+        start.countDown()
+        threads.forEach { it.join() }
+
+        assertTrue("every keep must succeed: $errors", errors.isEmpty())
+        val all = s.all()
+        assertEquals(n, all.size)
+        assertEquals("ids must be distinct", n, all.map { it.id }.toSet().size)
+        assertEquals((0 until n).map { "img_$it" }.toSet(), all.mapNotNull { it.imageId }.toSet())
+        all.forEach { assertNotNull("${it.id} must decode", s.full(it.id)) }
+        assertTrue("no temp file may be left behind", dir.listFiles().orEmpty().none { it.name.endsWith(".tmp") })
+    }
+
     /** ⚠ Both halves or neither — a card that cannot be opened is worse than none. */
     @Test
     fun aResultWithNoImageIsNotListed() {

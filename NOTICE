@@ -81,6 +81,37 @@ CLIP, DistilT5
     Text encoders used by the video path, converted for the NPU.
     Downloaded by the app at the user's request; not included here.
 
+DiT engine (libdit_engine.so and its Hexagon skels)
+    Built by xororz/local-dream (v3.0.0-alpha.1) from stable-diffusion.cpp
+    with ggml's Hexagon backend, and shipped prebuilt inside this app. Runs
+    FLUX.2 Klein and Z-Image Turbo on the NPU. Not included in this repository.
+
+stable-diffusion.cpp
+    leejet, with Hexagon optimisation by happyyzy
+    https://github.com/happyyzy/stable-diffusion.cpp
+    MIT licensed. Inside the DiT engine.
+
+ggml
+    ggml authors
+    https://github.com/ggml-org/ggml
+    MIT licensed. Inside the DiT engine.
+
+FLUX.2 [klein] 4B
+    Black Forest Labs
+    https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
+
+Z-Image Turbo
+    Tongyi-MAI; fp8 weights by Kijai
+    https://huggingface.co/Kijai/Z-Image_comfy_fp8_scaled
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
+
+Qwen3-4B text encoder, DiT VAEs
+    Converted for stable-diffusion.cpp by zhiyuanasad
+    https://huggingface.co/zhiyuanasad/flux2_klein_adreno
+    https://huggingface.co/zhiyuanasad/z_image_turbo_adreno
+    Downloaded by the app at the user's request; not included here.
+
 
 NON-COMMERCIAL
 --------------

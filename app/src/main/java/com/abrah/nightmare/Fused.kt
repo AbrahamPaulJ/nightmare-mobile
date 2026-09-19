@@ -109,11 +109,12 @@ object PromptNode : NodeType {
  * places for the blend argument order to drift, and that mistake is invisible
  * (`FusedSamplerTest`). The differences are exactly two constructor arguments.
  *
- * ⚠ **Latent-blend vs a 9-channel inpaint model is NOT a fifth type.** Same
- * ports, same editor; the difference is which checkpoint is loaded and one
- * branch inside [run]. It becomes a chip on the inpaint types when such a
- * checkpoint exists in the catalogue — today none does, and a chip with one
- * legal value is a knob that cannot matter (§5.7).
+ * ⚠ **Latent-blend vs a 9-channel inpaint model is NOT a fifth type — and not a
+ * chip either.** Same ports, same editor; the MODEL the node names is the whole
+ * choice. An inpaint render always sends its picture and mask with `sample`, and
+ * the backend uses them only when its UNet takes 9 channels
+ * (`backend-patches/006`). The user's call, 2026-09-19, replacing the chip this
+ * note used to promise: a knob that only restates the model is not a knob.
  *
  * ⚠⚠ **It does not draw its own picture.** The user's call, 2026-09-15: a
  * render appears on `core.output` and nowhere else, so a graph says where its
@@ -210,7 +211,13 @@ class SdSampler(
         val SDXL_INPAINT = SdSampler("sdxl.inpaint", Family.SDXL, inpaint = true)
         val ANIMA = SdSampler("anima.sample", Family.ANIMA, inpaint = false)
         val ANIMA_INPAINT = SdSampler("anima.inpaint", Family.ANIMA, inpaint = true)
-        val ALL = listOf(SD15, SDXL, ANIMA, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
+        /**
+         * ⭐ The DiT families: a `sample` type each and NO inpaint type — the
+         * engine takes no mask ([Family.dit]).
+         */
+        val FLUX2 = SdSampler("flux2.sample", Family.FLUX2, inpaint = false)
+        val ZIMAGE = SdSampler("zimage.sample", Family.ZIMAGE, inpaint = false)
+        val ALL = listOf(SD15, SDXL, ANIMA, FLUX2, ZIMAGE, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
 
         /**
          * ⭐⭐ The type a graph should use for [family] and [inpaint] — the one
@@ -221,7 +228,11 @@ class SdSampler(
          * get it wrong once.
          */
         fun typeFor(family: Family, inpaint: Boolean): String =
-            (ALL.firstOrNull { it.family == family && it.inpaint == inpaint } ?: SD15).name
+            (ALL.firstOrNull { it.family == family && it.inpaint == inpaint }
+                // ⚠ A family with no inpaint type (the DiT ones) asked for one:
+                // an SD 1.5 inpaint, not that family's text-to-image — which
+                // would silently drop the mask the caller asked for.
+                ?: if (inpaint) SD15_INPAINT else SD15).name
     }
 
     /**
@@ -245,7 +256,7 @@ class SdSampler(
      * are what the inpaint is, and the user asked for them above Steps
      * (2026-09-17). ⚠ Order only; every widget is the same declaration.
      */
-    override val widgets get() = baseWidgets().let { ws ->
+    override val widgets get() = (if (family.dit) ditWidgets() else baseWidgets()).let { ws ->
         if (!inpaint) ws else {
             val front = listOf("denoise", MaskCropNode.ONLY_MASKED, PasteNode.STITCH)
             front.mapNotNull { n -> ws.firstOrNull { it.name == n } } + ws.filterNot { it.name in front }
@@ -342,6 +353,40 @@ class SdSampler(
         Widget("height", "int", defaultRes().height.toString(), contextKey = true),
     )
 
+    /**
+     * ⭐⭐ A DiT family's knobs: the same names as every sampler's, minus what
+     * its engine does not have — no scheduler (it hardcodes euler), no aspect
+     * chip, no mask — and a SIZE that is a request field, not a launch one.
+     * ⚠ Not [Widget.contextKey]: moving them never relaunches the backend
+     * ([backendContextKey] keys a DiT model on its native size).
+     * ⚠⚠ They are also not drawn as sliders any more. The inspector's size
+     * panel owns them for every family now (`NodeInspector`'s `ditPanel`,
+     * [ModelCatalog.DIT_SHAPES]) and `hiddenKnob` keeps them out of the knob
+     * list, so these declarations exist to carry the DEFAULT and the legal
+     * range — which is what a saved workflow and `applyDefaults` read.
+     */
+    private fun ditWidgets(): List<Widget> = baseWidgets()
+        .filterNot { it.name in setOf("scheduler", "aspect", "width", "height", "cfg") } + listOf(
+        // ⭐ The one knob whose meaning DIFFERS here, so the one that gets a
+        // hint the SD nodes have no need of. A guidance-distilled checkpoint
+        // opens at 1.0, and at exactly 1.0 the engine skips the unconditional
+        // pass — which is what makes the negative prompt beside it inert until
+        // this moves. Nothing else in the sheet could tell a person that.
+        Widget(
+            "cfg", "float", defaultSpec().cfg.toString(), 1.0, 20.0, fine = true,
+            hint = "1 is what these models are distilled for. Above 1 the negative prompt " +
+                "starts being read, and each step costs about twice as long",
+        ),
+        Widget(
+            "width", "int", ModelCatalog.DIT_RES.width.toString(),
+            ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.DIT_MAX.toDouble(), step = ModelCatalog.DIT_STEP,
+        ),
+        Widget(
+            "height", "int", ModelCatalog.DIT_RES.height.toString(),
+            ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.DIT_MAX.toDouble(), step = ModelCatalog.DIT_STEP,
+        ),
+    )
+
     override fun contextKey(node: Node) = backendContextKey(node)
 
     /**
@@ -400,6 +445,7 @@ class SdSampler(
             )
         val w = int("width")
         val h = int("height")
+        if (family.dit) return runDit(ctx, node, p, prompt, inputs["image"] as? Value.Image, w, h)
         val aspect = nodeAspect(node)
             ?.takeIf { ModelCatalog.aspectTarget(it, Res(w, h)) != null }
 
@@ -507,7 +553,7 @@ class SdSampler(
 
         if (!masking) {
             ctx.say("re-imagining the picture")
-            val base = encode(ctx, padToCanvas(frame, w, h), ENCODE_SEED, w, h)
+            val base = encode(ctx, ImageStore.encodePng(padToCanvas(frame, w, h)), ENCODE_SEED, w, h)
             val latent = sample(ctx, p, cond, base, w, h, aspect)
             return VaeDecodeNode.decode(ctx, latent, w, h, aspect)
         }
@@ -542,16 +588,25 @@ class SdSampler(
         // so the detail lands where the finger was.
         val cut = MaskCropNode.cut(frame, maskBmp, tw, th, flag(MaskCropNode.ONLY_MASKED))
         ctx.say(if (painted.isEmpty) "filling the padding" else "repainting the area you marked")
-        val base = encode(ctx, padToCanvas(cut.image, w, h), ENCODE_SEED, w, h)
-        val repainted = sample(ctx, p, cond, base, w, h, aspect)
+        val imagePng = ImageStore.encodePng(padToCanvas(cut.image, w, h))
+        // ⚠ On the CANVAS, black outside the aspect rectangle: that is the
+        // part the decode cuts away, so it keeps the base.
+        val maskPng = ImageStore.encodePng(padToCanvas(cut.mask, w, h))
+        val base = encode(ctx, imagePng, ENCODE_SEED, w, h)
+        // ⭐⭐ The picture and mask go to `sample` as well. A 9-channel inpaint
+        // checkpoint conditions on them and SEES the hole it fills; every other
+        // model's backend drops them (`Ops.sample`), so nothing here branches
+        // on which kind of checkpoint is loaded — the model the node names is
+        // the whole choice (the user's call, 2026-09-19). The blend below then
+        // runs either way: over a 9-channel render it only re-asserts the
+        // unmasked area, which that model already kept.
+        val repainted = sample(ctx, p, cond, base, w, h, aspect, imagePng, maskPng)
 
         // ⚠⚠ `base` then `repainted`: the mask's WHITE area is where the new
         // pixels show through. The other way round replaces everything EXCEPT
         // what was painted — a plausible picture and a silent mistake.
-        // ⚠ On the CANVAS, black outside the aspect rectangle: that is the
-        // part the decode cuts away, so it keeps the base.
         val blended = when (
-            val r = ctx.host.latentBlend(base, repainted, ImageStore.encodePng(padToCanvas(cut.mask, w, h)))
+            val r = ctx.host.latentBlend(base, repainted, maskPng)
         ) {
             is Ops.Result.Ok -> r.value.handle
             is Ops.Result.Err -> throw OpFailure("latent_blend", r.code, r.body)
@@ -624,15 +679,71 @@ class SdSampler(
         return InpaintPixels.composite(base, patch, into, mask)
     }
 
+    /**
+     * ⭐⭐ A DiT render: ONE `/generate`, the text and (for image to image) the
+     * framed picture in, the picture out. Their engine owns the text encoder,
+     * the loop and the VAE, so there is no conditioning or latent to hand
+     * between ops ([Family.dit]).
+     *
+     * ⚠ The size snaps to the engine's grid here too: a saved flow or a typed
+     * param off the 256-px grid would otherwise reach the engine as a size it
+     * was never verified at.
+     */
+    private suspend fun runDit(
+        ctx: NodeCtx,
+        node: Node,
+        p: Map<String, String>,
+        prompt: Value.Prompt,
+        photo: Value.Image?,
+        w0: Int,
+        h0: Int,
+    ): Value {
+        // ⚠ [ModelCatalog.ditSnap], not a local copy: the size control offers
+        // only grid values and this must agree with it (see DIT_SHAPES).
+        val w = ModelCatalog.ditSnap(w0)
+        val h = ModelCatalog.ditSnap(h0)
+        val png = photo?.let {
+            val src = ctx.images.get(it.id)
+                ?: throw IllegalStateException("node \"${node.id}\": image ${it.id} is no longer in the store")
+            val (frame, _) = CropNode.render(
+                src,
+                p["x"]?.toFloatOrNull() ?: 0f, p["y"]?.toFloatOrNull() ?: 0f,
+                p["w"]?.toFloatOrNull() ?: 1f, p["h"]?.toFloatOrNull() ?: 1f,
+                w, h, p[CropNode.PAD] ?: CropNode.PAD_BLACK,
+            )
+            ImageStore.encodePng(frame)
+        }
+        ctx.say(if (png == null) "rendering" else "re-imagining the picture")
+        val r = ctx.host.generate(
+            prompt = prompt.positive,
+            negative = prompt.negative,
+            steps = p["steps"]?.toIntOrNull() ?: 4,
+            cfg = p["cfg"]?.toDoubleOrNull() ?: 1.0,
+            seed = p["seed"]?.toIntOrNull() ?: 0,
+            width = w,
+            height = h,
+            imagePng = png,
+            denoise = p["denoise"]?.toDoubleOrNull() ?: 0.65,
+            onProgress = ctx.onProgress,
+        )
+        val out = when (r) {
+            is Ops.Result.Ok -> r.value
+            is Ops.Result.Err -> throw OpFailure("generate", r.code, r.body)
+        }
+        val bmp = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
+            ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
+        return Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
+    }
+
     /** ⚠ Never put in the store: [ImageStore.encodePng] says why. */
     private suspend fun encode(
         ctx: NodeCtx,
-        bmp: android.graphics.Bitmap,
+        png: ByteArray,
         seed: Int,
         w: Int,
         h: Int,
     ): String = when (
-        val r = ctx.host.vaeEncode(ImageStore.encodePng(bmp), seed, w, h)
+        val r = ctx.host.vaeEncode(png, seed, w, h)
     ) {
         is Ops.Result.Ok -> r.value.handle
         is Ops.Result.Err -> throw OpFailure("vae_encode", r.code, r.body)
@@ -646,6 +757,8 @@ class SdSampler(
         w: Int,
         h: Int,
         aspect: String?,
+        inpaintImage: ByteArray? = null,
+        inpaintMask: ByteArray? = null,
     ): String {
         val r = ctx.host.sample(
             steps = p["steps"]?.toIntOrNull() ?: 20,
@@ -658,6 +771,8 @@ class SdSampler(
             scheduler = p["scheduler"].orEmpty(),
             condHandle = cond,
             aspect = aspect,
+            inpaintImage = inpaintImage,
+            inpaintMask = inpaintMask,
             onProgress = ctx.onProgress,
         )
         return when (r) {

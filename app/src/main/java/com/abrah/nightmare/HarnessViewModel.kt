@@ -850,7 +850,47 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             upscalerRows.any { it.spec.id == id } ->
                 upscalerRows = upscalerRows.map { if (it.spec.id == id) it.copy(progress = p) else it }
         }
+        // ⭐⭐ …and the shade. Asked for 2026-09-15 and never wired: only the
+        // FAILURE ever reached a notification (PROGRESS.md). ⚠ Its own ~1 s
+        // throttle: each update is a Binder call to system_server, and this
+        // tick fires every 150 ms.
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastNoticeAt >= NOTICE_TICK_MS) {
+            lastNoticeAt = now
+            DownloadNotice.progress(
+                getApplication(), downloadLabel(id), p.phase,
+                p.fraction.takeIf { p.total > 0 },
+            )
+        }
     }
+
+    private var lastNoticeAt = 0L
+
+    /** ⚠ What the shade and the toast call the thing downloading — one lookup for all four installers. */
+    private fun downloadLabel(id: String): String = when (id) {
+        VIDEO_INSTALL_ID -> "Video models"
+        SEGMENTER_INSTALL_ID -> com.abrah.nightmare.segment.Segmenter.LABEL
+        else -> ModelCatalog.byId(id)?.label ?: UpscalerCatalog.byId(id)?.label ?: id
+    }
+
+    /**
+     * ⭐⭐ The three ways a download ends, said the SAME way by all four
+     * installers (checkpoint, video, upscaler, segmenter). ⚠ Before this only
+     * the checkpoint path reported anything, and only a failure — the rule was
+     * honoured in one place of four, and in half of that one.
+     */
+    private fun downloadSucceeded(label: String) {
+        DownloadNotice.done(getApplication(), label, ok = true)
+        toast("$label downloaded")
+    }
+
+    private fun downloadFailed(label: String, why: String) {
+        DownloadNotice.done(getApplication(), label, ok = false, detail = why)
+        toast("$label failed — $why")
+    }
+
+    /** ⚠ Stopped by the user: no outcome to report, so the row simply goes. */
+    private fun downloadCancelled() = DownloadNotice.clear(getApplication())
 
     /**
      * ⚠ Reads the disk on every call. The alternative is a cache that has to be
@@ -1004,6 +1044,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 viewModelScope.launch {
                     say("installed ${spec.label}")
+                    downloadSucceeded(spec.label)
                     // ⭐ First model in becomes the one in use. Otherwise a user
                     // downloads a model, presses Run, and renders against a
                     // model they do not have.
@@ -1015,14 +1056,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 // ⚠ No outcome to report, so the row goes rather than sitting
                 // there saying "failed" about something the user stopped.
                 viewModelScope.launch {
-                    DownloadNotice.clear(ctx)
+                    downloadCancelled()
                     say("download cancelled", bad = true)
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
                     modelError = e.message ?: e.javaClass.simpleName
-                    DownloadNotice.done(ctx, spec.label, ok = false, detail = modelError)
-                    toast("${spec.label} failed — $modelError")
+                    downloadFailed(spec.label, modelError!!)
                     say("install failed — $modelError", bad = true)
                 }
             } finally {
@@ -1160,14 +1200,21 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
                     isCancelled = { cancelInstall },
                 )
-                viewModelScope.launch { say("installed the video models") }
+                viewModelScope.launch {
+                    say("installed the video models")
+                    downloadSucceeded(downloadLabel(VIDEO_INSTALL_ID))
+                }
             } catch (e: ModelInstaller.Cancelled) {
                 // ⚠ Not an error: every completed file is kept and the next
                 // attempt resumes from it.
-                viewModelScope.launch { say("download cancelled — what arrived is kept", bad = true) }
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled — what arrived is kept", bad = true)
+                }
             } catch (e: Exception) {
                 viewModelScope.launch {
                     modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(downloadLabel(VIDEO_INSTALL_ID), modelError!!)
                     say("video install — $modelError", bad = true)
                 }
             } finally {
@@ -1216,12 +1263,19 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     },
                     isCancelled = { cancelInstall },
                 )
-                viewModelScope.launch { say("installed ${spec.label}") }
+                viewModelScope.launch {
+                    say("installed ${spec.label}")
+                    downloadSucceeded(spec.label)
+                }
             } catch (e: ModelInstaller.Cancelled) {
-                viewModelScope.launch { say("download cancelled", bad = true) }
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
             } catch (e: Exception) {
                 viewModelScope.launch {
                     modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(spec.label, modelError!!)
                     say("install failed — $modelError", bad = true)
                 }
             } finally {
@@ -1386,7 +1440,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⭐ The segmenter: a Segment model node on the canvas, or a mask that was tapped.
         val needsSegmenter = graph.nodes.any { n ->
             n.type == SelectObjectNode.name ||
-                (n.type in com.abrah.nightmare.SD_INPAINT_TYPES &&
+                (n.type in com.abrah.nightmare.INPAINT_TYPES &&
                     com.abrah.nightmare.MaskTaps.hasTaps(com.abrah.nightmare.MaskNode.stateOf(n)))
         }
         if (needsSegmenter && !com.abrah.nightmare.segment.Segmenter.isInstalled(ctx)) {
@@ -1463,12 +1517,19 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
                     isCancelled = { cancelInstall },
                 )
-                viewModelScope.launch { say("installed ${com.abrah.nightmare.segment.Segmenter.LABEL}") }
+                viewModelScope.launch {
+                    say("installed ${com.abrah.nightmare.segment.Segmenter.LABEL}")
+                    downloadSucceeded(com.abrah.nightmare.segment.Segmenter.LABEL)
+                }
             } catch (e: ModelInstaller.Cancelled) {
-                viewModelScope.launch { say("download cancelled", bad = true) }
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
             } catch (e: Exception) {
                 viewModelScope.launch {
                     modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(com.abrah.nightmare.segment.Segmenter.LABEL, modelError!!)
                     say("install failed — $modelError", bad = true)
                 }
             } finally {
@@ -2095,7 +2156,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         var out = after
         val graph = after.workflow.graph
         for (n in graph.nodes) {
-            if (n.type !in com.abrah.nightmare.SD_INPAINT_TYPES) continue
+            if (n.type !in com.abrah.nightmare.INPAINT_TYPES) continue
             val ops = n.params[com.abrah.nightmare.MaskNode.OPS].orEmpty()
             if (before.workflow.graph.byId[n.id]?.params?.get(com.abrah.nightmare.MaskNode.OPS).orEmpty() == ops) continue
             val up = n.inputs["image"]?.node ?: continue
@@ -2147,7 +2208,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val uri = n.params["uri"].orEmpty()
             if (uri.isBlank() || before.workflow.graph.byId[n.id]?.params?.get("uri") == uri) continue
             for (s in after.workflow.graph.nodes) {
-                if (s.type in com.abrah.nightmare.SD_SAMPLER_TYPES && s.inputs["image"]?.node == n.id) {
+                if (s.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && s.inputs["image"]?.node == n.id) {
                     pendingAutoFrame[s.id] = before.previews[n.id]?.first
                 }
             }
@@ -2254,7 +2315,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val graph = canvas.workflow.graph
         var next = canvas
         for (n in graph.nodes) {
-            if (n.type !in com.abrah.nightmare.SD_SAMPLER_TYPES || n.type in com.abrah.nightmare.SD_INPAINT_TYPES) continue
+            if (n.type !in com.abrah.nightmare.IMAGE_SAMPLER_TYPES || n.type in com.abrah.nightmare.INPAINT_TYPES) continue
             val up = n.inputs["image"]?.node ?: continue
             if (nodeTypes[graph.byId[up]?.type]?.showsResult != false) continue
             val aspect = predictedAspect(graph, up) ?: continue
@@ -2277,9 +2338,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val t = nodeTypes[n.type] ?: return null
         fun input() = n.inputs["image"]?.node?.let { predictedAspect(graph, it, depth + 1) }
         return when {
-            n.type in com.abrah.nightmare.SD_INPAINT_TYPES &&
+            n.type in com.abrah.nightmare.INPAINT_TYPES &&
                 n.params[com.abrah.nightmare.PasteNode.STITCH].equals("true", true) -> input()
-            n.type in com.abrah.nightmare.SD_SAMPLER_TYPES ->
+            n.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES ->
                 t.framesTo(n)?.takeIf { it.first > 0 && it.second > 0 }?.let { it.first.toFloat() / it.second }
             n.type == "image.upscale" -> input()
             n.type == "core.image" ->
@@ -2776,11 +2837,31 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 val bmp = results.thumbnail(id)?.asImageBitmap()
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                     thumbLoading.remove(id)
-                    if (bmp != null) thumbs[id] = bmp
+                    if (bmp != null) thumbs[id] = bmp else markUnreadable(id, "thumbnail")
                 }
             }
         }
         return null
+    }
+
+    /**
+     * ⭐⭐ Kept results whose PNG will not decode — drawn as a "can't read this
+     * picture" card instead of a blank one.
+     *
+     * ⚠⚠ A failed decode used to write NOTHING, so no recomposition followed
+     * and the card stayed an empty grey square forever, indistinguishable from
+     * one still loading. Reported from a phone 2026-09-19; the cause was two
+     * autosaves interleaving one PNG (`ResultsStore.keep`), and the files that
+     * race already wrote cannot be repaired — this is how their owner finds and
+     * deletes them. ⚠ A state map, so marking one redraws the card.
+     */
+    private val unreadable = mutableStateMapOf<String, Unit>()
+
+    fun resultUnreadable(id: String): Boolean = id in unreadable
+
+    private fun markUnreadable(id: String, what: String) {
+        unreadable[id] = Unit
+        android.util.Log.w("Harness", "result $id: $what decode failed (${results.imageFile(id).length()} bytes)")
     }
 
     fun refreshResults() {
@@ -3230,6 +3311,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         batchLabel: String = "",
         favourite: Boolean = false,
         auto: Boolean = false,
+        /**
+         * ⭐ The node whose picture this is — autosave passes its output node.
+         * Null means "whichever node on the canvas shows [imageId]".
+         */
+        from: String? = null,
     ) {
         val bmp = ops.images.get(imageId)
         if (bmp == null) {
@@ -3238,14 +3324,29 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         val kept = flow ?: canvas.workflow
         val graph = kept.graph
+        // ⭐⭐ The sampler UPSTREAM OF THIS PICTURE, through [samplerFor] — the
+        // same nearest-first walk the canvas viewer's seed uses, so the two
+        // cannot disagree about which render a picture came from.
+        //
+        // ⚠⚠ It was "the LAST sampler in graph order" for the whole graph, which
+        // is right only while a graph has one branch. A flow with two outputs fed
+        // by two samplers filed BOTH pictures under the second sampler's seed
+        // and the globally selected model (reported with the two-output save
+        // race, 2026-09-19). ⚠ That rule survives as the fallback for a flow
+        // this canvas is not showing (an upscale's own little graph).
+        val origin = from ?: canvas.previews.entries
+            .firstOrNull { it.value.first == imageId && it.key in graph.byId }?.key
         // ⚠ Any sampler -- see [com.abrah.nightmare.SAMPLER_TYPES]. A kept clip
         // filed no seed at all while `sd.sample` was the only type matched here.
-        // ⚠ The LAST sampler in graph order — in a chain, the render is its.
-        val sampler = ((topoSort(graph) as? Order.Ok)?.nodes ?: graph.nodes)
-            .lastOrNull { com.abrah.nightmare.isSampler(it.type) }
+        val sampler = origin?.let { com.abrah.nightmare.canvas.samplerFor(graph, it) }?.let { graph.byId[it] }
+            ?: ((topoSort(graph) as? Order.Ok)?.nodes ?: graph.nodes)
+                .lastOrNull { com.abrah.nightmare.isSampler(it.type) }
         val seed = sampler?.id?.let { id ->
             com.abrah.nightmare.canvas.seedFor(graph, id) { canvasStatus[it]?.detail }
         }
+        // ⚠ The sampler's OWN checkpoint — a model is a per-node choice
+        // (`docs/ARCHITECTURE.md` §5.7), so the selected one names only one branch.
+        val modelLabel = (ModelCatalog.byId(sampler?.params?.get("model").orEmpty()) ?: SelectedModel.spec).label
         // ⚠ The video sampler carries its prompt itself; every picture recipe
         // puts it on a `clip_encode`. Neither graph has both.
         val prompt = graph.nodes.firstOrNull { it.type == "sd.clip_encode" }?.params?.get("prompt")
@@ -3280,7 +3381,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val r = runCatching {
                 results.keep(
-                    bmp, imageId, workflow, types, seed, SelectedModel.spec.label, prompt,
+                    bmp, imageId, workflow, types, seed, modelLabel, prompt,
                     batchId, batchLabel, video = clip, favourite = favourite, auto = auto,
                 )
             }
@@ -3638,7 +3739,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                             fullImages.remove(oldest)
                         }
                         fullImages[id] = bmp
-                    }
+                    } else markUnreadable(id, "full-size")
                 }
             }
         }
@@ -3916,7 +4017,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     // Mask editor shows. ⚠ Translucent: the picture underneath
                     // is what makes the mask legible as a REGION of it.
                     val ops0 = p[com.abrah.nightmare.MaskNode.OPS].orEmpty()
-                    if (n.type in com.abrah.nightmare.SD_INPAINT_TYPES && ops0.isNotBlank()) {
+                    if (n.type in com.abrah.nightmare.INPAINT_TYPES && ops0.isNotBlank()) {
                         // ⚠ Taps from the CACHE only: this runs on the main
                         // thread, and a tap made in this session is already there.
                         val state = com.abrah.nightmare.MaskTaps.resolve(
@@ -4417,6 +4518,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     // useful label is which run it was — the real seed is
                     // recorded separately by `keepResult` from the run itself.
                     batchLabel = label.ifBlank { "run ${i + 1}" },
+                    from = terminal,
                 )
             }
 
@@ -4665,14 +4767,32 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // workflow and the batch label, none of which a `NodeType.run` can
         // reach ([MediaOutputNode]). ⚠ Keyed on the picture the OUTPUT node
         // holds, so a graph with two branches keeps the one it was told to.
+        //
+        // ⭐⭐ A Run with SEVERAL outputs is kept as one group, the way a sweep
+        // is: a shared `batchId` puts its pictures side by side in Results and
+        // the viewer walks them together, each labelled with the output node it
+        // came from. The user's call, 2026-09-19. ⚠ A single output keeps no
+        // batch, so an ordinary Run reads exactly as it always did.
         if (MediaOutputNode.autosaves(canvas.workflow.graph)) {
-            canvas.workflow.graph.nodes
+            val outs = canvas.workflow.graph.nodes
                 .filter { it.type == MediaOutputNode.name }
-                .mapNotNull { (r.outputs[it.id]?.previewImage())?.id }
+                .mapNotNull { n -> r.outputs[n.id]?.previewImage()?.id?.let { n.id to it } }
+                // ⚠ Two outputs wired to ONE picture keep it once. `kept` below
+                // cannot catch that: it is not refreshed until these saves land.
+                .distinctBy { it.second }
                 // ⚠ Not already there: a Run that changed nothing is served from
                 // the cache and would otherwise keep a second copy every press.
-                .filter { id -> kept.none { it.imageId == id } }
-                .forEach { keepResult(it, canvas.workflow, auto = true) }
+                .filter { (_, id) -> kept.none { it.imageId == id } }
+            val batchId = if (outs.size > 1) "b" + System.currentTimeMillis() else null
+            outs.forEach { (node, id) ->
+                keepResult(
+                    id, canvas.workflow,
+                    batchId = batchId,
+                    batchLabel = if (batchId != null) node else "",
+                    auto = true,
+                    from = node,
+                )
+            }
         }
 
         r.error?.let {
@@ -4756,6 +4876,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun notWired(op: String, step: String) = say("$op — not wired yet ($step)", bad = true)
 
     private companion object {
+        /** ⚠ The shade's own tick — see [tickProgress]. */
+        const val NOTICE_TICK_MS = 1000L
         /** ⭐ The model-swap dialog's last answers ([confirmSwap]). */
         const val SWAP_TAKE_PROMPT = "swap_take_prompt"
 

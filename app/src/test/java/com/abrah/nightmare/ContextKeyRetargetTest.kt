@@ -240,8 +240,10 @@ class ContextKeyRetargetTest {
      */
     @Test
     fun anotherModelsPromptIsReplaced() {
-        val from = ModelCatalog.sd15Models.first { it.id != V1_MODEL }
+        // ⚠ A model whose starter text DIFFERS from the target's — AbsoluteReality
+        // Inpaint shares its base's text, so "the next SD 1.5 model" is not enough.
         val to = ModelCatalog.byId(V1_MODEL)!!
+        val from = ModelCatalog.sd15Models.first { it.prompt != to.prompt && it.negative != to.negative }
         val changes = modelPromptRetarget(textGraph(from.prompt, from.negative), NODE_TYPES, to)
         assertEquals(to.prompt, changes["text"]!!["prompt"])
         assertEquals(to.negative, changes["text"]!!["negative"])
@@ -250,8 +252,10 @@ class ContextKeyRetargetTest {
     /** ⚠ One field typed, one still ours: only the second moves. */
     @Test
     fun onlyTheUntouchedFieldMoves() {
-        val from = ModelCatalog.sd15Models.first { it.id != V1_MODEL }
+        // ⚠ A model whose starter text DIFFERS from the target's — AbsoluteReality
+        // Inpaint shares its base's text, so "the next SD 1.5 model" is not enough.
         val to = ModelCatalog.byId(V1_MODEL)!!
+        val from = ModelCatalog.sd15Models.first { it.prompt != to.prompt && it.negative != to.negative }
         val changes = modelPromptRetarget(
             textGraph("a lighthouse in a storm", from.negative), NODE_TYPES, to,
         )
