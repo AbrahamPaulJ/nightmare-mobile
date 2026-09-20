@@ -120,4 +120,5 @@
     <string name="clean_temp_confirm">Удалить %1$d МБ временных файлов?</string>
     <string name="clean_temp_confirm_body">Незавершённая загрузка начнётся заново, а не продолжится. Модели, картинки, сохранённые схемы и эмбеддинги не затрагиваются.</string>
     <string name="flow_unsupported">%1$s — это HTP v%2$d, а этому потоку нужен v%3$d (Snapdragon 8 Elite или новее).</string>
+    <string name="segmenter_loading">Загрузка сегментатора — первое касание по снимку займёт мгновение…</string>
 </resources>

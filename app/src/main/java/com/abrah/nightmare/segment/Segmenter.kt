@@ -216,4 +216,22 @@ object Segmenter {
     /** ⚠ Cache only — for a caller on the main thread that must not block. */
     fun cached(photo: Bitmap, x: Float, y: Float): SegmentModel.Segmentation? =
         synchronized(this) { cache[cacheKey(photoKey(photo), x, y)] }
+
+    /**
+     * ⭐⭐ **Is a tap on [photo] going to be quick?** True once the model is
+     * open AND this photo's trunk is primed.
+     *
+     * ⚠⚠ Both halves matter and they are paid at different times: opening
+     * the model is ~400 ms ONCE per process, encoding the trunk is up to
+     * ~1.2 s per PHOTO. A first tap on a new picture pays both, which is the
+     * couple of seconds reported from the phone 2026-09-20 — long enough that
+     * the inline "Finding the object…" line, under the picture and easy to
+     * miss mid-tap, read as nothing happening.
+     *
+     * ⚠ Non-blocking and allocates nothing: it must be safe to ask on the
+     * main thread, in the instant between the finger landing and the work
+     * starting.
+     */
+    fun isWarm(photo: Bitmap): Boolean =
+        synchronized(this) { model?.isReady(photoKey(photo)) == true }
 }

@@ -2531,6 +2531,10 @@ private fun MaskToolbar(
     if (!canTap && tool == MaskTool.TAP) tool = MaskTool.BRUSH
     var tapping by remember { mutableStateOf(false) }
     var tapNote by remember { mutableStateOf<String?>(null) }
+    // ⚠ Whether the segmenter was already warm when this tap started — it is
+    // what decides between "Loading" and "Finding", and it must be sampled at
+    // the tap rather than read live (see [onTap]).
+    var warmAtTap by remember { mutableStateOf(true) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MaskEditor(
@@ -2541,6 +2545,10 @@ private fun MaskToolbar(
             padding = padding,
             onTap = { u, v ->
                 if (!tapping) {
+                    // ⚠ Read BEFORE the work starts: by the time it finishes the
+                    // segmenter is warm, and the label would have said "loading"
+                    // for a tap that was not.
+                    warmAtTap = com.abrah.nightmare.segment.Segmenter.isWarm(photo.asAndroidBitmap())
                     tapping = true
                     tapNote = null
                     // ⚠ Frame → photo, the same crossing a stroke makes.
@@ -2665,6 +2673,10 @@ private fun MaskToolbar(
         if (tool == MaskTool.TAP || tapNote != null) {
             Text(
                 when {
+                    // ⚠ The same distinction the toast makes: the first tap on a
+                    // picture is loading, later ones are searching. One state,
+                    // two honest sentences ([Segmenter.isWarm]).
+                    tapping && !warmAtTap -> stringResource(R.string.segmenter_loading)
                     tapping -> stringResource(R.string.mask_tap_working)
                     tapNote != null -> tapNote!!
                     else -> stringResource(R.string.mask_tap_hint)

@@ -117,4 +117,5 @@
     <string name="clean_temp_confirm">删除 %1$d MB 临时文件？</string>
     <string name="clean_temp_confirm_body">未完成的下载将从头开始，而不是继续。模型、图片、已保存的工作流和嵌入不会受影响。</string>
     <string name="flow_unsupported">%1$s 的 HTP 为 v%2$d，而此工作流需要 v%3$d（骁龙 8 Elite 或更新）。</string>
+    <string name="segmenter_loading">正在加载分割模型 — 对一张图片的首次点选需要稍等…</string>
 </resources>

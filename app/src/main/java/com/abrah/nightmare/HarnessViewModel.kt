@@ -2648,6 +2648,22 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             return done("download ${com.abrah.nightmare.segment.Segmenter.LABEL} in Models, Tools, to tap objects")
         }
         val stored = com.abrah.nightmare.MaskNode.stateOf(node)
+        // ⭐⭐⭐ **Say the first tap is loading, before it starts.**
+        //
+        // Asked for 2026-09-20: the first tap on a picture takes a couple of
+        // seconds and looked like nothing happening. It is two costs, both
+        // one-off — opening the model (~400 ms per process) and encoding this
+        // photo's trunk (up to ~1.2 s per picture)
+        // ([Segmenter.isWarm]).
+        //
+        // ⚠⚠ A toast rather than only the inline line: the mask editor is a
+        // fullscreen dialog and "Finding the object…" sits under the picture,
+        // which is not where a finger that just tapped is looking. ⚠ Only when
+        // COLD — a toast on every tap would be noise, and the later taps are
+        // fast enough to need nothing.
+        if (!com.abrah.nightmare.segment.Segmenter.isWarm(photo)) {
+            toast(ctx.getString(R.string.segmenter_loading))
+        }
         viewModelScope.launch {
             val seg = com.abrah.nightmare.segment.Segmenter
             val outcome = withContext(kotlinx.coroutines.Dispatchers.Default) {
