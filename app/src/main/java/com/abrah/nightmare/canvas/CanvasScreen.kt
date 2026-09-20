@@ -232,6 +232,8 @@ fun CanvasScreen(
      * view model's job, and it is the only thing that may touch that map.
      */
     onClearImage: (String) -> Unit = {},
+    /** ⭐ Switch which node the inspector shows — the node strip. */
+    onInspectNode: (String) -> Unit = {},
     /** ⭐ Write a rendered image to the gallery. */
     onSaveImage: (String) -> Unit = {},
     /** ⭐ Hand a node's picture to another app. */
@@ -502,6 +504,7 @@ fun CanvasScreen(
     NodeInspector(
         state = state,
         types = types,
+        onInspectNode = onInspectNode,
         status = status,
         onClearImage = onClearImage,
         onSaveImage = onSaveImage,

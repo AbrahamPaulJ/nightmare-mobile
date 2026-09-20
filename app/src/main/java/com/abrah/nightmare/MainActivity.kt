@@ -571,6 +571,7 @@ fun HarnessScreen(
             onSetAspect = vm::selectAspect,
             validateWorkflowName = vm::workflowNameError,
             onClearImage = vm::clearImage,
+            onInspectNode = vm::inspectNode,
             onSaveImage = vm::saveImage,
             onShareImage = vm::shareNodeImage,
             onSendImage = vm::offerSendImage,

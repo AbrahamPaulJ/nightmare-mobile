@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -66,7 +67,24 @@ fun LibraryScreen(
     results: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
+    // ⭐⭐⭐ **BOTH insets, here, for all three tabs.**
+    //
+    // ⚠⚠⚠ Reported from the phone 2026-09-20: Models, Flows and Results
+    // ran their content under the navigation bar, so the last row of a list
+    // sat behind the gesture pill. Only the status bar was cleared — this
+    // screen has owned the TOP inset since it took the header and nobody
+    // gave it the bottom one.
+    //
+    // ⚠⚠ It belongs HERE and not in the three tab bodies, which is how the
+    // top one is done: three copies would be three chances to miss one, and
+    // that is exactly what happened — Flows had `navigationBarsPadding()` on
+    // its own list and the other two did not.
+    //
+    // ⚠ Roborazzi reports ZERO insets, so no golden can catch this
+    // (`docs/UI.md` §5). It is checked by looking at the phone.
+    Column(
+        modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp),
+    ) {
         // ⭐ The APP's name and logo, not the tab's — the tab row directly under
         // it already says Models / Flows / Results, so a title repeating it was
         // redundant (the user's call, 2026-09-17).

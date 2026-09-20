@@ -101,7 +101,9 @@ fun WorkflowsScreen(
             modifier = Modifier.padding(top = 8.dp),
         ) { page ->
             LazyColumn(
-                Modifier.fillMaxWidth().padding(top = 10.dp).navigationBarsPadding(),
+                // ⚠ No `navigationBarsPadding()` here any more: [LibraryScreen]
+                // applies it for all three tabs, and both would double it.
+                Modifier.fillMaxWidth().padding(top = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (page == 0) {

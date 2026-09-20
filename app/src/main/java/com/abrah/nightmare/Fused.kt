@@ -541,8 +541,18 @@ class SdSampler(
         // left off as "rare"; the user asked for it back in the inpaint Crop tab
         // (2026-09-17). ⚠ The FRAME only: the mask is always padded black,
         // because black is "not masked".
+        // ⭐⭐ **BLUR by default on an inpaint node, black elsewhere** — the
+        // user's call, 2026-09-20.
+        //
+        // ⚠⚠ On an inpaint node the frame running off the photo is
+        // OUTPAINTING ([PadRule.OUTPAINT]), and what fills it is what the
+        // model continues from: blurred edges carry the picture's own colour
+        // and light into the new area, where a black bar asks it to invent a
+        // scene that begins at a hard black edge. ⚠ Elsewhere the bars mean
+        // "this photo is too small" and black says that honestly.
         Widget(
-            CropNode.PAD, "string", CropNode.PAD_BLACK,
+            CropNode.PAD, "string",
+            if (inpaint) CropNode.PAD_BLUR else CropNode.PAD_BLACK,
             options = listOf(CropNode.PAD_BLACK, CropNode.PAD_BLUR),
             hint = "what fills the frame where it runs off the photo",
         ),

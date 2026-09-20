@@ -12,6 +12,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -114,7 +115,11 @@ fun SettingsScreen(
     // note. `statusBarsPadding().padding(16.dp)`, then `ScreenHeader`; if
     // Library's own inset changes, this must change with it.
     Column(
-        modifier.fillMaxSize().statusBarsPadding().padding(16.dp)
+        // ⚠⚠ Its OWN insets: Settings is not a [LibraryScreen] tab, so the
+        // bottom one that screen applies does not reach here. Reported from
+        // the phone 2026-09-20 along with the three tabs — the Clean temp
+        // button was the last thing on the page and sat under the gesture bar.
+        modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp)
             .verticalScroll(rememberScrollState()),
     ) {
         ScreenHeader(stringResource(R.string.settings), onClose = onClose)

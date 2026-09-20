@@ -114,6 +114,28 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * `setTheme` on the JVM, and the two clash at the bytecode level with an
      * error that names a signature rather than the property.
      */
+    /**
+     * ⭐⭐ Point the open inspector at another node — the node strip
+     * (`canvas/NodeStrip`).
+     *
+     * ⚠⚠ Clears `focusField`, `cropRequest` and its tab, because all three
+     * belong to the node being LEFT. A crop request that survived the switch
+     * would open the crop popup on the node just arrived at, which is the same
+     * class of bug as a `remember` that outlives its subject.
+     *
+     * ⚠ Does not touch the canvas SELECTION or mark the flow dirty: looking
+     * at a node changes nothing about the graph.
+     */
+    fun inspectNode(id: String) {
+        if (canvas.workflow.graph.byId[id] == null) return
+        canvas = canvas.copy(
+            editing = id,
+            focusField = null,
+            cropRequest = null,
+            cropRequestTab = 0,
+        )
+    }
+
     fun chooseTheme(value: Prefs.Theme) {
         Prefs.setTheme(getApplication(), value)
         theme = value
