@@ -118,10 +118,19 @@ object BackendProcess {
     @Volatile
     private var runtimeUnpacked: File? = null
 
+    /**
+     * ⭐ Where the QNN runtime, the DiT skels and the downloaded DiT engine all
+     * live: INTERNAL storage, which is the only writable place a `.so` can be
+     * mapped `PROT_EXEC` from. ⚠ Separate from [prepareRuntime] because
+     * [DitEngine] writes here before any backend has launched, and unpacking
+     * 33 MB of QNN libraries is not what an installer wants.
+     */
+    fun runtimeDir(context: Context): File = File(context.filesDir, RUNTIME_DIR)
+
     @Synchronized
     fun prepareRuntime(context: Context): File {
         runtimeUnpacked?.let { return it }
-        val dir = File(context.filesDir, RUNTIME_DIR).apply { mkdirs() }
+        val dir = runtimeDir(context).apply { mkdirs() }
         val all = context.assets.list("qnnlibs").orEmpty().toList()
         check(all.isNotEmpty()) {
             "no qnnlibs in assets — run tools/stage_backend.ps1 before building"
@@ -265,9 +274,16 @@ object BackendProcess {
                 // reports success.
                 val spec = ModelCatalog.byId(modelId)
                 val dit = !upscalerOnly && spec?.isDit == true
-                if (dit && !File(nativeDir, DIT_ENGINE).isFile) {
+                // ⚠⚠ The engine is DOWNLOADED, not shipped (`DitEngine`), so
+                // "missing" is an ordinary state and not a broken build: an
+                // app update replaces the native dir, and before 1.5.502 this
+                // file lived there. ⭐ The callers ask `DitEngine.isInstalled`
+                // first and offer the download (`modelsPresentOrAsk`); this is
+                // the backstop for a path that did not, and it names the fix.
+                if (dit && !DitEngine.isInstalled(context)) {
                     return@withContext Start.Failed(
-                        "the DiT engine ($DIT_ENGINE) is not in this build — it was staged without one"
+                        "the DiT engine ($DIT_ENGINE) is not installed — " +
+                            "download it from the model this flow names"
                     )
                 }
 
@@ -303,10 +319,16 @@ object BackendProcess {
                         add("--type"); add(ModelCatalog.backendTypeOf(modelId))
                         add("--model_dir"); add(model.absolutePath)
                     }
-                    // ⭐ A DiT model dlopens `libdit_engine.so` out of --lib_dir,
-                    // and the engine ships as an APK native library — so for
-                    // those types it is the NATIVE dir (upstream BackendService).
-                    add("--lib_dir"); add(if (dit) nativeDir else runtime.absolutePath)
+                    // ⭐ Always the runtime dir. ⚠ It used to be the NATIVE
+                    // dir for DiT types (upstream BackendService's shape),
+                    // because that is where `libdit_engine.so` shipped; since
+                    // 1.5.502 the engine is downloaded into the runtime dir
+                    // instead, so one path serves both. ⭐ That also means
+                    // `qnn_runtime::init` now finds `libQnnHtp.so` by path in a
+                    // DiT process rather than falling back to the bare soname
+                    // (`backend-patches/008`) — the fallback stays as a
+                    // backstop, but nothing routine depends on it any more.
+                    add("--lib_dir"); add(runtime.absolutePath)
                     add("--port"); add(port.toString())
                     // ⚠⚠ Not a tuning knob. `--lowram` loads and releases each
                     // stage instead of holding the pipeline resident, and every

@@ -74,24 +74,58 @@ foreach ($n in $want) {
 }
 Write-Output ("qnnlibs {0,9:N0} bytes across {1} files ({2} arches)" -f $total, $want.Count, $arches.Count)
 
-# ⭐ The DiT engine (FLUX.2 Klein / Z-Image): libdit_engine.so as a native lib,
-# its Hexagon skels as assets the app copies onto the DSP search path. Taken
-# from local-dream v3.0.0-alpha.1's APK, where upstream builds them from
-# stable-diffusion.cpp with the Hexagon SDK (not installed here). ⚠ Optional:
-# without them the app builds and every other family runs; a DiT model then
-# refuses at launch by name. Set $env:NM_DIT_ENGINE to a dir holding
-# lib/arm64-v8a/libdit_engine.so and assets/ditlibs/*.so.
+# ⭐⭐ The DiT engine (FLUX.2 Klein / Z-Image). Taken from local-dream
+# v3.0.0-alpha.1's APK, where upstream builds it from stable-diffusion.cpp with
+# the Hexagon SDK (not installed here).
+#
+# ⚠⚠ Since 1.5.502 libdit_engine.so does NOT go into the APK. It is 55.7 MB on
+# disk, 21.9 MB deflated, and dead weight on every phone that never renders a
+# DiT model - so it is packed into a release asset here and DOWNLOADED by
+# DitEngine.kt into the runtime dir at first use. notes/HANDOFF.md §7.
+# ⚠ Its Hexagon skels (assets/ditlibs, 1.8 MB) DO stay in the APK: FastRPC
+# hands them to the DSP by bare name and they are too small to pay for a
+# second moving part.
+#
+# ⚠⚠⚠ Publishing the zip is a MANUAL step, and the app cannot install the
+# engine until it is done: upload build/release-assets/ to the tag named in
+# DitEngine.URL. If the engine itself ever changes, change that URL (a new
+# filename at a new tag) and BYTES, FILE_BYTES and SHA256 with it. Re-uploading
+# the SAME engine under a new tag makes every user re-download 22 MB for
+# nothing.
+#
+# Set $env:NM_DIT_ENGINE to a dir holding lib/arm64-v8a/libdit_engine.so and
+# assets/ditlibs/*.so.
 $dit = if ($env:NM_DIT_ENGINE) { $env:NM_DIT_ENGINE } else {
     Join-Path (Split-Path -Parent $root) "LocalDream\ld3-apk\extracted"
 }
-$ditAssets = Join-Path $root "app\src\main\assets\ditlibs"
-if (Test-Path (Join-Path $dit "lib\arm64-v8a\libdit_engine.so")) {
-    Copy-Item (Join-Path $dit "lib\arm64-v8a\libdit_engine.so") (Join-Path $jni "libdit_engine.so") -Force
+$ditAssets = Join-Path $root "app\src\mainssets\ditlibs"
+$ditSo = Join-Path $dit "librm64-v8a\libdit_engine.so"
+# ⚠⚠ A copy left by a pre-1.5.502 staging run would be packaged silently and
+# quietly undo the whole change, so it is REMOVED rather than merely not
+# written.
+$staleEngine = Join-Path $jni "libdit_engine.so"
+if (Test-Path $staleEngine) {
+    Remove-Item $staleEngine -Force
+    Write-Output "removed stale libdit_engine.so from jniLibs (it is a download now)"
+}
+if (Test-Path $ditSo) {
     New-Item -ItemType Directory -Force $ditAssets | Out-Null
     Copy-Item (Join-Path $dit "assets\ditlibs\*.so") $ditAssets -Force
-    Write-Output "dit engine staged from $dit"
+    $relDir = Join-Path $root "build
+elease-assets"
+    New-Item -ItemType Directory -Force $relDir | Out-Null
+    $zip = Join-Path $relDir "dit-engine-ld3.0.0a1.zip"
+    if (Test-Path $zip) { Remove-Item $zip -Force }
+    Compress-Archive -Path $ditSo -DestinationPath $zip -CompressionLevel Optimal
+    $h = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+    Write-Output "dit skels staged from $dit"
+    Write-Output ("dit engine -> {0}" -f $zip)
+    Write-Output ("  FILE_BYTES {0,12:N0}" -f (Get-Item $ditSo).Length)
+    Write-Output ("  BYTES      {0,12:N0}" -f (Get-Item $zip).Length)
+    Write-Output ("  SHA256     {0}" -f $h)
+    Write-Output "  ^ these three must match the constants in DitEngine.kt"
 } else {
-    Write-Output "dit engine NOT staged (none at $dit) - DiT models will refuse at launch"
+    Write-Output "dit engine NOT staged (none at $dit) - DiT models cannot be installed"
 }
 
 # ⚠ A stale copy is the failure this guards against, so print what landed.

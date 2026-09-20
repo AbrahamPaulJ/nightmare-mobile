@@ -92,6 +92,16 @@ object ModelInstaller {
         val modelDir = spec.dir(context).apply { mkdirs() }
         val cache = ModelCatalog.downloads(context).apply { mkdirs() }
 
+        // ⭐⭐ The DiT engine rides along with the WEIGHTS, here rather than in
+        // the ViewModel, because the headless `model_install` op is a second
+        // caller (`HarnessOps`) and a checkpoint that downloads without the
+        // code to run it is the same class of failure in both.
+        // ⚠ 22 MB in front of 6.7 GB: its own bar, then the model's, which is
+        // honest about the two phases without pretending one total covers them.
+        if (spec.isDit && !DitEngine.isInstalled(context)) {
+            DitEngine.install(context, onProgress, isCancelled)
+        }
+
         // ⭐⭐ A plain-file package (the DiT families): each file fetched into
         // the model dir under the name the backend expects, no zip, no extract.
         // ⚠ Straight into place, resumably: a 4 GB file that had to be copied

@@ -1389,6 +1389,20 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             override val label get() = spec.label
             override val installId get() = spec.id
         }
+
+        /**
+         * ⭐⭐ The FLUX.2 / Z-Image engine, missing while its WEIGHTS are here.
+         *
+         * ⚠ Only reachable for someone who installed a DiT model before
+         * 1.5.502, when the engine shipped inside the APK: an app update
+         * replaces the native library dir, so their 6.7 GB of weights outlived
+         * the 22 MB that runs them. A fresh install never sees this — the
+         * engine comes down with the model (`ModelInstaller.installOnce`).
+         */
+        data object Engine : MissingModel {
+            override val label get() = com.abrah.nightmare.DitEngine.LABEL
+            override val installId get() = "\u0000ditengine"
+        }
     }
 
     var missingModel by mutableStateOf<MissingModel?>(null)
@@ -1399,6 +1413,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         is MissingModel.Checkpoint -> m.offer.buildFor(DeviceProbe.caps())?.bytes ?: m.offer.best?.bytes ?: 0L
         MissingModel.Segment -> com.abrah.nightmare.segment.Segmenter.BYTES
         is MissingModel.Upscale -> m.spec.buildFor(DeviceProbe.caps())?.bytes ?: 0L
+        MissingModel.Engine -> com.abrah.nightmare.DitEngine.BYTES
     }
 
     /** ⭐ The download's progress, for the popup. Null when not fetching it. */
@@ -1412,6 +1427,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             is MissingModel.Checkpoint -> modelRows.any { it.spec.id == m.offer.id && it.installed }
             MissingModel.Segment -> segmenterRow?.installed == true
             is MissingModel.Upscale -> upscalerRows.any { it.spec.id == m.spec.id && it.installed }
+            MissingModel.Engine -> com.abrah.nightmare.DitEngine.installed
         }
 
     /**
@@ -1430,7 +1446,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val t = types[n.type] as? SdSampler ?: continue
             val id = com.abrah.nightmare.applyDefaults(t.widgets, n)["model"].orEmpty()
             val spec = ModelCatalog.byId(id)
-            if (spec != null && spec.installed(ctx)) continue
+            if (spec != null && spec.installed(ctx)) {
+                // ⭐⭐ Weights present is not "ready" for a DiT family: the
+                // engine that runs them is a download too, and an app update
+                // takes it away (`MissingModel.Engine`).
+                if (spec.isDit && !com.abrah.nightmare.DitEngine.isInstalled(ctx)) {
+                    missingModel = MissingModel.Engine
+                    return false
+                }
+                continue
+            }
             val offer = spec?.takeIf { !it.isCustom && it.buildFor(caps) != null }
                 ?: ModelCatalog.all.firstOrNull { it.family == t.family && !it.isCustom && it.buildFor(caps) != null }
                 ?: continue
@@ -1474,6 +1499,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
             MissingModel.Segment -> installSegmenter()
             is MissingModel.Upscale -> installUpscaler(m.spec)
+            MissingModel.Engine -> installDitEngine()
         }
     }
 
@@ -1537,6 +1563,52 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     installing = null
                     installProgress = null
                     refreshSegmenter()
+                }
+            }
+        }
+    }
+
+    // ---- the DiT engine (notes/HANDOFF.md §7) ------------------------------
+
+    /**
+     * ⭐ Fetch `libdit_engine.so` on its own, for someone whose DiT weights
+     * predate 1.5.502. ⚠ No Tools-tab row goes with it, deliberately: it is a
+     * DEPENDENCY of a model rather than a thing to choose, it installs with the
+     * weights, and a Delete button beside it would invite stranding 6.7 GB.
+     */
+    fun installDitEngine() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        installing = MissingModel.Engine.installId
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, com.abrah.nightmare.DitEngine.BYTES)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                com.abrah.nightmare.DitEngine.install(
+                    ctx,
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch {
+                    say("installed ${com.abrah.nightmare.DitEngine.LABEL}")
+                    downloadSucceeded(com.abrah.nightmare.DitEngine.LABEL)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(com.abrah.nightmare.DitEngine.LABEL, modelError!!)
+                    say("install failed — $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
                 }
             }
         }

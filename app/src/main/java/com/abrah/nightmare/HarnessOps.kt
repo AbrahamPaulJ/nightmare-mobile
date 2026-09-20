@@ -726,6 +726,26 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             return
         }
         if (spec.installed(ctx)) {
+            // ⭐⭐ Weights present is not "installed" for a DiT family: the
+            // engine that runs them is a separate download since 1.5.502, and
+            // an app update takes the old APK-shipped copy away. ⚠ Without
+            // this the op reports "already installed" about a model that
+            // cannot launch — which is exactly what it did on the first run
+            // after the 1.5.502 update, with both DiT checkpoints on disk.
+            // The UI reaches the same fetch through `MissingModel.Engine`.
+            if (spec.isDit && !DitEngine.isInstalled(ctx)) {
+                say("${spec.id} has its weights but not ${DitEngine.LABEL} " +
+                    "(${DitEngine.BYTES shr 20} MB) — fetching that")
+                try {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        DitEngine.install(ctx, onProgress = {})
+                    }
+                    say("  ok   engine installed, ${DitEngine.bytesOnDisk(ctx) shr 20} MB on disk")
+                } catch (e: Exception) {
+                    say("  engine install FAILED — ${e.message}", bad = true)
+                }
+                return
+            }
             say("${spec.id} is already installed")
             return
         }

@@ -90,6 +90,9 @@ class MainActivity : ComponentActivity() {
         // an upscaler that may not be installed.
         UpscalerCatalog.refresh(this)
         com.abrah.nightmare.segment.Segmenter.refresh(this)
+        // ⭐ The DiT engine is a download too, since 1.5.502 — and an app
+        // update wipes the older, APK-shipped copy out of the native dir.
+        DitEngine.refresh(this)
         // ⭐ The video gate's remembered answer, before anything composes, so a
         // phone that cannot run video never draws a Video card for one frame.
         com.abrah.nightmare.npu.VideoGate.load(this, BuildConfig.VERSION_CODE)
