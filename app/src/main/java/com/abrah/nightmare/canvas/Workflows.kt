@@ -329,7 +329,34 @@ data class Recipe(
      * in two places. ⇒ Two recipes, each where it belongs.
      */
     val families: Set<com.abrah.nightmare.Family>? = null,
+    /**
+     * ⭐⭐⭐ **The HTP arch this flow needs**, 0 for anything.
+     *
+     * ⚠⚠ **Rule changed 2026-09-20, at the user's ask, hours after it was
+     * written the other way.** `CLAUDE.md` said the Flows list is not
+     * filtered and a flow that cannot run here says so in its own `about`
+     * line — which is what the video pair had always done. It is not enough:
+     * a card that reads like an offer, opens, builds a graph and then fails
+     * at Run spends a person's time to tell them something the app knew
+     * before they tapped. ⇒ The card is still SHOWN, with its reason, and
+     * cannot be opened — the pattern the Models tab already uses for a
+     * checkpoint this chip cannot load ("Unsupported", `docs/UI.md` §8.1).
+     *
+     * ⚠ Hidden would be worse than disabled here: this is a whole feature,
+     * not a knob, and someone comparing phones should see that the app has it.
+     */
+    val minArch: Int = 0,
 ) {
+
+    /**
+     * ⚠⚠⚠ **An UNKNOWN chip is offered the flow.** Gating on
+     * `arch < minArch` alone would hide FLUX and video from every phone no
+     * table recognises, because an unrecognised chip reads as the v68 floor
+     * — which is the exact shape of the Snapdragon 8 Gen 5 report
+     * ([com.abrah.nightmare.DeviceProbe.Caps.known], `docs/DEVICES.md`).
+     */
+    fun runsOnDevice(caps: com.abrah.nightmare.DeviceProbe.Caps): Boolean =
+        minArch == 0 || caps.supportsArch(minArch) || !caps.known
     /** ⚠ Null families means every family; an entry restricts it. */
     fun servesFamily(family: com.abrah.nightmare.Family?): Boolean =
         families == null || family in families
@@ -432,6 +459,7 @@ val RECIPES: List<Recipe> = listOf(
             "image 1 and image 2 in the prompt.",
         ::fluxEditWorkflow,
         families = setOf(com.abrah.nightmare.Family.FLUX2),
+        minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
     ),
     Recipe(
         "t2v", "Text to video",
@@ -443,6 +471,12 @@ val RECIPES: List<Recipe> = listOf(
             "Needs the video models installed; it does not use your checkpoint.",
         ::textToVideoWorkflow,
         usesCheckpoint = false,
+        // ⚠ The video contexts are v79 binaries too (`docs/NEODRAGON.md` §4).
+        // ⚠⚠ The canary on the Models tab stays the authority for the
+        // DOWNLOAD — it runs a real context binary rather than consulting a
+        // table. This is the cheap gate for a LIST, which cannot bring the QNN
+        // backend up to draw a card.
+        minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
     ),
     Recipe(
         "i2v", "Image to video",
@@ -454,6 +488,7 @@ val RECIPES: List<Recipe> = listOf(
             "Faster than text to video, and it needs three fewer models.",
         ::imageToVideoWorkflow,
         usesCheckpoint = false,
+        minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
     ),
 )
 

@@ -152,4 +152,6 @@
     <string name="clean_temp_none">Nothing to clean.</string>
     <string name="clean_temp_confirm">Delete %1$d MB of temp files?</string>
     <string name="clean_temp_confirm_body">An unfinished download starts again from the beginning rather than resuming. Models, pictures, saved flows and embeddings are not touched.</string>
+    <!-- A recommended flow this chip cannot run: chip, its HTP arch, the one needed. -->
+    <string name="flow_unsupported">%1$s is HTP v%2$d — this flow needs v%3$d (Snapdragon 8 Elite or newer).</string>
 </resources>

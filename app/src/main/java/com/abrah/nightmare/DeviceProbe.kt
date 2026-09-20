@@ -94,6 +94,25 @@ object DeviceProbe {
     ) {
         /** ⚠ The APK has to carry this arch's Skel, or NPU init fails whatever the model. */
         val staged: Boolean get() = arch in STAGED_ARCHES
+
+        /**
+         * ⭐⭐⭐ **Do we actually KNOW this chip, or is [arch] the floor
+         * because nothing recognised it?**
+         *
+         * ⚠⚠⚠ Anything that HIDES a feature must ask this first. An
+         * unmeasured chip that matched no table and no part number reads as
+         * v68, and treating that as "too old" is exactly the 2026-09-20 bug
+         * where a Snapdragon 8 Gen 5 owner was told every SDXL, Anima and
+         * FLUX row was beyond their phone (`docs/DEVICES.md`).
+         *
+         * ⇒ Gate on `!supportsArch(n) && known` — an unknown chip is offered
+         * the feature and finds out by trying, which is recoverable. Hiding it
+         * is not.
+         */
+        val known: Boolean get() = measured || arch != FLOOR_ARCH
+
+        /** ⚠ A floor, never an allowlist: newer archs run older contexts. */
+        fun supportsArch(min: Int): Boolean = arch >= min
     }
 
     /** Set once [measure] succeeds. ⚠ Volatile: written on IO, read on main. */

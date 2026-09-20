@@ -67,6 +67,13 @@ fun WorkflowsScreen(
     /** ⭐ Hand a saved flow to another app, as importable JSON. */
     onShareSaved: (String) -> Unit = {},
     onImportFlow: (() -> Unit)? = null,
+    /**
+     * ⭐ What this phone can run, for the per-flow gate ([Recipe.runsOnDevice]).
+     *
+     * ⚠ A parameter rather than a [com.abrah.nightmare.DeviceProbe] call in
+     * the body, so a golden can draw both sides of the gate without a device.
+     */
+    caps: com.abrah.nightmare.DeviceProbe.Caps = com.abrah.nightmare.DeviceProbe.caps(),
     modifier: Modifier = Modifier,
 ) {
     // ⚠ The name being edited, and the one being deleted. Local: an
@@ -102,16 +109,50 @@ fun WorkflowsScreen(
                         // ⭐ The CARD opens it. An "Open" button beside a row whose
                         // only purpose is to be opened is a second target for one
                         // intent -- and on a phone the card is the bigger, easier one.
+                        //
+                        // ⭐⭐⭐ …unless this phone cannot run it. A flow
+                        // needing an arch this chip does not have is drawn dimmed,
+                        // is not clickable, and says why — the Models tab's
+                        // "Unsupported" treatment for a whole flow
+                        // ([Recipe.runsOnDevice]).
+                        val ok = r.runsOnDevice(caps)
                         Card(
-                            Modifier.fillMaxWidth().clickable { onOpenRecipe(r) },
+                            Modifier.fillMaxWidth()
+                                .then(
+                                    if (ok) Modifier.clickable { onOpenRecipe(r) }
+                                    else Modifier,
+                                ),
                         ) {
                             Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                Text(r.label, style = MaterialTheme.typography.titleMedium)
+                                // ⚠ Dimmed rather than recoloured: the card still reads
+                                // as one of the list, just not for this phone.
+                                val fade = if (ok) 1f else 0.45f
+                                Text(
+                                    r.label,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = fade),
+                                )
                                 Text(
                                     r.about,
                                     style = LogTextStyle,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = fade),
                                 )
+                                if (!ok) {
+                                    // ⚠⚠ Names THIS phone, not just the requirement.
+                                    // "Needs an 8 Elite" leaves a person to work out
+                                    // what they are holding; the Device sheet states
+                                    // the same two numbers.
+                                    Text(
+                                        stringResource(
+                                            R.string.flow_unsupported,
+                                            caps.soc.ifEmpty { "this chip" },
+                                            caps.arch,
+                                            r.minArch,
+                                        ),
+                                        style = LogTextStyle,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
                             }
                         }
                     }

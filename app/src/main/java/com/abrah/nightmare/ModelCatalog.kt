@@ -1386,7 +1386,7 @@ object ModelCatalog {
         lowram = lowram,
         id = id,
         label = label,
-        builds = listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, 79, 8)),
+        builds = listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, DIT_MIN_ARCH, 8)),
         // ⚠ Upstream's own starter prompt for both checkpoints.
         prompt = "a lovely cat wearing black sunglasses, studio photo,",
         negative = "",
@@ -1402,6 +1402,21 @@ object ModelCatalog {
 
     /** ⚠ The tier label a DiT build reports — it is a device gate, not an archive. */
     const val TIER_DIT = "_v79"
+
+    /**
+     * ⭐⭐⭐ **The HTP arch a DiT model and the video models need** — v79,
+     * which is the Snapdragon 8 Elite and everything after it.
+     *
+     * ⚠⚠ Named because THREE things gate on it and a literal 79 in each
+     * would be three chances to drift: every `dit()` build, and the FLUX edit
+     * and video FLOWS, which refuse to open below it
+     * (`canvas/Workflows.kt`). The engine ships v79/v81 skels and the video
+     * contexts are v79 binaries — `docs/NEODRAGON.md` §4, `docs/MODELS.md` §9.
+     *
+     * ⚠ A QNN context runs on the arch it was built for and every newer one,
+     * so this is a floor and never an allowlist: gen 5 needed no entry.
+     */
+    const val DIT_MIN_ARCH = 79
 
     val ditModels: List<ModelSpec> = listOf(
         dit(

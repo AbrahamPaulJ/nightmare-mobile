@@ -264,6 +264,30 @@ class ModelsScreenshotTest {
         )
     }
 
+    /**
+     * ⭐⭐⭐ **The flows an older phone cannot run** — dimmed, not
+     * clickable, each naming this chip and the arch it would need.
+     *
+     * ⚠⚠ An 8 Gen 3 (v75, MEASURED) on purpose: the gate must fire only
+     * when the chip is KNOWN. The two goldens above pass no caps at all, so
+     * they run on Robolectric's unrecognised SoC — which reads as the v68
+     * floor — and every flow is still offered there. That pair is the control:
+     * if a future change starts gating on the floor, `workflows-empty` goes
+     * grey and says so.
+     */
+    @Test
+    fun workflowsOnAnOlderChip() = shoot("workflows-gated", LibraryTab.FLOWS) {
+        com.abrah.nightmare.ui.WorkflowsScreen(
+            recipes = com.abrah.nightmare.canvas.RECIPES,
+            saved = emptyList(),
+            error = null,
+            onOpenRecipe = {}, onOpenSaved = {}, onDeleteSaved = {},
+            caps = com.abrah.nightmare.DeviceProbe.Caps(
+                arch = 75, vtcmMb = 8, measured = true, soc = "SM8650",
+            ),
+        )
+    }
+
     /** ⚠ The selection row at 360dp: count, All and six icons must fit ONE row. */
     @Test
     @Config(qualifiers = "w360dp-h780dp-xxhdpi")
