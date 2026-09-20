@@ -667,7 +667,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             ramFreeBytes = mi.availMem,
             ramTotalBytes = mi.totalMem,
             resident = spec?.label,
-            residentBytes = spec?.bytesOnDisk(ctx) ?: 0L,
+            // ⚠ The SAME function the residency gate uses, or the bar would
+            // state a size the release decision disagrees with.
+            residentBytes = spec?.loadedBytes(ctx) ?: 0L,
             // ⭐⭐ The OTHER route to the NPU. ⚠ Cheap in the same way the rest
             // of this is: a map size behind a lock, no file and no IPC.
             npuGraphs = com.abrah.nightmare.npu.QnnRunner.Resident.count(),

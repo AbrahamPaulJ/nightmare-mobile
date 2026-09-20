@@ -1259,10 +1259,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             as android.app.ActivityManager
         val mi = android.app.ActivityManager.MemoryInfo()
         am.getMemoryInfo(mi)
-        // ⚠ What is on disk, not the catalogue's download size: an imported
-        // checkpoint has no `files` list, and this is the number the run bar
-        // already shows for the resident model.
-        val bytes = spec.bytesOnDisk(ctx)
+        // ⚠ What a launch LOADS, not the catalogue's download size and not
+        // the directory's size: an imported checkpoint has no `files` list, and
+        // an imported DiT keeps 2.6 GB of what it loads in the shared directory
+        // ([ModelSpec.loadedBytes]). It is the number the run bar shows too.
+        val bytes = spec.loadedBytes(ctx)
         if (!Residency.releaseAfterRun(bytes, mi.totalMem)) return
         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
             say(Residency.why(spec.label, bytes, mi.totalMem))

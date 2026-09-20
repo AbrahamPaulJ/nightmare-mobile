@@ -628,6 +628,39 @@ data class ModelSpec(
     /** What this model occupies on disk, or 0 when it is not installed. */
     fun bytesOnDisk(context: Context): Long =
         dir(context).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+    /**
+     * ⭐⭐⭐ **What a LAUNCH of this model brings into memory** — which is
+     * not what its directory occupies.
+     *
+     * ⚠⚠⚠ The two differ by 2.6 GB for an IMPORTED DiT package, and that
+     * gap is enough to flip a decision. Measured 2026-09-21: a bring-your-own
+     * Z-Image holds only `dit.safetensors` (6.16 GB) in its own directory and
+     * borrows the text encoder, VAE and tokenizer from [CustomModels.DIT_SHARED],
+     * so [bytesOnDisk] reported 6.16 GB where the built-in reports 8.76 GB. The
+     * residency gate releases a checkpoint over 65% of device RAM — 7.6 GB on
+     * an 11.7 GB phone — so the built-in was released between runs and the
+     * import, which loads exactly the same weights, was not. **Second run:
+     * killed by lmkd while preparing the 5.87 GB of params.** The shared
+     * directory saved disk and quietly lied about memory.
+     *
+     * ⚠ [bytesOnDisk] is still the right answer for "what does this occupy"
+     * and "what would deleting it free" — the two questions are genuinely
+     * different here, so they are two functions rather than one compromise.
+     *
+     * ⚠⚠ Counts a shared part only when this model does NOT have its own
+     * copy, matching how the backend resolves each file (`ditFile()` in
+     * `main.cpp`, `backend-patches/010`) and how [missing] decides it is there.
+     */
+    fun loadedBytes(context: Context): Long {
+        val own = bytesOnDisk(context)
+        if (!isDit) return own
+        val d = dir(context)
+        val shared = File(d.parentFile, CustomModels.DIT_SHARED)
+        return own + requiredFiles
+            .filter { !File(d, it).exists() }
+            .sumOf { File(shared, it).length() }
+    }
 }
 
 object ModelCatalog {

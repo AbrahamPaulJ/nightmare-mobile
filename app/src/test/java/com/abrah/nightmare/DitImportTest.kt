@@ -123,6 +123,37 @@ class DitImportTest {
     }
 
     /**
+     * ⭐⭐⭐ **An import weighs what it LOADS, not what its folder holds.**
+     *
+     * ⚠⚠⚠ The bug: the shared directory saved 2.6 GB of disk and made the
+     * model look 2.6 GB lighter to the residency gate, which releases a
+     * checkpoint over 65% of device RAM between runs. The built-in was
+     * released and the import — the same weights — was not, so the SECOND
+     * run was killed by lmkd. ⇒ An imported DiT must weigh the same as the
+     * built-in it borrows from.
+     */
+    @Test
+    fun anImportWeighsTheSameAsTheBuiltInItBorrowsFrom() {
+        installBuiltIn()
+        val spec = CustomModels.importDit(
+            ctx, "myzit", Family.ZIMAGE,
+            open = { ByteArrayInputStream(safetensors("""{"a.weight":{"dtype":"F8_E4M3"}}""")) },
+        )
+        val shared = ModelCatalog.DIT_REQUIRED
+            .filter { it != ModelSpec.DIT_WEIGHTS }
+            .sumOf { n -> zimage.files.first { it.name == n }.bytes }
+        assertTrue(
+            "the shared parts must not count as disk in this directory",
+            spec.bytesOnDisk(ctx) < shared,
+        )
+        assertEquals(
+            "a launch loads the weights AND the shared parts",
+            spec.bytesOnDisk(ctx) + shared,
+            spec.loadedBytes(ctx),
+        )
+    }
+
+    /**
      * ⭐⭐⭐ **The catalogue knows it, not just the caller.**
      *
      * ⚠⚠ The bug this is here for shipped: [CustomModels.importDit] built
