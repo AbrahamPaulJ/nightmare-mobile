@@ -446,7 +446,9 @@ fun inpaintWorkflow(): Workflow = Workflow(
             // fits whatever it is given.
             Node(
                 "inpaint", samplerType(inpaint = true),
-                params = ctxKeyParams(inpaint = true) + mapOf("seed" to "0", "denoise" to "0.65"),
+                params = ctxKeyParams(inpaint = true) + mapOf("seed" to "0", "denoise" to com.abrah.nightmare.SdSampler.defaultDenoise(
+                    com.abrah.nightmare.SelectedModel.spec.family,
+                )),
                 inputs = sources("prompt" to "prompt", "image" to "photo", "segmenter" to "segment_model"),
             ),
             Node("output", "core.output", inputs = sources("media" to "inpaint")),
@@ -476,7 +478,9 @@ fun img2imgWorkflow(): Workflow = Workflow(
                 // ⚠ No `steps`/`cfg`: the model supplies both (see
                 // [defaultWorkflow]). `denoise` stays — it is a property of THIS
                 // recipe, not of the checkpoint.
-                params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to "0.65"),
+                params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to com.abrah.nightmare.SdSampler.defaultDenoise(
+                    com.abrah.nightmare.SelectedModel.spec.family,
+                )),
                 inputs = sources("prompt" to "prompt", "image" to "photo"),
             ),
             Node("output", "core.output", inputs = sources("media" to "generate")),

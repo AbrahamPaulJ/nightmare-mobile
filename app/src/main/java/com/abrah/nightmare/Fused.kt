@@ -370,6 +370,36 @@ class SdSampler(
          * regenerates nothing inside it, `notes/PROGRESS.md`) — and it is why
          * registering it would light this up everywhere at once.
          */
+        /**
+         * ⭐⭐⭐ **The denoise a node of this family is born with.**
+         *
+         * ⚠⚠ FLUX.2 is **1.0** and the rest are 0.65, asked for 2026-09-20.
+         * For Klein, denoise is not a strength dial at all — it is the mode
+         * selector (`docs/MODELS.md` §9): at 1.0 the base is a clean REFERENCE
+         * and the full distilled schedule runs, which is what upstream calls
+         * "edit" and labels its button with. 0.65 was inherited from the SD
+         * samplers, where it means something else entirely.
+         *
+         * ⚠⚠⚠ **And with a reference wired it is the setting that does
+         * nothing.** Below 1.0 the base is BOTH the init latent and reference
+         * #1, so the picture is told to stay where it is while the noised init
+         * has little room to move, and the result comes back as the input.
+         * Reported from the phone twice.
+         *
+         * ⚠ Z-Image is a DiT and is NOT included: it is not an edit model,
+         * `native_edit` never fires for it, and its denoise is an ordinary
+         * img2img strength where 0.65 is the right default.
+         *
+         * ⚠⚠ It is a DEFAULT, not a lock. Klein img2img at 0.65 with no
+         * reference works and looks good — measured 2026-09-20, the same photo
+         * and prompt through both, and both returned a convincing picture. A
+         * lock would delete a working mode to prevent a footgun that exists
+         * only in one combination; the combination warns instead
+         * (`canvas/NodeInspector.kt`).
+         */
+        fun defaultDenoise(family: Family): String =
+            if (family == Family.FLUX2) "1.0" else "0.65"
+
         fun canInpaint(family: Family): Boolean =
             ALL.any { it.family == family && it.inpaint }
 
@@ -425,7 +455,7 @@ class SdSampler(
             hint = "0 = a new picture every Run. Type the seed shown on the node to get that one back.",
         ),
         // ⚠ Read only when a picture is wired AND `start_from` is `image`.
-        Widget("denoise", "float", "0.65", 0.0, 1.0),
+        Widget("denoise", "float", defaultDenoise(family), 0.0, 1.0),
         Widget(
             "scheduler", "string", defaultSpec().scheduler,
             options = ModelCatalog.schedulersFor(family),
@@ -965,7 +995,7 @@ class SdSampler(
             height = h,
             imagePng = imagePng,
             maskPng = maskPng,
-            denoise = p["denoise"]?.toDoubleOrNull() ?: 0.65,
+            denoise = p["denoise"]?.toDoubleOrNull() ?: defaultDenoise(family).toDouble(),
             onProgress = ctx.onProgress,
         )
         val out = when (r) {
@@ -1066,7 +1096,7 @@ class SdSampler(
             width = w,
             height = h,
             imagePng = png,
-            denoise = p["denoise"]?.toDoubleOrNull() ?: 0.65,
+            denoise = p["denoise"]?.toDoubleOrNull() ?: defaultDenoise(family).toDouble(),
             referencePngs = listOfNotNull(referencePng),
             onProgress = ctx.onProgress,
         )
@@ -1137,7 +1167,7 @@ class SdSampler(
             width = w,
             height = h,
             latentHandle = latent,
-            denoise = p["denoise"]?.toDoubleOrNull() ?: 0.65,
+            denoise = p["denoise"]?.toDoubleOrNull() ?: defaultDenoise(family).toDouble(),
             scheduler = p["scheduler"].orEmpty(),
             condHandle = cond,
             aspect = aspect,

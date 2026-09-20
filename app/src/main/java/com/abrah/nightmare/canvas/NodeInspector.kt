@@ -884,6 +884,35 @@ internal fun NodeInspectorBody(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // ⭐⭐⭐ **The one combination that quietly does nothing.**
+            //
+            // ⚠⚠ With a reference wired AND denoise below 1, the base is
+            // both the init latent and reference #1: it is told to stay where
+            // it is while the noised init has little room to move, and the
+            // render comes back as the input. Reported from the phone twice,
+            // and it is why FLUX.2 nodes are now born at 1.0
+            // ([SdSampler.defaultDenoise]).
+            //
+            // ⚠ Said, not enforced. Klein img2img at 0.65 with NO reference
+            // works and looks good (measured), so the knob stays free and the
+            // warning is scoped to the combination that misbehaves — it appears
+            // only while both conditions hold and vanishes when either changes.
+            // ⚠ The EFFECTIVE value, not the raw param: a node that has never
+            // had denoise touched carries none, and reading null as "fine" would
+            // hide the warning on exactly the nodes most likely to need it.
+            val refDenoise = node.params["denoise"]?.toFloatOrNull()
+                ?: type?.widgets.orEmpty()
+                    .firstOrNull { it.name == "denoise" }?.default?.toFloatOrNull()
+            if (refDenoise != null && refDenoise < 1f) {
+                Text(
+                    "⚠ Denoise is $refDenoise. With a reference wired, anything below " +
+                        "1.0 uses your picture as the starting point AND as a reference " +
+                        "telling the model to keep it — so the result usually comes back " +
+                        "unchanged. Set Denoise to 1.0 to edit.",
+                    style = LogTextStyle,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             CropEditor(
                 source = src,
                 rect = refCropRectOf(node),

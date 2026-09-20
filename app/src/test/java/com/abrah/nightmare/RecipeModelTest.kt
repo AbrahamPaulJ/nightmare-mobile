@@ -237,4 +237,39 @@ class RecipeModelTest {
         assertTrue("FLUX.2 gained an inpaint type", !SdSampler.canInpaint(Family.FLUX2))
         assertTrue("SD 1.5 lost its inpaint type", SdSampler.canInpaint(Family.SD15))
     }
+
+    /**
+     * ⭐⭐⭐ **A FLUX.2 node is born at denoise 1.0, and the recipes agree.**
+     *
+     * ⚠⚠ For Klein denoise is the MODE, not a strength: 1.0 is "edit" (the
+     * base as a clean reference, full distilled schedule) and below 1.0 with a
+     * reference wired is the combination that returns the input unchanged.
+     * 0.65 came from the SD samplers, where it means something else.
+     *
+     * ⚠ The recipes are checked as well as the widget, because they used to
+     * hardcode "0.65" — two magic numbers, and the node default would have
+     * been silently overridden by the flow that opens it.
+     */
+    @Test
+    fun fluxNodesAreBornAtDenoiseOne() {
+        assertEquals("1.0", SdSampler.defaultDenoise(Family.FLUX2))
+        for (f in Family.entries.filter { it != Family.FLUX2 }) {
+            assertEquals(
+                "$f should keep the ordinary img2img default",
+                "0.65",
+                SdSampler.defaultDenoise(f),
+            )
+        }
+        // ⚠ …and through the recipe that actually opens, per family.
+        for (spec in ModelCatalog.builtIn) {
+            SelectedModel.set(ctx, spec.id)
+            val node = samplerOf(img2imgWorkflow())
+            val want = SdSampler.defaultDenoise(familyOfType(node.type)!!)
+            assertEquals(
+                "image to image on ${spec.id} built denoise ${node.params["denoise"]}",
+                want,
+                node.params["denoise"],
+            )
+        }
+    }
 }
