@@ -1134,10 +1134,18 @@ class SdSampler(
             android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size, o)
             return "${o.outWidth}x${o.outHeight}"
         }
-        ctx.say(
-            "[ref] canvas=${w}x$h image=${dims(png)} reference=${dims(referencePng)} " +
-                "(a reference is encoded at the CANVAS, not at its own size)"
-        )
+        // ⚠⚠ **Only when a picture actually goes over the wire.** A
+        // text-to-image run sends neither, so the line could only ever read
+        // `image=none reference=none` — noise in the run log, and worse than
+        // noise on Z-Image, where `reference` names a port that family does
+        // not have (see [inputs] above) and the reader is invited to wonder
+        // what happened to it.
+        if (png != null || referencePng != null) {
+            ctx.say(
+                "[ref] canvas=${w}x$h image=${dims(png)} reference=${dims(referencePng)} " +
+                    "(a reference is encoded at the CANVAS, not at its own size)"
+            )
+        }
         ctx.say(
             when {
                 referencePng != null && png == null -> "rendering from your reference"
