@@ -307,7 +307,28 @@ data class Recipe(
      * flow.
      */
     val usesCheckpoint: Boolean = true,
-)
+    /**
+     * ⭐⭐ **Per-family wording**, for a flow that is a different JOB
+     * depending on the checkpoint it opens on.
+     *
+     * ⚠⚠ "Image to image" on FLUX.2 is "Image edit": Klein takes the base
+     * as a clean reference and runs its full schedule, and upstream labels
+     * the whole path edit. Asked for 2026-09-20.
+     *
+     * ⚠ A MAP rather than a flag, so the next family that renames a flow is
+     * an entry and not another `if`.
+     */
+    val byFamily: Map<com.abrah.nightmare.Family, Wording> = emptyMap(),
+) {
+    data class Wording(val label: String, val about: String)
+
+    /** ⚠ Falls back to the general wording, so a family needs no entry. */
+    fun labelFor(family: com.abrah.nightmare.Family?): String =
+        byFamily[family]?.label ?: label
+
+    fun aboutFor(family: com.abrah.nightmare.Family?): String =
+        byFamily[family]?.about ?: about
+}
 
 /**
  * ⚠ The text node is called **`prompt`**, not `text`.
@@ -365,6 +386,16 @@ val RECIPES: List<Recipe> = listOf(
         "img2img", "Image to image",
         "A photo from the gallery, re-imagined at the strength you choose.",
         ::img2imgWorkflow,
+        byFamily = mapOf(
+            com.abrah.nightmare.Family.FLUX2 to Recipe.Wording(
+                com.abrah.nightmare.SdSampler.EDIT_LABEL,
+                // ⚠ No "at the strength you choose": on Klein the strength is
+                // the MODE and it opens at 1.0 ([SdSampler.defaultDenoise]).
+                "A photo from the gallery, edited by your prompt. Add a second " +
+                    "picture on the reference port and name them as image 1 and " +
+                    "image 2 in the prompt.",
+            ),
+        ),
     ),
     Recipe(
         "inpaint", "Inpaint — paint an area to redo",
@@ -468,13 +499,23 @@ fun inpaintWorkflow(): Workflow = Workflow(
  * fits the photo itself now, so the node earns its place only when a framing is
  * worth choosing once and feeding to two branches.
  */
-fun img2imgWorkflow(): Workflow = Workflow(
+fun img2imgWorkflow(): Workflow {
+    // ⭐⭐ The node is called **edit** on FLUX.2 and **generate** elsewhere
+    // — the user's call, 2026-09-20. A node id is its title on the canvas
+    // (`docs/UI.md` §8.11), so a Klein flow that says "generate" names the
+    // wrong job on the one node a person looks at.
+    // ⚠ Held in a val, because it is also the wire target and the layout key;
+    // three literals would be three places to get it wrong once.
+    val id = if (com.abrah.nightmare.SelectedModel.spec.family ==
+        com.abrah.nightmare.Family.FLUX2
+    ) "edit" else "generate"
+    return Workflow(
     Graph(
         listOf(
             Node("prompt", "core.prompt", params = promptParams()),
             Node("photo", "core.image", params = mapOf("uri" to "")),
             Node(
-                "generate", samplerType(),
+                id, samplerType(),
                 // ⚠ No `steps`/`cfg`: the model supplies both (see
                 // [defaultWorkflow]). `denoise` stays — it is a property of THIS
                 // recipe, not of the checkpoint.
@@ -483,11 +524,12 @@ fun img2imgWorkflow(): Workflow = Workflow(
                 )),
                 inputs = sources("prompt" to "prompt", "image" to "photo"),
             ),
-            Node("output", "core.output", inputs = sources("media" to "generate")),
+            Node("output", "core.output", inputs = sources("media" to id)),
         )
     ),
-    flowLayout("prompt", "photo", "generate", "output"),
-)
+    flowLayout("prompt", "photo", id, "output"),
+    )
+}
 
 
 /**

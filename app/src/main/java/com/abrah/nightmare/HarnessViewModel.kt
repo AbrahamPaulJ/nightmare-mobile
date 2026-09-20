@@ -455,7 +455,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun sendToRecipe(r: com.abrah.nightmare.canvas.Recipe) {
         val s = pendingSend ?: return
         pendingSend = null
-        guardedOpen(r.label) {
+        guardedOpen(r.labelFor(SelectedModel.spec.family)) {
             closeResult()
             openRecipeNow(r)
             closeLibrary()
@@ -3428,7 +3428,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * row the user taps more often than either of the others.
      */
     fun openRecipe(r: com.abrah.nightmare.canvas.Recipe) =
-        guardedOpen(r.label) { openRecipeNow(r) }
+        guardedOpen(r.labelFor(SelectedModel.spec.family)) { openRecipeNow(r) }
 
     /**
      * ⚠⚠ The unguarded half, for the ONE caller that has already asked:

@@ -272,4 +272,37 @@ class RecipeModelTest {
             )
         }
     }
+
+    /**
+     * ⭐⭐ **FLUX.2 calls it "Image edit", everywhere at once.**
+     *
+     * Asked 2026-09-20. Three surfaces say it — the Use dialog, the Flows
+     * list and the node on the canvas — and the node id is the canvas title,
+     * so all four are checked here rather than trusting one.
+     */
+    @Test
+    fun fluxCallsImageToImageAnEdit() {
+        val img2img = com.abrah.nightmare.canvas.RECIPES.first { it.id == "img2img" }
+        assertEquals("Image edit", img2img.labelFor(Family.FLUX2))
+        assertEquals("Image to image", img2img.labelFor(Family.SD15))
+        // ⚠ …and the about line changes with it, or the card reads "at the
+        // strength you choose" for a flow that opens at 1.0.
+        assertTrue(
+            "the FLUX blurb still offers a strength",
+            !img2img.aboutFor(Family.FLUX2).contains("strength"),
+        )
+
+        val flux = ModelCatalog.builtIn.first { it.family == Family.FLUX2 }
+        SelectedModel.set(ctx, flux.id)
+        val node = samplerOf(img2imgWorkflow())
+        assertEquals("the FLUX edit node is still called generate", "edit", node.id)
+        // ⚠⚠ The wires and the layout follow the id, or the flow opens broken.
+        val w = img2imgWorkflow()
+        val out = w.graph.nodes.first { it.type == "core.output" }
+        assertEquals("the output is wired to the old id", node.id, out.inputs["media"]?.node)
+        assertTrue("the layout has no entry for ${node.id}", w.positions.containsKey(node.id))
+
+        val type = NODE_TYPES[node.type] as SdSampler
+        assertEquals("FLUX.2 Image edit", type.titleFor(node))
+    }
 }

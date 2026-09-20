@@ -185,9 +185,23 @@ class SdSampler(
     override val paletteGroup = if (inpaint) "sd.inpaint" else "sd.generate"
     override val paletteVariant = family.label
 
-    /** ⭐ `SDXL Inpaint`, or `SD 1.5 Text to image` until a photo is wired in. */
+    /**
+     * ⭐ `SDXL Inpaint`, or `SD 1.5 Text to image` until a photo is wired in.
+     *
+     * ⭐⭐ **FLUX.2 says "Image edit", not "Image to image"** — the user's
+     * call, 2026-09-20. It is not the same job: Klein takes the base as a
+     * clean reference and runs its full distilled schedule, which is why its
+     * denoise is born at 1.0 ([defaultDenoise]) and why upstream labels the
+     * whole path "edit" rather than img2img.
+     *
+     * ⚠ The condition is upstream's own, to the letter: an edit is a base
+     * image **or** a reference. A FLUX.2 node with only a reference wired is
+     * editing too — "generate fresh, guided by this" (`docs/MODELS.md` §9).
+     */
     override fun titleFor(node: Node): String = family.label + " " + when {
         inpaint -> "Inpaint"
+        family == Family.FLUX2 &&
+            (node.inputs["image"] != null || node.inputs["reference"] != null) -> EDIT_LABEL
         node.inputs["image"] != null -> "Image to image"
         else -> "Text to image"
     }
@@ -397,6 +411,13 @@ class SdSampler(
          * only in one combination; the combination warns instead
          * (`canvas/NodeInspector.kt`).
          */
+        /**
+         * ⭐⭐ What FLUX.2 calls the job a photo turns into. One constant,
+         * because the node title, the recipe and the node's own id all say it
+         * and three spellings would drift.
+         */
+        const val EDIT_LABEL = "Image edit"
+
         fun defaultDenoise(family: Family): String =
             if (family == Family.FLUX2) "1.0" else "0.65"
 
