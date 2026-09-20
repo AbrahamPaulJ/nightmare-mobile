@@ -206,6 +206,42 @@ object CustomModels {
      * the backend's file list changed, and the symptom is a 3.7 GB import that
      * reports "not installed" forever.
      */
+    /** What [familyDefaults] answers: the three knobs a package may omit. */
+    private data class Defaults(val scheduler: String, val steps: Int, val cfg: Double)
+
+    /**
+     * ⭐⭐⭐ **The generation defaults for a package that declares none.**
+     *
+     * ⚠⚠⚠ **A `when`, not a chain of `if (family == X)`, and that shape is
+     * the whole point.** This was two ternaries reading
+     * `if (family == ANIMA) 10 else DEFAULT_STEPS`, and when the DiT families
+     * arrived on 2026-09-21 nobody extended them — so an imported Z-Image
+     * inherited SD's `dpm`/20/7.5 instead of `euler`/8/1.0. It ran, which is
+     * why nothing caught it: **cfg above 1 makes the engine compute the
+     * unconditional pass as well**, so 20 steps at cfg 7.5 is ~5x the work of
+     * 8 steps at cfg 1, and the output is burnt on a turbo checkpoint.
+     * ⇒ An exhaustive `when` makes the next family a compile error.
+     *
+     * ⚠ `DEFAULT_*` is the BACKEND's default and is correct only for the two
+     * QNN families it was written for. Every other family's numbers here are
+     * copied from that family's built-in entries, not invented:
+     * `ModelCatalog.dit()` and the nine Anima `config.json`s.
+     */
+    private fun familyDefaults(family: Family): Defaults = when (family) {
+        // The backend's own defaults — neutral, and what every SD archive has
+        // always been imported with.
+        Family.SD15, Family.SDXL -> Defaults(
+            ModelCatalog.DEFAULT_SCHEDULER, ModelCatalog.DEFAULT_STEPS, ModelCatalog.DEFAULT_CFG,
+        )
+        // ⚠ Every published Anima checkpoint is turbo (`euler`, 10, cfg 1 in
+        // all nine `config.json`s), and `dpm` is not even a sampler there.
+        Family.ANIMA -> Defaults("euler", 10, 1.0)
+        // ⚠⚠ The DiT engine hardcodes euler and expects cfg 1; a fine-tune of
+        // a turbo base is still a turbo model. Same numbers as the built-ins.
+        Family.ZIMAGE -> Defaults("euler", 8, 1.0)
+        Family.FLUX2 -> Defaults("euler", 4, 1.0)
+    }
+
     private fun customSpec(dir: File, cfg: Config, family: Family): ModelSpec = ModelSpec(
         id = dir.name,
         label = cfg.label ?: dir.name,
@@ -215,23 +251,19 @@ object CustomModels {
         builds = emptyList(),
         prompt = cfg.prompt.orEmpty(),
         negative = cfg.negative.orEmpty(),
-        // ⚠ The backend's default when the archive says nothing, which is
-        // today's behaviour for every model -- so adding this field changes no
-        // existing import's output until its author declares otherwise.
-        // ⚠⚠ …except for Anima, where the backend default is WRONG rather than
-        // neutral: every published Anima checkpoint is turbo (`euler`, 10, cfg
-        // 1 in all nine `config.json`s), and `dpm` is not even a sampler there.
+        // ⭐ The FAMILY's defaults when the package says nothing
+        // ([familyDefaults]) — `dpm`/20/7.5 is only right for SD 1.5 and SDXL.
         scheduler = cfg.scheduler?.takeIf { it in ModelCatalog.schedulersFor(family) }
-            ?: if (family == Family.ANIMA) "euler" else ModelCatalog.DEFAULT_SCHEDULER,
-        steps = cfg.steps ?: if (family == Family.ANIMA) 10 else ModelCatalog.DEFAULT_STEPS,
-        cfg = cfg.cfg ?: if (family == Family.ANIMA) 1.0 else ModelCatalog.DEFAULT_CFG,
+            ?: familyDefaults(family).scheduler,
+        steps = cfg.steps ?: familyDefaults(family).steps,
+        cfg = cfg.cfg ?: familyDefaults(family).cfg,
         family = family,
         backendType = when (family) {
             Family.SD15 -> ModelCatalog.SD15_NPU
             Family.SDXL -> ModelCatalog.SDXL_NPU
             Family.ANIMA -> ModelCatalog.ANIMA_NPU
-            // ⚠ Never detected on import (no marker names them); answered so
-            // the `when` stays exhaustive and a new family is a compile error.
+            // ⭐ Detected since 2026-09-21 — [importDit] writes [FLUX2_MARK]
+            // and [ZIMAGE_MARK], so these two are reached by a real import.
             Family.FLUX2 -> ModelCatalog.KLEIN
             Family.ZIMAGE -> ModelCatalog.ZIMAGE
         },
@@ -252,14 +284,31 @@ object CustomModels {
         // ⚠ Not a preference: SDXL's UNet and Anima's two DiT halves do not fit
         // beside their encoders at 1024², and the backend needs telling
         // regardless of where the files came from.
-        lowram = family != Family.SD15,
+        //
+        // ⚠⚠⚠ **Per family, matching that family's built-in entries — NOT
+        // `!= SD15`.** Written as the negation, this said `true` for FLUX.2,
+        // which sets the engine's `te=disk` and re-made by accident a decision
+        // that was taken deliberately and REVERSED on 2026-09-20: Klein sits at
+        // 57% of RAM, stays resident and does not want it (`docs/LEGACY.md`,
+        // `ModelCatalog.dit`). An imported checkpoint is the same weights as
+        // the built-in, so it gets the same answer.
+        lowram = when (family) {
+            Family.SD15, Family.FLUX2 -> false
+            Family.SDXL, Family.ANIMA, Family.ZIMAGE -> true
+        },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which
         // HTP it was compiled for — `QnnSystemContext` gives the IO contract
         // and nothing else — so any number here would be invented. A built-in
         // entry knows because we recorded which archive it came from; this one
         // cannot. ⇒ Let it try and let the failure say what happened, which is
         // upstream's position too (`../LocalDream/docs/DEVICE-SUPPORT.md`).
-        minHtpArch = 0,
+        // ⭐⭐ …but a DiT family's floor IS known, and the paragraph above
+        // does not apply to it. The reason a QNN import claims nothing is that
+        // the context binary alone says which HTP it was built for; a DiT
+        // package has no context binary at all — the arch floor belongs to
+        // `libdit_engine.so`, is the same for every checkpoint of the family,
+        // and is the number the built-in entries and the Flows gate both use.
+        minHtpArch = if (family.dit) ModelCatalog.DIT_MIN_ARCH else 0,
         isCustom = true,
     )
 

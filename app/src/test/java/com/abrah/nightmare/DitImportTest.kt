@@ -74,6 +74,55 @@ class DitImportTest {
     }
 
     /**
+     * ⭐⭐⭐ **A turbo checkpoint imports with TURBO defaults.**
+     *
+     * ⚠⚠⚠ Shipped wrong on 2026-09-21: `customSpec` set the knobs with
+     * `if (family == ANIMA) … else DEFAULT_*`, the DiT families were added to
+     * the detection and not to that chain, and an imported Z-Image inherited
+     * SD's `dpm`/20/7.5. It RENDERED — at roughly five times the cost, because
+     * cfg above 1 makes the engine run the unconditional pass too — which is
+     * why only a stopwatch on the phone caught it. ⇒ Assert the numbers, per
+     * family, against the built-in they are copied from.
+     */
+    @Test
+    fun itImportsWithTheFamilysDefaultsNotSds() {
+        installBuiltIn()
+        val spec = CustomModels.importDit(
+            ctx, "myzit", Family.ZIMAGE,
+            open = { ByteArrayInputStream(safetensors("""{"a.weight":{"dtype":"F8_E4M3"}}""")) },
+        )
+        val builtIn = ModelCatalog.byId("z_image_turbo")!!
+        assertEquals("steps", builtIn.steps, spec.steps)
+        assertEquals("cfg", builtIn.cfg, spec.cfg, 0.0)
+        assertEquals("scheduler", builtIn.scheduler, spec.scheduler)
+        // ⚠ The arch floor belongs to the engine, so an import knows it even
+        // though a QNN import cannot know its own.
+        assertEquals("arch floor", ModelCatalog.DIT_MIN_ARCH, spec.minHtpArch)
+        assertEquals("lowram", builtIn.lowram, spec.lowram)
+    }
+
+    /**
+     * ⚠⚠ The same assertion for FLUX.2, and it is not redundant: `lowram`
+     * was `family != SD15`, so the two DiT families disagreed with each other
+     * and Klein's built-in says `false` on purpose (`docs/LEGACY.md`).
+     */
+    @Test
+    fun anImportedKleinDoesNotAskForLowram() {
+        val klein = ModelCatalog.byId("flux2_klein_4b")!!
+        val d = klein.dir(ctx).apply { mkdirs() }
+        for (f in klein.files) {
+            java.io.RandomAccessFile(File(d, f.name), "rw").use { it.setLength(f.bytes) }
+        }
+        val spec = CustomModels.importDit(
+            ctx, "myklein", Family.FLUX2,
+            open = { ByteArrayInputStream(safetensors("""{"a.weight":{"dtype":"F8_E4M3"}}""")) },
+        )
+        assertEquals("lowram", klein.lowram, spec.lowram)
+        assertEquals("steps", klein.steps, spec.steps)
+        assertEquals("cfg", klein.cfg, spec.cfg, 0.0)
+    }
+
+    /**
      * ⭐⭐⭐ **The catalogue knows it, not just the caller.**
      *
      * ⚠⚠ The bug this is here for shipped: [CustomModels.importDit] built
