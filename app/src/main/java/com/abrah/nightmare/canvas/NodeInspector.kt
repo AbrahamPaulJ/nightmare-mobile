@@ -368,9 +368,14 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // ⭐ The reference region belongs to ITS editor too, for the same reason:
     // it is dragged on the picture, and four more sliders under the size
     // control is the duplicate the 2026-09-18 report named.
+    // ⭐ …and so does the reference's SIZE, which is drawn at the top of that
+    // editor exactly where the base's Shape + Resolution sit in the Crop one.
+    // Loose in the list it would be a third size control on a node that already
+    // has two, which is the 2026-09-18 duplicate again.
     if (name in setOf(
             com.abrah.nightmare.SdSampler.REF_X, com.abrah.nightmare.SdSampler.REF_Y,
             com.abrah.nightmare.SdSampler.REF_W, com.abrah.nightmare.SdSampler.REF_H,
+            com.abrah.nightmare.SdSampler.REF_MAX,
         )
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
@@ -842,7 +847,29 @@ internal fun NodeInspectorBody(
         // (`docs/MODELS.md` §9).
         val refPanel: @Composable () -> Unit = refPanel@{
             val src = refSource ?: return@refPanel
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // ⭐⭐ ITS OWN SIZE CONTROL, first, exactly where the base's Shape +
+            // Resolution sit in the Crop panel. Reported from the phone
+            // 2026-09-20: *"both should have consistent cropper windows with
+            // their respective names and knobs for size"*. The base's size is
+            // the OUTPUT canvas; the reference's is how large it is sent to be
+            // read, which is a different number with the same job — and the
+            // one lever a user has when a big edit is reaped
+            // (`notes/PROGRESS.md` ①).
+            // ⚠ Only in the popup, for the reason [cropPanel] gives: drawn
+            // inline it would stack under a size control the sheet already has.
+            type?.widgets.orEmpty()
+                .firstOrNull { it.name == com.abrah.nightmare.SdSampler.REF_MAX }
+                ?.takeIf { popup }
+                ?.let { w ->
+                    Chooser(
+                        label = "Reference size",
+                        hint = w.hint,
+                        options = w.options.orEmpty(),
+                        current = node.params[w.name] ?: w.default.orEmpty(),
+                        onPick = { onSetParam(nodeId, w.name, it) },
+                    )
+                }
+            if (!popup) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Reference",
                     style = MaterialTheme.typography.titleSmall,
@@ -872,6 +899,16 @@ internal fun NodeInspectorBody(
                 aspect = src.width.toFloat() / src.height.coerceAtLeast(1),
                 padBlur = false,
                 rule = com.abrah.nightmare.PadRule.NEVER,
+            )
+            // ⚠ The SAME footer the crop draws, saying the same two gestures
+            // and the size that comes out of them — two editors that look alike
+            // and read differently is the report this panel is answering.
+            Text(
+                "drag to move · pinch to zoom · sent at " +
+                    "${node.params[com.abrah.nightmare.SdSampler.REF_MAX]
+                        ?: com.abrah.nightmare.SdSampler.REF_MAX_EDGE} px",
+                style = LogTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         val cropPanel: @Composable () -> Unit = {
@@ -1038,13 +1075,28 @@ internal fun NodeInspectorBody(
         // the shape of both, so it is chosen before them, not scrolled past.
         sizePanel()
 
-        if (popup && cropSource != null) {
+        // ⭐⭐⭐ **ONE editor mechanism for every picture on the node.**
+        //
+        // ⚠⚠ Reported from the phone 2026-09-20: *"why doesnt inpaint node
+        // have consistency for base and reference img, both should have
+        // consistent cropper windows with their respective names and knobs for
+        // size"*. It was the N−1-of-N rule again (`docs/ARCHITECTURE.md`
+        // §5.6) — the base's crop and mask went behind a titled thumbnail into
+        // a tabbed popup, and the reference, which is the same gesture on the
+        // same [CropEditor], was drawn loose in the sheet with no thumbnail, no
+        // tab and no size control. On a FLUX.2 image-to-image node the two sat
+        // one above the other with an empty half-row between them, because
+        // `paints = false` left the Mask tile's slot spare — which is exactly
+        // where the Reference tile belongs.
+        if (popup && (cropSource != null || refSource != null)) {
             InpaintEditors(
                 node = node,
                 type = type,
                 photo = cropSource,
+                refPhoto = refSource,
                 cropPanel = cropPanel,
                 maskPanel = maskPanel,
+                refPanel = refPanel,
                 inlineTab = inlinePopupTab,
                 paints = node.type in com.abrah.nightmare.INPAINT_TYPES,
                 openCrop = cropRequest?.takeIf { it.first == nodeId }?.second,
@@ -1053,11 +1105,10 @@ internal fun NodeInspectorBody(
         } else {
             cropPanel()
             maskPanel()
+            // ⚠ The inline fallback — a node whose sheet draws no popup at all.
+            // Draws itself only when something is wired into `reference`.
+            refPanel()
         }
-        // ⭐ Below both, because it is the third picture on the node and the
-        // least often used. ⚠ Draws itself only when something is wired into
-        // `reference`, so a sampler with no reference is unchanged.
-        refPanel()
         // ⚠ The sampler frames AND paints, so an empty one would print two
         // notes that say "wire a picture in" — the framing one below covers both.
         if (maskSource == null && node.type in PAINTS && node.type !in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
@@ -2032,9 +2083,22 @@ private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) 
 }
 
 /**
- * ⭐⭐ An inpaint node's two editors: CROP and MASK as two small previews under
- * their names, each opening ONE popup with the two as side-by-side tabs and a
- * close button. The user's call, 2026-09-17.
+ * ⭐ One picture editor on a node: its name, the preview that opens it, and
+ * the panel behind it.
+ *
+ * ⚠ A type rather than parallel lists, because the thumbnail row, the tab
+ * row and the index the popup is open at are all read from one order.
+ */
+private data class EditorTile(
+    val label: String,
+    val thumb: ImageBitmap,
+    val panel: @Composable () -> Unit,
+)
+
+/**
+ * ⭐⭐ A node's PICTURE EDITORS: CROP, MASK and REFERENCE as small previews
+ * under their names, each opening ONE popup with them as side-by-side tabs and
+ * a close button. The user's call, 2026-09-17.
  *
  * ⚠⚠ A `Dialog`, not more of the sheet: the sheet scrolls and drags, and every
  * drag on a picture-sized editor inside it was a fight over who owns the finger.
@@ -2043,16 +2107,27 @@ private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) 
  * ⚠ The popup is a FIXED height, so switching tabs does not resize it under the
  * finger — the same bug the Add node sheet had.
  *
- * ⚠ The previews are the same draws the editors make: the framed picture, and
- * that picture with the mask over it ([MaskFraming], taps from the cache).
+ * ⚠ The previews are the same draws the editors make: the framed picture, that
+ * picture with the mask over it ([MaskFraming], taps from the cache), and the
+ * reference's chosen region.
+ *
+ * ⭐⭐⭐ **Which tiles appear is data, not three branches.** It was two fixed
+ * ones until 2026-09-20, which is how the reference ended up outside the
+ * mechanism entirely — a third picture on the same node, drawn a fourth way.
+ * A tile is now `(label, thumbnail, panel)` and the list decides the tabs, the
+ * order and the indices together, so a fourth picture is one entry rather than
+ * another special case.
  */
 @Composable
 private fun InpaintEditors(
     node: com.abrah.nightmare.Node,
     type: NodeType?,
-    photo: ImageBitmap,
+    /** ⚠ Null on a node with a reference and no base: the Crop tile is absent. */
+    photo: ImageBitmap?,
+    refPhoto: ImageBitmap?,
     cropPanel: @Composable () -> Unit,
     maskPanel: @Composable () -> Unit,
+    refPanel: @Composable () -> Unit,
     inlineTab: Int? = null,
     /** ⚠ False on image-to-image: the Crop editor alone, no Mask tab. */
     paints: Boolean = true,
@@ -2073,6 +2148,7 @@ private fun InpaintEditors(
     // ⚠⚠ Keyed on the render SIZE and the padding too — keyed on the photo and
     // rect alone, a resolution change left both previews at the old shape.
     val framed = remember(photo, rect, outW0, outH0, pad) {
+        photo ?: return@remember null
         val (outW, outH) = outW0 to outH0
         CropNode.render(
             photo.asAndroidBitmap(), rect.x, rect.y, rect.w, rect.h, outW, outH, node.params[CropNode.PAD],
@@ -2082,15 +2158,16 @@ private fun InpaintEditors(
     val padding = if (!paints) null
     else com.abrah.nightmare.CropGeometry.photoInFrame(rect.x, rect.y, rect.w, rect.h)
     val masked = remember(framed, ops, grow, feather) {
+        val base = framed ?: return@remember null
         val stored = com.abrah.nightmare.MaskNode.stateOf(node)
-        if (stored.isEmpty && padding == null) return@remember framed.asImageBitmap()
-        val out = framed.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+        if (stored.isEmpty && padding == null) return@remember base.asImageBitmap()
+        val out = base.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
         val canvas = android.graphics.Canvas(out)
         if (!stored.isEmpty) {
-            val photoBmp = photo.asAndroidBitmap()
+            val photoBmp = photo?.asAndroidBitmap()
             val state = com.abrah.nightmare.MaskFraming.toFrame(
                 com.abrah.nightmare.MaskTaps.resolve(stored) { x, y ->
-                    com.abrah.nightmare.segment.Segmenter.cached(photoBmp, x, y)?.candidates
+                    photoBmp?.let { com.abrah.nightmare.segment.Segmenter.cached(it, x, y)?.candidates }
                 },
                 rect.x, rect.y, rect.w, rect.h,
             )
@@ -2104,39 +2181,74 @@ private fun InpaintEditors(
         padding?.let { com.abrah.nightmare.MaskRaster.paintPadding(out, it, PADDING_ALPHA) }
         out.asImageBitmap()
     }
-    val labels = if (paints) listOf("Crop", "Mask") else listOf("Crop")
+    // ⭐⭐ The REFERENCE tile, drawn by the same [CropNode.render] its editor
+    // moves. ⚠ Target size **0, 0** — the region at its own pixels, so the
+    // thumbnail keeps the shape the model is handed and cannot imply a crop to
+    // the canvas ([SdSampler.runDit]).
+    val refRect = refCropRectOf(node)
+    val refFramed = remember(refPhoto, refRect) {
+        val src = refPhoto ?: return@remember null
+        CropNode.render(
+            src.asAndroidBitmap(),
+            refRect.x, refRect.y, refRect.w, refRect.h,
+            0, 0, CropNode.PAD_BLACK,
+        ).first.asImageBitmap()
+    }
+    // ⭐⭐⭐ The tiles, in the order they are drawn AND tabbed. ONE list, so
+    // the thumbnail row, the tab row and the index [open] holds cannot disagree
+    // — they were hardcoded pairs until 2026-09-20, which is how a third
+    // picture on the node ended up outside this mechanism altogether.
+    val outAspect =
+        if (outW0 > 0 && outH0 > 0) outW0.toFloat() / outH0
+        else framed?.let { it.width.toFloat() / it.height.coerceAtLeast(1) } ?: 1f
+    val tiles = buildList {
+        framed?.let { add(EditorTile("Crop", it.asImageBitmap(), cropPanel)) }
+        if (paints) masked?.let { add(EditorTile("Mask", it, maskPanel)) }
+        refFramed?.let { add(EditorTile("Reference", it, refPanel)) }
+    }
+    if (tiles.isEmpty()) return
+    val labels = tiles.map { it.label }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        listOf(framed.asImageBitmap(), masked).take(labels.size).forEachIndexed { i, thumb ->
+        tiles.forEachIndexed { i, tile ->
             Column(
                 Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text(labels[i], style = MaterialTheme.typography.titleSmall)
+                Text(tile.label, style = MaterialTheme.typography.titleSmall)
                 androidx.compose.foundation.Image(
-                    bitmap = thumb,
-                    contentDescription = "edit the ${labels[i].lowercase()}",
+                    bitmap = tile.thumb,
+                    contentDescription = "edit the ${tile.label.lowercase()}",
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxWidth()
-                        // ⭐ The RESOLUTION's shape, not a fixed strip (2026-09-17).
-                        .aspectRatio(
-                            if (outW0 > 0 && outH0 > 0) outW0.toFloat() / outH0
-                            else framed.width.toFloat() / framed.height.coerceAtLeast(1),
-                        )
+                        // ⭐ The RESOLUTION's shape, not a fixed strip (2026-09-17),
+                        // and the SAME shape for every tile in the row.
+                        //
+                        // ⚠⚠ A reference keeps its own aspect on the wire, and
+                        // giving its TILE that aspect was the first attempt here:
+                        // a portrait reference beside a square canvas made one
+                        // thumbnail twice the height of the other and the row
+                        // read as broken — the opposite of the consistency this
+                        // was changed for. The shape it is sent at is stated in
+                        // its own editor, which is where that promise belongs;
+                        // `ContentScale.Fit` letterboxes it here.
+                        .aspectRatio(outAspect)
                         .clip(RoundedCornerShape(10.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .clickable { open = i },
                 )
             }
         }
-        // ⚠⚠ The SAME half width on image-to-image. Drawn full width, its one
-        // Crop preview looked exactly like the inline crop editor it replaced,
-        // and read as "no popup" on the phone (2026-09-17).
-        if (!paints) Spacer(Modifier.weight(1f))
+        // ⚠⚠ The SAME half width when there is only one tile. Drawn full
+        // width, a lone Crop preview looked exactly like the inline crop editor
+        // it replaced, and read as "no popup" on the phone (2026-09-17).
+        if (tiles.size == 1) Spacer(Modifier.weight(1f))
     }
-    val tab = open ?: return
+    // ⚠ Clamped: the tile list shrinks the moment a wire is pulled, and an
+    // index kept across that would open a tab that is no longer there.
+    val tab = (open ?: return).coerceIn(0, tiles.lastIndex)
     val body: @Composable () -> Unit = {
-        InpaintPopupBody(tab, labels, onTab = { open = it }, onClose = { open = null }, cropPanel, maskPanel)
+        InpaintPopupBody(tab, labels, onTab = { open = it }, onClose = { open = null }, tiles[tab].panel)
     }
     if (inlineTab != null) {
         Box(Modifier.fillMaxWidth().height(760.dp)) { body() }
@@ -2167,8 +2279,8 @@ private fun InpaintPopupBody(
     labels: List<String>,
     onTab: (Int) -> Unit,
     onClose: () -> Unit,
-    cropPanel: @Composable () -> Unit,
-    maskPanel: @Composable () -> Unit,
+    /** ⚠ The SELECTED tab's panel — the caller's tile list owns which. */
+    panel: @Composable () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2207,7 +2319,7 @@ private fun InpaintPopupBody(
             // text under them stays left-aligned like every other sheet.
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (tab == 0) cropPanel() else maskPanel()
+            panel()
         }
     }
 }

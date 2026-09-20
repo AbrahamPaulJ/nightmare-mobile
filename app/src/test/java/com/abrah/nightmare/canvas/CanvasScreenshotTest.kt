@@ -12,6 +12,7 @@ import com.abrah.nightmare.MaskState
 import com.abrah.nightmare.MaskStrokeData
 import com.abrah.nightmare.NODE_TYPES
 import com.abrah.nightmare.Res
+import com.abrah.nightmare.SdSampler
 import com.abrah.nightmare.V1_MODEL
 import com.abrah.nightmare.SizeDemand
 import com.abrah.nightmare.Node
@@ -1051,6 +1052,67 @@ class Img2ImgInspectorScreenshotTest {
                         onSetParam = { _, _, _ -> },
                         onDelete = {},
                         cropSource = stripeSource(300, 220),
+                        inlinePopupTab = tab,
+                    )
+                }
+            }
+        }
+}
+
+/**
+ * ⭐⭐⭐ **The FLUX.2 node with BOTH its pictures wired** — a base and a
+ * reference.
+ *
+ * Reported 2026-09-20: *"why doesnt inpaint node have consistency for base and
+ * reference img, both should have consistent cropper windows with their
+ * respective names and knobs for size"*. It was true, and no golden showed it:
+ * every crop/mask golden drew a node with ONE upstream picture, so the only
+ * sheet that draws two was the one nothing pinned. The base went behind a
+ * titled thumbnail into a tabbed popup; the reference — the same gesture on
+ * the same [CropEditor] — was drawn loose in the sheet below it, in the empty
+ * half-row the missing Mask tile left.
+ *
+ * ⚠⚠ These three pin the fix: the row has a **Reference** tile beside
+ * **Crop**, the popup has a Reference tab, and that tab carries a size control
+ * of its own where the Crop tab carries Shape + Resolution.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w411dp-h891dp-xxhdpi")
+class ReferenceInspectorScreenshotTest {
+    @Test fun bothPicturesAreTiles() = shoot("inspector-flux-reference", null)
+    /** ⚠ The two tabs, and the picture must sit in the same place in both. */
+    @Test fun popupCropTab() = shoot("flux-popup-crop", 0)
+    @Test fun popupReferenceTab() = shoot("flux-popup-reference", 1)
+
+    private fun shoot(name: String, tab: Int?) =
+        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+            NightmareTheme(darkTheme = true) {
+                Surface(Modifier.fillMaxSize()) {
+                    NodeInspectorBody(
+                        nodeId = "generate",
+                        node = Node(
+                            "generate", "flux2.sample",
+                            params = mapOf(
+                                "steps" to "4", "cfg" to "1.0", "seed" to "0",
+                                "model" to "flux2_klein_4b",
+                                "width" to "1024", "height" to "1024",
+                                "x" to "0.1", "y" to "0.1", "w" to "0.8", "h" to "0.8",
+                                // ⚠ A region that is NOT the whole reference, so the
+                                // tile proves it draws the chosen part.
+                                SdSampler.REF_X to "0.2", SdSampler.REF_Y to "0.05",
+                                SdSampler.REF_W to "0.6", SdSampler.REF_H to "0.7",
+                            ),
+                            inputs = sources("image" to "photo", "reference" to "ref", "prompt" to "prompt"),
+                        ),
+                        type = NODE_TYPES["flux2.sample"],
+                        onSetParam = { _, _, _ -> },
+                        onDelete = {},
+                        cropSource = stripeSource(300, 220),
+                        // ⚠ A PORTRAIT reference against a square canvas: the tile
+                        // must keep its own shape, because the wire never fits it
+                        // to the output (`docs/MODELS.md` §9).
+                        refSource = stripeSource(200, 320),
                         inlinePopupTab = tab,
                     )
                 }

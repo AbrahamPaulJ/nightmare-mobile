@@ -429,25 +429,51 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             return say("dit_edit: no backend", bad = true)
         }
 
-        // The base everything else edits, at a fixed seed so a rerun compares.
-        say("dit_edit: base — ${res.width}x${res.height}")
-        val base = when (
-            val r = Ops.generate(
-                prompt = "a red brick house beside a lake, clear sky, photorealistic",
-                negative = negative, steps = 4, cfg = 1.0, seed = 12345,
-                width = res.width, height = res.height,
-            )
-        ) {
-            is Ops.Result.Err -> return say("dit_edit: base FAILED http ${r.code} — ${r.body.take(200)}", bad = true)
-            is Ops.Result.Ok -> r.value
+        // ⭐⭐⭐ `ref1` — the REFERENCE leg as the FIRST render of the
+        // process, and the control the other modes cannot be.
+        //
+        // ⚠⚠ Measured 2026-09-20 at 1024x1024: `refs` ran base →
+        // img2img_0.65 → edit_1.0 → edit_with_reference and only the LAST one
+        // was reaped — `min watermark is breached and swap is low`, at the text
+        // encoder. But `img2img_0.65` makes the same two full-frame VAE encodes
+        // and had already survived, so "one encode more" does not explain it
+        // and PRESSURE ACCUMULATED OVER THREE RENDERS might. Separating those
+        // needs the suspect leg run alone, which is this mode: it reuses
+        // `0_base.png` off disk instead of rendering one, so the reference edit
+        // is the first thing the process does.
+        //
+        // ⚠ Falls back to rendering a base when there is no file yet — then
+        // it is the SECOND render and says so, rather than silently not being
+        // the control it claims.
+        val baseFile = java.io.File(dir, "0_base.png")
+        val reuse = arg == "ref1" && baseFile.isFile()
+        val base = if (reuse) {
+            say("dit_edit: reusing ${baseFile.name} — the reference leg runs FIRST in this process")
+            Ops.Decoded(baseFile.readBytes(), "", 0L, 0L)
+        } else {
+            // The base everything else edits, at a fixed seed so a rerun compares.
+            say("dit_edit: base — ${res.width}x${res.height}")
+            val b = when (
+                val r = Ops.generate(
+                    prompt = "a red brick house beside a lake, clear sky, photorealistic",
+                    negative = negative, steps = 4, cfg = 1.0, seed = 12345,
+                    width = res.width, height = res.height,
+                )
+            ) {
+                is Ops.Result.Err -> return say("dit_edit: base FAILED http ${r.code} — ${r.body.take(200)}", bad = true)
+                is Ops.Result.Ok -> r.value
+            }
+            baseFile.writeBytes(b.png)
+            say("  base ok (${b.png.size} bytes)")
+            b
         }
-        java.io.File(dir, "0_base.png").writeBytes(base.png)
-        say("  base ok (${base.png.size} bytes)")
 
         val legs = buildList {
-            add(Triple("img2img_0.65", 0.65, false))
-            add(Triple("edit_1.0", 1.0, false))
-            if (arg == "refs") add(Triple("edit_with_reference", 1.0, true))
+            if (arg != "ref1") {
+                add(Triple("img2img_0.65", 0.65, false))
+                add(Triple("edit_1.0", 1.0, false))
+            }
+            if (arg == "refs" || arg == "ref1") add(Triple("edit_with_reference", 1.0, true))
         }
         for ((label, denoise, withRef) in legs) {
             val t0 = System.currentTimeMillis()

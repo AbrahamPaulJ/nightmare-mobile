@@ -238,6 +238,22 @@ class SdSampler(
          */
         const val REF_MAX_EDGE = 512
 
+        /**
+         * ⭐⭐ …and the knob that moves it — the REFERENCE's size control, the
+         * same job the Shape + Resolution pair does for the base.
+         *
+         * ⚠⚠ It was a constant until 2026-09-20, and a constant is the wrong
+         * shape for it: the base picture has a size control in its own editor
+         * and the reference had none, which is the inconsistency reported from
+         * the phone. It is also the one lever a user has when a 1024² edit is
+         * reaped (`notes/PROGRESS.md` ①), so hiding it cost them the workaround
+         * as well as the symmetry.
+         */
+        const val REF_MAX = "ref_max"
+
+        /** ⚠ The offered sizes, longest edge. [REF_MAX_EDGE] is the default. */
+        val REF_SIZES = listOf("384", "512", "768", "1024")
+
         /** ⭐ The four registrations. One class; two arguments of difference. */
         val SD15 = SdSampler("sd15.sample", Family.SD15, inpaint = false)
         val SDXL = SdSampler("sdxl.sample", Family.SDXL, inpaint = false)
@@ -388,6 +404,16 @@ class SdSampler(
         Widget(REF_Y, "float", "0.0", 0.0, 1.0),
         Widget(REF_W, "float", "1.0", 0.0, 1.0),
         Widget(REF_H, "float", "1.0", 0.0, 1.0),
+        // ⭐⭐ The reference's SIZE, drawn in the Reference editor exactly
+        // where the base's Shape + Resolution sit in the Crop one — and hidden
+        // from the loose knob list for the same reason they are ([hiddenKnob]).
+        // ⚠ It bounds the LONGEST EDGE; the aspect never changes.
+        Widget(
+            REF_MAX, "string", REF_MAX_EDGE.toString(),
+            options = REF_SIZES,
+            hint = "how large the reference is sent — bigger reads more detail " +
+                "and costs a lot more memory (a 1024 px encode is 1536 MB against 512's 288 MB)",
+        ),
         // ⚠ Drawn as the tick/pencil in the Crop title row, never as a checkbox
         // in the knob list ([hiddenKnob]).
         Widget(CropNode.LOCKED, "bool", "false"),
@@ -927,7 +953,9 @@ class SdSampler(
                 p[REF_W]?.toFloatOrNull() ?: 1f, p[REF_H]?.toFloatOrNull() ?: 1f,
                 0, 0, CropNode.PAD_BLACK,
             )
-            ImageStore.encodePng(boundReference(region))
+            ImageStore.encodePng(
+                boundReference(region, p[REF_MAX]?.toIntOrNull() ?: REF_MAX_EDGE)
+            )
         }
         ctx.say(
             when {
@@ -977,16 +1005,23 @@ class SdSampler(
      *
      * ⇒ The one input this app can shrink without changing what is rendered
      * is the REFERENCE: it is context the model reads, never the output, so
-     * [REF_MAX_EDGE] pixels is ample. The base cannot shrink — it IS the
-     * canvas.
+     * [REF_MAX_EDGE] pixels is ample by default. The base cannot shrink — it
+     * IS the canvas.
+     *
+     * ⭐ [maxEdge] is the [REF_MAX] knob, drawn in the Reference editor. The
+     * default is still [REF_MAX_EDGE]; the knob exists because the base has a
+     * size control in ITS editor and this picture had none.
      *
      * ⚠ Untouched when it is already small, so a modest reference costs
      * nothing and keeps its exact pixels.
      */
-    private fun boundReference(src: android.graphics.Bitmap): android.graphics.Bitmap {
+    private fun boundReference(
+        src: android.graphics.Bitmap,
+        maxEdge: Int = REF_MAX_EDGE,
+    ): android.graphics.Bitmap {
         val longest = maxOf(src.width, src.height)
-        if (longest <= REF_MAX_EDGE) return src
-        val scale = REF_MAX_EDGE.toFloat() / longest
+        if (longest <= maxEdge) return src
+        val scale = maxEdge.toFloat() / longest
         val w = (src.width * scale).toInt().coerceAtLeast(1)
         val h = (src.height * scale).toInt().coerceAtLeast(1)
         return android.graphics.Bitmap.createScaledBitmap(src, w, h, true)
