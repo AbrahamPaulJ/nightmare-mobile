@@ -710,6 +710,15 @@ object Ops {
         imagePng: ByteArray? = null,
         denoise: Double = 0.6,
         /**
+         * ⭐⭐ The inpaint mask — white is regenerated, black keeps the init
+         * image (`DitEngine.h`'s `mask_image` contract, and the same sense the
+         * SD pipelines use).
+         *
+         * ⚠ The backend refuses a mask with no `image` ("mask requires
+         * image"), so these two travel together or not at all.
+         */
+        maskPng: ByteArray? = null,
+        /**
          * ⭐⭐ FLUX.2 Klein's native edit references — clean, separately
          * VAE-encoded latents appended to the DiT token sequence, NOT noised
          * into the generation latent like [imagePng].
@@ -744,6 +753,9 @@ object Ops {
                 if (imagePng != null) {
                     put("image", android.util.Base64.encodeToString(imagePng, android.util.Base64.NO_WRAP))
                     put("denoise_strength", denoise)
+                }
+                if (maskPng != null) {
+                    put("mask", android.util.Base64.encodeToString(maskPng, android.util.Base64.NO_WRAP))
                 }
                 if (referencePngs.isNotEmpty()) {
                     put(

@@ -671,10 +671,22 @@ internal fun NodeInspectorBody(
         // indistinguishable.
         if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
             CheckpointPicker(
-                // ⚠ An INPAINT node never offers a DiT model: their engine
-                // takes no mask, so there is no inpaint type to switch to.
+                // ⭐⭐ Derived from the TYPES, not from a hardcoded family list:
+                // a checkpoint is offered here when its family has an inpaint
+                // sampler at all. One source of truth, so registering
+                // `flux2.inpaint` would light this up with nothing to keep in
+                // sync — and NOT registering it keeps FLUX.2 out, which is
+                // where it stands (see `SdSampler.ALL`: the engine honours the
+                // mask and then regenerates nothing inside it).
+                // ⚠ The rule this replaced spelled the exclusion as
+                // "never a DiT model", which was a fact about the engine
+                // hardcoded in the UI.
                 installed = if ((type as? com.abrah.nightmare.SdSampler)?.inpaint == true) {
-                    installedModels.filterNot { it.family.dit }
+                    installedModels.filter {
+                        com.abrah.nightmare.SdSampler.ALL.any { s ->
+                            s.family == it.family && s.inpaint
+                        }
+                    }
                 } else installedModels,
                 currentId = node.params["model"].orEmpty(),
                 onPick = { onSetModel(nodeId, it) },

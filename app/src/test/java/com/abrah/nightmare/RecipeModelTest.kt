@@ -85,19 +85,27 @@ class RecipeModelTest {
 
     /**
      * ⚠ The exact reported case, kept as its own test so a failure names it:
-     * a DiT checkpoint selected, the Inpaint recipe opened.
+     * a checkpoint whose family CANNOT inpaint, with the Inpaint recipe opened.
+     *
+     * ⭐ Z-Image, not FLUX.2, since 1.5.507. The original report was about
+     * FLUX.2, but ABI 3 gave Klein a real `mask_image` and it now has an
+     * inpaint type of its own — so the family that still has none is Z-Image,
+     * and it is the one that must substitute. The INVARIANT is unchanged: the
+     * recipe never builds a node whose model's family has no inpaint type.
      */
     @Test
-    fun inpaintWithADitCheckpointSelectedDoesNotBuildADitNode() {
-        val dit = ModelCatalog.builtIn.firstOrNull { it.isDit }
-        assertNotNull("no DiT entry in the catalogue to test with", dit)
-        SelectedModel.set(ctx, dit!!.id)
+    fun inpaintWithANonInpaintFamilySelectedSubstitutes() {
+        val orphan = ModelCatalog.builtIn.firstOrNull { spec ->
+            SdSampler.ALL.none { it.family == spec.family && it.inpaint }
+        }
+        assertNotNull("every family can inpaint — this test has nothing to check", orphan)
+        SelectedModel.set(ctx, orphan!!.id)
         val node = samplerOf(inpaintWorkflow())
         val model = ModelCatalog.byId(node.params["model"].orEmpty())
         assertNotNull(model)
         assertTrue(
-            "the inpaint recipe carried the DiT checkpoint ${model!!.id} onto a ${node.type} node",
-            !model.isDit,
+            "the inpaint recipe carried ${model!!.id}, whose family cannot inpaint, onto ${node.type}",
+            SdSampler.ALL.any { it.family == model.family && it.inpaint },
         )
         // ⚠ And the node must be an inpaint node at all — falling back to a
         // plain sd15.sample would silently drop the mask the recipe wires in.
@@ -105,6 +113,26 @@ class RecipeModelTest {
             "${node.type} is not an inpaint sampler",
             (SdSampler.ALL.first { it.name == node.type }).inpaint,
         )
+    }
+
+    /**
+     * ⭐⭐ FLUX.2 is now an inpaint family, so the recipe must KEEP it rather
+     * than substituting — the other half of the rule above, and the thing that
+     * would silently regress if `flux2.inpaint` were ever dropped.
+     */
+    @Test
+    fun inpaintKeepsFluxWhenFluxIsSelected() {
+        val flux = ModelCatalog.builtIn.firstOrNull { spec ->
+            spec.isDit && SdSampler.ALL.any { it.family == spec.family && it.inpaint }
+        } ?: return
+        SelectedModel.set(ctx, flux.id)
+        val node = samplerOf(inpaintWorkflow())
+        assertEquals(
+            "the inpaint recipe substituted away from a DiT family that CAN inpaint",
+            flux.id,
+            node.params["model"].orEmpty(),
+        )
+        assertTrue((SdSampler.ALL.first { it.name == node.type }).inpaint)
     }
 
     /**
@@ -117,7 +145,12 @@ class RecipeModelTest {
      */
     @Test
     fun inpaintPrefersAnInstalledInpaintCheckpoint() {
-        val dit = ModelCatalog.builtIn.firstOrNull { it.isDit } ?: return
+        // ⚠ A family that cannot inpaint, so the recipe has to SUBSTITUTE and
+        // the preference below is what picks the replacement. With FLUX.2
+        // selected there is nothing to choose — it keeps its own checkpoint.
+        val dit = ModelCatalog.builtIn.firstOrNull { spec ->
+            SdSampler.ALL.none { it.family == spec.family && it.inpaint }
+        } ?: return
         val inpaintSpec = ModelCatalog.builtIn.firstOrNull { it.isInpaint }
         assertNotNull("no true inpainting checkpoint in the catalogue", inpaintSpec)
         SelectedModel.set(ctx, dit.id)

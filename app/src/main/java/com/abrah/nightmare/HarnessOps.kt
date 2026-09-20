@@ -296,6 +296,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             return
         }
         val stitch = arg == "stitch"
+        // ⭐ `--es arg d0.95` overrides the recipe's denoise. Added 2026-09-20:
+        // the recipe's 0.65 is tuned for SD 1.5, and on Klein a masked redraw
+        // binds the base as a clean reference AS WELL AS the init latent, so
+        // at 0.65 over four distilled steps the reference wins and the masked
+        // area comes back almost unchanged (measured: 1 strongly-changed
+        // pixel). This is the knob that says whether that is the cause.
+        val denoiseArg = arg?.removePrefix("d")?.toDoubleOrNull()?.takeIf { arg.startsWith("d") }
         // A small blob up and to the left: small enough that "Only masked" must crop.
         val mask = MaskState(
             ops = listOf(
@@ -319,7 +326,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                                 MaskNode.OPS to mask.encode(),
                                 PasteNode.STITCH to stitch.toString(),
                                 "seed" to "4242",
-                            ) + (
+                            ) + (denoiseArg?.let { d -> mapOf("denoise" to d.toString()) } ?: emptyMap()) + (
                                 // ⚠ Stitching is only a test when the frame is
                                 // SMALLER than the photo — a whole-photo frame
                                 // maps 1:1 and a wrong parent rect would still
@@ -364,7 +371,16 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             java.io.File(dir, "$id.png").writeBytes(png)
             say("  $id: ${img.w}x${img.h}  region=${img.region}")
         }
-        dump("sample", r.outputs["sample"])
+        // ⚠⚠ EVERY image output, by its own node id. This dumped a hardcoded
+        // `"sample"` — the id the sampler had before the recipe renamed it to
+        // `"inpaint"` — so it warned "sample: no image" and wrote NOTHING,
+        // while the op still reported the render as fine. The one op whose job
+        // is the seam check had not produced a picture to check since the
+        // rename (found 2026-09-20, wiring DiT inpaint). Driving it off the
+        // real outputs is what stops the next rename doing the same.
+        val images = r.outputs.filterValues { it is Value.Image }
+        if (images.isEmpty()) say("  no image output at all", bad = true)
+        for ((id, v) in images) dump(id, v)
         say("inpaint: stitch=$stitch — pictures in ${dir.absolutePath}")
     }
 

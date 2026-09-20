@@ -94,10 +94,13 @@ class VideoGraphTest {
         assertTrue(isSampler("flux2.sample"))
         assertTrue(isSampler("zimage.sample"))
         // ⚠ Nine: eight image samplers (SD 1.5, SDXL and Anima × sample/inpaint,
-        // plus FLUX.2 and Z-Image, which have no inpaint type — their engine
-        // takes no mask) plus the one video sampler. Asserted by NUMBER so
-        // adding a type without deciding whether it rolls a seed fails here
-        // rather than silently.
+        // plus FLUX.2 and Z-Image, neither of which has a REGISTERED inpaint
+        // type) plus the one video sampler. Asserted by NUMBER so adding a type
+        // without deciding whether it rolls a seed fails here rather than
+        // silently. ⚠⚠ `flux2.inpaint` exists in code and is deliberately not
+        // in `SdSampler.ALL` — see the note there. If this count moves to 10,
+        // somebody registered it, and the measurements that argued against
+        // that need re-taking first.
         assertEquals(9, SAMPLER_TYPES.size)
         assertEquals(8, IMAGE_SAMPLER_TYPES.size)
         assertEquals(3, INPAINT_TYPES.size)

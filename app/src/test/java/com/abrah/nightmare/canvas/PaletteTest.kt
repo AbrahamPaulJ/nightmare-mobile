@@ -38,6 +38,10 @@ class PaletteTest {
         val inpaint = sections.getValue("inpaint")
         // ⭐ The samplers, and the segment model (docs/SEGMENTER.md), which only feeds them.
         assertEquals(listOf("Inpaint", "Segment model"), inpaint.map { it.first().paletteName })
+        // ⚠ No FLUX.2: `flux2.inpaint` is written but NOT registered, because
+        // the engine honours the mask and then regenerates nothing inside it
+        // (measured 2026-09-20, `SdSampler.ALL`). This list is what guards
+        // that decision — registering it silently would show up here first.
         assertEquals(listOf("SD 1.5", "SDXL", "Anima"), inpaint.first().map { it.paletteVariant })
         assertFalse(sections.getValue("generate").flatten().any { it.name.endsWith(".inpaint") })
     }
