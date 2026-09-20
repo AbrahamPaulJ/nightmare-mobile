@@ -198,7 +198,19 @@ class SdSampler(
      * image **or** a reference. A FLUX.2 node with only a reference wired is
      * editing too — "generate fresh, guided by this" (`docs/MODELS.md` §9).
      */
-    override fun titleFor(node: Node): String = family.label + " " + when {
+    override fun titleFor(node: Node): String = family.label + " " + jobFor(node)
+
+    /**
+     * ⭐⭐ The JOB alone, without the family — what [titleFor] appends.
+     *
+     * ⚠⚠ Split out because a node card cannot fit both: "SD 1.5 Image to
+     * image" ellipsised to `SD 1.5 Imag…` at the canvas's own width, cutting
+     * off the one part that distinguishes text-to-image from image edit from
+     * inpaint. ⇒ [com.abrah.nightmare.nodeNameOf] puts this on the big line
+     * and the family on the small one; [titleFor] stays whole for the run log
+     * and the report, where there is room.
+     */
+    fun jobFor(node: Node): String = when {
         inpaint -> "Inpaint"
         family == Family.FLUX2 &&
             (node.inputs["image"] != null || node.inputs["reference"] != null) -> EDIT_LABEL

@@ -1,5 +1,8 @@
 package com.abrah.nightmare
 
+// ⚠ The canvas package owns the type-to-word rule and its overrides
+// ([nodeLabel]); [nodeNameOf] below reuses it rather than keeping a second copy.
+import com.abrah.nightmare.canvas.nodeLabel
 import java.security.MessageDigest
 
 /**
@@ -482,6 +485,107 @@ const val PROMPT_BRIEF = 28
 // ⚠ Renamed from `IMAGE_SAMPLER_TYPES` in the same edit: FLUX.2 and Z-Image are
 // not SD, and a name that says otherwise is how the next family gets left out.
 val IMAGE_SAMPLER_TYPES: Set<String> = SdSampler.ALL.map { it.name }.toSet()
+
+/**
+ * ⭐⭐⭐ **What a node is CALLED on screen — the one answer, for every
+ * surface that draws a node's name.**
+ *
+ * ⭐⭐ **Only a SAMPLER's id is overridden, and the boundary is not
+ * cosmetic.** A sampler is the one node whose TYPE changes under it — the
+ * checkpoint dropdown retypes it across families — so an id that named a job
+ * or a family is the one thing guaranteed to go stale. Every other node keeps
+ * its id as its name: `photo`, `prompt`, `output` and `mask` are words the
+ * recipes chose deliberately and they are BETTER than the type's label, which
+ * a first version of this learned the hard way by renaming `photo` to `image`
+ * on five goldens.
+ *
+ * ⚠⚠⚠ The canvas box and the inspector's tabs both name nodes, and they
+ * gave different answers: the box drew [Node.id] large with the job title as a
+ * subtitle it dropped when cramped, and the tabs drew the id alone. An id is
+ * frozen at creation, so a node added as SD 1.5 and switched to FLUX.2 went on
+ * calling itself `sd15_generate` on both — reported 2026-09-21 as "the node
+ * doesn't change to edit node", when [SdSampler.titleFor] had been returning
+ * "FLUX.2 Image edit" the whole time and almost nothing showed it.
+ *
+ * ⭐⭐ **An AUTO-GENERATED id is not a name a person chose.** `flux2_generate`
+ * encodes the type, which is exactly what goes stale; a name the user typed does
+ * not. ⇒ [primary] is the job title while the id is still automatic, and the
+ * user's name the moment there is one. The 2026-09-15 rule that "a node's id is
+ * what you are looking for" is kept where it was actually true.
+ */
+data class NodeName(
+    /** The big line: what the user called it, else what it does. */
+    val primary: String,
+    /** The small line, or null when it would only repeat [primary]. */
+    val secondary: String?,
+)
+
+/**
+ * ⚠⚠ Whether [id] is one this app generated rather than one a person typed.
+ *
+ * ⚠⚠⚠ Tested against EVERY registered type's [NodeType.defaultId], not
+ * just the node's current one — that is the whole point. A node swapped from
+ * SD 1.5 to FLUX.2 keeps the id `sd15_generate` while its type now defaults to
+ * `flux2_generate`, and comparing against the current type alone would call
+ * that stale id a deliberate name and show it.
+ *
+ * ⚠ The `_2`, `_3`… suffix [Graph.freeId] adds is part of an auto id.
+ */
+fun isAutoNodeId(id: String, types: Map<String, NodeType> = NODE_TYPES): Boolean {
+    val bases = types.values.mapNotNull { it.defaultId } + RECIPE_NODE_IDS
+    return bases.any { id == it || Regex(Regex.escape(it) + """_\d+""").matches(id) }
+}
+
+/**
+ * ⭐⭐⭐ **Every node id the BUILT-IN RECIPES write**, derived by building them
+ * rather than listed by hand.
+ *
+ * ⚠⚠⚠ A recipe hand-writes short ids — `edit`, `generate`, `prompt`,
+ * `photo`, `output` — and none of them is any type's [NodeType.defaultId]. That
+ * made [isAutoNodeId] call them names a person had chosen, so opening the Image
+ * edit flow and switching the checkpoint to SD 1.5 left the node still saying
+ * **edit**. Reported 2026-09-21, and it is the same bug as the frozen
+ * `defaultId` one directly above, entering by a second door.
+ *
+ * ⚠⚠ DERIVED, not a list: a new recipe's ids join this set by existing, and a
+ * hand-kept copy is the thing that would go stale next. ⚠ `by lazy` — building
+ * every recipe is cheap but pointless until a node is drawn.
+ *
+ * ⚠ A person who renames a node to exactly `edit` is then shown the job title
+ * instead of their word. Accepted: it is a word this app already uses for that
+ * node, and the title it falls back to says the same thing.
+ */
+private val RECIPE_NODE_IDS: Set<String> by lazy {
+    runCatching {
+        com.abrah.nightmare.canvas.RECIPES
+            .flatMap { it.build().graph.nodes.map { n -> n.id } }
+            .toSet()
+    }.getOrDefault(emptySet())
+}
+
+/**
+ * ⭐ [NodeName] for one node. Both surfaces call THIS — two hand-rolled
+ * lookups are how they stopped agreeing in the first place.
+ */
+fun nodeNameOf(node: Node, types: Map<String, NodeType> = NODE_TYPES): NodeName {
+    // ⚠⚠ The canvas's own [com.abrah.nightmare.canvas.nodeLabel] for the
+    // fallback, never a local `substringAfterLast('.')`. It carries
+    // LABEL_OVERRIDES, and re-deriving it here renamed the prompt node's
+    // second line from `prompt` to `clip_encode` — caught by the canvas
+    // goldens, 2026-09-21, which is the sibling rule failing yet again.
+    val type = types[node.type]
+    val title = type?.titleFor(node) ?: node.type.nodeLabel
+    val sampler = type as? SdSampler
+    return if (sampler != null && isAutoNodeId(node.id, types)) {
+        // ⚠⚠ The JOB big and the FAMILY small, not the whole title big: the
+        // full string does not fit a node's width and ellipsises away the job
+        // ([SdSampler.jobFor]). The family is the half a person can also read
+        // off the checkpoint field, so it is the half that gives way.
+        NodeName(sampler.jobFor(node), sampler.family.label)
+    } else {
+        NodeName(node.id, title.takeIf { it != node.id })
+    }
+}
 
 /** ⚠ The ones that carry a mask, its editor and the paste back. */
 val INPAINT_TYPES: Set<String> = SdSampler.ALL.filter { it.inpaint }.map { it.name }.toSet()

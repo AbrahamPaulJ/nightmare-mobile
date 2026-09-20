@@ -245,7 +245,7 @@ fun GraphCanvas(
             // exactly how a "pop out" stops reading as one.
             for (box in boxes.sortedBy { if (it.id in selected) 1 else 0 }) {
                 drawNode(box, vp, viewport.scale, measurer, box.id in selected,
-                    status[box.id], imageFor, clipFrameFor)
+                    status[box.id], imageFor, clipFrameFor, types)
             }
 
             // ⭐⭐ The picked wire's controls, LAST, so they sit over every node
@@ -350,6 +350,8 @@ private fun DrawScope.drawNode(
     status: NodeStatus?,
     imageFor: (String) -> ImageBitmap?,
     clipFrameFor: (String) -> ImageBitmap? = { null },
+    /** ⚠ For [com.abrah.nightmare.nodeNameOf] — a plugin's type is in here and not in `NODE_TYPES`. */
+    types: Map<String, NodeType> = com.abrah.nightmare.NODE_TYPES,
 ) {
     val tl = viewport.toScreen(box.topLeft)
     val w = box.width * viewport.scale
@@ -494,8 +496,13 @@ private fun DrawScope.drawNode(
     // node's own width, which is what makes a floored font safe: below the floor
     // the type no longer shrinks with the node, so without this a long id would
     // run out over the canvas.
+    // ⭐⭐⭐ **[com.abrah.nightmare.nodeNameOf], not `box.node.id`.** The big
+    // line is what the node DOES while its id is still the generated one, and
+    // the user's name the moment they give it one — the inspector's tabs call
+    // the same function, so the two cannot drift apart again.
+    val naming = com.abrah.nightmare.nodeNameOf(box.node, types)
     val title = measurer.measure(
-        box.node.id, titleStyle,
+        naming.primary, titleStyle,
         overflow = TextOverflow.Ellipsis,
         maxLines = 1,
         constraints = Constraints(maxWidth = room),
@@ -509,18 +516,35 @@ private fun DrawScope.drawNode(
     // readable from the stripe colour and the ports.
     // ⭐ The node's own title when its type gives one (`SDXL Inpaint`), so the
     // canvas says what the node DOES rather than the type's id.
-    val typeLabel = box.type?.titleFor(box.node) ?: box.node.type.nodeLabel
-    val subtitle = measurer.measure(
+    val typeLabel = naming.secondary ?: naming.primary
+    fun measureSub(sizeSp: Float) = measurer.measure(
         typeLabel,
         TextStyle(
             color = CanvasColors.label,
-            fontSize = (10f * textZoom).sp,
+            fontSize = sizeSp.sp,
             fontFamily = FontFamily.Monospace,
         ),
         overflow = TextOverflow.Ellipsis,
         maxLines = 1,
         constraints = Constraints(maxWidth = room),
     )
+    var subtitle = measureSub(10f * textZoom)
+    // ⭐⭐ **A sampler's second line SHRINKS rather than vanishing.** On every
+    // other node the type is readable from the stripe colour and the ports; on
+    // a sampler it is the only thing separating text-to-image from image edit
+    // from inpaint, and those look identical otherwise. ⚠ The drop happens
+    // when zoomed out — `textZoom` floors the font while `headerH` keeps
+    // shrinking — so the fix is a smaller font, not a taller header, which
+    // would move every port and every golden.
+    if (box.node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
+        val free = headerH - pad - title.size.height
+        if (subtitle.size.height > free && free > 0f) {
+            val shrunk = (10f * textZoom) * (free / subtitle.size.height)
+            // ⚠ A floor: below this it is a grey smudge, and a smudge is worse
+            // than the honest nothing the general rule already draws.
+            if (shrunk >= 5f) subtitle = measureSub(shrunk)
+        }
+    }
     // ⚠⚠ …and dropped when it would only REPEAT the title. `prompt / prompt`
     // and `sample / sample` are a line saying nothing twice; the type earns the
     // line where the id does not already say it (`frame / crop`, a renamed

@@ -285,7 +285,12 @@ fun NodeInspector(
         // ⚠ The pager is the source of truth while the sheet is open;
         // `state.editing` follows it through [onInspectNode] on settle.
         com.abrah.nightmare.ui.SwipeTabs(
-            labels = ordered.map { it.id },
+            // ⭐⭐⭐ The SAME name the canvas box draws
+            // ([com.abrah.nightmare.nodeNameOf]). It was `it.id`, and an id is
+            // frozen at creation — a node added as SD 1.5 and switched to
+            // FLUX.2 kept announcing itself as `sd15_generate` here while the
+            // box beside it already said "FLUX.2 Image edit".
+            labels = ordered.map { com.abrah.nightmare.nodeNameOf(it, types).primary },
             fillHeight = true,
             initialPage = here,
             onPage = { i -> ordered.getOrNull(i)?.let { onInspectNode(it.id) } },
