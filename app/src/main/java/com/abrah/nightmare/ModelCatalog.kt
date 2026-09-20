@@ -504,7 +504,19 @@ data class ModelSpec(
                 if (byo && it.name == DIT_WEIGHTS) len <= 0L else len != it.bytes
             }.map { it.name }
         }
-        return requiredFiles.filter { !File(d, it).exists() }
+        // ⭐⭐⭐ A DiT package may keep its shared parts BESIDE the models.
+        //
+        // ⚠⚠⚠ This must agree with the backend, which resolves the same three
+        // files the same way (`ditFile()` in `main.cpp`, `backend-patches/010`).
+        // Two answers here is the worst outcome available: the app calls a
+        // model installed and the backend cannot open it, or the reverse hides
+        // a model that would have run.
+        // ⚠ DiT only. An SD model whose own tokenizer went missing must read
+        // as broken, not borrow one.
+        val shared = File(d.parentFile, CustomModels.DIT_SHARED)
+        return requiredFiles.filter {
+            !File(d, it).exists() && !(isDit && File(shared, it).exists())
+        }
     }
 
     companion object {

@@ -1,0 +1,61 @@
+--- ../LocalDream/local-dream/app/src/main/cpp/src/main.cpp
++++ backend-src/src/main.cpp
+@@ -362,6 +362,31 @@
+ 
+ // Verifies the fixed per-type file layout under --model_dir and constructs
+ // the matching pipeline (not yet initialized).
++// A DiT package's SHARED parts, beside the model directories rather than
++// inside one.
++//
++// A DiT family loads plain weights at run time, so a user can bring their own
++// `dit.safetensors` -- but the text encoder, VAE and tokenizer that go with it
++// are ours and identical for every model of that family. Copying 2.6 GB of
++// them into each imported model is the alternative, and it is the whole reason
++// this exists.
++//
++// Symlinks are not an option: the models live on Android's FUSE-emulated
++// external storage, where neither symlinks nor hard links work.
++static constexpr const char *kDitSharedDir = "_dit_shared";
++
++// One model file: the model's OWN directory first, then the shared one.
++//
++// Returns the model's own path when neither exists, so the caller's "File not
++// found" names the file the user expects rather than an internal fallback.
++static std::string ditFile(const std::filesystem::path &dir, const char *name) {
++  const auto own = dir / name;
++  if (std::filesystem::exists(own)) return own.string();
++  const auto shared = dir.parent_path() / kDitSharedDir / name;
++  if (std::filesystem::exists(shared)) return shared.string();
++  return own.string();
++}
++
+ static std::unique_ptr<Pipeline> createPipeline(const ServerOptions &opts,
+                                                 TextEncoder &text_encoder) {
+   const std::filesystem::path dir(opts.model_dir);
+@@ -374,9 +399,10 @@
+   // passes as --lib_dir for these types; its FastRPC skels are copied from
+   // assets into the runtime directory on the DSP search path.
+   if (opts.isDit()) {
++    // The weights are the model's own; the rest may be shared ([ditFile]).
+     std::string dit_path = (dir / "dit.safetensors").string();
+-    std::string llm_path = (dir / "llm.gguf").string();
+-    std::string vae_path = (dir / "vae.safetensors").string();
++    std::string llm_path = ditFile(dir, "llm.gguf");
++    std::string vae_path = ditFile(dir, "vae.safetensors");
+     for (const auto &p : {dit_path, llm_path, vae_path}) {
+       if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
+     }
+@@ -1647,7 +1673,12 @@
+     text_encoder = std::make_unique<TextEncoder>(opts.isSdxl(), opts.isAnima());
+     try {
+       const std::filesystem::path mdir(opts.model_dir);
+-      text_encoder->loadTokenizer((mdir / "tokenizer.json").string());
++      // A DiT package may share its tokenizer with the family ([ditFile]).
++      // Deliberately NOT applied to the other types: an SD model whose own
++      // tokenizer went missing must fail, not silently load a DiT one.
++      text_encoder->loadTokenizer(
++          opts.isDit() ? ditFile(mdir, "tokenizer.json")
++                       : (mdir / "tokenizer.json").string());
+       // Anima's LLM adapter is fed by a second (T5) tokenizer.
+       if (opts.isAnima())
+         text_encoder->loadT5Tokenizer((mdir / "tokenizer_t5.json").string());

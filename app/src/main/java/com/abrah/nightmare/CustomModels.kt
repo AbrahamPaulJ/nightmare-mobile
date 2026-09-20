@@ -68,6 +68,39 @@ object CustomModels {
      */
     private const val ANIMA_MARK = "unet_part1.bin"
 
+    /**
+     * ⭐⭐⭐ **The DiT markers, and the one kind this app WRITES.**
+     *
+     * ⚠⚠⚠ Every other marker above is a file that came with the model — a
+     * marker is a claim, and a 2 GB graph is a better claim than a note
+     * saying so. A DiT package cannot work that way: FLUX.2 Klein and
+     * Z-Image ship the SAME four filenames, so nothing in the directory
+     * distinguishes them. `specFor` says as much today — *"never detected on
+     * import (no marker names them)"* — which is why an imported DiT
+     * directory is currently ignored outright.
+     *
+     * ⇒ The import writes one, because it is the one moment the family is
+     * actually known: the user pressed Import on a family's tab.
+     *
+     * ⚠ Empty files. Only the name means anything.
+     */
+    const val ZIMAGE_MARK = "zimage.dit"
+    const val FLUX2_MARK = "flux2.dit"
+
+    /**
+     * ⭐⭐ Where a DiT family's SHARED parts live — the text encoder, VAE
+     * and tokenizer, which are ours and identical for every model of the
+     * family. Beside the model directories, never inside one.
+     *
+     * ⚠⚠ The backend resolves them from here too, and the two must agree:
+     * `backend-patches/010`, `ditFile()` in `main.cpp`. An imported model
+     * that the app calls installed and the backend cannot open is the worst
+     * of both.
+     * ⚠ Symlinks would avoid the copy and do not work: this is FUSE-emulated
+     * external storage.
+     */
+    const val DIT_SHARED = "_dit_shared"
+
     /** ⚠ npuforge's graph-contract marker, beside the weights. */
     const val LONG_CONTEXT_FILE = "qnn_context.txt"
     const val LONG_CONTEXT_231 = "231_masked_v1"
@@ -148,6 +181,9 @@ object CustomModels {
             Family.SD15.takeIf { File(dir, SD15_MARK).isFile },
             Family.SDXL.takeIf { File(dir, SDXL_MARK).isFile },
             Family.ANIMA.takeIf { File(dir, ANIMA_MARK).isFile },
+            // ⭐ The two the import WRITES a marker for ([ZIMAGE_MARK]).
+            Family.ZIMAGE.takeIf { File(dir, ZIMAGE_MARK).isFile },
+            Family.FLUX2.takeIf { File(dir, FLUX2_MARK).isFile },
         )
         // ⚠ Two present is not a family, it is a mixed directory — someone
         // unpacked two archives into one place. Refusing beats picking one.
@@ -279,9 +315,17 @@ object CustomModels {
      * usable id rather than a refusal.
      */
     fun nameFromFile(displayName: String?, taken: Set<String>): String {
+        // ⚠⚠ EVERY extension an import can arrive with, not just `.zip`.
+        // The DiT import takes a bare `.safetensors`, and leaving the suffix on
+        // produced the model directory — and the label on the card —
+        // `intorealism_zitV90_(1).safetensors`.
         val base = displayName.orEmpty()
             .substringAfterLast('/')
-            .let { if (it.endsWith(".zip", ignoreCase = true)) it.dropLast(4) else it }
+            .let { n ->
+                val ext = listOf(".zip", ".safetensors", ".gguf", ".ckpt")
+                    .firstOrNull { n.endsWith(it, ignoreCase = true) }
+                if (ext != null) n.dropLast(ext.length) else n
+            }
             .map { if (it == '/' || it == '\\' || it == ':' || it.isWhitespace()) '_' else it }
             .joinToString("")
             .trimStart('.')
@@ -317,6 +361,179 @@ object CustomModels {
      *   other's problem.
      * @return the spec that was created.
      */
+    /**
+     * ⭐⭐⭐ **Import a DiT checkpoint — one plain `.safetensors`, no
+     * conversion.**
+     *
+     * A DiT family loads its weights at run time, so a community fine-tune of
+     * the same architecture just works — proven on device 2026-09-21 with a
+     * CivitAI Z-Image model (`docs/ROADMAP.md` §2b). This is that, with a
+     * button on it.
+     *
+     * ⚠⚠ [family] is given, never inferred. Klein and Z-Image ship
+     * identical filenames and a bare `.safetensors` says nothing about which
+     * it is; the tab the user pressed Import on is the only thing that knows.
+     *
+     * ⚠ The shared parts are copied ONCE into [DIT_SHARED] from the family's
+     * installed built-in, so the second import of a family costs only its own
+     * weights. That is also why the built-in has to be installed first: there
+     * is nowhere else for them to come from.
+     */
+    fun importDit(
+        context: Context,
+        name: String,
+        family: Family,
+        open: () -> InputStream,
+        onProgress: (ModelInstaller.Progress) -> Unit = {},
+        isCancelled: () -> Boolean = { false },
+    ): ModelSpec {
+        require(isValidName(name)) { "\"$name\" is not a usable directory name" }
+        require(!isReserved(name)) { "\"$name\" is the id of a built-in model; pick another name" }
+        val mark = when (family) {
+            Family.ZIMAGE -> ZIMAGE_MARK
+            Family.FLUX2 -> FLUX2_MARK
+            else -> throw IllegalArgumentException("$family does not import a plain .safetensors")
+        }
+
+        // ⚠⚠⚠ **Checked BEFORE the gigabytes.** Copying 6 GB and failing at
+        // Run leaves a dead 8.8 GB directory and minutes of a person's time
+        // spent to learn something the first kilobyte could have said.
+        onProgress(ModelInstaller.Progress("checking the file", 0, 0))
+        checkSafetensors(open)
+
+        // ⚠⚠ The shared parts first: if they cannot be produced there is no
+        // point copying the weights at all.
+        onProgress(ModelInstaller.Progress("preparing the shared parts", 0, 0))
+        shareDitParts(context, family)
+
+        val dir = File(ModelCatalog.root(context), name)
+        // ⚠ A retry after a failure starts clean, exactly as [import] does.
+        dir.deleteRecursively()
+        dir.mkdirs()
+        try {
+            val dest = File(dir, ModelSpec.DIT_WEIGHTS)
+            open().use { input ->
+                dest.outputStream().buffered(BUFFER).use { outS ->
+                    val buf = ByteArray(BUFFER)
+                    var done = 0L
+                    while (true) {
+                        if (isCancelled()) throw ModelInstaller.Cancelled()
+                        val n = input.read(buf)
+                        if (n <= 0) break
+                        outS.write(buf, 0, n)
+                        done += n
+                        onProgress(ModelInstaller.Progress("importing", done, 0))
+                    }
+                }
+            }
+            if (dest.length() <= 0L) throw java.io.IOException("the picked file was empty")
+            File(dir, mark).writeBytes(ByteArray(0))
+            // ⭐ The weights are the user's, so their SIZE is not ours to check
+            // ([ModelSpec.BRING_YOUR_OWN]).
+            File(dir, ModelSpec.BRING_YOUR_OWN).writeBytes(ByteArray(0))
+        } catch (t: Throwable) {
+            dir.deleteRecursively()
+            throw t
+        }
+        specFor(dir) ?: throw java.io.IOException(
+            "imported, but the directory is not a model this app recognises"
+        )
+        // ⚠⚠⚠ **The catalogue has to be re-scanned HERE**, exactly as
+        // [import] does it. A [ModelSpec] is not a model until `scan` has put
+        // it in [registered]: `ModelCatalog.byId` reads that list and
+        // `SelectedModel.set` requires a hit — so returning a freshly built
+        // spec without scanning made the very next `selectModel` throw
+        // "unknown model", and the import reported itself as FAILED after
+        // copying 6 GB perfectly well.
+        scan(context)
+        // ⚠ Re-read from the scan so the returned spec is the one the
+        // catalogue now holds, rather than an equal-looking copy.
+        val installed = registered.firstOrNull { it.id == name }
+            ?: throw java.io.IOException("imported, but the catalogue did not pick it up")
+        Log.i(TAG, "imported '$name' as ${installed.family} (${installed.bytesOnDisk(context)} bytes)")
+        return installed
+    }
+
+    /**
+     * ⚠⚠ Copies the family's text encoder, VAE and tokenizer into
+     * [DIT_SHARED] if they are not already there. ~2.6 GB, ONCE per family.
+     *
+     * ⚠ Copied rather than moved: the built-in package must stay complete,
+     * or the app would call the model it came from "not installed".
+     */
+    private fun shareDitParts(context: Context, family: Family) {
+        val from = ModelCatalog.builtIn.firstOrNull {
+            it.family == family && it.installed(context)
+        } ?: throw java.io.IOException(
+            "install ${family.label} first — an imported checkpoint uses its text " +
+                "encoder, VAE and tokenizer, and there is nowhere else to get them"
+        )
+        val src = from.dir(context)
+        val shared = File(ModelCatalog.root(context), DIT_SHARED).apply { mkdirs() }
+        for (f in ModelCatalog.DIT_REQUIRED) {
+            if (f == ModelSpec.DIT_WEIGHTS) continue
+            val target = File(shared, f)
+            val origin = File(src, f)
+            if (target.length() == origin.length() && origin.length() > 0) continue
+            origin.copyTo(target, overwrite = true)
+        }
+    }
+
+    /**
+     * ⭐⭐ A structural check of a safetensors file, from its first bytes.
+     *
+     * The format is an 8-byte little-endian header length, that many bytes of
+     * JSON naming every tensor, then the data. ⇒ Reading a few hundred KB
+     * says whether this is a safetensors at all, and whether it is obviously
+     * the WRONG kind.
+     *
+     * ⚠⚠ It does not verify the architecture, and is not pretending to.
+     * The engine does that properly — it reads the layer count, hidden size and
+     * channels out of the file and refuses a mismatch (`docs/ROADMAP.md` §2b).
+     * This only catches the cheap mistakes early: a zip, a truncated download,
+     * or an SD/SDXL checkpoint picked by hand.
+     */
+    private fun checkSafetensors(open: () -> InputStream) {
+        val head = ByteArray(8)
+        val json: String
+        open().use { input ->
+            if (input.readNBytes(head, 0, 8) != 8) {
+                throw java.io.IOException("this file is too small to be a checkpoint")
+            }
+            var len = 0L
+            for (i in 7 downTo 0) len = (len shl 8) or (head[i].toLong() and 0xFF)
+            // ⚠ A safetensors header is tens of KB to a few MB. A wild number
+            // here means the file is not one — a zip reads as ~1.2 quintillion.
+            if (len !in 2..(64L * 1024 * 1024)) {
+                throw java.io.IOException(
+                    "this is not a .safetensors file (its header claims $len bytes)"
+                )
+            }
+            val body = ByteArray(minOf(len, 512L * 1024).toInt())
+            input.readNBytes(body, 0, body.size)
+            json = String(body, Charsets.UTF_8)
+        }
+        if (!json.trimStart().startsWith("{")) {
+            throw java.io.IOException("this is not a .safetensors file (no tensor table)")
+        }
+        // ⚠⚠ Named signatures of the families that do NOT import this way.
+        // Picking an SD or SDXL checkpoint here is the likely mistake, and
+        // those need the conversion pipeline, not a copy.
+        val wrong = mapOf(
+            "model.diffusion_model.input_blocks" to "an SD 1.5 or SDXL checkpoint",
+            "conditioner.embedders" to "an SDXL checkpoint",
+            "cond_stage_model.transformer" to "an SD 1.5 checkpoint",
+        )
+        for ((key, what) in wrong) {
+            if (json.contains(key)) {
+                throw java.io.IOException(
+                    "that looks like $what. Those need converting for the NPU and " +
+                        "import as a .zip on their own tab, not here"
+                )
+            }
+        }
+    }
+
     fun import(
         context: Context,
         name: String,

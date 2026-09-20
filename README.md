@@ -92,6 +92,11 @@ chip can load.
 square up to 1024, portrait and landscape. SDXL and Anima crop their fixed canvas to the shape
 you choose. The DiT models render the size you ask for directly.
 
+**A DiT fine-tune imports as-is.** FLUX.2 and Z-Image build their graph at load time from
+plain weights, so a Z-Image checkpoint from CivitAI is picked from storage and runs — no
+conversion, no PC. The text encoder, VAE and tokenizer are shared with the model you already
+installed, so an import costs only the weights.
+
 **Embeddings.** Import a textual inversion `.safetensors` and name it in a prompt.
 
 **English, Chinese and Russian.** The interface follows your phone's language. Adding another

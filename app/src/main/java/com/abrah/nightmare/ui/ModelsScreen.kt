@@ -191,6 +191,11 @@ fun ModelsScreen(
      */
     onImport: ((name: String) -> Unit)? = null,
     /**
+     * ⭐ Import a plain `.safetensors` for a DiT family — the family comes
+     * from the TAB, because the file cannot say ([CustomModels.importDit]).
+     */
+    onImportDit: ((name: String, family: Family) -> Unit)? = null,
+    /**
      * ⭐ The name of an import in flight, or null. Drawn as a banner ABOVE the
      * family tabs — an imported model has no row to hang progress on until the
      * scan finds it, which is exactly why nothing was visible before.
@@ -530,7 +535,18 @@ fun ModelsScreen(
                 // ⚠ On every family tab, because the family is INFERRED from the
                 // archive rather than chosen — a zip picked on the SD 1.5 tab
                 // that turns out to be SDXL lands correctly on the other one.
-                if (onImport != null) {
+                // ⭐⭐⭐ **The same card, and on a DiT tab a different FILE.**
+                //
+                // ⚠⚠ The note above stops holding for FLUX.2 and Z-Image. A DiT
+                // package is not a zip and carries no marker, so nothing about a
+                // bare `.safetensors` says which family it is — the tab has to
+                // supply it. ⇒ One button per tab either way, never two, and
+                // the same [ImportCallout] and naming dialog everywhere.
+                if (family.dit) {
+                    if (onImportDit != null) {
+                        item { ImportCard(busy, onImport = { onImportDit(it, family) }, dit = true) }
+                    }
+                } else if (onImport != null) {
                     item { ImportCard(busy, onImport) }
                 }
                 item {
@@ -664,7 +680,12 @@ fun ModelsScreen(
  * entirely, and it cannot be renamed later without rewriting saved graphs.
  */
 @Composable
-private fun ImportCard(busy: Boolean, onImport: (String) -> Unit) {
+private fun ImportCard(
+    busy: Boolean,
+    onImport: (String) -> Unit,
+    /** ⚠ A DiT family takes one `.safetensors`; everything else takes a zip. */
+    dit: Boolean = false,
+) {
     var naming by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
 
@@ -672,12 +693,23 @@ private fun ImportCard(busy: Boolean, onImport: (String) -> Unit) {
     // follows. The three importers in the app share one card shape.
     ImportCallout(
         title = "Import a checkpoint",
-        body =
+        body = if (dit) {
+            // ⭐⭐⭐ The exception to the sentence below, and it is worth being
+            // plain about: a DiT family has no context binary. The engine reads
+            // plain weights at run time, so a community fine-tune needs nothing
+            // done to it (`docs/ROADMAP.md` §2b, measured on device).
+            // ⚠ Says the prerequisite, because "install the built-in first" is
+            // not guessable: the import borrows its text encoder and VAE.
+            "One .safetensors — a checkpoint from CivitAI or Hugging Face, used as it is. " +
+                "No conversion. It shares this family's text encoder and VAE, so download " +
+                "the built-in model first."
+        } else {
             // ⚠ Says what the app CANNOT do, because the alternative is a user
             // picking a `.safetensors` and reading "not a checkpoint" without
             // knowing why. Conversion is a PC step and there is no runtime
-            // compiler on the NPU.
-            "A zip of QNN model files, converted on a PC. SD 1.5, SDXL or Anima — it works out which.",
+            // compiler on the NPU — for these families.
+            "A zip of QNN model files, converted on a PC. SD 1.5, SDXL or Anima — it works out which."
+        },
         enabled = !busy,
         onImport = { name = ""; naming = true },
     )

@@ -501,6 +501,12 @@ class CustomModelsTest {
 
     @Test fun aDerivedNameIsMadeSafe() {
         assertEquals("my_model_v2", CustomModels.nameFromFile("my model:v2.ZIP", emptySet()))
+        // ⭐ The DiT import picks a bare `.safetensors`, and the suffix reached
+        // the directory name and the card's label before this was handled.
+        assertEquals(
+            "intorealism_zitV90_(1)",
+            CustomModels.nameFromFile("intorealism_zitV90_(1).safetensors", emptySet()),
+        )
         assertTrue(CustomModels.isValidName(CustomModels.nameFromFile("..hidden.zip", emptySet())))
     }
 

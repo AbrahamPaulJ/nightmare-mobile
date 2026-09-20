@@ -1115,6 +1115,53 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * ⭐⭐ Import a plain `.safetensors` as a model of [family].
+     *
+     * ⚠ The same shape as [importModel] on purpose — one install at a time,
+     * progress through [tickProgress], the error left on screen rather than
+     * toasted away. The only difference is which [CustomModels] entry point
+     * it calls and that the family is told rather than inferred.
+     */
+    fun importDitModel(uri: android.net.Uri, name: String, family: Family) {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        installing = name
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("importing", 0, 0)
+        refreshModels()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val spec = CustomModels.importDit(
+                    ctx, name, family,
+                    open = {
+                        ctx.contentResolver.openInputStream(uri)
+                            ?: throw java.io.IOException("cannot read the picked file")
+                    },
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                val missing = spec.missing(ctx)
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    installing = null
+                    installProgress = null
+                    if (missing.isEmpty()) selectModel(spec)
+                    else modelError = "${spec.label} imported but is incomplete: " +
+                        "missing ${missing.joinToString()}"
+                    refreshModels()
+                }
+            } catch (e: Exception) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    installing = null
+                    installProgress = null
+                    modelError = "import failed: ${e.message}"
+                    refreshModels()
+                }
+            }
+        }
+    }
+
     fun installModel(spec: ModelSpec) {
         if (installing != null) return
         val ctx = getApplication<Application>()

@@ -292,6 +292,23 @@ fun HarnessScreen(
                         vm.importModel(uri, importName.ifEmpty { vm.importNameFor(uri) })
                     }
                 }
+                // ⭐⭐ The DiT import: one `.safetensors`, family from the tab.
+                // ⚠ Its own name and family are captured before the picker opens,
+                // for the reason the zip picker captures `importName`: the
+                // callback cannot see which tab was pressed by the time it runs.
+                var ditName by remember { mutableStateOf("") }
+                var ditFamily by remember { mutableStateOf(Family.ZIMAGE) }
+                val ditPicker = rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        vm.importDitModel(
+                            uri,
+                            ditName.ifEmpty { vm.importNameFor(uri) },
+                            ditFamily,
+                        )
+                    }
+                }
                 // ⚠ `.safetensors` has no registered MIME type, so providers
                 // hand it back as `application/octet-stream` at best — same
                 // reasoning as the zip picker above.
@@ -322,6 +339,11 @@ fun HarnessScreen(
                     onUseVideo = vm::askUseVideo,
                     importing = vm.importing,
                     importProgress = vm.importProgress,
+                    onImportDit = { name, family ->
+                        ditName = name
+                        ditFamily = family
+                        ditPicker.launch(arrayOf("application/octet-stream", "*/*"))
+                    },
                     onImport = { name ->
                         importName = name
                         // ⚠ Two MIME types. A zip arrives as
