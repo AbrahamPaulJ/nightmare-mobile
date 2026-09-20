@@ -37,7 +37,9 @@ object DeviceProbe {
      * at the cause. An SoC that is absent here is safe: [runtimeLibs] then
      * unpacks *every* arch and lets QNN choose. A wrong entry is not safe.
      */
-    private val SOC_TO_ARCH = mapOf(
+    // ⚠ `internal`, not private: `UnknownChipGateTest` asserts that a chip the
+    // table knows still comes from the TABLE rather than the part-number parse.
+    internal val SOC_TO_ARCH = mapOf(
         "SM8350" to 68,                     // 888 / 888+
         "SM8450" to 69, "SM8475" to 69,     // 8 Gen 1 / 8+ Gen 1
         "SM8550" to 73, "SM8550P" to 73,    // 8 Gen 2
@@ -115,12 +117,61 @@ object DeviceProbe {
         measured?.let { return it }
         val soc = soc()
         return Caps(
-            arch = SOC_TO_ARCH[soc] ?: FLOOR_ARCH,
-            vtcmMb = if (soc in SOC_HAS_8MB_VTCM) 8 else FLOOR_VTCM_MB,
+            arch = SOC_TO_ARCH[soc] ?: archFromPartNumber(soc) ?: FLOOR_ARCH,
+            vtcmMb = when {
+                soc in SOC_HAS_8MB_VTCM -> 8
+                // ⚠ A chip NEWER than every 8 MB part we know is far likelier
+                // to have 8 MB than 2: every flagship since the 8 Gen 1 has.
+                // ⚠⚠ Still only a guess, and `runsOn` may hand out a download
+                // the HTP refuses — which is why [needsMeasuring] asks for the
+                // real numbers rather than leaving this standing.
+                archFromPartNumber(soc) != null -> 8
+                else -> FLOOR_VTCM_MB
+            },
             measured = false,
             soc = soc,
         )
     }
+
+    /**
+     * ⭐⭐⭐ An arch for a chip no table knows, read out of its PART NUMBER.
+     *
+     * ⚠⚠ The tables are an allowlist, and an allowlist is wrong by default
+     * the day a new chip ships. Reported 2026-09-20 by a Snapdragon 8 Gen 5
+     * owner: every SDXL, Anima and FLUX row read "this device cannot run it",
+     * because their `Build.SOC_MODEL` is not one of the strings above and the
+     * floor below is v68 with 2 MB — a guess, presented as a fact about their
+     * hardware.
+     *
+     * ⭐ The shape is upstream's own (`DitEngine.isSupportedDevice`, local-dream):
+     * take the digits out of `SM8850P` and compare the NUMBER. It needs no
+     * maintenance when a chip ships, which is the same reasoning the video
+     * gate uses a real canary binary rather than a SoC allowlist
+     * (`docs/NEODRAGON.md` §4).
+     *
+     * ⚠ Only ever used UPWARD, for a part number at or above the newest one
+     * we know. An unknown chip BELOW that is genuinely unknown — Qualcomm's
+     * numbering is only roughly chronological (SM8635 is an "8s Gen 3" with
+     * less than 8 MB of VTCM) — so those keep the floor.
+     */
+    internal fun archFromPartNumber(soc: String): Int? {
+        if (!soc.startsWith("SM")) return null
+        val n = soc.dropWhile { !it.isDigit() }.takeWhile { it.isDigit() }.toIntOrNull()
+            ?: return null
+        val newestKnown = SOC_TO_ARCH.keys.mapNotNull { partNumberOf(it) }.maxOrNull() ?: return null
+        if (n < newestKnown) return null
+        return SOC_TO_ARCH.values.maxOrNull()
+    }
+
+    private fun partNumberOf(soc: String): Int? =
+        soc.dropWhile { !it.isDigit() }.takeWhile { it.isDigit() }.toIntOrNull()
+
+    /**
+     * ⭐⭐ True when the guess above is doing real work and should be replaced
+     * by a measurement. An unknown chip is exactly the case where assuming is
+     * worst, and `--device_info` reads the arch and VTCM off the hardware.
+     */
+    fun needsMeasuring(): Boolean = measured == null && soc() !in SOC_TO_ARCH
 
     /** v68 / 2 MB — what `_min` is built for, and the safe answer for an unknown chip. */
     const val FLOOR_ARCH = 68

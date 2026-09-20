@@ -8,7 +8,7 @@
  #include <chrono>
  #include <string>
  #include <vector>
-@@ -188,10 +189,34 @@
+@@ -188,13 +189,46 @@
        params.reference_heights = reference_heights.data();
        params.reference_image_count = static_cast<int>(reference_ptrs.size());
      }
@@ -43,11 +43,23 @@
 +    }
 +    const long budget =
 +        vae_passes > 1 ? kTileAbovePixelsMultiPass : kTileAbovePixels;
-+    if (vae_tile_size_ > 0 && widest > budget) {
++    const bool tiled = vae_tile_size_ > 0 && widest > budget;
++    if (tiled) {
        params.vae_tile_size = vae_tile_size_;
        params.vae_tile_overlap = 0.25f;
      }
-@@ -234,9 +259,9 @@
++    // ⚠⚠ Says the decision out loud. The buffer sizes in the log are the
++    // only other evidence of it, and reading "1536 MB" tells you nothing about
++    // WHY — whether the test was not met, the knob was zero, or the engine
++    // ignored it. One line here settles which, and this file has already cost
++    // a day to theories that a log line would have ended.
++    QNN_INFO("[dit] vae: passes=%zu widest=%ldpx budget=%ldpx tile_size=%d -> %s",
++             vae_passes, widest, budget, vae_tile_size_,
++             tiled ? "TILED" : "full-frame");
+ 
+     // One slot per VAE encode before sampling: every reference, plus the
+     // init latent for img2img/inpaint.
+@@ -234,9 +268,9 @@
          throw std::runtime_error("DiT inpaint output size mismatch");
        blendInpaintResult(result.image_data, req);
      }
@@ -60,7 +72,7 @@
      result.width = out_width;
      result.height = out_height;
      result.channels = 3;
-@@ -274,6 +299,10 @@
+@@ -274,6 +308,10 @@
    static constexpr float kDistilledGuidance = 3.5f;
    // 1536x1536 still decodes whole on the devices this runs on; 2048 does not.
    static constexpr long kTileAbovePixels = 1536L * 1536L;

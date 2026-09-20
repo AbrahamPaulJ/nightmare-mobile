@@ -756,6 +756,30 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (on) {
             libraryTab = com.abrah.nightmare.ui.LibraryTab.MODELS
             refreshModels()
+            // ⭐⭐⭐ An UNKNOWN chip is measured here, not left as a guess.
+            //
+            // ⚠⚠ This screen is where the guess does its damage: every SDXL,
+            // Anima and FLUX row reads "this device cannot run it", which is a
+            // statement about the user's hardware that we do not actually
+            // know. Reported by a Snapdragon 8 Gen 5 owner on 2026-09-20,
+            // whose chip is not in `SOC_TO_ARCH` and so took the v68 / 2 MB
+            // floor.
+            //
+            // ⚠ The measurement used to happen ONLY when the Device sheet was
+            // opened — the one action nobody would think to take when the
+            // models say they are unsupported. The cost note on
+            // [setDeviceInfoVisible] still holds (it unpacks the QNN
+            // libraries), which is why this is not at app start and not for a
+            // chip the tables already know.
+            if (DeviceProbe.needsMeasuring()) {
+                viewModelScope.launch {
+                    DeviceProbe.measure(getApplication())
+                    // ⚠ The rows are computed from the caps, so a measurement
+                    // that arrived without this would leave the picker showing
+                    // the guess it was taken to replace.
+                    refreshModels()
+                }
+            }
         }
     }
 
