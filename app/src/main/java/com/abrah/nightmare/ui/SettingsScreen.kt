@@ -90,6 +90,14 @@ fun SettingsScreen(
      * [Prefs.setDownloadBase] so it survives a restart; this screen only
      * reads [Prefs.downloadBase] back.
      */
+    /**
+     * ⚠⚠ A PARAMETER, never `Prefs.downloadBase` read here. That field is a
+     * plain `var`, so a screen reading it directly never recomposes when it
+     * changes — which is how the radios shipped 2026-09-20 looking dead
+     * while the preference underneath them was working
+     * ([HarnessViewModel.downloadBase]).
+     */
+    downloadBase: String = Prefs.HF_ORIGIN,
     onDownloadBase: (String) -> Unit = {},
     /**
      * ⭐ Deletes what [TempCleaner] listed. ⚠ The SCAN happens here (it
@@ -266,7 +274,7 @@ fun SettingsScreen(
                 )
                 // ⚠ Radios, not chips: the custom row owns a text field, which
                 // no chip can hold. Same three-way shape as the theme above.
-                val base = Prefs.downloadBase
+                val base = downloadBase
                 val isOrigin = base == Prefs.HF_ORIGIN
                 val isMirror = base == Prefs.HF_MIRROR
                 var custom by remember(base) {

@@ -12,8 +12,10 @@ video, all on the phone. No server, no account, no cloud, no network.
 
 **[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)**
 
-Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU. Models are not in the APK:
-pick one in the app and it downloads on first use.
+Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU — SD 1.5 needs an 888 or
+newer, SDXL and Anima an 8 Gen 3, and FLUX.2, Z-Image and video an 8 Elite. Models are not in
+the APK: pick one in the app and it downloads on first use, and the app says which ones your
+chip can run.
 
 **Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile Stable
 Diffusion, local image generation, on device video generation, node editor, Qualcomm Hexagon

@@ -480,9 +480,42 @@ data class ModelSpec(
         // download leaves a real file of the right name and the wrong size.
         // Existence alone would call a half-fetched 4 GB DiT installed.
         if (files.isNotEmpty()) {
-            return files.filter { File(d, it.name).length() != it.bytes }.map { it.name }
+            // ⭐⭐⭐ **…unless the user brought their own DiT weights.**
+            //
+            // ⭐⭐ A DiT family loads a plain `.safetensors` at run time — there
+            // is no context binary and no conversion (`docs/ROADMAP.md` §2b) — so
+            // swapping [DIT_WEIGHTS] for a community fine-tune of the same
+            // architecture is a supportable thing to do. The exact-size check
+            // above is what stops it: any other file reads as "not installed"
+            // forever and the Run is refused before the engine sees it.
+            //
+            // ⚠⚠ The marker is the whole mechanism, and it is deliberately
+            // NOT "skip the check when the size differs". That would quietly
+            // accept a half-downloaded 6 GB file, which is the exact failure the
+            // check exists for. A marker is written on purpose, by an import or
+            // by hand, and says *this one file is mine now*.
+            //
+            // ⚠ The other three files keep their exact sizes: the text encoder,
+            // VAE and tokenizer are OURS, shared by every model of the family,
+            // and nobody has a reason to replace one.
+            val byo = File(d, BRING_YOUR_OWN).exists()
+            return files.filter {
+                val len = File(d, it.name).length()
+                if (byo && it.name == DIT_WEIGHTS) len <= 0L else len != it.bytes
+            }.map { it.name }
         }
         return requiredFiles.filter { !File(d, it).exists() }
+    }
+
+    companion object {
+        /** The DiT weights inside a DiT package — the one file a user may replace. */
+        const val DIT_WEIGHTS = "dit.safetensors"
+
+        /**
+         * ⭐ Present in a model directory: [DIT_WEIGHTS] here is the user's, so
+         * its size is not ours to check. Empty; only its existence means anything.
+         */
+        const val BRING_YOUR_OWN = "custom-dit"
     }
 
     /**

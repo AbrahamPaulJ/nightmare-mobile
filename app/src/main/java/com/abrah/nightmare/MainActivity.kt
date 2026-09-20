@@ -696,6 +696,7 @@ fun HarnessScreen(
             settingsEmbeddingPicker.launch(arrayOf("application/octet-stream", "*/*"))
         },
         onDeleteEmbedding = vm::deleteEmbedding,
+        downloadBase = vm.downloadBase,
         onDownloadBase = vm::chooseDownloadBase,
         onCleanTemp = vm::cleanTempFiles,
         // ⚠ So the cleaner leaves a live download's scratch alone.

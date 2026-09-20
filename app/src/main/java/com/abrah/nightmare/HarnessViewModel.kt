@@ -107,6 +107,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * `Prefs` owns the disk and this owns the frame.
      */
     var theme by mutableStateOf(Prefs.theme)
+
+    /**
+     * ⭐⭐ Where model files are fetched from — **an observable copy of
+     * [Prefs.downloadBase]**, for the same reason [theme] is one.
+     *
+     * ⚠⚠⚠ Reported from the phone 2026-09-21: the hf-mirror and Custom
+     * radios "isnt working". They were, in the sense that the preference was
+     * written and every download honoured it — `Prefs.apply()` reads the same
+     * field. What did not work was the SCREEN: it read `Prefs.downloadBase`
+     * directly, and that is a plain `var`, so nothing recomposed, the
+     * selection never moved, and the custom field's `remember` key never
+     * changed. Indistinguishable from broken, and worse than broken — it was
+     * silently doing what the UI denied.
+     *
+     * ⇒ The pattern already existed one line up. `theme` is a plain `var` in
+     * [Prefs] too and the screen never touches it: the view model holds the
+     * observable copy and passes it in. I read the singleton instead of
+     * looking at how its neighbour was done.
+     */
+    var downloadBase by mutableStateOf(Prefs.downloadBase)
         private set
 
     /**
@@ -151,7 +171,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun chooseDownloadBase(value: String) {
         Prefs.setDownloadBase(getApplication(), value)
-        say("downloads now come from ${Prefs.downloadBase}")
+        // ⚠ Read BACK from Prefs rather than echoing `value`: it normalises
+        // (trailing slash, blank falling back to Hugging Face), and the screen
+        // must show what was actually stored.
+        downloadBase = Prefs.downloadBase
+        say("downloads now come from $downloadBase")
     }
 
     /**
