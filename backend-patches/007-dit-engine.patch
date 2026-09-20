@@ -1,6 +1,53 @@
 --- ../LocalDream/local-dream/app/src/main/cpp/src/PipelineDit.hpp
 +++ backend-src/src/PipelineDit.hpp
-@@ -234,9 +234,9 @@
+@@ -3,6 +3,7 @@
+ 
+ #include <dlfcn.h>
+ 
++#include <algorithm>
+ #include <chrono>
+ #include <string>
+ #include <vector>
+@@ -188,10 +189,34 @@
+       params.reference_heights = reference_heights.data();
+       params.reference_image_count = static_cast<int>(reference_ptrs.size());
+     }
+-    // Full-frame decode needs latent-sized scratch that grows with the square
+-    // of the resolution; tile once past the point where it stops fitting.
+-    if (vae_tile_size_ > 0 &&
+-        static_cast<long>(req.width) * req.height > kTileAbovePixels) {
++    // Full-frame VAE scratch grows with pixel AREA; tile once past the point
++    // where it stops fitting. Two corrections to the obvious test, both paid
++    // for by an OOM on 2026-09-20 (a 1024x1024 edit with one 1024x1024
++    // reference reaped the app as foreground TOP):
++    //
++    //  - the request may make SEVERAL VAE passes, not one. A reference is
++    //    encoded, the init latent is encoded, and the result is decoded; an
++    //    edit from a base is three passes plus the decode. The old test was
++    //    tuned for a single full-frame decode, so a 1024x1024 edit sat under
++    //    the threshold and took 1536 MB of VRAM and 524 MB of RAM per pass.
++    //    Measured: 288 MB at 512x512, 1536 MB at 1024x1024.
++    //
++    //  - a REFERENCE is encoded at its own size, which the output resolution
++    //    says nothing about. Testing req.width * req.height only meant a
++    //    2048x2048 reference under a 512x512 canvas was never tiled.
++    const long out_pixels = static_cast<long>(req.width) * req.height;
++    // One pass per reference, one for the init latent, one for the decode.
++    const size_t vae_passes = reference_ptrs.size() +
++                              (params.init_image_rgb != nullptr ? 1u : 0u) + 1u;
++    // The largest single image any pass will put through the VAE.
++    long widest = out_pixels;
++    for (size_t i = 0; i < reference_ptrs.size(); ++i) {
++      widest = std::max(
++          widest, static_cast<long>(reference_widths[i]) * reference_heights[i]);
++    }
++    const long budget =
++        vae_passes > 1 ? kTileAbovePixelsMultiPass : kTileAbovePixels;
++    if (vae_tile_size_ > 0 && widest > budget) {
+       params.vae_tile_size = vae_tile_size_;
+       params.vae_tile_overlap = 0.25f;
+     }
+@@ -234,9 +259,9 @@
          throw std::runtime_error("DiT inpaint output size mismatch");
        blendInpaintResult(result.image_data, req);
      }
@@ -13,3 +60,14 @@
      result.width = out_width;
      result.height = out_height;
      result.channels = 3;
+@@ -274,6 +299,10 @@
+   static constexpr float kDistilledGuidance = 3.5f;
+   // 1536x1536 still decodes whole on the devices this runs on; 2048 does not.
+   static constexpr long kTileAbovePixels = 1536L * 1536L;
++  // ⚠ The multi-pass budget, just above 512x512 — that size was reliable all
++  // day at 288 MB a pass, and 1024x1024 at 1536 MB a pass was not. A request
++  // that runs the VAE more than once uses this instead.
++  static constexpr long kTileAbovePixelsMultiPass = 640L * 640L;
+ 
+   struct Callbacks {
+     GenerationRequest *req;
