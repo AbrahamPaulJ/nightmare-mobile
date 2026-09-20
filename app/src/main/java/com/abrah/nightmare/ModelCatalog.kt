@@ -418,6 +418,17 @@ data class ModelSpec(
     /** ⭐ Rendered by the DiT engine through `/generate` — see [Family.dit]. */
     val isDit: Boolean get() = family.dit
 
+    /**
+     * ⭐ A TRUE inpainting checkpoint — a 9-channel UNet whose `conv_in`
+     * takes the mask, not a plain one masked by latent blending.
+     *
+     * ⚠ Read off [backendType] rather than a flag of its own, because that
+     * string is what actually launches the backend (`--type sd15npu_inpaint`);
+     * a separate boolean would be a second place for the same fact to live and
+     * to disagree. `docs/MODELS.md`, `../LocalDream/docs/INPAINT.md`.
+     */
+    val isInpaint: Boolean get() = backendType.contains("inpaint")
+
     /** ⚠ [resolutions] is never empty; the constructor default is one entry. */
     val native: Res get() = resolutions.first()
 
@@ -1035,6 +1046,31 @@ object ModelCatalog {
      * ⚠ Not stable across a [CustomModels.scan] — by design.
      */
     val all: List<ModelSpec> get() = builtIn + CustomModels.registered
+
+    /**
+     * ⭐⭐ The ids that are ON THE PHONE, cached so a caller with no
+     * `Context` can still prefer an installed checkpoint.
+     *
+     * ⚠ [UpscalerCatalog.installedIds]'s shape exactly, for its reason: a
+     * recipe is built from half a dozen call sites that have no context to
+     * hand, and threading one through every builder to answer "is this
+     * downloaded?" would be a lot of plumbing for one question.
+     *
+     * ⚠ Empty until [refreshInstalled] runs, so a caller must degrade to the
+     * full catalogue rather than to "nothing is installed".
+     */
+    @Volatile
+    var installedIds: List<String> = emptyList()
+        // ⚠ `internal`, not `private`: `RecipeModelTest` sets it directly rather
+        // than writing a gigabyte of fixture to disk, since this cache is the
+        // only thing `Workflows.ctxKeyParams` reads. Nothing outside the module
+        // can write it.
+        internal set
+
+    /** ⚠ Call after anything that installs, imports or deletes a checkpoint. */
+    fun refreshInstalled(context: Context) {
+        installedIds = all.filter { it.installed(context) }.map { it.id }
+    }
 
     /**
      * ⭐⭐ The checkpoints WE publish — the catalogue proper.

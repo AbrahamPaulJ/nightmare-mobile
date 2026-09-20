@@ -89,6 +89,10 @@ class MainActivity : ComponentActivity() {
         // dropdown read this cache, and an empty one makes a new node default to
         // an upscaler that may not be installed.
         UpscalerCatalog.refresh(this)
+        // ⭐ Which checkpoints are on the phone, for the RECIPES: they are
+        // built with no `Context` and must still prefer an installed model
+        // over a 1 GB download (`Workflows.ctxKeyParams`).
+        ModelCatalog.refreshInstalled(this)
         com.abrah.nightmare.segment.Segmenter.refresh(this)
         // ⭐ The DiT engine is a download too, since 1.5.502 — and an app
         // update wipes the older, APK-shipped copy out of the native dir.

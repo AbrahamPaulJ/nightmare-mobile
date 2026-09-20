@@ -902,6 +902,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠ The upscalers ride along: this is the app's "re-read the disk"
         // entry point and a second one would be a second thing to forget.
         refreshUpscalers()
+        // ⚠ …and the recipes' view of what is installed, for the same reason.
+        ModelCatalog.refreshInstalled(ctx)
         refreshSegmenter()
         refreshEmbeddings()
         // ⚠ …and the video models, for the same reason. ⚠⚠ `probeVideoSupport`

@@ -1,6 +1,7 @@
 package com.abrah.nightmare.canvas
 
 import com.abrah.nightmare.Graph
+import com.abrah.nightmare.ModelCatalog
 import com.abrah.nightmare.Node
 import com.abrah.nightmare.SelectedModel
 import com.abrah.nightmare.sources
@@ -26,14 +27,60 @@ import com.abrah.nightmare.sources
 private fun samplerType(inpaint: Boolean = false): String =
     com.abrah.nightmare.SdSampler.typeFor(SelectedModel.spec.family, inpaint)
 
-private fun ctxKeyParams(): Map<String, String> {
-    // ⚠ The SELECTED size, not the model's native one. A recipe builds NEW
-    // nodes, and a new node is born at the size the user last chose for this
-    // checkpoint (`SelectedModel.res`) -- opening a recipe at 512 while the
-    // picker said 768x512 would silently retarget their whole graph back.
-    val res = SelectedModel.res
+/**
+ * ⚠⚠⚠ **The model must match the TYPE this recipe is building, not the
+ * selection.** [samplerType] already falls back to SD 1.5 inpaint when the
+ * selected family has no inpaint type (the DiT ones), but this function used
+ * to hand back `SelectedModel.id` regardless — so opening Inpaint with FLUX.2
+ * selected built an `sd15.inpaint` node carrying `flux2_klein_4b`. It rendered
+ * nothing useful, and the picker then (correctly) refused to offer FLUX back,
+ * which is how it was found from the phone on 2026-09-20.
+ *
+ * ⚠⚠ The rule already existed — [com.abrah.nightmare.SdSampler.defaultModel]
+ * has honoured it since the node rework: *the selected checkpoint when it
+ * belongs to this family, that family's entry otherwise.* A dragged-out node
+ * obeyed it and a recipe did not, which is the N−1-of-N failure
+ * `CLAUDE.md` warns about. This is the same rule, with one addition:
+ *
+ * ⭐ **Prefer one that is INSTALLED** ([ModelCatalog.installedIds]). The
+ * user's ask, 2026-09-20: opening Inpaint should land on AbsoluteReality
+ * Inpaint when it is downloaded rather than on the catalogue's first SD 1.5
+ * entry, which may be a 1 GB download away. ⚠ A true inpaint checkpoint wins
+ * over a plain one of the same family, since the node is an inpaint node.
+ */
+private fun ctxKeyParams(inpaint: Boolean = false): Map<String, String> {
+    val type = samplerType(inpaint)
+    val sampler = com.abrah.nightmare.SdSampler.ALL.firstOrNull { it.name == type }
+    val family = sampler?.family ?: SelectedModel.spec.family
+
+    // ⚠ The SELECTED size, not the model's native one, WHEN the family
+    // matches. A recipe builds NEW nodes, and a new node is born at the size
+    // the user last chose for this checkpoint (`SelectedModel.res`) -- opening
+    // a recipe at 512 while the picker said 768x512 would silently retarget
+    // their whole graph back. ⚠⚠ When the family does NOT match, that size
+    // belongs to another family entirely (a DiT 1024 on an SD 1.5 node), so
+    // the chosen model's own native size is the only sane answer.
+    if (SelectedModel.spec.family == family) {
+        val res = SelectedModel.res
+        return mapOf(
+            "model" to SelectedModel.id,
+            "width" to res.width.toString(),
+            "height" to res.height.toString(),
+        )
+    }
+
+    val ofFamily = ModelCatalog.all.filter { it.family == family }
+    val installed = ofFamily.filter { it.id in ModelCatalog.installedIds }
+    // ⚠ `installed` is empty before `refreshInstalled` has run, and also when
+    // the user genuinely has none of this family; both degrade to the
+    // catalogue order rather than to no model at all.
+    val pool = installed.ifEmpty { ofFamily }
+    val pick = (if (inpaint) pool.firstOrNull { it.isInpaint } else null)
+        ?: pool.firstOrNull()
+        ?: return mapOf("model" to SelectedModel.id)
+    val res = pick.native
     return mapOf(
-        "model" to SelectedModel.id,
+        "model" to pick.id,
         "width" to res.width.toString(),
         "height" to res.height.toString(),
     )
@@ -373,7 +420,7 @@ fun inpaintWorkflow(): Workflow = Workflow(
             // fits whatever it is given.
             Node(
                 "inpaint", samplerType(inpaint = true),
-                params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to "0.65"),
+                params = ctxKeyParams(inpaint = true) + mapOf("seed" to "0", "denoise" to "0.65"),
                 inputs = sources("prompt" to "prompt", "image" to "photo", "segmenter" to "segment_model"),
             ),
             Node("output", "core.output", inputs = sources("media" to "inpaint")),
