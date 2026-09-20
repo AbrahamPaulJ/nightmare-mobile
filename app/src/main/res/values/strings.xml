@@ -137,4 +137,19 @@
     <string name="segmenter_about">Tap an object in an Inpaint mask to select it. Wire a Segment model node into Inpaint.</string>
     <string name="embeddings_title">Embeddings</string>
     <string name="embeddings_body">A trained concept as a file, not a checkpoint — a .safetensors from Civitai or similar. Name it in a prompt to use it.</string>
+    <!-- Download source (mirror). Added 2026-09-20: huggingface.co is
+         unreachable from mainland China, as upstream local-dream long knew. -->
+    <string name="download_source">Download source</string>
+    <string name="download_source_note">Where model files are fetched from. Change this if Hugging Face is slow or blocked where you are — it applies to every checkpoint, the upscalers, the segmenter and the video models.</string>
+    <string name="source_huggingface">Hugging Face</string>
+    <string name="source_mirror">hf-mirror.com</string>
+    <string name="source_custom">Custom</string>
+    <string name="source_custom_hint">Base address</string>
+    <!-- Clean temp files, ported from upstream. -->
+    <string name="clean_temp_title">Clean temp files</string>
+    <string name="clean_temp_body">Part-finished downloads and scratch files. Your models, pictures, flows and embeddings are never touched.</string>
+    <string name="clean_temp_action">Look for temp files</string>
+    <string name="clean_temp_none">Nothing to clean.</string>
+    <string name="clean_temp_confirm">Delete %1$d MB of temp files?</string>
+    <string name="clean_temp_confirm_body">An unfinished download starts again from the beginning rather than resuming. Models, pictures, saved flows and embeddings are not touched.</string>
 </resources>

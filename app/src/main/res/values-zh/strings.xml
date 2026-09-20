@@ -104,4 +104,16 @@
     <string name="tools">工具</string>
     <string name="tools_note">在手机 CPU 上运行的小助手。接入流程即可使用。</string>
     <string name="segmenter_about">在 Inpaint 蒙版中点按物体即可选中。将 Segment model 节点接入 Inpaint。</string>
+    <string name="download_source">下载源</string>
+    <string name="download_source_note">从哪里下载模型文件。如果 Hugging Face 在你所在的地区很慢或无法访问，请修改此项 — 它对所有模型、超分模型、分割模型和视频模型都生效。</string>
+    <string name="source_huggingface">Hugging Face</string>
+    <string name="source_mirror">hf-mirror.com（国内镜像）</string>
+    <string name="source_custom">自定义</string>
+    <string name="source_custom_hint">基础地址</string>
+    <string name="clean_temp_title">清理临时文件</string>
+    <string name="clean_temp_body">未完成的下载和临时文件。不会动你的模型、图片、工作流和嵌入。</string>
+    <string name="clean_temp_action">查找临时文件</string>
+    <string name="clean_temp_none">没有需要清理的文件。</string>
+    <string name="clean_temp_confirm">删除 %1$d MB 临时文件？</string>
+    <string name="clean_temp_confirm_body">未完成的下载将从头开始，而不是继续。模型、图片、已保存的工作流和嵌入不会受影响。</string>
 </resources>

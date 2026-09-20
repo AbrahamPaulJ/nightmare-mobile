@@ -4,6 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.abrah.nightmare.canvas.defaultWorkflow
 import com.abrah.nightmare.canvas.img2imgWorkflow
 import com.abrah.nightmare.canvas.inpaintWorkflow
+import com.abrah.nightmare.canvas.runsOn
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -172,5 +173,68 @@ class RecipeModelTest {
         } finally {
             ModelCatalog.installedIds = emptyList()
         }
+    }
+
+    /**
+     * ⭐⭐⭐ **The Use dialog may only offer a flow the model can RUN.**
+     *
+     * ⚠⚠ Reported from the phone 2026-09-20: *"z-image shouldnt have
+     * inpaint"*. The dialog filtered on `usesCheckpoint`, which asks whether a
+     * flow needs A checkpoint and never whether it can use THIS one — so Use
+     * on Z-Image offered Inpaint, and Z-Image has no inpaint type.
+     *
+     * ⚠ Over the whole catalogue, not the two families that had the bug: the
+     * next family added is covered the day it appears. The oracle is
+     * [SdSampler.canInpaint], which is also what the checkpoint picker asks —
+     * one rule, two surfaces.
+     */
+    @Test
+    fun useOffersOnlyFlowsTheModelCanRun() {
+        var sawInpaintCapable = false
+        var sawInpaintIncapable = false
+        for (spec in ModelCatalog.builtIn) {
+            SelectedModel.set(ctx, spec.id)
+            val offered = com.abrah.nightmare.canvas.RECIPES.filter { it.runsOn(spec) }
+            // A flow that needs no checkpoint is never offered for one.
+            for (r in offered) {
+                assertTrue(
+                    "${spec.id} was offered ${r.id}, which does not run on a checkpoint",
+                    r.usesCheckpoint,
+                )
+            }
+            val masked = offered.filter { r ->
+                r.build().graph.nodes.any { (NODE_TYPES[it.type] as? SdSampler)?.inpaint == true }
+            }
+            if (SdSampler.canInpaint(spec.family)) {
+                sawInpaintCapable = true
+                assertTrue(
+                    "${spec.id} can inpaint but was offered no inpainting flow",
+                    masked.isNotEmpty(),
+                )
+            } else {
+                sawInpaintIncapable = true
+                assertEquals(
+                    "${spec.id} cannot inpaint but Use offered ${masked.map { it.id }}",
+                    emptyList<String>(),
+                    masked.map { it.id },
+                )
+            }
+        }
+        // ⚠⚠ Both halves must actually have been exercised, or a catalogue
+        // that lost every DiT model would make this test pass by vacuum.
+        assertTrue("no inpaint-capable family in the catalogue", sawInpaintCapable)
+        assertTrue("no inpaint-incapable family in the catalogue", sawInpaintIncapable)
+    }
+
+    /**
+     * ⚠ Z-Image and FLUX.2 by NAME, because they are the two the report was
+     * about and a rule can be right in general while the catalogue quietly
+     * stops containing the case that mattered.
+     */
+    @Test
+    fun theDitFamiliesCannotInpaint() {
+        assertTrue("Z-Image gained an inpaint type", !SdSampler.canInpaint(Family.ZIMAGE))
+        assertTrue("FLUX.2 gained an inpaint type", !SdSampler.canInpaint(Family.FLUX2))
+        assertTrue("SD 1.5 lost its inpaint type", SdSampler.canInpaint(Family.SD15))
     }
 }

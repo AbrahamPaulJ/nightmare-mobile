@@ -175,8 +175,12 @@ fun ModelsScreen(
      */
     pendingUse: com.abrah.nightmare.HarnessViewModel.PendingUse? = null,
     recipes: List<com.abrah.nightmare.canvas.Recipe> = emptyList(),
-    onConfirmUse: (ModelSpec, com.abrah.nightmare.canvas.Recipe?) -> Unit = { _, _ -> },
+    onConfirmUse: (ModelSpec?, com.abrah.nightmare.canvas.Recipe?) -> Unit = { _, _ -> },
     onCancelUse: () -> Unit = {},
+    /** ⭐ Use on an upscaler row — opens the Upscale flow. */
+    onUseUpscaler: (UpscalerSpec) -> Unit = {},
+    /** ⭐ Use on the video row — offers the two video flows. */
+    onUseVideo: () -> Unit = {},
     modifier: Modifier = Modifier,
     /**
      * ⭐ Import a checkpoint the user already has, as a zip.
@@ -249,7 +253,7 @@ fun ModelsScreen(
         // each; a list of choices is content.
         AlertDialog(
             onDismissRequest = onCancelUse,
-            title = { Text("Use ${p.spec.label}") },
+            title = { Text(p.title) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // ⚠⚠ The warning first, and ONLY when it is true. A dialog
@@ -262,10 +266,13 @@ fun ModelsScreen(
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
-                    // ⚠ Only flows that RUN on a checkpoint. The video ones and
-                    // the upscaler load their own weights and would ignore the
-                    // choice just made.
-                    for (r in recipes.filter { it.usesCheckpoint }) {
+                    // ⚠⚠ The offer is computed by the CALLER
+                    // ([HarnessViewModel.PendingUse.offer]) and not filtered here.
+                    // It used to be `recipes.filter { it.usesCheckpoint }`, which
+                    // asks "does this flow need a checkpoint" and never "can it
+                    // use THIS one" — so Use on Z-Image offered Inpaint, which
+                    // Z-Image has no type for. Reported 2026-09-20.
+                    for (r in p.offer) {
                         Surface(
                             onClick = { onConfirmUse(p.spec, r) },
                             shape = RoundedCornerShape(12.dp),
@@ -284,7 +291,11 @@ fun ModelsScreen(
                     }
                     // ⭐ …and the old behaviour, named: keep what is open and
                     // just point it at this checkpoint.
-                    Surface(
+                    // ⚠⚠ CHECKPOINTS only. An upscaler and the video models are
+                    // not selected globally, so there is nothing for "keep the
+                    // flow" to do — offering it would be a button that closes the
+                    // dialog and changes nothing.
+                    if (p.spec != null) Surface(
                         onClick = { onConfirmUse(p.spec, null) },
                         shape = RoundedCornerShape(12.dp),
                         color = Color.Transparent,
@@ -405,19 +416,20 @@ fun ModelsScreen(
                     if (segmenter != null) {
                         item { ToolCard(segmenter, busy, onInstallSegmenter, onCancel) { deletingSegmenter = true } }
                     }
-                    // ⭐ Embeddings, on the same tab as the segmenter — both are
-                    // auxiliary to a checkpoint rather than one, and neither has
-                    // a Use button.
-                    if (onImportEmbedding != null) {
-                        item {
-                            ImportCallout(
-                                title = stringResource(R.string.embeddings_title),
-                                body = stringResource(R.string.embeddings_body),
-                                enabled = !busy,
-                                onImport = onImportEmbedding,
-                            )
-                        }
-                    }
+                    // ⭐⭐ **The embeddings IMPORT lives in Settings, not here** —
+                    // the user's call, 2026-09-20: *"remove embedding import btn
+                    // from Tools tab, it is redundant. only keep the one in
+                    // settings."*
+                    //
+                    // ⚠⚠ It was in BOTH, which is the duplicate-surface
+                    // mistake `docs/ARCHITECTURE.md` §5.6 keeps naming: two
+                    // callouts, two places to find the same file picker, and no
+                    // rule saying which one is the home. Importing is a
+                    // one-off setup act, which is what Settings is for.
+                    //
+                    // ⚠ The installed LIST stays here, beside the segmenter,
+                    // because that is where a person looks for what is on the
+                    // phone — removing the button did not remove the tab's job.
                     if (embeddings != null) {
                         items(embeddings, key = { it.name }) { row ->
                             DownloadCard(
@@ -443,6 +455,7 @@ fun ModelsScreen(
                     video, busy, onInstallVideo, onCancel,
                     onConfirmDelete = { deletingVideo = true },
                     onProbe = onProbeVideo,
+                    onUse = onUseVideo,
                 )
                 return@SwipeTabs
             }
@@ -475,9 +488,11 @@ fun ModelsScreen(
                         }
                     }
                     items(upscalers, key = { it.spec.id }) { row ->
-                        UpscalerCard(row, busy, onInstallUpscaler, onCancel) {
-                            deletingUpscaler = it
-                        }
+                        UpscalerCard(
+                            row, busy, onInstallUpscaler, onCancel,
+                            onDelete = { deletingUpscaler = it },
+                            onUse = onUseUpscaler,
+                        )
                     }
                 }
                 return@SwipeTabs
@@ -880,6 +895,14 @@ private fun VideoModelsTab(
     /** ⚠ ASKS first — see [deletingVideo]. Never deletes on the tap. */
     onConfirmDelete: () -> Unit,
     onProbe: () -> Unit,
+    /**
+     * ⭐⭐ **Use — open a flow that uses these weights.** Added 2026-09-20 at
+     * the user's ask, for the reason [UpscalerCard] gives: the video models bind
+     * no context key and nothing selects them globally, but they have TWO flows
+     * (text to video, image to video) and picking between them is exactly what
+     * this dialog is for.
+     */
+    onUse: () -> Unit = {},
 ) {
     // ⚠ Once, when the tab is first composed. [HarnessViewModel.probeVideoSupport]
     // is itself idempotent, so a pager pre-composing this page costs one call.
@@ -917,8 +940,12 @@ private fun VideoModelsTab(
                         OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
                     row.supported == false ->
                         OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.unsupported)) }
-                    row.complete ->
+                    row.complete -> {
+                        // ⚠ Use filled and first, Delete outlined beside it — the
+                        // order every installed row uses (`docs/UI.md` §8.1).
+                        Button(onClick = onUse, enabled = !busy) { Text(stringResource(R.string.use)) }
                         OutlinedButton(onClick = onConfirmDelete, enabled = !busy) { Text(stringResource(R.string.delete)) }
+                    }
                     else -> Button(onClick = onInstall, enabled = !busy) { Text(stringResource(R.string.download)) }
                 }
             }
@@ -929,8 +956,16 @@ private fun VideoModelsTab(
 /**
  * One upscaler's card.
  *
- * ⚠ The one deliberate difference from a checkpoint is that there is no "Use":
- * nothing selects an upscaler globally, a flow's Upscale node names one.
+ * ⭐⭐ **It has a Use button since 2026-09-20**, at the user's ask. The note
+ * here used to say it could not: *"nothing selects an upscaler globally, a
+ * flow's Upscale node names one"*. That is still true and it turned out not to
+ * be the point — Use never meant "select", it means **open a flow that uses
+ * this**, which an upscaler has exactly one of. Asking what to open is the
+ * whole shape of the dialog ([HarnessViewModel.PendingUse]), and it works the
+ * same whether or not a global selection comes with it.
+ *
+ * ⚠ Only once installed: Use on a model that is not here would offer a flow
+ * that cannot run.
  */
 @Composable
 private fun UpscalerCard(
@@ -939,6 +974,7 @@ private fun UpscalerCard(
     onInstall: (UpscalerSpec) -> Unit,
     onCancel: () -> Unit,
     onDelete: (UpscalerSpec) -> Unit,
+    onUse: (UpscalerSpec) -> Unit = {},
 ) {
     DownloadCard(
         title = row.spec.label,
@@ -954,8 +990,12 @@ private fun UpscalerCard(
         when {
             row.progress != null ->
                 OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-            row.installed ->
+            row.installed -> {
+                // ⚠ Use FIRST and filled, Delete outlined beside it — the same
+                // pair, in the same order, a checkpoint row uses.
+                Button(onClick = { onUse(row.spec) }, enabled = !busy) { Text(stringResource(R.string.use)) }
                 OutlinedButton(onClick = { onDelete(row.spec) }, enabled = !busy) { Text(stringResource(R.string.delete)) }
+            }
             row.build == null ->
                 OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.unsupported)) }
             else -> Button(onClick = { onInstall(row.spec) }, enabled = !busy) { Text(stringResource(R.string.download)) }

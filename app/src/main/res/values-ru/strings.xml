@@ -107,4 +107,16 @@
     <string name="tools">Инструменты</string>
     <string name="tools_note">Небольшие помощники, работающие на процессоре телефона. Подключите к схеме, чтобы использовать.</string>
     <string name="segmenter_about">Коснитесь объекта в маске Inpaint, чтобы выбрать его. Подключите узел Segment model к Inpaint.</string>
+    <string name="download_source">Источник загрузки</string>
+    <string name="download_source_note">Откуда скачиваются файлы моделей. Измените, если Hugging Face работает медленно или недоступен — настройка действует для всех моделей, апскейлеров, сегментатора и видеомоделей.</string>
+    <string name="source_huggingface">Hugging Face</string>
+    <string name="source_mirror">hf-mirror.com</string>
+    <string name="source_custom">Свой адрес</string>
+    <string name="source_custom_hint">Базовый адрес</string>
+    <string name="clean_temp_title">Очистить временные файлы</string>
+    <string name="clean_temp_body">Незавершённые загрузки и временные файлы. Модели, картинки, схемы и эмбеддинги не трогаются.</string>
+    <string name="clean_temp_action">Найти временные файлы</string>
+    <string name="clean_temp_none">Нечего удалять.</string>
+    <string name="clean_temp_confirm">Удалить %1$d МБ временных файлов?</string>
+    <string name="clean_temp_confirm_body">Незавершённая загрузка начнётся заново, а не продолжится. Модели, картинки, сохранённые схемы и эмбеддинги не затрагиваются.</string>
 </resources>

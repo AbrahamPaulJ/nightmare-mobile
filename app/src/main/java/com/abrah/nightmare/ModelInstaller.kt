@@ -240,7 +240,10 @@ object ModelInstaller {
             from = 0L
         }
 
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        // ⭐⭐ The mirror, applied HERE and not in the catalogue — one of the
+        // two places in the app that open a connection ([Prefs.apply]).
+        val from_ = Prefs.apply(url)
+        val conn = (URL(from_).openConnection() as HttpURLConnection).apply {
             connectTimeout = 30_000
             readTimeout = 60_000
             instanceFollowRedirects = true

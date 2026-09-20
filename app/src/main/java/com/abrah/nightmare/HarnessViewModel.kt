@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.abrah.nightmare.canvas.runsOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -117,6 +119,35 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         theme = value
     }
 
+    /**
+     * ⭐⭐ Where model files are downloaded from — [Prefs.downloadBase].
+     *
+     * ⚠ Nothing is re-read or refreshed afterwards: the catalogue holds whole
+     * URLs and the substitution happens at the connection ([Prefs.apply]), so
+     * a change takes effect on the next download with no rebuild of anything.
+     * Upstream has to call `refreshAllModels()` here; we do not.
+     */
+    fun chooseDownloadBase(value: String) {
+        Prefs.setDownloadBase(getApplication(), value)
+        say("downloads now come from ${Prefs.downloadBase}")
+    }
+
+    /**
+     * ⭐⭐ Delete the scratch [TempCleaner] found, and SAY what was freed.
+     *
+     * ⚠⚠ The number comes from the delete, not from the scan that offered
+     * it: a target can vanish between the two (a download finishing, Android
+     * clearing its own cache), and reporting the scan would claim bytes that
+     * were never freed here.
+     */
+    fun cleanTempFiles() {
+        viewModelScope.launch {
+            val freed = withContext(Dispatchers.IO) {
+                TempCleaner.clean(getApplication(), busy = working)
+            }
+            say("cleaned ${freed shr 20} MB of temp files")
+        }
+    }
     /**
      * Pixels for an image id, cached per id.
      *
@@ -1821,7 +1852,28 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * the canvas held unsaved work, Use silently rewrote it on the way past.
      * Asked for 2026-09-15: offer the flows, and say what will be lost.
      */
-    data class PendingUse(val spec: ModelSpec, val unsavedFlow: Boolean)
+    /**
+     * ⭐⭐⭐ A Use waiting on a flow choice — for ANY kind of model.
+     *
+     * ⚠⚠ [spec] is null for an upscaler and for the video models, and that
+     * nullability is the feature: they are not checkpoints, nothing selects
+     * them globally, and there is nothing to retarget an open canvas at. What
+     * they DO have is flows that use them, which is what a person pressing Use
+     * is after — asked for 2026-09-20, *"video and upscaler models should also
+     * have use btns"*.
+     *
+     * ⇒ Use means **open a flow that uses this thing**, and for a checkpoint
+     * it additionally selects it. One dialog, three callers.
+     *
+     * ⚠ [offer] is computed by the caller, never filtered in the dialog: a
+     * checkpoint offers only the flows it can actually run ([Recipe.runsOn]).
+     */
+    data class PendingUse(
+        val spec: ModelSpec?,
+        val title: String,
+        val offer: List<com.abrah.nightmare.canvas.Recipe>,
+        val unsavedFlow: Boolean,
+    )
 
     var pendingUse by mutableStateOf<PendingUse?>(null)
         private set
@@ -1836,18 +1888,46 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun askUse(spec: ModelSpec) {
         pendingUse = PendingUse(
             spec,
-            unsavedFlow = currentWorkflowName == null &&
-                canvas.workflow.graph.nodes.isNotEmpty(),
+            title = "Use ${spec.label}",
+            // ⚠⚠ Only the flows this CHECKPOINT can run. `usesCheckpoint`
+            // alone offered Inpaint on Z-Image ([Recipe.runsOn]).
+            offer = com.abrah.nightmare.canvas.RECIPES.filter { it.runsOn(spec) },
+            unsavedFlow = unsavedFlow(),
         )
     }
+
+    /** ⭐ Use on an UPSCALER — it has one flow and no global selection. */
+    fun askUseUpscaler(label: String) {
+        pendingUse = PendingUse(
+            spec = null,
+            title = "Use $label",
+            offer = com.abrah.nightmare.canvas.recipesWithId("upscale"),
+            unsavedFlow = unsavedFlow(),
+        )
+    }
+
+    /** ⭐ Use on the VIDEO models — two flows, both theirs. */
+    fun askUseVideo() {
+        pendingUse = PendingUse(
+            spec = null,
+            title = "Use the video models",
+            offer = com.abrah.nightmare.canvas.recipesWithId("t2v", "i2v"),
+            unsavedFlow = unsavedFlow(),
+        )
+    }
+
+    private fun unsavedFlow(): Boolean =
+        currentWorkflowName == null && canvas.workflow.graph.nodes.isNotEmpty()
 
     /**
      * @param recipe the flow to open with it, or null to keep the open canvas
      *   and only retarget it — which is what Use did before it asked.
      */
-    fun confirmUse(spec: ModelSpec, recipe: com.abrah.nightmare.canvas.Recipe?) {
+    fun confirmUse(spec: ModelSpec?, recipe: com.abrah.nightmare.canvas.Recipe?) {
         pendingUse = null
-        selectModel(spec)
+        // ⚠ Null for an upscaler or the video models: there is no global
+        // selection to make, only a flow to open.
+        spec?.let { selectModel(it) }
         // ⚠ AFTER the model is set: a recipe reads [SelectedModel] as it builds,
         // so building first would lay out a flow pointed at the old checkpoint
         // and then retarget it — two writes where one will do, and the first one

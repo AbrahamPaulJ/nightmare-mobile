@@ -359,7 +359,10 @@ object UpscalerCatalog {
             from = 0L
         }
 
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        // ⭐⭐ The mirror — the OTHER of the two connection sites. The
+        // segmenter and the DiT engine come through here too, so a mirror set
+        // in Settings covers them without either knowing about it.
+        val conn = (URL(Prefs.apply(url)).openConnection() as HttpURLConnection).apply {
             connectTimeout = 30_000
             readTimeout = 60_000
             instanceFollowRedirects = true

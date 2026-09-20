@@ -698,12 +698,10 @@ internal fun NodeInspectorBody(
                 // ⚠ The rule this replaced spelled the exclusion as
                 // "never a DiT model", which was a fact about the engine
                 // hardcoded in the UI.
+                // ⚠⚠ [SdSampler.canInpaint], not a copy of it: the Use dialog
+                // asks the same question and the two must give one answer.
                 installed = if ((type as? com.abrah.nightmare.SdSampler)?.inpaint == true) {
-                    installedModels.filter {
-                        com.abrah.nightmare.SdSampler.ALL.any { s ->
-                            s.family == it.family && s.inpaint
-                        }
-                    }
+                    installedModels.filter { com.abrah.nightmare.SdSampler.canInpaint(it.family) }
                 } else installedModels,
                 currentId = node.params["model"].orEmpty(),
                 onPick = { onSetModel(nodeId, it) },

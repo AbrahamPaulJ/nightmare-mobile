@@ -316,6 +316,10 @@ fun HarnessScreen(
                     recipes = com.abrah.nightmare.canvas.RECIPES,
                     onConfirmUse = vm::confirmUse,
                     onCancelUse = vm::cancelUse,
+                    // ⭐ Use on the other two KINDS of model. Neither selects
+                    // anything globally; both open a flow that uses them.
+                    onUseUpscaler = { vm.askUseUpscaler(it.label) },
+                    onUseVideo = vm::askUseVideo,
                     importing = vm.importing,
                     importProgress = vm.importProgress,
                     onImport = { name ->
@@ -691,6 +695,10 @@ fun HarnessScreen(
             settingsEmbeddingPicker.launch(arrayOf("application/octet-stream", "*/*"))
         },
         onDeleteEmbedding = vm::deleteEmbedding,
+        onDownloadBase = vm::chooseDownloadBase,
+        onCleanTemp = vm::cleanTempFiles,
+        // ⚠ So the cleaner leaves a live download's scratch alone.
+        installing = vm.working,
     )
 }
 

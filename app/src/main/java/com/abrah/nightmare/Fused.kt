@@ -353,6 +353,26 @@ class SdSampler(
          * three string literals spelling "sdxl.inpaint" would be three places to
          * get it wrong once.
          */
+        /**
+         * ⭐⭐⭐ **Can a checkpoint of this family be inpainted with?**
+         *
+         * ⚠⚠ THE one answer, because there are now two surfaces asking and
+         * they must never disagree: the checkpoint picker on an inpaint node
+         * (`canvas/NodeInspector.kt`) and the Use dialog on the Models screen
+         * (`ui/ModelsScreen.kt`). The picker had it inline and the dialog did
+         * not ask at all, so pressing Use on Z-Image offered "Inpaint" and
+         * built a flow that cannot run — reported 2026-09-20.
+         *
+         * ⚠ It is a fact about the REGISTRY, not about the engine: a family
+         * can inpaint exactly when an inpaint type is registered for it. That
+         * is why FLUX.2 answers false — `flux2.inpaint` is written and
+         * deliberately not in [ALL] (the engine honours the mask and then
+         * regenerates nothing inside it, `notes/PROGRESS.md`) — and it is why
+         * registering it would light this up everywhere at once.
+         */
+        fun canInpaint(family: Family): Boolean =
+            ALL.any { it.family == family && it.inpaint }
+
         fun typeFor(family: Family, inpaint: Boolean): String =
             (ALL.firstOrNull { it.family == family && it.inpaint == inpaint }
                 // ⚠ A family with no inpaint type (the DiT ones) asked for one:

@@ -329,6 +329,32 @@ data class Recipe(
  * ⚠ Functions, not values: they read [SelectedModel], so a recipe evaluated once
  * at class-init would pin whichever model happened to be selected at app start.
  */
+/**
+ * ⭐⭐⭐ **Whether [spec] can actually run this recipe** — the filter the
+ * Use dialog offers flows through.
+ *
+ * ⚠⚠ `usesCheckpoint` alone was the old test and it is not enough: it
+ * asks "does this flow need A checkpoint", never "can it use THIS one".
+ * Pressing Use on Z-Image therefore offered Inpaint, and Z-Image has no
+ * inpaint type — reported 2026-09-20.
+ *
+ * ⚠ The inpaint-ness is DERIVED from the built graph rather than declared
+ * on the recipe, so a recipe that gains or loses a mask cannot leave a stale
+ * flag behind. Safe to build here: these graphs are four or five nodes, and
+ * [SdSampler.typeFor] keeps a type's inpaint-ness whatever family is
+ * selected while it builds.
+ */
+fun Recipe.runsOn(spec: com.abrah.nightmare.ModelSpec): Boolean {
+    if (!usesCheckpoint) return false
+    val wantsMask = build().graph.nodes.any {
+        (com.abrah.nightmare.NODE_TYPES[it.type] as? com.abrah.nightmare.SdSampler)?.inpaint == true
+    }
+    return !wantsMask || com.abrah.nightmare.SdSampler.canInpaint(spec.family)
+}
+
+/** ⭐ The flows a NON-checkpoint model opens — an upscaler, the video pair. */
+fun recipesWithId(vararg ids: String): List<Recipe> = RECIPES.filter { it.id in ids }
+
 val RECIPES: List<Recipe> = listOf(
     Recipe(
         "txt2img", "Text to image",
