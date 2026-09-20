@@ -97,6 +97,7 @@ import com.abrah.nightmare.MaskRaster
 import com.abrah.nightmare.Widget
 import com.abrah.nightmare.SizeDemand
 import com.abrah.nightmare.requiredOutputSize
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.lazy.items
@@ -113,19 +114,13 @@ import androidx.compose.ui.graphics.asImageBitmap
  * small box on the canvas.
  *
  * ⚠⚠⚠ **The strip does not scroll on its own, and that is deliberate.**
- * A horizontally scrollable row would make one sideways drag mean two
- * things — scroll the strip, and change the node — which is the same
- * gesture fight that put the crop editor in a Dialog. With
- * `userScrollEnabled = false` the swipe has exactly one meaning and the
- * strip follows the selection instead ([LazyListState.animateScrollToItem]).
- * ⇒ Tap to jump, swipe to step, and the current card is always on screen.
- *
- * ⚠⚠ **The swipe lives HERE and nowhere else.** The sheet body below is
- * sliders and chip rows almost all the way down; a full-width horizontal
- * pager over it would compete with every one of them. The user's call,
- * 2026-09-20, choosing this over a full-width swipe.
- *
- * ⚠ **Order is the CANVAS's**, left to right then top to bottom — the
+ * A horizontally scrollable row would eat the sheet-wide swipe that steps
+ * between nodes ([NodeInspector]) whenever the finger happened to land on
+ * the strip — one gesture with two meanings depending on where it started.
+ * With `userScrollEnabled = false` the strip only follows the selection
+ * ([LazyListState.animateScrollToItem]) and the swipe means one thing
+ * everywhere. ⇒ Tap a card to jump, swipe anywhere to step.
+ * * ⚠ **Order is the CANVAS's**, left to right then top to bottom — the
  * user's call the same day, over an explicit hand-set order. It needs no new
  * state in a saved flow and no reorder gesture, it cannot disagree with what
  * the eye sees, and a person who wants a different order already has one: the
@@ -153,22 +148,7 @@ fun NodeStrip(
         state = listState,
         userScrollEnabled = false,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = modifier
-            .fillMaxWidth()
-            .pointerInput(nodes.size, index) {
-                var dx = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { dx = 0f },
-                    // ⚠ On RELEASE and by ONE step, whatever the distance: a
-                    // strip that flew several nodes on a long drag would make
-                    // the sheet under it change twice.
-                    onDragEnd = {
-                        val step = if (dx < -60f) 1 else if (dx > 60f) -1 else 0
-                        val next = index + step
-                        if (step != 0 && next in nodes.indices) onPick(nodes[next].id)
-                    },
-                ) { _, d -> dx += d }
-            },
+        modifier = modifier.fillMaxWidth(),
     ) {
         items(nodes, key = { it.id }) { n ->
             val on = n.id == currentId
@@ -295,15 +275,57 @@ fun NodeInspector(
         }
     }
 
+    val ordered = nodeStripOrder(state.workflow)
+    val here = ordered.indexOfFirst { it.id == nodeId }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
+        // ⭐⭐⭐ **A FIXED, FULL height, whichever node is showing.**
+        //
+        // ⚠⚠ Asked for 2026-09-21: stepping through the cards must not make
+        // the sheet grow and shrink under the finger. A sheet sized by its
+        // content changes height on every switch — a prompt node is three
+        // fields and a sampler is a page of sliders — so the strip you are
+        // tapping would move between taps. It is the same rule the crop popup
+        // already had for its two tabs ([InpaintEditors]), now that the
+        // inspector has more than one thing to show.
+        Column(
+            Modifier
+                .fillMaxHeight()
+                // ⭐⭐⭐ **Swipe sideways ANYWHERE to step nodes.**
+                //
+                // ⚠⚠⚠ This was scoped to the strip alone, on the reasoning
+                // that a full-width pager would fight the sliders. It does not:
+                // Compose hit-tests innermost-first, a Slider consumes the drag
+                // inside its own bounds, and a parent detector is only offered
+                // changes no child took. A horizontally scrollable chip row
+                // likewise keeps the gesture until it runs out of content. The
+                // user made exactly this argument on 2026-09-21 and was right;
+                // the restriction was mine and unfounded.
+                //
+                // ⚠ One step per gesture however far it travels, decided on
+                // RELEASE — a long drag must not fly three nodes past the one
+                // being aimed at.
+                .pointerInput(ordered.size, here) {
+                    var dx = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dx = 0f },
+                        onDragEnd = {
+                            val step = if (dx < -80f) 1 else if (dx > 80f) -1 else 0
+                            val next = here + step
+                            if (step != 0 && here >= 0 && next in ordered.indices) {
+                                onInspectNode(ordered[next].id)
+                            }
+                        },
+                    ) { _, d -> dx += d }
+                },
+        ) {
         // ⭐⭐ Every node in the flow, above the knobs ([NodeStrip]).
         // ⚠ Drawn in the SHEET and not in [NodeInspectorBody]: the body is
         // what the goldens render and it must stay a function of ONE node.
         NodeStrip(
-            nodes = nodeStripOrder(state.workflow),
+            nodes = ordered,
             currentId = nodeId,
             onPick = onInspectNode,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -443,6 +465,7 @@ fun NodeInspector(
             seed = seedFor(state.workflow.graph, nodeId) { status[it]?.detail },
             onClearImage = { onClearImage(nodeId) },
         )
+        }
     }
 }
 
@@ -2456,39 +2479,69 @@ private fun InpaintPopupBody(
     /** ⚠ The SELECTED tab's panel — the caller's tile list owns which. */
     panel: @Composable () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // ⭐⭐⭐ **A DRAG HANDLE, and no close button** — the user's call,
-        // 2026-09-20: the crop and mask windows should close by dragging down
-        // like the node inspector does.
-        //
-        // ⚠⚠⚠ **The handle is the ONLY drag target, and that is the whole
-        // design.** This popup is a `Dialog` rather than a sheet precisely
-        // because a sheet lost the gesture war: every drag on a
-        // picture-sized editor inside one was a fight over who owns the
-        // finger ([InpaintEditors]). Making the whole surface
-        // drag-to-dismiss would re-create exactly that — a downward drag on
-        // the crop rectangle would also be closing the window. ⇒ The pill
-        // gets the consistency; the picture keeps its pan and pinch.
-        //
-        // ⚠ Removing the ✕ strands nobody: a `Dialog` is dismissed by the
-        // system back gesture too, which this one has always honoured
-        // (`onDismissRequest`).
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .pointerInput(Unit) {
-                    var dragged = 0f
-                    detectVerticalDragGestures(
-                        onDragStart = { dragged = 0f },
-                        // ⚠ Fires on RELEASE past the threshold, not while
-                        // dragging: a window that vanishes mid-gesture cannot be
-                        // taken back, and the sheet it copies behaves this way.
-                        onDragEnd = { if (dragged > 120f) onClose() },
-                    ) { _, dy -> if (dy > 0) dragged += dy }
-                }
-                .padding(vertical = 6.dp),
-            contentAlignment = Alignment.Center,
-        ) {
+    // ⭐⭐⭐ **Drag DOWN anywhere to close, and no close button.**
+    //
+    // ⚠⚠⚠ **Why `nestedScroll` and not a `pointerInput` on the root.**
+    // Hit-testing already does most of the work: the crop and mask editors
+    // consume their own drags, so a parent detector never sees a finger that
+    // landed on the picture — that part needs no arrangement at all. What
+    // DOES get in the way is the scrolling column below: `verticalScroll`
+    // consumes every vertical drag it can use, so a root detector would
+    // almost never fire. ⇒ Take what the scroll could NOT use. Once the
+    // content is at the top a downward drag is spare, and spare downward drag
+    // closes the window — which is how a bottom sheet behaves, for this reason.
+    //
+    // ⚠⚠ An earlier version of this comment claimed a whole-surface drag
+    // would fight the editors. It would not; children consume first, and the
+    // user said so on 2026-09-21. The fight the history records was a
+    // `ModalBottomSheet`, whose dismiss works through nested scroll that raw
+    // `pointerInput` children do not speak — a sheet-specific mechanism,
+    // wrongly generalised to a `Dialog`.
+    //
+    // ⚠ Decided on the gesture END, never mid-drag: a window that vanishes
+    // under the finger cannot be taken back.
+    var spare by remember { mutableStateOf(0f) }
+    val pull = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: androidx.compose.ui.geometry.Offset,
+                available: androidx.compose.ui.geometry.Offset,
+                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+            ): androidx.compose.ui.geometry.Offset {
+                if (available.y > 0f) spare += available.y
+                // ⚠ Consumes nothing: the content keeps every pixel it wanted,
+                // this only watches what was left over.
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override suspend fun onPostFling(
+                consumed: androidx.compose.ui.unit.Velocity,
+                available: androidx.compose.ui.unit.Velocity,
+            ): androidx.compose.ui.unit.Velocity {
+                if (spare > 160f) onClose()
+                spare = 0f
+                return androidx.compose.ui.unit.Velocity.Zero
+            }
+        }
+    }
+    Column(
+        Modifier.fillMaxSize()
+            .nestedScroll(pull)
+            // ⚠ …and the same gesture on the chrome, which does not scroll and
+            // so sends the connection above nothing.
+            .pointerInput(Unit) {
+                var dy = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { dy = 0f },
+                    onDragEnd = { if (dy > 160f) onClose() },
+                ) { _, d -> if (d > 0) dy += d }
+            }
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // ⚠ The pill is an AFFORDANCE, not the only target: it says the
+        // window can be dragged, which nothing else about it does.
+        Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
             Box(
                 Modifier
                     .size(width = 32.dp, height = 4.dp)
