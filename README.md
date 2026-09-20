@@ -46,9 +46,9 @@ running on the phone's CPU.
 **Image editing with FLUX.2 Klein.** A photo and a prompt: the whole picture is re-rendered
 to follow it rather than nudged, so the composition survives and the content changes. Wire a
 second picture into the reference port and name them as image 1 and image 2 in the prompt to
-compose the two. Needs a Snapdragon 8 Elite or newer and 6.2 GB of weights. 512x512 is the
-reliable size; a reference is encoded at your output size, so larger canvases cost sharply
-more memory.
+compose the two. Needs a Snapdragon 8 Elite or newer and 6.2 GB of weights. A reference is
+encoded at your output size rather than its own, so 512x512 is the size to use when you wire
+one in.
 
 **Text to video.** A prompt in, 49 frames at 1024x640 out, about two seconds of clip in about
 25 seconds on an 8 Elite. Image to video animates a photo instead, using the same three nodes
@@ -60,6 +60,16 @@ running a small real model on it rather than by reading its name.
 and both video flows, each laid out so no wire crosses and the whole graph fits the screen
 when it opens. They are listed from the least demanding to the most, and one your phone
 cannot run says so instead of opening.
+
+**Move between nodes without leaving the sheet.** Open a node and every node in the flow is
+a card along the top, in the order the graph runs. Tap one, or swipe sideways, and the
+inspector slides to the next. The crop and mask editors open over the picture and close with
+a drag downward.
+
+**Download from a mirror.** Every model file comes from Hugging Face by default, and Settings
+can point that at hf-mirror.com or any base address you give it. One setting covers the
+checkpoints, the upscalers, the segmenter and the video weights — for anywhere huggingface.co
+is slow or unreachable.
 
 **Batching.** Arm `seed`, `steps`, `cfg`, `denoise` or `scheduler` on a generate node and Run
 sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph that

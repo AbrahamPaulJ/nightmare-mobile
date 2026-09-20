@@ -866,16 +866,12 @@ class SdSampler(
         // disagree, put the numbers on the device. It names every size in
         // the chain, and writes the two PNGs so the mask can be LOOKED at
         // rather than reasoned about.
-        // ⚠ Meant to stay: nothing else in the log states the mask's size,
-        // and it overwrites one pair of files rather than accumulating.
-        ctx.android?.let { android ->
-            runCatching {
-                val dir = java.io.File(android.getExternalFilesDir(null), "inpaint-debug")
-                dir.mkdirs()
-                java.io.File(dir, "mask.png").writeBytes(maskPng)
-                java.io.File(dir, "image.png").writeBytes(imagePng)
-            }
-        }
+        // ⚠ Meant to stay: nothing else in the log states these sizes, and one
+        // line costs nothing on a path that is about to spend seconds on the NPU.
+        // ⚠⚠ It wrote the mask and image to `inpaint-debug/` while the bug was
+        // open; that went the moment the bug closed (the user's call, 2026-09-21).
+        // A dump is for a HUNT — leaving it on writes two files on every inpaint
+        // anyone ever does, to answer a question nobody is asking any more.
         ctx.say(
             "[mask] photo=${src.width}x${src.height} frame=${frame.width}x${frame.height} " +
                 "cut=${cut.mask.width}x${cut.mask.height} canvas=${w}x$h " +
