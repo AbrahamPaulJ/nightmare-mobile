@@ -68,8 +68,13 @@ object InpaintPixels {
      * UNMASKED pixels have been through a resample and a VAE round trip, so they
      * differ subtly from the original and a straight paste leaves a visible
      * square seam. Two feathers handle the two seams: a ramp out from the painted
-     * region, and a ramp to zero at any patch edge that sits inside the target
-     * (edges flush with the border keep full strength — nothing to blend into).
+     * region, and a ramp to zero at any patch edge that sits inside the target.
+     *
+     * ⚠⚠ TWO kinds of edge keep full strength, for one reason — there is
+     * nothing on the other side to blend into: an edge flush with the photo's
+     * border, and an edge the MASK runs up to ([feather]). The second was
+     * missing until 2026-09-21 and ate the bottom of every "Only masked"
+     * render whose painting reached the crop.
      *
      * @param cropMask the mask in the PATCH's frame, white = repainted.
      */
@@ -131,11 +136,54 @@ object InpaintPixels {
         val px = IntArray(dw * dh)
         small.getPixels(px, 0, dw, 0, 0, dw, dh)
 
-        val dist = MaskRaster.seed(px, dw, dh)
-        MaskRaster.chamfer(dist, dw, dh)
         // Band off the shorter edge so the feather is the same physical width on
         // both axes.
         val bandPx = max(MIN_FEATHER, min(dw, dh) / FEATHER_DIVISOR).toFloat()
+
+        // ⭐⭐⭐ **An edge the MASK reaches is not faded.**
+        //
+        // ⚠⚠⚠ Reported from the phone 2026-09-21: with AbsoluteReality
+        // Inpaint, clothes masked all the way down came back with the bottom
+        // edge unpainted — *"as if the composite wasnt overlayed on image
+        // correctly"*. It was not the paste geometry. It was this ramp.
+        //
+        // The edge ramp exists to hide the patch's RECTANGLE: its unmasked
+        // pixels have been through a resample and a VAE round trip, so they
+        // differ subtly from the original and a hard rectangular boundary
+        // shows. But it was applied to every edge sitting inside the photo,
+        // whatever the mask was doing — so when the painted region ran to the
+        // edge of the crop (which "Only masked" makes the COMMON case, since
+        // it crops around the mask) the ramp blended the paint itself away
+        // and let the original pixels back through.
+        //
+        // ⇒ Fade an edge only where there is unmasked patch to blend INTO.
+        // Where the mask reaches the edge there is nothing to blend with and
+        // nothing to hide, exactly as an edge flush with the photo border is
+        // already left alone by the caller.
+        //
+        // ⚠⚠ Per EDGE, not per pixel. A mask touching only part of an edge
+        // keeps that whole edge at full strength, which can leave a short
+        // rectangle seam beside the painting — far milder than a band of the
+        // picture that refused to change, and the alternative (a per-pixel
+        // rule) is a discontinuity right where the eye is already looking.
+        val reach = bandPx.toInt().coerceAtLeast(1)
+        var mLeft = dw; var mTop = dh; var mRight = -1; var mBottom = -1
+        for (y in 0 until dh) for (x in 0 until dw) {
+            if ((px[y * dw + x] and 0xFF) >= 128) {
+                if (x < mLeft) mLeft = x
+                if (x > mRight) mRight = x
+                if (y < mTop) mTop = y
+                if (y > mBottom) mBottom = y
+            }
+        }
+        val painted = mRight >= 0
+        val keepLeft = painted && mLeft <= reach
+        val keepTop = painted && mTop <= reach
+        val keepRight = painted && mRight >= dw - 1 - reach
+        val keepBottom = painted && mBottom >= dh - 1 - reach
+
+        val dist = MaskRaster.seed(px, dw, dh)
+        MaskRaster.chamfer(dist, dw, dh)
         val band = bandPx * MaskRaster.CH_STRAIGHT
 
         for (y in 0 until dh) {
@@ -143,10 +191,10 @@ object InpaintPixels {
                 val i = y * dw + x
                 val inside = 1f - MaskRaster.smoothstep(min(dist[i].toFloat() / band, 1f))
                 var e = Int.MAX_VALUE
-                if (fadeLeft) e = min(e, x)
-                if (fadeTop) e = min(e, y)
-                if (fadeRight) e = min(e, dw - 1 - x)
-                if (fadeBottom) e = min(e, dh - 1 - y)
+                if (fadeLeft && !keepLeft) e = min(e, x)
+                if (fadeTop && !keepTop) e = min(e, y)
+                if (fadeRight && !keepRight) e = min(e, dw - 1 - x)
+                if (fadeBottom && !keepBottom) e = min(e, dh - 1 - y)
                 val edge = if (e == Int.MAX_VALUE) 1f else MaskRaster.smoothstep(min(e / bandPx, 1f))
                 val a = (inside * edge * 255f).roundToInt().coerceIn(0, 255)
                 px[i] = (a shl 24) or 0xFFFFFF

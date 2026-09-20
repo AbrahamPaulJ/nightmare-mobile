@@ -849,6 +849,38 @@ class SdSampler(
         // ⚠ On the CANVAS, black outside the aspect rectangle: that is the
         // part the decode cuts away, so it keeps the base.
         val maskPng = ImageStore.encodePng(padToCanvas(cut.mask, w, h))
+        // ⭐⭐⭐ **What the backend is actually given, in pixels and on disk.**
+        //
+        // ⚠⚠⚠ An inpaint came back with the bottom band unpainted, and the
+        // reports narrowed it in a way no theory of mine survived: it happens
+        // with "Only masked" OFF and with Stitch OFF, and stitch-off returns
+        // the FRAME with no paste-back at all — so the composite is not
+        // putting the original over it, the model never painted there.
+        // ⇒ Which leaves the mask, and every stage between the finger and
+        // the request resizes, crops or PADS it. Padding is black and black
+        // is "not masked", so a single mismatched rectangle anywhere in that
+        // chain produces exactly this band.
+        //
+        // ⚠⚠ This line is the instrument, not a guess — CLAUDE.md's rule
+        // after three wrong diagnoses in a row: when the code and the phone
+        // disagree, put the numbers on the device. It names every size in
+        // the chain, and writes the two PNGs so the mask can be LOOKED at
+        // rather than reasoned about.
+        // ⚠ Meant to stay: nothing else in the log states the mask's size,
+        // and it overwrites one pair of files rather than accumulating.
+        ctx.android?.let { android ->
+            runCatching {
+                val dir = java.io.File(android.getExternalFilesDir(null), "inpaint-debug")
+                dir.mkdirs()
+                java.io.File(dir, "mask.png").writeBytes(maskPng)
+                java.io.File(dir, "image.png").writeBytes(imagePng)
+            }
+        }
+        ctx.say(
+            "[mask] photo=${src.width}x${src.height} frame=${frame.width}x${frame.height} " +
+                "cut=${cut.mask.width}x${cut.mask.height} canvas=${w}x$h " +
+                "onlyMasked=${flag(MaskCropNode.ONLY_MASKED)}"
+        )
         // ⭐⭐⭐ **Klein's masked redraw — TRUE inpainting, and neither blend is
         // reachable from here.** The engine takes the mask itself (ABI 3's
         // `mask_image`: white is regenerated, black keeps the init image) with

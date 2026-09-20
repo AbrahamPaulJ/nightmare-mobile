@@ -223,9 +223,43 @@ fun NodeInspector(
 
     val ordered = nodeStripOrder(state.workflow)
     val here = ordered.indexOfFirst { it.id == nodeId }.coerceAtLeast(0)
+    // ⭐⭐⭐ **A far longer pull is needed to close this sheet.**
+    //
+    // ⚠⚠⚠ Reported 2026-09-21: *"sometimes i try to swipe left right but
+    // it closes inspector instead"*. It is Compose gesture arbitration, not a
+    // bug: the pager claims a drag once HORIZONTAL touch slop is crossed and
+    // the sheet once VERTICAL slop is, and a slightly diagonal swipe can cross
+    // the sheet's first. Slop is a handful of pixels, so on a diagonal the two
+    // are near a coin toss — and M3 also settles to Hidden on VELOCITY alone,
+    // so a quick flick needs almost no distance.
+    //
+    // ⚠⚠ Material3 1.3.1 exposes neither a dismiss threshold nor
+    // `sheetGesturesEnabled` (probed — it does not compile). It does expose
+    // `confirmValueChange`, which a gesture-driven settle consults and a
+    // programmatic `hide()` does not, so vetoing Hidden here lengthens the
+    // PULL and leaves the scrim tap and the back gesture alone.
+    //
+    // ⇒ Losing the arbitration now costs a few pixels and a spring back
+    // instead of the sheet. Dismissal still works; it has to mean it.
+    // ⚠ A holder, because `confirmValueChange` is passed INTO the state it
+    // needs to read — it cannot reference `sheet` before it exists.
+    val dismissAfterPx = with(androidx.compose.ui.platform.LocalDensity.current) { 180.dp.toPx() }
+    val held = remember { arrayOfNulls<androidx.compose.material3.SheetState>(1) }
+    val sheet = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { target ->
+            // ⚠ Defaults to ALLOWING the change: an offset that is not yet
+            // measurable must never leave a sheet that cannot be closed.
+            target != androidx.compose.material3.SheetValue.Hidden ||
+                held[0]?.let {
+                    runCatching { it.requireOffset() > dismissAfterPx }.getOrDefault(true)
+                } ?: true
+        },
+    )
+    held[0] = sheet
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheet,
     ) {
         // ⭐⭐⭐ **The nodes are PAGES, and the pager is [SwipeTabs]** — the
         // same one the Models sub-tabs use, which is where the asked-for feel

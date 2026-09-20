@@ -48,7 +48,7 @@ object TempCleaner {
     private const val TAG = "TempCleaner"
 
     /** ⚠ Harness output, not app state. `notes/HANDOFF.md` §5. */
-    private val SCRATCH_DIRS = listOf("dit_edit", "inpaint", "t2i")
+    private val SCRATCH_DIRS = listOf("dit_edit", "inpaint", "inpaint-debug", "t2i")
     private val SCRATCH_FILES = listOf("aspect_probe.png")
 
     /** Bytes [clean] would free right now. ⚠ Call off the main thread. */
