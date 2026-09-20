@@ -1,65 +1,63 @@
 package com.abrah.nightmare
 
-import com.abrah.nightmare.canvas.Pt
 import com.abrah.nightmare.canvas.Workflow
 import com.abrah.nightmare.canvas.nodeStripOrder
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * ⭐⭐ The node strip's order — the canvas's own, left to right then top to
- * bottom.
+ * ⭐⭐ The node strip is ordered the way the graph RUNS — the user's call,
+ * 2026-09-21, replacing canvas position.
  *
- * ⚠ The user's call, 2026-09-20, over an explicit hand-set order: it needs no
- * new state in a saved flow and cannot disagree with what the eye sees,
- * because the person arranging the canvas IS choosing it.
+ * ⚠ It is [topoSort], the executor's own function, so this test is about
+ * the strip USING it rather than about sorting; the ordering itself is
+ * covered where that function lives.
  */
 class NodeStripOrderTest {
 
-    private fun wf(vararg at: Pair<String, Pt>) = Workflow(
-        Graph(at.map { Node(it.first, "core.image") }),
-        at.toMap(),
-        emptyMap(),
-    )
+    private fun wf(nodes: List<Node>) = Workflow(Graph(nodes), emptyMap(), emptyMap())
 
     @Test
-    fun leftToRightThenTopToBottom() {
-        // Deliberately built out of order, and a column on the left.
+    fun runOrderNotDeclarationOrder() {
+        // Declared backwards on purpose.
         val w = wf(
-            "output" to Pt(900f, 40f),
-            "prompt" to Pt(0f, 0f),
-            "photo" to Pt(0f, 300f),
-            "edit" to Pt(450f, 150f),
+            listOf(
+                Node("output", "core.output", inputs = sources("media" to "gen")),
+                Node("gen", "sd15.sample", inputs = sources("prompt" to "prompt")),
+                Node("prompt", "core.prompt"),
+            ),
         )
         assertEquals(
-            listOf("prompt", "photo", "edit", "output"),
+            listOf("prompt", "gen", "output"),
             nodeStripOrder(w).map { it.id },
         )
     }
 
     /**
-     * ⚠⚠ A node with NO recorded position sorts LAST, not at the origin. One
-     * just dropped on the canvas must not jump to the front of the strip and
-     * shift every card under a finger that is mid-swipe.
+     * ⚠⚠ A graph that cannot be ordered still lists every node. The
+     * inspector is where someone goes to FIX a broken graph, so an empty
+     * strip would take away the only way to reach the node at fault.
      */
     @Test
-    fun aNodeWithNoPositionGoesLast() {
-        val w = Workflow(
-            Graph(listOf(Node("fresh", "core.image"), Node("prompt", "core.prompt"))),
-            mapOf("prompt" to Pt(10f, 10f)),
-            emptyMap(),
+    fun aBrokenGraphStillListsItsNodes() {
+        val w = wf(
+            listOf(
+                Node("a", "core.image", inputs = sources("image" to "b")),
+                Node("b", "core.image", inputs = sources("image" to "a")),
+            ),
         )
-        assertEquals(listOf("prompt", "fresh"), nodeStripOrder(w).map { it.id })
+        assertEquals(listOf("a", "b"), nodeStripOrder(w).map { it.id })
     }
 
-    /**
-     * ⚠ Ties break on the ID, so two nodes at the same point keep a stable
-     * order between frames rather than swapping while someone steps through.
-     */
+    /** ⚠ Position is no longer consulted at all, so it cannot reshuffle. */
     @Test
-    fun tiesAreStable() {
-        val w = wf("b" to Pt(5f, 5f), "a" to Pt(5f, 5f))
-        assertEquals(listOf("a", "b"), nodeStripOrder(w).map { it.id })
-        assertEquals(nodeStripOrder(w).map { it.id }, nodeStripOrder(w).map { it.id })
+    fun draggingANodeDoesNotReorderTheStrip() {
+        val nodes = listOf(
+            Node("prompt", "core.prompt"),
+            Node("gen", "sd15.sample", inputs = sources("prompt" to "prompt")),
+        )
+        val left = Workflow(Graph(nodes), mapOf("gen" to com.abrah.nightmare.canvas.Pt(0f, 0f)), emptyMap())
+        val right = Workflow(Graph(nodes), mapOf("gen" to com.abrah.nightmare.canvas.Pt(9000f, 0f)), emptyMap())
+        assertEquals(nodeStripOrder(left).map { it.id }, nodeStripOrder(right).map { it.id })
     }
 }

@@ -1122,37 +1122,6 @@ class ReferenceInspectorScreenshotTest {
         }
 }
 
-/**
- * ⭐⭐ **The node strip** — every node in the flow, current one filled.
- *
- * ⚠ Drawn on its own rather than through the sheet: `ModalBottomSheet` does
- * not render in Roborazzi, which is why the strip is a composable of its own
- * and not inlined into [NodeInspector].
- */
-@RunWith(RobolectricTestRunner::class)
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(qualifiers = "w411dp-h891dp-xxhdpi")
-class NodeStripScreenshotTest {
-    @Test
-    fun theStrip() = captureRoboImage(filePath = "src/test/screenshots/node-strip.png") {
-        NightmareTheme(darkTheme = true) {
-            Surface(Modifier.fillMaxWidth()) {
-                com.abrah.nightmare.canvas.NodeStrip(
-                    nodes = listOf(
-                        Node("prompt", "core.prompt"),
-                        Node("photo", "core.image"),
-                        Node("edit", "flux2.sample"),
-                        Node("output", "core.output"),
-                    ),
-                    currentId = "edit",
-                    onPick = {},
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
-        }
-    }
-}
-
 /** [CanvasScreenshotTest]'s synthetic source, for the classes beside it. */
 private fun stripeSource(w: Int, h: Int): androidx.compose.ui.graphics.ImageBitmap {
     val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)

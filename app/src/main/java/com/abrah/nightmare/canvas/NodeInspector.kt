@@ -97,7 +97,10 @@ import com.abrah.nightmare.MaskRaster
 import com.abrah.nightmare.Widget
 import com.abrah.nightmare.SizeDemand
 import com.abrah.nightmare.requiredOutputSize
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.lazy.items
@@ -108,88 +111,31 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 
 /**
- * ⭐⭐⭐ **Every node in the flow, as cards at the top of the inspector** —
- * tap one to switch, or swipe the strip to step. Asked for 2026-09-20: so a
- * person moving between nodes does not have to close the sheet and find a
- * small box on the canvas.
+ * ⭐⭐ **The strip's order: the order the graph RUNS in.**
  *
- * ⚠⚠⚠ **The strip does not scroll on its own, and that is deliberate.**
- * A horizontally scrollable row would eat the sheet-wide swipe that steps
- * between nodes ([NodeInspector]) whenever the finger happened to land on
- * the strip — one gesture with two meanings depending on where it started.
- * With `userScrollEnabled = false` the strip only follows the selection
- * ([LazyListState.animateScrollToItem]) and the swipe means one thing
- * everywhere. ⇒ Tap a card to jump, swipe anywhere to step.
- * * ⚠ **Order is the CANVAS's**, left to right then top to bottom — the
- * user's call the same day, over an explicit hand-set order. It needs no new
- * state in a saved flow and no reorder gesture, it cannot disagree with what
- * the eye sees, and a person who wants a different order already has one: the
- * nodes are theirs to arrange. ⚠ A node with no recorded position sorts
- * last rather than at the origin, so a freshly dropped one does not jump to
- * the front.
- */
-@Composable
-fun NodeStrip(
-    /** Ordered already — [nodeStripOrder] is the one that decides. */
-    nodes: List<com.abrah.nightmare.Node>,
-    currentId: String,
-    onPick: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (nodes.size < 2) return
-    val index = nodes.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    // ⚠ Follows the selection however it changed — a tap here, a swipe, or a
-    // node tapped on the canvas behind the sheet.
-    LaunchedEffect(index, nodes.size) {
-        runCatching { listState.animateScrollToItem(index.coerceAtMost(nodes.lastIndex)) }
-    }
-    androidx.compose.foundation.lazy.LazyRow(
-        state = listState,
-        userScrollEnabled = false,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        items(nodes, key = { it.id }) { n ->
-            val on = n.id == currentId
-            androidx.compose.material3.Surface(
-                onClick = { if (!on) onPick(n.id) },
-                shape = RoundedCornerShape(20.dp),
-                color = if (on) MaterialTheme.colorScheme.secondaryContainer
-                else Color.Transparent,
-                border = if (on) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            ) {
-                Text(
-                    // ⚠ The node's ID, which is its title on the canvas
-                    // (`docs/UI.md` §8.11) — the word the person is looking for.
-                    n.id,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (on) MaterialTheme.colorScheme.onSecondaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                )
-            }
-        }
-    }
-}
-
-/**
- * ⭐⭐ The strip's order: canvas position, left to right then top to bottom.
+ * ⚠⚠ It was canvas position (left to right, then top to bottom) for a few
+ * hours on 2026-09-20 and the user replaced it on the 21st: *"changing card
+ * order on node based on canvas position is a bad and expensive idea. lets
+ * just do execution order instead."* Both readings of "bad" hold. Position
+ * makes the strip reshuffle every time a node is DRAGGED, so the card you
+ * were about to tap moves for a reason that has nothing to do with the flow;
+ * and it costs a sort with a map lookup per comparison, recomputed on every
+ * recomposition of an open sheet.
  *
- * ⚠ Pure, so it is tested without a device, and ⚠⚠ stable — ties break on
- * the node id so two nodes at the same point cannot swap places between
- * frames while someone is swiping through them.
+ * ⇒ [topoSort] instead — the executor's own order, so the strip reads the
+ * way a Run reads: prompt, photo, sampler, output. It is the SAME function
+ * the run uses, not a second opinion about what depends on what.
+ *
+ * ⚠ A graph that cannot be ordered — a cycle, or a wire to a node that is
+ * half drawn — falls back to declaration order rather than emptying the
+ * strip. An inspector is exactly where someone goes to FIX such a graph, so
+ * it must still list its nodes.
  */
 fun nodeStripOrder(workflow: Workflow): List<com.abrah.nightmare.Node> =
-    workflow.graph.nodes.sortedWith(
-        compareBy(
-            { workflow.positions[it.id]?.x ?: Float.MAX_VALUE },
-            { workflow.positions[it.id]?.y ?: Float.MAX_VALUE },
-            { it.id },
-        ),
-    )
-
+    when (val o = com.abrah.nightmare.topoSort(workflow.graph)) {
+        is com.abrah.nightmare.Order.Ok -> o.nodes
+        is com.abrah.nightmare.Order.Broken -> workflow.graph.nodes
+    }
 /**
  * The knobs of one node, as a bottom sheet.
  *
@@ -276,60 +222,49 @@ fun NodeInspector(
     }
 
     val ordered = nodeStripOrder(state.workflow)
-    val here = ordered.indexOfFirst { it.id == nodeId }
+    val here = ordered.indexOfFirst { it.id == nodeId }.coerceAtLeast(0)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
-        // ⭐⭐⭐ **A FIXED, FULL height, whichever node is showing.**
+        // ⭐⭐⭐ **The nodes are PAGES, and the pager is [SwipeTabs]** — the
+        // same one the Models sub-tabs use, which is where the asked-for feel
+        // comes from: the next node peeks in as the finger moves instead of
+        // appearing when it lifts.
         //
-        // ⚠⚠ Asked for 2026-09-21: stepping through the cards must not make
-        // the sheet grow and shrink under the finger. A sheet sized by its
-        // content changes height on every switch — a prompt node is three
-        // fields and a sampler is a page of sliders — so the strip you are
-        // tapping would move between taps. It is the same rule the crop popup
-        // already had for its two tabs ([InpaintEditors]), now that the
-        // inspector has more than one thing to show.
-        Column(
-            Modifier
-                .fillMaxHeight()
-                // ⭐⭐⭐ **Swipe sideways ANYWHERE to step nodes.**
-                //
-                // ⚠⚠⚠ This was scoped to the strip alone, on the reasoning
-                // that a full-width pager would fight the sliders. It does not:
-                // Compose hit-tests innermost-first, a Slider consumes the drag
-                // inside its own bounds, and a parent detector is only offered
-                // changes no child took. A horizontally scrollable chip row
-                // likewise keeps the gesture until it runs out of content. The
-                // user made exactly this argument on 2026-09-21 and was right;
-                // the restriction was mine and unfounded.
-                //
-                // ⚠ One step per gesture however far it travels, decided on
-                // RELEASE — a long drag must not fly three nodes past the one
-                // being aimed at.
-                .pointerInput(ordered.size, here) {
-                    var dx = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { dx = 0f },
-                        onDragEnd = {
-                            val step = if (dx < -80f) 1 else if (dx > 80f) -1 else 0
-                            val next = here + step
-                            if (step != 0 && here >= 0 && next in ordered.indices) {
-                                onInspectNode(ordered[next].id)
-                            }
-                        },
-                    ) { _, d -> dx += d }
-                },
-        ) {
-        // ⭐⭐ Every node in the flow, above the knobs ([NodeStrip]).
-        // ⚠ Drawn in the SHEET and not in [NodeInspectorBody]: the body is
-        // what the goldens render and it must stay a function of ONE node.
-        NodeStrip(
-            nodes = ordered,
-            currentId = nodeId,
-            onPick = onInspectNode,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
+        // ⚠⚠⚠ This replaced a hand-rolled `detectHorizontalDragGestures`
+        // that stepped on RELEASE. It worked and it felt wrong, because a
+        // step-on-release has no in-between to animate — reported 2026-09-21,
+        // *"i need it to have proper moving animation … how we can peek onto
+        // the next tab as we slide, similar to Models subtabs"*. The sibling
+        // already existed and I wrote a worse one beside it, which is the
+        // failure `CLAUDE.md` opens with.
+        //
+        // ⚠⚠ `fillHeight` and a `fillMaxHeight` modifier together: a pager
+        // sized by its page resizes the sheet on every swipe, so the pills
+        // jump away from the finger — [SwipeTabs] carries that note from the
+        // Add node sheet, and a node inspector has far more size variance
+        // between pages than that one does (a prompt is three fields, a
+        // sampler is a page of sliders). Also what makes stepping look
+        // steady, asked for in the same message.
+        //
+        // ⚠ The pager is the source of truth while the sheet is open;
+        // `state.editing` follows it through [onInspectNode] on settle.
+        com.abrah.nightmare.ui.SwipeTabs(
+            labels = ordered.map { it.id },
+            fillHeight = true,
+            initialPage = here,
+            onPage = { i -> ordered.getOrNull(i)?.let { onInspectNode(it.id) } },
+            modifier = Modifier.fillMaxHeight(),
+        ) { page ->
+        // ⚠⚠ Shadows the outer `node`/`nodeId`/`type` ON PURPOSE: every line
+        // below was written against one node and now renders whichever page
+        // it is on. Reading the node from `state.editing` here instead would
+        // draw the SETTLED node into the page peeking in, so a swipe would
+        // show the same node twice and then snap.
+        val node = ordered.getOrNull(page) ?: return@SwipeTabs
+        @Suppress("NAME_SHADOWING") val nodeId = node.id
+        @Suppress("NAME_SHADOWING") val type = types[node.type]
         // ⭐⭐ Upscale is the one before/after exception to "a renderer's own
         // result belongs to `core.output` alone" ([NodeType.showsResult]) — it
         // shows what it MADE here too, not just what it received just above.
@@ -376,13 +311,29 @@ fun NodeInspector(
             // ⚠⚠ THIS node's model, never the top bar's — they differ as soon as
             // a sampler's checkpoint is picked on the node. `remember`ed on the
             // id so the directory scan runs once per model, not per frame.
+            // ⚠⚠⚠ **OFF the first frame.** This is a DIRECTORY SCAN, and it
+            // ran inside `remember` during composition — on the main thread,
+            // in the frame that opens the sheet. That is the choppy open
+            // reported 2026-09-21: the sheet cannot draw until a `listFiles`
+            // over a model directory comes back.
+            // ⚠ Starts from the model's DECLARED sizes, which need no disk at
+            // all, and the scanned list (patches found on disk) replaces it a
+            // frame later. The control is correct either way; it only gains
+            // entries.
             resolutions = run {
                 val modelId = node.params["model"].orEmpty()
-                remember(modelId) {
-                    com.abrah.nightmare.ModelCatalog.byId(modelId)
-                        ?.let { com.abrah.nightmare.SelectedModel.resolutionsOf(appCtx, it) }
-                        ?: com.abrah.nightmare.SelectedModel.resolutions
-                }
+                val spec = com.abrah.nightmare.ModelCatalog.byId(modelId)
+                androidx.compose.runtime.produceState(
+                    initialValue = spec?.resolutions
+                        ?: com.abrah.nightmare.SelectedModel.resolutions,
+                    key1 = modelId,
+                ) {
+                    if (spec != null) {
+                        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            com.abrah.nightmare.SelectedModel.resolutionsOf(appCtx, spec)
+                        }
+                    }
+                }.value
             },
             onSetResolution = { onSetResolution(nodeId, it) },
             onSetAspect = onSetAspect,
@@ -2283,6 +2234,13 @@ private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) 
  * ⚠ A type rather than parallel lists, because the thumbnail row, the tab
  * row and the index the popup is open at are all read from one order.
  */
+/**
+ * ⚠ The longest edge the CROP and MASK tiles are rendered at. They are a
+ * third of a phone wide; building them at the render resolution cost a
+ * dropped frame every time the sheet opened.
+ */
+private const val THUMB_MAX_EDGE = 384
+
 private data class EditorTile(
     val label: String,
     val thumb: ImageBitmap,
@@ -2346,7 +2304,21 @@ private fun InpaintEditors(
     // rect alone, a resolution change left both previews at the old shape.
     val framed = remember(photo, rect, outW0, outH0, pad) {
         photo ?: return@remember null
-        val (outW, outH) = outW0 to outH0
+        // ⚠⚠⚠ **Rendered at THUMBNAIL size, not at the output size.**
+        //
+        // These two tiles are about a third of a phone wide, and this used to
+        // build them at the render resolution — a full 1024x1024 (or 2048x2048)
+        // bitmap composited and then scaled down to ~180dp, on the main thread,
+        // in the frame that opens the sheet. With the directory scan above it,
+        // that is the choppy open reported 2026-09-21.
+        //
+        // ⚠⚠ The SHAPE is kept exactly — the tile is drawn at `outAspect`
+        // and the framing maths is unchanged; only the pixel count drops. ⇒ Up
+        // to 16x less work for a picture nobody can see the detail of.
+        // ⚠ A small output is left alone rather than scaled UP.
+        val scale = (THUMB_MAX_EDGE.toFloat() / maxOf(outW0, outH0, 1)).coerceAtMost(1f)
+        val outW = (outW0 * scale).toInt().coerceAtLeast(1)
+        val outH = (outH0 * scale).toInt().coerceAtLeast(1)
         CropNode.render(
             photo.asAndroidBitmap(), rect.x, rect.y, rect.w, rect.h, outW, outH, node.params[CropNode.PAD],
         ).first
@@ -2479,7 +2451,7 @@ private fun InpaintPopupBody(
     /** ⚠ The SELECTED tab's panel — the caller's tile list owns which. */
     panel: @Composable () -> Unit,
 ) {
-    // ⭐⭐⭐ **Drag DOWN anywhere to close, and no close button.**
+    // ⭐⭐⭐ **Drag DOWN anywhere to close, and the window FOLLOWS the finger.**
     //
     // ⚠⚠⚠ **Why `nestedScroll` and not a `pointerInput` on the root.**
     // Hit-testing already does most of the work: the crop and mask editors
@@ -2487,20 +2459,37 @@ private fun InpaintPopupBody(
     // landed on the picture — that part needs no arrangement at all. What
     // DOES get in the way is the scrolling column below: `verticalScroll`
     // consumes every vertical drag it can use, so a root detector would
-    // almost never fire. ⇒ Take what the scroll could NOT use. Once the
+    // almost never fire. ⇒ Take what the scroll could NOT use: once the
     // content is at the top a downward drag is spare, and spare downward drag
-    // closes the window — which is how a bottom sheet behaves, for this reason.
+    // moves the window — which is how a bottom sheet behaves, for this reason.
     //
-    // ⚠⚠ An earlier version of this comment claimed a whole-surface drag
-    // would fight the editors. It would not; children consume first, and the
-    // user said so on 2026-09-21. The fight the history records was a
+    // ⚠⚠ An earlier version of this claimed a whole-surface drag would
+    // fight the editors. It would not; children consume first, and the user
+    // said so on 2026-09-21. The fight the history records was a
     // `ModalBottomSheet`, whose dismiss works through nested scroll that raw
     // `pointerInput` children do not speak — a sheet-specific mechanism,
     // wrongly generalised to a `Dialog`.
     //
-    // ⚠ Decided on the gesture END, never mid-drag: a window that vanishes
-    // under the finger cannot be taken back.
-    var spare by remember { mutableStateOf(0f) }
+    // ⭐⭐ **Animated, which is a separate thing from closing.** Reported
+    // 2026-09-21: only the node inspector animated shut. A window that
+    // vanishes on release never showed the gesture working, so the offset is
+    // applied live and released either back to rest or out of the bottom,
+    // with `onClose` called when the slide ENDS.
+    // ⚠ Damped to a third while dragging: the finger stays ahead of the
+    // window, which is what makes it feel resisted rather than stuck to.
+    val offset = remember { androidx.compose.animation.core.Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val outY = with(androidx.compose.ui.platform.LocalDensity.current) { 900.dp.toPx() }
+    val settle: () -> Unit = {
+        scope.launch {
+            if (offset.value > 160f) {
+                offset.animateTo(outY, androidx.compose.animation.core.tween(180))
+                onClose()
+            } else {
+                offset.animateTo(0f)
+            }
+        }
+    }
     val pull = remember {
         object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
             override fun onPostScroll(
@@ -2508,7 +2497,9 @@ private fun InpaintPopupBody(
                 available: androidx.compose.ui.geometry.Offset,
                 source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
             ): androidx.compose.ui.geometry.Offset {
-                if (available.y > 0f) spare += available.y
+                if (available.y > 0f) {
+                    scope.launch { offset.snapTo(offset.value + available.y / 3f) }
+                }
                 // ⚠ Consumes nothing: the content keeps every pixel it wanted,
                 // this only watches what was left over.
                 return androidx.compose.ui.geometry.Offset.Zero
@@ -2518,23 +2509,24 @@ private fun InpaintPopupBody(
                 consumed: androidx.compose.ui.unit.Velocity,
                 available: androidx.compose.ui.unit.Velocity,
             ): androidx.compose.ui.unit.Velocity {
-                if (spare > 160f) onClose()
-                spare = 0f
+                settle()
                 return androidx.compose.ui.unit.Velocity.Zero
             }
         }
     }
     Column(
         Modifier.fillMaxSize()
+            .graphicsLayer { translationY = offset.value }
             .nestedScroll(pull)
             // ⚠ …and the same gesture on the chrome, which does not scroll and
             // so sends the connection above nothing.
             .pointerInput(Unit) {
-                var dy = 0f
                 detectVerticalDragGestures(
-                    onDragStart = { dy = 0f },
-                    onDragEnd = { if (dy > 160f) onClose() },
-                ) { _, d -> if (d > 0) dy += d }
+                    onDragEnd = { settle() },
+                    onDragCancel = { settle() },
+                ) { _, d ->
+                    scope.launch { offset.snapTo((offset.value + d / 3f).coerceAtLeast(0f)) }
+                }
             }
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
