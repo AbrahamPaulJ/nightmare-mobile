@@ -230,6 +230,14 @@ class SdSampler(
         const val REF_W = "ref_w"
         const val REF_H = "ref_h"
 
+        /**
+         * ⭐ The longest edge a reference is sent at. 512 because that is the
+         * size whose VAE encode measured 288 MB against 1024's 1536 MB, and a
+         * reference is read rather than rendered — it does not need the
+         * output's resolution. See [boundReference].
+         */
+        const val REF_MAX_EDGE = 512
+
         /** ⭐ The four registrations. One class; two arguments of difference. */
         val SD15 = SdSampler("sd15.sample", Family.SD15, inpaint = false)
         val SDXL = SdSampler("sdxl.sample", Family.SDXL, inpaint = false)
@@ -919,7 +927,7 @@ class SdSampler(
                 p[REF_W]?.toFloatOrNull() ?: 1f, p[REF_H]?.toFloatOrNull() ?: 1f,
                 0, 0, CropNode.PAD_BLACK,
             )
-            ImageStore.encodePng(region)
+            ImageStore.encodePng(boundReference(region))
         }
         ctx.say(
             when {
@@ -949,6 +957,39 @@ class SdSampler(
         val bmp = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
         return Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
+    }
+
+    /**
+     * ⭐⭐⭐ A reference small enough to VAE-encode. **Aspect preserved, area
+     * bounded** — the two are different promises and only the first one was
+     * ever made.
+     *
+     * ⚠⚠⚠ Measured on device 2026-09-20, and it is not a precaution. Every
+     * VAE ENCODE takes a full-frame buffer sized by the picture's area, and
+     * `vae_tile_size` does NOT help: the engine logged
+     * `passes=4 ... tile_size=64 -> TILED` and still allocated **1536 MB of
+     * VRAM and 524 MB of RAM per encode** at 1024x1024. Tiling governs the
+     * DECODE only. At 512x512 the same buffer is 288 MB.
+     *
+     * A Klein edit encodes the base twice (init latent + clean reference) and
+     * every reference once, so a 1024x1024 edit with one reference asked for
+     * three of those and the app was reaped as foreground TOP, three times.
+     *
+     * ⇒ The one input this app can shrink without changing what is rendered
+     * is the REFERENCE: it is context the model reads, never the output, so
+     * [REF_MAX_EDGE] pixels is ample. The base cannot shrink — it IS the
+     * canvas.
+     *
+     * ⚠ Untouched when it is already small, so a modest reference costs
+     * nothing and keeps its exact pixels.
+     */
+    private fun boundReference(src: android.graphics.Bitmap): android.graphics.Bitmap {
+        val longest = maxOf(src.width, src.height)
+        if (longest <= REF_MAX_EDGE) return src
+        val scale = REF_MAX_EDGE.toFloat() / longest
+        val w = (src.width * scale).toInt().coerceAtLeast(1)
+        val h = (src.height * scale).toInt().coerceAtLeast(1)
+        return android.graphics.Bitmap.createScaledBitmap(src, w, h, true)
     }
 
     /** ⚠ Never put in the store: [ImageStore.encodePng] says why. */
