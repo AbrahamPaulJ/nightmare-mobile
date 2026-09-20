@@ -861,10 +861,8 @@ private fun ModelCard(
             // backend pointed at a directory that is gone.
             row.installed && row.selected ->
                 OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.in_use)) }
-            row.installed -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { onDelete(row.spec) }, enabled = !busy) { Text(stringResource(R.string.delete)) }
-                Button(onClick = { onUse(row.spec) }, enabled = !busy) { Text(stringResource(R.string.use)) }
-            }
+            row.installed ->
+                InstalledActions(busy, onDelete = { onDelete(row.spec) }, onUse = { onUse(row.spec) })
             // ⚠⚠ An INCOMPLETE import: the only action is to delete it. There
             // is no Download that could complete it. ⚠ `Delete`, not `Remove`:
             // the dialog it opens says Delete, and one action has one verb.
@@ -940,15 +938,40 @@ private fun VideoModelsTab(
                         OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
                     row.supported == false ->
                         OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.unsupported)) }
-                    row.complete -> {
-                        // ⚠ Use filled and first, Delete outlined beside it — the
-                        // order every installed row uses (`docs/UI.md` §8.1).
-                        Button(onClick = onUse, enabled = !busy) { Text(stringResource(R.string.use)) }
-                        OutlinedButton(onClick = onConfirmDelete, enabled = !busy) { Text(stringResource(R.string.delete)) }
-                    }
+                    row.complete ->
+                        InstalledActions(busy, onDelete = onConfirmDelete, onUse = onUse)
                     else -> Button(onClick = onInstall, enabled = !busy) { Text(stringResource(R.string.download)) }
                 }
             }
+        }
+    }
+}
+
+/**
+ * ⭐⭐⭐ **The actions on an INSTALLED model: Delete left, Use right.**
+ *
+ * ⚠⚠⚠ Reported from the phone 2026-09-20, angrily and rightly: the
+ * upscaler and video cards shipped Use on the LEFT and no spacing at all,
+ * under a comment of mine claiming they matched the checkpoint rows. They
+ * did not. I asserted the convention instead of reading it, which is the
+ * one failure `CLAUDE.md` opens with — **find the sibling before you write
+ * the thing** — and a comment that states a rule it breaks is worse than no
+ * comment, because the next reader believes it.
+ *
+ * ⇒ There is now ONE of these and three callers, so a fourth card cannot
+ * invent a fourth order. The shape, from the checkpoint row that always had
+ * it right: **outlined Delete, filled Use, `Arrangement.spacedBy(8.dp)`**.
+ * Destructive first, primary last where the thumb lands — the same order
+ * `PictureActions` uses (`docs/UI.md` §8.3).
+ */
+@Composable
+private fun InstalledActions(busy: Boolean, onDelete: () -> Unit, onUse: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = onDelete, enabled = !busy) {
+            Text(stringResource(R.string.delete))
+        }
+        Button(onClick = onUse, enabled = !busy) {
+            Text(stringResource(R.string.use))
         }
     }
 }
@@ -990,12 +1013,8 @@ private fun UpscalerCard(
         when {
             row.progress != null ->
                 OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-            row.installed -> {
-                // ⚠ Use FIRST and filled, Delete outlined beside it — the same
-                // pair, in the same order, a checkpoint row uses.
-                Button(onClick = { onUse(row.spec) }, enabled = !busy) { Text(stringResource(R.string.use)) }
-                OutlinedButton(onClick = { onDelete(row.spec) }, enabled = !busy) { Text(stringResource(R.string.delete)) }
-            }
+            row.installed ->
+                InstalledActions(busy, onDelete = { onDelete(row.spec) }, onUse = { onUse(row.spec) })
             row.build == null ->
                 OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.unsupported)) }
             else -> Button(onClick = { onInstall(row.spec) }, enabled = !busy) { Text(stringResource(R.string.download)) }

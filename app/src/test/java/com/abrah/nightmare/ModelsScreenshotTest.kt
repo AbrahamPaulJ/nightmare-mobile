@@ -166,6 +166,59 @@ class ModelsScreenshotTest {
         )
     }
 
+    /**
+     * ⭐⭐⭐ **Every INSTALLED row, so the action pair is pinned.**
+     *
+     * ⚠⚠⚠ This golden exists because nothing covered an installed
+     * upscaler or a finished video download, and both shipped on 2026-09-20
+     * with **Use on the left and no spacing** — the opposite of the checkpoint
+     * rows, found by a person opening the tab. The suite could not have caught
+     * it: `models-installed` draws checkpoints, `models-video` draws a row that
+     * is not installed, and `models-video-weights` draws one mid-download.
+     * Three goldens over the same screen and none of them over this state.
+     *
+     * ⚠⚠ — Delete OUTLINED on the left, Use FILLED on the right, 8.dp
+     * between them, identically on all three ([InstalledActions]).
+     */
+    @Test
+    fun everythingInstalledShowsTheSameActions() = shoot("models-installed-actions") {
+        val up = com.abrah.nightmare.UpscalerSpec(
+            id = "upscaler_realistic",
+            label = "4x UltraSharp V2 Lite",
+            about = "photos",
+            remoteDir = "",
+            builds = listOf(com.abrah.nightmare.UpscalerBuild("8gen2", 22_000_000L, 69, 4)),
+        )
+        ModelsScreen(
+            rows = emptyList(), busy = false, error = null,
+            onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
+            upscalers = listOf(
+                com.abrah.nightmare.ui.UpscalerRow(
+                    spec = up,
+                    build = up.builds.first(),
+                    installed = true,
+                    onDisk = 22_000_000L,
+                ),
+            ),
+        )
+    }
+
+    /** ⚠ …and the video row once it is complete, the other card that had it wrong. */
+    @Test
+    fun videoModelsInstalled() = shoot("models-video-installed") {
+        ModelsScreen(
+            rows = emptyList(), busy = false, error = null,
+            onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
+            video = com.abrah.nightmare.ui.VideoRow(
+                installedBytes = 8_596_825_402L,
+                totalBytes = 8_596_825_402L,
+                missing = emptyList(),
+                weightsMissing = emptyList(),
+                supported = true,
+            ),
+        )
+    }
+
     /** A failed install has to say why — "size mismatch" is the common one. */
     @Test
     fun withAnError() = shoot("models-error") {
