@@ -75,8 +75,14 @@ foreach ($n in $want) {
 Write-Output ("qnnlibs {0,9:N0} bytes across {1} files ({2} arches)" -f $total, $want.Count, $arches.Count)
 
 # ⭐⭐ The DiT engine (FLUX.2 Klein / Z-Image). Taken from local-dream
-# v3.0.0-alpha.1's APK, where upstream builds it from stable-diffusion.cpp with
+# v3.0.0-alpha.2's APK, where upstream builds it from stable-diffusion.cpp with
 # the Hexagon SDK (not installed here).
+#
+# ⚠⚠ alpha.2 is an ABI BUMP: DIT_ENGINE_ABI_VERSION went 1 -> 3, and the
+# Hexagon skels changed with it (upstream a7dd738, "correct Hexagon ops that
+# broke DiT edits and non-256 sizes"). The core refuses a mismatched engine by
+# version, so the engine, the skels and backend-src/src/DitEngine.h move
+# TOGETHER or DiT stops working entirely.
 #
 # ⚠⚠ Since 1.5.502 libdit_engine.so does NOT go into the APK. It is 55.7 MB on
 # disk, 21.9 MB deflated, and dead weight on every phone that never renders a
@@ -96,10 +102,10 @@ Write-Output ("qnnlibs {0,9:N0} bytes across {1} files ({2} arches)" -f $total, 
 # Set $env:NM_DIT_ENGINE to a dir holding lib/arm64-v8a/libdit_engine.so and
 # assets/ditlibs/*.so.
 $dit = if ($env:NM_DIT_ENGINE) { $env:NM_DIT_ENGINE } else {
-    Join-Path (Split-Path -Parent $root) "LocalDream\ld3-apk\extracted"
+    Join-Path (Split-Path -Parent $root) "LocalDream\ld3-apk-a2\extracted"
 }
-$ditAssets = Join-Path $root "app\src\mainssets\ditlibs"
-$ditSo = Join-Path $dit "librm64-v8a\libdit_engine.so"
+$ditAssets = Join-Path $root "app\src\main\assets\ditlibs"
+$ditSo = Join-Path $dit "lib\arm64-v8a\libdit_engine.so"
 # ⚠⚠ A copy left by a pre-1.5.502 staging run would be packaged silently and
 # quietly undo the whole change, so it is REMOVED rather than merely not
 # written.
@@ -111,10 +117,18 @@ if (Test-Path $staleEngine) {
 if (Test-Path $ditSo) {
     New-Item -ItemType Directory -Force $ditAssets | Out-Null
     Copy-Item (Join-Path $dit "assets\ditlibs\*.so") $ditAssets -Force
-    $relDir = Join-Path $root "build
-elease-assets"
+    # ⚠⚠⚠ STAMP THEM, or Gradle ships the PREVIOUS skels. They come out of
+    # an APK with a 1981 timestamp, and a rebuilt skel keeps its page-aligned
+    # SIZE -- so after Copy-Item the new file has the same size AND the same
+    # mtime as the old one, and the asset-merge task treats it as unchanged
+    # and reuses its cache. Measured 2026-09-20: the alpha.2 engine shipped
+    # against alpha.1 skels and every FLUX.2 edit rendered as pure noise,
+    # which is upstream's own bug (their a7dd738 hit it with a size check)
+    # one layer up in the build.
+    Get-ChildItem $ditAssets -Filter *.so | ForEach-Object { $_.LastWriteTime = Get-Date }
+    $relDir = Join-Path $root "build\release-assets"
     New-Item -ItemType Directory -Force $relDir | Out-Null
-    $zip = Join-Path $relDir "dit-engine-ld3.0.0a1.zip"
+    $zip = Join-Path $relDir "dit-engine-ld3.0.0a2.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path $ditSo -DestinationPath $zip -CompressionLevel Optimal
     $h = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()

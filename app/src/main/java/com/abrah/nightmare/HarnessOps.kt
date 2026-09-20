@@ -179,6 +179,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "npu_i2v" -> npuI2v(arg)
             "inpaint" -> inpaint(arg)
             "t2i" -> t2i()
+            "dit_edit" -> ditEdit(arg)
             // ⭐ Tap to select, headless (docs/SEGMENTER.md §5).
             // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
             "segmenter_install" -> segmenterInstall()
@@ -377,6 +378,82 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * be measuring the negatives. Written 2026-09-19 to gate the 9-channel
      * inpaint checkpoint's txt2img against its base before offering it.
      */
+    /**
+     * ⭐⭐ FLUX.2 Klein's three image paths, against ONE base picture, so
+     * their outputs can be compared side by side.
+     *
+     * Upstream's rule (`PipelineDit::generate`) is not three code paths but
+     * two booleans over one:
+     *
+     *   img2img, denoise < 1  -> base is a clean REFERENCE *and* the init
+     *                            latent. What this app already shipped, now
+     *                            with the reference keeping it on-model.
+     *   img2img, denoise = 1  -> base is reference-ONLY and the full distilled
+     *                            schedule runs. This is "image edit".
+     *   + reference_images[]  -> extra clean references, any aspect ratio.
+     *
+     * ⚠⚠ The third crashed LocalDream 3.0.0-alpha.2 on this phone
+     * (2026-09-20). It is driven ONLY from here, never from the canvas, so
+     * that we learn whether the fault is upstream's caller or the engine
+     * itself without shipping a control that leads anyone into it.
+     *
+     * `--es arg refs` turns the reference leg on; without it only the two
+     * safe legs run. Pictures land beside the base in files/dit_edit/.
+     */
+    private suspend fun ditEdit(arg: String?) {
+        val spec = ModelCatalog.byId(SelectedModel.id)
+        if (spec?.isDit != true) {
+            return say("dit_edit needs a DiT model selected; ${SelectedModel.id} is not one", bad = true)
+        }
+        val res = SelectedModel.res
+        val dir = java.io.File(ctx.getExternalFilesDir(null), "dit_edit").apply { mkdirs() }
+        val negative = "worst quality, low quality, blurry, lowres, watermark, text"
+
+        if (!ensureBackend(ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height))) {
+            return say("dit_edit: no backend", bad = true)
+        }
+
+        // The base everything else edits, at a fixed seed so a rerun compares.
+        say("dit_edit: base — ${res.width}x${res.height}")
+        val base = when (
+            val r = Ops.generate(
+                prompt = "a red brick house beside a lake, clear sky, photorealistic",
+                negative = negative, steps = 4, cfg = 1.0, seed = 12345,
+                width = res.width, height = res.height,
+            )
+        ) {
+            is Ops.Result.Err -> return say("dit_edit: base FAILED http ${r.code} — ${r.body.take(200)}", bad = true)
+            is Ops.Result.Ok -> r.value
+        }
+        java.io.File(dir, "0_base.png").writeBytes(base.png)
+        say("  base ok (${base.png.size} bytes)")
+
+        val legs = buildList {
+            add(Triple("img2img_0.65", 0.65, false))
+            add(Triple("edit_1.0", 1.0, false))
+            if (arg == "refs") add(Triple("edit_with_reference", 1.0, true))
+        }
+        for ((label, denoise, withRef) in legs) {
+            val t0 = System.currentTimeMillis()
+            val r = Ops.generate(
+                prompt = "make it winter, snow on the roof and ground",
+                negative = negative, steps = 4, cfg = 1.0, seed = 777,
+                width = res.width, height = res.height,
+                imagePng = base.png, denoise = denoise,
+                referencePngs = if (withRef) listOf(base.png) else emptyList(),
+            )
+            when (r) {
+                is Ops.Result.Err ->
+                    say("  $label FAILED http ${r.code} — ${r.body.take(200)}", bad = true)
+                is Ops.Result.Ok -> {
+                    java.io.File(dir, "$label.png").writeBytes(r.value.png)
+                    say("  $label ok  ${System.currentTimeMillis() - t0} ms")
+                }
+            }
+        }
+        say("dit_edit: done — pictures in ${dir.absolutePath}")
+    }
+
     private suspend fun t2i() {
         val prompts = listOf(
             "masterpiece, best quality, ultra-detailed, realistic, 8k, a cat on grass",

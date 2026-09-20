@@ -49,10 +49,14 @@ object DitEngine {
      * old install a newer engine than its core. A release asset at a tag cannot
      * move.
      *
-     * ⚠ The tag is `v1.5.501` while the app that first shipped this is
-     * 1.5.502 — not a typo. `v1.5.501` is the pre-release that HOSTS the
-     * asset; no APK was ever published under it. The two numbers are allowed
-     * to drift, and by the rule below they normally will.
+     * ⚠ The tag need not match the app version, and by the rule below it
+     * normally will not: `v1.5.501` hosted the alpha.1 engine for apps
+     * 1.5.502–1.5.503. This is the SECOND engine — upstream local-dream
+     * v3.0.0-alpha.2, `DIT_ENGINE_ABI_VERSION` 3, with the Hexagon op fix
+     * (their a7dd738) that image editing needs. ⚠⚠ An app built before
+     * 1.5.504 keeps fetching the alpha.1 engine from the old tag and keeps
+     * working, which is exactly what tag-pinning is for: the core refuses a
+     * mismatched ABI outright, so old core + new engine must never meet.
      *
      * ⚠ So: a NEW engine build gets a new filename at a new tag, and this
      * constant changes with it — [isInstalled] compares the stamp against this
@@ -65,13 +69,13 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/v1.5.501/dit-engine-ld3.0.0a1.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/v1.5.504/dit-engine-ld3.0.0a2.zip"
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_013_060L
+    const val BYTES = 23_015_258L
 
     /** The unpacked `.so`, checked after extraction. */
-    private const val FILE_BYTES = 55_716_088L
+    private const val FILE_BYTES = 55_719_760L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -81,7 +85,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "ffa876a86944ce0512d7bde7cea5f5ff9d5eb29dcb2b564cd9f740e688ab6d81"
+    private const val SHA256 = "5ea8575068a9a1694192d00b3d9d5f6a02f5260e07ca4dd908b30dc582e83a59"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

@@ -1,5 +1,5 @@
---- ../LocalDream/local-dream/app/src/main/cpp/src/SDUtils.hpp	2026-08-08 21:44:07.032141400 +0930
-+++ backend-src/src/SDUtils.hpp	2026-09-07 23:50:27.883899700 +0930
+--- ../LocalDream/local-dream/app/src/main/cpp/src/SDUtils.hpp
++++ backend-src/src/SDUtils.hpp
 @@ -32,6 +32,10 @@
    int channels;
    int generation_time_ms;
@@ -11,3 +11,10 @@
  };
  
  inline std::string base64_encode(const std::string &in) {
+@@ -487,4 +491,4 @@
+   return resized_image;
+ }
+ 
+-#endif
++#endif
+\ No newline at end of file

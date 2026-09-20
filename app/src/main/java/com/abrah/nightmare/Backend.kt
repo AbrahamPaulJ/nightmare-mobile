@@ -709,6 +709,26 @@ object Ops {
         height: Int,
         imagePng: ByteArray? = null,
         denoise: Double = 0.6,
+        /**
+         * ⭐⭐ FLUX.2 Klein's native edit references — clean, separately
+         * VAE-encoded latents appended to the DiT token sequence, NOT noised
+         * into the generation latent like [imagePng].
+         *
+         * ⚠⚠ Each keeps its OWN aspect ratio on purpose, so these must be
+         * encoded from the source bitmap and never through `CropNode.render`,
+         * which fits a picture to the output canvas.
+         *
+         * ⚠ Klein only — the backend throws for any other family
+         * (`PipelineDit::generate`), and refuses the field outright unless the
+         * pipeline reports `supportsReferenceEditing`.
+         *
+         * ⚠⚠⚠ NOT reachable from the canvas, deliberately: extra
+         * references crashed LocalDream 3.0.0-alpha.2 on this phone
+         * (reported 2026-09-20), so nothing in the UI can send them. The
+         * `dit_edit` harness op is the only caller, which is how we find out
+         * whether that crash is upstream's or the engine's.
+         */
+        referencePngs: List<ByteArray> = emptyList(),
         onProgress: (Progress) -> Unit = {},
     ): Result<Decoded> {
         val body = JSONObject()
@@ -724,6 +744,16 @@ object Ops {
                 if (imagePng != null) {
                     put("image", android.util.Base64.encodeToString(imagePng, android.util.Base64.NO_WRAP))
                     put("denoise_strength", denoise)
+                }
+                if (referencePngs.isNotEmpty()) {
+                    put(
+                        "reference_images",
+                        org.json.JSONArray().apply {
+                            for (r in referencePngs) {
+                                put(android.util.Base64.encodeToString(r, android.util.Base64.NO_WRAP))
+                            }
+                        },
+                    )
                 }
             }
             .toString()

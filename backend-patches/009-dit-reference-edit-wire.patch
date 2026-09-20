@@ -1,0 +1,79 @@
+--- ../LocalDream/local-dream/app/src/main/cpp/src/RequestParser.hpp
++++ backend-src/src/RequestParser.hpp
+@@ -22,6 +22,7 @@
+ // ultrafix (tiled img2img) validation.
+ inline GenerationRequest parseGenerationRequest(const nlohmann::json &json,
+                                                 bool sdxl, bool anima,
++                                                bool controlnet,
+                                                 bool img2img_available,
+                                                 bool reference_edit_available,
+                                                 bool ultrafix_supported) {
+@@ -85,6 +86,56 @@
+   }
+   req.denoise_strength = json.value("denoise_strength", 0.6f);
+ 
++  // --- ControlNet: fixed 512 canvas, mandatory hint image -----------------
++  // The AI Hub graphs are frozen at 512x512 and that bundle has no VAE
++  // encoder, so for it everything img2img-shaped is rejected up front.
++  //
++  // ⚠ But `controlnet` is not the same question as "has no VAE encoder".
++  // sd15npu_control_inpaint is a ControlNet pipeline that REQUIRES an image and
++  // a mask and ships its own encoder, so gate the rejection on the encoder
++  // actually being absent rather than on the pipeline being ControlNet-shaped.
++  if (controlnet) {
++    req.width = 512;
++    req.height = 512;
++    if (!img2img_available && (json.contains("image") || json.contains("mask")))
++      throw std::invalid_argument(
++          "img2img/inpaint not supported with this controlnet model "
++          "(no VAE encoder)");
++    if (req.ultrafix)
++      throw std::invalid_argument("ultrafix not supported with controlnet");
++    // ⭐ The control image is OPTIONAL for a control model that can also inpaint
++    // on its own (sd15npu_control_inpaint). Omitting it gives plain 9-channel
++    // inpainting from the same download -- one model, two modes -- and skips
++    // the ControlNet pass entirely, which is ~1 s faster over 20 steps.
++    // For the AI Hub bundle there is nothing to fall back to, so it stays
++    // mandatory there.
++    const bool has_control_image = json.contains("control_image");
++    if (!has_control_image && !img2img_available)
++      throw std::invalid_argument("Missing 'control_image'");
++    if (has_control_image) try {
++      std::string ctrl_b64 = json["control_image"].get<std::string>();
++      std::string dec_str = base64_decode(ctrl_b64);
++      std::vector<uint8_t> dec_buf(dec_str.begin(), dec_str.end());
++      std::vector<uint8_t> dec_pix;
++      decode_image(dec_buf, dec_pix, req.width, req.height);
++      if (dec_pix.size() != (size_t)3 * req.width * req.height)
++        throw std::runtime_error("control_image size mismatch");
++      // Keep the decoded HWC order (the graph is NHWC); just map to 0..1.
++      req.control_image_data.resize(dec_pix.size());
++      for (size_t i = 0; i < dec_pix.size(); ++i)
++        req.control_image_data[i] = dec_pix[i] / 255.0f;
++    } catch (const std::exception &e) {
++      throw std::invalid_argument("Err proc control_image: " +
++                                  std::string(e.what()));
++    }
++    if (has_control_image) {
++      req.control_strength = json.value("control_strength", 1.0f);
++      req.has_control = true;
++    }
++  } else if (json.contains("control_image")) {
++    throw std::invalid_argument("'control_image' requires --type controlnet");
++  }
++
+   auto sanitize_format = [](std::string f) {
+     return (f == "jpeg" || f == "png") ? f : std::string("raw");
+   };
+@@ -268,6 +319,11 @@
+     }
+   }
+ 
++  // Debug/A-B override for the per-step latent blend; absent leaves it on
++  // (see GenerationRequest::mask_latent_blend).
++  if (json.contains("mask_latent_blend"))
++    req.mask_latent_blend = json["mask_latent_blend"].get<bool>() ? 1 : 0;
++
+   // --- Aspect padding mask ------------------------------------------------
+   // Install or intersect with the centered paint rectangle (computed
+   // above). If a user mask was supplied we zero out everything outside

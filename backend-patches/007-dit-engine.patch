@@ -1,9 +1,9 @@
---- ../LocalDream/local-dream-3.0/app/src/main/cpp/src/PipelineDit.hpp	2026-09-19 20:13:38.601320100 +0930
-+++ backend-src/src/PipelineDit.hpp	2026-09-19 21:50:20.532169800 +0930
-@@ -151,9 +151,9 @@
-     result.image_data.assign(
-         out_rgb, out_rgb + static_cast<size_t>(out_width) * out_height * 3);
-     api_->free_image(out_rgb);
+--- ../LocalDream/local-dream/app/src/main/cpp/src/PipelineDit.hpp
++++ backend-src/src/PipelineDit.hpp
+@@ -234,9 +234,9 @@
+         throw std::runtime_error("DiT inpaint output size mismatch");
+       blendInpaintResult(result.image_data, req);
+     }
 -    // generate() is overridden wholesale here, so the base class's safety pass
 -    // never runs on its own; the filter build depends on this call.
 -    applySafetyChecker(result.image_data, out_width, out_height);
