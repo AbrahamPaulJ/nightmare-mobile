@@ -259,6 +259,10 @@ fun NodeInspector(
             // 1.4.54 with no way to paint a mask by hand — the storage and the
             // interface are one change, not two.
             cropSource = if (node.type in FRAMES) sourceId?.let(imageFor) else null,
+            // ⭐⭐ FLUX.2's reference, resolved through the SAME `pictureInto`
+            // the base uses — it takes the port as an argument precisely so a
+            // second picture into one node does not need a second rule.
+            refSource = state.pictureInto(nodeId, types, port = "reference")?.let(imageFor),
             // ⚠ Same upstream picture, different job: the cropper FRAMES it,
             // the mask editor is PAINTED on it. ⚠⚠ Both arrive as the PHOTO —
             // the mask is STORED in the photo's coordinates, so re-framing a
@@ -360,6 +364,14 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // sampler's own conditional knobs.
     if (node.type in FRAMES &&
         name in setOf("x", "y", "w", "h", com.abrah.nightmare.CropNode.LOCKED)
+    ) return true
+    // ⭐ The reference region belongs to ITS editor too, for the same reason:
+    // it is dragged on the picture, and four more sliders under the size
+    // control is the duplicate the 2026-09-18 report named.
+    if (name in setOf(
+            com.abrah.nightmare.SdSampler.REF_X, com.abrah.nightmare.SdSampler.REF_Y,
+            com.abrah.nightmare.SdSampler.REF_W, com.abrah.nightmare.SdSampler.REF_H,
+        )
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
     // ⭐ An inpaint node's grow and feather are drawn IN the Mask tab of its
@@ -515,6 +527,8 @@ internal fun NodeInspectorBody(
     onViewBeforeFullscreen: () -> Unit = {},
     /** The picture a `crop` node is framing — its upstream image. */
     cropSource: ImageBitmap? = null,
+    /** ⭐ The picture wired into `reference`, if any. FLUX.2 samplers only. */
+    refSource: ImageBitmap? = null,
     /** The picture an `image.mask` node is painted on — its upstream image. */
     maskSource: ImageBitmap? = null,
     /** ⭐ The same three actions the fullscreen viewer offers. Null hides them. */
@@ -816,6 +830,50 @@ internal fun NodeInspectorBody(
                 )
             }
         }
+        // ⭐⭐⭐ The REFERENCE's region — a different job to the crop above,
+        // and the comment is here because the two look alike on screen.
+        //
+        // The crop FRAMES the base into the output canvas: it is locked to the
+        // render's shape, it can pad, and what falls outside is discarded.
+        // This one only chooses WHICH PART of the reference to send, and the
+        // region travels at its own aspect ratio — so no `aspect`, no padding,
+        // and `PadRule.NEVER`. Fitting a reference to the canvas is exactly
+        // what FLUX.2's reference-token scheme exists to avoid
+        // (`docs/MODELS.md` §9).
+        val refPanel: @Composable () -> Unit = refPanel@{
+            val src = refSource ?: return@refPanel
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Reference",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                "the part of this picture the model reads. It is not redrawn, " +
+                    "and it keeps its own shape — it is never fitted to your output size.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            CropEditor(
+                source = src,
+                rect = refCropRectOf(node),
+                // ⚠ ONE write per gesture, for the reason the crop above says:
+                // four separate writes per pointer event is what crashed the
+                // app mid-drag.
+                onChange = { r -> onSetParams(nodeId, r.asRefParams().toMap()) },
+                interactive = true,
+                outW = src.width,
+                // ⚠⚠ The REFERENCE's OWN aspect, so the region is a zoom into
+                // it rather than a reshape of it, and `CropEditor` never has to
+                // pad. Its `aspect` is not nullable and a free-form rect is not
+                // a mode it has — this is the shape that needs no padding and
+                // keeps the promise the panel's text makes.
+                aspect = src.width.toFloat() / src.height.coerceAtLeast(1),
+                padBlur = false,
+                rule = com.abrah.nightmare.PadRule.NEVER,
+            )
+        }
         val cropPanel: @Composable () -> Unit = {
             // ⭐ The size first, in the crop window too — the frame's shape is
             // decided by it, so it is changed where the frame is.
@@ -996,6 +1054,10 @@ internal fun NodeInspectorBody(
             cropPanel()
             maskPanel()
         }
+        // ⭐ Below both, because it is the third picture on the node and the
+        // least often used. ⚠ Draws itself only when something is wired into
+        // `reference`, so a sampler with no reference is unchanged.
+        refPanel()
         // ⚠ The sampler frames AND paints, so an empty one would print two
         // notes that say "wire a picture in" — the framing one below covers both.
         if (maskSource == null && node.type in PAINTS && node.type !in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {

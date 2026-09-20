@@ -302,6 +302,15 @@ data class NodeBox(
      * the intermediate at all. Reported 2026-09-18.
      */
     val beforePreview: Preview? = null,
+    /**
+     * ⭐⭐ FLUX.2's edit REFERENCE, drawn above the other two so a glance at
+     * the node says which picture is being read and which is being redrawn.
+     *
+     * ⚠ DERIVED in [layout] from the graph's `reference` wire, not stored:
+     * the picture is the upstream node's own output, which the canvas
+     * already knows. A second state map would be a second thing to clear.
+     */
+    val refPreview: Preview? = null,
     /** ⭐ Text drawn in the body — a prompt node's prompts. Null for every other node. */
     val prose: Prose? = null,
 ) {
@@ -356,8 +365,15 @@ data class NodeBox(
     val beforePreviewTop get() = previewTop - (beforePreview?.height ?: 0f) -
         (if (beforePreview != null) Sizes.BODY_PADDING else 0f)
 
-    /** ⚠ Above whichever picture is topmost — [beforePreview] when there is one. */
-    val proseTop get() = (if (beforePreview != null) beforePreviewTop else previewTop) -
+    /** ⭐ [refPreview] sits above both, same padding rule again. */
+    val refPreviewTop get() = beforePreviewTop - (refPreview?.height ?: 0f) -
+        (if (refPreview != null) Sizes.BODY_PADDING else 0f)
+
+    /** ⚠ Above whichever picture is topmost — [refPreview] first, then [beforePreview]. */
+    val proseTop get() = (
+        if (refPreview != null) refPreviewTop
+        else if (beforePreview != null) beforePreviewTop else previewTop
+        ) -
         (prose?.height ?: 0f) - (if (prose != null) Sizes.BODY_PADDING else 0f)
 
     /**
@@ -626,6 +642,16 @@ fun layout(
         val beforePreview = shownBefore?.let { (id, aspect) ->
             NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))
         }
+        // ⭐⭐ The reference, DERIVED: whatever the node's `reference` wire
+        // comes from is already drawing that picture, so its entry in
+        // [previews] is the one to show here too. ⚠ Absent for every node
+        // that has no such wire, which is all of them but a FLUX.2 sampler
+        // with a reference connected.
+        val refPreview = n.inputs["reference"]?.node
+            ?.let { previews[it] }
+            ?.let { (id, aspect) ->
+                NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))
+            }
         // ⭐⭐ **Prose in the body**, for a node whose whole content is text.
         //
         // ⚠⚠ A prompt node had nothing to show: its ports carry a
@@ -704,9 +730,11 @@ fun layout(
                 else Sizes.nodeHeight(nIn, nOut)) +
                 (preview?.let { it.height + Sizes.BODY_PADDING } ?: 0f) +
                 (beforePreview?.let { it.height + Sizes.BODY_PADDING } ?: 0f) +
+                (refPreview?.let { it.height + Sizes.BODY_PADDING } ?: 0f) +
                 (prose?.let { it.height + Sizes.BODY_PADDING } ?: 0f),
             preview = preview,
             beforePreview = beforePreview,
+            refPreview = refPreview,
             prose = prose,
         )
     }

@@ -152,6 +152,23 @@ class SdSampler(
         // here is what shows the Tap tool. ⚠ Added while no flow depends on the
         // port list — a port cannot be added after one does (§7).
         if (inpaint) Port("segmenter", SelectObjectNode.PORT_TYPE) else null,
+        // ⭐⭐ FLUX.2 Klein's edit REFERENCE — a second picture the model reads
+        // but does not redraw. Unlike `image` it is never cropped to the
+        // canvas: the engine VAE-encodes each reference at its OWN aspect
+        // ratio and positions it with FLUX.2's reference-token RoPE scheme, so
+        // fitting it to the output would throw away the thing that makes it a
+        // reference.
+        //
+        // ⚠ Wiring it WITHOUT `image` is allowed and means "generate fresh,
+        // guided by this" — `native_edit` fires on references alone
+        // (`PipelineDit::generate`). The user's call, 2026-09-20.
+        //
+        // ⚠⚠ FLUX.2 ONLY, and the port is absent elsewhere rather than
+        // present-and-failing: the backend throws "native reference editing is
+        // only supported by FLUX.2 Klein" for Z-Image, and a port that always
+        // errors is worse than no port. Same reasoning that keeps Z-Image out
+        // of the inpaint picker.
+        if (family == Family.FLUX2) Port("reference", "IMAGE") else null,
     )
     override val outputs = listOf(Port("image", "IMAGE"))
     /** ⚠ Inpaint is its OWN palette section (the user's call, 2026-09-16). */
@@ -203,6 +220,15 @@ class SdSampler(
 
         /** ⚠ The stitched picture's longest edge — a 4096 px photo plus outpaint stays bounded. */
         const val STITCH_MAX_EDGE = 4096f
+
+        /**
+         * ⭐ The reference region's params. Named apart from `x`/`y`/`w`/`h`
+         * so a node can frame its base and crop its reference independently.
+         */
+        const val REF_X = "ref_x"
+        const val REF_Y = "ref_y"
+        const val REF_W = "ref_w"
+        const val REF_H = "ref_h"
 
         /** ⭐ The four registrations. One class; two arguments of difference. */
         val SD15 = SdSampler("sd15.sample", Family.SD15, inpaint = false)
@@ -337,6 +363,23 @@ class SdSampler(
         Widget("y", "float", "0.0", 0.0, 1.0),
         Widget("w", "float", "1.0", 0.0, 1.0),
         Widget("h", "float", "1.0", 0.0, 1.0),
+        // ⭐⭐ The REFERENCE's own region, and a different job to the four
+        // above. Those FRAME the picture into the output canvas; these choose
+        // WHICH PART of a reference to send, and the region goes over the wire
+        // at its own aspect ratio — never fitted to the canvas, because that
+        // is the whole point of a reference (`docs/MODELS.md` §9).
+        //
+        // ⚠ Separate names, not a second use of x/y/w/h: one node can carry a
+        // framed base AND a cropped reference at once, and sharing the params
+        // would make moving one move the other.
+        //
+        // ⚠⚠ Hidden from the knob list like x/y/w/h are ([hiddenKnob]) — they
+        // are dragged on the picture, and four more loose sliders under the
+        // size control is the duplicate the 2026-09-18 report named.
+        Widget(REF_X, "float", "0.0", 0.0, 1.0, hint = "drag the region on the reference"),
+        Widget(REF_Y, "float", "0.0", 0.0, 1.0),
+        Widget(REF_W, "float", "1.0", 0.0, 1.0),
+        Widget(REF_H, "float", "1.0", 0.0, 1.0),
         // ⚠ Drawn as the tick/pencil in the Crop title row, never as a checkbox
         // in the knob list ([hiddenKnob]).
         Widget(CropNode.LOCKED, "bool", "false"),
@@ -481,7 +524,12 @@ class SdSampler(
         // path rejoins at [runDitMasked] and returns before any op endpoint is
         // touched. `docs/MODELS.md` §9.
         if (family.dit && !inpaint) {
-            return runDit(ctx, node, p, prompt, inputs["image"] as? Value.Image, w, h)
+            return runDit(
+                ctx, node, p, prompt,
+                inputs["image"] as? Value.Image,
+                inputs["reference"] as? Value.Image,
+                w, h,
+            )
         }
         val aspect = nodeAspect(node)
             ?.takeIf { ModelCatalog.aspectTarget(it, Res(w, h)) != null }
@@ -832,6 +880,7 @@ class SdSampler(
         p: Map<String, String>,
         prompt: Value.Prompt,
         photo: Value.Image?,
+        reference: Value.Image?,
         w0: Int,
         h0: Int,
     ): Value {
@@ -850,7 +899,36 @@ class SdSampler(
             )
             ImageStore.encodePng(frame)
         }
-        ctx.say(if (png == null) "rendering" else "re-imagining the picture")
+        // ⭐⭐ The reference goes over the wire at its OWN size — no
+        // [CropNode.render], deliberately. `image` above is fitted to the
+        // canvas because it becomes the init latent; a reference is VAE-encoded
+        // separately and positioned by FLUX.2's reference-token RoPE, so
+        // cropping it to the output would discard its framing for nothing.
+        val referencePng = reference?.let {
+            val bmp = ctx.images.get(it.id)
+                ?: throw IllegalStateException(
+                    "node \"${node.id}\": reference image ${it.id} is no longer in the store"
+                )
+            // ⚠⚠ Target size **0, 0** — the region at its OWN pixels, the same
+            // way an inpaint keeps the photo's own resolution. Passing `w, h`
+            // here would fit the reference to the output canvas, which is
+            // exactly what a reference must not be.
+            val (region, _) = CropNode.render(
+                bmp,
+                p[REF_X]?.toFloatOrNull() ?: 0f, p[REF_Y]?.toFloatOrNull() ?: 0f,
+                p[REF_W]?.toFloatOrNull() ?: 1f, p[REF_H]?.toFloatOrNull() ?: 1f,
+                0, 0, CropNode.PAD_BLACK,
+            )
+            ImageStore.encodePng(region)
+        }
+        ctx.say(
+            when {
+                referencePng != null && png == null -> "rendering from your reference"
+                referencePng != null -> "re-imagining the picture with your reference"
+                png == null -> "rendering"
+                else -> "re-imagining the picture"
+            }
+        )
         val r = ctx.host.generate(
             prompt = prompt.positive,
             negative = prompt.negative,
@@ -861,6 +939,7 @@ class SdSampler(
             height = h,
             imagePng = png,
             denoise = p["denoise"]?.toDoubleOrNull() ?: 0.65,
+            referencePngs = listOfNotNull(referencePng),
             onProgress = ctx.onProgress,
         )
         val out = when (r) {

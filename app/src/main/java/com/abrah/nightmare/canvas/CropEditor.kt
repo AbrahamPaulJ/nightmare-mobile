@@ -522,6 +522,30 @@ fun CropRect.asParams(): List<Pair<String, String>> = listOf(
     "x" to round3(x), "y" to round3(y), "w" to round3(w), "h" to round3(h),
 )
 
+/**
+ * ⭐⭐ The same rect under the REFERENCE's param names
+ * ([com.abrah.nightmare.SdSampler.REF_X] and friends).
+ *
+ * ⚠⚠ A pair of thin wrappers rather than a second geometry: one node can
+ * carry a framed base AND a cropped reference, so the two rects need separate
+ * storage — but they must behave identically under a drag, and two copies of
+ * the clamping would stop agreeing. `CLAUDE.md`: two surfaces that must agree
+ * call the same function.
+ */
+fun refCropRectOf(node: com.abrah.nightmare.Node): CropRect = CropRect(
+    node.params[com.abrah.nightmare.SdSampler.REF_X]?.toFloatOrNull() ?: 0f,
+    node.params[com.abrah.nightmare.SdSampler.REF_Y]?.toFloatOrNull() ?: 0f,
+    node.params[com.abrah.nightmare.SdSampler.REF_W]?.toFloatOrNull() ?: 1f,
+    node.params[com.abrah.nightmare.SdSampler.REF_H]?.toFloatOrNull() ?: 1f,
+).clamped()
+
+fun CropRect.asRefParams(): List<Pair<String, String>> = listOf(
+    com.abrah.nightmare.SdSampler.REF_X to round3(x),
+    com.abrah.nightmare.SdSampler.REF_Y to round3(y),
+    com.abrah.nightmare.SdSampler.REF_W to round3(w),
+    com.abrah.nightmare.SdSampler.REF_H to round3(h),
+)
+
 private fun round3(v: Float) = (Math.round(v * 1000f) / 1000f).toString()
 
 /**

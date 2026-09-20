@@ -131,6 +131,8 @@ interface OpHost {
         width: Int, height: Int, imagePng: ByteArray?, denoise: Double,
         /** ⚠ Klein's masked redraw only; the backend refuses a mask with no image. */
         maskPng: ByteArray? = null,
+        /** ⚠ Klein's edit references, at their own aspect ratios. */
+        referencePngs: List<ByteArray> = emptyList(),
         onProgress: (Ops.Progress) -> Unit,
     ): Ops.Result<Ops.Decoded> = Ops.Result.Err(501, "this host cannot run a whole-render model")
 
@@ -201,11 +203,12 @@ object BackendHost : OpHost {
         prompt: String, negative: String, steps: Int, cfg: Double, seed: Int,
         width: Int, height: Int, imagePng: ByteArray?, denoise: Double,
         maskPng: ByteArray?,
+        referencePngs: List<ByteArray>,
         onProgress: (Ops.Progress) -> Unit,
     ) = Ops.generate(
         prompt = prompt, negative = negative, steps = steps, cfg = cfg, seed = seed,
         width = width, height = height, imagePng = imagePng, denoise = denoise,
-        maskPng = maskPng, onProgress = onProgress,
+        maskPng = maskPng, referencePngs = referencePngs, onProgress = onProgress,
     )
 
     override suspend fun latentBlend(a: String, b: String, maskPng: ByteArray) =

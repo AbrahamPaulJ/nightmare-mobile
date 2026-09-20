@@ -467,6 +467,67 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 }
             }
         }
+        // ⭐⭐⭐ The NODE path, which is a different code path to the three
+        // legs above: they call `/generate` directly, this drives
+        // `SdSampler.runDit` through a real graph with the `reference` port
+        // wired — and that port sends the picture UNCROPPED, at whatever size
+        // it happens to be.
+        //
+        // ⚠⚠ That difference is the point. The legs above used a
+        // canvas-sized reference and did not crash; LocalDream 3.0.0-alpha.2
+        // crashes on this phone with one base and one reference, and its UI
+        // does not fit a reference to the canvas either. So an
+        // ODD-SIZED reference is the live hypothesis, and this leg is what
+        // tests it — the gallery photo is 512x768 against a 512x512 canvas.
+        if (arg == "refs" || arg == "node") {
+            val photo = newestSavedImage()
+            if (photo == null) {
+                say("  node leg SKIPPED — nothing in Pictures/${ImageSaver.FOLDER} to use as a reference")
+            } else {
+                val types = nodeTypes()
+                val basePath = java.io.File(dir, "0_base.png").absolutePath
+                val g = deriveSizes(
+                    com.abrah.nightmare.Graph(
+                        listOf(
+                            Node("prompt", "core.prompt", params = mapOf(
+                                "prompt" to "make it winter, snow on the roof and ground",
+                                "negative" to negative,
+                            )),
+                            Node("base", "core.image", params = mapOf("uri" to basePath)),
+                            Node("ref", "core.image", params = mapOf("uri" to photo)),
+                            Node(
+                                "gen", com.abrah.nightmare.SdSampler.FLUX2.name,
+                                params = mapOf(
+                                    "model" to spec.id, "seed" to "777",
+                                    "steps" to "4", "cfg" to "1.0", "denoise" to "1.0",
+                                    "width" to res.width.toString(),
+                                    "height" to res.height.toString(),
+                                ),
+                                inputs = sources(
+                                    "prompt" to "prompt", "image" to "base", "reference" to "ref",
+                                ),
+                            ),
+                            Node("out", "core.output", inputs = sources("media" to "gen")),
+                        )
+                    ),
+                    types,
+                )
+                val t0 = System.currentTimeMillis()
+                val r = runWorkflow(com.abrah.nightmare.canvas.Workflow(g, emptyMap()))
+                if (r.error != null) {
+                    say("  node_reference REFUSED — ${r.error}", bad = true)
+                } else {
+                    val img = r.outputs.values.filterIsInstance<Value.Image>().lastOrNull()
+                    val png = img?.let { images.png(it.id) }
+                    if (png == null) say("  node_reference: no picture", bad = true)
+                    else {
+                        java.io.File(dir, "node_reference.png").writeBytes(png)
+                        say("  node_reference ok  ${System.currentTimeMillis() - t0} ms  (ref was the gallery photo, uncropped)")
+                    }
+                }
+            }
+        }
+
         say("dit_edit: done — pictures in ${dir.absolutePath}")
     }
 

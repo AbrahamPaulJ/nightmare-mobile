@@ -413,6 +413,12 @@ private fun DrawScope.drawNode(
     // node RECEIVED, where [box.preview] is what it MADE. Only a before/after
     // node (`image.upscale` today) ever has one; every other node draws
     // exactly as it did before this existed.
+    // ⭐ The REFERENCE, topmost: what the node READS, above what it received
+    // and what it made. Same function as the other two, so the three cannot
+    // drift apart in how they clip or scale.
+    box.refPreview?.let { p ->
+        drawPreviewImage(box, p, box.refPreviewTop, tl, w, viewport, imageFor, clipFrameFor)
+    }
     box.beforePreview?.let { p ->
         drawPreviewImage(box, p, box.beforePreviewTop, tl, w, viewport, imageFor, clipFrameFor)
     }
