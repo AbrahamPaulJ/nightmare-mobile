@@ -368,9 +368,12 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // ⭐ The reference region belongs to ITS editor too, for the same reason:
     // it is dragged on the picture, and four more sliders under the size
     // control is the duplicate the 2026-09-18 report named.
+    // ⭐ …and the reference's own SIZE, drawn at the top of that editor
+    // where the base's Shape + Resolution sit in the Crop one.
     if (name in setOf(
             com.abrah.nightmare.SdSampler.REF_X, com.abrah.nightmare.SdSampler.REF_Y,
             com.abrah.nightmare.SdSampler.REF_W, com.abrah.nightmare.SdSampler.REF_H,
+            com.abrah.nightmare.SdSampler.REF_MAX,
         )
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
@@ -842,22 +845,34 @@ internal fun NodeInspectorBody(
         // (`docs/MODELS.md` §9).
         val refPanel: @Composable () -> Unit = refPanel@{
             val src = refSource ?: return@refPanel
-            // ⭐⭐⭐ **The RESOLUTION, first** — the same control the Crop tab
-            // opens with, drawn from the same [sizePanel] so the two tabs cannot
-            // drift. Asked for 2026-09-20: *"both should have consistent cropper
-            // windows with their respective names and knobs for size"*.
+            // ⭐⭐⭐ **The reference's OWN size, first** — the slot the Crop tab
+            // uses for Shape + Resolution, filled by a control of this picture's
+            // own ([SdSampler.REF_MAX]).
             //
-            // ⚠⚠⚠ It is the resolution and NOT a size of the reference's own,
-            // which is what this panel carried for one day. A reference is
-            // VAE-encoded at the OUTPUT CANVAS's size, never at its own
-            // ([SdSampler.REF_ENCODED_AT_CANVAS]): the same 512x512 picture costs
-            // 384 MB under a 512x512 canvas and 1536 MB under a 1024x1024 one. So
-            // a "Reference size" knob was a control over nothing, sitting next to
-            // a hint quoting numbers that are false for a reference.
-            // ⚠⚠ The honest version of that symmetry is this: the resolution
-            // IS the reference's size control, and it belongs in both tabs
-            // because it decides what both pictures cost.
-            if (popup) sizePanel()
+            // ⚠⚠⚠ It must NOT be the output resolution, and for one build it
+            // was: 1.5.518 drew [sizePanel] here on the reasoning that the canvas
+            // is the only thing deciding a reference's cost (true) and therefore
+            // the only honest size control for it (false). Both tabs then wrote
+            // the same `width`/`height`, so moving one moved the other. Reported
+            // the same day: *"dont share same resolution dropdown. have base
+            // image res. and reference img res so i can test, for example, 1024
+            // base img and 512 reference"*.
+            //
+            // ⚠⚠ What it controls is DETAIL, never memory — the hint says so,
+            // and the warning below states the cost the canvas really does set.
+            type?.widgets.orEmpty()
+                .firstOrNull { it.name == com.abrah.nightmare.SdSampler.REF_MAX }
+                ?.takeIf { popup }
+                ?.let { w ->
+                    Chooser(
+                        label = "Reference size",
+                        hint = w.hint,
+                        options = w.options.orEmpty(),
+                        current = node.params[w.name] ?: w.default.orEmpty(),
+                        onPick = { onSetParam(nodeId, w.name, it) },
+                        variesInLength = true,
+                    )
+                }
             if (!popup) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Reference",

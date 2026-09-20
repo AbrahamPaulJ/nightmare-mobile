@@ -250,19 +250,54 @@ class SdSampler(
          * announces it — `diffusion_engine.cpp: Using 'flux2' preset for
          * reference images` — and resizes every reference before encoding it.
          *
-         * ⚠⚠⚠ **This is why there is no reference-size knob and no
-         * `boundReference`.** Both existed for one day, on the reasoning that a
-         * smaller reference is a cheaper one. It is not: shrinking one only
-         * throws detail away before the engine scales it back up. 1.5.513
-         * bounded the user's reference to 512 px for the same wrong reason and
-         * was written down as "right on its own terms, insufficient" — it was
-         * never right on its own terms either.
+         * ⚠⚠⚠ **This is why [REF_MAX] is not a memory control**, and why
+         * 1.5.513 (bound the reference to 512 px) and 1.5.516 (bound the base
+         * too) were both reverted: shrinking a reference does not make it
+         * cheaper, it only throws detail away before the engine scales it back
+         * up. 1.5.513 was written down as "right on its own terms,
+         * insufficient" — it was never right on its own terms either.
          *
-         * ⇒ The only lever on what a reference costs is the **resolution**,
-         * which is why the Reference editor draws that control rather than one
-         * of its own (`docs/UI.md` §8.12). `docs/MODELS.md` §9 has the rest.
+         * ⭐ **Rule changed 2026-09-20, later the same day, at the user's ask.**
+         * This block first said "there is no reference-size knob" and deleted
+         * [REF_MAX] outright. That went one step too far: the knob is useless
+         * for MEMORY and that is what the measurement above proves, but it is
+         * not useless — it changes **what the model reads**, and a reference
+         * sent at 512 under a 1024 canvas is upscaled context rather than
+         * sharp context. Whether that helps or hurts a composition is a
+         * question about pictures, which no measurement here answers and the
+         * person holding the phone has to try. ⇒ [REF_MAX] is back, defaulting
+         * to sending the reference untouched, and its hint says plainly that
+         * it costs nothing and buys nothing but detail.
+         *
+         * ⇒ The only lever on what a reference COSTS is the output resolution,
+         * which lives in the Crop tab and is stated in the Reference tab's
+         * warning (`docs/UI.md` §8.12). `docs/MODELS.md` §9 has the rest.
          */
         const val REF_ENCODED_AT_CANVAS = true
+
+        /**
+         * ⭐⭐ **The size a reference is SENT at — independent of the canvas.**
+         *
+         * ⚠⚠ Its own param, and that is the point: asked for 2026-09-20 after
+         * the Reference tab briefly drew the OUTPUT resolution (1.5.518), which
+         * meant changing it in one tab moved the other — *"dont share same
+         * resolution dropdown. have base image res. and reference img res so i
+         * can test, for example, 1024 base img and 512 reference"*.
+         *
+         * ⚠⚠⚠ **It does NOT change memory** — [REF_ENCODED_AT_CANVAS]. It is
+         * here so a composition can be tried with a coarser reference, not as
+         * a way out of an OOM, and its hint has to keep saying so or it will be
+         * reached for during the next crash the way it was during the last one.
+         */
+        const val REF_MAX = "ref_max"
+
+        /**
+         * ⚠ Longest edge, aspect always preserved. [REF_ORIGINAL] is the
+         * default: untouched pixels cost nothing extra, so anything else is a
+         * deliberate experiment.
+         */
+        const val REF_ORIGINAL = "Original"
+        val REF_SIZES = listOf(REF_ORIGINAL, "1536", "1024", "768", "512", "384")
 
         /** ⭐ The four registrations. One class; two arguments of difference. */
         val SD15 = SdSampler("sd15.sample", Family.SD15, inpaint = false)
@@ -414,11 +449,19 @@ class SdSampler(
         Widget(REF_Y, "float", "0.0", 0.0, 1.0),
         Widget(REF_W, "float", "1.0", 0.0, 1.0),
         Widget(REF_H, "float", "1.0", 0.0, 1.0),
-        // ⚠⚠ **No reference-SIZE widget**, though the Crop editor beside it has
-        // Shape + Resolution and the symmetry begs for one. There is nothing
-        // for it to control: [REF_ENCODED_AT_CANVAS]. The Reference editor
-        // draws the resolution instead, which is the control that really does
-        // decide what a reference costs.
+        // ⭐⭐ The reference's OWN size, drawn in the Reference editor where the
+        // base's Shape + Resolution sit in the Crop one — and a separate param
+        // from `width`/`height` so the two tabs cannot move each other, which
+        // is the whole reason it exists ([REF_MAX]).
+        // ⚠⚠ The hint must never promise memory: a reference is encoded at the
+        // CANVAS ([REF_ENCODED_AT_CANVAS]), so this buys detail and nothing else.
+        Widget(
+            REF_MAX, "string", REF_ORIGINAL,
+            options = REF_SIZES,
+            hint = "the longest edge the reference is sent at, its own aspect kept. " +
+                "This does NOT change memory — a reference is encoded at your output " +
+                "size whatever you send — it only changes how much detail the model reads",
+        ),
         // ⚠ Drawn as the tick/pencil in the Crop title row, never as a checkbox
         // in the knob list ([hiddenKnob]).
         Widget(CropNode.LOCKED, "bool", "false"),
@@ -958,7 +1001,9 @@ class SdSampler(
                 p[REF_W]?.toFloatOrNull() ?: 1f, p[REF_H]?.toFloatOrNull() ?: 1f,
                 0, 0, CropNode.PAD_BLACK,
             )
-            ImageStore.encodePng(region)
+            // ⭐ …then bounded, if the node asks for it. Default [REF_ORIGINAL]
+            // sends the region exactly as it is.
+            ImageStore.encodePng(boundReference(region, p[REF_MAX]))
         }
         // ⭐⭐⭐ Says what actually goes over the wire, in PIXELS.
         //
@@ -1012,6 +1057,32 @@ class SdSampler(
         val bmp = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
         return Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
+    }
+
+    /**
+     * ⭐ The reference at [REF_MAX]'s longest edge, **aspect preserved exactly**.
+     *
+     * ⚠⚠⚠ This is a DETAIL control, not a memory one, and the distinction is
+     * the most expensive thing learned on 2026-09-20. A reference is
+     * VAE-encoded at the output canvas's size whatever it is sent at
+     * ([REF_ENCODED_AT_CANVAS]), so shrinking one here saves nothing — it only
+     * decides whether the model reads sharp context or upscaled context. Two
+     * shipped fixes assumed the opposite and were reverted.
+     *
+     * ⚠ [REF_ORIGINAL], anything unparseable, and a picture already smaller
+     * than the bound all return the bitmap untouched.
+     */
+    private fun boundReference(
+        src: android.graphics.Bitmap,
+        setting: String?,
+    ): android.graphics.Bitmap {
+        val maxEdge = setting?.toIntOrNull() ?: return src
+        val longest = maxOf(src.width, src.height)
+        if (maxEdge <= 0 || longest <= maxEdge) return src
+        val scale = maxEdge.toFloat() / longest
+        val w = (src.width * scale).toInt().coerceAtLeast(1)
+        val h = (src.height * scale).toInt().coerceAtLeast(1)
+        return android.graphics.Bitmap.createScaledBitmap(src, w, h, true)
     }
 
     /** ⚠ Never put in the store: [ImageStore.encodePng] says why. */
