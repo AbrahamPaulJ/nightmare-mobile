@@ -106,15 +106,9 @@ fun WorkflowsScreen(
                             Modifier.fillMaxWidth().clickable { onOpenRecipe(r) },
                         ) {
                             Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                // ⚠⚠ The wording the SELECTED checkpoint gives this
-                                // flow, the same call the Use dialog makes: "Image
-                                // to image" is "Image edit" on FLUX.2, and the two
-                                // lists must not disagree about what a flow is
-                                // called (`docs/UI.md` §8.11).
-                                val fam = com.abrah.nightmare.SelectedModel.spec.family
-                                Text(r.labelFor(fam), style = MaterialTheme.typography.titleMedium)
+                                Text(r.label, style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    r.aboutFor(fam),
+                                    r.about,
                                     style = LogTextStyle,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

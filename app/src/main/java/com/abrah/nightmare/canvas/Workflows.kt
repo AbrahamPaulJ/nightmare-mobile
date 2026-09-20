@@ -24,8 +24,10 @@ import com.abrah.nightmare.sources
  * build a node of the wrong family, which refuses to run rather than rendering.
  * ⇒ The family comes from [SelectedModel], exactly as `model` and the size do.
  */
-private fun samplerType(inpaint: Boolean = false): String =
-    com.abrah.nightmare.SdSampler.typeFor(SelectedModel.spec.family, inpaint)
+private fun samplerType(
+    inpaint: Boolean = false,
+    family: com.abrah.nightmare.Family = SelectedModel.spec.family,
+): String = com.abrah.nightmare.SdSampler.typeFor(family, inpaint)
 
 /**
  * ⚠⚠⚠ **The model must match the TYPE this recipe is building, not the
@@ -48,10 +50,19 @@ private fun samplerType(inpaint: Boolean = false): String =
  * entry, which may be a 1 GB download away. ⚠ A true inpaint checkpoint wins
  * over a plain one of the same family, since the node is an inpaint node.
  */
-private fun ctxKeyParams(inpaint: Boolean = false): Map<String, String> {
-    val type = samplerType(inpaint)
+private fun ctxKeyParams(
+    inpaint: Boolean = false,
+    /**
+     * ⭐ The family this recipe is FOR, when it is not the selected one — a
+     * flow that exists only for FLUX.2 ([fluxEditWorkflow]) builds FLUX nodes
+     * whatever the user last selected, and the branch below then picks that
+     * family's installed checkpoint for it.
+     */
+    want: com.abrah.nightmare.Family = SelectedModel.spec.family,
+): Map<String, String> {
+    val type = samplerType(inpaint, want)
     val sampler = com.abrah.nightmare.SdSampler.ALL.firstOrNull { it.name == type }
-    val family = sampler?.family ?: SelectedModel.spec.family
+    val family = sampler?.family ?: want
 
     // ⚠ The SELECTED size, not the model's native one, WHEN the family
     // matches. A recipe builds NEW nodes, and a new node is born at the size
@@ -308,26 +319,20 @@ data class Recipe(
      */
     val usesCheckpoint: Boolean = true,
     /**
-     * ⭐⭐ **Per-family wording**, for a flow that is a different JOB
-     * depending on the checkpoint it opens on.
+     * ⭐⭐ **The families this flow is FOR**, or null for all of them.
      *
-     * ⚠⚠ "Image to image" on FLUX.2 is "Image edit": Klein takes the base
-     * as a clean reference and runs its full schedule, and upstream labels
-     * the whole path edit. Asked for 2026-09-20.
-     *
-     * ⚠ A MAP rather than a flag, so the next family that renames a flow is
-     * an entry and not another `if`.
+     * ⚠⚠ It replaced a per-family wording map on 2026-09-20, the same day
+     * that map was added. The map let one recipe read "Image edit" on FLUX.2
+     * and "Image to image" elsewhere, which was the right label and the wrong
+     * shape: a Klein edit belongs LATE in the list (it wants an 8 Elite and
+     * 6.2 GB) while img2img on SD 1.5 belongs early, and one recipe cannot sit
+     * in two places. ⇒ Two recipes, each where it belongs.
      */
-    val byFamily: Map<com.abrah.nightmare.Family, Wording> = emptyMap(),
+    val families: Set<com.abrah.nightmare.Family>? = null,
 ) {
-    data class Wording(val label: String, val about: String)
-
-    /** ⚠ Falls back to the general wording, so a family needs no entry. */
-    fun labelFor(family: com.abrah.nightmare.Family?): String =
-        byFamily[family]?.label ?: label
-
-    fun aboutFor(family: com.abrah.nightmare.Family?): String =
-        byFamily[family]?.about ?: about
+    /** ⚠ Null families means every family; an entry restricts it. */
+    fun servesFamily(family: com.abrah.nightmare.Family?): Boolean =
+        families == null || family in families
 }
 
 /**
@@ -367,6 +372,7 @@ data class Recipe(
  */
 fun Recipe.runsOn(spec: com.abrah.nightmare.ModelSpec): Boolean {
     if (!usesCheckpoint) return false
+    if (!servesFamily(spec.family)) return false
     val wantsMask = build().graph.nodes.any {
         (com.abrah.nightmare.NODE_TYPES[it.type] as? com.abrah.nightmare.SdSampler)?.inpaint == true
     }
@@ -386,16 +392,10 @@ val RECIPES: List<Recipe> = listOf(
         "img2img", "Image to image",
         "A photo from the gallery, re-imagined at the strength you choose.",
         ::img2imgWorkflow,
-        byFamily = mapOf(
-            com.abrah.nightmare.Family.FLUX2 to Recipe.Wording(
-                com.abrah.nightmare.SdSampler.EDIT_LABEL,
-                // ⚠ No "at the strength you choose": on Klein the strength is
-                // the MODE and it opens at 1.0 ([SdSampler.defaultDenoise]).
-                "A photo from the gallery, edited by your prompt. Add a second " +
-                    "picture on the reference port and name them as image 1 and " +
-                    "image 2 in the prompt.",
-            ),
-        ),
+        // ⚠ Not FLUX.2: there the job is an EDIT and has its own card,
+        // further down where its requirements put it.
+        families = com.abrah.nightmare.Family.entries.toSet() -
+            com.abrah.nightmare.Family.FLUX2,
     ),
     Recipe(
         "inpaint", "Inpaint — paint an area to redo",
@@ -414,6 +414,24 @@ val RECIPES: List<Recipe> = listOf(
             "the upscaler is its own small model, installed under Models.",
         ::upscaleWorkflow,
         usesCheckpoint = false,
+    ),
+    // ⭐⭐⭐ **Image edit — FLUX.2 only, and placed by what it COSTS.**
+    //
+    // ⚠⚠ Its position is the rule, not a preference: this list runs from
+    // least demanding to most (`CLAUDE.md`). A Klein edit needs an 8 Elite
+    // and 6.2 GB of weights, so it sits after the upscaler and before the
+    // video pair. The user's call, 2026-09-20.
+    Recipe(
+        "flux_edit", com.abrah.nightmare.SdSampler.EDIT_LABEL,
+        // ⚠ The requirement is IN the copy, the way the video flows state
+        // theirs. This list is not filtered by device or by checkpoint, so a
+        // card that cannot run here has to say so itself.
+        "FLUX.2 Klein only, on an 8 Elite or newer. A photo and a prompt: the " +
+            "whole picture is re-rendered to follow it, rather than nudged. " +
+            "Wire a second picture into the reference port and name them as " +
+            "image 1 and image 2 in the prompt.",
+        ::fluxEditWorkflow,
+        families = setOf(com.abrah.nightmare.Family.FLUX2),
     ),
     Recipe(
         "t2v", "Text to video",
@@ -500,15 +518,9 @@ fun inpaintWorkflow(): Workflow = Workflow(
  * worth choosing once and feeding to two branches.
  */
 fun img2imgWorkflow(): Workflow {
-    // ⭐⭐ The node is called **edit** on FLUX.2 and **generate** elsewhere
-    // — the user's call, 2026-09-20. A node id is its title on the canvas
-    // (`docs/UI.md` §8.11), so a Klein flow that says "generate" names the
-    // wrong job on the one node a person looks at.
-    // ⚠ Held in a val, because it is also the wire target and the layout key;
-    // three literals would be three places to get it wrong once.
-    val id = if (com.abrah.nightmare.SelectedModel.spec.family ==
-        com.abrah.nightmare.Family.FLUX2
-    ) "edit" else "generate"
+    // ⚠ Plain `generate`: the FLUX.2 flow is its own recipe now
+    // ([fluxEditWorkflow]), and this one is ordinary strength-based img2img.
+    val id = "generate"
     return Workflow(
     Graph(
         listOf(
@@ -531,6 +543,44 @@ fun img2imgWorkflow(): Workflow {
     )
 }
 
+
+/**
+ * ⭐⭐⭐ **FLUX.2 Klein's edit** — the same four nodes as image to image,
+ * and a different job.
+ *
+ * ⚠⚠ It builds FLUX nodes whatever is selected ([ctxKeyParams] `want`),
+ * because the card is FLUX-only and opening it with SD 1.5 selected must not
+ * quietly build an SD flow under a FLUX name. The checkpoint is FLUX.2's,
+ * preferring an installed one, exactly as the inpaint recipe prefers an
+ * installed inpainting checkpoint.
+ *
+ * ⚠ The node is called **edit**, and a node id is its title on the canvas
+ * (`docs/UI.md` §8.11). ⚠⚠ Held in a val: it is also the wire target and
+ * the layout key.
+ *
+ * ⚠ No `denoise` param — unlike [img2imgWorkflow], which pins one. The
+ * node is born at 1.0 for FLUX.2 ([SdSampler.defaultDenoise]) and that IS
+ * the edit setting, so writing it here would be a second place to keep it.
+ */
+fun fluxEditWorkflow(): Workflow {
+    val id = "edit"
+    val flux = com.abrah.nightmare.Family.FLUX2
+    return Workflow(
+        Graph(
+            listOf(
+                Node("prompt", "core.prompt", params = promptParams()),
+                Node("photo", "core.image", params = mapOf("uri" to "")),
+                Node(
+                    id, samplerType(family = flux),
+                    params = ctxKeyParams(want = flux) + mapOf("seed" to "0"),
+                    inputs = sources("prompt" to "prompt", "image" to "photo"),
+                ),
+                Node("output", "core.output", inputs = sources("media" to id)),
+            )
+        ),
+        flowLayout("prompt", "photo", id, "output"),
+    )
+}
 
 /**
  * ⭐⭐ Enlarge a picture, and nothing else.

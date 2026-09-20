@@ -274,35 +274,76 @@ class RecipeModelTest {
     }
 
     /**
-     * ⭐⭐ **FLUX.2 calls it "Image edit", everywhere at once.**
+     * ⭐⭐ **FLUX.2's edit is its own flow, named and placed for it.**
      *
-     * Asked 2026-09-20. Three surfaces say it — the Use dialog, the Flows
-     * list and the node on the canvas — and the node id is the canvas title,
-     * so all four are checked here rather than trusting one.
+     * Asked 2026-09-20. It began as per-family wording on the shared img2img
+     * recipe and became a separate recipe the same day, because a Klein edit
+     * belongs LATE in a list ordered by what a flow costs (`CLAUDE.md`) while
+     * img2img on SD 1.5 belongs early — and one recipe cannot sit twice.
      */
     @Test
-    fun fluxCallsImageToImageAnEdit() {
-        val img2img = com.abrah.nightmare.canvas.RECIPES.first { it.id == "img2img" }
-        assertEquals("Image edit", img2img.labelFor(Family.FLUX2))
-        assertEquals("Image to image", img2img.labelFor(Family.SD15))
-        // ⚠ …and the about line changes with it, or the card reads "at the
-        // strength you choose" for a flow that opens at 1.0.
+    fun fluxEditIsItsOwnFlowAfterUpscale() {
+        val ids = com.abrah.nightmare.canvas.RECIPES.map { it.id }
+        assertTrue("flux_edit is missing", "flux_edit" in ids)
+        // ⚠⚠ The ORDER is the rule, so it is the thing asserted: after the
+        // upscaler, before the video pair.
         assertTrue(
-            "the FLUX blurb still offers a strength",
-            !img2img.aboutFor(Family.FLUX2).contains("strength"),
+            "flux_edit is not after upscale: $ids",
+            ids.indexOf("flux_edit") > ids.indexOf("upscale"),
         )
+        assertTrue(
+            "flux_edit is not before the video flows: $ids",
+            ids.indexOf("flux_edit") < ids.indexOf("t2v"),
+        )
+        val edit = com.abrah.nightmare.canvas.RECIPES.first { it.id == "flux_edit" }
+        assertEquals("Image edit", edit.label)
+        // ⚠ The list is not filtered by device, so the card states its own
+        // requirement — that sentence is the gate.
+        assertTrue("the card does not say it is FLUX.2 only", edit.about.contains("FLUX.2"))
+        assertTrue("the card does not state a device", edit.about.contains("8 Elite"))
+    }
 
+    /**
+     * ⭐⭐ **Each of the two flows is offered to the right family, and only
+     * one of them is offered to FLUX.2.**
+     */
+    @Test
+    fun fluxIsOfferedTheEditAndNotImageToImage() {
         val flux = ModelCatalog.builtIn.first { it.family == Family.FLUX2 }
-        SelectedModel.set(ctx, flux.id)
-        val node = samplerOf(img2imgWorkflow())
-        assertEquals("the FLUX edit node is still called generate", "edit", node.id)
-        // ⚠⚠ The wires and the layout follow the id, or the flow opens broken.
-        val w = img2imgWorkflow()
-        val out = w.graph.nodes.first { it.type == "core.output" }
-        assertEquals("the output is wired to the old id", node.id, out.inputs["media"]?.node)
-        assertTrue("the layout has no entry for ${node.id}", w.positions.containsKey(node.id))
+        val offered = com.abrah.nightmare.canvas.RECIPES.filter { it.runsOn(flux) }.map { it.id }
+        assertTrue("FLUX.2 was not offered its edit", "flux_edit" in offered)
+        assertTrue("FLUX.2 was still offered plain img2img", "img2img" !in offered)
 
-        val type = NODE_TYPES[node.type] as SdSampler
-        assertEquals("FLUX.2 Image edit", type.titleFor(node))
+        val sd = ModelCatalog.builtIn.first { it.family == Family.SD15 }
+        val sdOffered = com.abrah.nightmare.canvas.RECIPES.filter { it.runsOn(sd) }.map { it.id }
+        assertTrue("SD 1.5 lost image to image", "img2img" in sdOffered)
+        assertTrue("SD 1.5 was offered the FLUX edit", "flux_edit" !in sdOffered)
+    }
+
+    /**
+     * ⭐⭐⭐ **The edit flow builds FLUX nodes whatever is selected**, and
+     * its node is called `edit`.
+     *
+     * ⚠⚠ Built with SD 1.5 selected on purpose: the card is FLUX-only, so
+     * opening it must not quietly produce an SD flow under a FLUX name. That
+     * is the same bug `everyRecipeBuildsAModelOfItsOwnNodesFamily` was written
+     * for, in the other direction.
+     */
+    @Test
+    fun theEditFlowIsFluxWhateverIsSelected() {
+        SelectedModel.set(ctx, V1_MODEL)
+        val w = com.abrah.nightmare.canvas.fluxEditWorkflow()
+        val node = samplerOf(w)
+        assertEquals("the edit node is not called edit", "edit", node.id)
+        assertEquals(Family.FLUX2, familyOfType(node.type))
+        val model = ModelCatalog.byId(node.params["model"].orEmpty())
+        assertNotNull("the edit flow named an unknown checkpoint", model)
+        assertEquals("the edit flow named a non-FLUX checkpoint", Family.FLUX2, model!!.family)
+        // ⚠⚠ The wires and the layout follow the id, or the flow opens broken.
+        val out = w.graph.nodes.first { it.type == "core.output" }
+        assertEquals("the output is wired elsewhere", node.id, out.inputs["media"]?.node)
+        assertTrue("the layout has no entry for ${node.id}", w.positions.containsKey(node.id))
+        // ⚠ …and the canvas calls it an edit.
+        assertEquals("FLUX.2 Image edit", (NODE_TYPES[node.type] as SdSampler).titleFor(node))
     }
 }

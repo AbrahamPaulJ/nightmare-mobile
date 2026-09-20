@@ -280,10 +280,9 @@ fun ModelsScreen(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                                // ⚠ The wording this CHECKPOINT gives the flow.
-                                Text(r.labelFor(p.spec?.family), fontWeight = FontWeight.Medium)
+                                Text(r.label, fontWeight = FontWeight.Medium)
                                 Text(
-                                    r.aboutFor(p.spec?.family),
+                                    r.about,
                                     style = LogTextStyle,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
