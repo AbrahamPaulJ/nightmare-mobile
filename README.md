@@ -3,8 +3,8 @@
 **A node graph for image and video generation on Android, running entirely on the Qualcomm
 Hexagon NPU.**
 
-Text to image, image to image, inpainting, upscaling and text to video, all on the phone. No
-server, no account, no cloud, no network.
+Text to image, image to image, inpainting, upscaling, FLUX.2 image editing and text to
+video, all on the phone. No server, no account, no cloud, no network.
 
 <p align="center">
   <img src="media/workflows.png" alt="Text to image, image to image and image to video, each as a node graph on an Android phone">
@@ -43,15 +43,23 @@ back afterwards. It sits among the SD 1.5 models and does text and image to imag
 want redone and the mask follows its outline. That is Segment Anything 2.1, an 87 MB download,
 running on the phone's CPU.
 
+**Image editing with FLUX.2 Klein.** A photo and a prompt: the whole picture is re-rendered
+to follow it rather than nudged, so the composition survives and the content changes. Wire a
+second picture into the reference port and name them as image 1 and image 2 in the prompt to
+compose the two. Needs a Snapdragon 8 Elite or newer and 6.2 GB of weights. 512x512 is the
+reliable size; a reference is encoded at your output size, so larger canvases cost sharply
+more memory.
+
 **Text to video.** A prompt in, 49 frames at 1024x640 out, about two seconds of clip in about
 25 seconds on an 8 Elite. Image to video animates a photo instead, using the same three nodes
 with a photo wired in. The clip loops on the node that made it and plays full screen. Needs a
 Snapdragon 8 Elite or 8 Elite Gen 5 and about 8.6 GB of models, and the app checks your chip by
 running a small real model on it rather than by reading its name.
 
-**Recipes to start from.** Text to image, image to image, inpainting, upscaling and both
-video flows, each laid out so no wire crosses and the whole graph fits the screen when
-it opens.
+**Recipes to start from.** Text to image, image to image, inpainting, upscaling, image edit
+and both video flows, each laid out so no wire crosses and the whole graph fits the screen
+when it opens. They are listed from the least demanding to the most, and one your phone
+cannot run says so instead of opening.
 
 **Batching.** Arm `seed`, `steps`, `cfg`, `denoise` or `scheduler` on a generate node and Run
 sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph that
