@@ -506,9 +506,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // ODD-SIZED reference is the live hypothesis, and this leg is what
         // tests it — the gallery photo is 512x768 against a 512x512 canvas.
         if (arg == "refs" || arg == "node") {
-            val photo = newestSavedImage()
+            // ⚠⚠ Falls back to the BASE when the gallery is empty, rather than
+            // skipping. This leg is now the measurement for the reference OOM
+            // (`notes/PROGRESS.md`), and a check that silently does not run is
+            // worse than no check — it reports a pass for a leg nobody ran.
+            val photo = newestSavedImage() ?: java.io.File(dir, "0_base.png")
+                .takeIf { it.isFile() }?.absolutePath
             if (photo == null) {
-                say("  node leg SKIPPED — nothing in Pictures/${ImageSaver.FOLDER} to use as a reference")
+                say("  node leg SKIPPED — no gallery picture and no 0_base.png to use as a reference")
             } else {
                 val types = nodeTypes()
                 val basePath = java.io.File(dir, "0_base.png").absolutePath

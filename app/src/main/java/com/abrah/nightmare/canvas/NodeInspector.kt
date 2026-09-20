@@ -368,14 +368,9 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // ⭐ The reference region belongs to ITS editor too, for the same reason:
     // it is dragged on the picture, and four more sliders under the size
     // control is the duplicate the 2026-09-18 report named.
-    // ⭐ …and so does the reference's SIZE, which is drawn at the top of that
-    // editor exactly where the base's Shape + Resolution sit in the Crop one.
-    // Loose in the list it would be a third size control on a node that already
-    // has two, which is the 2026-09-18 duplicate again.
     if (name in setOf(
             com.abrah.nightmare.SdSampler.REF_X, com.abrah.nightmare.SdSampler.REF_Y,
             com.abrah.nightmare.SdSampler.REF_W, com.abrah.nightmare.SdSampler.REF_H,
-            com.abrah.nightmare.SdSampler.REF_MAX,
         )
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
@@ -847,28 +842,22 @@ internal fun NodeInspectorBody(
         // (`docs/MODELS.md` §9).
         val refPanel: @Composable () -> Unit = refPanel@{
             val src = refSource ?: return@refPanel
-            // ⭐⭐ ITS OWN SIZE CONTROL, first, exactly where the base's Shape +
-            // Resolution sit in the Crop panel. Reported from the phone
-            // 2026-09-20: *"both should have consistent cropper windows with
-            // their respective names and knobs for size"*. The base's size is
-            // the OUTPUT canvas; the reference's is how large it is sent to be
-            // read, which is a different number with the same job — and the
-            // one lever a user has when a big edit is reaped
-            // (`notes/PROGRESS.md` ①).
-            // ⚠ Only in the popup, for the reason [cropPanel] gives: drawn
-            // inline it would stack under a size control the sheet already has.
-            type?.widgets.orEmpty()
-                .firstOrNull { it.name == com.abrah.nightmare.SdSampler.REF_MAX }
-                ?.takeIf { popup }
-                ?.let { w ->
-                    Chooser(
-                        label = "Reference size",
-                        hint = w.hint,
-                        options = w.options.orEmpty(),
-                        current = node.params[w.name] ?: w.default.orEmpty(),
-                        onPick = { onSetParam(nodeId, w.name, it) },
-                    )
-                }
+            // ⭐⭐⭐ **The RESOLUTION, first** — the same control the Crop tab
+            // opens with, drawn from the same [sizePanel] so the two tabs cannot
+            // drift. Asked for 2026-09-20: *"both should have consistent cropper
+            // windows with their respective names and knobs for size"*.
+            //
+            // ⚠⚠⚠ It is the resolution and NOT a size of the reference's own,
+            // which is what this panel carried for one day. A reference is
+            // VAE-encoded at the OUTPUT CANVAS's size, never at its own
+            // ([SdSampler.REF_ENCODED_AT_CANVAS]): the same 512x512 picture costs
+            // 384 MB under a 512x512 canvas and 1536 MB under a 1024x1024 one. So
+            // a "Reference size" knob was a control over nothing, sitting next to
+            // a hint quoting numbers that are false for a reference.
+            // ⚠⚠ The honest version of that symmetry is this: the resolution
+            // IS the reference's size control, and it belongs in both tabs
+            // because it decides what both pictures cost.
+            if (popup) sizePanel()
             if (!popup) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Reference",
@@ -901,15 +890,31 @@ internal fun NodeInspectorBody(
                 rule = com.abrah.nightmare.PadRule.NEVER,
             )
             // ⚠ The SAME footer the crop draws, saying the same two gestures
-            // and the size that comes out of them — two editors that look alike
-            // and read differently is the report this panel is answering.
+            // — two editors that look alike and read differently is the report
+            // this panel is answering.
             Text(
-                "drag to move · pinch to zoom · sent at " +
-                    "${node.params[com.abrah.nightmare.SdSampler.REF_MAX]
-                        ?: com.abrah.nightmare.SdSampler.REF_MAX_EDGE} px",
+                "drag to move · pinch to zoom",
                 style = LogTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // ⭐⭐ What the reference COSTS, measured, where the decision is
+            // made. ⚠⚠ A 1024x1024 edit with a reference has never once
+            // completed on a 12 GB phone — four attempts on 2026-09-20, every one
+            // reaped by lmkd, and the same graph at 512x512 renders in 54 s. The
+            // person choosing the resolution two lines above is the only one who
+            // can avoid it, so the warning belongs here and not in a crash report.
+            val refCost = framingOutSize(node, type)
+            if (refCost.first.toLong() * refCost.second > 512L * 512L) {
+                Text(
+                    "⚠ a reference is encoded at your output size, not its own, so " +
+                        "${refCost.first}x${refCost.second} costs about " +
+                        "${(refCost.first.toLong() * refCost.second * 384 / (512L * 512L))} MB per " +
+                        "picture. Above 512x512 this has not completed on a 12 GB phone; " +
+                        "drop the resolution if the run is killed.",
+                    style = LogTextStyle,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
         val cropPanel: @Composable () -> Unit = {
             // ⭐ The size first, in the crop window too — the frame's shape is

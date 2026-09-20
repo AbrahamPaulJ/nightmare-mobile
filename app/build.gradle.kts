@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -8,20 +8,20 @@ plugins {
 }
 
 /**
- * ⭐⭐ Release signing, read from OUTSIDE the repository.
+ * â­â­ Release signing, read from OUTSIDE the repository.
  *
- * ⚠⚠ `../.secrets/nightmare-keystore/` is a sibling of the repo, not a
+ * âš âš  `../.secrets/nightmare-keystore/` is a sibling of the repo, not a
  * gitignored path inside it. Gitignore is one `git add -f` away from
  * committing a private key; a file that is not in the tree at all cannot be
  * committed by accident.
  *
- * ⚠⚠ A MISSING keystore is not an error. The release build still runs and
+ * âš âš  A MISSING keystore is not an error. The release build still runs and
  * produces an unsigned APK, so a fresh clone on another machine can build
  * and test the release variant without holding the key. Failing here would
  * make the project unbuildable for everyone except one laptop, which is a
  * strange thing for a public repository to do.
  *
- * ⚠ Android identifies an app by its signature: lose this key and no future
+ * âš  Android identifies an app by its signature: lose this key and no future
  * build can update an installed copy. `facefusion-mobile` lost one already.
  * The README beside the keystore says what to do about it.
  */
@@ -41,28 +41,28 @@ android {
         // there is no reason to support anything the NPU path cannot run on.
         minSdk = 31
         targetSdk = 35
-        // ⚠ Bump on EVERY push. The harness prints versionName, and two builds
+        // âš  Bump on EVERY push. The harness prints versionName, and two builds
         // sharing a version makes a failure report unattributable -- DreamUI lost
         // five releases to this exact mistake.
         //
-        // ⚠⚠ THREE-part versionName, and an ordinary push increments the
-        // PATCH: 1.2.0 -> 1.2.1 -> 1.2.2. ⚠⚠ Getting the FORMAT right is not
+        // âš âš  THREE-part versionName, and an ordinary push increments the
+        // PATCH: 1.2.0 -> 1.2.1 -> 1.2.2. âš âš  Getting the FORMAT right is not
         // getting the GRANULARITY right -- this went 1.0.12 -> 1.1.0 -> 1.2.0,
         // a minor bump per push, which is what the rule exists to stop. The
-        // minor moves only when a release is called a release. ⚠ versionCode
+        // minor moves only when a release is called a release. âš  versionCode
         // stays a plain incrementing integer; Android requires that.
-        versionCode = 258
-        versionName = "1.5.515"
+        versionCode = 261
+        versionName = "1.5.518"
         ndk { abiFilters += "arm64-v8a" }
 
         // The plugin runtime and the NPU runner, both built from source.
-        // ⚠ arm64 only, like everything else here: the NPU path has no other
+        // âš  arm64 only, like everything else here: the NPU path has no other
         // target, and building quickjs.c (2.1 MB of C) four times for ABIs that
         // can never run a model is pure build time.
         //
-        // ⚠⚠ `c++_static`, not `none`. It was `none` while the only native code
+        // âš âš  `c++_static`, not `none`. It was `none` while the only native code
         // was `nmjs.c` (C, no STL); `nmqnn.cpp` uses std::string/vector/mutex
-        // and does not compile without one. ⭐ STATIC rather than shared so the
+        // and does not compile without one. â­ STATIC rather than shared so the
         // STL is linked into libnmqnn.so and no `libc++_shared.so` has to be
         // packaged -- libnmjs.so is C and links none of it either way.
         externalNativeBuild {
@@ -70,7 +70,7 @@ android {
         }
     }
 
-    // ⚠ Our own C, unlike the backend: libstable_diffusion_core.so is BUILT
+    // âš  Our own C, unlike the backend: libstable_diffusion_core.so is BUILT
     // ELSEWHERE and copied into jniLibs by tools/stage_backend.ps1 (it is an
     // executable, and its tree is CC BY-NC and uncommittable). libnmjs.so is
     // ours plus MIT QuickJS, so it is a normal Gradle native build -- and that
@@ -91,12 +91,12 @@ android {
                 storePassword = keystoreProps.getProperty("storePassword")
                 keyAlias = keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")
-                // ⚠ AGP leaves v3 OFF by default, and v3 is the scheme that
+                // âš  AGP leaves v3 OFF by default, and v3 is the scheme that
                 // makes KEY ROTATION possible later. It cannot be added
                 // retroactively to an APK people have already installed, so it
                 // goes on before the first release rather than after.
                 //
-                // ⚠⚠ MEASURED 2026-09-11: with v3 on, AGP emits a v3 block
+                // âš âš  MEASURED 2026-09-11: with v3 on, AGP emits a v3 block
                 // INSTEAD of v2, not alongside it -- `apksigner verify` reports
                 // v2 false, v3 true however `enableV2Signing` is set. That is
                 // fine here and only here: v3 needs API 28 and minSdk is 31, so
@@ -113,19 +113,19 @@ android {
     }
 
     buildTypes {
-        // âš  Not minified, unlike DreamUI's debug build -- and that is only
+        // Ã¢Å¡Â  Not minified, unlike DreamUI's debug build -- and that is only
         // tenable because the dex is small. MEASURED 2026-09-07: with
         // material-icons-extended on the classpath the unminified APK was
         // 55.6 MB, of which 55.0 MB was dex (44.4 + 10.6). Dropping that one
         // unused dependency took it to the size below. DreamUI hit the identical
         // wall at 43.8 MB and solved it by minifying debug instead.
-        // â‡’ Revisit the moment the dex grows again; unminified is a convenience,
+        // Ã¢â€¡â€™ Revisit the moment the dex grows again; unminified is a convenience,
         // not a principle, and stack traces are what it buys.
         debug {
             isMinifyEnabled = false
         }
         release {
-            // ⚠ Null when there is no keystore, which leaves the APK unsigned
+            // âš  Null when there is no keystore, which leaves the APK unsigned
             // rather than failing the build.
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
@@ -172,7 +172,7 @@ android {
 }
 
 dependencies {
-    // âš  Compose BOM 2024.10.01 gives material3 1.3.1, which is NOT Material 3
+    // Ã¢Å¡Â  Compose BOM 2024.10.01 gives material3 1.3.1, which is NOT Material 3
     // Expressive (needs 1.4+). Pinned here anyway because this exact set is
     // already in the Gradle cache, so the first build proves the scaffold rather
     // than dependency resolution. The Expressive bump is a separate, isolated
@@ -182,13 +182,13 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    // âš  material-icons-extended is deliberately ABSENT. It is thousands of
+    // Ã¢Å¡Â  material-icons-extended is deliberately ABSENT. It is thousands of
     // generated vector classes and costs ~55 MB of dex on its own (measured
     // above) whether or not a single icon is referenced. Add individual icons,
     // or the base `material-icons-core`, if one is actually needed.
 
-    // ⭐ Tap to select (`docs/SEGMENTER.md`): SAM 2.1 on ORT's CPU build, as
-    // DreamUI. NOT onnxruntime-android-qnn — QNN cannot create an HTP device on
+    // â­ Tap to select (`docs/SEGMENTER.md`): SAM 2.1 on ORT's CPU build, as
+    // DreamUI. NOT onnxruntime-android-qnn â€” QNN cannot create an HTP device on
     // this SoC through ORT, and the split graph costs 28 ms a tap on the CPU.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
 
@@ -197,7 +197,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.activity:activity-compose:1.9.3")
 
-    // â­ The inner loop of docs/UI.md: previews are the agent's cheap eyes, so
+    // Ã¢Â­Â The inner loop of docs/UI.md: previews are the agent's cheap eyes, so
     // the tooling that renders them is a first-class dependency, not an extra.
     debugImplementation("androidx.compose.ui:ui-tooling")
 

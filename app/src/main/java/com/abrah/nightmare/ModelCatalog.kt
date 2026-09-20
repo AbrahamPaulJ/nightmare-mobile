@@ -1406,30 +1406,37 @@ object ModelCatalog {
     val ditModels: List<ModelSpec> = listOf(
         dit(
             "flux2_klein_4b", "FLUX.2 Klein 4B", Family.FLUX2, KLEIN, steps = 4,
-            // ⭐⭐⭐ **`lowram` since 1.5.514, and the note above it is now half
-            // wrong.** It said "FLUX.2 Klein fits without it", which was true
-            // of a plain render and stopped being true of an EDIT.
+            // ⭐⭐⭐ **NO `lowram`, and the reason it was switched on was
+            // a misreading.** It was set in 1.5.514 and reverted 2026-09-20.
             //
-            // ⚠⚠ Measured on device 2026-09-20, the reading that settled it:
-            // a 1024x1024 edit with one reference gets all the way through
-            // `encode_first_stage completed, taking 13.51s` and then dies at
-            // `conditioner.hpp ... parse` — the TEXT ENCODER, loading on top
-            // of ~6 GB already resident plus 1.5 GB of VAE scratch. lmkd:
-            // `oom_score_adj 0 ... min watermark is breached even after kill;
-            // level: 3`. It had already killed other apps and still could not
-            // meet the watermark.
+            // The reasoning was: a 1024x1024 edit with a reference dies at
+            // `conditioner.hpp ... parse`, which is the TEXT ENCODER, so stream
+            // the text encoder off disk (`te=disk`) the way Z-Image does one
+            // entry below. It did not help, and measurement later said why: the
+            // text encoder is not what is expensive. Its compute buffer is
+            // **65 MB in every leg** — identical for zero, one and two
+            // references — and its 1.67 GB of weights are explicitly released
+            // before the DiT loads. The kill lands while it is resident, not
+            // because of it: what is underneath is VAE scratch, 1536 MB of VRAM
+            // plus 524 MB of RAM **per reference** at 1024x1024
+            // ([SdSampler.REF_ENCODED_AT_CANVAS]).
             //
-            // ⚠ `te=disk` is exactly the lever for that stage, and it is the
-            // same one Z-Image already uses for the same reason one entry
-            // below. An edit adds a third VAE encode and a longer sequence to
-            // a model that only just fitted.
+            // ⚠⚠⚠ Which makes `lowram` here a pure loss: it slowed prompt
+            // encoding on EVERY FLUX render, including plain text-to-image that
+            // was never near the limit, and bought nothing on the one case it
+            // was added for — the 1024x1024 edit is still reaped with it on.
             //
-            // ⚠⚠⚠ The COST is real and it applies to every FLUX render, not
-            // just edits: the text encoder streams from disk rather than
-            // sitting resident, so prompt encoding is slower. That is the
-            // trade, and it is one line to reverse if it proves too steep for
-            // plain text-to-image.
-            lowram = true,
+            // ⚠⚠ The general lesson, and it is the third time this file has
+            // paid for it: **the stage a process dies AT is not the stage that
+            // cost the memory.** Reaching for the lever that matches the last
+            // log line is how 1.5.511 tuned the VAE tile threshold, how 1.5.513
+            // and 1.5.516 bounded reference pixels, and how this line got set.
+            // All four were reasoned, all four were wrong, and one measurement
+            // with a control (`dit_edit`, and `img2img_0.65` as the leg that
+            // survives the same work) ended it. `notes/PROGRESS.md`.
+            //
+            // ⇒ Klein is 57% of RAM and stays resident; it needs no staging.
+            // Z-Image below is a different case and keeps its own `lowram`.
             files = listOf(
                 RemoteFile(HF + "black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors", "dit.safetensors", 4_070_624_520L),
                 RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/llm.gguf", "llm.gguf", 2_262_670_048L),

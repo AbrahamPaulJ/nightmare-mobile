@@ -231,28 +231,38 @@ class SdSampler(
         const val REF_H = "ref_h"
 
         /**
-         * ⭐ The longest edge a reference is sent at. 512 because that is the
-         * size whose VAE encode measured 288 MB against 1024's 1536 MB, and a
-         * reference is read rather than rendered — it does not need the
-         * output's resolution. See [boundReference].
-         */
-        const val REF_MAX_EDGE = 512
-
-        /**
-         * ⭐⭐ …and the knob that moves it — the REFERENCE's size control, the
-         * same job the Shape + Resolution pair does for the base.
+         * ⭐⭐⭐ **A reference is VAE-encoded at the OUTPUT CANVAS's size, never
+         * at its own** — so nothing this app does to a reference's pixels costs
+         * or saves a single byte.
          *
-         * ⚠⚠ It was a constant until 2026-09-20, and a constant is the wrong
-         * shape for it: the base picture has a size control in its own editor
-         * and the reference had none, which is the inconsistency reported from
-         * the phone. It is also the one lever a user has when a 1024² edit is
-         * reaped (`notes/PROGRESS.md` ①), so hiding it cost them the workaround
-         * as well as the symmetry.
+         * Measured on device 2026-09-20, the same two references through the
+         * same graph, with only the canvas changed:
+         *
+         * | reference sent | canvas 512x512 | canvas 1024x1024 |
+         * |---|---|---|
+         * | 512x512 | 384.00 MB | 1536.00 MB |
+         * | 341x512 | 380.25 MB | 1521.00 MB |
+         * | flux compute buffer | 491.50 MB | 1599.50 MB |
+         * | outcome | ✅ ok, 53.9 s | ❌ reaped by lmkd |
+         *
+         * Exactly 4x, which is the canvas AREA ratio; the 1% between the two
+         * rows is their differing aspect, not their pixel count. The engine
+         * announces it — `diffusion_engine.cpp: Using 'flux2' preset for
+         * reference images` — and resizes every reference before encoding it.
+         *
+         * ⚠⚠⚠ **This is why there is no reference-size knob and no
+         * `boundReference`.** Both existed for one day, on the reasoning that a
+         * smaller reference is a cheaper one. It is not: shrinking one only
+         * throws detail away before the engine scales it back up. 1.5.513
+         * bounded the user's reference to 512 px for the same wrong reason and
+         * was written down as "right on its own terms, insufficient" — it was
+         * never right on its own terms either.
+         *
+         * ⇒ The only lever on what a reference costs is the **resolution**,
+         * which is why the Reference editor draws that control rather than one
+         * of its own (`docs/UI.md` §8.12). `docs/MODELS.md` §9 has the rest.
          */
-        const val REF_MAX = "ref_max"
-
-        /** ⚠ The offered sizes, longest edge. [REF_MAX_EDGE] is the default. */
-        val REF_SIZES = listOf("384", "512", "768", "1024")
+        const val REF_ENCODED_AT_CANVAS = true
 
         /** ⭐ The four registrations. One class; two arguments of difference. */
         val SD15 = SdSampler("sd15.sample", Family.SD15, inpaint = false)
@@ -404,16 +414,11 @@ class SdSampler(
         Widget(REF_Y, "float", "0.0", 0.0, 1.0),
         Widget(REF_W, "float", "1.0", 0.0, 1.0),
         Widget(REF_H, "float", "1.0", 0.0, 1.0),
-        // ⭐⭐ The reference's SIZE, drawn in the Reference editor exactly
-        // where the base's Shape + Resolution sit in the Crop one — and hidden
-        // from the loose knob list for the same reason they are ([hiddenKnob]).
-        // ⚠ It bounds the LONGEST EDGE; the aspect never changes.
-        Widget(
-            REF_MAX, "string", REF_MAX_EDGE.toString(),
-            options = REF_SIZES,
-            hint = "how large the reference is sent — bigger reads more detail " +
-                "and costs a lot more memory (a 1024 px encode is 1536 MB against 512's 288 MB)",
-        ),
+        // ⚠⚠ **No reference-SIZE widget**, though the Crop editor beside it has
+        // Shape + Resolution and the symmetry begs for one. There is nothing
+        // for it to control: [REF_ENCODED_AT_CANVAS]. The Reference editor
+        // draws the resolution instead, which is the control that really does
+        // decide what a reference costs.
         // ⚠ Drawn as the tick/pencil in the Crop title row, never as a checkbox
         // in the knob list ([hiddenKnob]).
         Widget(CropNode.LOCKED, "bool", "false"),
@@ -953,10 +958,32 @@ class SdSampler(
                 p[REF_W]?.toFloatOrNull() ?: 1f, p[REF_H]?.toFloatOrNull() ?: 1f,
                 0, 0, CropNode.PAD_BLACK,
             )
-            ImageStore.encodePng(
-                boundReference(region, p[REF_MAX]?.toIntOrNull() ?: REF_MAX_EDGE)
-            )
+            ImageStore.encodePng(region)
         }
+        // ⭐⭐⭐ Says what actually goes over the wire, in PIXELS.
+        //
+        // ⚠⚠⚠ This line exists because two reasoned fixes were shipped against
+        // a cost that does not work the way the code believed. 1.5.513 bounded
+        // the user's reference to 512 px and 1.5.516 did the same to the base;
+        // both were reverted on 2026-09-20 when the engine logged a **1536 MB
+        // encode for a 512x512 reference** and 384 MB for the same picture
+        // under a 512x512 canvas. Nothing in the backend's own log states the
+        // size a reference was sent AT, so there was no way to see it.
+        // Same rule as `NmPreview` (CLAUDE.md): when three readings of the code
+        // disagree with the phone, instrument the phone.
+        //
+        // ⚠ Meant to STAY — [REF_ENCODED_AT_CANVAS] is the kind of claim that
+        // needs a line of evidence next to it every run.
+        fun dims(b: ByteArray?): String {
+            if (b == null) return "none"
+            val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size, o)
+            return "${o.outWidth}x${o.outHeight}"
+        }
+        ctx.say(
+            "[ref] canvas=${w}x$h image=${dims(png)} reference=${dims(referencePng)} " +
+                "(a reference is encoded at the CANVAS, not at its own size)"
+        )
         ctx.say(
             when {
                 referencePng != null && png == null -> "rendering from your reference"
@@ -985,46 +1012,6 @@ class SdSampler(
         val bmp = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
         return Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
-    }
-
-    /**
-     * ⭐⭐⭐ A reference small enough to VAE-encode. **Aspect preserved, area
-     * bounded** — the two are different promises and only the first one was
-     * ever made.
-     *
-     * ⚠⚠⚠ Measured on device 2026-09-20, and it is not a precaution. Every
-     * VAE ENCODE takes a full-frame buffer sized by the picture's area, and
-     * `vae_tile_size` does NOT help: the engine logged
-     * `passes=4 ... tile_size=64 -> TILED` and still allocated **1536 MB of
-     * VRAM and 524 MB of RAM per encode** at 1024x1024. Tiling governs the
-     * DECODE only. At 512x512 the same buffer is 288 MB.
-     *
-     * A Klein edit encodes the base twice (init latent + clean reference) and
-     * every reference once, so a 1024x1024 edit with one reference asked for
-     * three of those and the app was reaped as foreground TOP, three times.
-     *
-     * ⇒ The one input this app can shrink without changing what is rendered
-     * is the REFERENCE: it is context the model reads, never the output, so
-     * [REF_MAX_EDGE] pixels is ample by default. The base cannot shrink — it
-     * IS the canvas.
-     *
-     * ⭐ [maxEdge] is the [REF_MAX] knob, drawn in the Reference editor. The
-     * default is still [REF_MAX_EDGE]; the knob exists because the base has a
-     * size control in ITS editor and this picture had none.
-     *
-     * ⚠ Untouched when it is already small, so a modest reference costs
-     * nothing and keeps its exact pixels.
-     */
-    private fun boundReference(
-        src: android.graphics.Bitmap,
-        maxEdge: Int = REF_MAX_EDGE,
-    ): android.graphics.Bitmap {
-        val longest = maxOf(src.width, src.height)
-        if (longest <= maxEdge) return src
-        val scale = maxEdge.toFloat() / longest
-        val w = (src.width * scale).toInt().coerceAtLeast(1)
-        val h = (src.height * scale).toInt().coerceAtLeast(1)
-        return android.graphics.Bitmap.createScaledBitmap(src, w, h, true)
     }
 
     /** ⚠ Never put in the store: [ImageStore.encodePng] says why. */
