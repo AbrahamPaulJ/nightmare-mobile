@@ -1894,6 +1894,63 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             .sortedBy { it.name.lowercase() }
     }
 
+    /**
+     * ⭐⭐ The LoRA adapters on this device. DiT families only — a QNN
+     * pipeline has nowhere to put one (`docs/ROADMAP.md` §2f).
+     */
+    var loraRows by mutableStateOf<List<com.abrah.nightmare.ui.EmbeddingRow>>(emptyList())
+        private set
+
+    fun refreshLoras() {
+        loraRows = BackendProcess.lorasDir(getApplication()).listFiles { f ->
+            f.isFile && f.extension.equals("safetensors", ignoreCase = true)
+        }.orEmpty()
+            .map { com.abrah.nightmare.ui.EmbeddingRow(it.name, it.length()) }
+            .sortedBy { it.name.lowercase() }
+    }
+
+    /**
+     * ⭐⭐ Copy a picked adapter into [BackendProcess.lorasDir].
+     *
+     * ⚠⚠ The COPY is the point, not tidiness: the engine cannot open a file
+     * left in `Download/` at all ("cannot register LoRA source"), because the
+     * backend runs as this app's uid and scoped storage does not reach another
+     * app's file there.
+     *
+     * ⚠ Same validation as [importEmbedding], for the same reason — refuse a
+     * file whose name does not end `.safetensors` rather than renaming it, and
+     * take `File(displayName).name` so a provider's untrusted DISPLAY_NAME
+     * cannot carry `../` out of the directory.
+     */
+    fun importLora(uri: android.net.Uri) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val result = runCatching {
+                val displayName = uriDisplayName(uri).orEmpty()
+                require(displayName.endsWith(".safetensors", ignoreCase = true)) {
+                    "only .safetensors files are supported"
+                }
+                val dir = BackendProcess.lorasDir(ctx).apply { mkdirs() }
+                val safeName = java.io.File(displayName).name
+                    .ifBlank { "lora_${System.currentTimeMillis()}.safetensors" }
+                val target = java.io.File(dir, safeName)
+                ctx.contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { input.copyTo(it) }
+                } ?: throw java.io.IOException("could not read that file")
+                safeName
+            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                result.fold(
+                    onSuccess = { name -> say("imported LoRA $name"); refreshLoras() },
+                    onFailure = { e ->
+                        modelError = "LoRA import failed: ${e.message}"
+                        say("LoRA import failed — ${e.message}", bad = true)
+                    },
+                )
+            }
+        }
+    }
+
     fun importEmbedding(uri: android.net.Uri) {
         val ctx = getApplication<Application>()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {

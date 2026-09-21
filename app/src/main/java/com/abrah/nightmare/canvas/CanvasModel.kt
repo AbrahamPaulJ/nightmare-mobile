@@ -1042,6 +1042,8 @@ val String.nodeLabel: String
 // read as words. Everything else is the id with `_` as a space, Capitalised.
 private val KNOB_OVERRIDES = mapOf(
     "cfg" to "CFG",
+    // ⚠ The capitalisation everyone who trains one uses; "Loras" reads as a typo.
+    "loras" to "LoRAs",
     "out_w" to "Output width",
     "out_h" to "Output height",
     "w" to "Width",

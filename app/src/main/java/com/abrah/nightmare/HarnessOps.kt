@@ -166,6 +166,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "model_scan" -> scanModels()
             "model_import" -> importModels()
             "dit_lora" -> ditLora(arg)
+            "loras" -> listLoras()
             "latent_blend" -> latentBlend()
             "plugin_latent" -> pluginLatentGraph()
             // ⭐ The in-process NPU runner, on the phone, with nothing else
@@ -441,6 +442,20 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * `--es arg /sdcard/Download/foo.safetensors@0.8`. One string extra is all
      * the dispatcher hands an op, so the multiplier rides on the path.
      */
+    /** ⭐ What is in [BackendProcess.lorasDir] — the only place the engine can load one from. */
+    private fun listLoras() {
+        val dir = BackendProcess.lorasDir(ctx)
+        val files = dir.listFiles { f ->
+            f.isFile && f.extension.equals("safetensors", ignoreCase = true)
+        }.orEmpty().sortedBy { it.name.lowercase() }
+        say("loras in ${dir.absolutePath}")
+        if (files.isEmpty()) {
+            say("  none — an adapter left in Download/ cannot be read by the backend", bad = true)
+            return
+        }
+        for (f in files) say("  ${f.name.padEnd(44)} ${f.length() shr 20} MB")
+    }
+
     private suspend fun ditLora(arg: String?) {
         val spec = ModelCatalog.byId(SelectedModel.id)
         if (spec?.isDit != true) {

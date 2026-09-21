@@ -251,6 +251,21 @@ class SdSampler(
          * ⭐ The reference region's params. Named apart from `x`/`y`/`w`/`h`
          * so a node can frame its base and crop its reference independently.
          */
+        /**
+         * ⭐⭐ The LoRA adapters this node renders with: a comma-separated list
+         * of `file.safetensors@strength`, strength optional and 1.0 by default.
+         *
+         * ⚠⚠ A NAME, never a path. The file is resolved inside
+         * [BackendProcess.lorasDir], because that is the only directory the
+         * backend can open one from (`docs/ROADMAP.md` §2f) — a saved workflow
+         * carrying an absolute path would also break the moment it moved to
+         * another phone.
+         *
+         * ⚠ DiT only. A QNN pipeline has nowhere to put a LoRA, so the field is
+         * not offered on those families.
+         */
+        const val LORAS = "loras"
+
         const val REF_X = "ref_x"
         const val REF_Y = "ref_y"
         const val REF_W = "ref_w"
@@ -638,6 +653,15 @@ class SdSampler(
         Widget(
             "height", "int", ModelCatalog.DIT_RES.height.toString(),
             ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.DIT_MAX.toDouble(), step = ModelCatalog.DIT_STEP,
+        ),
+        // ⚠ Free text for now: the picker that will replace it needs the
+        // installed list, which a `NodeType.widgets` getter has no Context to
+        // read. The engine reports what bound, so a typo is caught at Run
+        // rather than silently ignored.
+        Widget(
+            LORAS, "string", "",
+            hint = "LoRA files in the app's _loras folder, comma separated, " +
+                "each optionally @strength — e.g. style.safetensors@0.8",
         ),
     )
 
@@ -1082,6 +1106,54 @@ class SdSampler(
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
     }
 
+    /**
+     * ⭐⭐ Turn the [LORAS] param into what `Ops.generate` sends: absolute
+     * paths inside [BackendProcess.lorasDir], each with a strength.
+     *
+     * ⚠⚠ **A missing file is refused here, not at Run.** The engine's answer
+     * to a path it cannot open is `cannot register LoRA source`, which it logs
+     * and then renders WITHOUT the adapter — a picture that looks like a
+     * success and is not the one that was asked for. Naming the file is the
+     * only way that failure becomes visible.
+     *
+     * ⚠ Blank, or every entry blank, is no LoRAs and costs nothing.
+     */
+    private fun lorasFor(ctx: NodeCtx, spec: String?): List<Pair<String, Double>> {
+        val text = spec?.trim().orEmpty()
+        if (text.isEmpty()) return emptyList()
+        // ⚠ A host with no Android context cannot resolve a LoRA at all; say so
+        // rather than rendering silently without one.
+        val android = ctx.android
+            ?: throw IllegalStateException("LoRAs need an Android context on this host")
+        return parseLoras(BackendProcess.lorasDir(android), text)
+    }
+
+    /**
+     * ⭐ The [LORAS] string, resolved against [dir]. Separated from
+     * [lorasFor] so it can be tested without an Android context.
+     */
+    internal fun parseLoras(dir: java.io.File, spec: String?): List<Pair<String, Double>> {
+        val text = spec?.trim().orEmpty()
+        if (text.isEmpty()) return emptyList()
+        return text.split(',').mapNotNull { entry ->
+            val piece = entry.trim()
+            if (piece.isEmpty()) return@mapNotNull null
+            // ⚠ Last `@`: a filename may contain one, a strength never does.
+            val at = piece.lastIndexOf('@')
+            val strength = if (at > 0) piece.substring(at + 1).trim().toDoubleOrNull() else null
+            val name = if (strength != null) piece.substring(0, at).trim() else piece
+            // ⚠ `File(name).name` — a saved workflow is untrusted text, and a
+            // name carrying `../` would name a file outside the directory.
+            val file = java.io.File(dir, java.io.File(name).name)
+            if (!file.isFile) {
+                throw IllegalStateException(
+                    "LoRA \"${file.name}\" is not in ${dir.name} — import it first",
+                )
+            }
+            file.absolutePath to (strength ?: 1.0)
+        }
+    }
+
     private suspend fun runDit(
         ctx: NodeCtx,
         node: Node,
@@ -1182,6 +1254,7 @@ class SdSampler(
             imagePng = png,
             denoise = p["denoise"]?.toDoubleOrNull() ?: defaultDenoise(family).toDouble(),
             referencePngs = listOfNotNull(referencePng),
+            loras = lorasFor(ctx, p[LORAS]),
             onProgress = ctx.onProgress,
         )
         val out = when (r) {

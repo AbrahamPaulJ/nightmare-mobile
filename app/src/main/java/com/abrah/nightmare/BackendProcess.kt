@@ -304,6 +304,23 @@ object BackendProcess {
     fun embeddingsDir(context: Context): File =
         File(context.getExternalFilesDir(null), "embeddings")
 
+    /**
+     * ⭐⭐ Where a LoRA adapter has to live for the engine to load it.
+     *
+     * ⚠⚠⚠ **Inside the app's own storage, and that is not a preference.**
+     * The backend runs as this app's uid, and scoped storage does not let it
+     * open a file another uid owns in `Download/` — the engine says so by name:
+     * `cannot register LoRA source '/sdcard/Download/…'`. A LoRA a user picked
+     * has to be COPIED here before it can be named in a request
+     * (`docs/ROADMAP.md` §2f).
+     *
+     * ⚠ Beside the model directories rather than inside one: an adapter is not
+     * a checkpoint, and the same file is usable by every checkpoint of its
+     * architecture. ⚠ The leading underscore keeps it out of the way of
+     * `CustomModels.scan`, exactly as `_dit_shared` does.
+     */
+    fun lorasDir(context: Context): File = File(modelsDir(context), "_loras")
+
     sealed interface Start {
         data object Ok : Start
         data class Failed(val why: String) : Start
