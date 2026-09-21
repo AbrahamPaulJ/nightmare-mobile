@@ -112,18 +112,35 @@ jobs:
       # copy out of an image layer, not a container build.
       - name: Extract the Hexagon SDK
         run: |
+          set -euo pipefail
           docker create --name hexsdk ghcr.io/snapdragon-toolchain/arm64-android:${{ inputs.hexagon_tag }}
-          sudo mkdir -p /opt/hexagon
-          docker cp hexsdk:/opt/hexagon/. /opt/hexagon/
+          # ⚠ Into a directory THIS user owns. `docker cp` writes as the client,
+          # so a `sudo mkdir`-ed target under /opt fails with
+          # "mkdir /opt/hexagon/6.6.0.0/build: permission denied" -- and only
+          # after the whole 2.3 GB image has been pulled, which is a slow way to
+          # learn about a chmod.
+          DEST="$RUNNER_TEMP/hexagon"
+          mkdir -p "$DEST"
+          docker cp hexsdk:/opt/hexagon/. "$DEST/"
           docker rm hexsdk
-          # The SDK root is a versioned directory; find it rather than hardcode
-          # a version that moves with the image tag.
-          ROOT=$(find /opt/hexagon -maxdepth 2 -name 'setup_sdk_env.source' -printf '%h\n' | head -1)
+          # The SDK root is a versioned directory (6.6.0.0 in image tag v0.7);
+          # find it rather than hardcode a version that moves with the tag.
+          # ⚠ `dirname`, not a `find -printf` format: the format string has
+          # to survive YAML, and a backslash escape that gets doubled on the
+          # way through makes printf emit a literal escape instead of a
+          # newline, so the path comes back with junk on the end.
+          MARK=$(find "$DEST" -maxdepth 2 -name setup_sdk_env.source | sort -V | tail -1)
+          if [ -n "$MARK" ]; then
+            ROOT=$(dirname "$MARK")
+          else
+            ROOT=$(find "$DEST" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*' | sort -V | tail -1)
+          fi
           if [ -z "$ROOT" ]; then
-            echo "::error::no Hexagon SDK root under /opt/hexagon"; find /opt/hexagon -maxdepth 2 | head -40; exit 1
+            echo "::error::no Hexagon SDK root under $DEST"; find "$DEST" -maxdepth 2 | head -40; exit 1
           fi
           echo "HEXAGON_SDK_ROOT=$ROOT" >> "$GITHUB_ENV"
           echo "found SDK at $ROOT"
+          du -sh "$ROOT" || true
 
       # Ours, if any. `git apply` from the cpp directory so a patch reads the
       # same way it would locally.
