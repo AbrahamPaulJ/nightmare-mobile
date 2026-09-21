@@ -51,6 +51,42 @@ object BackendProcess {
     /** Newest-first, same convention as the harness log. */
     val output = ArrayDeque<String>()
 
+    /**
+     * ⭐⭐⭐ **Why the backend gave up, in one line a person can act on.**
+     *
+     * ⚠⚠⚠ Reported 2026-09-21: importing a community FLUX checkpoint failed
+     * with *"the backend would not start — see Settings > Diagnostics"*, and
+     * **Settings has had no Diagnostics section since 2026-09-19**. Worse than a
+     * stale pointer: [HarnessOps] already `say`s the whole backend log, but
+     * `say` writes to the HARNESS log, which lived on exactly the screen that
+     * was removed. So the answer existed, in full, and there was no way to read
+     * it. The backend had said:
+     * `parsing ComfyUI quantization metadata tensor failed:
+     * 'model.diffusion_model.double_blocks.0.img_attn.proj.comfy_quant'`
+     * — precise, actionable, and invisible.
+     *
+     * ⭐⭐ **The FIRST error, not the last.** [output] is newest-first, and the
+     * last thing a failing launch prints is always the most generic: `engine
+     * create failed: new_sd_ctx failed`, then `Pipeline initialization failed!`.
+     * The root cause is the FIRST error the process emitted, which is the
+     * OLDEST line here. Taking the newest would have reported "new_sd_ctx
+     * failed" to a user whose actual problem was a quantisation format.
+     *
+     * ⚠ Null when nothing looks like an error — the caller then says only that
+     * it would not start, rather than inventing a reason.
+     */
+    fun failureReason(): String? = synchronized(output) {
+        val raw = output.lastOrNull {
+            it.contains("[ ERROR ]") || it.trimStart().startsWith("ERROR")
+        } ?: return null
+        // The engine prefixes `   522.3ms [ ERROR ] [dit] model_loader.cpp:270  - `.
+        // Everything before the ` - ` is timing and provenance, and none of it
+        // means anything to the person reading the chip.
+        val afterLevel = raw.substringAfter("[ ERROR ]", raw)
+        val message = if (" - " in afterLevel) afterLevel.substringAfter(" - ") else afterLevel
+        return message.trim().removePrefix("ERROR:").trim().takeIf { it.isNotBlank() }
+    }
+
     val isRunning: Boolean get() = process?.isAlive == true
 
     /**

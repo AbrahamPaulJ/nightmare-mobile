@@ -417,8 +417,13 @@ fun CanvasScreen(
             // ⚠⚠ A GEAR, and it opens Settings — not the wrench that opened
             // the op harness. A developer tool with a developer's icon was one
             // of three unlabelled glyphs on the app's first screen, and the
-            // least likely of the three to be what anyone wanted. The harness
-            // is still there, behind Settings > Diagnostics.
+            // least likely of the three to be what anyone wanted.
+            // ⚠⚠⚠ The harness is NOT behind Settings — this comment said it
+            // was until 2026-09-21, and the Diagnostics tab was deleted on
+            // 2026-09-19 (`ui/SettingsScreen.kt`). It is reachable only through
+            // `OpService` over adb (`notes/HANDOFF.md` §5). A run that refuses
+            // now carries the backend's own reason in its chip instead
+            // ([BackendProcess.failureReason]).
             IconButton(onClick = onBack) {
                 Icon(
                     Icons.Filled.Settings,

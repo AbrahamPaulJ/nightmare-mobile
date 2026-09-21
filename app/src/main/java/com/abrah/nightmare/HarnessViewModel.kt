@@ -893,6 +893,20 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     var modelError by mutableStateOf<String?>(null)
         private set
 
+    /**
+     * ⭐⭐ **How the app died last time, if it did** — null on every ordinary
+     * launch, which is almost all of them ([CrashReport]).
+     *
+     * ⚠⚠ Read ONCE, here, rather than by the composable: `CrashReport.pending`
+     * consumes the breadcrumb and records that the exit has been reported, so
+     * calling it from a recomposition would show the report and then lose it.
+     */
+    var crashReport by mutableStateOf<CrashReport.Report?>(null)
+        private set
+
+    /** ⚠ The user has read it. [CrashReport] has already recorded that it was shown. */
+    fun dismissCrashReport() { crashReport = null }
+
     /** Non-null while an install is running; the id being fetched. */
     private var installing by mutableStateOf<String?>(null)
 
@@ -957,6 +971,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // FAILURE ever reached a notification (PROGRESS.md). ⚠ Its own ~1 s
         // throttle: each update is a Binder call to system_server, and this
         // tick fires every 150 ms.
+        // ⭐ …and the breadcrumb, for the OTHER thing that gets reclaimed: a
+        // multi-gigabyte download or import ([CrashReport]). Idempotent, so the
+        // 150 ms tick costs one file write per job rather than one per tick.
+        CrashReport.mark(getApplication(), "downloading ${downloadLabel(id)}")
         val now = android.os.SystemClock.uptimeMillis()
         if (now - lastNoticeAt >= NOTICE_TICK_MS) {
             lastNoticeAt = now
@@ -1017,6 +1035,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // and `downloadFailed` say what HAPPENED, and this only guarantees that
         // nothing is left spinning when they are forgotten.
         if (installing == null && DownloadNotice.live) DownloadNotice.clear(ctx)
+        // ⚠ …and the breadcrumb, for the same reason and in the same place: an
+        // install that ended left one behind on every path that did not go
+        // through `run`'s finally ([CrashReport]).
+        if (installing == null && !busy) CrashReport.clear(ctx)
         // ⚠ The upscalers ride along: this is the app's "re-read the disk"
         // entry point and a second one would be a second thing to forget.
         refreshUpscalers()
@@ -4940,14 +4962,32 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * ⚠ They had two: a sweep said "see Settings > Diagnostics" and never said
      * "no model installed", while Run said "see the harness log" (a screen the
      * user reaches only through Settings). The design review, 2026-09-15.
+     *
+     * ⚠⚠⚠ **And "see Settings > Diagnostics" pointed at a screen that was
+     * DELETED on 2026-09-19**, three days before a user followed it. Reported
+     * 2026-09-21 while importing a community FLUX checkpoint. It is the doc
+     * rule applied to UI copy — *a superseded claim is worse than no claim* —
+     * and the fix is not a better pointer: the backend had already said exactly
+     * what was wrong, and nothing showed it.
+     *
+     * ⇒ **Say the reason here** ([BackendProcess.failureReason]). The chip is
+     * the only surface a person sees when a run refuses, so the one line that
+     * explains it belongs in the chip, not behind a navigation path.
      */
-    private fun backendRefusal(namesNoKey: Boolean): String =
+    private fun backendRefusal(namesNoKey: Boolean): String {
         if (!namesNoKey &&
-            ModelCatalog.byId(SelectedModel.id)?.installed(getApplication()) != true) {
-            "no model installed — open Models and download one"
-        } else {
-            "the backend would not start — see Settings > Diagnostics"
+            ModelCatalog.byId(SelectedModel.id)?.installed(getApplication()) != true
+        ) {
+            return "no model installed — open Models and download one"
         }
+        // ⚠ The backend's own words, trimmed to the root cause. A checkpoint the
+        // engine cannot load says so by name ("parsing ComfyUI quantization
+        // metadata tensor failed"), which is the difference between "try another
+        // file" and "this app is broken".
+        val why = BackendProcess.failureReason()
+        return if (why != null) "the backend would not start — $why"
+        else "the backend would not start"
+    }
 
     /**
      * ⭐⭐ A run that ENDS without reporting a total must not keep saying
@@ -5311,6 +5351,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // readout must stop saying "idle" the moment Run is pressed, not up to
         // two seconds later.
         refreshLoad()
+        // ⭐⭐ The breadcrumb: if the process dies between here and the
+        // `finally` below, the next launch says so ([CrashReport]). A render is
+        // the likeliest moment for that — it is when gigabytes of checkpoint
+        // are resident.
+        CrashReport.mark(getApplication(), "rendering")
         runJob = viewModelScope.launch {
             try {
                 block()
@@ -5331,6 +5376,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 // silence (`notes/HANDOFF.md` §5).
                 say("$label threw ${e.javaClass.simpleName}: ${e.message}", bad = true)
             } finally {
+                // ⚠ FIRST in the finally: every other line here can throw, and a
+                // breadcrumb left behind turns the next routine reclaim into a
+                // false crash report — the one thing this was asked not to do.
+                CrashReport.clear(getApplication())
                 settleRunLog()
                 busy = false
                 runJob = null
@@ -5366,6 +5415,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * must come after all of it.
      */
     init {
+        // ⭐⭐ Asked at app open, exactly once per process, and null on an
+        // ordinary launch.
+        //
+        // ⚠⚠⚠ **FIRST, before [refreshModels].** That function's backstop
+        // clears the breadcrumb whenever nothing is installing or running —
+        // which at startup is always true — so calling it first would delete the
+        // evidence of the crash being reported and every kill would read as
+        // idle. The two are correct individually and wrong in the other order.
+        //
+        // ⚠ `runCatching`: a diagnostic must never be the thing that stops the
+        // app opening ([DeviceProbe] makes the same promise).
+        crashReport = runCatching { CrashReport.pending(app) }.getOrNull()
         refreshModels()
     }
 }

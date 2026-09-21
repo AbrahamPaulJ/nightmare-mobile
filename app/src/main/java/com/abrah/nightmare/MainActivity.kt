@@ -469,6 +469,13 @@ fun HarnessScreen(
     }
 
     if (vm.showCanvas) {
+        // ⭐⭐ How the app died last time, if it did — null on an ordinary
+        // launch, which is nearly every launch (`CrashReport`). Drawn on the
+        // FIRST screen, because the person who needs it is the one who just
+        // watched the app vanish.
+        vm.crashReport?.let { r ->
+            com.abrah.nightmare.ui.CrashNotice(r, onDismiss = vm::dismissCrashReport)
+        }
         vm.missingModel?.let { m -> MissingModelDialog(m, vm) }
         // ⭐⭐ Every picture the graph can make without the NPU, kept current
         // as the user works -- the chosen photo on `load_image`, the framed one
