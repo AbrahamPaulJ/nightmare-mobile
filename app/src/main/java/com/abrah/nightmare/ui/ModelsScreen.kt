@@ -704,9 +704,15 @@ private fun ImportCard(
             // demanded to obtain 2.6 GB of it. The parts are now fetched on
             // demand, so what is left to say is the SIZE, once, before a person
             // picks a file and waits.
+            // ⚠ Three figures rather than one, because the parts do not all
+            // travel together: the text encoder and tokenizer (2.27 GB) are
+            // byte-identical across both DiT families and the VAE (336 MB) is
+            // not, so owning the OTHER family covers most of it but not all.
+            // `CustomModels.DIT_FAMILY_AGNOSTIC` has the md5s.
             "One .safetensors — a checkpoint from CivitAI or Hugging Face, used as it is. " +
-                "No conversion. It borrows this family's text encoder and VAE: already here " +
-                "if you have either DiT model, about 2.6 GB to fetch once if you do not."
+                "No conversion. It borrows a text encoder and this family's VAE: nothing to " +
+                "fetch if you have this family's model, 336 MB if you have the other one, " +
+                "2.6 GB if you have neither."
         } else {
             // ⚠ Says what the app CANNOT do, because the alternative is a user
             // picking a `.safetensors` and reading "not a checkpoint" without
