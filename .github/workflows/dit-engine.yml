@@ -35,7 +35,7 @@ on:
         description: "happyyzy/stable-diffusion.cpp ref (blank = local-dream's pinned submodule, which is what you want)"
         default: ""
       patch:
-        description: "Patch to apply to the cpp tree before building, relative to this repo (blank = baseline build)"
+        description: "Patch(es) to apply before building, space-separated, in order (blank = baseline build)"
         default: ""
 
 permissions:
@@ -166,7 +166,14 @@ jobs:
         run: |
           set -euo pipefail
           cd local-dream
-          git apply -v --directory=app/src/main/cpp "$GITHUB_WORKSPACE/nightmare/${{ inputs.patch }}"
+          # ⚠ In ORDER, and each one checked. 002 bumps the ABI that 001 set, so
+          # applying them out of order or skipping one fails loudly here rather
+          # than producing an engine whose version is a surprise.
+          for rel in ${{ inputs.patch }}; do
+            echo "--- $rel"
+            before=$(git rev-parse HEAD)
+            git apply -v --directory=app/src/main/cpp "$GITHUB_WORKSPACE/nightmare/$rel"
+          done
           if git diff --quiet; then
             echo "::error::${{ inputs.patch }} applied nothing -- the tree is unchanged"
             exit 1

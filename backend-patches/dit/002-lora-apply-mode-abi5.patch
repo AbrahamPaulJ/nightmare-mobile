@@ -1,0 +1,51 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index 5338ee9..57a8471 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -105,6 +105,13 @@ dit_ctx *engine_create(const dit_ctx_params *params) {
+   if (params->backend && params->backend[0]) sd_params.backend = params->backend;
+   if (params->params_backend && params->params_backend[0])
+     sd_params.params_backend = params->params_backend;
++  // 0 is "unset": leave whatever sd_ctx_params_init chose rather than pinning
++  // AUTO, so a caller that does not care stays on the engine's own default.
++  if (params->lora_apply_mode > 0 &&
++      params->lora_apply_mode < LORA_APPLY_MODE_COUNT) {
++    sd_params.lora_apply_mode =
++        static_cast<lora_apply_mode_t>(params->lora_apply_mode);
++  }
+ 
+   auto *ctx = new dit_ctx();
+   ctx->sd = new_sd_ctx(&sd_params);
+diff --git a/include/DitEngine.h b/include/DitEngine.h
+index ae37f0c..3be5f3b 100644
+--- a/include/DitEngine.h
++++ b/include/DitEngine.h
+@@ -21,7 +21,7 @@
+ extern "C" {
+ #endif
+ 
+-#define DIT_ENGINE_ABI_VERSION 4
++#define DIT_ENGINE_ABI_VERSION 5
+ 
+ // Name of the single symbol the core resolves after dlopen.
+ #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
+@@ -47,6 +47,19 @@ typedef struct {
+   int n_threads;
+   bool flash_attn;
+   bool vae_conv_direct;
++  // How a LoRA is applied: 0 = let the engine decide, 1 = merge into the
++  // weights at load, 2 = keep the branches and apply them each pass. Matches
++  // stable-diffusion.cpp's lora_apply_mode_t; 0 leaves its own default.
++  //
++  // A CONTEXT param rather than a generation one because that is where
++  // sd_ctx_params_t takes it -- so changing the MODE costs a reload, while
++  // changing which LoRAs, or how strongly, does not.
++  //
++  // It exists because AUTO picked at_runtime on a single-device HTP0 context
++  // and the adapter then never reached the NPU's weights: applied, 160/160
++  // tensors bound, output byte-identical (docs/ROADMAP.md 2f). Forcing the
++  // other mode is the only way to find out whether merging lands.
++  int lora_apply_mode;
+ } dit_ctx_params;
+ 
+ typedef struct {
