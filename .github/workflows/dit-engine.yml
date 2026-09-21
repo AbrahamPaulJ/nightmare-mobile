@@ -1,0 +1,197 @@
+# Builds libdit_engine.so and its two Hexagon DSP skels.
+#
+# WHY THIS IS IN CI AND NOT ON A LAPTOP
+# The engine needs the Hexagon SDK (~2.3 GB of container image, several GB
+# unpacked) on top of the NDK, stable-diffusion.cpp and ggml. That is a lot of
+# disk for a build nobody repeats: the result is uploaded once as a release
+# asset and every install downloads it (`DitEngine.URL`). A runner has the room
+# and the developer's `C:` does not.
+#
+# WHAT IT DOES NOT DO
+# Nothing from upstream is vendored into this repository. The sources are cloned
+# at build time from their own public repos; only the BUILT engine is published,
+# which is what this app already ships and what `NOTICE` attributes. Any change
+# of ours travels as a patch file under `backend-patches/dit/`, the same rule the
+# C++ backend follows (`backend-patches/README.md`).
+#
+# FIRST RUN SHOULD BE A BASELINE. Run it with no patch and confirm the engine it
+# produces works on the phone before changing a line of it. A build that cannot
+# reproduce the shipping engine is not a build you can debug a patch with.
+name: dit-engine
+
+on:
+  workflow_dispatch:
+    inputs:
+      hexagon_tag:
+        description: "Tag of ghcr.io/snapdragon-toolchain/arm64-android holding the Hexagon SDK"
+        default: "v0.7"
+      ndk_version:
+        description: "NDK the engine's build.sh documents"
+        default: "29.0.14206865"
+      local_dream_ref:
+        description: "xororz/local-dream ref (blank = default branch)"
+        default: ""
+      sdcpp_ref:
+        description: "happyyzy/stable-diffusion.cpp ref (blank = local-dream's pinned submodule, which is what you want)"
+        default: ""
+      patch:
+        description: "Patch to apply to the cpp tree before building, relative to this repo (blank = baseline build)"
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      # The image ships ~30 GB of things this build never touches, and the
+      # Hexagon SDK plus a full ggml/sd.cpp build is not small. Reclaiming first
+      # is cheaper than diagnosing a link step that died with ENOSPC.
+      - name: Reclaim disk
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      /usr/local/lib/android/sdk/ndk /opt/hostedtoolcache/CodeQL \
+                      /usr/local/share/powershell /usr/share/swift || true
+          sudo apt-get clean
+          df -h /
+
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          path: nightmare
+
+      # Shallow: this is a build input, not something we develop here.
+      - name: Clone local-dream (engine wrapper + build script)
+        run: |
+          git clone --depth 1 ${{ inputs.local_dream_ref && format('--branch {0}', inputs.local_dream_ref) || '' }} \
+            https://github.com/xororz/local-dream.git local-dream
+          cd local-dream
+          echo "local-dream $(git rev-parse HEAD)"
+
+      # ⚠ ONLY the stable-diffusion.cpp submodule. local-dream also pins MNN,
+      # xtensor, tokenizers-cpp and more for its CPU/QNN core, none of which the
+      # engine links against — fetching them all is minutes and gigabytes spent
+      # on code this job never compiles.
+      #
+      # ⚠⚠ Its PINNED commit, not a branch: the engine is built against the
+      # revision upstream tested, and `dit/*.patch` is written against that tree.
+      # Overriding `sdcpp_ref` is how you move it deliberately.
+      - name: Fetch stable-diffusion.cpp at the pinned revision
+        run: |
+          cd local-dream
+          git submodule update --init --recursive --depth 1 -- app/src/main/cpp/3rdparty/stable-diffusion.cpp
+          cd app/src/main/cpp/3rdparty/stable-diffusion.cpp
+          if [ -n "${{ inputs.sdcpp_ref }}" ]; then
+            git fetch --depth 1 origin "${{ inputs.sdcpp_ref }}"
+            git checkout FETCH_HEAD
+            git submodule update --init --recursive --depth 1
+          fi
+          echo "SDCPP_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "GGML_SHA=$(git -C ggml rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Install NDK ${{ inputs.ndk_version }}
+        run: |
+          SDK="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDK" --licenses >/dev/null 2>&1 || true
+          # r29 has lived on the canary channel; try stable first so a released
+          # build is preferred, then widen rather than fail on channel alone.
+          "$SDK" "ndk;${{ inputs.ndk_version }}" || "$SDK" --channel=3 "ndk;${{ inputs.ndk_version }}"
+          NDK="$ANDROID_HOME/ndk/${{ inputs.ndk_version }}"
+          if [ ! -d "$NDK" ]; then
+            echo "::error::NDK ${{ inputs.ndk_version }} did not install"; ls "$ANDROID_HOME/ndk" || true; exit 1
+          fi
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+
+      # The SDK is not redistributable as a tarball but IS inside the public
+      # toolchain image llama.cpp uses, which is the route upstream's build.sh
+      # documents. `docker create` never starts the container: this is a file
+      # copy out of an image layer, not a container build.
+      - name: Extract the Hexagon SDK
+        run: |
+          docker create --name hexsdk ghcr.io/snapdragon-toolchain/arm64-android:${{ inputs.hexagon_tag }}
+          sudo mkdir -p /opt/hexagon
+          docker cp hexsdk:/opt/hexagon/. /opt/hexagon/
+          docker rm hexsdk
+          # The SDK root is a versioned directory; find it rather than hardcode
+          # a version that moves with the image tag.
+          ROOT=$(find /opt/hexagon -maxdepth 2 -name 'setup_sdk_env.source' -printf '%h\n' | head -1)
+          if [ -z "$ROOT" ]; then
+            echo "::error::no Hexagon SDK root under /opt/hexagon"; find /opt/hexagon -maxdepth 2 | head -40; exit 1
+          fi
+          echo "HEXAGON_SDK_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "found SDK at $ROOT"
+
+      # Ours, if any. `git apply` from the cpp directory so a patch reads the
+      # same way it would locally.
+      - name: Apply patch
+        if: inputs.patch != ''
+        run: |
+          cd local-dream/app/src/main/cpp
+          git apply -v "$GITHUB_WORKSPACE/nightmare/${{ inputs.patch }}"
+          echo "PATCH_APPLIED=${{ inputs.patch }}" >> "$GITHUB_ENV"
+
+      - name: Record the ABI version
+        run: |
+          cd local-dream/app/src/main/cpp
+          V=$(sed -n 's/^#define DIT_ENGINE_ABI_VERSION \([0-9]*\).*/\1/p' include/DitEngine.h)
+          echo "ABI_VERSION=$V" >> "$GITHUB_ENV"
+          echo "DIT_ENGINE_ABI_VERSION=$V"
+
+      - name: Build
+        run: |
+          cd local-dream/app/src/main/cpp
+          bash dit/build.sh
+          df -h /
+
+      # The app downloads a zip and takes the single entry named
+      # libdit_engine.so (`DitEngine.install`), so the archive is exactly that
+      # file — no directory prefix, nothing else inside.
+      - name: Package
+        run: |
+          cd local-dream/app/src/main/cpp
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp jniLibs/arm64-v8a/libdit_engine.so "$GITHUB_WORKSPACE/out/"
+          cp assets/ditlibs/libggml-htp-v79.so assets/ditlibs/libggml-htp-v81.so "$GITHUB_WORKSPACE/out/"
+          cd "$GITHUB_WORKSPACE/out"
+          zip -j -X "dit-engine-abi${ABI_VERSION}.zip" libdit_engine.so
+
+      # Everything `DitEngine.kt` pins, printed together so updating it is
+      # copying four numbers rather than measuring four files by hand. ⚠ The
+      # skels are NOT in the zip: they ride in the APK under
+      # `app/src/main/assets/ditlibs/`, which is gitignored and staged locally.
+      - name: Constants for DitEngine.kt
+        run: |
+          cd "$GITHUB_WORKSPACE/out"
+          ZIP="dit-engine-abi${ABI_VERSION}.zip"
+          {
+            echo "## DiT engine build"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| local-dream | \`$(git -C "$GITHUB_WORKSPACE/local-dream" rev-parse HEAD)\` |"
+            echo "| stable-diffusion.cpp | \`$SDCPP_SHA\` |"
+            echo "| ggml | \`$GGML_SHA\` |"
+            echo "| patch | \`${PATCH_APPLIED:-none (baseline)}\` |"
+            echo "| ABI version | \`$ABI_VERSION\` |"
+            echo
+            echo '```kotlin'
+            echo "const val BYTES = $(stat -c%s "$ZIP")L        // the archive"
+            echo "private const val FILE_BYTES = $(stat -c%s libdit_engine.so)L  // the unpacked .so"
+            echo "private const val SHA256 = \"$(sha256sum "$ZIP" | cut -d' ' -f1)\""
+            echo '```'
+            echo
+            echo "skels for \`app/src/main/assets/ditlibs/\`:"
+            echo "- libggml-htp-v79.so $(stat -c%s libggml-htp-v79.so) bytes"
+            echo "- libggml-htp-v81.so $(stat -c%s libggml-htp-v81.so) bytes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: dit-engine-abi${{ env.ABI_VERSION }}
+          path: out/
+          if-no-files-found: error
