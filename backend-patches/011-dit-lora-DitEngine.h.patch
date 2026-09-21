@@ -1,0 +1,30 @@
+--- backend-src/src/DitEngine.h	2026-09-21 23:04:45.770405600 +0930
++++ backend-src/src/DitEngine.h	2026-09-21 22:25:18.961841200 +0930
+@@ -21,7 +21,7 @@
+ extern "C" {
+ #endif
+ 
+-#define DIT_ENGINE_ABI_VERSION 3
++#define DIT_ENGINE_ABI_VERSION 4
+ 
+ // Name of the single symbol the core resolves after dlopen.
+ #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
+@@ -82,6 +82,18 @@
+   // VAE tiling for resolutions whose full decode does not fit; 0 disables.
+   int vae_tile_size;
+   float vae_tile_overlap;
++  // LoRAs applied to THIS generation. Each path is a .safetensors adapter with
++  // its own multiplier; lora_multipliers may be NULL, which means 1.0 for all.
++  // Zero count is "no LoRAs" and costs nothing.
++  //
++  // Per generation rather than per context on purpose: stable-diffusion.cpp
++  // takes them in sd_img_gen_params_t, so a strength can change between renders
++  // without reloading the model. Whether that is actually free depends on the
++  // apply mode the engine settles on -- merging into the weights cannot work
++  // for row-split tensors, so a split model applies them per pass instead.
++  const char *const *lora_paths;
++  const float *lora_multipliers;
++  int lora_count;
+ } dit_gen_params;
+ 
+ // Called for sampling and for long auxiliary work so callers can still cancel

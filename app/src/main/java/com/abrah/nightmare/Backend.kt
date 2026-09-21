@@ -738,6 +738,20 @@ object Ops {
          * whether that crash is upstream's or the engine's.
          */
         referencePngs: List<ByteArray> = emptyList(),
+        /**
+         * ⭐⭐ LoRA adapters for THIS render — a file path and a strength each.
+         *
+         * ⚠⚠ DiT families only. A QNN pipeline has no way to apply one: its
+         * graph is an AOT-compiled context binary with nowhere to put a branch,
+         * and the measured alternative costs 2.8x per UNet pass
+         * (`docs/ROADMAP.md` §2f). The backend ignores the field for those.
+         *
+         * ⚠ Whether a LoRA FITS the checkpoint is not decided here. The engine
+         * reports it by name — "(N / M) LoRA tensors have been applied" against
+         * "incompatible LoRA tensors have been skipped" — which is the only
+         * answer that reflects actual tensor shapes.
+         */
+        loras: List<Pair<String, Double>> = emptyList(),
         onProgress: (Progress) -> Unit = {},
     ): Result<Decoded> {
         val body = JSONObject()
@@ -756,6 +770,16 @@ object Ops {
                 }
                 if (maskPng != null) {
                     put("mask", android.util.Base64.encodeToString(maskPng, android.util.Base64.NO_WRAP))
+                }
+                if (loras.isNotEmpty()) {
+                    put(
+                        "loras",
+                        org.json.JSONArray().apply {
+                            for ((path, mult) in loras) {
+                                put(JSONObject().put("path", path).put("multiplier", mult))
+                            }
+                        },
+                    )
                 }
                 if (referencePngs.isNotEmpty()) {
                     put(

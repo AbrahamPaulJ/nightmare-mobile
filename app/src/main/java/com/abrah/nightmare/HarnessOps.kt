@@ -165,6 +165,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "aspect" -> aspectProbe(arg)
             "model_scan" -> scanModels()
             "model_import" -> importModels()
+            "dit_lora" -> ditLora(arg)
             "latent_blend" -> latentBlend()
             "plugin_latent" -> pluginLatentGraph()
             // ⭐ The in-process NPU runner, on the phone, with nothing else
@@ -416,6 +417,88 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * `--es arg refs` turns the reference leg on; without it only the two
      * safe legs run. Pictures land beside the base in files/dit_edit/.
      */
+    /**
+     * ⭐⭐⭐ **Does a LoRA actually reach the weights?** — the go/no-go for
+     * `docs/ROADMAP.md` §2f, and the first thing to run on an ABI 4 engine.
+     *
+     * Renders ONE fixed neutral prompt at one seed, twice: without the LoRA and
+     * with it. Three things then have to agree, and any one of them alone can
+     * lie:
+     *
+     *  1. the engine says how many tensors bound — grep the backend log for
+     *     "LoRA tensors have been applied" or "skipped";
+     *  2. the two pictures DIFFER. Same seed, same prompt, same steps, so a
+     *     byte-identical pair means nothing was applied however cheerful the
+     *     log was;
+     *  3. …and the second one still decodes to a picture rather than noise,
+     *     which is what a botched fp8 merge looks like (`docs/ROADMAP.md` §2e).
+     *
+     * ⚠ The prompt is deliberately dull and has nothing to do with whatever
+     * the LoRA was trained on. This measures whether ΔW reached the tensors,
+     * not what the adapter draws.
+     *
+     * ⚠⚠ `--es arg <path>`, with an optional strength after an `@`:
+     * `--es arg /sdcard/Download/foo.safetensors@0.8`. One string extra is all
+     * the dispatcher hands an op, so the multiplier rides on the path.
+     */
+    private suspend fun ditLora(arg: String?) {
+        val spec = ModelCatalog.byId(SelectedModel.id)
+        if (spec?.isDit != true) {
+            return say("dit_lora needs a DiT model selected; ${SelectedModel.id} is not one", bad = true)
+        }
+        if (arg.isNullOrBlank()) {
+            return say("dit_lora needs --es arg <path to a .safetensors>[@strength]", bad = true)
+        }
+        // ⚠ rsplit: a path may contain an `@`, a strength never does.
+        val at = arg.lastIndexOf('@')
+        val mult = if (at > 0) arg.substring(at + 1).toDoubleOrNull() ?: 1.0 else 1.0
+        val path = if (at > 0 && arg.substring(at + 1).toDoubleOrNull() != null) arg.substring(0, at) else arg
+        val lora = java.io.File(path)
+        if (!lora.isFile) return say("dit_lora: no such file $path", bad = true)
+        say("lora: ${lora.name} (${lora.length() shr 20} MB) at x$mult")
+
+        val res = SelectedModel.res
+        if (!ensureBackend(ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height))) {
+            return say("dit_lora: no backend", bad = true)
+        }
+        val dir = java.io.File(ctx.getExternalFilesDir(null), "dit_lora").apply { mkdirs() }
+        // ⚠ Neutral on purpose — see the note above.
+        val prompt = "a red brick house beside a lake, clear sky, photorealistic"
+        val negative = "worst quality, low quality, blurry, lowres, watermark, text"
+
+        suspend fun leg(label: String, withLora: Boolean): ByteArray? {
+            val t0 = System.currentTimeMillis()
+            val r = Ops.generate(
+                prompt = prompt, negative = negative, steps = 4, cfg = 1.0, seed = 12345,
+                width = res.width, height = res.height, imagePng = null, denoise = 1.0,
+                loras = if (withLora) listOf(lora.absolutePath to mult) else emptyList(),
+            )
+            return when (r) {
+                is Ops.Result.Err -> {
+                    say("  $label FAILED http ${r.code} — ${r.body.take(200)}", bad = true); null
+                }
+                is Ops.Result.Ok -> {
+                    java.io.File(dir, "$label.png").writeBytes(r.value.png)
+                    say("  $label ok ${System.currentTimeMillis() - t0} ms, ${r.value.png.size} bytes")
+                    r.value.png
+                }
+            }
+        }
+
+        val plain = leg("without_lora", false) ?: return
+        val withL = leg("with_lora", true) ?: return
+
+        // ⚠⚠ The assertion that cannot be faked by a hopeful log line.
+        val same = plain.contentEquals(withL)
+        say(
+            if (same) "dit_lora: IDENTICAL output — the adapter did NOT reach the weights"
+            else "dit_lora: output CHANGED — the adapter reached the weights",
+            bad = same,
+        )
+        say("pictures in ${dir.absolutePath} — pull and LOOK, a changed picture can still be noise")
+        drainBackendLog()
+    }
+
     private suspend fun ditEdit(arg: String?) {
         val spec = ModelCatalog.byId(SelectedModel.id)
         if (spec?.isDit != true) {

@@ -1,0 +1,26 @@
+--- backend-src/src/PipelineDit.hpp	2026-09-21 23:04:45.767389400 +0930
++++ backend-src/src/PipelineDit.hpp	2026-09-21 23:04:33.341374200 +0930
+@@ -189,6 +189,23 @@
+       params.reference_heights = reference_heights.data();
+       params.reference_image_count = static_cast<int>(reference_ptrs.size());
+     }
++    // The engine only keeps POINTERS into these, so they have to outlive the
++    // generate() call below -- the same reason reference_ptrs is declared out
++    // here rather than inside the if.
++    std::vector<const char *> lora_paths;
++    std::vector<float> lora_multipliers;
++    if (!req.loras.empty()) {
++      lora_paths.reserve(req.loras.size());
++      lora_multipliers.reserve(req.loras.size());
++      for (const auto &lora : req.loras) {
++        lora_paths.push_back(lora.path.c_str());
++        lora_multipliers.push_back(lora.multiplier);
++      }
++      params.lora_paths = lora_paths.data();
++      params.lora_multipliers = lora_multipliers.data();
++      params.lora_count = static_cast<int>(lora_paths.size());
++    }
++
+     // Full-frame VAE scratch grows with pixel AREA; tile once past the point
+     // where it stops fitting. Two corrections to the obvious test, both paid
+     // for by an OOM on 2026-09-20 (a 1024x1024 edit with one 1024x1024

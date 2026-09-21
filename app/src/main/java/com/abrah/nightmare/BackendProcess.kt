@@ -230,6 +230,31 @@ object BackendProcess {
     }.getOrNull()
 
     /**
+     * ⭐⭐ **DIAGNOSTIC: the DiT device spec**, from
+     * `Download/nightmare-dit-backend.txt` — e.g.
+     * `diffusion=CPU,te=CPU,vae=CPU`. Absent (the normal case) leaves the
+     * backend's own `diffusion=HTP0,te=HTP0,vae=HTP0`.
+     *
+     * ⚠⚠ It exists for ONE question that nothing else can ask: a LoRA applied
+     * at runtime logs `apply_loras completed` and 160/160 tensors bound, and the
+     * picture comes back byte-identical to the one without it. Either the
+     * adapter never reaches the HTP-resident weights or something else is wrong,
+     * and the only way to tell them apart is to run the SAME build on the CPU
+     * path (`docs/ROADMAP.md` §2f).
+     *
+     * ⚠ Same shape as [readSpillFillOverride] deliberately — a file in
+     * Downloads, read at launch, no UI, nothing shipped enabled.
+     */
+    private fun readDitBackendOverride(context: Context): String? = runCatching {
+        File(
+            android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS,
+            ),
+            "nightmare-dit-backend.txt",
+        ).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
+    }.getOrNull()
+
+    /**
      * ⭐ Where a textual-inversion embedding must live for the backend to
      * find it. `main.cpp` computes this itself as `parent_path().parent_path()`
      * of `--model_dir`, i.e. two directories above `modelsDir/<modelId>/` —
@@ -398,6 +423,8 @@ object BackendProcess {
                     // the defaults leaves the skel unable to resolve what it
                     // links against. Upstream's exact list.
                     if (dit) {
+                        // ⚠ Diagnostic only, and absent on every ordinary launch.
+                        readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }
                         val dsp = listOf(
                             runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",
                         ).joinToString(";")

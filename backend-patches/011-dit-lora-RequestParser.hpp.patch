@@ -1,0 +1,38 @@
+--- backend-src/src/RequestParser.hpp	2026-09-21 23:04:45.767389400 +0930
++++ backend-src/src/RequestParser.hpp	2026-09-21 22:25:14.134453700 +0930
+@@ -173,6 +173,35 @@
+     }
+   }
+ 
++  // LoRA adapters. Each entry is {"path": "...", "multiplier": 0.8}, and a
++  // bare string is accepted as a path at full strength.
++  //
++  // Not checked for FIT here, only for being nameable: whether a LoRA matches
++  // the checkpoint is a question about tensor shapes that only the engine can
++  // answer, and it answers by name -- "(N / M) LoRA tensors have been applied"
++  // against "incompatible LoRA tensors have been skipped".
++  if (json.contains("loras")) {
++    const auto &arr = json["loras"];
++    if (!arr.is_array())
++      throw std::invalid_argument("'loras' must be an array");
++    req.loras.reserve(arr.size());
++    for (const auto &entry : arr) {
++      LoraRef lora;
++      if (entry.is_string()) {
++        lora.path = entry.get<std::string>();
++      } else if (entry.is_object()) {
++        lora.path = entry.value("path", std::string());
++        lora.multiplier = entry.value("multiplier", 1.0f);
++      } else {
++        throw std::invalid_argument(
++            "a lora must be a path or {path, multiplier}");
++      }
++      if (lora.path.empty())
++        throw std::invalid_argument("lora path must not be empty");
++      req.loras.push_back(std::move(lora));
++    }
++  }
++
+   const int sample_w = req.width / 8;
+   const int sample_h = req.height / 8;
+   // Latent channel count of the target format: SD/SDXL = 4, Anima = 16. The

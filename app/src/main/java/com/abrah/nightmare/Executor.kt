@@ -133,6 +133,8 @@ interface OpHost {
         maskPng: ByteArray? = null,
         /** ⚠ Klein's edit references, at their own aspect ratios. */
         referencePngs: List<ByteArray> = emptyList(),
+        /** ⭐ See `Backend.generate` — DiT only. */
+        loras: List<Pair<String, Double>> = emptyList(),
         onProgress: (Ops.Progress) -> Unit,
     ): Ops.Result<Ops.Decoded> = Ops.Result.Err(501, "this host cannot run a whole-render model")
 
@@ -204,11 +206,13 @@ object BackendHost : OpHost {
         width: Int, height: Int, imagePng: ByteArray?, denoise: Double,
         maskPng: ByteArray?,
         referencePngs: List<ByteArray>,
+        loras: List<Pair<String, Double>>,
         onProgress: (Ops.Progress) -> Unit,
     ) = Ops.generate(
         prompt = prompt, negative = negative, steps = steps, cfg = cfg, seed = seed,
         width = width, height = height, imagePng = imagePng, denoise = denoise,
-        maskPng = maskPng, referencePngs = referencePngs, onProgress = onProgress,
+        maskPng = maskPng, referencePngs = referencePngs, loras = loras,
+        onProgress = onProgress,
     )
 
     override suspend fun latentBlend(a: String, b: String, maskPng: ByteArray) =

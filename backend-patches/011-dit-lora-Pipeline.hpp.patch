@@ -1,0 +1,30 @@
+--- backend-src/src/Pipeline.hpp	2026-09-21 23:04:45.767389400 +0930
++++ backend-src/src/Pipeline.hpp	2026-09-21 23:03:54.679533600 +0930
+@@ -47,6 +47,15 @@
+   int height = 0;
+ };
+ 
++// A LoRA adapter for a DiT render: a file on disk and how strongly to apply
++// it. DiT only -- a QNN pipeline has no way to apply one, because its graph is
++// an AOT-compiled context binary with nowhere to add a branch
++// (../docs/ROADMAP.md 2f).
++struct LoraRef {
++  std::string path;
++  float multiplier = 1.0f;
++};
++
+ struct GenerationRequest {
+   std::string prompt;
+   std::string negative_prompt;
+@@ -69,6 +78,11 @@
+   // from img_data: a reference is appended to the DiT token sequence instead
+   // of being noised into the generation latent.
+   std::vector<ReferenceImage> reference_images;
++
++  // LoRA adapters, applied by the engine for this generation only. Empty for
++  // every family but the DiT ones.
++  std::vector<LoraRef> loras;
++
+   // Wire encoding for images sent back to the client: "raw" (RGB bytes),
+   // "jpeg" or "png", each base64-wrapped inside the SSE JSON. Raw stays the
+   // default for backward compatibility; jpeg shrinks a per-step preview by
