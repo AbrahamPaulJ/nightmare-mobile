@@ -2,3 +2,11 @@
 # a "not found" that names the interpreter, not the line endings -- an hour lost
 # to a one-byte problem.
 *.sh text eol=lf
+
+# ⚠⚠ A patch must stay LF too, and for a sharper reason than a shell script:
+# `git apply` compares CONTEXT lines byte for byte against an LF source tree, so
+# a patch checked out with CRLF fails with "patch does not apply" and says
+# nothing about line endings. CI builds on Linux and would have been fine; a
+# contributor on Windows committing one would not.
+*.patch text eol=lf
+*.diff text eol=lf
