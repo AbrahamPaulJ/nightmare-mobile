@@ -165,21 +165,39 @@ jobs:
         if: inputs.patch != ''
         run: |
           set -euo pipefail
-          cd local-dream
+          SDCPP=local-dream/app/src/main/cpp/3rdparty/stable-diffusion.cpp
           # ⚠ In ORDER, and each one checked. 002 bumps the ABI that 001 set, so
           # applying them out of order or skipping one fails loudly here rather
           # than producing an engine whose version is a surprise.
+          #
+          # ⚠⚠⚠ A `*.sdcpp.patch` goes to the stable-diffusion.cpp SUBMODULE,
+          # which is its own git repository. It is applied from THAT root with
+          # paths relative to it -- `git apply` from local-dream with
+          # `--directory` resolves against the PARENT's index, which does not
+          # track anything inside a gitlink, so the patch would be skipped and
+          # the step would still exit 0. That exact silent no-op cost run
+          # 35600769616 a byte-identical rebuild reported as a success.
           for rel in ${{ inputs.patch }}; do
             echo "--- $rel"
-            before=$(git rev-parse HEAD)
-            git apply -v --directory=app/src/main/cpp "$GITHUB_WORKSPACE/nightmare/$rel"
+            case "$rel" in
+              *.sdcpp.patch) repo="$SDCPP"; args="" ;;
+              *)             repo=local-dream; args="--directory=app/src/main/cpp" ;;
+            esac
+            # ⚠⚠ Per PATCH, not once at the end. `git diff --quiet` on the whole
+            # tree cannot tell "003 did nothing" from "001 already changed
+            # something", so the assertion compares the diff either side of
+            # each apply.
+            before=$(git -C "$repo" diff | sha256sum)
+            git -C "$repo" apply -v $args "$GITHUB_WORKSPACE/nightmare/$rel"
+            after=$(git -C "$repo" diff | sha256sum)
+            if [ "$before" = "$after" ]; then
+              echo "::error::$rel applied nothing -- $repo is unchanged"
+              exit 1
+            fi
           done
-          if git diff --quiet; then
-            echo "::error::${{ inputs.patch }} applied nothing -- the tree is unchanged"
-            exit 1
-          fi
           echo "files touched:"
-          git diff --stat
+          git -C local-dream diff --stat
+          git -C "$SDCPP" diff --stat
           echo "PATCH_APPLIED=${{ inputs.patch }}" >> "$GITHUB_ENV"
 
       - name: Record the ABI version

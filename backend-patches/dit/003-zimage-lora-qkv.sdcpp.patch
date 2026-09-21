@@ -1,0 +1,58 @@
+diff --git a/src/model/adapter/lora.hpp b/src/model/adapter/lora.hpp
+index 7384143..d596fb6 100644
+--- a/src/model/adapter/lora.hpp
++++ b/src/model/adapter/lora.hpp
+@@ -161,6 +161,53 @@ struct LoraModel : public GGMLRunner {
+                 new_lora_tensors[new_name] = tensor;
+             }
+ 
++            lora_tensors = std::move(new_lora_tensors);
++        }
++        // ⭐⭐⭐ Z-Image: a LoRA is published with SPLIT q/k/v and the checkpoint
++        // fuses them. Measured on device 2026-09-22 against a real adapter
++        // (480 tensors, rank 32, PEFT naming, `ss_base_model_version: zimage`):
++        //
++        //   checkpoint  model.diffusion_model.layers.N.attention.qkv.weight  [11520, 3840]
++        //   LoRA        diffusion_model.layers.N.attention.to_{q,k,v}         [3840, 32]
++        //
++        // 11520 = 3 x 3840, so q/k/v are concatenated on the OUT dimension --
++        // which is exactly what `get_lora_weight_diff` builds when it walks
++        // `<name>.1`, `<name>.2` and `ggml_concat`s along `n_dims - 1`. So this
++        // needs no new machinery, only the names the CLIP block above already
++        // demonstrates.
++        //
++        // ⚠ `name_conversion.cpp` has already done the other two halves by the
++        // time this runs: `diffusion_model.` -> `model.diffusion_model.` (its
++        // line 1486) and `.lora_A.weight` -> `.weight.lora_down` (line 1430).
++        // Only the fused-attention names are left, which is why exactly the
++        // feed_forward and adaLN halves bound before this patch.
++        if (model_tensor_names.find("model.diffusion_model.layers.0.attention.qkv.weight") != model_tensor_names.end()) {
++            std::unordered_map<std::string, ggml_tensor*> new_lora_tensors;
++            for (auto& [old_name, tensor] : lora_tensors) {
++                std::string new_name = old_name;
++
++                if (contains(new_name, "model.diffusion_model.layers")) {
++                    std::vector<std::pair<std::string, std::string>> zimage_name_map = {
++                        // ⚠ ORDER IS THE CONTRACT: index 0 lands first in the
++                        // concat, so q must be 0, k 1, v 2 to match [q;k;v].
++                        {"attention.to_q.weight", "attention.qkv.weight"},
++                        {"attention.to_k.weight", "attention.qkv.weight.1"},
++                        {"attention.to_v.weight", "attention.qkv.weight.2"},
++                        // ⚠ Diffusers wraps the output projection in a
++                        // Sequential, hence the `.0`; the checkpoint does not.
++                        {"attention.to_out.0.weight", "attention.out.weight"},
++                    };
++                    for (auto kv : zimage_name_map) {
++                        size_t pos = new_name.find(kv.first);
++                        if (pos != std::string::npos) {
++                            new_name.replace(pos, kv.first.size(), kv.second);
++                        }
++                    }
++                }
++
++                new_lora_tensors[new_name] = tensor;
++            }
++
+             lora_tensors = std::move(new_lora_tensors);
+         }
+     }
