@@ -69,14 +69,14 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi4/dit-engine-abi4.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi5/dit-engine-abi5.zip"
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_026_258L
+    const val BYTES = 23_026_133L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 55_555_560L
+    const val FILE_BYTES = 55_555_576L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -86,7 +86,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "0e565bda7783e0891fb42cd4c5524db03f88365986b78f014dc02153e8ba1cde"
+    private const val SHA256 = "1027161f284774a4fe7b6897ca55771af948d525b4df6e8b2d89295977a2657a"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

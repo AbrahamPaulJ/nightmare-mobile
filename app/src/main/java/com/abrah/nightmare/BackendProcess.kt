@@ -255,6 +255,23 @@ object BackendProcess {
     }.getOrNull()
 
     /**
+     * ⭐⭐ **DIAGNOSTIC: how a LoRA is applied**, from
+     * `Download/nightmare-dit-lora-mode.txt` — `1` merges into the weights at
+     * load, `2` keeps the branches and applies them per pass. Absent leaves the
+     * engine's own choice, which is what ships.
+     *
+     * ⚠ Same shape as [readSpillFillOverride] and [readDitBackendOverride].
+     */
+    private fun readDitLoraModeOverride(context: Context): String? = runCatching {
+        File(
+            android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS,
+            ),
+            "nightmare-dit-lora-mode.txt",
+        ).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.toIntOrNull() != null }
+    }.getOrNull()
+
+    /**
      * ⭐ Where a textual-inversion embedding must live for the backend to
      * find it. `main.cpp` computes this itself as `parent_path().parent_path()`
      * of `--model_dir`, i.e. two directories above `modelsDir/<modelId>/` —
@@ -425,6 +442,7 @@ object BackendProcess {
                     if (dit) {
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }
+                        readDitLoraModeOverride(context)?.let { put("NM_DIT_LORA_MODE", it) }
                         val dsp = listOf(
                             runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",
                         ).joinToString(";")
