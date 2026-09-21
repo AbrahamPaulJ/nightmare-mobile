@@ -175,7 +175,12 @@ jobs:
       # file — no directory prefix, nothing else inside.
       - name: Package
         run: |
-          cd local-dream/app/src/main/cpp
+          set -euo pipefail
+          # ⚠ `app/src/main`, NOT `app/src/main/cpp`. build.sh resolves its
+          # output dirs as `$(cd ../.. && pwd)` from `cpp/dit`, which lands on
+          # `main` -- so the libraries are beside the Kotlin source tree, not
+          # under the C++ one.
+          cd local-dream/app/src/main
           mkdir -p "$GITHUB_WORKSPACE/out"
           cp jniLibs/arm64-v8a/libdit_engine.so "$GITHUB_WORKSPACE/out/"
           cp assets/ditlibs/libggml-htp-v79.so assets/ditlibs/libggml-htp-v81.so "$GITHUB_WORKSPACE/out/"
