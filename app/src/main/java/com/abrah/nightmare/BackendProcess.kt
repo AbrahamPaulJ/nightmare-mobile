@@ -245,14 +245,42 @@ object BackendProcess {
      * ⚠ Same shape as [readSpillFillOverride] deliberately — a file in
      * Downloads, read at launch, no UI, nothing shipped enabled.
      */
-    private fun readDitBackendOverride(context: Context): String? = runCatching {
-        File(
-            android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_DOWNLOADS,
+    private fun readDitBackendOverride(context: Context): String? =
+        readDiagnosticFile(context, "nightmare-dit-backend.txt")?.takeIf { it.isNotEmpty() }
+
+    /**
+     * ⚠⚠⚠ **In the app's OWN external files dir, not `Download/`.** Under
+     * scoped storage this app can `stat` a file another app owns in Downloads
+     * but cannot READ it — `isFile` says true and `readText` throws, and a
+     * `runCatching` around both turns that into a silent null. Measured
+     * 2026-09-21: `nightmare-dit-lora-mode.txt` sat in Downloads, the app found
+     * it, and the backend never saw the variable. It is the same permission
+     * that makes the engine say `cannot register LoRA source` for a LoRA left
+     * there.
+     *
+     * ⚠ `Download/` is still read as a FALLBACK, because that is where the
+     * older `nightmare-spillfill.txt` note tells people to put one — it works
+     * when adb writes the file as the app's own uid, and costs nothing when it
+     * does not.
+     */
+    private fun readDiagnosticFile(context: Context, name: String): String? {
+        val places = listOf(
+            File(context.getExternalFilesDir(null), name),
+            File(
+                android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS,
+                ),
+                name,
             ),
-            "nightmare-dit-backend.txt",
-        ).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
-    }.getOrNull()
+        )
+        for (f in places) {
+            val v = runCatching {
+                f.takeIf { it.isFile }?.readText()?.trim()
+            }.getOrNull()
+            if (!v.isNullOrEmpty()) return v
+        }
+        return null
+    }
 
     /**
      * ⭐⭐ **DIAGNOSTIC: how a LoRA is applied**, from
@@ -262,14 +290,9 @@ object BackendProcess {
      *
      * ⚠ Same shape as [readSpillFillOverride] and [readDitBackendOverride].
      */
-    private fun readDitLoraModeOverride(context: Context): String? = runCatching {
-        File(
-            android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_DOWNLOADS,
-            ),
-            "nightmare-dit-lora-mode.txt",
-        ).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.toIntOrNull() != null }
-    }.getOrNull()
+    private fun readDitLoraModeOverride(context: Context): String? =
+        readDiagnosticFile(context, "nightmare-dit-lora-mode.txt")
+            ?.takeIf { it.toIntOrNull() != null }
 
     /**
      * ⭐ Where a textual-inversion embedding must live for the backend to
