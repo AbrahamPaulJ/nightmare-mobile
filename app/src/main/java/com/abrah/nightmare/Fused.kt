@@ -654,14 +654,18 @@ class SdSampler(
             "height", "int", ModelCatalog.DIT_RES.height.toString(),
             ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.DIT_MAX.toDouble(), step = ModelCatalog.DIT_STEP,
         ),
-        // ⚠ Free text for now: the picker that will replace it needs the
-        // installed list, which a `NodeType.widgets` getter has no Context to
-        // read. The engine reports what bound, so a typo is caught at Run
-        // rather than silently ignored.
+        // ⚠⚠ **A `string` the inspector does NOT draw as a text field.** A
+        // `NodeType.widgets` getter is a plain property with no Context, so it
+        // cannot list what is installed — which is why this shipped as free
+        // text in 1.5.557. The CONTROL is where the Context is: the inspector
+        // gives [LORAS] its own branch and opens
+        // [com.abrah.nightmare.canvas.LoraPicker]. The format is
+        // [com.abrah.nightmare.LoraSpec]'s, and a workflow file still carries
+        // exactly this string.
         Widget(
             LORAS, "string", "",
-            hint = "LoRA files in the app's _loras folder, comma separated, " +
-                "each optionally @strength — e.g. style.safetensors@0.8",
+            hint = "adapters applied on top of this checkpoint — import them on " +
+                "the Settings tab",
         ),
     )
 
@@ -1133,24 +1137,22 @@ class SdSampler(
      * [lorasFor] so it can be tested without an Android context.
      */
     internal fun parseLoras(dir: java.io.File, spec: String?): List<Pair<String, Double>> {
-        val text = spec?.trim().orEmpty()
-        if (text.isEmpty()) return emptyList()
-        return text.split(',').mapNotNull { entry ->
-            val piece = entry.trim()
-            if (piece.isEmpty()) return@mapNotNull null
-            // ⚠ Last `@`: a filename may contain one, a strength never does.
-            val at = piece.lastIndexOf('@')
-            val strength = if (at > 0) piece.substring(at + 1).trim().toDoubleOrNull() else null
-            val name = if (strength != null) piece.substring(0, at).trim() else piece
-            // ⚠ `File(name).name` — a saved workflow is untrusted text, and a
-            // name carrying `../` would name a file outside the directory.
-            val file = java.io.File(dir, java.io.File(name).name)
+        // ⚠⚠ The SPLIT is [LoraSpec]'s, not this function's. The picker sheet
+        // reads and writes the same string, and two tokenisers agree only until
+        // one of them learns something. What stays here is the half the UI must
+        // NOT do: turning a name into a file, which can fail.
+        return LoraSpec.parse(spec).map { e ->
+            // ⚠ [LoraSpec.parse] has already reduced the name to a bare
+            // filename, so a `../` in a saved workflow cannot name a file
+            // outside `dir` — it becomes a name that is simply not installed,
+            // and is refused two lines down like any other.
+            val file = java.io.File(dir, e.name)
             if (!file.isFile) {
                 throw IllegalStateException(
-                    "LoRA \"${file.name}\" is not in ${dir.name} — import it first",
+                    "LoRA \"${e.name}\" is not in ${dir.name} — import it first",
                 )
             }
-            file.absolutePath to (strength ?: 1.0)
+            file.absolutePath to e.strength
         }
     }
 

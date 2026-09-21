@@ -98,6 +98,11 @@ plain weights, so a Z-Image checkpoint from CivitAI is picked from storage and r
 conversion, no PC. The text encoder, VAE and tokenizer are shared with the model you already
 installed, so an import costs only the weights.
 
+**LoRAs, swappable per render.** Import an adapter `.safetensors` and pick it on any FLUX.2 or
+Z-Image generate node — a checkbox per installed file and a strength slider. It binds while the
+render starts, so changing one or moving a slider reloads nothing and costs about 6%. Stack as
+many as you like.
+
 **Embeddings.** Import a textual inversion `.safetensors` and name it in a prompt.
 
 **English, Chinese and Russian.** The interface follows your phone's language. Adding another

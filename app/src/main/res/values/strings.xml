@@ -135,6 +135,8 @@
     <string name="tools">Tools</string>
     <string name="tools_note">Small helpers that run on the phone\'s CPU. Wire one into a flow to use it.</string>
     <string name="segmenter_about">Tap an object in an Inpaint mask to select it. Wire a Segment model node into Inpaint.</string>
+    <string name="loras_title">LoRAs</string>
+    <string name="loras_body">A style or character as a small adapter file, applied on top of a checkpoint. FLUX.2 and Z‑Image only — pick one on a sampler node’s LoRAs knob.</string>
     <string name="embeddings_title">Embeddings</string>
     <string name="embeddings_body">A trained concept as a file, not a checkpoint — a .safetensors from Civitai or similar. Name it in a prompt to use it.</string>
     <!-- Download source (mirror). Added 2026-09-20: huggingface.co is

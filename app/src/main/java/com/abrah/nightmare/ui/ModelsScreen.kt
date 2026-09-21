@@ -236,6 +236,15 @@ fun ModelsScreen(
     embeddings: List<EmbeddingRow>? = null,
     onImportEmbedding: (() -> Unit)? = null,
     onDeleteEmbedding: ((String) -> Unit)? = null,
+    /**
+     * ⭐⭐ The installed LoRA adapters, on the same Tools tab and for the same
+     * reason as [embeddings]: this is where a person looks for what is on the
+     * phone. ⚠ The IMPORT is not here — it lives in Settings, the user's call
+     * of 2026-09-20 about the embeddings button, and a LoRA is the same kind of
+     * one-off setup act.
+     */
+    loras: List<EmbeddingRow>? = null,
+    onDeleteLora: ((String) -> Unit)? = null,
 ) {
     // ⚠⚠ The confirm is intercepted HERE rather than inside the card, so the
     // card stays a dumb row and there is exactly one place that can delete a
@@ -334,6 +343,7 @@ fun ModelsScreen(
     var deletingVideo by remember { mutableStateOf(false) }
     var deletingSegmenter by remember { mutableStateOf(false) }
     var deletingEmbedding by remember { mutableStateOf<String?>(null) }
+    var deletingLora by remember { mutableStateOf<String?>(null) }
 
     // ⚠ No header and no `statusBarsPadding` any more: [LibraryScreen] owns
     // both, because this screen is now a TAB rather than a whole screen. A
@@ -400,11 +410,11 @@ fun ModelsScreen(
             labels = families.map { it.label } +
                 (if (hasUpscalers) listOf(stringResource(R.string.upscalers)) else emptyList()) +
                 (if (video != null) listOf(stringResource(R.string.video)) else emptyList()) +
-                (if (segmenter != null || embeddings != null) listOf(stringResource(R.string.tools)) else emptyList()),
+                (if (segmenter != null || embeddings != null || loras != null) listOf(stringResource(R.string.tools)) else emptyList()),
             modifier = Modifier.padding(top = 8.dp),
         ) { page ->
             // ⚠ LAST again, after Video, so adding it moved no existing index.
-            if ((segmenter != null || embeddings != null) &&
+            if ((segmenter != null || embeddings != null || loras != null) &&
                 page == families.size + (if (hasUpscalers) 1 else 0) + (if (video != null) 1 else 0)
             ) {
                 LazyColumn(
@@ -436,7 +446,14 @@ fun ModelsScreen(
                     // because that is where a person looks for what is on the
                     // phone — removing the button did not remove the tab's job.
                     if (embeddings != null) {
-                        items(embeddings, key = { it.name }) { row ->
+                        if (loras != null) item {
+                            Text(
+                                stringResource(R.string.embeddings_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                        items(embeddings, key = { "emb:" + it.name }) { row ->
                             DownloadCard(
                                 title = row.name,
                                 emphasised = false,
@@ -446,6 +463,35 @@ fun ModelsScreen(
                             ) {
                                 OutlinedButton(
                                     onClick = { deletingEmbedding = row.name },
+                                    enabled = !busy,
+                                ) { Text(stringResource(R.string.delete)) }
+                            }
+                        }
+                    }
+                    // ⭐⭐ LoRAs, below the embeddings and shaped exactly like
+                    // them — a [DownloadCard] per file with its size and a
+                    // Delete. ⚠ A HEADING now, on both, because two unlabelled
+                    // lists of `.safetensors` on one tab are indistinguishable:
+                    // an embedding is named in a PROMPT and a LoRA is picked on
+                    // a sampler NODE, and nothing on screen said which was which.
+                    if (!loras.isNullOrEmpty()) {
+                        item {
+                            Text(
+                                stringResource(R.string.loras_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                        items(loras, key = { "lora:" + it.name }) { row ->
+                            DownloadCard(
+                                title = row.name,
+                                emphasised = false,
+                                status = stringResource(R.string.installed_mb, mb(row.bytes)),
+                                detail = "",
+                                progress = null,
+                            ) {
+                                OutlinedButton(
+                                    onClick = { deletingLora = row.name },
                                     enabled = !busy,
                                 ) { Text(stringResource(R.string.delete)) }
                             }
@@ -611,6 +657,20 @@ fun ModelsScreen(
                 "will refuse to run until you install it again.",
             onConfirm = onDeleteSegmenter,
             onDismiss = { deletingSegmenter = false },
+        )
+    }
+
+    deletingLora?.let { name ->
+        ConfirmDelete(
+            title = "Delete $name?",
+            // ⚠⚠ The opposite of the embeddings warning below, and that is
+            // the point of saying it: a node naming a LoRA that is gone REFUSES
+            // at Run by name ([SdSampler.parseLoras]). Nothing renders quietly
+            // without it.
+            body = "Any node that names it refuses to run until you import it " +
+                "again or untick it.",
+            onConfirm = { onDeleteLora?.invoke(name) },
+            onDismiss = { deletingLora = null },
         )
     }
 

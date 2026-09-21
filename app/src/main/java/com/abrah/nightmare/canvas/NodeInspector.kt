@@ -1335,6 +1335,8 @@ internal fun NodeInspectorBody(
         // ⚠ Which knob's batch popup is open, or null. Local: an unanswered
         // popup is not something to persist.
         var batching by remember(nodeId) { mutableStateOf<Widget?>(null) }
+        // ⚠ Whether the LoRA picker is open. Local for the same reason.
+        var pickingLoras by remember(nodeId) { mutableStateOf(false) }
         // ⚠ Null when not renaming. Keyed on the node so opening another
         // node's sheet cannot leave a half-typed name from the last one.
 
@@ -1498,6 +1500,30 @@ internal fun NodeInspectorBody(
         if (preview != null && seed != null && node.type == "core.output") SeedRow(seed)
 
         // ⭐ The popup for whichever knob's BAT icon was tapped.
+        // ⭐ The LoRA picker, opened from the knob's own row below.
+        //
+        // ⚠⚠ The installed list is read HERE, not in [com.abrah.nightmare.SdSampler]'s
+        // widget declaration — a `NodeType.widgets` getter is a plain property
+        // with no Context, which is why this param shipped as free text. A
+        // composable has one.
+        if (pickingLoras) {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            // ⚠ Re-read every time it opens: an import on the Settings tab
+            // happens while a graph is on the canvas, and a list cached at
+            // composition would not show the file that was just added.
+            val installed = remember(pickingLoras) {
+                com.abrah.nightmare.BackendProcess.lorasDir(ctx).listFiles { f ->
+                    f.isFile && f.extension.equals("safetensors", ignoreCase = true)
+                }.orEmpty().map { it.name to it.length() }.sortedBy { it.first.lowercase() }
+            }
+            LoraPicker(
+                installed = installed,
+                spec = node.params[com.abrah.nightmare.SdSampler.LORAS].orEmpty(),
+                onSet = { onSetParam(nodeId, com.abrah.nightmare.SdSampler.LORAS, it) },
+                onDismiss = { pickingLoras = false },
+            )
+        }
+
         batching?.let { w ->
             BatchDialog(
                 node = node,
@@ -1728,6 +1754,47 @@ internal fun NodeInspectorBody(
                 (w.name == "out_w" || w.name == "out_h") && conflict != null ->
                     "two consumers disagree — ${conflict.reason()}"
                 else -> w.locked
+            }
+            // ⭐⭐⭐ **The LoRA knob is a summary line that opens a picker**, not
+            // a text field. A LoRA is chosen from what is on the phone; typing
+            // its filename from memory is the one way to get it wrong, and a
+            // strength typed into a box has no bounds at all.
+            //
+            // ⚠ It reads its own summary from [com.abrah.nightmare.LoraSpec] — the
+            // same tokeniser the picker and Run use, so the line under the
+            // label cannot disagree with what will be applied.
+            if (w.name == com.abrah.nightmare.SdSampler.LORAS) {
+                val entries = com.abrah.nightmare.LoraSpec.parse(node.params[w.name])
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable(enabled = why == null) { pickingLoras = true }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(w.name.knobLabel, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            // ⚠⚠ The HINT when nothing is picked, not the word
+                            // "None". The golden for this row showed it bare,
+                            // and a bare row is where the old text field's one
+                            // useful sentence went — the hint is what says these
+                            // are adapters and where they come from. The button
+                            // beside it reads "Choose" rather than "Change", so
+                            // the empty STATE is already on screen twice over.
+                            if (entries.isEmpty()) w.hint ?: "None"
+                            else com.abrah.nightmare.LoraSpec.summary(entries),
+                            style = LogTextStyle,
+                            color = if (entries.isEmpty())
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    TextButton(
+                        onClick = { pickingLoras = true },
+                        enabled = why == null,
+                    ) { Text(if (entries.isEmpty()) "Choose" else "Change") }
+                }
+                continue
             }
             // ⭐⭐⭐ **A `bool` is a CHECKBOX.** It had no branch at all, so
             // every one in the app fell through to the text field at the bottom

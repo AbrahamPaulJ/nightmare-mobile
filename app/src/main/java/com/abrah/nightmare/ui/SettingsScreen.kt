@@ -82,6 +82,16 @@ fun SettingsScreen(
      * state and callbacks). ⚠ Null hides the section — a preview and a
      * golden with no picker want nothing drawn.
      */
+    /**
+     * ⭐⭐ The LoRA adapters, importable HERE and listed on the Models tab's
+     * Tools page — the same split the embeddings have, from the same call
+     * (2026-09-20): importing is a one-off setup act, which is what this screen
+     * is for, and two file pickers for one file is the duplicate-surface
+     * mistake `docs/ARCHITECTURE.md` §5.6 keeps naming.
+     */
+    loras: List<EmbeddingRow>? = null,
+    onImportLora: (() -> Unit)? = null,
+    onDeleteLora: ((String) -> Unit)? = null,
     embeddings: List<EmbeddingRow>? = null,
     onImportEmbedding: (() -> Unit)? = null,
     onDeleteEmbedding: ((String) -> Unit)? = null,
@@ -112,6 +122,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     var deletingEmbedding by remember { mutableStateOf<String?>(null) }
+    var deletingLora by remember { mutableStateOf<String?>(null) }
     // ⚠⚠ Hoisted to the function, not the Column that draws the button:
     // the confirm dialog below is a sibling of the whole layout, and a state
     // declared in the Column is invisible to it.
@@ -204,6 +215,49 @@ fun SettingsScreen(
                         )
                         OutlinedButton(onClick = onRequestBatteryUnrestricted) {
                             Text(stringResource(R.string.battery_allow))
+                        }
+                    }
+                }
+            }
+            // ⭐⭐ LoRAs — import / list / delete, above the embeddings and
+            // built from the same two pieces ([ImportCallout] + a row card).
+            //
+            // ⚠ Above rather than below because a LoRA is the one a person
+            // comes here for: it is picked on a node, so the picker sends them
+            // here by name. An embedding is named in a prompt and needs no trip.
+            if (onImportLora != null) {
+                Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ImportCallout(
+                        title = stringResource(R.string.loras_title),
+                        body = stringResource(R.string.loras_body),
+                        onImport = onImportLora,
+                    )
+                    for (row in loras.orEmpty()) {
+                        Card(
+                            Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(row.name, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        stringResource(R.string.installed_mb, row.bytes shr 20),
+                                        style = LogTextStyle,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                if (onDeleteLora != null) {
+                                    OutlinedButton(onClick = { deletingLora = row.name }) {
+                                        Text(stringResource(R.string.delete))
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -374,6 +428,16 @@ fun SettingsScreen(
             onDismiss = { scanned = null },
         )
     }
+    deletingLora?.let { name ->
+        ConfirmDelete(
+            title = "Delete $name?",
+            body = "Any node that names it refuses to run until you import it " +
+                "again or untick it.",
+            onConfirm = { onDeleteLora?.invoke(name) },
+            onDismiss = { deletingLora = null },
+        )
+    }
+
     deletingEmbedding?.let { name ->
         ConfirmDelete(
             title = "Delete $name?",

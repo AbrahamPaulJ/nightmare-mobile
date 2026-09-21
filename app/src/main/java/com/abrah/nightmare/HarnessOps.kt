@@ -117,6 +117,26 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     }
 
     /**
+     * ⭐⭐ Forget every cached node result.
+     *
+     * ⚠⚠⚠ **A LoRA is keyed by NAME, and a file can be replaced under its
+     * name.** `cacheKey` hashes a node's params, and the `loras` param holds
+     * `style.safetensors`, not the bytes behind it — so importing a v2 over a
+     * v1 and pressing Run on a locked seed serves the v1 picture back, with
+     * nothing on screen saying so. Hashing the file instead would mean reading
+     * 90 MB on every key, for a case that happens on import; dropping the cache
+     * AT the import costs one re-render and is exact.
+     *
+     * ⚠ An imported EMBEDDING has a related but different problem and this
+     * does not fix it: the backend reads `embeddings/` at LAUNCH
+     * (`loadTextualInversions`), so a replaced embedding needs a relaunch, not
+     * a cache drop.
+     */
+    fun dropNodeCache() {
+        executor.cache.clear()
+    }
+
+    /**
      * Dispatch for an op named by intent, so the whole harness is drivable over
      * adb.
      *
@@ -166,6 +186,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "model_scan" -> scanModels()
             "model_import" -> importModels()
             "dit_lora" -> ditLora(arg)
+            "lora_node" -> loraNode(arg)
             "loras" -> listLoras()
             "latent_blend" -> latentBlend()
             "plugin_latent" -> pluginLatentGraph()
@@ -511,6 +532,133 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             bad = same,
         )
         say("pictures in ${dir.absolutePath} — pull and LOOK, a changed picture can still be noise")
+        drainBackendLog()
+    }
+
+    /**
+     * ⭐⭐⭐ **The `loras` NODE PARAM, end to end through the executor.**
+     *
+     * ⚠⚠⚠ [ditLora] proves the TRANSPORT and nothing above it: it calls
+     * [Ops.generate] directly with a path it built itself, which is the one
+     * link in the chain that was never in doubt. Everything a user actually
+     * touches sits above that call — the picker writes a string, the param
+     * stores it, [SdSampler.parseLoras] resolves it against `_loras`, and
+     * [SdSampler.run] passes the result down. That half had unit tests and no
+     * device run, which is exactly the gap `CLAUDE.md` keeps naming: green
+     * across the suite and never once executed on the phone.
+     *
+     * So this op takes a NAME, puts it in a node's param, and runs a real
+     * three-node graph through [runWorkflow] twice.
+     *
+     * ⚠ Neutral prompt, fixed seed, and the verdict is a BYTE comparison —
+     * never the adapter's own subject matter.
+     */
+    private suspend fun loraNode(arg: String?) {
+        val spec = ModelCatalog.byId(SelectedModel.id)
+        if (spec?.isDit != true) {
+            return say("lora_node needs a DiT model selected; ${SelectedModel.id} is not one", bad = true)
+        }
+        val name = arg?.trim().orEmpty()
+        if (name.isEmpty()) {
+            return say("lora_node needs --es arg <name.safetensors[@strength]> from _loras", bad = true)
+        }
+        // ⚠ Parsed by the SAME tokeniser the picker writes with, so this op
+        // cannot pass a string the UI could not have produced.
+        val entries = com.abrah.nightmare.LoraSpec.parse(name)
+        val dir = BackendProcess.lorasDir(ctx)
+        for (e in entries) {
+            val f = java.io.File(dir, e.name)
+            say("  ${e.name} x${com.abrah.nightmare.LoraSpec.number(e.strength)} " +
+                if (f.isFile) "(${f.length() shr 20} MB)" else "— NOT INSTALLED")
+        }
+        val res = SelectedModel.res
+        // ⚠⚠ The backend, FIRST. [runWorkflow] relaunches for a key it does
+        // not hold, but it cannot start one from nothing — the first leg came
+        // back `GET /handles unreachable — backend down, nothing can run`. Same
+        // line [ditLora] has, and leaving it out is the whole reason this op
+        // exists: the path above [Ops.generate] is where the untested parts are.
+        // ⚠⚠ The model's NATIVE size, not [SelectedModel.res]. A DiT context
+        // key uses `native` because size is a REQUEST field there — one process
+        // serves every size ([backendContextKey]) — so launching at the picked
+        // resolution guarantees the executor immediately tears it down and
+        // relaunches: `serving …/512x512 but this graph needs …/1024x1024`,
+        // measured 2026-09-21, 2.3–5 s wasted on every run of this op.
+        val key = ContextKey(
+            ModelCatalog.backendTypeOf(spec.id), spec.id,
+            spec.native?.width ?: res.width, spec.native?.height ?: res.height,
+        )
+        if (!ensureBackend(key)) {
+            return say("lora_node: no backend", bad = true)
+        }
+        val out = java.io.File(ctx.getExternalFilesDir(null), "lora_node").apply { mkdirs() }
+
+        suspend fun leg(label: String, loras: String): ByteArray? {
+            val sampler = Node(
+                "generate",
+                if (spec.family == Family.FLUX2) "flux2.sample" else "zimage.sample",
+                params = mapOf(
+                    "model" to spec.id,
+                    "width" to res.width.toString(),
+                    "height" to res.height.toString(),
+                    "steps" to "4",
+                    "cfg" to "1.0",
+                    "seed" to "12345",
+                    com.abrah.nightmare.SdSampler.LORAS to loras,
+                ),
+                inputs = mapOf("prompt" to com.abrah.nightmare.Source("prompt", "prompt")),
+            )
+            val wf = com.abrah.nightmare.canvas.Workflow(
+                Graph(
+                    listOf(
+                        Node(
+                            "prompt", "core.prompt",
+                            params = mapOf(
+                                "prompt" to "a red brick house beside a lake, clear sky, photorealistic",
+                                "negative" to "worst quality, low quality, blurry, lowres, watermark, text",
+                            ),
+                        ),
+                        sampler,
+                        Node("output", "core.output", inputs = mapOf("media" to com.abrah.nightmare.Source("generate", "image"))),
+                    )
+                ),
+                positions = emptyMap(),
+            )
+            val t0 = System.currentTimeMillis()
+            val r = runWorkflow(wf, onNode = { n ->
+                say("    ${n.id.padEnd(9)} ${n.outcome.name.lowercase().padEnd(7)} ${n.ms} ms  ${n.detail}",
+                    bad = n.outcome == Outcome.FAILED)
+            })
+            if (r.error != null) {
+                // ⭐⭐ A REFUSAL is a pass for the missing-file leg and a failure
+                // for the others, so it is printed rather than swallowed.
+                say("  $label refused — ${r.error}", bad = true)
+                return null
+            }
+            val img = r.outputs["output"] as? Value.Image
+                ?: (r.outputs["generate"] as? Value.Image)
+            if (img == null) {
+                say("  $label produced no image", bad = true); return null
+            }
+            // ⚠ `png`, not `get` — `get` hands back a Bitmap, and the verdict
+            // below is a byte comparison.
+            val png = images.png(img.id)
+            if (png == null) {
+                say("  $label image ${img.id} is not in the store", bad = true); return null
+            }
+            java.io.File(out, "$label.png").writeBytes(png)
+            say("  $label ok ${System.currentTimeMillis() - t0} ms, ${png.size} bytes")
+            return png
+        }
+
+        val plain = leg("without_lora", "") ?: return
+        val withL = leg("with_lora", name) ?: return
+        val same = plain.contentEquals(withL)
+        say(
+            if (same) "lora_node: IDENTICAL output — the param did NOT reach the engine"
+            else "lora_node: output CHANGED — the param reached the engine",
+            bad = same,
+        )
+        say("pictures in ${out.absolutePath}")
         drainBackendLog()
     }
 

@@ -1086,6 +1086,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         ModelCatalog.refreshInstalled(ctx)
         refreshSegmenter()
         refreshEmbeddings()
+        // ⚠⚠ …and the LoRAs. It was missed when they landed, which is exactly
+        // what the comment above warns about: the list stayed empty until an
+        // import happened to refresh it, so a file already in `_loras` was
+        // invisible to both the Models tab and the node's picker.
+        refreshLoras()
         // ⚠ …and the video models, for the same reason. ⚠⚠ `probeVideoSupport`
         // is NOT called here: it starts the QNN backend, which is seconds, and
         // this runs every time the library opens. The tab asks for it itself.
@@ -1941,7 +1946,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 result.fold(
-                    onSuccess = { name -> say("imported LoRA $name"); refreshLoras() },
+                    onSuccess = { name ->
+                        say("imported LoRA $name")
+                        refreshLoras()
+                        // ⚠⚠ A LoRA is cached by NAME — see [HarnessOps.dropNodeCache].
+                        ops.dropNodeCache()
+                    },
                     onFailure = { e ->
                         modelError = "LoRA import failed: ${e.message}"
                         say("LoRA import failed — ${e.message}", bad = true)
@@ -1996,6 +2006,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    /**
+     * ⚠ Stripped to its last segment before it reaches [java.io.File], the
+     * same reason [deleteEmbedding] does it — a name that came back from a UI
+     * row is still a name this function did not produce.
+     *
+     * ⚠⚠ No "is a graph using it" guard, and deliberately: the `loras` param
+     * holds NAMES, and a node naming a file that is gone refuses at Run by that
+     * name ([SdSampler.parseLoras]). That is a better failure than a delete
+     * refused on behalf of a workflow the user may not have open.
+     */
+    fun deleteLora(name: String) {
+        val f = java.io.File(BackendProcess.lorasDir(getApplication()), java.io.File(name).name)
+        if (f.delete()) say("deleted LoRA $name")
+        refreshLoras()
+        // ⚠ …and on the way out too: a node still naming it must now REFUSE,
+        // not serve the picture it made while the file was there.
+        ops.dropNodeCache()
     }
 
     fun deleteEmbedding(name: String) {
