@@ -148,13 +148,31 @@ jobs:
           ls -ld "$ROOT" "$ROOT/build" 2>&1 | head -4
           du -sh "$ROOT" || true
 
-      # Ours, if any. `git apply` from the cpp directory so a patch reads the
-      # same way it would locally.
+      # Ours, if any.
+      #
+      # ⚠⚠⚠ `--directory`, and from the REPO ROOT. `git apply` resolves a
+      # patch's paths against the repository root, NOT the working directory, so
+      # `cd app/src/main/cpp && git apply` looks for `local-dream/include/...`,
+      # finds nothing, prints "Skipped patch" for every file -- and **exits 0**.
+      # Run 35600769616 rebuilt the baseline byte for byte and reported the
+      # patch step as a success.
+      #
+      # ⚠⚠ Hence the assertion. A patch step that can no-op silently is worse
+      # than one that fails, because the artifact it produces looks right and is
+      # not. `git diff --quiet` returns non-zero when the tree changed, so an
+      # unchanged tree is the error.
       - name: Apply patch
         if: inputs.patch != ''
         run: |
-          cd local-dream/app/src/main/cpp
-          git apply -v "$GITHUB_WORKSPACE/nightmare/${{ inputs.patch }}"
+          set -euo pipefail
+          cd local-dream
+          git apply -v --directory=app/src/main/cpp "$GITHUB_WORKSPACE/nightmare/${{ inputs.patch }}"
+          if git diff --quiet; then
+            echo "::error::${{ inputs.patch }} applied nothing -- the tree is unchanged"
+            exit 1
+          fi
+          echo "files touched:"
+          git diff --stat
           echo "PATCH_APPLIED=${{ inputs.patch }}" >> "$GITHUB_ENV"
 
       - name: Record the ABI version
