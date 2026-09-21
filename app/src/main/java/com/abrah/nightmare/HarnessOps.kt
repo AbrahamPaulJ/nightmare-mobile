@@ -587,12 +587,20 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             ModelCatalog.backendTypeOf(spec.id), spec.id,
             spec.native?.width ?: res.width, spec.native?.height ?: res.height,
         )
-        if (!ensureBackend(key)) {
-            return say("lora_node: no backend", bad = true)
-        }
         val out = java.io.File(ctx.getExternalFilesDir(null), "lora_node").apply { mkdirs() }
 
         suspend fun leg(label: String, loras: String): ByteArray? {
+            // ⚠⚠⚠ **Per LEG, not once for both.** [runWorkflow] ends in
+            // `releaseBackendIfTooBig`, and a checkpoint over the RAM gate
+            // (`docs/DEVICES.md` §6) is deliberately dropped after every render
+            // — Z-Image is 8.2 GB on an 11 GB phone. Ensuring once outside the
+            // legs made the second one report `GET /handles unreachable —
+            // backend down`, which reads exactly like a product bug and is not
+            // one: every Run path in [HarnessViewModel] calls `ensureBackendFor`
+            // itself for this reason. The op was the broken check.
+            if (!ensureBackend(key)) {
+                say("  $label: no backend", bad = true); return null
+            }
             val sampler = Node(
                 "generate",
                 if (spec.family == Family.FLUX2) "flux2.sample" else "zimage.sample",
