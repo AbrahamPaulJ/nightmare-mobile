@@ -29,6 +29,30 @@ object DownloadNotice {
     private const val CHANNEL = "downloads"
     private const val ID = 4201
 
+    /**
+     * ⭐⭐⭐ **True while an ONGOING row is in the shade**, so a caller that
+     * forgot to end one can be caught rather than trusted.
+     *
+     * ⚠⚠⚠ The bug, 2026-09-21: seven paths call [progress] and only five
+     * called [done] or [clear] — the two that did not were both IMPORTS, so a
+     * Z-Image custom import left "importing" pinned in the shade forever.
+     * `setOngoing(true)` means the user cannot even swipe it away. Reported from
+     * the phone, and it is the N−1-of-N rule again (`docs/ARCHITECTURE.md`
+     * §5.6): the missed place is the one someone opens first.
+     *
+     * ⚠⚠ Fixing the two call sites is not enough, because the next installer
+     * added will be an eighth place that has to remember. [HarnessViewModel]'s
+     * `refreshModels` clears a live row whenever nothing is installing, which
+     * makes the whole class of mistake self-correcting — every one of those
+     * paths already calls it on the way out.
+     *
+     * ⚠ [done] leaves a row in the shade on purpose and is NOT live: it is
+     * dismissible, and the outcome is the thing the user asked to see.
+     */
+    @Volatile
+    var live: Boolean = false
+        private set
+
     private fun manager(ctx: Context): NotificationManager? = runCatching {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -62,7 +86,7 @@ object DownloadNotice {
             // at zero — which reads as stalled.
             .setProgress(100, pct ?: 0, pct == null)
             .build()
-        runCatching { nm.notify(ID, n) }
+        if (runCatching { nm.notify(ID, n) }.isSuccess) live = true
     }
 
     /**
@@ -85,11 +109,15 @@ object DownloadNotice {
             .setOngoing(false)
             .setAutoCancel(true)
             .build()
+        // ⚠ Cleared FIRST: this row is dismissible, so it is no longer
+        // something the backstop has to tidy up, even if `notify` throws.
+        live = false
         runCatching { nm.notify(ID, n) }
     }
 
     /** ⚠ For a cancel: there is no outcome to report, so the row goes. */
     fun clear(ctx: Context) {
+        live = false
         runCatching { manager(ctx)?.cancel(ID) }
     }
 }

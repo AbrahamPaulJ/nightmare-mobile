@@ -1002,6 +1002,21 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun refreshModels() {
         val ctx = getApplication<Application>()
+        // ⭐⭐⭐ **The shade's backstop.** An ONGOING row with nothing
+        // installing is a row nobody will ever end — and the user cannot swipe
+        // it away, because `setOngoing(true)` forbids it.
+        //
+        // ⚠⚠ Here because every path that installs or imports anything already
+        // calls this on its way out, success or failure, so it is the one place
+        // that covers all of them AND the next one somebody adds. The bug it
+        // ends: both import paths posted progress and reported no outcome, so a
+        // custom Z-Image import pinned "importing" in the shade for good
+        // ([DownloadNotice.live]). Reported from the phone 2026-09-21.
+        //
+        // ⚠ Not a substitute for reporting the outcome — `downloadSucceeded`
+        // and `downloadFailed` say what HAPPENED, and this only guarantees that
+        // nothing is left spinning when they are forgotten.
+        if (installing == null && DownloadNotice.live) DownloadNotice.clear(ctx)
         // ⚠ The upscalers ride along: this is the app's "re-read the disk"
         // entry point and a second one would be a second thing to forget.
         refreshUpscalers()
@@ -1099,11 +1114,21 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     installing = null
                     installProgress = null
                     if (missing.isEmpty()) {
+                        // ⚠⚠ The shade, not just the screen — see [DownloadNotice.live].
+                        downloadSucceeded(spec.label)
                         selectModel(spec)
                     } else {
                         modelError = "${spec.label} imported but is incomplete: " +
                             "missing ${missing.joinToString()}"
+                        downloadFailed(spec.label, modelError!!)
                     }
+                    refreshModels()
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    installing = null
+                    installProgress = null
+                    downloadCancelled()
                     refreshModels()
                 }
             } catch (e: Exception) {
@@ -1111,6 +1136,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     installing = null
                     installProgress = null
                     modelError = "import failed: ${e.message}"
+                    downloadFailed(downloadLabel(name), modelError!!)
                     refreshModels()
                 }
             }
@@ -1148,9 +1174,22 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                     installing = null
                     installProgress = null
-                    if (missing.isEmpty()) selectModel(spec)
-                    else modelError = "${spec.label} imported but is incomplete: " +
-                        "missing ${missing.joinToString()}"
+                    if (missing.isEmpty()) {
+                        // ⚠⚠ The shade, not just the screen — see [DownloadNotice.live].
+                        downloadSucceeded(spec.label)
+                        selectModel(spec)
+                    } else {
+                        modelError = "${spec.label} imported but is incomplete: " +
+                            "missing ${missing.joinToString()}"
+                        downloadFailed(spec.label, modelError!!)
+                    }
+                    refreshModels()
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    installing = null
+                    installProgress = null
+                    downloadCancelled()
                     refreshModels()
                 }
             } catch (e: Exception) {
@@ -1158,6 +1197,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     installing = null
                     installProgress = null
                     modelError = "import failed: ${e.message}"
+                    downloadFailed(downloadLabel(name), modelError!!)
                     refreshModels()
                 }
             }
