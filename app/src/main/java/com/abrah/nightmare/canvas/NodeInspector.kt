@@ -1772,27 +1772,36 @@ internal fun NodeInspectorBody(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(w.name.knobLabel, style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            // ⚠⚠ The HINT when nothing is picked, not the word
-                            // "None". The golden for this row showed it bare,
-                            // and a bare row is where the old text field's one
-                            // useful sentence went — the hint is what says these
-                            // are adapters and where they come from. The button
-                            // beside it reads "Choose" rather than "Change", so
-                            // the empty STATE is already on screen twice over.
-                            if (entries.isEmpty()) w.hint ?: "None"
+                            if (why != null) "${w.name.knobLabel}  (locked)" else w.name.knobLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            // ⚠⚠⚠ The REASON beats everything when the knob is
+                            // locked — on Z-Image this control does nothing, and
+                            // a row that still reads "adapters applied on top of
+                            // this checkpoint" over a dead button is the lie the
+                            // lock exists to stop.
+                            // ⚠⚠ Otherwise the HINT when nothing is picked, not
+                            // the word "None". The golden for this row showed it
+                            // bare, and a bare row is where the old text field's
+                            // one useful sentence went. The button beside it
+                            // reads "Choose" rather than "Change", so the empty
+                            // STATE is already on screen twice over.
+                            why ?: if (entries.isEmpty()) w.hint ?: "None"
                             else com.abrah.nightmare.LoraSpec.summary(entries),
                             style = LogTextStyle,
-                            color = if (entries.isEmpty())
+                            // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
+                            color = if (why != null || entries.isEmpty())
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             else MaterialTheme.colorScheme.primary,
                         )
                     }
-                    TextButton(
-                        onClick = { pickingLoras = true },
-                        enabled = why == null,
-                    ) { Text(if (entries.isEmpty()) "Choose" else "Change") }
+                    if (why == null) {
+                        TextButton(
+                            onClick = { pickingLoras = true },
+                        ) { Text(if (entries.isEmpty()) "Choose" else "Change") }
+                    }
                 }
                 continue
             }

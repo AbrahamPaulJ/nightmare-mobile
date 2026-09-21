@@ -666,6 +666,25 @@ class SdSampler(
             LORAS, "string", "",
             hint = "adapters applied on top of this checkpoint — import them on " +
                 "the Settings tab",
+            // ⚠⚠⚠ **FLUX.2 only, and LOCKED on Z-Image rather than hidden.**
+            // Measured on device 2026-09-22: a Z-Image adapter is registered by
+            // the engine and binds ZERO tensors — no `loading N/M tensors` line
+            // at all, where FLUX prints `160/160` — and the render comes out
+            // byte-identical whatever is picked. The naming is NOT the cause;
+            // upstream's `convert_diffusers_dit_to_original_lumina2` already
+            // maps `to_q`/`to_k`/`to_v` onto the fused `qkv`. Why it does not
+            // bind is open (`docs/ROADMAP.md` §2g).
+            //
+            // ⚠⚠ The knob is DECLARED by [ditWidgets], which both DiT
+            // families share, so without this it renders on a Z-Image sampler,
+            // accepts a pick and silently does nothing — the exact shape of
+            // the sampler's old dead `prompt` field (`docs/ARCHITECTURE.md`
+            // §3). ⚠ Locked rather than removed, following `karras` on LCM: a
+            // control that vanishes reads as a bug, a greyed one that names the
+            // family says the support does not exist yet.
+            locked = if (family == Family.ZIMAGE)
+                "not supported on Z-Image yet — the engine binds no tensors from a Z-Image adapter"
+            else null,
         ),
     )
 

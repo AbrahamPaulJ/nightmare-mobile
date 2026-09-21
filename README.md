@@ -177,9 +177,7 @@ conversions this app runs were made from their weights. The first frame comes fr
 **AbsoluteReality Inpaint** is Lykon's inpainting checkpoint, converted for LocalDream.
 
 [LocalDream](https://github.com/AbrahamPaulJ/dreamui) is the consumer app built on the same
-backend, and it stays the simpler way to generate a picture on a phone. Its mask editor, brush
-behaviour and batch strip are ported here rather than reinvented, so that someone with both
-installed does not have to learn the same tool twice.
+backend, and it stays the simpler way to generate a picture on a phone.
 
 What is new here is the graph: pipelines decomposed into ops, latents and conditionings as
 handles, node types a contributor can add without an app release, and the video path taken
