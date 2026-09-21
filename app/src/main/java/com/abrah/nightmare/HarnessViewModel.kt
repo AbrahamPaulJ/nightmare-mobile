@@ -985,6 +985,46 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * ⭐⭐⭐ **What this run is about to load, for the crash report to quote.**
+     *
+     * ⚠⚠⚠ Asked for 2026-09-21, after a Z-Image render at 2048² was killed
+     * and the dialog could only say *"it happened while rendering"*. For a
+     * memory kill that is the ONLY useful thing there is to say: Android writes
+     * no tombstone for an lmkd kill (`trace=null`, `description=null`, measured
+     * on this phone), so there is no log to show and never will be. What there
+     * is, is the checkpoint and the size — and the size is the knob
+     * (`docs/MODELS.md` §9).
+     *
+     * ⚠⚠ The node's OWN `width`/`height`, never [contextKeyResolutions]. A DiT
+     * sampler's size is not part of its context key — the key pins the model's
+     * native 1024² — so asking the key would have reported 1024x1024 for the
+     * 2048² render that actually died, which is worse than saying nothing.
+     *
+     * ⚠ Every step is wrapped: a breadcrumb is a diagnostic and must never be
+     * the reason a run fails to start.
+     */
+    private fun renderingBreadcrumb(): String = runCatching {
+        val samplers = canvas.workflow.graph.nodes.filter { it.type in SAMPLER_TYPES }
+        val what = samplers.mapNotNull { n ->
+            val model = n.params["model"]?.takeIf { it.isNotBlank() }
+                ?.let { ModelCatalog.byId(it)?.label ?: it }
+            val w = n.params["width"]?.toIntOrNull()
+            val h = n.params["height"]?.toIntOrNull()
+            when {
+                model != null && w != null && h != null -> "$model at ${w}x$h"
+                model != null -> model
+                else -> null
+            }
+        }.distinct()
+        when {
+            what.isEmpty() -> "rendering"
+            // ⚠ A multi-checkpoint graph names them all: the executor schedules
+            // both, and which one was resident when it died is the question.
+            else -> "rendering ${what.joinToString(" and ")}"
+        }
+    }.getOrDefault("rendering")
+
     private var lastNoticeAt = 0L
 
     /** ⚠ What the shade and the toast call the thing downloading — one lookup for all four installers. */
@@ -5355,7 +5395,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // `finally` below, the next launch says so ([CrashReport]). A render is
         // the likeliest moment for that — it is when gigabytes of checkpoint
         // are resident.
-        CrashReport.mark(getApplication(), "rendering")
+        CrashReport.mark(getApplication(), renderingBreadcrumb())
         runJob = viewModelScope.launch {
             try {
                 block()
