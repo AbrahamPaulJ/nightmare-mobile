@@ -438,11 +438,7 @@ object CustomModels {
     ): ModelSpec {
         require(isValidName(name)) { "\"$name\" is not a usable directory name" }
         require(!isReserved(name)) { "\"$name\" is the id of a built-in model; pick another name" }
-        val mark = when (family) {
-            Family.ZIMAGE -> ZIMAGE_MARK
-            Family.FLUX2 -> FLUX2_MARK
-            else -> throw IllegalArgumentException("$family does not import a plain .safetensors")
-        }
+        val mark = markOf(family)
 
         // ⚠⚠⚠ **Checked BEFORE the gigabytes.** Copying 6 GB and failing at
         // Run leaves a dead 8.8 GB directory and minutes of a person's time
@@ -450,16 +446,29 @@ object CustomModels {
         onProgress(ModelInstaller.Progress("checking the file", 0, 0))
         checkSafetensors(open)
 
-        // ⚠⚠ The shared parts first: if they cannot be produced there is no
-        // point copying the weights at all.
-        onProgress(ModelInstaller.Progress("preparing the shared parts", 0, 0))
-        shareDitParts(context, family)
-
         val dir = File(ModelCatalog.root(context), name)
         // ⚠ A retry after a failure starts clean, exactly as [import] does.
         dir.deleteRecursively()
         dir.mkdirs()
         try {
+            // ⭐⭐⭐ **The engine, then the parts, then the weights** — in
+            // ascending order of cost, so the cheapest thing that can fail
+            // fails first.
+            //
+            // ⚠⚠ `libdit_engine.so` is downloaded HERE as well as in
+            // [ModelInstaller.installOnce], and that is the whole point of this
+            // change: an import no longer requires a built-in DiT package, so
+            // it can no longer assume the engine rode in with one. A checkpoint
+            // that imports perfectly and has no code to run it is the same
+            // class of failure the installer already guards against.
+            if (!DitEngine.isInstalled(context)) {
+                DitEngine.install(context, onProgress, isCancelled)
+            }
+            // ⚠⚠ Before the weights: these are 2.6 GB at worst and the
+            // checkpoint is 4-9 GB, so a failure to produce them should not cost
+            // the bigger copy. ⚠ `dir` exists already because the VAE lands in
+            // it ([ensureDitParts]).
+            ensureDitParts(context, family, dir, onProgress, isCancelled)
             val dest = File(dir, ModelSpec.DIT_WEIGHTS)
             open().use { input ->
                 dest.outputStream().buffered(BUFFER).use { outS ->
@@ -504,28 +513,185 @@ object CustomModels {
     }
 
     /**
-     * ⚠⚠ Copies the family's text encoder, VAE and tokenizer into
-     * [DIT_SHARED] if they are not already there. ~2.6 GB, ONCE per family.
+     * ⭐⭐⭐ **The two files that are the same for BOTH DiT families** —
+     * measured on device 2026-09-21, not assumed.
      *
-     * ⚠ Copied rather than moved: the built-in package must stay complete,
-     * or the app would call the model it came from "not installed".
+     * `llm.gguf` is `47ae93b4c5355273d6333ea12f52bd36` and `tokenizer.json` is
+     * `6423133b9cc1a2077b57822c30c211aa` in the Klein 4B package AND in the
+     * Z-Image Turbo one — byte-identical, 2.27 GB of it. Both families embed
+     * Qwen3-4B, so this is a property of the models rather than a coincidence
+     * of packaging.
+     *
+     * ⚠⚠⚠ **`vae.safetensors` is NOT**: Klein's is
+     * `1f01ec904ab02e44c0b4d04c83dc856d` (336,213,556 bytes) and Z-Image's is
+     * `5c8c2087d13d0951b36be6dfbd3cd157` (335,304,388). They are different
+     * files with different sizes, and [DIT_SHARED] is ONE directory for both
+     * families — which is the bug this constant exists to end. Until
+     * 2026-09-21 an import of either family copied its own VAE over the shared
+     * one, so importing a FLUX checkpoint silently gave every previously
+     * imported Z-Image the wrong VAE, and re-importing a Z-Image flipped it
+     * back. The two families' imports could not coexist.
+     *
+     * ⇒ The family-agnostic two stay shared; the VAE goes in the importing
+     * model's OWN directory, which `ditFile()` already prefers
+     * (`backend-patches/010`) — so this needed no backend change.
      */
-    private fun shareDitParts(context: Context, family: Family) {
-        val from = ModelCatalog.builtIn.firstOrNull {
-            it.family == family && it.installed(context)
-        } ?: throw java.io.IOException(
-            "install ${family.label} first — an imported checkpoint uses its text " +
-                "encoder, VAE and tokenizer, and there is nowhere else to get them"
-        )
-        val src = from.dir(context)
-        val shared = File(ModelCatalog.root(context), DIT_SHARED).apply { mkdirs() }
-        for (f in ModelCatalog.DIT_REQUIRED) {
-            if (f == ModelSpec.DIT_WEIGHTS) continue
-            val target = File(shared, f)
-            val origin = File(src, f)
-            if (target.length() == origin.length() && origin.length() > 0) continue
-            origin.copyTo(target, overwrite = true)
+    private val DIT_FAMILY_AGNOSTIC = setOf("llm.gguf", "tokenizer.json")
+
+    /**
+     * ⭐⭐⭐ **Puts the text encoder, VAE and tokenizer where an imported
+     * checkpoint's backend will find them — copying them if any model on the
+     * device has them, and DOWNLOADING them if none does.**
+     *
+     * ⚠⚠ **It used to refuse instead**, with *"install <family> first — an
+     * imported checkpoint uses its text encoder, VAE and tokenizer, and there
+     * is nowhere else to get them"*. That sentence was wrong about the last
+     * clause: the parts have public URLs, they are already declared as
+     * [RemoteFile]s on the built-in spec, and [ModelInstaller.fetch] is the one
+     * downloader in the app. Reported 2026-09-21 by a user who pressed Import
+     * on the FLUX.2 tab and was told to download a 6.7 GB package to get 2.6 GB
+     * of it. ⇒ An import now costs **2.6 GB at most**, and nothing at all
+     * once either DiT family is installed.
+     *
+     * ⚠ Copy before download, always, and the search widens on purpose:
+     * the family's built-in, then any OTHER model directory holding the file at
+     * exactly its published size — which is what makes a SECOND import of the
+     * same family free, and what lets an existing [DIT_SHARED] VAE serve the
+     * family it actually belongs to.
+     *
+     * ⚠⚠ Size-checked against [RemoteFile.bytes] at every step, never
+     * existence. A half-fetched 2.2 GB text encoder is a real file of the right
+     * name, and [ModelSpec.missing] would call the import complete.
+     */
+    /**
+     * ⭐⭐ One shared part and how it is going to be obtained — see [ditPartsPlan].
+     *
+     * ⚠ [from] null means DOWNLOAD. The distinction is the whole reason this
+     * is a value rather than a side effect: which files are copied and which
+     * are fetched is the behaviour worth testing, and it is not observable
+     * once the copying has happened.
+     */
+    data class PartStep(val file: RemoteFile, val dest: File, val from: File?)
+
+    /**
+     * ⭐⭐⭐ **What an import of [family] still needs, and where each piece
+     * will come from** — the decision, separated from the doing.
+     *
+     * ⚠ Copy before download, always, and the search widens on purpose: the
+     * family's built-in, then any OTHER model directory holding the file at
+     * exactly its published size — which is what makes a SECOND import of the
+     * same family free.
+     *
+     * ⚠⚠ Size-checked against [RemoteFile.bytes] at every step, never
+     * existence. A half-fetched 2.2 GB text encoder is a real file of the right
+     * name, and [ModelSpec.missing] would call the import complete.
+     */
+    internal fun ditPartsPlan(context: Context, family: Family, modelDir: File): List<PartStep> {
+        val donor = ModelCatalog.builtIn.firstOrNull { it.family == family && it.isDit }
+            ?: throw IOException("${family.label} has no built-in package to take its parts from")
+        val shared = File(ModelCatalog.root(context), DIT_SHARED)
+        // ⚠ Where each file has to END UP. The two family-agnostic ones are
+        // read from [DIT_SHARED] by `ditFile()`; the VAE is read from the
+        // model's own directory, which that same function prefers.
+        fun destOf(name: String) =
+            if (name in DIT_FAMILY_AGNOSTIC) File(shared, name) else File(modelDir, name)
+
+        // ⚠⚠ Every model directory, the family's own built-in FIRST so the
+        // right VAE wins when two could serve.
+        val own = donor.dir(context)
+        val roots = listOf(own) +
+            ModelCatalog.root(context).listFiles().orEmpty().filter { it.isDirectory && it != own }
+
+        return donor.files
+            .filter { it.name != ModelSpec.DIT_WEIGHTS }
+            .mapNotNull { f ->
+                val dest = destOf(f.name)
+                if (dest.length() == f.bytes) return@mapNotNull null
+                // ⚠⚠⚠ A family-specific file may only be copied from something
+                // that PROVES it belongs to this family: the family's own
+                // built-in, or a directory carrying this family's import
+                // marker. The size check would already refuse a cross-family
+                // VAE, because the two differ by 909 KB — but that is an
+                // accident of these two packages rather than a rule, and
+                // leaning on it is how the shared-VAE bug happened.
+                //
+                // ⚠⚠ [DIT_SHARED] is the ONE exception, and only at an exact
+                // size match. A VAE left there by an import made before
+                // 2026-09-21 carries no marker and cannot say which family
+                // wrote it — but its length can, and being wrong costs a 336 MB
+                // download rather than a bad render. ⇒ Read, never written: the
+                // file stays, because imports made under the old code still
+                // resolve their VAE through it.
+                val allowed = if (f.name in DIT_FAMILY_AGNOSTIC) roots else roots.filter { d ->
+                    d == own || File(d, markOf(family)).isFile || d == shared
+                }
+                val src = allowed.map { File(it, f.name) }
+                    .firstOrNull { it != dest && it.length() == f.bytes }
+                PartStep(f, dest, src)
+            }
+    }
+
+    /**
+     * ⭐⭐⭐ **Puts the text encoder, VAE and tokenizer where an imported
+     * checkpoint's backend will find them — copying them from any model on the
+     * device that has them, and DOWNLOADING them if none does.**
+     *
+     * ⚠⚠ **It used to refuse instead**, with *"install <family> first — an
+     * imported checkpoint uses its text encoder, VAE and tokenizer, and there
+     * is nowhere else to get them"*. That sentence was wrong about its last
+     * clause: the parts have public URLs, they are already declared as
+     * [RemoteFile]s on the built-in spec, and [ModelInstaller.fetch] is the one
+     * downloader in the app. Reported 2026-09-21 by a user who pressed Import
+     * on the FLUX.2 tab and was told to download a 6.7 GB package to obtain 2.6
+     * GB of it. ⇒ An import now costs **2.6 GB at most**, and nothing at all
+     * once either DiT family is installed.
+     */
+    private fun ensureDitParts(
+        context: Context,
+        family: Family,
+        modelDir: File,
+        onProgress: (ModelInstaller.Progress) -> Unit,
+        isCancelled: () -> Boolean,
+    ) {
+        val plan = ditPartsPlan(context, family, modelDir)
+        if (plan.isEmpty()) return
+        // ⚠⚠ The DOWNLOAD only, not the copies. A copy needs the space too,
+        // but `copyTo` reports ENOSPC perfectly well and the copy path behaved
+        // this way before 2026-09-21 — this check exists for the gigabytes this
+        // change newly makes possible, and widening it would be a second
+        // behaviour change hiding inside the first.
+        ModelInstaller.requireFreeSpace(modelDir, plan.filter { it.from == null }.sumOf { it.file.bytes })
+
+        val total = plan.sumOf { it.file.bytes }
+        var before = 0L
+        // ⚠ Copies first: they are the cheap ones, so a cancelled import still
+        // leaves progress made rather than a half-fetched 2.2 GB file.
+        for (step in plan.sortedBy { it.from == null }) {
+            if (isCancelled()) throw ModelInstaller.Cancelled()
+            val f = step.file
+            step.dest.parentFile?.mkdirs()
+            if (step.from != null) {
+                onProgress(ModelInstaller.Progress("preparing the shared parts", before, total))
+                step.from.copyTo(step.dest, overwrite = true)
+            } else {
+                ModelInstaller.fetch(f.url, step.dest, f.bytes, "downloading the shared parts", { p ->
+                    onProgress(ModelInstaller.Progress(p.phase, before + p.done, total))
+                }, isCancelled)
+            }
+            if (step.dest.length() != f.bytes) {
+                throw IOException("${f.name}: got ${step.dest.length()} bytes, expected ${f.bytes}")
+            }
+            before += f.bytes
         }
+        Log.i(TAG, "dit parts ready for ${family.label}: " +
+            "${plan.count { it.from != null }} copied, ${plan.count { it.from == null }} downloaded")
+    }
+
+    /** ⚠ The marker an import of [family] writes — see [importDit]. */
+    private fun markOf(family: Family): String = when (family) {
+        Family.ZIMAGE -> ZIMAGE_MARK
+        Family.FLUX2 -> FLUX2_MARK
+        else -> throw IllegalArgumentException("$family does not import a plain .safetensors")
     }
 
     /**
@@ -671,26 +837,58 @@ object CustomModels {
     }
 
     /**
-     * Imports every zip sitting in [inbox], deleting each on success.
+     * Imports every checkpoint sitting in [inbox], deleting each on success.
      *
-     * ⚠ The model name is the zip's basename, so `my-model.zip` becomes
+     * ⚠ The model name is the file's basename, so `my-model.zip` becomes
      * `models/my-model/`. That is the whole naming rule and it is the one a
      * shell user can predict.
      *
-     * @return one line per archive, for a log.
+     * ⭐⭐⭐ **`.safetensors` too, since 2026-09-21, and the name carries the
+     * FAMILY**: `my-flux.flux2.safetensors` and `mine.zimage.safetensors`.
+     *
+     * ⚠⚠ Because a DiT checkpoint cannot say which family it is — the same
+     * reason the Models tab takes it from the TAB rather than the file
+     * ([importDit]). A shell has no tab, so the name is where it goes.
+     *
+     * ⚠⚠⚠ **The gap this closes is why the FLUX import path reached
+     * 2026-09-21 unrun on a device.** `model_import` handled zips only, so the
+     * whole DiT import path had no headless route at all and could only be
+     * exercised through a SAF picker by hand — which is to say, it was not
+     * exercised. A path with no way to drive it is a path that is not tested.
+     *
+     * @return one line per file, for a log.
      */
     fun importInbox(
         context: Context,
         onProgress: (ModelInstaller.Progress) -> Unit = {},
     ): List<String> {
-        val zips = inbox(context).listFiles().orEmpty()
-            .filter { it.isFile && it.extension.equals("zip", ignoreCase = true) }
-        if (zips.isEmpty()) return emptyList()
-        return zips.map { zip ->
-            val name = zip.nameWithoutExtension
+        val files = inbox(context).listFiles().orEmpty().filter {
+            it.isFile && (it.extension.equals("zip", ignoreCase = true) ||
+                it.extension.equals("safetensors", ignoreCase = true))
+        }
+        if (files.isEmpty()) return emptyList()
+        return files.map { file ->
+            val stem = file.nameWithoutExtension
+            // ⚠ The family suffix is stripped from the NAME as well — a model
+            // called `my-flux.flux2` would be a directory with a dot in it and a
+            // name the user did not choose.
+            val dit = if (file.extension.equals("safetensors", ignoreCase = true)) {
+                val suffix = stem.substringAfterLast('.', "")
+                DIT_INBOX_FAMILIES[suffix.lowercase()]
+            } else null
+            val name = if (dit != null) stem.substringBeforeLast('.') else stem
             try {
-                val spec = import(context, name, { zip.inputStream() }, onProgress)
-                zip.delete()
+                val spec = if (dit != null) {
+                    importDit(context, name, dit, { file.inputStream() }, onProgress)
+                } else if (file.extension.equals("safetensors", ignoreCase = true)) {
+                    throw IOException(
+                        "a .safetensors needs its family in the name — " +
+                            "$name.<${DIT_INBOX_FAMILIES.keys.joinToString("|")}>.safetensors"
+                    )
+                } else {
+                    import(context, name, { file.inputStream() }, onProgress)
+                }
+                file.delete()
                 val missing = spec.missing(context)
                 if (missing.isEmpty()) {
                     "ok   ${spec.id} -> ${spec.family.label} ${spec.native}, " +
@@ -699,11 +897,17 @@ object CustomModels {
                     "warn ${spec.id} incomplete — missing ${missing.joinToString()}"
                 }
             } catch (e: Exception) {
-                // ⚠ The zip is KEPT on failure so a retry needs no second push.
+                // ⚠ The file is KEPT on failure so a retry needs no second push.
                 "FAIL $name — ${e.message}"
             }
         }
     }
+
+    /** ⚠ The family suffixes [importInbox] accepts on a `.safetensors`. */
+    private val DIT_INBOX_FAMILIES = mapOf(
+        "flux2" to Family.FLUX2,
+        "zimage" to Family.ZIMAGE,
+    )
 
     // ---- config.json -----------------------------------------------------
 

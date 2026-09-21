@@ -860,9 +860,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             CustomModels.importInbox(ctx)
         }
         if (lines.isEmpty()) {
-            // ⚠ Names the directory and the extension. The likely mistakes are
+            // ⚠ Names the directory and the extensions. The likely mistakes are
             // pushing to the models dir instead, and pushing an unzipped tree.
-            say("nothing to import — put a .zip in $inbox", bad = true)
+            // ⚠⚠ A DiT `.safetensors` carries its family in the name, because
+            // the file cannot say ([CustomModels.importInbox]).
+            say(
+                "nothing to import — put a .zip, or <name>.flux2/.zimage.safetensors, in $inbox",
+                bad = true,
+            )
             return
         }
         for (line in lines) say("  $line", bad = line.startsWith("FAIL"))

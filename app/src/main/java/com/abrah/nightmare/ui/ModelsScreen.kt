@@ -698,11 +698,15 @@ private fun ImportCard(
             // plain about: a DiT family has no context binary. The engine reads
             // plain weights at run time, so a community fine-tune needs nothing
             // done to it (`docs/ROADMAP.md` §2b, measured on device).
-            // ⚠ Says the prerequisite, because "install the built-in first" is
-            // not guessable: the import borrows its text encoder and VAE.
+            // ⭐⭐ **No prerequisite any more, and the body must not claim one.**
+            // It read "download the built-in model first" until 2026-09-21,
+            // which was the refusal `ensureDitParts` used to throw — 6.7 GB
+            // demanded to obtain 2.6 GB of it. The parts are now fetched on
+            // demand, so what is left to say is the SIZE, once, before a person
+            // picks a file and waits.
             "One .safetensors — a checkpoint from CivitAI or Hugging Face, used as it is. " +
-                "No conversion. It shares this family's text encoder and VAE, so download " +
-                "the built-in model first."
+                "No conversion. It borrows this family's text encoder and VAE: already here " +
+                "if you have either DiT model, about 2.6 GB to fetch once if you do not."
         } else {
             // ⚠ Says what the app CANNOT do, because the alternative is a user
             // picking a `.safetensors` and reading "not a checkpoint" without

@@ -33,11 +33,27 @@ class DitImportTest {
         return head + body + ByteArray(64)
     }
 
-    private fun installBuiltIn() {
-        val d = zimage.dir(ctx).apply { mkdirs() }
-        for (f in zimage.files) {
-            java.io.RandomAccessFile(File(d, f.name), "rw").use { it.setLength(f.bytes) }
-        }
+    private fun sparse(f: File, bytes: Long) {
+        f.parentFile?.mkdirs()
+        java.io.RandomAccessFile(f, "rw").use { it.setLength(bytes) }
+    }
+
+    private fun installBuiltIn(spec: ModelSpec = zimage) {
+        val d = spec.dir(ctx).apply { mkdirs() }
+        for (f in spec.files) sparse(File(d, f.name), f.bytes)
+    }
+
+    /**
+     * ⚠⚠ [CustomModels.importDit] fetches `libdit_engine.so` since
+     * 2026-09-21 — an import no longer rides in behind a built-in package, so
+     * it can no longer assume the engine came with one. Without this the tests
+     * would reach the network, which is both slow and a lie about what they
+     * cover.
+     */
+    private fun fakeEngine() {
+        DitEngine.file(ctx).also { sparse(it, DitEngine.FILE_BYTES) }
+        File(DitEngine.dir(ctx), ".dit-engine").writeText(DitEngine.URL)
+        assertTrue("the engine fixture does not read as installed", DitEngine.isInstalled(ctx))
     }
 
     @After
@@ -51,6 +67,7 @@ class DitImportTest {
 
     @Test
     fun itImportsAndIsRecognisedAsZImage() {
+        fakeEngine()
         installBuiltIn()
         val spec = CustomModels.importDit(
             ctx, "myzit", Family.ZIMAGE,
@@ -86,6 +103,7 @@ class DitImportTest {
      */
     @Test
     fun itImportsWithTheFamilysDefaultsNotSds() {
+        fakeEngine()
         installBuiltIn()
         val spec = CustomModels.importDit(
             ctx, "myzit", Family.ZIMAGE,
@@ -108,11 +126,9 @@ class DitImportTest {
      */
     @Test
     fun anImportedKleinDoesNotAskForLowram() {
+        fakeEngine()
         val klein = ModelCatalog.byId("flux2_klein_4b")!!
-        val d = klein.dir(ctx).apply { mkdirs() }
-        for (f in klein.files) {
-            java.io.RandomAccessFile(File(d, f.name), "rw").use { it.setLength(f.bytes) }
-        }
+        installBuiltIn(klein)
         val spec = CustomModels.importDit(
             ctx, "myklein", Family.FLUX2,
             open = { ByteArrayInputStream(safetensors("""{"a.weight":{"dtype":"F8_E4M3"}}""")) },
@@ -134,20 +150,24 @@ class DitImportTest {
      */
     @Test
     fun anImportWeighsTheSameAsTheBuiltInItBorrowsFrom() {
+        fakeEngine()
         installBuiltIn()
         val spec = CustomModels.importDit(
             ctx, "myzit", Family.ZIMAGE,
             open = { ByteArrayInputStream(safetensors("""{"a.weight":{"dtype":"F8_E4M3"}}""")) },
         )
-        val shared = ModelCatalog.DIT_REQUIRED
-            .filter { it != ModelSpec.DIT_WEIGHTS }
+        // ⚠⚠ The TWO family-agnostic files, not three. The VAE moved into the
+        // model's own directory on 2026-09-21 — it differs per family and one
+        // shared copy could only ever be right for one of them — so it is
+        // counted by [ModelSpec.bytesOnDisk] rather than borrowed.
+        val shared = listOf("llm.gguf", "tokenizer.json")
             .sumOf { n -> zimage.files.first { it.name == n }.bytes }
         assertTrue(
             "the shared parts must not count as disk in this directory",
             spec.bytesOnDisk(ctx) < shared,
         )
         assertEquals(
-            "a launch loads the weights AND the shared parts",
+            "a launch loads the weights, its own VAE AND the shared parts",
             spec.bytesOnDisk(ctx) + shared,
             spec.loadedBytes(ctx),
         )
@@ -164,6 +184,7 @@ class DitImportTest {
      */
     @Test
     fun itIsInTheCatalogueAfterImporting() {
+        fakeEngine()
         installBuiltIn()
         CustomModels.importDit(
             ctx, "myzit", Family.ZIMAGE,
@@ -180,25 +201,87 @@ class DitImportTest {
     }
 
     /**
-     * ⚠⚠ The prerequisite, said rather than discovered. There is nowhere else
-     * to get the text encoder and VAE from.
+     * ⭐⭐⭐ **With nothing installed, an import DOWNLOADS its parts rather
+     * than refusing.** Replaced `itRefusesWhenTheBuiltInIsNotInstalled`
+     * 2026-09-21.
+     *
+     * ⚠⚠ The old test asserted the refusal *"install <family> first"*, which
+     * a user hit on the FLUX.2 tab: told to download a 6.7 GB package to obtain
+     * 2.6 GB of it. The parts have public URLs and were already declared on the
+     * built-in spec, so the refusal was never true.
+     *
+     * ⚠ The PLAN is asserted, not the download — the decision is the
+     * behaviour, and it stops being observable once the bytes have moved.
      */
     @Test
-    fun itRefusesWhenTheBuiltInIsNotInstalled() {
-        val e = runCatching {
-            CustomModels.importDit(
-                ctx, "myzit", Family.ZIMAGE,
-                open = { ByteArrayInputStream(safetensors("""{"a":{}}""")) },
+    fun withNothingInstalledEveryPartIsFetched() {
+        val plan = CustomModels.ditPartsPlan(ctx, Family.ZIMAGE, File(ModelCatalog.root(ctx), "myzit"))
+        assertEquals("all three parts, none of them the weights", 3, plan.size)
+        assertTrue("nothing should be copyable", plan.all { it.from == null })
+        assertTrue(
+            "the weights must never be a shared part",
+            plan.none { it.file.name == ModelSpec.DIT_WEIGHTS },
+        )
+        // ⚠ ~2.6 GB, which is what the import card promises.
+        assertTrue("expected ~2.6 GB, got ${plan.sumOf { it.file.bytes } shr 20} MB",
+            plan.sumOf { it.file.bytes } in 2_400_000_000L..2_800_000_000L)
+    }
+
+    /**
+     * ⭐⭐⭐ **The VAE is NOT shared between the two DiT families, and a
+     * cross-family import must not borrow one.**
+     *
+     * ⚠⚠⚠ This is the 2026-09-21 bug, and it was silent. [CustomModels.DIT_SHARED]
+     * is ONE directory for both families, so an import copied its own VAE over
+     * whatever was there: importing a FLUX checkpoint gave every previously
+     * imported Z-Image Klein's VAE, and re-importing a Z-Image flipped it back.
+     * The two families' imports could not coexist. Measured on device: Klein's
+     * VAE is `1f01ec90…` and Z-Image's is `5c8c2087…`, while `llm.gguf` and
+     * `tokenizer.json` really are byte-identical across both.
+     */
+    @Test
+    fun aKleinInstallLendsItsTextEncoderButNotItsVae() {
+        val klein = ModelCatalog.ditModels.first { it.id == "flux2_klein_4b" }
+        installBuiltIn(klein)
+        val plan = CustomModels.ditPartsPlan(ctx, Family.ZIMAGE, File(ModelCatalog.root(ctx), "myzit"))
+        val by = plan.associateBy { it.file.name }
+        for (shared in listOf("llm.gguf", "tokenizer.json")) {
+            assertEquals(
+                "$shared is byte-identical across the families and should be copied",
+                klein.dir(ctx), by.getValue(shared).from?.parentFile,
             )
-        }.exceptionOrNull()
-        assertTrue("expected a refusal, got $e", e != null)
-        assertTrue("the reason does not mention installing first: ${e?.message}",
-            e!!.message!!.contains("install"))
+        }
+        assertEquals(
+            "a Z-Image import must never take Klein's VAE",
+            null, by.getValue("vae.safetensors").from,
+        )
+        // ⚠ …and it lands in the MODEL's directory, not the shared one, which
+        // is what `ditFile()` prefers and what ends the collision.
+        assertEquals("myzit", by.getValue("vae.safetensors").dest.parentFile.name)
+        assertEquals(
+            CustomModels.DIT_SHARED, by.getValue("llm.gguf").dest.parentFile.name,
+        )
+    }
+
+    /** ⭐ A second import of the same family costs nothing: it copies. */
+    @Test
+    fun aSecondImportOfTheSameFamilyCopiesEverything() {
+        fakeEngine()
+        installBuiltIn()
+        CustomModels.importDit(
+            ctx, "myzit", Family.ZIMAGE,
+            open = { ByteArrayInputStream(safetensors("""{"a.weight":{"dtype":"F8_E4M3"}}""")) },
+        )
+        val plan = CustomModels.ditPartsPlan(ctx, Family.ZIMAGE, File(ModelCatalog.root(ctx), "other"))
+        assertEquals("only the VAE is not already in place", 1, plan.size)
+        assertEquals("vae.safetensors", plan[0].file.name)
+        assertTrue("it should be copied from the first import, not fetched", plan[0].from != null)
     }
 
     /** ⚠ A zip, or anything that is not a safetensors, is refused up front. */
     @Test
     fun itRefusesSomethingThatIsNotASafetensors() {
+        fakeEngine()
         installBuiltIn()
         val zip = byteArrayOf(0x50, 0x4B, 0x03, 0x04) + ByteArray(256)
         val e = runCatching {
@@ -214,6 +297,7 @@ class DitImportTest {
      */
     @Test
     fun itNamesAnSdxlCheckpointRatherThanJustFailing() {
+        fakeEngine()
         installBuiltIn()
         val sdxl = safetensors("""{"conditioner.embedders.0.transformer.x":{"dtype":"F16"}}""")
         val e = runCatching {

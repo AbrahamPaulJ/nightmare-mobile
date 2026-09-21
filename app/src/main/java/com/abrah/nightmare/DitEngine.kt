@@ -75,7 +75,8 @@ object DitEngine {
     const val BYTES = 23_015_258L
 
     /** The unpacked `.so`, checked after extraction. */
-    private const val FILE_BYTES = 55_719_760L
+    /** ⚠ Public so a test can build an engine fixture without the network. */
+    const val FILE_BYTES = 55_719_760L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks

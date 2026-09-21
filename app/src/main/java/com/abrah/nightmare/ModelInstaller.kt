@@ -360,7 +360,11 @@ object ModelInstaller {
         }
     }
 
-    private fun requireFreeSpace(dir: File, needed: Long) {
+    /**
+     * ⚠ Public since 2026-09-21: [CustomModels] space-checks a DiT import's
+     * shared parts the same way, and two copies of this sum would drift.
+     */
+    fun requireFreeSpace(dir: File, needed: Long) {
         val stat = StatFs(dir.absolutePath)
         val free = stat.availableBlocksLong * stat.blockSizeLong
         if (free < needed) {
