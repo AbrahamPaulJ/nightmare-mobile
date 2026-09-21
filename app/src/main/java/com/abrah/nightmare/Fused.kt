@@ -608,11 +608,12 @@ class SdSampler(
      * chip, no mask — and a SIZE that is a request field, not a launch one.
      * ⚠ Not [Widget.contextKey]: moving them never relaunches the backend
      * ([backendContextKey] keys a DiT model on its native size).
-     * ⚠⚠ They are also not drawn as sliders any more. The inspector's size
-     * panel owns them for every family now (`NodeInspector`'s `ditPanel`,
-     * [ModelCatalog.DIT_SHAPES]) and `hiddenKnob` keeps them out of the knob
-     * list, so these declarations exist to carry the DEFAULT and the legal
-     * range — which is what a saved workflow and `applyDefaults` read.
+     * ⚠⚠ They ARE sliders, but not in the knob list: the inspector's size
+     * panel draws them in the slot every other family's size control occupies
+     * (`NodeInspector`'s `ditPanel`) and `hiddenKnob` keeps them from being
+     * drawn a second time at the bottom of the sheet. So these declarations
+     * carry the DEFAULT, the legal range and the grid — which is what the
+     * panel, a saved workflow and `applyDefaults` all read.
      */
     private fun ditWidgets(): List<Widget> = baseWidgets()
         .filterNot { it.name in setOf("scheduler", "aspect", "width", "height", "cfg") } + listOf(
@@ -626,9 +627,13 @@ class SdSampler(
             hint = "1 is what these models are distilled for. Above 1 the negative prompt " +
                 "starts being read, and each step costs about twice as long",
         ),
+        // ⭐ The hint goes on WIDTH alone, not on both: it describes the pair,
+        // and saying it twice under two adjacent sliders is noise.
         Widget(
             "width", "int", ModelCatalog.DIT_RES.width.toString(),
             ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.DIT_MAX.toDouble(), step = ModelCatalog.DIT_STEP,
+            hint = "any size in ${ModelCatalog.DIT_STEP}-pixel steps, either edge — no reload, " +
+                "and a bigger picture takes proportionally longer",
         ),
         Widget(
             "height", "int", ModelCatalog.DIT_RES.height.toString(),
@@ -1088,7 +1093,7 @@ class SdSampler(
         h0: Int,
     ): Value {
         // ⚠ [ModelCatalog.ditSnap], not a local copy: the size control offers
-        // only grid values and this must agree with it (see DIT_SHAPES).
+        // only grid values and this must agree with it ([ModelCatalog.DIT_STEP]).
         val w = ModelCatalog.ditSnap(w0)
         val h = ModelCatalog.ditSnap(h0)
         val png = photo?.let {

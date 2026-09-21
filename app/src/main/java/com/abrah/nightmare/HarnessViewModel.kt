@@ -2093,10 +2093,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val w = res.width.toString()
         val h = res.height.toString()
         if (node.params["width"] == w && node.params["height"] == h) return
-        val ok = SelectedModel.resolutionsOf(ctx, spec)
-        if (res !in ok) {
+        // ⚠⚠ [ModelSpec.serves], not `res in resolutionsOf(...)`. A DiT
+        // family answers with a GRID rather than a list, and the list idiom
+        // refused every legal size but its native one.
+        if (!spec.serves(ctx, res)) {
             say(
-                "${spec.label} cannot render $res — it serves ${ok.joinToString(", ")}",
+                "${spec.label} cannot render $res — it serves ${spec.sizesServedText(ctx)}",
                 bad = true,
             )
             return
@@ -2193,7 +2195,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠ Read against the graph's model, not the selected one -- on a model
         // switch the sizes that are legal change with it.
         val resMoved = res != null && res != SelectedModel.res &&
-            res in (spec ?: SelectedModel.spec).availableResolutions(ctx)
+            (spec ?: SelectedModel.spec).serves(ctx, res)
         if (!modelMoved && !resMoved) return
 
         if (modelMoved) {
@@ -2497,6 +2499,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * are equally far from 1:1. ⚠ SD 1.5 picks among the sizes ITS model serves;
      * a fixed-canvas family picks an aspect, written on THIS node only. ⚠ A tie
      * keeps the size the node already has.
+     *
+     * ⭐⭐ **A DiT family does not pick at all — it COMPUTES**
+     * ([ModelCatalog.ditFit]). Its size is a request field on a 64-px grid, so
+     * "closest match" is within half a step of exact and the log-ratio search
+     * above has nothing to search.
      */
     private fun autoFraming(node: Node, photo: android.graphics.Bitmap): Map<String, String> =
         autoFraming(node, photo.width, photo.height)
@@ -2512,6 +2519,24 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 { r -> if (r == node.params["aspect"]) 0 else 1 },
             ))
             out["aspect"] = best
+        } else if (spec != null && spec.isDit) {
+            // ⭐⭐⭐ **Computed, not picked from a list** — a DiT model renders
+            // any pair on its 64-px grid, so the photo's own ratio is reachable
+            // to within a grid step and there is no "closest match" to settle
+            // for. Reported 2026-09-21: a 4:3 photo landed on 1024x768 or
+            // 2048x1536 because those were the only 4:3 entries a table held,
+            // and 1280x960 — legal on this engine and on upstream — could not be
+            // reached at all.
+            //
+            // ⚠ Area held at what the node already renders, so dropping a photo
+            // changes the SHAPE and not the render time.
+            val cur = Res(
+                node.params["width"]?.toIntOrNull() ?: spec.native.width,
+                node.params["height"]?.toIntOrNull() ?: spec.native.height,
+            )
+            val best = ModelCatalog.ditFit(photoAspect, cur)
+            out["width"] = best.width.toString()
+            out["height"] = best.height.toString()
         } else if (spec != null) {
             val cur = Res(node.params["width"]?.toIntOrNull() ?: 0, node.params["height"]?.toIntOrNull() ?: 0)
             SelectedModel.resolutionsOf(getApplication(), spec).minWithOrNull(compareBy(

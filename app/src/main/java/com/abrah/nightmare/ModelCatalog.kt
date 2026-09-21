@@ -606,16 +606,21 @@ data class ModelSpec(
      * [DeviceProbe]-gated builds use, applied to graph shapes.
      *
      * ⚠ Before install this is just [native]: there are no files to scan yet.
+     *
+     * ⚠⚠⚠ **A LIST, and a DiT model's answer is not one** — ask [serves]
+     * instead of this whenever the question is "can it render X". A DiT size is
+     * a request field on a 64-px grid, so its legal set is 625 pairs; this
+     * returns [native] alone for that family, which is the one size a caller
+     * wanting a representative can use. Enumerating the grid here would put 625
+     * chips in a dropdown and 625 lines in `res_list`.
      */
     fun availableResolutions(context: Context): List<Res> {
         // ⭐⭐ A DiT model serves every pair on its grid and needs no file for
         // any of them: the size is a request field, not a `--patch`
         // ([backendContextKey]). ⚠ [native] is untouched — it stays
         // [ModelCatalog.DIT_RES], because that is what the context key is
-        // pinned to and what a new node is born at. This is only the list of
-        // sizes the SIZE CONTROL may offer, which for every other family is
-        // discovered and here is declared.
-        if (isDit) return ModelCatalog.DIT_SHAPES.values.flatten()
+        // pinned to and what a new node is born at.
+        if (isDit) return listOf(native)
         if (!servesPatches) return resolutions
         val found = dir(context).listFiles().orEmpty()
             .filter { it.isFile }
@@ -624,6 +629,31 @@ data class ModelSpec(
             .distinct()
             .sortedWith(compareBy({ it.area }, { it.width }))
     }
+
+    /**
+     * ⭐⭐⭐ **Can this model render [res]? — the ONE authority**, asked by the
+     * size control, the harness op, the workflow-adopt path and
+     * [SelectedModel.setRes].
+     *
+     * ⚠⚠ It exists because the two families answer by different *kinds* of
+     * rule: a patched family serves a LIST discovered on disk, a DiT family
+     * serves a GRID computed by arithmetic. Five call sites each testing
+     * `res in availableResolutions(ctx)` was fine while every family answered
+     * with a list; the moment one of them stopped, that idiom refused every
+     * legal DiT size but one. ⇒ Ask this, never the list.
+     */
+    fun serves(context: Context, res: Res): Boolean =
+        if (isDit) ModelCatalog.ditSupported(res.width) && ModelCatalog.ditSupported(res.height)
+        else res in availableResolutions(context)
+
+    /**
+     * ⭐ What to tell someone whose size was refused — the same split as
+     * [serves], so a refusal never reads like a list the user could have
+     * picked from when the real rule is a range.
+     */
+    fun sizesServedText(context: Context): String =
+        if (isDit) "any size ${ModelCatalog.DIT_MIN}–${ModelCatalog.DIT_MAX} in ${ModelCatalog.DIT_STEP}-pixel steps"
+        else availableResolutions(context).joinToString(", ")
 
     /** What this model occupies on disk, or 0 when it is not installed. */
     fun bytesOnDisk(context: Context): Long =
@@ -710,14 +740,31 @@ object ModelCatalog {
     const val ZIMAGE = "zimage"
     /** ⚠ The size a NEW node starts at, and the context key's constant size. */
     val DIT_RES = Res(1024, 1024)
-    /** ⭐ Upstream's `DitResolution`: any size 512–2048, in 256-px steps. */
+    /**
+     * ⭐ Upstream's `DitResolution`: any size 512–2048, in **64**-px steps.
+     *
+     * ⚠⚠ **This said 256 until 2026-09-21, and it was simply wrong about
+     * upstream.** `local-dream/.../data/DitResolution.kt` is `SIZE_STEP = 64`,
+     * and its own comment says the models need only multiples of 16 — 64 is
+     * upstream's slider-usability choice, not an engine limit. The 256 here was
+     * never measured against anything; it was a guess that then had a whole
+     * size vocabulary built on top of it.
+     *
+     * ⚠ 64 rather than 16, deliberately, and that is the one deviation from
+     * "what the engine needs": it is upstream parity (`CLAUDE.md`, *follow
+     * local-dream's implementation as much as possible*), and 16 makes a slider
+     * a precision instrument for a choice nobody makes that finely.
+     *
+     * ⚠ [DIT_MIN] is itself a multiple of [DIT_STEP], which is what lets
+     * [ditSnap] offset from it and still land on upstream's grid exactly.
+     */
     const val DIT_MIN = 512
     const val DIT_MAX = 2048
-    const val DIT_STEP = 256
+    const val DIT_STEP = 64
 
     /**
      * ⭐ The grid, as ONE function — the sampler snaps a request to it and the
-     * size control below only ever offers values already on it.
+     * size control only ever writes values already on it.
      *
      * ⚠ It lived as a local `snap` inside `SdSampler.runDit`, which made the
      * control and the render two places that each decided what a legal DiT size
@@ -729,61 +776,69 @@ object ModelCatalog {
             .coerceIn(DIT_MIN, DIT_MAX)
 
     /**
-     * ⭐⭐⭐ **A DiT family's size vocabulary: a shape, then a size within it.**
+     * ⭐ Is [v] already on the grid? — upstream's `DitResolution.isSupported`.
+     *
+     * ⚠ [ditSnap] is the fixer and this is the test; a caller that wants to
+     * REFUSE a stored size asks this, one that wants to repair it calls that.
+     * Rewriting a saved workflow's size silently is the thing the 2026-09-19
+     * "picture came back a different size" report was about.
+     */
+    fun ditSupported(v: Int): Boolean =
+        v in DIT_MIN..DIT_MAX && (v - DIT_MIN) % DIT_STEP == 0
+
+    /**
+     * ⭐⭐⭐ **The size nearest [aspect] that a DiT model can render** — both
+     * edges on the grid, area held near [around].
      *
      * ⚠⚠⚠ **This is NOT [aspectTarget] and must never be routed through it.**
      * That one means "render the square canvas the graph is frozen at, then crop
      * to this ratio", which is what SDXL and Anima do and what
      * [ModelSpec.fixedCanvas] gates. A DiT model has no fixed canvas — it
-     * renders whatever width and height it is handed — so here the shape
-     * *chooses* the width and height and there is no crop at all.
+     * renders whatever width and height it is handed — so this *chooses* the
+     * width and height and there is no crop at all.
      *
-     * ⚠⚠ **Every pair below is EXACT on the 256-px grid, and that is why the
-     * control is a list rather than an aspect chip times a size dropdown.**
-     * Measured while building it, 2026-09-19: an orthogonal pair cannot be
-     * honest here. With the short edge snapped to the grid, `4:3` and `3:2` both
-     * land on 1024x768 at a 1024 long edge — two chips, one output — and `16:9`
-     * at 1024 lands on 1024x512, which is 2:1 and not what the chip says. The
-     * grid is too coarse for a nominal ratio to survive it. ⇒ The shape names a
-     * list of pairs that really have that shape, and the sizes offered differ
-     * per shape because the grid genuinely offers different ones.
+     * ⚠⚠ **It replaced a table of hand-picked pairs (`DIT_SHAPES`), and the
+     * table is what the 2026-09-21 report was about**: on a 256-px grid `4:3`
+     * could only offer 1024x768 or 2048x1536, so a person wanting a 4:3 picture
+     * at an ordinary size had 1280x960 — legal upstream, legal on the engine —
+     * nowhere to reach. A table cannot hold 625 pairs; arithmetic can.
      *
-     * ⚠ `16:9` is the one approximation, and it is 1792x1024 = 1.75 against
-     * 1.778 — under 2%, which no eye finds and no arithmetic here pretends is
-     * exact. There is no 16:9 pair on this grid at all; the alternative was
-     * dropping the shape people most want a wallpaper in.
+     * ⚠⚠ **The rule is RATIO first, area only as the tie-break** — and on
+     * this grid the tie is usually real, because 4:3 is exact at 1024x768,
+     * 1280x960, 1536x1152 and 2048x1536. Ranking by area first instead picks
+     * 1216x896 for a 4:3 photo: 1.8% off the ratio, closer in pixels, and a
+     * size no one recognises. ⚠ 16:9 is where that costs something: `w = 16k,
+     * h = 9k` with both on a 64-px grid forces k to a multiple of 64, so the
+     * only exact pairs are 1024x576 and 2048x1152 and a node at 1024² drops to
+     * 576 tall. That is the honest answer — the long edge is held and the
+     * picture really is 16:9 — and the sliders are right there for anyone who
+     * wants 1344x768 (1.75) instead.
      */
-    val DIT_SHAPES: Map<String, List<Res>> = linkedMapOf(
-        "1:1" to listOf(Res(512, 512), Res(768, 768), Res(1024, 1024), Res(1280, 1280), Res(1536, 1536), Res(2048, 2048)),
-        "4:3" to listOf(Res(1024, 768), Res(2048, 1536)),
-        "3:4" to listOf(Res(768, 1024), Res(1536, 2048)),
-        "3:2" to listOf(Res(768, 512), Res(1536, 1024)),
-        "2:3" to listOf(Res(512, 768), Res(1024, 1536)),
-        "16:9" to listOf(Res(1792, 1024)),
-        "9:16" to listOf(Res(1024, 1792)),
-    )
-
-    /**
-     * ⭐ The shape [res] belongs to, or null when a saved flow names a pair no
-     * shape offers (512x2048, say).
-     *
-     * ⚠ Null rather than a nearest guess: the chips then show nothing selected,
-     * which is the honest reading of "this size is not one of these". Silently
-     * highlighting the closest chip would make the next tap look like a no-op.
-     */
-    fun ditShapeOf(res: Res): String? =
-        DIT_SHAPES.entries.firstOrNull { res in it.value }?.key
-
-    /**
-     * ⭐ The size to move to when a shape is picked — the one nearest in AREA to
-     * what the node already renders, so switching 1024x1024 to `16:9` gives
-     * 1792x1024 rather than the smallest pair in the list.
-     */
-    fun ditSizeFor(shape: String, current: Res): Res? {
-        val options = DIT_SHAPES[shape] ?: return null
-        val area = current.width.toLong() * current.height
-        return options.minByOrNull { kotlin.math.abs(it.width.toLong() * it.height - area) }
+    fun ditFit(aspect: Float, around: Res): Res {
+        if (!aspect.isFinite() || aspect <= 0f) return around
+        val want = kotlin.math.ln(aspect.toDouble())
+        val area = (around.width.toDouble() * around.height).coerceAtLeast(1.0)
+        val grid = (DIT_MIN..DIT_MAX step DIT_STEP).toList()
+        // ⚠⚠ Every pair on the grid, scored by RATIO first. 25 candidates —
+        // one per width, each with the single height nearest the ratio, because
+        // a second height on the same width is strictly further from it.
+        val candidates = grid.map { w -> Res(w, ditSnap((w / aspect).toInt())) }
+        // ⚠ Log ratio, matching `HarnessViewModel.autoFraming`'s `far`: it makes
+        // 2:3 and 3:2 equally far from 1:1, which a plain difference does not.
+        fun err(r: Res) = kotlin.math.abs(kotlin.math.ln(r.width.toDouble() / r.height) - want)
+        val best = candidates.minOf(::err)
+        // ⭐⭐ **Area breaks the tie, and on this grid the tie is usually real.**
+        // 4:3 is EXACT at 1024x768, 1280x960, 1536x1152 and 2048x1536, so
+        // picking the first would hand back a quarter of the pixels the node was
+        // rendering. ⚠ The epsilon admits pairs that are equally good rather
+        // than exactly equal — float error alone would split 1280x960 from
+        // 1536x1152 and make the choice depend on rounding.
+        return candidates
+            .filter { err(it) <= best + 1e-4 }
+            .minByOrNull { kotlin.math.abs(it.width.toDouble() * it.height - area) }
+            ?: around
     }
+
     /** ⭐ What the backend checks for in a DiT package dir (`main.cpp`) — plus the tokenizer it loads for every type. */
     val DIT_REQUIRED = listOf("dit.safetensors", "llm.gguf", "vae.safetensors", "tokenizer.json")
 
@@ -1732,9 +1787,8 @@ object SelectedModel {
      * re-downloaded from a build with fewer patches, say.
      */
     fun setRes(context: Context, newRes: Res) {
-        val ok = spec.availableResolutions(context)
-        require(newRes in ok) {
-            "\"${spec.label}\" cannot render $newRes — it serves ${ok.joinToString(", ")}"
+        require(spec.serves(context, newRes)) {
+            "\"${spec.label}\" cannot render $newRes — it serves ${spec.sizesServedText(context)}"
         }
         res = newRes
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -1754,6 +1808,6 @@ object SelectedModel {
         val w = parts.getOrNull(0)?.toIntOrNull() ?: return native
         val h = parts.getOrNull(1)?.toIntOrNull() ?: return native
         val want = Res(w, h)
-        return if (want in spec.availableResolutions(context)) want else native
+        return if (spec.serves(context, want)) want else native
     }
 }

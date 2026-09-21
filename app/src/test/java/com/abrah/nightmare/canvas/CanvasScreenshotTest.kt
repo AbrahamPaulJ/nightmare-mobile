@@ -661,15 +661,16 @@ class CanvasScreenshotTest {
      * raw sliders at the bottom of the knob list.
      *
      * ⚠⚠ This golden pins all three halves of the fix at once: the checkpoint
-     * field is present, Shape and Resolution are drawn at the TOP in the slot
-     * every other family's size control uses, and `width`/`height` do NOT also
-     * appear as number fields below — the same duplicate the SD nodes were
-     * reported for on 2026-09-18.
+     * field is present, the size is drawn at the TOP in the slot every other
+     * family's size control uses, and `width`/`height` do NOT also appear
+     * below — the same duplicate the SD nodes were reported for on 2026-09-18.
      *
-     * ⚠ Seven shapes is past `CHIP_LIMIT` (4), so Shape draws as a DROPDOWN —
-     * which is exactly what SDXL's seven-entry `aspect` chooser does, and is the
-     * point: both families now reach the same control through the same
-     * [Chooser] rule rather than through two hand-rolled layouts.
+     * ⭐⭐ **The size is two free SLIDERS since 2026-09-21** — upstream's
+     * control, on upstream's 64-px grid. It was a Shape dropdown over a table
+     * of hand-picked pairs, and the table could not reach 1280x960: see
+     * [ModelCatalog.ditFit] and `docs/MODELS.md`. ⚠ What the golden is still
+     * for is unchanged — the size control lives in the SAME slot as every
+     * other family's, whatever widget it is made of.
      */
     @Test
     fun theFluxNodeReadsLikeAnSdOne() = shoot("inspector-dit-size") {

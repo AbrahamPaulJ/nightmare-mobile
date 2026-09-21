@@ -230,55 +230,88 @@ class ResolutionTest {
     }
 
     /**
-     * ⭐⭐⭐ **Every size the shape control offers is EXACT and unique.**
+     * ⭐⭐⭐ **The DiT grid is upstream's grid**, and this is the assertion
+     * that says so.
      *
-     * ⚠⚠ This is the assertion that decided the control's shape, 2026-09-19. The
-     * first design was aspect chips times a long-edge dropdown — the orthogonal
-     * pair, which is what SD's controls look like. It cannot be honest on this
-     * grid: with the short edge snapped to 256, `4:3` and `3:2` at a 1024 long
-     * edge both land on 1024x768, and `16:9` at 1024 lands on 1024x512, which is
-     * 2:1. Two chips producing one size, and a chip producing a shape it does
-     * not name. ⇒ The shapes name lists of pairs that really are that shape, and
-     * this test is what holds them to it.
-     *
-     * ⚠ `16:9` is the documented exception at 1.75 — there is no exact 16:9 pair
-     * on a 256 grid at all. The tolerance below is what admits it and nothing
-     * looser.
+     * ⚠⚠ [ModelCatalog.DIT_STEP] read 256 until 2026-09-21 while its own
+     * comment claimed to be quoting upstream, which is `SIZE_STEP = 64`
+     * (`local-dream/.../data/DitResolution.kt`). Nothing failed, because the
+     * only thing that checked the grid was a table built FROM it — a test that
+     * asked the code to agree with itself. This one names the numbers.
      */
     @Test
-    fun everyDitShapeIsExactAndOnTheGrid() {
-        val seen = mutableMapOf<Res, String>()
-        for ((shape, sizes) in ModelCatalog.DIT_SHAPES) {
-            val colon = shape.indexOf(':')
-            val rw = shape.substring(0, colon).toInt()
-            val rh = shape.substring(colon + 1).toInt()
-            assertTrue("$shape offers no size", sizes.isNotEmpty())
-            for (res in sizes) {
-                // ⚠ On the grid, both axes — the engine is handed these verbatim.
-                for (v in listOf(res.width, res.height)) {
-                    assertEquals("$shape $res is off the grid", v, ModelCatalog.ditSnap(v))
-                }
-                // ⚠ …and really that shape. 2% admits 16:9's 1792x1024 (1.75)
-                // and refuses every collision the orthogonal design produced.
-                val want = rw.toDouble() / rh
-                val got = res.width.toDouble() / res.height
-                assertTrue(
-                    "$shape $res is ${"%.3f".format(got)}, not ${"%.3f".format(want)}",
-                    kotlin.math.abs(got - want) / want <= 0.02,
-                )
-                // ⚠⚠ Unique across ALL shapes, or [ModelCatalog.ditShapeOf]
-                // cannot answer and the chips would highlight the wrong one.
-                assertEquals("$res is offered by two shapes", null, seen.put(res, shape))
-                assertEquals("$res must map back to $shape", shape, ModelCatalog.ditShapeOf(res))
-            }
+    fun theDitGridIsUpstreams() {
+        assertEquals(512, ModelCatalog.DIT_MIN)
+        assertEquals(2048, ModelCatalog.DIT_MAX)
+        assertEquals(64, ModelCatalog.DIT_STEP)
+        // ⚠ [ModelCatalog.ditSnap] offsets from DIT_MIN, which is only the same
+        // as upstream's `round(v / STEP) * STEP` because MIN is a multiple of it.
+        assertEquals(0, ModelCatalog.DIT_MIN % ModelCatalog.DIT_STEP)
+        // ⭐ The size the report asked for, unreachable under the old table.
+        assertTrue("1280 must be on the grid", ModelCatalog.ditSupported(1280))
+        assertTrue("960 must be on the grid", ModelCatalog.ditSupported(960))
+        assertTrue("1280x960 is 4:3", ModelCatalog.ditSupported(1280) && ModelCatalog.ditSupported(960))
+        // ⚠ [ditSnap] repairs, [ditSupported] refuses — they are not the same
+        // question and a caller picks one on purpose.
+        assertTrue(!ModelCatalog.ditSupported(1000))
+        assertEquals(1024, ModelCatalog.ditSnap(1000))
+        assertTrue(!ModelCatalog.ditSupported(256))
+        assertEquals(512, ModelCatalog.ditSnap(256))
+        assertEquals(2048, ModelCatalog.ditSnap(9999))
+        // ⚠ Everything the grid claims really is snappable to itself.
+        var v = ModelCatalog.DIT_MIN
+        while (v <= ModelCatalog.DIT_MAX) {
+            assertTrue("$v", ModelCatalog.ditSupported(v))
+            assertEquals(v, ModelCatalog.ditSnap(v))
+            v += ModelCatalog.DIT_STEP
         }
-        // ⚠ A size no shape offers highlights nothing, rather than guessing.
-        assertEquals(null, ModelCatalog.ditShapeOf(Res(512, 2048)))
-        // ⭐ Picking a shape keeps the nearest AREA, so 1024² becomes 16:9's only
-        // pair rather than the smallest one in some other list.
-        assertEquals(Res(1792, 1024), ModelCatalog.ditSizeFor("16:9", Res(1024, 1024)))
-        assertEquals(Res(1024, 768), ModelCatalog.ditSizeFor("4:3", Res(1024, 1024)))
-        assertEquals(Res(2048, 1536), ModelCatalog.ditSizeFor("4:3", Res(2048, 2048)))
+    }
+
+    /**
+     * ⭐⭐ **[ModelCatalog.ditFit] lands on the grid and hits the ratio
+     * exactly whenever the grid holds an exact pair.**
+     *
+     * ⚠⚠ The ratio is the primary key and the area only breaks its ties.
+     * That is the clause the 2026-09-21 report turns on: rank by area first and
+     * a 4:3 photo gets 1216x896, which is 1.8% off and a size nobody
+     * recognises. ⚠ 16:9 is the documented cost of the rule — `16k x 9k` on a
+     * 64-px grid forces k to a multiple of 64, so 1024x576 is the only exact
+     * pair anywhere near 1024².
+     */
+    @Test
+    fun ditFitHitsTheRatioAndStaysOnTheGrid() {
+        val at1024 = Res(1024, 1024)
+        for (aspect in listOf(1f, 4f / 3f, 3f / 4f, 3f / 2f, 16f / 9f, 9f / 16f, 1.37f)) {
+            val got = ModelCatalog.ditFit(aspect, at1024)
+            assertTrue("$aspect -> $got off the grid", ModelCatalog.ditSupported(got.width))
+            assertTrue("$aspect -> $got off the grid", ModelCatalog.ditSupported(got.height))
+            // ⚠ Within one grid step of the ratio asked for — the most any
+            // snapped pair can promise, and every case above beats it easily.
+            val ratio = got.width.toDouble() / got.height
+            assertTrue(
+                "$aspect -> $got is ${"%.3f".format(ratio)}",
+                kotlin.math.abs(ratio - aspect) / aspect <= 0.05,
+            )
+        }
+        // ⭐ The reported case: a 4:3 photo on a node rendering 1024² reaches
+        // 1280x960 — exact, and the size the report named. The old table could
+        // offer only 1024x768 or 2048x1536.
+        assertEquals(Res(1280, 960), ModelCatalog.ditFit(4f / 3f, at1024))
+        assertEquals(Res(960, 1280), ModelCatalog.ditFit(3f / 4f, at1024))
+        // ⭐ Exact where the grid allows it, at an area near what the node had.
+        assertEquals(Res(1344, 896), ModelCatalog.ditFit(3f / 2f, at1024))
+        assertEquals(Res(1024, 1024), ModelCatalog.ditFit(1f, at1024))
+        // ⚠⚠ The documented cost of ratio-first: 16:9's only exact pairs on a
+        // 64 grid are 1024x576 and 2048x1152.
+        assertEquals(Res(1024, 576), ModelCatalog.ditFit(16f / 9f, at1024))
+        // ⚠ The area tie-break really is a tie-break — the same ratio from a
+        // bigger node comes back bigger.
+        assertEquals(Res(2048, 1536), ModelCatalog.ditFit(4f / 3f, Res(2048, 2048)))
+        assertEquals(Res(768, 576), ModelCatalog.ditFit(4f / 3f, Res(768, 768)))
+        // ⚠ A degenerate aspect changes nothing rather than throwing: it comes
+        // from a bitmap's own dimensions and a zero there is a bug elsewhere.
+        assertEquals(at1024, ModelCatalog.ditFit(0f, at1024))
+        assertEquals(at1024, ModelCatalog.ditFit(Float.NaN, at1024))
     }
 
     /**

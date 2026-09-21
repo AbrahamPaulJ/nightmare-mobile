@@ -1020,6 +1020,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
             return
         }
+        // ⭐⭐ A DiT family serves a GRID, not a list of patch files — there is
+        // no file to report present or missing, and 625 rows is not a listing.
+        if (spec.isDit) {
+            say("${spec.label} renders ${spec.sizesServedText(ctx)}, on either edge")
+            say("  * ${SelectedModel.res}")
+            return
+        }
         val all = spec.availableResolutions(ctx)
         say("${spec.label}: ${all.size} resolution${if (all.size == 1) "" else "s"}")
         for (r in all) {
@@ -1039,9 +1046,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val want = arg?.let { Res.fromLabel(it) }
         if (want == null) { say("res_use needs --es arg <WxH>, e.g. 768x512", bad = true); return }
         val spec = SelectedModel.spec
-        val ok = spec.availableResolutions(ctx)
-        if (want !in ok) {
-            say("${spec.label} cannot render $want — it serves ${ok.joinToString(", ")}", bad = true)
+        if (!spec.serves(ctx, want)) {
+            say("${spec.label} cannot render $want — it serves ${spec.sizesServedText(ctx)}", bad = true)
             return
         }
         val was = SelectedModel.res

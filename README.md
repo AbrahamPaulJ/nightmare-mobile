@@ -33,9 +33,9 @@ orders the run so each checkpoint loads once. Generate with FLUX.2 and then repa
 result with a dedicated inpainting checkpoint, in a single graph, with a single Run. The run
 bar tells you what the model switches will cost before you press it.
 
-**FLUX.2 Klein and Z-Image Turbo on the NPU.** Two DiT models, at any size from 512 to 2048,
-picked as a shape and a resolution. Changing the size costs no reload. Snapdragon 8 Elite or
-newer.
+**FLUX.2 Klein and Z-Image Turbo on the NPU.** Two DiT models, at any width and height from
+512 to 2048 in 64 pixel steps — 1280x960 and 1344x768 as readily as 1024 square. Changing the
+size costs no reload. Snapdragon 8 Elite or newer.
 
 **A real inpainting model.** AbsoluteReality Inpaint is a 9 channel checkpoint: the model sees
 the hole it is filling and the pixels around it, instead of repainting blind and being blended
@@ -90,7 +90,8 @@ chip can load.
 
 **Pick your size.** SD 1.5 renders any resolution its checkpoint ships a patch for, from 512
 square up to 1024, portrait and landscape. SDXL and Anima crop their fixed canvas to the shape
-you choose. The DiT models render the size you ask for directly.
+you choose. The DiT models take two sliders and render the size you ask for directly, and drop
+a photo on one and it sizes itself to that photo's shape.
 
 **A DiT fine-tune imports as-is.** FLUX.2 and Z-Image build their graph at load time from
 plain weights, so a Z-Image checkpoint from CivitAI is picked from storage and runs — no

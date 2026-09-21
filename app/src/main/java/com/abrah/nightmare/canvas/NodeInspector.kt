@@ -890,47 +890,54 @@ internal fun NodeInspectorBody(
         // here and its width and height turned up as two raw sliders loose in
         // the knob list at the bottom of the sheet.
         //
-        // ⚠⚠ The shape is [ModelCatalog.DIT_SHAPES], NOT [ModelCatalog.ASPECTS],
-        // and the two must not be merged however alike they read. An aspect chip
-        // on SDXL crops a frozen 1024² canvas and changes no dimension; a shape
-        // here CHOOSES the width and height the engine renders. Same word, two
-        // mechanisms — which is why this calls [onSetResolution] (a size) and
-        // never [onSetAspect] (a crop).
+        // ⚠⚠ **A DiT size is not an ASPECT and the two must not be merged
+        // however alike they read.** An aspect chip on SDXL crops a frozen
+        // 1024² canvas and changes no dimension; these sliders CHOOSE the width
+        // and height the engine renders. Same subject, two mechanisms — which
+        // is why this calls [onSetResolution] (a size) and never [onSetAspect]
+        // (a crop).
+        //
+        // ⭐⭐⭐ **Two free sliders, upstream's control**
+        // (`local-dream/.../AdvancedSettingsDialog.kt`), the user's call
+        // 2026-09-21. ⚠⚠ They replaced a Shape chooser over a table of
+        // hand-picked pairs, and the table is what the report was about: at
+        // `4:3` it could offer only 1024x768 or 2048x1536, so 1280x960 — legal
+        // on this engine, legal upstream — was unreachable, and a person after
+        // an ordinary 4:3 picture was pushed to 2048x1536. A table of pairs
+        // cannot cover a 64-px grid; two sliders are the grid.
+        //
+        // ⚠ The table only existed because [ModelCatalog.DIT_STEP] was wrongly
+        // believed to be 256, where `4:3` and `3:2` really do collide. At 64
+        // they do not, and the reasoning the table rested on went with it.
         val ditSpec = com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())
             ?.takeIf { it.isDit && node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES }
         val ditPanel: @Composable () -> Unit = ditPanel@{
             val spec = ditSpec ?: return@ditPanel
+            val widthW = type?.widgets?.firstOrNull { it.name == "width" } ?: return@ditPanel
+            val heightW = type?.widgets?.firstOrNull { it.name == "height" } ?: return@ditPanel
             val cur = com.abrah.nightmare.Res(
                 node.params["width"]?.toIntOrNull() ?: spec.native.width,
                 node.params["height"]?.toIntOrNull() ?: spec.native.height,
             )
-            val shape = com.abrah.nightmare.ModelCatalog.ditShapeOf(cur)
-            Chooser(
-                label = "Shape",
-                // ⚠ Says the one thing a person cannot see: this is free here,
-                // where on SDXL the same-looking control costs nothing either but
-                // on SD 1.5 the size below it costs a reload.
-                hint = "a DiT model renders any of these directly — no reload, and a wider picture is a bigger one",
-                options = com.abrah.nightmare.ModelCatalog.DIT_SHAPES.keys.toList(),
-                // ⚠ Empty, not a guess, when a saved flow names a pair no shape
-                // offers — [ditShapeOf] returns null and nothing is highlighted.
-                current = shape.orEmpty(),
-                onPick = { s ->
-                    com.abrah.nightmare.ModelCatalog.ditSizeFor(s, cur)?.let(onSetResolution)
-                },
+            // ⚠⚠ The value under the finger, held here until the finger lifts —
+            // see [SliderRow]'s `onCommit`. ⚠ Keyed on `cur` as well as the node,
+            // so it drops itself the moment the committed size lands (and when
+            // anything else moves it, such as dropping a photo in).
+            var draft by remember(nodeId, cur) { mutableStateOf<com.abrah.nightmare.Res?>(null) }
+            val shown = draft ?: cur
+            // ⚠ One commit for the pair, not one per slider: [onSetResolution]
+            // takes a [com.abrah.nightmare.Res] and a half-applied size is not a
+            // thing the graph should ever hold.
+            val commit = { draft?.let(onSetResolution); draft = null }
+            SliderRow(
+                widthW, shown.width.toString(),
+                onSet = { v -> v.toIntOrNull()?.let { draft = shown.copy(width = it) } },
+                onCommit = commit,
             )
-            // ⚠ The sizes of the CHOSEN shape, so the two controls can never
-            // disagree. With no shape matched the whole grid is offered, which
-            // is the only way back from a hand-written size.
-            val sizes = shape?.let { com.abrah.nightmare.ModelCatalog.DIT_SHAPES[it] }
-                ?: com.abrah.nightmare.ModelCatalog.DIT_SHAPES.values.flatten()
-            Chooser(
-                label = stringResource(R.string.resolution),
-                hint = null,
-                options = sizes.map { it.toString() },
-                current = cur.toString(),
-                onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
-                variesInLength = true,
+            SliderRow(
+                heightW, shown.height.toString(),
+                onSet = { v -> v.toIntOrNull()?.let { draft = shown.copy(height = it) } },
+                onCommit = commit,
             )
         }
         val sizePanel: @Composable () -> Unit = {
@@ -2192,7 +2199,23 @@ private fun ChoiceDropdown(
  * and into every cache key derived from it.
  */
 @Composable
-private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) {
+private fun SliderRow(
+    widget: Widget,
+    current: String,
+    onSet: (String) -> Unit,
+    /**
+     * ⭐⭐ Called once when the finger LIFTS, for a knob whose [onSet] is too
+     * expensive to run per frame.
+     *
+     * ⚠⚠ Null for every ordinary knob, and that is deliberate: writing a
+     * param on each change is what makes the preview and the node title follow
+     * the thumb. The DiT size sliders are the exception — a size write
+     * invalidates every derived picture on the canvas and prints a line in the
+     * run log ([HarnessViewModel.setNodeResolution]), so per-frame it would be
+     * sixty invalidations and sixty log lines for one drag.
+     */
+    onCommit: (() -> Unit)? = null,
+) {
     val min = widget.min!!.toFloat()
     val max = widget.max!!.toFloat()
     val isInt = widget.type == "int"
@@ -2258,6 +2281,7 @@ private fun SliderRow(widget: Widget, current: String, onSet: (String) -> Unit) 
             // instrument. Rounding the written value gives the same snap with
             // none of that.
             steps = 0,
+            onValueChangeFinished = onCommit ?: {},
             modifier = Modifier.fillMaxWidth(),
         )
         widget.hint?.let {
