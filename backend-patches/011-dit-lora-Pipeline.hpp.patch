@@ -1,4 +1,4 @@
---- backend-src/src/Pipeline.hpp	2026-09-21 23:04:45.767389400 +0930
+--- backend-src/src/Pipeline.hpp	2026-09-21 23:21:43.859942000 +0930
 +++ backend-src/src/Pipeline.hpp	2026-09-21 23:03:54.679533600 +0930
 @@ -47,6 +47,15 @@
    int height = 0;

@@ -1,15 +1,30 @@
---- backend-src/src/DitEngine.h	2026-09-21 23:04:45.770405600 +0930
-+++ backend-src/src/DitEngine.h	2026-09-21 22:25:18.961841200 +0930
+--- backend-src/src/DitEngine.h	2026-09-21 23:21:43.860946400 +0930
++++ backend-src/src/DitEngine.h	2026-09-21 23:10:00.607171700 +0930
 @@ -21,7 +21,7 @@
  extern "C" {
  #endif
  
 -#define DIT_ENGINE_ABI_VERSION 3
-+#define DIT_ENGINE_ABI_VERSION 4
++#define DIT_ENGINE_ABI_VERSION 5
  
  // Name of the single symbol the core resolves after dlopen.
  #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
-@@ -82,6 +82,18 @@
+@@ -47,6 +47,14 @@
+   int n_threads;
+   bool flash_attn;
+   bool vae_conv_direct;
++  // How a LoRA is applied: 0 = let the engine decide, 1 = merge into the
++  // weights at load, 2 = keep the branches and apply them each pass. Matches
++  // stable-diffusion.cpp's lora_apply_mode_t; 0 leaves its own default.
++  //
++  // A CONTEXT param rather than a generation one because that is where
++  // sd_ctx_params_t takes it -- so changing the MODE costs a reload, while
++  // changing which LoRAs, or how strongly, does not.
++  int lora_apply_mode;
+ } dit_ctx_params;
+ 
+ typedef struct {
+@@ -82,6 +90,18 @@
    // VAE tiling for resolutions whose full decode does not fit; 0 disables.
    int vae_tile_size;
    float vae_tile_overlap;

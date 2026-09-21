@@ -1,6 +1,35 @@
---- backend-src/src/PipelineDit.hpp	2026-09-21 23:04:45.767389400 +0930
-+++ backend-src/src/PipelineDit.hpp	2026-09-21 23:04:33.341374200 +0930
-@@ -189,6 +189,23 @@
+--- backend-src/src/PipelineDit.hpp	2026-09-21 23:21:43.859942000 +0930
++++ backend-src/src/PipelineDit.hpp	2026-09-21 23:10:00.607171700 +0930
+@@ -27,7 +27,7 @@
+               std::string engine_path, std::string diffusion_model_path,
+               std::string llm_path, std::string vae_path, dit_model_kind kind,
+               std::string backend, std::string params_backend, int n_threads,
+-              int vae_tile_size, bool img2img_enabled)
++              int vae_tile_size, bool img2img_enabled, int lora_apply_mode)
+       : Pipeline(text_encoder, model_dir, /*sdxl=*/false, /*use_v_pred=*/false),
+         engine_path_(std::move(engine_path)),
+         diffusion_model_path_(std::move(diffusion_model_path)),
+@@ -36,6 +36,7 @@
+         kind_(kind),
+         backend_(std::move(backend)),
+         params_backend_(std::move(params_backend)),
++        lora_apply_mode_(lora_apply_mode),
+         n_threads_(n_threads),
+         vae_tile_size_(vae_tile_size),
+         img2img_enabled_(img2img_enabled) {}
+@@ -78,6 +79,11 @@
+     // direct-conv kernel reads that layout. Without it every VAE conv falls
+     // back to im2col + mul_mat over the repacked weights.
+     params.vae_conv_direct = true;
++    // 0 leaves the engine's own choice. Forcing it is a DIAGNOSTIC: AUTO
++    // picked at_runtime on this single-device HTP0 context and the adapter
++    // never reached the NPU's weights (../docs/ROADMAP.md 2f).
++    params.lora_apply_mode = lora_apply_mode_;
++
+     ctx_ = api_->create(&params);
+     if (!ctx_) {
+       QNN_ERROR("engine create failed: %s", api_->last_error(nullptr));
+@@ -188,6 +194,23 @@
        params.reference_heights = reference_heights.data();
        params.reference_image_count = static_cast<int>(reference_ptrs.size());
      }
@@ -24,3 +53,11 @@
      // Full-frame VAE scratch grows with pixel AREA; tile once past the point
      // where it stops fitting. Two corrections to the obvious test, both paid
      // for by an OOM on 2026-09-20 (a 1024x1024 edit with one 1024x1024
+@@ -469,6 +492,7 @@
+   const dit_model_kind kind_;
+   const std::string backend_;
+   const std::string params_backend_;
++  const int lora_apply_mode_;
+   const int n_threads_;
+   const int vae_tile_size_;
+   const bool img2img_enabled_;
