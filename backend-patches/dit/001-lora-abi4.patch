@@ -1,0 +1,68 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index 6fed254..5338ee9 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -192,6 +192,31 @@ bool engine_generate(dit_ctx *ctx, const dit_gen_params *params, dit_progress_cb
+     gen.ref_image_args = "preset=flux2";
+   }
+ 
++  // Same shape as reference_images above: the vector outlives the generate call
++  // because gen only holds a pointer into it.
++  std::vector<sd_lora_t> loras;
++  if (params->lora_count > 0) {
++    if (!params->lora_paths) {
++      ctx->last_error = "invalid loras";
++      return false;
++    }
++    loras.reserve(params->lora_count);
++    for (int i = 0; i < params->lora_count; ++i) {
++      if (!params->lora_paths[i] || !params->lora_paths[i][0]) {
++        ctx->last_error = "empty lora path";
++        return false;
++      }
++      sd_lora_t lora{};
++      lora.is_high_noise = false;
++      lora.multiplier =
++          params->lora_multipliers ? params->lora_multipliers[i] : 1.0f;
++      lora.path = params->lora_paths[i];
++      loras.push_back(lora);
++    }
++    gen.loras = loras.data();
++    gen.lora_count = static_cast<uint32_t>(loras.size());
++  }
++
+   if (params->vae_tile_size > 0) {
+     gen.vae_tiling_params.enabled = true;
+     gen.vae_tiling_params.tile_size_x = params->vae_tile_size;
+diff --git a/include/DitEngine.h b/include/DitEngine.h
+index 301c43b..ae37f0c 100644
+--- a/include/DitEngine.h
++++ b/include/DitEngine.h
+@@ -21,7 +21,7 @@
+ extern "C" {
+ #endif
+ 
+-#define DIT_ENGINE_ABI_VERSION 3
++#define DIT_ENGINE_ABI_VERSION 4
+ 
+ // Name of the single symbol the core resolves after dlopen.
+ #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
+@@ -82,6 +82,18 @@ typedef struct {
+   // VAE tiling for resolutions whose full decode does not fit; 0 disables.
+   int vae_tile_size;
+   float vae_tile_overlap;
++  // LoRAs applied to THIS generation. Each path is a .safetensors adapter with
++  // its own multiplier; lora_multipliers may be NULL, which means 1.0 for all.
++  // Zero count is "no LoRAs" and costs nothing.
++  //
++  // Per generation rather than per context on purpose: stable-diffusion.cpp
++  // takes them in sd_img_gen_params_t, so a strength can change between renders
++  // without reloading the model. Whether that is actually free depends on the
++  // apply mode the engine settles on -- merging into the weights cannot work
++  // for row-split tensors, so a split model applies them per pass instead.
++  const char *const *lora_paths;
++  const float *lora_multipliers;
++  int lora_count;
+ } dit_gen_params;
+ 
+ // Called for sampling and for long auxiliary work so callers can still cancel
