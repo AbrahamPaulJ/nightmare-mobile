@@ -78,7 +78,9 @@ sweeps them. Two knobs at once gives you a grid. Every run is kept with the exac
 produced it, so a picture you like can be reopened as the flow that made it.
 
 **Upscalers.** RealESRGAN x4plus anime and 4x UltraSharp V2 Lite, loaded per request so they
-cost no restart, or bring your own converted `.bin`.
+cost no restart, or bring your own converted `.bin`. Enlarging is a checkbox on the output node
+rather than a node of its own, and that node then shows what it received above what it made,
+each with its own buttons.
 
 **Twenty seven checkpoints, or bring your own.** Six SD 1.5, ten SDXL, nine Anima and two DiT
 in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
@@ -105,7 +107,8 @@ unchanged.
 **LoRAs, swappable per render.** Import an adapter `.safetensors` and pick it on any FLUX.2 or
 Z-Image generate node — a checkbox per installed file and a strength slider. It binds while the
 render starts, so changing one or moving a slider reloads nothing. The cost is the adapter's
-size: about 6% for a 160 tensor FLUX adapter, more for a larger one. Stack as many as you like.
+size: about 6% for a 160 tensor FLUX adapter, 43% for a 480 tensor Z-Image one. Stack as many
+as you like.
 
 **Embeddings.** Import a textual inversion `.safetensors` and name it in a prompt.
 
