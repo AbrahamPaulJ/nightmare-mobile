@@ -111,6 +111,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Card
 
 /**
  * ⭐⭐ **The strip's order: the order the graph RUNS in.**
@@ -278,6 +280,10 @@ fun NodeInspector(
     loraEpoch: Int = 0,
     /** ⭐⭐ Enlarge the node's picture by editing the flow behind it. */
     onUpscale: ((String) -> Unit)? = null,
+    /** ⭐⭐⭐ Drop the enlargement, keeping what the node received. */
+    onDropEnlargement: ((String) -> Unit)? = null,
+    /** ⭐⭐⭐ Drop what the node received, keeping the enlargement. */
+    onDropReceived: ((String) -> Unit)? = null,
     /** ⭐⭐ Put a node's knobs back to their defaults — [CanvasState.resetNode]. */
     onReset: ((String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from an inpaint node's Tap-select row. */
@@ -511,7 +517,17 @@ fun NodeInspector(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         deleteTint = MaterialTheme.colorScheme.error,
                         isClip = false,
-                        onDelete = { onClearOutput(nodeId) },
+                        // ⭐⭐⭐ **Drops THIS picture, not the node.** The bin
+                        // below drops the enlargement and leaves this one; this
+                        // one drops the original and leaves the enlargement.
+                        // They both called `clearOutput` and emptied everything
+                        // — *"why do both the delete icons do the same fucking
+                        // thing"*, 2026-09-22.
+                        onDelete = onDropReceived?.let { { it(nodeId) } },
+                        deleteTitle = "Drop the picture this node received?",
+                        deleteBody = "The enlarged picture below stays and becomes the " +
+                            "only one on this node. The original is not saved anywhere " +
+                            "unless you kept it — Run brings it back.",
                         onKeep = { onKeepImage(id) },
                         onDownload = { onSaveImage(id) },
                         onShare = { onShareImage(id) },
@@ -632,6 +648,7 @@ fun NodeInspector(
                         nodeId !in clipNodes(state.workflow.graph, state.videos)
                 }
                 ?.let { up -> { up(nodeId) } },
+            onDropEnlargement = onDropEnlargement?.let { d -> { d(nodeId) } },
             upscaleDisabledReason =
                 if (com.abrah.nightmare.MediaOutputNode.autoUpscales(node)) {
                     "this output already enlarges every render — untick auto upscale to choose"
@@ -927,6 +944,11 @@ internal fun NodeInspectorBody(
     onUpscale: (() -> Unit)? = null,
     /** ⭐⭐ Why it is dimmed — see [PictureActions.upscaleDisabledReason]. */
     upscaleDisabledReason: String? = null,
+    /**
+     * ⭐⭐⭐ Drop the enlargement and keep what the node received —
+     * `HarnessViewModel.dropEnlargement`. Null when there is no pair.
+     */
+    onDropEnlargement: (() -> Unit)? = null,
     /** ⭐⭐ Put this node's knobs back to their defaults — [CanvasState.resetNode]. */
     onReset: ((String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from the Tap-select row; null hides the button. */
@@ -1738,7 +1760,16 @@ internal fun NodeInspectorBody(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         deleteTint = MaterialTheme.colorScheme.error,
                         isClip = hasClip,
-                        onDelete = onClearOutput,
+                        // ⭐⭐ With a Received picture above, this drops the
+                        // ENLARGEMENT and leaves that one as the node's output.
+                        // With no pair, it empties the node as it always did.
+                        onDelete = if (beforeImage != null) onDropEnlargement else onClearOutput,
+                        deleteTitle = if (beforeImage != null) "Drop the enlargement?" else null,
+                        deleteBody = if (beforeImage != null) {
+                            "The picture above becomes this node's output, at its " +
+                                "original size. Auto upscale stays on, so the next Run " +
+                                "enlarges again."
+                        } else null,
                         onKeep = onKeepImage,
                         onDownload = { onSaveImage() },
                         onShare = { onShareImage() },
@@ -3454,68 +3485,12 @@ private fun MaskToolbar(
             featherMax = featherW?.max?.toFloat() ?: 0.2f,
             onFeather = if (featherW == null) null else { v -> onSetParam("feather", fixed(v, 3)) },
         )
-        // ⭐⭐⭐ **Tap to select lives HERE, under the slider** — the user's
-        // call, 2026-09-22. The tapping happens in this editor, so the switch
-        // for it belongs in this editor rather than in the node's knob list two
-        // screens of sliders away.
+        // ⭐⭐ **How much is covered, right under the slider that changes it**
+        // — and ABOVE the tap-select container below.
         //
-        // ⚠⚠ It also says whether the MODEL is here, with the action that
-        // changes that: Download when it is missing, Delete when it is not.
-        // A checkbox that silently needs an 80 MB download is the shape of bug
-        // `MissingModelDialog` exists to stop — offer the thing the control
-        // needs, where the control is.
-        if (type?.widgets?.any { it.name == com.abrah.nightmare.SdSampler.TAP_SELECT } == true) {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(
-                    checked = tapSelect,
-                    onCheckedChange = { v ->
-                        onSetParam(com.abrah.nightmare.SdSampler.TAP_SELECT, v.toString())
-                    },
-                )
-                // ⚠ Just what the checkbox DOES. Whether the model is here, how
-                // big it is and what to do about it are the card's job below,
-                // and saying it twice is how the two start disagreeing.
-                Text(
-                    "Tap to select",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            // ⭐⭐⭐ **The download is the SAME card the Models tab draws** —
-            // `ToolCard` over `DownloadCard`: the size, the progress bar, Cancel
-            // while it runs, Delete when it is there (`docs/UI.md` §8.1).
-            //
-            // ⚠⚠⚠ It was two hand-rolled `TextButton`s. They showed no size,
-            // no progress and no way to stop, and the state behind them never
-            // refreshed — so pressing either one appeared to do nothing at all.
-            // Reported 2026-09-22. ⇒ A second download surface is a second
-            // download surface that will drift; there is one.
-            //
-            // ⚠⚠ **Only while the box is TICKED**, or while a download this
-            // row started is still running. An 87 MB card sitting under an
-            // unticked checkbox is an offer nobody made — reported the same day
-            // (*"the download btn for segment is showing even when its
-            // disabled"*). Untick it mid-download and the card stays until the
-            // download ends, because Cancel has to remain reachable.
-            if (tapSelect || segmenterRow?.progress != null) {
-                segmenterRow?.let { row ->
-                    // ⚠ Its own spacing, so it reads as a card in a list the way
-                    // the Tools tab's does rather than as part of the row above.
-                    Box(Modifier.padding(top = 4.dp, bottom = 4.dp)) {
-                        com.abrah.nightmare.ui.ToolCard(
-                            row = row,
-                            busy = busy,
-                            onInstall = { onInstallSegmenter?.invoke() },
-                            onCancel = { onCancelSegmenter?.invoke() },
-                            onDelete = { onDeleteSegmenter?.invoke() },
-                        )
-                    }
-                }
-            }
-        }
+        // ⚠⚠ It sat UNDER the download card, so the one number that tells you
+        // whether the mask is finished was the last thing on the screen, below a
+        // button about a model. The user's call, 2026-09-22.
         Text(
             // ⚠⚠ Says the convention out loud. White-takes-repaint is the one
             // thing about masking that is easy to get backwards and impossible
@@ -3532,6 +3507,78 @@ private fun MaskToolbar(
             style = LogTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // ⭐⭐⭐ **Tap to select lives HERE, in the mask editor** — the user's
+        // call, 2026-09-22. The tapping happens in this editor, so the switch
+        // for it belongs here rather than in the node's knob list two screens of
+        // sliders away.
+        if (type?.widgets?.any { it.name == com.abrah.nightmare.SdSampler.TAP_SELECT } == true) {
+            // ⭐⭐⭐ **ONE container for the switch and the thing it needs.**
+            //
+            // ⚠⚠ The checkbox and the download card were two loose items in the
+            // editor's column, so the card read as an unrelated panel that had
+            // appeared under an unrelated tick. The user's call, 2026-09-22:
+            // *"put the checkbox and downloader in one container"*. They are one
+            // control — a tool and the model it runs on — and the surface says
+            // so.
+            Card(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
+            ) {
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = tapSelect,
+                            onCheckedChange = { v ->
+                                onSetParam(com.abrah.nightmare.SdSampler.TAP_SELECT, v.toString())
+                            },
+                        )
+                        // ⭐⭐ **"Show tap to select icon"** — the user's wording,
+                        // 2026-09-22. ⚠ It says what the tick DOES: it puts the
+                        // Tap tool in the toolbar above. It does not start
+                        // selecting anything, and "Tap to select" read as though
+                        // it might.
+                        Text(
+                            "Show tap to select icon",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    // ⭐⭐⭐ **The download is the SAME card the Models tab draws**
+                    // — `ToolCard` over `DownloadCard`: the size, the progress bar,
+                    // Cancel while it runs, Delete when it is there
+                    // (`docs/UI.md` §8.1).
+                    //
+                    // ⚠⚠⚠ It was two hand-rolled `TextButton`s. They showed no
+                    // size, no progress and no way to stop, and the state behind
+                    // them never refreshed — so pressing either appeared to do
+                    // nothing at all. Reported 2026-09-22.
+                    //
+                    // ⚠⚠ **Only while the box is TICKED**, or while a download
+                    // this row started is still running. An 87 MB card under an
+                    // unticked checkbox is an offer nobody made. Untick it
+                    // mid-download and the card stays until the download ends,
+                    // because Cancel has to remain reachable.
+                    if (tapSelect || segmenterRow?.progress != null) {
+                        segmenterRow?.let { row ->
+                            Box(Modifier.padding(bottom = 4.dp)) {
+                                com.abrah.nightmare.ui.ToolCard(
+                                    row = row,
+                                    busy = busy,
+                                    onInstall = { onInstallSegmenter?.invoke() },
+                                    onCancel = { onCancelSegmenter?.invoke() },
+                                    onDelete = { onDeleteSegmenter?.invoke() },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -275,6 +275,27 @@ fun ResultsScreen(
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // ⭐⭐⭐ **Clearing a filter takes ONE tap, not three.** Asked for
+            // 2026-09-22: *"add a clear btn to the right of filter if filter is
+            // active"*.
+            //
+            // ⚠⚠ Only while something IS filtered — a permanent ✕ beside the
+            // funnel would be a control that does nothing most of the time, and
+            // the pair then reads as one two-part widget rather than as a state.
+            // ⚠ It is the same `onClear` the dialog's own button calls, so the
+            // two cannot come to mean different things.
+            if (filtered) {
+                IconButton(
+                    onClick = { hiddenModels = emptySet(); query = "" },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "clear the filter",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
         }
         if (filtering) {
             ResultFilterDialog(
@@ -435,14 +456,22 @@ fun ResultsScreen(
                 IconButton(onClick = { info = shown }, modifier = small) {
                     Icon(Icons.Filled.Info, contentDescription = "what made this picture", tint = onSurface)
                 }
-                Spacer(Modifier.weight(1f))
-                // ⚠ The flow ICON in the filled button, as it always was — not a
-                // word (the user, 2026-09-17).
-                Button(
-                    onClick = { onOpenFlow(shown) },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                ) {
-                    Icon(ShareFlowIcon, contentDescription = stringResource(R.string.open_flow), modifier = Modifier.size(20.dp))
+                // ⭐⭐⭐ **A normal icon in the row** — the user's call,
+                // 2026-09-22: *"make the open result icon same size and space it
+                // properly like the other icon, its a normal item in that row"*.
+                //
+                // ⚠⚠ It was a filled `Button` pushed to the far right by a
+                // `Spacer(weight(1f))`, which made it a different size, a
+                // different colour and a different distance from its neighbours
+                // than the seven icons before it — for no difference in what it
+                // does. ⚠ Still the flow ICON and never the words (the user,
+                // 2026-09-17, twice).
+                IconButton(onClick = { onOpenFlow(shown) }, modifier = small) {
+                    Icon(
+                        ShareFlowIcon,
+                        contentDescription = stringResource(R.string.open_flow),
+                        tint = onSurface,
+                    )
                 }
             }
         }
@@ -633,6 +662,16 @@ fun ResultViewer(
     )
     var showInfo by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
+    // ⭐⭐⭐ **40dp, not the 48dp default** — the same size the Results row
+    // uses, and for the same reason.
+    //
+    // ⚠⚠⚠ This row is EIGHT actions. At 48dp that is 384dp of buttons on a
+    // 360dp screen, so the last one was clipped to a sliver — which is what
+    // *"the vertical purple line in fullscreen"* was (2026-09-22): the open-flow
+    // button's fill, with its icon cut off. `PictureActions` hit exactly this
+    // and dropped to 32dp; this row has more width to play with because it has
+    // no surrounding sheet padding.
+    val viewerIcon = Modifier.size(40.dp)
     // ⚠⚠ STATE objects, not values: they are handed to [viewerZoom], whose
     // gesture lambda outlives the composition that built it.
     val scaleState = remember { mutableStateOf(1f) }
@@ -820,7 +859,7 @@ fun ResultViewer(
             // full screen, next to the buttons you actually came for, deleting
             // the picture AND its flow with no undo. Careless; reported from the
             // phone, 2026-09-10.
-            IconButton(onClick = { confirmingDelete = true }) {
+            IconButton(onClick = { confirmingDelete = true }, modifier = viewerIcon) {
                 Icon(
                     Icons.Filled.Delete,
                     contentDescription = stringResource(R.string.cd_delete_result),
@@ -838,7 +877,7 @@ fun ResultViewer(
             // ⚠ N−1 of N again (`docs/ARCHITECTURE.md` §5.6), and the missed
             // place was the one the finger found.
             onToggleFavourite?.let { toggle ->
-                IconButton(onClick = { toggle(current) }) {
+                IconButton(onClick = { toggle(current) }, modifier = viewerIcon) {
                     Icon(
                         Icons.Filled.Star,
                         contentDescription = if (current.favourite) {
@@ -857,7 +896,7 @@ fun ResultViewer(
             // where someone wants that.
             // ⚠ The DOWNLOAD glyph: the floppy means "keep in Results"
             // everywhere since 2026-09-15 and this writes to the gallery.
-            IconButton(onClick = { onSave(current) }) {
+            IconButton(onClick = { onSave(current) }, modifier = viewerIcon) {
                 Icon(
                     com.abrah.nightmare.ui.DownloadIcon,
                     contentDescription = "save to the gallery",
@@ -867,7 +906,7 @@ fun ResultViewer(
             // ⚠ The seed is drawn BELOW the picture now — see above. ⚠ Still no
             // `onLock`: locking writes onto the OPEN canvas, and a result in a
             // list is not necessarily from that graph.
-            IconButton(onClick = { onShare(current) }) {
+            IconButton(onClick = { onShare(current) }, modifier = viewerIcon) {
                 Icon(
                     ShareIcon,
                     contentDescription = "share this picture",
@@ -877,7 +916,7 @@ fun ResultViewer(
             // ⭐ Send into a flow, after share — [PictureActions]' order. ⚠ Not
             // on a clip: no flow takes a video as its input.
             onSendTo?.takeIf { current.videoPath == null }?.let { send ->
-                IconButton(onClick = { send(current) }) {
+                IconButton(onClick = { send(current) }, modifier = viewerIcon) {
                     Icon(
                         SendToIcon,
                         contentDescription = "send this picture to a flow",
@@ -894,7 +933,7 @@ fun ResultViewer(
                         current.width, current.height, current.videoPath != null, upscaling,
                     )
                     if (no != null) onToast(no) else upscalingPick = current
-                }) {
+                }, modifier = viewerIcon) {
                     Icon(
                         UpscaleIcon,
                         contentDescription = "upscale this picture",
@@ -903,7 +942,7 @@ fun ResultViewer(
                     )
                 }
             }
-            IconButton(onClick = { showInfo = !showInfo }) {
+            IconButton(onClick = { showInfo = !showInfo }, modifier = viewerIcon) {
                 Icon(
                     Icons.Filled.Info,
                     contentDescription = "what made this picture",
@@ -915,13 +954,22 @@ fun ResultViewer(
             // `FullscreenImage`: `onTap = { if (scale <= 1.01f) onDismiss() }`).
             // Two fullscreen viewers in one app must not be left with two
             // different ways out.
-            // ⚠⚠ The flow ICON in the filled button, as on the Results row —
-            // never the words (the user, 2026-09-17, twice).
-            Button(
-                onClick = { onOpenFlow(current) },
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-            ) {
-                Icon(ShareFlowIcon, contentDescription = stringResource(R.string.open_flow), modifier = Modifier.size(20.dp))
+            // ⭐⭐⭐ **A normal icon here too**, same as the Results row.
+            //
+            // ⚠⚠⚠ As a filled `Button` at the end of eight 48dp icons it did
+            // not fit a 360dp screen, and what was actually on the phone was a
+            // sliver of its purple background down the right edge — reported
+            // 2026-09-22 as *"remove the vertical purple line in fullscreen"*
+            // AND as *"show that icon in fullscreen"*, which are the same bug
+            // twice: the icon was clipped away and only the fill was left.
+            // Exactly the overflow that made the ⓘ a dot on the inspector row
+            // (`PictureActions`), which is why the whole row is 32dp now.
+            IconButton(onClick = { onOpenFlow(current) }, modifier = viewerIcon) {
+                Icon(
+                    ShareFlowIcon,
+                    contentDescription = stringResource(R.string.open_flow),
+                    tint = androidx.compose.ui.graphics.Color.White,
+                )
             }
         }
 
@@ -1336,17 +1384,33 @@ private fun HistoryThumb(
             .aspectRatio(1f)
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .border(
-                width = if (picked || inFrame) 2.dp else 0.dp,
-                color = if (picked) MaterialTheme.colorScheme.primary
-                else if (inFrame) MaterialTheme.colorScheme.outline else Color.Transparent,
-                shape = RoundedCornerShape(8.dp),
-            )
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         thumb?.let {
             Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         } ?: run { if (unreadable) UnreadablePicture() }
+        // ⭐⭐⭐ **The selection ring is drawn OVER the picture** — and that is
+        // the fix, not the width.
+        //
+        // ⚠⚠⚠ It was `.border()` in this Box's own modifier chain, which
+        // draws BEFORE the children. The thumbnail is `fillMaxSize` + `Crop`, so
+        // it painted straight over the ring and left at most a corner of it
+        // showing. Reported 2026-09-22 as *"show a clearer border for selected
+        // item"* — the border was there, the picture was on top of it.
+        // ⚠⚠ 3dp for a picked item, 2dp for the one merely in the frame: the
+        // two mean different things and the thicker one is the one you chose.
+        if (picked || inFrame) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .border(
+                        width = if (picked) 3.dp else 2.dp,
+                        color = if (picked) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outline,
+                        shape = RoundedCornerShape(8.dp),
+                    ),
+            )
+        }
         // ⭐ A clip is a STILL here with a play mark — only the big frame plays.
         if (isClip) {
             Box(

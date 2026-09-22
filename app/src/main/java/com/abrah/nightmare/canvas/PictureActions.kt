@@ -122,6 +122,17 @@ fun PictureActions(
      * ⚠ LAST, which is where Results puts it too.
      */
     onInfo: (() -> Unit)? = null,
+    /**
+     * ⭐⭐ What the bin's confirm SAYS, when it does not empty the node.
+     *
+     * ⚠⚠ The default body promises "the node goes back to empty", and on an
+     * auto-upscaling output neither bin does that any more — one drops the
+     * enlargement and leaves the original, the other the reverse. A confirm
+     * that names the wrong outcome is worse than none (`docs/UI.md` §8.2 asks
+     * the body to name the COST).
+     */
+    deleteTitle: String? = null,
+    deleteBody: String? = null,
 ) {
     // ⭐⭐⭐ **32dp buttons, not the 48dp default**, and this is a bug fix.
     //
@@ -259,15 +270,15 @@ fun PictureActions(
 
     if (confirming && onDelete != null) {
         ConfirmDelete(
-            title = "Clear this $what?",
+            title = deleteTitle ?: "Clear this $what?",
             confirmLabel = "Clear",
             // ⚠ Says whether there is another copy — the render is often the only one.
-            body = "The node goes back to empty. " + when {
+            body = deleteBody ?: ("The node goes back to empty. " + when {
                 downloaded -> "You saved it to the gallery, so that copy stays."
                 kept -> "If autosave kept it, it goes from History too; a copy you kept or starred stays."
                 else -> "It has NOT been saved to the gallery, and Run will make a " +
                     "different one unless the seed is locked."
-            },
+            }),
             onConfirm = onDelete,
             onDismiss = { confirming = false },
         )

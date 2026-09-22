@@ -269,6 +269,10 @@ fun CanvasScreen(
     onUpscaleNode: ((String) -> Unit)? = null,
     /** ⭐⭐ What made this node's picture, for the ⓘ dialog. */
     detailsOfNode: ((String) -> List<Pair<String, String>>)? = null,
+    /** ⭐⭐⭐ Drop the enlargement, keeping what the output received. */
+    onDropEnlargement: ((String) -> Unit)? = null,
+    /** ⭐⭐⭐ Drop what the output received, keeping the enlargement. */
+    onDropReceived: ((String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from an inpaint node's Tap-select row. */
     onInstallSegmenter: (() -> Unit)? = null,
     /** ⭐⭐ …and delete it from there. */
@@ -557,6 +561,8 @@ fun CanvasScreen(
         types = types,
         onUpscale = onUpscaleNode,
         detailsOf = detailsOfNode,
+        onDropEnlargement = onDropEnlargement,
+        onDropReceived = onDropReceived,
         onReset = { id -> onEdit { st -> st.resetNode(id, types) } },
         onInstallSegmenter = onInstallSegmenter,
         onDeleteSegmenter = onDeleteSegmenter,
@@ -769,9 +775,19 @@ fun CanvasScreen(
                 favourite = isFavourite(id),
                 keepDisabledReason = keepDisabledReason,
                 onDisabledAction = onDisabledAction,
+                // ⭐⭐⭐ **The bin here drops the picture ON SCREEN**, the same
+                // as the row in the sheet — the Received one or the enlargement,
+                // not both. ⚠ Which one is decided by IDENTITY against
+                // `beforePreviews`, never by node type.
                 onDeleteOutput = if (!viewedIsInput && viewedNode != null) {
+                    val isReceived = state.beforePreviews[viewedNode]?.first == id
+                    val hasPair = state.beforePreviews[viewedNode] != null
                     {
-                        onClearImage(viewedNode)
+                        when {
+                            isReceived -> onDropReceived?.invoke(viewedNode)
+                            hasPair -> onDropEnlargement?.invoke(viewedNode)
+                            else -> onClearImage(viewedNode)
+                        }
                         onEdit { s -> s.copy(viewing = null, viewingNode = null) }
                     }
                 } else null,

@@ -535,6 +535,8 @@ fun HarnessScreen(
             // chooser Results uses, then edits the flow and Runs.
             onUpscaleNode = vm::offerUpscaleNode,
             detailsOfNode = vm::detailsOfNode,
+            onDropEnlargement = vm::dropEnlargement,
+            onDropReceived = vm::dropReceived,
             // ⭐⭐ The segmenter, offered where the checkbox that needs it is.
             // ⚠ Re-read on `vm.working`, which is what changes while an install
             // runs — without a dependency the row would still say "not

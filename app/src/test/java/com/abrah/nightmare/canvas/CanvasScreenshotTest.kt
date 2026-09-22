@@ -557,6 +557,9 @@ class CanvasScreenshotTest {
                 onKeepImage = {},
                 onStarImage = {},
                 onUpscale = {},
+                // ⚠ With a Received picture above, the Made bin drops the
+                // ENLARGEMENT rather than emptying the node.
+                onDropEnlargement = {},
                 // ⚠ The state the button is dimmed in — the node already
                 // enlarges every render.
                 upscaleDisabledReason = "this output already enlarges every render",

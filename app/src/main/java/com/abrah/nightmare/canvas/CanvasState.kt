@@ -127,6 +127,24 @@ data class CanvasState(
      */
     val beforePreviews: Map<String, Pair<String, Float>> = emptyMap(),
     /**
+     * ⭐⭐⭐ **Node id -> the Received picture the user BINNED**, so it stays
+     * binned.
+     *
+     * ⚠⚠⚠ The two bins on an auto-upscaling output do different things:
+     * the one on Made drops the enlargement and leaves the original as the
+     * node's picture; the one on Received drops the original and leaves the
+     * enlargement. Without this map the second is impossible — the Received
+     * half is DERIVED from the upstream render on every preview pass, so it
+     * came straight back, which is what *"why do both the delete icons do the
+     * same fucking thing"* was about (2026-09-22).
+     *
+     * ⚠⚠ It remembers the IMAGE ID, not just the node. A new Run makes a new
+     * picture with a new id, so the Received half returns on its own and
+     * nothing has to remember to clear this — which is the kind of bookkeeping
+     * that gets forgotten on one of the four run paths.
+     */
+    val beforeHidden: Map<String, String> = emptyMap(),
+    /**
      * ⭐⭐ Node id -> the image id it RENDERED on the last Run — including the
      * nodes that do not SHOW their result ([com.abrah.nightmare.NodeType.showsResult]).
      *
@@ -805,6 +823,7 @@ data class CanvasState(
             previews = previews - id,
             rendered = rendered - id,
             beforePreviews = beforePreviews - id,
+            beforeHidden = beforeHidden - id,
             // ⚠ And the clip, for the same reason — a video node reusing a
             // freed id must not inherit the poster's MP4 either.
             videos = videos - id,
@@ -853,6 +872,7 @@ data class CanvasState(
             previews = previews.moveKey(),
             rendered = rendered.moveKey(),
             beforePreviews = beforePreviews.moveKey(),
+            beforeHidden = beforeHidden.moveKey(),
             videos = videos.moveKey(),
             selection = if (from in selection) selection - from + name else selection,
             editing = if (editing == from) name else editing,
@@ -877,6 +897,7 @@ data class CanvasState(
         previews = previews - id,
         rendered = rendered - id,
         beforePreviews = beforePreviews - id,
+        beforeHidden = beforeHidden - id,
         videos = videos - id,
         selection = selection - id,
         editing = if (editing == id) null else editing,

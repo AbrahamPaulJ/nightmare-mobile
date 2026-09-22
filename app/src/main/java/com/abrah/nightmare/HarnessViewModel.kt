@@ -3186,6 +3186,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // it only records a Received picture for a node that HAS one of its
             // own, and this node no longer does.
             beforePreviews = canvas.beforePreviews.filterKeys { !downstream(it) },
+            beforeHidden = canvas.beforeHidden.filterKeys { !downstream(it) },
         )
         previewSigs.keys.retainAll { !downstream(it) }
     }
@@ -3197,6 +3198,62 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * node does not have. A render exists only as a preview and a cache entry,
      * and only the PREVIEW is dropped — see the note on the cache below.
      */
+    /**
+     * ⭐⭐⭐ **Drop the ENLARGEMENT, keep what the node received.**
+     *
+     * The bin on the Made picture of an auto-upscaling output. The un-enlarged
+     * picture becomes the node's output, the pair collapses to one picture, and
+     * `auto upscale` STAYS ON — this is about the render in front of you, not
+     * about the setting.
+     *
+     * ⚠⚠⚠ It used to call [clearOutput], so both bins emptied the node and
+     * the un-upscaled picture — the only copy of it anywhere — went with it.
+     * Reported 2026-09-22: *"why can't deleting just the made image keep the
+     * non-upscaled received img as output"*.
+     *
+     * ⚠⚠ The AUTOSAVED copy of the enlargement goes too, exactly as
+     * [clearOutput] drops it: it is the picture being discarded. A copy kept or
+     * starred by hand stays.
+     */
+    fun dropEnlargement(nodeId: String) {
+        val before = canvas.beforePreviews[nodeId] ?: return clearOutput(nodeId)
+        val made = canvas.previews[nodeId]?.first ?: canvas.rendered[nodeId]
+        val dropped = kept.filter { it.auto && !it.favourite && it.imageId == made }
+        if (dropped.isNotEmpty()) {
+            dropped.forEach { results.delete(it.id) }
+            refreshResults()
+        }
+        canvas = canvas.copy(
+            // ⚠ The received picture IS the node's output now. Nothing else
+            // needs to change: `applyBeforeAfterPreviews` refuses to record a
+            // Received half that is the node's own picture, so the pair stays
+            // collapsed through every preview pass and across the canvas.
+            previews = canvas.previews + (nodeId to before),
+            rendered = canvas.rendered - nodeId,
+            beforePreviews = canvas.beforePreviews - nodeId,
+        )
+        say("dropped the enlargement on $nodeId")
+    }
+
+    /**
+     * ⭐⭐⭐ **Drop what the node RECEIVED, keep the enlargement.**
+     *
+     * The bin on the Received picture — the other half of [dropEnlargement].
+     *
+     * ⚠⚠ It has to be REMEMBERED, because the Received half is derived from
+     * the upstream render on every preview pass and would otherwise return a
+     * moment later. [CanvasState.beforeHidden] holds the image id, so the next
+     * Run — which makes a new id — brings it back on its own.
+     */
+    fun dropReceived(nodeId: String) {
+        val id = canvas.beforePreviews[nodeId]?.first ?: return
+        canvas = canvas.copy(
+            beforePreviews = canvas.beforePreviews - nodeId,
+            beforeHidden = canvas.beforeHidden + (nodeId to id),
+        )
+        say("dropped the received picture on $nodeId")
+    }
+
     fun clearOutput(nodeId: String) {
         val graph = canvas.workflow.graph
         fun downstream(id: String) = id == nodeId || graph.dependsOn(id, nodeId)
@@ -4893,10 +4950,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // node's own picture, and without this line the very next preview
             // pass re-derived the Received one from the upstream render that
             // clearing deliberately does NOT touch — so the node never emptied.
-            if (canvas.previews[n.id] == null && canvas.rendered[n.id] == null) {
-                return@mapNotNull null
-            }
+            val own = canvas.previews[n.id]?.first ?: canvas.rendered[n.id]
+                ?: return@mapNotNull null
             val id = canvas.pictureInto(n.id, nodeTypes, portOf(n)) ?: return@mapNotNull null
+            // ⚠⚠⚠ **Never the node's OWN picture.** After the bin on Made, the
+            // received picture BECOMES this node's output, so `pictureInto` and
+            // `previews` return the same id — and without this the node would
+            // draw one picture twice, labelled Received and Made. It is also
+            // what makes that bin stick across a preview pass.
+            if (id == own) return@mapNotNull null
+            // ⚠⚠ …and not one the user binned. Keyed on the IMAGE id, so the
+            // next Run brings the Received half back on its own.
+            if (canvas.beforeHidden[n.id] == id) return@mapNotNull null
             val bmp = ops.images.get(id) ?: return@mapNotNull null
             n.id to (id to bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
         }.toMap()
@@ -4919,7 +4984,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // not fetch the bitmap, so the frame does not blink out and back.
         val noWire = nodes.filter { canvas.pictureInto(it.id, nodeTypes, portOf(it)) == null }
         val noOwn = nodes.filter {
-            canvas.previews[it.id] == null && canvas.rendered[it.id] == null
+            val own = canvas.previews[it.id]?.first ?: canvas.rendered[it.id]
+            own == null ||
+                own == canvas.pictureInto(it.id, nodeTypes, portOf(it)) ||
+                canvas.beforeHidden[it.id] == canvas.pictureInto(it.id, nodeTypes, portOf(it))
         }
         val drop = staleBeforePreviews(
             held = canvas.beforePreviews.keys,

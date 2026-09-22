@@ -874,7 +874,15 @@ private fun DownloadCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
+                // ⚠⚠ `padding(end = 12.dp)` — with `SpaceBetween` and a weighted
+                // column there is NOTHING between the longest line of text and
+                // the button beside it, so a title or a detail line that runs
+                // the full width ends up touching it. Reported 2026-09-22:
+                // *"give more room to the left of the btn, the text is
+                // basically touching the border"*. The gap belongs to the text
+                // column rather than to a Spacer, or a short line would push
+                // the button inwards.
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
                     Text(
                         title,
                         style = MaterialTheme.typography.titleMedium,
