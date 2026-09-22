@@ -42,11 +42,47 @@ data class SnapCandidate(
     val recommended: Boolean,
 )
 
-/** One node to create alongside, because nothing on the canvas can feed a port. */
+/**
+ * One node to create alongside and wire into [port].
+ *
+ * ⚠⚠ Offered even when something on the canvas ALREADY feeds that port — the
+ * user's call, 2026-09-22: *"you should offer to connect same prompt node or
+ * use new one"*. Sharing one prompt between two samplers and giving the second
+ * its own are both ordinary things to want, and only the person knows which.
+ * [AddPlan.snaps] carries the sharing option; this carries the fresh one, and
+ * they are mutually exclusive per port.
+ */
 data class HelperNode(
     /** The input port ON THE NEW NODE this helper will feed. */
     val port: String,
     val type: NodeType,
+)
+
+/**
+ * ⭐⭐⭐ **Splicing the new node in FRONT of something that already reads the
+ * source** — the case the first version missed.
+ *
+ * The user, 2026-09-22: *"you didnt account for when the new sample node goes
+ * between an existing sample node and an output, that would involve breaking off
+ * the wire to output node from sample 1 and instead connecting it from output
+ * img wire of sample 2"*.
+ *
+ * ⇒ When the node being added can feed [consumer]'s [consumerPort] as well as
+ * read from [SnapCandidate.fromNode], the wire between them is the one a person
+ * almost always means to redirect: otherwise the new node hangs off the side
+ * producing a picture nothing looks at.
+ */
+data class SpliceCandidate(
+    /** The existing node whose input is taken over. */
+    val consumer: String,
+    /** The port on it that currently reads [from]. */
+    val consumerPort: String,
+    /** What it currently reads — and what the new node will read instead. */
+    val from: String,
+    /** The new node's output port that will feed [consumer]. */
+    val outPort: String,
+    /** The new node's input port that takes [from]. */
+    val inPort: String,
 )
 
 /**
@@ -61,8 +97,9 @@ data class AddPlan(
     val type: NodeType,
     val helpers: List<HelperNode>,
     val snaps: List<SnapCandidate>,
+    val splices: List<SpliceCandidate> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = helpers.isEmpty() && snaps.isEmpty()
+    val isEmpty: Boolean get() = helpers.isEmpty() && snaps.isEmpty() && splices.isEmpty()
 }
 
 /**
@@ -97,16 +134,40 @@ fun planAdd(
             val out = types[n.type]?.outputs?.firstOrNull { fits(it, input) } ?: return@mapNotNull null
             n.id to out.name
         }
-        if (feeders.isEmpty()) {
-            helperFor(input, types)?.let { helpers += HelperNode(input.name, it) }
-        } else {
-            val best = feeders.last().first
-            for ((nodeId, port) in feeders) {
-                snaps += SnapCandidate(input.name, nodeId, port, recommended = nodeId == best)
-            }
+        val best = feeders.lastOrNull()?.first
+        for ((nodeId, port) in feeders) {
+            snaps += SnapCandidate(input.name, nodeId, port, recommended = nodeId == best)
+        }
+        // ⚠⚠ A fresh node is offered EVEN WHEN something can feed the port —
+        // see [HelperNode]. It is ticked only when nothing else can, so the
+        // default is still "use what is there".
+        helperFor(input, types)?.let { helpers += HelperNode(input.name, it) }
+    }
+
+    // ⭐⭐⭐ Where the new node would go BETWEEN two that are already wired.
+    //
+    // ⚠ Only for a source the new node can actually read, and only where the
+    // new node can also feed what reads it — both halves, or it is not a splice.
+    val splices = mutableListOf<SpliceCandidate>()
+    for (consumer in order) {
+        for ((port, src) in consumer.inputs) {
+            val consumerPort = types[consumer.type]?.inputs?.firstOrNull { it.name == port } ?: continue
+            val out = type.outputs.firstOrNull { fits(it, consumerPort) } ?: continue
+            val srcOut = types[graph.byId[src.node]?.type]?.outputs ?: continue
+            val inPort = type.inputs.firstOrNull { inp -> srcOut.any { fits(it, inp) } } ?: continue
+            // ⚠ A node cannot splice in front of itself, and a splice that
+            // closed a loop would be refused at Run instead of here.
+            if (consumer.id == src.node) continue
+            splices += SpliceCandidate(
+                consumer = consumer.id,
+                consumerPort = port,
+                from = src.node,
+                outPort = out.name,
+                inPort = inPort.name,
+            )
         }
     }
-    return AddPlan(type, helpers, snaps)
+    return AddPlan(type, helpers, snaps, splices)
 }
 
 /**
@@ -155,6 +216,11 @@ fun CanvasState.applyAdd(
     helperPorts: Set<String>,
     /** Which existing node feeds which of the new node's ports. */
     snaps: Map<String, SnapCandidate>,
+    /**
+     * ⭐⭐ The splice they kept, or null. It supplies the new node's input AND
+     * redirects the consumer's wire, so it OVERRIDES any snap on the same port.
+     */
+    splice: SpliceCandidate? = null,
 ): CanvasState {
     var st = addNode(plan.type, at)
     val newId = st.editing ?: return st
@@ -175,6 +241,8 @@ fun CanvasState.applyAdd(
         row++
     }
     for ((port, snap) in snaps) {
+        // ⚠ A splice owns its own input port — see [splice].
+        if (splice != null && port == splice.inPort) continue
         // ⚠ Checked again here, not just in the sheet: a candidate computed
         // before the person ticked boxes can be stale by the time they finish.
         if (st.workflow.graph.byId[snap.fromNode] == null) continue
@@ -184,6 +252,25 @@ fun CanvasState.applyAdd(
                 graph = st.workflow.graph.connected(newId, port, Source(snap.fromNode, snap.fromPort)),
             ),
         )
+    }
+    // ⭐⭐⭐ The splice: take the source, then TAKE OVER the wire that read it.
+    //
+    // ⚠⚠ Both halves or neither. Wiring only the input leaves the new node
+    // producing a picture nothing looks at, which is what the first version did
+    // and what the user reported.
+    if (splice != null) {
+        val g = st.workflow.graph
+        if (g.byId[splice.from] != null && g.byId[splice.consumer] != null &&
+            !g.wouldCycle(splice.from, newId)
+        ) {
+            st = st.copy(
+                workflow = st.workflow.copy(
+                    graph = g
+                        .connected(newId, splice.inPort, Source(splice.from))
+                        .connected(splice.consumer, splice.consumerPort, Source(newId, splice.outPort)),
+                ),
+            )
+        }
     }
     return st.copy(editing = newId, showPalette = false, message = null)
 }

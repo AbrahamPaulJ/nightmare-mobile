@@ -16,6 +16,13 @@ import org.junit.Test
  * ⚠⚠ The seed pinning is the half worth testing hardest. Without it Run rolls a
  * new seed and enlarges a DIFFERENT picture from the one on screen, at full
  * render cost, and the button looks broken for a reason nothing shows.
+ *
+ * ⚠⚠⚠ **The fixtures wire `core.output` on `media`, which is its REAL port.**
+ * They said `image` for one release and so did the code, so this whole class
+ * passed against a button that could never find a wire on an actual graph. A
+ * fixture written from the same assumption as the code under test proves the
+ * assumption, not the behaviour — `CLAUDE.md`'s "suspect the CHECK first",
+ * applied to a fixture.
  */
 class UpscaleInsertTest {
 
@@ -29,7 +36,7 @@ class UpscaleInsertTest {
     private val flow = state(
         Node("prompt", "core.prompt"),
         Node("gen", "sd15.sample", mapOf("seed" to "0"), sources("prompt" to "prompt")),
-        Node("out", "core.output", inputs = sources("image" to "gen")),
+        Node("out", "core.output", inputs = sources("media" to "gen")),
     )
 
     private fun insert(st: CanvasState, seeds: Map<String, String> = emptyMap()) =
@@ -41,7 +48,7 @@ class UpscaleInsertTest {
         val g = next.workflow.graph
         val added = g.nodes.single { it.type == UpscaleNode.name }
         // The output now reads the upscale node…
-        assertEquals(added.id, g.byId["out"]!!.inputs["image"]!!.node)
+        assertEquals(added.id, g.byId["out"]!!.inputs["media"]!!.node)
         // …and the upscale node reads what the output used to.
         assertEquals("gen", added.inputs["image"]!!.node)
         assertEquals("upscaler_realistic", added.params[UpscaleNode.UPSCALER])
@@ -66,7 +73,7 @@ class UpscaleInsertTest {
     fun itLeavesAPinnedSeedAlone() {
         val pinned = state(
             Node("gen", "sd15.sample", mapOf("seed" to "777")),
-            Node("out", "core.output", inputs = sources("image" to "gen")),
+            Node("out", "core.output", inputs = sources("media" to "gen")),
         )
         val next = insertUpscale(pinned, "out", "u", UpscaleNode.UPSCALER, mapOf("gen" to "12345"))!!
         assertEquals("777", next.workflow.graph.byId["gen"]!!.params["seed"])

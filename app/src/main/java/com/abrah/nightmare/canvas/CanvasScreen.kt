@@ -265,6 +265,16 @@ fun CanvasScreen(
     onImportLora: (() -> Unit)? = null,
     /** ⚠⚠ `HarnessViewModel.loraEpoch` — what re-reads `_loras` after an Add. */
     loraEpoch: Int = 0,
+    /**
+     * ⭐⭐ The build, drawn top right.
+     *
+     * ⚠⚠ A PARAMETER, not `BuildConfig.VERSION_NAME` read inside the body,
+     * and that is the whole point: read inside, it bakes the current version
+     * into every canvas golden, so seven of them break on every release for a
+     * reason that has nothing to do with what they pin. The goldens pass a
+     * fixed string; the app passes its own.
+     */
+    version: String = com.abrah.nightmare.BuildConfig.VERSION_NAME,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current.density
@@ -381,111 +391,86 @@ fun CanvasScreen(
         // could not say which had produced it -- and it covered whatever was
         // underneath. Previews are drawn ON the node that made them.
 
-        // ⭐⭐⭐ **The brand, then the row of destinations and icons.**
+        // ⭐⭐⭐ **The brand and the icons are INSIDE the card**, with the
+        // destinations under them — the user's call, 2026-09-22: *"logo + name
+        // should be in same container as the top buttons, extend container to
+        // cover it … left, and icons can be on right end, and the cards go
+        // below it."*
         //
-        // ⚠⚠ One Column rather than two overlays pinned to opposite corners,
-        // which is what these were: `TopStart` for the nav card and `TopEnd`
-        // for the icons, each applying its own `statusBarsPadding`. Two
-        // independently positioned things cannot have a row above them — a
-        // brand drawn as a third overlay would have needed a hardcoded offset
-        // matching whatever height it happened to be.
-        //
-        // ⚠ The inset is applied ONCE, here, and neither child reapplies it.
-        Column(
+        // ⚠⚠⚠ **The icons VANISHED for one build and this is why.** They
+        // were a sibling of the card in a `Row`, with no weight on either and a
+        // weighted `Spacer` between. A Compose `Row` measures its UNWEIGHTED
+        // children first, against the full width — so the card, whose width is
+        // a flow name and a load line we do not choose, took everything and the
+        // icons were measured at zero. On the golden's shorter strings there
+        // was room left over, so nothing caught it. ⇒ Anything that must not be
+        // squeezed out goes in the SAME container, and the card carries a real
+        // `weight(1f)` so it is measured with what is left rather than first.
+        Row(
             Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding(),
+            verticalAlignment = Alignment.Top,
         ) {
-            // ⭐⭐ The SAME mark Models / Flows / Results draw
-            // ([com.abrah.nightmare.ui.BrandMark]) — asked for 2026-09-22,
-            // and the point of the ask was consistency, so it is the one
-            // function rather than a second copy of the gradient.
-            // ⚠ Centred and with no ✕: the canvas is not a panel over
-            // anything, so there is nothing to close back to.
-            com.abrah.nightmare.ui.BrandMark(
-                Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(top = 4.dp, bottom = 2.dp),
+            TopBar(
+                backendUp = backendUp,
+                flowName = flowName,
+                flowDirty = flowDirty,
+                loadLine = loadLine,
+                onModels = onModels,
+                onResults = onResults,
+                onWorkflows = onWorkflows,
+                modifier = Modifier.weight(1f),
+                icons = {
+                    // ⭐ Save the canvas. ⚠ FIRST, i.e. leftmost of the three,
+                    // because it is the only one that acts on the graph rather
+                    // than opening something about the app.
+                    IconButton(onClick = { saving = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            com.abrah.nightmare.ui.SaveIcon,
+                            contentDescription = "save this flow",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    // ⭐ What this phone's NPU actually is — it answers the
+                    // question a failed render raises, and the arch/VTCM pair is
+                    // the answer to most of them.
+                    IconButton(onClick = onDeviceInfo, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Filled.Info,
+                            contentDescription = stringResource(R.string.cd_device_info),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    // ⚠⚠ A GEAR, and it opens Settings — not the wrench that
+                    // opened the op harness. A developer tool with a developer's
+                    // icon was one of three unlabelled glyphs on the app's first
+                    // screen, and the least likely of the three to be wanted.
+                    // ⚠⚠⚠ The harness is NOT behind Settings. It is reachable
+                    // only through `OpService` over adb (`notes/HANDOFF.md`
+                    // §5); a run that refuses carries the backend's own reason
+                    // in its chip instead ([BackendProcess.failureReason]).
+                    IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = stringResource(R.string.cd_settings),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
             )
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                TopBar(
-                    backendUp = backendUp,
-                    flowName = flowName,
-                    flowDirty = flowDirty,
-                    loadLine = loadLine,
-                    onModels = onModels,
-                    onResults = onResults,
-                    onWorkflows = onWorkflows,
-                    // ⚠⚠ **No `weight(1f)`** — the card HUGS its content, as it
-                    // did when it was its own `TopStart` overlay. Weighted, its
-                    // background stretched all the way to the icons and covered
-                    // the left-most node underneath; the `screen-top-bar`
-                    // golden caught exactly that. The Spacer below is what
-                    // pushes the icons to the end instead.
-                )
-                Spacer(Modifier.weight(1f))
-
-        // ⭐⭐ The two diagnostics, top RIGHT. Neither is part of making a
-        // picture -- the harness had a full-width word in the run bar,
-        // competing for the row with Run itself. ⚠ They stay ONE TAP away
-        // rather than being buried: the harness is where the backend log lives,
-        // and a canvas with no exit strands the user the first time a render
-        // fails.
-                Row(
-                    Modifier
-                        // ⚠⚠ `end = 8` against the old `horizontal = 4`. Reported
-                        // 2026-09-22: *"the settings icon is too close to the
-                        // container boundary"*. An `IconButton` centres a 24dp
-                        // glyph in a 48dp target, so the visible gear already
-                        // sits 12dp inside its own box — but the box ended 4dp
-                        // from the screen, which reads as the glyph hanging off
-                        // the edge next to a card that is inset 12dp.
-                        .padding(start = 0.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-            // ⭐ Save the canvas. ⚠ FIRST in this row, i.e. leftmost, because
-            // it is the only one of the three that acts on the graph rather
-            // than opening something about the app — and it is the one reached
-            // most often, so it sits furthest from the screen edge where a
-            // thumb is steadiest.
-            IconButton(onClick = { saving = true }) {
-                Icon(
-                    com.abrah.nightmare.ui.SaveIcon,
-                    contentDescription = "save this flow",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            // ⭐ What this phone's NPU actually is. ⚠ Beside the wrench because
-            // it answers the question the wrench's log raises -- "why did that
-            // fail on MY phone" -- and the arch/VTCM pair is the answer to most
-            // of them.
-            // ⚠ See `docs/UI.md` §7.2: an inset is not padding. This row sits
-            // at the top-RIGHT, so it needs clearance from that edge too — the
-            // gear was landing hard against it.
-            IconButton(onClick = onDeviceInfo) {
-                Icon(
-                    Icons.Filled.Info,
-                    contentDescription = stringResource(R.string.cd_device_info),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            // ⚠⚠ A GEAR, and it opens Settings — not the wrench that opened
-            // the op harness. A developer tool with a developer's icon was one
-            // of three unlabelled glyphs on the app's first screen, and the
-            // least likely of the three to be what anyone wanted.
-            // ⚠⚠⚠ The harness is NOT behind Settings — this comment said it
-            // was until 2026-09-21, and the Diagnostics tab was deleted on
-            // 2026-09-19 (`ui/SettingsScreen.kt`). It is reachable only through
-            // `OpService` over adb (`notes/HANDOFF.md` §5). A run that refuses
-            // now carries the backend's own reason in its chip instead
-            // ([BackendProcess.failureReason]).
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.Filled.Settings,
-                    contentDescription = stringResource(R.string.cd_settings),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-                }
-            }
+            // ⭐⭐ **The build, top right of the canvas** — asked for
+            // 2026-09-22. ⚠ Outside the card on purpose: it is a fact about the
+            // APP, not about this flow, and every diagnostic report needs it
+            // (`CLAUDE.md`: two builds sharing a version makes a failure report
+            // unattributable). ⚠ Unweighted, so it is measured first and can
+            // never be the thing that gets squeezed out.
+            Text(
+                version,
+                style = LogTextStyle,
+                fontSize = 10.sp,
+                maxLines = 1,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.padding(top = 10.dp, end = 8.dp, start = 4.dp),
+            )
         }
 
         RunBar(
@@ -855,9 +840,9 @@ fun CanvasScreen(
         AddAssistSheet(
             plan = plan,
             onCancel = { assisting = null },
-            onAdd = { helperPorts, snaps ->
+            onAdd = { helperPorts, snaps, splice ->
                 assisting = null
-                onEdit { s -> s.applyAdd(plan, at, helperPorts, snaps) }
+                onEdit { s -> s.applyAdd(plan, at, helperPorts, snaps, splice) }
             },
         )
     }
@@ -885,6 +870,15 @@ private fun TopBar(
     onWorkflows: () -> Unit,
     onResults: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * ⭐⭐ The save / device / settings icons, drawn at the RIGHT END of the
+     * brand row INSIDE this card (the user's call, 2026-09-22).
+     *
+     * ⚠⚠ A slot rather than three more callbacks, because what matters is
+     * that they share a container with the brand: outside it they were a
+     * sibling with no weight and got measured to zero width.
+     */
+    icons: @Composable RowScope.() -> Unit = {},
 ) {
     // ⚠⚠ TWO rows, and the model name is the SECOND one. It used to sit inline
     // ahead of the buttons, which made the row's layout depend on the length of
@@ -910,6 +904,20 @@ private fun TopBar(
             .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 5.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+        // ⭐⭐⭐ **The brand, LEFT, in the position Models / Flows / Results
+        // put it** — asked for so it does not jump when you switch screens —
+        // and the icons at the right end of the same row.
+        // ⚠ [com.abrah.nightmare.ui.BrandMark] is the ONE function all four
+        // surfaces draw; a second copy of the gradient is a second copy that
+        // drifts. ⚠ No ✕ here: the canvas is what the others close back to.
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            com.abrah.nightmare.ui.BrandMark()
+            Spacer(Modifier.weight(1f))
+            icons()
+        }
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1238,7 +1246,11 @@ private fun RunBar(
             // — arm a knob from its own node.
             Row(
                 Modifier.weight(1f),
-                horizontalArrangement = Arrangement.Start,
+                // ⚠⚠ CENTRED in its slot, not `Start` — the user's call,
+                // 2026-09-22: *"center the add node btn so the gap is even to
+                // the left edge and the run btn"*. Left-aligned it hugged the
+                // screen edge with all the slack on the Run side.
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(12.dp)) {
@@ -1733,10 +1745,19 @@ private fun FullscreenImage(
             // before the first Run the row vanished entirely, and with it the
             // copy button. Reported 2026-09-15 as "seed doesn't have a copy btn
             // in fullscreen": the button was never missing, the whole row was.
-            if (seed != null) {
-                SeedRow(seed, tint = Color.White, onLock = onLockSeed)
-            } else if (hasSampler) {
-                SeedRow(null, tint = Color.White, onLock = null)
+            // ⭐⭐ The SIZE first, in its own pill, then the seed in its own —
+            // asked for 2026-09-22. Two facts about different things, so two
+            // containers ([SizePill]'s note).
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SizePill(image.width, image.height, tint = Color.White)
+                if (seed != null) {
+                    SeedRow(seed, tint = Color.White, onLock = onLockSeed)
+                } else if (hasSampler) {
+                    SeedRow(null, tint = Color.White, onLock = null)
+                }
             }
             if (onPick == null && seed == null && onSave == null) {
                 Text(

@@ -587,11 +587,15 @@ fun HarnessScreen(
                 // to ask both rather than assume the server is the only one.
                 val holding = when {
                     // Something is mapped on the NPU right now.
+                    // ⚠ A COLON after "holding" — the user's call, 2026-09-22.
+                    // ⚠⚠ The literal is here, not `R.string.canvas_holding`:
+                    // this line has never used that resource, and changing the
+                    // string alone did nothing on the phone.
                     l.npuGraphs > 0 ->
-                        "holding ${com.abrah.nightmare.npu.NpuFiles.LABEL}" +
+                        "holding: ${com.abrah.nightmare.npu.NpuFiles.LABEL}" +
                             "  ·  ${l.npuGraphs} graph" + (if (l.npuGraphs == 1) "" else "s")
                     // A backend process is up with a checkpoint in it.
-                    l.resident != null -> "holding ${l.resident}"
+                    l.resident != null -> "holding: ${l.resident}"
                     // ⭐⭐ Nothing is loaded — so name what the OPEN FLOW would
                     // use, not what the picker happens to be set to. A video
                     // flow does not touch a checkpoint, and saying

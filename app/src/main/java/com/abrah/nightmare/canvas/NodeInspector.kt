@@ -3614,6 +3614,36 @@ internal fun ImageActions(onPick: () -> Unit, onClear: () -> Unit, tint: Color? 
 }
 
 /**
+ * ⭐⭐ **The picture's SIZE, in a container of its own.**
+ *
+ * Asked for 2026-09-22: *"in fullscreen views show output dimension as well
+ * before the seed and its copy btn, separate containers for both."*
+ *
+ * ⚠ Its own pill rather than a field inside [SeedRow]: they are facts about
+ * different things — the size is what came out, the seed is what would make it
+ * again — and the seed's container exists to bind the number to its own two
+ * buttons (see that function's note). Putting a third, unrelated value inside it
+ * would undo exactly that.
+ * ⚠ `512x512`, the app's spelling everywhere (`docs/UI.md` §8.11).
+ */
+@Composable
+internal fun SizePill(width: Int, height: Int, tint: Color? = null) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background((tint ?: MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.12f))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "${width}x$height",
+            style = LogTextStyle,
+            color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
  * `seed 1234567` and a copy button.
  *
  * ⚠ The clipboard write is the whole point, and there is no confirmation of our

@@ -989,8 +989,17 @@ fun insertUpscale(
 ): CanvasState? = with(state) {
     val g = workflow.graph
     val out = g.byId[outputNode] ?: return null
-    // ⚠ The wire BEHIND it — an output node takes one picture, on `image`.
-    val src = out.inputs["image"] ?: return null
+    // ⚠⚠⚠ **The wire BEHIND it, by whatever its port is called.**
+    //
+    // This read `inputs["image"]` for one release and `core.output`'s port is
+    // `media` — the one port type that takes a picture OR a clip
+    // ([MediaOutputNode]). So the button never found a wire and always toasted
+    // "nothing is wired into this output", on every real graph. `UpscaleInsertTest`
+    // passed because its fixture used the same wrong name: a test written from
+    // the same assumption as the code cannot catch the assumption.
+    // ⇒ Take the wire that is THERE. An output node has exactly one input, and
+    // its name is the node type's business rather than this function's.
+    val (inPort, src) = out.inputs.entries.singleOrNull()?.toPair() ?: return null
     if (g.byId[src.node]?.type == com.abrah.nightmare.UpscaleNode.name) return null
 
     val id = g.freeId("upscale")
@@ -1001,7 +1010,7 @@ fun insertUpscale(
         inputs = mapOf("image" to src),
     )
     val rewired = g.nodes.map { n ->
-        if (n.id == outputNode) n.copy(inputs = n.inputs + ("image" to com.abrah.nightmare.Source(id)))
+        if (n.id == outputNode) n.copy(inputs = n.inputs + (inPort to com.abrah.nightmare.Source(id)))
         else n
     } + node
     // ⚠ Halfway between the two it sits between, so the graph reads left to

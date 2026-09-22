@@ -49,18 +49,25 @@ class AddAssistTest {
         assertTrue(plan.helpers.all { it.type.inputs.isEmpty() })
     }
 
-    /** ⚠ A port something already feeds gets no helper — that is how you end up with three prompts. */
+    /**
+     * ⭐⭐⭐ **Both are offered for a port something can already feed** — the
+     * user's call, 2026-09-22: *"you should offer to connect same prompt node or
+     * use new one"*.
+     *
+     * ⚠ Sharing one prompt between two samplers and giving the second its own
+     * are both ordinary things to want; only the person knows which.
+     */
     @Test
-    fun anExistingFeederReplacesTheHelper() {
+    fun anExistingFeederIsOfferedBesideAFreshOne() {
         val g = Graph(listOf(Node("prompt", "core.prompt")))
         val plan = planAdd(typeOf("sd15.sample"), g, types)
-        assertTrue(
-            "no helper for a port that has a feeder",
-            plan.helpers.none { it.port == "prompt" },
-        )
         assertEquals(
             listOf("prompt"),
             plan.snaps.filter { it.port == "prompt" }.map { it.fromNode },
+        )
+        assertTrue(
+            "a fresh prompt should be offered too: ${plan.helpers}",
+            plan.helpers.any { it.port == "prompt" },
         )
     }
 
@@ -72,7 +79,7 @@ class AddAssistTest {
     fun theRecommendedSourceIsTheLastInRunOrder() {
         val g = Graph(
             listOf(
-                Node("out", "core.output", inputs = sources("image" to "gen")),
+                Node("out", "core.output", inputs = sources("media" to "gen")),
                 Node("gen", "sd15.sample", inputs = sources("prompt" to "prompt")),
                 Node("prompt", "core.prompt"),
                 Node("photo", "core.image"),
@@ -111,6 +118,55 @@ class AddAssistTest {
         assertEquals("photo", added.inputs["image"]!!.node)
         // ⚠ The new node's sheet opens, exactly as a plain add does.
         assertEquals(added.id, next.editing)
+    }
+
+    // ---- splicing into an existing wire -----------------------------------
+
+    /**
+     * ⭐⭐⭐ The case the first version missed, reported 2026-09-22: *"you
+     * didnt account for when the new sample node goes between an existing sample
+     * node and an output"*.
+     */
+    @Test
+    fun itOffersToSitInAnExistingWire() {
+        val g = Graph(
+            listOf(
+                Node("photo", "core.image"),
+                Node("out", "core.output", inputs = sources("media" to "photo")),
+            ),
+        )
+        val plan = planAdd(typeOf("image.upscale"), g, types)
+        val splice = plan.splices.singleOrNull { it.consumer == "out" && it.from == "photo" }
+        assertTrue("no splice offered: ${plan.splices}", splice != null)
+    }
+
+    /** ⚠⚠ BOTH halves, or the new node makes a picture nothing looks at. */
+    @Test
+    fun aSpliceRewiresTheConsumerAsWellAsTheInput() {
+        val g = Graph(
+            listOf(
+                Node("photo", "core.image"),
+                Node("out", "core.output", inputs = sources("media" to "photo")),
+            ),
+        )
+        val st = CanvasState(Workflow(g, mapOf("photo" to Pt(0f, 0f), "out" to Pt(400f, 0f))))
+        val plan = planAdd(typeOf("image.upscale"), g, types)
+        val splice = plan.splices.single { it.consumer == "out" && it.from == "photo" }
+        val next = st.applyAdd(plan, Pt(200f, 0f), emptySet(), emptyMap(), splice)
+        val added = next.workflow.graph.nodes.single { it.type == "image.upscale" }
+        assertEquals("the new node must read the old source", "photo", added.inputs["image"]!!.node)
+        assertEquals(
+            "the consumer must now read the new node",
+            added.id,
+            next.workflow.graph.byId["out"]!!.inputs["media"]!!.node,
+        )
+    }
+
+    /** ⚠ Nothing wired means nothing to splice into. */
+    @Test
+    fun anUnwiredGraphOffersNoSplice() {
+        val g = Graph(listOf(Node("photo", "core.image")))
+        assertTrue(planAdd(typeOf("image.upscale"), g, types).splices.isEmpty())
     }
 
     @Test

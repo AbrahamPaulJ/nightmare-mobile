@@ -47,7 +47,7 @@ import com.abrah.nightmare.ui.LogTextStyle
 fun AddAssistSheet(
     plan: AddPlan,
     onCancel: () -> Unit,
-    onAdd: (helperPorts: Set<String>, snaps: Map<String, SnapCandidate>) -> Unit,
+    onAdd: (helperPorts: Set<String>, snaps: Map<String, SnapCandidate>, splice: SpliceCandidate?) -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
@@ -69,11 +69,21 @@ fun AddAssistSheet(
 @Composable
 fun AddAssistContent(
     plan: AddPlan,
-    onAdd: (helperPorts: Set<String>, snaps: Map<String, SnapCandidate>) -> Unit,
+    onAdd: (helperPorts: Set<String>, snaps: Map<String, SnapCandidate>, splice: SpliceCandidate?) -> Unit,
 ) {
+    // ⚠⚠ A fresh node is ticked only for a port NOTHING can feed. Where
+    // something can, sharing it is the default and "new" is the opt-in —
+    // otherwise adding a second sampler would silently make a second prompt.
     var helperPorts by remember(plan) {
-        mutableStateOf(plan.helpers.map { it.port }.toSet())
+        mutableStateOf(
+            plan.helpers.map { it.port }
+                .filter { port -> plan.snaps.none { it.port == port } }
+                .toSet(),
+        )
     }
+    // ⚠ Ticked by default (the user's call): a node dropped between two wired
+    // ones almost always means to sit in that wire.
+    var splice by remember(plan) { mutableStateOf(plan.splices.firstOrNull()) }
     // ⚠ Seeded from the recommendation, which is what "selected intuitively"
     // means — the box is already right for the common case and is still a box.
     var picked by remember(plan) {
@@ -86,30 +96,47 @@ fun AddAssistContent(
         Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        if (plan.helpers.isNotEmpty()) {
-            Section("Also add")
-            for (h in plan.helpers) {
+        // ⭐⭐⭐ **Grouped by PORT**, so "use the prompt that is there" and
+        // "make a new one" sit together as the alternatives they are. Listing
+        // every existing node and then every helper put the two halves of one
+        // decision in different sections.
+        val ports = (plan.snaps.map { it.port } + plan.helpers.map { it.port }).distinct()
+        for (port in ports) {
+            Section(port.knobLabel)
+            for (c in plan.snaps.filter { it.port == port }) {
                 CheckRow(
-                    checked = h.port in helperPorts,
-                    title = h.type.paletteName.knobLabel,
-                    subtitle = "feeds ${h.port.knobLabel.lowercase()}",
+                    checked = picked[port] === c,
+                    title = c.fromNode,
+                    subtitle = "use the one already here",
                     onToggle = { on ->
-                        helperPorts = if (on) helperPorts + h.port else helperPorts - h.port
+                        // ⚠⚠ One source per PORT — see the class note. Picking an
+                        // existing node drops the "new" box for the same port.
+                        picked = if (on) picked + (port to c) else picked - port
+                        if (on) helperPorts = helperPorts - port
+                    },
+                )
+            }
+            for (h in plan.helpers.filter { it.port == port }) {
+                CheckRow(
+                    checked = port in helperPorts,
+                    title = "New ${h.type.paletteName.knobLabel.lowercase()}",
+                    subtitle = if (plan.snaps.any { it.port == port }) "instead of sharing"
+                    else "nothing here can feed this",
+                    onToggle = { on ->
+                        helperPorts = if (on) helperPorts + port else helperPorts - port
+                        if (on) picked = picked - port
                     },
                 )
             }
         }
-        if (plan.snaps.isNotEmpty()) {
-            Section("Connect to")
-            for (c in plan.snaps) {
+        if (plan.splices.isNotEmpty()) {
+            Section("Put it in the wire")
+            for (c in plan.splices) {
                 CheckRow(
-                    checked = picked[c.port] === c,
-                    title = c.fromNode,
-                    subtitle = "into ${c.port.knobLabel.lowercase()}",
-                    onToggle = { on ->
-                        // ⚠⚠ One source per PORT — see the class note.
-                        picked = if (on) picked + (c.port to c) else picked - c.port
-                    },
+                    checked = splice === c,
+                    title = "${c.from} → here → ${c.consumer}",
+                    subtitle = "${c.consumer} reads this node instead",
+                    onToggle = { on -> splice = if (on) c else null },
                 )
             }
         }
@@ -117,7 +144,7 @@ fun AddAssistContent(
             Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            TextButton(onClick = { onAdd(helperPorts, picked) }) { Text("Add") }
+            TextButton(onClick = { onAdd(helperPorts, picked, splice) }) { Text("Add") }
         }
     }
 }

@@ -743,11 +743,24 @@ fun ResultViewer(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            current.seed?.let { seed ->
-                com.abrah.nightmare.canvas.SeedRow(
-                    seed = seed,
-                    tint = androidx.compose.ui.graphics.Color.White,
-                )
+            // ⭐⭐ The SIZE first, in its own pill, then the seed in its own —
+            // asked for 2026-09-22, and the same pair the canvas viewer draws.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (current.width > 0) {
+                    com.abrah.nightmare.canvas.SizePill(
+                        current.width, current.height,
+                        tint = androidx.compose.ui.graphics.Color.White,
+                    )
+                }
+                current.seed?.let { seed ->
+                    com.abrah.nightmare.canvas.SeedRow(
+                        seed = seed,
+                        tint = androidx.compose.ui.graphics.Color.White,
+                    )
+                }
             }
             if (items.size > 1) {
                 Text(

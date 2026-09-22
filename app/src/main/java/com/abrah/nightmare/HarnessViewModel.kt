@@ -45,6 +45,15 @@ data class LogLine(val stamp: String, val text: String, val bad: Boolean = false
  * after the runtime works; this exists so the ops can be driven from the phone
  * and so the build/install/push loop is proven before the canvas depends on it.
  */
+/**
+ * ⚠ Not a node id — the key `detailsOfGraph` asks the WHOLE run for.
+ *
+ * ⚠⚠ Top level rather than in the companion, which already exists: a second
+ * `companion object` in one class does not compile, and the error it gives
+ * names every constant in the FIRST one as unresolved.
+ */
+private const val TOTAL_MS_KEY = "@@total"
+
 class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     private val clock = SimpleDateFormat("HH:mm:ss", Locale.US)
@@ -1692,10 +1701,20 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun detailsOfNode(nodeId: String): List<Pair<String, String>> {
         val g = canvas.workflow.graph
-        return detailsOfGraph(g, nodeId) { id ->
+        // ⚠ The picture this node is SHOWING, for the Output line. `previews`
+        // holds the id and its aspect, and the store knows the pixels.
+        val shown = canvas.rendered[nodeId] ?: canvas.previews[nodeId]?.first
+        val bmp = shown?.let { imageFor(it) }
+        return detailsOfGraph(
+            g, nodeId,
+            width = bmp?.width ?: 0,
+            height = bmp?.height ?: 0,
+            times = { id -> if (id == TOTAL_MS_KEY) lastRunMs else nodeMs[id] },
+        ) { id ->
             com.abrah.nightmare.canvas.seedFor(g, id) { n -> canvasStatus[n]?.detail }
         }
     }
+
 
     // ---- a flow naming a model that is not here -----------------------------
 
@@ -4379,6 +4398,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         upTo: String?,
         width: Int = 0,
         height: Int = 0,
+        /**
+         * ⚠ Milliseconds for a node id, or for [TOTAL_MS_KEY] — null when this
+         * graph has no timings at all (a stored result: the run that made it is
+         * over and its clock was never kept with it).
+         */
+        times: ((String) -> Long?)? = null,
         rolled: (String) -> String?,
     ): List<Pair<String, String>> {
         val types = typesFor(g)
@@ -4429,6 +4454,21 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         if (width > 0) out += "Output" to "${width}x$height"
+        // ⭐⭐ What it COST — asked for 2026-09-22. ⚠ Per SAMPLER as well as
+        // the whole flow, because on a chain the total says nothing about which
+        // step was expensive. ⚠⚠ A sampler that came back from the cache has
+        // no entry rather than a 0 — see [nodeMs]; it is named as cached, which
+        // is the useful fact.
+        if (times != null) {
+            for (sampler in samplers) {
+                val ms = times(sampler.id)
+                out += ("Time · " + sampler.id) to
+                    (ms?.let { com.abrah.nightmare.canvas.formatMs(it) } ?: "cached")
+            }
+            times(TOTAL_MS_KEY)?.let {
+                out += "Time · whole flow" to com.abrah.nightmare.canvas.formatMs(it)
+            }
+        }
         if (samplers.size > 1) out += "Samplers in the chain" to samplers.size.toString()
         return out
     }
@@ -4972,6 +5012,19 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * bar a few dp wide inside the node, and on SDXL one `sample` is 24 s: long
      * enough for a person with no feedback to conclude the button did nothing.
      */
+    /**
+     * ⭐⭐ Per-node milliseconds from the last Run, and [lastRunMs] for the
+     * whole graph — what the ⓘ dialog reports.
+     *
+     * ⚠ Only nodes that RAN are in here, so a cached one is absent rather than
+     * present with a zero.
+     */
+    val nodeMs = mutableStateMapOf<String, Long>()
+
+    // ⚠⚠ The whole-run total is NOT declared here — `lastRunMs` already
+    // exists, set from `GraphRun.totalMs` so a sweep can estimate from a
+    // measured render. One number, two readers.
+
     var runLog by mutableStateOf(com.abrah.nightmare.canvas.RunLogState())
         private set
 
@@ -5112,6 +5165,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 onStart = { id, _ -> runLog = runLog.copy(now = id, step = null) },
                 onNode = { n ->
                     canvasStatus[n.id] = NodeStatus(outcome = n.outcome, detail = n.detail)
+                    // ⭐⭐ What this node COST, kept for the ⓘ dialog — asked
+                    // for 2026-09-22: *"info should include time taken of total
+                    // flow and any sample nodes"*. ⚠ Only a node that actually
+                    // RAN: a cached one reports 0 ms, and printing "0 ms" beside
+                    // a sampler reads as a broken clock rather than as a cache
+                    // hit ([nodeMs] is consulted with that in mind).
+                    if (n.outcome == Outcome.RAN) nodeMs[n.id] = n.ms
                     runLog = runLog.copy(
                         lines = runLog.lines +
                             com.abrah.nightmare.canvas.runLineOf(n.id, n.outcome, n.ms, n.detail),

@@ -1,5 +1,6 @@
 package com.abrah.nightmare.canvas
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -12,7 +13,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.ui.ConfirmDelete
 
 /** ⚠ Long enough to swallow a double tap, short enough not to block a retry. */
@@ -101,6 +104,19 @@ fun PictureActions(
      */
     onInfo: (() -> Unit)? = null,
 ) {
+    // ⭐⭐⭐ **32dp buttons, not the 48dp default**, and this is a bug fix.
+    //
+    // ⚠⚠⚠ Reported 2026-09-22: *"theres just some shitty dot or line
+    // artefact on right edge of row"*. That WAS the info button. The row is a
+    // plain `Row` with no scroll and no wrap, so the two actions added that day
+    // took it to eight 48dp targets — 384dp of icons plus gaps on a 360dp
+    // sheet — and the last ones were clipped to a sliver. An action you cannot
+    // see is worse than one that is not there, because it looks like damage.
+    //
+    // ⚠⚠ The Results ROW already drew its icons small for exactly this
+    // reason and this row did not, which is the N−1-of-N shape again
+    // (`docs/ARCHITECTURE.md` §5.6). Eight fit on a 360dp screen at this size.
+    val small = Modifier.size(32.dp)
     var downloaded by remember { mutableStateOf(false) }
     // ⚠ Survives recomposition, resets with the surface — which is right: a new
     // viewer on a new picture is a new download.
@@ -112,7 +128,7 @@ fun PictureActions(
     // empties the node; the picture is gone only if nothing else holds it. An
     // AUTOSAVED History copy goes with it; a hand-kept one stays.
     onDelete?.let {
-        IconButton(onClick = { confirming = true }) {
+        IconButton(onClick = { confirming = true }, modifier = small) {
             Icon(Icons.Filled.Delete, contentDescription = "clear this $what", tint = deleteTint)
         }
     }
@@ -123,6 +139,7 @@ fun PictureActions(
                 if (keepDisabledReason != null) onDisabledKeep?.invoke(keepDisabledReason)
                 else keep()
             },
+            modifier = small,
         ) {
             Icon(
                 if (kept) Icons.Filled.Check else com.abrah.nightmare.ui.SaveIcon,
@@ -160,6 +177,7 @@ fun PictureActions(
                     download()
                 }
             },
+            modifier = small,
         ) {
             Icon(
                 com.abrah.nightmare.ui.DownloadIcon,
@@ -169,17 +187,17 @@ fun PictureActions(
         }
     }
     onShare?.let { share ->
-        IconButton(onClick = share) {
+        IconButton(onClick = share, modifier = small) {
             Icon(com.abrah.nightmare.ui.ShareIcon, contentDescription = "share this $what", tint = tint)
         }
     }
     onSendTo?.takeIf { !isClip }?.let { send ->
-        IconButton(onClick = send) {
+        IconButton(onClick = send, modifier = small) {
             Icon(com.abrah.nightmare.ui.SendToIcon, contentDescription = "send this picture to a flow", tint = tint)
         }
     }
     onStar?.let { star ->
-        IconButton(onClick = star) {
+        IconButton(onClick = star, modifier = small) {
             Icon(
                 Icons.Filled.Star,
                 contentDescription = if (favourite) "remove from favourites" else "keep and favourite",
@@ -195,7 +213,7 @@ fun PictureActions(
     // (`docs/UI.md` §8.11), so the two surfaces read the same way at the end
     // even though they order the first few differently.
     onUpscale?.takeIf { !isClip }?.let { up ->
-        IconButton(onClick = up) {
+        IconButton(onClick = up, modifier = small) {
             Icon(
                 com.abrah.nightmare.ui.UpscaleIcon,
                 contentDescription = "upscale this picture",
@@ -204,7 +222,7 @@ fun PictureActions(
         }
     }
     onInfo?.let { info ->
-        IconButton(onClick = info) {
+        IconButton(onClick = info, modifier = small) {
             Icon(
                 Icons.Filled.Info,
                 contentDescription = "what made this $what",

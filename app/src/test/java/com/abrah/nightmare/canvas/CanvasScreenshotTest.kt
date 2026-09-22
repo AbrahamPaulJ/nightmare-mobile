@@ -45,6 +45,8 @@ import org.robolectric.annotation.GraphicsMode
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
 class CanvasScreenshotTest {
 
+    private val GOLDEN_VERSION = "0.0.0"
+
     private fun shoot(name: String, body: @Composable () -> Unit) {
         captureRoboImage(filePath = "src/test/screenshots/$name.png") {
             NightmareTheme(darkTheme = true) { body() }
@@ -280,6 +282,9 @@ class CanvasScreenshotTest {
     @Test
     fun theScreenMidRender() = shoot("screen-running") {
         CanvasScreen(
+            // ⚠ FIXED, so a release does not break this golden — see
+            // `CanvasScreen.version`.
+            version = GOLDEN_VERSION,
             state = opened(),
             types = NODE_TYPES,
             status = mapOf("sample" to NodeStatus(progress = 7 to 20)),
@@ -317,6 +322,9 @@ class CanvasScreenshotTest {
     @Test
     fun theScreenWithBothLocks() = shoot("screen-locked") {
         CanvasScreen(
+            // ⚠ FIXED, so a release does not break this golden — see
+            // `CanvasScreen.version`.
+            version = GOLDEN_VERSION,
             state = opened().copy(zoomLocked = true, panLocked = true),
             types = NODE_TYPES,
             status = emptyMap(),
@@ -330,6 +338,9 @@ class CanvasScreenshotTest {
     @Test
     fun theScreenShowingARefusal() = shoot("screen-refused") {
         CanvasScreen(
+            // ⚠ FIXED, so a release does not break this golden — see
+            // `CanvasScreen.version`.
+            version = GOLDEN_VERSION,
             state = opened().copy(
                 // ⚠ No selection: `selection.isNotEmpty()` implies multi-select
                 // now, and this golden is about the refusal strip over an
@@ -358,6 +369,9 @@ class CanvasScreenshotTest {
     @Test
     fun theFirstScreen() = shoot("screen-first-run") {
         CanvasScreen(
+            // ⚠ FIXED, so a release does not break this golden — see
+            // `CanvasScreen.version`.
+            version = GOLDEN_VERSION,
             state = opened(),
             types = NODE_TYPES,
             status = emptyMap(),
@@ -382,6 +396,9 @@ class CanvasScreenshotTest {
     @Test
     fun aFlowWithAPhotoAndAPrompt() = shoot("screen-img2img") {
         CanvasScreen(
+            // ⚠ FIXED, so a release does not break this golden — see
+            // `CanvasScreen.version`.
+            version = GOLDEN_VERSION,
             state = opened(img2imgWorkflow()),
             types = NODE_TYPES,
             status = emptyMap(),
@@ -406,6 +423,9 @@ class CanvasScreenshotTest {
     @Test
     fun theTopBarNamesTheFlowAndTheLoad() = shoot("screen-top-bar") {
         CanvasScreen(
+            // ⚠ FIXED, so a release does not break this golden — see
+            // `CanvasScreen.version`.
+            version = GOLDEN_VERSION,
             state = opened(textToVideoWorkflow()),
             types = NODE_TYPES,
             status = emptyMap(),
@@ -423,6 +443,9 @@ class CanvasScreenshotTest {
     @Test
     fun theScreenShowingWhyARunFailed() = shoot("screen-run-error") {
         CanvasScreen(
+            // ⚠ FIXED, so a release does not break this golden — see
+            // `CanvasScreen.version`.
+            version = GOLDEN_VERSION,
             state = opened(),
             types = NODE_TYPES,
             status = emptyMap(),
