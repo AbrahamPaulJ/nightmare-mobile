@@ -86,6 +86,29 @@ data class SpliceCandidate(
 )
 
 /**
+ * ⭐⭐⭐ **An existing node the NEW one would feed** — the other direction.
+ *
+ * ⚠⚠ The user's ask, 2026-09-22: *"add node assist did well but pls add
+ * support for non-sample nodes as well"*. A prompt, a photo and a crop have
+ * nothing to take, so the first version offered them nothing at all and the
+ * sheet never opened — yet "what does this feed" is the only question worth
+ * asking about a node you just dropped at the start of a flow.
+ *
+ * ⚠ Ticked when [free] — i.e. that port has no wire yet. Filling a hole is
+ * safe; replacing a wire someone drew is a decision, so it is offered unticked.
+ */
+data class FeedCandidate(
+    /** The existing node that would read the new one. */
+    val toNode: String,
+    /** Its input port. */
+    val toPort: String,
+    /** The new node's output port that feeds it. */
+    val outPort: String,
+    /** True when [toPort] currently has no wire. */
+    val free: Boolean,
+)
+
+/**
  * ⭐⭐ The offer: helpers to create, and existing nodes to snap to.
  *
  * ⚠ [isEmpty] is what decides whether the sheet is worth showing at all. A node
@@ -98,8 +121,10 @@ data class AddPlan(
     val helpers: List<HelperNode>,
     val snaps: List<SnapCandidate>,
     val splices: List<SpliceCandidate> = emptyList(),
+    val feeds: List<FeedCandidate> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = helpers.isEmpty() && snaps.isEmpty() && splices.isEmpty()
+    val isEmpty: Boolean
+        get() = helpers.isEmpty() && snaps.isEmpty() && splices.isEmpty() && feeds.isEmpty()
 }
 
 /**
@@ -167,7 +192,26 @@ fun planAdd(
             )
         }
     }
-    return AddPlan(type, helpers, snaps, splices)
+    // ⭐⭐⭐ …and the other direction: what this node would FEED.
+    //
+    // ⚠ Offered for every node, not only the input-less ones — a crop dropped
+    // after a photo wants wiring onward just as much. ⚠⚠ A free port is
+    // ticked; an occupied one is offered unticked, because replacing a wire
+    // someone drew is their decision (see [FeedCandidate.free]).
+    val feeds = mutableListOf<FeedCandidate>()
+    for (consumer in order) {
+        val consumerType = types[consumer.type] ?: continue
+        for (inPort in consumerType.inputs) {
+            val out = type.outputs.firstOrNull { fits(it, inPort) } ?: continue
+            feeds += FeedCandidate(
+                toNode = consumer.id,
+                toPort = inPort.name,
+                outPort = out.name,
+                free = consumer.inputs[inPort.name] == null,
+            )
+        }
+    }
+    return AddPlan(type, helpers, snaps, splices, feeds)
 }
 
 /**
@@ -221,6 +265,8 @@ fun CanvasState.applyAdd(
      * redirects the consumer's wire, so it OVERRIDES any snap on the same port.
      */
     splice: SpliceCandidate? = null,
+    /** ⭐⭐ Downstream connections they kept — see [FeedCandidate]. */
+    feeds: List<FeedCandidate> = emptyList(),
 ): CanvasState {
     var st = addNode(plan.type, at)
     val newId = st.editing ?: return st
@@ -271,6 +317,18 @@ fun CanvasState.applyAdd(
                 ),
             )
         }
+    }
+    // ⚠ Downstream, after the splice — a splice already rewires its consumer,
+    // and a feed naming the same port would fight it.
+    for (f in feeds) {
+        if (splice != null && f.toNode == splice.consumer && f.toPort == splice.consumerPort) continue
+        val g = st.workflow.graph
+        if (g.byId[f.toNode] == null || g.wouldCycle(newId, f.toNode)) continue
+        st = st.copy(
+            workflow = st.workflow.copy(
+                graph = g.connected(f.toNode, f.toPort, Source(newId, f.outPort)),
+            ),
+        )
     }
     return st.copy(editing = newId, showPalette = false, message = null)
 }

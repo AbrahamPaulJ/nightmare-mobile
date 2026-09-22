@@ -2195,6 +2195,22 @@ object UpscaleNode : NodeType {
     /** ⚠⚠ It RENDERS, so its result belongs to `core.output` too — the rule is
      * everywhere or it is two rules ([NodeType.showsResult]). */
     override val showsResult = false
+
+    /**
+     * ⭐⭐⭐ **RETIRED from the palette, 2026-09-22** — the user's call:
+     * *"i plan to eventually remove need of upscale node, output node can have
+     * auto upscale checkbox"*.
+     *
+     * ⚠⚠ **Hidden, not deleted.** Flows saved with one still load and still
+     * run — a graph that stops opening because a node type went away is the one
+     * failure a retirement must not cause. Nothing new can add one, and
+     * `core.output`'s [MediaOutputNode.UPSCALE] does the job in one checkbox on
+     * the node a flow already ends at.
+     *
+     * ⚠ Its [run] is still the ONE implementation; the output node calls
+     * [upscaleTo] rather than carrying a second copy.
+     */
+    override val hidden = true
     override val name = "image.upscale"
     override val version = "1"
     override val inputs = listOf(Port("image", "IMAGE"))
@@ -2247,18 +2263,36 @@ object UpscaleNode : NodeType {
             ?: throw IllegalArgumentException(
                 "node \"${node.id}\": \"image\" is not connected"
             )
+        return upscaleTo(ctx, node.id, image, node.params[UPSCALER].orEmpty())
+    }
+
+    /**
+     * ⭐⭐⭐ **Enlarge one picture — the ONE implementation.**
+     *
+     * ⚠⚠ Called by this node's [run] and by `core.output`'s auto-upscale
+     * ([MediaOutputNode.UPSCALE]). Two copies of "find the weights, pack RGB,
+     * post it, decode the reply" would be two copies that drift, and the
+     * failure modes here — a missing upscaler, bytes that will not decode —
+     * are exactly the ones a user needs named the same way wherever they start.
+     */
+    suspend fun upscaleTo(
+        ctx: NodeCtx,
+        nodeId: String,
+        image: Value.Image,
+        upscalerId: String,
+    ): Value.Image {
         val src = ctx.images.get(image.id)
             ?: throw IllegalStateException(
-                "node \"${node.id}\": image ${image.id} is no longer in the store"
+                "node \"$nodeId\": image ${image.id} is no longer in the store"
             )
         val android = ctx.android
             ?: throw IllegalStateException(
-                "node \"${node.id}\": upscaling needs a platform context to find the weights"
+                "node \"$nodeId\": upscaling needs a platform context to find the weights"
             )
-        val id = node.params[UPSCALER].orEmpty()
+        val id = upscalerId
         val path = UpscalerCatalog.pathFor(android, id)
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": upscaler \"" +
+                "node \"$nodeId\": upscaler \"" +
                     (UpscalerCatalog.byId(id)?.label ?: id) +
                     "\" is not installed — open Models and download it"
             )
@@ -2268,7 +2302,7 @@ object UpscaleNode : NodeType {
             is Ops.Result.Ok -> {
                 val bmp = android_graphics_decode(r.value.jpeg)
                     ?: throw IllegalStateException(
-                        "node \"${node.id}\": the upscaler returned bytes that will not decode"
+                        "node \"$nodeId\": the upscaler returned bytes that will not decode"
                     )
                 Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
             }

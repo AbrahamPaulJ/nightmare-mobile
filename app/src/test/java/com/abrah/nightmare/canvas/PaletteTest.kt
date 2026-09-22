@@ -22,10 +22,23 @@ class PaletteTest {
         assertEquals(listOf("common", "generate", "inpaint"), paletteTabs(NODE_TYPES).map { it.first })
 
     /** ⚠ The light, family-agnostic nodes, in the order a flow is built. */
+    /**
+     * ⚠⚠ **`image.upscale` is NOT here since 2026-09-22** — it is retired
+     * (`UpscaleNode.hidden`), because `core.output` now carries an auto-upscale
+     * checkbox and a flow already ends at that node. ⚠ Hidden, not deleted:
+     * flows saved with one still load and still run, which is why the type is
+     * registered and this list is what guards the retirement.
+     */
     @Test fun commonHoldsTheAgnosticNodes() = assertEquals(
-        listOf("core.image", "core.prompt", "image.upscale", "core.output"),
+        listOf("core.image", "core.prompt", "core.output"),
         sections.getValue("common").map { it.single().name },
     )
+
+    /** ⚠ Retired from the palette, still runnable — see above. */
+    @Test fun theUpscaleNodeIsRetiredButStillRegistered() {
+        assertTrue(com.abrah.nightmare.NODE_TYPES.containsKey("image.upscale"))
+        assertTrue(sections.values.flatten().flatten().none { it.name == "image.upscale" })
+    }
 
     /** ⚠ It was registered all along, but its card read like the SD one. */
     @Test fun videoIsInGenerate() {

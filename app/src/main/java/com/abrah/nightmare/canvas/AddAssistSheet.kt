@@ -47,7 +47,7 @@ import com.abrah.nightmare.ui.LogTextStyle
 fun AddAssistSheet(
     plan: AddPlan,
     onCancel: () -> Unit,
-    onAdd: (helperPorts: Set<String>, snaps: Map<String, SnapCandidate>, splice: SpliceCandidate?) -> Unit,
+    onAdd: (helperPorts: Set<String>, snaps: Map<String, SnapCandidate>, splice: SpliceCandidate?, feeds: List<FeedCandidate>) -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
@@ -69,7 +69,7 @@ fun AddAssistSheet(
 @Composable
 fun AddAssistContent(
     plan: AddPlan,
-    onAdd: (helperPorts: Set<String>, snaps: Map<String, SnapCandidate>, splice: SpliceCandidate?) -> Unit,
+    onAdd: (helperPorts: Set<String>, snaps: Map<String, SnapCandidate>, splice: SpliceCandidate?, feeds: List<FeedCandidate>) -> Unit,
 ) {
     // ⚠⚠ A fresh node is ticked only for a port NOTHING can feed. Where
     // something can, sharing it is the default and "new" is the opt-in —
@@ -84,6 +84,9 @@ fun AddAssistContent(
     // ⚠ Ticked by default (the user's call): a node dropped between two wired
     // ones almost always means to sit in that wire.
     var splice by remember(plan) { mutableStateOf(plan.splices.firstOrNull()) }
+    // ⚠ A FREE port is ticked; an occupied one is offered unticked — see
+    // [FeedCandidate.free].
+    var feeds by remember(plan) { mutableStateOf(plan.feeds.filter { it.free }.toSet()) }
     // ⚠ Seeded from the recommendation, which is what "selected intuitively"
     // means — the box is already right for the common case and is still a box.
     var picked by remember(plan) {
@@ -129,6 +132,25 @@ fun AddAssistContent(
                 )
             }
         }
+        if (plan.feeds.isNotEmpty()) {
+            Section("Feed it into")
+            for (f in plan.feeds) {
+                CheckRow(
+                    checked = f in feeds,
+                    title = f.toNode,
+                    subtitle = if (f.free) "its ${f.toPort.knobLabel.lowercase()} is empty"
+                    else "replaces what feeds its ${f.toPort.knobLabel.lowercase()}",
+                    onToggle = { on ->
+                        // ⚠ One source per target PORT, the same rule an input has
+                        // anywhere else — ticking a second for one port drops the
+                        // first rather than silently losing it at apply time.
+                        feeds = feeds.filterNot {
+                            it.toNode == f.toNode && it.toPort == f.toPort
+                        }.toSet() + if (on) setOf(f) else emptySet()
+                    },
+                )
+            }
+        }
         if (plan.splices.isNotEmpty()) {
             Section("Put it in the wire")
             for (c in plan.splices) {
@@ -144,7 +166,7 @@ fun AddAssistContent(
             Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            TextButton(onClick = { onAdd(helperPorts, picked, splice) }) { Text("Add") }
+            TextButton(onClick = { onAdd(helperPorts, picked, splice, feeds.toList()) }) { Text("Add") }
         }
     }
 }

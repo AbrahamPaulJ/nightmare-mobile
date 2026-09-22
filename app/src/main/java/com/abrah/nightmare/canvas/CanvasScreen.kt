@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -391,11 +392,8 @@ fun CanvasScreen(
         // could not say which had produced it -- and it covered whatever was
         // underneath. Previews are drawn ON the node that made them.
 
-        // ⭐⭐⭐ **The brand and the icons are INSIDE the card**, with the
-        // destinations under them — the user's call, 2026-09-22: *"logo + name
-        // should be in same container as the top buttons, extend container to
-        // cover it … left, and icons can be on right end, and the cards go
-        // below it."*
+        // ⭐⭐⭐ **The brand, the version and the icons are INSIDE the card**,
+        // with the destinations under them — the user's call, 2026-09-22.
         //
         // ⚠⚠⚠ **The icons VANISHED for one build and this is why.** They
         // were a sibling of the card in a `Row`, with no weight on either and a
@@ -404,74 +402,56 @@ fun CanvasScreen(
         // a flow name and a load line we do not choose, took everything and the
         // icons were measured at zero. On the golden's shorter strings there
         // was room left over, so nothing caught it. ⇒ Anything that must not be
-        // squeezed out goes in the SAME container, and the card carries a real
-        // `weight(1f)` so it is measured with what is left rather than first.
-        Row(
-            Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding(),
-            verticalAlignment = Alignment.Top,
-        ) {
-            TopBar(
-                backendUp = backendUp,
-                flowName = flowName,
-                flowDirty = flowDirty,
-                loadLine = loadLine,
-                onModels = onModels,
-                onResults = onResults,
-                onWorkflows = onWorkflows,
-                modifier = Modifier.weight(1f),
-                icons = {
-                    // ⭐ Save the canvas. ⚠ FIRST, i.e. leftmost of the three,
-                    // because it is the only one that acts on the graph rather
-                    // than opening something about the app.
-                    IconButton(onClick = { saving = true }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            com.abrah.nightmare.ui.SaveIcon,
-                            contentDescription = "save this flow",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    // ⭐ What this phone's NPU actually is — it answers the
-                    // question a failed render raises, and the arch/VTCM pair is
-                    // the answer to most of them.
-                    IconButton(onClick = onDeviceInfo, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Filled.Info,
-                            contentDescription = stringResource(R.string.cd_device_info),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    // ⚠⚠ A GEAR, and it opens Settings — not the wrench that
-                    // opened the op harness. A developer tool with a developer's
-                    // icon was one of three unlabelled glyphs on the app's first
-                    // screen, and the least likely of the three to be wanted.
-                    // ⚠⚠⚠ The harness is NOT behind Settings. It is reachable
-                    // only through `OpService` over adb (`notes/HANDOFF.md`
-                    // §5); a run that refuses carries the backend's own reason
-                    // in its chip instead ([BackendProcess.failureReason]).
-                    IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Filled.Settings,
-                            contentDescription = stringResource(R.string.cd_settings),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-            )
-            // ⭐⭐ **The build, top right of the canvas** — asked for
-            // 2026-09-22. ⚠ Outside the card on purpose: it is a fact about the
-            // APP, not about this flow, and every diagnostic report needs it
-            // (`CLAUDE.md`: two builds sharing a version makes a failure report
-            // unattributable). ⚠ Unweighted, so it is measured first and can
-            // never be the thing that gets squeezed out.
-            Text(
-                version,
-                style = LogTextStyle,
-                fontSize = 10.sp,
-                maxLines = 1,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.padding(top = 10.dp, end = 8.dp, start = 4.dp),
-            )
-        }
+        // squeezed out goes in the SAME container as what would squeeze it.
+        //
+        // ⚠⚠ The version was briefly a sibling OUTSIDE the card for the same
+        // bad reason, which cost the card its full width. It belongs beside the
+        // name (the user, 2026-09-22), so the card is simply the container
+        // again and nothing sits next to it.
+        TopBar(
+            backendUp = backendUp,
+            flowName = flowName,
+            flowDirty = flowDirty,
+            loadLine = loadLine,
+            onModels = onModels,
+            onResults = onResults,
+            onWorkflows = onWorkflows,
+            version = version,
+            modifier = Modifier.align(Alignment.TopStart).statusBarsPadding(),
+            icons = {
+                // ⭐ Save the canvas. ⚠ FIRST, i.e. leftmost of the three,
+                // because it is the only one that acts on the graph rather than
+                // opening something about the app.
+                IconButton(onClick = { saving = true }, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        com.abrah.nightmare.ui.SaveIcon,
+                        contentDescription = "save this flow",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // ⭐ What this phone's NPU actually is — it answers the question
+                // a failed render raises, and the arch/VTCM pair answers most.
+                IconButton(onClick = onDeviceInfo, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Filled.Info,
+                        contentDescription = stringResource(R.string.cd_device_info),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // ⚠⚠ A GEAR, and it opens Settings — not the wrench that opened
+                // the op harness. ⚠⚠⚠ The harness is NOT behind Settings; it is
+                // reachable only through `OpService` over adb
+                // (`notes/HANDOFF.md` §5), and a run that refuses carries the
+                // backend's own reason in its chip instead.
+                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Filled.Settings,
+                        contentDescription = stringResource(R.string.cd_settings),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+        )
 
         RunBar(
             plannedLoads = plannedLoads,
@@ -840,9 +820,9 @@ fun CanvasScreen(
         AddAssistSheet(
             plan = plan,
             onCancel = { assisting = null },
-            onAdd = { helperPorts, snaps, splice ->
+            onAdd = { helperPorts, snaps, splice, feeds ->
                 assisting = null
-                onEdit { s -> s.applyAdd(plan, at, helperPorts, snaps, splice) }
+                onEdit { s -> s.applyAdd(plan, at, helperPorts, snaps, splice, feeds) }
             },
         )
     }
@@ -879,6 +859,8 @@ private fun TopBar(
      * sibling with no weight and got measured to zero width.
      */
     icons: @Composable RowScope.() -> Unit = {},
+    /** ⭐ The build, beside the name — see [CanvasScreen.version]. */
+    version: String = "",
 ) {
     // ⚠⚠ TWO rows, and the model name is the SECOND one. It used to sit inline
     // ahead of the buttons, which made the row's layout depend on the length of
@@ -915,6 +897,21 @@ private fun TopBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             com.abrah.nightmare.ui.BrandMark()
+            // ⭐⭐ **The build, right beside the name** — the user's call,
+            // 2026-09-22. ⚠ A fact about the APP, so it belongs with the app's
+            // own name rather than floating over the canvas, and every failure
+            // report needs it (`CLAUDE.md`: two builds sharing a version make a
+            // report unattributable).
+            if (version.isNotEmpty()) {
+                Text(
+                    version,
+                    style = LogTextStyle,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
             Spacer(Modifier.weight(1f))
             icons()
         }
@@ -1245,16 +1242,36 @@ private fun RunBar(
             // opened a second way to build a sweep, and there is only one now
             // — arm a knob from its own node.
             Row(
+                // ⚠⚠⚠ **`weight(1f)` here and NO weight on the right slot**, and
+                // that pairing is the whole fix. Run is 60% wider now and the
+                // pixels come out of the spacing rather than out of a button
+                // (the user, 2026-09-22: *"you can accomodate the extra pixels
+                // to the left side spacing (theres no strict centering rule)"*).
+                //
+                // ⚠⚠ It was `weight(0.55f)` against a weighted right slot for
+                // one recording, and the arithmetic does not survive: the right
+                // slot holds a zoom readout and two padlocks, all fixed size, so
+                // weighting it hands it space it cannot use — and the left slot
+                // was squeezed to ~96dp, which made **"+ Node" wrap onto two
+                // lines**. The `screen-top-bar` golden caught it before it
+                // shipped. ⇒ A slot whose content is fixed WRAPS; only the slot
+                // that must absorb slack gets the weight.
                 Modifier.weight(1f),
-                // ⚠⚠ CENTRED in its slot, not `Start` — the user's call,
-                // 2026-09-22: *"center the add node btn so the gap is even to
-                // the left edge and the run btn"*. Left-aligned it hugged the
-                // screen edge with all the slack on the Run side.
+                // ⚠ Still centred WITHIN its slot, so the gap either side of
+                // Add node stays even.
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(12.dp)) {
-                    Text(stringResource(R.string.add_node), fontSize = 12.sp)
+                    // ⚠ One line, never wrapped. A two-line "+ Node" is what a
+                    // squeezed slot looks like, and it should be visible as a
+                    // layout problem rather than absorbed by the label.
+                    Text(
+                        stringResource(R.string.add_node),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
                 }
             }
             // ⭐⭐ Run BECOMES Cancel while a render is in flight, rather than
@@ -1269,6 +1286,10 @@ private fun RunBar(
                 Button(
                     onClick = onCancelRun,
                     shape = RoundedCornerShape(12.dp),
+                    // ⚠ The SAME width as Run — it replaces it in place, and a
+                    // button that resizes as it changes job makes the bar jump
+                    // mid-render.
+                    modifier = Modifier.defaultMinSize(minWidth = RUN_WIDTH),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer,
                         contentColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -1279,12 +1300,17 @@ private fun RunBar(
                     onClick = onRun,
                     enabled = !busy,
                     shape = RoundedCornerShape(12.dp),
+                    // ⭐⭐ **About 60% wider than it wraps to** — the user's call,
+                    // 2026-09-22. It is the button pressed on every single
+                    // render and it was the smallest thing on the bar.
+                    modifier = Modifier.defaultMinSize(minWidth = RUN_WIDTH),
                 ) { Text(stringResource(if (busy) R.string.running else R.string.run), fontWeight = FontWeight.Medium) }
             }
-            // ⚠ The right slot: the zoom readout, then the two locks. Same
-            // `weight(1f)` as the left one — that pair is what centres Run.
+            // ⚠ The right slot: the zoom readout, then the two locks. It WRAPS
+            // its content — see the note on the left slot; every item in here is
+            // a fixed size, so a weight would only steal room from the one slot
+            // that needs it.
             Row(
-                Modifier.weight(1f),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1319,6 +1345,14 @@ private fun RunBar(
         }
     }
 }
+
+/**
+ * ⭐ How wide Run (and Cancel, which replaces it) is drawn.
+ *
+ * ⚠ A `defaultMinSize`, not a fixed width: a longer word in another locale
+ * still grows the button rather than being clipped by it.
+ */
+private val RUN_WIDTH = 124.dp
 
 /** Which lock a padlock glyph stands for. */
 private enum class LockMark { ZOOM, PAN }

@@ -4760,7 +4760,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * this only needs to run whenever [applyFramedPreviews] does.
      */
     private fun applyBeforeAfterPreviews(graph: Graph) {
-        val nodes = graph.nodes.filter { it.type == UpscaleNode.name }
+        // ⭐⭐ …and `core.output` when its auto-upscale is on, since 2026-09-22:
+        // it then MAKES a different picture from the one it was handed, which
+        // is exactly the condition a before/after exists for.
+        // ⚠ The retired `image.upscale` keeps its own, for flows that have one.
+        val nodes = graph.nodes.filter {
+            it.type == UpscaleNode.name ||
+                (it.type == MediaOutputNode.name &&
+                    MediaOutputNode.effectiveParams(it)[MediaOutputNode.UPSCALE]
+                        .equals("true", ignoreCase = true))
+        }
         val shown = nodes.mapNotNull { n ->
             val id = canvas.pictureInto(n.id, nodeTypes) ?: return@mapNotNull null
             val bmp = ops.images.get(id) ?: return@mapNotNull null

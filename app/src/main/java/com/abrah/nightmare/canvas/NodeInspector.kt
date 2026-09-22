@@ -466,6 +466,30 @@ fun NodeInspector(
             // ⭐ Upscale's BEFORE half — see [beforeId] above.
             beforeImage = beforeId?.let(imageFor),
             onViewBeforeFullscreen = { beforeId?.let(onViewFullscreen) },
+            // ⭐⭐ The SAME row, bound to the BEFORE picture. ⚠ No bin: that
+            // picture belongs to the node upstream, and clearing it from here
+            // would empty a node this sheet is not showing.
+            beforeActions = beforeId?.let { id ->
+                {
+                    PictureActions(
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        deleteTint = MaterialTheme.colorScheme.error,
+                        isClip = false,
+                        onDelete = null,
+                        onKeep = { onKeepImage(id) },
+                        onDownload = { onSaveImage(id) },
+                        onShare = { onShareImage(id) },
+                        onSendTo = { onSendImage(id) },
+                        onStar = { onStarImage(id) },
+                        kept = isKept(id),
+                        favourite = isFavourite(id),
+                        keepDisabledReason = keepDisabledReason,
+                        onDisabledKeep = onDisabledKeep,
+                        starKeptTint = com.abrah.nightmare.ui.StarKept,
+                        starIdleTint = com.abrah.nightmare.ui.StarIdle,
+                    )
+                }
+            } ?: {},
             // ⭐⭐ The framing and the painting live on the SAMPLER now
             // (docs/ARCHITECTURE.md §5.7), so the two editors are drawn for it
             // as well as for the nodes they came from.
@@ -752,6 +776,14 @@ internal fun NodeInspectorBody(
      * `CanvasState.beforePreviews`.
      */
     beforeImage: ImageBitmap? = null,
+    /**
+     * ⭐⭐ The actions on the RECEIVED picture — asked for 2026-09-22:
+     * *"previews before and after with all the needed btns and views for both"*.
+     *
+     * ⚠ A slot rather than six more callbacks, so this body stays a function
+     * of its arguments and a golden can still draw it with none.
+     */
+    beforeActions: @Composable () -> Unit = {},
     onViewBeforeFullscreen: () -> Unit = {},
     /** The picture a `crop` node is framing — its upstream image. */
     cropSource: ImageBitmap? = null,
@@ -1525,6 +1557,15 @@ internal fun NodeInspectorBody(
                         .clip(RoundedCornerShape(10.dp))
                         .clickable { onViewBeforeFullscreen() },
                 )
+                // ⚠ Its OWN actions. Before 2026-09-22 this picture could only
+                // be looked at: the row below belonged to what the node MADE,
+                // so the original was unreachable from the one screen showing
+                // it — and on an auto-upscaling output it is the only place the
+                // un-enlarged picture exists at all.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) { beforeActions() }
             }
         }
         if (preview != null && cropSource == null && maskSource == null && onSaveImage != null) {

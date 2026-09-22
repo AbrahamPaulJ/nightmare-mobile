@@ -192,4 +192,47 @@ class AddAssistTest {
         val next = st.applyAdd(plan, Pt(0f, 0f), emptySet(), emptyMap())
         assertEquals(1, next.workflow.graph.nodes.size)
     }
+
+    // ---- a node with NO inputs: what does it FEED? ------------------------
+
+    /**
+     * ⭐⭐⭐ The user's ask, 2026-09-22: *"pls add support for non-sample
+     * nodes as well"*. A prompt has nothing to take, so the first version
+     * offered it nothing and the sheet never opened — yet "what does this feed"
+     * is the only question worth asking about it.
+     */
+    @Test
+    fun aPromptOffersWhatItWouldFeed() {
+        val g = Graph(listOf(Node("gen", "sd15.sample")))
+        val plan = planAdd(typeOf("core.prompt"), g, types)
+        assertTrue("the sheet must open for a prompt now", !plan.isEmpty)
+        val feed = plan.feeds.single { it.toNode == "gen" }
+        assertTrue("the sampler's prompt port is empty, so it is ticked", feed.free)
+    }
+
+    /** ⚠ An occupied port is offered UNTICKED — replacing a wire is a decision. */
+    @Test
+    fun anOccupiedPortIsOfferedButNotTicked() {
+        val g = Graph(
+            listOf(
+                Node("p1", "core.prompt"),
+                Node("gen", "sd15.sample", inputs = sources("prompt" to "p1")),
+            ),
+        )
+        val plan = planAdd(typeOf("core.prompt"), g, types)
+        val feed = plan.feeds.single { it.toNode == "gen" && it.toPort == "prompt" }
+        assertTrue("it is offered", true)
+        assertTrue("but not ticked", !feed.free)
+    }
+
+    @Test
+    fun itWiresTheFeedItWasGiven() {
+        val g = Graph(listOf(Node("gen", "sd15.sample")))
+        val st = CanvasState(Workflow(g, mapOf("gen" to Pt(400f, 0f))))
+        val plan = planAdd(typeOf("core.prompt"), g, types)
+        val feed = plan.feeds.single { it.toNode == "gen" }
+        val next = st.applyAdd(plan, Pt(0f, 0f), emptySet(), emptyMap(), null, listOf(feed))
+        val added = next.workflow.graph.nodes.single { it.type == "core.prompt" }
+        assertEquals(added.id, next.workflow.graph.byId["gen"]!!.inputs["prompt"]!!.node)
+    }
 }

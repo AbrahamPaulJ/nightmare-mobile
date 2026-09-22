@@ -1412,10 +1412,44 @@ object MediaOutputNode : NodeType {
      */
     const val AUTOSAVE = "autosave"
 
+    /**
+     * ⭐⭐⭐ **Enlarge the result without a node for it** — the user's call,
+     * 2026-09-22: *"i plan to eventually remove need of upscale node, output
+     * node can have auto upscale checkbox"*.
+     *
+     * ⚠⚠ It is the same work `image.upscale` does, through the same function
+     * ([UpscaleNode.upscaleTo]) — not a second implementation. That node is
+     * RETIRED from the palette rather than deleted, so flows that already have
+     * one keep working.
+     *
+     * ⚠ A picture only. A clip reaching here is passed through untouched: the
+     * upscaler takes RGB frames and nothing wires a video into it on purpose.
+     */
+    const val UPSCALE = "upscale"
+    const val UPSCALER = "upscaler"
+
     override val widgets = listOf(
         // ⭐ ON by default: placing this node IS the statement that this is the
         // result you want back, and Results is private to the app.
         Widget(AUTOSAVE, "bool", "true", hint = "keep every Run in Results"),
+        // ⭐⭐ OFF by default: an upscale costs seconds and a download, and a
+        // flow that quietly did it would surprise someone on their first Run.
+        Widget(
+            UPSCALE, "bool", "false",
+            hint = "enlarge the result before keeping it — the picture above " +
+                "stays as the before",
+        ),
+        // ⚠⚠ The OPTIONS are the INSTALLED set and the DEFAULT is the first of
+        // them, exactly as `image.upscale` declares it — the same trap applies:
+        // a control pre-set to weights that are not on the phone fails the
+        // instant it runs. ⚠ Falls back to the whole catalogue when nothing is
+        // installed, so [run] can name what to download.
+        Widget(
+            UPSCALER, "string",
+            (UpscalerCatalog.installedIds.firstOrNull() ?: UpscalerCatalog.ALL.first().id),
+            options = UpscalerCatalog.installedIds.ifEmpty { UpscalerCatalog.ALL.map { it.id } },
+            hint = "which upscaler weights to use — install them under Models",
+        ),
         // ⚠⚠ **No `name` box.** It was the filename prefix for the gallery
         // write this node used to do, and that write is gone — autosave keeps
         // into Results, which names things by seed and prompt. A text box whose
@@ -1447,6 +1481,17 @@ object MediaOutputNode : NodeType {
         // ⚠ It used to write a PNG to the gallery when `save` was ticked. That
         // was the same confusion the disk icon had — an export wearing the word
         // "save" — and the gallery is a deliberate tap on ⬇ now.
+        //
+        // ⭐⭐⭐ …one exception: [UPSCALE]. It is the only thing this node
+        // DOES to what it is handed, and it is here rather than in a node of its
+        // own because a flow already ends here.
+        // ⚠ A clip passes through: the upscaler takes RGB frames.
+        val params = effectiveParams(node)
+        if (media is Value.Image &&
+            params[UPSCALE].equals("true", ignoreCase = true)
+        ) {
+            return UpscaleNode.upscaleTo(ctx, node.id, media, params[UPSCALER].orEmpty())
+        }
         return media
     }
 
