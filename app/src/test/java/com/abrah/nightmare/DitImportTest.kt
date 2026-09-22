@@ -307,4 +307,86 @@ class DitImportTest {
         assertTrue("it should say what the file looks like: ${e?.message}",
             e!!.message!!.contains("SDXL"))
     }
+
+    // ---- the family, read off the checkpoint ------------------------------
+
+    /**
+     * ⚠ The names are the REAL ones, taken from the two packages on the phone
+     * 2026-09-22 — a fixture invented to match the matcher proves nothing.
+     */
+    private val zimageNames = """
+        {"model.diffusion_model.cap_embedder.1.weight":{},
+         "model.diffusion_model.noise_refiner.0.attention.qkv.weight":{},
+         "model.diffusion_model.context_refiner.0.attention.out.weight":{},
+         "model.diffusion_model.layers.0.attention.qkv.weight":{}}
+    """.trimIndent()
+
+    private val kleinNames = """
+        {"double_blocks.0.img_attn.qkv.weight":{},
+         "single_blocks.0.linear1.weight":{},
+         "img_in.weight":{},
+         "txt_in.weight":{}}
+    """.trimIndent()
+
+    @Test
+    fun itTellsTheTwoDitFamiliesApartFromTheirTensorNames() {
+        assertEquals(Family.ZIMAGE, CustomModels.ditFamilyOf(zimageNames))
+        assertEquals(Family.FLUX2, CustomModels.ditFamilyOf(kleinNames))
+        // ⚠ Null, not a guess: the import and the scan both treat null as
+        // "the file says nothing", which is the only safe reading.
+        assertEquals(null, CustomModels.ditFamilyOf("""{"a.weight":{}}"""))
+    }
+
+    /**
+     * ⭐⭐⭐ **A folder pushed over adb, with no marker in it, is a model.**
+     *
+     * Reported 2026-09-22: *"you have to import from the app now"*. The marker
+     * is now a cache — see [CustomModels.ZIMAGE_MARK].
+     */
+    @Test
+    fun aMarkerlessDitFolderIsAdoptedByAScan() {
+        val dir = File(ModelCatalog.root(ctx), "pushed").apply { mkdirs() }
+        File(dir, ModelSpec.DIT_WEIGHTS).writeBytes(safetensors(zimageNames))
+        val found = CustomModels.scan(ctx).singleOrNull { it.id == "pushed" }
+        assertTrue("a marker-less DiT folder was not picked up", found != null)
+        assertEquals(Family.ZIMAGE, found!!.family)
+        assertEquals(ModelCatalog.ZIMAGE, found.backendType)
+        // ⚠ Written, so the next scan is a stat rather than a header read.
+        assertTrue(
+            "the marker was not cached",
+            File(dir, CustomModels.ZIMAGE_MARK).isFile,
+        )
+    }
+
+    /** ⚠ …and the same folder holding Klein weights reads as FLUX.2. */
+    @Test
+    fun aMarkerlessKleinFolderReadsAsFlux2() {
+        val dir = File(ModelCatalog.root(ctx), "pushedklein").apply { mkdirs() }
+        File(dir, ModelSpec.DIT_WEIGHTS).writeBytes(safetensors(kleinNames))
+        val found = CustomModels.scan(ctx).singleOrNull { it.id == "pushedklein" }
+        assertEquals(Family.FLUX2, found?.family)
+        assertTrue(File(dir, CustomModels.FLUX2_MARK).isFile)
+    }
+
+    /**
+     * ⭐ The mistake the SD/SDXL list cannot catch: the right KIND of file on
+     * the wrong family's tab, which would otherwise copy 6 GB and fail at Run.
+     */
+    @Test
+    fun itRefusesAKleinCheckpointOnTheZImageTab() {
+        fakeEngine()
+        installBuiltIn()
+        val e = runCatching {
+            CustomModels.importDit(
+                ctx, "mixed", Family.ZIMAGE,
+                open = { ByteArrayInputStream(safetensors(kleinNames)) },
+            )
+        }.exceptionOrNull()
+        assertTrue("expected a refusal", e != null)
+        assertTrue(
+            "it should name both families: ${e?.message}",
+            e!!.message!!.contains(Family.FLUX2.label),
+        )
+        assertTrue("nothing should be left behind", !File(ModelCatalog.root(ctx), "mixed").exists())
+    }
 }

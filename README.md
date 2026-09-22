@@ -96,12 +96,13 @@ a photo on one and it sizes itself to that photo's shape.
 **A DiT fine-tune imports as-is.** FLUX.2 and Z-Image build their graph at load time from
 plain weights, so a Z-Image checkpoint from CivitAI is picked from storage and runs — no
 conversion, no PC. The text encoder, VAE and tokenizer are shared with the model you already
-installed, so an import costs only the weights.
+installed, so an import costs only the weights. A folder copied onto the phone works too — the
+family is read out of the checkpoint's own tensor names, so nothing has to be declared.
 
 **LoRAs, swappable per render.** Import an adapter `.safetensors` and pick it on any FLUX.2 or
 Z-Image generate node — a checkbox per installed file and a strength slider. It binds while the
-render starts, so changing one or moving a slider reloads nothing and costs about 6%. Stack as
-many as you like.
+render starts, so changing one or moving a slider reloads nothing. The cost is the adapter's
+size: about 6% for a 160 tensor FLUX adapter, more for a larger one. Stack as many as you like.
 
 **Embeddings.** Import a textual inversion `.safetensors` and name it in a prompt.
 

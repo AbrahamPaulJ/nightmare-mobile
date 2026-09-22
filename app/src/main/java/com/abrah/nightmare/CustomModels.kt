@@ -73,14 +73,22 @@ object CustomModels {
      *
      * ⚠⚠⚠ Every other marker above is a file that came with the model — a
      * marker is a claim, and a 2 GB graph is a better claim than a note
-     * saying so. A DiT package cannot work that way: FLUX.2 Klein and
-     * Z-Image ship the SAME four filenames, so nothing in the directory
-     * distinguishes them. `specFor` says as much today — *"never detected on
-     * import (no marker names them)"* — which is why an imported DiT
-     * directory is currently ignored outright.
+     * saying so. A DiT package was held not to work that way: FLUX.2 Klein
+     * and Z-Image ship the SAME four filenames, so nothing in the directory
+     * distinguishes them.
      *
-     * ⇒ The import writes one, because it is the one moment the family is
-     * actually known: the user pressed Import on a family's tab.
+     * ⭐⭐⭐ **Rule changed 2026-09-22, at the user's ask.** The filenames do
+     * not distinguish them; the first 36–60 KB of `dit.safetensors` does, and
+     * [ditFamilyOf] reads it. ⇒ **A marker is no longer required.** It is
+     * written by [importDit] and by [detectDit] as a CACHE, so a scan stays
+     * one `stat` per directory, and a folder pushed over adb with no marker is
+     * adopted on the next scan instead of being ignored.
+     *
+     * ⚠ What forced it: a user reported *"you have to import from the app
+     * now"* and *"please get rid of the verifying stuff"*. The marker was the
+     * wall, not the size and header checks they blamed — and it is the one
+     * requirement nobody could have guessed from the outside, because the file
+     * is empty and its name appears in no error message.
      *
      * ⚠ Empty files. Only the name means anything.
      */
@@ -177,7 +185,7 @@ object CustomModels {
      * half-copied tree with no CLIP file yet is not something to describe.
      */
     private fun specFor(dir: File): ModelSpec? {
-        val found = listOfNotNull(
+        val marked = listOfNotNull(
             Family.SD15.takeIf { File(dir, SD15_MARK).isFile },
             Family.SDXL.takeIf { File(dir, SDXL_MARK).isFile },
             Family.ANIMA.takeIf { File(dir, ANIMA_MARK).isFile },
@@ -185,6 +193,15 @@ object CustomModels {
             Family.ZIMAGE.takeIf { File(dir, ZIMAGE_MARK).isFile },
             Family.FLUX2.takeIf { File(dir, FLUX2_MARK).isFile },
         )
+        // ⭐⭐⭐ **A DiT folder pushed over adb has no marker, and is a model
+        // anyway** — [detectDit] reads the family out of `dit.safetensors`.
+        // Reported by a user 2026-09-22: *"you have to import from the app
+        // now"*. They were right, and nothing in a hand-assembled directory
+        // could have told them to `touch zimage.dit`.
+        //
+        // ⚠ Only when no marker matched, so this costs one header read per
+        // adopted directory, once — [detectDit] writes the marker.
+        val found = if (marked.isNotEmpty()) marked else listOfNotNull(detectDit(dir))
         // ⚠ Two present is not a family, it is a mixed directory — someone
         // unpacked two archives into one place. Refusing beats picking one.
         if (found.size != 1) {
@@ -444,7 +461,7 @@ object CustomModels {
         // Run leaves a dead 8.8 GB directory and minutes of a person's time
         // spent to learn something the first kilobyte could have said.
         onProgress(ModelInstaller.Progress("checking the file", 0, 0))
-        checkSafetensors(open)
+        checkSafetensors(open, expect = family)
 
         val dir = File(ModelCatalog.root(context), name)
         // ⚠ A retry after a failure starts clean, exactly as [import] does.
@@ -708,7 +725,7 @@ object CustomModels {
      * This only catches the cheap mistakes early: a zip, a truncated download,
      * or an SD/SDXL checkpoint picked by hand.
      */
-    private fun checkSafetensors(open: () -> InputStream) {
+    private fun safetensorsHeader(open: () -> InputStream): String {
         val head = ByteArray(8)
         val json: String
         open().use { input ->
@@ -731,6 +748,73 @@ object CustomModels {
         if (!json.trimStart().startsWith("{")) {
             throw java.io.IOException("this is not a .safetensors file (no tensor table)")
         }
+        return json
+    }
+
+    /**
+     * ⭐⭐⭐ **Which DiT family a checkpoint belongs to, read off its own
+     * tensor names** — or null when nothing in it says.
+     *
+     * ⚠⚠⚠ **This is the claim that [ZIMAGE_MARK] was invented to work
+     * around, and it was wrong.** That comment says *"FLUX.2 Klein and Z-Image
+     * ship the SAME four filenames, so nothing in the directory distinguishes
+     * them"*. The FILENAMES do not, and the first 36–60 KB of
+     * `dit.safetensors` does, unmistakably. Measured 2026-09-22 against both
+     * packages on the phone:
+     *
+     * ```
+     * Klein 4B   309 tensors  double_blocks.N.img_attn.qkv.weight, single_blocks.N.linear1.weight, img_in.weight, txt_in.weight
+     * Z-Image    453 tensors  model.diffusion_model.layers.N.attention.qkv.weight, cap_embedder.N.weight, noise_refiner.N…, context_refiner.N…
+     * ```
+     *
+     * ⚠ Matched on the BLOCK names, not on the `model.diffusion_model.`
+     * prefix: our Z-Image repack carries that prefix and Klein's does not, but
+     * a community repack may carry either, and the prefix is exactly the part
+     * a repacker changes. `cap_embedder`/`noise_refiner` is Lumina2's shape and
+     * `double_blocks`/`single_blocks` is FLUX's, and neither survives being
+     * repacked as the other family.
+     *
+     * ⚠⚠ **Two hits required, and exactly one family.** One substring could
+     * appear in a merge or a wrapper; both families matching means the file is
+     * not what either of them looks like, and guessing beats nothing only when
+     * being wrong is cheap. Here it costs a 6 GB import.
+     */
+    fun ditFamilyOf(header: String): Family? {
+        val signatures = mapOf(
+            Family.ZIMAGE to listOf("cap_embedder", "noise_refiner.", "context_refiner.", "attention.qkv."),
+            Family.FLUX2 to listOf("double_blocks.", "single_blocks.", "img_in.", "txt_in."),
+        )
+        val hits = signatures.filterValues { keys -> keys.count(header::contains) >= 2 }.keys
+        return hits.singleOrNull()
+    }
+
+    /**
+     * ⭐⭐ The family of a marker-less DiT directory, and the marker written so
+     * the next scan costs a `stat` again.
+     *
+     * ⚠ Best effort on the write: a directory the app cannot write to is
+     * re-detected on every scan — slower, still correct. The marker is a cache,
+     * not the mechanism, which is the whole change.
+     *
+     * ⚠⚠ A checkpoint still being COPIED reads as a family the moment its
+     * header lands, so a folder mid-`adb push` can appear in the list and fail
+     * at Run. That is the same "listed and incomplete" state a half-downloaded
+     * built-in is in (`ModelSpec.missing`), it corrects itself on the next
+     * scan, and the alternative is a size threshold no file declares. ⇒ Left
+     * deliberately, not overlooked.
+     */
+    private fun detectDit(dir: File): Family? {
+        val weights = File(dir, ModelSpec.DIT_WEIGHTS)
+        if (!weights.isFile || weights.length() <= 0L) return null
+        val family = runCatching { ditFamilyOf(safetensorsHeader { weights.inputStream() }) }
+            .getOrNull() ?: return null
+        runCatching { File(dir, markOf(family)).createNewFile() }
+        Log.i(TAG, "adopted '${dir.name}' as $family from its tensor names")
+        return family
+    }
+
+    private fun checkSafetensors(open: () -> InputStream, expect: Family? = null) {
+        val json = safetensorsHeader(open)
         // ⚠⚠ Named signatures of the families that do NOT import this way.
         // Picking an SD or SDXL checkpoint here is the likely mistake, and
         // those need the conversion pipeline, not a copy.
@@ -746,6 +830,17 @@ object CustomModels {
                         "import as a .zip on their own tab, not here"
                 )
             }
+        }
+        // ⭐ …and the mistake the list above cannot catch: the RIGHT kind of
+        // file on the WRONG family's tab. Only a confident disagreement is an
+        // error — [ditFamilyOf] returning null means the file says nothing
+        // either way, and the engine is the one that decides that properly.
+        val actual = ditFamilyOf(json)
+        if (expect != null && actual != null && actual != expect) {
+            throw java.io.IOException(
+                "that is a ${actual.label} checkpoint, not a ${expect.label} one — " +
+                    "import it on the ${actual.label} tab"
+            )
         }
     }
 
