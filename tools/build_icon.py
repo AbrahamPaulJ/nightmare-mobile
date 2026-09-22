@@ -144,7 +144,21 @@ print(f"head spans x {HEAD[:, 0].min()}..{HEAD[:, 0].max()}, "
 # into the mask clearance, and the assert below refuses a nudge that would clip
 # the muzzle rather than shipping one.
 HEAD_NUDGE_X = 0.03
-FILL = 0.88                  # of the guaranteed-visible radius
+# ⚠⚠⚠ **0.62, not 0.88** — reported 2026-09-22: *"the app icon (on the phones
+# ui tray) is way too zoomed in … the icon inside app is perfect"*.
+#
+# 0.88 passed the assertion below — nothing was TRUNCATED — and that is exactly
+# what made it misleading. The check asks "does the head fit inside the circle";
+# it cannot ask "does it leave any air". At 0.88 the head spans 88% of the
+# guaranteed circle's diameter, so a launcher that masks to 72dp shows a head
+# filling the badge edge to edge, while the same drawing in the app
+# (`brand_logo.png`, a square composition) has room around it. Two framings of
+# one picture, and only one of them was being looked at.
+#
+# ⚠ A fraction of the guaranteed-visible RADIUS, so this is "how much of the
+# circle the head fills". ~0.6 is where an adaptive icon's key content usually
+# sits, and it is measured against the same number the assertion uses.
+FILL = 0.62                  # of the guaranteed-visible radius
 
 
 def gradient(size):

@@ -46,6 +46,9 @@ class ModelsScreenshotTest {
         captureRoboImage(filePath = "src/test/screenshots/$name.png") {
             NightmareTheme(darkTheme = true) {
                 LibraryScreen(
+                    // ⚠ FIXED, so a release does not break this golden — see
+                    // `LibraryScreen.version`.
+                    version = "0.0.0",
                     tab = tab,
                     onTab = {},
                     onClose = {},
@@ -376,6 +379,9 @@ class ModelsScreenshotTest {
         captureRoboImage(filePath = "src/test/screenshots/$name.png") {
             NightmareTheme(darkTheme = true) {
                 LibraryScreen(
+                    // ⚠ FIXED, so a release does not break this golden — see
+                    // `LibraryScreen.version`.
+                    version = "0.0.0",
                     tab = LibraryTab.RESULTS, onTab = {}, onClose = {},
                     models = {}, flows = {},
                     results = {

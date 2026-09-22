@@ -266,6 +266,15 @@ class SdSampler(
          */
         const val LORAS = "loras"
 
+        /**
+         * ⭐⭐ Tap to select, on an inpaint node — what `mask.segment_model`
+         * used to be a whole node for.
+         *
+         * ⚠ `tap_select`, so [knobLabel] reads "Tap select"; the inspector
+         * draws the row with the model's name and its download beside it.
+         */
+        const val TAP_SELECT = "tap_select"
+
         const val REF_X = "ref_x"
         const val REF_Y = "ref_y"
         const val REF_W = "ref_w"
@@ -662,6 +671,21 @@ class SdSampler(
         // [com.abrah.nightmare.canvas.LoraPicker]. The format is
         // [com.abrah.nightmare.LoraSpec]'s, and a workflow file still carries
         // exactly this string.
+        // ⭐⭐⭐ **Tap to select, as a CHECKBOX** — the user's call,
+        // 2026-09-22: *"i want to remove the segmenter node, it should go as
+        // 'enable tap to select' checkbox"*.
+        //
+        // ⚠⚠ The `segmenter` PORT stays and a wire into it still works: flows
+        // saved with a `mask.segment_model` node keep opening and keep their Tap
+        // tool. The node is retired from the palette, not deleted
+        // ([SelectObjectNode.hidden]) — a graph that stops loading because a
+        // type went away is the one failure a retirement must not cause.
+        // ⚠ Inpaint only, exactly as the port is.
+        Widget(
+            TAP_SELECT, "bool", "false",
+            hint = "tap an object in the mask editor to select it, instead of " +
+                "painting it by hand",
+        ),
         Widget(
             LORAS, "string", "",
             hint = "adapters applied on top of this checkpoint — import them on " +
@@ -1425,7 +1449,11 @@ object MediaOutputNode : NodeType {
      * ⚠ A picture only. A clip reaching here is passed through untouched: the
      * upscaler takes RGB frames and nothing wires a video into it on purpose.
      */
-    const val UPSCALE = "upscale"
+    // ⚠ `auto_upscale`, not `upscale`: [knobLabel] turns a param id into the
+    // label, so the id IS the words on the row — "Auto upscale", which is what
+    // the user asked it be called (2026-09-22). A separate label field would be
+    // a second place to keep in step.
+    const val UPSCALE = "auto_upscale"
     const val UPSCALER = "upscaler"
 
     override val widgets = listOf(

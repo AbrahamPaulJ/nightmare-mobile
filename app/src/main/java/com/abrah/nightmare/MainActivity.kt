@@ -268,6 +268,7 @@ fun HarnessScreen(
             ) notifyAsk.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
         LibraryScreen(
+            version = com.abrah.nightmare.BuildConfig.VERSION_NAME,
             tab = vm.libraryTab,
             onTab = vm::switchLibraryTab,
             onClose = { vm.closeLibrary() },
@@ -378,6 +379,8 @@ fun HarnessScreen(
             },
             results = {
                 com.abrah.nightmare.ui.ResultsScreen(
+                    // ⭐⭐ What the filter beside Favourites reads.
+                    tagsOf = vm::resultTags,
                     groups = vm.keptGroups,
                     results = vm.kept,
                     favouritesOnly = vm.favouritesOnly,
@@ -489,6 +492,8 @@ fun HarnessScreen(
         val canvasLoraPicker = rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
         ) { uri -> if (uri != null) vm.importLora(uri) }
+        // ⚠ For the segmenter's installed check below.
+        val segCtx = androidx.compose.ui.platform.LocalContext.current
         // ⭐⭐ How the app died last time, if it did — null on an ordinary
         // launch, which is nearly every launch (`CrashReport`). Drawn on the
         // FIRST screen, because the person who needs it is the one who just
@@ -532,6 +537,14 @@ fun HarnessScreen(
             // chooser Results uses, then edits the flow and Runs.
             onUpscaleNode = vm::offerUpscaleNode,
             detailsOfNode = vm::detailsOfNode,
+            // ⭐⭐ The segmenter, offered where the checkbox that needs it is.
+            // ⚠ Re-read on `vm.working`, which is what changes while an install
+            // runs — without a dependency the row would still say "not
+            // installed" after the download finished.
+            onInstallSegmenter = vm::installSegmenter,
+            segmenterInstalled = androidx.compose.runtime.remember(vm.working) {
+                com.abrah.nightmare.segment.Segmenter.isInstalled(segCtx)
+            },
             // ⭐ Video hidden from Add node where the chip refused it (VideoGate).
             paletteTypes = if (com.abrah.nightmare.npu.VideoGate.hidden) {
                 vm.nodeTypes.filterKeys { it != com.abrah.nightmare.npu.VideoGate.VIDEO_TYPE }

@@ -276,6 +276,10 @@ fun NodeInspector(
     loraEpoch: Int = 0,
     /** ⭐⭐ Enlarge the node's picture by editing the flow behind it. */
     onUpscale: ((String) -> Unit)? = null,
+    /** ⭐⭐ Download the segmenter from an inpaint node's Tap-select row. */
+    onInstallSegmenter: (() -> Unit)? = null,
+    /** ⚠ Whether the segmenter weights are on the phone. */
+    segmenterInstalled: Boolean = true,
     /** ⭐⭐ What made this picture, for the ⓘ dialog. */
     detailsOf: ((String) -> List<Pair<String, String>>)? = null,
     onInspectNode: (String) -> Unit = {},
@@ -561,6 +565,8 @@ fun NodeInspector(
             loraEpoch = loraEpoch,
             // ⚠ Only on a node that HAS a picture and acts on it — the same
             // `actsOnItsPicture` rule the star and the disk follow.
+            onInstallSegmenter = onInstallSegmenter,
+            segmenterInstalled = segmenterInstalled,
             onUpscale = onUpscale
                 ?.takeIf { previewId != null && actsOnItsPicture &&
                     nodeId !in clipNodes(state.workflow.graph, state.videos) }
@@ -849,6 +855,10 @@ internal fun NodeInspectorBody(
     loraEpoch: Int = 0,
     /** ⭐⭐ Enlarge this node's picture — see [PictureActions.onUpscale]. */
     onUpscale: (() -> Unit)? = null,
+    /** ⭐⭐ Download the segmenter from the Tap-select row; null hides the button. */
+    onInstallSegmenter: (() -> Unit)? = null,
+    /** ⚠ Whether the segmenter weights are on the phone — read by the caller. */
+    segmenterInstalled: Boolean = true,
     /** ⭐⭐ What made this picture — the rows for [com.abrah.nightmare.ui.ResultInfoDialog]. */
     onInfo: (() -> List<Pair<String, String>>)? = null,
     /** ⚠ For a golden only: draw the inpaint popup's tab INLINE, since a Dialog is a window a screenshot cannot reach. */
@@ -1947,6 +1957,39 @@ internal fun NodeInspectorBody(
             // ships `save = true`, and a box drawn unchecked over a node that
             // will in fact save is a control lying about its own state.
             // ⚠ Written lowercase, the one spelling every `run` compares against.
+            // ⭐⭐⭐ **Tap select is a checkbox that NAMES ITS MODEL** and
+            // offers the download beside it — the user's call, 2026-09-22.
+            //
+            // ⚠⚠ A plain `bool` row would tick on and then fail at the first
+            // tap with "the segmenter is not installed", which is the shape of
+            // bug `MissingModelDialog` exists to stop everywhere else: the thing
+            // a control needs is offered where the control is.
+            if (w.name == com.abrah.nightmare.SdSampler.TAP_SELECT) {
+                val on = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = on,
+                        onCheckedChange = { v -> onSetParam(nodeId, w.name, v.toString()) },
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(w.name.knobLabel, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            // ⚠ The MODEL is named whether it is here or not: it
+                            // is what the checkbox will use, and a download button
+                            // with no subject is a button for something unnamed.
+                            com.abrah.nightmare.segment.Segmenter.LABEL +
+                                if (segmenterInstalled) "" else " · not installed",
+                            style = LogTextStyle,
+                            color = if (segmenterInstalled) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (!segmenterInstalled && onInstallSegmenter != null) {
+                        TextButton(onClick = onInstallSegmenter) { Text("Download") }
+                    }
+                }
+                continue
+            }
             if (w.type == "bool") {
                 val on = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3062,8 +3105,14 @@ private fun MaskToolbar(
         }
     }
     val state = full ?: quick
-    // ⭐ The Tap tool exists only while a segmenter is WIRED (`docs/SEGMENTER.md` §1).
-    val canTap = node.inputs["segmenter"] != null
+    // ⭐ The Tap tool exists when the node's own checkbox is on — or, for a
+    // flow saved before 2026-09-22, while a `mask.segment_model` is still WIRED
+    // (`docs/SEGMENTER.md` §1). ⚠⚠ BOTH, not one: the node is retired rather
+    // than deleted, so an old graph must keep working untouched.
+    val canTap = node.inputs["segmenter"] != null ||
+        com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)[
+            com.abrah.nightmare.SdSampler.TAP_SELECT
+        ].equals("true", ignoreCase = true)
     if (!canTap && tool == MaskTool.TAP) tool = MaskTool.BRUSH
     var tapping by remember { mutableStateOf(false) }
     var tapNote by remember { mutableStateOf<String?>(null) }

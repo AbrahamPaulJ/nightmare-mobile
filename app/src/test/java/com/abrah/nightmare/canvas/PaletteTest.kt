@@ -40,6 +40,12 @@ class PaletteTest {
         assertTrue(sections.values.flatten().flatten().none { it.name == "image.upscale" })
     }
 
+    /** ⚠ Same for the segmenter — a saved flow with one must keep working. */
+    @Test fun theSegmentNodeIsRetiredButStillRegistered() {
+        assertTrue(com.abrah.nightmare.NODE_TYPES.containsKey("mask.segment_model"))
+        assertTrue(sections.values.flatten().flatten().none { it.name == "mask.segment_model" })
+    }
+
     /** ⚠ It was registered all along, but its card read like the SD one. */
     @Test fun videoIsInGenerate() {
         val generate = sections.getValue("generate")
@@ -49,8 +55,13 @@ class PaletteTest {
 
     @Test fun inpaintIsItsOwnTab() {
         val inpaint = sections.getValue("inpaint")
-        // ⭐ The samplers, and the segment model (docs/SEGMENTER.md), which only feeds them.
-        assertEquals(listOf("Inpaint", "Segment model"), inpaint.map { it.first().paletteName })
+        // ⭐ The samplers. ⚠⚠ **"Segment model" is gone since 2026-09-22** —
+        // tap-to-select is a checkbox on the inpaint node now
+        // (`SdSampler.TAP_SELECT`) and the node is retired
+        // (`SelectObjectNode.hidden`). Hidden, not deleted: a flow saved with
+        // one still loads, still wires into `segmenter` and still gets its Tap
+        // tool, which `theSegmentNodeIsRetiredButStillRegistered` pins.
+        assertEquals(listOf("Inpaint"), inpaint.map { it.first().paletteName })
         // ⚠ No FLUX.2: `flux2.inpaint` is written but NOT registered, because
         // the engine honours the mask and then regenerates nothing inside it
         // (measured 2026-09-20, `SdSampler.ALL`). This list is what guards

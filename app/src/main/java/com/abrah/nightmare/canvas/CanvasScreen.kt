@@ -262,6 +262,10 @@ fun CanvasScreen(
     onUpscaleNode: ((String) -> Unit)? = null,
     /** ⭐⭐ What made this node's picture, for the ⓘ dialog. */
     detailsOfNode: ((String) -> List<Pair<String, String>>)? = null,
+    /** ⭐⭐ Download the segmenter from an inpaint node's Tap-select row. */
+    onInstallSegmenter: (() -> Unit)? = null,
+    /** ⚠ Whether the segmenter weights are on the phone. */
+    segmenterInstalled: Boolean = true,
     /** ⭐⭐ Import a `.safetensors` adapter from inside a node's LoRA picker. */
     onImportLora: (() -> Unit)? = null,
     /** ⚠⚠ `HarnessViewModel.loraEpoch` — what re-reads `_loras` after an Add. */
@@ -471,6 +475,10 @@ fun CanvasScreen(
             onTogglePanLock = { onEdit { s -> s.togglePanLock() } },
             onSelectAll = { onEdit { s -> s.selectAll() } },
             onDeleteSelected = { confirmingDelete = true },
+            // ⚠ No confirm: a clone is undone by deleting it, which is the
+            // control right beside it. `ConfirmDelete` is for what cannot be
+            // taken back (`docs/UI.md` §8.2).
+            onCloneSelected = { onEdit { s -> s.cloneSelected() } },
             onClearSelection = { onEdit { s -> s.clearSelection() } },
             runError = runError,
             runLog = runLog,
@@ -537,6 +545,8 @@ fun CanvasScreen(
         types = types,
         onUpscale = onUpscaleNode,
         detailsOf = detailsOfNode,
+        onInstallSegmenter = onInstallSegmenter,
+        segmenterInstalled = segmenterInstalled,
         onInspectNode = onInspectNode,
         onImportLora = onImportLora,
         loraEpoch = loraEpoch,
@@ -629,9 +639,13 @@ fun CanvasScreen(
     // upscale's own result — it is what fed it. Checked by IDENTITY against
     // `beforePreviews`, not by node type alone, so upscale's AFTER picture
     // (the same node, the other image id) still gets the action row.
+    // ⚠⚠ By IDENTITY against `beforePreviews`, for ANY node that has one —
+    // not for `image.upscale` by name. `core.output` grew a before/after when it
+    // gained auto-upscale (2026-09-22), and with the type hardcoded here its
+    // RECEIVED picture would have been treated as the node's own result: keep
+    // and delete would have acted on the wrong image.
     val viewedIsInput = viewedIsPhoto || viewedType in com.abrah.nightmare.IMAGE_SAMPLER_TYPES ||
-        (viewedType == com.abrah.nightmare.UpscaleNode.name &&
-            state.beforePreviews[viewedNode]?.first == state.viewing)
+        state.beforePreviews[viewedNode]?.first == state.viewing
     // ⚠⚠ Hoisted OUT of the `let` below: `rememberImagePick` registers an
     // activity-result launcher, and a launcher registered inside a conditional
     // is registered and torn down as the condition flips -- which is exactly
@@ -877,13 +891,21 @@ private fun TopBar(
             // owns this row and the icons — an inset applied twice in one
             // stack pushes the second thing down by the notch again
             // (`docs/UI.md` §7.2).
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            //
+            // ⚠⚠⚠ **12 + 4 = 16, which is what `LibraryScreen` pads to**, and
+            // that is the whole reason for these numbers. Reported 2026-09-22:
+            // *"the name and icon are slightly shifting when i go to models
+            // view"*. They were 12+10 across and 6+4 down against the library's
+            // flat 16, so the logo jumped a few dp in both axes on every trip
+            // between the two screens — small enough to look like a rendering
+            // fault rather than a layout one.
+            .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 6.dp)
             // ⚠ A background, because the canvas scrolls UNDER this bar: the
             // default graph puts a node within a few dp of the top, and without
             // a ground the model name is drawn over the node's title.
             .clip(RoundedCornerShape(14.dp))
             .background(CanvasColors.nodeBody.copy(alpha = 0.92f))
-            .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 5.dp),
+            .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 5.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         // ⭐⭐⭐ **The brand, LEFT, in the position Models / Flows / Results
@@ -896,22 +918,11 @@ private fun TopBar(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            com.abrah.nightmare.ui.BrandMark()
-            // ⭐⭐ **The build, right beside the name** — the user's call,
-            // 2026-09-22. ⚠ A fact about the APP, so it belongs with the app's
-            // own name rather than floating over the canvas, and every failure
-            // report needs it (`CLAUDE.md`: two builds sharing a version make a
-            // report unattributable).
-            if (version.isNotEmpty()) {
-                Text(
-                    version,
-                    style = LogTextStyle,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
+            // ⭐⭐⭐ The mark, the name AND the version, all from the ONE
+            // function the library screens draw ([com.abrah.nightmare.ui.BrandMark]).
+            // The version used to be a second `Text` here, which is how two
+            // surfaces start disagreeing about a `v` prefix.
+            com.abrah.nightmare.ui.BrandMark(version = version)
             Spacer(Modifier.weight(1f))
             icons()
         }
@@ -1117,6 +1128,8 @@ private fun RunBar(
     onSelectAll: () -> Unit,
     onDeleteSelected: () -> Unit,
     onClearSelection: () -> Unit,
+    /** ⭐⭐ Duplicate the selection — [CanvasState.cloneSelected]. */
+    onCloneSelected: () -> Unit = {},
     runError: String? = null,
     runLog: RunLogState = RunLogState(),
     onCloseRunLog: () -> Unit = {},
@@ -1216,6 +1229,7 @@ private fun RunBar(
                 count = state.selection.size,
                 total = state.workflow.graph.nodes.size,
                 onSelectAll = onSelectAll,
+                onClone = onCloneSelected,
                 onDelete = onDeleteSelected,
                 onDone = onClearSelection,
             )
@@ -1480,6 +1494,7 @@ private fun SelectionBar(
     count: Int,
     total: Int,
     onSelectAll: () -> Unit,
+    onClone: () -> Unit,
     onDelete: () -> Unit,
     onDone: () -> Unit,
 ) {
@@ -1504,6 +1519,18 @@ private fun SelectionBar(
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
             ) { Text("All", fontSize = 12.sp) }
+        }
+        // ⭐⭐ Clone — asked for 2026-09-22. ⚠ BEFORE the bin, because the row
+        // is ordered by consequence and the destructive one comes last here
+        // (this bar is not [PictureActions]; its Done sits at the end and the
+        // bin beside it is the thing a finger must not find by accident).
+        IconButton(onClick = onClone, enabled = count > 0) {
+            Icon(
+                com.abrah.nightmare.ui.CloneIcon,
+                contentDescription = "duplicate the selected nodes",
+                tint = if (count > 0) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            )
         }
         // ⚠ Disabled, not hidden, at zero: the row must not change shape as the
         // count crosses one, or the Done button moves under the finger reaching

@@ -164,7 +164,25 @@ val UpscaleIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
             "8l2.5-3.21 1.79 2.15 2.5-3.22L13 19H3z")
 }
 
-/** ⚠ One builder for the three above: a 24dp viewport and a single filled path. */
+/**
+ * ⭐ Duplicate — Material's ContentCopy: two overlapping sheets.
+ *
+ * ⚠ Borrowed rather than drawn, unlike the locks and the sweep: "a copy of
+ * this" is a glyph everyone already reads, and `material-icons-core` has it, so
+ * inventing one would cost recognition for nothing.
+ */
+val CloneIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("ContentCopy",
+        "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 " +
+            "2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z")
+}
+
+/** ⭐ Filter — Material's FilterList: three bars of falling length. */
+val FilterIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("FilterList", "M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z")
+}
+
+/** ⚠ One builder for the icons above: a 24dp viewport and a single filled path. */
 private fun materialIcon(name: String, path: String): ImageVector =
     ImageVector.Builder(
         name = name,

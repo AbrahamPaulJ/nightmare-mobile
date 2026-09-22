@@ -54,6 +54,9 @@ data class LogLine(val stamp: String, val text: String, val bad: Boolean = false
  */
 private const val TOTAL_MS_KEY = "@@total"
 
+/** ⭐⭐ What the Results filter reads — see `HarnessViewModel.resultTags`. */
+data class ResultTags(val models: Set<String>, val text: String)
+
 class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     private val clock = SimpleDateFormat("HH:mm:ss", Locale.US)
@@ -4375,6 +4378,43 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * since §5.7, so a current flow showed no prompt at all and a rolled seed
      * as nothing. ⚠ Labels are [knobLabel], the inspector's own words.
      */
+    /**
+     * ⭐⭐⭐ **What a kept result can be FILTERED by** — the models any
+     * sampler in its flow used, and the text worth searching.
+     *
+     * Asked for 2026-09-22: a filter beside Favourites listing every model, and
+     * a search box.
+     *
+     * ⚠⚠ **Cached per result id.** It opens the stored flow from disk, and
+     * the Results list asks for every visible row on every recomposition — the
+     * same shape as the `refresh*()` reads that froze the app during a download
+     * (`docs/UI.md` §8.4). A flow is immutable once kept, so the cache never
+     * needs invalidating.
+     *
+     * ⚠ The model's LABEL, not its id: it is what the checkbox will say, and
+     * two ids can share a label only if the catalogue does.
+     */
+    fun resultTags(r: com.abrah.nightmare.canvas.Result): ResultTags =
+        resultTagCache.getOrPut(r.id) {
+            val g = results.flow(r.id)?.workflow?.graph
+                ?: return@getOrPut ResultTags(emptySet(), r.batchLabel)
+            val models = g.nodes.mapNotNull { n ->
+                n.params["model"]?.takeIf { it.isNotBlank() && isSampler(n.type) }
+            }.map { ModelCatalog.byId(it)?.label ?: it }.toSet()
+            // ⚠ Prompt AND negative AND the batch label: a person searching
+            // "cat" means the picture, and they may have typed it into either.
+            val text = buildString {
+                for (n in g.nodes) {
+                    n.params["prompt"]?.let { append(it).append(' ') }
+                    n.params["negative"]?.let { append(it).append(' ') }
+                }
+                append(r.batchLabel)
+            }
+            ResultTags(models, text)
+        }
+
+    private val resultTagCache = mutableMapOf<String, ResultTags>()
+
     fun detailsOf(r: com.abrah.nightmare.canvas.Result): List<Pair<String, String>> {
         val g = results.flow(r.id)?.workflow?.graph ?: return emptyList()
         return detailsOfGraph(g, null, r.width, r.height) { r.seed }
@@ -5047,6 +5087,37 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * screen. Reported from the phone: switching model left the previous run's
      * "done" sitting there as though it belonged to the new one.
      */
+    /**
+     * ⭐⭐⭐ **One node finished — the ONE place that records it.**
+     *
+     * ⚠⚠⚠ There are TWO run paths, [runCanvas] and [runBatch], and each
+     * had its own copy of this. When per-node timings were added for the ⓘ
+     * dialog on 2026-09-22 only the BATCH copy got them, so an ordinary Run —
+     * which is every Run without a sweep armed — recorded none and the dialog
+     * showed no time at all. Reported the same day: *"i dont see the time taken
+     * for run in info, why?"*.
+     *
+     * ⚠⚠ The mirror image was true of the total: [runCanvas] set it and
+     * [runBatch] did not. ⇒ Two paths through one event is one path too many;
+     * both call this.
+     *
+     * ⚠ `now`/`step` are cleared with the node that owned them, or the panel
+     * keeps counting the previous node's steps under the next one's name.
+     * ⚠ Only a node that actually RAN gets a time: a cached one reports 0 ms,
+     * and "0 ms" beside a sampler reads as a broken clock rather than a cache
+     * hit.
+     */
+    private fun noteNodeRun(n: NodeRun) {
+        canvasStatus[n.id] = NodeStatus(outcome = n.outcome, detail = n.detail)
+        if (n.outcome == Outcome.RAN) nodeMs[n.id] = n.ms
+        runLog = runLog.copy(
+            lines = runLog.lines +
+                com.abrah.nightmare.canvas.runLineOf(n.id, n.outcome, n.ms, n.detail),
+            now = null,
+            step = null,
+        )
+    }
+
     fun clearRunLog() { runLog = com.abrah.nightmare.canvas.RunLogState() }
 
     // ---- batching ---------------------------------------------------------
@@ -5172,26 +5243,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val r = ops.runWorkflow(
                 canvas.workflow.copy(graph = graph),
                 onStart = { id, _ -> runLog = runLog.copy(now = id, step = null) },
-                onNode = { n ->
-                    canvasStatus[n.id] = NodeStatus(outcome = n.outcome, detail = n.detail)
-                    // ⭐⭐ What this node COST, kept for the ⓘ dialog — asked
-                    // for 2026-09-22: *"info should include time taken of total
-                    // flow and any sample nodes"*. ⚠ Only a node that actually
-                    // RAN: a cached one reports 0 ms, and printing "0 ms" beside
-                    // a sampler reads as a broken clock rather than as a cache
-                    // hit ([nodeMs] is consulted with that in mind).
-                    if (n.outcome == Outcome.RAN) nodeMs[n.id] = n.ms
-                    runLog = runLog.copy(
-                        lines = runLog.lines +
-                            com.abrah.nightmare.canvas.runLineOf(n.id, n.outcome, n.ms, n.detail),
-                        now = null, step = null,
-                    )
-                },
+                onNode = ::noteNodeRun,
                 onProgress = { id, step, total ->
                     canvasStatus[id] = NodeStatus(progress = step to total)
                     runLog = runLog.copy(now = id, step = step to total)
                 },
             )
+            // ⚠⚠ PER RUN, not per sweep — the same meaning [runCanvas] gives
+            // it ("the LAST measured render"), which is what the batch estimate
+            // and the ⓘ dialog both read. A whole sweep's elapsed time here
+            // would tell the estimator that one render takes eight renders.
+            lastRunMs = r.totalMs
             // ⚠ Previews follow the LAST run, so the canvas shows where the
             // sweep got to rather than freezing on the first picture.
             val shown = r.outputs.mapNotNull { (id, v) ->
@@ -5396,20 +5458,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             onStart = { id, _ ->
                 runLog = runLog.copy(now = id, step = null)
             },
-            onNode = { n ->
-                // ⚠ The progress entry is cleared as the node settles, or a
-                // finished node keeps a half-full bar under its result.
-                canvasStatus[n.id] = NodeStatus(outcome = n.outcome, detail = n.detail)
-                runLog = runLog.copy(
-                    lines = runLog.lines +
-                        com.abrah.nightmare.canvas.runLineOf(n.id, n.outcome, n.ms, n.detail),
-                    // ⚠ Cleared with the node that owned it, or the panel keeps
-                    // counting the previous node's steps under the next one's
-                    // name.
-                    now = null,
-                    step = null,
-                )
-            },
+            onNode = ::noteNodeRun,
             onProgress = { id, step, total ->
                 canvasStatus[id] = NodeStatus(progress = step to total)
                 runLog = runLog.copy(now = id, step = step to total)

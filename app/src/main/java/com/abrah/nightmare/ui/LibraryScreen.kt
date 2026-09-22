@@ -67,6 +67,18 @@ fun LibraryScreen(
     flows: @Composable () -> Unit,
     results: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
+    /**
+     * ⭐⭐ The build, shown beside the name here as it is on the canvas.
+     *
+     * ⚠⚠⚠ A PARAMETER, for the same reason `CanvasScreen.version` is one —
+     * and this file got it wrong FIRST: reading `BuildConfig.VERSION_NAME`
+     * inside the body baked the version into fifteen `ModelsScreenshotTest`
+     * goldens, so every release would break them. That trap was fixed on the
+     * canvas the day before and recreated here the day after, which is the
+     * N−1-of-N shape (`docs/ARCHITECTURE.md` §5.6) in its purest form: the same
+     * mistake, in the second of two places, by the same hand.
+     */
+    version: String = "",
 ) {
     // ⭐⭐⭐ **BOTH insets, here, for all three tabs.**
     //
@@ -89,7 +101,7 @@ fun LibraryScreen(
         // ⭐ The APP's name and logo, not the tab's — the tab row directly under
         // it already says Models / Flows / Results, so a title repeating it was
         // redundant (the user's call, 2026-09-17).
-        BrandHeader(onClose = onClose)
+        BrandHeader(onClose = onClose, version = version)
         TabRow(
             selectedTabIndex = tab.ordinal,
             containerColor = MaterialTheme.colorScheme.background,
@@ -121,13 +133,19 @@ fun LibraryScreen(
  * panel over the canvas keeps it ([ScreenHeader]'s corner, same icon, same tint).
  */
 @Composable
-fun BrandHeader(onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun BrandHeader(
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** ⚠ Shown here too since 2026-09-22 — the canvas is not the only screen
+     * someone reads a version off. Empty hides it (a golden, a preview). */
+    version: String = "",
+) {
     Row(
         modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
-        BrandMark(Modifier.weight(1f))
+        BrandMark(Modifier.weight(1f), version = version)
         androidx.compose.material3.IconButton(onClick = onClose) {
             androidx.compose.material3.Icon(
                 androidx.compose.material.icons.Icons.Filled.Close,
@@ -151,7 +169,7 @@ fun BrandHeader(onClose: () -> Unit, modifier: Modifier = Modifier) {
  * this alone.
  */
 @Composable
-fun BrandMark(modifier: Modifier = Modifier) {
+fun BrandMark(modifier: Modifier = Modifier, version: String = "") {
     Row(
         modifier,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -177,6 +195,20 @@ fun BrandMark(modifier: Modifier = Modifier) {
             ),
             maxLines = 1,
         )
+        // ⭐⭐ **The build, drawn HERE** — so the canvas and the library cannot
+        // disagree about where it sits or what it looks like. The user's call,
+        // 2026-09-22: it is wanted on both, with the `v`.
+        // ⚠ The `v` is added here rather than stored in `versionName`, which
+        // Android compares numerically and a tag is cut from (`CLAUDE.md`).
+        if (version.isNotEmpty()) {
+            Text(
+                "v$version",
+                style = LogTextStyle,
+                fontSize = 10.sp,
+                maxLines = 1,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+        }
     }
 }
 

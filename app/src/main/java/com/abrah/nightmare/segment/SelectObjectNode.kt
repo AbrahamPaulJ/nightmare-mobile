@@ -24,6 +24,18 @@ package com.abrah.nightmare
  * registry in `Executor.kt` names it without an import.
  */
 object SelectObjectNode : NodeType {
+    /**
+     * ⭐⭐⭐ **RETIRED from the palette, 2026-09-22** — the user's call:
+     * *"i want to remove the segmenter node, it should go as 'enable tap to
+     * select' checkbox"*. That checkbox is `SdSampler.TAP_SELECT`.
+     *
+     * ⚠⚠ **Hidden, not deleted.** Flows saved with one still load, still
+     * wire into `segmenter`, and still get their Tap tool — a graph that stops
+     * opening because a node type went away is the one failure a retirement
+     * must not cause. Nothing new can add one.
+     */
+    override val hidden = true
+
     const val PORT_TYPE = "SEGMENTER"
 
     override val name = "mask.segment_model"

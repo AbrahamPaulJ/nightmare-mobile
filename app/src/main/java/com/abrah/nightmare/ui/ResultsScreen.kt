@@ -53,6 +53,8 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -97,6 +99,13 @@ fun ResultsScreen(
     /** ⭐ Whether the Favourites chip is the one selected. */
     favouritesOnly: Boolean = false,
     onFavouritesOnly: (Boolean) -> Unit = {},
+    /**
+     * ⭐⭐ What a result can be filtered by — `HarnessViewModel.resultTags`.
+     * Defaulted so a golden and a preview need no view model.
+     */
+    tagsOf: (Result) -> com.abrah.nightmare.ResultTags = {
+        com.abrah.nightmare.ResultTags(emptySet(), "")
+    },
     /**
      * ⭐⭐ Ids the user has long-pressed into a selection. Empty means normal
      * browsing — the mode is the SET being non-empty rather than a flag, so
@@ -177,7 +186,26 @@ fun ResultsScreen(
             return@Column
         }
         val all = groups.flatMap { it.items }
-        val items = if (favouritesOnly) all.filter { it.favourite } else all
+        // ⭐⭐⭐ **The filter, beside Favourites** — asked for 2026-09-22.
+        //
+        // ⚠⚠ `hiddenModels` holds what is UNTICKED, not what is ticked. Every
+        // model starts selected (the user's call), and a model that appears for
+        // the first time after the sheet was opened must start selected too —
+        // storing the ticked set would have hidden it.
+        var hiddenModels by remember { mutableStateOf(emptySet<String>()) }
+        var query by remember { mutableStateOf("") }
+        var filtering by remember { mutableStateOf(false) }
+        val models = remember(all) { all.flatMap { tagsOf(it).models }.distinct().sorted() }
+        val items = all
+            .filter { !favouritesOnly || it.favourite }
+            .filter { r ->
+                val tags = tagsOf(r)
+                // ⚠ A result whose flow names NO model is never hidden by the
+                // model filter: unticking "SDXL" means "not that one", not
+                // "only things I can attribute".
+                (tags.models.isEmpty() || tags.models.any { it !in hiddenModels }) &&
+                    (query.isBlank() || tags.text.contains(query.trim(), ignoreCase = true))
+            }
         val selecting = selected.isNotEmpty()
 
         // ⭐⭐ A PERSISTENT notice while an upscale runs — a toast is gone in
@@ -230,6 +258,32 @@ fun ResultsScreen(
                     )
                 }
             }
+            Spacer(Modifier.weight(1f))
+            // ⚠ The dot says the list is not showing everything — a filter that
+            // is ON and invisible is how someone concludes their pictures were
+            // deleted.
+            val filtered = hiddenModels.isNotEmpty() || query.isNotBlank()
+            IconButton(onClick = { filtering = true }, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    FilterIcon,
+                    contentDescription = "filter these results",
+                    tint = if (filtered) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (filtering) {
+            ResultFilterDialog(
+                models = models,
+                hidden = hiddenModels,
+                query = query,
+                onToggleModel = { m, on ->
+                    hiddenModels = if (on) hiddenModels - m else hiddenModels + m
+                },
+                onQuery = { query = it },
+                onClear = { hiddenModels = emptySet(); query = "" },
+                onDismiss = { filtering = false },
+            )
         }
         if (items.isEmpty()) {
             Text(
@@ -1499,5 +1553,73 @@ fun UpscalePicker(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+/**
+ * ⭐⭐ **The Results filter** — every model any kept flow used, all ticked,
+ * over a search box. Asked for 2026-09-22.
+ *
+ * ⚠⚠ The search searches the RESULTS — prompt, negative and batch label —
+ * not the model list beside it (the user's call when asked). A box above a list
+ * that filtered the list would be the obvious reading, which is why the
+ * placeholder says what it does.
+ *
+ * ⚠ One `Clear` that resets both, because two filters combine and "why is it
+ * still empty" otherwise needs two discoveries.
+ */
+@Composable
+private fun ResultFilterDialog(
+    models: List<String>,
+    hidden: Set<String>,
+    query: String,
+    onToggleModel: (String, Boolean) -> Unit,
+    onQuery: (String) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Filter") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQuery,
+                    singleLine = true,
+                    label = { Text("Search prompts") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (models.isEmpty()) {
+                    Text(
+                        "Nothing kept here names a model yet.",
+                        style = LogTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                } else {
+                    Text(
+                        "Models",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    for (m in models) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = m !in hidden,
+                                onCheckedChange = { on -> onToggleModel(m, on) },
+                            )
+                            Text(m, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = { TextButton(onClick = onClear) { Text("Clear") } },
     )
 }

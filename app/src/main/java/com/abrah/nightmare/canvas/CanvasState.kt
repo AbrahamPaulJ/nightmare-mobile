@@ -667,6 +667,53 @@ data class CanvasState(
     fun removeSelected(): CanvasState =
         selection.fold(this) { st, id -> st.removeNode(id) }.clearSelection()
 
+    /**
+     * ⭐⭐⭐ **Copy the selected nodes, wired to NOTHING.**
+     *
+     * The user's ask, 2026-09-22 — a clone icon in multi-select — and their
+     * call on what it copies: the node and its settings, no wires.
+     *
+     * ⚠⚠ **No wires at all, not even the inputs.** The alternative, copying
+     * what the original READS, is tempting and was offered; it was turned down,
+     * and the reason to respect that is the one below: most ports take a single
+     * wire, so a clone that also copied OUTPUTS would silently steal the
+     * original's connection downstream rather than add one. "No wires" is the
+     * only rule with no surprise in it.
+     *
+     * ⚠ Offset so the copy is visibly a second node rather than sitting
+     * exactly on top of the first — which reads as nothing having happened.
+     * ⚠⚠ The COPIES become the selection, so a second clone does not make
+     * four: the thing you just made is the thing you are now holding.
+     */
+    fun cloneSelected(): CanvasState {
+        if (selection.isEmpty()) return this
+        var graph = workflow.graph
+        var positions = workflow.positions
+        val made = mutableSetOf<String>()
+        for (id in selection) {
+            val node = graph.byId[id] ?: continue
+            val newId = graph.freeId(id)
+            graph = graph.copy(
+                nodes = graph.nodes + node.copy(
+                    id = newId,
+                    // ⚠ The params come with it — a clone of a configured
+                    // sampler that lost its checkpoint would be a new node with
+                    // extra steps.
+                    inputs = emptyMap(),
+                ),
+            )
+            positions = positions + (newId to (positions[id]?.let { Pt(it.x + CLONE_OFFSET, it.y + CLONE_OFFSET) }
+                ?: Pt(0f, 0f)))
+            made += newId
+        }
+        if (made.isEmpty()) return this
+        return copy(
+            workflow = Workflow(graph, positions),
+            selection = made,
+            message = null,
+        )
+    }
+
     fun openPalette() = copy(showPalette = true)
 
     fun closePalette() = copy(showPalette = false)
@@ -932,6 +979,13 @@ data class CanvasState(
          * world units that shrink with everything else.
          */
         const val REFERENCE_MARGIN = 32f
+
+        /**
+         * ⚠ How far a clone lands from its original, in world units. Enough
+         * that the copy reads as a second node; small enough that it is still
+         * obviously beside the one it came from.
+         */
+        const val CLONE_OFFSET = 40f
     }
 
     /**
