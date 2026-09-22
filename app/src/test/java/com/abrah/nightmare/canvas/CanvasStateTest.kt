@@ -886,7 +886,13 @@ class CanvasStateTest {
             assertEquals("${recipe.id}: feeders must share one column", 1, xs.size)
 
             // ⚠ A renderer's feeders, top to bottom, in the renderer's port order.
-            val worker = w.graph.nodes.first { n -> n.inputs.keys.any { it in setOf("prompt", "image") } }
+            // ⚠⚠ `firstOrNull`: since `image.upscale` was deleted (2026-09-22)
+            // the Upscale recipe is two nodes — a picture straight into an output
+            // that enlarges it — and has no node taking `prompt` or `image` at
+            // all. A recipe with no such worker has no wires that could cross.
+            val worker = w.graph.nodes.firstOrNull { n ->
+                n.inputs.keys.any { it in setOf("prompt", "image") }
+            } ?: continue
             val ys = types.getValue(worker.type).inputs
                 .map { it.name }
                 .mapNotNull { worker.inputs[it] }

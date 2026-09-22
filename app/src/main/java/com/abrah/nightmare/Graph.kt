@@ -541,7 +541,7 @@ fun isAutoNodeId(id: String, types: Map<String, NodeType> = NODE_TYPES): Boolean
  * rather than listed by hand.
  *
  * ⚠⚠⚠ A recipe hand-writes short ids — `edit`, `generate`, `prompt`,
- * `photo`, `output` — and none of them is any type's [NodeType.defaultId]. That
+ * `image`, `output` — and none of them is any type's [NodeType.defaultId]. That
  * made [isAutoNodeId] call them names a person had chosen, so opening the Image
  * edit flow and switching the checkpoint to SD 1.5 left the node still saying
  * **edit**. Reported 2026-09-21, and it is the same bug as the frozen

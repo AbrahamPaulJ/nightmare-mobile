@@ -483,6 +483,7 @@ class CanvasScreenshotTest {
                 type = NODE_TYPES["core.image"],
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
             )
         }
     }
@@ -510,6 +511,7 @@ class CanvasScreenshotTest {
                 type = NODE_TYPES["core.image"],
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
             )
         }
     }
@@ -530,6 +532,7 @@ class CanvasScreenshotTest {
                 type = NODE_TYPES["sd.vae_decode"],
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
                 preview = stripes(96, 96),
                 seed = "1284471903",
             )
@@ -566,6 +569,7 @@ class CanvasScreenshotTest {
                 type = NODE_TYPES["sd15.sample"],
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
                 // ⭐⭐⭐ **The checkpoint picker**, which had no golden at all
                 // while it was the most-reported control in the sheet — a chip
                 // strip of fifteen models, then a dropdown, then a family
@@ -610,6 +614,7 @@ class CanvasScreenshotTest {
                 type = NODE_TYPES["nd.vae_decode"],
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
             )
         }
     }
@@ -627,6 +632,7 @@ class CanvasScreenshotTest {
                 type = NODE_TYPES["nd.sample"],
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
             )
         }
     }
@@ -668,6 +674,7 @@ class CanvasScreenshotTest {
                     Res(768, 1024), Res(1024, 768), Res(1024, 1024),
                 ),
                 onDelete = {},
+                onReset = {},
             )
         }
     }
@@ -744,6 +751,7 @@ class CanvasScreenshotTest {
                 type = NODE_TYPES["flux2.sample"],
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
             )
         }
     }
@@ -769,6 +777,7 @@ class CanvasScreenshotTest {
                 onSetParam = { _, _, _ -> },
                 resolutions = listOf(Res(512, 512)),
                 onDelete = {},
+                onReset = {},
             )
         }
     }
@@ -806,6 +815,7 @@ class CanvasScreenshotTest {
                 type = NODE_TYPES["image.mask"],
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
                 maskSource = stripes(256, 256),
             )
         }
@@ -827,6 +837,7 @@ class CanvasScreenshotTest {
                 type = NODE_TYPES["sd.latent_blend"],
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
             )
         }
     }
@@ -844,6 +855,7 @@ class CanvasScreenshotTest {
                 type = null,
                 onSetParam = { _, _, _ -> },
                 onDelete = {},
+                onReset = {},
             )
         }
     }
@@ -1073,6 +1085,7 @@ class InpaintInspectorScreenshotTest {
                         type = NODE_TYPES["sd15.inpaint"],
                         onSetParam = { _, _, _ -> },
                         onDelete = {},
+                        onReset = {},
                         cropSource = stripeSource(300, 220),
                         maskSource = stripeSource(300, 220),
                         inlinePopupTab = tab,
@@ -1111,6 +1124,7 @@ class Img2ImgInspectorScreenshotTest {
                         type = NODE_TYPES["sd15.sample"],
                         onSetParam = { _, _, _ -> },
                         onDelete = {},
+                        onReset = {},
                         cropSource = stripeSource(300, 220),
                         inlinePopupTab = tab,
                     )
@@ -1168,6 +1182,7 @@ class ReferenceInspectorScreenshotTest {
                         type = NODE_TYPES["flux2.sample"],
                         onSetParam = { _, _, _ -> },
                         onDelete = {},
+                        onReset = {},
                         cropSource = stripeSource(300, 220),
                         // ⚠ A PORTRAIT reference against a square canvas: the tile
                         // must keep its own shape, because the wire never fits it

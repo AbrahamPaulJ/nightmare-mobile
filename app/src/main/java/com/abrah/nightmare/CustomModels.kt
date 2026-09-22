@@ -21,29 +21,41 @@ import java.util.zip.ZipInputStream
  * silence. Being invisible to `byId` is the failure mode, not being absent from
  * a list.
  *
- * ## ⚠ Why this does not follow either upstream
+ * ## How a folder's family is decided — three ways, in this order
  *
- * Both reference apps declare a model's family with a **marker file** —
- * `npucustom` / `SDXL` / `ANIMA` / `finished` upstream, only `npucustom` in
- * DreamUI. A marker is a claim that can be wrong, and upstream's own zip
- * importer proves it: `ModelListScreen.kt` writes `npucustom` at the end of
- * **every** import including an SDXL one, so an SDXL zip imported through its
- * UI is mislabelled SD 1.5 by the tool that unpacked it.
+ * **1. A marker the person put there, including UPSTREAM's** ([UPSTREAM_MARKS]).
+ * `ZIMAGE`, `KLEIN`, `ANIMA`, `SDXL`, `finished`, `npucustom` — read in
+ * upstream's own precedence, so a folder that works in LocalDream works here
+ * unchanged.
  *
- * ⇒ **We infer the family from the files instead**, which cannot disagree with
- * what is on disk. The discriminator is the CLIP side and it is unambiguous:
- * SD 1.5 ships one `clip_v2.mnn`, SDXL ships `clip_2.mnn` (CLIP-G) beside
- * `clip.mnn`. No archive contains both.
+ * ⚠⚠⚠ **This file used to argue the opposite**, at length: that a marker is
+ * a claim that can be wrong, that upstream's importer writes `npucustom` onto
+ * every import including SDXL ones, and therefore that inference from files is
+ * strictly better. Every word of that is still TRUE and the conclusion was
+ * still wrong, because it optimised for a mislabelled zip nobody had and taxed
+ * a person who assembles folders by hand every single time. Reported
+ * 2026-09-22: *"for most users they have to unzip, create the proper dummy file
+ * and zip it, and or keep two zip files just to import a flux/z-image model.
+ * That's a huge hassle and storage being used up."*
  *
- * ⚠ The interesting property is that a *partial* directory can never be
+ * ⇒ A marker is somebody SAYING what this is. Inference is a guess made when
+ * nobody has. A guess does not outrank a statement, and `CLAUDE.md`'s rule —
+ * follow upstream, justify every deviation — was the tiebreak all along.
+ *
+ * **2. The files, when no marker says.** The CLIP side is unambiguous: SD 1.5
+ * ships one `clip_v2.mnn`, SDXL ships `clip_2.mnn` (CLIP-G) beside `clip.mnn`.
+ * No archive contains both.
+ *
+ * **3. The weights themselves**, for a DiT folder with neither ([ditFamilyOf]).
+ *
+ * ⚠ The property worth keeping from 2: a *partial* directory can never be
  * MISCLASSIFIED, only unclassifiable — the discriminators are disjoint, so a
  * half-extracted SDXL model is never mistaken for an SD 1.5 one. It is listed
  * as partial with [ModelSpec.missing] naming what is absent, exactly like a
  * half-downloaded built-in.
  *
- * ⇒ **No marker file, and therefore no marker-written-last dance.** A model
- * directory pushed over adb (`notes/HANDOFF.md` §5) is picked up with no extra
- * step, which the marker designs cannot do.
+ * ⇒ A model directory pushed over adb (`notes/HANDOFF.md` §5) is picked up
+ * with no extra step whichever of the three applies.
  *
  * ⚠ What IS taken from upstream — and what DreamUI dropped — is
  * [Config]: an optional `config.json` inside the model directory carrying the
@@ -94,6 +106,41 @@ object CustomModels {
      */
     const val ZIMAGE_MARK = "zimage.dit"
     const val FLUX2_MARK = "flux2.dit"
+
+    /**
+     * ⭐⭐⭐ **UPSTREAM's marker filenames, honoured as-is.**
+     *
+     * Reported 2026-09-22 by a user who assembles model folders by hand:
+     * *"a couple updates back, having only SDXL or ANIMA or KLEIN or ZIMAGE or
+     * npucustom or v3 or finished files was enough. i want that back — also why
+     * use flux2.dit instead of KLEIN?"*
+     *
+     * ⚠⚠⚠ **A fair question with no good answer.** `flux2.dit` and
+     * `zimage.dit` were invented here while `xororz/local-dream` has used
+     * `KLEIN` and `ZIMAGE` all along — and `CLAUDE.md` says in plain words to
+     * follow upstream and treat a deviation as needing its own justification.
+     * This one had none. The cost fell on people: a folder that works in
+     * LocalDream had to be re-zipped with a second dummy file to work here, or
+     * kept twice.
+     *
+     * ⇒ These are read FIRST, in upstream's own precedence
+     * (`data/Model.kt`, `scanCustomModels`), and [markOf] WRITES `KLEIN` /
+     * `ZIMAGE` now. Our two old names are still read so folders this app
+     * already created keep working.
+     *
+     * ⚠ `finished` and `npucustom` do not name a family — upstream uses them
+     * for a CPU and an NPU SD 1.5 respectively. This app has no CPU path, so
+     * both read as SD 1.5 and a folder that is not one fails at LAUNCH with the
+     * backend's own words, which is what §3b already argues for a QNN import.
+     */
+    val UPSTREAM_MARKS: List<Pair<String, Family>> = listOf(
+        "ZIMAGE" to Family.ZIMAGE,
+        "KLEIN" to Family.FLUX2,
+        "ANIMA" to Family.ANIMA,
+        "SDXL" to Family.SDXL,
+        "finished" to Family.SD15,
+        "npucustom" to Family.SD15,
+    )
 
     /**
      * ⭐⭐ Where a DiT family's SHARED parts live — the text encoder, VAE
@@ -185,11 +232,23 @@ object CustomModels {
      * half-copied tree with no CLIP file yet is not something to describe.
      */
     private fun specFor(dir: File): ModelSpec? {
+        // ⭐⭐⭐ **A DECLARED family wins, and upstream's names count.**
+        //
+        // ⚠⚠ First and alone: a marker is somebody saying what this folder is,
+        // and the file-based inference below is a guess made when nobody has.
+        // Guessing over a statement is how a folder someone assembled by hand
+        // gets classified as something else.
+        // ⚠ Upstream's precedence, not ours: ZIMAGE, KLEIN, ANIMA, SDXL, then
+        // the two that only mean "SD 1.5" ([UPSTREAM_MARKS]).
+        UPSTREAM_MARKS.firstOrNull { (name, _) -> File(dir, name).isFile }
+            ?.let { (_, family) -> return customSpec(dir, Config.read(dir), family) }
+
         val marked = listOfNotNull(
             Family.SD15.takeIf { File(dir, SD15_MARK).isFile },
             Family.SDXL.takeIf { File(dir, SDXL_MARK).isFile },
             Family.ANIMA.takeIf { File(dir, ANIMA_MARK).isFile },
-            // ⭐ The two the import WRITES a marker for ([ZIMAGE_MARK]).
+            // ⚠ Our own two, kept readable for folders this app already wrote
+            // before it adopted upstream's names.
             Family.ZIMAGE.takeIf { File(dir, ZIMAGE_MARK).isFile },
             Family.FLUX2.takeIf { File(dir, FLUX2_MARK).isFile },
         )
@@ -706,8 +765,11 @@ object CustomModels {
 
     /** ⚠ The marker an import of [family] writes — see [importDit]. */
     private fun markOf(family: Family): String = when (family) {
-        Family.ZIMAGE -> ZIMAGE_MARK
-        Family.FLUX2 -> FLUX2_MARK
+        // ⚠⚠ UPSTREAM's names since 2026-09-22 — see [UPSTREAM_MARKS]. A folder
+        // this app writes is now one LocalDream can read, and the reverse was
+        // always true; it is the same model either way.
+        Family.ZIMAGE -> "ZIMAGE"
+        Family.FLUX2 -> "KLEIN"
         else -> throw IllegalArgumentException("$family does not import a plain .safetensors")
     }
 

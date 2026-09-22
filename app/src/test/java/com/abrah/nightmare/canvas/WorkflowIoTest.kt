@@ -452,7 +452,7 @@ class WorkflowIoTest {
                "params": {"pad": "mirror", "x": "0.1", "y": "0.2", "w": "0.5", "h": "0.5"},
                "inputs": {"image": "photo"}},
               {"id": "s", "type": "sd15.sample", "x": 0, "y": 0, "params": {}, "inputs": {"image": "c"}},
-              {"id": "u", "type": "image.upscale", "x": 0, "y": 0, "params": {}, "inputs": {"image": "c"}}
+              {"id": "u", "type": "core.output", "x": 0, "y": 0, "params": {}, "inputs": {"media": "c"}}
             ]}
         """.trimIndent()
         val loaded = workflowFromJson(json)
@@ -463,7 +463,10 @@ class WorkflowIoTest {
         assertEquals("0.1", s.params["x"])
         assertEquals("blur", s.params["pad"])
         // ⚠ A consumer that does not frame is just rewired through.
-        assertEquals("photo", g.byId.getValue("u").inputs["image"]?.node)
+        // ⚠⚠ An OUTPUT node here since 2026-09-22: it was `image.upscale`, and
+        // that type is deleted. The rule under test is the crop migration, not
+        // which node consumes it.
+        assertEquals("photo", g.byId.getValue("u").inputs["media"]?.node)
         assertEquals(1, loaded.notes.size)
     }
 
@@ -569,7 +572,7 @@ class WorkflowIoTest {
               {"id":"src","type":"core.image","params":{},"inputs":{}},
               {"id":"out","type":"image.output",
                "params":{"save":"true"},"inputs":{"image":"src"}},
-              {"id":"up","type":"image.upscale","params":{},
+              {"id":"up","type":"sd15.sample","params":{},
                "inputs":{"image":"out"}}
             ],"positions":{}}
         """.trimIndent()

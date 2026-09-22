@@ -77,6 +77,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import com.abrah.nightmare.canvas.viewerPicture
 
 /**
  * ⭐⭐ Pictures the user kept, each with the graph that made it.
@@ -702,15 +703,10 @@ fun ResultViewer(
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
-                        // ⚠ Clear of the actions above and the seed below —
-                        // the canvas viewer's band ([VIEWER_CHROME]).
-                        .padding(horizontal = 8.dp, vertical = com.abrah.nightmare.canvas.VIEWER_CHROME)
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                            translationX = offset.x
-                            translationY = offset.y
-                        }
+                        // ⚠⚠ Clear of the actions above and the seed below,
+                        // and CLIPPED to that band so a zoom cannot draw over
+                        // either — the same function the canvas viewer calls.
+                        .viewerPicture(scale, offset)
                         // ⚠⚠⚠ **NOT `detectTransformGestures`.** That consumes
                         // every pointer event it sees, so the pager underneath
                         // never got a drag — swiping to the next picture did

@@ -252,7 +252,7 @@ class WorkflowRestoreTest {
         assertNotNull("it replaced the canvas without asking", vm.pendingOpen)
         assertTrue(
             "the graph must NOT have changed yet: " + vm.canvas.workflow.graph.nodes.map { it.id },
-            vm.canvas.workflow.graph.nodes.none { it.id == "photo" },
+            vm.canvas.workflow.graph.nodes.none { it.id == "image" },
         )
 
         // ⚠ …and confirming is what opens it, which is the control: without
@@ -261,7 +261,7 @@ class WorkflowRestoreTest {
         settle()
         assertTrue(
             "confirming must open it",
-            vm.canvas.workflow.graph.nodes.any { it.id == "photo" },
+            vm.canvas.workflow.graph.nodes.any { it.id == "image" },
         )
     }
 
@@ -284,7 +284,7 @@ class WorkflowRestoreTest {
 
         vm.openRecipe(com.abrah.nightmare.canvas.RECIPES.first { it.id == "img2img" })
         assertTrue("an unedited flow is not worth a dialog", vm.pendingOpen == null)
-        assertTrue(vm.canvas.workflow.graph.nodes.any { it.id == "photo" })
+        assertTrue(vm.canvas.workflow.graph.nodes.any { it.id == "image" })
     }
 
     /**

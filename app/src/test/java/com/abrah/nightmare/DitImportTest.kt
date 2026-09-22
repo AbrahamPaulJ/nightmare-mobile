@@ -75,7 +75,7 @@ class DitImportTest {
         )
         assertEquals(Family.ZIMAGE, spec.family)
         assertEquals(ModelCatalog.ZIMAGE, spec.backendType)
-        assertTrue("the family marker was not written", File(spec.dir(ctx), CustomModels.ZIMAGE_MARK).isFile)
+        assertTrue("the family marker was not written", File(spec.dir(ctx), "ZIMAGE").isFile)
         assertTrue("the byo marker was not written", File(spec.dir(ctx), ModelSpec.BRING_YOUR_OWN).isFile)
         // ⭐ The point of the whole exercise: installed WITHOUT its own copy of
         // the 2.6 GB of shared parts.
@@ -342,6 +342,10 @@ class DitImportTest {
      *
      * Reported 2026-09-22: *"you have to import from the app now"*. The marker
      * is now a cache — see [CustomModels.ZIMAGE_MARK].
+     *
+     * ⚠⚠ The marker written is UPSTREAM's name (`ZIMAGE` / `KLEIN`) since
+     * 2026-09-22, so a folder this app makes is one LocalDream can read —
+     * `UpstreamMarkerTest` is where that contract lives.
      */
     @Test
     fun aMarkerlessDitFolderIsAdoptedByAScan() {
@@ -354,7 +358,7 @@ class DitImportTest {
         // ⚠ Written, so the next scan is a stat rather than a header read.
         assertTrue(
             "the marker was not cached",
-            File(dir, CustomModels.ZIMAGE_MARK).isFile,
+            File(dir, "ZIMAGE").isFile,
         )
     }
 
@@ -365,7 +369,7 @@ class DitImportTest {
         File(dir, ModelSpec.DIT_WEIGHTS).writeBytes(safetensors(kleinNames))
         val found = CustomModels.scan(ctx).singleOrNull { it.id == "pushedklein" }
         assertEquals(Family.FLUX2, found?.family)
-        assertTrue(File(dir, CustomModels.FLUX2_MARK).isFile)
+        assertTrue(File(dir, "KLEIN").isFile)
     }
 
     /**

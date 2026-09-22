@@ -220,6 +220,23 @@ fun defaultWorkflow(): Workflow = Workflow(
  *   wires cross again.
  */
 private fun flowLayout(vararg ids: String): Map<String, Pt> {
+    // ⭐⭐⭐ **TWO nodes is a feeder and an output, with no worker between
+    // them** — the Upscale flow since `image.upscale` was deleted (2026-09-22).
+    //
+    // ⚠⚠ Without this branch `dropLast(2)` leaves NO feeder, the picture
+    // node is laid out as the worker, and the whole graph starts at
+    // `TOP - FEED_STEP_Y / 2 + WORKER_DROP` — 350 instead of 500. At the scale a
+    // two-node graph fits at, that is 97dp from the top of the screen and the
+    // floating top bar is drawn over the first node. Caught by
+    // `CanvasStateTest.aFittedViewPutsEveryRecipeOnScreen`, which is exactly
+    // what that test is for.
+    //
+    // ⚠ The output goes in the WORKER column, not the output one: with
+    // nothing in between, a wire crossing two empty columns is just a long wire.
+    if (ids.size == 2) return mapOf(
+        ids[0] to Pt(LEFT, TOP),
+        ids[1] to Pt(WORKER_X, TOP + OUTPUT_DROP),
+    )
     val feeders = ids.dropLast(2)
     val worker = ids[ids.size - 2]
     val output = ids.last()
@@ -516,7 +533,7 @@ fun inpaintWorkflow(): Workflow = Workflow(
     Graph(
         listOf(
             Node("prompt", "core.prompt", params = promptParams()),
-            Node("photo", "core.image", params = mapOf("uri" to "")),
+            Node("image", "core.image", params = mapOf("uri" to "")),
             // ⭐ Tap the node, then Mask, to paint. The framing lives here too —
             // there is no crop node in the chain any more, because the sampler
             // fits whatever it is given.
@@ -540,12 +557,12 @@ fun inpaintWorkflow(): Workflow = Workflow(
                     // the checkbox now says where to get it.
                     com.abrah.nightmare.SdSampler.TAP_SELECT to "true",
                 ),
-                inputs = sources("prompt" to "prompt", "image" to "photo"),
+                inputs = sources("prompt" to "prompt", "image" to "image"),
             ),
             Node("output", "core.output", inputs = sources("media" to "inpaint")),
         )
     ),
-    flowLayout("prompt", "photo", "inpaint", "output"),
+    flowLayout("prompt", "image", "inpaint", "output"),
 )
 
 /**
@@ -567,7 +584,7 @@ fun img2imgWorkflow(): Workflow {
     Graph(
         listOf(
             Node("prompt", "core.prompt", params = promptParams()),
-            Node("photo", "core.image", params = mapOf("uri" to "")),
+            Node("image", "core.image", params = mapOf("uri" to "")),
             Node(
                 id, samplerType(),
                 // ⚠ No `steps`/`cfg`: the model supplies both (see
@@ -576,12 +593,12 @@ fun img2imgWorkflow(): Workflow {
                 params = ctxKeyParams() + mapOf("seed" to "0", "denoise" to com.abrah.nightmare.SdSampler.defaultDenoise(
                     com.abrah.nightmare.SelectedModel.spec.family,
                 )),
-                inputs = sources("prompt" to "prompt", "image" to "photo"),
+                inputs = sources("prompt" to "prompt", "image" to "image"),
             ),
             Node("output", "core.output", inputs = sources("media" to id)),
         )
     ),
-    flowLayout("prompt", "photo", id, "output"),
+    flowLayout("prompt", "image", id, "output"),
     )
 }
 
@@ -611,16 +628,16 @@ fun fluxEditWorkflow(): Workflow {
         Graph(
             listOf(
                 Node("prompt", "core.prompt", params = promptParams()),
-                Node("photo", "core.image", params = mapOf("uri" to "")),
+                Node("image", "core.image", params = mapOf("uri" to "")),
                 Node(
                     id, samplerType(family = flux),
                     params = ctxKeyParams(want = flux) + mapOf("seed" to "0"),
-                    inputs = sources("prompt" to "prompt", "image" to "photo"),
+                    inputs = sources("prompt" to "prompt", "image" to "image"),
                 ),
                 Node("output", "core.output", inputs = sources("media" to id)),
             )
         ),
-        flowLayout("prompt", "photo", id, "output"),
+        flowLayout("prompt", "image", id, "output"),
     )
 }
 
@@ -639,18 +656,20 @@ fun fluxEditWorkflow(): Workflow {
 fun upscaleWorkflow(): Workflow = Workflow(
     Graph(
         listOf(
-            Node("photo", "core.image", params = mapOf("uri" to "")),
+            Node("image", "core.image", params = mapOf("uri" to "")),
+            // ⭐⭐⭐ **Two nodes, not three** — `image.upscale` is deleted
+            // (2026-09-22) and the output does the enlarging.
+            // ⚠ No `upscaler` param written: the node's own default is the first
+            // INSTALLED one, read at call time, and pinning a literal here would
+            // name a file a fresh install does not have.
             Node(
-                "upscale", "image.upscale",
-                // ⚠ No `upscaler` param written: the node's own default is the
-                // first INSTALLED one, read at call time, and pinning a literal
-                // here would name a file a fresh install does not have.
-                inputs = sources("image" to "photo"),
+                "output", "core.output",
+                params = mapOf(com.abrah.nightmare.MediaOutputNode.UPSCALE to "true"),
+                inputs = sources("media" to "image"),
             ),
-            Node("output", "core.output", inputs = sources("media" to "upscale")),
         )
     ),
-    positions = flowLayout("photo", "upscale", "output"),
+    positions = flowLayout("image", "output"),
 )
 
 /**
@@ -678,16 +697,16 @@ fun imageToVideoWorkflow(): Workflow = Workflow(
                     "negative" to "",
                 ),
             ),
-            Node("photo", "core.image", params = mapOf("uri" to "")),
+            Node("image", "core.image", params = mapOf("uri" to "")),
             Node(
                 "video", "nd.sample",
                 params = mapOf("seed" to "0", "upscale" to "true"),
-                inputs = sources("prompt" to "prompt", "image" to "photo"),
+                inputs = sources("prompt" to "prompt", "image" to "image"),
             ),
             Node("output", "core.output", inputs = sources("media" to "video")),
         )
     ),
-    flowLayout("prompt", "photo", "video", "output"),
+    flowLayout("prompt", "image", "video", "output"),
 )
 
 /**

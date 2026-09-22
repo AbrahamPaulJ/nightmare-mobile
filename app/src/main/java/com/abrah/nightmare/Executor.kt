@@ -1312,6 +1312,13 @@ internal fun explainOpFailure(code: Int, body: String): String {
  */
 object LoadImageNode : NodeType {
     override val name = "core.image"
+    /**
+     * ⚠⚠ **`image`, not `photo`** — the user's call, 2026-09-22: *"dont call
+     * it a photo node, image is the correct term"*. The node takes anything the
+     * picker hands it, and a render fed into a flow from Results is not a photo.
+     * ⚠ `defaultId` names NEW nodes only; a saved flow keeps the ids it has.
+     */
+    override val defaultId = "image"
     // ⚠ 3: pictures are decoded UPRIGHT now (EXIF orientation, `ImageStore.decode`).
     override val version = "3"
     override val inputs = emptyList<Port>()
@@ -2197,18 +2204,18 @@ object UpscaleNode : NodeType {
     override val showsResult = false
 
     /**
-     * ⭐⭐⭐ **RETIRED from the palette, 2026-09-22** — the user's call:
-     * *"i plan to eventually remove need of upscale node, output node can have
-     * auto upscale checkbox"*.
+     * ⭐⭐⭐ **DELETED, 2026-09-22** — the user's call, twice: hiding it from
+     * the palette was not enough while the Inpaint recipe still built one and
+     * the upscale button still inserted one.
      *
-     * ⚠⚠ **Hidden, not deleted.** Flows saved with one still load and still
-     * run — a graph that stops opening because a node type went away is the one
-     * failure a retirement must not cause. Nothing new can add one, and
-     * `core.output`'s [MediaOutputNode.UPSCALE] does the job in one checkbox on
-     * the node a flow already ends at.
+     * ⚠⚠ It is out of `NODE_TYPES` entirely. A saved flow naming one is
+     * REWRITTEN on load — `WorkflowIo.migrateUpscaleNodes` drops the node and
+     * turns [MediaOutputNode.UPSCALE] on at the output it fed — so nothing
+     * breaks and nothing is left behind.
      *
-     * ⚠ Its [run] is still the ONE implementation; the output node calls
-     * [upscaleTo] rather than carrying a second copy.
+     * ⚠ The object survives because [upscaleTo] is still the ONE
+     * implementation of the call, which `core.output` makes, and the migration
+     * reads this node's param names off it.
      */
     override val hidden = true
     override val name = "image.upscale"
@@ -2339,7 +2346,14 @@ object UpscaleNode : NodeType {
 val NODE_TYPES: Map<String, NodeType> = (
     listOf(
         // ⭐⭐⭐ The set of docs/ARCHITECTURE.md §5.7 — what a person wires.
-        PromptNode, LoadImageNode, UpscaleNode, MediaOutputNode,
+        // ⚠⚠⚠ **`UpscaleNode` is NOT here since 2026-09-22** — the type is
+        // DELETED, not hidden. `core.output` carries the checkbox and
+        // `WorkflowIo.migrateUpscaleNodes` rewrites a saved flow that names one,
+        // turning the enlargement on at the output it fed. ⚠ The object itself
+        // survives for `UpscaleNode.upscaleTo`, which is still the one
+        // implementation of the call, and for the migration to read its param
+        // names off.
+        PromptNode, LoadImageNode, MediaOutputNode,
         // ⭐ Six SD samplers (three families × sample/inpaint): one class, two
         // arguments of difference.
         // docs/ARCHITECTURE.md §5.7 has why the fork is capability AND family.

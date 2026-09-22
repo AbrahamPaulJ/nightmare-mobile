@@ -48,6 +48,7 @@ import com.abrah.nightmare.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -264,6 +265,8 @@ fun CanvasScreen(
     detailsOfNode: ((String) -> List<Pair<String, String>>)? = null,
     /** ⭐⭐ Download the segmenter from an inpaint node's Tap-select row. */
     onInstallSegmenter: (() -> Unit)? = null,
+    /** ⭐⭐ …and delete it from there. */
+    onDeleteSegmenter: (() -> Unit)? = null,
     /** ⚠ Whether the segmenter weights are on the phone. */
     segmenterInstalled: Boolean = true,
     /** ⭐⭐ Import a `.safetensors` adapter from inside a node's LoRA picker. */
@@ -545,7 +548,9 @@ fun CanvasScreen(
         types = types,
         onUpscale = onUpscaleNode,
         detailsOf = detailsOfNode,
+        onReset = { id -> onEdit { st -> st.resetNode(id, types) } },
         onInstallSegmenter = onInstallSegmenter,
+        onDeleteSegmenter = onDeleteSegmenter,
         segmenterInstalled = segmenterInstalled,
         onInspectNode = onInspectNode,
         onImportLora = onImportLora,
@@ -1722,14 +1727,9 @@ private fun FullscreenImage(
             modifier = Modifier
                 .fillMaxSize()
                 // ⚠ Room above for the actions and below for the seed, so
-                // neither sits ON the picture (2026-09-17, "seed below image").
-                .then(if (chromeless) Modifier.padding(12.dp) else Modifier.padding(horizontal = 12.dp, vertical = VIEWER_CHROME))
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                },
+                // neither sits ON the picture (2026-09-17, "seed below image"),
+                // and a clip so a ZOOM cannot spend it — [viewerPicture].
+                .viewerPicture(scale, offset, chromeless = chromeless),
         )
         }
         // ⚠⚠ The actions at the TOP, like the Results viewer's — which moved
@@ -1836,6 +1836,41 @@ private fun FullscreenImage(
  * its picture. ⚠ Shared with `ResultViewer`, so both viewers frame alike.
  */
 internal val VIEWER_CHROME = 96.dp
+
+/**
+ * ⭐⭐⭐ **The picture inside a fullscreen viewer** — the chrome band, the
+ * zoom, and the CLIP that keeps the second inside the first.
+ *
+ * ⚠⚠⚠ Asked for 2026-09-22: *"in zoom views dont allow zoom to leak
+ * towards the top and bottom icons/text, pls set boundary for it."* Both viewers
+ * already reserved [VIEWER_CHROME] with `padding`, but `graphicsLayer` scales
+ * the drawing AFTER layout — at 3x the picture simply drew over the action row
+ * and the seed pill, which are the two things a person is reading while they
+ * zoom. `clipToBounds` before the layer is what confines it; the padding alone
+ * never could.
+ *
+ * ⚠⚠ ONE function, both viewers (`FullscreenImage` here and
+ * `ResultViewer`). They had two copies of the same four lines and the comment in
+ * the second already claimed it matched the first — the horizontal inset did
+ * not (8 vs 12), so they were unified here rather than left to drift again.
+ */
+internal fun Modifier.viewerPicture(
+    scale: Float,
+    offset: Offset,
+    /** ⚠ A viewer over an INPUT draws no chrome, so it keeps no band for one. */
+    chromeless: Boolean = false,
+): Modifier = this
+    .padding(
+        horizontal = 12.dp,
+        vertical = if (chromeless) 12.dp else VIEWER_CHROME,
+    )
+    .clipToBounds()
+    .graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+        translationX = offset.x
+        translationY = offset.y
+    }
 
 /**
  * ⭐⭐ THE confirm for deleting nodes — from the run bar's selection and from the

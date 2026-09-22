@@ -496,15 +496,20 @@ data class CanvasState(
             }?.let { (field, _, _) ->
                 return copy(gesture = Gesture.Idle, editing = g.id, focusField = field)
             }
-            val onPreview = box?.preview != null && world.y >= box.previewTop
+            // ⭐⭐⭐ **Every picture on the node is tappable, not just the
+            // bottom one.** `previewAt` owns the bands — received, reference,
+            // made — so the fullscreen viewer opens the one under the finger.
+            // Asked for 2026-09-22, when an auto-upscaling output drew two and
+            // answered only to the lower one.
+            val hitPreview = box?.previewAt(world.y)
             // ⚠⚠ …UNLESS the node is interactive, and the cropper is why. Its
             // picture is not something to look at, it is the control you frame
             // with -- so a tap on it must open the framing view. Opening a
             // fullscreen copy of the thing you were trying to adjust is the
             // gesture landing on the wrong surface, and it was reported as
             // exactly that from the phone.
-            return if (onPreview && box!!.type?.interactive != true) {
-                copy(gesture = Gesture.Idle, viewing = box.preview!!.imageId, viewingNode = box.id)
+            return if (hitPreview != null && box!!.type?.interactive != true) {
+                copy(gesture = Gesture.Idle, viewing = hitPreview.imageId, viewingNode = box.id)
             } else {
                 copy(gesture = Gesture.Idle, editing = g.id, focusField = null)
             }
@@ -710,6 +715,42 @@ data class CanvasState(
         return copy(
             workflow = Workflow(graph, positions),
             selection = made,
+            message = null,
+        )
+    }
+
+    /**
+     * ⭐⭐ **Put one node's knobs back to their declared defaults.**
+     *
+     * The user's ask, 2026-09-22, and their call on the scope: **knobs only**.
+     * The wires, the position and whatever picture the node is showing all stay
+     * — a reset is "I have made a mess of these values", not "remove this node
+     * from my flow", and the second of those already has a control.
+     *
+     * ⚠⚠ It writes the defaults IN rather than clearing the map, because an
+     * absent param and a default-valued one are not the same to everything that
+     * reads a graph: `applyDefaults` fills the gaps for a RUN, but the canvas
+     * and the inspector read `node.params` directly in places, and a saved flow
+     * carrying no `seed` at all is a flow whose seed a later default change
+     * would silently move.
+     *
+     * ⚠ Behind a confirm at the call site, like delete — it is not undoable
+     * and it can throw away a prompt somebody typed.
+     */
+    fun resetNode(nodeId: String, types: Map<String, NodeType>): CanvasState {
+        val node = workflow.graph.byId[nodeId] ?: return this
+        val defaults = types[node.type]?.widgets.orEmpty()
+            .mapNotNull { w -> w.default?.let { w.name to it } }
+            .toMap()
+        if (defaults.isEmpty()) return this
+        return copy(
+            workflow = workflow.copy(
+                graph = workflow.graph.copy(
+                    nodes = workflow.graph.nodes.map {
+                        if (it.id == nodeId) it.copy(params = it.params + defaults) else it
+                    },
+                ),
+            ),
             message = null,
         )
     }
@@ -1002,97 +1043,4 @@ data class CanvasState(
         get() = (gesture as? Gesture.DraggingWire)?.let { PendingWire(it.from, it.to, it.error) }
 }
 
-/**
- * ⭐⭐⭐ **Put an upscale node between an output and whatever feeds it.**
- *
- * The user's ask, 2026-09-22: *"add an upscale icon in output (for images). it
- * would trace the wire behind it, add upscale node in between, lock the seed
- * (if previous gen exists, to avoid regenerating the thing we wanna upscale)
- * and Run."*
- *
- * ⚠⚠⚠ **The seed lock is the load-bearing half, not a nicety.** Every
- * sampler in this app opens at `seed = 0`, which means *roll a new one each
- * Run* — so inserting a node and pressing Run would enlarge a DIFFERENT
- * picture from the one on screen, at full render cost, and the button would
- * look broken for a reason nobody could see. ⇒ [rolledSeed] is written onto
- * the sampler first, and the sampler's own output then comes back from the
- * executor's cache rather than being made again.
- *
- * ⚠⚠ The node STAYS afterwards — the user's call when asked, over removing
- * it or asking each time. It is an ordinary edit: wired, visible, deletable,
- * and saved with the flow, which is also what lets the flow reproduce the
- * result.
- *
- * ⚠ Refuses (returns null) when there is nothing to do: no wire behind the
- * output, or an `image.upscale` already sitting there. The caller says why;
- * silently doing nothing is what this whole file argues against.
- */
-fun insertUpscale(
-    state: CanvasState,
-    outputNode: String,
-    upscalerId: String,
-    upscalerParam: String,
-    /**
-     * ⚠⚠ EVERY rolling sampler upstream and the seed its last Run rolled —
-     * not just the nearest. A chain of two samplers rolls two seeds and either
-     * one changes the picture, which is the same rule the mask-edit lock
-     * follows (`HarnessViewModel`). The caller builds it; an empty map locks
-     * nothing, which is right for a graph that has never run.
-     */
-    seedsToLock: Map<String, String>,
-): CanvasState? = with(state) {
-    val g = workflow.graph
-    val out = g.byId[outputNode] ?: return null
-    // ⚠⚠⚠ **The wire BEHIND it, by whatever its port is called.**
-    //
-    // This read `inputs["image"]` for one release and `core.output`'s port is
-    // `media` — the one port type that takes a picture OR a clip
-    // ([MediaOutputNode]). So the button never found a wire and always toasted
-    // "nothing is wired into this output", on every real graph. `UpscaleInsertTest`
-    // passed because its fixture used the same wrong name: a test written from
-    // the same assumption as the code cannot catch the assumption.
-    // ⇒ Take the wire that is THERE. An output node has exactly one input, and
-    // its name is the node type's business rather than this function's.
-    val (inPort, src) = out.inputs.entries.singleOrNull()?.toPair() ?: return null
-    if (g.byId[src.node]?.type == com.abrah.nightmare.UpscaleNode.name) return null
 
-    val id = g.freeId("upscale")
-    val node = com.abrah.nightmare.Node(
-        id = id,
-        type = com.abrah.nightmare.UpscaleNode.name,
-        params = mapOf(upscalerParam to upscalerId),
-        inputs = mapOf("image" to src),
-    )
-    val rewired = g.nodes.map { n ->
-        if (n.id == outputNode) n.copy(inputs = n.inputs + (inPort to com.abrah.nightmare.Source(id)))
-        else n
-    } + node
-    // ⚠ Halfway between the two it sits between, so the graph reads left to
-    // right as it always did. Falls back to beside the output when either
-    // position is unknown (a flow loaded without positions).
-    val a = workflow.positions[src.node]
-    val b = workflow.positions[outputNode]
-    val at = if (a != null && b != null) Pt((a.x + b.x) / 2f, (a.y + b.y) / 2f)
-    else b?.let { Pt(it.x - 40f, it.y + 60f) } ?: Pt(0f, 0f)
-
-    var next = copy(
-        workflow = Workflow(
-            graph = g.copy(nodes = rewired),
-            positions = workflow.positions + (id to at),
-        ),
-        // ⚠⚠ Same clearing [addNode] does, and for the same reason: `freeId`
-        // hands back a freed name and the picture maps are keyed by id.
-        previews = previews - id,
-        rendered = rendered - id,
-        beforePreviews = beforePreviews - id,
-        videos = videos - id,
-        message = null,
-    )
-    // ⚠ Only where it is still rolling. A seed someone pinned by hand is not
-    // ours to overwrite.
-    for ((sampler, rolled) in seedsToLock) {
-        val cur = next.workflow.graph.byId[sampler]?.params?.get("seed")?.trim().orEmpty()
-        if (cur.isEmpty() || cur == "0") next = next.setParam(sampler, "seed", rolled)
-    }
-    return next
-}

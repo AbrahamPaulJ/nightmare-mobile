@@ -149,20 +149,24 @@ class PreviewSigTest {
      * upscale for a picture nobody asked for.
      */
     @Test
-    fun anUpscaleIsNeverRunForAPreview() {
+    fun aSamplerIsNeverRunForAPreview() {
+        // ⚠⚠ This was an `image.upscale` node until 2026-09-22, when that type
+        // was DELETED (upscaling is a checkbox on the output). The rule it pins
+        // is about [NodeType.appSide], not about upscaling — any node that
+        // reaches the backend must be refused by the free test — so a sampler
+        // stands in and the assertion is unchanged.
         val g = Graph(
             listOf(
                 Node("photo", "core.image", mapOf("uri" to "/a.png")),
-                Node("up", "image.upscale", mapOf("upscaler" to "upscaler_anime"),
-                    sources("image" to "photo")),
+                Node("gen", "sd15.sample", inputs = sources("image" to "photo")),
             )
         )
         // It IS a target — it makes a picture — which is exactly why the free
         // test has to be the thing that refuses it.
-        assertEquals(listOf("photo", "up"), previewTargets(g, types))
-        assertNull("an upscale reaches the backend", freeAncestry(g, "up", types))
+        assertEquals(listOf("photo", "gen"), previewTargets(g, types))
+        assertNull("a sampler reaches the backend", freeAncestry(g, "gen", types))
         // ⚠ …and the photo feeding it is still free on its own, or choosing a
-        // picture would stop showing one the moment an upscaler was wired after it.
+        // picture would stop showing one the moment a sampler was wired after it.
         assertNotNull(freeAncestry(g, "photo", types))
     }
 

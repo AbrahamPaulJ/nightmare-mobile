@@ -1654,45 +1654,33 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun upscaleFromNode(nodeId: String, upscalerId: String) {
         upscaleNodePick = null
-        val st = canvas
-        val graph = st.workflow.graph
-        // ⚠⚠ Every rolling sampler upstream, not only the nearest — a chain of
-        // two rolls two seeds and either one changes the picture.
-        val seeds = mutableMapOf<String, String>()
-        val seen = mutableSetOf<String>()
-        val queue = ArrayDeque(listOf(nodeId))
-        while (queue.isNotEmpty()) {
-            val id = queue.removeFirst()
-            if (!seen.add(id)) continue
-            val n = graph.byId[id] ?: continue
-            if (com.abrah.nightmare.isSampler(n.type) &&
-                n.params["seed"]?.trim().orEmpty().let { it.isEmpty() || it == "0" }
-            ) {
-                com.abrah.nightmare.canvas.seedFor(graph, id) { canvasStatus[it]?.detail }
-                    ?.let { seeds[id] = it }
-            }
-            n.inputs.values.forEach { queue.addLast(it.node) }
-        }
-        val next = com.abrah.nightmare.canvas.insertUpscale(
-            st,
-            outputNode = nodeId,
-            upscalerId = upscalerId,
-            upscalerParam = UpscaleNode.UPSCALER,
-            seedsToLock = seeds,
-        )
-        if (next == null) {
-            // ⚠ By NAME, never silence — the two ways this refuses are both
-            // things the person can see on the canvas and act on.
-            val behind = graph.byId[nodeId]?.inputs?.get("image")?.node
-            toast(
-                if (behind != null && graph.byId[behind]?.type == UpscaleNode.name)
-                    "There is already an upscale node here"
-                else "Nothing is wired into this output yet",
-            )
+        val node = canvas.workflow.graph.byId[nodeId] ?: return
+        if (node.type != MediaOutputNode.name) {
+            toast("Upscaling is a checkbox on the output node")
             return
         }
-        updateCanvas(next)
-        for ((sampler, seed) in seeds) say("$sampler: seed locked at $seed — upscaling its picture")
+        // ⭐⭐⭐ **It TICKS the checkbox; it does not add a node.**
+        //
+        // ⚠⚠⚠ It used to insert an `image.upscale` between this output and
+        // whatever fed it. That node is deleted now (2026-09-22), and the user
+        // had asked for it to be — a button that answered "upscale this" by
+        // building the very node they wanted gone was the complaint. ⇒ The
+        // output does the enlargement itself, and this sets the two params that
+        // say so.
+        //
+        // ⚠ No seed pinning any more, and none is needed: nothing upstream
+        // changes, so every node before this one comes back from the cache and
+        // only the enlargement runs. The pinning existed because INSERTING a
+        // node re-keyed the graph.
+        updateCanvas(
+            canvas.setParams(
+                nodeId,
+                mapOf(
+                    MediaOutputNode.UPSCALE to "true",
+                    MediaOutputNode.UPSCALER to upscalerId,
+                ),
+            )
+        )
         runCanvasOrBatch()
     }
 
@@ -1827,19 +1815,30 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             missingModel = MissingModel.Checkpoint(id, offer, substitute = offer.id != id)
             return false
         }
-        // ⭐ The segmenter: a Segment model node on the canvas, or a mask that was tapped.
+        // ⭐⭐⭐ **The segmenter is demanded ONLY by a mask that was actually
+        // TAPPED**, never by the feature being switched on.
+        //
+        // ⚠⚠⚠ Reported 2026-09-22: *"in inpaint flow even if i dont use tap
+        // to segment and click run, i got window saying to download segment
+        // model"*. The clause was `n.type == SelectObjectNode.name`, and the
+        // Inpaint recipe wired one of those in by default — so every inpaint
+        // Run demanded an 80 MB download for a tool the person had not touched.
+        // The node is deleted now and the checkbox that replaced it must NOT
+        // inherit the demand: ticking a tool is not using it.
+        // ⚠ A mask holding taps is different — those taps are re-resolved at
+        // render, so the model is genuinely needed and the popup is right.
         val needsSegmenter = graph.nodes.any { n ->
-            n.type == SelectObjectNode.name ||
-                (n.type in com.abrah.nightmare.INPAINT_TYPES &&
-                    com.abrah.nightmare.MaskTaps.hasTaps(com.abrah.nightmare.MaskNode.stateOf(n)))
+            n.type in com.abrah.nightmare.INPAINT_TYPES &&
+                com.abrah.nightmare.MaskTaps.hasTaps(com.abrah.nightmare.MaskNode.stateOf(n))
         }
         if (needsSegmenter && !com.abrah.nightmare.segment.Segmenter.isInstalled(ctx)) {
             missingModel = MissingModel.Segment
             return false
         }
-        // ⭐ Upscalers an Upscale node names.
-        for (n in graph.nodes.filter { it.type == UpscaleNode.name }) {
-            val id = com.abrah.nightmare.applyDefaults(UpscaleNode.widgets, n)[UpscaleNode.UPSCALER].orEmpty()
+        // ⭐ Upscalers an OUTPUT node names — `image.upscale` is deleted, and the
+        // checkbox that replaced it needs the same weights.
+        for (n in graph.nodes.filter { MediaOutputNode.autoUpscales(it) }) {
+            val id = MediaOutputNode.effectiveParams(n)[MediaOutputNode.UPSCALER].orEmpty()
             val spec = UpscalerCatalog.byId(id) ?: continue
             if (spec.installed(ctx) || spec.buildFor(caps) == null) continue
             missingModel = MissingModel.Upscale(spec)
@@ -4128,17 +4127,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * ⚠⚠ Selecting a BATCH means selecting all of it. The card shows one
-     * checkbox-worth of state (its cover), and this expands that to the items
-     * so a delete or a save covers what the user actually pointed at.
+     * ⚠⚠⚠ **It expands NOTHING, and that is a bug fix.**
+     *
+     * It used to grow a selection containing a batch's COVER into the whole
+     * sweep, because Results drew a batch as ONE card with one checkbox and
+     * acting on less than the card would have been a lie.
+     *
+     * ⚠⚠ That layout is gone. Results is a big preview over a flat grid
+     * (`docs/UI.md` §8.11) and `BatchCard` is no longer called by anything — so
+     * nothing on screen says which pictures share a sweep, and deleting one
+     * quietly took the other seven. Reported by a user 2026-09-22, and the
+     * reason it was hard to credit is that the justification still existed in
+     * the code that no longer ran.
+     *
+     * ⇒ A selection means exactly the pictures in it. ⚠ Kept as a function
+     * rather than inlined away: if grouping ever returns to the list, this is
+     * the one place that decides, and the note above is the argument it has to
+     * beat.
      */
-    fun expandSelection(ids: Set<String>): Set<String> {
-        val out = ids.toMutableSet()
-        for (g in keptGroups) if (g.isBatch && g.cover.id in ids) {
-            out += g.items.map { it.id }
-        }
-        return out
-    }
+    fun expandSelection(ids: Set<String>): Set<String> = ids
 
     fun saveSelectedResults() = saveResultsToGallery(expandSelection(selectedResults))
 

@@ -41,9 +41,9 @@ size costs no reload. Snapdragon 8 Elite or newer.
 the hole it is filling and the pixels around it, instead of repainting blind and being blended
 back afterwards. It sits among the SD 1.5 models and does text and image to image too.
 
-**Tap to select.** The Inpaint flow opens with a Segment model node wired in. Tap the thing you
-want redone and the mask follows its outline. That is Segment Anything 2.1, an 87 MB download,
-running on the phone's CPU.
+**Tap to select.** Tick `Tap to select` in the mask editor, tap the thing you want redone, and
+the mask follows its outline. That is Segment Anything 2.1, an 87 MB download that the same
+checkbox offers, running on the phone's CPU.
 
 **Image editing with FLUX.2 Klein.** A photo and a prompt: the whole picture is re-rendered
 to follow it rather than nudged, so the composition survives and the content changes. Wire a
@@ -97,7 +97,10 @@ a photo on one and it sizes itself to that photo's shape.
 plain weights, so a Z-Image checkpoint from CivitAI is picked from storage and runs — no
 conversion, no PC. The text encoder, VAE and tokenizer are shared with the model you already
 installed, so an import costs only the weights. A folder copied onto the phone works too — the
-family is read out of the checkpoint's own tensor names, so nothing has to be declared.
+family is read out of the checkpoint's own tensor names, so nothing has to be declared. A folder
+that already carries LocalDream's marker file — `SDXL`, `ANIMA`, `KLEIN`, `ZIMAGE`, `npucustom`
+or `finished` — is taken at its word, so a model directory assembled for that app imports here
+unchanged.
 
 **LoRAs, swappable per render.** Import an adapter `.safetensors` and pick it on any FLUX.2 or
 Z-Image generate node — a checkbox per installed file and a strength slider. It binds while the

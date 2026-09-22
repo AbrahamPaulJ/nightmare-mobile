@@ -148,10 +148,14 @@ class SdSampler(
         // mask is painted or tapped in the node's own editor; a wired mask was a
         // second way to supply it that nobody used and every inpaint node paid
         // a port row for. `WorkflowIo.migrateType` drops an old saved wire.
-        // ⭐ Tap to select (`docs/SEGMENTER.md`): wiring `mask.segment_model`
-        // here is what shows the Tap tool. ⚠ Added while no flow depends on the
-        // port list — a port cannot be added after one does (§7).
-        if (inpaint) Port("segmenter", SelectObjectNode.PORT_TYPE) else null,
+        // ⚠⚠⚠ **No `segmenter` port since 2026-09-22.** Tap to select is a
+        // CHECKBOX on this node ([TAP_SELECT]) and `mask.segment_model` is
+        // deleted, so a port for wiring one in is a socket for a plug that no
+        // longer exists. Reported the same day: *"the inpaint node still shows
+        // the wiring point for segmenter, remove it"*.
+        // ⚠ A saved flow's wire into it is dropped by `WorkflowIo`, which
+        // already drops wires to ports a node no longer has — the same thing
+        // that happened when `mask` was removed on 2026-09-17.
         // ⭐⭐ FLUX.2 Klein's edit REFERENCE — a second picture the model reads
         // but does not redraw. Unlike `image` it is never cropped to the
         // canvas: the engine VAE-encodes each reference at its OWN aspect
@@ -496,7 +500,23 @@ class SdSampler(
         }
     }
 
-    private fun baseWidgets() = listOf(
+    private fun baseWidgets() = listOfNotNull(
+        // ⭐⭐⭐ **Tap to select, on the INPAINT samplers** — the checkbox that
+        // replaced `mask.segment_model` (2026-09-22, the user's call).
+        //
+        // ⚠⚠⚠ It was declared in `ditWidgets()` for one round, which is the
+        // only list the inpaint samplers do NOT use: they are SD 1.5, SDXL and
+        // Anima. So the checkbox appeared on FLUX.2 and Z-Image — which cannot
+        // inpaint at all — and on none of the nodes that can. `PaletteTest`
+        // caught it; nothing a person could see would have, because the mask
+        // editor only draws the row when the widget exists.
+        // ⚠ Drawn in the MASK EDITOR rather than the knob list — the tapping
+        // happens there, so the switch for it is there ([NodeInspector]).
+        if (inpaint) Widget(
+            TAP_SELECT, "bool", "false",
+            hint = "tap an object in the mask editor to select it, instead of " +
+                "painting it by hand",
+        ) else null,
         // ⚠⚠ Defaults from the MODEL, not from a literal. A distilled checkpoint
         // publishes something like 10 steps at cfg 1.5, and this app's 20/7.5
         // renders it burnt rather than failing — measured on device 2026-09-10.
@@ -680,12 +700,6 @@ class SdSampler(
         // tool. The node is retired from the palette, not deleted
         // ([SelectObjectNode.hidden]) — a graph that stops loading because a
         // type went away is the one failure a retirement must not cause.
-        // ⚠ Inpaint only, exactly as the port is.
-        Widget(
-            TAP_SELECT, "bool", "false",
-            hint = "tap an object in the mask editor to select it, instead of " +
-                "painting it by hand",
-        ),
         Widget(
             LORAS, "string", "",
             hint = "adapters applied on top of this checkpoint — import them on " +

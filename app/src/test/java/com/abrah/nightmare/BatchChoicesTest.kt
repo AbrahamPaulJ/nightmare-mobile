@@ -96,14 +96,23 @@ class TerminalImageNodeTest {
         assertEquals(listOf("inpaint"), terminalImageNodes(bare, NODE_TYPES))
     }
 
-    /** ⭐ An Upscale wired after the decode moves the answer, with no list to edit. */
+    /**
+     * ⭐ A SECOND sampler wired after the first moves the answer, with no list
+     * to edit.
+     *
+     * ⚠⚠ It used to be an `image.upscale` here. That type was DELETED
+     * 2026-09-22 (`core.output` carries the checkbox instead), and a fixture
+     * naming a type `NODE_TYPES` no longer holds tests nothing — the rule reads
+     * its ports off the type. An img2img sampler is the same shape: one IMAGE
+     * in, one IMAGE out.
+     */
     @Test
-    fun anUpscaleAfterTheDecodeBecomesTheTerminal() {
+    fun aSecondSamplerAfterTheFirstBecomesTheTerminal() {
         val g = com.abrah.nightmare.canvas.inpaintWorkflow().graph
         val withUp = Graph(
             g.nodes.filterNot { it.type == "core.output" } + Node(
-                "up", "image.upscale",
-                mapOf("upscaler" to "upscaler_anime"),
+                "up", "sd15.sample",
+                emptyMap(),
                 sources("image" to "inpaint"),
             )
         )
@@ -120,9 +129,9 @@ class TerminalImageNodeTest {
         val g = com.abrah.nightmare.canvas.inpaintWorkflow().graph
         val two = Graph(
             g.nodes.filterNot { it.type == "core.output" } + Node(
-                "up", "image.upscale",
-                mapOf("upscaler" to "upscaler_anime"),
-                sources("image" to "photo"),
+                "up", "sd15.sample",
+                emptyMap(),
+                sources("image" to "image"),
             )
         )
         assertEquals(setOf("inpaint", "up"), terminalImageNodes(two, NODE_TYPES).toSet())

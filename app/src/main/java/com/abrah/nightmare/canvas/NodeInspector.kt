@@ -73,6 +73,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.graphics.ImageBitmap
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
@@ -276,8 +278,12 @@ fun NodeInspector(
     loraEpoch: Int = 0,
     /** ⭐⭐ Enlarge the node's picture by editing the flow behind it. */
     onUpscale: ((String) -> Unit)? = null,
+    /** ⭐⭐ Put a node's knobs back to their defaults — [CanvasState.resetNode]. */
+    onReset: ((String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from an inpaint node's Tap-select row. */
     onInstallSegmenter: (() -> Unit)? = null,
+    /** ⭐⭐ …and delete it from there too. */
+    onDeleteSegmenter: (() -> Unit)? = null,
     /** ⚠ Whether the segmenter weights are on the phone. */
     segmenterInstalled: Boolean = true,
     /** ⭐⭐ What made this picture, for the ⓘ dialog. */
@@ -566,7 +572,9 @@ fun NodeInspector(
             // ⚠ Only on a node that HAS a picture and acts on it — the same
             // `actsOnItsPicture` rule the star and the disk follow.
             onInstallSegmenter = onInstallSegmenter,
+            onDeleteSegmenter = onDeleteSegmenter,
             segmenterInstalled = segmenterInstalled,
+            onReset = onReset,
             // ⚠⚠ **Not offered when the node ALREADY auto-upscales** — the
             // user's call, 2026-09-22. The button's whole job is to put an
             // upscale into the flow behind this output, and the checkbox above
@@ -863,8 +871,12 @@ internal fun NodeInspectorBody(
     loraEpoch: Int = 0,
     /** ⭐⭐ Enlarge this node's picture — see [PictureActions.onUpscale]. */
     onUpscale: (() -> Unit)? = null,
+    /** ⭐⭐ Put this node's knobs back to their defaults — [CanvasState.resetNode]. */
+    onReset: ((String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from the Tap-select row; null hides the button. */
     onInstallSegmenter: (() -> Unit)? = null,
+    /** ⭐⭐ …and delete it, the other half of saying it is here. */
+    onDeleteSegmenter: (() -> Unit)? = null,
     /** ⚠ Whether the segmenter weights are on the phone — read by the caller. */
     segmenterInstalled: Boolean = true,
     /** ⭐⭐ What made this picture — the rows for [com.abrah.nightmare.ui.ResultInfoDialog]. */
@@ -878,6 +890,7 @@ internal fun NodeInspectorBody(
     // ⚠ Local: an unanswered confirm is not something to persist, same as every
     // other one in the app.
     var confirmingDelete by remember { mutableStateOf(false) }
+    var confirmingReset by remember { mutableStateOf(false) }
     // ⚠ Null when not renaming. Keyed on the node so opening another node's
     // sheet cannot leave a half-typed name from the last one behind.
     var renaming by remember(nodeId) { mutableStateOf<TextFieldValue?>(null) }
@@ -1432,6 +1445,9 @@ internal fun NodeInspectorBody(
                     onTapMask = onTapMask,
                     type = type,
                     onSetParam = { k, v -> onSetParam(nodeId, k, v) },
+                    segmenterInstalled = segmenterInstalled,
+                    onInstallSegmenter = onInstallSegmenter,
+                    onDeleteSegmenter = onDeleteSegmenter,
                 )
             }
         }
@@ -1965,39 +1981,12 @@ internal fun NodeInspectorBody(
             // ships `save = true`, and a box drawn unchecked over a node that
             // will in fact save is a control lying about its own state.
             // ⚠ Written lowercase, the one spelling every `run` compares against.
-            // ⭐⭐⭐ **Tap select is a checkbox that NAMES ITS MODEL** and
-            // offers the download beside it — the user's call, 2026-09-22.
-            //
-            // ⚠⚠ A plain `bool` row would tick on and then fail at the first
-            // tap with "the segmenter is not installed", which is the shape of
-            // bug `MissingModelDialog` exists to stop everywhere else: the thing
-            // a control needs is offered where the control is.
-            if (w.name == com.abrah.nightmare.SdSampler.TAP_SELECT) {
-                val on = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = on,
-                        onCheckedChange = { v -> onSetParam(nodeId, w.name, v.toString()) },
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(w.name.knobLabel, style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            // ⚠ The MODEL is named whether it is here or not: it
-                            // is what the checkbox will use, and a download button
-                            // with no subject is a button for something unnamed.
-                            com.abrah.nightmare.segment.Segmenter.LABEL +
-                                if (segmenterInstalled) "" else " · not installed",
-                            style = LogTextStyle,
-                            color = if (segmenterInstalled) MaterialTheme.colorScheme.onSurfaceVariant
-                            else MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    if (!segmenterInstalled && onInstallSegmenter != null) {
-                        TextButton(onClick = onInstallSegmenter) { Text("Download") }
-                    }
-                }
-                continue
-            }
+            // ⚠⚠ **Hidden from the knob list — it is drawn in the MASK EDITOR**,
+            // under the slider, where the tapping happens (the user's call,
+            // 2026-09-22). A second checkbox for one param in the sheet above
+            // would be two controls over one state, which §8.6 spent four
+            // shapes learning not to do.
+            if (w.name == com.abrah.nightmare.SdSampler.TAP_SELECT) continue
             if (w.type == "bool") {
                 val on = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2229,9 +2218,33 @@ internal fun NodeInspectorBody(
         // node and every wire on it with no undo. Every other destructive
         // action in the app already asks -- multi-select delete, a saved flow,
         // a model -- and this was the one that did not. `docs/UI.md` §5.
-        TextButton(onClick = { confirmingDelete = true }) {
-            Text("Delete node", color = MaterialTheme.colorScheme.error)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // ⭐⭐ **Reset — the knobs back to their defaults**, asked for
+            // 2026-09-22. ⚠ Behind a confirm like Delete beside it: it is not
+            // undoable and it can throw away a prompt somebody typed.
+            // ⚠⚠ NOT error-coloured. It keeps the node, its wires and its
+            // picture, so it is not the same kind of act as the button next to
+            // it, and colouring them alike would make the pair read as two ways
+            // to destroy something.
+            if (onReset != null) {
+                TextButton(onClick = { confirmingReset = true }) { Text("Reset node") }
+            }
+            TextButton(onClick = { confirmingDelete = true }) {
+                Text("Delete node", color = MaterialTheme.colorScheme.error)
+            }
         }
+    }
+
+    if (confirmingReset && onReset != null) {
+        com.abrah.nightmare.ui.ConfirmDelete(
+            title = "Reset this node?",
+            confirmLabel = "Reset",
+            // ⚠ Says exactly what survives, because the word "reset" does not.
+            body = "Every knob on \"$nodeId\" goes back to its default. Its wires, " +
+                "its place on the canvas and any picture on it stay.",
+            onConfirm = { onReset(nodeId) },
+            onDismiss = { confirmingReset = false },
+        )
     }
 
     if (confirmingDelete) {
@@ -3071,6 +3084,12 @@ private fun MaskToolbar(
      * strokes, because `node` is whatever the last recomposition captured.
      */
     onEditMask: (node: String, (com.abrah.nightmare.MaskState) -> com.abrah.nightmare.MaskState) -> Unit,
+    /** ⚠ Whether the segmenter weights are on the phone — for the row below the slider. */
+    segmenterInstalled: Boolean = true,
+    /** ⭐ Fetch them from here; null hides the button (a golden has no VM). */
+    onInstallSegmenter: (() -> Unit)? = null,
+    /** ⭐ …and remove them, which is the other half of saying they are here. */
+    onDeleteSegmenter: (() -> Unit)? = null,
 ) {
     var tool by remember { mutableStateOf(MaskTool.BRUSH) }
     // ⚠ Local, not a graph param: the brush size is how you are working right
@@ -3117,10 +3136,14 @@ private fun MaskToolbar(
     // flow saved before 2026-09-22, while a `mask.segment_model` is still WIRED
     // (`docs/SEGMENTER.md` §1). ⚠⚠ BOTH, not one: the node is retired rather
     // than deleted, so an old graph must keep working untouched.
-    val canTap = node.inputs["segmenter"] != null ||
-        com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)[
-            com.abrah.nightmare.SdSampler.TAP_SELECT
-        ].equals("true", ignoreCase = true)
+    // ⚠ The port is gone (2026-09-22); the checkbox is the only switch now.
+    val tapSelect = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)[
+        com.abrah.nightmare.SdSampler.TAP_SELECT
+    ].equals("true", ignoreCase = true)
+    // ⚠⚠ The TOOL appears only when the model is here as well as ticked: a Tap
+    // tool that answers every tap with "download it first" is a tool that does
+    // not work, and the row under the slider is where that is said.
+    val canTap = tapSelect && segmenterInstalled
     if (!canTap && tool == MaskTool.TAP) tool = MaskTool.BRUSH
     var tapping by remember { mutableStateOf(false) }
     var tapNote by remember { mutableStateOf<String?>(null) }
@@ -3298,6 +3321,44 @@ private fun MaskToolbar(
             featherMax = featherW?.max?.toFloat() ?: 0.2f,
             onFeather = if (featherW == null) null else { v -> onSetParam("feather", fixed(v, 3)) },
         )
+        // ⭐⭐⭐ **Tap to select lives HERE, under the slider** — the user's
+        // call, 2026-09-22. The tapping happens in this editor, so the switch
+        // for it belongs in this editor rather than in the node's knob list two
+        // screens of sliders away.
+        //
+        // ⚠⚠ It also says whether the MODEL is here, with the action that
+        // changes that: Download when it is missing, Delete when it is not.
+        // A checkbox that silently needs an 80 MB download is the shape of bug
+        // `MissingModelDialog` exists to stop — offer the thing the control
+        // needs, where the control is.
+        if (type?.widgets?.any { it.name == com.abrah.nightmare.SdSampler.TAP_SELECT } == true) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = tapSelect,
+                    onCheckedChange = { v ->
+                        onSetParam(com.abrah.nightmare.SdSampler.TAP_SELECT, v.toString())
+                    },
+                )
+                Column(Modifier.weight(1f)) {
+                    Text("Tap to select", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        com.abrah.nightmare.segment.Segmenter.LABEL +
+                            if (segmenterInstalled) "" else " · not downloaded",
+                        style = LogTextStyle,
+                        color = if (segmenterInstalled) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (!segmenterInstalled) {
+                    onInstallSegmenter?.let { TextButton(onClick = it) { Text("Download") } }
+                } else {
+                    onDeleteSegmenter?.let { TextButton(onClick = it) { Text("Delete") } }
+                }
+            }
+        }
         Text(
             // ⚠⚠ Says the convention out loud. White-takes-repaint is the one
             // thing about masking that is easy to get backwards and impossible
@@ -3658,10 +3719,42 @@ private fun ImagePicker(current: String, onPicked: (String) -> Unit, onClear: ()
         // photo already explains itself, and a full-width "choose another" then
         // spends the sheet's widest row restating it. Asked for from the phone.
         if (current.isBlank()) {
-            Button(
-                onClick = pick,
-                shape = RoundedCornerShape(12.dp),
-            ) { Text("Choose an image") }
+            // ⭐⭐⭐ **A framed + where the picture will go**, not a button
+            // saying so — the user's call, 2026-09-22: *"i dont want a Choose an
+            // image btn on it, center a big plus btn with a frame like a gallery
+            // picker"*.
+            //
+            // ⚠ It occupies the slot the picture will occupy, so the empty node
+            // reads as a place for one rather than as a node with a control on
+            // it. ⚠⚠ The dashes are drawn, not an image: a dashed border is a
+            // stroke with a `PathEffect`, and `Modifier.border` cannot dash.
+            val outline = MaterialTheme.colorScheme.outlineVariant
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 140.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = pick)
+                    .drawBehind {
+                        drawRoundRect(
+                            color = outline,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                width = 2.dp.toPx(),
+                                pathEffect = androidx.compose.ui.graphics.PathEffect
+                                    .dashPathEffect(floatArrayOf(12f, 10f)),
+                            ),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()),
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "choose an image",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(44.dp),
+                )
+            }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ImageActions(

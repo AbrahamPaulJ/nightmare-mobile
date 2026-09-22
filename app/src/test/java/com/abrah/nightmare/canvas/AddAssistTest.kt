@@ -26,6 +26,14 @@ class AddAssistTest {
 
     private val empty = Graph(emptyList())
 
+    /** ⚠ A node with an IMAGE in and an IMAGE out — what a splice needs. */
+    private val sampler = com.abrah.nightmare.SdSampler.ALL.first { !it.inpaint }.name
+
+    // ⚠⚠ `core.output` stands in for "a node that consumes a picture" here.
+    // It was `image.upscale`, which was DELETED on 2026-09-22 — upscaling is a
+    // checkbox on the output node now. The assist's arithmetic is about PORTS,
+    // not about which node it is, so the substitution changes nothing it tests.
+
     /** ⚠ A node with no inputs proposes nothing, so no sheet is shown for it. */
     @Test
     fun aSourceNodeOffersNothing() {
@@ -85,8 +93,8 @@ class AddAssistTest {
                 Node("photo", "core.image"),
             ),
         )
-        val plan = planAdd(typeOf("image.upscale"), g, types)
-        val forImage = plan.snaps.filter { it.port == "image" }
+        val plan = planAdd(typeOf("core.output"), g, types)
+        val forImage = plan.snaps.filter { it.port == "media" }
         assertTrue("both picture sources offered: $forImage", forImage.size >= 2)
         assertEquals(
             "the sampler runs last, so it is what 'what I just made' means",
@@ -99,7 +107,7 @@ class AddAssistTest {
     @Test
     fun oneRecommendationPerPort() {
         val g = Graph(listOf(Node("a", "core.image"), Node("b", "core.image")))
-        val plan = planAdd(typeOf("image.upscale"), g, types)
+        val plan = planAdd(typeOf("core.output"), g, types)
         for ((_, forPort) in plan.snaps.groupBy { it.port }) {
             assertEquals(1, forPort.count { it.recommended })
         }
@@ -111,11 +119,11 @@ class AddAssistTest {
     fun itWiresTheSnapItWasGiven() {
         val g = Graph(listOf(Node("photo", "core.image")))
         val st = CanvasState(Workflow(g, mapOf("photo" to Pt(0f, 0f))))
-        val plan = planAdd(typeOf("image.upscale"), g, types)
-        val snap = plan.snaps.single { it.port == "image" && it.recommended }
-        val next = st.applyAdd(plan, Pt(300f, 0f), emptySet(), mapOf("image" to snap))
-        val added = next.workflow.graph.nodes.single { it.type == "image.upscale" }
-        assertEquals("photo", added.inputs["image"]!!.node)
+        val plan = planAdd(typeOf("core.output"), g, types)
+        val snap = plan.snaps.single { it.port == "media" && it.recommended }
+        val next = st.applyAdd(plan, Pt(300f, 0f), emptySet(), mapOf("media" to snap))
+        val added = next.workflow.graph.nodes.single { it.type == "core.output" }
+        assertEquals("photo", added.inputs["media"]!!.node)
         // ⚠ The new node's sheet opens, exactly as a plain add does.
         assertEquals(added.id, next.editing)
     }
@@ -135,8 +143,11 @@ class AddAssistTest {
                 Node("out", "core.output", inputs = sources("media" to "photo")),
             ),
         )
-        val plan = planAdd(typeOf("image.upscale"), g, types)
-        val splice = plan.splices.singleOrNull { it.consumer == "out" && it.from == "photo" }
+        // ⚠ A SAMPLER, because a splice needs the new node to have an input AND
+        // an output — `core.output` has no outputs, so it can never sit IN a
+        // wire, only at the end of one.
+        val plan = planAdd(typeOf(sampler), g, types)
+        val splice = plan.splices.firstOrNull { it.consumer == "out" && it.from == "photo" }
         assertTrue("no splice offered: ${plan.splices}", splice != null)
     }
 
@@ -150,11 +161,11 @@ class AddAssistTest {
             ),
         )
         val st = CanvasState(Workflow(g, mapOf("photo" to Pt(0f, 0f), "out" to Pt(400f, 0f))))
-        val plan = planAdd(typeOf("image.upscale"), g, types)
-        val splice = plan.splices.single { it.consumer == "out" && it.from == "photo" }
+        val plan = planAdd(typeOf(sampler), g, types)
+        val splice = plan.splices.first { it.consumer == "out" && it.from == "photo" }
         val next = st.applyAdd(plan, Pt(200f, 0f), emptySet(), emptyMap(), splice)
-        val added = next.workflow.graph.nodes.single { it.type == "image.upscale" }
-        assertEquals("the new node must read the old source", "photo", added.inputs["image"]!!.node)
+        val added = next.workflow.graph.nodes.single { it.type == sampler }
+        assertEquals("the new node must read the old source", "photo", added.inputs[splice.inPort]!!.node)
         assertEquals(
             "the consumer must now read the new node",
             added.id,
@@ -166,7 +177,7 @@ class AddAssistTest {
     @Test
     fun anUnwiredGraphOffersNoSplice() {
         val g = Graph(listOf(Node("photo", "core.image")))
-        assertTrue(planAdd(typeOf("image.upscale"), g, types).splices.isEmpty())
+        assertTrue(planAdd(typeOf(sampler), g, types).splices.isEmpty())
     }
 
     @Test

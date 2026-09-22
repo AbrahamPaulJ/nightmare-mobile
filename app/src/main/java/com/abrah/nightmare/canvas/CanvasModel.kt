@@ -369,6 +369,30 @@ data class NodeBox(
     val refPreviewTop get() = beforePreviewTop - (refPreview?.height ?: 0f) -
         (if (refPreview != null) Sizes.BODY_PADDING else 0f)
 
+    /**
+     * ⭐⭐⭐ **Which picture a tap at `y` landed on** — the ONE place the
+     * three bands are turned back into a picture.
+     *
+     * ⚠⚠ Asked for 2026-09-22: *"the canvas view of output node shows both
+     * received and made preview of output img (if upscaled). if i click one it
+     * should go into fullscreen for that img."* Before this, only [preview] was
+     * tappable and a tap on the received one fell through to the inspector —
+     * the node drew two pictures and answered to one.
+     *
+     * ⚠ Topmost first, and each band is its own height, so the order here
+     * matches the order they are drawn in. The LAST one has no bottom edge:
+     * [preview] runs to the node's bottom padding, which is what a tap below the
+     * picture has always done.
+     */
+    fun previewAt(y: Float): Preview? {
+        refPreview?.let { if (y >= refPreviewTop && y < refPreviewTop + it.height) return it }
+        beforePreview?.let {
+            if (y >= beforePreviewTop && y < beforePreviewTop + it.height) return it
+        }
+        preview?.let { if (y >= previewTop) return it }
+        return null
+    }
+
     /** ⚠ Above whichever picture is topmost — [refPreview] first, then [beforePreview]. */
     val proseTop get() = (
         if (refPreview != null) refPreviewTop

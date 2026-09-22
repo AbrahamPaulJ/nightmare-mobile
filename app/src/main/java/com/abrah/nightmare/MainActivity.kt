@@ -542,6 +542,7 @@ fun HarnessScreen(
             // runs — without a dependency the row would still say "not
             // installed" after the download finished.
             onInstallSegmenter = vm::installSegmenter,
+            onDeleteSegmenter = vm::deleteSegmenter,
             segmenterInstalled = androidx.compose.runtime.remember(vm.working) {
                 com.abrah.nightmare.segment.Segmenter.isInstalled(segCtx)
             },

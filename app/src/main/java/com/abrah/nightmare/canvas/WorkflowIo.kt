@@ -198,7 +198,7 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     ))
     // ⚠ LAST: every node it looks for has its current name and shape by now.
     val notes = mutableListOf<String>()
-    val migrated = migrateCropNodes(collapsed, notes)
+    val migrated = migrateUpscaleNodes(migrateCropNodes(collapsed, notes), notes)
 
     val requiresJson = root.optJSONArray("requires")
     val requires = (0 until (requiresJson?.length() ?: 0)).map {
@@ -220,6 +220,64 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     return LoadedWorkflow(
         Workflow(Graph(migrated.first), migrated.second, sizes, proseLines), requires, view, notes,
     )
+}
+
+/**
+ * ⭐⭐⭐ `image.upscale` was DELETED (2026-09-22, the user's call): the output
+ * node carries an auto-upscale checkbox and a flow already ends there, so a node
+ * whose whole job was one call is one node too many (§5.7's test).
+ *
+ * A saved flow naming one is rebuilt without it:
+ *
+ * - every consumer is rewired to whatever fed the upscale, so the picture still
+ *   arrives;
+ * - a consumer that is `core.output` has [MediaOutputNode.UPSCALE] turned ON and
+ *   inherits the upscaler the node named — so the flow still produces the
+ *   enlarged picture it used to, from the node that now does that job;
+ * - the upscale node is removed, and [notes] says so.
+ *
+ * ⚠⚠ **The output node already carrying its own `auto_upscale` wins.** A flow
+ * with both was configured by hand more recently than it was migrated, and a
+ * migration that overwrote it would undo a choice somebody made.
+ *
+ * ⚠ A consumer that is NOT an output (a second upscale, a sampler reading the
+ * enlarged picture) just loses the enlargement — there is nowhere on such a node
+ * to put it, and saying so in [notes] beats inventing a hidden param.
+ */
+private fun migrateUpscaleNodes(
+    input: Pair<List<Node>, Map<String, Pt>>,
+    notes: MutableList<String>,
+): Pair<List<Node>, Map<String, Pt>> {
+    val (nodes, positions) = input
+    val ups = nodes.filter { it.type == "image.upscale" }.associateBy { it.id }
+    if (ups.isEmpty()) return input
+    var moved = 0
+    val out = nodes.filter { it.id !in ups }.map { n ->
+        var params = n.params
+        val inputs = n.inputs.mapNotNull { (port, src) ->
+            val up = ups[src.node] ?: return@mapNotNull port to src
+            if (n.type == com.abrah.nightmare.MediaOutputNode.name &&
+                !params[com.abrah.nightmare.MediaOutputNode.UPSCALE]
+                    .equals("true", ignoreCase = true)
+            ) {
+                params = params + (com.abrah.nightmare.MediaOutputNode.UPSCALE to "true")
+                // ⚠ The upscaler only when the old node named one; its own
+                // default is the first INSTALLED one, which is the better
+                // fallback than a name that may not be on this phone.
+                up.params[com.abrah.nightmare.UpscaleNode.UPSCALER]
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { params = params + (com.abrah.nightmare.MediaOutputNode.UPSCALER to it) }
+                moved++
+            }
+            up.inputs["image"]?.let { port to Source(it.node, it.port) }
+        }.toMap()
+        n.copy(params = params, inputs = inputs)
+    }
+    notes += "removed the upscale node" + (if (ups.size == 1) " " else "s ") +
+        ups.keys.joinToString(", ") { "\"$it\"" } +
+        " — upscaling is a checkbox on the output node now" +
+        (if (moved > 0) ", and it is switched on there" else "")
+    return out to positions.filterKeys { it !in ups }
 }
 
 /**

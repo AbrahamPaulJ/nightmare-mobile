@@ -34,9 +34,14 @@ class PaletteTest {
         sections.getValue("common").map { it.single().name },
     )
 
-    /** ⚠ Retired from the palette, still runnable — see above. */
-    @Test fun theUpscaleNodeIsRetiredButStillRegistered() {
-        assertTrue(com.abrah.nightmare.NODE_TYPES.containsKey("image.upscale"))
+    /**
+     * ⚠⚠ **`image.upscale` is DELETED, not hidden** — it is out of
+     * `NODE_TYPES` entirely (2026-09-22). A saved flow naming one is rewritten
+     * on load by `WorkflowIo.migrateUpscaleNodes`, which turns the enlargement
+     * on at the output it fed, so nothing breaks and nothing is left behind.
+     */
+    @Test fun theUpscaleNodeIsGone() {
+        assertFalse(com.abrah.nightmare.NODE_TYPES.containsKey("image.upscale"))
         assertTrue(sections.values.flatten().flatten().none { it.name == "image.upscale" })
     }
 
@@ -80,9 +85,24 @@ class PaletteTest {
     }
 
     /** ⚠ The port that makes the Tap tool appear exists only on the inpaint types. */
-    @Test fun onlyInpaintTakesASegmenter() {
+    /**
+     * ⚠⚠ **No sampler takes a segmenter PORT any more** (2026-09-22). Tap to
+     * select is a checkbox on the inpaint node (`SdSampler.TAP_SELECT`) and
+     * `mask.segment_model` is gone, so a socket for wiring one in is a socket
+     * for a plug that no longer exists. ⚠ Only the inpaint samplers carry the
+     * checkbox, which is what this now asserts.
+     */
+    @Test fun onlyInpaintTakesTapToSelect() {
         for (t in com.abrah.nightmare.SdSampler.ALL) {
-            assertEquals(t.name, t.inpaint, t.inputs.any { it.type == com.abrah.nightmare.SelectObjectNode.PORT_TYPE })
+            assertFalse(
+                t.name,
+                t.inputs.any { it.type == com.abrah.nightmare.SelectObjectNode.PORT_TYPE },
+            )
+            assertEquals(
+                t.name,
+                t.inpaint,
+                t.widgets.any { it.name == com.abrah.nightmare.SdSampler.TAP_SELECT },
+            )
         }
     }
 

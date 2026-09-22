@@ -156,18 +156,75 @@ class LoadReadoutTest {
     }
 
     /**
-     * ⭐ A flow with a Segment model node asks for the SEGMENTER when it is not
-     * installed — the case that ran straight past the popup (2026-09-17).
+     * ⚠ Every checkpoint a graph names, as empty files of the right names —
+     * enough for `ModelSpec.missing()`, which checks EXISTENCE for a QNN family.
+     */
+    private fun installCheckpointsFor(w: com.abrah.nightmare.canvas.Workflow) {
+        for (n in w.graph.nodes) {
+            val spec = ModelCatalog.byId(n.params["model"].orEmpty()) ?: continue
+            val dir = spec.dir(app).apply { mkdirs() }
+            for (f in spec.requiredFiles) java.io.File(dir, f).writeText("")
+        }
+    }
+
+    /**
+     * ⭐⭐ A mask that was actually TAPPED asks for the segmenter when it is
+     * not installed — those taps are re-resolved at render, so the model is
+     * genuinely needed.
+     *
+     * ⚠⚠⚠ **It used to fire on a Segment model NODE being present**, and
+     * the Inpaint recipe wired one in by default — so every inpaint Run demanded
+     * an 80 MB download for a tool nobody had touched. Reported 2026-09-22:
+     * *"even if i dont use tap to segment and click run, i got window saying to
+     * download segment model"*. The node is deleted and the checkbox that
+     * replaced it must NOT inherit the demand: ticking a tool is not using it.
+     * ⇒ This asserts the TAP, which is using it.
      */
     @Test
-    fun aMissingSegmenterAsksToo() {
+    fun aTappedMaskAsksForTheSegmenter() {
         val vm = HarnessViewModel(app)
-        val w = com.abrah.nightmare.canvas.upscaleWorkflow().let { wf ->
-            wf.copy(graph = Graph(wf.graph.nodes + Node("segment_model", "mask.segment_model")))
+        val inpaint = com.abrah.nightmare.SdSampler.ALL.first { it.inpaint }
+        // ⚠⚠ The CHECKPOINT check runs before the segmenter one, so without a
+        // model on disk this stops at "which model" and never reaches the
+        // assertion. The old fixture dodged it by using a graph with no sampler
+        // at all, which an inpaint test cannot do.
+        installCheckpointsFor(com.abrah.nightmare.canvas.inpaintWorkflow())
+        // ⚠ A COMPLETE inpaint graph: the checkpoint check runs before the
+        // segmenter one, so a bare node stops at "which model" and never
+        // reaches the assertion.
+        val w = com.abrah.nightmare.canvas.inpaintWorkflow().let { wf ->
+            wf.copy(
+                graph = Graph(
+                    wf.graph.nodes.map { n ->
+                        if (n.type != inpaint.name) n else n.copy(
+                            params = n.params + (
+                                com.abrah.nightmare.MaskNode.OPS to
+                                    com.abrah.nightmare.MaskState(
+                                        listOf(com.abrah.nightmare.MaskOp.Tap(0.5f, 0.5f, 1)),
+                                    ).encode()
+                                ),
+                        )
+                    },
+                ),
+            )
         }
         vm.openWorkflow(w)
         vm.runCanvas()
         val m = vm.missingModel
         assertTrue("got $m", m is HarnessViewModel.MissingModel.Segment)
+    }
+
+    /** ⚠ …and an inpaint node with the checkbox ON but no taps does NOT. */
+    @Test
+    fun tickingTapToSelectDoesNotDemandTheModel() {
+        val vm = HarnessViewModel(app)
+        installCheckpointsFor(com.abrah.nightmare.canvas.inpaintWorkflow())
+        val w = com.abrah.nightmare.canvas.inpaintWorkflow()
+        vm.openWorkflow(w)
+        vm.runCanvas()
+        assertTrue(
+            "a ticked checkbox must not demand a download: got ${vm.missingModel}",
+            vm.missingModel !is HarnessViewModel.MissingModel.Segment,
+        )
     }
 }

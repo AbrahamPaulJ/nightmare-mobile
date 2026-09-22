@@ -113,9 +113,14 @@ class NodeNameTest {
      */
     @Test
     fun onlyASamplerLosesItsIdToItsTitle() {
-        val photo = Node("photo", "core.image", mapOf("uri" to ""))
-        assertTrue("the recipe id is still recognised as generated", isAutoNodeId("photo"))
-        assertEquals("photo", nodeNameOf(photo).primary)
+        // ⚠⚠ `image`, not `photo`: [LoadImageNode.defaultId] and every recipe
+        // say `image` since 2026-09-22 (the user's call — the node takes
+        // anything the picker hands it, and a render sent in from Results is not
+        // a photo). `RECIPE_NODE_IDS` is DERIVED from the recipes, so `photo` is
+        // correctly no longer an auto id.
+        val photo = Node("image", "core.image", mapOf("uri" to ""))
+        assertTrue("the recipe id is still recognised as generated", isAutoNodeId("image"))
+        assertEquals("image", nodeNameOf(photo).primary)
     }
 
     /**

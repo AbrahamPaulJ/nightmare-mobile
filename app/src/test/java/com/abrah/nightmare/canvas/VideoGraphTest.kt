@@ -54,8 +54,8 @@ class VideoGraphTest {
     fun imageToVideoIsTextToVideoWithAPhotoWired() {
         val v = i2v.graph.byId.getValue("video")
         assertEquals("nd.sample", v.type)
-        assertEquals(Source("photo"), v.inputs["image"])
-        assertEquals("core.image", i2v.graph.byId.getValue("photo").type)
+        assertEquals(Source("image"), v.inputs["image"])
+        assertEquals("core.image", i2v.graph.byId.getValue("image").type)
         assertTrue("no crop node stands in front of it any more",
             i2v.graph.nodes.none { it.type == "image.crop" })
     }
@@ -123,13 +123,13 @@ class VideoGraphTest {
     fun aPhotoWiresStraightIntoTheSampler() {
         val g = Graph(
             listOf(
-                Node("photo", "core.image"),
-                Node("video", "nd.sample", inputs = sources("image" to "photo")),
+                Node("image", "core.image"),
+                Node("video", "nd.sample", inputs = sources("image" to "image")),
             )
         )
         assertNull(
             "a photo must wire straight in now",
-            com.abrah.nightmare.sizeRefusal(g, NODE_TYPES, "photo", "video", "image"),
+            com.abrah.nightmare.sizeRefusal(g, NODE_TYPES, "image", "video", "image"),
         )
     }
 
