@@ -101,4 +101,44 @@ class BackendFailureReasonTest {
         BackendProcess.output.clear()
         assertNull(BackendProcess.failureReason())
     }
+
+    // ---- and the same answer for a backend that dies MID-RENDER ------------
+
+    /**
+     * ⭐⭐⭐ Reported 2026-09-22: `generate failed http -1 — EOFException: no
+     * message` on a FLUX.2 render with a LoRA. True, and useless.
+     *
+     * ⚠ The tests here run with no process, so [BackendProcess.isRunning] is
+     * false — which is exactly the state being described.
+     */
+    @Test
+    fun aDeadBackendIsNamedRatherThanTheSocketException() {
+        feed(realFailure)
+        val msg = explainOpFailure(-1, "EOFException: no message")
+        assertTrue("it should name the backend: $msg", msg.startsWith("the backend stopped"))
+        assertTrue("it should carry the engine's own reason: $msg", msg.contains("comfy_quant"))
+        // ⚠⚠ KEPT, not replaced: EOFException and SocketTimeoutException are
+        // different failures and the next diagnosis needs to tell them apart.
+        assertTrue("the socket's words must survive: $msg", msg.contains("EOFException"))
+    }
+
+    /** ⚠ No error line means no reason — the sentence still has to work. */
+    @Test
+    fun aDeadBackendWithNothingToSayStillReadsAsDead() {
+        BackendProcess.output.clear()
+        val msg = explainOpFailure(-1, "EOFException: no message")
+        assertTrue(msg.startsWith("the backend stopped —"))
+        assertTrue(msg.contains("EOFException"))
+    }
+
+    /**
+     * ⚠⚠ A real HTTP status is the BACKEND answering, so it is left exactly
+     * as it came. Rewriting a 500 as "the backend stopped" would be a lie, and
+     * it is the error bodies that name the real problem.
+     */
+    @Test
+    fun aRealHttpErrorIsUntouched() {
+        feed(realFailure)
+        assertEquals("no such handle", explainOpFailure(500, "no such handle"))
+    }
 }

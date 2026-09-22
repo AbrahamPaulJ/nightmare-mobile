@@ -1259,7 +1259,35 @@ object VaeDecodeNode : NodeType {
 
 /** ⚠ Carries the backend's own words. Its error bodies name the real problem. */
 class OpFailure(op: String, val code: Int, val body: String) :
-    RuntimeException("$op failed http $code — ${body.take(160)}")
+    RuntimeException("$op failed http $code — ${explainOpFailure(code, body).take(200)}")
+
+/**
+ * ⭐⭐⭐ **A backend that DIED, said as such** — rather than the exception the
+ * socket happened to throw on the way down.
+ *
+ * ⚠⚠⚠ Reported 2026-09-22: a FLUX.2 Klein render with one LoRA failed as
+ * `generate failed http -1 — EOFException: no message`, which is the truth and
+ * tells a person nothing. `-1` is [Backend]'s code for "the call threw", and
+ * when the process is also gone the call did not fail — **the backend did**,
+ * and its own last `[ ERROR ]` line is very often precise
+ * ([BackendProcess.failureReason], whose whole reason for existing was the same
+ * kind of answer being invisible).
+ *
+ * ⚠⚠ **The socket's words are KEPT, not replaced.** `EOFException` (the
+ * process vanished mid-response) and `SocketTimeoutException` (it is alive and
+ * slow — `Backend.STAGE_TIMEOUT_MS`) are different failures, and a message that
+ * threw the distinction away would cost the next diagnosis what this one cost.
+ *
+ * ⚠ Memory is *a* likely cause on a phone, never a certain one, so it is
+ * offered as the first thing to try and not stated as the reason. When the
+ * engine left a real error, that error leads.
+ */
+internal fun explainOpFailure(code: Int, body: String): String {
+    if (code != -1 || BackendProcess.isRunning) return body
+    val why = BackendProcess.failureReason()
+    return "the backend stopped" + (why?.let { ": $it" } ?: "") +
+        " — if it keeps happening, close other apps or try a smaller canvas [$body]"
+}
 
 /**
  * ⭐ A picture from the device, as the start of a graph — **whole, and at its
