@@ -492,8 +492,6 @@ fun HarnessScreen(
         val canvasLoraPicker = rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
         ) { uri -> if (uri != null) vm.importLora(uri) }
-        // ⚠ For the segmenter's installed check below.
-        val segCtx = androidx.compose.ui.platform.LocalContext.current
         // ⭐⭐ How the app died last time, if it did — null on an ordinary
         // launch, which is nearly every launch (`CrashReport`). Drawn on the
         // FIRST screen, because the person who needs it is the one who just
@@ -543,9 +541,20 @@ fun HarnessScreen(
             // installed" after the download finished.
             onInstallSegmenter = vm::installSegmenter,
             onDeleteSegmenter = vm::deleteSegmenter,
-            segmenterInstalled = androidx.compose.runtime.remember(vm.working) {
-                com.abrah.nightmare.segment.Segmenter.isInstalled(segCtx)
-            },
+            onCancelSegmenter = vm::cancelModelInstall,
+            // ⭐⭐⭐ **Read off `segmenterRow`, which is STATE.**
+            //
+            // ⚠⚠⚠ It was `remember(vm.working) { Segmenter.isInstalled(…) }`,
+            // and neither `installSegmenter` nor `deleteSegmenter` touches
+            // `working` — so the key never changed, the snapshot never
+            // recomputed, and the row went on saying "not downloaded" after a
+            // download and "Delete" after a delete. Reported from the phone
+            // 2026-09-22 as *"not even the delete btn works"*: it worked, and
+            // nothing on screen said so. ⇒ `segmenterRow` is a
+            // `mutableStateOf` that `refreshSegmenter()` rewrites, and both
+            // paths call it.
+            segmenterRow = vm.segmenterRow,
+            segmenterInstalled = vm.segmenterRow?.installed == true,
             // ⭐ Video hidden from Add node where the chip refused it (VideoGate).
             paletteTypes = if (com.abrah.nightmare.npu.VideoGate.hidden) {
                 vm.nodeTypes.filterKeys { it != com.abrah.nightmare.npu.VideoGate.VIDEO_TYPE }

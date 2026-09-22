@@ -86,6 +86,12 @@ import com.abrah.nightmare.NodeType
 import com.abrah.nightmare.ui.LogTextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 
 /**
  * The canvas, with the run bar over it.
@@ -269,6 +275,9 @@ fun CanvasScreen(
     onDeleteSegmenter: (() -> Unit)? = null,
     /** ⚠ Whether the segmenter weights are on the phone. */
     segmenterInstalled: Boolean = true,
+    /** ⭐⭐ The Models tab's own row for the segmenter — see the inspector's copy. */
+    segmenterRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onCancelSegmenter: (() -> Unit)? = null,
     /** ⭐⭐ Import a `.safetensors` adapter from inside a node's LoRA picker. */
     onImportLora: (() -> Unit)? = null,
     /** ⚠⚠ `HarnessViewModel.loraEpoch` — what re-reads `_loras` after an Add. */
@@ -552,6 +561,9 @@ fun CanvasScreen(
         onInstallSegmenter = onInstallSegmenter,
         onDeleteSegmenter = onDeleteSegmenter,
         segmenterInstalled = segmenterInstalled,
+        segmenterRow = segmenterRow,
+        onCancelSegmenter = onCancelSegmenter,
+        busy = busy,
         onInspectNode = onInspectNode,
         onImportLora = onImportLora,
         loraEpoch = loraEpoch,
@@ -637,20 +649,27 @@ fun CanvasScreen(
      * output. The user's call, 2026-09-15: *"in sample fullscreen view, don't
      * need any btns."*
      */
-    // ⚠⚠ …and the same for upscale's BEFORE picture: opened from the same
-    // inspector (`viewingNode` is whichever node's SHEET is open, not
-    // necessarily who owns the picture on screen), a "keep"/"delete" tap
-    // there must not act as though the picture it is looking at were
-    // upscale's own result — it is what fed it. Checked by IDENTITY against
-    // `beforePreviews`, not by node type alone, so upscale's AFTER picture
-    // (the same node, the other image id) still gets the action row.
-    // ⚠⚠ By IDENTITY against `beforePreviews`, for ANY node that has one —
-    // not for `image.upscale` by name. `core.output` grew a before/after when it
-    // gained auto-upscale (2026-09-22), and with the type hardcoded here its
-    // RECEIVED picture would have been treated as the node's own result: keep
-    // and delete would have acted on the wrong image.
-    val viewedIsInput = viewedIsPhoto || viewedType in com.abrah.nightmare.IMAGE_SAMPLER_TYPES ||
-        state.beforePreviews[viewedNode]?.first == state.viewing
+    // ⭐⭐⭐ **A RECEIVED picture is NOT an input** — reversed 2026-09-22 at
+    // the user's ask: *"why the fuck dont the icons show in fullscreen"*.
+    //
+    // ⚠⚠ The rule used to add `beforePreviews[viewedNode] == viewing` here,
+    // on the argument that the picture belongs to the node upstream. It does not
+    // on the node that actually has one: an auto-upscaling `core.output` MADE
+    // both halves in one run, so its Received picture is its own result at an
+    // earlier stage — savable, sharable, keepable, and deletable. Every
+    // callback below already binds to `id`, the picture being VIEWED, so they
+    // act on the right one.
+    val viewedIsInput = viewedIsPhoto || viewedType in com.abrah.nightmare.IMAGE_SAMPLER_TYPES
+
+    // ⭐⭐ **The pictures this node holds, in the order they were made** — what
+    // a swipe moves between. Received first, Made second; one entry for every
+    // other node, which turns the pager off.
+    val viewedPages: List<String> = viewedNode?.let { n ->
+        listOfNotNull(
+            state.beforePreviews[n]?.first,
+            state.previews[n]?.first ?: state.rendered[n],
+        ).distinct()
+    }.orEmpty()
     // ⚠⚠ Hoisted OUT of the `let` below: `rememberImagePick` registers an
     // activity-result launcher, and a launcher registered inside a conditional
     // is registered and torn down as the condition flips -- which is exactly
@@ -776,12 +795,39 @@ fun CanvasScreen(
                 // one set of actions, whichever surface it is on.
                 // ⚠ Only on an OUTPUT this node made, never on a photo the user
                 // picked: there is no wire behind an input to trace.
+                // ⚠⚠ **Not when the node ALREADY auto-upscales** — the same
+                // rule the inspector's row follows. It was in one of the two
+                // places, which is the N−1-of-N shape: the sheet hid the
+                // button and the fullscreen viewer went on offering it, and
+                // fullscreen is where a person decides a picture is worth
+                // enlarging.
                 onUpscale = viewedNode
-                    ?.takeIf { !viewedIsInput && onUpscaleNode != null }
+                    ?.takeIf { n ->
+                        !viewedIsInput && onUpscaleNode != null &&
+                            state.workflow.graph.byId[n]?.let {
+                                !com.abrah.nightmare.MediaOutputNode.autoUpscales(it)
+                            } == true
+                    }
                     ?.let { n -> { onUpscaleNode?.invoke(n) } },
                 onInfo = viewedNode
                     ?.takeIf { !viewedIsInput && detailsOfNode != null }
                     ?.let { n -> { showingNodeInfo = n } },
+                // ⭐⭐ Received ⇄ Made, to swipe between while zoomed out.
+                // ⚠ Only when every page has a bitmap: a pager with a hole in
+                // it swipes to a black screen.
+                pages = viewedPages.mapNotNull(imageFor).takeIf {
+                    it.size == viewedPages.size && viewedPages.size > 1
+                }.orEmpty(),
+                pageIndex = viewedPages.indexOf(id).coerceAtLeast(0),
+                // ⚠⚠ A swipe moves `viewing`, and `viewingNode` STAYS put —
+                // it is the node whose pictures these are, and recomputing it
+                // from the image id would be the ambiguous reverse lookup the
+                // comment above warns about.
+                onPage = { i ->
+                    viewedPages.getOrNull(i)?.let { next ->
+                        if (next != id) onEdit { st -> st.copy(viewing = next) }
+                    }
+                },
             )
         }
     }
@@ -1632,6 +1678,22 @@ private fun FullscreenImage(
     onUpscale: (() -> Unit)? = null,
     /** ⭐⭐ ⓘ — see [PictureActions.onInfo]. */
     onInfo: (() -> Unit)? = null,
+    /**
+     * ⭐⭐⭐ **The other pictures on this node, to swipe between** — Received
+     * then Made on an auto-upscaling output. Asked for 2026-09-22.
+     *
+     * ⚠ [image] is still the one being shown, and [pageIndex] says where it
+     * sits in this list. A swipe calls [onPage], which moves `state.viewing` —
+     * so every action above is rebound to the picture that is now on screen
+     * rather than to the one the viewer opened on.
+     *
+     * ⚠⚠ Empty or one long = no pager, and the viewer behaves exactly as it
+     * did. The swipe is disabled while zoomed, or a drag meant to pan would
+     * flick to the next picture and throw the zoom away.
+     */
+    pages: List<androidx.compose.ui.graphics.ImageBitmap> = emptyList(),
+    pageIndex: Int = 0,
+    onPage: (Int) -> Unit = {},
 ) {
     // ⚠⚠ BACK CLOSES THE VIEWER. Without this the system back went to the
     // activity, which has no back stack -- so the one gesture every Android user
@@ -1644,17 +1706,14 @@ private fun FullscreenImage(
     // looked at, and a 512-square render on a 1080-wide screen is drawn at 2x
     // already -- the detail a person wants to check is under the interpolation
     // until they can push in past it.
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    // ⚠⚠ Held as STATE objects rather than read out with `by`: they are
+    // handed to [viewerZoom], whose gesture lambda outlives the composition
+    // that built it.
+    val scaleState = remember { mutableStateOf(1f) }
+    val offsetState = remember { mutableStateOf(Offset.Zero) }
+    val scale by scaleState
+    val offset by offsetState
     var box by remember { mutableStateOf(IntSize.Zero) }
-
-    // ⚠ Never further than the picture can travel while still covering the
-    // frame. Un-clamped, a pinch flings the image off screen and the only way
-    // back is to close the viewer -- which also throws away the zoom.
-    fun clamp(o: Offset, sc: Float) = Offset(
-        o.x.coerceIn(-box.width * (sc - 1f) / 2f, box.width * (sc - 1f) / 2f),
-        o.y.coerceIn(-box.height * (sc - 1f) / 2f, box.height * (sc - 1f) / 2f),
-    )
 
     Box(
         Modifier
@@ -1666,45 +1725,22 @@ private fun FullscreenImage(
             // the video surface where it was, which draws the clip in the wrong
             // place at the wrong size with nothing on screen explaining it. The
             // picture keeps every gesture it had.
+            //
+            // ⚠⚠⚠ [viewerZoom], not `detectTransformGestures`: the latter
+            // consumes every pointer event it sees, so the pager below never got
+            // a drag and swiping between this node's pictures did nothing at
+            // all. The Results viewer learned this on 2026-09-10; the gesture is
+            // one function now so the next fix lands on both.
             .then(
                 if (videoPath != null) Modifier
-                else Modifier.pointerInput(Unit) {
-                detectTransformGestures { centroid, pan, zoom, _ ->
-                    val next = (scale * zoom).coerceIn(1f, 8f)
-                    // ⚠⚠ The point under the fingers STAYS under the fingers.
-                    // `graphicsLayer` scales about the centre, so zooming about
-                    // a centroid means moving the layer by the difference --
-                    // without this the picture zooms towards its middle and the
-                    // detail being examined slides away from the pinch.
-                    val v = Offset(centroid.x - box.width / 2f, centroid.y - box.height / 2f)
-                    val moved = v - (v - offset) * (next / scale) + pan
-                    scale = next
-                    offset = clamp(moved, next)
-                }
-                }
-            )
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    // ⚠ Double tap is the fast way in and the fast way out. A
-                    // pinch on a phone held one-handed is awkward, and this is
-                    // the gesture every photo viewer already answers to.
-                    onDoubleTap = { at ->
-                        if (scale > 1.01f) {
-                            scale = 1f; offset = Offset.Zero
-                        } else {
-                            scale = 3f
-                            val v = Offset(at.x - box.width / 2f, at.y - box.height / 2f)
-                            offset = clamp(v - v * 3f, 3f)
-                        }
-                    },
-                    // ⚠⚠ …and a single tap closes ONLY at 1x. While zoomed, a
-                    // tap is the end of a pan that moved less than the slop, and
-                    // closing the viewer on it would throw away the zoom the
-                    // user just set up -- the way to leave is back, or double
-                    // tap out first.
-                    onTap = { if (scale <= 1.01f) onDismiss() },
-                )
-            },
+                else Modifier.viewerZoom(
+                    key = pageIndex,
+                    scale = scaleState,
+                    offset = offsetState,
+                    bounds = { box },
+                    onDismiss = onDismiss,
+                ),
+            ),
         contentAlignment = Alignment.Center,
     ) {
         // ⭐⭐ A clip PLAYS here; a picture is drawn. ⚠ Same box, same padding
@@ -1717,6 +1753,49 @@ private fun FullscreenImage(
                 path = videoPath,
                 modifier = Modifier.fillMaxSize().padding(12.dp),
             )
+        } else if (pages.size > 1) {
+            // ⭐⭐⭐ **Swipe between this node's pictures** — Received ⇄ Made,
+            // the user's call 2026-09-22: *"in fullscreen i want to swipe to
+            // upscaled img and backwards when zoomed out"*.
+            //
+            // ⚠⚠ `userScrollEnabled` is the load-bearing half, exactly as in
+            // the Results viewer: a horizontal drag on a ZOOMED picture has to
+            // pan it, not flick to the next one, or examining an edge throws
+            // away the zoom that was just set up.
+            val pager = androidx.compose.foundation.pager.rememberPagerState(
+                initialPage = pageIndex.coerceIn(0, pages.size - 1),
+                pageCount = { pages.size },
+            )
+            // ⚠⚠ The swipe MOVES `state.viewing`, so the action row above is
+            // rebound to the picture now on screen. Without this, Keep and the
+            // bin would go on acting on whichever picture the viewer opened on.
+            LaunchedEffect(pager.currentPage) { onPage(pager.currentPage) }
+            // ⚠ A new picture starts unzoomed — carrying 3x onto the next one
+            // shows a corner of something the user has not seen whole.
+            LaunchedEffect(pager.currentPage) {
+                scaleState.value = 1f
+                offsetState.value = Offset.Zero
+            }
+            androidx.compose.foundation.pager.HorizontalPager(
+                state = pager,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = scale <= 1.01f,
+            ) { page ->
+                Image(
+                    bitmap = pages[page],
+                    contentDescription = "the picture, full screen",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .viewerPicture(
+                            // ⚠ Only the page being LOOKED at carries the zoom.
+                            // A neighbour peeking in at 3x is a smear.
+                            if (page == pager.currentPage) scale else 1f,
+                            if (page == pager.currentPage) offset else Offset.Zero,
+                            chromeless = chromeless,
+                        ),
+                )
+            }
         } else {
         Image(
             bitmap = image,
@@ -1854,6 +1933,105 @@ internal val VIEWER_CHROME = 96.dp
  * the second already claimed it matched the first — the horizontal inset did
  * not (8 vs 12), so they were unified here rather than left to drift again.
  */
+/**
+ * ⭐⭐⭐ **The zoom gesture a fullscreen viewer answers to** — one definition,
+ * both viewers.
+ *
+ * Pinch to zoom about the point under the fingers, drag to pan once zoomed,
+ * double tap in and out, single tap to close at 1x only.
+ *
+ * ⚠⚠⚠ **It consumes ONLY when the gesture is really ours** — two fingers
+ * down, or already zoomed in. `detectTransformGestures` consumes every event it
+ * sees, so a one-finger drag at 1x never reached the pager underneath and
+ * swiping between pictures did nothing at all. Reported from the phone
+ * 2026-09-10 against the Results viewer, and the canvas viewer had the same
+ * `detectTransformGestures` until a pager was put under it too (2026-09-22).
+ *
+ * ⚠⚠ [scale] and [offset] are passed as STATE, not as values: the gesture
+ * lambda outlives the composition that created it (`pointerInput` is keyed on
+ * [key]), so a captured `Float` would be the zoom level from whenever the
+ * pointer handler last restarted.
+ *
+ * @param bounds the viewer's size, for [clampOffset]. `IntSize.Zero` disables
+ *   clamping — measure the box and pass it, or a fling puts the picture off
+ *   screen with no way back but closing the viewer.
+ */
+internal fun Modifier.viewerZoom(
+    key: Any?,
+    scale: androidx.compose.runtime.MutableState<Float>,
+    offset: androidx.compose.runtime.MutableState<Offset>,
+    bounds: () -> IntSize,
+    onDismiss: () -> Unit,
+): Modifier {
+    fun clampOffset(o: Offset, sc: Float): Offset {
+        val b = bounds()
+        if (b.width == 0 || b.height == 0) return o
+        return Offset(
+            o.x.coerceIn(-b.width * (sc - 1f) / 2f, b.width * (sc - 1f) / 2f),
+            o.y.coerceIn(-b.height * (sc - 1f) / 2f, b.height * (sc - 1f) / 2f),
+        )
+    }
+    return this
+        .pointerInput(key) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                do {
+                    val event = awaitPointerEvent()
+                    val fingers = event.changes.count { it.pressed }
+                    if (fingers > 1 || scale.value > 1.01f) {
+                        val next = (scale.value * event.calculateZoom()).coerceIn(1f, 8f)
+                        val pan = event.calculatePan()
+                        val centroid = event.calculateCentroid(useCurrent = false)
+                        val b = bounds()
+                        // ⚠⚠ The point under the fingers STAYS under the fingers.
+                        // `graphicsLayer` scales about the centre, so zooming
+                        // about a centroid means moving the layer by the
+                        // difference — without it the picture zooms towards its
+                        // middle and the detail being examined slides away.
+                        val v = Offset(centroid.x - b.width / 2f, centroid.y - b.height / 2f)
+                        val moved =
+                            if (next != scale.value && b.width > 0) {
+                                v - (v - offset.value) * (next / scale.value) + pan
+                            } else {
+                                offset.value + pan
+                            }
+                        scale.value = next
+                        // ⚠ Snapping home at 1x: a pan that leaves the picture
+                        // off-centre at rest is a viewer needing tidying before
+                        // it can be read.
+                        offset.value = if (next <= 1.01f) Offset.Zero else clampOffset(moved, next)
+                        // ⚠ Only the changes that actually MOVED. Consuming a
+                        // bare down would eat the tap that closes the viewer.
+                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+                    }
+                } while (event.changes.any { it.pressed })
+            }
+        }
+        .pointerInput(key) {
+            detectTapGestures(
+                // ⚠ Double tap is the fast way in and the fast way out. A pinch
+                // on a phone held one-handed is awkward, and this is the gesture
+                // every photo viewer already answers to.
+                onDoubleTap = { at ->
+                    if (scale.value > 1.01f) {
+                        scale.value = 1f
+                        offset.value = Offset.Zero
+                    } else {
+                        val b = bounds()
+                        scale.value = 3f
+                        val v = Offset(at.x - b.width / 2f, at.y - b.height / 2f)
+                        offset.value = clampOffset(v - v * 3f, 3f)
+                    }
+                },
+                // ⚠⚠ A single tap closes ONLY at 1x. While zoomed a tap is the
+                // end of a pan that moved less than the slop, and closing on it
+                // would throw away the zoom the user just set up — the way out
+                // is back, or double tap out first.
+                onTap = { if (scale.value <= 1.01f) onDismiss() },
+            )
+        }
+}
+
 internal fun Modifier.viewerPicture(
     scale: Float,
     offset: Offset,

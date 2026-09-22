@@ -78,6 +78,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import com.abrah.nightmare.canvas.viewerPicture
+import com.abrah.nightmare.canvas.viewerZoom
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.layout.onSizeChanged
 
 /**
  * ⭐⭐ Pictures the user kept, each with the graph that made it.
@@ -630,8 +633,13 @@ fun ResultViewer(
     )
     var showInfo by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    // ⚠⚠ STATE objects, not values: they are handed to [viewerZoom], whose
+    // gesture lambda outlives the composition that built it.
+    val scaleState = remember { mutableStateOf(1f) }
+    val offsetState = remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var scale by scaleState
+    var offset by offsetState
+    var box by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     // ⚠ Swiping to a new picture starts it unzoomed. Carrying a 3x zoom onto
     // the next one shows a corner of something the user has not seen whole.
     LaunchedEffect(pager.currentPage) {
@@ -707,67 +715,26 @@ fun ResultViewer(
                         // and CLIPPED to that band so a zoom cannot draw over
                         // either — the same function the canvas viewer calls.
                         .viewerPicture(scale, offset)
-                        // ⚠⚠⚠ **NOT `detectTransformGestures`.** That consumes
-                        // every pointer event it sees, so the pager underneath
-                        // never got a drag — swiping to the next picture did
-                        // nothing at ALL, zoomed or not. Reported from the
-                        // phone, 2026-09-10.
-                        //
-                        // ⇒ Hand-rolled, and it consumes ONLY when the gesture
-                        // is really ours: two fingers down (a pinch), or
-                        // already zoomed in (a pan). A one-finger drag at 1x
-                        // falls straight through to the pager, which is exactly
-                        // the swipe.
-                        .pointerInput(page) {
-                            awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false)
-                                do {
-                                    val event = awaitPointerEvent()
-                                    val fingers = event.changes.count { it.pressed }
-                                    val ours = fingers > 1 || scale > 1.01f
-                                    if (ours) {
-                                        val next = (scale * event.calculateZoom())
-                                            .coerceIn(1f, 8f)
-                                        val pan = event.calculatePan()
-                                        scale = next
-                                        // ⚠ Snapping home at 1x: a pan that
-                                        // leaves the picture off-centre at rest
-                                        // is a viewer needing tidying before it
-                                        // can be read.
-                                        offset = if (next <= 1.01f) {
-                                            androidx.compose.ui.geometry.Offset.Zero
-                                        } else {
-                                            offset + pan
-                                        }
-                                        // ⚠ Only the changes that actually
-                                        // MOVED. Consuming a bare down would
-                                        // eat the tap that closes the viewer.
-                                        event.changes.forEach {
-                                            if (it.positionChanged()) it.consume()
-                                        }
-                                    }
-                                } while (event.changes.any { it.pressed })
-                            }
-                        }
-                        .pointerInput(page) {
-                            detectTapGestures(
-                                // ⚠ Double tap in and out, the gesture every
-                                // photo viewer already answers to.
-                                onDoubleTap = {
-                                    if (scale > 1.01f) {
-                                        scale = 1f
-                                        offset = androidx.compose.ui.geometry.Offset.Zero
-                                    } else {
-                                        scale = 3f
-                                    }
-                                },
-                                // ⚠⚠ A single tap closes ONLY at 1x — same rule
-                                // as the canvas viewer. While zoomed a tap is
-                                // the end of a pan that moved less than the
-                                // slop, and closing on it would discard the zoom.
-                                onTap = { if (scale <= 1.01f) onDismiss() },
-                            )
-                        },
+                        // ⚠⚠⚠ **[viewerZoom], the same gesture the canvas
+                        // viewer answers to.** It consumes ONLY when the
+                        // gesture is really ours — two fingers down, or already
+                        // zoomed in — so a one-finger drag at 1x falls through
+                        // to the pager, which is exactly the swipe.
+                        // `detectTransformGestures` consumes everything, and
+                        // with it here swiping to the next picture did nothing
+                        // at ALL. Reported from the phone 2026-09-10; one
+                        // function since 2026-09-22, so the next fix lands on
+                        // both viewers.
+                        // ⚠ `bounds` is the page's own size, so a pan cannot
+                        // fling the picture off screen.
+                        .onSizeChanged { box = it }
+                        .viewerZoom(
+                            key = page,
+                            scale = scaleState,
+                            offset = offsetState,
+                            bounds = { box },
+                            onDismiss = onDismiss,
+                        ),
                 )
             } ?: run {
                 if (unreadable(item.id)) UnreadablePicture(

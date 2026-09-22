@@ -4833,11 +4833,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val bmp = ops.images.get(id) ?: return@mapNotNull null
             n.id to (id to bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
         }.toMap()
-        val empty = nodes.filter { canvas.pictureInto(it.id, nodeTypes, portOf(it)) == null }
-            .map { it.id }.toSet()
-        if (shown.isNotEmpty() || empty.any { it in canvas.beforePreviews }) {
+        // ⚠⚠⚠ **Every node that should NOT have one is cleared, not just the
+        // before/after nodes whose wire is empty.**
+        //
+        // This read `nodes.filter { … == null }`, so a node that STOPPED being a
+        // before/after node was in neither set and kept its old entry forever.
+        // Reported from the phone 2026-09-22: untick `auto upscale`, press Run,
+        // and the Received frame still showed the picture from two runs ago
+        // while Made updated underneath it. ⇒ The set to clear is "everything
+        // that is not currently a before/after node with a picture", which is
+        // the whole graph minus [shown].
+        val drop = staleBeforePreviews(
+            held = canvas.beforePreviews.keys,
+            beforeAfter = nodes.map { it.id }.toSet(),
+            empty = nodes.filter { canvas.pictureInto(it.id, nodeTypes, portOf(it)) == null }
+                .map { it.id }.toSet(),
+        )
+        if (shown.isNotEmpty() || drop.isNotEmpty()) {
             canvas = canvas.copy(
-                beforePreviews = canvas.beforePreviews.filterKeys { it !in empty } + shown,
+                beforePreviews = canvas.beforePreviews.filterKeys { it !in drop } + shown,
             )
         }
     }
@@ -5826,3 +5840,28 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         refreshModels()
     }
 }
+
+/**
+ * ⭐⭐⭐ **Which before/after entries are stale** — the rule that decides what
+ * `CanvasState.beforePreviews` stops holding.
+ *
+ * ⚠⚠⚠ It had only the second half. `empty` was computed over the before/after
+ * nodes THEMSELVES, so a node that stopped being one — untick `auto upscale` —
+ * was in neither set and kept its entry forever. Reported from the phone
+ * 2026-09-22: *"turning off autoupscale and rerunning updates only the upscale
+ * preview instead of removing it, and the received frame goes stale with some
+ * old shit."* ⇒ The universe to sweep is everything [held], not everything live.
+ *
+ * ⚠⚠ A node that IS still a before/after node and whose bitmap has not resolved
+ * yet is in neither set on purpose: dropping it there would blink the Received
+ * frame out and back on every preview pass.
+ *
+ * @param held the node ids that currently have an entry.
+ * @param beforeAfter the node ids that are before/after nodes right now.
+ * @param empty those of [beforeAfter] with nothing wired into them.
+ */
+internal fun staleBeforePreviews(
+    held: Set<String>,
+    beforeAfter: Set<String>,
+    empty: Set<String>,
+): Set<String> = held.filterTo(mutableSetOf()) { it !in beforeAfter } + empty

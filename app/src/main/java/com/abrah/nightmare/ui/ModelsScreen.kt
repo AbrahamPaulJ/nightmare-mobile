@@ -1126,7 +1126,7 @@ private fun UpscalerCard(
 
 /** ⚠ [UpscalerCard]'s shape: no Use, one action, the shared [DownloadCard]. */
 @Composable
-private fun ToolCard(
+internal fun ToolCard(
     row: ToolRow,
     busy: Boolean,
     onInstall: () -> Unit,

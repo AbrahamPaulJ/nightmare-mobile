@@ -286,6 +286,20 @@ fun NodeInspector(
     onDeleteSegmenter: (() -> Unit)? = null,
     /** ⚠ Whether the segmenter weights are on the phone. */
     segmenterInstalled: Boolean = true,
+    /**
+     * ⭐⭐⭐ **The SAME row the Models tab draws** — so the download beside
+     * the checkbox has a size, a progress bar and a Cancel, like every other
+     * download in the app (`docs/UI.md` §8.2).
+     *
+     * ⚠⚠ It was a bare `TextButton` reading "Download"/"Delete", with the
+     * installed state read from a `remember(vm.working)` snapshot that neither
+     * install nor delete invalidates — so the button did nothing visible, showed
+     * no progress, and still said the same thing afterwards. Reported from the
+     * phone 2026-09-22.
+     */
+    segmenterRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onCancelSegmenter: (() -> Unit)? = null,
+    busy: Boolean = false,
     /** ⭐⭐ What made this picture, for the ⓘ dialog. */
     detailsOf: ((String) -> List<Pair<String, String>>)? = null,
     onInspectNode: (String) -> Unit = {},
@@ -407,6 +421,10 @@ fun NodeInspector(
         // ⭐ The BEFORE half, same source the canvas box draws
         // ([CanvasState.beforePreviews]) — so the sheet and the graph agree.
         val beforeId = state.beforePreviews[nodeId]?.first
+        // ⚠ The ⓘ for the Received picture. It lives HERE rather than in the
+        // body because `beforeActions` is a slot built at this level — and it
+        // opens the SAME rows the Made ⓘ does, since one run made both.
+        var showingBeforeInfo by remember(nodeId) { mutableStateOf(false) }
         // ⚠ A crop is framed against its INPUT, not its output. Showing the
         // node's own result would be showing the crop that has already happened.
         // ⚠ Every node that is not an output still acts on its own picture —
@@ -476,16 +494,24 @@ fun NodeInspector(
             // ⭐ Upscale's BEFORE half — see [beforeId] above.
             beforeImage = beforeId?.let(imageFor),
             onViewBeforeFullscreen = { beforeId?.let(onViewFullscreen) },
-            // ⭐⭐ The SAME row, bound to the BEFORE picture. ⚠ No bin: that
-            // picture belongs to the node upstream, and clearing it from here
-            // would empty a node this sheet is not showing.
+            // ⭐⭐ The SAME row, bound to the BEFORE picture — **every icon it
+            // has**, the bin included.
+            //
+            // ⚠⚠⚠ It had no bin, on the argument that the picture belongs to
+            // the node upstream. That argument is wrong for the node this row
+            // is actually on: an auto-upscaling `core.output` MADE both halves
+            // in one run, so its Received picture is its own, and a pair of
+            // pictures side by side with different buttons reads as a bug.
+            // The user's call, 2026-09-22 — and the bin clears the WHOLE output,
+            // the same as the bin on the Made row, because half a result is not
+            // a state worth being able to reach.
             beforeActions = beforeId?.let { id ->
                 {
                     PictureActions(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         deleteTint = MaterialTheme.colorScheme.error,
                         isClip = false,
-                        onDelete = null,
+                        onDelete = { onClearOutput(nodeId) },
                         onKeep = { onKeepImage(id) },
                         onDownload = { onSaveImage(id) },
                         onShare = { onShareImage(id) },
@@ -497,6 +523,11 @@ fun NodeInspector(
                         onDisabledKeep = onDisabledKeep,
                         starKeptTint = com.abrah.nightmare.ui.StarKept,
                         starIdleTint = com.abrah.nightmare.ui.StarIdle,
+                        // ⚠ ⓘ too, and it is the SAME dialog the Made row opens
+                        // — one run made both pictures, so there is one answer.
+                        // A missing ⓘ on one of two pictures is exactly the
+                        // asymmetry this row was rebuilt to remove.
+                        onInfo = if (detailsOf == null) null else { { showingBeforeInfo = true } },
                     )
                 }
             } ?: {},
@@ -574,6 +605,9 @@ fun NodeInspector(
             onInstallSegmenter = onInstallSegmenter,
             onDeleteSegmenter = onDeleteSegmenter,
             segmenterInstalled = segmenterInstalled,
+            segmenterRow = segmenterRow,
+            onCancelSegmenter = onCancelSegmenter,
+            busy = busy,
             onReset = onReset,
             // ⚠⚠ **Not offered when the node ALREADY auto-upscales** — the
             // user's call, 2026-09-22. The button's whole job is to put an
@@ -589,6 +623,11 @@ fun NodeInspector(
                 ?.let { up -> { up(nodeId) } },
             onInfo = detailsOf?.takeIf { previewId != null }?.let { d -> { d(nodeId) } },
         )
+        if (showingBeforeInfo && detailsOf != null) {
+            com.abrah.nightmare.ui.ResultInfoDialog(detailsOf(nodeId)) {
+                showingBeforeInfo = false
+            }
+        }
         }
     }
 }
@@ -879,6 +918,20 @@ internal fun NodeInspectorBody(
     onDeleteSegmenter: (() -> Unit)? = null,
     /** ⚠ Whether the segmenter weights are on the phone — read by the caller. */
     segmenterInstalled: Boolean = true,
+    /**
+     * ⭐⭐⭐ **The SAME row the Models tab draws** — so the download beside
+     * the checkbox has a size, a progress bar and a Cancel, like every other
+     * download in the app (`docs/UI.md` §8.2).
+     *
+     * ⚠⚠ It was a bare `TextButton` reading "Download"/"Delete", with the
+     * installed state read from a `remember(vm.working)` snapshot that neither
+     * install nor delete invalidates — so the button did nothing visible, showed
+     * no progress, and still said the same thing afterwards. Reported from the
+     * phone 2026-09-22.
+     */
+    segmenterRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onCancelSegmenter: (() -> Unit)? = null,
+    busy: Boolean = false,
     /** ⭐⭐ What made this picture — the rows for [com.abrah.nightmare.ui.ResultInfoDialog]. */
     onInfo: (() -> List<Pair<String, String>>)? = null,
     /** ⚠ For a golden only: draw the inpaint popup's tab INLINE, since a Dialog is a window a screenshot cannot reach. */
@@ -1446,6 +1499,9 @@ internal fun NodeInspectorBody(
                     type = type,
                     onSetParam = { k, v -> onSetParam(nodeId, k, v) },
                     segmenterInstalled = segmenterInstalled,
+                    segmenterRow = segmenterRow,
+                    onCancelSegmenter = onCancelSegmenter,
+                    busy = busy,
                     onInstallSegmenter = onInstallSegmenter,
                     onDeleteSegmenter = onDeleteSegmenter,
                 )
@@ -1581,55 +1637,49 @@ internal fun NodeInspectorBody(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // ⭐⭐⭐ **Label, then icons, then the picture** — the user's
+                // call, 2026-09-22, and it is the layout BOTH halves use.
+                //
+                // ⚠⚠⚠ The two halves disagreed: this row sat UNDER its picture
+                // while the Made row sat above the "Made" label, so the same
+                // sheet put one picture's controls below it and the other's two
+                // elements above it. That is the N−1-of-N shape `CLAUDE.md`
+                // warns about, in one function, three lines apart.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) { beforeActions() }
                 Image(
                     bitmap = bmp,
                     contentDescription = "the picture this node received",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = minOf(180.dp, LocalConfiguration.current.screenHeightDp.dp * 0.3f))
+                        // ⚠ The SAME cap as the Made picture below. They are meant
+                        // to be compared, and two different caps make the smaller
+                        // one look like the worse render.
+                        .heightIn(max = pictureCap(pair = true))
                         .clip(RoundedCornerShape(10.dp))
                         .clickable { onViewBeforeFullscreen() },
                 )
-                // ⚠ Its OWN actions. Before 2026-09-22 this picture could only
-                // be looked at: the row below belonged to what the node MADE,
-                // so the original was unreachable from the one screen showing
-                // it — and on an auto-upscaling output it is the only place the
-                // un-enlarged picture exists at all.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) { beforeActions() }
             }
         }
-        if (preview != null && cropSource == null && maskSource == null && onSaveImage != null) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                // ⭐ The SAME row the fullscreen viewer draws, in the same order,
-                // with the same confirm on the bin (`docs/UI.md` §8.3). ⚠ This
-                // bin used to clear on the tap while the viewer's asked.
-                PictureActions(
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    deleteTint = MaterialTheme.colorScheme.error,
-                    isClip = hasClip,
-                    onDelete = onClearOutput,
-                    onKeep = onKeepImage,
-                    onDownload = { onSaveImage() },
-                    onShare = { onShareImage() },
-                    onSendTo = { onSendImage() },
-                    onStar = onStarImage,
-                    kept = kept,
-                    favourite = favourite,
-                    keepDisabledReason = keepDisabledReason,
-                    onDisabledKeep = onDisabledKeep,
-                    starKeptTint = com.abrah.nightmare.ui.StarKept,
-                    starIdleTint = com.abrah.nightmare.ui.StarIdle,
-                    onUpscale = onUpscale,
-                    onInfo = onInfo?.let { { showingInfo = true } },
-                )
-            }
+        // ⚠ Nothing here: the Made row is drawn with the Made picture below,
+        // label → icons → picture, exactly as the Received half above.
+        // ⭐⭐⭐ **The image node's own controls, ABOVE its picture.**
+        //
+        // ⚠⚠ They were drawn below the picture, under the knob list, which
+        // put the swap and the bin further from the thing they act on than any
+        // other node's icons are — and on the opposite side of it. The user's
+        // call, 2026-09-22. ⚠ With no picture chosen this IS the picture's
+        // slot, so the framed + stands where the photo will stand.
+        if (node.type == "core.image") {
+            ImagePicker(
+                current = node.params["uri"].orEmpty(),
+                onPicked = { uri -> onSetParam(nodeId, "uri", uri) },
+                onClear = onClearImage,
+                emptyHeight = pictureCap(),
+            )
         }
         // ⚠⚠ …and NOT on a `mask` node either, for the same reason plus a
         // sharper one: the mask's own output is a black-and-white raster, and
@@ -1649,6 +1699,40 @@ internal fun NodeInspectorBody(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            // ⭐⭐⭐ **The icons, ABOVE the picture they act on** — the user's
+            // call, 2026-09-22, and the same order the Received half uses.
+            // ⚠ The SAME row the fullscreen viewer draws, in the same order,
+            // with the same confirm on the bin (`docs/UI.md` §8.3).
+            if (onSaveImage != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    PictureActions(
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        deleteTint = MaterialTheme.colorScheme.error,
+                        isClip = hasClip,
+                        onDelete = onClearOutput,
+                        onKeep = onKeepImage,
+                        onDownload = { onSaveImage() },
+                        onShare = { onShareImage() },
+                        onSendTo = { onSendImage() },
+                        onStar = onStarImage,
+                        kept = kept,
+                        favourite = favourite,
+                        keepDisabledReason = keepDisabledReason,
+                        onDisabledKeep = onDisabledKeep,
+                        starKeptTint = com.abrah.nightmare.ui.StarKept,
+                        starIdleTint = com.abrah.nightmare.ui.StarIdle,
+                        // ⚠⚠ Disabled while `auto upscale` is on — the user's
+                        // call: the node is already enlarging every render, so
+                        // a button offering to enlarge it again is offering
+                        // nothing.
+                        onUpscale = onUpscale,
+                        onInfo = onInfo?.let { { showingInfo = true } },
+                    )
+                }
             }
             // ⭐⭐ A clip loops here exactly as it does on the node.
             //
@@ -1681,7 +1765,7 @@ internal fun NodeInspectorBody(
                     // landscape the whole window is ~360dp tall, so a flat cap
                     // is most of the screen -- and on a `crop` node this picture
                     // sits UNDER the framing view, which has already taken half.
-                    .heightIn(max = minOf(240.dp, LocalConfiguration.current.screenHeightDp.dp * 0.4f))
+                    .heightIn(max = pictureCap(pair = beforeImage != null))
                     .clip(RoundedCornerShape(10.dp))
                     .clickable { onViewFullscreen() },
             )
@@ -1768,13 +1852,6 @@ internal fun NodeInspectorBody(
         // valid-looking string that resolves to nothing, or to somebody else's
         // picture.
         val picked = if (node.type == "core.image") "uri" else null
-        if (picked != null) {
-            ImagePicker(
-                current = node.params[picked].orEmpty(),
-                onPicked = { uri -> onSetParam(nodeId, picked, uri) },
-                onClear = onClearImage,
-            )
-        }
 
         // ⭐⭐⭐ **The LAST-node rule** (`isLastOfKind`): only the last sampler
         // in a chain may arm a sweep. Sweeping an earlier one re-runs everything
@@ -2226,7 +2303,17 @@ internal fun NodeInspectorBody(
             // picture, so it is not the same kind of act as the button next to
             // it, and colouring them alike would make the pair read as two ways
             // to destroy something.
-            if (onReset != null) {
+            // ⚠⚠ **Not on a `core.image` node** — the user's call, 2026-09-22.
+            // Its only knob IS the photo, and the bin beside the picker already
+            // forgets it, so Reset would be the same button twice — one of them
+            // behind a confirm that says "every knob" when there is one.
+            //
+            // ⚠⚠⚠ The rule lives HERE, where `node` is, and not at the call
+            // site that passes `onReset` in. Gated there, it was still drawn in
+            // every screenshot test, because the goldens call this function
+            // directly — which is `docs/UI.md` §5's blind spot exactly: a test
+            // that does not drive the production wiring cannot see it.
+            if (onReset != null && node.type != "core.image") {
                 TextButton(onClick = { confirmingReset = true }) { Text("Reset node") }
             }
             TextButton(onClick = { confirmingDelete = true }) {
@@ -3086,6 +3173,20 @@ private fun MaskToolbar(
     onEditMask: (node: String, (com.abrah.nightmare.MaskState) -> com.abrah.nightmare.MaskState) -> Unit,
     /** ⚠ Whether the segmenter weights are on the phone — for the row below the slider. */
     segmenterInstalled: Boolean = true,
+    /**
+     * ⭐⭐⭐ **The SAME row the Models tab draws** — so the download beside
+     * the checkbox has a size, a progress bar and a Cancel, like every other
+     * download in the app (`docs/UI.md` §8.2).
+     *
+     * ⚠⚠ It was a bare `TextButton` reading "Download"/"Delete", with the
+     * installed state read from a `remember(vm.working)` snapshot that neither
+     * install nor delete invalidates — so the button did nothing visible, showed
+     * no progress, and still said the same thing afterwards. Reported from the
+     * phone 2026-09-22.
+     */
+    segmenterRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onCancelSegmenter: (() -> Unit)? = null,
+    busy: Boolean = false,
     /** ⭐ Fetch them from here; null hides the button (a golden has no VM). */
     onInstallSegmenter: (() -> Unit)? = null,
     /** ⭐ …and remove them, which is the other half of saying they are here. */
@@ -3342,21 +3443,32 @@ private fun MaskToolbar(
                         onSetParam(com.abrah.nightmare.SdSampler.TAP_SELECT, v.toString())
                     },
                 )
-                Column(Modifier.weight(1f)) {
-                    Text("Tap to select", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        com.abrah.nightmare.segment.Segmenter.LABEL +
-                            if (segmenterInstalled) "" else " · not downloaded",
-                        style = LogTextStyle,
-                        color = if (segmenterInstalled) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.error,
-                    )
-                }
-                if (!segmenterInstalled) {
-                    onInstallSegmenter?.let { TextButton(onClick = it) { Text("Download") } }
-                } else {
-                    onDeleteSegmenter?.let { TextButton(onClick = it) { Text("Delete") } }
-                }
+                // ⚠ Just what the checkbox DOES. Whether the model is here, how
+                // big it is and what to do about it are the card's job below,
+                // and saying it twice is how the two start disagreeing.
+                Text(
+                    "Tap to select",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            // ⭐⭐⭐ **The download is the SAME card the Models tab draws** —
+            // `ToolCard` over `DownloadCard`: the size, the progress bar, Cancel
+            // while it runs, Delete when it is there (`docs/UI.md` §8.2).
+            //
+            // ⚠⚠⚠ It was two hand-rolled `TextButton`s. They showed no size,
+            // no progress and no way to stop, and the state behind them never
+            // refreshed — so pressing either one appeared to do nothing at all.
+            // Reported 2026-09-22. ⇒ A second download surface is a second
+            // download surface that will drift; there is one.
+            segmenterRow?.let { row ->
+                com.abrah.nightmare.ui.ToolCard(
+                    row = row,
+                    busy = busy,
+                    onInstall = { onInstallSegmenter?.invoke() },
+                    onCancel = { onCancelSegmenter?.invoke() },
+                    onDelete = { onDeleteSegmenter?.invoke() },
+                )
             }
         }
         Text(
@@ -3376,6 +3488,29 @@ private fun MaskToolbar(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/**
+ * ⭐⭐⭐ **How tall a picture may be in the sheet** — ONE number, asked by
+ * every surface that draws one.
+ *
+ * ⚠⚠ It was `min(240.dp, 40% of the window)` for the node's own picture and
+ * `min(180.dp, 30%)` for the Received one above it, written out at two call
+ * sites. Two pictures meant to be COMPARED drawn at two different caps makes
+ * the smaller one read as the worse render, and 240dp on a 900dp window left
+ * most of the sheet empty — *"dont u see all the free space vertically"*,
+ * 2026-09-22.
+ *
+ * ⚠ Bounded by the WINDOW, not a flat dp: in landscape the whole window is
+ * ~360dp tall, so a flat cap is the entire screen.
+ *
+ * @param pair true when a Received/Made stack is being drawn, so the two
+ *   together plus their labels and icon rows still fit a scroll's worth.
+ */
+@Composable
+private fun pictureCap(pair: Boolean = false): androidx.compose.ui.unit.Dp {
+    val window = LocalConfiguration.current.screenHeightDp.dp
+    return if (pair) minOf(280.dp, window * 0.32f) else minOf(420.dp, window * 0.52f)
 }
 
 /**
@@ -3708,8 +3843,48 @@ internal fun rememberImagePick(onPicked: (String) -> Unit): () -> Unit {
     return { launcher.launch(arrayOf("image/*")) }
 }
 
+/**
+ * ⭐⭐ **A picked photo's name**, for the one line under the swap and bin.
+ *
+ * ⚠ `DISPLAY_NAME` from the provider, which is what the gallery calls the
+ * file. ⚠⚠ Falling back to the last path segment rather than to the whole
+ * URI: a provider that answers nothing still leaves something a person can read,
+ * and the URI is the string this function exists to keep off the screen.
+ *
+ * ⚠ `remember`ed on the URI — it is a `ContentResolver` query, and the sheet
+ * recomposes on every keystroke in a prompt two nodes away.
+ */
 @Composable
-private fun ImagePicker(current: String, onPicked: (String) -> Unit, onClear: () -> Unit) {
+private fun displayNameOf(uri: String): String {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    return remember(uri) {
+        if (uri.isBlank()) return@remember uri
+        val parsed = runCatching { android.net.Uri.parse(uri) }.getOrNull()
+            ?: return@remember uri
+        val fromProvider = runCatching {
+            ctx.contentResolver.query(
+                parsed,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null, null, null,
+            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull()
+        fromProvider?.takeIf { it.isNotBlank() }
+            ?: parsed.lastPathSegment?.takeIf { it.isNotBlank() }
+            ?: uri
+    }
+}
+
+/**
+ * ⚠ How tall the empty frame is — the slot the picture will occupy, so the two
+ * states of this node are the same size. See [pictureCap].
+ */
+@Composable
+private fun ImagePicker(
+    current: String,
+    onPicked: (String) -> Unit,
+    onClear: () -> Unit,
+    emptyHeight: androidx.compose.ui.unit.Dp = 140.dp,
+) {
     val pick = rememberImagePick(onPicked)
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -3732,7 +3907,7 @@ private fun ImagePicker(current: String, onPicked: (String) -> Unit, onClear: ()
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 140.dp)
+                    .height(emptyHeight)
                     .clip(RoundedCornerShape(12.dp))
                     .clickable(onClick = pick)
                     .drawBehind {
@@ -3761,11 +3936,22 @@ private fun ImagePicker(current: String, onPicked: (String) -> Unit, onClear: ()
                     onPick = pick,
                     onClear = onClear,
                 )
+                // ⭐⭐⭐ **The FILE's name, not the URI.** The user's call,
+                // 2026-09-22: *"show the correct image name not the content://
+                // bullshit"*.
+                //
+                // ⚠⚠ `content://media/picker/0/com.android.providers.../media/
+                // 1000000034` is not a name of anything — it is the handle the
+                // picker returned, it means nothing to the person who chose the
+                // photo, and it is the widest string on the sheet.
+                // [displayNameOf] asks the provider for `DISPLAY_NAME` and falls
+                // back to the last path segment, so a provider that answers
+                // nothing still gets something shorter than this.
                 Text(
-                    current,
+                    displayNameOf(current),
                     style = LogTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(start = 4.dp),
                 )
