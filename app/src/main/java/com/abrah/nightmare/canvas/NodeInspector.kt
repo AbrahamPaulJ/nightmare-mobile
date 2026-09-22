@@ -254,7 +254,7 @@ fun NodeInspector(
     onStarImage: (String) -> Unit = {},
     isFavourite: (String) -> Boolean = { false },
     keepDisabledReason: String? = null,
-    onDisabledKeep: ((String) -> Unit)? = null,
+    onDisabledAction: ((String) -> Unit)? = null,
     onKeepImage: (String) -> Unit = {},
     isKept: (String) -> Boolean = { false },
     onClearOutput: (String) -> Unit = {},
@@ -519,8 +519,17 @@ fun NodeInspector(
                         onStar = { onStarImage(id) },
                         kept = isKept(id),
                         favourite = isFavourite(id),
-                        keepDisabledReason = keepDisabledReason,
-                        onDisabledKeep = onDisabledKeep,
+                        // ⭐⭐⭐ **Keep is LIVE on the Received picture even when
+                        // autosave is on** — the user's call, 2026-09-22.
+                        //
+                        // ⚠⚠ `keepDisabledReason` says "autosave already kept
+                        // this". Autosave keeps the node's RESULT, which is the
+                        // Made picture below; the un-enlarged one is not in
+                        // Results and this row is the only way to put it there.
+                        // Dimming it here disabled the one button that had
+                        // something left to do.
+                        keepDisabledReason = null,
+                        onDisabledAction = onDisabledAction,
                         starKeptTint = com.abrah.nightmare.ui.StarKept,
                         starIdleTint = com.abrah.nightmare.ui.StarIdle,
                         // ⚠ ⓘ too, and it is the SAME dialog the Made row opens
@@ -592,7 +601,7 @@ fun NodeInspector(
             kept = previewId?.let(isKept) == true,
             favourite = previewId?.let(isFavourite) == true,
             keepDisabledReason = keepDisabledReason,
-            onDisabledKeep = onDisabledKeep,
+            onDisabledAction = onDisabledAction,
             onClearOutput = previewId?.takeIf { node.type != "core.image" }
                 ?.let { { onClearOutput(nodeId) } },
             demand = demand,
@@ -614,13 +623,19 @@ fun NodeInspector(
             // upscale into the flow behind this output, and the checkbox above
             // has already done it: pressing it would enlarge an enlarged
             // picture, which is not what a second tap means.
+            // ⚠⚠ **Offered even when the node ALREADY auto-upscales** — dimmed,
+            // with the reason, rather than gone. See
+            // [PictureActions.upscaleDisabledReason].
             onUpscale = onUpscale
                 ?.takeIf {
                     previewId != null && actsOnItsPicture &&
-                        nodeId !in clipNodes(state.workflow.graph, state.videos) &&
-                        !com.abrah.nightmare.MediaOutputNode.autoUpscales(node)
+                        nodeId !in clipNodes(state.workflow.graph, state.videos)
                 }
                 ?.let { up -> { up(nodeId) } },
+            upscaleDisabledReason =
+                if (com.abrah.nightmare.MediaOutputNode.autoUpscales(node)) {
+                    "this output already enlarges every render — untick auto upscale to choose"
+                } else null,
             onInfo = detailsOf?.takeIf { previewId != null }?.let { d -> { d(nodeId) } },
         )
         if (showingBeforeInfo && detailsOf != null) {
@@ -882,7 +897,7 @@ internal fun NodeInspectorBody(
     favourite: Boolean = false,
     /** ⚠ Non-null when autosave already keeps every Run — the disk is dimmed. */
     keepDisabledReason: String? = null,
-    onDisabledKeep: ((String) -> Unit)? = null,
+    onDisabledAction: ((String) -> Unit)? = null,
     onKeepImage: (() -> Unit)? = null,
     /** ⚠ Filled star when true. The action toggles, so the icon must say which way. */
     kept: Boolean = false,
@@ -910,6 +925,8 @@ internal fun NodeInspectorBody(
     loraEpoch: Int = 0,
     /** ⭐⭐ Enlarge this node's picture — see [PictureActions.onUpscale]. */
     onUpscale: (() -> Unit)? = null,
+    /** ⭐⭐ Why it is dimmed — see [PictureActions.upscaleDisabledReason]. */
+    upscaleDisabledReason: String? = null,
     /** ⭐⭐ Put this node's knobs back to their defaults — [CanvasState.resetNode]. */
     onReset: ((String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from the Tap-select row; null hides the button. */
@@ -1655,10 +1672,18 @@ internal fun NodeInspectorBody(
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxWidth()
-                        // ⚠ The SAME cap as the Made picture below. They are meant
-                        // to be compared, and two different caps make the smaller
-                        // one look like the worse render.
-                        .heightIn(max = pictureCap(pair = true))
+                        // ⚠⚠⚠ A FIXED height, not a cap, and the SAME one the
+                        // Made picture below gets.
+                        //
+                        // ⚠⚠ `heightIn(max =)` lets each picture sit at its own
+                        // natural size, and the Received one is by definition the
+                        // SMALLER file — it is the render before a 4x. So the
+                        // pair came out at two different sizes, which is the one
+                        // thing a before/after must not do: the smaller picture
+                        // reads as the worse render rather than as the earlier
+                        // one. ⚠ `ContentScale.Fit` letterboxes inside the box,
+                        // so nothing is cropped to achieve it.
+                        .height(pictureCap(pair = true))
                         .clip(RoundedCornerShape(10.dp))
                         .clickable { onViewBeforeFullscreen() },
                 )
@@ -1722,7 +1747,7 @@ internal fun NodeInspectorBody(
                         kept = kept,
                         favourite = favourite,
                         keepDisabledReason = keepDisabledReason,
-                        onDisabledKeep = onDisabledKeep,
+                        onDisabledAction = onDisabledAction,
                         starKeptTint = com.abrah.nightmare.ui.StarKept,
                         starIdleTint = com.abrah.nightmare.ui.StarIdle,
                         // ⚠⚠ Disabled while `auto upscale` is on — the user's
@@ -1730,6 +1755,7 @@ internal fun NodeInspectorBody(
                         // a button offering to enlarge it again is offering
                         // nothing.
                         onUpscale = onUpscale,
+                        upscaleDisabledReason = upscaleDisabledReason,
                         onInfo = onInfo?.let { { showingInfo = true } },
                     )
                 }
@@ -1765,7 +1791,13 @@ internal fun NodeInspectorBody(
                     // landscape the whole window is ~360dp tall, so a flat cap
                     // is most of the screen -- and on a `crop` node this picture
                     // sits UNDER the framing view, which has already taken half.
-                    .heightIn(max = pictureCap(pair = beforeImage != null))
+                    // ⚠ A fixed box when there is a Received picture above to
+                    // match, a cap when this is the only picture — letterboxing
+                    // a lone wide render would waste half the sheet.
+                    .then(
+                        if (beforeImage != null) Modifier.height(pictureCap(pair = true))
+                        else Modifier.heightIn(max = pictureCap()),
+                    )
                     .clip(RoundedCornerShape(10.dp))
                     .clickable { onViewFullscreen() },
             )
@@ -3454,21 +3486,34 @@ private fun MaskToolbar(
             }
             // ⭐⭐⭐ **The download is the SAME card the Models tab draws** —
             // `ToolCard` over `DownloadCard`: the size, the progress bar, Cancel
-            // while it runs, Delete when it is there (`docs/UI.md` §8.2).
+            // while it runs, Delete when it is there (`docs/UI.md` §8.1).
             //
             // ⚠⚠⚠ It was two hand-rolled `TextButton`s. They showed no size,
             // no progress and no way to stop, and the state behind them never
             // refreshed — so pressing either one appeared to do nothing at all.
             // Reported 2026-09-22. ⇒ A second download surface is a second
             // download surface that will drift; there is one.
-            segmenterRow?.let { row ->
-                com.abrah.nightmare.ui.ToolCard(
-                    row = row,
-                    busy = busy,
-                    onInstall = { onInstallSegmenter?.invoke() },
-                    onCancel = { onCancelSegmenter?.invoke() },
-                    onDelete = { onDeleteSegmenter?.invoke() },
-                )
+            //
+            // ⚠⚠ **Only while the box is TICKED**, or while a download this
+            // row started is still running. An 87 MB card sitting under an
+            // unticked checkbox is an offer nobody made — reported the same day
+            // (*"the download btn for segment is showing even when its
+            // disabled"*). Untick it mid-download and the card stays until the
+            // download ends, because Cancel has to remain reachable.
+            if (tapSelect || segmenterRow?.progress != null) {
+                segmenterRow?.let { row ->
+                    // ⚠ Its own spacing, so it reads as a card in a list the way
+                    // the Tools tab's does rather than as part of the row above.
+                    Box(Modifier.padding(top = 4.dp, bottom = 4.dp)) {
+                        com.abrah.nightmare.ui.ToolCard(
+                            row = row,
+                            busy = busy,
+                            onInstall = { onInstallSegmenter?.invoke() },
+                            onCancel = { onCancelSegmenter?.invoke() },
+                            onDelete = { onDeleteSegmenter?.invoke() },
+                        )
+                    }
+                }
             }
         }
         Text(

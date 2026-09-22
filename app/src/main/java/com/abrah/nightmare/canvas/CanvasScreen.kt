@@ -255,7 +255,7 @@ fun CanvasScreen(
     isFavourite: (String) -> Boolean = { false },
     /** ⚠ Non-null when this flow's autosave keeps every Run — the disk is dimmed. */
     keepDisabledReason: String? = null,
-    onDisabledKeep: ((String) -> Unit)? = null,
+    onDisabledAction: ((String) -> Unit)? = null,
     onKeepImage: (String) -> Unit = {},
     /** ⭐ Is this picture already kept? Drives the star's filled/outline state. */
     isKept: (String) -> Boolean = { false },
@@ -587,7 +587,7 @@ fun CanvasScreen(
         onStarImage = onStarImage,
         isFavourite = isFavourite,
         keepDisabledReason = keepDisabledReason,
-        onDisabledKeep = onDisabledKeep,
+        onDisabledAction = onDisabledAction,
         onClearOutput = onClearOutput,
         imageFor = imageFor,
         // ⚠ `s.editing` IS the node whose inspector is open, so the viewer
@@ -768,7 +768,7 @@ fun CanvasScreen(
                 kept = isKept(id),
                 favourite = isFavourite(id),
                 keepDisabledReason = keepDisabledReason,
-                onDisabledKeep = onDisabledKeep,
+                onDisabledAction = onDisabledAction,
                 onDeleteOutput = if (!viewedIsInput && viewedNode != null) {
                     {
                         onClearImage(viewedNode)
@@ -795,20 +795,15 @@ fun CanvasScreen(
                 // one set of actions, whichever surface it is on.
                 // ⚠ Only on an OUTPUT this node made, never on a photo the user
                 // picked: there is no wire behind an input to trace.
-                // ⚠⚠ **Not when the node ALREADY auto-upscales** — the same
-                // rule the inspector's row follows. It was in one of the two
-                // places, which is the N−1-of-N shape: the sheet hid the
-                // button and the fullscreen viewer went on offering it, and
-                // fullscreen is where a person decides a picture is worth
-                // enlarging.
+                // ⚠⚠ **Dimmed, not gone**, when the node already auto-upscales
+                // — the same rule and the same words the inspector's row uses.
                 onUpscale = viewedNode
-                    ?.takeIf { n ->
-                        !viewedIsInput && onUpscaleNode != null &&
-                            state.workflow.graph.byId[n]?.let {
-                                !com.abrah.nightmare.MediaOutputNode.autoUpscales(it)
-                            } == true
-                    }
+                    ?.takeIf { !viewedIsInput && onUpscaleNode != null }
                     ?.let { n -> { onUpscaleNode?.invoke(n) } },
+                upscaleDisabledReason = viewedNode
+                    ?.let { state.workflow.graph.byId[it] }
+                    ?.takeIf { com.abrah.nightmare.MediaOutputNode.autoUpscales(it) }
+                    ?.let { "this output already enlarges every render — untick auto upscale to choose" },
                 onInfo = viewedNode
                     ?.takeIf { !viewedIsInput && detailsOfNode != null }
                     ?.let { n -> { showingNodeInfo = n } },
@@ -1656,7 +1651,7 @@ private fun FullscreenImage(
     favourite: Boolean = false,
     /** ⚠ Non-null when the flow's autosave already keeps every Run — the disk is dimmed. */
     keepDisabledReason: String? = null,
-    onDisabledKeep: ((String) -> Unit)? = null,
+    onDisabledAction: ((String) -> Unit)? = null,
     /** ⭐ Whether this picture is already in Results — the star's amber/grey state. */
     kept: Boolean = false,
     /**
@@ -1676,6 +1671,8 @@ private fun FullscreenImage(
     onLockSeed: (() -> Unit)? = null,
     /** ⭐⭐ Enlarge this picture — see [PictureActions.onUpscale]. */
     onUpscale: (() -> Unit)? = null,
+    /** ⭐⭐ Why it is dimmed — see [PictureActions.upscaleDisabledReason]. */
+    upscaleDisabledReason: String? = null,
     /** ⭐⭐ ⓘ — see [PictureActions.onInfo]. */
     onInfo: (() -> Unit)? = null,
     /**
@@ -1862,10 +1859,11 @@ private fun FullscreenImage(
                 kept = kept,
                 favourite = favourite,
                 keepDisabledReason = keepDisabledReason,
-                onDisabledKeep = onDisabledKeep,
+                onDisabledAction = onDisabledAction,
                 starKeptTint = com.abrah.nightmare.ui.StarKept,
                 starIdleTint = com.abrah.nightmare.ui.StarIdle,
                 onUpscale = onUpscale,
+                upscaleDisabledReason = upscaleDisabledReason,
                 onInfo = onInfo,
             )
         }

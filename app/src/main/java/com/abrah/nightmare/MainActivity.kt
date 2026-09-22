@@ -681,7 +681,7 @@ fun HarnessScreen(
             onStarImage = { id -> vm.toggleKeepResult(id, favourite = true) },
             isFavourite = { id -> vm.isFavourite(id) },
             keepDisabledReason = vm.keepDisabledReason,
-            onDisabledKeep = { why -> vm.say(why) },
+            onDisabledAction = { why -> vm.say(why) },
             isKept = vm::isKept,
             onClearOutput = vm::clearOutput,
             onSave = vm::saveWorkflowAs,

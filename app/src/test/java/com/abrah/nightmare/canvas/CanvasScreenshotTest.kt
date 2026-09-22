@@ -517,6 +517,78 @@ class CanvasScreenshotTest {
     }
 
     /**
+     * ⭐⭐⭐ **The auto-upscaling output — Received above Made, both with a
+     * full row of icons above the picture they act on.**
+     *
+     * ⚠⚠⚠ This surface has been reported broken three times in one day
+     * (2026-09-22) and the suite caught none of it, because nothing drew it: the
+     * Received picture had no bin, its icons sat UNDER it while the Made row sat
+     * above the "Made" label, and the upscale icon disappeared entirely instead
+     * of dimming. All three are visible in a screenshot and in nothing else.
+     * `docs/UI.md` §8.18.
+     *
+     * ⚠⚠ What to check when this golden changes:
+     *   • both halves read label → icons → picture;
+     *   • the two rows hold the SAME icons — bin, keep, download, share, send,
+     *     star, upscale, ⓘ;
+     *   • the upscale icon is DIMMED, not missing;
+     *   • Keep is live on Received even with autosave on.
+     */
+    @Test
+    fun theAutoUpscalingOutputShowsBothPictures() = shoot("inspector-auto-upscale") {
+        Surface(Modifier.fillMaxSize()) {
+            NodeInspectorBody(
+                nodeId = "output",
+                node = Node(
+                    "output", "core.output",
+                    params = mapOf(com.abrah.nightmare.MediaOutputNode.UPSCALE to "true"),
+                ),
+                type = NODE_TYPES["core.output"],
+                onSetParam = { _, _, _ -> },
+                onDelete = {},
+                onReset = {},
+                // ⚠ REAL render sizes. A 384px fixture is drawn at its natural
+                // size inside the cap and the golden then says nothing about
+                // how a 1024² render lays out, which is the only case there is.
+                preview = stripes(2048, 1360),
+                beforeImage = stripes(512, 340),
+                onSaveImage = {},
+                onClearOutput = {},
+                onKeepImage = {},
+                onStarImage = {},
+                onUpscale = {},
+                // ⚠ The state the button is dimmed in — the node already
+                // enlarges every render.
+                upscaleDisabledReason = "this output already enlarges every render",
+                // ⚠ Autosave is on, which is what used to disable Keep on BOTH
+                // pictures. It must disable it on Made only.
+                keepDisabledReason = "autosave already keeps every Run",
+                onDisabledAction = {},
+                onInfo = { listOf("Time · whole flow" to "24.6 s") },
+                beforeActions = {
+                    PictureActions(
+                        tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                        deleteTint = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        isClip = false,
+                        onDelete = {},
+                        onKeep = {},
+                        onDownload = {},
+                        onShare = {},
+                        onSendTo = {},
+                        onStar = {},
+                        kept = false,
+                        favourite = false,
+                        keepDisabledReason = null,
+                        starKeptTint = com.abrah.nightmare.ui.StarKept,
+                        starIdleTint = com.abrah.nightmare.ui.StarIdle,
+                        onInfo = {},
+                    )
+                },
+            )
+        }
+    }
+
+    /**
      ⭐ The seed that made the picture, on the node that DECODED it.
      *
      * ⚠⚠ The number comes from the sampler upstream, not from this node -- a

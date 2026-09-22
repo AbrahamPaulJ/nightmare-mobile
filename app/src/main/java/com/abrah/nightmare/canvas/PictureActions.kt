@@ -76,7 +76,26 @@ fun PictureActions(
      * nothing, or quietly making a duplicate, are both worse.
      */
     keepDisabledReason: String? = null,
-    onDisabledKeep: ((String) -> Unit)? = null,
+    /**
+     * ⭐⭐ **Why an icon is dimmed — said out loud when it is tapped.**
+     *
+     * ⚠ It was `onDisabledKeep`, named for the one button that used it.
+     * Upscale needs the same treatment, and a second callback with a second
+     * name would be the second copy `docs/UI.md` §8 exists to stop.
+     */
+    onDisabledAction: ((String) -> Unit)? = null,
+    /**
+     * ⭐⭐⭐ **Why the upscale button is dimmed, or null when it is live.**
+     *
+     * ⚠⚠⚠ The button is DIMMED, never removed. Asked for as *"if auto
+     * upscale enabled disable upscale btn"* and then, once it had been removed
+     * outright, as *"where is upscale btn in the output node after enabling
+     * autoupscale"* — both on 2026-09-22. Disabling is not hiding: a row that
+     * changes length depending on a checkbox two inches above it leaves the
+     * user hunting for a button that was there a moment ago. Same rule, and the
+     * same mechanism, as [keepDisabledReason].
+     */
+    upscaleDisabledReason: String? = null,
     /**
      * ⭐ SEND TO a flow ([com.abrah.nightmare.ui.SendToDialog]), after share.
      * ⚠ Null on a clip: no flow takes a video as its input.
@@ -136,7 +155,7 @@ fun PictureActions(
     onKeep?.let { keep ->
         IconButton(
             onClick = {
-                if (keepDisabledReason != null) onDisabledKeep?.invoke(keepDisabledReason)
+                if (keepDisabledReason != null) onDisabledAction?.invoke(keepDisabledReason)
                 else keep()
             },
             modifier = small,
@@ -213,11 +232,18 @@ fun PictureActions(
     // (`docs/UI.md` §8.11), so the two surfaces read the same way at the end
     // even though they order the first few differently.
     onUpscale?.takeIf { !isClip }?.let { up ->
-        IconButton(onClick = up, modifier = small) {
+        IconButton(
+            onClick = {
+                if (upscaleDisabledReason != null) onDisabledAction?.invoke(upscaleDisabledReason)
+                else up()
+            },
+            modifier = small,
+        ) {
             Icon(
                 com.abrah.nightmare.ui.UpscaleIcon,
-                contentDescription = "upscale this picture",
-                tint = tint,
+                contentDescription = upscaleDisabledReason ?: "upscale this picture",
+                // ⚠ Dimmed rather than hidden — see [upscaleDisabledReason].
+                tint = if (upscaleDisabledReason != null) tint.copy(alpha = 0.38f) else tint,
             )
         }
     }

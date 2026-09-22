@@ -1668,19 +1668,41 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // output does the enlargement itself, and this sets the two params that
         // say so.
         //
-        // ⚠ No seed pinning any more, and none is needed: nothing upstream
-        // changes, so every node before this one comes back from the cache and
-        // only the enlargement runs. The pinning existed because INSERTING a
-        // node re-keyed the graph.
-        updateCanvas(
-            canvas.setParams(
-                nodeId,
-                mapOf(
-                    MediaOutputNode.UPSCALE to "true",
-                    MediaOutputNode.UPSCALER to upscalerId,
-                ),
-            )
+        // ⭐⭐⭐ **The SEED IS PINNED FIRST**, and this is the whole point of
+        // the button.
+        //
+        // ⚠⚠⚠ It was dropped on 2026-09-22 on the reasoning that "nothing
+        // upstream changes, so every node before this one comes back from the
+        // cache". That is false whenever `seed` is 0, which is the default and
+        // what nearly every flow is left on: a new Run ROLLS a new seed, so the
+        // cache key differs, the sampler renders something else, and the user
+        // gets a DIFFERENT picture enlarged. Reported from the phone the same
+        // day: *"u rerun the generate and get different image with its
+        // upscaled"*. ⇒ Enlarge THIS picture means: fix the seed that made it,
+        // then run.
+        //
+        // ⚠⚠ It writes the seed onto the sampler, which is a visible change to
+        // the user's graph — deliberately. The run bar shows the lock and can
+        // release it; a seed pinned invisibly would be worse.
+        val sampler = com.abrah.nightmare.canvas.samplerFor(canvas.workflow.graph, nodeId)
+        val rolled = com.abrah.nightmare.canvas.seedFor(canvas.workflow.graph, nodeId) {
+            canvasStatus[it]?.detail
+        }
+        var next = canvas.setParams(
+            nodeId,
+            mapOf(
+                MediaOutputNode.UPSCALE to "true",
+                MediaOutputNode.UPSCALER to upscalerId,
+            ),
         )
+        // ⚠ Only when it is actually loose. A seed already typed in is the
+        // user's, and overwriting it with the rolled one would be the same bug
+        // pointing the other way.
+        if (sampler != null) {
+            seedToPin(next.workflow.graph.byId[sampler]?.params?.get("seed"), rolled)
+                ?.let { next = next.setParam(sampler, "seed", it) }
+        }
+        updateCanvas(next)
         runCanvasOrBatch()
     }
 
@@ -3156,6 +3178,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         canvas = canvas.copy(
             previews = canvas.previews.filterKeys { !downstream(it) },
             rendered = canvas.rendered.filterKeys { !downstream(it) },
+            // ⚠⚠⚠ **…and the RECEIVED half.** It was left behind, so the bin
+            // on an auto-upscaling output emptied the Made picture and left the
+            // other one sitting there with a full row of buttons — which reads
+            // as the bin not working at all. Reported from the phone
+            // 2026-09-22. ⚠ [applyBeforeAfterPreviews] will not put it back:
+            // it only records a Received picture for a node that HAS one of its
+            // own, and this node no longer does.
+            beforePreviews = canvas.beforePreviews.filterKeys { !downstream(it) },
         )
         previewSigs.keys.retainAll { !downstream(it) }
     }
@@ -4469,10 +4499,49 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         val samplers = order.filter { isSampler(it.type) && (reach == null || it.id in reach) }
         val out = mutableListOf<Pair<String, String>>()
+
+        /**
+         * ⭐⭐⭐ **What it COST** — and it is appended on EVERY path.
+         *
+         * ⚠⚠⚠ It used to be written once, at the bottom, AFTER an early
+         * return taken whenever the graph reaches no sampler. So an Upscale
+         * flow — a picture and an output, no sampler anywhere — showed Size and
+         * Nodes and nothing else, and the ⓘ on the node that had just spent
+         * eight seconds enlarging something said nothing about the eight
+         * seconds. Reported twice from the phone, 2026-09-22.
+         *
+         * ⚠⚠ It also reports THIS node's own time, not only the samplers'.
+         * `core.output` does the enlarging itself now, so the node the user
+         * tapped is often the node that did the work.
+         */
+        fun appendTimes() {
+            if (times == null) return
+            // ⚠ Per SAMPLER as well as the whole flow: on a chain the total says
+            // nothing about which step was expensive. ⚠⚠ A sampler that came
+            // back from the cache has no entry rather than a 0 — see [nodeMs] —
+            // and is named as cached, which is the useful fact.
+            for (sampler in samplers) {
+                val ms = times(sampler.id)
+                out += ("Time · " + sampler.id) to
+                    (ms?.let { com.abrah.nightmare.canvas.formatMs(it) } ?: "cached")
+            }
+            // ⚠ The node being asked about, when it is not one of those — an
+            // auto-upscaling output, or any node that ran work of its own.
+            if (upTo != null && samplers.none { it.id == upTo }) {
+                times(upTo)?.let {
+                    out += ("Time · " + upTo) to com.abrah.nightmare.canvas.formatMs(it)
+                }
+            }
+            times(TOTAL_MS_KEY)?.let {
+                out += "Time · whole flow" to com.abrah.nightmare.canvas.formatMs(it)
+            }
+        }
+
         val s = samplers.lastOrNull()
         if (s == null) {
             if (width > 0) out += "Size" to "${width}x$height"
             out += "Nodes" to g.nodes.size.toString()
+            appendTimes()
             return out
         }
         val type = types[s.type]
@@ -4501,21 +4570,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         if (width > 0) out += "Output" to "${width}x$height"
-        // ⭐⭐ What it COST — asked for 2026-09-22. ⚠ Per SAMPLER as well as
-        // the whole flow, because on a chain the total says nothing about which
-        // step was expensive. ⚠⚠ A sampler that came back from the cache has
-        // no entry rather than a 0 — see [nodeMs]; it is named as cached, which
-        // is the useful fact.
-        if (times != null) {
-            for (sampler in samplers) {
-                val ms = times(sampler.id)
-                out += ("Time · " + sampler.id) to
-                    (ms?.let { com.abrah.nightmare.canvas.formatMs(it) } ?: "cached")
-            }
-            times(TOTAL_MS_KEY)?.let {
-                out += "Time · whole flow" to com.abrah.nightmare.canvas.formatMs(it)
-            }
-        }
+        appendTimes()
         if (samplers.size > 1) out += "Samplers in the chain" to samplers.size.toString()
         return out
     }
@@ -4829,6 +4884,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         fun portOf(n: com.abrah.nightmare.Node) =
             nodeTypes[n.type]?.inputs?.firstOrNull()?.name ?: "image"
         val shown = nodes.mapNotNull { n ->
+            // ⚠⚠⚠ **A "Received" needs a "Made" to be received INTO.** Half a
+            // before/after is not a state the node can be in: the pair is one
+            // run's output, and on its own the upper picture is just the
+            // upstream render shown on a node that has nothing.
+            //
+            // ⚠⚠ It is also what makes the bin work. `clearOutput` drops this
+            // node's own picture, and without this line the very next preview
+            // pass re-derived the Received one from the upstream render that
+            // clearing deliberately does NOT touch — so the node never emptied.
+            if (canvas.previews[n.id] == null && canvas.rendered[n.id] == null) {
+                return@mapNotNull null
+            }
             val id = canvas.pictureInto(n.id, nodeTypes, portOf(n)) ?: return@mapNotNull null
             val bmp = ops.images.get(id) ?: return@mapNotNull null
             n.id to (id to bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
@@ -4843,11 +4910,21 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // while Made updated underneath it. ⇒ The set to clear is "everything
         // that is not currently a before/after node with a picture", which is
         // the whole graph minus [shown].
+        // ⚠⚠ TWO ways a node that IS still a before/after node loses its
+        // Received picture, and they are different questions:
+        //   • nothing is wired into it any more, so there is no Received;
+        //   • it has no picture OF ITS OWN, so there is no Made to receive into
+        //     — which is the state the bin puts it in.
+        // ⚠ A node failing NEITHER test keeps its entry even if this pass could
+        // not fetch the bitmap, so the frame does not blink out and back.
+        val noWire = nodes.filter { canvas.pictureInto(it.id, nodeTypes, portOf(it)) == null }
+        val noOwn = nodes.filter {
+            canvas.previews[it.id] == null && canvas.rendered[it.id] == null
+        }
         val drop = staleBeforePreviews(
             held = canvas.beforePreviews.keys,
             beforeAfter = nodes.map { it.id }.toSet(),
-            empty = nodes.filter { canvas.pictureInto(it.id, nodeTypes, portOf(it)) == null }
-                .map { it.id }.toSet(),
+            empty = (noWire + noOwn).map { it.id }.toSet(),
         )
         if (shown.isNotEmpty() || drop.isNotEmpty()) {
             canvas = canvas.copy(
@@ -5865,3 +5942,26 @@ internal fun staleBeforePreviews(
     beforeAfter: Set<String>,
     empty: Set<String>,
 ): Set<String> = held.filterTo(mutableSetOf()) { it !in beforeAfter } + empty
+
+/**
+ * ⭐⭐⭐ **The seed to write onto a sampler before enlarging its picture**, or
+ * null to leave it alone.
+ *
+ * ⚠⚠⚠ "Enlarge THIS picture" only means anything if the run that follows
+ * makes the same picture. With `seed = 0` — the default, and what nearly every
+ * flow is left on — a Run rolls a new one, the cache key differs, and the user
+ * gets a different render enlarged. Reported from the phone 2026-09-22.
+ *
+ * ⚠⚠ A seed the user TYPED is never overwritten: it is already the thing
+ * that makes the run repeatable, and replacing it with the last rolled value
+ * would be the same bug pointing the other way.
+ *
+ * @param live what the sampler's `seed` param says now.
+ * @param rolled the seed the shown picture was actually made with, or null when
+ *   the run that made it is not on record.
+ */
+internal fun seedToPin(live: String?, rolled: String?): String? {
+    if (rolled.isNullOrBlank()) return null
+    val current = live?.trim().orEmpty()
+    return if (current.isEmpty() || current == "0") rolled else null
+}
