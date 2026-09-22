@@ -467,6 +467,13 @@ fun HarnessScreen(
                     onSave = { r -> vm.saveResultsToGallery(listOf(r.id)) },
                     onShare = { r -> vm.shareResultImage(r.id) },
                     onSendTo = { r -> vm.offerSendResult(r.id) },
+                    // ⭐⭐ The same upscale the Results row offers, from the
+                    // viewer — one picker, one refusal, one in-flight name.
+                    upscalers = vm.upscalerRows,
+                    upscaling = vm.upscalingResult,
+                    onUpscale = { r, u -> vm.upscaleResult(r.id, u) },
+                    onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
+                    onToast = vm::toast,
                 )
             }
         }
@@ -474,6 +481,14 @@ fun HarnessScreen(
     }
 
     if (vm.showCanvas) {
+        // ⭐⭐ The LoRA import, launched from a node's picker rather than from
+        // the Settings tab — `canvas/LoraPicker.kt`'s Add button. ⚠ Same wide
+        // filter and the same validator as the Settings one: `.safetensors` has
+        // no registered MIME type, so the EXTENSION is what validates
+        // ([HarnessViewModel.importLora]).
+        val canvasLoraPicker = rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+        ) { uri -> if (uri != null) vm.importLora(uri) }
         // ⭐⭐ How the app died last time, if it did — null on an ordinary
         // launch, which is nearly every launch (`CrashReport`). Drawn on the
         // FIRST screen, because the person who needs it is the one who just
@@ -482,6 +497,20 @@ fun HarnessScreen(
             com.abrah.nightmare.ui.CrashNotice(r, onDismiss = vm::dismissCrashReport)
         }
         vm.missingModel?.let { m -> MissingModelDialog(m, vm) }
+        // ⭐⭐ Which upscaler, asked on the canvas — the SAME chooser Results
+        // opens ([com.abrah.nightmare.ui.UpscalePicker]), so a person meets one
+        // dialog wherever they start an upscale from.
+        vm.upscaleNodePick?.let { node ->
+            com.abrah.nightmare.ui.UpscalePicker(
+                upscalers = vm.upscalerRows,
+                onPick = { id -> vm.upscaleFromNode(node, id) },
+                // ⚠ No `askToNotify` here: that helper is scoped to the library
+                // branch, and this dialog is on the canvas. An upscale started
+                // here shows its progress on the canvas, not in a notification.
+                onInstall = vm::installUpscaler,
+                onDismiss = vm::cancelUpscaleNode,
+            )
+        }
         // ⭐⭐ Every picture the graph can make without the NPU, kept current
         // as the user works -- the chosen photo on `load_image`, the framed one
         // on `crop`. ⚠ The trigger lives in `HarnessViewModel.updateCanvas`
@@ -492,6 +521,17 @@ fun HarnessScreen(
         CanvasScreen(
             state = vm.canvas,
             types = vm.nodeTypes,
+            // ⭐⭐ The SAME import the Settings tab runs, reachable from the
+            // node that wants it — `canvas/LoraPicker.kt`. ⚠ A second launcher
+            // rather than a shared one because `rememberLauncherForActivityResult`
+            // is composition-scoped and these two screens are never composed
+            // together; both call the one `HarnessViewModel.importLora`.
+            onImportLora = { canvasLoraPicker.launch(arrayOf("application/octet-stream", "*/*")) },
+            loraEpoch = vm.loraEpoch,
+            // ⭐⭐ Enlarge what an output made — it opens the SAME upscaler
+            // chooser Results uses, then edits the flow and Runs.
+            onUpscaleNode = vm::offerUpscaleNode,
+            detailsOfNode = vm::detailsOfNode,
             // ⭐ Video hidden from Add node where the chip refused it (VideoGate).
             paletteTypes = if (com.abrah.nightmare.npu.VideoGate.hidden) {
                 vm.nodeTypes.filterKeys { it != com.abrah.nightmare.npu.VideoGate.VIDEO_TYPE }

@@ -80,10 +80,22 @@ class CanvasTouchTest {
         return { state }
     }
 
+    /**
+     * ⚠⚠ **Placed CLEAR OF THE TOP CHROME**, which is why the y is 240 and
+     * not 60. The canvas is full-screen with the top bar drawn OVER it, so a
+     * node near the top of the world sits under the header's buttons and a tap
+     * meant for it lands on Models instead.
+     *
+     * ⚠ It moved down on 2026-09-22 when the brand row was added above the
+     * nav row (`CanvasScreen`, the user's call) and these two tests started
+     * failing. The BEHAVIOUR under test is unchanged — a tap on a node opens
+     * its sheet, a drag moves it — only where on screen the node is. Nothing
+     * here is weakened: the assertions are the same.
+     */
     private val oneNode = CanvasState(
         Workflow(
             com.abrah.nightmare.Graph(listOf(Node("s", "sd15.sample"))),
-            mapOf("s" to Pt(40f, 60f)),
+            mapOf("s" to Pt(40f, 240f)),
         )
     )
 
@@ -98,7 +110,7 @@ class CanvasTouchTest {
     fun aNodeFollowsTheFinger() {
         val state = canvas(oneNode)
         // World (40,60)+ is the node; touch is in PIXELS, so scale by density.
-        val start = Offset(60f * density, 80f * density)
+        val start = Offset(60f * density, 260f * density)
 
         rule.onRoot().performTouchInput {
             down(start)
@@ -110,11 +122,11 @@ class CanvasTouchTest {
         rule.waitForIdle()
 
         val at = state().workflow.positions.getValue("s")
-        assertNotEquals("the node did not move at all", Pt(40f, 60f), at)
+        assertNotEquals("the node did not move at all", Pt(40f, 240f), at)
         // Moved by the full gesture, not just the first step.
         // The drag was 60x60 DEVICE px, which is 60/density world units.
         assertEquals("did not follow the whole drag", 40f + 60f, at.x, 2f)
-        assertEquals("did not follow the whole drag", 60f + 60f, at.y, 2f)
+        assertEquals("did not follow the whole drag", 240f + 60f, at.y, 2f)
     }
 
     /** ⭐ One finger on empty space pans the viewport. */
@@ -166,7 +178,7 @@ class CanvasTouchTest {
         val state = canvas(oneNode)
 
         rule.onRoot().performTouchInput {
-            down(Offset(60f * density, 80f * density))
+            down(Offset(60f * density, 260f * density))
             up()
         }
         rule.waitForIdle()

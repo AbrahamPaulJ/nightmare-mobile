@@ -947,3 +947,89 @@ data class CanvasState(
     val pending: PendingWire?
         get() = (gesture as? Gesture.DraggingWire)?.let { PendingWire(it.from, it.to, it.error) }
 }
+
+/**
+ * ⭐⭐⭐ **Put an upscale node between an output and whatever feeds it.**
+ *
+ * The user's ask, 2026-09-22: *"add an upscale icon in output (for images). it
+ * would trace the wire behind it, add upscale node in between, lock the seed
+ * (if previous gen exists, to avoid regenerating the thing we wanna upscale)
+ * and Run."*
+ *
+ * ⚠⚠⚠ **The seed lock is the load-bearing half, not a nicety.** Every
+ * sampler in this app opens at `seed = 0`, which means *roll a new one each
+ * Run* — so inserting a node and pressing Run would enlarge a DIFFERENT
+ * picture from the one on screen, at full render cost, and the button would
+ * look broken for a reason nobody could see. ⇒ [rolledSeed] is written onto
+ * the sampler first, and the sampler's own output then comes back from the
+ * executor's cache rather than being made again.
+ *
+ * ⚠⚠ The node STAYS afterwards — the user's call when asked, over removing
+ * it or asking each time. It is an ordinary edit: wired, visible, deletable,
+ * and saved with the flow, which is also what lets the flow reproduce the
+ * result.
+ *
+ * ⚠ Refuses (returns null) when there is nothing to do: no wire behind the
+ * output, or an `image.upscale` already sitting there. The caller says why;
+ * silently doing nothing is what this whole file argues against.
+ */
+fun insertUpscale(
+    state: CanvasState,
+    outputNode: String,
+    upscalerId: String,
+    upscalerParam: String,
+    /**
+     * ⚠⚠ EVERY rolling sampler upstream and the seed its last Run rolled —
+     * not just the nearest. A chain of two samplers rolls two seeds and either
+     * one changes the picture, which is the same rule the mask-edit lock
+     * follows (`HarnessViewModel`). The caller builds it; an empty map locks
+     * nothing, which is right for a graph that has never run.
+     */
+    seedsToLock: Map<String, String>,
+): CanvasState? = with(state) {
+    val g = workflow.graph
+    val out = g.byId[outputNode] ?: return null
+    // ⚠ The wire BEHIND it — an output node takes one picture, on `image`.
+    val src = out.inputs["image"] ?: return null
+    if (g.byId[src.node]?.type == com.abrah.nightmare.UpscaleNode.name) return null
+
+    val id = g.freeId("upscale")
+    val node = com.abrah.nightmare.Node(
+        id = id,
+        type = com.abrah.nightmare.UpscaleNode.name,
+        params = mapOf(upscalerParam to upscalerId),
+        inputs = mapOf("image" to src),
+    )
+    val rewired = g.nodes.map { n ->
+        if (n.id == outputNode) n.copy(inputs = n.inputs + ("image" to com.abrah.nightmare.Source(id)))
+        else n
+    } + node
+    // ⚠ Halfway between the two it sits between, so the graph reads left to
+    // right as it always did. Falls back to beside the output when either
+    // position is unknown (a flow loaded without positions).
+    val a = workflow.positions[src.node]
+    val b = workflow.positions[outputNode]
+    val at = if (a != null && b != null) Pt((a.x + b.x) / 2f, (a.y + b.y) / 2f)
+    else b?.let { Pt(it.x - 40f, it.y + 60f) } ?: Pt(0f, 0f)
+
+    var next = copy(
+        workflow = Workflow(
+            graph = g.copy(nodes = rewired),
+            positions = workflow.positions + (id to at),
+        ),
+        // ⚠⚠ Same clearing [addNode] does, and for the same reason: `freeId`
+        // hands back a freed name and the picture maps are keyed by id.
+        previews = previews - id,
+        rendered = rendered - id,
+        beforePreviews = beforePreviews - id,
+        videos = videos - id,
+        message = null,
+    )
+    // ⚠ Only where it is still rolling. A seed someone pinned by hand is not
+    // ours to overwrite.
+    for ((sampler, rolled) in seedsToLock) {
+        val cur = next.workflow.graph.byId[sampler]?.params?.get("seed")?.trim().orEmpty()
+        if (cur.isEmpty() || cur == "0") next = next.setParam(sampler, "seed", rolled)
+    }
+    return next
+}

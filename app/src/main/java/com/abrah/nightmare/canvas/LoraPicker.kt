@@ -49,12 +49,27 @@ fun LoraPicker(
     spec: String,
     onSet: (String) -> Unit,
     onDismiss: () -> Unit,
+    /**
+     * ⭐⭐⭐ **Import a `.safetensors` from HERE.** Null hides the button —
+     * a golden draws the content with no Activity to launch a picker from.
+     *
+     * ⚠⚠ Asked for 2026-09-22: the empty state said "import one on the
+     * Settings tab", which is a screen away, behind the gear, past the theme
+     * and the battery rows — and it is the one moment a person is certain they
+     * want a LoRA. A hint that names another screen is a hint that could have
+     * been a button.
+     */
+    onImport: (() -> Unit)? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("LoRAs") },
-        text = { LoraPickerContent(installed, spec, onSet) },
+        text = { LoraPickerContent(installed, spec, onSet, onImport) },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        // ⚠ The dismiss SLOT, so Add sits left of Done — the same
+        // "destructive-or-secondary left, primary right" order `InstalledActions`
+        // and `PictureActions` keep (`docs/UI.md` §8.1, §8.3).
+        dismissButton = onImport?.let { { TextButton(onClick = it) { Text("Add") } } },
     )
 }
 
@@ -68,6 +83,7 @@ fun LoraPickerContent(
     installed: List<Pair<String, Long>>,
     spec: String,
     onSet: (String) -> Unit,
+    onImport: (() -> Unit)? = null,
 ) {
     // ⚠ Seeded from the param and re-seeded when it changes, so the sheet shows
     // what the node actually carries rather than a copy that drifted.
@@ -89,7 +105,10 @@ fun LoraPickerContent(
 
     if (rows.isEmpty()) {
         Text(
-            "No LoRAs on this phone yet. Import a .safetensors on the Settings " +
+            // ⚠ It names the button below it rather than another screen. The
+            // Settings tab still imports; it is no longer the only way.
+            if (onImport != null) "No LoRAs on this phone yet. Add one and it will appear here."
+            else "No LoRAs on this phone yet. Import a .safetensors on the Settings " +
                 "tab and it will appear here.",
             style = LogTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

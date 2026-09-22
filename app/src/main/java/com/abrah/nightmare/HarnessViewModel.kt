@@ -1613,6 +1613,90 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * ⭐⭐⭐ **Which output node is waiting for an upscaler to be picked**, or
+     * null. The canvas draws [com.abrah.nightmare.ui.UpscalePicker] for it — the
+     * SAME chooser Results opens.
+     */
+    var upscaleNodePick by mutableStateOf<String?>(null)
+        private set
+
+    fun offerUpscaleNode(nodeId: String) { upscaleNodePick = nodeId }
+    fun cancelUpscaleNode() { upscaleNodePick = null }
+
+    /**
+     * ⭐⭐⭐ **Upscale what an output node is showing, by editing the flow.**
+     *
+     * Asked for 2026-09-22: trace the wire behind the output, put an upscale
+     * node in between, pin the seed so the picture is not regenerated, Run.
+     *
+     * ⚠⚠ **The seed pinning is what makes it cheap rather than a second full
+     * render.** Every rolling sampler upstream is pinned to the seed its last
+     * Run rolled — the same walk [lockSeedsFor]-style edits already do — so the
+     * executor serves those nodes from cache and only the new node runs.
+     * ⚠ A graph that has never run pins nothing and simply renders; there is no
+     * previous picture to preserve.
+     *
+     * ⚠ The inserted node STAYS (the user's call): it is an ordinary edit,
+     * deletable, and saved with the flow.
+     */
+    fun upscaleFromNode(nodeId: String, upscalerId: String) {
+        upscaleNodePick = null
+        val st = canvas
+        val graph = st.workflow.graph
+        // ⚠⚠ Every rolling sampler upstream, not only the nearest — a chain of
+        // two rolls two seeds and either one changes the picture.
+        val seeds = mutableMapOf<String, String>()
+        val seen = mutableSetOf<String>()
+        val queue = ArrayDeque(listOf(nodeId))
+        while (queue.isNotEmpty()) {
+            val id = queue.removeFirst()
+            if (!seen.add(id)) continue
+            val n = graph.byId[id] ?: continue
+            if (com.abrah.nightmare.isSampler(n.type) &&
+                n.params["seed"]?.trim().orEmpty().let { it.isEmpty() || it == "0" }
+            ) {
+                com.abrah.nightmare.canvas.seedFor(graph, id) { canvasStatus[it]?.detail }
+                    ?.let { seeds[id] = it }
+            }
+            n.inputs.values.forEach { queue.addLast(it.node) }
+        }
+        val next = com.abrah.nightmare.canvas.insertUpscale(
+            st,
+            outputNode = nodeId,
+            upscalerId = upscalerId,
+            upscalerParam = UpscaleNode.UPSCALER,
+            seedsToLock = seeds,
+        )
+        if (next == null) {
+            // ⚠ By NAME, never silence — the two ways this refuses are both
+            // things the person can see on the canvas and act on.
+            val behind = graph.byId[nodeId]?.inputs?.get("image")?.node
+            toast(
+                if (behind != null && graph.byId[behind]?.type == UpscaleNode.name)
+                    "There is already an upscale node here"
+                else "Nothing is wired into this output yet",
+            )
+            return
+        }
+        updateCanvas(next)
+        for ((sampler, seed) in seeds) say("$sampler: seed locked at $seed — upscaling its picture")
+        runCanvasOrBatch()
+    }
+
+    /**
+     * ⭐⭐ A node's picture, described the way a kept result is — the SAME
+     * dialog ([com.abrah.nightmare.ui.ResultInfoDialog]) over the LIVE graph.
+     *
+     * ⚠ Asked for 2026-09-22: the output viewer had no ⓘ where Results has one.
+     */
+    fun detailsOfNode(nodeId: String): List<Pair<String, String>> {
+        val g = canvas.workflow.graph
+        return detailsOfGraph(g, nodeId) { id ->
+            com.abrah.nightmare.canvas.seedFor(g, id) { n -> canvasStatus[n]?.detail }
+        }
+    }
+
     // ---- a flow naming a model that is not here -----------------------------
 
     /**
@@ -1906,12 +1990,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     var loraRows by mutableStateOf<List<com.abrah.nightmare.ui.EmbeddingRow>>(emptyList())
         private set
 
+    /**
+     * ⭐⭐ Bumped whenever `_loras` changes — an import, a delete.
+     *
+     * ⚠⚠ The node's LoRA picker reads the DIRECTORY, not [loraRows], because
+     * the directory cannot be stale and the list depends on someone having
+     * called [refreshLoras] first. But a directory read is not observable, so
+     * an Add inside the picker would copy a file the open dialog never saw.
+     * This integer is the dependency that makes the read re-run — the source of
+     * truth stays the disk.
+     */
+    var loraEpoch by mutableStateOf(0)
+        private set
+
     fun refreshLoras() {
         loraRows = BackendProcess.lorasDir(getApplication()).listFiles { f ->
             f.isFile && f.extension.equals("safetensors", ignoreCase = true)
         }.orEmpty()
             .map { com.abrah.nightmare.ui.EmbeddingRow(it.name, it.length()) }
             .sortedBy { it.name.lowercase() }
+        loraEpoch++
     }
 
     /**
@@ -4260,13 +4358,48 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun detailsOf(r: com.abrah.nightmare.canvas.Result): List<Pair<String, String>> {
         val g = results.flow(r.id)?.workflow?.graph ?: return emptyList()
+        return detailsOfGraph(g, null, r.width, r.height) { r.seed }
+    }
+
+    /**
+     * ⭐⭐⭐ **The body of [detailsOf], over ANY graph** — a stored flow or the
+     * live canvas.
+     *
+     * ⚠⚠ Extracted 2026-09-22 when the output viewer gained the same ⓘ.
+     * Two surfaces that must agree call the SAME function (`CLAUDE.md`); a
+     * second copy of "which sampler, which prompt, which rolled seed" is a
+     * second copy that stops agreeing — and this one already got that wrong
+     * once, reading node types that had been gone since §5.7.
+     *
+     * @param upTo when non-null, describe the chain feeding THIS node rather
+     *   than the whole graph — a canvas may hold two branches.
+     */
+    private fun detailsOfGraph(
+        g: Graph,
+        upTo: String?,
+        width: Int = 0,
+        height: Int = 0,
+        rolled: (String) -> String?,
+    ): List<Pair<String, String>> {
         val types = typesFor(g)
         val order = (topoSort(g) as? Order.Ok)?.nodes ?: g.nodes
-        val samplers = order.filter { isSampler(it.type) }
+        // ⚠ Only what actually feeds [upTo] — the last sampler on the canvas
+        // may belong to a branch this output has nothing to do with.
+        val reach: Set<String>? = if (upTo == null) null else {
+            val acc = mutableSetOf<String>()
+            val pending = ArrayDeque(listOf(upTo))
+            while (pending.isNotEmpty()) {
+                val id = pending.removeFirst()
+                if (!acc.add(id)) continue
+                g.byId[id]?.inputs?.values?.forEach { pending.addLast(it.node) }
+            }
+            acc
+        }
+        val samplers = order.filter { isSampler(it.type) && (reach == null || it.id in reach) }
         val out = mutableListOf<Pair<String, String>>()
         val s = samplers.lastOrNull()
         if (s == null) {
-            out += "Size" to "${r.width}x${r.height}"
+            if (width > 0) out += "Size" to "${width}x$height"
             out += "Nodes" to g.nodes.size.toString()
             return out
         }
@@ -4284,7 +4417,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             when (w.name) {
                 "model" -> out += "Model" to (ModelCatalog.byId(v)?.label ?: v)
                 // ⚠ The ROLLED seed: the param is 0 ("new every Run") on most flows.
-                "seed" -> out += "Seed" to (if (v == "0") r.seed ?: v else v)
+                "seed" -> out += "Seed" to (if (v == "0") rolled(s.id) ?: v else v)
                 MaskNode.OPS -> {
                     val m = MaskState.decode(v)
                     if (!m.isEmpty) {
@@ -4295,7 +4428,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 else -> if (v.isNotBlank()) out += w.name.knobLabel to v
             }
         }
-        out += "Output" to "${r.width}x${r.height}"
+        if (width > 0) out += "Output" to "${width}x$height"
         if (samplers.size > 1) out += "Samplers in the chain" to samplers.size.toString()
         return out
     }

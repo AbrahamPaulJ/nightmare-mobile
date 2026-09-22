@@ -366,16 +366,8 @@ fun ResultsScreen(
                 // ⚠ Always SHOWN, refusing by name (the user's call, 2026-09-17):
                 // a button that vanishes on a clip teaches nothing.
                 IconButton(onClick = {
-                    when {
-                        upscaling != null -> onToast("Already upscaling with $upscaling")
-                        shown.videoPath != null -> onToast("Upscale works on pictures, not clips")
-                        maxOf(shown.width, shown.height) > UPSCALE_MAX_EDGE ->
-                            onToast(
-                                "Too big to upscale: ${shown.width}x${shown.height}. Pictures up to " +
-                                    "$UPSCALE_MAX_EDGE px on the long edge only (4x would pass ${UPSCALE_MAX_EDGE * 4} px)."
-                            )
-                        else -> upscalingPick = shown
-                    }
+                    val no = upscaleRefusal(shown.width, shown.height, shown.videoPath != null, upscaling)
+                    if (no != null) onToast(no) else upscalingPick = shown
                 }, modifier = small) {
                     Icon(
                         UpscaleIcon, contentDescription = "upscale this picture",
@@ -433,35 +425,11 @@ fun ResultsScreen(
     info?.let { r -> ResultInfoDialog(detailsFor(r)) { info = null } }
 
     upscalingPick?.let { r ->
-        AlertDialog(
-            onDismissRequest = { upscalingPick = null },
-            title = { Text("Upscale") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "The enlarged picture is kept as a new item; this one stays.",
-                        style = LogTextStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    for (u in upscalers) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(u.spec.label)
-                                Text(u.spec.about, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                            }
-                            when {
-                                u.installed -> Button(onClick = { upscalingPick = null; onUpscale(r, u.spec.id) }) { Text("Use") }
-                                u.progress != null -> Text("${u.progress.done shr 20} / ${u.progress.total shr 20} MB", style = LogTextStyle)
-                                u.build != null -> OutlinedButton(onClick = { onInstallUpscaler(u.spec) }) {
-                                    Text("${u.build.bytes shr 20} MB")
-                                }
-                                else -> Text(stringResource(R.string.cannot_run_it), style = LogTextStyle)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { upscalingPick = null }) { Text(stringResource(R.string.cancel)) } },
+        UpscalePicker(
+            upscalers = upscalers,
+            onPick = { id -> upscalingPick = null; onUpscale(r, id) },
+            onInstall = onInstallUpscaler,
+            onDismiss = { upscalingPick = null },
         )
     }
 
@@ -585,7 +553,22 @@ fun ResultViewer(
     onToggleFavourite: ((Result) -> Unit)? = null,
     /** ⭐ Send this picture into a flow ([SendToDialog]). */
     onSendTo: ((Result) -> Unit)? = null,
+    /**
+     * ⭐⭐⭐ **Upscale from HERE too.** Asked for 2026-09-22 — the Results
+     * ROW had the button and the fullscreen viewer did not, which is where a
+     * person decides a picture is worth enlarging.
+     *
+     * ⚠ The upscalers and the in-flight name come with it, because this draws
+     * the SAME [UpscalePicker] and asks the SAME [upscaleRefusal]; a viewer
+     * with its own copy of either would be the N−1-of-N bug again.
+     */
+    upscalers: List<UpscalerRow> = emptyList(),
+    upscaling: String? = null,
+    onUpscale: ((Result, String) -> Unit)? = null,
+    onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
+    onToast: (String) -> Unit = {},
 ) {
+    var upscalingPick by remember { mutableStateOf<Result?>(null) }
     val pager = androidx.compose.foundation.pager.rememberPagerState(
         initialPage = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
         pageCount = { items.size },
@@ -814,19 +797,16 @@ fun ResultViewer(
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
-            // ⭐ Save to the phone's gallery. ⚠ Distinct from "keep": keeping is
-            // this app remembering the flow, saving is a PNG anyone else can
-            // open — and a picture worth looking at full screen is exactly
-            // where someone wants that.
-            // ⚠ The DOWNLOAD glyph: the floppy means "keep in Results"
-            // everywhere since 2026-09-15 and this writes to the gallery.
-            IconButton(onClick = { onSave(current) }) {
-                Icon(
-                    com.abrah.nightmare.ui.DownloadIcon,
-                    contentDescription = "save to the gallery",
-                    tint = androidx.compose.ui.graphics.Color.White,
-                )
-            }
+            // ⭐⭐⭐ **STAR before DOWNLOAD, matching the Results row above.**
+            //
+            // ⚠⚠⚠ Reported 2026-09-22: *"in results tab when i fullscreen img
+            // the position of star and download btn get exchanged"*. They were:
+            // the row draws delete · star · download · share · upscale · info
+            // (`docs/UI.md` §8.11) and this viewer drew delete · download · star.
+            // Opening a picture full screen moved two buttons under the thumb
+            // that had just been on them.
+            // ⚠ N−1 of N again (`docs/ARCHITECTURE.md` §5.6), and the missed
+            // place was the one the finger found.
             onToggleFavourite?.let { toggle ->
                 IconButton(onClick = { toggle(current) }) {
                     Icon(
@@ -840,6 +820,19 @@ fun ResultViewer(
                             else androidx.compose.ui.graphics.Color.White,
                     )
                 }
+            }
+            // ⭐ Save to the phone's gallery. ⚠ Distinct from "keep": keeping is
+            // this app remembering the flow, saving is a PNG anyone else can
+            // open — and a picture worth looking at full screen is exactly
+            // where someone wants that.
+            // ⚠ The DOWNLOAD glyph: the floppy means "keep in Results"
+            // everywhere since 2026-09-15 and this writes to the gallery.
+            IconButton(onClick = { onSave(current) }) {
+                Icon(
+                    com.abrah.nightmare.ui.DownloadIcon,
+                    contentDescription = "save to the gallery",
+                    tint = androidx.compose.ui.graphics.Color.White,
+                )
             }
             // ⚠ The seed is drawn BELOW the picture now — see above. ⚠ Still no
             // `onLock`: locking writes onto the OPEN canvas, and a result in a
@@ -859,6 +852,24 @@ fun ResultViewer(
                         SendToIcon,
                         contentDescription = "send this picture to a flow",
                         tint = androidx.compose.ui.graphics.Color.White,
+                    )
+                }
+            }
+            // ⚠ Before info, matching the Results row's order exactly
+            // (`docs/UI.md` §8.11): delete · star · download · share · send ·
+            // upscale · info · Open.
+            onUpscale?.let {
+                IconButton(onClick = {
+                    val no = upscaleRefusal(
+                        current.width, current.height, current.videoPath != null, upscaling,
+                    )
+                    if (no != null) onToast(no) else upscalingPick = current
+                }) {
+                    Icon(
+                        UpscaleIcon,
+                        contentDescription = "upscale this picture",
+                        tint = androidx.compose.ui.graphics.Color.White
+                            .copy(alpha = if (upscaling == null) 1f else 0.38f),
                     )
                 }
             }
@@ -895,6 +906,15 @@ fun ResultViewer(
                 body = RESULT_DELETE_BODY,
                 onConfirm = { onDelete(current) },
                 onDismiss = { confirmingDelete = false },
+            )
+        }
+        // ⚠ The SAME chooser the Results row opens — see [UpscalePicker].
+        upscalingPick?.let { r ->
+            UpscalePicker(
+                upscalers = upscalers,
+                onPick = { id -> upscalingPick = null; onUpscale?.invoke(r, id) },
+                onInstall = onInstallUpscaler,
+                onDismiss = { upscalingPick = null },
             )
         }
     }
@@ -1402,3 +1422,69 @@ fun ResultInfoDialog(details: List<Pair<String, String>>, onClose: () -> Unit) {
  * which is where a phone starts refusing the allocation.
  */
 const val UPSCALE_MAX_EDGE = 1536
+
+/**
+ * ⭐⭐⭐ **Why this picture cannot be upscaled, in one sentence — or null.**
+ *
+ * ⚠⚠ ONE function, because three surfaces ask: the Results row, the Results
+ * fullscreen viewer, and a node's output. Each had to know that a clip is not a
+ * picture and that [UPSCALE_MAX_EDGE] exists, and three copies of a rule are
+ * three copies that stop agreeing (`CLAUDE.md`).
+ *
+ * ⚠ It REFUSES BY NAME rather than hiding the button (the user's call,
+ * 2026-09-17): a control that vanishes on a clip teaches nothing.
+ */
+fun upscaleRefusal(width: Int, height: Int, isClip: Boolean, busyWith: String?): String? = when {
+    busyWith != null -> "Already upscaling with $busyWith"
+    isClip -> "Upscale works on pictures, not clips"
+    maxOf(width, height) > UPSCALE_MAX_EDGE ->
+        "Too big to upscale: ${width}x$height. Pictures up to " +
+            "$UPSCALE_MAX_EDGE px on the long edge only (4x would pass ${UPSCALE_MAX_EDGE * 4} px)."
+    else -> null
+}
+
+/**
+ * ⭐⭐ The upscaler chooser — one dialog, wherever an upscale is started.
+ *
+ * ⚠ Offers every upscaler, installed or not: the not-installed rows carry
+ * their download size, so "I have no upscaler" and "I have the wrong one" are
+ * the same screen (§8.1's rule, applied to a dialog).
+ */
+@Composable
+fun UpscalePicker(
+    upscalers: List<UpscalerRow>,
+    onPick: (String) -> Unit,
+    onInstall: (com.abrah.nightmare.UpscalerSpec) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Upscale") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "The enlarged picture is kept as a new item; this one stays.",
+                    style = LogTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                for (u in upscalers) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(u.spec.label)
+                            Text(u.spec.about, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                        }
+                        when {
+                            u.installed -> Button(onClick = { onPick(u.spec.id) }) { Text("Use") }
+                            u.progress != null -> Text("${u.progress.done shr 20} / ${u.progress.total shr 20} MB", style = LogTextStyle)
+                            u.build != null -> OutlinedButton(onClick = { onInstall(u.spec) }) {
+                                Text("${u.build.bytes shr 20} MB")
+                            }
+                            else -> Text(stringResource(R.string.cannot_run_it), style = LogTextStyle)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}

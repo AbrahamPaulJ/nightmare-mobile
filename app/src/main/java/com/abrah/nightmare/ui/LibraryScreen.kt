@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -126,6 +127,36 @@ fun BrandHeader(onClose: () -> Unit, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
+        BrandMark(Modifier.weight(1f))
+        androidx.compose.material3.IconButton(onClick = onClose) {
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Filled.Close,
+                contentDescription = "close — back to the canvas",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * ⭐⭐⭐ **The logo and the wordmark, and the ONE place they are drawn.**
+ *
+ * ⚠⚠ Extracted 2026-09-22, when the canvas asked for the same mark: *"in
+ * canvas view we still dont have app name and logo at top — make sure its
+ * consistent with how we show it in Models/Flows/Results"*. Two surfaces that
+ * must agree call the SAME function (`CLAUDE.md`); a second copy of a gradient,
+ * a letter-spacing and a corner radius is a second copy that stops agreeing.
+ *
+ * ⚠ [BrandHeader] adds the ✕; the canvas has nothing to close, so it draws
+ * this alone.
+ */
+@Composable
+fun BrandMark(modifier: Modifier = Modifier) {
+    Row(
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
         androidx.compose.foundation.Image(
             painter = androidx.compose.ui.res.painterResource(com.abrah.nightmare.R.drawable.brand_logo),
             contentDescription = null,
@@ -145,15 +176,7 @@ fun BrandHeader(onClose: () -> Unit, modifier: Modifier = Modifier) {
                 ),
             ),
             maxLines = 1,
-            modifier = Modifier.weight(1f),
         )
-        androidx.compose.material3.IconButton(onClick = onClose) {
-            androidx.compose.material3.Icon(
-                androidx.compose.material.icons.Icons.Filled.Close,
-                contentDescription = "close — back to the canvas",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
@@ -193,6 +216,16 @@ fun SwipeTabs(
     initialPage: Int = 0,
     /** ⭐ The settled page, for a caller whose state follows the tab (History's filter). */
     onPage: (Int) -> Unit = {},
+    /**
+     * ⭐⭐ Draw a thin rule BEFORE this pill — null for no rule.
+     *
+     * ⚠⚠ The node inspector's strip puts the nodes that are not part of the
+     * main flow last ([com.abrah.nightmare.canvas.looseNodes]) and needs the
+     * boundary to be visible; without a mark, "last" is indistinguishable from
+     * "later in the run". ⚠ A rule rather than a second LazyRow or a heading
+     * pill: a heading would be tappable and would page to something.
+     */
+    dividerBefore: Int? = null,
     page: @Composable (Int) -> Unit,
 ) {
     val state = rememberPagerState(initialPage = initialPage, pageCount = { labels.size })
@@ -225,6 +258,18 @@ fun SwipeTabs(
             items(labels.size) { i ->
                 val label = labels[i]
                 val on = i == state.currentPage
+                // ⚠⚠ A Row, because a LazyRow item lays out ONE child: two
+                // siblings emitted into one slot have no arrangement between
+                // them. The rule scrolls with the pills it separates.
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                if (i == dividerBefore && i > 0) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier
+                            .padding(end = 8.dp)
+                            .size(width = 1.dp, height = 22.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant),
+                    )
+                }
                 Surface(
                     onClick = { scope.launch { state.animateScrollToPage(i) } },
                     shape = RoundedCornerShape(20.dp),
@@ -257,6 +302,7 @@ fun SwipeTabs(
                             .widthIn(min = 72.dp)
                             .padding(horizontal = 18.dp, vertical = 8.dp),
                     )
+                }
                 }
             }
         }

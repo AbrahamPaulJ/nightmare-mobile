@@ -131,11 +131,67 @@ import androidx.compose.ui.graphics.asImageBitmap
  * strip. An inspector is exactly where someone goes to FIX such a graph, so
  * it must still list its nodes.
  */
-fun nodeStripOrder(workflow: Workflow): List<com.abrah.nightmare.Node> =
-    when (val o = com.abrah.nightmare.topoSort(workflow.graph)) {
+fun nodeStripOrder(workflow: Workflow): List<com.abrah.nightmare.Node> {
+    val ordered = when (val o = com.abrah.nightmare.topoSort(workflow.graph)) {
         is com.abrah.nightmare.Order.Ok -> o.nodes
         is com.abrah.nightmare.Order.Broken -> workflow.graph.nodes
     }
+    val loose = looseNodes(workflow.graph)
+    if (loose.isEmpty()) return ordered
+    // ⚠ `partition` keeps each side's own order, so both halves stay in
+    // execution order — this only moves the boundary.
+    val (main, rest) = ordered.partition { it.id !in loose }
+    return main + rest
+}
+
+/**
+ * ⭐⭐⭐ **The nodes that are NOT part of the main flow**, by id.
+ *
+ * ⚠⚠ The user's rule, 2026-09-22: *"if 2 nodes are connected and theres a
+ * 3rd unconnected row, 2 is majority so those show"*. ⇒ the LARGEST weakly
+ * connected group is the flow, and everything else is loose.
+ *
+ * ⚠ **Weakly** connected — direction is ignored. A prompt feeds a sampler and
+ * nothing feeds the prompt; on a directed reading it is its own component, and
+ * it is obviously part of the flow.
+ *
+ * ⚠⚠ Ties keep everything. With two groups of two there is no majority, and
+ * guessing which pair is "the flow" would hide half a graph on the strength of
+ * a coin toss.
+ *
+ * ⚠⚠⚠ Loose nodes are ORDERED LAST, never hidden — the user's call when
+ * asked. A node you just dropped has no wires yet, and a strip that refused to
+ * page to it would leave no way to configure it before wiring it up. Being
+ * last says "not in the flow" and strands nobody.
+ */
+fun looseNodes(graph: com.abrah.nightmare.Graph): Set<String> {
+    if (graph.nodes.size < 2) return emptySet()
+    // Union-find over the wires, undirected.
+    val parent = HashMap<String, String>()
+    fun find(a: String): String {
+        var r = a
+        while (parent[r] != null && parent[r] != r) r = parent[r]!!
+        return r
+    }
+    fun union(a: String, b: String) {
+        parent.getOrPut(a) { a }; parent.getOrPut(b) { b }
+        val ra = find(a); val rb = find(b)
+        if (ra != rb) parent[ra] = rb
+    }
+    for (n in graph.nodes) parent.getOrPut(n.id) { n.id }
+    for (n in graph.nodes) {
+        for (src in n.inputs.values) {
+            // ⚠ A wire to a node that is not there (a half-loaded flow) joins
+            // nothing rather than throwing.
+            if (graph.byId.containsKey(src.node)) union(n.id, src.node)
+        }
+    }
+    val groups = graph.nodes.groupBy { find(it.id) }
+    val biggest = groups.values.maxOfOrNull { it.size } ?: return emptySet()
+    // ⚠ A tie means no majority — nothing is loose.
+    if (groups.values.count { it.size == biggest } > 1) return emptySet()
+    return groups.values.filter { it.size != biggest }.flatten().map { it.id }.toSet()
+}
 /**
  * The knobs of one node, as a bottom sheet.
  *
@@ -207,6 +263,21 @@ fun NodeInspector(
      * `cropRequest` or a focused field belongs to that node and would otherwise
      * fire on the new one (`HarnessViewModel.inspectNode`).
      */
+    /**
+     * ⭐⭐ Import a `.safetensors` adapter from inside the LoRA picker.
+     * Null (a golden, a preview) hides the Add button.
+     */
+    onImportLora: (() -> Unit)? = null,
+    /**
+     * ⚠⚠ Bumped by `HarnessViewModel.refreshLoras`. The picker reads the
+     * DIRECTORY, which cannot be stale but also cannot be observed, so this is
+     * what makes an Add inside the open dialog show up in its own list.
+     */
+    loraEpoch: Int = 0,
+    /** ⭐⭐ Enlarge the node's picture by editing the flow behind it. */
+    onUpscale: ((String) -> Unit)? = null,
+    /** ⭐⭐ What made this picture, for the ⓘ dialog. */
+    detailsOf: ((String) -> List<Pair<String, String>>)? = null,
     onInspectNode: (String) -> Unit = {},
 ) {
     val nodeId = state.editing ?: return
@@ -291,6 +362,14 @@ fun NodeInspector(
             // FLUX.2 kept announcing itself as `sd15_generate` here while the
             // box beside it already said "FLUX.2 Image edit".
             labels = ordered.map { com.abrah.nightmare.nodeNameOf(it, types).primary },
+            // ⭐⭐ Where the main flow ends and the loose nodes begin
+            // ([looseNodes]). Null when every node is in the flow, which is the
+            // ordinary case and draws no rule at all.
+            dividerBefore = run {
+                val loose = looseNodes(state.workflow.graph)
+                if (loose.isEmpty()) null
+                else ordered.indexOfFirst { it.id in loose }.takeIf { it > 0 }
+            },
             fillHeight = true,
             initialPage = here,
             onPage = { i -> ordered.getOrNull(i)?.let { onInspectNode(it.id) } },
@@ -454,6 +533,15 @@ fun NodeInspector(
             demand = demand,
             seed = seedFor(state.workflow.graph, nodeId) { status[it]?.detail },
             onClearImage = { onClearImage(nodeId) },
+            onImportLora = onImportLora,
+            loraEpoch = loraEpoch,
+            // ⚠ Only on a node that HAS a picture and acts on it — the same
+            // `actsOnItsPicture` rule the star and the disk follow.
+            onUpscale = onUpscale
+                ?.takeIf { previewId != null && actsOnItsPicture &&
+                    nodeId !in clipNodes(state.workflow.graph, state.videos) }
+                ?.let { up -> { up(nodeId) } },
+            onInfo = detailsOf?.takeIf { previewId != null }?.let { d -> { d(nodeId) } },
         )
         }
     }
@@ -723,6 +811,14 @@ internal fun NodeInspectorBody(
      */
     seed: String? = null,
     onClearImage: () -> Unit = {},
+    /** ⭐⭐ Import a `.safetensors` from inside the LoRA picker; null hides Add. */
+    onImportLora: (() -> Unit)? = null,
+    /** ⚠⚠ See [NodeInspector]'s copy — it is what re-reads `_loras`. */
+    loraEpoch: Int = 0,
+    /** ⭐⭐ Enlarge this node's picture — see [PictureActions.onUpscale]. */
+    onUpscale: (() -> Unit)? = null,
+    /** ⭐⭐ What made this picture — the rows for [com.abrah.nightmare.ui.ResultInfoDialog]. */
+    onInfo: (() -> List<Pair<String, String>>)? = null,
     /** ⚠ For a golden only: draw the inpaint popup's tab INLINE, since a Dialog is a window a screenshot cannot reach. */
     inlinePopupTab: Int? = null,
     /** ⭐ [CanvasState.cropRequest] — open the Crop popup when it names this node. */
@@ -823,6 +919,13 @@ internal fun NodeInspectorBody(
         // is also what made the field vanish entirely on a cold start
         // ([HarnessViewModel.init]) — an empty list and "no models" were
         // indistinguishable.
+        // ⚠ Whether the LoRA picker is open. Local: an unanswered popup is
+        // not something to persist. ⚠⚠ Declared HERE rather than beside the
+        // other knob-popup state below, because [LoraRow] is now drawn under
+        // the checkpoint picker and a Kotlin local has to exist before its use.
+        var pickingLoras by remember(nodeId) { mutableStateOf(false) }
+        // ⚠ Whether ⓘ is open. Local, keyed on the node, same as the picker.
+        var showingInfo by remember(nodeId) { mutableStateOf(false) }
         if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
             CheckpointPicker(
                 // ⭐⭐ Derived from the TYPES, not from a hardcoded family list:
@@ -843,6 +946,26 @@ internal fun NodeInspectorBody(
                 currentId = node.params["model"].orEmpty(),
                 onPick = { onSetModel(nodeId, it) },
             )
+            // ⭐⭐⭐ **Directly under the checkpoint, because that is what it
+            // modifies.** The user's call, 2026-09-22. It was declared in
+            // [com.abrah.nightmare.SdSampler.ditWidgets] and therefore drawn
+            // wherever the knob loop reached it — under CFG and the size
+            // sliders, pages away from the model whose weights it patches.
+            //
+            // ⚠ Same reasoning the checkpoint itself was moved to the top for
+            // (§above): a control belongs beside the thing it changes the
+            // meaning of, not in declaration order.
+            // ⚠⚠ The [Widget] stays declared — it is what a saved flow
+            // stores and what [com.abrah.nightmare.SdSampler.parseLoras] reads.
+            // Only the DRAWING moved; the loop skips it.
+            type?.widgets?.firstOrNull { it.name == com.abrah.nightmare.SdSampler.LORAS }?.let { w ->
+                LoraRow(
+                    widget = w,
+                    value = node.params[w.name].orEmpty(),
+                    why = w.locked,
+                    onOpen = { pickingLoras = true },
+                )
+            }
         }
 
         val canSweepHere = canSweep
@@ -1335,8 +1458,6 @@ internal fun NodeInspectorBody(
         // ⚠ Which knob's batch popup is open, or null. Local: an unanswered
         // popup is not something to persist.
         var batching by remember(nodeId) { mutableStateOf<Widget?>(null) }
-        // ⚠ Whether the LoRA picker is open. Local for the same reason.
-        var pickingLoras by remember(nodeId) { mutableStateOf(false) }
         // ⚠ Null when not renaming. Keyed on the node so opening another
         // node's sheet cannot leave a half-typed name from the last one.
 
@@ -1430,6 +1551,8 @@ internal fun NodeInspectorBody(
                     onDisabledKeep = onDisabledKeep,
                     starKeptTint = com.abrah.nightmare.ui.StarKept,
                     starIdleTint = com.abrah.nightmare.ui.StarIdle,
+                    onUpscale = onUpscale,
+                    onInfo = onInfo?.let { { showingInfo = true } },
                 )
             }
         }
@@ -1506,12 +1629,22 @@ internal fun NodeInspectorBody(
         // widget declaration — a `NodeType.widgets` getter is a plain property
         // with no Context, which is why this param shipped as free text. A
         // composable has one.
+        // ⭐ The SAME dialog Results opens — one function, so the two cannot
+        // drift (`docs/ARCHITECTURE.md` §5.6).
+        if (showingInfo && onInfo != null) {
+            com.abrah.nightmare.ui.ResultInfoDialog(onInfo()) { showingInfo = false }
+        }
         if (pickingLoras) {
             val ctx = androidx.compose.ui.platform.LocalContext.current
             // ⚠ Re-read every time it opens: an import on the Settings tab
             // happens while a graph is on the canvas, and a list cached at
             // composition would not show the file that was just added.
-            val installed = remember(pickingLoras) {
+            // ⚠⚠ Keyed on [loraEpoch] as well, so an Add made from INSIDE this
+            // dialog lands in its own list. Without it the read is remembered
+            // across the import and the file a person just picked is invisible
+            // until they close and reopen — which is exactly the shape of bug
+            // the Add button was added to remove.
+            val installed = remember(pickingLoras, loraEpoch) {
                 com.abrah.nightmare.BackendProcess.lorasDir(ctx).listFiles { f ->
                     f.isFile && f.extension.equals("safetensors", ignoreCase = true)
                 }.orEmpty().map { it.name to it.length() }.sortedBy { it.first.lowercase() }
@@ -1521,6 +1654,7 @@ internal fun NodeInspectorBody(
                 spec = node.params[com.abrah.nightmare.SdSampler.LORAS].orEmpty(),
                 onSet = { onSetParam(nodeId, com.abrah.nightmare.SdSampler.LORAS, it) },
                 onDismiss = { pickingLoras = false },
+                onImport = onImportLora,
             )
         }
 
@@ -1755,56 +1889,10 @@ internal fun NodeInspectorBody(
                     "two consumers disagree — ${conflict.reason()}"
                 else -> w.locked
             }
-            // ⭐⭐⭐ **The LoRA knob is a summary line that opens a picker**, not
-            // a text field. A LoRA is chosen from what is on the phone; typing
-            // its filename from memory is the one way to get it wrong, and a
-            // strength typed into a box has no bounds at all.
-            //
-            // ⚠ It reads its own summary from [com.abrah.nightmare.LoraSpec] — the
-            // same tokeniser the picker and Run use, so the line under the
-            // label cannot disagree with what will be applied.
-            if (w.name == com.abrah.nightmare.SdSampler.LORAS) {
-                val entries = com.abrah.nightmare.LoraSpec.parse(node.params[w.name])
-                Row(
-                    Modifier.fillMaxWidth()
-                        .clickable(enabled = why == null) { pickingLoras = true }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (why != null) "${w.name.knobLabel}  (locked)" else w.name.knobLabel,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            // ⚠⚠⚠ The REASON beats everything when the knob is
-                            // locked — on Z-Image this control does nothing, and
-                            // a row that still reads "adapters applied on top of
-                            // this checkpoint" over a dead button is the lie the
-                            // lock exists to stop.
-                            // ⚠⚠ Otherwise the HINT when nothing is picked, not
-                            // the word "None". The golden for this row showed it
-                            // bare, and a bare row is where the old text field's
-                            // one useful sentence went. The button beside it
-                            // reads "Choose" rather than "Change", so the empty
-                            // STATE is already on screen twice over.
-                            why ?: if (entries.isEmpty()) w.hint ?: "None"
-                            else com.abrah.nightmare.LoraSpec.summary(entries),
-                            style = LogTextStyle,
-                            // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
-                            color = if (why != null || entries.isEmpty())
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            else MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    if (why == null) {
-                        TextButton(
-                            onClick = { pickingLoras = true },
-                        ) { Text(if (entries.isEmpty()) "Choose" else "Change") }
-                    }
-                }
-                continue
-            }
+            // ⚠⚠ Drawn ABOVE, directly under the checkpoint picker, because a
+            // LoRA is a property OF that checkpoint — see [LoraRow]. It stays a
+            // declared [Widget] so a workflow still carries the param.
+            if (w.name == com.abrah.nightmare.SdSampler.LORAS) continue
             // ⭐⭐⭐ **A `bool` is a CHECKBOX.** It had no branch at all, so
             // every one in the app fell through to the text field at the bottom
             // of this loop — a number-less keyboard and the word `true` to type
@@ -2108,6 +2196,63 @@ private const val FINE_EDGE = 2f
  * said once, in the run bar, in the units that matter ("2 model loads this run
  * — about 7 s") and at the moment it applies.
  */
+/**
+ * ⭐⭐⭐ **The LoRA knob is a summary line that opens a picker**, not a
+ * text field. A LoRA is chosen from what is on the phone; typing its filename
+ * from memory is the one way to get it wrong, and a strength typed into a box
+ * has no bounds at all.
+ *
+ * ⚠ It reads its own summary from [com.abrah.nightmare.LoraSpec] — the same
+ * tokeniser the picker and Run use, so the line under the label cannot disagree
+ * with what will be applied.
+ *
+ * ⚠⚠ Lifted out of the knob loop 2026-09-22 so it can be drawn directly
+ * under the checkpoint picker. Its own drawing did not change.
+ */
+@Composable
+private fun LoraRow(
+    widget: com.abrah.nightmare.Widget,
+    value: String,
+    why: String?,
+    onOpen: () -> Unit,
+) {
+    val entries = com.abrah.nightmare.LoraSpec.parse(value)
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(enabled = why == null) { onOpen() }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (why != null) "${widget.name.knobLabel}  (locked)" else widget.name.knobLabel,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                // ⚠⚠⚠ The REASON beats everything when the knob is locked — a
+                // row that still reads "adapters applied on top of this
+                // checkpoint" over a dead button is the lie the lock exists to
+                // stop.
+                // ⚠⚠ Otherwise the HINT when nothing is picked, not the word
+                // "None". The golden for this row showed it bare, and a bare row
+                // is where the old text field's one useful sentence went.
+                why ?: if (entries.isEmpty()) widget.hint ?: "None"
+                else com.abrah.nightmare.LoraSpec.summary(entries),
+                style = LogTextStyle,
+                // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
+                color = if (why != null || entries.isEmpty())
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.primary,
+            )
+        }
+        if (why == null) {
+            TextButton(onClick = onOpen) {
+                Text(if (entries.isEmpty()) "Choose" else "Change")
+            }
+        }
+    }
+}
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun CheckpointPicker(

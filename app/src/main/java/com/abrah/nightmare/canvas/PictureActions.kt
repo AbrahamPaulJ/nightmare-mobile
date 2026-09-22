@@ -3,6 +3,7 @@ package com.abrah.nightmare.canvas
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -78,6 +79,27 @@ fun PictureActions(
      * ⚠ Null on a clip: no flow takes a video as its input.
      */
     onSendTo: (() -> Unit)? = null,
+    /**
+     * ⭐⭐⭐ **Enlarge what this node made**, by putting an upscale node into
+     * the flow behind it — `HarnessViewModel.upscaleFromNode`.
+     *
+     * ⚠ Null on anything that is not an output holding a picture: a clip
+     * cannot be upscaled, and a node with nothing on it has nothing to enlarge.
+     * ⚠⚠ AFTER the star, so the row's first five never move — every golden
+     * and every thumb position for them stays where it was.
+     */
+    onUpscale: (() -> Unit)? = null,
+    /**
+     * ⭐⭐ ⓘ — the same dialog Results opens
+     * ([com.abrah.nightmare.ui.ResultInfoDialog]), over the live graph.
+     *
+     * ⚠⚠ Asked for 2026-09-22: *"theres no info icon in output viewer
+     * (inspector and fullscreen), add it, same as in results"*. N−1 of N
+     * (`docs/ARCHITECTURE.md` §5.6) — Results had it on the row AND in its
+     * viewer, and the canvas had it in neither.
+     * ⚠ LAST, which is where Results puts it too.
+     */
+    onInfo: (() -> Unit)? = null,
 ) {
     var downloaded by remember { mutableStateOf(false) }
     // ⚠ Survives recomposition, resets with the surface — which is right: a new
@@ -165,6 +187,28 @@ fun PictureActions(
                 // than kept: the star's own job is the flag now, and one that lit
                 // up because the disk had been tapped would say the wrong thing.
                 tint = if (favourite) starKeptTint else starIdleTint,
+            )
+        }
+    }
+
+    // ⚠ Upscale then info — the same tail the Results row ends with
+    // (`docs/UI.md` §8.11), so the two surfaces read the same way at the end
+    // even though they order the first few differently.
+    onUpscale?.takeIf { !isClip }?.let { up ->
+        IconButton(onClick = up) {
+            Icon(
+                com.abrah.nightmare.ui.UpscaleIcon,
+                contentDescription = "upscale this picture",
+                tint = tint,
+            )
+        }
+    }
+    onInfo?.let { info ->
+        IconButton(onClick = info) {
+            Icon(
+                Icons.Filled.Info,
+                contentDescription = "what made this $what",
+                tint = tint,
             )
         }
     }

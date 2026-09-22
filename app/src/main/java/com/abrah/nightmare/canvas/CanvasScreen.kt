@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -252,6 +253,18 @@ fun CanvasScreen(
     isKept: (String) -> Boolean = { false },
     /** ⭐ Drop a render from the node that made it. */
     onClearOutput: (String) -> Unit = {},
+    /**
+     * ⭐⭐⭐ Enlarge what an output node made — it puts an upscale node into
+     * the flow behind that output and Runs
+     * (`HarnessViewModel.offerUpscaleNode`).
+     */
+    onUpscaleNode: ((String) -> Unit)? = null,
+    /** ⭐⭐ What made this node's picture, for the ⓘ dialog. */
+    detailsOfNode: ((String) -> List<Pair<String, String>>)? = null,
+    /** ⭐⭐ Import a `.safetensors` adapter from inside a node's LoRA picker. */
+    onImportLora: (() -> Unit)? = null,
+    /** ⚠⚠ `HarnessViewModel.loraEpoch` — what re-reads `_loras` after an Add. */
+    loraEpoch: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current.density
@@ -268,6 +281,10 @@ fun CanvasScreen(
     // sure" are not graph state, and putting them in `CanvasState` would autosave
     // them and restore them on a cold start.
     var saving by remember { mutableStateOf(false) }
+    // ⚠ Which node's ⓘ is open in the fullscreen viewer, or null.
+    var showingNodeInfo by remember { mutableStateOf<String?>(null) }
+    // ⚠ The add-node offer in flight: the plan and where the node will go.
+    var assisting by remember { mutableStateOf<Pair<AddPlan, Pt>?>(null) }
     var confirmingDelete by remember { mutableStateOf(false) }
 
     Box(
@@ -364,16 +381,47 @@ fun CanvasScreen(
         // could not say which had produced it -- and it covered whatever was
         // underneath. Previews are drawn ON the node that made them.
 
-        TopBar(
-            backendUp = backendUp,
-            flowName = flowName,
-            flowDirty = flowDirty,
-            loadLine = loadLine,
-            onModels = onModels,
-            onResults = onResults,
-            onWorkflows = onWorkflows,
-            modifier = Modifier.align(Alignment.TopStart),
-        )
+        // ⭐⭐⭐ **The brand, then the row of destinations and icons.**
+        //
+        // ⚠⚠ One Column rather than two overlays pinned to opposite corners,
+        // which is what these were: `TopStart` for the nav card and `TopEnd`
+        // for the icons, each applying its own `statusBarsPadding`. Two
+        // independently positioned things cannot have a row above them — a
+        // brand drawn as a third overlay would have needed a hardcoded offset
+        // matching whatever height it happened to be.
+        //
+        // ⚠ The inset is applied ONCE, here, and neither child reapplies it.
+        Column(
+            Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding(),
+        ) {
+            // ⭐⭐ The SAME mark Models / Flows / Results draw
+            // ([com.abrah.nightmare.ui.BrandMark]) — asked for 2026-09-22,
+            // and the point of the ask was consistency, so it is the one
+            // function rather than a second copy of the gradient.
+            // ⚠ Centred and with no ✕: the canvas is not a panel over
+            // anything, so there is nothing to close back to.
+            com.abrah.nightmare.ui.BrandMark(
+                Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 4.dp, bottom = 2.dp),
+            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                TopBar(
+                    backendUp = backendUp,
+                    flowName = flowName,
+                    flowDirty = flowDirty,
+                    loadLine = loadLine,
+                    onModels = onModels,
+                    onResults = onResults,
+                    onWorkflows = onWorkflows,
+                    // ⚠⚠ **No `weight(1f)`** — the card HUGS its content, as it
+                    // did when it was its own `TopStart` overlay. Weighted, its
+                    // background stretched all the way to the icons and covered
+                    // the left-most node underneath; the `screen-top-bar`
+                    // golden caught exactly that. The Spacer below is what
+                    // pushes the icons to the end instead.
+                )
+                Spacer(Modifier.weight(1f))
 
         // ⭐⭐ The two diagnostics, top RIGHT. Neither is part of making a
         // picture -- the harness had a full-width word in the run bar,
@@ -381,13 +429,18 @@ fun CanvasScreen(
         // rather than being buried: the harness is where the backend log lives,
         // and a canvas with no exit strands the user the first time a render
         // fails.
-        Row(
-            Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(horizontal = 4.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+                Row(
+                    Modifier
+                        // ⚠⚠ `end = 8` against the old `horizontal = 4`. Reported
+                        // 2026-09-22: *"the settings icon is too close to the
+                        // container boundary"*. An `IconButton` centres a 24dp
+                        // glyph in a 48dp target, so the visible gear already
+                        // sits 12dp inside its own box — but the box ended 4dp
+                        // from the screen, which reads as the glyph hanging off
+                        // the edge next to a card that is inset 12dp.
+                        .padding(start = 0.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
             // ⭐ Save the canvas. ⚠ FIRST in this row, i.e. leftmost, because
             // it is the only one of the three that acts on the graph rather
             // than opening something about the app — and it is the one reached
@@ -430,6 +483,8 @@ fun CanvasScreen(
                     contentDescription = stringResource(R.string.cd_settings),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+                }
             }
         }
 
@@ -506,10 +561,20 @@ fun CanvasScreen(
     // ⚠ Outside the Box, so the sheet's scrim covers the run bar too. Inside it
     // the bar would sit on top of the scrim and still be tappable, which is how
     // a graph gets run while its own inspector is open.
+    // ⭐ The SAME dialog Results and the inspector open.
+    showingNodeInfo?.let { n ->
+        detailsOfNode?.let { d ->
+            com.abrah.nightmare.ui.ResultInfoDialog(d(n)) { showingNodeInfo = null }
+        }
+    }
     NodeInspector(
         state = state,
         types = types,
+        onUpscale = onUpscaleNode,
+        detailsOf = detailsOfNode,
         onInspectNode = onInspectNode,
+        onImportLora = onImportLora,
+        loraEpoch = loraEpoch,
         status = status,
         onClearImage = onClearImage,
         onSaveImage = onSaveImage,
@@ -723,6 +788,16 @@ fun CanvasScreen(
                         null
                     }
                 },
+                // ⭐⭐ The same two the inspector's row offers — one picture,
+                // one set of actions, whichever surface it is on.
+                // ⚠ Only on an OUTPUT this node made, never on a photo the user
+                // picked: there is no wire behind an input to trace.
+                onUpscale = viewedNode
+                    ?.takeIf { !viewedIsInput && onUpscaleNode != null }
+                    ?.let { n -> { onUpscaleNode?.invoke(n) } },
+                onInfo = viewedNode
+                    ?.takeIf { !viewedIsInput && detailsOfNode != null }
+                    ?.let { n -> { showingNodeInfo = n } },
             )
         }
     }
@@ -757,14 +832,33 @@ fun CanvasScreen(
                 )
                 // ⚠ Offset by half a node so the node is centred rather than
                 // starting at the centre, which puts most of it off to one side.
-                onEdit { s ->
-                    s.addNode(
-                        type,
-                        Pt(centre.x - Sizes.NODE_WIDTH / 2f, centre.y - Sizes.HEADER_HEIGHT),
-                    )
+                val at = Pt(centre.x - Sizes.NODE_WIDTH / 2f, centre.y - Sizes.HEADER_HEIGHT)
+                // ⭐⭐⭐ **Offer the helpers and the snap before adding.** Asked
+                // for 2026-09-22 — adding an inpaint node meant adding a prompt
+                // and a segmenter by hand and then drawing three wires.
+                // ⚠ A plan with nothing in it (a prompt, a photo: no inputs)
+                // adds straight away, exactly as before. The sheet appears only
+                // when there is something to decide.
+                val plan = planAdd(type, state.workflow.graph, types)
+                if (plan.isEmpty) {
+                    onEdit { s -> s.addNode(type, at) }
+                } else {
+                    // ⚠ The palette closes first, or two sheets stack.
+                    onEdit { s -> s.closePalette() }
+                    assisting = plan to at
                 }
             },
             onDismiss = { onEdit { s -> s.closePalette() } },
+        )
+    }
+    assisting?.let { (plan, at) ->
+        AddAssistSheet(
+            plan = plan,
+            onCancel = { assisting = null },
+            onAdd = { helperPorts, snaps ->
+                assisting = null
+                onEdit { s -> s.applyAdd(plan, at, helperPorts, snaps) }
+            },
         )
     }
 }
@@ -803,8 +897,10 @@ private fun TopBar(
     // itself underneath, where growing costs nothing.
     Column(
         modifier
-            // ⚠ Edge-to-edge again: without this the row is under the clock.
-            .statusBarsPadding()
+            // ⚠⚠ The status-bar inset moved OUT to the header Column that now
+            // owns this row and the icons — an inset applied twice in one
+            // stack pushes the second thing down by the notch again
+            // (`docs/UI.md` §7.2).
             .padding(horizontal = 12.dp, vertical = 6.dp)
             // ⚠ A background, because the canvas scrolls UNDER this bar: the
             // default graph puts a node within a few dp of the top, and without
@@ -1125,6 +1221,30 @@ private fun RunBar(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // ⭐⭐⭐ **Add node LEFT, Run CENTRED, the zoom and the locks
+            // RIGHT** — the user's call, 2026-09-22. Run was leftmost, which put
+            // the one button pressed every single time in the corner where a
+            // right thumb has to reach furthest across the phone.
+            //
+            // ⚠⚠ Centred TRULY, not "centred if the two sides happen to
+            // match": the sides are a 78dp button and a zoom readout beside two
+            // padlocks, so `SpaceBetween` would have parked Run left of middle
+            // and moved it whenever the scale went from `1.0x` to `0.35x`. Each
+            // side takes `weight(1f)`, so Run sits on the bar's midpoint
+            // whatever is beside it.
+            // ⚠ Add node is drawn FIRST, in the left slot.
+            // Removed at the user's request, 2026-09-10: the Batch button. It
+            // opened a second way to build a sweep, and there is only one now
+            // — arm a knob from its own node.
+            Row(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(12.dp)) {
+                    Text(stringResource(R.string.add_node), fontSize = 12.sp)
+                }
+            }
             // ⭐⭐ Run BECOMES Cancel while a render is in flight, rather than
             // sitting there greyed out beside a new button.
             //
@@ -1149,14 +1269,13 @@ private fun RunBar(
                     shape = RoundedCornerShape(12.dp),
                 ) { Text(stringResource(if (busy) R.string.running else R.string.run), fontWeight = FontWeight.Medium) }
             }
-            // ⚠⚠ **No Batch button.** It opened a second way to build a sweep,
-            // and there is only one now: arm a knob from its own node. The run
-            // bar already says what is armed and Run already sweeps when it is
-            // — a button that duplicated that was a third place to look.
-            // Removed at the user's request, 2026-09-10.
-            OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(12.dp)) {
-                Text(stringResource(R.string.add_node), fontSize = 12.sp)
-            }
+            // ⚠ The right slot: the zoom readout, then the two locks. Same
+            // `weight(1f)` as the left one — that pair is what centres Run.
+            Row(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             Text(
                 "${"%.1f".format(state.viewport.scale)}x",
                 style = LogTextStyle,
@@ -1164,7 +1283,7 @@ private fun RunBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.padding(end = 4.dp),
             )
             // ⭐⭐ Two locks, because they solve different annoyances: one
             // keeps the graph the same SIZE while you work at it, the other
@@ -1184,6 +1303,7 @@ private fun RunBar(
                 onClick = onTogglePanLock,
                 what = "canvas movement",
             )
+            }
         }
     }
 }
@@ -1430,6 +1550,10 @@ private fun FullscreenImage(
      * state is visible without opening a picture.
      */
     onLockSeed: (() -> Unit)? = null,
+    /** ⭐⭐ Enlarge this picture — see [PictureActions.onUpscale]. */
+    onUpscale: (() -> Unit)? = null,
+    /** ⭐⭐ ⓘ — see [PictureActions.onInfo]. */
+    onInfo: (() -> Unit)? = null,
 ) {
     // ⚠⚠ BACK CLOSES THE VIEWER. Without this the system back went to the
     // activity, which has no back stack -- so the one gesture every Android user
@@ -1589,6 +1713,8 @@ private fun FullscreenImage(
                 onDisabledKeep = onDisabledKeep,
                 starKeptTint = com.abrah.nightmare.ui.StarKept,
                 starIdleTint = com.abrah.nightmare.ui.StarIdle,
+                onUpscale = onUpscale,
+                onInfo = onInfo,
             )
         }
         if (!chromeless) Column(
