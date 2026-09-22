@@ -236,6 +236,13 @@ private fun fits(output: Port, input: Port): Boolean =
  */
 private fun helperFor(input: Port, types: Map<String, NodeType>): NodeType? =
     types.values
+        // ⚠⚠ **Never a RETIRED type.** `mask.segment_model` and
+        // `image.upscale` are hidden from the palette but still registered so
+        // old flows load — and this read the registry, so the assist happily
+        // offered to create the very nodes the palette had stopped offering.
+        // Reported 2026-09-22. ⇒ The same `hidden` flag the palette filters on,
+        // asked in both places.
+        .filterNot { it.hidden }
         .filter { it.inputs.isEmpty() && it.outputs.any { o -> fits(o, input) } }
         // ⚠ Deterministic, so the sheet does not reorder between openings: map
         // iteration order is not a promise.

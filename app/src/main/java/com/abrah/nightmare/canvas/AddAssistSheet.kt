@@ -10,6 +10,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,15 +31,22 @@ import com.abrah.nightmare.ui.LogTextStyle
  * helper nodes ticked by default, and a checkbox list of snap candidates with
  * the sensible one already selected.
  *
- * ⚠⚠⚠ **Checkboxes here, not the radios `docs/UI.md` §8.10 prescribes**, and
- * the difference is real rather than an oversight. §8.10's radios are for an
- * either/or with one right answer — take the checkpoint's prompt or keep mine,
- * where exactly one outcome happens. This is a LIST of independent additions:
- * keeping the prompt and dropping the photo is a legitimate combination, and a
- * radio group cannot say it. ⚠ The one place it is an either/or is the SOURCE
- * of a single input port, and that is enforced by [pick] rather than by the
- * control: ticking a second candidate for the same port unticks the first,
- * because an input takes one wire ([com.abrah.nightmare.Graph.connected]).
+ * ⭐⭐⭐ **The control says how many you may pick.** A group where exactly one
+ * option can win is drawn with RADIOS; only a genuinely independent list gets
+ * checkboxes. The user's call, 2026-09-22: *"if we only allow single select show
+ * it as radio btn not checkbox"* — and they were right, because the sheet was
+ * already ENFORCING single-select on two of its three groups while drawing boxes
+ * that promised otherwise.
+ *
+ * | group | control | why |
+ * |---|---|---|
+ * | a port's source | radio | an input takes ONE wire ([com.abrah.nightmare.Graph.connected] replaces) |
+ * | put it in the wire | radio | a node sits in one wire, not several |
+ * | feed it into | checkbox | one output feeds as many inputs as you like |
+ *
+ * ⚠ Every radio group also has an OFF state: tapping the selected one clears
+ * it. A radio you cannot unpick would make "wire nothing into this port" the one
+ * thing the sheet could not say.
  *
  * ⚠⚠ It is not shown when it would offer nothing ([AddPlan.isEmpty]) — the node
  * is simply added, as it always was. A dialog with nothing in it is what
@@ -52,12 +61,12 @@ fun AddAssistSheet(
     AlertDialog(
         onDismissRequest = onCancel,
         title = { Text("Add ${plan.type.paletteName.knobLabel}") },
-        text = { AddAssistContent(plan, onAdd) },
+        text = { AddAssistContent(plan, onAdd, onCancel) },
         // ⚠ The confirm lives INSIDE the content, because it has to carry the
         // tick state. This slot keeps the dismiss where every other dialog puts
         // it.
+        // ⚠ BOTH buttons live in the content — see the note there.
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
     )
 }
 
@@ -70,6 +79,7 @@ fun AddAssistSheet(
 fun AddAssistContent(
     plan: AddPlan,
     onAdd: (helperPorts: Set<String>, snaps: Map<String, SnapCandidate>, splice: SpliceCandidate?, feeds: List<FeedCandidate>) -> Unit,
+    onCancel: () -> Unit = {},
 ) {
     // ⚠⚠ A fresh node is ticked only for a port NOTHING can feed. Where
     // something can, sharing it is the default and "new" is the opt-in —
@@ -107,27 +117,32 @@ fun AddAssistContent(
         for (port in ports) {
             Section(port.knobLabel)
             for (c in plan.snaps.filter { it.port == port }) {
-                CheckRow(
-                    checked = picked[port] === c,
+                PickRow(
+                    selected = picked[port] === c,
                     title = c.fromNode,
                     subtitle = "use the one already here",
-                    onToggle = { on ->
-                        // ⚠⚠ One source per PORT — see the class note. Picking an
-                        // existing node drops the "new" box for the same port.
-                        picked = if (on) picked + (port to c) else picked - port
-                        if (on) helperPorts = helperPorts - port
+                    onPick = {
+                        // ⚠⚠ One source per PORT. Picking an existing node drops
+                        // the "new" option for the same port.
+                        val was = picked[port] === c
+                        picked = if (was) picked - port else picked + (port to c)
+                        if (!was) helperPorts = helperPorts - port
                     },
                 )
             }
             for (h in plan.helpers.filter { it.port == port }) {
-                CheckRow(
-                    checked = port in helperPorts,
+                PickRow(
+                    selected = port in helperPorts,
                     title = "New ${h.type.paletteName.knobLabel.lowercase()}",
                     subtitle = if (plan.snaps.any { it.port == port }) "instead of sharing"
                     else "nothing here can feed this",
-                    onToggle = { on ->
-                        helperPorts = if (on) helperPorts + port else helperPorts - port
-                        if (on) picked = picked - port
+                    onPick = {
+                        if (port in helperPorts) {
+                            helperPorts = helperPorts - port
+                        } else {
+                            helperPorts = helperPorts + port
+                            picked = picked - port
+                        }
                     },
                 )
             }
@@ -154,18 +169,24 @@ fun AddAssistContent(
         if (plan.splices.isNotEmpty()) {
             Section("Put it in the wire")
             for (c in plan.splices) {
-                CheckRow(
-                    checked = splice === c,
+                PickRow(
+                    selected = splice === c,
                     title = "${c.from} → here → ${c.consumer}",
                     subtitle = "${c.consumer} reads this node instead",
-                    onToggle = { on -> splice = if (on) c else null },
+                    onPick = { splice = if (splice === c) null else c },
                 )
             }
         }
+        // ⚠⚠ Cancel and Add in ONE row, here in the content — the user's call,
+        // 2026-09-22. An `AlertDialog` puts its own dismiss and confirm on one
+        // line, but Add has to carry the tick state so it cannot live in that
+        // slot; splitting the pair across the content and the dialog's row put
+        // them on two lines with Cancel stranded under Add.
         Row(
             Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.End,
         ) {
+            TextButton(onClick = onCancel) { Text("Cancel") }
             TextButton(onClick = { onAdd(helperPorts, picked, splice, feeds.toList()) }) { Text("Add") }
         }
     }
@@ -179,6 +200,34 @@ private fun Section(label: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 6.dp),
     )
+}
+
+/**
+ * ⚠ A radio row — for a group where exactly one option can win. [onPick] is
+ * given the TAP rather than a boolean: tapping the selected one CLEARS it, which
+ * a `RadioButton`'s own semantics cannot express.
+ */
+@Composable
+private fun PickRow(
+    selected: Boolean,
+    title: String,
+    subtitle: String,
+    onPick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onPick() },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onPick)
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                subtitle,
+                style = LogTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable

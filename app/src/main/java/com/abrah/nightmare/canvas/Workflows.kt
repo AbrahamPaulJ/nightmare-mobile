@@ -517,28 +517,35 @@ fun inpaintWorkflow(): Workflow = Workflow(
         listOf(
             Node("prompt", "core.prompt", params = promptParams()),
             Node("photo", "core.image", params = mapOf("uri" to "")),
-            // ⭐ Wired by default (the user's call, 2026-09-17, reversing "no new
-            // recipe" of the day before): the Tap tool is the easy way to mask, and
-            // a person should not have to know a node exists to find it. Without
-            // the model installed the tool says where to get it.
-            Node(
-                "segment_model", "mask.segment_model",
-                params = mapOf(com.abrah.nightmare.SelectObjectNode.MODEL to com.abrah.nightmare.segment.Segmenter.LABEL),
-            ),
             // ⭐ Tap the node, then Mask, to paint. The framing lives here too —
             // there is no crop node in the chain any more, because the sampler
             // fits whatever it is given.
             Node(
                 "inpaint", samplerType(inpaint = true),
-                params = ctxKeyParams(inpaint = true) + mapOf("seed" to "0", "denoise" to com.abrah.nightmare.SdSampler.defaultDenoise(
-                    com.abrah.nightmare.SelectedModel.spec.family,
-                )),
-                inputs = sources("prompt" to "prompt", "image" to "photo", "segmenter" to "segment_model"),
+                params = ctxKeyParams(inpaint = true) + mapOf(
+                    "seed" to "0",
+                    "denoise" to com.abrah.nightmare.SdSampler.defaultDenoise(
+                        com.abrah.nightmare.SelectedModel.spec.family,
+                    ),
+                    // ⭐⭐⭐ **Tap to select is ON, as a param** — it was a whole
+                    // `mask.segment_model` NODE wired into `segmenter` until
+                    // 2026-09-22. Retiring the node from the palette was not
+                    // enough: this recipe still BUILT one, so opening Inpaint
+                    // still dropped a segmenter on the canvas. Reported the same
+                    // day, and fairly — "removed" that leaves the thing being
+                    // created is not removed.
+                    // ⚠ Same intent as before (the user's call, 2026-09-17): the
+                    // Tap tool is the easy way to mask and nobody should have to
+                    // know a node exists to find it. Without the model installed
+                    // the checkbox now says where to get it.
+                    com.abrah.nightmare.SdSampler.TAP_SELECT to "true",
+                ),
+                inputs = sources("prompt" to "prompt", "image" to "photo"),
             ),
             Node("output", "core.output", inputs = sources("media" to "inpaint")),
         )
     ),
-    flowLayout("prompt", "photo", "segment_model", "inpaint", "output"),
+    flowLayout("prompt", "photo", "inpaint", "output"),
 )
 
 /**

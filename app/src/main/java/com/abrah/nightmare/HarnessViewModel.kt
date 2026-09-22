@@ -4805,17 +4805,29 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // is exactly the condition a before/after exists for.
         // ⚠ The retired `image.upscale` keeps its own, for flows that have one.
         val nodes = graph.nodes.filter {
-            it.type == UpscaleNode.name ||
-                (it.type == MediaOutputNode.name &&
-                    MediaOutputNode.effectiveParams(it)[MediaOutputNode.UPSCALE]
-                        .equals("true", ignoreCase = true))
+            it.type == UpscaleNode.name || MediaOutputNode.autoUpscales(it)
         }
+        // ⚠⚠⚠ **The node's OWN input port, not the string "image".**
+        //
+        // [CanvasState.pictureInto] defaults to `image` and `core.output`'s port
+        // is `media` — the union type that takes a picture or a clip — so this
+        // asked for a wire that does not exist and every auto-upscaling output
+        // recorded NO before picture at all. Reported 2026-09-22, after being
+        // claimed as working: the before/after simply never appeared.
+        //
+        // ⚠⚠ **Second time the same two port names have done this.**
+        // `insertUpscale` read `inputs["image"]` off an output node for a whole
+        // release. ⇒ Ask the TYPE what its port is called; a port name written
+        // out at a call site is a port name that will be wrong somewhere.
+        fun portOf(n: com.abrah.nightmare.Node) =
+            nodeTypes[n.type]?.inputs?.firstOrNull()?.name ?: "image"
         val shown = nodes.mapNotNull { n ->
-            val id = canvas.pictureInto(n.id, nodeTypes) ?: return@mapNotNull null
+            val id = canvas.pictureInto(n.id, nodeTypes, portOf(n)) ?: return@mapNotNull null
             val bmp = ops.images.get(id) ?: return@mapNotNull null
             n.id to (id to bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
         }.toMap()
-        val empty = nodes.filter { canvas.pictureInto(it.id, nodeTypes) == null }.map { it.id }.toSet()
+        val empty = nodes.filter { canvas.pictureInto(it.id, nodeTypes, portOf(it)) == null }
+            .map { it.id }.toSet()
         if (shown.isNotEmpty() || empty.any { it in canvas.beforePreviews }) {
             canvas = canvas.copy(
                 beforePreviews = canvas.beforePreviews.filterKeys { it !in empty } + shown,

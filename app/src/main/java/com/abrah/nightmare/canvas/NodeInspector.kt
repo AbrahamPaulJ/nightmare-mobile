@@ -567,9 +567,17 @@ fun NodeInspector(
             // `actsOnItsPicture` rule the star and the disk follow.
             onInstallSegmenter = onInstallSegmenter,
             segmenterInstalled = segmenterInstalled,
+            // ⚠⚠ **Not offered when the node ALREADY auto-upscales** — the
+            // user's call, 2026-09-22. The button's whole job is to put an
+            // upscale into the flow behind this output, and the checkbox above
+            // has already done it: pressing it would enlarge an enlarged
+            // picture, which is not what a second tap means.
             onUpscale = onUpscale
-                ?.takeIf { previewId != null && actsOnItsPicture &&
-                    nodeId !in clipNodes(state.workflow.graph, state.videos) }
+                ?.takeIf {
+                    previewId != null && actsOnItsPicture &&
+                        nodeId !in clipNodes(state.workflow.graph, state.videos) &&
+                        !com.abrah.nightmare.MediaOutputNode.autoUpscales(node)
+                }
                 ?.let { up -> { up(nodeId) } },
             onInfo = detailsOf?.takeIf { previewId != null }?.let { d -> { d(nodeId) } },
         )

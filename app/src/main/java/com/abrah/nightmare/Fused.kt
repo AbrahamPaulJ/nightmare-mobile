@@ -1529,6 +1529,15 @@ object MediaOutputNode : NodeType {
      * ⚠ Asked by the picture actions, which dim the keep button when it is true
      * — keeping by hand would make a second copy of something already there.
      */
+    /**
+     * ⭐ Whether THIS node enlarges what it is handed.
+     *
+     * ⚠ One reader of the param, so the canvas, the inspector and the run all
+     * ask the same question the same way.
+     */
+    fun autoUpscales(node: Node): Boolean =
+        node.type == name && effectiveParams(node)[UPSCALE].equals("true", ignoreCase = true)
+
     fun autosaves(graph: Graph): Boolean = graph.nodes
         .filter { it.type == name }
         .any { effectiveParams(it)[AUTOSAVE].equals("true", ignoreCase = true) }
