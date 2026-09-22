@@ -666,25 +666,24 @@ class SdSampler(
             LORAS, "string", "",
             hint = "adapters applied on top of this checkpoint — import them on " +
                 "the Settings tab",
-            // ⚠⚠⚠ **FLUX.2 only, and LOCKED on Z-Image rather than hidden.**
-            // Measured on device 2026-09-22: a Z-Image adapter is registered by
-            // the engine and binds ZERO tensors — no `loading N/M tensors` line
-            // at all, where FLUX prints `160/160` — and the render comes out
-            // byte-identical whatever is picked. The naming is NOT the cause;
-            // upstream's `convert_diffusers_dit_to_original_lumina2` already
-            // maps `to_q`/`to_k`/`to_v` onto the fused `qkv`. Why it does not
-            // bind is open (`docs/ROADMAP.md` §2g).
+            // ⚠⚠⚠ **This was LOCKED on Z-Image for one release, and the lock
+            // was wrong.** 1.6.0 greyed it out on the reading that a Z-Image
+            // adapter binds zero tensors. The evidence for that was the ABSENCE
+            // of the engine's `loading N/M tensors` line — and on 2026-09-22
+            // the same capture turned out to be missing `loading 452/453
+            // tensors from dit.safetensors` too, which certainly happened.
+            // logcat had pruned the block. ⇒ An absent log line is not a
+            // measurement; `CLAUDE.md`'s "suspect the CHECK first" applies to
+            // the log as much as to a script.
             //
-            // ⚠⚠ The knob is DECLARED by [ditWidgets], which both DiT
-            // families share, so without this it renders on a Z-Image sampler,
-            // accepts a pick and silently does nothing — the exact shape of
-            // the sampler's old dead `prompt` field (`docs/ARCHITECTURE.md`
-            // §3). ⚠ Locked rather than removed, following `karras` on LCM: a
-            // control that vanishes reads as a bug, a greyed one that names the
-            // family says the support does not exist yet.
-            locked = if (family == Family.ZIMAGE)
-                "not supported on Z-Image yet — the engine binds no tensors from a Z-Image adapter"
-            else null,
+            // ⭐⭐ What replaced it is a control the log cannot fake — the
+            // adapter's own STRENGTH, `docs/ROADMAP.md` §2g. Same seed, same
+            // neutral prompt, `mystic.safetensors` on `intorealism_zitV90`:
+            // mean |Δ| against the LoRA-less render is 11.5 at x0.25 and 30.5
+            // at x1.00, and the LoRA-less render is byte-identical across two
+            // runs. `scale_value *= multiplier` lives inside the branch that
+            // only runs once `lora_up`/`lora_down` were FOUND, so an adapter
+            // that bound nothing could not answer its own multiplier.
         ),
     )
 
