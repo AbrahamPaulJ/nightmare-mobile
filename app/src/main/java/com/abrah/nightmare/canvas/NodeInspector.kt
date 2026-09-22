@@ -719,6 +719,17 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         )
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
+    // ⭐⭐⭐ **The Upscaler chooser only when `auto upscale` is ON** — the
+    // user's call, 2026-09-22.
+    //
+    // ⚠⚠ Which weights to enlarge with is a question only the node that is
+    // enlarging has. On an output with the box unticked it was a heading, a
+    // pair of chips and a line of help text about something the node does not
+    // do — and it sat directly under the checkbox that decides, so it read as
+    // part of it.
+    if (name == com.abrah.nightmare.MediaOutputNode.UPSCALER &&
+        !com.abrah.nightmare.MediaOutputNode.autoUpscales(node)
+    ) return true
     // ⭐ An inpaint node's grow and feather are drawn IN the Mask tab of its
     // popup, under the picture they change — never loose in the knob list
     // (the user's call, 2026-09-17).

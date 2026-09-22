@@ -315,7 +315,6 @@ fun CanvasScreen(
     // ⚠ Which node's ⓘ is open in the fullscreen viewer, or null.
     var showingNodeInfo by remember { mutableStateOf<String?>(null) }
     // ⚠ The add-node offer in flight: the plan and where the node will go.
-    var assisting by remember { mutableStateOf<Pair<AddPlan, Pt>?>(null) }
     var confirmingDelete by remember { mutableStateOf(false) }
 
     Box(
@@ -874,32 +873,15 @@ fun CanvasScreen(
                 // ⚠ Offset by half a node so the node is centred rather than
                 // starting at the centre, which puts most of it off to one side.
                 val at = Pt(centre.x - Sizes.NODE_WIDTH / 2f, centre.y - Sizes.HEADER_HEIGHT)
-                // ⭐⭐⭐ **Offer the helpers and the snap before adding.** Asked
-                // for 2026-09-22 — adding an inpaint node meant adding a prompt
-                // and a segmenter by hand and then drawing three wires.
-                // ⚠ A plan with nothing in it (a prompt, a photo: no inputs)
-                // adds straight away, exactly as before. The sheet appears only
-                // when there is something to decide.
-                val plan = planAdd(type, state.workflow.graph, types)
-                if (plan.isEmpty) {
-                    onEdit { s -> s.addNode(type, at) }
-                } else {
-                    // ⚠ The palette closes first, or two sheets stack.
-                    onEdit { s -> s.closePalette() }
-                    assisting = plan to at
-                }
+                // ⚠⚠⚠ **A pick ADDS the node, and nothing else.** The
+                // helper/snap assist sheet that sat here was REVERTED on
+                // 2026-09-22 at the user's ask — `docs/ROADMAP.md` §5 keeps the
+                // idea. It is not a bad idea; it was decided before the shape
+                // of the problem was settled, and half-built it cost more to
+                // keep correct than it gave back.
+                onEdit { s -> s.addNode(type, at) }
             },
             onDismiss = { onEdit { s -> s.closePalette() } },
-        )
-    }
-    assisting?.let { (plan, at) ->
-        AddAssistSheet(
-            plan = plan,
-            onCancel = { assisting = null },
-            onAdd = { helperPorts, snaps, splice, feeds ->
-                assisting = null
-                onEdit { s -> s.applyAdd(plan, at, helperPorts, snaps, splice, feeds) }
-            },
         )
     }
 }
