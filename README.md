@@ -20,8 +20,8 @@ chip can run.
 **Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile Stable
 Diffusion, local image generation, on device video generation, node editor, Qualcomm Hexagon
 NPU, Snapdragon, QNN, FLUX.2, Z-Image, SDXL, Anima, text to image, text to video, image to
-video, img2img, inpainting, Segment Anything, SAM 2.1, npuforge, safetensors to QNN, on device
-model conversion, no cloud, private.
+video, img2img, inpainting, outpainting, virtual try-on, Segment Anything, SAM 2.1, npuforge,
+safetensors to QNN, on device model conversion, offline prompt translation, no cloud, private.
 
 ## What it does
 
@@ -50,6 +50,17 @@ Shoes or Bag. The flow remembers the choice and masks every new photo by itself,
 and Run is the whole job. It is an ATR human parser (SegFormer-B2, int8), a 29 MB download,
 on the CPU; a chip that finds nothing says so rather than guessing. `Enable auto crop` in the
 crop window does the same for framing: the whole photo, fitted.
+
+**Add Objects.** Paste a real object from another photo into the one you are repainting, and
+only its edges are repainted so it blends in while its middle stays pixel exact. Choose the
+object by painting over it, then drag it into place, resize and turn it with two fingers, flip
+or rotate it. Each Add is its own layer above the photo, up to two, and the mask stays on the
+photo's layer.
+
+**Outpainting.** An inpaint frame may zoom out past the photo, up to twice its area, and the
+padding is generated. What fills it first is your choice: black, the photo's own edges blurred,
+or pure green (`#00FF00`) for an outpaint LoRA trained on a green screen. FLUX.2 image edit gets
+the same with `Allow padding` in its crop window.
 
 **Image editing with FLUX.2 Klein.** A photo and a prompt: the whole picture is re-rendered
 to follow it rather than nudged, so the composition survives and the content changes. Wire a
@@ -96,7 +107,8 @@ each with its own buttons.
 **Twenty seven checkpoints, or bring your own.** Six SD 1.5, ten SDXL, nine Anima and two DiT
 in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
 [npuforge](https://github.com/AbrahamPaulJ/npuforge), which turns an SD safetensors checkpoint
-into a QNN model with no PC involved. Every generate node has its own checkpoint picker,
+into a QNN model with no PC involved; its 9 channel inpainting exports run as real inpainting
+models. A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
 grouped by family and listing what is actually installed; switching family rewrites that node
 and keeps every wire. The APK carries every Hexagon architecture tier and picks the build your
 chip can load.
@@ -201,6 +213,11 @@ released under BSD-3-Clause-Clear with additional terms on the model card. The p
 schedule, the autoregressive MMDiT loop and the streaming VAE decode are theirs, and the NPU
 conversions this app runs were made from their weights. The first frame comes from
 [SSD-1B](https://huggingface.co/segmind/SSD-1B) by Segmind.
+
+**Tap to select and auto mask** run
+[SAM 2.1](https://github.com/facebookresearch/sam2) hiera-tiny by Meta (Apache 2.0) and
+[SegFormer-B2 fine-tuned on ATR](https://huggingface.co/mattmdjaga/segformer_b2_clothes) by
+mattmdjaga (MIT), both converted to ONNX for the phone.
 
 **Prompt translation** is [Foxlet](https://github.com/yinvoke/foxlet-translate) by yinvoke,
 built from source: Mozilla's Bergamot engine and Marian with ARM int8 kernels. The

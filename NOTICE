@@ -112,6 +112,20 @@ Qwen3-4B text encoder, DiT VAEs
     https://huggingface.co/zhiyuanasad/z_image_turbo_adreno
     Downloaded by the app at the user's request; not included here.
 
+SAM 2.1 (hiera-tiny)
+    Meta
+    https://github.com/facebookresearch/sam2
+    Apache 2.0. Tap to select. Converted to ONNX (split trunk / prompt /
+    decoder, int8) and re-hosted at huggingface.co/AbrahamPJ/sam2-tiny-split-onnx;
+    downloaded by the app at the user's request; not included here.
+
+SegFormer-B2 clothes (ATR human parser)
+    mattmdjaga
+    https://huggingface.co/mattmdjaga/segformer_b2_clothes
+    MIT licensed. Auto mask by name. Converted to ONNX (int8) and re-hosted at
+    huggingface.co/AbrahamPJ/segformer-b2-clothes-onnx; downloaded by the app at
+    the user's request; not included here.
+
 Foxlet Translate
     yinvoke
     https://github.com/yinvoke/foxlet-translate
