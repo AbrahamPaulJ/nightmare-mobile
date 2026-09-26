@@ -305,6 +305,9 @@ fun HarnessScreen(
             com.abrah.nightmare.ui.UpscalePicker(
                 upscalers = vm.upscalerRows,
                 onPick = { id, scale -> vm.upscaleFromNode(node, id, scale) },
+                // ⭐ So the scales past the cap are dimmed, as Results' are.
+                width = vm.upscaleNodeSize?.first,
+                height = vm.upscaleNodeSize?.second,
                 // ⚠ No `askToNotify` here: that helper is scoped to the library
                 // branch, and this dialog is on the canvas. An upscale started
                 // here shows its progress on the canvas, not in a notification.
@@ -490,7 +493,10 @@ fun HarnessScreen(
             onStarImage = { id -> vm.toggleKeepResult(id, favourite = true) },
             isFavourite = { id -> vm.isFavourite(id) },
             keepDisabledReason = vm.keepDisabledReason,
-            onDisabledAction = { why -> vm.say(why) },
+            // ⚠⚠ Toasted as well as logged: a dimmed button whose reason
+            // reached only the run log did nothing visible when tapped
+            // (2026-09-27) — Results already toasts its own refusals.
+            onDisabledAction = { why -> vm.say(why); vm.toast(why) },
             isKept = vm::isKept,
             onClearOutput = vm::clearOutput,
             onSave = vm::saveWorkflowAs,
@@ -736,10 +742,24 @@ fun HarnessScreen(
             // ⭐ A kept picture full screen, over the library. ⚠ Inside the
             // library branch, because that is where it is opened from and back
             // must return to the list rather than to the canvas.
+            //
+            // ⚠⚠⚠ **In its OWN WINDOW (a `Dialog`), not beside LibraryScreen.**
+            // Since the library became a [PullDownSheet] (1.6.014–1.6.042) this
+            // block is a `ModalBottomSheet`'s content, which is a COLUMN: the
+            // viewer was laid out BELOW a LibraryScreen that already fills the
+            // height, so tapping a picture composed a viewer nobody could see.
+            // Reported 2026-09-27 as *"the fullscreen isnt working"*. The sheet
+            // is itself a window, so nothing in the activity can draw over it;
+            // a Dialog can. Back is the Dialog's `onDismissRequest`.
             vm.viewingResult?.let { _ ->
-                if (vm.viewingSet.isNotEmpty()) {
-                    BackHandler { vm.closeResult() }
-                    com.abrah.nightmare.ui.ResultViewer(
+                if (vm.viewingSet.isNotEmpty()) androidx.compose.ui.window.Dialog(
+                    onDismissRequest = { vm.closeResult() },
+                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+                ) {
+                    // ⚠ Sized by the window's real frame, not the display —
+                    // the full-height Dialog trap ([rememberDialogHeight]).
+                    val viewerHeight = com.abrah.nightmare.canvas.rememberDialogHeight()
+                    Box(Modifier.fillMaxWidth().height(viewerHeight)) { com.abrah.nightmare.ui.ResultViewer(
                         onToggleFavourite = vm::toggleResultFavourite,
                         items = vm.viewingSet,
                         startIndex = vm.viewingIndex,
@@ -765,7 +785,7 @@ fun HarnessScreen(
                         onUpscale = { r, u, s -> vm.upscaleResult(r.id, u, s) },
                         onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
                         onToast = vm::toast,
-                    )
+                    ) }
                 }
             }
         }

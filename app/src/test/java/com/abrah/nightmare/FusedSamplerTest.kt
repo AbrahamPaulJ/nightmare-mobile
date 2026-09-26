@@ -100,6 +100,32 @@ class FusedSamplerTest {
     }
 
     /**
+     * ⭐⭐ An output asked to upscale a picture already too big WARNS — the
+     * app toasts it. It only logged, and the button did nothing visible
+     * (reported 2026-09-27).
+     */
+    @Test
+    fun anOutputThatCannotUpscaleSaysSo() = runBlocking {
+        val g = Graph(
+            listOf(
+                Node("photo", "core.image", mapOf("uri" to photoFile(w = 2100, h = 64))),
+                Node(
+                    "out", MediaOutputNode.name,
+                    mapOf(MediaOutputNode.UPSCALE to "true", MediaOutputNode.SCALE to "2x"),
+                    mapOf("media" to Source("photo")),
+                ),
+            )
+        )
+        val warned = mutableListOf<String>()
+        val r = exec(RecordingHost()).run(g, onWarn = { _, text -> warned += text })
+        assertNull(r.error)
+        assertEquals(1, warned.size)
+        assertTrue(warned.single(), warned.single().startsWith("Not upscaled: 2100x64"))
+        // ⚠ …and the picture passes through unchanged rather than failing the run.
+        assertEquals(2100, r.outputs["out"]?.previewImage()?.w)
+    }
+
+    /**
      * ⭐⭐ **The WIRE decides, and nothing else.**
      *
      * ⚠⚠ There was a `start from` switch here so a flow could flip without

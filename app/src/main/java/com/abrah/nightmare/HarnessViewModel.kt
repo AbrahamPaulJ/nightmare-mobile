@@ -1678,30 +1678,24 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * no context key, so it runs in whichever backend is up.
      */
     fun upscaleResult(id: String, upscalerId: String, scale: Int = UpscaleNode.NATIVE_SCALE) {
-        val spec = UpscalerCatalog.byId(upscalerId) ?: return
+        // ⚠⚠ Every way out of here TOASTS: this is started from Results, where
+        // the run log is not on screen, and a refusal that only reached the log
+        // was a button that did nothing (reported 2026-09-27).
+        val spec = UpscalerCatalog.byId(upscalerId)
+        if (spec == null) {
+            toast("upscale failed — no upscaler named $upscalerId")
+            return
+        }
         val file = results.imageFile(id)
         if (!file.isFile) {
             say("that picture's file is gone", bad = true)
+            toast("upscale failed — that picture's file is gone")
             return
         }
-        val g = com.abrah.nightmare.Graph(
-            listOf(
-                com.abrah.nightmare.Node(
-                    "photo", "core.image",
-                    // ⚠⚠ The PATH, not a `file://` URI: `core.image` reads any
-                    // non-`content://` string as a path, so a `file://` one looked
-                    // for a file literally named that and every upscale failed.
-                    params = mapOf("uri" to file.absolutePath),
-                ),
-                com.abrah.nightmare.Node(
-                    "upscale", "image.upscale",
-                    params = mapOf(UpscaleNode.UPSCALER to upscalerId, UpscaleNode.SCALE to "${scale}x"),
-                    inputs = com.abrah.nightmare.sources("image" to "photo"),
-                ),
-            )
-        )
+        // ⚠⚠ The PATH, not a `file://` URI — [MediaOutputNode.upscaleGraph].
+        val g = MediaOutputNode.upscaleGraph(file.absolutePath, upscalerId, scale)
         val wf = com.abrah.nightmare.canvas.Workflow(g, emptyMap())
-        run("upscale") {
+        val refused = run("upscale") {
             upscalingResult = spec.label
             toast("Upscaling with ${spec.label}…")
             try {
@@ -1710,10 +1704,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     toast("could not start the backend to upscale")
                     return@run
                 }
-                val r = ops.runWorkflow(wf)
-                val img = r.outputs["upscale"]?.previewImage()
+                // ⚠⚠ The output node PASSES THROUGH a picture it will not
+                // enlarge, and says why through [NodeCtx.warn] — so a warning
+                // here is a failure, or the unchanged picture is kept as an
+                // "upscaled" copy of itself.
+                var refused: String? = null
+                val r = ops.runWorkflow(wf, onWarn = { _, text -> if (refused == null) refused = text })
+                val img = r.outputs["upscale"]?.previewImage()?.takeIf { refused == null }
                 if (r.error != null || img == null) {
-                    val why = r.error ?: r.runs.lastOrNull { it.outcome == Outcome.FAILED }?.detail ?: "no picture"
+                    val why = r.error ?: refused
+                        ?: r.runs.lastOrNull { it.outcome == Outcome.FAILED }?.detail ?: "no picture"
                     // ⚠ Logged AND toasted: a toast alone left nothing to read
                     // when this failed on the phone (2026-09-17).
                     say("upscale failed — $why", bad = true)
@@ -1726,6 +1726,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 upscalingResult = null
             }
         }
+        refused?.let { toast("Not upscaled: $it") }
     }
 
     /**
@@ -1736,7 +1737,36 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     var upscaleNodePick by mutableStateOf<String?>(null)
         private set
 
-    fun offerUpscaleNode(nodeId: String) { upscaleNodePick = nodeId }
+    /** ⭐ The size of the picture [upscaleNodePick] shows, for the chooser to dim the scales that do not fit. */
+    var upscaleNodeSize by mutableStateOf<Pair<Int, Int>?>(null)
+        private set
+
+    /**
+     * ⚠⚠⚠ **Asks [com.abrah.nightmare.ui.upscaleRefusal] first**, the same
+     * question both Results surfaces ask. It did not, so a picture already too
+     * big opened the chooser, ticked the output's upscale and ran — and the
+     * output skipped the enlargement with a line in the run log and nothing on
+     * screen. Reported 2026-09-27: *"nothing happens when i use output node
+     * upscale btn on images that are already too big"*.
+     */
+    fun offerUpscaleNode(nodeId: String) {
+        val shown = canvas.rendered[nodeId] ?: canvas.previews[nodeId]?.first
+        val bmp = shown?.let { imageFor(it) }
+        val no = when {
+            working -> "something is already running — try again when it finishes"
+            bmp != null -> com.abrah.nightmare.ui.upscaleRefusal(
+                bmp.width, bmp.height, isClip = clipForImage(shown) != null, busyWith = upscalingResult,
+            )
+            else -> null
+        }
+        if (no != null) {
+            say("upscale: $no", bad = true)
+            toast(no)
+            return
+        }
+        upscaleNodeSize = bmp?.let { it.width to it.height }
+        upscaleNodePick = nodeId
+    }
     fun cancelUpscaleNode() { upscaleNodePick = null }
 
     /**
@@ -6200,6 +6230,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         say("batch: ${combos.size} runs")
         val started = android.os.SystemClock.elapsedRealtime()
         var done = 0
+        val warned = mutableSetOf<String>()
         for ((i, overrides) in combos.withIndex()) {
             if (cancelBatch) {
                 say("batch: stopped after $done of ${combos.size}", bad = true)
@@ -6222,6 +6253,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     canvasStatus[id] = NodeStatus(progress = step to total)
                     runLog = runLog.copy(now = id, step = step to total)
                 },
+                // ⚠ Once per SWEEP per sentence: eight runs refusing the same
+                // upscale is one thing to know, not eight toasts in a queue.
+                onWarn = { _, text -> if (warned.add(text)) toast(text) },
             )
             // ⚠⚠ PER RUN, not per sweep — the same meaning [runCanvas] gives
             // it ("the LAST measured render"), which is what the batch estimate
@@ -6461,6 +6495,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     now = id,
                 )
             },
+            // ⭐ [com.abrah.nightmare.NodeCtx.warn] — already in the panel via
+            // onLog; the toast is for the person not looking at it.
+            onWarn = { _, text -> toast(text) },
         )
         // ⚠ `startedAtMs = 0` stops the panel's ticking clock; `totalMs` is what
         // it shows instead, so the cost of the run survives the run.
@@ -6713,7 +6750,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         runJob?.cancel()
     }
 
-    private fun run(label: String, block: suspend () -> Unit) {
+    /**
+     * ⚠ Returns WHY it did not start, or null when it did. The canvas shows
+     * [runError] on its run bar; a caller off the canvas (Results' upscale) has
+     * no run bar in view and must toast this instead, or its button does
+     * nothing visible.
+     */
+    private fun run(label: String, block: suspend () -> Unit): String? {
         // ⚠⚠ The DOWNLOAD is named, because it is the one a user cannot see
         // from the canvas. "already running" was true and useless: nothing was
         // running that they had started or could find.
@@ -6723,9 +6766,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             runError = if (installing == MOVE_ID) "models are moving — Run once they have"
                 else "$what is downloading — Run once it has finished"
             say("$label ignored — $what is downloading", bad = true)
-            return
+            return runError
         }
-        if (busy) { say("$label ignored — already running", bad = true); return }
+        if (busy) {
+            say("$label ignored — already running", bad = true)
+            return "something is already running — try again when it finishes"
+        }
         busy = true
         // ⚠ Both ends, for the same reason [applyNodeModel] does it: the
         // readout must stop saying "idle" the moment Run is pressed, not up to
@@ -6766,6 +6812,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 refreshLoad()
             }
         }
+        return null
     }
 
     /**

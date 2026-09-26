@@ -1541,9 +1541,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onStart: (String, String) -> Unit = { _, _ -> },
         /** ⭐ A node narrating itself while it runs. [com.abrah.nightmare.NodeCtx.say]. */
         onLog: (String, String) -> Unit = { _, _ -> },
+        /** ⭐ A node telling the person something. [com.abrah.nightmare.NodeCtx.warn]. */
+        onWarn: (String, String) -> Unit = { _, _ -> },
     ): GraphRun {
         try {
-            return runRolled(workflow, onNode, onProgress, onStart, onLog)
+            return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn)
         } finally {
             releaseBackendIfTooBig()
         }
@@ -1620,6 +1622,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onProgress: (String, Int, Int) -> Unit,
         onStart: (String, String) -> Unit = { _, _ -> },
         onLog: (String, String) -> Unit = { _, _ -> },
+        onWarn: (String, String) -> Unit = { _, _ -> },
     ): GraphRun {
         // ⚠⚠⚠ **Consumer-derived sizes are settled HERE, before anything
         // runs.** A consumer-sized node (`image.crop` until its deletion on 2026-09-17; the legacy mask nodes) carries no `out_w`/`out_h` of its own — they are
@@ -1678,6 +1681,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 say("  $text")
                 onLog(id, text)
             },
+            onWarn = onWarn,
             // ⚠ The rolled seed is shown on the node, or a user watching a
             // picture change every Run has no way to learn WHICH seed made the
             // one they liked.
@@ -2416,18 +2420,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("save_upscaled: no backend", bad = true)
             return
         }
-        val g = Graph(
-            listOf(
-                // ⚠ Squared to 1024 BEFORE the graph, as an SDXL render is — the
-                // `image.crop` node that did it in-graph was deleted 2026-09-17.
-                Node("photo", "core.image", params = mapOf("uri" to square1024(uri))),
-                Node(
-                    "upscale", "image.upscale",
-                    params = mapOf(UpscaleNode.UPSCALER to which),
-                    inputs = sources("image" to "photo"),
-                ),
-            )
-        )
+        // ⚠ Squared to 1024 BEFORE the graph, as an SDXL render is — the
+        // `image.crop` node that did it in-graph was deleted 2026-09-17.
+        val g = MediaOutputNode.upscaleGraph(square1024(uri), which)
         val r = runWorkflow(
             com.abrah.nightmare.canvas.Workflow(g, emptyMap()),
             onNode = { n ->

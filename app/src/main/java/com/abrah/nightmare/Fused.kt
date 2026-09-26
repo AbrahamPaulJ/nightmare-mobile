@@ -1637,6 +1637,30 @@ object MediaOutputNode : NodeType {
     /** ⭐ `2x`/`3x`/`4x` — [UpscaleNode.SCALE]'s param, on the node that enlarges. */
     const val SCALE = UpscaleNode.SCALE
 
+    /**
+     * ⭐⭐⭐ **The graph that enlarges one picture on disk**: photo → output,
+     * upscale ticked. Its output is node `upscale`.
+     *
+     * ⚠⚠⚠ Results' Upscale and the `save_upscaled` op each built
+     * `photo → image.upscale` by hand, and kept doing so after that type was
+     * DELETED (2026-09-22) — so both failed with *unknown node type*. Reported
+     * from Results 2026-09-27. ⇒ ONE builder, over the node that exists.
+     *
+     * @param path a file PATH, not a `file://` URI — `core.image` reads any
+     *   non-`content://` string as a path.
+     */
+    fun upscaleGraph(path: String, upscalerId: String, scale: Int = UpscaleNode.NATIVE_SCALE): Graph =
+        Graph(
+            listOf(
+                Node("photo", LoadImageNode.name, params = mapOf("uri" to path)),
+                Node(
+                    "upscale", name,
+                    params = mapOf(UPSCALE to "true", UPSCALER to upscalerId, SCALE to "${scale}x"),
+                    inputs = sources("media" to "photo"),
+                ),
+            )
+        )
+
     override val widgets = listOf(
         // ⭐ ON by default: placing this node IS the statement that this is the
         // result you want back, and Results is private to the app.
@@ -1711,15 +1735,18 @@ object MediaOutputNode : NodeType {
             // [UpscaleNode.MAX_OUT_EDGE] — the user's call, 2026-09-26.
             val wanted = UpscaleNode.scaleOf(params[SCALE])
             val scale = UpscaleNode.fittingScale(media.w, media.h, wanted)
+            // ⚠⚠ [NodeCtx.warn], not `say`: both succeed with a picture that is
+            // not what was asked for, and a run-log line alone was invisible —
+            // *"nothing happens"*, reported 2026-09-27.
             if (scale == null) {
-                ctx.say(
-                    "not enlarged: ${media.w}x${media.h} would pass " +
+                ctx.warn(
+                    "Not upscaled: ${media.w}x${media.h} would pass " +
                         "${UpscaleNode.MAX_OUT_EDGE} px even at 2x"
                 )
                 return media
             }
             if (scale < wanted) {
-                ctx.say("enlarged ${scale}x, not ${wanted}x — ${wanted}x would pass ${UpscaleNode.MAX_OUT_EDGE} px")
+                ctx.warn("Upscaled ${scale}x, not ${wanted}x — ${wanted}x would pass ${UpscaleNode.MAX_OUT_EDGE} px")
             }
             return UpscaleNode.upscaleTo(ctx, node.id, media, params[UPSCALER].orEmpty(), scale)
         }

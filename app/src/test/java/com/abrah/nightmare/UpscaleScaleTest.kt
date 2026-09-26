@@ -1,6 +1,7 @@
 package com.abrah.nightmare
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -21,6 +22,19 @@ class UpscaleScaleTest {
         assertEquals(2, UpscaleNode.fittingScale(2048, 2048, 4))
         assertEquals("never ABOVE the choice", 2, UpscaleNode.fittingScale(512, 512, 2))
         assertEquals("past 2048 nothing fits", null, UpscaleNode.fittingScale(2049, 1000, 4))
+    }
+
+    /**
+     * ⭐⭐ Results' Upscale built `image.upscale` for five days after that type
+     * was deleted, and failed with *unknown node type* (2026-09-27).
+     */
+    @Test
+    fun theUpscaleGraphNamesOnlyTypesThatExist() {
+        val g = MediaOutputNode.upscaleGraph("/x.png", "upscaler_realistic", 3)
+        for (n in g.nodes) assertTrue(n.type, n.type in NODE_TYPES)
+        val out = g.nodes.single { it.id == "upscale" }
+        assertTrue(MediaOutputNode.autoUpscales(out))
+        assertEquals("3x", out.params[MediaOutputNode.SCALE])
     }
 
     @Test

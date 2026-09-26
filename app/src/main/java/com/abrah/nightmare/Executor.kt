@@ -251,6 +251,15 @@ class NodeCtx(
      */
     val say: (String) -> Unit = {},
     /**
+     * ⭐⭐ A line the PERSON must see, not only the run log — the app toasts it.
+     * For a node that did not do what it was asked and still succeeded (the
+     * output's upscale refusing a picture already too big), which otherwise
+     * looks exactly like a button that did nothing. ⚠ It is also logged, so
+     * the run log keeps its record; defaulted to [say] for every construction
+     * that has no toast to give.
+     */
+    val warn: (String) -> Unit = say,
+    /**
      * ⭐⭐ Which of THIS node's output ports something downstream actually
      * reads.
      *
@@ -2600,6 +2609,8 @@ class Executor(
          * the rest of this app already relies on that.
          */
         onLog: (nodeId: String, text: String) -> Unit = { _, _ -> },
+        /** ⭐ A node telling the person something — see [NodeCtx.warn]. Already logged through [onLog]. */
+        onWarn: (nodeId: String, text: String) -> Unit = { _, _ -> },
     ): GraphRun {
         val t0 = System.nanoTime()
         fun sinceMs() = (System.nanoTime() - t0) / 1_000_000
@@ -2830,6 +2841,7 @@ class Executor(
                     host, images, android,
                     onProgress = { p -> onProgress(node.id, p.step, p.total) },
                     say = { line -> onLog(node.id, line) },
+                    warn = { line -> onLog(node.id, line); onWarn(node.id, line) },
                     wanted = wanted,
                     ancestorTypes = ancestorTypes(node.id, order),
                 )
