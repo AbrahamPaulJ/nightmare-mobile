@@ -214,8 +214,28 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val bitmaps = mutableMapOf<String, ImageBitmap>()
 
-    fun imageFor(id: String): ImageBitmap? = bitmaps.getOrPut(id) {
-        ops.images.get(id)?.asImageBitmap() ?: return null
+    fun imageFor(id: String): ImageBitmap? {
+        bitmaps[id]?.let { return it }
+        val b = ops.images.get(id)?.asImageBitmap() ?: return null
+        // ⚠⚠⚠ **Pruned to what is still LIVE.** This map only ever grew, and a
+        // preview pass mints a new full-size picture per edit — so every
+        // framed preview ever drawn stayed reachable from here: hundreds of MB
+        // of dead bitmaps for the GC to walk, which is lag (found 2026-09-24).
+        // ⚠⚠ Live = still in the store OR still referenced by the canvas. The
+        // store keeps 12 and has no disk behind it, so a picture the canvas
+        // still shows may exist ONLY here; dropping it would blank its node.
+        if (bitmaps.size >= BITMAP_CACHE) {
+            val c = canvas
+            val shown = buildSet {
+                c.previews.values.forEach { add(it.first) }
+                c.beforePreviews.values.forEach { add(it.first) }
+                addAll(c.rendered.values)
+                c.viewing?.let { add(it) }
+            }
+            bitmaps.keys.retainAll { it in ops.images || it in shown }
+        }
+        bitmaps[id] = b
+        return b
     }
 
     // ---- workflows -------------------------------------------------------
@@ -843,10 +863,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     fun setModelsVisible(on: Boolean) {
+        if (on) Perf.markModelsOpened()
         showModels = on
         if (on) {
             libraryTab = com.abrah.nightmare.ui.LibraryTab.MODELS
-            refreshModels()
+            refreshModels(offMain = true)
             // ⭐⭐⭐ An UNKNOWN chip is measured here, not left as a guess.
             //
             // ⚠⚠ This screen is where the guess does its damage: every SDXL,
@@ -892,7 +913,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // from install, delete, save and rename alike, and the one that got
         // missed would show a model as present after it was removed.
         when (t) {
-            com.abrah.nightmare.ui.LibraryTab.MODELS -> refreshModels()
+            com.abrah.nightmare.ui.LibraryTab.MODELS -> refreshModels(offMain = true)
             com.abrah.nightmare.ui.LibraryTab.FLOWS -> refreshWorkflows()
             com.abrah.nightmare.ui.LibraryTab.RESULTS -> refreshResults()
         }
@@ -974,6 +995,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         when {
             id == VIDEO_INSTALL_ID -> videoRow = videoRow?.copy(progress = p)
             id == SEGMENTER_INSTALL_ID -> segmenterRow = segmenterRow?.copy(progress = p)
+            id == PARSER_INSTALL_ID -> parserRow = parserRow?.copy(progress = p)
+            translateRows.keys.any { it.installId == id } ->
+                translateRows = translateRows.mapValues { (src, row) -> if (src.installId == id) row.copy(progress = p) else row }
             modelRows.any { it.spec.id == id } ->
                 modelRows = modelRows.map { if (it.spec.id == id) it.copy(progress = p) else it }
             upscalerRows.any { it.spec.id == id } ->
@@ -1042,6 +1066,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /** ⚠ What the shade and the toast call the thing downloading — one lookup for all four installers. */
     private fun downloadLabel(id: String): String = when (id) {
         VIDEO_INSTALL_ID -> "Video models"
+        MOVE_ID -> "Moving models"
         SEGMENTER_INSTALL_ID -> com.abrah.nightmare.segment.Segmenter.LABEL
         else -> ModelCatalog.byId(id)?.label ?: UpscalerCatalog.byId(id)?.label ?: id
     }
@@ -1070,7 +1095,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * invalidated by install, delete and cancel alike -- and the one that gets
      * missed shows a model as installed after it was removed.
      */
-    fun refreshModels() {
+    /** ⚠ Which [refreshModels] may publish — the newest one. */
+    private var rowsGen = 0
+
+    /**
+     * @param offMain ⭐ read the disk for the rows, the installed set and the
+     *   video row on a worker, and publish them when done — for OPENING the
+     *   Models tab, which blocked the main thread 240–360 ms per open
+     *   (`NmPerf`, 2026-09-27). ⚠ Every other caller keeps the synchronous
+     *   form: it may read [modelRows] on the very next line.
+     */
+    fun refreshModels(offMain: Boolean = false) {
         val ctx = getApplication<Application>()
         // ⭐⭐⭐ **The shade's backstop.** An ONGOING row with nothing
         // installing is a row nobody will ever end — and the user cannot swipe
@@ -1091,50 +1126,106 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // install that ended left one behind on every path that did not go
         // through `run`'s finally ([CrashReport]).
         if (installing == null && !busy) CrashReport.clear(ctx)
+        // ⭐ Timed per step (`adb logcat -s NmPerf`): the Models tab took ~1 s
+        // to open on 2026-09-27, and all of this runs on the main thread.
+        val t0 = System.nanoTime()
+        var lapAt = t0
+        val laps = StringBuilder()
+        fun lap(what: String) {
+            val now = System.nanoTime()
+            laps.append(" $what=").append((now - lapAt) / 1_000_000)
+            lapAt = now
+        }
         // ⚠ The upscalers ride along: this is the app's "re-read the disk"
         // entry point and a second one would be a second thing to forget.
         refreshUpscalers()
+        lap("upscalers")
         // ⚠ …and the recipes' view of what is installed, for the same reason.
-        ModelCatalog.refreshInstalled(ctx)
         refreshSegmenter()
+        lap("segmenter")
+        refreshParser()
+        lap("parser")
+        refreshTranslation()
+        lap("translation")
         refreshEmbeddings()
+        lap("embeddings")
         // ⚠⚠ …and the LoRAs. It was missed when they landed, which is exactly
         // what the comment above warns about: the list stayed empty until an
         // import happened to refresh it, so a file already in `_loras` was
         // invisible to both the Models tab and the node's picker.
         refreshLoras()
-        // ⚠ …and the video models, for the same reason. ⚠⚠ `probeVideoSupport`
-        // is NOT called here: it starts the QNN backend, which is seconds, and
-        // this runs every time the library opens. The tab asks for it itself.
-        refreshVideoModels()
-        // ⚠ …and so does the reachable-size cache, for exactly that reason. A
+        lap("loras")
+        // ⚠ …and the models folder's "still in the other place" line.
+        refreshStorage()
+        lap("storage")
+        // ⚠ The reachable-size cache, for exactly that reason. A
         // download that has just landed brings six patch files with it, and the
         // size chips read a cache rather than the disk ([SelectedModel.refresh]).
         SelectedModel.refresh(ctx)
+        lap("sizes")
         // ⚠⚠ Rescan first. A custom model directory is normally copied onto the
         // phone WHILE the app is running (adb, a file manager, a share), so the
         // catalogue read on the next line is stale by construction unless this
         // runs -- and this function is already the app's "re-read the disk"
         // entry point, called on every open of the Models tab.
         CustomModels.scan(ctx)
-        modelRows = ModelCatalog.all.map { spec ->
-            val here = spec.installed(ctx)
-            com.abrah.nightmare.ui.ModelRow(
-                spec = spec,
-                // ⚠ Recomputed per refresh rather than cached: the answer
-                // changes the first time [DeviceProbe.measure] returns, which is
-                // after the first backend start.
-                build = spec.buildFor(DeviceProbe.caps()),
-                installed = here,
-                selected = spec.id == SelectedModel.id,
-                progress = if (spec.id == installing) installProgress else null,
-                onDisk = if (here) spec.bytesOnDisk(ctx) else 0,
-                // ⚠ Only read for a custom row, but computed for every one: a
-                // conditional here would be a second place that knows what
-                // `isCustom` means, and it is one cheap `exists()` per file.
-                missing = if (here) emptyList() else spec.missing(ctx),
-            )
+        lap("scan")
+        // ⭐⭐ The disk-heavy half: every installed model's size walked, every
+        // spec's files checked, the video package's too. ⚠ Snapshot what it
+        // reads from the view model FIRST, so the worker touches only files.
+        val specs = ModelCatalog.all
+        val selected = SelectedModel.id
+        val caps = DeviceProbe.caps()
+        val gen = ++rowsGen
+        val read: () -> Triple<List<com.abrah.nightmare.ui.ModelRow>, List<String>, VideoDisk> = {
+            val rows =
+            specs.map { spec ->
+                val here = spec.installed(ctx)
+                com.abrah.nightmare.ui.ModelRow(
+                    spec = spec,
+                    // ⚠ Recomputed per refresh rather than cached: the answer
+                    // changes the first time [DeviceProbe.measure] returns, which is
+                    // after the first backend start.
+                    build = spec.buildFor(caps),
+                    installed = here,
+                    selected = spec.id == selected,
+                    progress = null,
+                    onDisk = if (here) spec.bytesOnDisk(ctx) else 0,
+                    // ⚠ Only read for a custom row, but computed for every one: a
+                    // conditional here would be a second place that knows what
+                    // `isCustom` means, and it is one cheap `exists()` per file.
+                    missing = if (here) emptyList() else spec.missing(ctx),
+                    partial = !here && spec.partial(ctx),
+                    fetchBytes = if (here) 0L else spec.fetchBytes(ctx, spec.buildFor(caps)),
+                )
+            }
+            Triple(rows, rows.filter { it.installed }.map { it.spec.id }, readVideoDisk())
         }
+        val publish: (Triple<List<com.abrah.nightmare.ui.ModelRow>, List<String>, VideoDisk>) -> Unit = { (rows, ids, video) ->
+            // ⚠ A later refresh wins; an older one landing late must not undo it.
+            if (gen == rowsGen) {
+                // ⚠ Progress read NOW, not at the snapshot: a download ticking
+                // while the worker ran must not be shown as stopped.
+                modelRows = rows.map { if (it.spec.id == installing) it.copy(progress = installProgress) else it }
+                ModelCatalog.installedIds = ids
+                // ⚠ …and the video models, for the same reason. ⚠⚠
+                // `probeVideoSupport` is NOT called here: it starts the QNN
+                // backend, which is seconds, and this runs on every open.
+                refreshVideoModels(video)
+            }
+        }
+        if (offMain) {
+            viewModelScope.launch {
+                val t1 = System.nanoTime()
+                val got = withContext(Dispatchers.IO) { read() }
+                publish(got)
+                android.util.Log.i(Perf.TAG, "refreshModels rows off main: ${(System.nanoTime() - t1) / 1_000_000} ms")
+            }
+        } else {
+            publish(read())
+        }
+        lap("rows")
+        android.util.Log.i(Perf.TAG, "refreshModels${if (offMain) " (rows off main)" else ""} ${(System.nanoTime() - t0) / 1_000_000} ms:$laps")
     }
 
 
@@ -1370,6 +1461,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     private val VIDEO_INSTALL_ID = "\u0000video"
 
+    /** ⚠ A models-folder move holds the same one-at-a-time latch a download does. */
+    private val MOVE_ID = "\u0000move"
+
     fun refreshUpscalers() {
         val ctx = getApplication<Application>()
         // ⚠ The node's dropdown reads a cache, not the disk -- refresh it here,
@@ -1407,17 +1501,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     private var videoSupported: Boolean? = null
 
-    fun refreshVideoModels() {
+    /** ⭐ What the video row reads from DISK — split out so [refreshModels] can read it on a worker. */
+    data class VideoDisk(val installedBytes: Long, val missing: List<String>, val weightsMissing: List<String>)
+
+    private fun readVideoDisk(): VideoDisk {
         val ctx = getApplication<Application>()
         val vi = com.abrah.nightmare.npu.VideoInstaller
+        // ⚠ The INSTALLER's check, which is size-aware — `NpuFiles`'s only
+        // asks whether the file exists, which is the right question for a
+        // render and the wrong one for a download that may have truncated.
+        return VideoDisk(vi.installedBytes(ctx), vi.missing(ctx), vi.missingAssets(ctx))
+    }
+
+    fun refreshVideoModels(disk: VideoDisk? = null) {
+        val d = disk ?: readVideoDisk()
+        val vi = com.abrah.nightmare.npu.VideoInstaller
         videoRow = com.abrah.nightmare.ui.VideoRow(
-            installedBytes = vi.installedBytes(ctx),
+            installedBytes = d.installedBytes,
             totalBytes = vi.totalBytes,
-            missing = vi.missing(ctx),
-            // ⚠ The INSTALLER's check, which is size-aware — `NpuFiles`'s only
-            // asks whether the file exists, which is the right question for a
-            // render and the wrong one for a download that may have truncated.
-            weightsMissing = vi.missingAssets(ctx),
+            missing = d.missing,
+            weightsMissing = d.weightsMissing,
             supported = videoSupported,
             progress = if (installing == VIDEO_INSTALL_ID) installProgress else null,
         )
@@ -1574,7 +1677,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * racing for it is the thing that latch exists to stop. ⚠ An upscaler binds
      * no context key, so it runs in whichever backend is up.
      */
-    fun upscaleResult(id: String, upscalerId: String) {
+    fun upscaleResult(id: String, upscalerId: String, scale: Int = UpscaleNode.NATIVE_SCALE) {
         val spec = UpscalerCatalog.byId(upscalerId) ?: return
         val file = results.imageFile(id)
         if (!file.isFile) {
@@ -1592,7 +1695,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 ),
                 com.abrah.nightmare.Node(
                     "upscale", "image.upscale",
-                    params = mapOf(UpscaleNode.UPSCALER to upscalerId),
+                    params = mapOf(UpscaleNode.UPSCALER to upscalerId, UpscaleNode.SCALE to "${scale}x"),
                     inputs = com.abrah.nightmare.sources("image" to "photo"),
                 ),
             )
@@ -1652,7 +1755,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * ⚠ The inserted node STAYS (the user's call): it is an ordinary edit,
      * deletable, and saved with the flow.
      */
-    fun upscaleFromNode(nodeId: String, upscalerId: String) {
+    fun upscaleFromNode(nodeId: String, upscalerId: String, scale: Int = UpscaleNode.NATIVE_SCALE) {
         upscaleNodePick = null
         val node = canvas.workflow.graph.byId[nodeId] ?: return
         if (node.type != MediaOutputNode.name) {
@@ -1693,6 +1796,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             mapOf(
                 MediaOutputNode.UPSCALE to "true",
                 MediaOutputNode.UPSCALER to upscalerId,
+                MediaOutputNode.SCALE to "${scale}x",
             ),
         )
         // ⚠ Only when it is actually loose. A seed already typed in is the
@@ -1760,6 +1864,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             override val installId get() = "\u0000segmenter"
         }
 
+        /** ⚠ A different download to [Segment] — see `Parser.LABEL`. */
+        data object Parse : MissingModel {
+            override val label get() = com.abrah.nightmare.segment.Parser.LABEL
+            override val installId get() = "parser-tool"
+        }
+
         data class Upscale(val spec: UpscalerSpec) : MissingModel {
             override val label get() = spec.label
             override val installId get() = spec.id
@@ -1778,6 +1888,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             override val label get() = com.abrah.nightmare.DitEngine.LABEL
             override val installId get() = "\u0000ditengine"
         }
+
+        /** ⭐ A prompt's translation model (`docs/TRANSLATE.md`) — asked at the first tap. */
+        data class Translate(val source: com.abrah.nightmare.PromptTranslate.Source) : MissingModel {
+            override val label get() = source.name
+            override val installId get() = source.installId
+        }
     }
 
     var missingModel by mutableStateOf<MissingModel?>(null)
@@ -1785,10 +1901,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     /** ⭐ Bytes the download will cost, for the popup's sentence. */
     fun missingBytes(m: MissingModel): Long = when (m) {
-        is MissingModel.Checkpoint -> m.offer.buildFor(DeviceProbe.caps())?.bytes ?: m.offer.best?.bytes ?: 0L
+        // ⭐ What the fetch will actually cost — only the missing files of a
+        // damaged DiT package ([ModelSpec.fetchBytes]).
+        is MissingModel.Checkpoint ->
+            (m.offer.buildFor(DeviceProbe.caps()) ?: m.offer.best).let { m.offer.fetchBytes(getApplication(), it) }
         MissingModel.Segment -> com.abrah.nightmare.segment.Segmenter.BYTES
+        MissingModel.Parse -> com.abrah.nightmare.segment.Parser.BYTES
         is MissingModel.Upscale -> m.spec.buildFor(DeviceProbe.caps())?.bytes ?: 0L
         MissingModel.Engine -> com.abrah.nightmare.DitEngine.BYTES
+        is MissingModel.Translate -> m.source.bytes
+    }
+
+    /**
+     * ⭐ The files a damaged built-in is missing — non-empty means the popup
+     * offers a REPAIR and names them. Empty for a model never downloaded.
+     */
+    fun repairOf(m: MissingModel): List<String> {
+        val ctx = getApplication<Application>()
+        val c = m as? MissingModel.Checkpoint ?: return emptyList()
+        if (c.substitute || !c.offer.partial(ctx)) return emptyList()
+        return c.offer.missing(ctx)
     }
 
     /** ⭐ The download's progress, for the popup. Null when not fetching it. */
@@ -1801,8 +1933,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             null -> false
             is MissingModel.Checkpoint -> modelRows.any { it.spec.id == m.offer.id && it.installed }
             MissingModel.Segment -> segmenterRow?.installed == true
+            MissingModel.Parse -> parserRow?.installed == true
             is MissingModel.Upscale -> upscalerRows.any { it.spec.id == m.spec.id && it.installed }
             MissingModel.Engine -> com.abrah.nightmare.DitEngine.installed
+            is MissingModel.Translate -> translateRows[m.source]?.installed == true
         }
 
     /**
@@ -1831,6 +1965,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 continue
             }
+            // ⚠⚠ A model half-way through a folder move is ON the phone: never
+            // offer to download it again (the user's call, 2026-09-27).
+            if (ModelStorage.strandedModel(ctx, id)) {
+                runError = "${spec?.label ?: id} is partly still in the other models folder — " +
+                    "finish the move in Settings → Downloads"
+                return false
+            }
             val offer = spec?.takeIf { !it.isCustom && it.buildFor(caps) != null }
                 ?: ModelCatalog.all.firstOrNull { it.family == t.family && !it.isCustom && it.buildFor(caps) != null }
                 ?: continue
@@ -1855,6 +1996,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (needsSegmenter && !com.abrah.nightmare.segment.Segmenter.isInstalled(ctx)) {
             missingModel = MissingModel.Segment
+            return false
+        }
+        // ⚠ Same rule as the taps above, and the same trap it warns about: a
+        // TICKED checkbox demands nothing, a mask holding a Pick does.
+        val needsParser = graph.nodes.any { n ->
+            n.type in com.abrah.nightmare.INPAINT_TYPES &&
+                com.abrah.nightmare.MaskTaps.hasPicks(com.abrah.nightmare.MaskNode.stateOf(n))
+        }
+        if (needsParser && !com.abrah.nightmare.segment.Parser.isInstalled(ctx)) {
+            missingModel = MissingModel.Parse
             return false
         }
         // ⭐ Upscalers an OUTPUT node names — `image.upscale` is deleted, and the
@@ -1884,8 +2035,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 installModel(m.offer)
             }
             MissingModel.Segment -> installSegmenter()
+            MissingModel.Parse -> installParser()
             is MissingModel.Upscale -> installUpscaler(m.spec)
             MissingModel.Engine -> installDitEngine()
+            is MissingModel.Translate -> installTranslation(m.source)
         }
     }
 
@@ -1950,6 +2103,371 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     installProgress = null
                     refreshSegmenter()
                 }
+            }
+        }
+    }
+
+    // ---- the parser (docs/SEGMENTER.md §8) ---------------------------------
+
+    /**
+     * ⭐ The Tools tab's SECOND row. Shares the one-download latch with the
+     * segmenter and the upscalers, so two cannot run at once.
+     */
+    var parserRow by mutableStateOf<com.abrah.nightmare.ui.ToolRow?>(null)
+        private set
+
+    private val PARSER_INSTALL_ID = MissingModel.Parse.installId
+
+    fun refreshParser() {
+        val ctx = getApplication<Application>()
+        val par = com.abrah.nightmare.segment.Parser
+        par.refresh(ctx)
+        parserRow = com.abrah.nightmare.ui.ToolRow(
+            label = par.LABEL,
+            bytes = par.BYTES,
+            installed = par.installed,
+            onDisk = if (par.installed) par.bytesOnDisk(ctx) else 0L,
+            progress = if (installing == PARSER_INSTALL_ID) installProgress else null,
+        )
+    }
+
+    fun installParser() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        installing = PARSER_INSTALL_ID
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, com.abrah.nightmare.segment.Parser.BYTES)
+        refreshParser()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                com.abrah.nightmare.segment.Parser.install(
+                    ctx,
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch {
+                    say("installed ${com.abrah.nightmare.segment.Parser.LABEL}")
+                    downloadSucceeded(com.abrah.nightmare.segment.Parser.LABEL)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(com.abrah.nightmare.segment.Parser.LABEL, modelError!!)
+                    say("install failed — $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshParser()
+                }
+            }
+        }
+    }
+
+    fun deleteParser() {
+        com.abrah.nightmare.segment.Parser.delete(getApplication())
+        say("deleted ${com.abrah.nightmare.segment.Parser.LABEL}")
+        refreshParser()
+    }
+
+    // ---- prompt translation (docs/TRANSLATE.md) ----------------------------
+
+    /**
+     * ⭐ Settings' Translation rows — one per language, the same [ToolRow] the
+     * segmenter and parser use, on the same one-download latch.
+     */
+    var translateRows by mutableStateOf<Map<com.abrah.nightmare.PromptTranslate.Source, com.abrah.nightmare.ui.ToolRow>>(emptyMap())
+        private set
+
+    fun refreshTranslation() {
+        val ctx = getApplication<Application>()
+        val tr = com.abrah.nightmare.PromptTranslate
+        translateRows = com.abrah.nightmare.PromptTranslate.Source.entries.associateWith { src ->
+            val here = tr.installed(ctx, src)
+            com.abrah.nightmare.ui.ToolRow(
+                label = ctx.getString(
+                    if (src == com.abrah.nightmare.PromptTranslate.Source.RU) com.abrah.nightmare.R.string.translate_ru
+                    else com.abrah.nightmare.R.string.translate_zh,
+                ),
+                bytes = src.bytes,
+                installed = here,
+                onDisk = if (here) tr.bytesOnDisk(ctx, src) else 0L,
+                progress = if (installing == src.installId) installProgress else null,
+            )
+        }
+    }
+
+    /**
+     * ⭐ The prompt a tap asked to translate while its model was missing —
+     * translated the moment the download lands, so the user does not tap twice.
+     */
+    private var pendingTranslation: Triple<String, String, (String) -> Unit>? = null
+
+    fun installTranslation(source: com.abrah.nightmare.PromptTranslate.Source) {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        installing = source.installId
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, source.bytes)
+        refreshTranslation()
+        val label = translateRows[source]?.label ?: source.name
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                com.abrah.nightmare.PromptTranslate.install(
+                    ctx, source,
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch {
+                    say("installed $label")
+                    downloadSucceeded(label)
+                    installing = null
+                    installProgress = null
+                    refreshTranslation()
+                    pendingTranslation?.let { (node, param, done) ->
+                        pendingTranslation = null
+                        if (missingModel is MissingModel.Translate) missingModel = null
+                        translatePrompt(node, param, done)
+                    }
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch { downloadCancelled(); say("download cancelled", bad = true) }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(label, modelError!!)
+                    say("install failed — $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshTranslation()
+                }
+            }
+        }
+    }
+
+    fun deleteTranslation(source: com.abrah.nightmare.PromptTranslate.Source) {
+        viewModelScope.launch {
+            com.abrah.nightmare.PromptTranslate.delete(getApplication(), source)
+            say("deleted ${translateRows[source]?.label ?: source.name}")
+            refreshTranslation()
+        }
+    }
+
+    /**
+     * ⭐⭐ Translate [param] of [nodeId] into English and write it back
+     * (`docs/TRANSLATE.md`). [done] gets the new text, for a field holding its
+     * own copy while focused. ⚠ A missing model asks with the SAME popup a
+     * missing checkpoint does ([MissingModel.Translate]) and translates when it
+     * lands.
+     */
+    fun translatePrompt(nodeId: String, param: String, done: (String) -> Unit = {}) {
+        val ctx = getApplication<Application>()
+        val text = canvas.workflow.graph.byId[nodeId]?.params?.get(param) ?: return
+        val source = com.abrah.nightmare.PromptTranslate.detect(text) ?: return
+        if (!com.abrah.nightmare.PromptTranslate.installed(ctx, source)) {
+            pendingTranslation = Triple(nodeId, param, done)
+            refreshTranslation()
+            missingModel = MissingModel.Translate(source)
+            return
+        }
+        viewModelScope.launch {
+            val out = runCatching { com.abrah.nightmare.PromptTranslate.translate(ctx, text, source) }
+            out.onSuccess { english ->
+                editCanvas { s -> s.setParam(nodeId, param, english) }
+                done(english)
+            }.onFailure { e ->
+                toast(ctx.getString(com.abrah.nightmare.R.string.translate_failed, e.message ?: e.javaClass.simpleName))
+            }
+        }
+    }
+
+    // ---- the models folder (ModelStorage) ----------------------------------
+
+    /** ⭐ Where models live now — Settings → Downloads' two radios. */
+    var modelsPlace by mutableStateOf(ModelStorage.place(app))
+        private set
+
+    /** ⚠ Re-read on resume: the only way it changes is the system page we open. */
+    var storageAccess by mutableStateOf(ModelStorage.hasAccess())
+        private set
+
+    /**
+     * ⭐ What is still in the place NOT chosen — (items, bytes). A move that
+     * was interrupted, or a `Download/Nightmare` that outlived an uninstall,
+     * shows here with a Move button rather than being silently invisible.
+     */
+    var strandedModels by mutableStateOf(0 to 0L)
+        private set
+
+    /** ⭐ A move waiting for its confirm — where to, and what it will carry. */
+    data class MovePlan(val to: ModelStorage.Place, val count: Int, val bytes: Long)
+
+    var movePlan by mutableStateOf<MovePlan?>(null)
+        private set
+
+    /** ⭐ Set when the system's All files access page must be opened; MainActivity does it. */
+    var wantStorageAccess by mutableStateOf(false)
+        private set
+
+    private var pendingPlace: ModelStorage.Place? = null
+
+    /** ⭐ The move's progress, for its card. Null when not moving. */
+    val moveProgress: ModelInstaller.Progress?
+        get() = if (installing == MOVE_ID) installProgress else null
+
+    fun refreshStorage() {
+        val ctx = getApplication<Application>()
+        storageAccess = ModelStorage.hasAccess()
+        modelsPlace = ModelStorage.place(ctx)
+        val other = if (modelsPlace == ModelStorage.Place.APP) ModelStorage.Place.DOWNLOAD else ModelStorage.Place.APP
+        viewModelScope.launch {
+            // ⚠ Without access, `Download/` lists only what this install wrote —
+            // a partial answer is worse than none here.
+            strandedModels = withContext(Dispatchers.IO) {
+                if (other == ModelStorage.Place.DOWNLOAD && !ModelStorage.hasAccess()) 0 to 0L
+                else ModelStorage.contents(ctx, other).let { it.size to it.sumOf { p -> p.second } }
+            }
+        }
+    }
+
+    /**
+     * ⭐⭐ Pick where models live. `Download/` needs All files access first,
+     * asked HERE and nowhere else — the user's call, 2026-09-26. Anything in
+     * the other place is offered as a move ([movePlan]); nothing there means
+     * the switch is immediate.
+     */
+    fun chooseModelsPlace(to: ModelStorage.Place) {
+        if (working) { say("finish the current run or download first", bad = true); return }
+        val ctx = getApplication<Application>()
+        if (to == ModelStorage.Place.DOWNLOAD && !ModelStorage.hasAccess()) {
+            pendingPlace = to
+            wantStorageAccess = true
+            return
+        }
+        val from = if (to == ModelStorage.Place.APP) ModelStorage.Place.DOWNLOAD else ModelStorage.Place.APP
+        viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) {
+                if (from == ModelStorage.Place.DOWNLOAD && !ModelStorage.hasAccess()) emptyList()
+                else ModelStorage.contents(ctx, from)
+            }
+            if (items.isEmpty()) {
+                if (to != ModelStorage.place(ctx)) {
+                    ModelStorage.setPlace(ctx, to)
+                    say("models now live in ${ModelStorage.rootFor(ctx, to).absolutePath}")
+                    refreshModels()
+                }
+                refreshStorage()
+            } else {
+                movePlan = MovePlan(to, items.size, items.sumOf { it.second })
+            }
+        }
+    }
+
+    fun storageAccessPageOpened() { wantStorageAccess = false }
+
+    /** ⚠ Called on RESUME: continue the choice that sent the person to the system page. */
+    fun storageAccessReturned() {
+        storageAccess = ModelStorage.hasAccess()
+        val p = pendingPlace ?: return
+        pendingPlace = null
+        if (storageAccess) chooseModelsPlace(p)
+        else say("All files access was not granted — models stay in app storage", bad = true)
+    }
+
+    fun dismissMove() { movePlan = null }
+
+    /**
+     * ⭐⭐ Carry the models over. ⚠ The PLACE switches first, so what has
+     * landed is used at once and an interruption leaves the rest as a
+     * "still in …" line with a Move button, never a model nobody can find.
+     * ⚠ The backend is stopped: it holds a model directory open by path.
+     */
+    fun confirmMove() {
+        val plan = movePlan ?: return
+        movePlan = null
+        startMove(plan)
+    }
+
+    /**
+     * ⭐⭐ A move the app was killed in the middle of, finished at the next
+     * launch without asking again — the person already said Move.
+     * ⚠ Needs All files access when `Download/` is either end; without it the
+     * marker is dropped and the Settings line with its Move button remains.
+     */
+    private fun resumeMove() {
+        val ctx = getApplication<Application>()
+        val from = ModelStorage.pendingMove(ctx) ?: return
+        val to = if (from == ModelStorage.Place.APP) ModelStorage.Place.DOWNLOAD else ModelStorage.Place.APP
+        if (!ModelStorage.hasAccess()) {
+            ModelStorage.setPendingMove(ctx, null)
+            say("a models move was interrupted and cannot resume without All files access", bad = true)
+            return
+        }
+        viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) { ModelStorage.contents(ctx, from) }
+            if (items.isEmpty()) { ModelStorage.setPendingMove(ctx, null); return@launch }
+            say("resuming the interrupted models move — ${items.size} item(s) left")
+            startMove(MovePlan(to, items.size, items.sumOf { it.second }))
+        }
+    }
+
+    private fun startMove(plan: MovePlan) {
+        if (working) { say("finish the current run or download first", bad = true); return }
+        val ctx = getApplication<Application>()
+        val from = if (plan.to == ModelStorage.Place.APP) ModelStorage.Place.DOWNLOAD else ModelStorage.Place.APP
+        installing = MOVE_ID
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, plan.bytes)
+        viewModelScope.launch {
+            try {
+                ops.stopBackend()
+                // ⭐ Held up like a resident model — AFTER the stop, which
+                // stops the keep-alive with the backend.
+                BackendKeepAliveService.start(ctx, "moving models")
+                ModelStorage.setPendingMove(ctx, from)
+                ModelStorage.setPlace(ctx, plan.to)
+                modelsPlace = plan.to
+                val kept = withContext(Dispatchers.IO) {
+                    ModelStorage.move(
+                        ctx, from, plan.to,
+                        onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                        isCancelled = { cancelInstall },
+                    )
+                }
+                ModelStorage.setPendingMove(ctx, null)
+                downloadSucceeded("Moving models")
+                say(
+                    "moved ${plan.count} item(s) to ${ModelStorage.rootFor(ctx, plan.to).absolutePath}" +
+                        if (kept.isEmpty()) "" else " — ${kept.size} file(s) were already there and stay behind",
+                )
+            } catch (e: ModelInstaller.Cancelled) {
+                // ⚠ Stopped on purpose: nothing to resume at next launch.
+                ModelStorage.setPendingMove(ctx, null)
+                downloadCancelled()
+                say("move stopped — what moved is in use, the rest is listed in Settings", bad = true)
+            } catch (e: Exception) {
+                modelError = e.message ?: e.javaClass.simpleName
+                ModelStorage.setPendingMove(ctx, null)
+                downloadFailed("Moving models", modelError!!)
+                say("move failed — $modelError", bad = true)
+            } finally {
+                BackendKeepAliveService.stop(ctx)
+                installing = null
+                installProgress = null
+                refreshModels()
+                refreshStorage()
             }
         }
     }
@@ -2739,6 +3257,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             canvasStatus.remove(id)
             pendingAutoFrame.remove(id)
             previewSigs.remove(id)
+            framedSigs.remove(id)
+            framedPending.remove(id)
+            framedJobs.remove(id)?.cancel()
+            objectRenders.remove(id)
         }
         updateCanvas(after)
     }
@@ -2881,7 +3403,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (fw > 0 && fh > 0) {
             out.putAll(
                 com.abrah.nightmare.canvas.wholePhotoFraming(
-                    photoW, photoH, fw.toFloat() / fh, com.abrah.nightmare.padRuleFor(node.type),
+                    photoW, photoH, fw.toFloat() / fh, com.abrah.nightmare.padRuleOf(node),
                 ).asParams().toMap()
             )
         }
@@ -2908,6 +3430,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val node = canvas.workflow.graph.byId[id]
         val made = canvas.pictureInto(id, nodeTypes)?.let { ops.images.get(it) }
         var next = canvas
+        // ⚠⚠ Rule CHANGED 2026-09-23, at the user's ask: an inpaint node with
+        // Enable auto mask ticked reads its own chips
+        // ([com.abrah.nightmare.MaskNode.opsOf]). That is not the full mask
+        // below: it is the person's own last choice, and a pick that finds
+        // nothing still refuses at Run by name.
         // ⚠⚠ **No auto-fill.** Tried 2026-09-18 (a full mask written into
         // [MaskNode.OPS] the moment this opened) and reverted the same day —
         // *"lets not do the full masking thing for inpaint... if user doesnt
@@ -2993,11 +3520,34 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val photo = ops.images.get(srcId) ?: continue
             pendingAutoFrame.remove(sid)
             val params = autoFraming(s, photo)
-            canvas = canvas.setParams(sid, params).copy(
-                editing = sid,
-                cropRequest = sid to ((canvas.cropRequest?.second ?: 0) + 1),
-                cropRequestTab = 0,
-            )
+            // ⭐⭐⭐ **Enable auto crop / Enable auto mask** — the user's calls,
+            // 2026-09-23. The framing above IS auto crop (the whole photo,
+            // padded as the node's rule allows); what the two ticks decide is
+            // which window, if any, opens after it:
+            //   both ticked      → none; the chips are read in the background
+            //                      and the mask window opens only if they find
+            //                      nothing ([warmPicks])
+            //   crop only, inpaint → straight to the MASK tab: painting is left
+            //   crop only, i2i     → none
+            //   neither            → the crop tab, as before
+            val autoCrop = s.params[com.abrah.nightmare.SdSampler.AUTO_CROP].equals("true", ignoreCase = true)
+            val inpaint = s.type in com.abrah.nightmare.INPAINT_TYPES
+            val autoMask = inpaint &&
+                s.params[com.abrah.nightmare.SdSampler.PICK_SELECT].equals("true", ignoreCase = true)
+            canvas = canvas.setParams(sid, params)
+            when {
+                !autoCrop -> canvas = canvas.copy(
+                    editing = sid,
+                    cropRequest = sid to ((canvas.cropRequest?.second ?: 0) + 1),
+                    cropRequestTab = 0,
+                )
+                inpaint && !autoMask -> canvas = canvas.copy(
+                    editing = sid,
+                    cropRequest = sid to ((canvas.cropRequest?.second ?: 0) + 1),
+                    cropRequestTab = 1,
+                )
+                autoMask -> autoMaskCheck += sid
+            }
             say("$sid: fitted to the new picture — ${params.filterKeys { it in setOf("width", "height", "aspect") }.values.joinToString("x")}")
             saveWorkflow()
         }
@@ -3146,16 +3696,84 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     mask.ops + com.abrah.nightmare.MaskOp.Tap(x, y, found.default)
                 }
-                val values = mutableMapOf(com.abrah.nightmare.MaskNode.OPS to mask.copy(ops = ops).encode())
-                // ⭐ The first tap gives the mask DreamUI's slack: a region traces
-                // the object's true edge, and repainting exactly to it leaves a
-                // halo. `MaskState.growFrac` defaults to zero only for brushes.
-                if (hit == null && (live.params["grow"]?.toFloatOrNull() ?: 0f) == 0f) {
-                    values["grow"] = TAP_GROW.toString()
-                }
-                s.setParams(nodeId, values)
+                // ⚠ No grow is written here any more: the node's own default is
+                // DreamUI's 10/512 slack ([MaskNode.GROW_DEFAULT]), and writing it
+                // on the first tap overwrote a grow set to 0 on purpose.
+                s.setParams(nodeId, mapOf(com.abrah.nightmare.MaskNode.OPS to mask.copy(ops = ops).encode()))
             }
             done(null)
+        }
+    }
+
+    /**
+     * ⭐⭐ Toggle a target picked BY NAME on an inpaint node's mask
+     * (`docs/SEGMENTER.md` §8). Selected chips ARE the picks in the mask, so
+     * this is the whole of the chip row's behaviour.
+     *
+     * ⭐⭐⭐ **Turning one OFF costs nothing and must never touch the model.**
+     * The op is removed by name; there is no parse, no wait and no failure
+     * path. A chip that took 500 ms to clear would read as broken.
+     *
+     * ⚠ The same "say it is loading before it starts" the first tap gets, and
+     * for the same reason — the first pick on a picture is ~1 s (open + one
+     * pass) and looked like nothing happening ([Parser.isWarm]).
+     *
+     * ⚠⚠ A target that is not in the picture is reported BY NAME rather than
+     * added as an empty op. The parser fails by finding nothing, and an op that
+     * rasterises to nothing is indistinguishable from a mask that did not
+     * apply — exactly the silence `../LocalDream/docs/TEXT-EDIT.md` §2 warns
+     * about for CLIPSeg.
+     */
+    fun pickMask(nodeId: String, target: String, done: (String?) -> Unit) {
+        val ctx = getApplication<Application>()
+        val node = canvas.workflow.graph.byId[nodeId] ?: return done(null)
+        val par = com.abrah.nightmare.segment.Parser
+        val label = par.target(target)?.label ?: target
+        // ⚠ The chips are the node's `pick_targets` and nothing else
+        // ([com.abrah.nightmare.MaskNode.opsOf]) — toggling one edits that list.
+        val current = com.abrah.nightmare.MaskNode.pickTargets(node.params)
+        if (target in current) {
+            rememberPicks(nodeId, current - target)
+            return done(null)
+        }
+        val photo = canvas.pictureInto(nodeId, nodeTypes)?.let { ops.images.get(it) }
+            ?: return done("no picture to pick from yet — choose one on the image node")
+        if (!par.isInstalled(ctx)) {
+            return done("download ${par.LABEL} in Models, Tools, to auto segment")
+        }
+        if (!par.isWarm(photo)) toast(ctx.getString(R.string.parser_loading))
+        viewModelScope.launch {
+            val found = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                runCatching { par.pick(ctx, photo, target) }
+            }.getOrElse {
+                say("pick failed — ${it.message}", bad = true)
+                return@launch done("could not pick: ${it.message ?: it.javaClass.simpleName}")
+            }
+            if (found == null) {
+                return@launch done("no $label in this picture")
+            }
+            rememberPicks(nodeId, com.abrah.nightmare.MaskNode.pickTargets(
+                canvas.workflow.graph.byId[nodeId]?.params.orEmpty(),
+            ) + target)
+            done(null)
+        }
+    }
+
+    private fun pickedIn(mask: com.abrah.nightmare.MaskState): List<String> =
+        mask.ops.filterIsInstance<com.abrah.nightmare.MaskOp.Pick>().map { it.target }.distinct()
+
+    /**
+     * ⭐⭐ The chip set, saved on the NODE — so it is remembered for that flow
+     * and re-applied to the next photo ([com.abrah.nightmare.MaskNode.opsOf]).
+     * ⚠ A legacy `head` is saved as `face`, the chip that replaced it.
+     */
+    private fun rememberPicks(nodeId: String, ids: List<String>) {
+        editCanvas { s ->
+            s.setParam(
+                nodeId,
+                com.abrah.nightmare.SdSampler.PICK_TARGETS,
+                ids.map { if (it == "head") "face" else it }.distinct().joinToString(","),
+            )
         }
     }
 
@@ -4828,70 +5446,64 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // preview below is drawn from the fitted framing, not the old one.
         applyPendingAutoFrames()
         val graph = canvas.workflow.graph
-        val shown = graph.nodes
-            .filter { it.type in com.abrah.nightmare.FRAMING_TYPES }
-            .mapNotNull { n ->
-                val srcId = canvas.pictureInto(n.id, nodeTypes) ?: return@mapNotNull null
-                val src = ops.images.get(srcId) ?: return@mapNotNull null
-                val p = com.abrah.nightmare.applyDefaults(nodeTypes[n.type]?.widgets.orEmpty(), n)
-                fun f(k: String, d: Float) = p[k]?.toFloatOrNull() ?: d
-                runCatching {
-                    // ⚠⚠ `framingOutSize` — the SAME function the crop editor,
-                    // the mask editor and the sampler's own cut ask. This read
-                    // width/height directly, so on SDXL with a 2:3 aspect the
-                    // node (and its fullscreen view) showed a 1:1 framing while
-                    // every editor showed 2:3 (reported 2026-09-17). The video
-                    // sampler's encoder size comes through `framesTo` as well.
-                    val (outW, outH) = com.abrah.nightmare.canvas.framingOutSize(n, nodeTypes[n.type])
-                    var bmp = com.abrah.nightmare.CropNode.render(
-                        src, f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f),
-                        outW, outH, p[com.abrah.nightmare.CropNode.PAD] ?: com.abrah.nightmare.CropNode.PAD_BLACK,
-                    ).first
-                    // ⭐ …and the painting on top, so the node shows what the
-                    // Mask editor shows. ⚠ Translucent: the picture underneath
-                    // is what makes the mask legible as a REGION of it.
-                    val ops0 = p[com.abrah.nightmare.MaskNode.OPS].orEmpty()
-                    if (n.type in com.abrah.nightmare.INPAINT_TYPES && ops0.isNotBlank()) {
-                        // ⚠ Taps from the CACHE only: this runs on the main
-                        // thread, and a tap made in this session is already there.
-                        val state = com.abrah.nightmare.MaskTaps.resolve(
-                            com.abrah.nightmare.MaskState.decode(ops0).copy(
-                                growFrac = f("grow", 0f), featherFrac = f("feather", 0.02f),
-                            ),
-                        ) { x, y -> com.abrah.nightmare.segment.Segmenter.cached(src, x, y)?.candidates }
-                        // ⚠⚠ `bmp` is the FRAMED picture and the mask is stored
-                        // against the PHOTO, so it is converted here exactly as
-                        // the editor converts it ([MaskFraming]). Rasterising
-                        // the stored ops straight into a framed bitmap draws
-                        // the painting the crop's own offset away from where it
-                        // will be repainted — the 2026-09-16 bug, as a preview.
-                        // ⚠⚠ The editor's RED overlay, not the raw white mask —
-                        // the node must look like the editor (the user, 2026-09-17).
-                        // One function draws both ([MaskRaster.overlay]).
-                        val mask = com.abrah.nightmare.MaskRaster.overlay(
-                            com.abrah.nightmare.MaskFraming.toFrame(
-                                state, f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f),
-                            ),
-                            bmp.width, bmp.height, com.abrah.nightmare.MaskRaster.OVERLAY_RGB,
-                        )
-                        val out = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
-                        android.graphics.Canvas(out).drawBitmap(
-                            mask, 0f, 0f,
-                            android.graphics.Paint().apply { alpha = com.abrah.nightmare.MaskRaster.OVERLAY_ALPHA },
-                        )
-                        bmp = out
-                    }
-                    // ⭐ …and the OUTPAINT padding in blue, as the editors show it.
-                    if (com.abrah.nightmare.padRuleFor(n.type) == com.abrah.nightmare.PadRule.OUTPAINT) {
-                        com.abrah.nightmare.CropGeometry.photoInFrame(f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f))
-                            ?.let { pad ->
-                                if (!bmp.isMutable) bmp = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
-                                com.abrah.nightmare.MaskRaster.paintPadding(bmp, pad)
-                            }
-                    }
-                    n.id to (ops.images.put(bmp) to bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
-                }.getOrNull()
+        val parseEpoch = com.abrah.nightmare.segment.Parser.epoch
+        val tapEpoch = com.abrah.nightmare.segment.Segmenter.epoch
+        for (n in graph.nodes) {
+            if (n.type !in com.abrah.nightmare.FRAMING_TYPES) continue
+            val srcId = canvas.pictureInto(n.id, nodeTypes) ?: continue
+            val src = ops.images.get(srcId) ?: continue
+            val p = com.abrah.nightmare.applyDefaults(nodeTypes[n.type]?.widgets.orEmpty(), n)
+            // ⚠⚠ `framingOutSize` — the SAME function the crop editor, the mask
+            // editor and the sampler's own cut ask. This read width/height
+            // directly, so on SDXL with a 2:3 aspect the node (and its
+            // fullscreen view) showed a 1:1 framing while every editor showed
+            // 2:3 (reported 2026-09-17).
+            val (outW, outH) = com.abrah.nightmare.canvas.framingOutSize(n, nodeTypes[n.type])
+            // ⭐⭐ Add Objects: the objects pasted on, and Layer 2 as mask —
+            // from [objectRenders], filled in the background. ⚠ The SAME render
+            // the sampler runs.
+            val objectRender = objectRenderFor(n, srcId, src, p)
+            // ⭐⭐⭐ **Skipped unless something it DRAWS changed.** Every edit —
+            // every stroke, every keystroke in a prompt two nodes away — runs
+            // this pass, and it re-rendered every framing node at the full
+            // output size on the main thread each time (found 2026-09-24).
+            // ⚠ The key is everything read below: the picture, the frame, the
+            // size, the padding, the mask and its knobs, the objects' render,
+            // and the two caches a tap or pick is drawn from.
+            val sig = listOf(
+                srcId, p["x"], p["y"], p["w"], p["h"], outW, outH, p[com.abrah.nightmare.CropNode.PAD],
+                com.abrah.nightmare.MaskNode.opsOf(n.type, p), p["grow"], p["feather"],
+                objectRender?.let { System.identityHashCode(it) },
+                p[com.abrah.nightmare.AddObjects.PARAM], parseEpoch, tapEpoch,
+            ).joinToString("|")
+            if (framedSigs[n.id] == sig && n.id in canvas.previews) continue
+            if (framedPending[n.id] == sig) continue
+            framedPending[n.id] = sig
+            framedJobs.remove(n.id)?.cancel()
+            // ⚠⚠ OFF the main thread: a crop at the output size (up to 2048 px),
+            // a mask rasterised at that size, and a copy — tens of ms each, in
+            // the frame after every edit.
+            framedJobs[n.id] = viewModelScope.launch {
+                val t0 = System.nanoTime()
+                val done = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    runCatching {
+                        val bmp = renderFramed(n, p, src, outW, outH, objectRender)
+                        // ⚠ `put` hashes every pixel — tens of ms at 2048 px — so
+                        // it is paid here too, never on the main thread.
+                        ops.images.put(bmp) to bmp.width.toFloat() / bmp.height.coerceAtLeast(1)
+                    }.getOrNull()
+                } ?: return@launch
+                android.util.Log.i(com.abrah.nightmare.Perf.TAG, "framed ${n.id} ${outW}x$outH: ${(System.nanoTime() - t0) / 1_000_000} ms (off main)")
+                if (framedPending[n.id] != sig) return@launch
+                framedPending.remove(n.id)
+                framedJobs.remove(n.id)
+                framedSigs[n.id] = sig
+                // ⚠ Read `canvas` NOW: the edit that started this may be one of
+                // several since, and writing a stale state back would undo them.
+                canvas = canvas.copy(previews = canvas.previews + (n.id to done))
+                applyBeforeAfterPreviews(canvas.workflow.graph)
             }
+        }
         // ⚠⚠ …and a framing node with NOTHING coming in shows nothing. This only
         // ever added, so an inpaint rewired to an un-run generate node kept the
         // photo it had framed before (reported 2026-09-17).
@@ -4899,10 +5511,187 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             .filter { it.type in com.abrah.nightmare.FRAMING_TYPES && canvas.pictureInto(it.id, nodeTypes) == null }
             .map { it.id }
             .toSet()
-        if (shown.isNotEmpty() || empty.any { it in canvas.previews }) {
-            canvas = canvas.copy(previews = canvas.previews.filterKeys { it !in empty } + shown)
+        if (empty.any { it in canvas.previews }) {
+            canvas = canvas.copy(previews = canvas.previews.filterKeys { it !in empty })
         }
+        empty.forEach { framedSigs.remove(it); framedPending.remove(it); framedJobs.remove(it)?.cancel() }
         applyBeforeAfterPreviews(graph)
+        warmPicks(graph)
+    }
+
+    /** ⭐ What each framing node's preview was drawn from ([applyFramedPreviews]). */
+    private val framedSigs = mutableMapOf<String, String>()
+    private val framedPending = mutableMapOf<String, String>()
+    private val framedJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+
+    /**
+     * ⭐ One framing node's preview: the photo (with its objects) framed at the
+     * output size, the mask over it in the editor's red, and the outpaint
+     * padding in blue. ⚠ Pure pixels on a background thread — taps and picks
+     * come from the CACHES only.
+     */
+    private fun renderFramed(
+        n: com.abrah.nightmare.Node,
+        p: Map<String, String>,
+        src: Bitmap,
+        outW: Int,
+        outH: Int,
+        objectRender: com.abrah.nightmare.AddObjects.Render?,
+    ): Bitmap {
+        fun f(k: String, d: Float) = p[k]?.toFloatOrNull() ?: d
+        var bmp = com.abrah.nightmare.CropNode.render(
+            objectRender?.photo ?: src, f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f),
+            outW, outH, p[com.abrah.nightmare.CropNode.PAD] ?: com.abrah.nightmare.CropNode.PAD_BLACK,
+        ).first
+        // ⭐ …and the painting on top, so the node shows what the Mask editor
+        // shows. ⚠ Translucent: the picture underneath is what makes the mask
+        // legible as a REGION of it.
+        val ops0 = com.abrah.nightmare.MaskNode.opsOf(n.type, p).orEmpty()
+        if (n.type in com.abrah.nightmare.INPAINT_TYPES && (ops0.isNotBlank() || objectRender != null)) {
+            val state = com.abrah.nightmare.MaskTaps.resolve(
+                com.abrah.nightmare.MaskState.decode(ops0).copy(
+                    growFrac = f("grow", com.abrah.nightmare.MaskNode.GROW_DEFAULT), featherFrac = f("feather", 0f),
+                ),
+                pick = { t -> com.abrah.nightmare.segment.Parser.cachedPick(src, t) },
+            ) { x, y -> com.abrah.nightmare.segment.Segmenter.cached(src, x, y)?.candidates }.let { s ->
+                // ⭐ The rings, drawn where their objects sit ([AddObjects.resolveRings]).
+                objectRender?.let { r ->
+                    com.abrah.nightmare.AddObjects.resolveRings(s, com.abrah.nightmare.AddObjects.of(p), r.cuts, src.width, src.height)
+                } ?: s
+            }
+            // ⚠⚠ `bmp` is the FRAMED picture and the mask is stored against the
+            // PHOTO, so it is converted here exactly as the editor converts it
+            // ([MaskFraming]) — the 2026-09-16 bug, as a preview, otherwise.
+            // ⚠⚠ The editor's RED overlay, not the raw white mask — the node
+            // must look like the editor (the user, 2026-09-17).
+            val mask = com.abrah.nightmare.MaskRaster.overlay(
+                com.abrah.nightmare.MaskFraming.toFrame(state, f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f)),
+                bmp.width, bmp.height, com.abrah.nightmare.MaskRaster.OVERLAY_RGB,
+            )
+            val out = bmp.copy(Bitmap.Config.ARGB_8888, true)
+            android.graphics.Canvas(out).drawBitmap(
+                mask, 0f, 0f,
+                android.graphics.Paint().apply { alpha = com.abrah.nightmare.MaskRaster.OVERLAY_ALPHA },
+            )
+            bmp = out
+        }
+        // ⭐ …and the OUTPAINT padding in blue, as the editors show it.
+        if (com.abrah.nightmare.padRuleFor(n.type) == com.abrah.nightmare.PadRule.OUTPAINT) {
+            com.abrah.nightmare.CropGeometry.photoInFrame(f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f))
+                ?.let { pad ->
+                    if (!bmp.isMutable) bmp = bmp.copy(Bitmap.Config.ARGB_8888, true)
+                    com.abrah.nightmare.MaskRaster.paintPadding(bmp, pad)
+                }
+        }
+        return bmp
+    }
+
+    /**
+     * ⭐⭐ A node's Add Objects render, keyed by its objects and its photo, so
+     * a preview pass never decodes a source photo on the main thread.
+     */
+    private val objectRenders = mutableMapOf<String, Pair<String, com.abrah.nightmare.AddObjects.Render>>()
+    private val objectRendering = mutableSetOf<String>()
+
+    private fun objectRenderFor(
+        n: com.abrah.nightmare.Node,
+        srcId: String,
+        src: Bitmap,
+        p: Map<String, String>,
+    ): com.abrah.nightmare.AddObjects.Render? {
+        if (n.type !in com.abrah.nightmare.INPAINT_TYPES) return null
+        val objects = com.abrah.nightmare.AddObjects.of(p)
+        if (objects.isEmpty()) return null
+        // ⚠⚠ The photo with its objects — keyed on the picture and the
+        // objects. The rings are resolved from [AddObjects.Render.cuts] in
+        // [renderFramed], cheaply.
+        val key = srcId + "|" + p[com.abrah.nightmare.AddObjects.PARAM]
+        objectRenders[n.id]?.takeIf { it.first == key }?.let { return it.second }
+        if (objectRendering.add(key)) {
+            val ctx = getApplication<Application>()
+            viewModelScope.launch {
+                val r = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    runCatching {
+                        com.abrah.nightmare.AddObjects.render(
+                            src, objects,
+                            load = { com.abrah.nightmare.AddObjects.load(ctx, it) },
+                            resolve = { s, m -> com.abrah.nightmare.AddObjects.resolveOn(ctx, s, m) },
+                        )
+                    }.getOrNull()
+                }
+                objectRendering.remove(key)
+                if (r != null) {
+                    objectRenders[n.id] = key to r
+                    applyFramedPreviews()
+                }
+            }
+        }
+        return null
+    }
+
+    /** ⚠ Photos being parsed right now, by content key — one pass each. */
+    private val parsing = mutableSetOf<Long>()
+
+    /** Samplers auto-framed with auto mask on, waiting to learn if it found anything. */
+    private val autoMaskCheck = mutableSetOf<String>()
+
+    /**
+     * ⭐⭐⭐ **Read the photo for every node whose mask is auto-picked**, in
+     * the background, then redraw the previews.
+     *
+     * ⚠⚠ Reported 2026-09-23: auto mask "is not being applied" after a crop.
+     * The chips WERE in the mask, but a pick is resolved from the parser's
+     * cache, and nothing filled that cache until the mask window was opened —
+     * so the node previews showed no mask, as if none were set.
+     * ⚠ Then, for a sampler just auto-framed with both ticks: if the chips found
+     * NOTHING, open its mask window and say so. That is the one case the person
+     * must act on, and finding out at Run would waste the trip.
+     */
+    private fun warmPicks(graph: com.abrah.nightmare.Graph) {
+        val par = com.abrah.nightmare.segment.Parser
+        if (!par.installed) return
+        for (n in graph.nodes) {
+            if (n.type !in com.abrah.nightmare.INPAINT_TYPES) continue
+            val mask = com.abrah.nightmare.MaskState.decode(
+                com.abrah.nightmare.MaskNode.opsOf(n.type, n.params),
+            )
+            if (!com.abrah.nightmare.MaskTaps.hasPicks(mask)) continue
+            val photo = canvas.pictureInto(n.id, nodeTypes)?.let { ops.images.get(it) } ?: continue
+            if (par.isWarm(photo)) {
+                if (autoMaskCheck.remove(n.id)) reportEmptyPicks(n.id, mask, photo)
+                continue
+            }
+            val key = par.photoKey(photo)
+            if (!parsing.add(key)) continue
+            android.util.Log.i("AutoMask", "${n.id}: reading the photo for ${mask.ops.filterIsInstance<com.abrah.nightmare.MaskOp.Pick>().map { it.target }}")
+            val ctx = getApplication<Application>()
+            viewModelScope.launch {
+                withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    runCatching { par.map(ctx, photo) }
+                }.onFailure { say("auto mask: could not read the picture — ${it.message}", bad = true) }
+                parsing.remove(key)
+                // ⚠ Redraws the previews, and comes back here with the cache warm.
+                applyFramedPreviews()
+            }
+        }
+    }
+
+    private fun reportEmptyPicks(
+        nodeId: String,
+        mask: com.abrah.nightmare.MaskState,
+        photo: android.graphics.Bitmap,
+    ) {
+        val picks = mask.ops.filterIsInstance<com.abrah.nightmare.MaskOp.Pick>()
+        if (picks.any { com.abrah.nightmare.segment.Parser.cachedPick(photo, it.target) != null }) return
+        val names = picks.mapNotNull {
+            com.abrah.nightmare.segment.Parser.target(it.target)?.label?.lowercase()
+        }
+        toast("no ${names.joinToString(" or ")} found in this picture — paint the area to repaint")
+        canvas = canvas.copy(
+            editing = nodeId,
+            cropRequest = nodeId to ((canvas.cropRequest?.second ?: 0) + 1),
+            cropRequestTab = 1,
+        )
     }
 
     /**
@@ -4923,8 +5712,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // it then MAKES a different picture from the one it was handed, which
         // is exactly the condition a before/after exists for.
         // ⚠ The retired `image.upscale` keeps its own, for flows that have one.
+        // ⭐⭐ …and an output that still HOLDS a pair after auto upscale was
+        // unticked. The user's call, 2026-09-23: *"when i disable autoupscale it
+        // doesnt have to remove the made image"*. Unticking changes the NEXT
+        // run, not the pictures this one made; the pair is replaced when that
+        // run lands — its output is then the received picture itself, which
+        // the `id == own` rule below drops.
         val nodes = graph.nodes.filter {
-            it.type == UpscaleNode.name || MediaOutputNode.autoUpscales(it)
+            it.type == UpscaleNode.name || MediaOutputNode.autoUpscales(it) ||
+                (it.type == MediaOutputNode.name && it.id in canvas.beforePreviews)
         }
         // ⚠⚠⚠ **The node's OWN input port, not the string "image".**
         //
@@ -5504,6 +6300,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * ignoring the thing the bar says is on.
      */
     fun runCanvasOrBatch() {
+        // ⚠ A sweep shows the canvas too — the same rule as [runCanvas].
+        canvas = canvas.copy(editing = null, cropRequest = null)
         val axes = BatchParams.axesOf(canvas.workflow.graph)
         if (axes.isEmpty()) { runCanvas(); return }
         runBatch(BatchSpec(axes))
@@ -5583,6 +6381,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun runCanvas() = run("canvas") {
+        // ⭐⭐ **Run shows the CANVAS** — the user's call, 2026-09-23: the node
+        // sheet closes so the run is watched where it happens, and its errors
+        // land where they are already shown. ⚠ `editing` is then the signal
+        // that the person opened something DURING the run ([openOutputAfter]).
+        canvas = canvas.copy(editing = null, cropRequest = null)
         fitChainedImageToImage()
         canvasStatus.clear()
         runError = null
@@ -5763,6 +6566,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val bad = r.runs.firstOrNull { it.outcome == Outcome.FAILED }
             if (bad != null) runError = "${bad.id}: ${bad.detail}"
         }
+        openOutputAfter(r)
+    }
+
+    /**
+     * ⭐⭐ When a run SUCCEEDS, open the output node that got the new picture —
+     * the user's call, 2026-09-23.
+     *
+     * ⚠ Only on success: a stop for a person already opened THAT node
+     * ([stopForPerson]), which is the one to look at; a failure stays on the
+     * canvas with its error. ⚠ Never over something opened during the run, or
+     * over the library: a 25 s video render is long enough to have moved on.
+     */
+    private fun openOutputAfter(r: GraphRun) {
+        if (r.error != null || r.waiting != null || runError != null) return
+        if (canvas.editing != null || showWorkflows) return
+        val out = canvas.workflow.graph.nodes
+            .filter { it.type == MediaOutputNode.name }
+            .firstOrNull { r.outputs[it.id]?.previewImage() != null }
+            ?: return
+        canvas = canvas.copy(editing = out.id)
     }
 
 
@@ -5832,8 +6655,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
         const val SWAP_TAKE_RECIPE = "swap_take_recipe"
 
-        /** ⚠ DreamUI's 10/512 — the grow a first tap gives an ungrown mask. */
-        const val TAP_GROW = 10f / 512f
+        /** ⚠ Past this many, [imageFor] drops what the store has let go. */
+        const val BITMAP_CACHE = 24
+
 
         /** The one workflow the app keeps. Named because there will be more. */
         const val CURRENT = "current"
@@ -5896,7 +6720,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (installing != null) {
             val what = if (installing == VIDEO_INSTALL_ID) "the video models"
                 else ModelCatalog.byId(installing.orEmpty())?.label ?: "a model"
-            runError = "$what is downloading — Run once it has finished"
+            runError = if (installing == MOVE_ID) "models are moving — Run once they have"
+                else "$what is downloading — Run once it has finished"
             say("$label ignored — $what is downloading", bad = true)
             return
         }
@@ -5983,6 +6808,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // app opening ([DeviceProbe] makes the same promise).
         crashReport = runCatching { CrashReport.pending(app) }.getOrNull()
         refreshModels()
+        // ⭐ …and a models move the last process died in the middle of.
+        resumeMove()
     }
 }
 

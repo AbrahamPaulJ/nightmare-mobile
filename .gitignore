@@ -59,6 +59,8 @@ claude-yolo.bat
 app/src/main/jniLibs/
 app/src/main/assets/qnnlibs/
 app/src/main/assets/ditlibs/
+# Foxlet (prompt translation) — built from source by tools/build_foxlet.sh, never committed.
+app/libs/*.aar
 
 # QuickJS is fetched, not vendored -- tools/fetch_quickjs.ps1 (pinned tag + sha256).
 # Our CMakeLists and JNI bridge beside it ARE committed.

@@ -30,7 +30,7 @@ import org.robolectric.annotation.GraphicsMode
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
-class ModelsScreenshotTest {
+open class ModelsScreenshotTest {
 
     /**
      * ⚠⚠ Wrapped in [LibraryScreen], because that is the only way these screens
@@ -43,7 +43,7 @@ class ModelsScreenshotTest {
         tab: LibraryTab = LibraryTab.MODELS,
         body: @Composable () -> Unit,
     ) {
-        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 LibraryScreen(
                     // ⚠ FIXED, so a release does not break this golden — see
@@ -51,7 +51,6 @@ class ModelsScreenshotTest {
                     version = "0.0.0",
                     tab = tab,
                     onTab = {},
-                    onClose = {},
                     models = { if (tab == LibraryTab.MODELS) body() },
                     flows = { if (tab == LibraryTab.FLOWS) body() },
                 )
@@ -108,6 +107,23 @@ class ModelsScreenshotTest {
     fun oneInUseAndOneSpare() = shoot("models-installed") {
         ModelsScreen(
             rows = rows(installed = setOf(V1_MODEL, "qteamix"), selected = V1_MODEL),
+            busy = false, error = null,
+            onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
+        )
+    }
+
+    /**
+     * ⭐ A built-in with a file deleted says which one and offers Repair at the
+     * archive's size — not a plain Download as if it had never been fetched.
+     */
+    @Test
+    fun aDamagedBuiltInOffersRepair() = shoot("models-repair") {
+        ModelsScreen(
+            rows = rows(installed = setOf(V1_MODEL), selected = V1_MODEL).map {
+                if (it.spec.id == "qteamix") {
+                    it.copy(partial = true, missing = listOf("unet.bin"), fetchBytes = it.build?.bytes ?: 0L)
+                } else it
+            },
             busy = false, error = null,
             onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
         )
@@ -376,13 +392,13 @@ class ModelsScreenshotTest {
             )
         }
         val thumbs = items.associate { it.id to pic(colours[items.indexOf(it) % colours.size]) }
-        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 LibraryScreen(
                     // ⚠ FIXED, so a release does not break this golden — see
                     // `LibraryScreen.version`.
                     version = "0.0.0",
-                    tab = LibraryTab.RESULTS, onTab = {}, onClose = {},
+                    tab = LibraryTab.RESULTS, onTab = {},
                     models = {}, flows = {},
                     results = {
                         com.abrah.nightmare.ui.ResultsScreen(

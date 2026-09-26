@@ -95,7 +95,7 @@ object CropGeometry {
         return when (rule) {
             PadRule.NEVER -> cover
             // ⭐ DreamUI's `padScale`: "the whole photo fits", then √2 further.
-            PadRule.OUTPAINT -> minOf(viewW / imgW, viewH / imgH) / OUTPAINT_LIMIT
+            PadRule.OUTPAINT, PadRule.PAD -> minOf(viewW / imgW, viewH / imgH) / OUTPAINT_LIMIT
             PadRule.WHEN_TOO_SMALL -> if (outW <= 0) cover else minOf(cover, viewW / outW)
         }
     }
@@ -152,7 +152,24 @@ enum class PadRule {
 
     /** Zoom out to [CropGeometry.OUTPAINT_LIMIT]; the bars are masked. Inpaint. */
     OUTPAINT,
+
+    /**
+     * ⭐ Zoom out as far as [OUTPAINT] — but NOTHING masks the bars: they are
+     * the pad fill (black, blurred, green), sent as pixels. FLUX.2 image edit
+     * with *Allow padding* ticked, for an outpaint LoRA (the user's call,
+     * 2026-09-27). ⚠ So the editors draw the real fill here, never the blue
+     * that means "masked".
+     */
+    PAD,
 }
+
+/**
+ * ⭐⭐ The rule for a NODE — [padRuleFor] its type, unless it is a FLUX.2 image
+ * edit with *Allow padding* ticked ([SdSampler.ALLOW_PAD]). ⚠ Every caller that
+ * has the node asks THIS, so the editor, the fitting and the preview agree.
+ */
+fun padRuleOf(node: Node): PadRule =
+    if (SdSampler.allowsPad(node)) PadRule.PAD else padRuleFor(node.type)
 
 /** ⚠ The ONE place a node type's [PadRule] is decided — editor and sampler both ask. */
 fun padRuleFor(type: String): PadRule = when (type) {

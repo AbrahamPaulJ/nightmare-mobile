@@ -77,6 +77,22 @@ class MainActivity : ComponentActivity() {
     private var pending by mutableStateOf<String?>(null)
     private var pendingNonce by mutableIntStateOf(0)
 
+    /**
+     * ⭐ Memory pressure, or the app leaving the screen: the segment models go
+     * now rather than at their idle timeout (`segment/IdleRelease`). ⚠ Their
+     * cached results stay, so nothing already drawn changes.
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
+        ) {
+            com.abrah.nightmare.segment.Segmenter.trim()
+            com.abrah.nightmare.segment.Parser.trim()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -94,6 +110,11 @@ class MainActivity : ComponentActivity() {
         // over a 1 GB download (`Workflows.ctxKeyParams`).
         ModelCatalog.refreshInstalled(this)
         com.abrah.nightmare.segment.Segmenter.refresh(this)
+        // ⚠⚠ The parser's twin of the line above, which was MISSING: without
+        // it `Parser.installed` stayed false on every phone, so the mask window
+        // never resolved a pick in the background and nothing auto-picked.
+        com.abrah.nightmare.segment.Parser.refresh(this)
+        MaskDefaults.load(this)
         // ⭐ The DiT engine is a download too, since 1.5.502 — and an app
         // update wipes the older, APK-shipped copy out of the native dir.
         DitEngine.refresh(this)
@@ -115,13 +136,22 @@ class MainActivity : ComponentActivity() {
             val vm: HarnessViewModel = viewModel()
             // ⭐ Ask the chip once, at first launch (the user's call, 2026-09-17).
             androidx.compose.runtime.LaunchedEffect(Unit) { vm.probeVideoSupport() }
-            NightmareTheme(
-                darkTheme = when (vm.theme) {
-                    Prefs.Theme.DARK -> true
-                    Prefs.Theme.LIGHT -> false
-                    Prefs.Theme.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+            val dark = when (vm.theme) {
+                Prefs.Theme.DARK -> true
+                Prefs.Theme.LIGHT -> false
+                Prefs.Theme.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
+            // ⚠⚠ The bar ICONS follow the app's theme, not the system's:
+            // `enableEdgeToEdge` picks them from the system setting, so Light in
+            // Settings on a dark-mode phone drew white icons on a white bar.
+            val view = androidx.compose.ui.platform.LocalView.current
+            androidx.compose.runtime.SideEffect {
+                androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
                 }
-            ) {
+            }
+            NightmareTheme(darkTheme = dark) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     HarnessScreen(op = pending, nonce = pendingNonce, vm = vm)
                 }
@@ -247,243 +277,11 @@ fun HarnessScreen(
     // ⭐⭐ ONE library screen, two tabs. Models and Flows were separate full
     // screens reached from separate buttons, so moving between them cost three
     // taps -- and they are the same question asked twice.
-    if (vm.libraryOpen) {
-        // ⚠⚠ Every screen the app puts OVER the canvas handles back itself, or
-        // the gesture leaves the app entirely -- there is one activity and no
-        // back stack, so the system's default is "finish". Found on the
-        // fullscreen viewer, 2026-09-09; these two had it just as badly.
-        BackHandler { vm.closeLibrary() }
-        // ⭐⭐ Asked AT the first Download, not at launch: that is the
-        // moment the answer means something. Android 13+ drops every
-        // notification silently without it, and the shade is where a
-        // 4 GB download is watched once the screen is off.
-        val notifyAsk = rememberLauncherForActivityResult(
-            androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-        ) { }
-        val notifyCtx = androidx.compose.ui.platform.LocalContext.current
-        val askToNotify: () -> Unit = {
-            if (android.os.Build.VERSION.SDK_INT >= 33 &&
-                notifyCtx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) notifyAsk.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-        LibraryScreen(
-            version = com.abrah.nightmare.BuildConfig.VERSION_NAME,
-            tab = vm.libraryTab,
-            onTab = vm::switchLibraryTab,
-            onClose = { vm.closeLibrary() },
-            models = {
-                // ⭐ The zip picker for an imported checkpoint.
-                //
-                // ⚠⚠ The NAME is captured before the picker opens and held
-                // here, because `rememberLauncherForActivityResult` hands back
-                // only a `Uri` — there is no way to pass a payload through the
-                // round trip, and the activity can be recreated during it.
-                // ⚠ `remember` and not a local `var`: this composable
-                // recomposes while the picker is up.
-                var importName by remember { mutableStateOf("") }
-                // ⚠ `OpenDocument` rather than `GetContent`: it returns a
-                // durable, re-readable Uri. `GetContent` can hand back one that
-                // is already gone by the time a gigabyte has finished copying.
-                val picker = rememberLauncherForActivityResult(
-                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-                ) { uri ->
-                    // ⚠ Null is a CANCEL, not a failure. Saying nothing is right.
-                    if (uri != null) {
-                        vm.importModel(uri, importName.ifEmpty { vm.importNameFor(uri) })
-                    }
-                }
-                // ⭐⭐ The DiT import: one `.safetensors`, family from the tab.
-                // ⚠ Its own name and family are captured before the picker opens,
-                // for the reason the zip picker captures `importName`: the
-                // callback cannot see which tab was pressed by the time it runs.
-                var ditName by remember { mutableStateOf("") }
-                var ditFamily by remember { mutableStateOf(Family.ZIMAGE) }
-                val ditPicker = rememberLauncherForActivityResult(
-                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-                ) { uri ->
-                    if (uri != null) {
-                        vm.importDitModel(
-                            uri,
-                            ditName.ifEmpty { vm.importNameFor(uri) },
-                            ditFamily,
-                        )
-                    }
-                }
-                // ⚠ `.safetensors` has no registered MIME type, so providers
-                // hand it back as `application/octet-stream` at best — same
-                // reasoning as the zip picker above.
-                val embeddingPicker = rememberLauncherForActivityResult(
-                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-                ) { uri -> if (uri != null) vm.importEmbedding(uri) }
-                // ⚠ Same reasoning: `.bin` has no registered MIME type either.
-                val upscalerPicker = rememberLauncherForActivityResult(
-                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-                ) { uri -> if (uri != null) vm.importUpscaler(uri) }
-                ModelsScreen(
-                    rows = vm.modelRows,
-                    // ⚠ The OR: this screen's buttons mean "the app is doing
-                    // something long", which is what [working] is for.
-                    busy = vm.working,
-                    error = vm.modelError,
-                    onInstall = { askToNotify(); vm.installModel(it) },
-                    onCancel = vm::cancelModelInstall,
-                    onDelete = vm::deleteModel,
-                    onSelect = vm::askUse,
-                    pendingUse = vm.pendingUse,
-                    recipes = com.abrah.nightmare.canvas.RECIPES,
-                    onConfirmUse = vm::confirmUse,
-                    onCancelUse = vm::cancelUse,
-                    // ⭐ Use on the other two KINDS of model. Neither selects
-                    // anything globally; both open a flow that uses them.
-                    onUseUpscaler = { vm.askUseUpscaler(it.label) },
-                    onUseVideo = vm::askUseVideo,
-                    importing = vm.importing,
-                    importProgress = vm.importProgress,
-                    onImportDit = { name, family ->
-                        ditName = name
-                        ditFamily = family
-                        ditPicker.launch(arrayOf("application/octet-stream", "*/*"))
-                    },
-                    onImport = { name ->
-                        importName = name
-                        // ⚠ Two MIME types. A zip arrives as
-                        // `application/octet-stream` from plenty of providers
-                        // (Downloads especially), and filtering on
-                        // `application/zip` alone greys out the file the user
-                        // came to pick, with nothing on screen explaining why.
-                        picker.launch(arrayOf("application/zip", "application/octet-stream"))
-                    },
-                    upscalers = vm.upscalerRows,
-                    onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
-                    onDeleteUpscaler = vm::deleteUpscaler,
-                    onImportUpscaler = {
-                        upscalerPicker.launch(arrayOf("application/octet-stream", "*/*"))
-                    },
-                    segmenter = vm.segmenterRow,
-                    onInstallSegmenter = { askToNotify(); vm.installSegmenter() },
-                    onDeleteSegmenter = vm::deleteSegmenter,
-                    video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
-                    onInstallVideo = { askToNotify(); vm.installVideoModels() },
-                    onDeleteVideo = vm::deleteVideoModels,
-                    onProbeVideo = vm::probeVideoSupport,
-                    embeddings = vm.embeddingRows,
-                    onImportEmbedding = { embeddingPicker.launch(arrayOf("application/octet-stream", "*/*")) },
-                    onDeleteEmbedding = vm::deleteEmbedding,
-                    // ⚠ List and delete only. The LoRA import button lives in
-                    // Settings, beside the embeddings one, for the reason the
-                    // user gave on 2026-09-20.
-                    loras = vm.loraRows,
-                    onDeleteLora = vm::deleteLora,
-                )
-            },
-            results = {
-                com.abrah.nightmare.ui.ResultsScreen(
-                    // ⭐⭐ What the filter beside Favourites reads.
-                    tagsOf = vm::resultTags,
-                    groups = vm.keptGroups,
-                    results = vm.kept,
-                    favouritesOnly = vm.favouritesOnly,
-                    onFavouritesOnly = vm::showFavouritesOnly,
-                    onToggleFavourite = vm::toggleResultFavourite,
-                    thumbnailFor = vm::thumbnailFor,
-                    onOpenFlow = { vm.openResultFlow(it.id) },
-                    onView = { vm.viewResult(it) },
-                    onDelete = { vm.deleteResult(it.id) },
-                    onDiskBytes = vm.keptBytes,
-                    selected = vm.selectedResults,
-                    onToggleSelect = { vm.toggleResultSelected(it.id) },
-                    onSelectAll = vm::toggleSelectAllResults,
-                    onClearSelection = vm::clearResultSelection,
-                    onDeleteSelected = vm::deleteSelectedResults,
-                    onDeleteGroup = vm::deleteResultGroup,
-                    onSaveSelected = vm::saveSelectedResults,
-                    onSave = { vm.saveResultsToGallery(listOf(it.id)) },
-                    onSaveGroup = { g -> vm.saveResultsToGallery(g.items.map { it.id }) },
-                    onShareFlow = { vm.shareResultFlow(it.id) },
-                    imageFor = vm::resultImage,
-                    unreadable = vm::resultUnreadable,
-                    detailsFor = vm::detailsOf,
-                    onUpscale = { r, u -> vm.upscaleResult(r.id, u) },
-                    upscalers = vm.upscalerRows,
-                    onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
-                    upscaling = vm.upscalingResult,
-                    onShareResults = { ids, asFlow -> vm.shareResults(ids, asFlow) },
-                    onToast = vm::toast,
-                    onStarSelected = vm::starSelectedResults,
-                    onSendTo = { vm.offerSendResult(it.id) },
-                )
-            },
-            flows = {
-                // ⚠ Two pickers, because the two imports accept different
-                // things and a single launcher would have to guess from the
-                // extension — which is exactly how a .zip picked as a flow
-                // becomes "could not import that file".
-                val flowPicker = rememberLauncherForActivityResult(
-                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-                ) { uri -> if (uri != null) vm.importWorkflow(uri) }
-                WorkflowsScreen(
-                    recipes = com.abrah.nightmare.canvas.RECIPES.filter {
-                        !com.abrah.nightmare.npu.VideoGate.hidden ||
-                            it.id !in com.abrah.nightmare.npu.VideoGate.VIDEO_RECIPES
-                    },
-                    saved = vm.savedWorkflows,
-                    error = vm.workflowError,
-                    onOpenRecipe = vm::openRecipe,
-                    onOpenSaved = vm::openSaved,
-                    onDeleteSaved = vm::deleteSaved,
-                    onRenameSaved = vm::renameWorkflow,
-                    onShareSaved = vm::shareSavedWorkflow,
-                    // ⚠ `application/octet-stream` alongside the real type, for
-                    // the reason the model importer documents: plenty of
-                    // providers hand a file over as octet-stream, and filtering
-                    // on the exact type greys out the file the user came to pick
-                    // with nothing on screen explaining why.
-                    onImportFlow = {
-                        flowPicker.launch(arrayOf("application/json", "application/octet-stream"))
-                    },
-                )
-            },
-        )
-        // ⭐ A kept picture full screen, over the library. ⚠ Inside the
-        // library branch, because that is where it is opened from and back
-        // must return to the list rather than to the canvas.
-        vm.viewingResult?.let { _ ->
-            if (vm.viewingSet.isNotEmpty()) {
-                BackHandler { vm.closeResult() }
-                com.abrah.nightmare.ui.ResultViewer(
-                    onToggleFavourite = vm::toggleResultFavourite,
-                    items = vm.viewingSet,
-                    startIndex = vm.viewingIndex,
-                    // ⚠ The FULL picture, not the list thumbnail: this is the
-                    // surface where the detail is the point.
-                    imageFor = { id -> vm.resultImage(id) },
-                    // ⭐ Shown while the full decode is still in flight —
-                    // both are async now, so this fills the gap rather than
-                    // leaving a blank page for however long that takes.
-                    thumbnailFor = { id -> vm.thumbnailFor(id) },
-                    unreadable = vm::resultUnreadable,
-                    detailsFor = vm::detailsOf,
-                    onDismiss = { vm.closeResult() },
-                    onOpenFlow = { r -> vm.closeResult(); vm.openResultFlow(r.id) },
-                    onDelete = { r -> vm.deleteResult(r.id) },
-                    onSave = { r -> vm.saveResultsToGallery(listOf(r.id)) },
-                    onShare = { r -> vm.shareResultImage(r.id) },
-                    onSendTo = { r -> vm.offerSendResult(r.id) },
-                    // ⭐⭐ The same upscale the Results row offers, from the
-                    // viewer — one picker, one refusal, one in-flight name.
-                    upscalers = vm.upscalerRows,
-                    upscaling = vm.upscalingResult,
-                    onUpscale = { r, u -> vm.upscaleResult(r.id, u) },
-                    onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
-                    onToast = vm::toast,
-                )
-            }
-        }
-        return
-    }
-
-    if (vm.showCanvas) {
+    // ⭐⭐⭐ **The canvas is ALWAYS drawn** — the library and Settings are
+    // pull-down SHEETS over it since 2026-09-26 (the user's call: no ✕,
+    // "pull down to close" like the node sheet — [com.abrah.nightmare.ui.PullDownSheet]).
+    // ⚠ They used to REPLACE the canvas, so it was torn down and rebuilt on
+    // every trip to Models; now it stays composed underneath.
         // ⭐⭐ The LoRA import, launched from a node's picker rather than from
         // the Settings tab — `canvas/LoraPicker.kt`'s Add button. ⚠ Same wide
         // filter and the same validator as the Settings one: `.safetensors` has
@@ -506,7 +304,7 @@ fun HarnessScreen(
         vm.upscaleNodePick?.let { node ->
             com.abrah.nightmare.ui.UpscalePicker(
                 upscalers = vm.upscalerRows,
-                onPick = { id -> vm.upscaleFromNode(node, id) },
+                onPick = { id, scale -> vm.upscaleFromNode(node, id, scale) },
                 // ⚠ No `askToNotify` here: that helper is scoped to the library
                 // branch, and this dialog is on the canvas. An upscale started
                 // here shows its progress on the canvas, not in a notification.
@@ -557,6 +355,13 @@ fun HarnessScreen(
             // paths call it.
             segmenterRow = vm.segmenterRow,
             segmenterInstalled = vm.segmenterRow?.installed == true,
+            // ⭐⭐ The parser, on exactly the same terms — STATE, not a
+            // `remember` snapshot. The note above is why.
+            onInstallParser = vm::installParser,
+            onDeleteParser = vm::deleteParser,
+            onCancelParser = vm::cancelModelInstall,
+            parserRow = vm.parserRow,
+            parserInstalled = vm.parserRow?.installed == true,
             // ⭐ Video hidden from Add node where the chip refused it (VideoGate).
             paletteTypes = if (com.abrah.nightmare.npu.VideoGate.hidden) {
                 vm.nodeTypes.filterKeys { it != com.abrah.nightmare.npu.VideoGate.VIDEO_TYPE }
@@ -669,6 +474,8 @@ fun HarnessScreen(
             onEdit = vm::editCanvas,
             onEditMask = vm::editMask,
             onTapMask = vm::tapMask,
+            onPickMask = vm::pickMask,
+            onTranslate = vm::translatePrompt,
             onCancelRun = vm::cancelRun,
             onSetResolution = vm::setNodeResolution,
             onSetAspect = vm::selectAspect,
@@ -732,90 +539,353 @@ fun HarnessScreen(
                 onRun = { spec -> vm.closeBatch(); vm.runBatch(spec) },
             )
         }
+
+    if (vm.libraryOpen) {
+        com.abrah.nightmare.ui.PullDownSheet(onDismiss = { vm.closeLibrary() }) {
+            // ⚠⚠ Every screen the app puts OVER the canvas handles back itself, or
+            // the gesture leaves the app entirely -- there is one activity and no
+            // back stack, so the system's default is "finish". Found on the
+            // fullscreen viewer, 2026-09-09; these two had it just as badly.
+            BackHandler { vm.closeLibrary() }
+            // ⭐⭐ Asked AT the first Download, not at launch: that is the
+            // moment the answer means something. Android 13+ drops every
+            // notification silently without it, and the shade is where a
+            // 4 GB download is watched once the screen is off.
+            val notifyAsk = rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+            ) { }
+            val notifyCtx = androidx.compose.ui.platform.LocalContext.current
+            val askToNotify: () -> Unit = {
+                if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                    notifyCtx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) notifyAsk.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+            LibraryScreen(
+                version = com.abrah.nightmare.BuildConfig.VERSION_NAME,
+                tab = vm.libraryTab,
+                onTab = vm::switchLibraryTab,
+                models = {
+                    // ⭐ The zip picker for an imported checkpoint.
+                    //
+                    // ⚠⚠ The NAME is captured before the picker opens and held
+                    // here, because `rememberLauncherForActivityResult` hands back
+                    // only a `Uri` — there is no way to pass a payload through the
+                    // round trip, and the activity can be recreated during it.
+                    // ⚠ `remember` and not a local `var`: this composable
+                    // recomposes while the picker is up.
+                    var importName by remember { mutableStateOf("") }
+                    // ⚠ `OpenDocument` rather than `GetContent`: it returns a
+                    // durable, re-readable Uri. `GetContent` can hand back one that
+                    // is already gone by the time a gigabyte has finished copying.
+                    val picker = rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                    ) { uri ->
+                        // ⚠ Null is a CANCEL, not a failure. Saying nothing is right.
+                        if (uri != null) {
+                            vm.importModel(uri, importName.ifEmpty { vm.importNameFor(uri) })
+                        }
+                    }
+                    // ⭐⭐ The DiT import: one `.safetensors`, family from the tab.
+                    // ⚠ Its own name and family are captured before the picker opens,
+                    // for the reason the zip picker captures `importName`: the
+                    // callback cannot see which tab was pressed by the time it runs.
+                    var ditName by remember { mutableStateOf("") }
+                    var ditFamily by remember { mutableStateOf(Family.ZIMAGE) }
+                    val ditPicker = rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                    ) { uri ->
+                        if (uri != null) {
+                            vm.importDitModel(
+                                uri,
+                                ditName.ifEmpty { vm.importNameFor(uri) },
+                                ditFamily,
+                            )
+                        }
+                    }
+                    // ⚠ `.safetensors` has no registered MIME type, so providers
+                    // hand it back as `application/octet-stream` at best — same
+                    // reasoning as the zip picker above.
+                    val embeddingPicker = rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                    ) { uri -> if (uri != null) vm.importEmbedding(uri) }
+                    // ⚠ Same reasoning: `.bin` has no registered MIME type either.
+                    val upscalerPicker = rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                    ) { uri -> if (uri != null) vm.importUpscaler(uri) }
+                    ModelsScreen(
+                        rows = vm.modelRows,
+                        // ⚠ The OR: this screen's buttons mean "the app is doing
+                        // something long", which is what [working] is for.
+                        busy = vm.working,
+                        error = vm.modelError,
+                        onInstall = { askToNotify(); vm.installModel(it) },
+                        onCancel = vm::cancelModelInstall,
+                        onDelete = vm::deleteModel,
+                        onSelect = vm::askUse,
+                        pendingUse = vm.pendingUse,
+                        recipes = com.abrah.nightmare.canvas.RECIPES,
+                        onConfirmUse = vm::confirmUse,
+                        onCancelUse = vm::cancelUse,
+                        // ⭐ Use on the other two KINDS of model. Neither selects
+                        // anything globally; both open a flow that uses them.
+                        onUseUpscaler = { vm.askUseUpscaler(it.label) },
+                        onUseVideo = vm::askUseVideo,
+                        importing = vm.importing,
+                        importProgress = vm.importProgress,
+                        onImportDit = { name, family ->
+                            ditName = name
+                            ditFamily = family
+                            ditPicker.launch(arrayOf("application/octet-stream", "*/*"))
+                        },
+                        onImport = { name ->
+                            importName = name
+                            // ⚠ Two MIME types. A zip arrives as
+                            // `application/octet-stream` from plenty of providers
+                            // (Downloads especially), and filtering on
+                            // `application/zip` alone greys out the file the user
+                            // came to pick, with nothing on screen explaining why.
+                            picker.launch(arrayOf("application/zip", "application/octet-stream"))
+                        },
+                        upscalers = vm.upscalerRows,
+                        onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
+                        onDeleteUpscaler = vm::deleteUpscaler,
+                        onImportUpscaler = {
+                            upscalerPicker.launch(arrayOf("application/octet-stream", "*/*"))
+                        },
+                        segmenter = vm.segmenterRow,
+                        onInstallSegmenter = { askToNotify(); vm.installSegmenter() },
+                        onDeleteSegmenter = vm::deleteSegmenter,
+                        parser = vm.parserRow,
+                        onInstallParser = { askToNotify(); vm.installParser() },
+                        onDeleteParser = vm::deleteParser,
+                        video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
+                        onInstallVideo = { askToNotify(); vm.installVideoModels() },
+                        onDeleteVideo = vm::deleteVideoModels,
+                        onProbeVideo = vm::probeVideoSupport,
+                    )
+                },
+                results = {
+                    com.abrah.nightmare.ui.ResultsScreen(
+                        // ⭐⭐ What the filter beside Favourites reads.
+                        tagsOf = vm::resultTags,
+                        groups = vm.keptGroups,
+                        results = vm.kept,
+                        favouritesOnly = vm.favouritesOnly,
+                        onFavouritesOnly = vm::showFavouritesOnly,
+                        onToggleFavourite = vm::toggleResultFavourite,
+                        thumbnailFor = vm::thumbnailFor,
+                        onOpenFlow = { vm.openResultFlow(it.id) },
+                        onView = { vm.viewResult(it) },
+                        onDelete = { vm.deleteResult(it.id) },
+                        onDiskBytes = vm.keptBytes,
+                        selected = vm.selectedResults,
+                        onToggleSelect = { vm.toggleResultSelected(it.id) },
+                        onSelectAll = vm::toggleSelectAllResults,
+                        onClearSelection = vm::clearResultSelection,
+                        onDeleteSelected = vm::deleteSelectedResults,
+                        onDeleteGroup = vm::deleteResultGroup,
+                        onSaveSelected = vm::saveSelectedResults,
+                        onSave = { vm.saveResultsToGallery(listOf(it.id)) },
+                        onSaveGroup = { g -> vm.saveResultsToGallery(g.items.map { it.id }) },
+                        onShareFlow = { vm.shareResultFlow(it.id) },
+                        imageFor = vm::resultImage,
+                        unreadable = vm::resultUnreadable,
+                        detailsFor = vm::detailsOf,
+                        onUpscale = { r, u, s -> vm.upscaleResult(r.id, u, s) },
+                        upscalers = vm.upscalerRows,
+                        onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
+                        upscaling = vm.upscalingResult,
+                        onShareResults = { ids, asFlow -> vm.shareResults(ids, asFlow) },
+                        onToast = vm::toast,
+                        onStarSelected = vm::starSelectedResults,
+                        onSendTo = { vm.offerSendResult(it.id) },
+                    )
+                },
+                flows = {
+                    // ⚠ Two pickers, because the two imports accept different
+                    // things and a single launcher would have to guess from the
+                    // extension — which is exactly how a .zip picked as a flow
+                    // becomes "could not import that file".
+                    val flowPicker = rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+                    ) { uri -> if (uri != null) vm.importWorkflow(uri) }
+                    WorkflowsScreen(
+                        recipes = com.abrah.nightmare.canvas.RECIPES.filter {
+                            !com.abrah.nightmare.npu.VideoGate.hidden ||
+                                it.id !in com.abrah.nightmare.npu.VideoGate.VIDEO_RECIPES
+                        },
+                        saved = vm.savedWorkflows,
+                        error = vm.workflowError,
+                        onOpenRecipe = vm::openRecipe,
+                        onOpenSaved = vm::openSaved,
+                        onDeleteSaved = vm::deleteSaved,
+                        onRenameSaved = vm::renameWorkflow,
+                        onShareSaved = vm::shareSavedWorkflow,
+                        // ⚠ `application/octet-stream` alongside the real type, for
+                        // the reason the model importer documents: plenty of
+                        // providers hand a file over as octet-stream, and filtering
+                        // on the exact type greys out the file the user came to pick
+                        // with nothing on screen explaining why.
+                        onImportFlow = {
+                            flowPicker.launch(arrayOf("application/json", "application/octet-stream"))
+                        },
+                    )
+                },
+            )
+            // ⭐ A kept picture full screen, over the library. ⚠ Inside the
+            // library branch, because that is where it is opened from and back
+            // must return to the list rather than to the canvas.
+            vm.viewingResult?.let { _ ->
+                if (vm.viewingSet.isNotEmpty()) {
+                    BackHandler { vm.closeResult() }
+                    com.abrah.nightmare.ui.ResultViewer(
+                        onToggleFavourite = vm::toggleResultFavourite,
+                        items = vm.viewingSet,
+                        startIndex = vm.viewingIndex,
+                        // ⚠ The FULL picture, not the list thumbnail: this is the
+                        // surface where the detail is the point.
+                        imageFor = { id -> vm.resultImage(id) },
+                        // ⭐ Shown while the full decode is still in flight —
+                        // both are async now, so this fills the gap rather than
+                        // leaving a blank page for however long that takes.
+                        thumbnailFor = { id -> vm.thumbnailFor(id) },
+                        unreadable = vm::resultUnreadable,
+                        detailsFor = vm::detailsOf,
+                        onDismiss = { vm.closeResult() },
+                        onOpenFlow = { r -> vm.closeResult(); vm.openResultFlow(r.id) },
+                        onDelete = { r -> vm.deleteResult(r.id) },
+                        onSave = { r -> vm.saveResultsToGallery(listOf(r.id)) },
+                        onShare = { r -> vm.shareResultImage(r.id) },
+                        onSendTo = { r -> vm.offerSendResult(r.id) },
+                        // ⭐⭐ The same upscale the Results row offers, from the
+                        // viewer — one picker, one refusal, one in-flight name.
+                        upscalers = vm.upscalerRows,
+                        upscaling = vm.upscalingResult,
+                        onUpscale = { r, u, s -> vm.upscaleResult(r.id, u, s) },
+                        onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
+                        onToast = vm::toast,
+                    )
+                }
+            }
+        }
         return
     }
 
-    // ⚠⚠ **Settings is one page now** — Community and Diagnostics (the op
-    // harness) were removed 2026-09-19, at the user's ask: a pack still loads
-    // from `<externalFiles>/plugins/` with no UI, and the harness is a
-    // developer surface (`OpService` over adb) that never needed one either.
-    // `ui/SettingsScreen.kt` has the reasoning.
-    //
-    // ⚠ Back returns to the canvas rather than quitting -- the same hole the
-    // fullscreen viewer had, and the reason every over-canvas screen handles it.
-    BackHandler { vm.setCanvasVisible(true) }
-    // ⭐ Settings' own copy of the embeddings import picker — see the Models
-    // tab's `embeddingPicker` for the same launcher and why it is declared
-    // per-screen rather than shared (each screen owns its own launcher, the
-    // existing pattern every picker in this file already follows).
-    val settingsEmbeddingPicker = rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-    ) { uri -> if (uri != null) vm.importEmbedding(uri) }
-    // ⚠ Same reasoning again: `.safetensors` has no registered MIME type, so
-    // the filter has to be wide and the EXTENSION is what validates
-    // ([HarnessViewModel.importLora]).
-    val settingsLoraPicker = rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-    ) { uri -> if (uri != null) vm.importLora(uri) }
-    // ⭐ Whether this app is exempt from Doze/App Standby battery
-    // optimisation — the belt-and-suspenders half of the background-kill fix
-    // ([BackendKeepAliveService]'s foreground service is the main one). Not a
-    // ViewModel field: it is OS state this app does not own, so it is read
-    // fresh from PowerManager rather than cached and drifting.
-    // ⚠ Re-read on RESUME, not just once: the only way it changes is the user
-    // granting it from the system dialog this screen launches, and that
-    // dialog closes back into this same Activity.
-    val appCtx = androidx.compose.ui.platform.LocalContext.current
-    var batteryUnrestricted by androidx.compose.runtime.remember {
-        mutableStateOf(
-            (appCtx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager)
-                .isIgnoringBatteryOptimizations(appCtx.packageName)
+    if (vm.showCanvas) return
+
+    com.abrah.nightmare.ui.PullDownSheet(onDismiss = { vm.setCanvasVisible(true) }) {
+
+        // ⚠⚠ **Settings is one page now** — Community and Diagnostics (the op
+        // harness) were removed 2026-09-19, at the user's ask: a pack still loads
+        // from `<externalFiles>/plugins/` with no UI, and the harness is a
+        // developer surface (`OpService` over adb) that never needed one either.
+        // `ui/SettingsScreen.kt` has the reasoning.
+        //
+        // ⚠ Back returns to the canvas rather than quitting -- the same hole the
+        // fullscreen viewer had, and the reason every over-canvas screen handles it.
+        BackHandler { vm.setCanvasVisible(true) }
+        // ⭐ Settings' own copy of the embeddings import picker — see the Models
+        // tab's `embeddingPicker` for the same launcher and why it is declared
+        // per-screen rather than shared (each screen owns its own launcher, the
+        // existing pattern every picker in this file already follows).
+        val settingsEmbeddingPicker = rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+        ) { uri -> if (uri != null) vm.importEmbedding(uri) }
+        // ⚠ Same reasoning again: `.safetensors` has no registered MIME type, so
+        // the filter has to be wide and the EXTENSION is what validates
+        // ([HarnessViewModel.importLora]).
+        val settingsLoraPicker = rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+        ) { uri -> if (uri != null) vm.importLora(uri) }
+        // ⭐ Whether this app is exempt from Doze/App Standby battery
+        // optimisation — the belt-and-suspenders half of the background-kill fix
+        // ([BackendKeepAliveService]'s foreground service is the main one). Not a
+        // ViewModel field: it is OS state this app does not own, so it is read
+        // fresh from PowerManager rather than cached and drifting.
+        // ⚠ Re-read on RESUME, not just once: the only way it changes is the user
+        // granting it from the system dialog this screen launches, and that
+        // dialog closes back into this same Activity.
+        val appCtx = androidx.compose.ui.platform.LocalContext.current
+        var batteryUnrestricted by androidx.compose.runtime.remember {
+            mutableStateOf(
+                (appCtx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager)
+                    .isIgnoringBatteryOptimizations(appCtx.packageName)
+            )
+        }
+        val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+        androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                    vm.storageAccessReturned()
+                    batteryUnrestricted =
+                        (appCtx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager)
+                            .isIgnoringBatteryOptimizations(appCtx.packageName)
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+        com.abrah.nightmare.ui.SettingsScreen(
+            theme = vm.theme,
+            onTheme = vm::chooseTheme,
+            batteryUnrestricted = batteryUnrestricted,
+            onRequestBatteryUnrestricted = {
+                // ⚠⚠ The DIRECT request, not just a link to the settings list —
+                // sideload distribution means the Play policy gating this intent
+                // does not apply (CLAUDE.md), and the whole point is to save the
+                // user from hunting through Battery settings for this app by name.
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:${appCtx.packageName}"),
+                )
+                appCtx.startActivity(intent)
+            },
+            loras = vm.loraRows,
+            onImportLora = {
+                settingsLoraPicker.launch(arrayOf("application/octet-stream", "*/*"))
+            },
+            onDeleteLora = vm::deleteLora,
+            embeddings = vm.embeddingRows,
+            onImportEmbedding = {
+                settingsEmbeddingPicker.launch(arrayOf("application/octet-stream", "*/*"))
+            },
+            onDeleteEmbedding = vm::deleteEmbedding,
+            downloadBase = vm.downloadBase,
+            onDownloadBase = vm::chooseDownloadBase,
+            onCleanTemp = vm::cleanTempFiles,
+            // ⚠ So the cleaner leaves a live download's scratch alone.
+            installing = vm.working,
+            translateRows = vm.translateRows,
+            onInstallTranslation = vm::installTranslation,
+            onDeleteTranslation = vm::deleteTranslation,
+            onCancelInstall = vm::cancelModelInstall,
+            modelsPlace = vm.modelsPlace,
+            storageAccess = vm.storageAccess,
+            strandedModels = vm.strandedModels,
+            moveProgress = vm.moveProgress,
+            movePlan = vm.movePlan,
+            onModelsPlace = vm::chooseModelsPlace,
+            onConfirmMove = vm::confirmMove,
+            onDismissMove = vm::dismissMove,
         )
-    }
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                batteryUnrestricted =
-                    (appCtx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager)
-                        .isIgnoringBatteryOptimizations(appCtx.packageName)
+        // ⭐ The system's All files access page, opened when a person picks
+        // `Download/Nightmare` without it ([HarnessViewModel.chooseModelsPlace]).
+        // ⚠ The answer is read on RESUME, below — the page returns no result.
+        if (vm.wantStorageAccess) {
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                vm.storageAccessPageOpened()
+                runCatching {
+                    appCtx.startActivity(
+                        android.content.Intent(
+                            android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            android.net.Uri.parse("package:${appCtx.packageName}"),
+                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    com.abrah.nightmare.ui.SettingsScreen(
-        onClose = { vm.setCanvasVisible(true) },
-        theme = vm.theme,
-        onTheme = vm::chooseTheme,
-        batteryUnrestricted = batteryUnrestricted,
-        onRequestBatteryUnrestricted = {
-            // ⚠⚠ The DIRECT request, not just a link to the settings list —
-            // sideload distribution means the Play policy gating this intent
-            // does not apply (CLAUDE.md), and the whole point is to save the
-            // user from hunting through Battery settings for this app by name.
-            val intent = android.content.Intent(
-                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                android.net.Uri.parse("package:${appCtx.packageName}"),
-            )
-            appCtx.startActivity(intent)
-        },
-        loras = vm.loraRows,
-        onImportLora = {
-            settingsLoraPicker.launch(arrayOf("application/octet-stream", "*/*"))
-        },
-        onDeleteLora = vm::deleteLora,
-        embeddings = vm.embeddingRows,
-        onImportEmbedding = {
-            settingsEmbeddingPicker.launch(arrayOf("application/octet-stream", "*/*"))
-        },
-        onDeleteEmbedding = vm::deleteEmbedding,
-        downloadBase = vm.downloadBase,
-        onDownloadBase = vm::chooseDownloadBase,
-        onCleanTemp = vm::cleanTempFiles,
-        // ⚠ So the cleaner leaves a live download's scratch alone.
-        installing = vm.working,
-    )
 }
 
 /**
@@ -832,20 +902,41 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
     else "${bytes shr 20} MB"
     val progress = vm.missingProgress
     val done = vm.missingInstalled
+    // ⭐ Files deleted from a built-in: say which, and call it a repair.
+    val repair = remember(m, done) { vm.repairOf(m) }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = { vm.dismissMissingModel() },
         title = {
-            Text(if (done) "${m.label} is ready" else "This flow needs a model")
+            Text(
+                when {
+                    done -> "${m.label} is ready"
+                    // ⚠ Not "this flow": a translate tap is not a Run.
+                    m is HarnessViewModel.MissingModel.Translate ->
+                        androidx.compose.ui.res.stringResource(R.string.translate_needs_title)
+                    else -> "This flow needs a model"
+                }
+            )
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     when {
+                        done && m is HarnessViewModel.MissingModel.Translate -> "Downloaded."
                         done -> "Downloaded. Run the flow now?"
                         m is HarnessViewModel.MissingModel.Checkpoint && m.substitute && m.wanted.isNotBlank() ->
                             "\"${m.wanted}\" is not on this phone and has no download — it was " +
                                 "imported somewhere else. Download ${m.label} ($size) and use it " +
                                 "for this flow instead?"
+                        // ⭐ The language pair by its NAME, not the enum's code,
+                        // and a promise that the tap needs no repeating.
+                        m is HarnessViewModel.MissingModel.Translate ->
+                            androidx.compose.ui.res.stringResource(
+                                R.string.translate_needs_body,
+                                vm.translateRows[m.source]?.label ?: m.label, size,
+                            )
+                        repair.isNotEmpty() -> androidx.compose.ui.res.stringResource(
+                            R.string.repair_body, m.label, repair.joinToString(), size,
+                        )
                         m is HarnessViewModel.MissingModel.Segment ->
                             "${m.label} is not installed — this flow's Segment model node needs it. " +
                                 "Download it ($size)?"
@@ -869,6 +960,10 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
         },
         confirmButton = {
             when {
+                // ⚠ A translation model has nothing to Run — the prompt it was
+                // fetched for is translated the moment it lands.
+                done && m is HarnessViewModel.MissingModel.Translate ->
+                    androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) { Text("OK") }
                 done -> androidx.compose.material3.Button(onClick = {
                     vm.dismissMissingModel()
                     vm.runCanvasOrBatch()
@@ -877,7 +972,7 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
                     Text("Hide")
                 }
                 else -> androidx.compose.material3.Button(onClick = { vm.downloadMissingModel() }) {
-                    Text("Download")
+                    Text(androidx.compose.ui.res.stringResource(if (repair.isNotEmpty()) R.string.repair else R.string.download))
                 }
             }
         },

@@ -74,6 +74,14 @@ object CustomModels {
     private const val SDXL_MARK = "clip_2.mnn"
 
     /**
+     * ⭐ npuforge's SD 1.5 inpainting export: an empty file beside a 9-channel
+     * `unet.bin`. Nothing else in the folder distinguishes it from a plain SD
+     * 1.5 package, and launching it as `sd15npu` feeds a 4-channel latent to a
+     * 9-channel `conv_in`. ⇒ It selects [ModelCatalog.SD15_NPU_INPAINT].
+     */
+    private const val INPAINT_MARK = "INPAINT"
+
+    /**
      * ⚠ Anima's first DiT half. Absent from SD 1.5 and SDXL, which ship one
      * `unet.bin`. ⚠⚠ Not `tokenizer_t5.json` alone and not the upstream `ANIMA`
      * marker file: a marker is a claim (see the class note), a 2 GB graph is not.
@@ -335,7 +343,8 @@ object CustomModels {
         cfg = cfg.cfg ?: familyDefaults(family).cfg,
         family = family,
         backendType = when (family) {
-            Family.SD15 -> ModelCatalog.SD15_NPU
+            Family.SD15 -> if (File(dir, INPAINT_MARK).isFile) ModelCatalog.SD15_NPU_INPAINT
+                else ModelCatalog.SD15_NPU
             Family.SDXL -> ModelCatalog.SDXL_NPU
             Family.ANIMA -> ModelCatalog.ANIMA_NPU
             // ⭐ Detected since 2026-09-21 — [importDit] writes [FLUX2_MARK]

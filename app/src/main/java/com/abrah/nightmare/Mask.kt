@@ -72,9 +72,30 @@ sealed interface MaskOp {
     data class Tap(val x: Float, val y: Float, val k: Int) : MaskOp
 
     /**
+     * ⭐⭐ A target picked BY NAME — `clothes`, `face`, `hair`, `shoes`, `bag`
+     * ([segment.Parser.TARGETS]). The parser labels every pixel of the photo in
+     * one pass, and this op is one GROUP of those labels.
+     *
+     * ⚠⚠ The NAME, not the pixels, for the same reason [Tap] stores a point
+     * (`docs/SEGMENTER.md` §3, option A): a mask is a string param a shared flow
+     * carries. The mask is recomputed when drawn and cached per PHOTO, so a
+     * second target on the same picture is free.
+     *
+     * ⚠ Rasterises to NOTHING until [MaskTaps.resolve] has turned it into a
+     * [Placed]; the sampler refuses a picked mask it cannot resolve rather than
+     * render without it.
+     */
+    data class Pick(val target: String) : MaskOp
+
+    /**
      * ⚠ A resolved region: an ALPHA_8 bitmap stretched over the normalised rect
      * [x],[y],[w],[h]. IN MEMORY ONLY — [MaskState.encode] never writes one; it
      * exists so framing and rasterising treat a region as geometry like a stroke.
+     *
+     * ⚠⚠ [exact]: drawn exactly as given — the node's grow and feather do NOT
+     * spread it. An Add Objects band is shaped to reach only a few pixels into
+     * the object; the default feather alone pushed it 2% of the frame further
+     * in, over the pixels the feature exists to keep (2026-09-24).
      */
     data class Placed(
         val alpha: android.graphics.Bitmap,
@@ -82,28 +103,65 @@ sealed interface MaskOp {
         val y: Float = 0f,
         val w: Float = 1f,
         val h: Float = 1f,
+        val exact: Boolean = false,
     ) : MaskOp
+
+    /**
+     * ⭐⭐ The ring round placed object [id] (Add Objects, `docs/ADD-OBJECTS.md`)
+     * — an op on the IMAGE layer, stored like a stroke, so brush, eraser, Clear
+     * and Invert treat it as ordinary mask (the user's call, 2026-09-26).
+     *
+     * ⚠ Rasterises to NOTHING until `AddObjects.resolveRings` has turned it into
+     * an exact [Placed] round where the object sits NOW. Moving the object moves
+     * this op to the END of the list (`AddObjects.freshRings`) — a clean ring at
+     * the new place, while strokes that edited the old one stay where they were
+     * painted (the user's call: *"least confusing"*).
+     */
+    data class ObjectRing(val id: Int) : MaskOp
+
+    /**
+     * ⭐⭐ A second LAYER — in memory only, never stored. Its ops are rasterised
+     * on their own and ADDED to the mask where the layer stands, so nothing
+     * outside it (an Invert or Erase before it) reaches in.
+     */
+    data class Layer(val ops: List<MaskOp>) : MaskOp
 }
 
 /** ⭐ Turning stored taps into regions — the one place that does it. */
 object MaskTaps {
-    fun hasTaps(state: MaskState): Boolean = state.ops.any { it is MaskOp.Tap }
+    fun hasTaps(state: MaskState): Boolean =
+        state.ops.any { it is MaskOp.Tap || (it is MaskOp.Layer && hasTaps(MaskState(it.ops))) }
+
+    /** ⭐ Whether anything here needs the PARSER (`segment.Parser`). */
+    fun hasPicks(state: MaskState): Boolean =
+        state.ops.any { it is MaskOp.Pick || (it is MaskOp.Layer && hasPicks(MaskState(it.ops))) }
 
     /**
-     * Every [MaskOp.Tap] replaced by its candidate, via [segment]; a tap that
-     * resolves to nothing is dropped. ⚠ [segment] may block (see
-     * `Segmenter.segment`).
+     * Every [MaskOp.Tap] replaced by its candidate via [segment], and every
+     * [MaskOp.Pick] by its mask via [pick]; either resolving to nothing is
+     * dropped. ⚠ Both may block (see `Segmenter.segment`, `Parser.pick`).
+     *
+     * ⚠⚠⚠ **ONE function resolves BOTH**, and [segment] stays the trailing
+     * lambda so every existing call site reads unchanged. Two resolvers would
+     * be two things to remember at five call sites, and the one that forgot
+     * picks would silently drop half the mask — which renders, which is how
+     * every bug of this shape here has escaped the suite (`CLAUDE.md`).
      */
     fun resolve(
         state: MaskState,
+        pick: ((String) -> android.graphics.Bitmap?)? = null,
         segment: (Float, Float) -> List<android.graphics.Bitmap>?,
     ): MaskState {
-        if (!hasTaps(state)) return state
+        if (!hasTaps(state) && !hasPicks(state)) return state
         return state.copy(
             ops = state.ops.mapNotNull { op ->
-                if (op !is MaskOp.Tap) op
-                else segment(op.x, op.y)?.takeIf { it.isNotEmpty() }
-                    ?.let { MaskOp.Placed(it[op.k.coerceIn(0, it.size - 1)]) }
+                when (op) {
+                    is MaskOp.Tap -> segment(op.x, op.y)?.takeIf { it.isNotEmpty() }
+                        ?.let { MaskOp.Placed(it[op.k.coerceIn(0, it.size - 1)]) }
+                    is MaskOp.Pick -> pick?.invoke(op.target)?.let { MaskOp.Placed(it) }
+                    is MaskOp.Layer -> MaskOp.Layer(resolve(MaskState(op.ops), pick, segment).ops)
+                    else -> op
+                }
             },
         )
     }
@@ -127,12 +185,12 @@ object MaskTaps {
 data class MaskState(
     val ops: List<MaskOp> = emptyList(),
     /**
-     * ⚠ Grows the mask outward before feathering. **Zero by default here**,
-     * where DreamUI defaults to 10/512 — its default exists for tapped
-     * segmenter regions, which trace an object's true edge and need slack. This
-     * app has no segmenter, so every op is a brush stroke that is already
-     * exactly the size the finger asked for, and growing it is a second
-     * invisible brush-size control fighting the real one.
+     * ⚠ Grows TAPPED and PICKED regions outward before feathering — or
+     * shrinks them when negative — and nothing else: a brush stroke is already
+     * exactly the size the finger asked for, and growing it would be a second
+     * invisible brush-size control fighting the real one. The node's default is
+     * DreamUI's 10/512, which exists for segmenter regions that trace an
+     * object's true edge and need slack ([MaskNode.GROW_DEFAULT]).
      */
     val growFrac: Float = 0f,
     /**
@@ -165,8 +223,11 @@ data class MaskState(
                 is MaskOp.Stroke -> "s" + strokeText(op.stroke)
                 is MaskOp.Erase -> "e" + strokeText(op.stroke)
                 is MaskOp.Tap -> "t${fmt(op.x)},${fmt(op.y)},${op.k}"
-                // ⚠ Never stored — see [MaskOp.Placed].
-                is MaskOp.Placed -> ""
+                // ⚠ The target's id, which is `[a-z]+` — no separator to escape.
+                is MaskOp.Pick -> "p${op.target}"
+                is MaskOp.ObjectRing -> "o${op.id}"
+                // ⚠ Never stored — see [MaskOp.Placed] and [MaskOp.Layer].
+                is MaskOp.Placed, is MaskOp.Layer -> ""
             }
         }.split(";").filter { it.isNotEmpty() }.joinToString(";")
         return "$body~${fmt(growFrac)},${fmt(featherFrac)}"
@@ -198,6 +259,9 @@ data class MaskState(
                     when {
                         part.isBlank() -> null
                         part == "i" -> MaskOp.Invert
+                        part.startsWith("o") -> part.substring(1).toIntOrNull()?.let { MaskOp.ObjectRing(it) }
+                        part.startsWith("p") ->
+                            part.substring(1).takeIf { it.isNotBlank() }?.let { MaskOp.Pick(it) }
                         part.startsWith("t") -> part.substring(1).split(",").let { c ->
                             val x = c.getOrNull(0)?.toFloatOrNull()
                             val y = c.getOrNull(1)?.toFloatOrNull()
@@ -303,9 +367,18 @@ object MaskFraming {
                     is MaskOp.Erase -> MaskOp.Erase(toFrame(op.stroke, x, y, w, h))
                     // ⚠ A point moves like a stroke's; a region's rect likewise.
                     is MaskOp.Tap -> MaskOp.Tap((op.x - x) / w, (op.y - y) / h, op.k)
-                    is MaskOp.Placed -> MaskOp.Placed(
-                        op.alpha, (op.x - x) / w, (op.y - y) / h, op.w / w, op.h / h,
+                    // ⚠ A Pick has NO geometry to move — it is a name, and it
+                    // is resolved to a [Placed] (which does) before this runs.
+                    // One that reaches here unresolved has no parser behind it
+                    // and draws nothing, which is the refusal's job to report.
+                    is MaskOp.Pick -> op
+                    // ⚠ Resolved before framing, like a Pick; one here draws nothing.
+                    is MaskOp.ObjectRing -> op
+                    is MaskOp.Placed -> op.copy(
+                        x = (op.x - x) / w, y = (op.y - y) / h, w = op.w / w, h = op.h / h,
                     )
+                    // ⚠ Resolved before framing; one that reaches here draws nothing.
+                    is MaskOp.Layer -> MaskOp.Layer(toFrame(MaskState(op.ops), x, y, w, h).ops)
                 }
             },
             growFrac = state.growFrac / w,
@@ -386,8 +459,35 @@ object MaskRaster {
      */
     fun rasterise(state: MaskState, w: Int, h: Int = w): Bitmap {
         val featherPx = state.featherFrac * w
-        val combined = composite(state.ops, state.growFrac * w, w, h)
-        return if (featherPx > 0f) dilate(combined, 0f, featherPx) else combined
+        val growPx = state.growFrac * w
+        val combined = composite(state.ops, growPx, w, h)
+        if (featherPx <= 0f) return combined
+        if (!hasExact(state.ops)) return dilate(combined, 0f, featherPx)
+        // ⚠⚠ [MaskOp.Placed.exact] ops are not feathered: everything ELSE is
+        // feathered on its own, then laid under the unfeathered whole — which
+        // still carries the exact ops with every Erase and Invert applied.
+        val loose = dilate(composite(looseOps(state.ops), growPx, w, h), 0f, featherPx)
+        return union(combined, loose)
+    }
+
+    private fun isExact(op: MaskOp) = op is MaskOp.Placed && op.exact
+
+    /**
+     * ⭐ A tapped or picked REGION — the only thing grow acts on. A stroke is
+     * already the size the Size slider showed, and an exact op is shaped on
+     * purpose ([MaskOp.Placed.exact]).
+     */
+    private fun isRegion(op: MaskOp) = op is MaskOp.Placed && !op.exact
+
+    private fun hasExact(ops: List<MaskOp>): Boolean =
+        ops.any { isExact(it) || (it is MaskOp.Layer && hasExact(it.ops)) }
+
+    private fun looseOps(ops: List<MaskOp>): List<MaskOp> = ops.mapNotNull {
+        when {
+            isExact(it) -> null
+            it is MaskOp.Layer -> MaskOp.Layer(looseOps(it.ops))
+            else -> it
+        }
     }
 
     /**
@@ -405,8 +505,20 @@ object MaskRaster {
 
         fun flush() {
             if (run.isEmpty()) return
-            val layer = coverage(run, w, h).let {
-                if (growPx > 0f) dilate(it, growPx, 0f) else it
+            // ⚠⚠ Grow acts on tapped and picked REGIONS only ([isRegion]) —
+            // and shrinks them when negative. Strokes and exact ops are drawn
+            // at the size they were made.
+            val regions = run.filter(::isRegion)
+            var layer = coverage(run.filterNot(::isRegion), w, h)
+            if (regions.isNotEmpty()) {
+                val grown = coverage(regions, w, h).let {
+                    when {
+                        growPx > 0f -> dilate(it, growPx, 0f)
+                        growPx < 0f -> erode(it, -growPx)
+                        else -> it
+                    }
+                }
+                layer = union(layer, grown)
             }
             acc = acc?.let { union(it, layer) } ?: layer
             run.clear()
@@ -427,6 +539,12 @@ object MaskRaster {
                 is MaskOp.Invert -> {
                     flush()
                     acc = invert(acc, w, h)
+                }
+                // ⭐ A layer is composited on its own and ADDED ([MaskOp.Layer]).
+                is MaskOp.Layer -> {
+                    flush()
+                    val layer = composite(op.ops, growPx, w, h)
+                    acc = acc?.let { union(it, layer) } ?: layer
                 }
                 else -> run += op
             }
@@ -493,6 +611,13 @@ object MaskRaster {
             canvas.drawPath(path, paint)
             paint.style = Paint.Style.FILL
         }
+    }
+
+    /** ⭐ The inverse of grow: the mask shrunk inward by [px]. */
+    private fun erode(src: Bitmap, px: Float): Bitmap {
+        val w = src.width
+        val h = src.height
+        return invert(dilate(invert(src, w, h), px, 0f), w, h)
     }
 
     private fun invert(src: Bitmap?, w: Int, h: Int): Bitmap {

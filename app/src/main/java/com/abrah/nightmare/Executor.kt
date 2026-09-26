@@ -1601,6 +1601,16 @@ object CropNode {
      */
     const val PAD_BLUR = "blur"
 
+    /**
+     * ⭐⭐ A GREEN SCREEN — pure `#00FF00`, for an outpaint LoRA trained to
+     * paint over green padding (asked for by a user, 2026-09-27). Inpaint and
+     * image edit only ([SdSampler.padOptions]).
+     */
+    const val PAD_GREEN = "green"
+
+    /** ⚠ Pure chroma green, the one every green-screen workflow keys on. */
+    const val GREEN_RGB = 0xFF00FF00.toInt()
+
     /** ⚠ How wide the downscaled copy is, in pixels. Smaller is blurrier. */
     const val BLUR_SOURCE_WIDTH = 48
     const val PAD = "pad"
@@ -1683,7 +1693,7 @@ object CropNode {
             // the thing they framed.
             canvas.drawBitmap(src, m, android.graphics.Paint(paint).apply { shader = null })
         } else {
-            canvas.drawColor(android.graphics.Color.BLACK)
+            canvas.drawColor(if (pad == PAD_GREEN) GREEN_RGB else android.graphics.Color.BLACK)
             canvas.drawBitmap(src, m, paint)
         }
         return bmp to rect
@@ -1785,6 +1795,15 @@ object MaskNode : NodeType {
     const val OPS = "ops"
 
     /**
+     * ⭐⭐ Grow, in px at 512 as the slider shows it: −20…+41, default 10 — the
+     * user's numbers, 2026-09-24. It acts on tapped and picked regions only
+     * ([MaskState.growFrac]); negative shrinks them.
+     */
+    const val GROW_DEFAULT = 10f / 512f
+    const val GROW_MIN = -20f / 512f
+    const val GROW_MAX = 41f / 512f
+
+    /**
      * ⭐⭐ The image id of the GENERATED picture the mask was last painted on,
      * written with every stroke (`HarnessViewModel.editCanvas`). ⚠ An inpaint
      * whose incoming picture no longer matches stops by name rather than
@@ -1806,8 +1825,8 @@ object MaskNode : NodeType {
         // and need slack. Every op here is a brush stroke that is already the
         // size the finger asked for, so growing it is a second invisible
         // brush-size control fighting the real one.
-        Widget("grow", "float", "0.0", 0.0, 0.2, hint = "spread the mask outward"),
-        Widget("feather", "float", "0.02", 0.0, 0.2, hint = "soften the mask edge"),
+        Widget("grow", "float", GROW_DEFAULT.toString(), GROW_MIN.toDouble(), GROW_MAX.toDouble(), hint = "grow or shrink a tapped or picked area"),
+        Widget("feather", "float", "0.0", 0.0, 0.2, hint = "soften the mask edge"),
         // ⚠ Not locked HERE: the inspector locks `out_w`/`out_h` with the
         // consumer'''s own reason the moment this node feeds something that
         // demands a size, exactly as it does for `crop`.
@@ -1829,9 +1848,39 @@ object MaskNode : NodeType {
         return if (port == "image" && w > 0 && h > 0) w to h else null
     }
 
-    fun stateOf(node: Node): MaskState = MaskState.decode(node.params[OPS]).copy(
-        growFrac = node.params["grow"]?.toFloatOrNull() ?: 0f,
-        featherFrac = node.params["feather"]?.toFloatOrNull() ?: 0.02f,
+    /**
+     * ⭐⭐⭐ **The ONE reader of a node's mask string.** On an inpaint node with
+     * Enable auto mask ticked, the node's chips ([SdSampler.PICK_TARGETS]) are
+     * ALWAYS part of the mask, followed by whatever was painted on top.
+     *
+     * ⚠⚠⚠ **The chips live in `pick_targets` and nowhere else.** Reported
+     * 2026-09-23, 1.6.019: *"im getting nothing masked when i run"*. The rule
+     * then was "picks apply only when there is no [OPS] key at all", so ANY
+     * empty mask string — a Clear, an Undo, the last chip toggled off —
+     * silently switched the auto mask off while its box stayed ticked. The
+     * tick is the authority now: unticking it, or deselecting every chip, is
+     * the only way the chips leave the mask. Pick ops stored in [OPS] by
+     * earlier builds are ignored for the same reason.
+     */
+    fun opsOf(type: String, params: Map<String, String>): String? {
+        val raw = params[OPS]
+        if (type !in INPAINT_TYPES) return raw
+        val auto = (params[SdSampler.PICK_SELECT] ?: MaskDefaults.of(SdSampler.PICK_SELECT))
+            .equals("true", ignoreCase = true)
+        val picks = if (auto) pickTargets(params).map { MaskOp.Pick(it) } else emptyList()
+        if (raw == null && picks.isEmpty()) return null
+        val stored = MaskState.decode(raw)
+        return stored.copy(ops = picks + stored.ops.filterNot { it is MaskOp.Pick }).encode()
+    }
+
+    /** The node's auto mask chips; Clothes until someone picks otherwise. */
+    fun pickTargets(params: Map<String, String>): List<String> =
+        params[SdSampler.PICK_TARGETS]?.split(',')?.filter { it.isNotBlank() }
+            ?: listOf("clothes")
+
+    fun stateOf(node: Node): MaskState = MaskState.decode(opsOf(node.type, node.params)).copy(
+        growFrac = node.params["grow"]?.toFloatOrNull() ?: GROW_DEFAULT,
+        featherFrac = node.params["feather"]?.toFloatOrNull() ?: 0f,
     )
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
@@ -2234,6 +2283,36 @@ object UpscaleNode : NodeType {
 
     const val UPSCALER = "upscaler"
 
+    /**
+     * ⭐⭐ How much larger — `2x`, `3x` or `4x`, local-dream's own choice
+     * (the user's ask, 2026-09-26). ⚠ The upscalers are all 4x
+     * ([NATIVE_SCALE]); a smaller choice is the 4x result scaled down, as
+     * upstream does it (`performUpscale`) — it caps the SIZE, not the time.
+     */
+    const val SCALE = "scale"
+    const val NATIVE_SCALE = 4
+    val SCALES = listOf("2x", "3x", "4x")
+
+    /**
+     * ⭐⭐⭐ **The longest edge an upscale may PRODUCE** — the user's call,
+     * 2026-09-26, after the output node's button and auto upscale had no cap
+     * at all (a 2048 px render became 8192 px). 4096 is the GPU texture limit
+     * and [LoadImageNode.MAX_EDGE]; at 4x it admits a 1024 px source, which is
+     * local-dream's own upscale limit.
+     */
+    const val MAX_OUT_EDGE = 4096
+
+    /** The scale a `2x`/`3x`/`4x` param asks for; 4 when unreadable. */
+    fun scaleOf(raw: String?): Int =
+        raw?.trim()?.removeSuffix("x")?.toIntOrNull()?.coerceIn(2, NATIVE_SCALE) ?: NATIVE_SCALE
+
+    /**
+     * ⭐⭐ The largest scale up to [wanted] that keeps a [width]×[height]
+     * picture within [MAX_OUT_EDGE] — or null when not even 2x fits.
+     */
+    fun fittingScale(width: Int, height: Int, wanted: Int): Int? =
+        (wanted.coerceIn(2, NATIVE_SCALE) downTo 2).firstOrNull { maxOf(width, height) * it <= MAX_OUT_EDGE }
+
     override val widgets get() = listOf(
         // ⚠⚠ The OPTIONS are the INSTALLED set, so the dropdown cannot offer a
         // file that is not on the device -- and the DEFAULT is the first of
@@ -2270,7 +2349,13 @@ object UpscaleNode : NodeType {
             ?: throw IllegalArgumentException(
                 "node \"${node.id}\": \"image\" is not connected"
             )
-        return upscaleTo(ctx, node.id, image, node.params[UPSCALER].orEmpty())
+        val wanted = scaleOf(node.params[SCALE])
+        val scale = fittingScale(image.w, image.h, wanted)
+            ?: throw NeedsInput(
+                "too big to upscale: ${image.w}x${image.h} — pictures up to " +
+                    "${MAX_OUT_EDGE / 2} px on the long edge only ($MAX_OUT_EDGE px after 2x)"
+            )
+        return upscaleTo(ctx, node.id, image, node.params[UPSCALER].orEmpty(), scale)
     }
 
     /**
@@ -2287,6 +2372,8 @@ object UpscaleNode : NodeType {
         nodeId: String,
         image: Value.Image,
         upscalerId: String,
+        /** ⭐ 2, 3 or 4 — the upscaler's 4x result is scaled down to it. Already capped ([fittingScale]). */
+        scale: Int = NATIVE_SCALE,
     ): Value.Image {
         val src = ctx.images.get(image.id)
             ?: throw IllegalStateException(
@@ -2307,15 +2394,21 @@ object UpscaleNode : NodeType {
         val rgb = rgbBytes(src)
         return when (val r = ctx.host.upscale(rgb, src.width, src.height, path)) {
             is Ops.Result.Ok -> {
-                val bmp = android_graphics_decode(r.value.jpeg)
+                val four = android_graphics_decode(r.value.jpeg)
                     ?: throw IllegalStateException(
                         "node \"$nodeId\": the upscaler returned bytes that will not decode"
                     )
+                val bmp = if (scale >= NATIVE_SCALE) four
+                else scaledTo(four, src.width * scale, src.height * scale)
                 Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
             }
             is Ops.Result.Err -> throw OpFailure("upscale", r.code, r.body)
         }
     }
+
+    /** ⚠ A function of its own: inside [upscaleTo] a local `android` shadows the package. */
+    private fun scaledTo(b: android.graphics.Bitmap, w: Int, h: Int): android.graphics.Bitmap =
+        android.graphics.Bitmap.createScaledBitmap(b, w, h, true)
 
     /**
      * A bitmap as tightly packed RGB, the layout `/upscale` reads.

@@ -43,12 +43,12 @@ import org.robolectric.annotation.GraphicsMode
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
-class CanvasScreenshotTest {
+open class CanvasScreenshotTest {
 
     private val GOLDEN_VERSION = "0.0.0"
 
     private fun shoot(name: String, body: @Composable () -> Unit) {
-        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) { body() }
         }
     }
@@ -1055,7 +1055,7 @@ class CanvasScreenshotTest {
                 onChange = {},
                 outW = 512,
                 aspect = 1f,
-                padBlur = true,
+                pad = com.abrah.nightmare.CropNode.PAD_BLUR,
             )
         }
     }
@@ -1112,9 +1112,9 @@ class CanvasScreenshotTest {
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
-class PaletteScreenshotTest {
+open class PaletteScreenshotTest {
     private fun shootTab(tab: Int, name: String) =
-        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
                     NodePaletteContent(NODE_TYPES, onPick = {}, height = 660.dp, initialTab = tab)
@@ -1134,14 +1134,14 @@ class PaletteScreenshotTest {
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
-class InpaintInspectorScreenshotTest {
+open class InpaintInspectorScreenshotTest {
     @Test fun cropAndMaskArePreviews() = shoot("inspector-inpaint", null)
     /** ⭐ The popup's two tabs — the picture must sit in the same place in both. */
     @Test fun popupCropTab() = shoot("inpaint-popup-crop", 0)
     @Test fun popupMaskTab() = shoot("inpaint-popup-mask", 1)
 
     private fun shoot(name: String, tab: Int?) =
-        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
                     NodeInspectorBody(
@@ -1178,12 +1178,12 @@ class InpaintInspectorScreenshotTest {
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
-class Img2ImgInspectorScreenshotTest {
+open class Img2ImgInspectorScreenshotTest {
     @Test fun cropIsAPreview() = shoot("inspector-i2i", null)
     @Test fun popupCropTab() = shoot("i2i-popup-crop", 0)
 
     private fun shoot(name: String, tab: Int?) =
-        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
                     NodeInspectorBody(
@@ -1228,14 +1228,14 @@ class Img2ImgInspectorScreenshotTest {
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
-class ReferenceInspectorScreenshotTest {
+open class ReferenceInspectorScreenshotTest {
     @Test fun bothPicturesAreTiles() = shoot("inspector-flux-reference", null)
     /** ⚠ The two tabs, and the picture must sit in the same place in both. */
     @Test fun popupCropTab() = shoot("flux-popup-crop", 0)
     @Test fun popupReferenceTab() = shoot("flux-popup-reference", 1)
 
     private fun shoot(name: String, tab: Int?) =
-        captureRoboImage(filePath = "src/test/screenshots/$name.png") {
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
                     NodeInspectorBody(
@@ -1297,4 +1297,37 @@ private class FakeType(
         inputs: Map<String, com.abrah.nightmare.Value>,
     ) = throw UnsupportedOperationException("drawing only")
 
+}
+
+/**
+ * ⭐⭐ A Russian prompt shows the translate button on its border, and an
+ * English negative beside it does not (`docs/TRANSLATE.md`).
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w411dp-h891dp-xxhdpi")
+open class TranslateScreenshotTest {
+    @Test
+    fun aRussianPromptOffersTranslation() =
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, "inspector-prompt-translate")) {
+            NightmareTheme(darkTheme = true) {
+                Surface(Modifier.fillMaxSize()) {
+                    NodeInspectorBody(
+                        nodeId = "text",
+                        node = Node(
+                            "text", "sd.clip_encode",
+                            params = mapOf(
+                                "prompt" to "красивая девушка в красном платье, (длинные волосы:1.2), 8k",
+                                "negative" to "blurry, lowres",
+                            ),
+                        ),
+                        type = NODE_TYPES["sd.clip_encode"],
+                        onSetParam = { _, _, _ -> },
+                        onDelete = {},
+                        onReset = {},
+                        onTranslate = { _, _, _ -> },
+                    )
+                }
+            }
+        }
 }

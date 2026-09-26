@@ -72,7 +72,7 @@ data class ToolRow(
 )
 
 /**
- * ⭐ One textual-inversion embedding, on the Tools tab beside the segmenter.
+ * ⭐ One textual-inversion embedding, listed, imported and deleted in Settings.
  *
  * ⚠ Upstream `local-dream` has an Embedding Manager (import/list/delete a
  * `.safetensors` by name); DreamUI dropped it along with `config.json` and
@@ -150,6 +150,10 @@ data class ModelRow(
      * button, so the list would be noise.
      */
     val missing: List<String> = emptyList(),
+    /** ⭐ [ModelSpec.partial] — a built-in that says Repair, not Download. */
+    val partial: Boolean = false,
+    /** ⭐ [ModelSpec.fetchBytes] — what the button will download. */
+    val fetchBytes: Long = 0,
 )
 
 /**
@@ -228,24 +232,16 @@ fun ModelsScreen(
     segmenter: ToolRow? = null,
     onInstallSegmenter: () -> Unit = {},
     onDeleteSegmenter: () -> Unit = {},
-    /**
-     * ⭐ The installed embeddings, on the Tools tab. Null hides the whole
-     * section — same convention as [segmenter] and [video] — which is what a
-     * preview and a golden with no picker want.
-     */
-    embeddings: List<EmbeddingRow>? = null,
-    onImportEmbedding: (() -> Unit)? = null,
-    onDeleteEmbedding: ((String) -> Unit)? = null,
-    /**
-     * ⭐⭐ The installed LoRA adapters, on the same Tools tab and for the same
-     * reason as [embeddings]: this is where a person looks for what is on the
-     * phone. ⚠ The IMPORT is not here — it lives in Settings, the user's call
-     * of 2026-09-20 about the embeddings button, and a LoRA is the same kind of
-     * one-off setup act.
-     */
-    loras: List<EmbeddingRow>? = null,
-    onDeleteLora: ((String) -> Unit)? = null,
+    /** ⭐⭐ The second Tools row — Pick by name (`docs/SEGMENTER.md` §8). */
+    parser: ToolRow? = null,
+    onInstallParser: () -> Unit = {},
+    onDeleteParser: () -> Unit = {},
 ) {
+    // ⭐ Tap → first drawn frame, for the lag report of 2026-09-27 (`NmPerf`).
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        androidx.compose.runtime.withFrameNanos { }
+        com.abrah.nightmare.Perf.modelsDrawn()
+    }
     // ⚠⚠ The confirm is intercepted HERE rather than inside the card, so the
     // card stays a dumb row and there is exactly one place that can delete a
     // model. A dialog per card would be one per row on screen.
@@ -342,8 +338,7 @@ fun ModelsScreen(
     // 8.6 GB on a single tap. Reported from the phone, 2026-09-13.
     var deletingVideo by remember { mutableStateOf(false) }
     var deletingSegmenter by remember { mutableStateOf(false) }
-    var deletingEmbedding by remember { mutableStateOf<String?>(null) }
-    var deletingLora by remember { mutableStateOf<String?>(null) }
+    var deletingParser by remember { mutableStateOf(false) }
 
     // ⚠ No header and no `statusBarsPadding` any more: [LibraryScreen] owns
     // both, because this screen is now a TAB rather than a whole screen. A
@@ -410,11 +405,11 @@ fun ModelsScreen(
             labels = families.map { it.label } +
                 (if (hasUpscalers) listOf(stringResource(R.string.upscalers)) else emptyList()) +
                 (if (video != null) listOf(stringResource(R.string.video)) else emptyList()) +
-                (if (segmenter != null || embeddings != null || loras != null) listOf(stringResource(R.string.tools)) else emptyList()),
+                (if (segmenter != null || parser != null) listOf(stringResource(R.string.tools)) else emptyList()),
             modifier = Modifier.padding(top = 8.dp),
         ) { page ->
             // ⚠ LAST again, after Video, so adding it moved no existing index.
-            if ((segmenter != null || embeddings != null || loras != null) &&
+            if ((segmenter != null || parser != null) &&
                 page == families.size + (if (hasUpscalers) 1 else 0) + (if (video != null) 1 else 0)
             ) {
                 LazyColumn(
@@ -431,72 +426,12 @@ fun ModelsScreen(
                     if (segmenter != null) {
                         item { ToolCard(segmenter, busy, onInstallSegmenter, onCancel) { deletingSegmenter = true } }
                     }
-                    // ⭐⭐ **The embeddings IMPORT lives in Settings, not here** —
-                    // the user's call, 2026-09-20: *"remove embedding import btn
-                    // from Tools tab, it is redundant. only keep the one in
-                    // settings."*
-                    //
-                    // ⚠⚠ It was in BOTH, which is the duplicate-surface
-                    // mistake `docs/ARCHITECTURE.md` §5.6 keeps naming: two
-                    // callouts, two places to find the same file picker, and no
-                    // rule saying which one is the home. Importing is a
-                    // one-off setup act, which is what Settings is for.
-                    //
-                    // ⚠ The installed LIST stays here, beside the segmenter,
-                    // because that is where a person looks for what is on the
-                    // phone — removing the button did not remove the tab's job.
-                    if (embeddings != null) {
-                        if (loras != null) item {
-                            Text(
-                                stringResource(R.string.embeddings_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.padding(top = 6.dp),
-                            )
-                        }
-                        items(embeddings, key = { "emb:" + it.name }) { row ->
-                            DownloadCard(
-                                title = row.name,
-                                emphasised = false,
-                                status = stringResource(R.string.installed_mb, mb(row.bytes)),
-                                detail = "",
-                                progress = null,
-                            ) {
-                                OutlinedButton(
-                                    onClick = { deletingEmbedding = row.name },
-                                    enabled = !busy,
-                                ) { Text(stringResource(R.string.delete)) }
-                            }
-                        }
+                    if (parser != null) {
+                        item { ToolCard(parser, busy, onInstallParser, onCancel) { deletingParser = true } }
                     }
-                    // ⭐⭐ LoRAs, below the embeddings and shaped exactly like
-                    // them — a [DownloadCard] per file with its size and a
-                    // Delete. ⚠ A HEADING now, on both, because two unlabelled
-                    // lists of `.safetensors` on one tab are indistinguishable:
-                    // an embedding is named in a PROMPT and a LoRA is picked on
-                    // a sampler NODE, and nothing on screen said which was which.
-                    if (!loras.isNullOrEmpty()) {
-                        item {
-                            Text(
-                                stringResource(R.string.loras_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.padding(top = 6.dp),
-                            )
-                        }
-                        items(loras, key = { "lora:" + it.name }) { row ->
-                            DownloadCard(
-                                title = row.name,
-                                emphasised = false,
-                                status = stringResource(R.string.installed_mb, mb(row.bytes)),
-                                detail = "",
-                                progress = null,
-                            ) {
-                                OutlinedButton(
-                                    onClick = { deletingLora = row.name },
-                                    enabled = !busy,
-                                ) { Text(stringResource(R.string.delete)) }
-                            }
-                        }
-                    }
+                    // ⭐⭐ **No LoRAs or embeddings here** — the user's call,
+                    // 2026-09-26: Settings already imports, lists and deletes
+                    // both, so this tab is the models a TOOL runs on.
                 }
                 return@SwipeTabs
             }
@@ -649,6 +584,17 @@ fun ModelsScreen(
         )
     }
 
+    if (deletingParser && parser != null) {
+        ConfirmDelete(
+            title = "Delete ${parser.label}?",
+            body = "Frees ${mb(parser.onDisk)} MB. Getting it back is a " +
+                "${mb(parser.bytes)} MB download. Any flow with a mask picked " +
+                "by name will refuse to run until you install it again.",
+            onConfirm = onDeleteParser,
+            onDismiss = { deletingParser = false },
+        )
+    }
+
     if (deletingSegmenter && segmenter != null) {
         ConfirmDelete(
             title = "Delete ${segmenter.label}?",
@@ -657,30 +603,6 @@ fun ModelsScreen(
                 "will refuse to run until you install it again.",
             onConfirm = onDeleteSegmenter,
             onDismiss = { deletingSegmenter = false },
-        )
-    }
-
-    deletingLora?.let { name ->
-        ConfirmDelete(
-            title = "Delete $name?",
-            // ⚠⚠ The opposite of the embeddings warning below, and that is
-            // the point of saying it: a node naming a LoRA that is gone REFUSES
-            // at Run by name ([SdSampler.parseLoras]). Nothing renders quietly
-            // without it.
-            body = "Any node that names it refuses to run until you import it " +
-                "again or untick it.",
-            onConfirm = { onDeleteLora?.invoke(name) },
-            onDismiss = { deletingLora = null },
-        )
-    }
-
-    deletingEmbedding?.let { name ->
-        ConfirmDelete(
-            title = "Delete $name?",
-            body = "Any prompt naming it renders without that embedding — no error, " +
-                "just the ordinary tokens instead.",
-            onConfirm = { onDeleteEmbedding?.invoke(name) },
-            onDismiss = { deletingEmbedding = null },
         )
     }
 
@@ -849,7 +771,7 @@ private fun ImportCard(
  * from the one [ModelInstaller.Progress], so the three cannot disagree again.
  */
 @Composable
-private fun DownloadCard(
+internal fun DownloadCard(
     title: String,
     /** ⚠ In use — the one fact that also changes the card's colour and weight. */
     emphasised: Boolean,
@@ -868,21 +790,14 @@ private fun DownloadCard(
             },
         ),
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // ⚠⚠ `padding(end = 12.dp)` — with `SpaceBetween` and a weighted
-                // column there is NOTHING between the longest line of text and
-                // the button beside it, so a title or a detail line that runs
-                // the full width ends up touching it. Reported 2026-09-22:
-                // *"give more room to the left of the btn, the text is
-                // basically touching the border"*. The gap belongs to the text
-                // column rather than to a Spacer, or a short line would push
-                // the button inwards.
-                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.padding(12.dp)) {
+        // ⚠⚠⚠ **Buttons UNDER the text on a narrow card.** At 320dp the
+        // Delete + Use pair (~180dp) left the name and details a column a few
+        // words wide — "installed · / 8198 MB / Text and / image to…" — the
+        // whole card read as a stack of fragments (`NarrowSweep`, 2026-09-23).
+        // ⚠ Measured on the CARD's width, so a 384dp phone keeps them beside.
+        val stacked = maxWidth < 320.dp
+        val details: @Composable () -> Unit = {
                     Text(
                         title,
                         style = MaterialTheme.typography.titleMedium,
@@ -901,7 +816,29 @@ private fun DownloadCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(detail, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        }
+        Column {
+            if (stacked) {
+                details()
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) { action() }
+            } else Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // ⚠⚠ `padding(end = 12.dp)` — with `SpaceBetween` and a weighted
+                // column there is NOTHING between the longest line of text and
+                // the button beside it, so a title or a detail line that runs
+                // the full width ends up touching it. Reported 2026-09-22:
+                // *"give more room to the left of the btn, the text is
+                // basically touching the border"*. The gap belongs to the text
+                // column rather than to a Spacer, or a short line would push
+                // the button inwards.
+                Column(Modifier.weight(1f).padding(end = 12.dp)) { details() }
                 action()
             }
             if (progress != null) {
@@ -918,6 +855,7 @@ private fun DownloadCard(
                 // ⭐ The phase under the bar: which file, or "extracting".
                 Text(progress.phase, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
         }
     }
 }
@@ -945,6 +883,10 @@ private fun ModelCard(
             // failure it can have is being INCOMPLETE -- and it must say which
             // files, because nothing else would ever tell the user.
             row.spec.isCustom -> stringResource(R.string.incomplete_missing, row.missing.joinToString())
+            // ⭐⭐ A built-in with files DELETED names them and what the repair
+            // costs, rather than reading as never downloaded (2026-09-27).
+            row.build != null && row.partial ->
+                stringResource(R.string.incomplete_repair_mb, row.missing.joinToString(), mb(row.fetchBytes))
             // ⚠⚠ The size of the build THIS DEVICE would get, not of the
             // preferred one: they differ by up to 60 MB between tiers.
             row.build != null -> stringResource(R.string.not_installed_mb, mb(row.build.bytes))
@@ -982,7 +924,9 @@ private fun ModelCard(
             // than failing after a multi-gigabyte download.
             row.build == null ->
                 OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.unsupported)) }
-            else -> Button(onClick = { onInstall(row.spec) }, enabled = !busy) { Text(stringResource(R.string.download)) }
+            else -> Button(onClick = { onInstall(row.spec) }, enabled = !busy) {
+                Text(stringResource(if (row.partial) R.string.repair else R.string.download))
+            }
         }
     }
 }
@@ -1139,6 +1083,8 @@ internal fun ToolCard(
     busy: Boolean,
     onInstall: () -> Unit,
     onCancel: () -> Unit,
+    /** ⚠ What the model is for — the segmenter's line unless the caller says. */
+    detail: String = stringResource(R.string.segmenter_about),
     onDelete: () -> Unit,
 ) {
     DownloadCard(
@@ -1146,7 +1092,7 @@ internal fun ToolCard(
         emphasised = false,
         status = if (row.installed) stringResource(R.string.installed_mb, mb(row.onDisk))
         else stringResource(R.string.not_installed_mb, mb(row.bytes)),
-        detail = stringResource(R.string.segmenter_about),
+        detail = detail,
         progress = row.progress,
     ) {
         when {

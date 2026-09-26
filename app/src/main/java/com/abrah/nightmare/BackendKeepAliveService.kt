@@ -48,7 +48,7 @@ class BackendKeepAliveService : Service() {
         // ⚠ FIRST, before anything else can throw — same trap OpService's own
         // comment names: a service started with startForegroundService() that
         // does not call startForeground() within ~5 s is killed outright.
-        val n: Notification = notification()
+        val n: Notification = notification(intent?.getStringExtra(EXTRA_TEXT) ?: TEXT_MODEL)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
@@ -61,7 +61,7 @@ class BackendKeepAliveService : Service() {
         return START_STICKY
     }
 
-    private fun notification(): Notification {
+    private fun notification(text: String): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
@@ -70,7 +70,7 @@ class BackendKeepAliveService : Service() {
         }
         return Notification.Builder(this, CHANNEL)
             .setContentTitle("Nightmare")
-            .setContentText("keeping a loaded model in memory")
+            .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .build()
@@ -80,9 +80,16 @@ class BackendKeepAliveService : Service() {
         private const val CHANNEL = "backend-keepalive"
         private const val NOTIFICATION_ID = 2
 
-        /** ⚠ Idempotent: starting an already-started foreground service is a no-op. */
-        fun start(context: Context) {
-            val intent = Intent(context, BackendKeepAliveService::class.java)
+        private const val EXTRA_TEXT = "text"
+        private const val TEXT_MODEL = "keeping a loaded model in memory"
+
+        /**
+         * ⚠ Idempotent: starting an already-started foreground service is a no-op.
+         * ⭐ [text] says WHY — a models-folder move ([ModelStorage]) holds the
+         * process up the same way a resident checkpoint does.
+         */
+        fun start(context: Context, text: String = TEXT_MODEL) {
+            val intent = Intent(context, BackendKeepAliveService::class.java).putExtra(EXTRA_TEXT, text)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {

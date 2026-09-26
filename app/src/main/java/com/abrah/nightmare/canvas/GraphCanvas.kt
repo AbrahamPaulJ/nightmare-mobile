@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -70,11 +72,22 @@ data class NodeStatus(
  * decoration.
  */
 object CanvasColors {
-    val background = Color(0xFF0B0B10)
-    val grid = Color(0xFF16161F)
-    val nodeBody = Color(0xFF1A1A24)
-    val nodeStroke = Color(0xFF2A2A38)
-    val selectedStroke = Color(0xFF9B6BFF)
+    /**
+     * ⭐⭐ The LIGHT canvas — white, the user's call 2026-09-26 (`ui/Theme.kt`).
+     * Set by `NightmareTheme`. ⚠ Compose state, so the draw lambdas that read
+     * these colours redraw when it flips. Every colour below is a (dark, light)
+     * pair; the hues stay the same and only their lightness moves, so a node's
+     * category reads the same in both.
+     */
+    var light by androidx.compose.runtime.mutableStateOf(false)
+
+    private fun pick(dark: Long, light: Long) = Color(if (this.light) light else dark)
+
+    val background get() = pick(0xFF0B0B10, 0xFFFFFFFF)
+    val grid get() = pick(0xFF16161F, 0xFFE8E8EE)
+    val nodeBody get() = pick(0xFF1A1A24, 0xFFF6F6F9)
+    val nodeStroke get() = pick(0xFF2A2A38, 0xFFD3D3DD)
+    val selectedStroke get() = pick(0xFF9B6BFF, 0xFF7C4DFF)
 
     /**
      * ⭐ A selected node is drawn RAISED, and these are the two halves of it: a
@@ -85,64 +98,64 @@ object CanvasColors {
      * halo is the SAME purple as the selection stroke it surrounds, so the
      * canvas still spends exactly one colour on state and one on category.
      */
-    val selectedBody = Color(0xFF26263A)
-    val selectedGlow = Color(0xFF9B6BFF)
+    val selectedBody get() = pick(0xFF26263A, 0xFFF1ECFF)
+    val selectedGlow get() = pick(0xFF9B6BFF, 0xFF7C4DFF)
 
-    /** ⚠ Under a raised node. Only ever drawn against [background]. */
-    val shadow = Color(0xFF000000)
-    val title = Color(0xFFEDEDF2)
-    val label = Color(0xFF9A9AA8)
-    val edge = Color(0xFF4A4A5C)
-    val edgeLive = Color(0xFF9B6BFF)
-    val ran = Color(0xFF6BFF9B)
-    val cached = Color(0xFF6BA8FF)
-    val failed = Color(0xFFFF6B6B)
+    /** ⚠ Under a raised node. Only ever drawn against [background]; a grey on white. */
+    val shadow get() = pick(0xFF000000, 0xFF9A9AAA)
+    val title get() = pick(0xFFEDEDF2, 0xFF16161D)
+    val label get() = pick(0xFF9A9AA8, 0xFF5E5E6E)
+    val edge get() = pick(0xFF4A4A5C, 0xFFB4B4C2)
+    val edgeLive get() = pick(0xFF9B6BFF, 0xFF7C4DFF)
+    val ran get() = pick(0xFF6BFF9B, 0xFF1C9E55)
+    val cached get() = pick(0xFF6BA8FF, 0xFF2F74D6)
+    val failed get() = pick(0xFFFF6B6B, 0xFFD93838)
 
     /** Deterministic per category, so a shared screenshot means the same thing everywhere. */
     fun forCategory(category: String?): Color = when (category) {
         // ⭐ The four of docs/ARCHITECTURE.md §5.7, in the order a flow runs.
-        "source" -> Color(0xFF7BFFB0)
-        "generate" -> Color(0xFFB07BFF)
+        "source" -> pick(0xFF7BFFB0, 0xFF1FAF66)
+        "generate" -> pick(0xFFB07BFF, 0xFF8A4DFF)
         // ⚠ Its own hue since inpaint became its own palette section (2026-09-16).
-        "inpaint" -> Color(0xFFFF9B7B)
-        "edit" -> Color(0xFFFFD37B)
-        "output" -> Color(0xFF7BC7FF)
+        "inpaint" -> pick(0xFFFF9B7B, 0xFFEE6A3E)
+        "edit" -> pick(0xFFFFD37B, 0xFFD99A12)
+        "output" -> pick(0xFF7BC7FF, 0xFF2893E0)
         // ⚠ The old categories, still worn by the hidden legacy types and by
         // the video nodes until they are reworked too.
-        "sampling" -> Color(0xFFB07BFF)
-        "latent" -> Color(0xFF7BC7FF)
-        "image" -> Color(0xFF7BFFB0)
-        "mask" -> Color(0xFFFFD37B)
-        "video" -> Color(0xFFFF7BD4)
-        else -> Color(0xFF8A8A9A)
+        "sampling" -> pick(0xFFB07BFF, 0xFF8A4DFF)
+        "latent" -> pick(0xFF7BC7FF, 0xFF2893E0)
+        "image" -> pick(0xFF7BFFB0, 0xFF1FAF66)
+        "mask" -> pick(0xFFFFD37B, 0xFFD99A12)
+        "video" -> pick(0xFFFF7BD4, 0xFFDB45AE)
+        else -> pick(0xFF8A8A9A, 0xFF7A7A8A)
     }
 
     fun forType(portType: String): Color = when (portType) {
-        "LATENT" -> Color(0xFF7BC7FF)
-        "IMAGE" -> Color(0xFF7BFFB0)
-        "COND" -> Color(0xFFFFB07B)
+        "LATENT" -> pick(0xFF7BC7FF, 0xFF2893E0)
+        "IMAGE" -> pick(0xFF7BFFB0, 0xFF1FAF66)
+        "COND" -> pick(0xFFFFB07B, 0xFFEB7F2F)
         // ⭐ Text, not a conditioning — and a colour of its own, because a
         // PROMPT wire and a COND wire accept different things (§5.7).
-        "PROMPT" -> Color(0xFFFFB07B)
+        "PROMPT" -> pick(0xFFFFB07B, 0xFFEB7F2F)
         // ⚠ The one port that takes either a picture or a clip, so it may not
         // look like only one of them.
-        "MEDIA" -> Color(0xFFCFCFE0)
+        "MEDIA" -> pick(0xFFCFCFE0, 0xFF8C8CA0)
         // ⭐ The segmenter capability — the inpaint hue, since that is all it feeds.
-        "SEGMENTER" -> Color(0xFFFF9B7B)
+        "SEGMENTER" -> pick(0xFFFF9B7B, 0xFFEE6A3E)
         // ⚠ A pink of its own rather than IMAGE's green: a VIDEO port does not
         // accept an image wire and the canvas refuses the drop, so two ports
         // that mean different things must not look alike.
-        "VIDEO" -> Color(0xFFFF7BD4)
+        "VIDEO" -> pick(0xFFFF7BD4, 0xFFDB45AE)
         // ⚠⚠ The video path's own conditioning and latent. They are NOT
         // `COND`/`LATENT` — those live in the backend process — so they must
         // not look like them either: a port that refuses a wire while looking
         // identical to one that accepts it reads as a bug.
         // ⚠ Kin to their SD counterparts (a warmer orange, a deeper blue) so
         // the family is legible without the two being confusable.
-        "VIDEO_COND" -> Color(0xFFFF9E5C)
-        "FRAME_COND" -> Color(0xFFFFC98A)
-        "VIDEO_LATENT" -> Color(0xFF5C9EFF)
-        else -> Color(0xFF8A8A9A)
+        "VIDEO_COND" -> pick(0xFFFF9E5C, 0xFFE0701F)
+        "FRAME_COND" -> pick(0xFFFFC98A, 0xFFE09A3A)
+        "VIDEO_LATENT" -> pick(0xFF5C9EFF, 0xFF2F6FE0)
+        else -> pick(0xFF8A8A9A, 0xFF7A7A8A)
     }
 }
 

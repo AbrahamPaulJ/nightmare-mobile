@@ -62,10 +62,16 @@ import com.abrah.nightmare.Prefs
  *
  * ⇒ With both gone, a `TabRow` over one page was a tab bar with nothing to
  * switch to, so it went too.
+ *
+ * ⚠⚠ **Rule changed 2026-09-26, at the user's ask: pill sub-tabs again** —
+ * General · Add-ons · Translation · Downloads, the [SwipeTabs] Models uses.
+ * What no longer held: the page had grown to theme, battery, LoRAs,
+ * embeddings, download source and clean temp, and prompt translation brought
+ * two download cards more. The reason the old tabs went — tabs with nothing
+ * to switch to — does not apply to four pages that each have content.
  */
 @Composable
 fun SettingsScreen(
-    onClose: () -> Unit,
     theme: Prefs.Theme,
     onTheme: (Prefs.Theme) -> Unit,
     /**
@@ -119,10 +125,31 @@ fun SettingsScreen(
      * leaves the download scratch alone rather than pulling a live transfer
      * out from under itself. */
     installing: Boolean = false,
+    /**
+     * ⭐ The prompt-translation models, one row per language
+     * ([com.abrah.nightmare.HarnessViewModel.translateRows]). ⚠ Null hides
+     * the Translation tab.
+     */
+    translateRows: Map<com.abrah.nightmare.PromptTranslate.Source, ToolRow>? = null,
+    onInstallTranslation: (com.abrah.nightmare.PromptTranslate.Source) -> Unit = {},
+    onDeleteTranslation: (com.abrah.nightmare.PromptTranslate.Source) -> Unit = {},
+    onCancelInstall: () -> Unit = {},
+    /** ⭐ Where models live ([com.abrah.nightmare.ModelStorage]) and the move between places. */
+    modelsPlace: com.abrah.nightmare.ModelStorage.Place = com.abrah.nightmare.ModelStorage.Place.APP,
+    storageAccess: Boolean = false,
+    strandedModels: Pair<Int, Long> = 0 to 0L,
+    moveProgress: com.abrah.nightmare.ModelInstaller.Progress? = null,
+    movePlan: com.abrah.nightmare.HarnessViewModel.MovePlan? = null,
+    onModelsPlace: (com.abrah.nightmare.ModelStorage.Place) -> Unit = {},
+    onConfirmMove: () -> Unit = {},
+    onDismissMove: () -> Unit = {},
+    /** ⚠ For a golden, which cannot swipe. */
+    initialPage: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     var deletingEmbedding by remember { mutableStateOf<String?>(null) }
     var deletingLora by remember { mutableStateOf<String?>(null) }
+    var deletingTranslation by remember { mutableStateOf<com.abrah.nightmare.PromptTranslate.Source?>(null) }
     // ⚠⚠ Hoisted to the function, not the Column that draws the button:
     // the confirm dialog below is a sibling of the whole layout, and a state
     // declared in the Column is invisible to it.
@@ -133,19 +160,34 @@ fun SettingsScreen(
     // ⚠⚠⚠ Laid out like [LibraryScreen] minus its `TabRow` — see the class
     // note. `statusBarsPadding().padding(16.dp)`, then `ScreenHeader`; if
     // Library's own inset changes, this must change with it.
+    // ⭐ Which pages exist — Translation only when there are rows to draw
+    // (null hides a section, the same convention as every slot here).
+    val pages = listOfNotNull(
+        Page.GENERAL, Page.ADDONS, Page.TRANSLATION.takeIf { translateRows != null }, Page.DOWNLOADS,
+    )
     Column(
         // ⚠⚠ Its OWN insets: Settings is not a [LibraryScreen] tab, so the
         // bottom one that screen applies does not reach here. Reported from
         // the phone 2026-09-20 along with the three tabs — the Clean temp
         // button was the last thing on the page and sat under the gesture bar.
-        modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+        // ⚠ `fillMaxSize` is also the FIXED height a tabbed sheet needs
+        // (`docs/UI.md` §8.11): each page scrolls, the sheet does not resize.
+        modifier.fillMaxSize().navigationBarsPadding().padding(16.dp),
     ) {
-        ScreenHeader(stringResource(R.string.settings), onClose = onClose)
+        // ⚠ No ✕: Settings is a pull-down sheet since 2026-09-26 ([PullDownSheet]).
+        ScreenHeader(stringResource(R.string.settings), onClose = null)
+        SwipeTabs(
+            labels = pages.map { stringResource(it.label) },
+            modifier = Modifier.weight(1f).padding(top = 8.dp),
+            fillHeight = true,
+            initialPage = initialPage,
+        ) { index ->
         Column(
-            Modifier.fillMaxWidth().padding(top = 14.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+        when (pages[index]) {
+        Page.GENERAL -> {
             // ⚠⚠ THREE choices, not a dark-mode switch. "Follow the system" cannot
             // be expressed as on/off, and a bare switch would pin the app to
             // whatever the phone was when it was first opened with no way back.
@@ -219,6 +261,8 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+        Page.ADDONS -> {
             // ⭐⭐ LoRAs — import / list / delete, above the embeddings and
             // built from the same two pieces ([ImportCallout] + a row card).
             //
@@ -298,6 +342,98 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+        Page.TRANSLATION -> {
+            // ⭐⭐ The two language models behind a prompt box's translate
+            // button (`docs/TRANSLATE.md`) — the SAME [ToolCard] the Models
+            // tab's Tools page draws, so a download here has its size, bar and
+            // Cancel (`docs/UI.md` §8.2).
+            Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    stringResource(R.string.translation_note),
+                    style = LogTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                for ((source, row) in translateRows.orEmpty()) {
+                    ToolCard(
+                        row, installing, { onInstallTranslation(source) }, onCancelInstall,
+                        detail = stringResource(R.string.translate_about),
+                    ) { deletingTranslation = source }
+                }
+            }
+        }
+        Page.DOWNLOADS -> {
+            // ⭐⭐⭐ **Where models live** ([com.abrah.nightmare.ModelStorage]) —
+            // the user's ask, 2026-09-26: a folder a file picker can reach.
+            // ⚠ Radios, the SAME [SourceRow] the download source below uses:
+            // two places, one of them chosen.
+            // ⚠⚠ All files access is asked only when `Download/` is PICKED,
+            // never on opening this page — *"some users would be wary"*.
+            Column(
+                Modifier.fillMaxWidth().padding(top = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(stringResource(R.string.models_folder), style = MaterialTheme.typography.labelLarge)
+                Text(
+                    stringResource(R.string.models_folder_note),
+                    style = LogTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val inDownload = modelsPlace == com.abrah.nightmare.ModelStorage.Place.DOWNLOAD
+                SourceRow(
+                    label = stringResource(R.string.models_folder_app),
+                    detail = "Android/data/com.abrah.nightmare/files",
+                    selected = !inDownload,
+                    onSelect = { onModelsPlace(com.abrah.nightmare.ModelStorage.Place.APP) },
+                )
+                SourceRow(
+                    label = stringResource(R.string.models_folder_download),
+                    detail = "Download/" + com.abrah.nightmare.ModelStorage.FOLDER,
+                    selected = inDownload,
+                    onSelect = { onModelsPlace(com.abrah.nightmare.ModelStorage.Place.DOWNLOAD) },
+                )
+                if (inDownload && !storageAccess) {
+                    Text(
+                        stringResource(R.string.models_folder_no_access),
+                        style = LogTextStyle,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    OutlinedButton(onClick = { onModelsPlace(com.abrah.nightmare.ModelStorage.Place.DOWNLOAD) }) {
+                        Text(stringResource(R.string.models_folder_allow))
+                    }
+                }
+                // ⭐ The move, on the SAME card a download uses — size, bar,
+                // Cancel (`docs/UI.md` §8.2).
+                val moving = moveProgress
+                if (moving != null) {
+                    DownloadCard(
+                        title = stringResource(R.string.models_moving),
+                        emphasised = false,
+                        status = "${moving.done shr 20} / ${moving.total shr 20} MB",
+                        detail = moving.phase,
+                        progress = moving,
+                    ) {
+                        OutlinedButton(onClick = onCancelInstall) { Text(stringResource(R.string.cancel)) }
+                    }
+                } else if (strandedModels.first > 0) {
+                    // ⭐ What the OTHER place still holds — an interrupted move,
+                    // or a folder that outlived an uninstall.
+                    Text(
+                        stringResource(
+                            R.string.models_stranded,
+                            strandedModels.first, sizeLabel(strandedModels.second),
+                            stringResource(
+                                if (inDownload) R.string.models_folder_app else R.string.models_folder_download,
+                            ),
+                        ),
+                        style = LogTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(onClick = { onModelsPlace(modelsPlace) }, enabled = !installing) {
+                        Text(stringResource(R.string.models_move_here))
                     }
                 }
             }
@@ -411,6 +547,9 @@ fun SettingsScreen(
                 }
             }
         }
+        }
+        }
+        }
     }
     // ⚠⚠ Only a REAL delete gets [ConfirmDelete]. "Nothing to clean" is
     // an answer, not a destructive action, and dressing it as one would put
@@ -435,6 +574,44 @@ fun SettingsScreen(
                 "again or untick it.",
             onConfirm = { onDeleteLora?.invoke(name) },
             onDismiss = { deletingLora = null },
+        )
+    }
+
+    movePlan?.let { plan ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = onDismissMove,
+            title = { Text(stringResource(R.string.models_move_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.models_move_body,
+                        plan.count, sizeLabel(plan.bytes),
+                        stringResource(
+                            if (plan.to == com.abrah.nightmare.ModelStorage.Place.DOWNLOAD) R.string.models_folder_download
+                            else R.string.models_folder_app,
+                        ),
+                    )
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(onClick = onConfirmMove) {
+                    Text(stringResource(R.string.models_move_action))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = onDismissMove) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
+    deletingTranslation?.let { source ->
+        val row = translateRows?.get(source)
+        ConfirmDelete(
+            title = "Delete ${row?.label ?: source.name}?",
+            body = "Frees ${(row?.onDisk ?: 0L) shr 20} MB. Getting it back is a " +
+                "${source.bytes shr 20} MB download, asked for the next time you translate.",
+            onConfirm = { onDeleteTranslation(source) },
+            onDismiss = { deletingTranslation = null },
         )
     }
 
@@ -483,3 +660,15 @@ private fun SourceRow(
     if (selected) content?.invoke()
 }
 
+/** ⭐ Settings' pages, in pill order. */
+private enum class Page(val label: Int) {
+    GENERAL(R.string.settings_general),
+    ADDONS(R.string.settings_addons),
+    TRANSLATION(R.string.settings_translation),
+    DOWNLOADS(R.string.settings_downloads),
+}
+
+/** ⚠ MB below a gigabyte, one decimal of GB above — the unit the Models tab uses. */
+private fun sizeLabel(bytes: Long): String =
+    if (bytes >= 1L shl 30) String.format(java.util.Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
+    else "${bytes shr 20} MB"

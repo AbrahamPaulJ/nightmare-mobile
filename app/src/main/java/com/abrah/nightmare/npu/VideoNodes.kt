@@ -119,7 +119,6 @@ object VideoSampleNode : NodeType {
         Widget("y", "float", "0.0", 0.0, 1.0),
         Widget("w", "float", "1.0", 0.0, 1.0),
         Widget("h", "float", "1.0", 0.0, 1.0),
-        Widget(com.abrah.nightmare.CropNode.LOCKED, "bool", "false"),
     )
 
     /**

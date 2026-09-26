@@ -549,6 +549,30 @@ data class ModelSpec(
     fun installed(context: Context): Boolean = missing(context).isEmpty()
 
     /**
+     * ⭐ Some of its files are here and some are not — a model damaged or
+     * half-moved, not one never downloaded. ⚠ `.part` files do not count: a
+     * download that never finished is still "not installed".
+     */
+    fun partial(context: Context): Boolean =
+        !installed(context) &&
+            dir(context).listFiles().orEmpty().any { it.isFile && !it.name.endsWith(".part") && it.length() > 0 }
+
+    /**
+     * ⭐⭐ What a Download or Repair will FETCH. A plain-file package (the DiT
+     * families) fetches only what is absent or short — [ModelInstaller] skips
+     * a file already at full size; an archive is fetched whole, because it is
+     * one zip. The user's call, 2026-09-27: repair names what is missing and
+     * keeps the whole-archive download.
+     */
+    fun fetchBytes(context: Context, build: Build?): Long =
+        if (files.isNotEmpty()) {
+            files.sumOf { f ->
+                val have = File(dir(context), f.name).takeIf { it.isFile }?.length() ?: 0L
+                (f.bytes - have).coerceAtLeast(0L)
+            }
+        } else build?.bytes ?: 0L
+
+    /**
      * Whether this model's `unet.bin` is a 512 base that resolution patches
      * apply to.
      *
@@ -1107,11 +1131,14 @@ object ModelCatalog {
         "vae_decoder.bin", "vae_encoder.bin",
     )
 
-    fun root(context: Context): File = File(context.getExternalFilesDir(null), "models")
+    /** ⚠ Under [ModelStorage.root] — the person may have moved it to `Download/Nightmare`. */
+    fun root(context: Context): File = File(ModelStorage.root(context), "models")
 
     /** Where a part-downloaded archive lives. ⚠ Not the model dir: a stray zip there reads as a model. */
     fun downloads(context: Context): File =
-        File(context.getExternalFilesDir(null), "downloads")
+        // ⚠ Beside the models, so the finished file RENAMES into place rather
+        // than copying across mounts.
+        File(ModelStorage.root(context), "downloads")
 
     // ---- prompts ---------------------------------------------------------
     // ⭐⭐ Model parameters rather than UI copy, and **`local-dream`'s own, id
@@ -1148,6 +1175,14 @@ object ModelCatalog {
     // list about skin. Collapsing them was DreamUI's loss, not a tidy-up.
     /** ⚠ Shared by AbsoluteReality and its inpainting checkpoint — one text, two entries. */
     private const val P_ABSOLUTE = "masterpiece, best quality, ultra-detailed, realistic, 8k, a cat on grass,"
+
+    /**
+     * ⚠ The same tags with NO SUBJECT, for the inpaint checkpoint — the user's
+     * call, 2026-09-23: *"for inpaint flows, remove cat on a grass from default
+     * prompt"*. An inpaint prompt describes what goes IN the masked area, and a
+     * cat that has to be deleted first is the [Family.prompt] rule's complaint.
+     */
+    private const val P_ABSOLUTE_INPAINT = "masterpiece, best quality, ultra-detailed, realistic, 8k,"
 
     private const val NEG_ABSOLUTE =
         "worst quality, low quality, normal quality, poorly drawn, lowres, " +
@@ -1284,7 +1319,7 @@ object ModelCatalog {
         // ⚠ Its BASE's starter text, not DreamUI's negative-only entry. There it
         // was an inpaint-only model; here it also does text to image, and an
         // empty prompt cleared the box when a node was switched onto it.
-        prompt = P_ABSOLUTE,
+        prompt = P_ABSOLUTE_INPAINT,
         negative = NEG_ABSOLUTE,
         backendType = SD15_NPU_INPAINT,
         baseUrl = "https://huggingface.co/AbrahamPJ/absolutereality-inpainting-qnn/resolve/main/",

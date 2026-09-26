@@ -76,11 +76,20 @@ object TempCleaner {
         val out = mutableListOf<File>()
 
         // ⚠⚠ Only when nothing is installing — see the class note.
-        if (!busy && ext != null) {
-            File(ext, "downloads").takeIf { it.isDirectory }?.let { out += it }
-            File(ext, "models").takeIf { it.isDirectory }?.listFiles()
-                ?.filter { it.isFile }
-                ?.forEach { out += it }
+        // ⚠ BOTH model places ([ModelStorage]): a move leaves the old one's
+        // part-files behind, and they are scratch wherever they sit.
+        if (!busy) {
+            for (place in ModelStorage.Place.entries) {
+                val root = ModelStorage.rootFor(context, place)
+                File(root, "downloads").takeIf { it.isDirectory }?.let { out += it }
+                File(root, "models").takeIf { it.isDirectory }?.listFiles()
+                    ?.filter { it.isFile }
+                    ?.forEach { out += it }
+                // ⚠ A move interrupted mid-file ([ModelStorage.move]).
+                ModelStorage.SUBDIRS.map { File(root, it) }.filter { it.isDirectory }
+                    .flatMap { d -> d.walkTopDown().filter { it.isFile && it.name.endsWith(".moving") }.toList() }
+                    .forEach { out += it }
+            }
         }
         if (ext != null) {
             for (d in SCRATCH_DIRS) File(ext, d).takeIf { it.isDirectory }?.let { out += it }

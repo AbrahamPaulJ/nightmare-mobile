@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -146,7 +147,7 @@ fun ResultsScreen(
     /** ⭐ Info — what made it, from the stored flow. */
     detailsFor: (Result) -> List<Pair<String, String>> = { emptyList() },
     /** ⭐ Upscale with an installed upscaler; the enlarged picture becomes a new item. */
-    onUpscale: (Result, String) -> Unit = { _, _ -> },
+    onUpscale: (Result, String, Int) -> Unit = { _, _, _ -> },
     upscalers: List<UpscalerRow> = emptyList(),
     onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
     /** ⭐ Non-null while an upscale runs, naming it. */
@@ -384,10 +385,10 @@ fun ResultsScreen(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 8.dp),
                 )
-                Spacer(Modifier.weight(1f))
-                // ⚠ 40dp targets (DreamUI's own minimum) so six controls and the
-                // count fit one row on a 360dp phone without pushing any off.
-                val small = Modifier.size(40.dp)
+                // ⚠⚠ An EQUAL SHARE each, not a fixed 40dp — see the other
+                // branch. The share also does the Spacer's old job of pushing
+                // the controls away from the count.
+                val small = Modifier.weight(1f).height(40.dp)
                 TextButton(onClick = onSelectAll, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("All") }
                 // ⭐ Star the selection — no confirm, a star is one tap to undo.
                 val allStarred = all.filter { it.id in selected }.let { sel -> sel.isNotEmpty() && sel.all { it.favourite } }
@@ -411,9 +412,14 @@ fun ResultsScreen(
                     Icon(Icons.Filled.Close, contentDescription = "stop selecting", tint = onSurface)
                 }
             } else {
-                // ⚠⚠ 40dp targets, as the selection row: with Send to added, seven
-                // 48dp icons pushed Open off a 360dp phone (golden `history-360`).
-                val small = Modifier.size(40.dp)
+                // ⚠⚠⚠ **An EQUAL SHARE of the row each, not a fixed size.**
+                // 40dp was the last fix (seven 48dp icons pushed Open off a 360dp
+                // phone, golden `history-360`) and it ran out again: eight 40dp
+                // buttons are 320dp, and a 320dp phone has 288dp here, so Open
+                // was squeezed to a speck (`NarrowSweep`, 2026-09-23). A share
+                // is 36dp there — the 24dp icon still fits — and wider on a
+                // wider phone, so the row can never outgrow the screen again.
+                val small = Modifier.weight(1f).height(40.dp)
                 IconButton(onClick = { deleting = shown }, modifier = small) {
                     Icon(
                         Icons.Filled.Delete,
@@ -514,7 +520,9 @@ fun ResultsScreen(
     upscalingPick?.let { r ->
         UpscalePicker(
             upscalers = upscalers,
-            onPick = { id -> upscalingPick = null; onUpscale(r, id) },
+            onPick = { id, scale -> upscalingPick = null; onUpscale(r, id, scale) },
+            width = r.width,
+            height = r.height,
             onInstall = onInstallUpscaler,
             onDismiss = { upscalingPick = null },
         )
@@ -651,7 +659,7 @@ fun ResultViewer(
      */
     upscalers: List<UpscalerRow> = emptyList(),
     upscaling: String? = null,
-    onUpscale: ((Result, String) -> Unit)? = null,
+    onUpscale: ((Result, String, Int) -> Unit)? = null,
     onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
     onToast: (String) -> Unit = {},
 ) {
@@ -990,7 +998,9 @@ fun ResultViewer(
         upscalingPick?.let { r ->
             UpscalePicker(
                 upscalers = upscalers,
-                onPick = { id -> upscalingPick = null; onUpscale?.invoke(r, id) },
+                onPick = { id, scale -> upscalingPick = null; onUpscale?.invoke(r, id, scale) },
+                width = r.width,
+                height = r.height,
                 onInstall = onInstallUpscaler,
                 onDismiss = { upscalingPick = null },
             )
@@ -1510,12 +1520,12 @@ fun ResultInfoDialog(details: List<Pair<String, String>>, onClose: () -> Unit) {
     )
 }
 
+
 /**
- * ⚠ The longest edge Results will upscale. The upscalers are 4x, so this caps
- * the output at 6144 px — ~150 MB of pixels held while the PNG is written,
- * which is where a phone starts refusing the allocation.
+ * ⭐ The scale the upscaler chooser last used — kept for the session, so the
+ * next upscale starts where the last one was set.
  */
-const val UPSCALE_MAX_EDGE = 1536
+private var upscaleScale by androidx.compose.runtime.mutableIntStateOf(com.abrah.nightmare.UpscaleNode.NATIVE_SCALE)
 
 /**
  * ⭐⭐⭐ **Why this picture cannot be upscaled, in one sentence — or null.**
@@ -1531,9 +1541,12 @@ const val UPSCALE_MAX_EDGE = 1536
 fun upscaleRefusal(width: Int, height: Int, isClip: Boolean, busyWith: String?): String? = when {
     busyWith != null -> "Already upscaling with $busyWith"
     isClip -> "Upscale works on pictures, not clips"
-    maxOf(width, height) > UPSCALE_MAX_EDGE ->
+    // ⭐⭐ Refused only when not even 2x fits [UpscaleNode.MAX_OUT_EDGE]; the
+    // chooser dims the scales that do not fit ([UpscalePicker]).
+    com.abrah.nightmare.UpscaleNode.fittingScale(width, height, 2) == null ->
         "Too big to upscale: ${width}x$height. Pictures up to " +
-            "$UPSCALE_MAX_EDGE px on the long edge only (4x would pass ${UPSCALE_MAX_EDGE * 4} px)."
+            "${com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE / 2} px on the long edge only " +
+            "(${com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE} px after 2x)."
     else -> null
 }
 
@@ -1547,20 +1560,52 @@ fun upscaleRefusal(width: Int, height: Int, isClip: Boolean, busyWith: String?):
 @Composable
 fun UpscalePicker(
     upscalers: List<UpscalerRow>,
-    onPick: (String) -> Unit,
+    /** The upscaler's id and the scale, 2..4. */
+    onPick: (String, Int) -> Unit,
     onInstall: (com.abrah.nightmare.UpscalerSpec) -> Unit,
     onDismiss: () -> Unit,
+    /** ⭐ The picture's size, to dim the scales that would pass the cap; null offers all. */
+    width: Int? = null,
+    height: Int? = null,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Upscale") },
+        title = { Text(stringResource(R.string.upscale_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "The enlarged picture is kept as a new item; this one stays.",
+                    stringResource(R.string.upscale_body),
                     style = LogTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // ⭐⭐ 2x / 3x / 4x — local-dream's choice (the user's ask,
+                // 2026-09-26). ⚠ A scale that would pass
+                // [com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE] is DIMMED and
+                // says why when tapped, never hidden (`docs/UI.md` §8.18).
+                val fits = { s: Int ->
+                    width == null || height == null || maxOf(width, height) * s <= com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE
+                }
+                if (!fits(upscaleScale)) upscaleScale = (upscaleScale downTo 2).firstOrNull(fits) ?: 2
+                val tooBig = stringResource(R.string.upscale_scale_too_big, com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (s in 2..com.abrah.nightmare.UpscaleNode.NATIVE_SCALE) {
+                        androidx.compose.material3.FilterChip(
+                            selected = upscaleScale == s,
+                            onClick = {
+                                if (fits(s)) upscaleScale = s
+                                else android.widget.Toast.makeText(context, tooBig, android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            label = {
+                                Text(
+                                    "${s}x",
+                                    color = if (fits(s)) androidx.compose.ui.graphics.Color.Unspecified
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                                )
+                            },
+                        )
+                    }
+                }
                 for (u in upscalers) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -1568,7 +1613,7 @@ fun UpscalePicker(
                             Text(u.spec.about, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                         }
                         when {
-                            u.installed -> Button(onClick = { onPick(u.spec.id) }) { Text("Use") }
+                            u.installed -> Button(onClick = { onPick(u.spec.id, upscaleScale) }) { Text(stringResource(R.string.use)) }
                             u.progress != null -> Text("${u.progress.done shr 20} / ${u.progress.total shr 20} MB", style = LogTextStyle)
                             u.build != null -> OutlinedButton(onClick = { onInstall(u.spec) }) {
                                 Text("${u.build.bytes shr 20} MB")

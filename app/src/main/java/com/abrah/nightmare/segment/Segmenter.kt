@@ -3,6 +3,8 @@ package com.abrah.nightmare.segment
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.abrah.nightmare.BackendProcess
 import com.abrah.nightmare.ModelInstaller
 import com.abrah.nightmare.UpscalerCatalog
@@ -147,6 +149,20 @@ object Segmenter {
         cache.clear()
     }
 
+    /** ⚠ The model only — the cached regions stay ([IdleRelease]). */
+    @Synchronized
+    private fun releaseModel() {
+        if (model == null) return
+        model?.close()
+        model = null
+        Log.i(TAG, "model released (idle or low memory)")
+    }
+
+    private val idle = IdleRelease(IdleRelease.IDLE_MS) { releaseModel() }
+
+    /** ⭐ Let the model go now if nothing is using it — low memory. */
+    fun trim() = idle.releaseNow()
+
     // ---- regions ----------------------------------------------------------
 
     /**
@@ -199,6 +215,22 @@ object Segmenter {
         val pk = photoKey(photo)
         val key = cacheKey(pk, x, y)
         synchronized(this) { cache[key] }?.let { return it }
+        idle.begin()
+        try {
+            return segmentWith(context, photo, pk, key, x, y)
+        } finally {
+            idle.end()
+        }
+    }
+
+    private fun segmentWith(
+        context: Context,
+        photo: Bitmap,
+        pk: Long,
+        key: String,
+        x: Float,
+        y: Float,
+    ): SegmentModel.Segmentation? {
         val m = model(context) ?: return null
         val t0 = System.nanoTime()
         val primed = m.isReady(pk)
@@ -210,8 +242,17 @@ object Segmenter {
                 "decode ${(System.nanoTime() - t1) / 1_000_000} ms, ${result.candidates.size} candidates",
         )
         synchronized(this) { cache[key] = result }
+        epoch++
         return result
     }
+
+    /**
+     * ⭐ Bumped each time a tap's regions land in the cache — [Parser.epoch]'s
+     * twin. A preview keyed on it redraws when the tap it resolves from the
+     * cache becomes available, and is skipped otherwise.
+     */
+    var epoch by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
 
     /** ⚠ Cache only — for a caller on the main thread that must not block. */
     fun cached(photo: Bitmap, x: Float, y: Float): SegmentModel.Segmentation? =

@@ -1,0 +1,55 @@
+diff --git a/foxlet/build.gradle.kts b/foxlet/build.gradle.kts
+index e13b9fd..3a1eadf 100644
+--- a/foxlet/build.gradle.kts
++++ b/foxlet/build.gradle.kts
+@@ -7,8 +7,8 @@ plugins {
+ 
+ android {
+     namespace = "io.github.yinvoker.foxlet"
+-    compileSdk = 36
+-    ndkVersion = "29.0.13113456"
++    compileSdk = 35
++    ndkVersion = "29.0.14206865"
+ 
+     defaultConfig {
+         minSdk = 28
+@@ -23,6 +23,7 @@ android {
+                     "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                     // An explicit target architecture disables host SSE probing during cross-compilation.
+                     "-DBUILD_ARCH=armv8-a",
++                    "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+                 )
+                 targets += "foxlet"
+             }
+@@ -43,7 +44,7 @@ android {
+     externalNativeBuild {
+         cmake {
+             path = file("../CMakeLists.txt")
+-            version = "3.31.6"
++            version = "4.1.2"
+         }
+     }
+ 
+@@ -54,7 +55,12 @@ android {
+ }
+ 
+ kotlin {
+-    compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
++    compilerOptions {
++        jvmTarget.set(JvmTarget.JVM_17)
++        // Local change (nightmare-mobile): metadata readable by a Kotlin 2.0 consumer.
++        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_1)
++        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_1)
++    }
+ }
+ 
+ dependencies {
+@@ -75,7 +81,7 @@ val generateDistributionResources by tasks.registering(Exec::class) {
+     outputs.dir(distributionResources)
+     // SOURCE.txt records the current commit/tag and local modification state.
+     outputs.upToDateWhen { false }
+-    commandLine("python3", rootProject.file("tools/distribution/package_notices.py"),
++    commandLine("python", rootProject.file("tools/distribution/package_notices.py"),
+         "--resources", distributionResources.get().asFile)
+ }
+ androidComponents {

@@ -892,6 +892,37 @@ private fun dist2(a: Pt, b: Pt): Float {
 }
 
 /**
+ * ⭐⭐ The seed lock on [nodeId]'s picture: the sampler behind it, whether its
+ * seed is PINNED, and the value — the typed seed when pinned, the one it last
+ * rolled when not. Null when there is no sampler, or nothing has rolled yet.
+ *
+ * ⚠⚠⚠ **A TOGGLE, always shown while there is a seed.** Reported 2026-09-23:
+ * *"when i click it it just disappears"*. The first version answered "is there
+ * anything left to LOCK", so a tap pinned the seed and the button vanished. The
+ * padlock now shows the state — open while the seed rolls, closed while pinned
+ * — and a tap flips it ([toggleSeedLock]), exactly like the run bar's lock.
+ * ⚠ ONE rule for every lock on a picture: the fullscreen viewer and the Output
+ * node's inspector both call this.
+ */
+data class SeedLock(val sampler: String, val locked: Boolean, val value: String)
+
+fun seedLock(
+    graph: com.abrah.nightmare.Graph,
+    nodeId: String,
+    detail: (String) -> String?,
+): SeedLock? {
+    val sampler = samplerFor(graph, nodeId) ?: return null
+    val typed = graph.byId[sampler]?.params?.get("seed")?.trim().orEmpty()
+    if (typed.isNotEmpty() && typed != "0") return SeedLock(sampler, true, typed)
+    val rolled = seedFor(graph, nodeId, detail) ?: return null
+    return SeedLock(sampler, false, rolled)
+}
+
+/** The param write that flips [lock]: pin its value, or release to `0` (roll). */
+fun toggleSeedLock(lock: SeedLock): Pair<String, String> =
+    "seed" to if (lock.locked) "0" else lock.value
+
+/**
  * ⭐ The seed that made the picture on [nodeId] — walking UPSTREAM to find it.
  *
  * ⚠⚠ The seed belongs to the sampler, but the picture belongs to whatever

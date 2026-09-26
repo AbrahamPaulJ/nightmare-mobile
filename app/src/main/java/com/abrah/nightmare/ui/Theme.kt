@@ -40,11 +40,35 @@ private val NightmareDark = darkColorScheme(
 )
 
 /**
- * ⚠ Light is a stub. Dark is the shipping theme (a graph canvas is dark
- * everywhere it exists); this exists so a light-mode device is merely plain
- * rather than unreadable.
+ * ⭐⭐ **Light is WHITE** — the user's call, 2026-09-26: users found light mode
+ * *"too dull"*. It was Material's default scheme, whose every surface carries a
+ * lavender tint, under a graph canvas that stayed dark. Now the surfaces are
+ * white and the containers neutral greys, and the canvas turns white with them
+ * ([com.abrah.nightmare.canvas.CanvasColors.light]). Dark is untouched.
+ * ⚠ The accent is still [Ember], deepened a step so it holds contrast on white.
  */
-private val NightmareLight = lightColorScheme(primary = Ember)
+private val LightOn = Color(0xFF16161D)
+private val LightOnMuted = Color(0xFF5E5E6E)
+
+private val NightmareLight = lightColorScheme(
+    primary = Color(0xFF7C4DFF),
+    onPrimary = Color.White,
+    background = Color.White,
+    onBackground = LightOn,
+    surface = Color.White,
+    onSurface = LightOn,
+    surfaceVariant = Color(0xFFF1F1F5),
+    onSurfaceVariant = LightOnMuted,
+    surfaceTint = Color.White,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFF7F7FA),
+    surfaceContainer = Color(0xFFF2F2F6),
+    surfaceContainerHigh = Color(0xFFECECF1),
+    surfaceContainerHighest = Color(0xFFE6E6EC),
+    outline = Color(0xFFC9C9D4),
+    outlineVariant = Color(0xFFE2E2E9),
+    error = Color(0xFFD93838),
+)
 
 /** Monospace for anything an agent or a human reads as a measurement. */
 val LogTextStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
@@ -54,6 +78,9 @@ fun NightmareTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
+    // ⚠ Before the content composes, so the canvas's first frame is already
+    // the right one. A state write: flipping the theme redraws the canvas.
+    com.abrah.nightmare.canvas.CanvasColors.light = !darkTheme
     MaterialTheme(
         colorScheme = if (darkTheme) NightmareDark else NightmareLight,
         typography = Typography(),

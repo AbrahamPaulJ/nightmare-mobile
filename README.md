@@ -41,9 +41,15 @@ size costs no reload. Snapdragon 8 Elite or newer.
 the hole it is filling and the pixels around it, instead of repainting blind and being blended
 back afterwards. It sits among the SD 1.5 models and does text and image to image too.
 
-**Tap to select.** Tick `Tap to select` in the mask editor, tap the thing you want redone, and
-the mask follows its outline. That is Segment Anything 2.1, an 87 MB download that the same
-checkbox offers, running on the phone's CPU.
+**Tap to select.** Tick `Enable tap to select` in the mask editor, tap the thing you want
+redone, and the mask follows its outline. That is Segment Anything 2.1, an 87 MB download that
+the same checkbox offers, running on the phone's CPU.
+
+**Auto mask.** Tick `Enable auto mask` and pick what to repaint by name — Clothes, Face, Hair,
+Shoes or Bag. The flow remembers the choice and masks every new photo by itself, so a photo in
+and Run is the whole job. It is an ATR human parser (SegFormer-B2, int8), a 29 MB download,
+on the CPU; a chip that finds nothing says so rather than guessing. `Enable auto crop` in the
+crop window does the same for framing: the whole photo, fitted.
 
 **Image editing with FLUX.2 Klein.** A photo and a prompt: the whole picture is re-rendered
 to follow it rather than nudged, so the composition survives and the content changes. Wire a
@@ -70,8 +76,13 @@ a drag downward.
 
 **Download from a mirror.** Every model file comes from Hugging Face by default, and Settings
 can point that at hf-mirror.com or any base address you give it. One setting covers the
-checkpoints, the upscalers, the segmenter and the video weights — for anywhere huggingface.co
+checkpoints, the upscalers, the segmenter, the translation models and the video weights — for anywhere huggingface.co
 is slow or unreachable.
+
+**Keep models where you can see them.** By default models live in the app's private storage.
+Settings can move them to `Download/Nightmare`, where any file manager reaches them and they
+survive uninstalling the app. That needs All files access, which is asked only if you choose
+it. Loading speed is the same either way.
 
 **Batching.** Arm `seed`, `steps`, `cfg`, `denoise` or `scheduler` on a generate node and Run
 sweeps them. Two knobs at once gives you a grid. Every run is kept with the exact graph that
@@ -116,6 +127,12 @@ as you like.
 is a file drop: copy `app/src/main/res/values/strings.xml` into a `values-<code>/` folder and
 translate it, with no code changes.
 
+**Prompts in Russian or Chinese.** SD 1.5 and SDXL only read English, so a prompt box holding
+Cyrillic or Chinese text shows a translate button. One tap turns it into English and the same
+button undoes it. Weights like `(long hair:1.2)` and English tags pass through untouched. It
+runs offline on the phone with Mozilla's Firefox Translations models (37 MB for Russian, 55 MB
+for Chinese, downloaded the first time you tap), about 15 ms a prompt. Settings manages them.
+
 **Offline and private.** Nothing is uploaded, there is no account, and no prompt or picture
 leaves the phone. The only thing that ever does is a file you explicitly share.
 
@@ -155,6 +172,10 @@ gradlew assembleDebug
 The NPU backend is a native binary, and the QNN runtime libraries are not in this repository.
 Without them the app builds and the canvas works, but nothing renders.
 
+Prompt translation needs Foxlet built once: `tools/build_foxlet.sh` (from Git Bash) clones it
+beside this repository, builds it from source and copies the AAR into `app/libs/`. The app
+does not compile without it.
+
 ## Credits
 
 **The NPU work is not ours.** This app forks the C++ inference server from
@@ -180,6 +201,11 @@ released under BSD-3-Clause-Clear with additional terms on the model card. The p
 schedule, the autoregressive MMDiT loop and the streaming VAE decode are theirs, and the NPU
 conversions this app runs were made from their weights. The first frame comes from
 [SSD-1B](https://huggingface.co/segmind/SSD-1B) by Segmind.
+
+**Prompt translation** is [Foxlet](https://github.com/yinvoke/foxlet-translate) by yinvoke,
+built from source: Mozilla's Bergamot engine and Marian with ARM int8 kernels. The
+Russian and Chinese models are Mozilla's
+[Firefox Translations](https://github.com/mozilla/firefox-translations-models) models, unmodified.
 
 **AbsoluteReality Inpaint** is Lykon's inpainting checkpoint, converted for LocalDream.
 

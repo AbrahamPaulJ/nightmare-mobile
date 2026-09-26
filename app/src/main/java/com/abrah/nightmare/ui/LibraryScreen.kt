@@ -23,6 +23,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -62,7 +63,6 @@ enum class LibraryTab(val label: String) {
 fun LibraryScreen(
     tab: LibraryTab,
     onTab: (LibraryTab) -> Unit,
-    onClose: () -> Unit,
     models: @Composable () -> Unit,
     flows: @Composable () -> Unit,
     results: @Composable () -> Unit = {},
@@ -95,13 +95,15 @@ fun LibraryScreen(
     //
     // ⚠ Roborazzi reports ZERO insets, so no golden can catch this
     // (`docs/UI.md` §5). It is checked by looking at the phone.
+    // ⭐ Inside a pull-down sheet since 2026-09-26 ([PullDownSheet]), which
+    // starts below the status bar — so only the BOTTOM inset is this screen's.
     Column(
-        modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp),
+        modifier.fillMaxSize().navigationBarsPadding().padding(16.dp),
     ) {
         // ⭐ The APP's name and logo, not the tab's — the tab row directly under
         // it already says Models / Flows / Results, so a title repeating it was
         // redundant (the user's call, 2026-09-17).
-        BrandHeader(onClose = onClose, version = version)
+        BrandHeader(version = version)
         TabRow(
             selectedTabIndex = tab.ordinal,
             containerColor = MaterialTheme.colorScheme.background,
@@ -129,12 +131,11 @@ fun LibraryScreen(
 }
 
 /**
- * ⭐⭐ "Nightmare", stylised, beside the logo, with the ✕ in the corner every
- * panel over the canvas keeps it ([ScreenHeader]'s corner, same icon, same tint).
+ * ⭐⭐ "Nightmare", stylised, beside the logo. ⚠ No ✕ since 2026-09-26: the
+ * library is a pull-down sheet, closed the way the node sheet is (the user's call).
  */
 @Composable
 fun BrandHeader(
-    onClose: () -> Unit,
     modifier: Modifier = Modifier,
     /** ⚠ Shown here too since 2026-09-22 — the canvas is not the only screen
      * someone reads a version off. Empty hides it (a golden, a preview). */
@@ -142,17 +143,10 @@ fun BrandHeader(
 ) {
     Row(
         modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
-        BrandMark(Modifier.weight(1f), version = version)
-        androidx.compose.material3.IconButton(onClick = onClose) {
-            androidx.compose.material3.Icon(
-                androidx.compose.material.icons.Icons.Filled.Close,
-                contentDescription = "close — back to the canvas",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        BrandMark(Modifier.weight(1f, fill = false), version = version)
     }
 }
 
@@ -170,44 +164,75 @@ fun BrandHeader(
  */
 @Composable
 fun BrandMark(modifier: Modifier = Modifier, version: String = "") {
-    Row(
-        modifier,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-    ) {
-        androidx.compose.foundation.Image(
-            painter = androidx.compose.ui.res.painterResource(com.abrah.nightmare.R.drawable.brand_logo),
-            contentDescription = null,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(11.dp)),
+    // ⚠⚠⚠ **The wordmark SHRINKS to the width it is given, and the icons beside
+    // it never do.** Reported from the phone 2026-09-23 with a screenshot: the
+    // canvas header drew save and ⓘ and no gear. At 28sp the mark and the
+    // version are ~265dp, three 36dp icons are 108dp, and a 384dp phone
+    // (1080px at 450dpi — the S25 Ultra at its default display size) leaves the
+    // card ~350dp. The icons were measured after the mark and the last one got
+    // zero width. Every golden was 411dp, which has exactly enough room.
+    // ⇒ The callers give this `weight(1f, fill = false)` so it is measured
+    // LAST, and the name steps down from headlineMedium until it fits. The logo
+    // keeps its size and place, so it still does not jump between screens.
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val base = MaterialTheme.typography.headlineMedium.copy(
+            fontWeight = FontWeight.Black,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+            letterSpacing = (-0.5).sp,
         )
-        Text(
-            "Nightmare",
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.Black,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                letterSpacing = (-0.5).sp,
-                // ⭐ The logo's own violet, fading to lavender.
-                brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                    listOf(Color(0xFF9B6BFF), Color(0xFFD9C8FF)),
-                ),
-            ),
-            maxLines = 1,
-        )
-        // ⭐⭐ **The build, drawn HERE** — so the canvas and the library cannot
-        // disagree about where it sits or what it looks like. The user's call,
-        // 2026-09-22: it is wanted on both, with the `v`.
-        // ⚠ The `v` is added here rather than stored in `versionName`, which
-        // Android compares numerically and a tag is cut from (`CLAUDE.md`).
-        if (version.isNotEmpty()) {
-            Text(
-                "v$version",
-                style = LogTextStyle,
-                fontSize = 10.sp,
-                maxLines = 1,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        val versionStyle = LogTextStyle.copy(fontSize = 10.sp)
+        val versionW = if (version.isEmpty()) 0.dp else with(density) {
+            measurer.measure("v$version", versionStyle).size.width.toDp() + 12.dp
+        }
+        val room = maxWidth - 40.dp - 12.dp - versionW
+        // ⚠ Measured, not guessed from the width: a font-scale setting moves
+        // the answer as much as the screen does.
+        val size = remember(room, base, version) {
+            var sp = base.fontSize.value
+            while (sp > 14f && with(density) {
+                    measurer.measure("Nightmare", base.copy(fontSize = sp.sp)).size.width.toDp()
+                } > room) sp -= 1f
+            sp.sp
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(com.abrah.nightmare.R.drawable.brand_logo),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(11.dp)),
             )
+            Text(
+                "Nightmare",
+                style = base.copy(
+                    fontSize = size,
+                    // ⭐ The logo's own violet, fading to lavender.
+                    brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(Color(0xFF9B6BFF), Color(0xFFD9C8FF)),
+                    ),
+                ),
+                maxLines = 1,
+                softWrap = false,
+            )
+            // ⭐⭐ **The build, drawn HERE** — so the canvas and the library cannot
+            // disagree about where it sits or what it looks like. The user's call,
+            // 2026-09-22: it is wanted on both, with the `v`.
+            // ⚠ The `v` is added here rather than stored in `versionName`, which
+            // Android compares numerically and a tag is cut from (`CLAUDE.md`).
+            if (version.isNotEmpty()) {
+                Text(
+                    "v$version",
+                    style = versionStyle,
+                    maxLines = 1,
+                    softWrap = false,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+            }
         }
     }
 }

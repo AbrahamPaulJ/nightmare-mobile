@@ -99,6 +99,13 @@ data class CanvasState(
     val message: String? = null,
     /** The node whose inspector is open, or null. */
     val editing: String? = null,
+    /**
+     * ⭐⭐ An EMPTY image node that was tapped: the canvas opens the file picker
+     * straight away instead of its sheet — the user's call, 2026-09-26. The
+     * sheet had nothing to show but a + to press. The canvas clears this as it
+     * launches the picker ([consumePickRequest]).
+     */
+    val pickImageFor: String? = null,
     /** Whether the add-a-node palette is open. */
     val showPalette: Boolean = false,
     /**
@@ -526,8 +533,11 @@ data class CanvasState(
             // fullscreen copy of the thing you were trying to adjust is the
             // gesture landing on the wrong surface, and it was reported as
             // exactly that from the phone.
+            val tapped = workflow.graph.byId[g.id]
             return if (hitPreview != null && box!!.type?.interactive != true) {
                 copy(gesture = Gesture.Idle, viewing = hitPreview.imageId, viewingNode = box.id)
+            } else if (tapped?.type == "core.image" && tapped.params["uri"].isNullOrBlank()) {
+                copy(gesture = Gesture.Idle, pickImageFor = g.id)
             } else {
                 copy(gesture = Gesture.Idle, editing = g.id, focusField = null)
             }
@@ -635,6 +645,9 @@ data class CanvasState(
     )
 
     fun closeInspector() = copy(editing = null, focusField = null, cropRequest = null)
+
+    /** ⚠ The pick request, handed to the picker once — see [pickImageFor]. */
+    fun consumePickRequest() = copy(pickImageFor = null)
 
     /**
      * ⭐⭐ The picture coming INTO [nodeId] on [port] — what its upstream
@@ -765,7 +778,9 @@ data class CanvasState(
             workflow = workflow.copy(
                 graph = workflow.graph.copy(
                     nodes = workflow.graph.nodes.map {
-                        if (it.id == nodeId) it.copy(params = it.params + defaults) else it
+                        // ⚠ …and the placed OBJECTS go with the knobs — the
+                        // user's call, 2026-09-23: Reset must clear them.
+                        if (it.id == nodeId) it.copy(params = it.params + defaults - com.abrah.nightmare.AddObjects.PARAM - com.abrah.nightmare.AddObjects.ORIGINAL - com.abrah.nightmare.AddObjects.LAYER - com.abrah.nightmare.AddObjects.RING) else it
                     },
                 ),
             ),

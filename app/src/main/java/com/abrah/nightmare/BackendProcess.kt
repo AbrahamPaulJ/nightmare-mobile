@@ -213,7 +213,7 @@ object BackendProcess {
 
     /** Where a model must live for the app to reach it. */
     fun modelsDir(context: Context): File =
-        File(context.getExternalFilesDir(null), "models")
+        File(ModelStorage.root(context), "models")
 
     /**
      * ⭐ The diagnostic override in `Download/nightmare-spillfill.txt` — a
@@ -302,7 +302,7 @@ object BackendProcess {
      * embeddings directory serves every model, loaded fresh at every launch.
      */
     fun embeddingsDir(context: Context): File =
-        File(context.getExternalFilesDir(null), "embeddings")
+        File(ModelStorage.root(context), "embeddings")
 
     /**
      * ⭐⭐ Where a LoRA adapter has to live for the engine to load it.

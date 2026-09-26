@@ -279,6 +279,57 @@ class SdSampler(
          */
         const val TAP_SELECT = "tap_select"
 
+        /**
+         * ⭐⭐ Pick by name, on an inpaint node — the parser's chips beside
+         * the Tap tool (`docs/SEGMENTER.md` §8).
+         *
+         * ⚠ Its own switch rather than sharing [TAP_SELECT]: they are two
+         * models, two downloads and two tools, and one tick that revealed both
+         * would offer a tool whose model is not on the phone.
+         */
+        const val PICK_SELECT = "pick_select"
+
+        /**
+         * ⭐⭐ The auto mask chips on THIS node, comma-separated — `clothes`
+         * until someone picks otherwise. ⚠ On the node, so it is saved with the
+         * FLOW (the user's call, 2026-09-23: *"remembered for that flow"*), and
+         * it outlives the mask: a new photo drops `ops`, and
+         * [MaskNode.opsOf] rebuilds the picks from this.
+         */
+        const val PICK_TARGETS = "pick_targets"
+
+        /**
+         * ⭐⭐ Auto crop: a new photo is fitted WHOLE and padded as needed
+         * (`wholePhotoFraming`, the same framing the crop window opens on), and
+         * the crop window is not opened. The user's call, 2026-09-23. ⚠ Off in a
+         * new flow. ⚠ Drawn in the CROP tab, not the knob list.
+         */
+        const val AUTO_CROP = "auto_crop"
+
+        /**
+         * ⭐⭐ *Allow padding* on a FLUX.2 image edit: the frame may zoom out
+         * past the photo ([PadRule.PAD]) and the bars are filled with the Pad
+         * choice — green for an outpaint LoRA. The user's call, 2026-09-27.
+         * ⚠ Off in a new flow; drawn in the CROP window beside Pad.
+         */
+        const val ALLOW_PAD = "allow_pad"
+
+        /** Whether [node] is a FLUX.2 edit that may pad — [padRuleOf] asks. */
+        fun allowsPad(node: Node): Boolean {
+            val t = ALL.firstOrNull { it.name == node.type } ?: return false
+            return t.family == Family.FLUX2 && !t.inpaint &&
+                node.params[ALLOW_PAD].equals("true", ignoreCase = true)
+        }
+
+        /**
+         * ⭐ The fills a sampler offers. ⚠ Green only where the bars are
+         * generated over — inpaint and FLUX.2 edit; elsewhere they are an
+         * honest "this photo is too small", which black says.
+         */
+        fun padOptions(family: Family, inpaint: Boolean): List<String> =
+            if (inpaint || family == Family.FLUX2) listOf(CropNode.PAD_BLACK, CropNode.PAD_BLUR, CropNode.PAD_GREEN)
+            else listOf(CropNode.PAD_BLACK, CropNode.PAD_BLUR)
+
         const val REF_X = "ref_x"
         const val REF_Y = "ref_y"
         const val REF_W = "ref_w"
@@ -513,10 +564,37 @@ class SdSampler(
         // ⚠ Drawn in the MASK EDITOR rather than the knob list — the tapping
         // happens there, so the switch for it is there ([NodeInspector]).
         if (inpaint) Widget(
-            TAP_SELECT, "bool", "false",
+            TAP_SELECT, "bool", MaskDefaults.of(TAP_SELECT),
             hint = "tap an object in the mask editor to select it, instead of " +
                 "painting it by hand",
         ) else null,
+        // ⚠ Same list and same reason as [TAP_SELECT] above — inpaint only,
+        // and NOT `ditWidgets()`, which is the one list no inpaint sampler uses.
+        if (inpaint) Widget(
+            PICK_SELECT, "bool", MaskDefaults.of(PICK_SELECT),
+            hint = "mask clothes, face, hair, shoes or a bag automatically, on " +
+                "every new photo, instead of painting it by hand",
+        ) else null,
+        // ⭐⭐ Enable Add Objects — the user's design, 2026-09-23 ([AddObjects]).
+        // ⚠ Inpaint only: the objects are blended in through a mask.
+        if (inpaint) Widget(
+            AddObjects.ENABLE, "bool", MaskDefaults.of(AddObjects.ENABLE),
+            hint = "take objects from another photo, place them, and repaint only their edges",
+        ) else null,
+        // ⚠ EVERY sampler, not only inpaint: image-to-image has a crop window
+        // too, and both were asked for. `ditWidgets()` is built from this list,
+        // so FLUX.2 and Z-Image get it as well.
+        Widget(
+            AUTO_CROP, "bool", "false",
+            // ⚠ Two sentences, because the two node kinds do two different
+            // things: inpaint may pad, image-to-image never does and so crops
+            // (the user saw the padding missing on i2i, 2026-09-23).
+            hint = if (inpaint) {
+                "fit the whole photo, padded where it does not fill the frame — no crop window"
+            } else {
+                "centre-crop the photo to the frame, at the size closest to its shape — no crop window"
+            },
+        ),
         // ⚠⚠ Defaults from the MODEL, not from a literal. A distilled checkpoint
         // publishes something like 10 steps at cfg 1.5, and this app's 20/7.5
         // renders it burnt rather than failing — measured on device 2026-09-10.
@@ -609,9 +687,16 @@ class SdSampler(
         Widget(
             CropNode.PAD, "string",
             if (inpaint) CropNode.PAD_BLUR else CropNode.PAD_BLACK,
-            options = listOf(CropNode.PAD_BLACK, CropNode.PAD_BLUR),
+            options = padOptions(family, inpaint),
             hint = "what fills the frame where it runs off the photo",
         ),
+        // ⭐ FLUX.2 edit only: may the frame run off the photo at all ([ALLOW_PAD]).
+        *(if (family == Family.FLUX2 && !inpaint) arrayOf(
+            Widget(
+                ALLOW_PAD, "bool", "false",
+                hint = "zoom out past the photo and fill the rest with the Pad choice — green for an outpaint LoRA",
+            ),
+        ) else emptyArray()),
         // ⭐ The painting itself — `image.mask`'s params, moved. ⚠ A real param
         // rather than editor state, because it is what a saved workflow stores.
         // ⚠⚠ Declared ONLY on an inpaint type: an undeclared param is still
@@ -619,8 +704,12 @@ class SdSampler(
         // put a mask nobody can edit into the key of every render it makes.
         *(if (!inpaint) emptyArray() else arrayOf(
             Widget(MaskNode.OPS, "string", "", hint = "paint the area to redo"),
-            Widget("grow", "float", "0.0", 0.0, 0.2, hint = "spread the mask outward"),
-            Widget("feather", "float", "0.02", 0.0, 0.2, hint = "soften the mask edge"),
+            Widget(
+                "grow", "float", MaskNode.GROW_DEFAULT.toString(),
+                MaskNode.GROW_MIN.toDouble(), MaskNode.GROW_MAX.toDouble(),
+                hint = "grow or shrink a tapped or picked area",
+            ),
+            Widget("feather", "float", "0.0", 0.0, 0.2, hint = "soften the mask edge"),
             // ⭐⭐ DreamUI's two inpaint toggles, unchanged in meaning.
             Widget(
                 MaskCropNode.ONLY_MASKED, "bool", "true",
@@ -741,7 +830,7 @@ class SdSampler(
      */
     override fun outputSize(node: Node): Pair<Int, Int>? {
         val p = effectiveParams(node)
-        if (inpaint && (p[MaskNode.OPS].orEmpty().isNotBlank() || paddingOf(p) != null)) return null
+        if (inpaint && (MaskNode.opsOf(node.type, p).orEmpty().isNotBlank() || paddingOf(p) != null)) return null
         return (p["width"]?.toIntOrNull() ?: 0) to (p["height"]?.toIntOrNull() ?: 0)
     }
 
@@ -833,7 +922,7 @@ class SdSampler(
             )
 
         // ⭐⭐ Is there a mask? Painted (or tapped) here — there is no mask wire.
-        val stored = MaskState.decode(p[MaskNode.OPS]).copy(
+        val stored = MaskState.decode(MaskNode.opsOf(node.type, p)).copy(
             growFrac = num("grow").toFloat(),
             featherFrac = num("feather").toFloat(),
         )
@@ -852,7 +941,10 @@ class SdSampler(
         // ⚠ Padding is still the one exception: an outpaint frame hanging off
         // the photo IS the mask, and needs no painting.
         val padded = paddingOf(p) != null
-        if (inpaint && stored.isEmpty && !padded) {
+        // ⭐ An object's ring is ordinary mask on the image layer
+        // ([MaskOp.ObjectRing]) — but only while its object is there.
+        val placedObjects = if (inpaint) AddObjects.of(p) else emptyList()
+        if (inpaint && AddObjects.withoutDeadRings(stored, placedObjects).isEmpty && !padded) {
             throw NeedsInput("nothing masked — paint an area, then Run again")
         }
         // ⚠⚠ Still gated to a CHAINED picture, unlike the check above: a plain
@@ -872,25 +964,86 @@ class SdSampler(
         // missing-model case, read the way a missing checkpoint reads
         // (`docs/SEGMENTER.md` §3, the user's call 2026-09-16). Rendering
         // without the mask would repaint the wrong area confidently.
-        val painted = if (!MaskTaps.hasTaps(stored)) stored else {
+        val painted = if (!MaskTaps.hasTaps(stored) && !MaskTaps.hasPicks(stored)) stored else {
             val android = ctx.android
-            if (android == null || !com.abrah.nightmare.segment.Segmenter.isInstalled(android)) {
+            if (MaskTaps.hasTaps(stored) &&
+                (android == null || !com.abrah.nightmare.segment.Segmenter.isInstalled(android))
+            ) {
                 throw IllegalStateException(
                     "node \"${node.id}\": this mask was tapped — download " +
                         "${com.abrah.nightmare.segment.Segmenter.LABEL} in Models, Tools"
                 )
             }
-            ctx.say("finding the objects you tapped")
-            MaskTaps.resolve(stored) { x, y ->
-                com.abrah.nightmare.segment.Segmenter.segment(android, src, x, y)?.candidates
+            // ⚠ The PARSER is a different download, so it is a different
+            // refusal — naming the segmenter here would send someone to fetch
+            // 87 MB that does not help.
+            if (MaskTaps.hasPicks(stored) &&
+                (android == null || !com.abrah.nightmare.segment.Parser.isInstalled(android))
+            ) {
+                throw IllegalStateException(
+                    "node \"${node.id}\": this mask was picked by name — download " +
+                        "${com.abrah.nightmare.segment.Parser.LABEL} in Models, Tools"
+                )
+            }
+            ctx.say(
+                if (MaskTaps.hasTaps(stored)) "finding the objects you tapped"
+                else "finding what you picked"
+            )
+            MaskTaps.resolve(
+                stored,
+                pick = { t ->
+                    android?.let { com.abrah.nightmare.segment.Parser.pick(it, src, t) }
+                },
+            ) { x, y ->
+                com.abrah.nightmare.segment.Segmenter.segment(android!!, src, x, y)?.candidates
             }
         }
+        // ⚠⚠⚠ **Picked or tapped, and NOTHING came back** — every region
+        // resolved to empty. Without this the sampler ran UNMASKED: an empty
+        // mask reads as "no mask" below, so a Clothes pick on a photo with no
+        // clothes silently became a plain re-render. ⚠ Now that picks are
+        // applied to every new photo (Enable auto mask) that would happen
+        // without the person ever opening the editor, so it is said by name.
+        if (inpaint && !padded && painted.ops.none { it !is MaskOp.Invert } &&
+            (MaskTaps.hasPicks(stored) || MaskTaps.hasTaps(stored))
+        ) {
+            val names = stored.ops.filterIsInstance<MaskOp.Pick>()
+                .mapNotNull { com.abrah.nightmare.segment.Parser.target(it.target)?.label?.lowercase() }
+            throw NeedsInput(
+                if (names.isEmpty()) "nothing found where you tapped — paint an area, then Run again"
+                else "no ${names.joinToString(" or ")} found in this picture — paint an area, " +
+                    "or pick something else in the mask editor"
+            )
+        }
+        // ⭐⭐⭐ **Add Objects**: the objects pasted onto the photo, and each
+        // ring op on the image layer drawn round where its object sits
+        // ([AddObjects.resolveRings]). Everything
+        // below — framing, the mask raster, the stitch — uses [photoIn], so the
+        // middle of each object survives the paste-back pixel-exact.
+        val objectRender = if (placedObjects.isEmpty()) null else {
+            val android = ctx.android
+                ?: throw IllegalStateException("node \"${node.id}\": placing objects needs a platform context")
+            ctx.say("placing the objects")
+            AddObjects.render(
+                src, placedObjects,
+                load = { uri -> AddObjects.load(android, uri) },
+                resolve = { source, mask -> AddObjects.resolveOn(android, source, mask) },
+            ).also { r ->
+                if (r.missing.isNotEmpty()) throw NeedsInput(
+                    "an object's source photo can no longer be read — add it again in the mask editor"
+                )
+            }
+        }
+        val photoIn = objectRender?.photo ?: src
+        val paintedAll = objectRender?.let { r ->
+            AddObjects.resolveRings(painted, placedObjects, r.cuts, src.width, src.height)
+        } ?: painted
         // ⭐⭐ OUTPAINT: a frame hanging off the photo is masked there whether or
         // not anything was painted — DreamUI's `isEmpty` counts the padding too.
         val padding = paddingOf(p)
         // ⚠ `inpaint` first: a `sample` type has no painting params, so there is
         // nothing here to be true.
-        val masking = inpaint && (!painted.isEmpty || padding != null)
+        val masking = inpaint && (!paintedAll.isEmpty || padding != null)
         // ⭐⭐ The cut is the ASPECT's rectangle; the encode is the whole canvas
         // with that rectangle centred in it ([framesTo], [padToCanvas]).
         val (tw, th) = framesTo(node)
@@ -904,7 +1057,7 @@ class SdSampler(
         val fw = num("w").toFloat()
         val fh = num("h").toFloat()
         val (frame, frameRect) = CropNode.render(
-            src, fx, fy, fw, fh,
+            photoIn, fx, fy, fw, fh,
             if (masking) 0 else tw, if (masking) 0 else th,
             p[CropNode.PAD] ?: CropNode.PAD_BLACK,
         )
@@ -927,12 +1080,12 @@ class SdSampler(
         // ⚠ Capped for the reason `image.mask` capped: a photo may be 4096 px
         // and a mask is read in normalised terms anyway, so a smaller raster
         // loses nothing but memory.
-        val cap = (MaskNode.NO_DEMAND_MAX_EDGE.toFloat() / maxOf(src.width, src.height))
+        val cap = (MaskNode.NO_DEMAND_MAX_EDGE.toFloat() / maxOf(photoIn.width, photoIn.height))
             .coerceAtMost(1f)
         val maskSrc = MaskRaster.rasterise(
-                painted,
-                (src.width * cap).toInt().coerceAtLeast(1),
-                (src.height * cap).toInt().coerceAtLeast(1),
+                paintedAll,
+                (photoIn.width * cap).toInt().coerceAtLeast(1),
+                (photoIn.height * cap).toInt().coerceAtLeast(1),
             )
         // ⚠⚠ PAD_BLACK, never the blurred fill: black is "not masked". A
         // mirrored edge here would invent painting outside the photo.
@@ -945,7 +1098,7 @@ class SdSampler(
         // ⭐⭐ "Only masked" — the render window is a crop around the painting,
         // so the detail lands where the finger was.
         val cut = MaskCropNode.cut(frame, maskBmp, tw, th, flag(MaskCropNode.ONLY_MASKED))
-        ctx.say(if (painted.isEmpty) "filling the padding" else "repainting the area you marked")
+        ctx.say(if (paintedAll.isEmpty) "filling the padding" else "repainting the area you marked")
         val imagePng = ImageStore.encodePng(padToCanvas(cut.image, w, h))
         // ⚠ On the CANVAS, black outside the aspect rectangle: that is the
         // part the decode cuts away, so it keeps the base.
@@ -974,10 +1127,22 @@ class SdSampler(
         // A dump is for a HUNT — leaving it on writes two files on every inpaint
         // anyone ever does, to answer a question nobody is asking any more.
         ctx.say(
-            "[mask] photo=${src.width}x${src.height} frame=${frame.width}x${frame.height} " +
+            "[mask] photo=${photoIn.width}x${photoIn.height} frame=${frame.width}x${frame.height} " +
                 "cut=${cut.mask.width}x${cut.mask.height} canvas=${w}x$h " +
                 "onlyMasked=${flag(MaskCropNode.ONLY_MASKED)}"
         )
+        // ⚠⚠ A HUNT, and it goes when the hunt ends: black artefacts reported
+        // 2026-09-23 on renders with placed objects, at denoise 0.65 AND 1.0.
+        // Written only when objects are placed, to the app's external files
+        // (`adb pull /sdcard/Android/data/com.abrah.nightmare/files/objects-debug`),
+        // so the pixels can be LOOKED at rather than reasoned about.
+        if (objectRender != null) runCatching {
+            val dir = ctx.android?.getExternalFilesDir("objects-debug") ?: return@runCatching
+            java.io.File(dir, "1-photo-with-objects.png").writeBytes(ImageStore.encodePng(photoIn))
+            java.io.File(dir, "2-image-to-model.png").writeBytes(imagePng)
+            java.io.File(dir, "3-mask-to-model.png").writeBytes(maskPng)
+            ctx.say("[objects] debug PNGs in ${dir.absolutePath}")
+        }
         // ⭐⭐⭐ **Klein's masked redraw — TRUE inpainting, and neither blend is
         // reachable from here.** The engine takes the mask itself (ABI 3's
         // `mask_image`: white is regenerated, black keeps the init image) with
@@ -999,7 +1164,7 @@ class SdSampler(
         // thing that looks the same. `docs/MODELS.md` §9.
         if (family.dit) {
             val patchBmp = runDitMasked(ctx, node, p, prompt, imagePng, maskPng, w, h)
-            return finishInpaint(ctx, node, p, src, frame, frameRect, cut, patchBmp)
+            return finishInpaint(ctx, node, p, photoIn, frame, frameRect, cut, patchBmp)
         }
 
         val base = encode(ctx, imagePng, ENCODE_SEED, w, h)
@@ -1024,7 +1189,7 @@ class SdSampler(
         val patch = VaeDecodeNode.decode(ctx, blended, w, h, aspect)
         val patchBmp = ctx.images.get(patch.id)
             ?: throw IllegalStateException("node \"${node.id}\": the render vanished from the store")
-        return finishInpaint(ctx, node, p, src, frame, frameRect, cut, patchBmp)
+        return finishInpaint(ctx, node, p, photoIn, frame, frameRect, cut, patchBmp)
     }
 
     /**
@@ -1469,6 +1634,8 @@ object MediaOutputNode : NodeType {
     // a second place to keep in step.
     const val UPSCALE = "auto_upscale"
     const val UPSCALER = "upscaler"
+    /** ⭐ `2x`/`3x`/`4x` — [UpscaleNode.SCALE]'s param, on the node that enlarges. */
+    const val SCALE = UpscaleNode.SCALE
 
     override val widgets = listOf(
         // ⭐ ON by default: placing this node IS the statement that this is the
@@ -1491,6 +1658,14 @@ object MediaOutputNode : NodeType {
             (UpscalerCatalog.installedIds.firstOrNull() ?: UpscalerCatalog.ALL.first().id),
             options = UpscalerCatalog.installedIds.ifEmpty { UpscalerCatalog.ALL.map { it.id } },
             hint = "which upscaler weights to use — install them under Models",
+        ),
+        // ⭐ How much larger (the user's ask, 2026-09-26). ⚠ Capped at
+        // [UpscaleNode.MAX_OUT_EDGE]: a render too big for this falls back to
+        // the largest scale that fits, and says so.
+        Widget(
+            SCALE, "string", "4x",
+            options = UpscaleNode.SCALES,
+            hint = "how much larger — a picture that would pass 4096 px gets the largest size that fits",
         ),
         // ⚠⚠ **No `name` box.** It was the filename prefix for the gallery
         // write this node used to do, and that write is gone — autosave keeps
@@ -1532,7 +1707,21 @@ object MediaOutputNode : NodeType {
         if (media is Value.Image &&
             params[UPSCALE].equals("true", ignoreCase = true)
         ) {
-            return UpscaleNode.upscaleTo(ctx, node.id, media, params[UPSCALER].orEmpty())
+            // ⭐⭐ The largest scale up to the one chosen that stays within
+            // [UpscaleNode.MAX_OUT_EDGE] — the user's call, 2026-09-26.
+            val wanted = UpscaleNode.scaleOf(params[SCALE])
+            val scale = UpscaleNode.fittingScale(media.w, media.h, wanted)
+            if (scale == null) {
+                ctx.say(
+                    "not enlarged: ${media.w}x${media.h} would pass " +
+                        "${UpscaleNode.MAX_OUT_EDGE} px even at 2x"
+                )
+                return media
+            }
+            if (scale < wanted) {
+                ctx.say("enlarged ${scale}x, not ${wanted}x — ${wanted}x would pass ${UpscaleNode.MAX_OUT_EDGE} px")
+            }
+            return UpscaleNode.upscaleTo(ctx, node.id, media, params[UPSCALER].orEmpty(), scale)
         }
         return media
     }

@@ -963,6 +963,30 @@ class CanvasStateTest {
         )
     }
 
+    /**
+     * ⚠⚠⚠ The seed lock is a TOGGLE that stays on screen. Reported 2026-09-23:
+     * *"when i click it it just disappears"* — the first version only existed
+     * while there was something left to lock. Lock, then unlock, round trip.
+     */
+    @Test
+    fun theSeedLockTogglesBothWays() {
+        val rolled: (String) -> String? = { if (it == "s") "seed 1284471903  1132 ms" else null }
+        val rolling = Graph(
+            listOf(
+                Node("s", "sd15.sample", mapOf("seed" to "0")),
+                Node("d", "sd.vae_decode", inputs = sources("latent" to "s")),
+            )
+        )
+        val open = seedLock(rolling, "d", rolled)!!
+        assertEquals(false, open.locked)
+        assertEquals("seed" to "1284471903", toggleSeedLock(open))
+
+        val pinned = rolling.withParam("s", "seed", "1284471903")
+        val shut = seedLock(pinned, "d", rolled)!!
+        assertEquals("still there once locked", true, shut.locked)
+        assertEquals("seed" to "0", toggleSeedLock(shut))
+    }
+
     /** ⚠ Nothing upstream samples: a photo has no seed, and must not invent one. */
     @Test
     fun aLoadedPhotoHasNoSeed() {

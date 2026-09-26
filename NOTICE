@@ -112,6 +112,34 @@ Qwen3-4B text encoder, DiT VAEs
     https://huggingface.co/zhiyuanasad/z_image_turbo_adreno
     Downloaded by the app at the user's request; not included here.
 
+Foxlet Translate
+    yinvoke
+    https://github.com/yinvoke/foxlet-translate
+    MIT licensed. Offline prompt translation (Russian/Chinese to English).
+    Built from source at v0.6.0 with the local build changes in
+    tools/foxlet-overrides.patch, and shipped as libfoxlet.so inside this app.
+    Its full third-party notices ship in the APK under
+    io/github/yinvoker/foxlet/licenses/.
+
+Bergamot translator
+    Mozilla and the Bergamot project
+    https://github.com/mozilla/translations (inference/)
+    MPL-2.0. Inside libfoxlet.so. The corresponding source, including
+    Foxlet's changes, is at the Foxlet repository above.
+
+Marian NMT
+    Marian authors
+    https://github.com/marian-nmt/marian-dev
+    MIT licensed. Inside libfoxlet.so, with SentencePiece and ruy (Apache 2.0)
+    and further components listed in Foxlet's notices.
+
+Firefox Translations models (ru-en, zh-en)
+    Mozilla
+    https://github.com/mozilla/firefox-translations-models
+    MPL-2.0, unmodified. Re-hosted at
+    https://huggingface.co/AbrahamPJ/nightmare-translate and downloaded by
+    the app at the user's request; not included here.
+
 
 NON-COMMERCIAL
 --------------

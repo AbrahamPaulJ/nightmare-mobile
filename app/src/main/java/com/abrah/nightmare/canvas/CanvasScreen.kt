@@ -282,6 +282,15 @@ fun CanvasScreen(
     /** ⭐⭐ The Models tab's own row for the segmenter — see the inspector's copy. */
     segmenterRow: com.abrah.nightmare.ui.ToolRow? = null,
     onCancelSegmenter: (() -> Unit)? = null,
+    /** ⭐⭐ …and the PARSER's half of the same, for Pick by name. */
+    onPickMask: ((node: String, target: String, done: (String?) -> Unit) -> Unit)? = null,
+    /** ⭐⭐ Translate a prompt into English — [NodeInspectorBody]'s `onTranslate`. */
+    onTranslate: ((node: String, param: String, done: (String) -> Unit) -> Unit)? = null,
+    parserInstalled: Boolean = true,
+    parserRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onInstallParser: (() -> Unit)? = null,
+    onDeleteParser: (() -> Unit)? = null,
+    onCancelParser: (() -> Unit)? = null,
     /** ⭐⭐ Import a `.safetensors` adapter from inside a node's LoRA picker. */
     onImportLora: (() -> Unit)? = null,
     /** ⚠⚠ `HarnessViewModel.loraEpoch` — what re-reads `_loras` after an Add. */
@@ -555,6 +564,19 @@ fun CanvasScreen(
             com.abrah.nightmare.ui.ResultInfoDialog(d(n)) { showingNodeInfo = null }
         }
     }
+    // ⭐⭐ An empty image node tapped on the canvas: the file picker, directly
+    // ([CanvasState.pickImageFor]). ⚠ The SAME launcher the sheet's + uses
+    // ([rememberImagePick]), and the pick lands through the same setParam.
+    val pickTarget = remember { mutableStateOf<String?>(null) }
+    val launchImagePick = rememberImagePick { uri ->
+        pickTarget.value?.let { id -> onEdit { s -> s.setParam(id, "uri", uri) } }
+    }
+    LaunchedEffect(state.pickImageFor) {
+        val id = state.pickImageFor ?: return@LaunchedEffect
+        pickTarget.value = id
+        onEdit { s -> s.consumePickRequest() }
+        launchImagePick()
+    }
     NodeInspector(
         state = state,
         types = types,
@@ -568,7 +590,16 @@ fun CanvasScreen(
         segmenterInstalled = segmenterInstalled,
         segmenterRow = segmenterRow,
         onCancelSegmenter = onCancelSegmenter,
+        onPickMask = onPickMask,
+        onTranslate = onTranslate,
+        parserInstalled = parserInstalled,
+        parserRow = parserRow,
+        onInstallParser = onInstallParser,
+        onDeleteParser = onDeleteParser,
+        onCancelParser = onCancelParser,
         busy = busy,
+        onRun = onRun,
+        onCancelRun = onCancelRun,
         onInspectNode = onInspectNode,
         onImportLora = onImportLora,
         loraEpoch = loraEpoch,
@@ -794,17 +825,10 @@ fun CanvasScreen(
                 // already pinned — a lock button that is already locked says
                 // nothing, and the release lives in the run bar where it stays
                 // visible after this closes.
-                onLockSeed = viewedNode?.let { n ->
-                    val sampler = samplerFor(state.workflow.graph, n)
-                    val rolled = seedFor(state.workflow.graph, n) { status[it]?.detail }
-                    if (sampler != null && rolled != null &&
-                        state.workflow.graph.byId[sampler]?.params?.get("seed")?.trim()
-                            .orEmpty().let { it.isEmpty() || it == "0" }
-                    ) {
-                        { onEdit { s -> s.setParam(sampler, "seed", rolled) } }
-                    } else {
-                        null
-                    }
+                seedLock = viewedNode?.let { n -> seedLock(state.workflow.graph, n) { status[it]?.detail } },
+                onToggleSeedLock = { lock ->
+                    val (k, v) = toggleSeedLock(lock)
+                    onEdit { s -> s.setParam(lock.sampler, k, v) }
                 },
                 // ⭐⭐ The same two the inspector's row offers — one picture,
                 // one set of actions, whichever surface it is on.
@@ -960,14 +984,18 @@ private fun TopBar(
         // drifts. ⚠ No ✕ here: the canvas is what the others close back to.
         Row(
             Modifier.fillMaxWidth(),
+            // ⚠⚠⚠ SpaceBetween and a `fill = false` weight on the mark, NOT a
+            // weighted Spacer: the mark is then measured LAST, so the icons are
+            // never the thing that runs out of room. The Spacer version drew no
+            // gear on a 384dp phone — see [com.abrah.nightmare.ui.BrandMark].
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // ⭐⭐⭐ The mark, the name AND the version, all from the ONE
             // function the library screens draw ([com.abrah.nightmare.ui.BrandMark]).
             // The version used to be a second `Text` here, which is how two
             // surfaces start disagreeing about a `v` prefix.
-            com.abrah.nightmare.ui.BrandMark(version = version)
-            Spacer(Modifier.weight(1f))
+            com.abrah.nightmare.ui.BrandMark(Modifier.weight(1f, fill = false), version = version)
             icons()
         }
         Row(
@@ -1281,56 +1309,41 @@ private fun RunBar(
         }
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            // ⚠⚠⚠ **SpaceBetween, and the WEIGHT IS ON RUN**, not on the Add
+            // node slot. Reported from the phone 2026-09-23: "+ Node" drew as
+            // an empty outlined box. The left slot was `weight(1f)`, so it got
+            // whatever Run (124dp) and the locks left, and on a 384dp phone
+            // that was ~50dp for an ~88dp button — the label clipped to
+            // nothing. The goldens were all 411dp, which has just enough.
+            // ⇒ The fixed things are measured first and Run, the only thing
+            // that can give, takes the rest up to [RUN_WIDTH].
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // ⭐⭐⭐ **Add node LEFT, Run CENTRED, the zoom and the locks
+            // ⭐⭐⭐ **Add node LEFT, Run in the MIDDLE, the zoom and the locks
             // RIGHT** — the user's call, 2026-09-22. Run was leftmost, which put
             // the one button pressed every single time in the corner where a
-            // right thumb has to reach furthest across the phone.
-            //
-            // ⚠⚠ Centred TRULY, not "centred if the two sides happen to
-            // match": the sides are a 78dp button and a zoom readout beside two
-            // padlocks, so `SpaceBetween` would have parked Run left of middle
-            // and moved it whenever the scale went from `1.0x` to `0.35x`. Each
-            // side takes `weight(1f)`, so Run sits on the bar's midpoint
-            // whatever is beside it.
-            // ⚠ Add node is drawn FIRST, in the left slot.
+            // right thumb has to reach furthest across the phone. Not strictly
+            // centred (the user: *"theres no strict centering rule"*).
             // Removed at the user's request, 2026-09-10: the Batch button. It
             // opened a second way to build a sweep, and there is only one now
             // — arm a knob from its own node.
-            Row(
-                // ⚠⚠⚠ **`weight(1f)` here and NO weight on the right slot**, and
-                // that pairing is the whole fix. Run is 60% wider now and the
-                // pixels come out of the spacing rather than out of a button
-                // (the user, 2026-09-22: *"you can accomodate the extra pixels
-                // to the left side spacing (theres no strict centering rule)"*).
-                //
-                // ⚠⚠ It was `weight(0.55f)` against a weighted right slot for
-                // one recording, and the arithmetic does not survive: the right
-                // slot holds a zoom readout and two padlocks, all fixed size, so
-                // weighting it hands it space it cannot use — and the left slot
-                // was squeezed to ~96dp, which made **"+ Node" wrap onto two
-                // lines**. The `screen-top-bar` golden caught it before it
-                // shipped. ⇒ A slot whose content is fixed WRAPS; only the slot
-                // that must absorb slack gets the weight.
-                Modifier.weight(1f),
-                // ⚠ Still centred WITHIN its slot, so the gap either side of
-                // Add node stays even.
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
+            OutlinedButton(
+                onClick = onAdd,
+                shape = RoundedCornerShape(12.dp),
+                // ⚠ 14 rather than M3's 24: the label is two characters and a
+                // word, and the 20dp saved goes to Run on a narrow phone.
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
             ) {
-                OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(12.dp)) {
-                    // ⚠ One line, never wrapped. A two-line "+ Node" is what a
-                    // squeezed slot looks like, and it should be visible as a
-                    // layout problem rather than absorbed by the label.
-                    Text(
-                        stringResource(R.string.add_node),
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
-                }
+                // ⚠ One line, never wrapped. A two-line "+ Node" is what a
+                // squeezed slot looks like, and it should be visible as a
+                // layout problem rather than absorbed by the label.
+                Text(
+                    stringResource(R.string.add_node),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                )
             }
             // ⭐⭐ Run BECOMES Cancel while a render is in flight, rather than
             // sitting there greyed out beside a new button.
@@ -1340,30 +1353,13 @@ private fun RunBar(
             // way to stop a render you had already decided was wrong.
             // ⚠⚠ Completed nodes keep their outputs, so this is cheap to press:
             // Run again resumes from the cache.
-            if (busy && onCancelRun != null) {
-                Button(
-                    onClick = onCancelRun,
-                    shape = RoundedCornerShape(12.dp),
-                    // ⚠ The SAME width as Run — it replaces it in place, and a
-                    // button that resizes as it changes job makes the bar jump
-                    // mid-render.
-                    modifier = Modifier.defaultMinSize(minWidth = RUN_WIDTH),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
-                ) { Text(stringResource(R.string.cancel_run), fontWeight = FontWeight.Medium) }
-            } else {
-                Button(
-                    onClick = onRun,
-                    enabled = !busy,
-                    shape = RoundedCornerShape(12.dp),
-                    // ⭐⭐ **About 60% wider than it wraps to** — the user's call,
-                    // 2026-09-22. It is the button pressed on every single
-                    // render and it was the smallest thing on the bar.
-                    modifier = Modifier.defaultMinSize(minWidth = RUN_WIDTH),
-                ) { Text(stringResource(if (busy) R.string.running else R.string.run), fontWeight = FontWeight.Medium) }
-            }
+            // ⚠ `fill = false` + a default min: RUN_WIDTH when there is room,
+            // narrower when there is not, never pushing its neighbours out.
+            val runModifier = Modifier
+                .weight(1f, fill = false)
+                .padding(horizontal = 8.dp)
+                .defaultMinSize(minWidth = RUN_WIDTH)
+            RunButton(busy = busy, onRun = onRun, onCancelRun = onCancelRun, modifier = runModifier)
             // ⚠ The right slot: the zoom readout, then the two locks. It WRAPS
             // its content — see the note on the left slot; every item in here is
             // a fixed size, so a weight would only steal room from the one slot
@@ -1666,7 +1662,9 @@ private fun FullscreenImage(
      * action and its undo live in the run bar, not here, so that the LOCKED
      * state is visible without opening a picture.
      */
-    onLockSeed: (() -> Unit)? = null,
+    /** ⭐ The seed's lock toggle ([seedLock]). */
+    seedLock: SeedLock? = null,
+    onToggleSeedLock: (SeedLock) -> Unit = {},
     /** ⭐⭐ Enlarge this picture — see [PictureActions.onUpscale]. */
     onUpscale: (() -> Unit)? = null,
     /** ⭐⭐ Why it is dimmed — see [PictureActions.upscaleDisabledReason]. */
@@ -1890,9 +1888,13 @@ private fun FullscreenImage(
             ) {
                 SizePill(image.width, image.height, tint = Color.White)
                 if (seed != null) {
-                    SeedRow(seed, tint = Color.White, onLock = onLockSeed)
+                    SeedRow(
+                        seed, tint = Color.White,
+                        locked = seedLock?.locked == true,
+                        onToggleLock = seedLock?.let { l -> { onToggleSeedLock(l) } },
+                    )
                 } else if (hasSampler) {
-                    SeedRow(null, tint = Color.White, onLock = null)
+                    SeedRow(null, tint = Color.White)
                 }
             }
             if (onPick == null && seed == null && onSave == null) {
@@ -2199,6 +2201,65 @@ private fun SwapRadio(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+/**
+ * ⭐⭐⭐ **Run, becoming Cancel while a render is in flight** — THE one drawing
+ * of it. The canvas bar and the node sheet's pinned bar both call this (the
+ * user's call, 2026-09-23: *"show run button persisting at bottom … for node
+ * view"*), so the two cannot disagree about a label, a colour or a width.
+ */
+@Composable
+internal fun RunButton(
+    busy: Boolean,
+    onRun: () -> Unit,
+    onCancelRun: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val runModifier = modifier
+    if (busy && onCancelRun != null) {
+        Button(
+            onClick = onCancelRun,
+            shape = RoundedCornerShape(12.dp),
+            // ⚠ The SAME width as Run — it replaces it in place, and a
+            // button that resizes as it changes job makes the bar jump
+            // mid-render.
+            modifier = runModifier,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            ),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Text(
+                stringResource(R.string.cancel_run),
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
+    } else {
+        Button(
+            onClick = onRun,
+            enabled = !busy,
+            shape = RoundedCornerShape(12.dp),
+            // ⭐⭐ **About 60% wider than it wraps to** — the user's call,
+            // 2026-09-22. It is the button pressed on every single
+            // render and it was the smallest thing on the bar.
+            modifier = runModifier,
+            // ⚠ 12 rather than M3's 24, and ONE line: at 320dp Run gives
+            // way to its neighbours and "Running…" wrapped to "Runni /
+            // ng…" (`NarrowSweep`, 2026-09-23).
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Text(
+                stringResource(if (busy) R.string.running else R.string.run),
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false,
+            )
         }
     }
 }

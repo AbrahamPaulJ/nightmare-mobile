@@ -346,9 +346,15 @@ private fun migrateType(node: Node): Node {
     // ⚠⚠ The inpaint types lost their `mask` PORT (2026-09-17, the user's call):
     // the painting is the mask. A saved wire into it is dropped rather than left
     // pointing at a port nothing declares.
-    val renamed = if (renamed0.type in com.abrah.nightmare.INPAINT_TYPES && "mask" in renamed0.inputs) {
+    val renamed1 = if (renamed0.type in com.abrah.nightmare.INPAINT_TYPES && "mask" in renamed0.inputs) {
         renamed0.copy(inputs = renamed0.inputs - "mask")
     } else renamed0
+    // ⚠⚠ …and Add Objects' old Layer 2 mask and shared ring width became
+    // per-object rings on layers that take no brush (2026-09-26,
+    // `docs/ADD-OBJECTS.md`).
+    val renamed = if (renamed1.type !in com.abrah.nightmare.INPAINT_TYPES) renamed1
+    else com.abrah.nightmare.AddObjects.migrated(renamed1.params, com.abrah.nightmare.MaskNode.OPS)
+        ?.let { renamed1.copy(params = it) } ?: renamed1
     // ⚠⚠ …and a crop's mirrored padding became a BLURRED mirror, under a new
     // value — kept, because [migrateCropNodes] hands the crop's padding on.
     return if (renamed.type == "image.crop" && renamed.params[CropNode.PAD] == "mirror") {

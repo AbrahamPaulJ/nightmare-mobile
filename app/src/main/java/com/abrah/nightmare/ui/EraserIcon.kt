@@ -125,6 +125,13 @@ val UndoIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
             "5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z")
 }
 
+/** ⭐ Material's redo — [UndoIcon] mirrored. */
+val RedoIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("Redo",
+        "M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 " +
+            "4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z")
+}
+
 /** ⭐ The half-filled drop — "invert what is masked so far". */
 val InvertMaskIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
     materialIcon("InvertColors",
@@ -153,6 +160,17 @@ val TapObjectIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
             "6.67 10 7.5v10.74l-3.43-.72c-.08-.01-.15-.03-.24-.03-.31 0-.59.13-.79.33l-.79.8 " +
             "4.94 4.94c.27.27.65.44 1.06.44h6.79c.75 0 1.33-.55 1.44-1.28l.75-5.27c.01-.07.02-.14.02-.2 " +
             "0-.62-.38-1.16-.91-1.38z")
+}
+
+/**
+ * ⭐ Pick by name — Material's `Label`, a name tag. The sibling of
+ * [TapObjectIcon] in the mask editor's tool row: that one is a finger on the
+ * picture, this one is a word for what is in it (`docs/SEGMENTER.md` §8).
+ */
+val PickByNameIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("Label",
+        "M17.63 5.84C17.27 5.33 16.67 5 16 5L5 5.01C3.9 5.01 3 5.9 3 7v10c0 " +
+            "1.1.9 1.99 2 1.99L16 19c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z")
 }
 
 /** ⭐ Enlarge — Material's PhotoSizeSelectLarge, DreamUI's upscale glyph. */
@@ -240,4 +258,53 @@ val ShareFlowIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
     materialIcon("ShareFlow",
         "M9 3v4h2v3H4v4H2v6h6v-6H6v-2h12v2h-2v6h6v-6h-2v-4h-7V7h2V3H9zM6 20H4v-2h2v2z" +
             "m14 0h-2v-2h2v2z")
+}
+
+/**
+ * ⭐⭐ The object layers' four tools (`docs/ADD-OBJECTS.md`, the user's ask
+ * 2026-09-26: *"new icons needed"*) — Material's `rotate_right`, `flip`,
+ * `restart_alt` and `highlight_off`, declared here for the reason [BrushIcon]
+ * gives. ⚠ Remove-object is the ✕ in a circle, NOT a bin: the bin on an object
+ * layer deletes the whole LAYER, and two bins doing two things is the
+ * confusion `docs/UI.md` §8.18 already paid for.
+ */
+val RotateRightIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("RotateRight",
+        "M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91" +
+            "s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11c-.17-1.39-.72-2.73-1.62-3.89l-1.42 1.42c.54.75.88 " +
+            "1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 " +
+            "1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z")
+}
+
+val FlipIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("Flip",
+        "M15 21h2v-2h-2v2zm4-12h2V7h-2v2zM3 5v14c0 1.1.9 2 2 2h4v-2H5V5h4V3H5c-1.1 0-2 .9-2 2z" +
+            "m16-2v2h2c0-1.1-.9-2-2-2zm-8 20h2V1h-2v22zm8-6h2v-2h-2v2zM15 5h2V3h-2v2zm4 8h2v-2h-2v2z" +
+            "m0 8c1.1 0 2-.9 2-2h-2v2z")
+}
+
+val ResetIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("RestartAlt",
+        "M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6 0 2.97-2.17 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93 " +
+            "0-4.42-3.58-8-8-8zm-6 8c0-1.65.67-3.15 1.76-4.24L6.34 7.34C4.9 8.79 4 10.79 4 13c0 " +
+            "4.08 3.05 7.44 7 7.93v-2.02c-2.83-.48-5-2.94-5-5.91z")
+}
+
+val RemoveObjectIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("HighlightOff",
+        "M14.59 8L12 10.59 9.41 8 8 9.41 10.59 12 8 14.59 9.41 16 12 13.41 14.59 16 16 14.59 13.41 12 " +
+            "16 9.41 14.59 8zM12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18" +
+            "c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z")
+}
+
+/**
+ * ⭐ Material's `translate` (文A) — the prompt box's translate button
+ * (`docs/TRANSLATE.md`). Declared, not depended on, like every icon here.
+ */
+val TranslateIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("Translate",
+        "M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17" +
+            "C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56" +
+            "l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12z" +
+            "m-2.62 7l1.62-4.33L19.12 17h-3.24z")
 }

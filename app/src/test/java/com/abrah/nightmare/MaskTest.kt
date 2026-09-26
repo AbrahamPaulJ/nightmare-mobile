@@ -92,6 +92,65 @@ class MaskTest {
         assertEquals(0, luminanceAt(MaskState(listOf(MaskOp.Tap(0.5f, 0.5f, 0))), 0.5f, 0.5f))
     }
 
+    /**
+     * ⭐⭐ A Pick round-trips as its NAME and draws nothing until resolved
+     * — the same contract as a Tap (`docs/SEGMENTER.md` §8).
+     */
+    @Test
+    fun aPickRoundTripsByNameAndDrawsNothingUnresolved() {
+        val state = MaskState(listOf(MaskOp.Pick("clothes")))
+        val back = MaskState.decode(state.encode())
+        assertEquals(MaskOp.Pick("clothes"), back.ops.single())
+        assertEquals(0, luminanceAt(state, 0.5f, 0.5f))
+        // ⚠ Beside a stroke, and in order: undo replays the list.
+        val mixed = MaskState(
+            listOf(
+                MaskOp.Pick("head"),
+                MaskOp.Stroke(MaskStrokeData(listOf(0.5f to 0.5f), 0.1f)),
+                MaskOp.Pick("hair"),
+            ),
+        )
+        assertEquals(mixed.ops, MaskState.decode(mixed.encode()).ops)
+    }
+
+    /** ⭐ Resolved, a Pick paints its region — and ONE call resolves both kinds. */
+    @Test
+    fun aResolvedPickPaintsItsRegionAndTapsResolveInTheSamePass() {
+        val left = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
+        for (y in 0 until 8) for (x in 0 until 4) left.setPixel(x, y, android.graphics.Color.WHITE)
+        val right = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
+        for (y in 0 until 8) for (x in 4 until 8) right.setPixel(x, y, android.graphics.Color.WHITE)
+
+        val state = MaskState(listOf(MaskOp.Pick("clothes"), MaskOp.Tap(0.9f, 0.5f, 0)))
+        assertTrue(MaskTaps.hasPicks(state))
+        assertTrue(MaskTaps.hasTaps(state))
+        val resolved = MaskTaps.resolve(state, pick = { t -> if (t == "clothes") left else null }) { _, _ ->
+            listOf(right)
+        }
+        // ⚠⚠ BOTH became geometry in one pass. A resolver that handled only
+        // taps would leave the Pick drawing nothing and still look like it worked.
+        assertEquals(2, resolved.ops.size)
+        assertTrue(resolved.ops.all { it is MaskOp.Placed })
+        assertEquals(255, luminanceAt(resolved, 0.2f, 0.5f))
+        assertEquals(255, luminanceAt(resolved, 0.8f, 0.5f))
+
+        // ⚠ A target that is not in the picture is DROPPED, never an empty op.
+        val missing = MaskTaps.resolve(
+            MaskState(listOf(MaskOp.Pick("bag"))), pick = { null },
+        ) { _, _ -> null }
+        assertTrue(missing.ops.isEmpty())
+    }
+
+    /** ⚠ A Placed is never stored, whatever produced it. */
+    @Test
+    fun aResolvedPickIsNotWrittenIntoTheParam() {
+        val alpha = android.graphics.Bitmap.createBitmap(4, 4, android.graphics.Bitmap.Config.ARGB_8888)
+        val resolved = MaskTaps.resolve(
+            MaskState(listOf(MaskOp.Pick("hair"))), pick = { alpha },
+        ) { _, _ -> null }
+        assertTrue(MaskState.decode(resolved.encode()).ops.isEmpty())
+    }
+
     /** ⭐ Resolved, the region paints white where it covers, and moves with the frame. */
     @Test
     fun aResolvedTapPaintsItsRegionAndFollowsTheFrame() {

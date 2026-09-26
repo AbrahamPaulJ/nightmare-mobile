@@ -194,10 +194,11 @@ fun CropEditor(
     /** The viewport's shape: width / height. */
     aspect: Float = 1f,
     /**
-     * Fill the bars with the picture's own edges, mirrored and blurred, rather
-     * than with black. ⚠ [CropNode.PAD_BLUR] is the same fill; this draws it.
+     * The fill the bars get — [CropNode.PAD_BLUR] (the picture's own edges,
+     * mirrored and blurred), [CropNode.PAD_GREEN] or black. ⚠ The same fill
+     * [CropNode.render] paints; this draws it. Null is black.
      */
-    padBlur: Boolean = false,
+    pad: String? = null,
     /**
      * ⚠⚠ False when the crop is LOCKED, and then the editor takes no gesture at
      * all. Ignoring the write alone still swallowed the drag, so the inspector's
@@ -233,8 +234,8 @@ fun CropEditor(
     // the same [blurSource] the node uses, so the preview blurs by exactly the
     // amount the render will -- and computing it per frame would scale a bitmap
     // on every pointer event of a drag.
-    val blurred = remember(source, padBlur) {
-        if (padBlur) blurSource(source.asAndroidBitmap()).asImageBitmap() else source
+    val blurred = remember(source, pad) {
+        if (pad == CropNode.PAD_BLUR) blurSource(source.asAndroidBitmap()).asImageBitmap() else source
     }
 
     fun clamp() {
@@ -333,8 +334,8 @@ fun CropEditor(
             // will render them. Black underneath in both modes: a mirror that
             // does not quite reach the corner must not show the sheet's
             // background, which is not a colour the picture will ever have.
-            drawRect(Color.Black)
-            if (padBlur) drawMirroredEdges(blurred, offset, iw, ih, size)
+            drawRect(if (pad == CropNode.PAD_GREEN) Color(CropNode.GREEN_RGB) else Color.Black)
+            if (pad == CropNode.PAD_BLUR) drawMirroredEdges(blurred, offset, iw, ih, size)
             drawImage(
                 image = source,
                 dstOffset = IntOffset(offset.x.roundToInt(), offset.y.roundToInt()),
@@ -510,7 +511,7 @@ fun wholePhotoFraming(
     if (srcW <= 0 || srcH <= 0 || aspect <= 0f) return CropRect.WHOLE
     val photo = srcW.toFloat() / srcH
     val wider = photo > aspect
-    val fit = rule == com.abrah.nightmare.PadRule.OUTPAINT
+    val fit = rule == com.abrah.nightmare.PadRule.OUTPAINT || rule == com.abrah.nightmare.PadRule.PAD
     // ⚠ Normalised per axis: a frame `aspect` wide in PIXELS is
     // `aspect / photo` wide relative to its own height in photo fractions.
     val (w, h) = if (wider == fit) 1f to (photo / aspect) else (aspect / photo) to 1f

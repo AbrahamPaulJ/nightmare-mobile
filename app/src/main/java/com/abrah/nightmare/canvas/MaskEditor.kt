@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -46,6 +48,13 @@ import kotlin.math.pow
 /** Translucent red, so the photo stays visible under what you are painting. */
 private const val MASK_OVERLAY_RGB = MaskRaster.OVERLAY_RGB
 private const val MASK_ALPHA = 0.55f
+
+/**
+ * ⭐ The OTHER layer's mask, drawn faint under the one being painted — the
+ * user's ask, 2026-09-24: *"adjust opacity so other layers can be visible as
+ * well"*. Faint enough that it never reads as the layer a stroke will change.
+ */
+private const val UNDER_ALPHA = 0.2f
 
 /** ⚠ The overlay is rasterised at this edge, then scaled — not at screen size. */
 private const val OVERLAY_DIM = 384
@@ -63,7 +72,37 @@ private const val PINCH_GAIN = 1.6f
  * Whether a stroke adds coverage or takes it away — or, with a segmenter wired,
  * whether a touch SELECTS the object under it (`docs/SEGMENTER.md`).
  */
-enum class MaskTool { BRUSH, ERASE, TAP }
+/**
+ * ⚠ [PICK] draws NOTHING on the canvas — its whole interaction is the chip
+ * row above, so a finger on the picture must not paint while it is selected
+ * (`docs/SEGMENTER.md` §8).
+ */
+enum class MaskTool { BRUSH, ERASE, TAP, PICK }
+
+/**
+ * ⭐⭐⭐ An OBJECT LAYER in the editor (`docs/ADD-OBJECTS.md`, the user's
+ * design 2026-09-26): nothing is painted on it. A finger on an object selects
+ * it and drags it; two fingers resize and turn the selected one together,
+ * snapping to right angles ([com.abrah.nightmare.AddObjects.snapAngle]). With
+ * nothing selected, two fingers zoom the view as on the image layer.
+ *
+ * [items] are this layer's objects in the PICTURE's normalised terms (framed
+ * by the caller), each with the index it has in the node's list.
+ * ⚠ [onChange] fires ONCE, when the fingers lift — the same one-write-per-
+ * gesture rule as a stroke, and it is what makes a drag one Undo step.
+ */
+class ObjectLayerEdit(
+    val items: List<ObjectItem>,
+    val selected: Int?,
+    val onSelect: (Int?) -> Unit,
+    val onChange: (Int, com.abrah.nightmare.AddObjects.Placed) -> Unit,
+)
+
+class ObjectItem(val index: Int, val obj: com.abrah.nightmare.AddObjects.Placed, val cut: ImageBitmap)
+
+/** ⚠ How small or large an object may be pinched, as a share of the picture's width. */
+private const val OBJECT_MIN_W = 0.03f
+private const val OBJECT_MAX_W = 3f
 
 /**
  * ⭐⭐ Paint an inpaint mask over [source] with a finger.
@@ -97,7 +136,30 @@ fun MaskEditor(
      * un-erasable, so a stroke here can neither add to it nor take it away.
      */
     padding: com.abrah.nightmare.Frame? = null,
+    /**
+     * ⭐⭐ The other LAYER's mask, shown faintly under [state] and never
+     * painted by a stroke here (`docs/ADD-OBJECTS.md`, layers).
+     */
+    under: MaskState? = null,
+    /**
+     * ⚠ What resets the zoom and pan — [source] unless told otherwise. The
+     * mask window passes the PHOTO, so a new picture resets the view but the
+     * objects moving or turning see-through (a layer switch) does not.
+     */
+    viewKey: Any? = source,
+    /** ⭐⭐ Non-null on an OBJECT layer: select, move, resize, turn — no painting. */
+    objects: ObjectLayerEdit? = null,
 ) {
+    // ⚠⚠⚠ **The callbacks are read FRESH.** They are called from inside a
+    // `pointerInput` that restarts only on the brush size and the tool, so it
+    // held the lambdas of the composition it last started in — and a stroke
+    // made after a LAYER switch went to the layer that was active before.
+    val strokeTo by rememberUpdatedState(onStroke)
+    val tapAt by rememberUpdatedState(onTap)
+    val objectLayer by rememberUpdatedState(objects)
+    // ⭐ The object under the fingers, as it is mid-gesture — drawn in place of
+    // its stored self until the fingers lift and [ObjectLayerEdit.onChange] lands.
+    var liveObject by remember { mutableStateOf<Pair<Int, com.abrah.nightmare.AddObjects.Placed>?>(null) }
     // ⚠ The in-progress stroke lives in LOCAL state so dragging stays smooth
     // without a round trip through the view model on every pointer sample.
     var live by remember { mutableStateOf<List<Offset>>(emptyList()) }
@@ -106,8 +168,8 @@ fun MaskEditor(
 
     // ⚠ Reset whenever the picture changes — a pan held over from the previous
     // photo would put the mask somewhere arbitrary.
-    var zoom by remember(source) { mutableFloatStateOf(1f) }
-    var pan by remember(source) { mutableStateOf(Offset.Zero) }
+    var zoom by remember(viewKey) { mutableFloatStateOf(1f) }
+    var pan by remember(viewKey) { mutableStateOf(Offset.Zero) }
 
     /**
      * Screen point -> normalised image coordinate, undoing the view transform.
@@ -134,18 +196,98 @@ fun MaskEditor(
         return Offset(next.x.coerceIn(-maxX, maxX), next.y.coerceIn(-maxY, maxY))
     }
 
+    /**
+     * ⭐⭐ One gesture on an object layer ([ObjectLayerEdit]). The down point
+     * picks the TOPMOST object under it; with none there, the selected one
+     * still takes a two-finger resize and turn, and a plain tap on nothing
+     * lets the selection go.
+     */
+    suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.objectGesture(
+        layer: ObjectLayerEdit,
+        at: Offset,
+        size: Size,
+    ) {
+        val p0 = toImage(at, size)
+        val hit = layer.items.lastOrNull {
+            com.abrah.nightmare.AddObjects.contains(it.obj, it.cut.width, it.cut.height, source.width, source.height, p0.x, p0.y)
+        }
+        if (hit != null && hit.index != layer.selected) layer.onSelect(hit.index)
+        val target = hit ?: layer.items.firstOrNull { it.index == layer.selected }
+        val start = target?.obj
+        var cur = start
+        var startSpread = 0f
+        var startAngle = 0f
+        var startW = 0f
+        var startRot = 0f
+        var startZoom = zoom
+        var fingers = 1
+        var most = 1
+        var travelled = 0f
+        while (true) {
+            val event = awaitPointerEvent()
+            val down = event.changes.filter { it.pressed }
+            if (down.isEmpty()) break
+            if (down.size != fingers) {
+                // ⚠ Re-anchored whenever a finger lands or lifts, so the object
+                // does not jump by what the spread was before.
+                fingers = down.size
+                most = maxOf(most, fingers)
+                startSpread = 0f
+            }
+            val panPx = event.calculatePan()
+            travelled += panPx.getDistance()
+            if (target == null || cur == null) {
+                // ⭐ Nothing selected: two fingers zoom the view, as on the image layer.
+                if (down.size > 1) {
+                    val spread = event.calculateCentroidSize(useCurrent = true)
+                    if (startSpread == 0f && spread > 0f) { startSpread = spread; startZoom = zoom }
+                    if (startSpread > 0f && spread > 0f) {
+                        zoom = (startZoom * (spread / startSpread).pow(PINCH_GAIN)).coerceIn(1f, MAX_ZOOM)
+                    }
+                    pan = clampPan(pan + panPx, size, zoom)
+                }
+                event.changes.forEach { it.consume() }
+                continue
+            }
+            var o: com.abrah.nightmare.AddObjects.Placed = cur
+            o = o.copy(x = o.x + panPx.x / (size.width * zoom), y = o.y + panPx.y / (size.height * zoom))
+            if (down.size > 1) {
+                val a = down[0].position
+                val b = down[1].position
+                val spread = (a - b).getDistance()
+                val angle = Math.toDegrees(kotlin.math.atan2((b.y - a.y).toDouble(), (b.x - a.x).toDouble())).toFloat()
+                if (startSpread == 0f) {
+                    if (spread > 0f) { startSpread = spread; startAngle = angle; startW = o.w; startRot = o.rot }
+                } else {
+                    val w = (startW * spread / startSpread).coerceIn(OBJECT_MIN_W, OBJECT_MAX_W)
+                    // ⚠ Resized about its CENTRE, like the placer: its height
+                    // in the picture's terms follows the cut's shape.
+                    val tall = source.width.toFloat() / source.height.coerceAtLeast(1) *
+                        target.cut.height / target.cut.width.coerceAtLeast(1)
+                    o = o.copy(
+                        x = o.x - (w - o.w) / 2f,
+                        y = o.y - (w - o.w) * tall / 2f,
+                        w = w,
+                        rot = com.abrah.nightmare.AddObjects.snapAngle(startRot + angle - startAngle),
+                    )
+                }
+            }
+            cur = o
+            liveObject = target.index to o
+            event.changes.forEach { it.consume() }
+        }
+        val end = cur
+        if (target != null && end != null && end != start) layer.onChange(target.index, end)
+        else if (hit == null && most == 1 && travelled < 12f && layer.selected != null) layer.onSelect(null)
+        liveObject = null
+    }
+
     // ⚠ Recomputed only when the mask actually changes — not per frame, and not
     // during a drag, which is why the live stroke is drawn separately below.
-    val overlay = remember(state, aspect) {
-        if (state.isEmpty) {
-            null
-        } else {
-            val w = OVERLAY_DIM
-            val h = (OVERLAY_DIM / aspect).toInt().coerceAtLeast(1)
-            MaskRaster.overlay(state, w, h, MASK_OVERLAY_RGB.toInt())
-        }
-    }
+    val overlay = remember(state, aspect) { overlayOf(state, aspect, "mask overlay") }
     DisposableEffect(overlay) { onDispose { overlay?.recycle() } }
+    val underlay = remember(under, aspect) { under?.let { overlayOf(it, aspect, "other layer overlay") } }
+    DisposableEffect(underlay) { onDispose { underlay?.recycle() } }
 
     // ⚠⚠ Fit the WINDOW and centre, by [CropEditor]'s own rule and constants —
     // it filled the width alone, so in the inpaint popup the Mask tab drew the
@@ -189,6 +331,20 @@ fun MaskEditor(
             .pointerInput(brushRadiusFrac, tool) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    // ⭐ Kept, like `NmPreview`: where every touch on the frame
+                    // LANDS. Reported 2026-09-23 that drags near the frame's
+                    // left and right sides register nothing; a missing line
+                    // here for such a drag means the touch never reached it.
+                    android.util.Log.i(
+                        "NmMaskTouch",
+                        "down x=${down.position.x.toInt()} y=${down.position.y.toInt()} " +
+                            "frame=${size.width}x${size.height} tool=$tool zoom=$zoom",
+                    )
+                    objectLayer?.let { layer ->
+                        down.consume()
+                        objectGesture(layer, down.position, size.toSize())
+                        return@awaitEachGesture
+                    }
                     var transforming = false
                     var painting = false
                     // ⚠ Pinch is tracked ABSOLUTELY, from the spread at the
@@ -241,10 +397,14 @@ fun MaskEditor(
                         }
                     }
 
-                    if (tool == MaskTool.TAP) {
+                    if (tool == MaskTool.PICK) {
+                        // ⚠ Nothing: the chips do the picking. Falling through
+                        // to the paint branch would paint a stroke with an
+                        // invisible brush, which is the worst of both.
+                    } else if (tool == MaskTool.TAP) {
                         // ⚠ The DOWN point, not where a wobbling finger lifted:
                         // it is what the user aimed at. A pinch is not a tap.
-                        if (painting && live.isNotEmpty()) onTap(live.first().x, live.first().y)
+                        if (painting && live.isNotEmpty()) tapAt(live.first().x, live.first().y)
                     } else if (painting && live.isNotEmpty()) {
                         // ⚠⚠ ONE write, at the END of the gesture. A widget that
                         // emits per pointer event runs the canvas-update-and-
@@ -253,7 +413,7 @@ fun MaskEditor(
                         // crashed the app mid-drag on the cropper
                         // (`notes/HANDOFF.md` §5). A tap is a legitimate
                         // one-dot stroke and the list already holds it.
-                        onStroke(MaskStrokeData(live.map { it.x to it.y }, brushRadiusFrac))
+                        strokeTo(MaskStrokeData(live.map { it.x to it.y }, brushRadiusFrac))
                     }
                     live = emptyList()
                 }
@@ -288,6 +448,53 @@ fun MaskEditor(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
+            // ⭐⭐ An object layer's own objects, drawn here rather than baked
+            // into [source], so a drag moves them without a composite per frame.
+            objects?.let { layer ->
+                val ring = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                Canvas(Modifier.fillMaxSize()) {
+                    for (item in layer.items) {
+                        val o = liveObject?.takeIf { it.first == item.index }?.second ?: item.obj
+                        val w = o.w * size.width
+                        val h = w * item.cut.height / item.cut.width.coerceAtLeast(1)
+                        // ⚠ The same three steps as `AddObjects.matrix`, which
+                        // the render draws with: centre, turn, mirror.
+                        withTransform({
+                            translate(o.x * size.width + w / 2f, o.y * size.height + h / 2f)
+                            rotate(o.rot, pivot = Offset.Zero)
+                            scale(if (o.flip) -1f else 1f, 1f, pivot = Offset.Zero)
+                        }) {
+                            drawImage(
+                                item.cut,
+                                dstOffset = IntOffset((-w / 2f).toInt(), (-h / 2f).toInt()),
+                                dstSize = IntSize(w.toInt().coerceAtLeast(1), h.toInt().coerceAtLeast(1)),
+                            )
+                            if (item.index == layer.selected) drawRect(
+                                color = ring,
+                                topLeft = Offset(-w / 2f, -h / 2f),
+                                size = Size(w, h),
+                                style = DrawStroke(width = 2.dp.toPx() / zoom),
+                            )
+                        }
+                    }
+                }
+            }
+            underlay?.let { u ->
+                Canvas(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = UNDER_ALPHA
+                            compositingStrategy = CompositingStrategy.Offscreen
+                        },
+                ) {
+                    drawImage(
+                        image = u.asImageBitmap(),
+                        dstOffset = IntOffset.Zero,
+                        dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                    )
+                }
+            }
 
             Canvas(
                 Modifier
@@ -306,7 +513,9 @@ fun MaskEditor(
                         compositingStrategy = CompositingStrategy.Offscreen
                     },
             ) {
-                overlay?.let {
+                // ⚠ Hidden while an object is dragged: its ring would stay
+                // behind at the old place until the fingers lift.
+                if (liveObject == null) overlay?.let {
                     drawImage(
                         image = it.asImageBitmap(),
                         dstOffset = IntOffset.Zero,
@@ -314,7 +523,7 @@ fun MaskEditor(
                     )
                 }
 
-                if (live.isNotEmpty() && tool != MaskTool.TAP) {
+                if (live.isNotEmpty() && tool != MaskTool.TAP && tool != MaskTool.PICK) {
                     // ⚠ WIDTH, not min(width, height): radiusFrac is
                     // width-relative everywhere else, so measuring the preview
                     // against the short edge draws a landscape brush a third
@@ -353,5 +562,24 @@ fun MaskEditor(
             padding?.let { p -> Canvas(Modifier.fillMaxSize()) { drawPadding(p) } }
         }
     }
+    }
+}
+
+/**
+ * The red overlay of [state] at [OVERLAY_DIM], or null when there is nothing.
+ * ⚠ On the main thread, deliberately: it must land in the same frame the
+ * finished stroke leaves, or the stroke blinks out. Timed to `NmPerf`, so a
+ * slow one shows up in the log rather than as a stutter nobody can place.
+ */
+private fun overlayOf(state: MaskState, aspect: Float, label: String): android.graphics.Bitmap? {
+    if (state.isEmpty) return null
+    val t0 = System.nanoTime()
+    val w = OVERLAY_DIM
+    val h = (OVERLAY_DIM / aspect).toInt().coerceAtLeast(1)
+    return MaskRaster.overlay(state, w, h, MASK_OVERLAY_RGB.toInt()).also {
+        android.util.Log.i(
+            com.abrah.nightmare.Perf.TAG,
+            "$label ${w}x$h: ${(System.nanoTime() - t0) / 1_000_000} ms (main)",
+        )
     }
 }

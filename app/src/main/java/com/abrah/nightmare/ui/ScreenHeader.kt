@@ -35,7 +35,8 @@ import androidx.compose.ui.Modifier
 @Composable
 fun ScreenHeader(
     title: String,
-    onClose: () -> Unit,
+    /** ⚠ Null draws no ✕ — a panel inside a [PullDownSheet] closes by pulling. */
+    onClose: (() -> Unit)?,
     modifier: Modifier = Modifier,
     /** Shown just before the ✕ — the harness puts its version here. */
     trailing: @Composable () -> Unit = {},
@@ -59,7 +60,7 @@ fun ScreenHeader(
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             trailing()
-            IconButton(onClick = onClose) {
+            if (onClose != null) IconButton(onClick = onClose) {
                 Icon(
                     Icons.Filled.Close,
                     // ⚠ Names the DESTINATION, not the glyph. "close" tells a

@@ -42,7 +42,7 @@ object NpuFiles {
      */
     const val LABEL = "Neodragon (video)"
 
-    fun root(ctx: Context): File = File(ctx.getExternalFilesDir(null), "npu")
+    fun root(ctx: Context): File = File(com.abrah.nightmare.ModelStorage.root(ctx), "npu")
 
     fun ctxDir(ctx: Context): File = File(root(ctx), "ctx").apply { mkdirs() }
 

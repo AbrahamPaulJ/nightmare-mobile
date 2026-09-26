@@ -51,8 +51,8 @@ android {
         // a minor bump per push, which is what the rule exists to stop. The
         // minor moves only when a release is called a release. âš  versionCode
         // stays a plain incrementing integer; Android requires that.
-        versionCode = 319
-        versionName = "1.6.013"
+        versionCode = 348
+        versionName = "1.6.042"
         ndk { abiFilters += "arm64-v8a" }
 
         // The plugin runtime and the NPU runner, both built from source.
@@ -178,6 +178,12 @@ dependencies {
     // than dependency resolution. The Expressive bump is a separate, isolated
     // change -- see docs/UI.md section 1.
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+    // ⭐ Prompt translation (Russian/Chinese → English) — Foxlet, built FROM SOURCE
+    // into app/libs by tools/build_foxlet.sh and gitignored like jniLibs
+    // (docs/TRANSLATE.md). A local AAR carries no dependency metadata, so its
+    // coroutines dependency is declared here.
+    implementation(files("libs/foxlet-release.aar"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")

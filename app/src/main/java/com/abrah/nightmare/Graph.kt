@@ -717,7 +717,9 @@ data class Graph(val nodes: List<Node>) {
             if (!which(n.id)) n else {
                 var drop = emptySet<String>()
                 if (n.type in FRAMES_PICTURE_TYPES) drop = drop + framing
-                if (n.type in PAINTS_PICTURE_TYPES) drop = drop + MaskNode.OPS + MaskNode.PAINTED_ON
+                // ⚠ …and the placed OBJECTS: they sat on the old picture
+                // (reported 2026-09-23 — a new photo kept the old objects).
+                if (n.type in PAINTS_PICTURE_TYPES) drop = drop + MaskNode.OPS + MaskNode.PAINTED_ON + AddObjects.PARAM + AddObjects.ORIGINAL + AddObjects.LAYER + AddObjects.RING
                 if (drop.isEmpty()) n else n.copy(params = n.params - drop)
             }
         })

@@ -202,11 +202,19 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "npu_i2v" -> npuI2v(arg)
             "inpaint" -> inpaint(arg)
             "t2i" -> t2i()
+            // ⭐ Prompt translation, timed (`docs/TRANSLATE.md`). `--es arg "ru|красная шляпа, 8k"`;
+            // no arg runs a fixed Russian and Chinese set.
+            "translate" -> translateProbe(arg)
+            // ⭐ The models folder (`ModelStorage`), headless. `--es arg "download|models/qteamix,models/translate"`
+            // switches the place and moves ONLY those items; `app|…` moves them back.
+            "models_place" -> modelsPlaceProbe(arg)
             "dit_edit" -> ditEdit(arg)
             // ⭐ Tap to select, headless (docs/SEGMENTER.md §5).
             // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
             "segmenter_install" -> segmenterInstall()
             "segment" -> segmentProbe(arg)
+            // ⭐⭐ What does a human PARSER cost on this CPU? Measurement only.
+            "parse_probe" -> parseProbe(arg)
             else -> say("unknown intent op \"$op\"", bad = true)
         }
     }
@@ -814,6 +822,52 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
 
         say("dit_edit: done — pictures in ${dir.absolutePath}")
+    }
+
+    private suspend fun modelsPlaceProbe(arg: String?) {
+        val parts = arg.orEmpty().split("|", limit = 2)
+        val to = com.abrah.nightmare.ModelStorage.Place.entries.firstOrNull { it.name.equals(parts[0], true) }
+        if (to == null) { say("  models_place: arg is app|download[|items]", bad = true); return }
+        val only = parts.getOrNull(1)?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+        val from = if (to == com.abrah.nightmare.ModelStorage.Place.APP) com.abrah.nightmare.ModelStorage.Place.DOWNLOAD
+            else com.abrah.nightmare.ModelStorage.Place.APP
+        say("  models_place: access=${com.abrah.nightmare.ModelStorage.hasAccess()} was=${com.abrah.nightmare.ModelStorage.place(ctx)} → $to, only=$only")
+        stopBackend()
+        com.abrah.nightmare.ModelStorage.setPlace(ctx, to)
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        val kept = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.abrah.nightmare.ModelStorage.move(ctx, from, to, onProgress = {}, isCancelled = { false }, only = only)
+        }
+        val ms = android.os.SystemClock.elapsedRealtime() - t0
+        CustomModels.scan(ctx)
+        ModelCatalog.refreshInstalled(ctx)
+        val left = com.abrah.nightmare.ModelStorage.contents(ctx, from).map { it.first.name }
+        say("  models_place: moved in $ms ms, kept ${kept.size}; root=${com.abrah.nightmare.ModelStorage.root(ctx)}; still in $from: $left")
+    }
+
+    private suspend fun translateProbe(arg: String?) {
+        val cases = if (arg != null && '|' in arg) listOf(arg.substringBefore('|') to arg.substringAfter('|'))
+        else listOf(
+            "ru" to "красивая девушка в красном платье, (длинные волосы:1.2), 8k, закат на пляже",
+            "ru" to "старый моряк с седой бородой, драматичный свет, портрет",
+            "zh" to "一只可爱的小猫坐在草地上，阳光明媚，高清，8k",
+            "zh" to "穿着汉服的女孩，(樱花:1.3)，古风，精致的面部",
+        )
+        for ((code, text) in cases) {
+            val source = PromptTranslate.Source.entries.firstOrNull { it.code == code }
+            if (source == null || !PromptTranslate.installed(ctx, source)) {
+                say("  translate: no $code model in ${source?.let { PromptTranslate.dir(ctx, it) }}", bad = true)
+                continue
+            }
+            // ⚠ Twice: the first includes loading the model, the second is what a user waits for after.
+            for (pass in 1..2) {
+                val t0 = System.nanoTime()
+                val out = runCatching { PromptTranslate.translate(ctx, text, source) }
+                val ms = (System.nanoTime() - t0) / 1_000_000
+                out.onSuccess { say("  translate $code pass $pass ${ms} ms: $text  =>  $it") }
+                    .onFailure { say("  translate $code FAILED ${ms} ms: ${it.message}", bad = true) }
+            }
+        }
     }
 
     private suspend fun t2i() {
@@ -2572,6 +2626,197 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("  deterministic across a fresh model: $same", bad = !same)
         }
     }
+
+    /**
+     * ⭐⭐ Is a human PARSER cheap enough to be the text-prompt segmenter?
+     * SegFormer-B2 fine-tuned on ATR (`mattmdjaga/segformer_b2_clothes`, 27.4M,
+     * fp32 ONNX) takes a photo and returns ALL 18 labels in one pass — hat,
+     * hair, face, the garments, each limb — so "clothes" and "head" are unions
+     * of labels rather than a prompt, and switching target costs nothing.
+     * The question this op answers is the only one that decides it: what does
+     * that one pass cost on this phone's CPU? (`docs/SEGMENTER.md` §6.)
+     *
+     * ⚠ MEASUREMENT ONLY — no catalogue entry, no download, no node. The model
+     * is whatever has been pushed to `files/parse/`, named by the arg's second
+     * half and defaulting to `model.onnx`.
+     *
+     * ⚠ The photo is SQUASHED to 512², the opposite of [SegmentModel]'s
+     * letterbox, and deliberately: the model's own `preprocessor_config.json`
+     * says `size {512, 512}` with bilinear resample and no padding, so that is
+     * what the weights were shown.
+     */
+    private suspend fun parseProbe(arg: String?) {
+        val dir = java.io.File(ctx.getExternalFilesDir(null), "parse").apply { mkdirs() }
+        // `<photo>` or `<photo>,<model filename>` — the second half is how two
+        // exports are compared on the same picture in one session.
+        val parts = arg.orEmpty().split(",")
+        val photoPath = parts.getOrNull(0)?.takeIf { it.isNotBlank() }
+        val model = java.io.File(dir, parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "model.onnx")
+        if (!model.isFile) {
+            say("parse_probe: push an .onnx to ${model.absolutePath}", bad = true)
+            return
+        }
+        val photo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            if (photoPath != null) BitmapFactory.decodeFile(photoPath)
+            else newestSavedImage()?.let { uri ->
+                ctx.contentResolver.openInputStream(android.net.Uri.parse(uri))
+                    ?.use { BitmapFactory.decodeStream(it) }
+            }
+        }
+        if (photo == null) {
+            say("parse_probe: no photo (${photoPath ?: "nothing in Pictures/" + ImageSaver.FOLDER})", bad = true)
+            return
+        }
+        say("parse_probe: ${photo.width}x${photo.height}, ${model.name} ${model.length()} B")
+
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val env = ai.onnxruntime.OrtEnvironment.getEnvironment(
+                ai.onnxruntime.OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR, "nightmare-parse",
+            )
+            var t = System.nanoTime()
+            val session = try {
+                env.createSession(
+                    model.absolutePath,
+                    // ⚠ 4, to match SegmentModel: letting ORT pick oversubscribes big.LITTLE.
+                    ai.onnxruntime.OrtSession.SessionOptions().apply { setIntraOpNumThreads(4) },
+                )
+            } catch (e: Throwable) {
+                say("  FAIL open ${e.javaClass.simpleName}: ${e.message}", bad = true)
+                return@withContext
+            }
+            say("  open ${(System.nanoTime() - t) / 1_000_000} ms")
+            session.use { ses ->
+                val inName = ses.inputNames.first()
+                val outName = ses.outputNames.first()
+
+                t = System.nanoTime()
+                val dim = 512
+                val square = Bitmap.createBitmap(dim, dim, Bitmap.Config.ARGB_8888)
+                android.graphics.Canvas(square).drawBitmap(
+                    photo, null, android.graphics.Rect(0, 0, dim, dim),
+                    android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG),
+                )
+                val n = dim * dim
+                val px = IntArray(n)
+                square.getPixels(px, 0, dim, 0, 0, dim, dim)
+                square.recycle()
+                // NCHW float32, rescale 1/255 then ImageNet mean/std — the
+                // numbers are the model's own preprocessor config.
+                val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
+                val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+                val buf = java.nio.FloatBuffer.allocate(3 * n)
+                for (c in 0 until 3) {
+                    val shift = 16 - 8 * c
+                    for (i in 0 until n) {
+                        buf.put(((px[i] shr shift and 0xFF) / 255f - mean[c]) / std[c])
+                    }
+                }
+                buf.rewind()
+                say("  preprocess ${(System.nanoTime() - t) / 1_000_000} ms ($inName -> $outName)")
+
+                val input = ai.onnxruntime.OnnxTensor.createTensor(
+                    env, buf, longArrayOf(1, 3, dim.toLong(), dim.toLong()),
+                )
+                var labels: ByteArray? = null
+                var ow = 0
+                var oh = 0
+                var classes = 0
+                input.use { tensor ->
+                    val runs = 4
+                    for (k in 0 until runs) {
+                        t = System.nanoTime()
+                        try {
+                            ses.run(mapOf(inName to tensor)).use { out ->
+                                val ms = (System.nanoTime() - t) / 1_000_000
+                                say("  run $k  $ms ms" + if (k == 0) "   <- cold" else "")
+                                if (k == runs - 1) {
+                                    val logits = out.associate { it.key to it.value }[outName]
+                                        as ai.onnxruntime.OnnxTensor
+                                    val shape = logits.info.shape
+                                    classes = shape[1].toInt()
+                                    oh = shape[2].toInt()
+                                    ow = shape[3].toInt()
+                                    val f = logits.floatBuffer
+                                    val plane = ow * oh
+                                    // argmax over the class axis, one byte per pixel.
+                                    val best = ByteArray(plane)
+                                    val top = FloatArray(plane) { f.get(it) }
+                                    for (c in 1 until classes) {
+                                        val base = c * plane
+                                        for (i in 0 until plane) {
+                                            val v = f.get(base + i)
+                                            if (v > top[i]) {
+                                                top[i] = v
+                                                best[i] = c.toByte()
+                                            }
+                                        }
+                                    }
+                                    labels = best
+                                }
+                            }
+                        } catch (e: Throwable) {
+                            say("  FAIL run ${e.javaClass.simpleName}: ${e.message}", bad = true)
+                            return@withContext
+                        }
+                    }
+                }
+                val lab = labels
+                if (lab == null) {
+                    say("  no logits read", bad = true)
+                    return@withContext
+                }
+                say("  logits ${classes}x${oh}x${ow}")
+
+                // ⚠ Coverage and the PNGs are what says whether it FOUND the
+                // clothes, which is the half a millisecond count cannot report.
+                val counts = IntArray(classes)
+                for (b in lab) counts[b.toInt() and 0xFF]++
+                val plane = ow * oh
+                fun pct(c: Int) = c * 100f / plane
+                for (c in 0 until classes) {
+                    if (counts[c] == 0) continue
+                    val name = ATR_LABELS.getOrElse(c) { "class" + c }
+                    say("    $c $name ${"%.1f".format(pct(counts[c]))}%")
+                }
+
+                fun write(tag: String, want: IntArray) {
+                    val alpha = ByteArray(plane)
+                    var hit = 0
+                    for (i in 0 until plane) {
+                        if ((lab[i].toInt() and 0xFF) in want) {
+                            alpha[i] = 255.toByte()
+                            hit++
+                        }
+                    }
+                    if (hit == 0) {
+                        say("    $tag — empty", bad = true)
+                        return
+                    }
+                    val bmp = com.abrah.nightmare.segment.SegmentModel.alphaBitmap(alpha, ow, oh)
+                    val m = MaskRaster.rasterise(
+                        MaskState(listOf(MaskOp.Placed(bmp))), photo.width, photo.height,
+                    )
+                    java.io.File(dir, "${model.nameWithoutExtension}_$tag.png").outputStream().use {
+                        m.compress(Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                    say("    $tag ${"%.1f".format(pct(hit))}%  -> ${model.nameWithoutExtension}_$tag.png")
+                }
+                // The unions a user would actually ask for by name.
+                write("clothes", intArrayOf(4, 5, 6, 7, 8, 17))
+                write("head", intArrayOf(1, 2, 3, 11))
+                write("hair", intArrayOf(2))
+                write("skin", intArrayOf(11, 12, 13, 14, 15))
+                say("  PNGs in ${dir.absolutePath}")
+            }
+        }
+    }
+
+    /** `mattmdjaga/segformer_b2_clothes`' own label order (the ATR set). */
+    private val ATR_LABELS = listOf(
+        "Background", "Hat", "Hair", "Sunglasses", "Upper-clothes", "Skirt",
+        "Pants", "Dress", "Belt", "Left-shoe", "Right-shoe", "Face",
+        "Left-leg", "Right-leg", "Left-arm", "Right-arm", "Bag", "Scarf",
+    )
 
     /** How many images this app has in its gallery folder. */
     private fun countSaved(): Int {

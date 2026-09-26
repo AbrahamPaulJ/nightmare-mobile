@@ -167,3 +167,28 @@ val CopyIcon: ImageVector by lazy {
         build()
     }
 }
+
+/**
+ * ⭐ A picture with a plus — Material's `add_photo_alternate`. The Add Objects
+ * tool in the mask editor: pick a photo to take objects from (2026-09-23).
+ */
+val AddObjectIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "AddObject",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).run {
+        addPath(
+            pathData = PathParser().parsePathString(
+                "M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3z" +
+                    "m-3 4V8h-3V5H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8h-3z" +
+                    "M5 19l3-4 2 3 3-4 4 5H5z"
+            ).toNodes(),
+            fill = SolidColor(Color.White),
+        )
+        build()
+    }
+}
+
