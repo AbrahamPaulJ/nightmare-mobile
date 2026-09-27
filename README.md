@@ -10,7 +10,8 @@ to video, all on the phone. No server, no account, no cloud, no network.
   <img src="media/workflows.png" alt="Text to image, image to image and image to video, each as a node graph on an Android phone">
 </p>
 
-**[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)**
+**[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)** ·
+**[User guide](https://abrahampaulj.github.io/nightmare-mobile/)**
 
 Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU — SD 1.5 needs an 888 or
 newer, SDXL and Anima an 8 Gen 3, and FLUX.2, Z-Image, Qwen Image and video an 8 Elite. Models are not in
