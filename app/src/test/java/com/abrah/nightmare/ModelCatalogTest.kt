@@ -248,7 +248,8 @@ class ModelCatalogTest {
                 // ⚠ `anima` since 2026-09-16 — `main.cpp` has built it all along.
                 // ⚠ `sd15npu_inpaint` since 2026-09-19, the same way.
                 // ⚠ `klein`/`zimage` since 2026-09-19 (backend-patches/007).
-                spec.backendType in listOf("sd15npu", "sd15npu_inpaint", "sdxl", "anima", "klein", "zimage"),
+                // ⚠ `qwen21` since 2026-09-27 (backend-patches/013).
+                spec.backendType in listOf("sd15npu", "sd15npu_inpaint", "sdxl", "anima", "klein", "zimage", "qwen21"),
             )
             assertTrue("${spec.id} has no required files", spec.requiredFiles.isNotEmpty())
             assertTrue("${spec.id} has no resolution", spec.resolutions.isNotEmpty())

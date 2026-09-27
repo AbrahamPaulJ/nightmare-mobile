@@ -101,8 +101,10 @@ class VideoGraphTest {
         // in `SdSampler.ALL` — see the note there. If this count moves to 10,
         // somebody registered it, and the measurements that argued against
         // that need re-taking first.
-        assertEquals(9, SAMPLER_TYPES.size)
-        assertEquals(8, IMAGE_SAMPLER_TYPES.size)
+        // ⚠ Ten since 2026-09-27: `qwen21.sample` (Qwen Image 2.1, no inpaint
+        // type, rolls a seed like every other image sampler).
+        assertEquals(10, SAMPLER_TYPES.size)
+        assertEquals(9, IMAGE_SAMPLER_TYPES.size)
         assertEquals(3, INPAINT_TYPES.size)
     }
 

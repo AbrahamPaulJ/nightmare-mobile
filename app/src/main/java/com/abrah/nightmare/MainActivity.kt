@@ -84,6 +84,17 @@ class MainActivity : ComponentActivity() {
      */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+        // ⭐ The resident checkpoint: out of sight arms [BackendIdle]'s grace
+        // period; real pressure skips it. ⚠ TRIM_MEMORY_BACKGROUND is NOT
+        // pressure — it is routine on leaving the screen, and treating it as
+        // pressure would defeat the grace period for a trip to the photo picker.
+        if (level == android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) BackendIdle.hidden()
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_MODERATE ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
+        ) {
+            BackendIdle.pressure()
+        }
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN ||
             level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
             level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
@@ -91,6 +102,12 @@ class MainActivity : ComponentActivity() {
             com.abrah.nightmare.segment.Segmenter.trim()
             com.abrah.nightmare.segment.Parser.trim()
         }
+    }
+
+    /** ⭐ Back in front: a resident checkpoint stays ([BackendIdle]). */
+    override fun onStart() {
+        super.onStart()
+        BackendIdle.visible()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -873,6 +890,8 @@ fun HarnessScreen(
             onDeleteEmbedding = vm::deleteEmbedding,
             downloadBase = vm.downloadBase,
             onDownloadBase = vm::chooseDownloadBase,
+            lowRam = vm.lowRam,
+            onLowRam = vm::chooseLowRam,
             onCleanTemp = vm::cleanTempFiles,
             // ⚠ So the cleaner leaves a live download's scratch alone.
             installing = vm.working,

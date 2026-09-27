@@ -436,10 +436,9 @@ val RECIPES: List<Recipe> = listOf(
         "img2img", "Image to image",
         "A photo from the gallery, re-imagined at the strength you choose.",
         ::img2imgWorkflow,
-        // ⚠ Not FLUX.2: there the job is an EDIT and has its own card,
-        // further down where its requirements put it.
-        families = com.abrah.nightmare.Family.entries.toSet() -
-            com.abrah.nightmare.Family.FLUX2,
+        // ⚠ Not an edit model (FLUX.2, Qwen Image): there the job is an EDIT
+        // and has its own card, further down where its requirements put it.
+        families = com.abrah.nightmare.Family.entries.filterNot { it.edit }.toSet(),
     ),
     Recipe(
         "inpaint", "Inpaint — paint an area to redo",
@@ -470,12 +469,12 @@ val RECIPES: List<Recipe> = listOf(
         // ⚠ The requirement is IN the copy, the way the video flows state
         // theirs. This list is not filtered by device or by checkpoint, so a
         // card that cannot run here has to say so itself.
-        "FLUX.2 Klein only, on an 8 Elite or newer. A photo and a prompt: the " +
+        "FLUX.2 Klein or Qwen Image 2.1, on an 8 Elite or newer. A photo and a prompt: the " +
             "whole picture is re-rendered to follow it, rather than nudged. " +
             "Wire a second picture into the reference port and name them as " +
             "image 1 and image 2 in the prompt.",
         ::fluxEditWorkflow,
-        families = setOf(com.abrah.nightmare.Family.FLUX2),
+        families = com.abrah.nightmare.Family.entries.filter { it.edit }.toSet(),
         minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
     ),
     Recipe(
@@ -623,7 +622,9 @@ fun img2imgWorkflow(): Workflow {
  */
 fun fluxEditWorkflow(): Workflow {
     val id = "edit"
-    val flux = com.abrah.nightmare.Family.FLUX2
+    // ⭐ The SELECTED model's family when it is an edit model (Qwen Image
+    // opens a Qwen edit); FLUX.2 otherwise, the smaller and faster of the two.
+    val flux = SelectedModel.spec.family.takeIf { it.edit } ?: com.abrah.nightmare.Family.FLUX2
     return Workflow(
         Graph(
             listOf(

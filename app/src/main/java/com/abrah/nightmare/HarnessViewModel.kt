@@ -168,6 +168,27 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    /** ⭐ The three low-RAM switches, observable for Settings ([Prefs.lowRam]). */
+    var lowRam by mutableStateOf(Prefs.lowRam(getApplication()))
+        private set
+
+    /**
+     * ⭐ Flip one low-RAM switch. ⚠ `--lowram` binds at LAUNCH, so a backend of
+     * the family it governs is stopped: the next Run relaunches with the new
+     * setting instead of silently keeping the old one.
+     */
+    fun chooseLowRam(key: String, on: Boolean) {
+        val app = getApplication<Application>()
+        Prefs.setLowRam(app, key, on)
+        lowRam = Prefs.lowRam(app)
+        val family = if (key == Prefs.KEY_SDXL_LOWRAM) Family.SDXL else Family.ANIMA
+        val resident = BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }
+        if (resident?.family == family) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
+            say("${family.label} low RAM setting changed — the next Run relaunches the backend")
+        }
+    }
+
     fun chooseTheme(value: Prefs.Theme) {
         Prefs.setTheme(getApplication(), value)
         theme = value

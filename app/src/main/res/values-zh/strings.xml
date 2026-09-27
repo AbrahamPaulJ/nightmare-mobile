@@ -195,4 +195,12 @@
     <string name="models_move_title">移动模型？</string>
     <string name="models_move_body">%1$d 项（%2$s）将移动到“%3$s”。加载速度不变。移动期间需要能容纳最大模型的剩余空间。</string>
     <string name="models_move_action">移动</string>
+    <string name="memory_title">内存</string>
+    <string name="memory_note">默认值根据本机内存设定。如果模型仍能运行，可关闭开关以提速并显示实时预览；如果被系统杀掉，请开启。</string>
+    <string name="sdxl_lowram">SDXL 低内存模式</string>
+    <string name="sdxl_lowram_hint">仅 SDXL 生效：按需加载每个模型，用完即释放。小于 16GB 内存的设备建议开启。开启后将禁用生成过程预览。</string>
+    <string name="anima_lowram">Anima 低内存模式</string>
+    <string name="anima_lowram_hint">仅 Anima 生效：按需加载每个模型，用完即释放。小于 16GB 内存的设备建议开启。开启后将禁用生成过程预览。</string>
+    <string name="anima_seq_dit">Anima DiT 轮流加载</string>
+    <string name="anima_seq_dit_hint">仅在 Anima 低内存模式下生效：不再让 DiT 的两块同时驻留内存。如果你有 12GB 内存但 Anima 低内存模式仍无法运行，请开启此选项。每步速度会变慢。</string>
 </resources>

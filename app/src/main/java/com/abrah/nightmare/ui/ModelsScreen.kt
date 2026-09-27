@@ -523,8 +523,10 @@ fun ModelsScreen(
                 // bare `.safetensors` says which family it is — the tab has to
                 // supply it. ⇒ One button per tab either way, never two, and
                 // the same [ImportCallout] and naming dialog everywhere.
+                // ⚠ Not Qwen Image: its DiT is a .gguf and the importer reads a
+                // .safetensors header ([CustomModels.ditFamilyOf]).
                 if (family.dit) {
-                    if (onImportDit != null) {
+                    if (onImportDit != null && family != Family.QWEN21) {
                         item { ImportCard(busy, onImport = { onImportDit(it, family) }, dit = true) }
                     }
                 } else if (onImport != null) {
@@ -549,6 +551,10 @@ fun ModelsScreen(
                             // on some 8 Elite Gen 5 phones (the user, 2026-09-19).
                             Family.ZIMAGE -> "About 8.8 GB. 8 Elite or newer only. Still " +
                                 "maturing: it crashes on some 8 Elite phones. Use Wi-Fi."
+                            // ⚠ 10.8 GB on disk against a 12 GB phone: it loads one
+                            // part at a time, so it is slower than FLUX.2.
+                            Family.QWEN21 -> "About 10.8 GB. 8 Elite or newer only. Edits " +
+                                "and generates; slower than FLUX.2. Use Wi-Fi."
                             // ⚠ The free-space figure is the one that surprises:
                             // the archive and its unpacked copy are both on disk
                             // at once, so a 3.5 GB download needs ~7.5 GB free.

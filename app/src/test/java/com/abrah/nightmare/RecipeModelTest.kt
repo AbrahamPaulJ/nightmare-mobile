@@ -252,8 +252,10 @@ class RecipeModelTest {
      */
     @Test
     fun fluxNodesAreBornAtDenoiseOne() {
+        // ⭐ Every native EDIT family (FLUX.2, Qwen Image) — [Family.edit].
         assertEquals("1.0", SdSampler.defaultDenoise(Family.FLUX2))
-        for (f in Family.entries.filter { it != Family.FLUX2 }) {
+        assertEquals("1.0", SdSampler.defaultDenoise(Family.QWEN21))
+        for (f in Family.entries.filter { !it.edit }) {
             assertEquals(
                 "$f should keep the ordinary img2img default",
                 "0.65",

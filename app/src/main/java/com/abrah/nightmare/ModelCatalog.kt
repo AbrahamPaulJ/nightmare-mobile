@@ -48,12 +48,21 @@ enum class Family(
      * its size is a request field rather than a launch one.
      */
     val dit: Boolean = false,
+    /**
+     * ⭐ A NATIVE EDIT model: the engine takes the base picture as a clean
+     * reference latent (`PipelineDit::isNativeEditModel`), so it has a
+     * `reference` port, "Image edit" as its job, denoise born at 1.0 and green
+     * padding. The ONE place that says which families those are — FLUX.2
+     * Klein, and Qwen Image 2.1 since upstream 440899f.
+     */
+    val edit: Boolean = false,
 ) {
     SD15("SD 1.5", GP_SD15, GP_SD15_NEG, "sd15"),
     SDXL("SDXL", GP_SDXL, GP_SDXL_NEG, "sdxl"),
     ANIMA("Anima", GP_ANIMA, GP_ANIMA_NEG, "anima"),
-    FLUX2("FLUX.2", GP_DIT, GP_DIT_NEG, "flux2", dit = true),
+    FLUX2("FLUX.2", GP_DIT, GP_DIT_NEG, "flux2", dit = true, edit = true),
     ZIMAGE("Z-Image", GP_DIT, GP_DIT_NEG, "zimage", dit = true),
+    QWEN21("Qwen Image", GP_DIT, GP_DIT_NEG, "qwen21", dit = true, edit = true),
 }
 
 // ---- the general-purpose prompts --------------------------------------------
@@ -515,9 +524,17 @@ data class ModelSpec(
         // as broken, not borrow one.
         val shared = File(d.parentFile, CustomModels.DIT_SHARED)
         return requiredFiles.filter {
-            !File(d, it).exists() && !(isDit && File(shared, it).exists())
+            !File(d, it).exists() && !(usesDitShared && File(shared, it).exists())
         }
     }
+
+    /**
+     * ⚠ Whether [CustomModels.DIT_SHARED] may stand in for a missing part. NOT
+     * Qwen Image: the shared parts are FLUX.2/Z-Image's Qwen3-4B encoder and
+     * VAE, and the backend reads Qwen's own directory only
+     * (`backend-patches/013`) — the two answers must be the same one.
+     */
+    private val usesDitShared: Boolean get() = isDit && family != Family.QWEN21
 
     companion object {
         /** The DiT weights inside a DiT package — the one file a user may replace. */
@@ -708,7 +725,7 @@ data class ModelSpec(
      */
     fun loadedBytes(context: Context): Long {
         val own = bytesOnDisk(context)
-        if (!isDit) return own
+        if (!usesDitShared) return own
         val d = dir(context)
         val shared = File(d.parentFile, CustomModels.DIT_SHARED)
         return own + requiredFiles
@@ -762,6 +779,8 @@ object ModelCatalog {
     /** ⭐ The DiT engine's `--type`s (backend-patches/007). */
     const val KLEIN = "klein"
     const val ZIMAGE = "zimage"
+    /** ⭐ Qwen Image 2.1 (upstream local-dream 440899f, backend-patches/013). */
+    const val QWEN21 = "qwen21"
     /** ⚠ The size a NEW node starts at, and the context key's constant size. */
     val DIT_RES = Res(1024, 1024)
     /**
@@ -865,6 +884,8 @@ object ModelCatalog {
 
     /** ⭐ What the backend checks for in a DiT package dir (`main.cpp`) — plus the tokenizer it loads for every type. */
     val DIT_REQUIRED = listOf("dit.safetensors", "llm.gguf", "vae.safetensors", "tokenizer.json")
+    /** ⭐ Qwen Image 2.1's package — a GGUF DiT and the VLM's vision tower (`main.cpp`, 013). */
+    val QWEN21_REQUIRED = listOf("dit.gguf", "llm.gguf", "llm_vision.gguf", "vae.safetensors", "tokenizer.json")
 
     /**
      * ⭐⭐ Non-square output on a family whose graphs are frozen at 1024.
@@ -1538,6 +1559,8 @@ object ModelCatalog {
     private fun dit(
         id: String, label: String, family: Family, type: String, steps: Int,
         files: List<RemoteFile>,
+        /** ⚠ Upstream's own starter prompt for the checkpoint. */
+        prompt: String = "a lovely cat wearing black sunglasses, studio photo,",
         /**
          * ⭐⭐ On a DiT package `--lowram` does ONE thing, and it is not what it
          * does for SDXL: `main.cpp` turns it into the engine's
@@ -1555,8 +1578,7 @@ object ModelCatalog {
         id = id,
         label = label,
         builds = listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, DIT_MIN_ARCH, 8)),
-        // ⚠ Upstream's own starter prompt for both checkpoints.
-        prompt = "a lovely cat wearing black sunglasses, studio photo,",
+        prompt = prompt,
         negative = "",
         family = family,
         backendType = type,
@@ -1656,6 +1678,30 @@ object ModelCatalog {
                 RemoteFile(HF + "zhiyuanasad/z_image_turbo_adreno/resolve/main/llm.gguf", "llm.gguf", 2_262_670_048L),
                 RemoteFile(HF + "zhiyuanasad/z_image_turbo_adreno/resolve/main/vae.safetensors", "vae.safetensors", 335_304_388L),
                 RemoteFile(HF + "Tongyi-MAI/Z-Image-Turbo/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
+            ),
+        ),
+        // ⭐ Qwen Image 2.1 — upstream local-dream v3.0.0-alpha.3 (440899f),
+        // file for file, sizes HEAD-checked 2026-09-27. A Q4_0 GGUF DiT plus
+        // Qwen3-VL-8B as the text encoder; `llm_vision.gguf` is its vision
+        // tower, which native EDITING needs (a reference reaches the prompt
+        // through it). 20 steps at cfg 1, upstream's defaults.
+        //
+        // ⚠ 10.8 GB against a 12 GB phone, so the backend always runs it
+        // `all=disk` — each of TE, DiT and VAE loaded for its stage and dropped
+        // after (backend-patches/013). No `lowram` needed here: that flag is the
+        // weaker `te=disk`, and `main.cpp` does not read it for this type.
+        //
+        // ⚠ Every file lives in the model's OWN directory: `_dit_shared` holds
+        // FLUX.2/Z-Image's Qwen3-4B encoder and VAE, which are not these.
+        dit(
+            "qwen_image_2_1", "Qwen Image 2.1", Family.QWEN21, QWEN21, steps = 20,
+            prompt = "a lovely cat holding a sign that says 'Qwen Image 2.1',",
+            files = listOf(
+                RemoteFile(HF + "leejet/Qwen-Image-2.1-GGUF/resolve/main/qwen_image_2.1-Q4_0.gguf", "dit.gguf", 4_197_494_816L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-8B-Instruct-Q4_0.gguf", "llm.gguf", 4_787_333_600L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-8B-Instruct-f16.gguf", "llm_vision.gguf", 1_159_029_920L),
+                RemoteFile(HF + "Qwen/Qwen3-VL-8B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+                RemoteFile(HF + "Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors", "vae.safetensors", 675_509_688L),
             ),
         ),
     )

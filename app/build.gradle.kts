@@ -51,8 +51,8 @@ android {
         // a minor bump per push, which is what the rule exists to stop. The
         // minor moves only when a release is called a release. âš  versionCode
         // stays a plain incrementing integer; Android requires that.
-        versionCode = 351
-        versionName = "1.6.045"
+        versionCode = 355
+        versionName = "1.6.049"
         ndk { abiFilters += "arm64-v8a" }
 
         // The plugin runtime and the NPU runner, both built from source.
@@ -135,6 +135,22 @@ android {
                 "proguard-rules.pro",
             )
         }
+        // ⭐ The PUSH build: what goes to the phone between releases. Signed with the
+        // RELEASE key -- so it installs over the phone's release build and keeps the
+        // 12 GB of models and every flow (notes/HANDOFF.md §3b) -- but with no R8 and
+        // no lint. Measured 2026-09-27: assembleRelease was 89 s, of which R8 was 61 s
+        // and lintVital 67 s running beside it; Kotlin itself was 11 s.
+        //
+        // ⚠ Not a substitute for a release: R8 cannot see calls made from C
+        // (`nmjs.c` looks its JNI entry points up by string), so an R8-only failure
+        // shows up ONLY in assembleRelease. A GitHub release is always built with it.
+        // Same applicationId and version on purpose: it is the same app to Android.
+        create("dev") {
+            initWith(getByName("release"))
+            isMinifyEnabled = false
+            isShrinkResources = false
+            matchingFallbacks += listOf("release")
+        }
     }
 
     compileOptions {
@@ -215,4 +231,10 @@ dependencies {
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.26.0")
     testImplementation("io.github.takahirom.roborazzi:roborazzi-junit-rule:1.26.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// ⚠ lintVital runs on every non-debuggable variant, and `dev` is one (the release
+// config minus R8). It is the RELEASE gate, not the push gate.
+tasks.configureEach {
+    if (name.startsWith("lintVital") && name.contains("Dev")) enabled = false
 }

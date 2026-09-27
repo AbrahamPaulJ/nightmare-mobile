@@ -1,0 +1,98 @@
+--- a/src/DitEngine.h
++++ b/src/DitEngine.h
+@@ -21,7 +21,12 @@
+ extern "C" {
+ #endif
+ 
+-#define DIT_ENGINE_ABI_VERSION 5
++// Nightmare's engine: upstream's ABI 5 (Qwen Image 2.1, v3.0.0-alpha.3) plus
++// our LoRA fields below. Numbered 1xx so it can never collide with an upstream
++// ABI -- our old LoRA engine ALSO called itself 5 while upstream's 5 is a
++// different struct, and a matching number over mismatched structs is exactly
++// the failure this constant exists to refuse.
++#define DIT_ENGINE_ABI_VERSION 105
+ 
+ // Name of the single symbol the core resolves after dlopen.
+ #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
+@@ -31,13 +36,16 @@
+ typedef enum {
+   DIT_MODEL_Z_IMAGE = 0,
+   DIT_MODEL_FLUX2_KLEIN = 1,
++  DIT_MODEL_QWEN_IMAGE_2_1 = 2,
+ } dit_model_kind;
+ 
+ typedef struct {
+   dit_model_kind kind;
+-  // Weight files. The text encoder (llm) is shared between both models.
++  // Weight files. llm_vision_path is only required for native image editing
++  // with a vision-language text encoder (currently Qwen Image 2.1).
+   const char *diffusion_model_path;
+   const char *llm_path;
++  const char *llm_vision_path;
+   const char *vae_path;
+   // ggml device spec, e.g. "HTP0" for the Hexagon NPU or "CPU".
+   const char *backend;
+@@ -49,11 +57,8 @@
+   bool vae_conv_direct;
+   // How a LoRA is applied: 0 = let the engine decide, 1 = merge into the
+   // weights at load, 2 = keep the branches and apply them each pass. Matches
+-  // stable-diffusion.cpp's lora_apply_mode_t; 0 leaves its own default.
+-  //
+-  // A CONTEXT param rather than a generation one because that is where
+-  // sd_ctx_params_t takes it -- so changing the MODE costs a reload, while
+-  // changing which LoRAs, or how strongly, does not.
++  // stable-diffusion.cpp's lora_apply_mode_t; 0 leaves its own default. A
++  // CONTEXT param because sd_ctx_params_t takes it there.
+   int lora_apply_mode;
+ } dit_ctx_params;
+ 
+@@ -64,8 +69,8 @@
+   int height;
+   int steps;
+   float cfg_scale;
+-  // Distilled guidance; both shipped models are guidance-distilled turbo
+-  // variants, so this is not the same knob as cfg_scale.
++  // Distilled guidance for models that expose a guidance embedding. Other
++  // architectures ignore it; this is not the same knob as cfg_scale.
+   float guidance;
+   int64_t seed;
+   const char *sample_method;
+@@ -90,15 +95,9 @@
+   // VAE tiling for resolutions whose full decode does not fit; 0 disables.
+   int vae_tile_size;
+   float vae_tile_overlap;
+-  // LoRAs applied to THIS generation. Each path is a .safetensors adapter with
+-  // its own multiplier; lora_multipliers may be NULL, which means 1.0 for all.
+-  // Zero count is "no LoRAs" and costs nothing.
+-  //
+-  // Per generation rather than per context on purpose: stable-diffusion.cpp
+-  // takes them in sd_img_gen_params_t, so a strength can change between renders
+-  // without reloading the model. Whether that is actually free depends on the
+-  // apply mode the engine settles on -- merging into the weights cannot work
+-  // for row-split tensors, so a split model applies them per pass instead.
++  // LoRAs applied to THIS generation: .safetensors adapters, each with its own
++  // multiplier; lora_multipliers may be NULL (1.0 for all). Zero count is "no
++  // LoRAs". Per generation because sd_img_gen_params_t takes them there.
+   const char *const *lora_paths;
+   const float *lora_multipliers;
+   int lora_count;
+@@ -124,13 +123,14 @@
+   dit_ctx *(*create)(const dit_ctx_params *params);
+   void (*destroy)(dit_ctx *ctx);
+ 
+-  // Writes an RGB8 image of width * height * 3 bytes into *out_rgb, owned by
+-  // the engine until free_image(). Returns false on failure or cancellation.
++  // Writes an interleaved RGB8/RGBA8 image into *out_pixels and its channel
++  // count into *out_channels, owned by the engine until free_image(). Returns
++  // false on failure or cancellation.
+   bool (*generate)(dit_ctx *ctx, const dit_gen_params *params,
+                    dit_progress_cb progress, dit_preview_cb preview,
+-                   void *user_data, uint8_t **out_rgb, int *out_width,
+-                   int *out_height);
+-  void (*free_image)(uint8_t *rgb);
++                   void *user_data, uint8_t **out_pixels, int *out_width,
++                   int *out_height, int *out_channels);
++  void (*free_image)(uint8_t *pixels);
+ 
+   // Last failure on this context, or the last create() failure when ctx is
+   // NULL. Valid until the next call on the same context.

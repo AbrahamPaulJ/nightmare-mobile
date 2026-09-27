@@ -1,0 +1,128 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -80,7 +80,8 @@
+     kControlNet,
+     kSd15NpuControlInpaint,
+     kZImage,
+-    kFlux2Klein
++    kFlux2Klein,
++    kQwenImage21
+   };
+ 
+   int port = 8081;
+@@ -118,7 +119,8 @@
+   bool isMnn() const { return type == ModelType::kSd15Cpu; }
+   // DiT formats served by libdit_engine.so: no fixed canvas, no QNN contexts.
+   bool isDit() const {
+-    return type == ModelType::kZImage || type == ModelType::kFlux2Klein;
++    return type == ModelType::kZImage || type == ModelType::kFlux2Klein ||
++           type == ModelType::kQwenImage21;
+   }
+ };
+ 
+@@ -134,7 +136,7 @@
+          "Modes:\n"
+          "  --type <type>          Model format: sd15cpu (MNN), sd15npu "
+          "(QNN), sd15npu_inpaint (QNN), sd15npu_control_inpaint (QNN), sdxl "
+-         "(QNN), anima (QNN), controlnet (QNN), zimage/klein (DiT engine)\n"
++         "(QNN), anima (QNN), controlnet (QNN), zimage/klein/qwen21 (DiT engine)\n"
+          "  --upscaler_mode        Upscale-only server, no diffusion model\n"
+          "  --device_info          Print HTP vtcm/arch as JSON and exit "
+          "(needs --lib_dir only)\n"
+@@ -319,6 +321,8 @@
+     opts.type = ServerOptions::ModelType::kZImage;
+   else if (typeStr == "klein")
+     opts.type = ServerOptions::ModelType::kFlux2Klein;
++  else if (typeStr == "qwen21")
++    opts.type = ServerOptions::ModelType::kQwenImage21;
+   else
+     showHelpAndExit(typeStr.empty() ? "Missing --type"
+                                     : "Invalid --type: " + typeStr);
+@@ -406,18 +410,36 @@
+   // assets into the runtime directory on the DSP search path.
+   if (opts.isDit()) {
+     // The weights are the model's own; the rest may be shared ([ditFile]).
+-    std::string dit_path = (dir / "dit.safetensors").string();
+-    std::string llm_path = ditFile(dir, "llm.gguf");
+-    std::string vae_path = ditFile(dir, "vae.safetensors");
++    // Qwen Image 2.1 (upstream local-dream 440899f) ships its DiT as GGUF and
++    // adds the VLM's vision tower, which native editing needs.
++    const bool qwen = opts.type == ServerOptions::ModelType::kQwenImage21;
++    std::string dit_path =
++        (dir / (qwen ? "dit.gguf" : "dit.safetensors")).string();
++    // ⚠ Qwen reads its OWN directory only. `_dit_shared` holds the FLUX.2 /
++    // Z-Image parts (a Qwen3-4B text encoder, their VAE); a Qwen package
++    // missing one must fail, not load the wrong family's file in silence.
++    const auto own = [&](const char *name) { return (dir / name).string(); };
++    std::string llm_path = qwen ? own("llm.gguf") : ditFile(dir, "llm.gguf");
++    std::string llm_vision_path = qwen ? own("llm_vision.gguf") : "";
++    std::string vae_path =
++        qwen ? own("vae.safetensors") : ditFile(dir, "vae.safetensors");
+     for (const auto &p : {dit_path, llm_path, vae_path}) {
+       if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
+     }
++    if (qwen && !std::filesystem::exists(llm_vision_path))
++      showHelpAndExit("File not found: " + llm_vision_path);
+     if (opts.lib_dir.empty()) showHelpAndExit("Missing --lib_dir for DiT");
+     // The text encoder is a 4B LLM used once per request; streaming its
+     // parameters from disk trades a few seconds for the headroom the DiT
+     // itself needs on 12GB devices.
++    //
++    // Qwen Image 2.1 is 10.8 GB on disk against a 12 GB phone, so every
++    // component is loaded lazily and dropped at the end of its stage
++    // ("all=disk", upstream's default since 440899f): TE, DiT and VAE are
++    // never co-resident. ⚠ Upstream made it the default for EVERY DiT; here
++    // it is Qwen only until FLUX.2/Z-Image are measured with it.
+     const std::string params_backend =
+-        opts.lowram ? "te=disk" : opts.dit_params_backend;
++        qwen ? "all=disk" : opts.lowram ? "te=disk" : opts.dit_params_backend;
+     // DIAGNOSTIC override, read once at launch. Answering "does a runtime
+     // LoRA reach HTP-resident weights" needs the SAME build to run the same
+     // request on the CPU path, and nothing else can ask that question.
+@@ -441,10 +463,13 @@
+         (std::filesystem::path(opts.lib_dir) / "libdit_engine.so").string();
+     if (!std::filesystem::exists(engine_path))
+       showHelpAndExit("DiT engine not installed: " + engine_path);
+-    return std::make_unique<PipelineDit>(
+-        text_encoder, opts.model_dir, engine_path, dit_path, llm_path, vae_path,
++    const dit_model_kind kind =
+         opts.type == ServerOptions::ModelType::kZImage ? DIT_MODEL_Z_IMAGE
+-                                                       : DIT_MODEL_FLUX2_KLEIN,
++        : qwen                                         ? DIT_MODEL_QWEN_IMAGE_2_1
++                                                       : DIT_MODEL_FLUX2_KLEIN;
++    return std::make_unique<PipelineDit>(
++        text_encoder, opts.model_dir, engine_path, dit_path, llm_path,
++        llm_vision_path, vae_path, kind,
+         dit_backend, params_backend, opts.dit_threads,
+         opts.dit_vae_tile_size, !opts.no_img2img, lora_apply_mode);
+   }
+@@ -572,11 +597,13 @@
+ static std::string encodeResultImage(const GenerationResult &result,
+                                      const std::string &format) {
+   if (format == "jpeg") {
+-    auto jpeg = encodeJPEG(result.image_data, result.width, result.height, 95);
++    auto jpeg = encodeJPEG(result.image_data, result.width, result.height, 95,
++                           result.channels);
+     return base64_encode(std::string(jpeg.begin(), jpeg.end()));
+   }
+   if (format == "png") {
+-    auto png = encodePNG(result.image_data, result.width, result.height);
++    auto png = encodePNG(result.image_data, result.width, result.height,
++                         result.channels);
+     return base64_encode(std::string(png.begin(), png.end()));
+   }
+   return base64_encode(
+@@ -1701,9 +1728,11 @@
+       // A DiT package may share its tokenizer with the family ([ditFile]).
+       // Deliberately NOT applied to the other types: an SD model whose own
+       // tokenizer went missing must fail, not silently load a DiT one.
++      // Qwen Image 2.1's tokenizer is Qwen3-VL's, not the shared Qwen3-4B one.
+       text_encoder->loadTokenizer(
+-          opts.isDit() ? ditFile(mdir, "tokenizer.json")
+-                       : (mdir / "tokenizer.json").string());
++          opts.isDit() && opts.type != ServerOptions::ModelType::kQwenImage21
++              ? ditFile(mdir, "tokenizer.json")
++              : (mdir / "tokenizer.json").string());
+       // Anima's LLM adapter is fed by a second (T5) tokenizer.
+       if (opts.isAnima())
+         text_encoder->loadT5Tokenizer((mdir / "tokenizer_t5.json").string());

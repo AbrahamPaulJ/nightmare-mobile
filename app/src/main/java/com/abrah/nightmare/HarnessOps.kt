@@ -611,7 +611,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
             val sampler = Node(
                 "generate",
-                if (spec.family == Family.FLUX2) "flux2.sample" else "zimage.sample",
+                SdSampler.typeFor(spec.family, inpaint = false),
                 params = mapOf(
                     "model" to spec.id,
                     "width" to res.width.toString(),
@@ -1544,10 +1544,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         /** ⭐ A node telling the person something. [com.abrah.nightmare.NodeCtx.warn]. */
         onWarn: (String, String) -> Unit = { _, _ -> },
     ): GraphRun {
+        // ⭐ In use for the whole run, so an out-of-sight release waits for it
+        // ([BackendIdle]) — and `finally`, so a failed run still ends the use.
+        BackendIdle.begin()
         try {
             return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn)
         } finally {
-            releaseBackendIfTooBig()
+            try { releaseBackendIfTooBig() } finally { BackendIdle.end() }
         }
     }
 

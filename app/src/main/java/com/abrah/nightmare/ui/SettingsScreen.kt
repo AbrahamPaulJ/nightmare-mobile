@@ -114,6 +114,12 @@ fun SettingsScreen(
      * ([HarnessViewModel.downloadBase]).
      */
     downloadBase: String = Prefs.HF_ORIGIN,
+    /**
+     * ⭐ Upstream's three low-RAM switches ([Prefs.lowRam]). ⚠ A parameter, for
+     * the reason [downloadBase] is one. Null hides the section (previews, goldens).
+     */
+    lowRam: Prefs.LowRam? = null,
+    onLowRam: (String, Boolean) -> Unit = { _, _ -> },
     onDownloadBase: (String) -> Unit = {},
     /**
      * ⭐ Deletes what [TempCleaner] listed. ⚠ The SCAN happens here (it
@@ -259,6 +265,33 @@ fun SettingsScreen(
                             Text(stringResource(R.string.battery_allow))
                         }
                     }
+                }
+            }
+            // ⭐ Upstream's low-RAM switches, drawn with the app's one bool
+            // control (`BoolKnobRow`, docs/UI.md §8.9a). Sequential DiT is only
+            // meaningful with Anima low RAM on, so it is disabled without it —
+            // upstream hides it; a disabled row keeps the layout still.
+            if (lowRam != null) {
+                Column(Modifier.fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(stringResource(R.string.memory_title), style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        stringResource(R.string.memory_note),
+                        style = LogTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    com.abrah.nightmare.canvas.BoolKnobRow(
+                        stringResource(R.string.sdxl_lowram), stringResource(R.string.sdxl_lowram_hint),
+                        lowRam.sdxl, { onLowRam(Prefs.KEY_SDXL_LOWRAM, it) },
+                    )
+                    com.abrah.nightmare.canvas.BoolKnobRow(
+                        stringResource(R.string.anima_lowram), stringResource(R.string.anima_lowram_hint),
+                        lowRam.anima, { onLowRam(Prefs.KEY_ANIMA_LOWRAM, it) },
+                    )
+                    com.abrah.nightmare.canvas.BoolKnobRow(
+                        stringResource(R.string.anima_seq_dit), stringResource(R.string.anima_seq_dit_hint),
+                        lowRam.animaSeqDit, { onLowRam(Prefs.KEY_ANIMA_SEQ_DIT, it) },
+                        enabled = lowRam.anima,
+                    )
                 }
             }
         }

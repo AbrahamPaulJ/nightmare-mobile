@@ -76,6 +76,22 @@ object Backend {
      */
     private const val SSE_READ_TIMEOUT_MS = STAGE_TIMEOUT_MS
 
+    /**
+     * ⭐ The same gap for a DiT `/generate` — [Ops.generate] is DiT-only.
+     *
+     * ⚠⚠ Reported 2026-09-28: a Qwen Image 2.1 EDIT at 1024² failed with
+     * `SocketTimeoutException` after 2 min 07 s — and the app then stopped a
+     * backend that was still working. Before its first step an edit runs the
+     * vision tower over the base picture, VAE-encodes it at the canvas size and
+     * loads a DiT whose sequence the reference doubles; text-to-image had its
+     * first frame at ~12 s. The phone was also busy with other apps.
+     *
+     * ⚠ Long on purpose: a backend that DIES closes the socket, which reads as
+     * an immediate EOF, not a timeout — so this only ever bounds a genuine hang,
+     * and Cancel still stops one at any time.
+     */
+    internal const val DIT_SSE_READ_TIMEOUT_MS = 600_000
+
     data class Response(val code: Int, val body: String, val millis: Long)
 
     suspend fun get(path: String): Response = request("GET", path, null)
@@ -796,7 +812,7 @@ object Ops {
 
         var complete: JSONObject? = null
         var streamError: String? = null
-        val r = Backend.postSse("/generate?stream=1", body) { ev ->
+        val r = Backend.postSse("/generate?stream=1", body, readTimeoutMs = Backend.DIT_SSE_READ_TIMEOUT_MS) { ev ->
             val j = try { JSONObject(ev.data) } catch (e: Exception) { null }
             when (j?.optString("type")) {
                 "progress" -> onProgress(

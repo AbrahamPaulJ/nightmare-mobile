@@ -172,7 +172,7 @@ class SdSampler(
         // only supported by FLUX.2 Klein" for Z-Image, and a port that always
         // errors is worse than no port. Same reasoning that keeps Z-Image out
         // of the inpaint picker.
-        if (family == Family.FLUX2) Port("reference", "IMAGE") else null,
+        if (family.edit) Port("reference", "IMAGE") else null,
     )
     override val outputs = listOf(Port("image", "IMAGE"))
     /** ⚠ Inpaint is its OWN palette section (the user's call, 2026-09-16). */
@@ -216,7 +216,7 @@ class SdSampler(
      */
     fun jobFor(node: Node): String = when {
         inpaint -> "Inpaint"
-        family == Family.FLUX2 &&
+        family.edit &&
             (node.inputs["image"] != null || node.inputs["reference"] != null) -> EDIT_LABEL
         node.inputs["image"] != null -> "Image to image"
         else -> "Text to image"
@@ -317,7 +317,7 @@ class SdSampler(
         /** Whether [node] is a FLUX.2 edit that may pad — [padRuleOf] asks. */
         fun allowsPad(node: Node): Boolean {
             val t = ALL.firstOrNull { it.name == node.type } ?: return false
-            return t.family == Family.FLUX2 && !t.inpaint &&
+            return t.family.edit && !t.inpaint &&
                 node.params[ALLOW_PAD].equals("true", ignoreCase = true)
         }
 
@@ -327,7 +327,7 @@ class SdSampler(
          * honest "this photo is too small", which black says.
          */
         fun padOptions(family: Family, inpaint: Boolean): List<String> =
-            if (inpaint || family == Family.FLUX2) listOf(CropNode.PAD_BLACK, CropNode.PAD_BLUR, CropNode.PAD_GREEN)
+            if (inpaint || family.edit) listOf(CropNode.PAD_BLACK, CropNode.PAD_BLUR, CropNode.PAD_GREEN)
             else listOf(CropNode.PAD_BLACK, CropNode.PAD_BLUR)
 
         const val REF_X = "ref_x"
@@ -424,6 +424,8 @@ class SdSampler(
          */
         val FLUX2 = SdSampler("flux2.sample", Family.FLUX2, inpaint = false)
         val ZIMAGE = SdSampler("zimage.sample", Family.ZIMAGE, inpaint = false)
+        /** ⭐ Qwen Image 2.1 (upstream 440899f) — a native edit model like FLUX.2, no inpaint type. */
+        val QWEN21 = SdSampler("qwen21.sample", Family.QWEN21, inpaint = false)
         /**
          * ⚠⚠⚠ **`flux2.inpaint` is BUILT and NOT REGISTERED, on purpose.**
          * Everything behind it works — [runDitMasked] sends `mask` on
@@ -448,7 +450,7 @@ class SdSampler(
          * "it still RENDERED" class as the stale-skel noise bug. It stays out
          * until the engine's behaviour is understood. `notes/PROGRESS.md`.
          */
-        val ALL = listOf(SD15, SDXL, ANIMA, FLUX2, ZIMAGE, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
+        val ALL = listOf(SD15, SDXL, ANIMA, FLUX2, ZIMAGE, QWEN21, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
 
         /**
          * ⭐⭐ The type a graph should use for [family] and [inpaint] — the one
@@ -510,7 +512,7 @@ class SdSampler(
         const val EDIT_LABEL = "Image edit"
 
         fun defaultDenoise(family: Family): String =
-            if (family == Family.FLUX2) "1.0" else "0.65"
+            if (family.edit) "1.0" else "0.65"
 
         fun canInpaint(family: Family): Boolean =
             ALL.any { it.family == family && it.inpaint }
@@ -690,8 +692,8 @@ class SdSampler(
             options = padOptions(family, inpaint),
             hint = "what fills the frame where it runs off the photo",
         ),
-        // ⭐ FLUX.2 edit only: may the frame run off the photo at all ([ALLOW_PAD]).
-        *(if (family == Family.FLUX2 && !inpaint) arrayOf(
+        // ⭐ An edit model only: may the frame run off the photo at all ([ALLOW_PAD]).
+        *(if (family.edit && !inpaint) arrayOf(
             Widget(
                 ALLOW_PAD, "bool", "false",
                 hint = "zoom out past the photo and fill the rest with the Pad choice — green for an outpaint LoRA",

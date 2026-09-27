@@ -93,11 +93,15 @@ class OpService : Service() {
             return START_NOT_STICKY
         }
         scope.launch {
+            // ⭐ A whole op is one use: `t2i` renders five pictures, and an
+            // out-of-sight release between them would fail the next ([BackendIdle]).
+            BackendIdle.begin()
             try {
                 ops.run(op, intent.getStringExtra(EXTRA_ARG))
             } catch (e: Exception) {
                 Log.w(TAG, "$op threw ${e.javaClass.simpleName}: ${e.message}")
             } finally {
+                BackendIdle.end()
                 busy.set(false)
                 // ⚠ stopSelf(startId), not stopSelf(): the id form is a no-op
                 // if another command has arrived since, which is what keeps a

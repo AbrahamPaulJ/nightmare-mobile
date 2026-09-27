@@ -144,6 +144,7 @@ object CustomModels {
     val UPSTREAM_MARKS: List<Pair<String, Family>> = listOf(
         "ZIMAGE" to Family.ZIMAGE,
         "KLEIN" to Family.FLUX2,
+        "QWEN_IMAGE_2_1" to Family.QWEN21,
         "ANIMA" to Family.ANIMA,
         "SDXL" to Family.SDXL,
         "finished" to Family.SD15,
@@ -324,6 +325,8 @@ object CustomModels {
         // a turbo base is still a turbo model. Same numbers as the built-ins.
         Family.ZIMAGE -> Defaults("euler", 8, 1.0)
         Family.FLUX2 -> Defaults("euler", 4, 1.0)
+        // ⚠ NOT turbo: upstream's own 20 steps at cfg 1 (440899f).
+        Family.QWEN21 -> Defaults("euler", 20, 1.0)
     }
 
     private fun customSpec(dir: File, cfg: Config, family: Family): ModelSpec = ModelSpec(
@@ -351,13 +354,17 @@ object CustomModels {
             // and [ZIMAGE_MARK], so these two are reached by a real import.
             Family.FLUX2 -> ModelCatalog.KLEIN
             Family.ZIMAGE -> ModelCatalog.ZIMAGE
+            // ⚠ Reached only by a folder carrying upstream's QWEN_IMAGE_2_1
+            // marker (a LocalDream download in the shared models folder):
+            // there is no .gguf import.
+            Family.QWEN21 -> ModelCatalog.QWEN21
         },
         resolutions = listOf(
             when (family) {
                 Family.SD15 -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
-                Family.FLUX2, Family.ZIMAGE -> ModelCatalog.DIT_RES
+                Family.FLUX2, Family.ZIMAGE, Family.QWEN21 -> ModelCatalog.DIT_RES
             },
         ),
         requiredFiles = when (family) {
@@ -365,6 +372,7 @@ object CustomModels {
             Family.SDXL -> ModelCatalog.SDXL_REQUIRED
             Family.ANIMA -> ModelCatalog.ANIMA_REQUIRED
             Family.FLUX2, Family.ZIMAGE -> ModelCatalog.DIT_REQUIRED
+            Family.QWEN21 -> ModelCatalog.QWEN21_REQUIRED
         },
         // ⚠ Not a preference: SDXL's UNet and Anima's two DiT halves do not fit
         // beside their encoders at 1024², and the backend needs telling
@@ -380,6 +388,8 @@ object CustomModels {
         lowram = when (family) {
             Family.SD15, Family.FLUX2 -> false
             Family.SDXL, Family.ANIMA, Family.ZIMAGE -> true
+            // ⚠ The backend runs Qwen `all=disk` whatever this says (013).
+            Family.QWEN21 -> false
         },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which
         // HTP it was compiled for — `QnnSystemContext` gives the IO contract

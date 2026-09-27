@@ -107,4 +107,78 @@ object Prefs {
         if (t.isEmpty()) return HF_ORIGIN
         return if (t.endsWith("/")) t else "$t/"
     }
+
+    // ---- low RAM: upstream local-dream's three Settings switches -----------
+
+    /**
+     * ⭐⭐ **SDXL low RAM, Anima low RAM, Anima sequential DiT** — upstream's own
+     * Settings (`sdxl_lowram`, `anima_lowram`, `anima_seq_dit`, same keys). They
+     * were forced per catalogue entry here until 2026-09-28, which put a 16 GB
+     * phone in the slow mode with no live preview for no reason (`docs/DEVICES.md` §6c).
+     *
+     * ⚠ An app SETTING, never a node param: a node param is saved into shared
+     * flows and would carry one phone's choice to another ([Residency]'s argument,
+     * which is about nodes and does not reach this).
+     *
+     * ⭐ Unset means the DEFAULT, computed from this phone's RAM rather than stored:
+     * the two low-RAM switches are on below [LOWRAM_BELOW_BYTES] — upstream's hint
+     * says they are "required on devices with less than 16GB RAM", and upstream
+     * defaults them on everywhere. ⚠ Sequential DiT stays OFF by default, as
+     * upstream has it: its own hint says to enable it only when low RAM mode alone
+     * still cannot run, and it is slower per step.
+     *
+     * ⚠ Read from storage at every LAUNCH ([lowRamFor]) rather than from a loaded
+     * copy, because a headless `OpService` op launches backends without ever
+     * running [load].
+     */
+    const val KEY_SDXL_LOWRAM = "sdxl_lowram"
+    const val KEY_ANIMA_LOWRAM = "anima_lowram"
+    const val KEY_ANIMA_SEQ_DIT = "anima_seq_dit"
+
+    /**
+     * ⚠ 13 GiB, between the classes rather than at "16": a 12 GB phone reports
+     * ~10.9–11.4 GiB of `totalMem` and a 16 GB one ~14.5–15 GiB, the rest being
+     * reserved before Android sees it.
+     */
+    const val LOWRAM_BELOW_BYTES = 13L shl 30
+
+    data class LowRam(val sdxl: Boolean, val anima: Boolean, val animaSeqDit: Boolean)
+
+    /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */
+    fun lowRamDefault(totalRamBytes: Long): Boolean =
+        totalRamBytes <= 0L || totalRamBytes < LOWRAM_BELOW_BYTES
+
+    private fun totalRam(context: Context): Long {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+            ?: return 0L
+        return android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem
+    }
+
+    fun lowRam(context: Context): LowRam {
+        val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val def = lowRamDefault(totalRam(context))
+        fun read(key: String, fallback: Boolean) =
+            if (p.contains(key)) p.getBoolean(key, fallback) else fallback
+        return LowRam(
+            sdxl = read(KEY_SDXL_LOWRAM, def),
+            anima = read(KEY_ANIMA_LOWRAM, def),
+            animaSeqDit = read(KEY_ANIMA_SEQ_DIT, false),
+        )
+    }
+
+    fun setLowRam(context: Context, key: String, on: Boolean) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()
+    }
+
+    /**
+     * ⭐ Whether a launch of [spec] passes `--lowram`. SDXL and Anima follow the
+     * switches; every other family keeps its catalogue entry's own answer
+     * ([ModelSpec.lowram] — Z-Image's `te=disk`; Qwen is `all=disk` in the backend
+     * whatever this says).
+     */
+    fun lowRamFor(context: Context, spec: ModelSpec): Boolean = when (spec.family) {
+        Family.SDXL -> lowRam(context).sdxl
+        Family.ANIMA -> lowRam(context).anima
+        else -> spec.lowram
+    }
 }

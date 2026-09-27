@@ -218,4 +218,12 @@
     <string name="models_move_title">Move models?</string>
     <string name="models_move_body">%1$d item(s), %2$s, will move to %3$s. Loading speed stays the same. The phone needs free space for the largest model while it moves.</string>
     <string name="models_move_action">Move</string>
+    <string name="memory_title">Memory</string>
+    <string name="memory_note">Set from this phone\'s RAM. Turn a switch off for speed and a live preview if the model still runs; turn it on if it is killed.</string>
+    <string name="sdxl_lowram">SDXL low RAM mode</string>
+    <string name="sdxl_lowram_hint">For SDXL only: load each model on demand and free it after use. Required on devices with less than 16GB RAM. Disables in-progress preview.</string>
+    <string name="anima_lowram">Anima low RAM mode</string>
+    <string name="anima_lowram_hint">For Anima only: load each model on demand and free it after use. Required on devices with less than 16GB RAM. Disables in-progress preview.</string>
+    <string name="anima_seq_dit">Anima DiT sequential loading</string>
+    <string name="anima_seq_dit_hint">Only with Anima low RAM mode: never keep both DiT halves in memory at the same time. Enable this if you have 12GB RAM but Anima low RAM mode still cannot run. Slower per step.</string>
 </resources>

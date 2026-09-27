@@ -455,7 +455,14 @@ object BackendProcess {
                     // run slower, it fails to allocate. ⚠ It is a property of
                     // the MODEL, so it is read off the catalogue entry beside
                     // the `--type` rather than decided here.
-                    if (!upscalerOnly && spec?.lowram == true) add("--lowram")
+                    // ⭐ Since 2026-09-28 SDXL and Anima follow upstream's Settings
+                    // switches (defaults from this phone's RAM) — [Prefs.lowRamFor].
+                    val lowram = !upscalerOnly && spec != null && Prefs.lowRamFor(context, spec)
+                    if (lowram) add("--lowram")
+                    // ⭐ Only meaningful WITH --lowram, as upstream passes it.
+                    if (lowram && spec?.family == Family.ANIMA && Prefs.lowRam(context).animaSeqDit) {
+                        add("--anima_seq_dit")
+                    }
                     // ⭐ The third launch-bound field of the context key. Absent
                     // for the 512 base (`unet.bin` already IS that graph) and
                     // for every family that ships no patches; a patch that was
