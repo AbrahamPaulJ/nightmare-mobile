@@ -82,9 +82,11 @@ CLIP, DistilT5
     Downloaded by the app at the user's request; not included here.
 
 DiT engine (libdit_engine.so and its Hexagon skels)
-    Built by xororz/local-dream (v3.0.0-alpha.1) from stable-diffusion.cpp
-    with ggml's Hexagon backend, and shipped prebuilt inside this app. Runs
-    FLUX.2 Klein and Z-Image Turbo on the NPU. Not included in this repository.
+    xororz/local-dream's engine wrapper (v3.0.0-alpha.3) around stable-diffusion.cpp
+    with ggml's Hexagon backend, plus this project's LoRA patch
+    (backend-patches/dit/), built by this repository's CI and downloaded by the
+    app; the skels ship in the APK. Runs FLUX.2 Klein, Z-Image Turbo and Qwen
+    Image 2.1 on the NPU. Not included in this repository.
 
 stable-diffusion.cpp
     leejet, with Hexagon optimisation by happyyzy
@@ -111,6 +113,20 @@ Qwen3-4B text encoder, DiT VAEs
     https://huggingface.co/zhiyuanasad/flux2_klein_adreno
     https://huggingface.co/zhiyuanasad/z_image_turbo_adreno
     Downloaded by the app at the user's request; not included here.
+
+Qwen Image 2.1
+    Qwen team (Hangzhou Tongyi Laboratory); GGUF by leejet; VAE repackaged by Comfy-Org
+    https://huggingface.co/Qwen/Qwen-Image-2.1
+    https://huggingface.co/leejet/Qwen-Image-2.1-GGUF
+    https://huggingface.co/Comfy-Org/Qwen-Image-2.1
+    Qwen Research License. Downloaded by the app at the user's request; not
+    included here.
+
+Qwen3-VL-8B-Instruct (Qwen Image 2.1's text encoder and vision tower)
+    Qwen team; GGUF by bartowski
+    https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct
+    https://huggingface.co/bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
 
 SAM 2.1 (hiera-tiny)
     Meta

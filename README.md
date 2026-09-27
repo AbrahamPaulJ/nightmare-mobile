@@ -3,8 +3,8 @@
 **A node graph for image and video generation on Android, running entirely on the Qualcomm
 Hexagon NPU.**
 
-Text to image, image to image, inpainting, upscaling, FLUX.2 image editing and text to
-video, all on the phone. No server, no account, no cloud, no network.
+Text to image, image to image, inpainting, upscaling, FLUX.2 and Qwen Image editing and text
+to video, all on the phone. No server, no account, no cloud, no network.
 
 <p align="center">
   <img src="media/workflows.png" alt="Text to image, image to image and image to video, each as a node graph on an Android phone">
@@ -13,13 +13,13 @@ video, all on the phone. No server, no account, no cloud, no network.
 **[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)**
 
 Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU — SD 1.5 needs an 888 or
-newer, SDXL and Anima an 8 Gen 3, and FLUX.2, Z-Image and video an 8 Elite. Models are not in
+newer, SDXL and Anima an 8 Gen 3, and FLUX.2, Z-Image, Qwen Image and video an 8 Elite. Models are not in
 the APK: pick one in the app and it downloads on first use, and the app says which ones your
 chip can run.
 
 **Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile Stable
 Diffusion, local image generation, on device video generation, node editor, Qualcomm Hexagon
-NPU, Snapdragon, QNN, FLUX.2, Z-Image, SDXL, Anima, text to image, text to video, image to
+NPU, Snapdragon, QNN, FLUX.2, Z-Image, Qwen Image, SDXL, Anima, text to image, text to video, image to
 video, img2img, inpainting, outpainting, virtual try-on, Segment Anything, SAM 2.1, npuforge,
 safetensors to QNN, on device model conversion, offline prompt translation, no cloud, private.
 
@@ -33,9 +33,16 @@ orders the run so each checkpoint loads once. Generate with FLUX.2 and then repa
 result with a dedicated inpainting checkpoint, in a single graph, with a single Run. The run
 bar tells you what the model switches will cost before you press it.
 
-**FLUX.2 Klein and Z-Image Turbo on the NPU.** Two DiT models, at any width and height from
-512 to 2048 in 64 pixel steps — 1280x960 and 1344x768 as readily as 1024 square. Changing the
-size costs no reload. Snapdragon 8 Elite or newer.
+**FLUX.2 Klein, Z-Image Turbo and Qwen Image 2.1 on the NPU.** Three DiT models, at any width
+and height from 512 to 2048 in 64 pixel steps — 1280x960 and 1344x768 as readily as 1024
+square. Changing the size costs no reload. Snapdragon 8 Elite or newer.
+
+**Qwen Image 2.1.** A 7B image model with an 8B vision-language model reading the prompt, so
+it follows long instructions and can put legible text in a picture. It generates and it edits:
+its text encoder sees the photos you give it, not just their latents. It is 10.8 GB, so on a
+12 GB phone it loads one part at a time and gives each back before the next. That makes it
+slower than FLUX.2 (about 4 minutes for a 1024 square picture on an 8 Elite, longer for an
+edit), and worth it when the prompt is hard.
 
 **A real inpainting model.** AbsoluteReality Inpaint is a 9 channel checkpoint: the model sees
 the hole it is filling and the pixels around it, instead of repainting blind and being blended
@@ -59,15 +66,15 @@ photo's layer.
 
 **Outpainting.** An inpaint frame may zoom out past the photo, up to twice its area, and the
 padding is generated. What fills it first is your choice: black, the photo's own edges blurred,
-or pure green (`#00FF00`) for an outpaint LoRA trained on a green screen. FLUX.2 image edit gets
-the same with `Allow padding` in its crop window.
+or pure green (`#00FF00`) for an outpaint LoRA trained on a green screen. An image edit gets the
+same with `Allow padding` in its crop window.
 
-**Image editing with FLUX.2 Klein.** A photo and a prompt: the whole picture is re-rendered
-to follow it rather than nudged, so the composition survives and the content changes. Wire a
-second picture into the reference port and name them as image 1 and image 2 in the prompt to
-compose the two. Needs a Snapdragon 8 Elite or newer and 6.2 GB of weights. A reference is
-encoded at your output size rather than its own, so 512x512 is the size to use when you wire
-one in.
+**Image editing with FLUX.2 Klein or Qwen Image 2.1.** A photo and a prompt: the whole
+picture is re-rendered to follow it rather than nudged, so the composition survives and the
+content changes. Wire a second picture into the reference port and name them as image 1 and
+image 2 in the prompt to compose the two. Needs a Snapdragon 8 Elite or newer. FLUX.2 is the
+fast one (6.2 GB); with FLUX.2 a reference is encoded at your output size rather than its own,
+so 512x512 is the size to use when you wire one in.
 
 **Text to video.** A prompt in, 49 frames at 1024x640 out, about two seconds of clip in about
 25 seconds on an 8 Elite. Image to video animates a photo instead, using the same three nodes
@@ -104,8 +111,8 @@ cost no restart, or bring your own converted `.bin`. Enlarging is a checkbox on 
 rather than a node of its own, and that node then shows what it received above what it made,
 each with its own buttons.
 
-**Twenty seven checkpoints, or bring your own.** Six SD 1.5, ten SDXL, nine Anima and two DiT
-in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
+**Twenty eight checkpoints, or bring your own.** Six SD 1.5, ten SDXL, nine Anima and three
+DiT in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
 [npuforge](https://github.com/AbrahamPaulJ/npuforge), which turns an SD safetensors checkpoint
 into a QNN model with no PC involved; its 9 channel inpainting exports run as real inpainting
 models. A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
@@ -123,8 +130,8 @@ plain weights, so a Z-Image checkpoint from CivitAI is picked from storage and r
 conversion, no PC. The text encoder, VAE and tokenizer are shared with the model you already
 installed, so an import costs only the weights. A folder copied onto the phone works too — the
 family is read out of the checkpoint's own tensor names, so nothing has to be declared. A folder
-that already carries LocalDream's marker file — `SDXL`, `ANIMA`, `KLEIN`, `ZIMAGE`, `npucustom`
-or `finished` — is taken at its word, so a model directory assembled for that app imports here
+that already carries LocalDream's marker file — `SDXL`, `ANIMA`, `KLEIN`, `ZIMAGE`,
+`QWEN_IMAGE_2_1`, `npucustom` or `finished` — is taken at its word, so a model directory assembled for that app imports here
 unchanged.
 
 **LoRAs, swappable per render.** Import an adapter `.safetensors` and pick it on any FLUX.2 or
@@ -144,6 +151,11 @@ Cyrillic or Chinese text shows a translate button. One tap turns it into English
 button undoes it. Weights like `(long hair:1.2)` and English tags pass through untouched. It
 runs offline on the phone with Mozilla's Firefox Translations models (37 MB for Russian, 55 MB
 for Chinese, downloaded the first time you tap), about 15 ms a prompt. Settings manages them.
+
+**Your RAM back when you leave.** A loaded model is let go a minute after the app leaves the
+screen, or at once if the phone runs short, and never in the middle of a render. Settings has
+LocalDream's low RAM switches for SDXL and Anima, set from how much memory your phone has: on
+under 16 GB, off above it for speed and a live preview.
 
 **Offline and private.** Nothing is uploaded, there is no account, and no prompt or picture
 leaves the phone. The only thing that ever does is a file you explicitly share.
@@ -206,6 +218,11 @@ and the DiT VAEs were converted by
 [FLUX.2 klein 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8) by Black Forest
 Labs and [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) by Tongyi-MAI, with
 fp8 weights by [Kijai](https://huggingface.co/Kijai/Z-Image_comfy_fp8_scaled).
+[Qwen Image 2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) is by the Qwen team under the
+Qwen Research License, in [leejet's GGUF](https://huggingface.co/leejet/Qwen-Image-2.1-GGUF)
+with the VAE from [Comfy-Org](https://huggingface.co/Comfy-Org/Qwen-Image-2.1); its text encoder
+is [Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) (Apache 2.0) in
+[bartowski's GGUF](https://huggingface.co/bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF).
 
 **The video is not ours either.** It is
 [Neodragon](https://huggingface.co/Qualcomm-AI-Research/Neodragon) by Qualcomm AI Research,
