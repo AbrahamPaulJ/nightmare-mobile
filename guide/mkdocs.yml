@@ -1,0 +1,88 @@
+# The Nightmare user guide — built by .github/workflows/guide.yml and served on GitHub Pages.
+# Local preview:  pip install mkdocs-material  &&  mkdocs serve -f guide/mkdocs.yml
+site_name: Nightmare user guide
+site_url: https://abrahampaulj.github.io/nightmare-mobile/
+site_description: How to use Nightmare Mobile — image and video generation on your phone's NPU, as a node graph.
+site_author: Abraham Paul Jaison
+repo_url: https://github.com/AbrahamPaulJ/nightmare-mobile
+repo_name: nightmare-mobile
+edit_uri: ""
+docs_dir: pages
+site_dir: ../site
+
+theme:
+  name: material
+  logo: assets/icon.png
+  favicon: assets/icon.png
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - navigation.tracking
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.keys
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - start/index.md
+      - Install and check your phone: start/install.md
+      - Your first picture: start/first-picture.md
+      - The canvas: start/canvas.md
+  - Flows:
+      - flows/index.md
+      - Text to image: flows/text-to-image.md
+      - Image to image: flows/image-to-image.md
+      - Inpaint: flows/inpaint.md
+      - Add Objects: flows/add-objects.md
+      - Upscale a photo: flows/upscale.md
+      - Image edit: flows/image-edit.md
+      - Video: flows/video.md
+      - Batching: flows/batch.md
+  - Models:
+      - models/index.md
+      - Download, switch and delete: models/manage.md
+      - Bring your own: models/bring-your-own.md
+      - LoRAs and embeddings: models/loras.md
+  - Reference:
+      - reference/index.md
+      - Nodes and their settings: reference/nodes.md
+      - Results: reference/results.md
+      - Settings: reference/settings.md
+      - Memory and speed: reference/memory.md
+  - Troubleshooting: troubleshooting.md
+  - Glossary: glossary.md

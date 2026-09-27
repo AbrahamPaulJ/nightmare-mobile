@@ -97,6 +97,12 @@ docs/DEVICES.md
 # The ROOT readme only. A bare `!README.md` would also un-ignore
 # backend-patches/README.md, which is working material like the rest.
 !/README.md
+# ⭐ The user guide IS public: it is the GitHub Pages site (guide/, built by
+# .github/workflows/guide.yml). Its pages are Markdown, so they are negated here.
+# ⚠ guide/ only — docs/ and notes/ stay private.
+!/guide/**/*.md
+# MkDocs build output, from `mkdocs build -f guide/mkdocs.yml` (site_dir: ../site).
+/site/
 
 # ⚠ The icon SOURCE artwork. `tools/build_icon.py` generates every asset under
 # res/mipmap-* from it, and those are committed; shipping the source too invites

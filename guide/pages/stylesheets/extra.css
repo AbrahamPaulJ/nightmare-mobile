@@ -1,0 +1,56 @@
+/* Nightmare's own colours: the violet accent (0xFF9B6BFF) and the near-black
+   canvas (0xFF0B0B10) from the app, so the guide reads as part of it. */
+:root {
+  --nm-violet: #9b6bff;
+  --nm-violet-deep: #6d3fe0;
+  --md-primary-fg-color: var(--nm-violet-deep);
+  --md-primary-fg-color--light: var(--nm-violet);
+  --md-primary-fg-color--dark: #5227c4;
+  --md-accent-fg-color: var(--nm-violet);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 250;
+  --md-default-bg-color: #0b0b10;
+  --md-default-bg-color--light: #14141c;
+  --md-code-bg-color: #161622;
+  --md-primary-fg-color: #1a1626;
+  --md-typeset-a-color: var(--nm-violet);
+  --md-accent-fg-color: #b894ff;
+}
+
+/* Phone screenshots: shown at phone size, framed like the app frames a picture. */
+.md-typeset img.screen {
+  width: 280px;
+  max-width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(155, 107, 255, 0.35);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.md-typeset figure {
+  margin: 1.2em auto;
+}
+
+.md-typeset figcaption {
+  max-width: 34em;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+/* Two screens side by side on a wide page, stacked on a phone. */
+.md-typeset .screens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2em;
+  justify-content: center;
+}
+
+.md-typeset .screens figure {
+  margin: 0;
+}
+
+.md-header__title {
+  font-weight: 700;
+  font-style: italic;
+}

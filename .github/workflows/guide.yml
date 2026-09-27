@@ -1,0 +1,49 @@
+# Builds the user guide (guide/, MkDocs Material) and publishes it on GitHub Pages:
+# https://abrahampaulj.github.io/nightmare-mobile/
+#
+# Runs on every push to main that touches the guide, and by hand. Pages must be
+# set to "GitHub Actions" as its source (Settings → Pages), once.
+name: guide
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "guide/**"
+      - ".github/workflows/guide.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # ⚠ mkdocs<2: MkDocs 2.0 drops the plugin and theme systems Material depends on.
+      - run: pip install "mkdocs<2" "mkdocs-material==9.*"
+      # --strict: a broken link or a missing image fails the build instead of shipping.
+      - run: mkdocs build --strict -f guide/mkdocs.yml
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
