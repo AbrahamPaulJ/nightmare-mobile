@@ -1,0 +1,92 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index f7083bb..e4910f8 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -162,6 +162,12 @@ dit_ctx *engine_create(const dit_ctx_params *params) {
+   if (params->backend && params->backend[0]) sd_params.backend = params->backend;
+   if (params->params_backend && params->params_backend[0])
+     sd_params.params_backend = params->params_backend;
++  // 0 is "unset": leave whatever sd_ctx_params_init chose.
++  if (params->lora_apply_mode > 0 &&
++      params->lora_apply_mode < LORA_APPLY_MODE_COUNT) {
++    sd_params.lora_apply_mode =
++        static_cast<lora_apply_mode_t>(params->lora_apply_mode);
++  }
+ 
+   auto *ctx = new dit_ctx();
+   ctx->kind = params->kind;
+@@ -251,6 +257,31 @@ bool engine_generate(dit_ctx *ctx, const dit_gen_params *params, dit_progress_cb
+         ctx->kind == DIT_MODEL_QWEN_IMAGE_2_1 ? "preset=qwen" : "preset=flux2";
+   }
+ 
++  // Same shape as reference_images above: the vector outlives the generate
++  // call because gen only holds a pointer into it.
++  std::vector<sd_lora_t> loras;
++  if (params->lora_count > 0) {
++    if (!params->lora_paths) {
++      ctx->last_error = "invalid loras";
++      return false;
++    }
++    loras.reserve(params->lora_count);
++    for (int i = 0; i < params->lora_count; ++i) {
++      if (!params->lora_paths[i] || !params->lora_paths[i][0]) {
++        ctx->last_error = "empty lora path";
++        return false;
++      }
++      sd_lora_t lora{};
++      lora.is_high_noise = false;
++      lora.multiplier =
++          params->lora_multipliers ? params->lora_multipliers[i] : 1.0f;
++      lora.path = params->lora_paths[i];
++      loras.push_back(lora);
++    }
++    gen.loras = loras.data();
++    gen.lora_count = static_cast<uint32_t>(loras.size());
++  }
++
+   if (params->vae_tile_size > 0) {
+     gen.vae_tiling_params.enabled = true;
+     gen.vae_tiling_params.tile_size_x = params->vae_tile_size;
+diff --git a/include/DitEngine.h b/include/DitEngine.h
+index 63c0a19..108e025 100644
+--- a/include/DitEngine.h
++++ b/include/DitEngine.h
+@@ -21,7 +21,12 @@
+ extern "C" {
+ #endif
+ 
+-#define DIT_ENGINE_ABI_VERSION 5
++// Nightmare's engine: upstream's ABI 5 (Qwen Image 2.1, v3.0.0-alpha.3) plus
++// our LoRA fields below. Numbered 1xx so it can never collide with an upstream
++// ABI -- our old LoRA engine ALSO called itself 5 while upstream's 5 is a
++// different struct, and a matching number over mismatched structs is exactly
++// the failure this constant exists to refuse.
++#define DIT_ENGINE_ABI_VERSION 105
+ 
+ // Name of the single symbol the core resolves after dlopen.
+ #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
+@@ -50,6 +55,11 @@ typedef struct {
+   int n_threads;
+   bool flash_attn;
+   bool vae_conv_direct;
++  // How a LoRA is applied: 0 = let the engine decide, 1 = merge into the
++  // weights at load, 2 = keep the branches and apply them each pass. Matches
++  // stable-diffusion.cpp's lora_apply_mode_t; 0 leaves its own default. A
++  // CONTEXT param because sd_ctx_params_t takes it there.
++  int lora_apply_mode;
+ } dit_ctx_params;
+ 
+ typedef struct {
+@@ -85,6 +95,12 @@ typedef struct {
+   // VAE tiling for resolutions whose full decode does not fit; 0 disables.
+   int vae_tile_size;
+   float vae_tile_overlap;
++  // LoRAs applied to THIS generation: .safetensors adapters, each with its own
++  // multiplier; lora_multipliers may be NULL (1.0 for all). Zero count is "no
++  // LoRAs". Per generation because sd_img_gen_params_t takes them there.
++  const char *const *lora_paths;
++  const float *lora_multipliers;
++  int lora_count;
+ } dit_gen_params;
+ 
+ // Called for sampling and for long auxiliary work so callers can still cancel
