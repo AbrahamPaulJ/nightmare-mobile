@@ -101,6 +101,9 @@ docs/DEVICES.md
 # .github/workflows/guide.yml). Its pages are Markdown, so they are negated here.
 # ⚠ guide/ only — docs/ and notes/ stay private.
 !/guide/**/*.md
+# ⚠ `models/` (line ~23, for model binaries) also matches the guide's models/ PAGES,
+# and git cannot re-include a file whose parent directory is excluded.
+!/guide/pages/models/
 # MkDocs build output, from `mkdocs build -f guide/mkdocs.yml` (site_dir: ../site).
 /site/
 
