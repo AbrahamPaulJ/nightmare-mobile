@@ -117,7 +117,7 @@ cost no restart, or bring your own converted `.bin`. Enlarging is a checkbox on 
 rather than a node of its own, and that node then shows what it received above what it made,
 each with its own buttons.
 
-**Twenty eight checkpoints, or bring your own.** Six SD 1.5, ten SDXL, nine Anima and three
+**Thirty checkpoints, or bring your own.** Six SD 1.5, ten SDXL, nine Anima and five
 DiT in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
 [npuforge](https://github.com/AbrahamPaulJ/npuforge), which turns an SD safetensors checkpoint
 into a QNN model with no PC involved; its 9 channel inpainting exports run as real inpainting
