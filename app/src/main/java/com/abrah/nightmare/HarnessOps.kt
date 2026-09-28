@@ -1250,7 +1250,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val build = spec.buildFor(DeviceProbe.caps())
         if (build == null) {
             say("${spec.id} has no build this device can load " +
-                "(arch ${DeviceProbe.caps().arch}, needs ${spec.builds.minOf { it.minArch }})", bad = true)
+                "(arch ${DeviceProbe.caps().arch}, needs ${spec.builds.minOf { it.minArch }}; " +
+                "RAM ${DeviceProbe.caps().ramBytes shr 20} MB, needs " +
+                "${spec.ramNeeded(DeviceProbe.caps()) shr 20} MB)", bad = true)
             return
         }
         say("installing ${spec.label} ${build.tier} (${build.bytes shr 20} MB)")

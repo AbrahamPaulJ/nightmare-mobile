@@ -426,6 +426,8 @@ class SdSampler(
         val ZIMAGE = SdSampler("zimage.sample", Family.ZIMAGE, inpaint = false)
         /** ⭐ Qwen Image 2.1 (upstream 440899f) — a native edit model like FLUX.2, no inpaint type. */
         val QWEN21 = SdSampler("qwen21.sample", Family.QWEN21, inpaint = false)
+        /** ⭐ Krea 2 Turbo — text to image only, like Z-Image; no inpaint type. */
+        val KREA2 = SdSampler("krea2.sample", Family.KREA2, inpaint = false)
         /**
          * ⚠⚠⚠ **`flux2.inpaint` is BUILT and NOT REGISTERED, on purpose.**
          * Everything behind it works — [runDitMasked] sends `mask` on
@@ -450,7 +452,7 @@ class SdSampler(
          * "it still RENDERED" class as the stale-skel noise bug. It stays out
          * until the engine's behaviour is understood. `notes/PROGRESS.md`.
          */
-        val ALL = listOf(SD15, SDXL, ANIMA, FLUX2, ZIMAGE, QWEN21, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
+        val ALL = listOf(SD15, SDXL, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
 
         /**
          * ⭐⭐ The type a graph should use for [family] and [inpaint] — the one

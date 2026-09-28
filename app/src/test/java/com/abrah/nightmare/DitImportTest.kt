@@ -338,6 +338,21 @@ class DitImportTest {
     }
 
     /**
+     * ⭐ Klein 9B is refused, 4B is not — and the lines are COPIED from the two
+     * real headers (our 4B package; `wikeeyang/Flux2-Klein-9B-True-V3`), read
+     * 2026-09-28, for the reason the note above gives.
+     */
+    @Test
+    fun itTellsKlein9bFromKlein4bByWidth() {
+        val k4 = """{"img_in.weight":{"dtype":"BF16","shape":[3072,128],"data_offsets":[265033344,265819776]}}"""
+        val k9 = """{"img_in.weight":{"dtype":"BF16","shape":[4096, 128],"data_offsets":[0,1048576]}}"""
+        assertEquals(false, CustomModels.isKlein9b(k4))
+        assertEquals(true, CustomModels.isKlein9b(k9))
+        // ⚠ No width at all says nothing — never refuse on silence.
+        assertEquals(false, CustomModels.isKlein9b(kleinNames))
+    }
+
+    /**
      * ⭐⭐⭐ **A folder pushed over adb, with no marker in it, is a model.**
      *
      * Reported 2026-09-22: *"you have to import from the app now"*. The marker

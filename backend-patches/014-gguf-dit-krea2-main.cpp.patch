@@ -1,0 +1,159 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -81,7 +81,8 @@
+     kSd15NpuControlInpaint,
+     kZImage,
+     kFlux2Klein,
+-    kQwenImage21
++    kQwenImage21,
++    kKrea2
+   };
+ 
+   int port = 8081;
+@@ -120,7 +121,7 @@
+   // DiT formats served by libdit_engine.so: no fixed canvas, no QNN contexts.
+   bool isDit() const {
+     return type == ModelType::kZImage || type == ModelType::kFlux2Klein ||
+-           type == ModelType::kQwenImage21;
++           type == ModelType::kQwenImage21 || type == ModelType::kKrea2;
+   }
+ };
+ 
+@@ -136,7 +137,8 @@
+          "Modes:\n"
+          "  --type <type>          Model format: sd15cpu (MNN), sd15npu "
+          "(QNN), sd15npu_inpaint (QNN), sd15npu_control_inpaint (QNN), sdxl "
+-         "(QNN), anima (QNN), controlnet (QNN), zimage/klein/qwen21 (DiT engine)\n"
++         "(QNN), anima (QNN), controlnet (QNN), zimage/klein/qwen21/krea2 (DiT "
++         "engine)\n"
+          "  --upscaler_mode        Upscale-only server, no diffusion model\n"
+          "  --device_info          Print HTP vtcm/arch as JSON and exit "
+          "(needs --lib_dir only)\n"
+@@ -164,6 +166,8 @@
+          "disk\n"
+          "  --anima_seq_dit        (anima+lowram) never keep both DiT halves "
+          "resident; for 12GB devices\n"
++         "  --dit_params_backend <spec>  (zimage/klein) engine parameter "
++         "residency, e.g. all=disk; overrides --lowram\n"
+          "  --clip_skip_2          (convert) export CLIP with skip 2\n"
+          "  --log_level <n>        QNN log level\n"
+          "  --version              Print QNN SDK build id\n"
+@@ -195,6 +199,7 @@
+     OPT_UPSCALER_MODE,
+     OPT_LOWRAM,
+     OPT_ANIMA_SEQ_DIT,
++    OPT_DIT_PARAMS_BACKEND,
+     OPT_LOG_LEVEL,
+     OPT_DEVICE_INFO,
+     OPT_FP16_PROBE
+@@ -216,6 +221,8 @@
+       {"upscaler_mode", pal::no_argument, NULL, OPT_UPSCALER_MODE},
+       {"lowram", pal::no_argument, NULL, OPT_LOWRAM},
+       {"anima_seq_dit", pal::no_argument, NULL, OPT_ANIMA_SEQ_DIT},
++      {"dit_params_backend", pal::required_argument, NULL,
++       OPT_DIT_PARAMS_BACKEND},
+       {"log_level", pal::required_argument, NULL, OPT_LOG_LEVEL},
+       {"device_info", pal::no_argument, NULL, OPT_DEVICE_INFO},
+       {"fp16_probe", pal::required_argument, NULL, OPT_FP16_PROBE},
+@@ -279,6 +286,9 @@
+       case OPT_ANIMA_SEQ_DIT:
+         opts.anima_seq_dit = true;
+         break;
++      case OPT_DIT_PARAMS_BACKEND:
++        opts.dit_params_backend = pal::g_optArg;
++        break;
+       case OPT_DEVICE_INFO:
+         opts.device_info_mode = true;
+         break;
+@@ -323,6 +333,8 @@
+     opts.type = ServerOptions::ModelType::kFlux2Klein;
+   else if (typeStr == "qwen21")
+     opts.type = ServerOptions::ModelType::kQwenImage21;
++  else if (typeStr == "krea2")
++    opts.type = ServerOptions::ModelType::kKrea2;
+   else
+     showHelpAndExit(typeStr.empty() ? "Missing --type"
+                                     : "Invalid --type: " + typeStr);
+@@ -413,16 +425,25 @@
+     // Qwen Image 2.1 (upstream local-dream 440899f) ships its DiT as GGUF and
+     // adds the VLM's vision tower, which native editing needs.
+     const bool qwen = opts.type == ServerOptions::ModelType::kQwenImage21;
+-    std::string dit_path =
+-        (dir / (qwen ? "dit.gguf" : "dit.safetensors")).string();
+-    // ⚠ Qwen reads its OWN directory only. `_dit_shared` holds the FLUX.2 /
+-    // Z-Image parts (a Qwen3-4B text encoder, their VAE); a Qwen package
++    // Krea 2 Turbo (the fork's e70d89b): a Qwen3-VL-4B text encoder and the
++    // Wan 2.1 VAE -- like Qwen, none of it is the shared FLUX.2 parts.
++    const bool krea2 = opts.type == ServerOptions::ModelType::kKrea2;
++    const bool own_only = qwen || krea2;
++    // The DiT may be GGUF in ANY family (FLUX.2 Klein 9B ships as Q4_0): the
++    // engine picks the loader by extension. A `dit.gguf` wins when both exist.
++    std::string dit_path = (dir / "dit.gguf").string();
++    if (!std::filesystem::exists(dit_path))
++      dit_path = (dir / "dit.safetensors").string();
++    // ⚠ Qwen and Krea 2 read their OWN directory only. `_dit_shared` holds the
++    // FLUX.2 / Z-Image parts (a Qwen3-4B text encoder, their VAE); a package
+     // missing one must fail, not load the wrong family's file in silence.
++    // Klein 9B keeps [ditFile]: its own Qwen3-8B wins over the shared 4B.
+     const auto own = [&](const char *name) { return (dir / name).string(); };
+-    std::string llm_path = qwen ? own("llm.gguf") : ditFile(dir, "llm.gguf");
++    std::string llm_path =
++        own_only ? own("llm.gguf") : ditFile(dir, "llm.gguf");
+     std::string llm_vision_path = qwen ? own("llm_vision.gguf") : "";
+     std::string vae_path =
+-        qwen ? own("vae.safetensors") : ditFile(dir, "vae.safetensors");
++        own_only ? own("vae.safetensors") : ditFile(dir, "vae.safetensors");
+     for (const auto &p : {dit_path, llm_path, vae_path}) {
+       if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
+     }
+@@ -438,8 +459,15 @@
+     // ("all=disk", upstream's default since 440899f): TE, DiT and VAE are
+     // never co-resident. ⚠ Upstream made it the default for EVERY DiT; here
+     // it is Qwen only until FLUX.2/Z-Image are measured with it.
++    //
++    // Krea 2 Turbo is 9.5 GB on disk (a 6.8 GB MXFP4 DiT), so it runs like
++    // Qwen. An explicit --dit_params_backend beats --lowram for the others:
++    // it is how FLUX.2 Klein 9B is measured and, if it has to be, shipped.
+     const std::string params_backend =
+-        qwen ? "all=disk" : opts.lowram ? "te=disk" : opts.dit_params_backend;
++        own_only                          ? "all=disk"
++        : !opts.dit_params_backend.empty() ? opts.dit_params_backend
++        : opts.lowram                     ? "te=disk"
++                                          : "";
+     // DIAGNOSTIC override, read once at launch. Answering "does a runtime
+     // LoRA reach HTP-resident weights" needs the SAME build to run the same
+     // request on the CPU path, and nothing else can ask that question.
+@@ -463,10 +491,16 @@
+         (std::filesystem::path(opts.lib_dir) / "libdit_engine.so").string();
+     if (!std::filesystem::exists(engine_path))
+       showHelpAndExit("DiT engine not installed: " + engine_path);
++    // ⚠ The engine has no Krea 2 kind, and needs none for text to image: the
++    // wrapper reads `kind` ONLY to pick the reference-image preset, and
++    // stable-diffusion.cpp detects the architecture from the weights. Z-Image
++    // is the kind that is not an edit model, so PipelineDit refuses a
++    // reference for it rather than sending Krea 2 a FLUX.2 preset.
+     const dit_model_kind kind =
+-        opts.type == ServerOptions::ModelType::kZImage ? DIT_MODEL_Z_IMAGE
+-        : qwen                                         ? DIT_MODEL_QWEN_IMAGE_2_1
+-                                                       : DIT_MODEL_FLUX2_KLEIN;
++        opts.type == ServerOptions::ModelType::kZImage || krea2
++            ? DIT_MODEL_Z_IMAGE
++        : qwen ? DIT_MODEL_QWEN_IMAGE_2_1
++               : DIT_MODEL_FLUX2_KLEIN;
+     return std::make_unique<PipelineDit>(
+         text_encoder, opts.model_dir, engine_path, dit_path, llm_path,
+         llm_vision_path, vae_path, kind,
+@@ -1728,9 +1762,11 @@
+       // A DiT package may share its tokenizer with the family ([ditFile]).
+       // Deliberately NOT applied to the other types: an SD model whose own
+       // tokenizer went missing must fail, not silently load a DiT one.
+-      // Qwen Image 2.1's tokenizer is Qwen3-VL's, not the shared Qwen3-4B one.
++      // Qwen Image 2.1's and Krea 2's tokenizers are Qwen3-VL's, not the
++      // shared Qwen3-4B one.
+       text_encoder->loadTokenizer(
+-          opts.isDit() && opts.type != ServerOptions::ModelType::kQwenImage21
++          opts.isDit() && opts.type != ServerOptions::ModelType::kQwenImage21 &&
++                  opts.type != ServerOptions::ModelType::kKrea2
+               ? ditFile(mdir, "tokenizer.json")
+               : (mdir / "tokenizer.json").string());
+       // Anima's LLM adapter is fed by a second (T5) tokenizer.

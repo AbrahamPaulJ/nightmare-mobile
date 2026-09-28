@@ -154,6 +154,8 @@ data class ModelRow(
     val partial: Boolean = false,
     /** ⭐ [ModelSpec.fetchBytes] — what the button will download. */
     val fetchBytes: Long = 0,
+    /** ⭐ [ModelSpec.ramNeeded] — non-zero: the chip could, the RAM cannot. */
+    val needsRam: Long = 0,
 )
 
 /**
@@ -523,10 +525,10 @@ fun ModelsScreen(
                 // bare `.safetensors` says which family it is — the tab has to
                 // supply it. ⇒ One button per tab either way, never two, and
                 // the same [ImportCallout] and naming dialog everywhere.
-                // ⚠ Not Qwen Image: its DiT is a .gguf and the importer reads a
-                // .safetensors header ([CustomModels.ditFamilyOf]).
+                // ⚠ Not Qwen Image or Krea 2: their DiTs are .gguf and the
+                // importer reads a .safetensors header ([CustomModels.ditFamilyOf]).
                 if (family.dit) {
-                    if (onImportDit != null && family != Family.QWEN21) {
+                    if (onImportDit != null && family != Family.QWEN21 && family != Family.KREA2) {
                         item { ImportCard(busy, onImport = { onImportDit(it, family) }, dit = true) }
                     }
                 } else if (onImport != null) {
@@ -544,8 +546,11 @@ fun ModelsScreen(
                                 "while it renders. Use Wi-Fi."
                             // ⚠ Plain files straight into place, so no unpack
                             // headroom — but only an 8 Elite or newer runs them.
-                            Family.FLUX2 -> "About 6.7 GB. 8 Elite or newer only. Any size " +
-                                "from 512 to 2048. Use Wi-Fi."
+                            // ⚠ Klein 9B is 10.7 GB and streams its text
+                            // encoder from disk, so it is the slower of the two.
+                            Family.FLUX2 -> "Klein 4B about 6.7 GB, Klein 9B about 10.7 GB " +
+                                "and slower. 8 Elite or newer only. Any size from 512 to " +
+                                "2048. Use Wi-Fi."
                             // ⚠⚠ Said before 8.8 GB is downloaded: upstream's own
                             // build crashes on the dev phone (8 Elite), and works
                             // on some 8 Elite Gen 5 phones (the user, 2026-09-19).
@@ -555,6 +560,10 @@ fun ModelsScreen(
                             // part at a time, so it is slower than FLUX.2.
                             Family.QWEN21 -> "About 10.8 GB. 8 Elite or newer only. Edits " +
                                 "and generates; slower than FLUX.2. Use Wi-Fi."
+                            // ⚠ Loads one part at a time like Qwen (all=disk).
+                            // Not an edit model: the fork's own edits fail.
+                            Family.KREA2 -> "About 9.5 GB. 8 Elite or newer only. Text to " +
+                                "image only; it does not edit. Use Wi-Fi."
                             // ⚠ The free-space figure is the one that surprises:
                             // the archive and its unpacked copy are both on disk
                             // at once, so a 3.5 GB download needs ~7.5 GB free.
@@ -896,6 +905,9 @@ private fun ModelCard(
             // ⚠⚠ The size of the build THIS DEVICE would get, not of the
             // preferred one: they differ by up to 60 MB between tiers.
             row.build != null -> stringResource(R.string.not_installed_mb, mb(row.build.bytes))
+            // ⭐ The chip could run it and the RAM cannot: say which. ⚠ One
+            // class today ([Prefs.LOWRAM_BELOW_BYTES], the 16 GB phones).
+            row.needsRam > 0 -> stringResource(R.string.needs_16gb_ram)
             else -> stringResource(R.string.cannot_run_it)
         },
         // ⭐ Family, NATIVE size, and the BUILD TIER -- `_min` is ~2.5x slower

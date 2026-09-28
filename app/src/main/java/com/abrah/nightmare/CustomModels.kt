@@ -327,6 +327,8 @@ object CustomModels {
         Family.FLUX2 -> Defaults("euler", 4, 1.0)
         // ⚠ NOT turbo: upstream's own 20 steps at cfg 1 (440899f).
         Family.QWEN21 -> Defaults("euler", 20, 1.0)
+        // Krea 2 Turbo: the fork's README runs 8 steps at cfg 1.
+        Family.KREA2 -> Defaults("euler", 8, 1.0)
     }
 
     private fun customSpec(dir: File, cfg: Config, family: Family): ModelSpec = ModelSpec(
@@ -358,13 +360,16 @@ object CustomModels {
             // marker (a LocalDream download in the shared models folder):
             // there is no .gguf import.
             Family.QWEN21 -> ModelCatalog.QWEN21
+            // ⚠ Not reached today: no upstream marker names Krea 2 and there is
+            // no .gguf import. Here so the `when` stays exhaustive and honest.
+            Family.KREA2 -> ModelCatalog.KREA2
         },
         resolutions = listOf(
             when (family) {
                 Family.SD15 -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
-                Family.FLUX2, Family.ZIMAGE, Family.QWEN21 -> ModelCatalog.DIT_RES
+                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2 -> ModelCatalog.DIT_RES
             },
         ),
         requiredFiles = when (family) {
@@ -373,6 +378,7 @@ object CustomModels {
             Family.ANIMA -> ModelCatalog.ANIMA_REQUIRED
             Family.FLUX2, Family.ZIMAGE -> ModelCatalog.DIT_REQUIRED
             Family.QWEN21 -> ModelCatalog.QWEN21_REQUIRED
+            Family.KREA2 -> ModelCatalog.KREA2_REQUIRED
         },
         // ⚠ Not a preference: SDXL's UNet and Anima's two DiT halves do not fit
         // beside their encoders at 1024², and the backend needs telling
@@ -390,6 +396,8 @@ object CustomModels {
             Family.SDXL, Family.ANIMA, Family.ZIMAGE -> true
             // ⚠ The backend runs Qwen `all=disk` whatever this says (013).
             Family.QWEN21 -> false
+            // ⚠ Same as Qwen: the backend runs Krea 2 `all=disk` (014).
+            Family.KREA2 -> false
         },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which
         // HTP it was compiled for — `QnnSystemContext` gives the IO contract
@@ -682,7 +690,9 @@ object CustomModels {
      * name, and [ModelSpec.missing] would call the import complete.
      */
     internal fun ditPartsPlan(context: Context, family: Family, modelDir: File): List<PartStep> {
-        val donor = ModelCatalog.builtIn.firstOrNull { it.family == family && it.isDit }
+        // ⚠ Never a package with its own parts: FLUX.2 Klein 9B is FLUX.2 too,
+        // and its 8B text encoder is not what a FLUX.2 import runs with.
+        val donor = ModelCatalog.builtIn.firstOrNull { it.family == family && it.isDit && !it.ownDitParts }
             ?: throw IOException("${family.label} has no built-in package to take its parts from")
         val shared = File(ModelCatalog.root(context), DIT_SHARED)
         // ⚠ Where each file has to END UP. The two family-agnostic ones are
@@ -870,6 +880,22 @@ object CustomModels {
     }
 
     /**
+     * ⭐⭐ A FLUX.2 **Klein 9B** checkpoint — refused on import (the user's
+     * call, 2026-09-28).
+     *
+     * ⚠ Same tensor NAMES as 4B, so [ditFamilyOf] calls it FLUX.2 and it would
+     * import happily, then launch with the family's shared Qwen3-4B encoder
+     * where it needs Qwen3-8B — an engine error at Run, after gigabytes copied.
+     * The width is the tell: `img_in.weight` is `[3072, 128]` on 4B and
+     * `[4096, 128]` on 9B (read off both headers 2026-09-28: our 4B package and
+     * `wikeeyang/Flux2-Klein-9B-True-V3`).
+     */
+    fun isKlein9b(header: String): Boolean =
+        KLEIN_IMG_IN.find(header)?.groupValues?.get(1) == "4096"
+
+    private val KLEIN_IMG_IN = Regex("\"img_in\\.weight\"\\s*:\\s*\\{[^}]*\"shape\"\\s*:\\s*\\[\\s*(\\d+)")
+
+    /**
      * ⭐⭐ The family of a marker-less DiT directory, and the marker written so
      * the next scan costs a `stat` again.
      *
@@ -887,8 +913,13 @@ object CustomModels {
     private fun detectDit(dir: File): Family? {
         val weights = File(dir, ModelSpec.DIT_WEIGHTS)
         if (!weights.isFile || weights.length() <= 0L) return null
-        val family = runCatching { ditFamilyOf(safetensorsHeader { weights.inputStream() }) }
-            .getOrNull() ?: return null
+        val header = runCatching { safetensorsHeader { weights.inputStream() } }.getOrNull() ?: return null
+        val family = ditFamilyOf(header) ?: return null
+        // ⚠ Not adopted: it would launch with the 4B encoder ([isKlein9b]).
+        if (family == Family.FLUX2 && isKlein9b(header)) {
+            Log.w(TAG, "'${dir.name}' is a FLUX.2 Klein 9B checkpoint; importing those is not supported")
+            return null
+        }
         runCatching { File(dir, markOf(family)).createNewFile() }
         Log.i(TAG, "adopted '${dir.name}' as $family from its tensor names")
         return family
@@ -921,6 +952,12 @@ object CustomModels {
             throw java.io.IOException(
                 "that is a ${actual.label} checkpoint, not a ${expect.label} one — " +
                     "import it on the ${actual.label} tab"
+            )
+        }
+        if (actual == Family.FLUX2 && isKlein9b(json)) {
+            throw java.io.IOException(
+                "that is a FLUX.2 Klein 9B checkpoint. Importing Klein 9B models is not " +
+                    "supported yet; only Klein 4B ones import"
             )
         }
     }

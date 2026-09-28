@@ -63,6 +63,11 @@ enum class Family(
     FLUX2("FLUX.2", GP_DIT, GP_DIT_NEG, "flux2", dit = true, edit = true),
     ZIMAGE("Z-Image", GP_DIT, GP_DIT_NEG, "zimage", dit = true),
     QWEN21("Qwen Image", GP_DIT, GP_DIT_NEG, "qwen21", dit = true, edit = true),
+    /**
+     * ⚠ Text to image ONLY, although the engine can edit with it: the fork's
+     * own README shows its edits failing (the user's call, 2026-09-28).
+     */
+    KREA2("Krea 2", GP_DIT, GP_DIT_NEG, "krea2", dit = true),
 }
 
 // ---- the general-purpose prompts --------------------------------------------
@@ -259,9 +264,23 @@ data class Build(
      * discovers it from disk like any other patch.
      */
     val extras: List<Pair<String, Long>> = emptyList(),
+    /**
+     * ⭐ The phone RAM (`MemTotal`) below which this build cannot run at all —
+     * 0 for none. Krea 2 Turbo's 6.5 GB DiT was reaped by lmkd while loading
+     * on a 12 GB phone (2026-09-28), so it is offered on the 16 GB class only.
+     *
+     * ⚠ Unknown RAM (0) is offered the model, for the reason
+     * [DeviceProbe.Caps.known] gives about an unknown chip: trying is
+     * recoverable, hiding is not.
+     */
+    val minRamBytes: Long = 0L,
 ) {
     fun runsOn(caps: DeviceProbe.Caps): Boolean =
-        caps.arch >= minArch && caps.vtcmMb >= minVtcmMb
+        caps.arch >= minArch && caps.vtcmMb >= minVtcmMb && ramOk(caps)
+
+    /** ⚠ See [minRamBytes]. */
+    fun ramOk(caps: DeviceProbe.Caps): Boolean =
+        minRamBytes <= 0L || caps.ramBytes <= 0L || caps.ramBytes >= minRamBytes
 }
 
 /**
@@ -423,6 +442,29 @@ data class ModelSpec(
      * fetches these into the model dir and [builds] only gates the device.
      */
     val files: List<RemoteFile> = emptyList(),
+    /**
+     * ⭐⭐ A DiT package whose text encoder and VAE are its OWN, never the
+     * family's shared ones in [CustomModels.DIT_SHARED] — Qwen Image 2.1,
+     * Krea 2 Turbo, and FLUX.2 Klein 9B (whose Qwen3-8B encoder is not the
+     * FLUX.2 family's Qwen3-4B).
+     *
+     * ⚠ Per model rather than per family, because of the 9B: a family flag
+     * would either give Klein 4B's imports the 8B encoder, or give the 9B the
+     * 4B one. It is also what keeps the 9B from being chosen as the donor an
+     * import copies its parts from ([CustomModels.ditPartsPlan]).
+     */
+    val ownDitParts: Boolean = false,
+    /**
+     * ⭐ The size a node STARTS at when it takes this model — a new flow, or
+     * "Use" on the Models tab — when that is not [native]. Null = [native].
+     *
+     * ⚠⚠ Never the context key: [native] stays what the key is pinned to, and
+     * a DiT's size is a request field, so this moves no launch. It exists for
+     * FLUX.2 Klein 9B, which completed 5 of 5 renders at 768² and 3 of 4 at
+     * 1024² on a 12 GB phone (2026-09-28; the user's call to start it at 768).
+     * The user can still slide it up; a node's own size is never overwritten.
+     */
+    val startRes: Res? = null,
 ) {
     /** ⭐ Rendered by the DiT engine through `/generate` — see [Family.dit]. */
     val isDit: Boolean get() = family.dit
@@ -440,6 +482,9 @@ data class ModelSpec(
 
     /** ⚠ [resolutions] is never empty; the constructor default is one entry. */
     val native: Res get() = resolutions.first()
+
+    /** ⭐ Where a node starts — [startRes], else [native]. */
+    val bornAt: Res get() = startRes ?: native
 
     /**
      * ⭐⭐ **What a new prompt node opens on for this checkpoint** — its own
@@ -467,6 +512,16 @@ data class ModelSpec(
      * is how a user spends 3.5 GB on a file their chip rejects at load.
      */
     fun buildFor(caps: DeviceProbe.Caps): Build? = builds.firstOrNull { it.runsOn(caps) }
+
+    /**
+     * ⭐ The RAM this model needs when RAM is the ONLY reason [buildFor] is null
+     * — so the row can say "needs a 16 GB phone" instead of blaming the chip.
+     * 0 when the chip is the problem, or nothing is.
+     */
+    fun ramNeeded(caps: DeviceProbe.Caps): Long =
+        if (buildFor(caps) != null) 0L
+        else builds.filter { it.copy(minRamBytes = 0L).runsOn(caps) }
+            .minOfOrNull { it.minRamBytes } ?: 0L
 
     /**
      * ⚠ The PREFERRED build, for anything that must name one without a device.
@@ -530,11 +585,12 @@ data class ModelSpec(
 
     /**
      * ⚠ Whether [CustomModels.DIT_SHARED] may stand in for a missing part. NOT
-     * Qwen Image: the shared parts are FLUX.2/Z-Image's Qwen3-4B encoder and
-     * VAE, and the backend reads Qwen's own directory only
-     * (`backend-patches/013`) — the two answers must be the same one.
+     * a package with [ownDitParts]: the shared parts are FLUX.2/Z-Image's
+     * Qwen3-4B encoder and VAE, and the backend reads Qwen's and Krea 2's own
+     * directory only (`backend-patches/013`, `014`) — the two answers must be
+     * the same one.
      */
-    private val usesDitShared: Boolean get() = isDit && family != Family.QWEN21
+    private val usesDitShared: Boolean get() = isDit && !ownDitParts
 
     companion object {
         /** The DiT weights inside a DiT package — the one file a user may replace. */
@@ -781,6 +837,8 @@ object ModelCatalog {
     const val ZIMAGE = "zimage"
     /** ⭐ Qwen Image 2.1 (upstream local-dream 440899f, backend-patches/013). */
     const val QWEN21 = "qwen21"
+    /** ⭐ Krea 2 Turbo (the fork's e70d89b, backend-patches/014). */
+    const val KREA2 = "krea2"
     /** ⚠ The size a NEW node starts at, and the context key's constant size. */
     val DIT_RES = Res(1024, 1024)
     /**
@@ -886,6 +944,8 @@ object ModelCatalog {
     val DIT_REQUIRED = listOf("dit.safetensors", "llm.gguf", "vae.safetensors", "tokenizer.json")
     /** ⭐ Qwen Image 2.1's package — a GGUF DiT and the VLM's vision tower (`main.cpp`, 013). */
     val QWEN21_REQUIRED = listOf("dit.gguf", "llm.gguf", "llm_vision.gguf", "vae.safetensors", "tokenizer.json")
+    /** ⭐ Krea 2 Turbo's package — a GGUF DiT, no vision tower (`main.cpp`, 014). */
+    val KREA2_REQUIRED = listOf("dit.gguf", "llm.gguf", "vae.safetensors", "tokenizer.json")
 
     /**
      * ⭐⭐ Non-square output on a family whose graphs are frozen at 1024.
@@ -1573,11 +1633,19 @@ object ModelCatalog {
          * flag: FLUX.2 Klein fits without it and Z-Image does not.
          */
         lowram: Boolean = false,
+        /** ⚠ See [ModelSpec.ownDitParts]. */
+        ownDitParts: Boolean = false,
+        /** ⚠ See [Build.minRamBytes]. */
+        minRamBytes: Long = 0L,
+        /** ⚠ See [ModelSpec.startRes]. */
+        startRes: Res? = null,
     ) = ModelSpec(
+        startRes = startRes,
         lowram = lowram,
+        ownDitParts = ownDitParts,
         id = id,
         label = label,
-        builds = listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, DIT_MIN_ARCH, 8)),
+        builds = listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, DIT_MIN_ARCH, 8, minRamBytes = minRamBytes)),
         prompt = prompt,
         negative = "",
         family = family,
@@ -1680,6 +1748,53 @@ object ModelCatalog {
                 RemoteFile(HF + "Tongyi-MAI/Z-Image-Turbo/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
             ),
         ),
+        // ⭐ Krea 2 Turbo — `happyyzy/stable-diffusion.cpp`'s README, file for
+        // file (e70d89b; sizes HEAD-checked 2026-09-28). A 6.8 GB MXFP4 MoE DiT,
+        // Qwen3-VL-4B as the text encoder, the Wan 2.1 VAE; 8 steps at cfg 1.
+        //
+        // ⚠ Text to image only ([Family.KREA2]). The backend runs it
+        // `all=disk` like Qwen, and reads its own directory only
+        // (backend-patches/014) — none of it is FLUX.2's.
+        //
+        // ⚠⚠ **16 GB phones only** (the user's call, 2026-09-28). Measured on
+        // the 12 GB S25 Ultra: its DiT is 6,520 MB of params, and lmkd reaped
+        // the app while that loaded — the text encoder already released, not
+        // one step taken. Never run on a 16 GB phone; there is none here.
+        dit(
+            "krea2_turbo", "Krea 2 Turbo", Family.KREA2, KREA2, steps = 8,
+            ownDitParts = true,
+            minRamBytes = Prefs.LOWRAM_BELOW_BYTES,
+            files = listOf(
+                RemoteFile(HF + "gguf-org/krea-2-gguf/resolve/main/krea2_turbo-mxfp4_moe.gguf", "dit.gguf", 6_837_146_720L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
+                RemoteFile(HF + "Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors", "vae.safetensors", 253_815_318L),
+                RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+            ),
+        ),
+        // ⭐ FLUX.2 Klein 9B — the same architecture as 4B, so the same family,
+        // sampler and edit; only the files differ. `leejet`'s Q4_0 DiT and
+        // Qwen3-8B as the text encoder, as the fork's README runs it (7841da2;
+        // sizes HEAD-checked 2026-09-28). The VAE and tokenizer are 4B's.
+        //
+        // ⚠ [ModelSpec.ownDitParts]: the 8B encoder is not the family's 4B one,
+        // so nothing here may come from, or go to, `_dit_shared`.
+        // ⚠ `lowram` (te=disk) is the fork's own setting for the 9B: 10.7 GB on
+        // disk, a 5.6 GB DiT — Z-Image's footprint with its encoder streamed.
+        dit(
+            "flux2_klein_9b", "FLUX.2 Klein 9B", Family.FLUX2, KLEIN, steps = 4,
+            lowram = true,
+            // ⚠ Measured 2026-09-28 on the 12 GB S25 Ultra, five renders in a
+            // row: 768² 5 of 5 (64–94 s); 1024² 3 of 4 (84–97 s), the fourth
+            // reaped by lmkd mid-sampling. ⇒ Nodes start at 768.
+            startRes = Res(768, 768),
+            ownDitParts = true,
+            files = listOf(
+                RemoteFile(HF + "leejet/FLUX.2-klein-9B-GGUF/resolve/main/flux-2-klein-9b-Q4_0.gguf", "dit.gguf", 5_616_208_032L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-8B-GGUF/resolve/main/Qwen_Qwen3-8B-Q4_0.gguf", "llm.gguf", 4_787_332_640L),
+                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
+                RemoteFile(HF + "Qwen/Qwen3-8B/resolve/main/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
+            ),
+        ),
         // ⭐ Qwen Image 2.1 — upstream local-dream v3.0.0-alpha.3 (440899f),
         // file for file, sizes HEAD-checked 2026-09-27. A Q4_0 GGUF DiT plus
         // Qwen3-VL-8B as the text encoder; `llm_vision.gguf` is its vision
@@ -1696,6 +1811,7 @@ object ModelCatalog {
         dit(
             "qwen_image_2_1", "Qwen Image 2.1", Family.QWEN21, QWEN21, steps = 20,
             prompt = "a lovely cat holding a sign that says 'Qwen Image 2.1',",
+            ownDitParts = true,
             files = listOf(
                 RemoteFile(HF + "leejet/Qwen-Image-2.1-GGUF/resolve/main/qwen_image_2.1-Q4_0.gguf", "dit.gguf", 4_197_494_816L),
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-8B-Instruct-Q4_0.gguf", "llm.gguf", 4_787_333_600L),
@@ -1884,7 +2000,9 @@ object SelectedModel {
      * serve. All three are the same answer and none is an error.
      */
     private fun readRes(context: Context, stored: String?): Res {
-        val native = spec.native
+        // ⚠ [ModelSpec.bornAt], not `native`: a model with no stored size
+        // starts where its entry says (Klein 9B at 768²).
+        val native = spec.bornAt
         val parts = stored?.split("x") ?: return native
         val w = parts.getOrNull(0)?.toIntOrNull() ?: return native
         val h = parts.getOrNull(1)?.toIntOrNull() ?: return native

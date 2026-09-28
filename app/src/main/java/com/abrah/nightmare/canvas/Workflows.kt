@@ -89,7 +89,7 @@ private fun ctxKeyParams(
     val pick = (if (inpaint) pool.firstOrNull { it.isInpaint } else null)
         ?: pool.firstOrNull()
         ?: return mapOf("model" to SelectedModel.id)
-    val res = pick.native
+    val res = pick.bornAt
     return mapOf(
         "model" to pick.id,
         "width" to res.width.toString(),

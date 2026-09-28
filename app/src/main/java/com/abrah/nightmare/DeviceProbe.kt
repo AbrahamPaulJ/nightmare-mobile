@@ -91,6 +91,12 @@ object DeviceProbe {
         val measured: Boolean,
         /** `SM8750` — shown to the user, and the key both tables above use. */
         val soc: String,
+        /**
+         * ⭐ `MemTotal` in bytes; 0 = unknown ([ModelCatalog]'s `Build.minRamBytes`).
+         * ⚠ Defaults to unknown rather than reading the system, so a test that
+         * builds a Caps never sees its HOST's RAM; [caps] and [measure] fill it.
+         */
+        val ramBytes: Long = 0L,
     ) {
         /** ⚠ The APK has to carry this arch's Skel, or NPU init fails whatever the model. */
         val staged: Boolean get() = arch in STAGED_ARCHES
@@ -119,6 +125,19 @@ object DeviceProbe {
     @Volatile
     var measured: Caps? = null
         private set
+
+    /**
+     * ⭐ The phone's RAM, from `/proc/meminfo` — readable by any app and with no
+     * Context, which [caps] does not have. The same figure as
+     * `ActivityManager.MemoryInfo.totalMem` ([Prefs.LOWRAM_BELOW_BYTES] has the
+     * two phone classes). 0 when it cannot be read (the JVM tests).
+     */
+    fun totalRamBytes(): Long = runCatching {
+        java.io.File("/proc/meminfo").useLines { lines ->
+            lines.first { it.startsWith("MemTotal:") }
+                .filter { it.isDigit() }.toLong() * 1024L
+        }
+    }.getOrDefault(0L)
 
     /** The SoC as Android reports it, uppercased — the key for both tables. */
     fun soc(): String = (Build.SOC_MODEL ?: "").uppercase()
@@ -149,6 +168,7 @@ object DeviceProbe {
             },
             measured = false,
             soc = soc,
+            ramBytes = totalRamBytes(),
         )
     }
 
@@ -260,6 +280,7 @@ object DeviceProbe {
                 vtcmMb = d.optInt("vtcm_mb", FLOOR_VTCM_MB),
                 measured = true,
                 soc = soc(),
+                ramBytes = totalRamBytes(),
             )
             Log.i(TAG, "probed $caps")
             measured = caps

@@ -87,6 +87,7 @@
     <string name="repair_body">В %1$s не хватает: %2$s. Восстановить (загрузка %3$s)?</string>
     <string name="not_installed_mb">не установлено · загрузка %1$d МБ</string>
     <string name="cannot_run_it">это устройство не сможет её запустить</string>
+    <string name="needs_16gb_ram">нужен телефон с 16 ГБ оперативной памяти</string>
     <string name="upscalers">Апскейлеры</string>
     <string name="upscalers_note">По 8-24 МБ. Включите «Авто-увеличение» на узле вывода или увеличьте картинку из «Результатов».</string>
 

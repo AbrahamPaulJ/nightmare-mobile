@@ -101,8 +101,15 @@ Write-Output ("qnnlibs {0,9:N0} bytes across {1} files ({2} arches)" -f $total, 
 #
 # Set $env:NM_DIT_ENGINE to a dir holding lib/arm64-v8a/libdit_engine.so and
 # assets/ditlibs/*.so.
+#
+# ⚠⚠⚠ The DEFAULT is the engine DitEngine.URL names, and must move with it.
+# It was left pointing at alpha.2 after the ABI 105 engine shipped (1.6.046),
+# and a plain run on 2026-09-28 put alpha.2 skels beside the ABI 105 engine:
+# FLUX.2 Klein 9B's first DiT graph died `dsp-rsp INVAL-PARAMS` + SIGABRT.
+# ../LocalDream/dit-engine-abi105 is the CI build's layout (the release asset
+# dit-engine-abi105.zip plus the skels built with it).
 $dit = if ($env:NM_DIT_ENGINE) { $env:NM_DIT_ENGINE } else {
-    Join-Path (Split-Path -Parent $root) "LocalDream\ld3-apk-a2\extracted"
+    Join-Path (Split-Path -Parent $root) "LocalDream\dit-engine-abi105"
 }
 $ditAssets = Join-Path $root "app\src\main\assets\ditlibs"
 $ditSo = Join-Path $dit "lib\arm64-v8a\libdit_engine.so"

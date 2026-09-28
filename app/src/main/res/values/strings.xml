@@ -107,6 +107,7 @@
     <string name="repair_body">%1$s is missing %2$s. Repair it (%3$s download)?</string>
     <string name="not_installed_mb">not installed · %1$d MB download</string>
     <string name="cannot_run_it">this device cannot run it</string>
+    <string name="needs_16gb_ram">needs a phone with 16 GB of RAM</string>
     <string name="upscalers">Upscalers</string>
     <string name="upscalers_note">8-24 MB each. Tick Auto upscale on an output node, or upscale a picture from Results.</string>
     <string name="import_upscaler_title">Import an upscaler</string>

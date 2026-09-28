@@ -87,6 +87,7 @@
     <string name="repair_body">%1$s 缺少 %2$s。要修复吗（需下载 %3$s）？</string>
     <string name="not_installed_mb">未安装 · 需下载 %1$d MB</string>
     <string name="cannot_run_it">本机无法运行</string>
+    <string name="needs_16gb_ram">需要 16 GB 内存的手机</string>
     <string name="upscalers">放大模型</string>
     <string name="upscalers_note">每个 8-24 MB。在输出节点勾选“自动放大”，或在“结果”中放大图片。</string>
 

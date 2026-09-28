@@ -188,7 +188,7 @@ object PromptTokens {
     private fun familyBudget(f: Family): Budget? = when (f) {
         Family.SD15, Family.SDXL -> Budget.CLIP
         Family.ANIMA -> Budget.ANIMA
-        Family.FLUX2, Family.ZIMAGE, Family.QWEN21 -> null
+        Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2 -> null
     }
 }
 

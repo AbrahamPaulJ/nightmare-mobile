@@ -1218,6 +1218,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     missing = if (here) emptyList() else spec.missing(ctx),
                     partial = !here && spec.partial(ctx),
                     fetchBytes = if (here) 0L else spec.fetchBytes(ctx, spec.buildFor(caps)),
+                    needsRam = spec.ramNeeded(caps),
                 )
             }
             Triple(rows, rows.filter { it.installed }.map { it.spec.id }, readVideoDisk())
@@ -1405,7 +1406,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // refused up front rather than after 3.5 GB.
         val build = spec.buildFor(DeviceProbe.caps())
         if (build == null) {
-            modelError = "${spec.label} needs an HTP arch of " +
+            modelError = if (spec.ramNeeded(DeviceProbe.caps()) > 0)
+                "${spec.label} needs a phone with 16 GB of RAM; this one has " +
+                    "${DeviceProbe.caps().ramBytes shr 30} GB"
+            else "${spec.label} needs an HTP arch of " +
                 "${spec.builds.minOf { it.minArch }} or newer; this device reports " +
                 "${DeviceProbe.caps().arch}"
             installing = null

@@ -102,9 +102,10 @@ class VideoGraphTest {
         // somebody registered it, and the measurements that argued against
         // that need re-taking first.
         // ⚠ Ten since 2026-09-27: `qwen21.sample` (Qwen Image 2.1, no inpaint
-        // type, rolls a seed like every other image sampler).
-        assertEquals(10, SAMPLER_TYPES.size)
-        assertEquals(9, IMAGE_SAMPLER_TYPES.size)
+        // type, rolls a seed like every other image sampler). Eleven since
+        // 2026-09-28: `krea2.sample` (Krea 2 Turbo, the same shape).
+        assertEquals(11, SAMPLER_TYPES.size)
+        assertEquals(10, IMAGE_SAMPLER_TYPES.size)
         assertEquals(3, INPAINT_TYPES.size)
     }
 

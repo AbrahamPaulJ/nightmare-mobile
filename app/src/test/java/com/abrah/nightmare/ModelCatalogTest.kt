@@ -249,7 +249,8 @@ class ModelCatalogTest {
                 // ⚠ `sd15npu_inpaint` since 2026-09-19, the same way.
                 // ⚠ `klein`/`zimage` since 2026-09-19 (backend-patches/007).
                 // ⚠ `qwen21` since 2026-09-27 (backend-patches/013).
-                spec.backendType in listOf("sd15npu", "sd15npu_inpaint", "sdxl", "anima", "klein", "zimage", "qwen21"),
+                // ⚠ `krea2` since 2026-09-28 (backend-patches/014).
+                spec.backendType in listOf("sd15npu", "sd15npu_inpaint", "sdxl", "anima", "klein", "zimage", "qwen21", "krea2"),
             )
             assertTrue("${spec.id} has no required files", spec.requiredFiles.isNotEmpty())
             assertTrue("${spec.id} has no resolution", spec.resolutions.isNotEmpty())
@@ -280,8 +281,41 @@ class ModelCatalogTest {
 
     // ---- which build a given phone gets ----------------------------------
 
-    private fun caps(arch: Int, vtcm: Int) =
-        DeviceProbe.Caps(arch = arch, vtcmMb = vtcm, measured = true, soc = "TEST")
+    private fun caps(arch: Int, vtcm: Int, ram: Long = 0L) =
+        DeviceProbe.Caps(arch = arch, vtcmMb = vtcm, measured = true, soc = "TEST", ramBytes = ram)
+
+    /**
+     * ⭐ Krea 2 Turbo on the 16 GB class only; Klein 9B on any 8 Elite. The
+     * `totalMem` figures are the two classes' real ones ([Prefs.LOWRAM_BELOW_BYTES]).
+     * ⚠ Unknown RAM (0) is OFFERED, never hidden — the [DeviceProbe.Caps.known] rule.
+     */
+    @Test
+    fun krea2NeedsASixteenGigabytePhone() {
+        val krea = ModelCatalog.byId("krea2_turbo")!!
+        val klein9 = ModelCatalog.byId("flux2_klein_9b")!!
+        val twelve = 11_379_968L * 1024   // this S25 Ultra's MemTotal
+        val sixteen = 15L shl 30
+        assertEquals(null, krea.buildFor(caps(79, 8, twelve)))
+        assertEquals(Prefs.LOWRAM_BELOW_BYTES, krea.ramNeeded(caps(79, 8, twelve)))
+        assertTrue(krea.buildFor(caps(79, 8, sixteen)) != null)
+        assertTrue(krea.buildFor(caps(79, 8, 0L)) != null)
+        // ⚠ The chip, not the RAM, is what refuses an 8 Gen 3 — and the row must say so.
+        assertEquals(0L, krea.ramNeeded(caps(75, 8, twelve)))
+        assertTrue(klein9.buildFor(caps(79, 8, twelve)) != null)
+    }
+
+    /**
+     * ⭐ Klein 9B STARTS at 768² (5 of 5 there, 3 of 4 at 1024² on 12 GB) —
+     * and ⚠ its context key does not move with it: [ModelSpec.native] is
+     * still the DiT constant every DiT process is keyed on.
+     */
+    @Test
+    fun klein9bStartsAt768WithoutMovingItsContextKey() {
+        val klein9 = ModelCatalog.byId("flux2_klein_9b")!!
+        assertEquals(Res(768, 768), klein9.bornAt)
+        assertEquals(ModelCatalog.DIT_RES, klein9.native)
+        assertEquals(ModelCatalog.DIT_RES, ModelCatalog.byId("flux2_klein_4b")!!.bornAt)
+    }
 
     /**
      * ⭐⭐ AbsoluteReality Inpaint: the right build per phone, and the portrait
