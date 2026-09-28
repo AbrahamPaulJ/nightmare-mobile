@@ -1,8 +1,68 @@
+diff --git a/src/core/ggml_extend.cpp b/src/core/ggml_extend.cpp
+index 0b64b9a..48b0154 100644
+--- a/src/core/ggml_extend.cpp
++++ b/src/core/ggml_extend.cpp
+@@ -299,6 +299,22 @@ ggml_tensor* ggml_ext_pad(ggml_context* ctx,
+     return ggml_ext_pad_ext(ctx, nullptr, x, 0, p0, 0, p1, 0, p2, 0, p3, circular_x, circular_y);
+ }
+ 
++ggml_tensor* ggml_ext_keep_even_2d(ggml_context* ctx, ggml_tensor* x) {
++    const int64_t W = x->ne[0];
++    const int64_t H = x->ne[1];
++    const int64_t C = x->ne[2];
++    const int64_t N = x->ne[3];
++    GGML_ASSERT(W % 2 == 0 && H % 2 == 0);
++    const size_t es = ggml_element_size(x);
++    // [N*C*H/2, 2, W/2, 2] -> pick index 0 on both size-2 axes.
++    if (!ggml_is_contiguous(x)) {
++        x = ggml_cont(ctx, x);
++    }
++    x = ggml_reshape_4d(ctx, x, 2, W / 2, 2, (H / 2) * C * N);
++    x = ggml_view_4d(ctx, x, 1, W / 2, 1, (H / 2) * C * N, 2 * es, W * es, 2 * W * es, 0);
++    return ggml_reshape_4d(ctx, ggml_cont(ctx, x), W / 2, H / 2, C, N);
++}
++
+ ggml_tensor* ggml_ext_conv_2d(ggml_context* ctx,
+                               ggml_tensor* x,
+                               ggml_tensor* w,
+@@ -327,7 +343,16 @@ ggml_tensor* ggml_ext_conv_2d(ggml_context* ctx,
+     }
+ 
+     if (direct) {
+-        x = ggml_conv_2d_direct(ctx, w, x, s0, s1, p0, p1, d0, d1);
++        // Hexagon repacks F16 3x3 weights for its HMX direct kernel, which runs
++        // stride 1 only; a stride-2 conv would fall back and read them
++        // scrambled. out[i][j] of a 3x3 s2 p1 conv is full[2i][2j] of the
++        // s1 p1 one. This is the path every conv takes under a runtime LoRA.
++        if (s0 == 2 && s1 == 2 && p0 == 1 && p1 == 1 && d0 == 1 && d1 == 1 &&
++            w->ne[0] == 3 && w->ne[1] == 3 && x->ne[0] % 2 == 0 && x->ne[1] % 2 == 0) {
++            x = ggml_ext_keep_even_2d(ctx, ggml_conv_2d_direct(ctx, w, x, 1, 1, 1, 1, 1, 1));
++        } else {
++            x = ggml_conv_2d_direct(ctx, w, x, s0, s1, p0, p1, d0, d1);
++        }
+     } else {
+         x = ggml_conv_2d(ctx, w, x, s0, s1, p0, p1, d0, d1);
+     }
+diff --git a/src/core/ggml_extend.h b/src/core/ggml_extend.h
+index da3a343..e731b6b 100644
+--- a/src/core/ggml_extend.h
++++ b/src/core/ggml_extend.h
+@@ -103,6 +103,10 @@ ggml_tensor* ggml_ext_pad(ggml_context* ctx,
+                           bool circular_x = false,
+                           bool circular_y = false);
+ 
++// x: [N, C, H, W] with H, W even
++// result: [N, C, H/2, W/2], x[..., 2i, 2j] -- a stride-2 subsample
++ggml_tensor* ggml_ext_keep_even_2d(ggml_context* ctx, ggml_tensor* x);
++
+ // w: [OC，IC, KH, KW]
+ // x: [N, IC, IH, IW]
+ // b: [OC,]
 diff --git a/src/model/common/ggml_block.hpp b/src/model/common/ggml_block.hpp
-index d05f88b..9ea6281 100644
+index d05f88b..11c9520 100644
 --- a/src/model/common/ggml_block.hpp
 +++ b/src/model/common/ggml_block.hpp
-@@ -440,12 +440,53 @@ public:
+@@ -440,12 +440,43 @@ public:
          return "Conv2d";
      }
  
@@ -31,17 +91,7 @@ index d05f88b..9ea6281 100644
 +        if (!ggml_backend_supports_op(ctx->backend, full)) {
 +            return nullptr;
 +        }
-+
-+        const int64_t C  = full->ne[2];
-+        const int64_t N  = full->ne[3];
-+        const size_t es  = ggml_element_size(full);
-+        // [N*OC*H/2, 2, W/2, 2] -> pick index 0 on both size-2 axes.
-+        full             = ggml_reshape_4d(ctx->ggml_ctx, full, 2, W / 2, 2, (H / 2) * C * N);
-+        ggml_tensor* out = ggml_view_4d(ctx->ggml_ctx, full,
-+                                        1, W / 2, 1, (H / 2) * C * N,
-+                                        2 * es, W * es, 2 * W * es, 0);
-+        out              = ggml_cont(ctx->ggml_ctx, out);
-+        return ggml_reshape_4d(ctx->ggml_ctx, out, W / 2, H / 2, C, N);
++        return ggml_ext_keep_even_2d(ctx->ggml_ctx, full);
 +    }
 +
      ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) override {
