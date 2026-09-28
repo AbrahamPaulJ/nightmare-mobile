@@ -1,0 +1,58 @@
+diff --git a/src/model/common/ggml_block.hpp b/src/model/common/ggml_block.hpp
+index d05f88b..9ea6281 100644
+--- a/src/model/common/ggml_block.hpp
++++ b/src/model/common/ggml_block.hpp
+@@ -440,12 +440,53 @@ public:
+         return "Conv2d";
+     }
+ 
++    // Stride-2, pad-1 3x3 conv (the UNet and ControlNet downsample). The HMX
++    // direct kernel only runs stride 1, and Hexagon has already repacked this
++    // weight into its tile layout, so the im2col fallback would multiply
++    // scrambled weights. Compute the stride-1, pad-1 conv instead and keep even
++    // rows/columns: out[i][j] = full[2i][2j] reads x[2i-1..2i+1][2j-1..2j+1],
++    // exactly the stride-2 window. Returns nullptr when that cannot run.
++    ggml_tensor* try_forward_stride2_pad1(GGMLRunnerContext* ctx, ggml_tensor* x) {
++        const int64_t W = x->ne[0];
++        const int64_t H = x->ne[1];
++        if (ctx->backend == nullptr || ctx->weight_adapter ||
++            ctx->circular_x_enabled || ctx->circular_y_enabled || scale != 1.f ||
++            kernel_size != std::make_pair(3, 3) || stride != std::make_pair(2, 2) ||
++            padding != std::make_pair(1, 1) || dilation != std::make_pair(1, 1) ||
++            W % 2 != 0 || H % 2 != 0) {
++            return nullptr;
++        }
++
++        ggml_tensor* full = bias
++                                ? ggml_conv_2d_direct_bias(ctx->ggml_ctx, params["weight"], x,
++                                                           params["bias"], 1, 1, 1, 1, 1, 1)
++                                : ggml_conv_2d_direct(ctx->ggml_ctx, params["weight"], x,
++                                                      1, 1, 1, 1, 1, 1);  // [N, OC, H, W]
++        if (!ggml_backend_supports_op(ctx->backend, full)) {
++            return nullptr;
++        }
++
++        const int64_t C  = full->ne[2];
++        const int64_t N  = full->ne[3];
++        const size_t es  = ggml_element_size(full);
++        // [N*OC*H/2, 2, W/2, 2] -> pick index 0 on both size-2 axes.
++        full             = ggml_reshape_4d(ctx->ggml_ctx, full, 2, W / 2, 2, (H / 2) * C * N);
++        ggml_tensor* out = ggml_view_4d(ctx->ggml_ctx, full,
++                                        1, W / 2, 1, (H / 2) * C * N,
++                                        2 * es, W * es, 2 * W * es, 0);
++        out              = ggml_cont(ctx->ggml_ctx, out);
++        return ggml_reshape_4d(ctx->ggml_ctx, out, W / 2, H / 2, C, N);
++    }
++
+     ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) override {
+         ggml_tensor* w = params["weight"];
+         ggml_tensor* b = nullptr;
+         if (bias) {
+             b = params["bias"];
+         }
++        if (ggml_tensor* out = try_forward_stride2_pad1(ctx, x)) {
++            return out;  // [N, OC, H/2, W/2]
++        }
+         if (ctx->weight_adapter) {
+             WeightAdapter::ForwardParams forward_params;
+             forward_params.op_type           = WeightAdapter::ForwardParams::op_type_t::OP_CONV2D;
