@@ -1,0 +1,11 @@
+--- a/dit/CMakeLists.txt
++++ b/dit/CMakeLists.txt
+@@ -39,7 +39,7 @@
+ set(GGML_HEXAGON ON CACHE BOOL "" FORCE)
+ set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+ set(GGML_LLAMAFILE OFF CACHE BOOL "" FORCE)
+-set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
++set(SD_BUILD_EXAMPLES ON CACHE BOOL "" FORCE)
+ set(SD_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+ # The skels are cross-compiled for the DSP by the Hexagon toolchain; keep the
+ # prebuilt FastRPC libraries for the Android host side.

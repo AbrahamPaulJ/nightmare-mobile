@@ -37,6 +37,12 @@ on:
       patch:
         description: "Patch(es) to apply before building, space-separated, in order (blank = baseline build)"
         default: ""
+      cmake_args:
+        description: "Extra CMake arguments for dit/build.sh (blank = none)"
+        default: ""
+      extra_target:
+        description: "Also build this target and upload it beside the engine, e.g. sd-cli for an on-device spike (blank = none)"
+        default: ""
 
 permissions:
   contents: read
@@ -210,7 +216,15 @@ jobs:
       - name: Build
         run: |
           cd local-dream/app/src/main/cpp
-          bash dit/build.sh
+          bash dit/build.sh ${{ inputs.cmake_args }}
+          if [ -n "${{ inputs.extra_target }}" ]; then
+            cmake --build dit/build/android --target "${{ inputs.extra_target }}" -j "$(nproc)"
+            BIN=$(find dit/build/android -type f -name "${{ inputs.extra_target }}" | head -1)
+            if [ -z "$BIN" ]; then echo "::error::${{ inputs.extra_target }} built but not found"; exit 1; fi
+            mkdir -p "$GITHUB_WORKSPACE/out"
+            cp "$BIN" "$GITHUB_WORKSPACE/out/"
+            echo "extra target: $BIN"
+          fi
           df -h /
 
       # The app downloads a zip and takes the single entry named
