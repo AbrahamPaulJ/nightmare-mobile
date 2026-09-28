@@ -158,8 +158,10 @@ button undoes it. Weights like `(long hair:1.2)` and English tags pass through u
 runs offline on the phone with Mozilla's Firefox Translations models (37 MB for Russian, 55 MB
 for Chinese, downloaded the first time you tap), about 15 ms a prompt. Settings manages them.
 
-**Your RAM back when you leave.** A loaded model is let go a minute after the app leaves the
-screen, or at once if the phone runs short, and never in the middle of a render. Settings has
+**Your RAM back when you leave.** Close the app — swipe it from recents or back out — and the
+loaded model is let go at once. Step away to another app and it stays a minute so a quick
+trip costs no reload, then goes (sooner if the phone runs short); a render you step away
+from is never interrupted. Settings has
 LocalDream's low RAM switches for SDXL and Anima, set from how much memory your phone has: on
 under 16 GB, off above it for speed and a live preview.
 

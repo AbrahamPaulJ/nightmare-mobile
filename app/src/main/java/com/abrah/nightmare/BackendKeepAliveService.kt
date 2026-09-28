@@ -61,6 +61,17 @@ class BackendKeepAliveService : Service() {
         return START_STICKY
     }
 
+    /**
+     * ⭐ The app was swiped out of recents. This service is what keeps the
+     * process alive afterwards, so it is also what hears about it — the one
+     * signal a swipe is guaranteed to send a started service. The release
+     * stops this service in turn ([BackendProcess.stop]).
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        BackendIdle.exited("removed from recents")
+        super.onTaskRemoved(rootIntent)
+    }
+
     private fun notification(text: String): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

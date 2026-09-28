@@ -85,7 +85,8 @@ class MainActivity : ComponentActivity() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         // ⭐ The resident checkpoint: out of sight arms [BackendIdle]'s grace
-        // period; real pressure skips it. ⚠ TRIM_MEMORY_BACKGROUND is NOT
+        // period — ⚠ a backstop only: [onStop] is what actually arrives on this
+        // phone, UI_HIDDEN was never seen. Real pressure skips it. ⚠ TRIM_MEMORY_BACKGROUND is NOT
         // pressure — it is routine on leaving the screen, and treating it as
         // pressure would defeat the grace period for a trip to the photo picker.
         if (level == android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) BackendIdle.hidden()
@@ -108,6 +109,33 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         BackendIdle.visible()
+    }
+
+    /**
+     * ⭐⭐ Off the screen — Home, another app, the photo picker, recents: arms
+     * [BackendIdle]'s grace period, the counterpart of [onStart]'s cancel.
+     *
+     * ⚠⚠ This used to be `onTrimMemory(TRIM_MEMORY_UI_HIDDEN)` alone, and on this
+     * One UI phone that never arrived: with per-decision logging, 2026-09-28,
+     * not one `hidden:` line in two sessions of leaving the app — so the
+     * one-minute release shipped in 1.6.049 had never fired (a swipe on 1.6.052
+     * held the model 3+ minutes). `onStop` is the activity's own callback and
+     * always comes. ⚠ Not on a rotation, which stops and restarts at once.
+     */
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) BackendIdle.hidden()
+    }
+
+    /**
+     * ⭐ Closed, not stepped away from — backed out of, or swiped from recents
+     * with the process still up: the model goes now ([BackendIdle.exited]).
+     * ⚠ Not on a rotation or other configuration change, which also destroys
+     * this activity and comes straight back.
+     */
+    override fun onDestroy() {
+        if (isFinishing && !isChangingConfigurations) BackendIdle.exited("the app was closed")
+        super.onDestroy()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

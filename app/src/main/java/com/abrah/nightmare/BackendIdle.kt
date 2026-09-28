@@ -51,21 +51,78 @@ object BackendIdle {
     private val handler by lazy {
         Handler(HandlerThread("backend-idle").apply { start() }.looper)
     }
-    private var hidden = false
+    // ⚠⚠ Volatile flags, NOT the lock, for everything the MAIN thread touches
+    // ([hidden], [visible], [exited]). The lock is held across
+    // [BackendProcess.stop] — up to 5 s (SIGTERM, then SIGKILL after 3) — and
+    // the first on-device test logged `dvm_lock_sample … main … exited …
+    // stopNow` at 98 ms: a slower stop there is an ANR (2026-09-28). The lock
+    // stays for [users] and for [begin], which SHOULD wait for a stop in progress.
+    @Volatile private var hidden = false
     private var users = 0
+    /** ⭐ Set by [exited]: no grace period, release as soon as nothing is running. */
+    @Volatile private var exiting = false
     private val task = Runnable { releaseIfIdle("out of sight for ${GRACE_MS / 1000} s") }
 
     /** The app's UI left the screen. */
     fun hidden() {
-        synchronized(this) { hidden = true }
+        hidden = true
+        val now = exiting
         handler.removeCallbacks(task)
-        handler.postDelayed(task, GRACE_MS)
+        if (!now) handler.postDelayed(task, GRACE_MS)
+        Log.i(TAG, "hidden: release in ${GRACE_MS / 1000} s unless back or running")
     }
 
     /** The app is back in front: whatever is resident stays. */
     fun visible() {
-        synchronized(this) { hidden = false }
+        hidden = false
+        exiting = false
         handler.removeCallbacks(task)
+        Log.i(TAG, "visible: release cancelled")
+    }
+
+    /**
+     * ⭐⭐ The user CLOSED the app — swiped it from recents, or backed out of it —
+     * rather than stepping away: release now, with no grace period.
+     *
+     * ⚠⚠ The report, 2026-09-28: *"why do I have to force stop the app after I
+     * remove it from recent apps for it to offload the model?"* The log showed a
+     * swipe at 21:25:35 and a force-stop at 21:25:50 — the backend was alive and
+     * waiting out the [GRACE_MS] meant for a trip to another app, with
+     * [BackendKeepAliveService] holding the process up. A swipe is not a trip.
+     *
+     * ⚠⚠ **Mid-render too — the one exception to "never during a render".**
+     * First version waited for the run's [end], and the user's next report was
+     * *"loaded model, cancelled mid run, removed app from recents, still 10 GB
+     * active"*: the log had `Job was cancelled` 31 s after the swipe, because
+     * the run sat in a blocking backend read until the render finished by
+     * itself (Cancel had not stopped it). A closed app has abandoned its render,
+     * so waiting for it only holds the RAM. Stepping away (the [GRACE_MS] path)
+     * still never interrupts one. The run itself is cancelled with the
+     * ViewModel; its read fails when the process goes, and it ends.
+     */
+    fun exited(why: String) {
+        hidden = true
+        exiting = true
+        handler.removeCallbacks(task)
+        handler.post { stopNow(why) }
+        Log.i(TAG, "exited ($why): release now")
+    }
+
+    /**
+     * ⚠ [exited] only: ignores a run in flight, never ignores what is resident.
+     * ⚠ The stop runs OUTSIDE the lock: the abandoned run's [end] lands on the
+     * main thread while the process is dying, and nothing here needs to wait.
+     */
+    private fun stopNow(why: String) {
+        val key = BackendProcess.launchedKey
+        if (key == null && !BackendProcess.upscalerServer) {
+            Log.i(TAG, "not releasing ($why): nothing resident")
+            return
+        }
+        val running = synchronized(this) { users > 0 }
+        Log.i(TAG, "releasing ${key?.model ?: "upscaler"} backend: $why" +
+            if (running) " — abandoning the run in flight" else "")
+        BackendProcess.stop()
     }
 
     /** ⭐ Memory pressure while hidden: no grace period. */
@@ -80,25 +137,37 @@ object BackendIdle {
     }
 
     fun end() {
-        val rearm = synchronized(this) {
+        val (rearm, now) = synchronized(this) {
             users = maxOf(0, users - 1)
-            hidden && users == 0
+            (hidden && users == 0) to exiting
         }
         if (rearm) {
             handler.removeCallbacks(task)
-            handler.postDelayed(task, GRACE_MS)
+            // ⚠ After [exited], the run that held the release off was the last
+            // reason to keep the model: go now, not a grace period later.
+            if (now) handler.post { releaseIfIdle("the app was closed during a run") }
+            else handler.postDelayed(task, GRACE_MS)
         }
     }
 
     /** ⚠ Hidden, nothing running, and something actually resident — all three. */
     private fun releaseIfIdle(why: String) = synchronized(this) {
-        if (!hidden || users > 0) return@synchronized
+        // ⚠ Every early return SAYS so: this path shipped in 1.6.049 and was never
+        // once seen in a log, and a silent skip is indistinguishable from never
+        // being called (2026-09-28).
+        if (!hidden || users > 0) {
+            Log.i(TAG, "not releasing ($why): hidden=$hidden users=$users")
+            return@synchronized
+        }
         val key = BackendProcess.launchedKey
-        if (key == null && !BackendProcess.upscalerServer) return@synchronized
+        if (key == null && !BackendProcess.upscalerServer) {
+            Log.i(TAG, "not releasing ($why): nothing resident")
+            return@synchronized
+        }
         Log.i(TAG, "releasing ${key?.model ?: "upscaler"} backend: $why")
         BackendProcess.stop()
     }
 
     /** ⚠ Tests only. */
-    internal fun resetForTest() = synchronized(this) { hidden = false; users = 0 }
+    internal fun resetForTest() = synchronized(this) { hidden = false; users = 0; exiting = false }
 }

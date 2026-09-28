@@ -50,7 +50,14 @@ More in [Memory and speed](reference/memory.md).
 Allow background running:
 [Settings → General → Keep rendering in the background](reference/settings.md#keep-rendering-in-the-background).
 A render you leave running finishes; a model you are not using is let go a minute after you
-leave, which is normal ([why](reference/memory.md#when-you-leave-the-app)).
+leave, which is normal ([why](reference/memory.md#when-you-leave-the-app)). Swiping the app
+away from recent apps closes it, and stops a render.
+
+## RAM stays in use after I close the app
+
+Update to 1.6.053 or newer. Before it, swiping the app away kept the model loaded until a
+timer that never fired, and only force stop freed it. Now a closed app lets the model go at
+once ([when models are let go](reference/memory.md#when-you-leave-the-app)).
 
 ## The first Run after coming back is slower
 

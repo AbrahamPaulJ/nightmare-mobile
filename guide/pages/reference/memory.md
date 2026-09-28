@@ -29,10 +29,13 @@ phone at all, and part of why it is slower.
 
 ## When you leave the app
 
-A loaded model is let go **one minute after the app leaves the screen** — Home, switching to
-another app, or backing out — or at once if the phone reports it is short of memory. It is
-never let go **during** a render: leave while one runs and it finishes first, then the minute
-starts.
+**Close the app** — swipe it away from recent apps, or back out of it — and the model is let go
+**at once**, even in the middle of a render (a closed app has abandoned it).
+
+**Step away** — Home, switching to another app, the photo picker — and the model stays for
+**one minute**, so a quick trip does not cost a reload; after that it is let go, or at once if
+the phone reports it is short of memory. A render you step away from is never interrupted: it
+finishes first, then the minute starts.
 
 Coming back costs one reload on your next Run.
 
