@@ -1,0 +1,31 @@
+diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
+index e944c9a..d460a82 100644
+--- a/src/pipeline/diffusion_engine.cpp
++++ b/src/pipeline/diffusion_engine.cpp
+@@ -1051,6 +1051,11 @@ bool StableDiffusionGGML::build_control_net_runner() {
+         return false;
+     }
+     control_net->set_max_graph_vram_bytes(max_graph_vram_bytes_for_module(SDBackendModule::CONTROL_NET));
++    // The ControlNet is a copy of the UNet's encoder: give it the diffusion model's attention.
++    // Without it an SDXL ControlNet at 1024² materialises 4096x4096x10 f32 score matrices.
++    if (config_->params.flash_attn || config_->params.diffusion_flash_attn) {
++        control_net->set_flash_attention_enabled(true);
++    }
+     return register_runner_params(ModelComponent::ControlNet, control_net, SDBackendModule::CONTROL_NET);
+ }
+ 
+diff --git a/src/pipeline/image.cpp b/src/pipeline/image.cpp
+index c9e1ff1..8f1afa0 100644
+--- a/src/pipeline/image.cpp
++++ b/src/pipeline/image.cpp
+@@ -246,7 +246,9 @@ namespace sd::pipeline {
+             }
+         }
+ 
+-        if (!control_image_tensor.empty()) {
++        // Only FLEX_2 and FLUX_CONTROLS read control_latent; a ControlNet takes the image itself.
++        if (!control_image_tensor.empty() &&
++            (sd->version == VERSION_FLEX_2 || sd->version == VERSION_FLUX_CONTROLS)) {
+             control_latent = sd->encode_first_stage(control_image_tensor);
+             if (control_latent.empty()) {
+                 LOG_ERROR("failed to encode control image");
