@@ -14,13 +14,13 @@ to video, all on the phone. No server, no account, no cloud, no network.
 **[User guide](https://abrahampaulj.github.io/nightmare-mobile/)**
 
 Android 12 or newer, arm64, and a Snapdragon with a Hexagon NPU — SD 1.5 needs an 888 or
-newer, SDXL and Anima an 8 Gen 3, and FLUX.2, Z-Image, Qwen Image and video an 8 Elite. Models are not in
-the APK: pick one in the app and it downloads on first use, and the app says which ones your
-chip can run.
+newer, SDXL and Anima an 8 Gen 3, and FLUX.2, Z-Image, Qwen Image and video an 8 Elite; Krea 2
+also needs 16 GB of RAM. Models are not in the APK: pick one in the app and it downloads on first
+use, and the app says which ones your phone can run.
 
 **Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile Stable
 Diffusion, local image generation, on device video generation, node editor, Qualcomm Hexagon
-NPU, Snapdragon, QNN, FLUX.2, Z-Image, Qwen Image, SDXL, Anima, text to image, text to video, image to
+NPU, Snapdragon, QNN, FLUX.2, FLUX.2 Klein 9B, Z-Image, Qwen Image, Krea 2, SDXL, Anima, text to image, text to video, image to
 video, img2img, inpainting, outpainting, virtual try-on, Segment Anything, SAM 2.1, npuforge,
 safetensors to QNN, on device model conversion, offline prompt translation, no cloud, private.
 
@@ -34,9 +34,14 @@ orders the run so each checkpoint loads once. Generate with FLUX.2 and then repa
 result with a dedicated inpainting checkpoint, in a single graph, with a single Run. The run
 bar tells you what the model switches will cost before you press it.
 
-**FLUX.2 Klein, Z-Image Turbo and Qwen Image 2.1 on the NPU.** Three DiT models, at any width
-and height from 512 to 2048 in 64 pixel steps — 1280x960 and 1344x768 as readily as 1024
-square. Changing the size costs no reload. Snapdragon 8 Elite or newer.
+**FLUX.2 Klein 4B and 9B, Z-Image Turbo, Qwen Image 2.1 and Krea 2 Turbo on the NPU.** DiT
+models at any width and height from 512 to 2048 in 64 pixel steps — 1280x960 and 1344x768 as
+readily as 1024 square. Changing the size costs no reload. Snapdragon 8 Elite or newer.
+
+**FLUX.2 Klein 9B** is the bigger Klein: the same editing and LoRAs as the 4B, with an 8B text
+encoder. It is 10.7 GB and tight on a 12 GB phone, so it starts at 768 square (about a minute
+a picture); 1024 works but may be closed by Android when other apps hold memory. **Krea 2
+Turbo** is text to image only and needs a phone with 16 GB of RAM: on 12 GB it does not load.
 
 **Qwen Image 2.1.** A 7B image model with an 8B vision-language model reading the prompt, so
 it follows long instructions and can put legible text in a picture. It generates and it edits:
@@ -128,7 +133,7 @@ a photo on one and it sizes itself to that photo's shape.
 
 **A DiT fine-tune imports as-is.** FLUX.2 and Z-Image build their graph at load time from
 plain weights, so a Z-Image checkpoint from CivitAI is picked from storage and runs — no
-conversion, no PC. The text encoder, VAE and tokenizer are shared with the model you already
+conversion, no PC. (FLUX.2 Klein 4B fine-tunes only: a Klein 9B one is refused for now.) The text encoder, VAE and tokenizer are shared with the model you already
 installed, so an import costs only the weights. A folder copied onto the phone works too — the
 family is read out of the checkpoint's own tensor names, so nothing has to be declared. A folder
 that already carries LocalDream's marker file — `SDXL`, `ANIMA`, `KLEIN`, `ZIMAGE`,
@@ -210,7 +215,7 @@ checkpoint and upscaler archives the app downloads are published by the same aut
 interested in how Stable Diffusion runs on a Hexagon NPU at all should start there rather than
 here.
 
-**FLUX.2 and Z-Image run on work by [happyyzy](https://github.com/happyyzy/stable-diffusion.cpp).**
+**FLUX.2, Z-Image, Qwen Image and Krea 2 run on work by [happyyzy](https://github.com/happyyzy/stable-diffusion.cpp).**
 The DiT engine is [leejet's stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
 with happyyzy's Hexagon optimisations for on device DiT inference, the same engine local-dream
 3.0 ships, and it is what makes these models usable on a phone at all. The Qwen3 text encoder
@@ -224,6 +229,17 @@ Qwen Research License, in [leejet's GGUF](https://huggingface.co/leejet/Qwen-Ima
 with the VAE from [Comfy-Org](https://huggingface.co/Comfy-Org/Qwen-Image-2.1); its text encoder
 is [Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) (Apache 2.0) in
 [bartowski's GGUF](https://huggingface.co/bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF).
+[FLUX.2 klein 9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B) is by Black Forest
+Labs under the FLUX Non-Commercial License, in
+[leejet's GGUF](https://huggingface.co/leejet/FLUX.2-klein-9B-GGUF), with
+[Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) (Apache 2.0) in
+[bartowski's GGUF](https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF) as its text encoder.
+[Krea 2 Turbo](https://huggingface.co/krea/Krea-2-Turbo) is by Krea: Krea 2 is licensed under
+the Krea 2 Community License Agreement; see https://krea.ai/krea-2-licensing. It runs from the
+[gguf-org MXFP4 GGUF](https://huggingface.co/gguf-org/krea-2-gguf) with
+[Qwen3-VL-4B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) (Apache 2.0) in
+[bartowski's GGUF](https://huggingface.co/bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF) and the
+Wan 2.1 VAE from [Comfy-Org](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged).
 
 **The video is not ours either.** It is
 [Neodragon](https://huggingface.co/Qualcomm-AI-Research/Neodragon) by Qualcomm AI Research,

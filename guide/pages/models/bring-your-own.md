@@ -29,8 +29,12 @@ imports as-is** — no conversion, no PC.
 The text encoder, VAE and tokenizer are shared with the family's built-in model, so an import
 costs only the size of its own weights.
 
-!!! note "Qwen Image"
-    Qwen Image models are `.gguf` files and cannot be imported from the phone yet. A Qwen
+!!! note "FLUX.2 Klein 9B"
+    Only **Klein 4B** fine-tunes import. A Klein 9B `.safetensors` is recognised and refused:
+    it needs the 9B's own, larger text encoder, which imports do not use yet.
+
+!!! note "Qwen Image and Krea 2"
+    Qwen Image and Krea 2 models are `.gguf` files and cannot be imported from the phone yet. A Qwen
     folder made by LocalDream (see below) is recognised.
 
 ## A folder copied onto the phone

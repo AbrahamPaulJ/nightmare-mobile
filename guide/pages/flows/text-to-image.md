@@ -20,11 +20,11 @@ The model families read prompts differently:
 |---|---|---|
 | SD 1.5, SDXL | short tags, most important first | `portrait of an old sailor, weathered face, rim light, 35mm` |
 | Anima | anime-style tags | `1girl, silver hair, school uniform, cherry blossoms` |
-| FLUX.2, Z-Image, Qwen Image | plain sentences | `An old sailor smiling at the camera, late afternoon light behind him.` |
+| FLUX.2, Z-Image, Qwen Image, Krea 2 | plain sentences | `An old sailor smiling at the camera, late afternoon light behind him.` |
 
 - For SD 1.5 and SDXL you can weight a phrase: `(red scarf:1.3)` for more, `(hat:0.7)` for
   less.
-- FLUX.2, Z-Image and Qwen Image are run at **CFG 1**, where the **negative prompt is not read
+- FLUX.2, Z-Image, Qwen Image and Krea 2 are run at **CFG 1**, where the **negative prompt is not read
   at all**. Put what you want in the prompt instead.
 - A prompt in **Russian or Chinese** can be translated to English on the phone with the
   **文A** button on the prompt box (SD 1.5 and SDXL only read English). See
@@ -54,8 +54,10 @@ Tap the **Text to image** node:
   portrait and landscape). A different size reloads the model on the next Run.
 - **SDXL and Anima** — these draw a fixed 1024 square; **Shape** crops it to the aspect you
   choose. No reload.
-- **FLUX.2, Z-Image, Qwen Image** — **Width** and **Height** sliders, any size from 512 to 2048
-  in 64-pixel steps. No reload. Bigger takes longer, roughly in proportion to the area.
+- **FLUX.2, Z-Image, Qwen Image, Krea 2** — **Width** and **Height** sliders, any size from 512
+  to 2048 in 64-pixel steps. No reload. Bigger takes longer, roughly in proportion to the area.
+  FLUX.2 Klein 9B starts at 768: on a 12 GB phone, 1024 may be closed by Android when other
+  apps hold memory.
 
 <figure markdown>
   ![Width and height sliders on a DiT model](../img/inspector-dit-size.png){ .screen }
@@ -69,7 +71,8 @@ Roughly, on a Snapdragon 8 Elite:
 |---|---|
 | SD 1.5 (512) | a few seconds |
 | SDXL, Anima | tens of seconds to over a minute |
-| FLUX.2 Klein (4 steps) | under a minute |
+| FLUX.2 Klein 4B (4 steps) | under a minute |
+| FLUX.2 Klein 9B (4 steps, 768²) | about a minute |
 | Qwen Image 2.1 (20 steps, 1024²) | about 4 minutes |
 
 The first Run after choosing a model also loads it, which adds a few seconds (more for the

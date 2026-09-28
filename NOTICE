@@ -85,8 +85,8 @@ DiT engine (libdit_engine.so and its Hexagon skels)
     xororz/local-dream's engine wrapper (v3.0.0-alpha.3) around stable-diffusion.cpp
     with ggml's Hexagon backend, plus this project's LoRA patch
     (backend-patches/dit/), built by this repository's CI and downloaded by the
-    app; the skels ship in the APK. Runs FLUX.2 Klein, Z-Image Turbo and Qwen
-    Image 2.1 on the NPU. Not included in this repository.
+    app; the skels ship in the APK. Runs FLUX.2 Klein 4B and 9B, Z-Image Turbo,
+    Qwen Image 2.1 and Krea 2 Turbo on the NPU. Not included in this repository.
 
 stable-diffusion.cpp
     leejet, with Hexagon optimisation by happyyzy
@@ -126,6 +126,38 @@ Qwen3-VL-8B-Instruct (Qwen Image 2.1's text encoder and vision tower)
     Qwen team; GGUF by bartowski
     https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct
     https://huggingface.co/bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
+
+FLUX.2 [klein] 9B
+    Black Forest Labs; GGUF by leejet
+    https://huggingface.co/black-forest-labs/FLUX.2-klein-9B
+    https://huggingface.co/leejet/FLUX.2-klein-9B-GGUF
+    FLUX Non-Commercial License. Downloaded by the app at the user's request;
+    not included here.
+
+Qwen3-8B (FLUX.2 [klein] 9B's text encoder)
+    Qwen team; GGUF by bartowski
+    https://huggingface.co/Qwen/Qwen3-8B
+    https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
+
+Krea 2 Turbo
+    Krea; MXFP4 GGUF by gguf-org
+    https://huggingface.co/krea/Krea-2-Turbo
+    https://huggingface.co/gguf-org/krea-2-gguf
+    Krea 2 is licensed under the Krea 2 Community License Agreement. For more
+    information, visit https://krea.ai/krea-2-licensing.
+    Downloaded by the app at the user's request, unmodified; not included here.
+
+Qwen3-VL-4B-Instruct (Krea 2 Turbo's text encoder)
+    Qwen team; GGUF by bartowski
+    https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct
+    https://huggingface.co/bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
+
+Wan 2.1 VAE (Krea 2 Turbo's VAE)
+    Wan team (Alibaba); repackaged by Comfy-Org
+    https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged
     Apache 2.0. Downloaded by the app at the user's request; not included here.
 
 SAM 2.1 (hiera-tiny)

@@ -14,9 +14,10 @@ which phones can run it; inside a family, models differ in style.
 | **SD 1.5** | 6 | ~1 GB | 512–1024 | Fast; realistic, anime and general mixes | Snapdragon 888+ |
 | **SDXL** | 10 | ~3.5 GB | 1024 | Sharper, better composition | 8 Gen 3+ |
 | **Anima** | 9 | ~4.3 GB | 1024 | Anime; slow (about 80 s a picture) | 8 Gen 3+ |
-| **FLUX.2** | Klein 4B | 6.7 GB | 512–2048 | Understands sentences; edits photos | 8 Elite+ |
+| **FLUX.2** | Klein 4B, Klein 9B | 6.7 GB, 10.7 GB | 512–2048 | Understands sentences; edits photos. 9B: more detail, slower, starts at 768 | 8 Elite+ |
 | **Z-Image** | Turbo | 8.8 GB | 512–2048 | Photorealistic, fast for its size | 8 Elite+ |
 | **Qwen Image** | 2.1 | 10.8 GB | 512–2048 | Follows long instructions, legible text; edits photos; slow | 8 Elite+ |
+| **Krea 2** | Turbo | 9.5 GB | 512–2048 | Text to image only | 8 Elite+ **and 16 GB RAM** |
 
 Besides picture models, **Models** also holds:
 
