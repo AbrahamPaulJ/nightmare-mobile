@@ -1106,6 +1106,10 @@ private val KNOB_OVERRIDES = mapOf(
     "uri" to "Picture",
     // ⚠ DreamUI's own words for the same toggle.
     "stitch" to "Stitch to original image",
+    // ⚠ "Ip scale" read as a typo; IP-Adapter's own name and the word the ControlNet slider uses.
+    "ip_scale" to "IP strength",
+    "ip_adapter" to "IP-Adapter",
+    "ip_image" to "IP-Adapter picture",
 )
 
 /**

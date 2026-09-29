@@ -770,10 +770,13 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         )
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
-    // ⭐ SD 1.5 Swap's ControlNet knobs live in its ControlNet TILE ([ControlNetPanel]).
+    // ⭐ SD 1.5 Swap's ControlNet knobs live in its ControlNet TILE ([ControlNetPanel]),
+    // its IP-Adapter knobs in the IP-Adapter tile ([IpAdapterPanel]).
     if (name in setOf(
             com.abrah.nightmare.SdSampler.CONTROLNET, com.abrah.nightmare.SdSampler.CONTROL_STRENGTH,
             com.abrah.nightmare.SdSampler.CONTROL_IMAGE,
+            com.abrah.nightmare.SdSampler.IP_ADAPTER, com.abrah.nightmare.SdSampler.IP_SCALE,
+            com.abrah.nightmare.SdSampler.IP_IMAGE,
         )
     ) return true
     // ⭐⭐⭐ **The Upscaler chooser only when `auto upscale` is ON** — the
@@ -1710,6 +1713,18 @@ internal fun NodeInspectorBody(
                 cnRows = cnRows, onInstallControlNet = onInstallControlNet, onDeleteControlNet = onDeleteControlNet,
             ) { k, v -> onSetParam(nodeId, k, v) }
         }
+        // ⭐⭐ …and its IP-Adapter tile: the square the encoder will read, present
+        // whether or not a reference is chosen yet — it is where one gets picked.
+        val ipSquare = if (swap) rememberIpSquare(node, type, refSource) else null
+        val ipTile = if (!swap) null else EditorTile(
+            androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.ip_label), ipSquare,
+        ) {
+            IpAdapterPanel(
+                node, type, refSource, ipSquare,
+                busy = busy, rows = cnRows,
+                onInstall = onInstallControlNet, onCancel = onCancelParser, onDelete = onDeleteControlNet,
+            ) { k, v -> onSetParam(nodeId, k, v) }
+        }
         if (popup && (cropSource != null || refSource != null || controlTile != null)) {
             InpaintEditors(
                 node = node,
@@ -1724,6 +1739,7 @@ internal fun NodeInspectorBody(
                 openCrop = cropRequest?.takeIf { it.first == nodeId }?.second,
                 openTab = cropRequestTab,
                 control = controlTile,
+                ip = ipTile,
             )
         } else {
             cropPanel()
@@ -3029,8 +3045,9 @@ private fun InpaintEditors(
     openCrop: Int? = null,
     /** ⭐ …on this tab — 1 (Mask) only where there is one. */
     openTab: Int = 0,
-    /** ⭐ SD 1.5 Swap's ControlNet tile, last in the row. */
+    /** ⭐ SD 1.5 Swap's ControlNet tile, then its IP-Adapter tile, last in the row. */
     control: EditorTile? = null,
+    ip: EditorTile? = null,
 ) {
     // ⚠⚠ Keyed on the NODE: the inspector can now switch node under this
     // composable ([NodeStrip]), and an unkeyed `remember` would leave the
@@ -3141,6 +3158,7 @@ private fun InpaintEditors(
         if (paints && photo != null) add(EditorTile("Mask", masked, maskPanel))
         if (refPhoto != null) add(EditorTile("Reference", refFramed, refPanel))
         control?.let { add(it) }
+        ip?.let { add(it) }
     }
     if (tiles.isEmpty()) return
     val labels = tiles.map { it.label }

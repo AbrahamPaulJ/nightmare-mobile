@@ -53,6 +53,9 @@ object SwapInputs {
      */
     class Hint(val bitmap: Bitmap?, val missing: String? = null)
 
+    /** ⭐ IP-Adapter's default strength — diffusers' examples use 0.5–0.7 for Plus. */
+    const val IP_SCALE_DEFAULT = 0.6
+
     /** ⚠ How many LoRA packs one model keeps; each is ~100 MB at rank 64. */
     private const val KEEP_PACKS = 4
 
@@ -223,14 +226,35 @@ object SwapInputs {
         control: Bitmap?,
         frame: Frame?,
         say: (String) -> Unit = {},
+        /** ⭐ IP-Adapter's reference picture ([IpAdapter]); null = none. */
+        reference: Bitmap? = null,
+        ipAdapter: String = IpAdapter.PLUS,
+        ipScale: Double = IP_SCALE_DEFAULT,
     ): Ops.TemplateInputs {
         val modelDir = spec.dir(context)
         val (loraDir, loraStrength) = if (loras.isEmpty()) null to 1.0 else {
             val (dir, s) = packDir(modelDir, loras.map { File(it.first) to it.second }, say)
             dir.absolutePath to s
         }
+        val ipDir = reference?.let { ref ->
+            if (!IpAdapter.supports(modelDir)) {
+                throw NeedsInput(
+                    if (spec in ModelCatalog.builtIn) {
+                        "this copy of ${spec.label} predates IP-Adapter — delete it in Models and " +
+                            "download it again to use a reference picture, or unwire the reference"
+                    } else {
+                        "this model was converted before IP-Adapter — convert it again with npuforge " +
+                            "(SD1.5 Swap) to use a reference picture, or unwire the reference"
+                    },
+                )
+            }
+            if (!IpAdapter.isInstalled(context, ipAdapter)) {
+                throw NeedsInput("download IP-Adapter first — on the node's IP-Adapter tab or in Models, Tools")
+            }
+            IpAdapter.ipDir(context, modelDir, ref, ipAdapter, ipScale, say).absolutePath
+        }
         if (type == NONE || type.isBlank()) {
-            return Ops.TemplateInputs(loraDir = loraDir, loraStrength = loraStrength)
+            return Ops.TemplateInputs(loraDir = loraDir, loraStrength = loraStrength, ipDir = ipDir)
         }
         require(type in TYPES) { "unknown ControlNet type \"$type\"" }
         val cn = controlnetFile(context, type)
@@ -266,6 +290,7 @@ object SwapInputs {
         return Ops.TemplateInputs(
             loraDir = loraDir, loraStrength = loraStrength,
             controlnet = cn.absolutePath, controlImage = png, controlStrength = strength,
+            ipDir = ipDir,
         )
     }
 }

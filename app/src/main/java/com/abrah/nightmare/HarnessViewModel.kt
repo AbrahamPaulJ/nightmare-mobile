@@ -2401,21 +2401,44 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 onDisk = if (ok) ControlNetCatalog.bytesOnDisk(ctx, e.type) else 0L,
                 progress = if (installing == CN_INSTALL_PREFIX + e.type) installProgress else null,
             )
-        }.toMap()
+        }.toMap() + IpAdapter.ADAPTERS.associate { a ->
+            // ⭐ IP-Adapter rides in the same map (keys `ip_<adapter>`): it is a Swap
+            // download like the ControlNets, and the node tab and Models, Tools
+            // already carry this map. The encoder is shared, so bytes = what is left.
+            val key = IpAdapter.rowKey(a)
+            val ok = IpAdapter.isInstalled(ctx, a)
+            key to com.abrah.nightmare.ui.ToolRow(
+                label = IpAdapter.label(a),
+                bytes = if (ok) IpAdapter.bytesOnDisk(ctx) else IpAdapter.bytesToFetch(ctx, a),
+                installed = ok,
+                onDisk = if (ok) IpAdapter.bytesOnDisk(ctx) else 0L,
+                progress = if (installing == CN_INSTALL_PREFIX + key) installProgress else null,
+            )
+        }
     }
 
     fun installControlNet(type: String) {
         if (installing != null) return
         val ctx = getApplication<Application>()
-        val label = ControlNetCatalog.entry(type)?.label ?: type
+        val ip = type.removePrefix(IpAdapter.ROW_PREFIX).takeIf { type.startsWith(IpAdapter.ROW_PREFIX) }
+        val label = ip?.let { IpAdapter.label(it) } ?: ControlNetCatalog.entry(type)?.label ?: type
         installing = CN_INSTALL_PREFIX + type
         cancelInstall = false
         modelError = null
-        installProgress = ModelInstaller.Progress("starting", 0, ControlNetCatalog.buildFor(type)?.bytes ?: 0L)
+        installProgress = ModelInstaller.Progress(
+            "starting", 0,
+            ip?.let { IpAdapter.bytesToFetch(ctx, it) } ?: ControlNetCatalog.buildFor(type)?.bytes ?: 0L,
+        )
         refreshControlNets()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                ControlNetCatalog.install(
+                if (ip != null) {
+                    IpAdapter.install(
+                        ctx, ip,
+                        onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                        isCancelled = { cancelInstall },
+                    )
+                } else ControlNetCatalog.install(
                     ctx, type,
                     onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
                     isCancelled = { cancelInstall },
@@ -2446,8 +2469,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteControlNet(type: String) {
-        ControlNetCatalog.delete(getApplication(), type)
-        say("deleted ${ControlNetCatalog.entry(type)?.label ?: type}")
+        if (type.startsWith(IpAdapter.ROW_PREFIX)) {
+            val a = type.removePrefix(IpAdapter.ROW_PREFIX)
+            IpAdapter.delete(getApplication(), a)
+            say("deleted ${IpAdapter.label(a)}")
+        } else {
+            ControlNetCatalog.delete(getApplication(), type)
+            say("deleted ${ControlNetCatalog.entry(type)?.label ?: type}")
+        }
         refreshControlNets()
     }
 

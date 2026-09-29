@@ -458,7 +458,10 @@ fun ModelsScreen(
                         item {
                             ToolCard(
                                 row, busy, { onInstallControlNet(type) }, onCancel,
-                                detail = stringResource(R.string.cn_about),
+                                detail = stringResource(
+                                    if (type.startsWith(com.abrah.nightmare.IpAdapter.ROW_PREFIX)) R.string.ip_about
+                                    else R.string.cn_about,
+                                ),
                             ) { deletingControlNet = type }
                         }
                     }
@@ -657,8 +660,13 @@ fun ModelsScreen(
         controlnets[type]?.let { row ->
             ConfirmDelete(
                 title = "Delete ${row.label}?",
-                body = "Frees ${mb(row.onDisk)} MB. Getting it back is a " +
-                    "${mb(row.bytes)} MB download. Swap flows using $type will ask for it again.",
+                body = if (type.startsWith(com.abrah.nightmare.IpAdapter.ROW_PREFIX)) {
+                    "Swap flows with a reference picture will ask for it again. The image " +
+                        "encoder is shared, and goes with the last IP-Adapter deleted."
+                } else {
+                    "Frees ${mb(row.onDisk)} MB. Getting it back is a " +
+                        "${mb(row.bytes)} MB download. Swap flows using $type will ask for it again."
+                },
                 onConfirm = { onDeleteControlNet(type) },
                 onDismiss = { deletingControlNet = null },
             )

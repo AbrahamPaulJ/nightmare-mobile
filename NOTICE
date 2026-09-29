@@ -226,6 +226,14 @@ Depth Anything V2 Small (the depth estimator)
     Apache 2.0 (the Small model). Downloaded from its own repository at the
     user's request.
 
+IP-Adapter Plus / Plus Face (SD 1.5) and the CLIP ViT-H/14 image encoder
+    Tencent AI Lab (h94/IP-Adapter), Apache 2.0; OpenCLIP ViT-H-14 laion2B, MIT
+    https://huggingface.co/h94/IP-Adapter
+    Converted to ONNX (encoder truncated to its penultimate layer, int16
+    weights; heads int8) and re-hosted at
+    https://huggingface.co/AbrahamPJ/nightmare-ip-adapter. Downloaded at the
+    user's request.
+
 AbsoluteReality v1.8.1, CuteYukiMix (the SD 1.5 Swap defaults)
     Lykon; kemiaomiao
     Converted with npuforge (https://github.com/AbrahamPaulJ/npuforge) as

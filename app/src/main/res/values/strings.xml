@@ -246,4 +246,13 @@
     <string name="cn_no_picture_depth">No picture yet: choose a photo or a ready-made depth map, or wire one into control.</string>
     <string name="cn_not_for_chip">No %1$s ControlNet is built for the chip in this phone yet.</string>
     <string name="cn_about">A ControlNet for SD 1.5 Swap models, shared by all of them.</string>
+    <string name="ip_label">IP-Adapter</string>
+    <string name="ip_hint">a reference picture steers the render: plus follows its subject and style, face follows a face</string>
+    <string name="ip_about">IP-Adapter for SD 1.5 Swap models: a reference picture steers the render. The image encoder is shared by both adapters.</string>
+    <string name="ip_not_installed">%1$s is not installed on this phone yet.</string>
+    <string name="ip_from_wire">Using the picture wired into reference.</string>
+    <string name="ip_old_model">This model was converted before IP-Adapter. Convert it again with npuforge (SD1.5 Swap) to use a reference picture.</string>
+    <string name="ip_old_builtin">This copy of %1$s predates IP-Adapter. Delete it in Models and download it again to use a reference picture.</string>
+    <string name="ip_sees">What IP-Adapter reads (a centre square)</string>
+    <string name="ip_no_picture">Choose a picture, or wire one into reference, and the render follows it.</string>
 </resources>

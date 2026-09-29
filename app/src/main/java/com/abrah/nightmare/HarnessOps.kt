@@ -215,6 +215,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "segmenter_install" -> segmenterInstall()
             "pose_install" -> poseInstall()
             "depth_install" -> depthInstall()
+            "ip_install" -> ipInstall(arg)
             "depth_probe" -> depthProbe(arg)
             "cn_install" -> cnInstall(arg)
             "segment" -> segmentProbe(arg)
@@ -778,6 +779,24 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
             kv["depthphoto"]?.let {
                 add(Triple("depth_photo", house, mapOf(SdSampler.CONTROLNET to "depth", SdSampler.CONTROL_IMAGE to it)))
+            }
+            // ⭐⭐ IP-Adapter (a Swap v2 model): the reference picked on the node, at
+            // the default strength and at 1.0; `ipface` through the face adapter;
+            // with `lora` and `canny` given, all three at once.
+            kv["ip"]?.let { ref ->
+                val ip = mapOf(SdSampler.IP_IMAGE to ref, SdSampler.IP_ADAPTER to (kv["ipadapter"] ?: IpAdapter.PLUS))
+                add(Triple("ip", lake, ip + (kv["ipscale"]?.let { mapOf(SdSampler.IP_SCALE to it) } ?: emptyMap())))
+                add(Triple("ip_1.0", lake, ip + mapOf(SdSampler.IP_SCALE to "1.0")))
+                if (kv["lora"] != null && kv["canny"] != null) {
+                    add(Triple("ip_lora_canny", house, ip + mapOf(
+                        SdSampler.LORAS to kv.getValue("lora"),
+                        SdSampler.CONTROLNET to "canny", SdSampler.CONTROL_IMAGE to kv.getValue("canny"),
+                    )))
+                }
+            }
+            kv["ipface"]?.let { ref ->
+                add(Triple("ip_face", "a portrait photo of a person, soft light, detailed",
+                    mapOf(SdSampler.IP_IMAGE to ref, SdSampler.IP_ADAPTER to IpAdapter.FACE)))
             }
         }
         var bad = 0
@@ -2737,6 +2756,20 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 d.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
             }
             say("  ok   ${d.bytesOnDisk(ctx)} B at ${d.dir(ctx).absolutePath}")
+        } catch (e: Throwable) {
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    /** `ip_install [plus|face]` — the IP-Adapter encoder (shared) and one adapter's head. */
+    private suspend fun ipInstall(arg: String?) {
+        val adapter = arg?.takeIf { it.isNotBlank() } ?: IpAdapter.PLUS
+        say("ip_install: $adapter, ${IpAdapter.bytesToFetch(ctx, adapter)} B to fetch")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                IpAdapter.install(ctx, adapter, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+            }
+            say("  ok   ${IpAdapter.bytesOnDisk(ctx)} B at ${IpAdapter.dir(ctx).absolutePath}")
         } catch (e: Throwable) {
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
         }

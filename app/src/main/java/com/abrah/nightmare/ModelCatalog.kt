@@ -1432,15 +1432,19 @@ object ModelCatalog {
      * newer only, until v73 / v68 builds are made on the PC from the same
      * checkpoints (`notes/HANDOFF.md`).
      */
+    // ⭐ **Swap v2** since 1.6.065 (IP-Adapter inputs, `docs/MODELS.md` §10): the same CLIP/VAE,
+    // a v2 UNet converted on the S25 and `ip_targets.json`. ⚠ A v1 copy already installed stays
+    // "installed" (the required files are all there) and renders as before; only a reference
+    // picture asks for a re-download ([SwapInputs.resolve]).
     val swapModels: List<ModelSpec> = listOf(
         swapModel(
             "absolutereality_swap", "AbsoluteReality Swap",
-            "absolutereality_v181_swap_v79.zip", 1_308_701_689L,
+            "absolutereality_v181_swap_v2_v79.zip", 1_309_413_181L,
             prompt = P_ABSOLUTE, negative = NEG_ABSOLUTE,
         ),
         swapModel(
             "cuteyukimix_swap", "CuteYukiMix Swap",
-            "cuteyukimix_swap_v79.zip", 1_308_701_689L,
+            "cuteyukimix_swap_v2_v79.zip", 1_309_413_181L,
             prompt = P_ANIME_GIRL, negative = NEG_ANIME,
         ),
     )

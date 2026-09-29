@@ -172,7 +172,11 @@ class SdSampler(
         // only supported by FLUX.2 Klein" for Z-Image, and a port that always
         // errors is worse than no port. Same reasoning that keeps Z-Image out
         // of the inpaint picker.
-        if (family.edit) Port("reference", "IMAGE") else null,
+        // ⭐⭐ …and on SD 1.5 Swap, the IP-Adapter REFERENCE (2026-09-30): the same
+        // port name for the same idea — a picture the render reads but does not
+        // redraw — cut by the same REF region. ⚠ A Swap model converted before
+        // IP-Adapter refuses it with a message ([SwapInputs.resolve]).
+        if (family.edit || family == Family.SD15_SWAP) Port("reference", "IMAGE") else null,
         // ⭐⭐ SD 1.5 Swap's ControlNet picture — OPTIONAL: unwired, the picture
         // picked on the node is used ([CONTROL_IMAGE]). Swap only, for the same
         // reason `reference` is FLUX.2 only: a port that always errors is worse
@@ -284,6 +288,11 @@ class SdSampler(
         const val CONTROLNET = "controlnet"
         const val CONTROL_STRENGTH = "control_strength"
         const val CONTROL_IMAGE = "control_image"
+
+        /** ⭐⭐ SD 1.5 Swap's IP-Adapter: the adapter, its strength, the picture picked on the node. */
+        const val IP_ADAPTER = "ip_adapter"
+        const val IP_SCALE = "ip_scale"
+        const val IP_IMAGE = "ip_image"
 
         /** ⭐ The node's crop window as [SwapInputs] takes it — the ONE reading, for the run and the tile. */
         fun swapFrame(p: Map<String, String>) = SwapInputs.Frame(
@@ -876,6 +885,16 @@ class SdSampler(
         ),
         Widget(CONTROL_STRENGTH, "float", "1.0", 0.0, 2.0),
         Widget(CONTROL_IMAGE, "string", ""),
+        // ⭐⭐ IP-Adapter ([IpAdapter]): which adapter reads the reference, how
+        // strongly, and a reference picked ON the node. ⚠ The `reference` wire
+        // wins over the picked picture, as `control` does over [CONTROL_IMAGE].
+        // Drawn as the IP-Adapter tile, never as loose knobs.
+        Widget(
+            IP_ADAPTER, "string", IpAdapter.PLUS, options = IpAdapter.ADAPTERS,
+            hint = "plus copies the reference's subject and style; face follows a face",
+        ),
+        Widget(IP_SCALE, "float", SwapInputs.IP_SCALE_DEFAULT.toString(), 0.0, 1.5),
+        Widget(IP_IMAGE, "string", ""),
     )
 
     override fun contextKey(node: Node) = backendContextKey(node)
@@ -1458,8 +1477,12 @@ class SdSampler(
         inputs: Map<String, Value>,
     ): Ops.TemplateInputs {
         val type = p[CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
-        // ⚠ Nothing to pack and no hint: the base model, and no platform needed.
-        if (type == SwapInputs.NONE && LoraSpec.parse(p[LORAS]).isEmpty()) return Ops.TemplateInputs()
+        val refWired = inputs["reference"] as? Value.Image
+        val refPicked = p[IP_IMAGE]?.takeIf { it.isNotBlank() }
+        // ⚠ Nothing to pack, no hint and no reference: the base model, and no platform needed.
+        if (type == SwapInputs.NONE && LoraSpec.parse(p[LORAS]).isEmpty() && refWired == null && refPicked == null) {
+            return Ops.TemplateInputs()
+        }
         val android = ctx.android
             ?: throw IllegalStateException("SD 1.5 Swap needs an Android context on this host")
         val spec = ModelCatalog.byId(p["model"].orEmpty())
@@ -1475,11 +1498,30 @@ class SdSampler(
                     }
                     ?: photo
             }
+            // ⭐ The IP-Adapter reference: the `reference` wire cut by the node's
+            // REF region (the FLUX.2 reference's own params), else the picture
+            // picked on the node. CLIP then centre-crops it square.
+            val reference = refWired?.let { r ->
+                val bmp = ctx.images.get(r.id)
+                    ?: throw IllegalStateException("node \"${node.id}\": image ${r.id} is no longer in the store")
+                CropNode.render(
+                    bmp,
+                    p[REF_X]?.toFloatOrNull() ?: 0f, p[REF_Y]?.toFloatOrNull() ?: 0f,
+                    p[REF_W]?.toFloatOrNull() ?: 1f, p[REF_H]?.toFloatOrNull() ?: 1f,
+                    0, 0, CropNode.PAD_BLACK,
+                ).first
+            } ?: refPicked?.let {
+                AddObjects.load(android, it)
+                    ?: throw NeedsInput("the IP-Adapter picture can no longer be read — pick it again")
+            }
             SwapInputs.resolve(
                 android, spec, loras, type,
                 p[CONTROL_STRENGTH]?.toDoubleOrNull() ?: 1.0, control,
                 frame = photo?.let { swapFrame(p) },
                 say = ctx.say,
+                reference = reference,
+                ipAdapter = p[IP_ADAPTER].orEmpty().ifBlank { IpAdapter.PLUS },
+                ipScale = p[IP_SCALE]?.toDoubleOrNull() ?: SwapInputs.IP_SCALE_DEFAULT,
             )
         }
     }

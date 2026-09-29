@@ -146,9 +146,9 @@ render starts, so changing one or moving a slider reloads nothing. The cost is t
 size: about 6% for a 160 tensor FLUX adapter, 43% for a 480 tensor Z-Image one. Stack as many
 as you like.
 
-**SD 1.5 Swap: LoRA and ControlNet on the NPU, per render.** Convert an SD 1.5 checkpoint in
-npuforge as *SD1.5 Swap* and it becomes a model whose LoRA and ControlNet are inputs rather
-than baked-in weights. Pick LoRAs on its node the same way (several are merged into its one
+**SD 1.5 Swap: LoRA, ControlNet and IP-Adapter on the NPU, per render.** Convert an SD 1.5
+checkpoint in npuforge as *SD1.5 Swap* and it becomes a model whose LoRA, ControlNet and (since
+npuforge 1.0.7) IP-Adapter are inputs rather than baked-in weights. Pick LoRAs on its node the same way (several are merged into its one
 rank-64 slot on the phone, once, then cached), and give it a ControlNet picture: **canny**
 finds the edges of a photo on the phone, **openpose** finds the pose in a photo (a 19 MB
 detector in Models → Tools, MoveNet) or takes a ready-made skeleton as it is, and **depth** makes
@@ -163,6 +163,13 @@ fill can leave a soft seam). Nothing is reconverted and the model is not
 reloaded. 512×512 only; about 15% slower than the same checkpoint converted plainly, and a
 ControlNet adds about 3 s a picture. ControlNet adds about 30 ms a step. Only the
 UNet half of a LoRA applies, as with every NPU conversion.
+
+**IP-Adapter: a reference picture steers the render.** On a Swap model converted with npuforge
+1.0.7 or later (and the two defaults), pick a picture on the node's **IP-Adapter** tile or wire one
+into **reference**: **Plus** carries its subject and style into the picture, **Plus Face** a face.
+The picture is read once on the phone's CPU (CLIP ViT-H, about 6 s on an 8 Elite; 1.3 GB to
+download, Face another 50 MB), then a strength change or a new prompt costs nothing. It stacks
+with LoRAs and ControlNet. A Swap model converted earlier keeps working, without a reference.
 
 **Embeddings.** Import a textual inversion `.safetensors` and name it in a prompt.
 
@@ -286,6 +293,9 @@ terms. Their ControlNets are our QNN builds of
 [lllyasviel's ControlNet 1.1](https://huggingface.co/lllyasviel/ControlNet-v1-1) (canny, depth,
 openpose; CreativeML OpenRAIL-M), hosted at
 [`AbrahamPJ/nightmare-sd15-controlnet-qnn`](https://huggingface.co/AbrahamPJ/nightmare-sd15-controlnet-qnn).
+IP-Adapter is Tencent AI Lab's [IP-Adapter Plus and Plus Face](https://huggingface.co/h94/IP-Adapter)
+(Apache 2.0) with the OpenCLIP ViT-H/14 image encoder (MIT), converted to ONNX and hosted at
+[`AbrahamPJ/nightmare-ip-adapter`](https://huggingface.co/AbrahamPJ/nightmare-ip-adapter).
 The hint makers are [MoveNet MultiPose Lightning](https://huggingface.co/Xenova/movenet-multipose-lightning)
 by Google (Apache 2.0) with LocalDream's OpenPose renderer, and
 [Depth Anything V2 Small](https://huggingface.co/onnx-community/depth-anything-v2-small)

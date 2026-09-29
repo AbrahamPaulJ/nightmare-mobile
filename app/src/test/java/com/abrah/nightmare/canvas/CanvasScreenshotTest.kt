@@ -1293,6 +1293,12 @@ open class SwapInspectorScreenshotTest {
      * (a type-name check), and its `control` wire was silently ignored.
      */
     @Test fun inpaintHasTheTile() = shoot("inspector-swap-inpaint-controlnet", null, inpaint = true)
+    /**
+     * ⭐ The IP-Adapter tab (2026-09-30): chooser, strength, Choose picture, and the
+     * no-picture line. ⚠ The fixture's model is not in the catalogue, so neither the
+     * old-model notice nor the download card draws here — both are phone walks.
+     */
+    @Test fun popupIpAdapterTab() = shoot("swap-popup-ipadapter", 2)
 
     private fun shoot(name: String, tab: Int?, pose: Boolean = false, inpaint: Boolean = false) =
         captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {

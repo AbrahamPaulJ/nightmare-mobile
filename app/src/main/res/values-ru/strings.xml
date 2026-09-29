@@ -226,4 +226,13 @@
     <string name="cn_no_picture_depth">Изображения ещё нет: выберите фото или готовую карту глубины, либо подключите её к control.</string>
     <string name="cn_not_for_chip">ControlNet %1$s для чипа этого телефона ещё не собран.</string>
     <string name="cn_about">ControlNet для моделей SD 1.5 Swap, общий для всех.</string>
+    <string name="ip_label">IP-Adapter</string>
+    <string name="ip_hint">эталонное изображение направляет рендер: plus повторяет его объект и стиль, face — лицо</string>
+    <string name="ip_about">IP-Adapter для моделей SD 1.5 Swap: эталонное изображение направляет рендер. Кодировщик изображений общий для обоих адаптеров.</string>
+    <string name="ip_not_installed">%1$s ещё не установлен на этом телефоне.</string>
+    <string name="ip_from_wire">Используется изображение, подключённое к reference.</string>
+    <string name="ip_old_model">Эта модель сконвертирована до появления IP-Adapter. Сконвертируйте её снова в npuforge (SD1.5 Swap), чтобы использовать эталонное изображение.</string>
+    <string name="ip_old_builtin">Эта копия %1$s старше IP-Adapter. Удалите её в «Моделях» и скачайте заново, чтобы использовать эталонное изображение.</string>
+    <string name="ip_sees">Что читает IP-Adapter (центральный квадрат)</string>
+    <string name="ip_no_picture">Выберите изображение или подключите его к reference — рендер будет следовать ему.</string>
 </resources>

@@ -483,6 +483,11 @@ object Ops {
         /** The HINT, 512² PNG — edges, depth or a pose skeleton, already made. */
         val controlImage: ByteArray? = null,
         val controlStrength: Double = 1.0,
+        /**
+         * ⭐ IP-Adapter (`backend-patches/016`): `pos/` + `neg/` K/V for a Swap v2
+         * UNet ([IpAdapter.ipDir]), named after its contents like [loraDir].
+         */
+        val ipDir: String? = null,
     )
 
     data class Sampled(
@@ -651,6 +656,7 @@ object Ops {
                         put("control_image", android.util.Base64.encodeToString(template.controlImage, android.util.Base64.NO_WRAP))
                         put("control_strength", template.controlStrength)
                     }
+                    template.ipDir?.let { put("ip_dir", it) }
                 }
                 if (inpaintImage != null && inpaintMask != null) {
                     put("inpaint_image", android.util.Base64.encodeToString(inpaintImage, android.util.Base64.NO_WRAP))

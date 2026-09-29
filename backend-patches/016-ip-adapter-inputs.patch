@@ -1,0 +1,168 @@
+--- a/src/Pipeline.hpp
++++ b/src/Pipeline.hpp
+@@ -162,6 +162,11 @@
+   std::string lora_dir;
+   float lora_strength = 1.0f;
+   std::string controlnet_path;
++  // IP-Adapter (backend-patches 016): a directory holding pos/ and neg/, each
++  // with ipk_<i>.raw / ipv_<i>.raw (float32) for the template's ipk_*/ipv_*
++  // inputs -- the reference picture's K/V (IP scale folded into V) and the
++  // unconditional ones. neg feeds the CFG uncond pass, pos the cond pass.
++  std::string ip_dir;
+ 
+   // Ultrafix: tiled img2img over an arbitrarily large (upscaled) input.
+   // VAE encode, every UNet denoising step and the final decode all run as
+--- a/src/RequestParser.hpp
++++ b/src/RequestParser.hpp
+@@ -87,6 +87,7 @@
+   req.denoise_strength = json.value("denoise_strength", 0.6f);
+   req.lora_dir = json.value("lora_dir", std::string());
+   req.lora_strength = json.value("lora_strength", 1.0f);
++  req.ip_dir = json.value("ip_dir", std::string());
+ 
+   // --- ControlNet: fixed 512 canvas, mandatory hint image -----------------
+   // The AI Hub graphs are frozen at 512x512 and that bundle has no VAE
+--- a/src/QnnModel.hpp
++++ b/src/QnnModel.hpp
+@@ -785,6 +785,13 @@
+     return ensureIoTensors() &&
+            findTensor(inputs, (*m_graphsInfo)[0].numInputTensors, name);
+   }
++  // Element count of a named input, 0 when the graph has none (patch 016).
++  size_t inputElems(const char *name) {
++    if (!ensureIoTensors()) return 0;
++    Qnn_Tensor_t *t =
++        findTensor(inputs, (*m_graphsInfo)[0].numInputTensors, name);
++    return t ? tensorElems(*t) : 0;
++  }
+ 
+   bool writeExtraInputs(const qnn_wrapper_api::GraphInfo_t &graphInfo) {
+     int written = 0, from_file = 0, zeroed = 0;
+--- a/src/PipelineSd15Npu.hpp
++++ b/src/PipelineSd15Npu.hpp
+@@ -2,6 +2,7 @@
+ #define PIPELINESD15NPU_HPP
+ 
+ #include <MNN/Interpreter.hpp>
++#include <fstream>
+ #include <memory>
+ #include <stdexcept>
+ #include <string>
+@@ -94,9 +95,20 @@
+     // 015); a plain one has three inputs and none of what follows applies.
+     tpl_lora_ = unet_->hasInput("lora_S");
+     tpl_control_ = unet_->hasInput("res_0");
+-    if (tpl_lora_ || tpl_control_)
+-      QNN_INFO("template unet: lora inputs %d, controlnet inputs %d",
+-               tpl_lora_, tpl_control_);
++    // IP-Adapter inputs (patch 016): ipk_<i> / ipv_<i> per attn2 layer.
++    for (int i = 0;; ++i) {
++      const std::string k = "ipk_" + std::to_string(i);
++      const std::string v = "ipv_" + std::to_string(i);
++      const size_t nk = unet_->inputElems(k.c_str());
++      const size_t nv = unet_->inputElems(v.c_str());
++      if (!nk || !nv) break;
++      ip_inputs_.push_back({k, nk});
++      ip_inputs_.push_back({v, nv});
++    }
++    if (tpl_lora_ || tpl_control_ || !ip_inputs_.empty())
++      QNN_INFO("template unet: lora inputs %d, controlnet inputs %d, "
++               "ip-adapter layers %zu",
++               tpl_lora_, tpl_control_, ip_inputs_.size() / 2);
+     if (patched) {
+       QNN_INFO("Releasing unet patch buffer to free memory");
+       patched.reset();
+@@ -196,11 +208,25 @@
+       }
+     }
+ 
+-    if (!skip_uncond && StatusCode::SUCCESS !=
+-                            unet_->executeUnetGraphs(
+-                                latents_in, ts, cond.negHidden(), out_batch2))
+-      throw std::runtime_error("QNN UNET exec failed (uncond)");
++    // IP-Adapter (patch 016): unlike the residuals, the uncond pass gets its
++    // OWN K/V (the zeros-image embedding) -- sharing the reference's with it
++    // would cancel most of the IP effect in the CFG difference. Each side is
++    // written only when the other one is bound (32 small tensors).
++    if (!ip_inputs_.empty())
++      loadIp(req.ip_dir);
++    else if (!req.ip_dir.empty())
++      throw std::invalid_argument(
++          "'ip_dir': this model has no IP-Adapter inputs");
+ 
++    if (!skip_uncond) {
++      bindIp(ip_neg_, 0);
++      if (StatusCode::SUCCESS !=
++          unet_->executeUnetGraphs(latents_in, ts, cond.negHidden(),
++                                   out_batch2))
++        throw std::runtime_error("QNN UNET exec failed (uncond)");
++    }
++
++    bindIp(ip_pos_, 1);
+     if (StatusCode::SUCCESS !=
+         unet_->executeUnetGraphs(latents_in + single_latent_size, ts,
+                                  cond.posHidden(),
+@@ -245,8 +271,53 @@
+     QNN_INFO("controlnet %s feeds the unet's res_0..12", path.c_str());
+   }
+ 
++  // <ip_dir>/{pos,neg}/<name>.raw, loaded once per directory; "" = zeros
++  // (the identity). Throws naming the file that is missing or the wrong size.
++  void loadIp(const std::string &dir) {
++    if (ip_loaded_ && dir == ip_dir_) return;
++    ip_pos_.assign(ip_inputs_.size(), {});
++    ip_neg_.assign(ip_inputs_.size(), {});
++    for (size_t i = 0; i < ip_inputs_.size(); ++i) {
++      const auto &in = ip_inputs_[i];
++      for (int side = 0; side < 2; ++side) {
++        auto &buf = side ? ip_pos_[i] : ip_neg_[i];
++        buf.assign(in.second, 0.0f);
++        if (dir.empty()) continue;
++        const std::string path =
++            dir + (side ? "/pos/" : "/neg/") + in.first + ".raw";
++        std::ifstream f(path, std::ios::binary);
++        if (!f) throw std::invalid_argument("'ip_dir': missing " + path);
++        f.read(reinterpret_cast<char *>(buf.data()), in.second * sizeof(float));
++        if (static_cast<size_t>(f.gcount()) != in.second * sizeof(float))
++          throw std::invalid_argument("'ip_dir': " + path + " holds " +
++                                      std::to_string(f.gcount()) +
++                                      " bytes, the graph wants " +
++                                      std::to_string(in.second * 4));
++      }
++    }
++    ip_dir_ = dir;
++    ip_loaded_ = true;
++    ip_bound_ = -1;
++    QNN_INFO("ip-adapter inputs: %s", dir.empty() ? "none" : dir.c_str());
++  }
++  // side 0 = uncond (neg), 1 = cond (pos); a no-op when already bound, and
++  // with no ip_dir both sides are zeros, so the first bind is the last.
++  void bindIp(const std::vector<std::vector<float>> &set, int side) {
++    if (ip_inputs_.empty() || ip_bound_ == side ||
++        (ip_dir_.empty() && ip_bound_ >= 0))
++      return;
++    for (size_t i = 0; i < ip_inputs_.size(); ++i)
++      unet_->setExtraInput(ip_inputs_[i].first, set[i]);
++    ip_bound_ = side;
++  }
++
+   bool tpl_lora_ = false;
+   bool tpl_control_ = false;
++  std::vector<std::pair<std::string, size_t>> ip_inputs_;
++  std::vector<std::vector<float>> ip_pos_, ip_neg_;
++  std::string ip_dir_;
++  bool ip_loaded_ = false;
++  int ip_bound_ = -1;
+   std::unique_ptr<QnnModel> tpl_controlnet_;
+   std::string tpl_controlnet_path_;
+   std::vector<std::vector<float>> residuals_;
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -722,6 +722,7 @@
+   if (!req.lora_dir.empty())
+     template_key += "lora" + req.lora_dir + "\x1f" +
+                     std::to_string(req.lora_strength);
++  if (!req.ip_dir.empty()) template_key += "ip" + req.ip_dir;
+   const auto t0 = std::chrono::steady_clock::now();
+   GenerationResult out;
+   {
