@@ -53,6 +53,21 @@ class PoseDetectorTest {
         assertFalse(DepthEstimator.looksLikeDepthMap(colour))
     }
 
+    /**
+     * ⚠ The case the phone caught (2026-09-30): a FIGURE on black — smooth inside,
+     * a sharp outline — is a depth map, although its outline pulls the mean step up.
+     */
+    @Test
+    fun aFigureOnBlackIsADepthMap() {
+        val m = Bitmap.createBitmap(512, 768, Bitmap.Config.ARGB_8888)
+        m.eraseColor(Color.BLACK)
+        for (y in 100 until 700) for (x in 150 until 360) {
+            val g = 140 + (y - 100) / 6
+            m.setPixel(x, y, Color.rgb(g, g, g))
+        }
+        assertTrue(DepthEstimator.looksLikeDepthMap(m))
+    }
+
     /** ⚠ Mostly black, lit parts GREY — a night photo, not a drawing in pure hues. */
     @Test
     fun aDarkPhotoIsNot() {

@@ -182,15 +182,25 @@ object DepthEstimator {
     }
 
     /**
-     * ⭐ Is [source] ALREADY a depth map? GREY (every channel alike) and SMOOTH:
-     * a black-and-white photo is grey too, but its texture is not — the mean
-     * step between neighbours is several times a depth map's.
+     * ⭐ Is [source] ALREADY a depth map? GREY (every channel alike) and SMOOTH
+     * ALMOST EVERYWHERE — a depth map is flat except at a few outline jumps; a
+     * black-and-white photo is textured everywhere.
+     *
+     * ⚠⚠ Measured on the user's pose pack, 2026-09-30, after the phone showed a
+     * ready-made map going through the estimator: the MEAN step alone (≤ 4.5)
+     * recognised only **37%** of 547 maps — a figure's sharp outline against black
+     * pulls the mean up. The share of near-flat steps (|step| ≤ 3) recognises
+     * **96.9%** at ≥ 0.78; with the mean rule as a second way in, **97.4%**, and
+     * still **0 of 22** photos (our renders turned black-and-white — anime, the
+     * flattest case: flat share ≤ 0.75, mean ≥ 5.5). The ~3% missed go through
+     * the estimator, which still returns a depth map.
      */
     fun looksLikeDepthMap(source: Bitmap): Boolean {
         val step = (maxOf(source.width, source.height) / SAMPLES).coerceAtLeast(1)
         var seen = 0
         var grey = 0
         var rough = 0L
+        var flat = 0
         var pairs = 0
         var y = 0
         while (y < source.height) {
@@ -203,23 +213,27 @@ object DepthEstimator {
                 val b = p and 0xFF
                 seen++
                 if (maxOf(r, g, b) - minOf(r, g, b) <= GREY_SPREAD) grey++
-                if (prev >= 0) { rough += kotlin.math.abs(g - prev); pairs++ }
+                if (prev >= 0) {
+                    val d = kotlin.math.abs(g - prev)
+                    rough += d
+                    if (d <= FLAT_STEP) flat++
+                    pairs++
+                }
                 prev = g
                 x += step
             }
             y += step
         }
         if (seen == 0 || grey < seen * GREY_FRACTION) return false
-        return pairs == 0 || rough.toDouble() / pairs <= SMOOTH_MAX
+        if (pairs == 0) return true
+        return flat >= pairs * FLAT_FRACTION || rough.toDouble() / pairs <= SMOOTH_MAX
     }
 
     private const val SAMPLES = 128
     private const val GREY_SPREAD = 10
     private const val GREY_FRACTION = 0.97f
-    /**
-     * Mean |step| between samples ~1/128 of the picture apart, 0..255. Measured
-     * 2026-09-29: eight pose-pack depth maps 1.0–3.1; the same renders turned
-     * black-and-white 6.0–16.6, line art 8–16. The gap's middle.
-     */
+    /** Mean |step| between samples ~1/128 of the picture apart, 0..255 — the second way in. */
     private const val SMOOTH_MAX = 4.5
+    private const val FLAT_STEP = 3
+    private const val FLAT_FRACTION = 0.78
 }
