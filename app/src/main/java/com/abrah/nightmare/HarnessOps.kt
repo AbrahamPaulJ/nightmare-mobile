@@ -216,6 +216,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "pose_install" -> poseInstall()
             "depth_install" -> depthInstall()
             "depth_probe" -> depthProbe(arg)
+            "cn_install" -> cnInstall(arg)
             "segment" -> segmentProbe(arg)
             // ⭐⭐ What does a human PARSER cost on this CPU? Measurement only.
             "parse_probe" -> parseProbe(arg)
@@ -2702,6 +2703,21 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
         }
         drainBackendLog()
+    }
+
+    /** ⭐ Download this phone's build of a ControlNet type from the hosted repo: `--es arg depth`. */
+    private suspend fun cnInstall(arg: String?) {
+        val type = arg?.trim().orEmpty()
+        val b = ControlNetCatalog.buildFor(type) ?: return say("cn_install: no $type build for this chip", bad = true)
+        say("cn_install: $type <- ${b.path} (${b.bytes} B)")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ControlNetCatalog.install(ctx, type, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+            }
+            say("  ok   installed=${ControlNetCatalog.isInstalled(ctx, type)} ${ControlNetCatalog.bytesOnDisk(ctx, type)} B")
+        } catch (e: Throwable) {
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
     }
 
     private suspend fun depthInstall() {

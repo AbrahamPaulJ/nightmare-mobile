@@ -246,6 +246,10 @@ fun ModelsScreen(
     depth: ToolRow? = null,
     onInstallDepth: () -> Unit = {},
     onDeleteDepth: () -> Unit = {},
+    /** ⭐ SD 1.5 Swap's ControlNets — one row per type built for this chip. */
+    controlnets: Map<String, ToolRow> = emptyMap(),
+    onInstallControlNet: (String) -> Unit = {},
+    onDeleteControlNet: (String) -> Unit = {},
 ) {
     // ⭐ Tap → first drawn frame, for the lag report of 2026-09-27 (`NmPerf`).
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -351,6 +355,7 @@ fun ModelsScreen(
     var deletingParser by remember { mutableStateOf(false) }
     var deletingPose by remember { mutableStateOf(false) }
     var deletingDepth by remember { mutableStateOf(false) }
+    var deletingControlNet by remember { mutableStateOf<String?>(null) }
 
     // ⚠ No header and no `statusBarsPadding` any more: [LibraryScreen] owns
     // both, because this screen is now a TAB rather than a whole screen. A
@@ -447,6 +452,14 @@ fun ModelsScreen(
                                 pose, busy, onInstallPose, onCancel,
                                 detail = stringResource(R.string.pose_about),
                             ) { deletingPose = true }
+                        }
+                    }
+                    for ((type, row) in controlnets) {
+                        item {
+                            ToolCard(
+                                row, busy, { onInstallControlNet(type) }, onCancel,
+                                detail = stringResource(R.string.cn_about),
+                            ) { deletingControlNet = type }
                         }
                     }
                     if (depth != null) {
@@ -638,6 +651,18 @@ fun ModelsScreen(
             onConfirm = onDeleteParser,
             onDismiss = { deletingParser = false },
         )
+    }
+
+    deletingControlNet?.let { type ->
+        controlnets[type]?.let { row ->
+            ConfirmDelete(
+                title = "Delete ${row.label}?",
+                body = "Frees ${mb(row.onDisk)} MB. Getting it back is a " +
+                    "${mb(row.bytes)} MB download. Swap flows using $type will ask for it again.",
+                onConfirm = { onDeleteControlNet(type) },
+                onDismiss = { deletingControlNet = null },
+            )
+        }
     }
 
     if (deletingDepth && depth != null) {

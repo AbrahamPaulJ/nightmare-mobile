@@ -35,13 +35,10 @@ object SwapInputs {
     const val DEPTH = "depth"
     const val OPENPOSE = "openpose"
     /**
-     * ⭐ What the ControlNet chooser offers. ⚠⚠ NO DEPTH until the depth
-     * CONTROLNET exists: its estimator is done (CPU, 0.92 s, `docs/ROADMAP.md`
-     * §2i) but the ControlNet conversion was cancelled on 2026-09-29, and an option
-     * that always says "not installed" does not ship. Add [DEPTH] back here (and
-     * the Tools card in `MainActivity`) once `_controlnet/depth.bin` is built.
+     * ⭐ What the ControlNet chooser offers. Depth is back since 1.6.061: its
+     * ControlNet is built (v73 + v68 tiers) and hosted ([ControlNetCatalog]).
      */
-    val TYPES = listOf(NONE, CANNY, OPENPOSE)
+    val TYPES = listOf(NONE, CANNY, DEPTH, OPENPOSE)
 
     /** ⭐ Canny is always computed; openpose and depth are estimated unless the picture already is one. */
     fun computes(type: String): Boolean = type == CANNY || type == OPENPOSE || type == DEPTH
@@ -235,11 +232,13 @@ object SwapInputs {
         if (type == NONE || type.isBlank()) {
             return Ops.TemplateInputs(loraDir = loraDir, loraStrength = loraStrength)
         }
-        if (type == DEPTH) throw NeedsInput("the depth ControlNet is not available yet — choose canny or openpose")
         require(type in TYPES) { "unknown ControlNet type \"$type\"" }
         val cn = controlnetFile(context, type)
         if (!cn.isFile) {
-            throw IllegalStateException("the $type ControlNet is not installed (models/_controlnet/$type.bin)")
+            throw NeedsInput(
+                if (ControlNetCatalog.buildFor(type) == null) "the $type ControlNet is not available for this phone's chip yet"
+                else "download the $type ControlNet first — on the node's ControlNet tab or in Models, Tools",
+            )
         }
         control ?: throw NeedsInput(
             "ControlNet $type needs a picture — pick one on the node or wire one into control, " +

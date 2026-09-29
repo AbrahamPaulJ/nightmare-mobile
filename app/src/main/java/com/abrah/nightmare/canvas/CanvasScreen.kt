@@ -298,6 +298,10 @@ fun CanvasScreen(
     depthRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallDepth: (() -> Unit)? = null,
     onDeleteDepth: (() -> Unit)? = null,
+    /** ⭐ SD 1.5 Swap's ControlNet downloads, by type ([com.abrah.nightmare.ControlNetCatalog]). */
+    cnRows: Map<String, com.abrah.nightmare.ui.ToolRow> = emptyMap(),
+    onInstallControlNet: ((String) -> Unit)? = null,
+    onDeleteControlNet: ((String) -> Unit)? = null,
     /** ⭐⭐ Import a `.safetensors` adapter from inside a node's LoRA picker. */
     onImportLora: (() -> Unit)? = null,
     /** ⚠⚠ `HarnessViewModel.loraEpoch` — what re-reads `_loras` after an Add. */
@@ -610,6 +614,9 @@ fun CanvasScreen(
         depthRow = depthRow,
         onInstallDepth = onInstallDepth,
         onDeleteDepth = onDeleteDepth,
+        cnRows = cnRows,
+        onInstallControlNet = onInstallControlNet,
+        onDeleteControlNet = onDeleteControlNet,
         busy = busy,
         onRun = onRun,
         onCancelRun = onCancelRun,

@@ -94,6 +94,9 @@ internal fun ControlNetPanel(
     depthRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallDepth: (() -> Unit)? = null,
     onDeleteDepth: (() -> Unit)? = null,
+    cnRows: Map<String, com.abrah.nightmare.ui.ToolRow> = emptyMap(),
+    onInstallControlNet: ((String) -> Unit)? = null,
+    onDeleteControlNet: ((String) -> Unit)? = null,
     onSetParam: (String, String) -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -115,8 +118,23 @@ internal fun ControlNetPanel(
             onPick = { onSetParam(SdSampler.CONTROLNET, it) },
         )
         if (cn == SwapInputs.NONE) return@Column
-        if (!SwapInputs.controlnetFile(ctx, cn).isFile) {
+        // ⭐ The ControlNet itself: downloaded HERE when missing (`docs/UI.md` §8.1),
+        // or said plainly when no build exists for this phone's chip.
+        val cnRow = cnRows[cn]
+        if (cnRow == null) {
+            if (!SwapInputs.controlnetFile(ctx, cn).isFile) {
+                ErrorNotice(stringResource(R.string.cn_not_for_chip, cn))
+            }
+        } else if (!cnRow.installed || cnRow.progress != null) {
             ErrorNotice(stringResource(R.string.cn_not_installed, cn))
+            com.abrah.nightmare.ui.ToolCard(
+                row = cnRow,
+                busy = busy,
+                onInstall = { onInstallControlNet?.invoke(cn) },
+                onCancel = { onCancelPose?.invoke() },
+                detail = stringResource(R.string.cn_about),
+                onDelete = { onDeleteControlNet?.invoke(cn) },
+            )
         }
         type?.widgets?.firstOrNull { it.name == SdSampler.CONTROL_STRENGTH }?.let { w ->
             SliderRow(

@@ -419,6 +419,9 @@ fun HarnessScreen(
             depthRow = vm.depthRow,
             onInstallDepth = vm::installDepth,
             onDeleteDepth = vm::deleteDepth,
+            cnRows = vm.cnRows,
+            onInstallControlNet = vm::installControlNet,
+            onDeleteControlNet = vm::deleteControlNet,
             parserInstalled = vm.parserRow?.installed == true,
             // ⭐ Video hidden from Add node where the chip refused it (VideoGate).
             paletteTypes = if (com.abrah.nightmare.npu.VideoGate.hidden) {
@@ -723,8 +726,12 @@ fun HarnessScreen(
                         pose = vm.poseRow,
                         onInstallPose = { askToNotify(); vm.installPose() },
                         onDeletePose = vm::deletePose,
-                        // ⚠ No depth estimator card until the depth ControlNet exists
-                        // (`SwapInputs.TYPES`). The row stays wired for that.
+                        depth = vm.depthRow,
+                        onInstallDepth = { askToNotify(); vm.installDepth() },
+                        onDeleteDepth = vm::deleteDepth,
+                        controlnets = vm.cnRows,
+                        onInstallControlNet = { askToNotify(); vm.installControlNet(it) },
+                        onDeleteControlNet = vm::deleteControlNet,
                         video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
                         onInstallVideo = { askToNotify(); vm.installVideoModels() },
                         onDeleteVideo = vm::deleteVideoModels,

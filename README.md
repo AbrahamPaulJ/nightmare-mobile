@@ -151,13 +151,17 @@ npuforge as *SD1.5 Swap* and it becomes a model whose LoRA and ControlNet are in
 than baked-in weights. Pick LoRAs on its node the same way (several are merged into its one
 rank-64 slot on the phone, once, then cached), and give it a ControlNet picture: **canny**
 finds the edges of a photo on the phone, **openpose** finds the pose in a photo (a 19 MB
-detector in Models → Tools, MoveNet) or takes a ready-made skeleton as it is. Depth is coming.
+detector in Models → Tools, MoveNet) or takes a ready-made skeleton as it is, and **depth** makes
+a depth map from a photo (Depth Anything V2 Small, 99 MB, about 1 s on an 8 Elite) or takes a
+ready-made one. The ControlNets themselves are our own QNN builds, downloaded in the app in the
+tier your chip loads — [`AbrahamPJ/nightmare-sd15-controlnet-qnn`](https://huggingface.co/AbrahamPJ/nightmare-sd15-controlnet-qnn):
+depth for Snapdragon 888 / 8 Gen 1 and newer, openpose for 8 Gen 2 and newer (canny coming).
 With a photo wired into the node, that photo is the control picture by default and follows the
 node's crop window, so the hint lines up with it. **SD 1.5 Swap Inpaint** repaints a masked area
 with the same LoRAs and ControlNet (a blend inpaint: the model does not see the mask, so a big
 fill can leave a soft seam). Nothing is reconverted and the model is not
 reloaded. 512×512 only; about 15% slower than the same checkpoint converted plainly, and a
-ControlNet adds about 3 s a picture. The ControlNet models are not in the catalogue yet. Only the
+ControlNet adds about 3 s a picture. ControlNet adds about 30 ms a step. Only the
 UNet half of a LoRA applies, as with every NPU conversion.
 
 **Embeddings.** Import a textual inversion `.safetensors` and name it in a prompt.

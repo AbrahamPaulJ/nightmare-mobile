@@ -330,6 +330,9 @@ fun NodeInspector(
     depthRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallDepth: (() -> Unit)? = null,
     onDeleteDepth: (() -> Unit)? = null,
+    cnRows: Map<String, com.abrah.nightmare.ui.ToolRow> = emptyMap(),
+    onInstallControlNet: ((String) -> Unit)? = null,
+    onDeleteControlNet: ((String) -> Unit)? = null,
     busy: Boolean = false,
     /** ⭐⭐ Run from the sheet — null in a preview, which draws no bar. */
     onRun: (() -> Unit)? = null,
@@ -652,6 +655,9 @@ fun NodeInspector(
             depthRow = depthRow,
             onInstallDepth = onInstallDepth,
             onDeleteDepth = onDeleteDepth,
+            cnRows = cnRows,
+            onInstallControlNet = onInstallControlNet,
+            onDeleteControlNet = onDeleteControlNet,
             busy = busy,
             onReset = onReset,
             // ⚠⚠ **Not offered when the node ALREADY auto-upscales** — the
@@ -1056,6 +1062,9 @@ internal fun NodeInspectorBody(
     depthRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallDepth: (() -> Unit)? = null,
     onDeleteDepth: (() -> Unit)? = null,
+    cnRows: Map<String, com.abrah.nightmare.ui.ToolRow> = emptyMap(),
+    onInstallControlNet: ((String) -> Unit)? = null,
+    onDeleteControlNet: ((String) -> Unit)? = null,
     busy: Boolean = false,
     /** ⭐⭐ What made this picture — the rows for [com.abrah.nightmare.ui.ResultInfoDialog]. */
     onInfo: (() -> List<Pair<String, String>>)? = null,
@@ -1694,6 +1703,7 @@ internal fun NodeInspectorBody(
                 poseRow = poseRow, busy = busy,
                 onInstallPose = onInstallPose, onCancelPose = onCancelParser, onDeletePose = onDeletePose,
                 depthRow = depthRow, onInstallDepth = onInstallDepth, onDeleteDepth = onDeleteDepth,
+                cnRows = cnRows, onInstallControlNet = onInstallControlNet, onDeleteControlNet = onDeleteControlNet,
             ) { k, v -> onSetParam(nodeId, k, v) }
         }
         if (popup && (cropSource != null || refSource != null || controlTile != null)) {

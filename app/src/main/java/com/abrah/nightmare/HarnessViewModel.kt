@@ -1019,6 +1019,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             id == PARSER_INSTALL_ID -> parserRow = parserRow?.copy(progress = p)
             id == POSE_INSTALL_ID -> poseRow = poseRow?.copy(progress = p)
             id == DEPTH_INSTALL_ID -> depthRow = depthRow?.copy(progress = p)
+            id.startsWith(CN_INSTALL_PREFIX) -> id.removePrefix(CN_INSTALL_PREFIX).let { t ->
+                cnRows = cnRows.mapValues { (k, row) -> if (k == t) row.copy(progress = p) else row }
+            }
             translateRows.keys.any { it.installId == id } ->
                 translateRows = translateRows.mapValues { (src, row) -> if (src.installId == id) row.copy(progress = p) else row }
             modelRows.any { it.spec.id == id } ->
@@ -1172,6 +1175,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         lap("pose")
         refreshDepth()
         lap("depth")
+        refreshControlNets()
+        lap("controlnets")
         refreshTranslation()
         lap("translation")
         refreshEmbeddings()
@@ -2370,6 +2375,80 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    // ---- SD 1.5 Swap's ControlNets (ControlNetCatalog) ------------------------
+
+    /**
+     * ⭐ One [ToolRow] per ControlNet TYPE with a build for THIS phone's chip — the
+     * ControlNet tab offers the chosen one's, and Models, Tools lists them all.
+     * The same one-download latch as every other tool.
+     */
+    var cnRows by mutableStateOf<Map<String, com.abrah.nightmare.ui.ToolRow>>(emptyMap())
+        private set
+
+    private val CN_INSTALL_PREFIX = "cn-tool-"
+
+    fun refreshControlNets() {
+        val ctx = getApplication<Application>()
+        cnRows = ControlNetCatalog.ENTRIES.mapNotNull { e ->
+            val b = ControlNetCatalog.buildFor(e.type) ?: return@mapNotNull null
+            val ok = ControlNetCatalog.isInstalled(ctx, e.type)
+            e.type to com.abrah.nightmare.ui.ToolRow(
+                label = e.label,
+                bytes = b.bytes,
+                installed = ok,
+                onDisk = if (ok) ControlNetCatalog.bytesOnDisk(ctx, e.type) else 0L,
+                progress = if (installing == CN_INSTALL_PREFIX + e.type) installProgress else null,
+            )
+        }.toMap()
+    }
+
+    fun installControlNet(type: String) {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        val label = ControlNetCatalog.entry(type)?.label ?: type
+        installing = CN_INSTALL_PREFIX + type
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, ControlNetCatalog.buildFor(type)?.bytes ?: 0L)
+        refreshControlNets()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                ControlNetCatalog.install(
+                    ctx, type,
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch {
+                    say("installed $label")
+                    downloadSucceeded(label)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(label, modelError!!)
+                    say("install failed — $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshControlNets()
+                }
+            }
+        }
+    }
+
+    fun deleteControlNet(type: String) {
+        ControlNetCatalog.delete(getApplication(), type)
+        say("deleted ${ControlNetCatalog.entry(type)?.label ?: type}")
+        refreshControlNets()
     }
 
     fun deleteDepth() {
