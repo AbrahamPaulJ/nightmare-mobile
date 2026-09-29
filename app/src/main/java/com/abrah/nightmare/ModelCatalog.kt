@@ -1353,7 +1353,7 @@ object ModelCatalog {
      * id here is skipped by the scan, because [byId] returns the first match
      * and a shadowed built-in would point its downloads at the user's files.
      */
-    val builtIn: List<ModelSpec> get() = sd15Models + sdxlModels + animaModels + ditModels
+    val builtIn: List<ModelSpec> get() = sd15Models + swapModels + sdxlModels + animaModels + ditModels
 
     /** ⚠ Kept as its own list so a family can be counted, filtered and tested. */
     /**
@@ -1423,6 +1423,43 @@ object ModelCatalog {
         backendType = SD15_NPU_INPAINT,
         baseUrl = "https://huggingface.co/AbrahamPJ/absolutereality-inpainting-qnn/resolve/main/",
     )
+
+    /**
+     * ⭐⭐ The SD 1.5 Swap tab's two defaults — the user's pick, 2026-09-30: one
+     * realistic, one anime, converted in npuforge as *SD1.5 Swap* and hosted at
+     * [SWAP_BASE_URL]. ⚠⚠ Converted ON the S25, so the UNet and VAE contexts are
+     * v79 builds (npuforge compiles for the device's own arch): 8 Elite and
+     * newer only, until v73 / v68 builds are made on the PC from the same
+     * checkpoints (`notes/HANDOFF.md`).
+     */
+    val swapModels: List<ModelSpec> = listOf(
+        swapModel(
+            "absolutereality_swap", "AbsoluteReality Swap",
+            "absolutereality_v181_swap_v79.zip", 1_308_701_689L,
+            prompt = P_ABSOLUTE, negative = NEG_ABSOLUTE,
+        ),
+        swapModel(
+            "cuteyukimix_swap", "CuteYukiMix Swap",
+            "cuteyukimix_swap_v79.zip", 1_308_701_689L,
+            prompt = P_ANIME_GIRL, negative = NEG_ANIME,
+        ),
+    )
+
+    private fun swapModel(
+        id: String, label: String, archive: String, bytes: Long,
+        prompt: String, negative: String,
+    ) = ModelSpec(
+        id = id,
+        label = label,
+        builds = listOf(Build(TIER_DIT, archive, bytes, DIT_MIN_ARCH, 8)),
+        family = Family.SD15_SWAP,
+        requiredFiles = SD15_SWAP_REQUIRED,
+        prompt = prompt,
+        negative = negative,
+        baseUrl = SWAP_BASE_URL,
+    )
+
+    const val SWAP_BASE_URL = "https://huggingface.co/AbrahamPJ/nightmare-sd15-swap-models/resolve/main/"
 
     val sd15Models: List<ModelSpec> = listOf(
         sd15(

@@ -577,10 +577,10 @@ fun ModelsScreen(
                     Text(
                         when (family) {
                             Family.SD15 -> "About 1 GB each. Use Wi-Fi."
-                            // ⭐ No catalogue entry: every Swap model is a conversion.
-                            Family.SD15_SWAP -> "Convert an SD 1.5 checkpoint in npuforge " +
-                                "as SD1.5 Swap and import the zip here (about 1.3 GB). LoRAs " +
-                                "and ControlNet are then chosen per render, 512×512 only."
+                            // ⭐ Two defaults, or any conversion of your own.
+                            Family.SD15_SWAP -> "About 1.3 GB each. LoRAs and ControlNet are " +
+                                "chosen per render, 512×512 only. Convert your own SD 1.5 " +
+                                "checkpoint in npuforge as SD1.5 Swap and import the zip here."
                             // ⚠ Measured 2026-09-16 on an 11.4 GB phone: 6.4 s a
                             // step, and killed by Android while other apps were
                             // in use. Said here, before 4 GB is downloaded.

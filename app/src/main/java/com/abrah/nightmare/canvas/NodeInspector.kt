@@ -1688,7 +1688,11 @@ internal fun NodeInspectorBody(
         // where the Reference tile belongs.
         // ⭐⭐ SD 1.5 Swap: the ControlNet picture is a tile of its own, present
         // whether or not anything is picked yet — it is where one gets picked.
-        val swap = node.type == com.abrah.nightmare.SdSampler.SD15_SWAP.name
+        // ⚠⚠ By FAMILY, not by type name: it was `== SD15_SWAP.name`, which left the
+        // Swap INPAINT node with no ControlNet tile — a picture wired into its
+        // `control` port was silently ignored (ControlNet stayed `none`), reported
+        // from the phone 2026-09-30.
+        val swap = (type as? com.abrah.nightmare.SdSampler)?.family == com.abrah.nightmare.Family.SD15_SWAP
         val controlHint = if (swap) {
             rememberControlHint(
                 node, type, controlSource, cropSource,

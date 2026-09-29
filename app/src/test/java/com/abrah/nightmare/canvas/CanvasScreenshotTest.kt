@@ -1288,15 +1288,20 @@ open class SwapInspectorScreenshotTest {
      * tab says why there is no hint and offers the download ([ToolCard]).
      */
     @Test fun popupOpenposeNeedsTheDetector() = shoot("swap-popup-openpose-download", 1, pose = true)
+    /**
+     * ⚠ The Swap INPAINT node has the tile too — it had none until 2026-09-30
+     * (a type-name check), and its `control` wire was silently ignored.
+     */
+    @Test fun inpaintHasTheTile() = shoot("inspector-swap-inpaint-controlnet", null, inpaint = true)
 
-    private fun shoot(name: String, tab: Int?, pose: Boolean = false) =
+    private fun shoot(name: String, tab: Int?, pose: Boolean = false, inpaint: Boolean = false) =
         captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
                     NodeInspectorBody(
                         nodeId = "generate",
                         node = Node(
-                            "generate", SdSampler.SD15_SWAP.name,
+                            "generate", if (inpaint) SdSampler.SD15_SWAP_INPAINT.name else SdSampler.SD15_SWAP.name,
                             params = mapOf(
                                 "steps" to "20", "cfg" to "7.5", "seed" to "0",
                                 "model" to "yukimix_swap", "width" to "512", "height" to "512",
@@ -1309,11 +1314,12 @@ open class SwapInspectorScreenshotTest {
                                 "image" to "photo", SdSampler.CONTROL to "pose", "prompt" to "prompt",
                             ),
                         ),
-                        type = NODE_TYPES[SdSampler.SD15_SWAP.name],
+                        type = NODE_TYPES[if (inpaint) SdSampler.SD15_SWAP_INPAINT.name else SdSampler.SD15_SWAP.name],
                         onSetParam = { _, _, _ -> },
                         onDelete = {},
                         onReset = {},
                         cropSource = stripeSource(300, 220),
+                        maskSource = if (inpaint) stripeSource(300, 220) else null,
                         controlSource = if (pose) null else stripeSource(200, 320),
                         poseRow = if (pose) com.abrah.nightmare.ui.ToolRow(
                             label = com.abrah.nightmare.pose.PoseDetector.LABEL,

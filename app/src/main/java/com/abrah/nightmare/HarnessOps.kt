@@ -807,6 +807,15 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 "x" to "0.0", "y" to "0.0", "w" to "1.0", "h" to "1.0",
             ) + (kv["lora"]?.let { mapOf(SdSampler.LORAS to it) } ?: emptyMap())
             if (leg("inpaint", "a small red wooden cabin", p, photo, SdSampler.SD15_SWAP_INPAINT.name) == null) bad++
+            // ⭐ …and with canny taken from the node's OWN photo — the ControlNet
+            // must reach the inpaint path too (the missing tile, 2026-09-30).
+            if (kv.containsKey("inpaintcn")) {
+                val cn = leg(
+                    "inpaint_canny", "a small red wooden cabin", p + (SdSampler.CONTROLNET to "canny"),
+                    photo, SdSampler.SD15_SWAP_INPAINT.name,
+                )
+                if (cn == null) bad++
+            }
         }
         say("swap: ${legs.size - bad}/${legs.size} legs rendered and differ from base (+ i2i crop, inpaint); pictures in ${out.absolutePath}",
             bad = bad > 0)
