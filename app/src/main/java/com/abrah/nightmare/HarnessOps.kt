@@ -215,6 +215,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "segmenter_install" -> segmenterInstall()
             "pose_install" -> poseInstall()
             "depth_install" -> depthInstall()
+            "depth_probe" -> depthProbe(arg)
             "segment" -> segmentProbe(arg)
             // ⭐⭐ What does a human PARSER cost on this CPU? Measurement only.
             "parse_probe" -> parseProbe(arg)
@@ -2677,6 +2678,30 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // SSLException want opposite fixes.
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
         }
+    }
+
+    /**
+     * ⭐ How long the CPU depth estimator takes on THIS phone: `--es arg <picture>`,
+     * five runs (the first opens the session). Writes the map to files/swap/.
+     */
+    private suspend fun depthProbe(arg: String?) {
+        val d = com.abrah.nightmare.pose.DepthEstimator
+        if (!d.isInstalled(ctx)) return say("depth_probe: install it first (depth_install)", bad = true)
+        val src = arg?.let { AddObjects.load(ctx, it) } ?: return say("depth_probe: --es arg <picture path>", bad = true)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val square = android.graphics.Bitmap.createScaledBitmap(src, 512, 512, true)
+            var map: android.graphics.Bitmap? = null
+            for (i in 1..5) {
+                val t0 = System.nanoTime()
+                map = d.depth(ctx, square)
+                say("  run $i: ${(System.nanoTime() - t0) / 1_000_000} ms")
+            }
+            map?.let {
+                val out = java.io.File(ctx.getExternalFilesDir(null), "swap").apply { mkdirs() }
+                java.io.File(out, "depth_probe.png").writeBytes(ImageStore.encodePng(it))
+            }
+        }
+        drainBackendLog()
     }
 
     private suspend fun depthInstall() {

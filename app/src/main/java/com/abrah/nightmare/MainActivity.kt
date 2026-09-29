@@ -723,8 +723,8 @@ fun HarnessScreen(
                         pose = vm.poseRow,
                         onInstallPose = { askToNotify(); vm.installPose() },
                         onDeletePose = vm::deletePose,
-                        // ⚠ No depth estimator card: depth is off the UI until it runs on
-                        // the NPU (`docs/ROADMAP.md` §2i). The row stays wired for that.
+                        // ⚠ No depth estimator card until the depth ControlNet exists
+                        // (`SwapInputs.TYPES`). The row stays wired for that.
                         video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
                         onInstallVideo = { askToNotify(); vm.installVideoModels() },
                         onDeleteVideo = vm::deleteVideoModels,

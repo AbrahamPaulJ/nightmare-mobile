@@ -35,10 +35,11 @@ object SwapInputs {
     const val DEPTH = "depth"
     const val OPENPOSE = "openpose"
     /**
-     * ⭐ What the ControlNet chooser offers. ⚠⚠ NO DEPTH — taken off the UI by the
-     * user 2026-09-29: the estimator ran on the CPU, and depth waits for an NPU
-     * one (`docs/ROADMAP.md` §2i). [DEPTH] and [com.abrah.nightmare.pose.DepthEstimator]
-     * stay in the code for that; a saved flow naming depth is refused by name.
+     * ⭐ What the ControlNet chooser offers. ⚠⚠ NO DEPTH until the depth
+     * CONTROLNET exists: its estimator is done (CPU, 0.92 s, `docs/ROADMAP.md`
+     * §2i) but the ControlNet conversion was cancelled on 2026-09-29, and an option
+     * that always says "not installed" does not ship. Add [DEPTH] back here (and
+     * the Tools card in `MainActivity`) once `_controlnet/depth.bin` is built.
      */
     val TYPES = listOf(NONE, CANNY, OPENPOSE)
 

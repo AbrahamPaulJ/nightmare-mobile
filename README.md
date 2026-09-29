@@ -151,8 +151,8 @@ npuforge as *SD1.5 Swap* and it becomes a model whose LoRA and ControlNet are in
 than baked-in weights. Pick LoRAs on its node the same way (several are merged into its one
 rank-64 slot on the phone, once, then cached), and give it a ControlNet picture: **canny**
 finds the edges of a photo on the phone, **openpose** finds the pose in a photo (a 19 MB
-detector in Models → Tools, MoveNet) or takes a ready-made skeleton as it is. Depth is coming,
-once its depth estimator runs on the NPU. With a photo wired into the node, that photo is the control picture by default and follows the
+detector in Models → Tools, MoveNet) or takes a ready-made skeleton as it is. Depth is coming.
+With a photo wired into the node, that photo is the control picture by default and follows the
 node's crop window, so the hint lines up with it. **SD 1.5 Swap Inpaint** repaints a masked area
 with the same LoRAs and ControlNet (a blend inpaint: the model does not see the mask, so a big
 fill can leave a soft seam). Nothing is reconverted and the model is not
