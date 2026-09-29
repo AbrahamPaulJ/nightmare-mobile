@@ -34,6 +34,12 @@ object ControlNetCatalog {
     data class Entry(val type: String, val label: String, val v73: Build?, val min: Build?)
 
     val ENTRIES = listOf(
+        // ⭐ Our own build (2026-09-30) — AI Hub's canny is v79-only.
+        Entry(
+            SwapInputs.CANNY, "Canny ControlNet",
+            v73 = Build("canny/controlnet_8gen2.bin", 370_987_120L),
+            min = Build("canny/controlnet_min.bin", 373_538_888L),
+        ),
         Entry(
             SwapInputs.DEPTH, "Depth ControlNet",
             v73 = Build("depth/controlnet_8gen2.bin", 371_146_864L),

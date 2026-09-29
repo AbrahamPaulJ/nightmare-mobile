@@ -155,7 +155,7 @@ detector in Models → Tools, MoveNet) or takes a ready-made skeleton as it is, 
 a depth map from a photo (Depth Anything V2 Small, 99 MB, about 1 s on an 8 Elite) or takes a
 ready-made one. The ControlNets themselves are our own QNN builds, downloaded in the app in the
 tier your chip loads — [`AbrahamPJ/nightmare-sd15-controlnet-qnn`](https://huggingface.co/AbrahamPJ/nightmare-sd15-controlnet-qnn):
-depth for Snapdragon 888 / 8 Gen 1 and newer, openpose for 8 Gen 2 and newer (canny coming).
+canny and depth for Snapdragon 888 / 8 Gen 1 and newer, openpose for 8 Gen 2 and newer.
 With a photo wired into the node, that photo is the control picture by default and follows the
 node's crop window, so the hint lines up with it. **SD 1.5 Swap Inpaint** repaints a masked area
 with the same LoRAs and ControlNet (a blend inpaint: the model does not see the mask, so a big
