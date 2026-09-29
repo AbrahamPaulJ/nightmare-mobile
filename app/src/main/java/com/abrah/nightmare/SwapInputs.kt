@@ -14,7 +14,14 @@ import java.security.MessageDigest
  * mix or hint costs a pack (cached) or a ControlNet pass, never a relaunch.
  * The user's design, 2026-09-29 (`notes/PROGRESS.md`): several LoRAs merged into
  * the template's one rank-64 slot; ControlNet canny / depth / openpose, canny
- * computed here from a photo, depth and openpose taking a ready-made hint.
+ * computed here from a photo, openpose detected from a photo ([PoseDetector])
+ * or taken as-is from a skeleton, depth taking a ready-made depth map.
+ *
+ * ⭐⭐ The control picture follows the node's CROP WINDOW when the node has a
+ * photo wired (the user's call, 2026-09-29): with nothing else chosen the photo
+ * itself is the control picture, cut by the same frame, so the hint lines up
+ * with the img2img base; a separately chosen picture gets the same relative
+ * frame. With no photo there is no crop window, and the picture is FITTED.
  */
 object SwapInputs {
 
@@ -29,8 +36,17 @@ object SwapInputs {
     const val OPENPOSE = "openpose"
     val TYPES = listOf(NONE, CANNY, DEPTH, OPENPOSE)
 
-    /** ⭐ Only canny is computed; the others ARE the hint the user brings. */
-    fun computes(type: String): Boolean = type == CANNY
+    /** ⭐ Canny is always computed; openpose is detected unless the picture is a skeleton. */
+    fun computes(type: String): Boolean = type == CANNY || type == OPENPOSE
+
+    /** The node's crop window — [CropNode.render]'s params, normalised to the source. */
+    data class Frame(val x: Float, val y: Float, val w: Float, val h: Float, val pad: String?)
+
+    /**
+     * What [hint] made. [bitmap] null with [needsPoseDetector] true: a photo for
+     * openpose and the detector is not installed — the caller offers the download.
+     */
+    class Hint(val bitmap: Bitmap?, val needsPoseDetector: Boolean = false)
 
     /** ⚠ How many LoRA packs one model keeps; each is ~100 MB at rank 64. */
     private const val KEEP_PACKS = 4
@@ -48,35 +64,77 @@ object SwapInputs {
         TYPES.filter { it != NONE && controlnetFile(context, it).isFile }
 
     /**
-     * ⭐⭐ The hint the ControlNet sees, from [src]: FITTED into [SIZE]² — the
-     * template's canvas — and padded black, then for canny reduced to white
-     * edges ([Canny], OpenCV's `Canny(img, 100, 200)`, what the AI Hub canny
-     * branch was built against).
+     * ⭐⭐ The hint the ControlNet sees, from [src], at the template's [SIZE]².
      *
-     * ⚠⚠ Fitted, never centre-cropped: a portrait pose skeleton cropped square
-     * lost its head and its feet (2026-09-29, the first openpose hint tried).
-     * Black is "nothing here" in all three kinds — no edge, no limb, far away.
-     * ⚠ Canny runs on the picture BEFORE the padding, or the pad's border
-     * would be found as an edge.
+     * [frame] (the node's crop window) cuts it exactly as the sampler cuts the
+     * base ([CropNode.render]). Without one it is FITTED and padded black —
+     * ⚠⚠ never centre-cropped: a portrait skeleton cropped square lost its head
+     * and feet (2026-09-29). Black is "nothing here" in all three kinds.
+     *
+     * - canny: white edges ([Canny], OpenCV's 100/200 — what the AI Hub branch
+     *   was built against). ⚠ Found BEFORE the fit's padding, or the pad's
+     *   border would be an edge.
+     * - openpose: a skeleton picture as it is ([PoseDetector.looksLikeSkeleton],
+     *   judged on the WHOLE source); a photo through [PoseDetector.skeleton].
+     * - depth: the picture as it is.
+     *
+     * ⚠ Blocking (the detector); off the main thread. [context] null = no detector.
      */
-    fun hint(src: Bitmap, type: String): Bitmap {
-        val scale = SIZE.toFloat() / maxOf(src.width, src.height)
-        val w = (src.width * scale).toInt().coerceIn(1, SIZE)
-        val h = (src.height * scale).toInt().coerceIn(1, SIZE)
-        var fitted = Bitmap.createScaledBitmap(src, w, h, true)
-        if (computes(type)) {
-            val px = IntArray(w * h)
-            fitted.getPixels(px, 0, w, 0, 0, w, h)
-            val edges = Canny.edges(Canny.gray(px), w, h)
-            for (i in px.indices) px[i] = if (edges[i].toInt() != 0) -0x1 else -0x1000000
-            fitted = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+    fun hint(context: Context?, src: Bitmap, type: String, frame: Frame?): Hint {
+        val skeleton = type == OPENPOSE && com.abrah.nightmare.pose.PoseDetector.looksLikeSkeleton(src)
+        val edges = type == CANNY
+        val placed = if (frame != null) {
+            // ⚠ The frame is SQUARE in the node's photo's pixels; a control picture
+            // of another shape would stretch under the same numbers (a squashed
+            // skeleton). Same centre and width, height made square in THIS
+            // picture's pixels — for the photo itself that changes nothing.
+            val hSquare = frame.w * src.width / src.height
+            val y = frame.y + (frame.h - hSquare) / 2f
+            val native = (frame.w * src.width).toInt().coerceAtLeast(1)
+            if (edges && native < SIZE) {
+                upscaleEdges(cannyOf(CropNode.render(src, frame.x, y, frame.w, hSquare, native, native, frame.pad).first))
+            } else {
+                val cut = CropNode.render(src, frame.x, y, frame.w, hSquare, SIZE, SIZE, frame.pad).first
+                if (edges) cannyOf(cut) else cut
+            }
+        } else {
+            val scale = SIZE.toFloat() / maxOf(src.width, src.height)
+            val w = (src.width * scale).toInt().coerceIn(1, SIZE)
+            val h = (src.height * scale).toInt().coerceIn(1, SIZE)
+            val fitted = when {
+                !edges -> Bitmap.createScaledBitmap(src, w, h, true)
+                scale > 1f -> Bitmap.createScaledBitmap(cannyOf(src), w, h, false)
+                else -> cannyOf(Bitmap.createScaledBitmap(src, w, h, true))
+            }
+            if (w == SIZE && h == SIZE) fitted else {
+                val out = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(out)
+                canvas.drawColor(android.graphics.Color.BLACK)
+                canvas.drawBitmap(fitted, ((SIZE - w) / 2).toFloat(), ((SIZE - h) / 2).toFloat(), null)
+                out
+            }
         }
-        if (w == SIZE && h == SIZE) return fitted
-        val out = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(out)
-        canvas.drawColor(android.graphics.Color.BLACK)
-        canvas.drawBitmap(fitted, ((SIZE - w) / 2).toFloat(), ((SIZE - h) / 2).toFloat(), null)
-        return out
+        if (type != OPENPOSE || skeleton) return Hint(placed)
+        val pose = context?.let { com.abrah.nightmare.pose.PoseDetector.skeleton(it, placed) }
+            ?: return Hint(null, needsPoseDetector = true)
+        return Hint(pose)
+    }
+
+    /**
+     * ⚠ Edges of a picture SMALLER than the hint are found at its own size and
+     * then scaled up WITHOUT filtering: upscaling first blurs every step below
+     * canny's threshold (a 160 px region at ×3.2 came back black, the golden).
+     */
+    private fun upscaleEdges(e: Bitmap): Bitmap = Bitmap.createScaledBitmap(e, SIZE, SIZE, false)
+
+    private fun cannyOf(b: Bitmap): Bitmap {
+        val w = b.width
+        val h = b.height
+        val px = IntArray(w * h)
+        b.getPixels(px, 0, w, 0, 0, w, h)
+        val e = Canny.edges(Canny.gray(px), w, h)
+        for (i in px.indices) px[i] = if (e[i].toInt() != 0) -0x1 else -0x1000000
+        return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
     }
 
     /**
@@ -149,6 +207,7 @@ object SwapInputs {
         type: String,
         strength: Double,
         control: Bitmap?,
+        frame: Frame?,
         say: (String) -> Unit = {},
     ): Ops.TemplateInputs {
         val modelDir = spec.dir(context)
@@ -168,8 +227,19 @@ object SwapInputs {
             "ControlNet $type needs a picture — pick one on the node or wire one into control, " +
                 "or set ControlNet to none",
         )
-        say(if (computes(type)) "finding the edges" else "reading the $type hint")
-        val png = ImageStore.encodePng(hint(control, type))
+        say(
+            when (type) {
+                CANNY -> "finding the edges"
+                OPENPOSE -> "finding the pose"
+                else -> "reading the $type hint"
+            },
+        )
+        val made = hint(context, control, type, frame)
+        val bitmap = made.bitmap ?: throw NeedsInput(
+            "openpose needs the ${com.abrah.nightmare.pose.PoseDetector.LABEL} to read a photo — " +
+                "download it on the ControlNet tab or in Models, Tools (a ready-made skeleton needs nothing)",
+        )
+        val png = ImageStore.encodePng(bitmap)
         return Ops.TemplateInputs(
             loraDir = loraDir, loraStrength = loraStrength,
             controlnet = cn.absolutePath, controlImage = png, controlStrength = strength,

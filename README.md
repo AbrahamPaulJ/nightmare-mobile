@@ -150,8 +150,10 @@ as you like.
 npuforge as *SD1.5 Swap* and it becomes a model whose LoRA and ControlNet are inputs rather
 than baked-in weights. Pick LoRAs on its node the same way (several are merged into its one
 rank-64 slot on the phone, once, then cached), and give it a ControlNet picture: **canny**
-finds the edges of a photo on the phone, **openpose** takes a pose skeleton, and **depth** will
-take a depth map once its ControlNet is built. Nothing is reconverted and the model is not
+finds the edges of a photo on the phone, **openpose** finds the pose in a photo (a 19 MB
+detector in Models → Tools, MoveNet) or takes a ready-made skeleton as it is, and **depth** will
+take a depth map once its ControlNet is built. With a photo wired into the node, that photo is
+the control picture by default and follows the node's crop window, so the hint lines up with it. Nothing is reconverted and the model is not
 reloaded. 512×512 only; about 15% slower than the same checkpoint converted plainly, and a
 ControlNet adds about 3 s a picture. The ControlNet models are not in the catalogue yet. Only the
 UNet half of a LoRA applies, as with every NPU conversion.

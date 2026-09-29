@@ -30,23 +30,38 @@ import com.abrah.nightmare.SwapInputs
 import com.abrah.nightmare.ui.ErrorNotice
 import com.abrah.nightmare.ui.LogTextStyle
 
+/** What the ControlNet tile shows: the hint, or why there is none. */
+internal class ControlHint(val bitmap: ImageBitmap?, val needsPoseDetector: Boolean)
+
 /**
- * ⭐⭐ The hint an SD 1.5 Swap node's ControlNet will see — the picture wired into
- * `control`, else the one picked on the node — made by the SAME
- * [SwapInputs.hint] the sampler sends, off the main thread. Null with ControlNet
- * at `none`, with no picture, or while it is drawn.
+ * ⭐⭐ The hint an SD 1.5 Swap node's ControlNet will see, made by the SAME
+ * [SwapInputs.hint] the sampler sends, off the main thread: the `control` wire's
+ * picture, else the one picked on the node, else the node's own [photo] — cut by
+ * the node's crop window whenever a photo is wired ([SdSampler.swapFrame]).
+ * ⚠ Keyed on the frame, so moving the crop redraws it. Null with ControlNet at
+ * `none` or no picture.
  */
 @Composable
-internal fun rememberControlHint(node: Node, wired: ImageBitmap?): ImageBitmap? {
+internal fun rememberControlHint(
+    node: Node,
+    type: NodeType?,
+    wired: ImageBitmap?,
+    photo: ImageBitmap?,
+    poseInstalled: Boolean,
+): ControlHint? {
     val ctx = LocalContext.current
-    val type = node.params[SdSampler.CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
-    val uri = node.params[SdSampler.CONTROL_IMAGE].orEmpty()
-    return rememberOffMain(node.id, "control hint", type, uri, wired) {
-        if (type == SwapInputs.NONE) return@rememberOffMain null
+    val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
+    val cn = live[SdSampler.CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
+    val uri = live[SdSampler.CONTROL_IMAGE].orEmpty()
+    val frame = if (photo != null) SdSampler.swapFrame(live) else null
+    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, poseInstalled) {
+        if (cn == SwapInputs.NONE) return@rememberOffMain null
         val src = wired?.asAndroidBitmap()
             ?: uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) }
+            ?: photo?.asAndroidBitmap()
             ?: return@rememberOffMain null
-        SwapInputs.hint(src, type).asImageBitmap()
+        val made = SwapInputs.hint(ctx, src, cn, frame)
+        ControlHint(made.bitmap?.asImageBitmap(), made.needsPoseDetector)
     }
 }
 
@@ -54,10 +69,12 @@ internal fun rememberControlHint(node: Node, wired: ImageBitmap?): ImageBitmap? 
  * ⭐⭐ SD 1.5 Swap's **ControlNet** tab — one of the node's picture tiles
  * (`docs/UI.md` §8.12), because the control picture is a picture on the node.
  *
- * Type ([Chooser]), strength ([SliderRow]), the picture (the system picker, or
- * the `control` wire, which wins), and the hint itself so a person sees what
- * the ControlNet will read: canny's edges, or the depth map / skeleton as sent.
- * The user's design, 2026-09-29.
+ * Type ([Chooser]), strength ([SliderRow]), where the picture comes from (the
+ * `control` wire, a picked picture, or the node's own photo), and the hint
+ * itself — canny's edges, the detected skeleton, or the depth map as sent —
+ * so a person sees what the ControlNet will read. The pose detector's download
+ * is offered HERE when a photo needs it ([com.abrah.nightmare.ui.ToolCard],
+ * `docs/UI.md` §8.1). The user's design, 2026-09-29.
  */
 @Composable
 internal fun ControlNetPanel(
@@ -65,7 +82,14 @@ internal fun ControlNetPanel(
     type: NodeType?,
     /** The picture wired into `control`, if any. */
     wired: ImageBitmap?,
-    hint: ImageBitmap?,
+    /** The node's own photo (the `image` wire), if any — the default control picture. */
+    photo: ImageBitmap?,
+    hint: ControlHint?,
+    poseRow: com.abrah.nightmare.ui.ToolRow? = null,
+    busy: Boolean = false,
+    onInstallPose: (() -> Unit)? = null,
+    onCancelPose: (() -> Unit)? = null,
+    onDeletePose: (() -> Unit)? = null,
     onSetParam: (String, String) -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -97,13 +121,19 @@ internal fun ControlNetPanel(
                 onSet = { onSetParam(w.name, it) },
             )
         }
-        if (wired != null) {
-            Text(
+        when {
+            wired != null -> Text(
                 stringResource(R.string.cn_from_wire),
                 style = LogTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        } else {
+            uri.isBlank() && photo != null -> Text(
+                stringResource(R.string.cn_from_photo),
+                style = LogTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (wired == null) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // ⚠ Destructive first, primary last (`docs/UI.md` §8.1).
                 if (uri.isNotBlank()) {
@@ -116,10 +146,24 @@ internal fun ControlNetPanel(
                 }
             }
         }
-        if (hint != null) {
+        if (hint?.needsPoseDetector == true || (cn == SwapInputs.OPENPOSE && poseRow?.progress != null)) {
+            ErrorNotice(stringResource(R.string.cn_pose_missing))
+            poseRow?.let { row ->
+                com.abrah.nightmare.ui.ToolCard(
+                    row = row,
+                    busy = busy,
+                    onInstall = { onInstallPose?.invoke() },
+                    onCancel = { onCancelPose?.invoke() },
+                    detail = stringResource(R.string.pose_about),
+                    onDelete = { onDeletePose?.invoke() },
+                )
+            }
+        }
+        val shown = hint?.bitmap
+        if (shown != null) {
             Text(stringResource(R.string.cn_sees), style = MaterialTheme.typography.titleSmall)
             Image(
-                bitmap = hint,
+                bitmap = shown,
                 contentDescription = stringResource(R.string.cn_sees),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -127,10 +171,14 @@ internal fun ControlNetPanel(
                     .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             )
-        } else if (wired == null && uri.isBlank()) {
+        } else if (wired == null && uri.isBlank() && photo == null) {
             Text(
                 stringResource(
-                    if (SwapInputs.computes(cn)) R.string.cn_no_picture_photo else R.string.cn_no_picture_hint,
+                    when (cn) {
+                        SwapInputs.CANNY -> R.string.cn_no_picture_photo
+                        SwapInputs.OPENPOSE -> R.string.cn_no_picture_pose
+                        else -> R.string.cn_no_picture_hint
+                    },
                 ),
                 style = LogTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

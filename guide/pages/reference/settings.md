@@ -77,7 +77,7 @@ same in either place.
 
 Where model files are fetched from: **Hugging Face** (default), **hf-mirror.com**, or a
 **Custom** base address. Change it if Hugging Face is slow or blocked where you are — it applies
-to every model, upscaler, segmenter, translation model and the video models.
+to every model, upscaler, segmenter, pose detector, translation model and the video models.
 
 ### Clean temp files
 

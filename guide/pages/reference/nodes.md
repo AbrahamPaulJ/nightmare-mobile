@@ -68,7 +68,7 @@ The palette card is **Image** with a chip per family — **SD 1.5**, **SD 1.5 Sw
 | **Shape** | SDXL, Anima | Crops the fixed 1024 square to an aspect. No reload |
 | **Width**, **Height** | FLUX.2, Z-Image, Qwen | 512–2048 in 64-pixel steps. No reload |
 | **LoRAs** | FLUX.2, Z-Image, SD 1.5 Swap | Adapters on top of the model, each with a strength. [LoRAs](../models/loras.md) |
-| **ControlNet** tile | SD 1.5 Swap | Type (**canny**, **depth**, **openpose** or none), strength, and the picture — chosen on the tile, or wired into **control**, which wins. Canny finds the edges of a photo; depth and openpose take a ready-made depth map or skeleton. The tile shows what the ControlNet sees. The picture is fitted into 512×512, never cropped |
+| **ControlNet** tile | SD 1.5 Swap | Type (**canny**, **depth**, **openpose** or none), strength, and the picture — wired into **control**, else chosen on the tile, else the node's own photo. With a photo wired, the picture follows the node's **crop window**; with none it is fitted into 512×512, never cropped. Canny finds the edges; openpose finds the pose in a photo (the **Pose Detector**, a 19 MB download offered on the tile and in Models → Tools) or uses a skeleton as it is; depth takes a ready-made depth map. The tile shows what the ControlNet sees |
 | **Crop** frame | with an image | Which part of the photo is used. Tap the picture on the node to frame it |
 | **Pad** | with an image | What fills the frame where it runs off a small photo: **Black**, **Blur**; edit models also **Green** |
 | **Allow padding** | FLUX.2, Qwen (edit) | Lets the frame zoom out past the photo; the padding is generated |

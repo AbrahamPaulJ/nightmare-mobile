@@ -238,6 +238,10 @@ fun ModelsScreen(
     parser: ToolRow? = null,
     onInstallParser: () -> Unit = {},
     onDeleteParser: () -> Unit = {},
+    /** ⭐ The third Tools row — SD 1.5 Swap's openpose detector. */
+    pose: ToolRow? = null,
+    onInstallPose: () -> Unit = {},
+    onDeletePose: () -> Unit = {},
 ) {
     // ⭐ Tap → first drawn frame, for the lag report of 2026-09-27 (`NmPerf`).
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -341,6 +345,7 @@ fun ModelsScreen(
     var deletingVideo by remember { mutableStateOf(false) }
     var deletingSegmenter by remember { mutableStateOf(false) }
     var deletingParser by remember { mutableStateOf(false) }
+    var deletingPose by remember { mutableStateOf(false) }
 
     // ⚠ No header and no `statusBarsPadding` any more: [LibraryScreen] owns
     // both, because this screen is now a TAB rather than a whole screen. A
@@ -430,6 +435,14 @@ fun ModelsScreen(
                     }
                     if (parser != null) {
                         item { ToolCard(parser, busy, onInstallParser, onCancel) { deletingParser = true } }
+                    }
+                    if (pose != null) {
+                        item {
+                            ToolCard(
+                                pose, busy, onInstallPose, onCancel,
+                                detail = stringResource(R.string.pose_about),
+                            ) { deletingPose = true }
+                        }
                     }
                     // ⭐⭐ **No LoRAs or embeddings here** — the user's call,
                     // 2026-09-26: Settings already imports, lists and deletes
@@ -611,6 +624,17 @@ fun ModelsScreen(
                 "by name will refuse to run until you install it again.",
             onConfirm = onDeleteParser,
             onDismiss = { deletingParser = false },
+        )
+    }
+
+    if (deletingPose && pose != null) {
+        ConfirmDelete(
+            title = "Delete ${pose.label}?",
+            body = "Frees ${mb(pose.onDisk)} MB. Getting it back is a " +
+                "${mb(pose.bytes)} MB download. An openpose ControlNet given a photo " +
+                "will refuse to run until you install it again.",
+            onConfirm = onDeletePose,
+            onDismiss = { deletingPose = false },
         )
     }
 

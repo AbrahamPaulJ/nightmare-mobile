@@ -324,6 +324,9 @@ fun NodeInspector(
     onInstallParser: (() -> Unit)? = null,
     onDeleteParser: (() -> Unit)? = null,
     onCancelParser: (() -> Unit)? = null,
+    poseRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onInstallPose: (() -> Unit)? = null,
+    onDeletePose: (() -> Unit)? = null,
     busy: Boolean = false,
     /** ⭐⭐ Run from the sheet — null in a preview, which draws no bar. */
     onRun: (() -> Unit)? = null,
@@ -640,6 +643,9 @@ fun NodeInspector(
             onInstallParser = onInstallParser,
             onDeleteParser = onDeleteParser,
             onCancelParser = onCancelParser,
+            poseRow = poseRow,
+            onInstallPose = onInstallPose,
+            onDeletePose = onDeletePose,
             busy = busy,
             onReset = onReset,
             // ⚠⚠ **Not offered when the node ALREADY auto-upscales** — the
@@ -1038,6 +1044,9 @@ internal fun NodeInspectorBody(
     onInstallParser: (() -> Unit)? = null,
     onDeleteParser: (() -> Unit)? = null,
     onCancelParser: (() -> Unit)? = null,
+    poseRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onInstallPose: (() -> Unit)? = null,
+    onDeletePose: (() -> Unit)? = null,
     busy: Boolean = false,
     /** ⭐⭐ What made this picture — the rows for [com.abrah.nightmare.ui.ResultInfoDialog]. */
     onInfo: (() -> List<Pair<String, String>>)? = null,
@@ -1662,11 +1671,17 @@ internal fun NodeInspectorBody(
         // ⭐⭐ SD 1.5 Swap: the ControlNet picture is a tile of its own, present
         // whether or not anything is picked yet — it is where one gets picked.
         val swap = node.type == com.abrah.nightmare.SdSampler.SD15_SWAP.name
-        val controlHint = if (swap) rememberControlHint(node, controlSource) else null
+        val controlHint = if (swap) {
+            rememberControlHint(node, type, controlSource, cropSource, poseRow?.installed == true)
+        } else null
         val controlTile = if (!swap) null else EditorTile(
-            androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.cn_label), controlHint,
+            androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.cn_label), controlHint?.bitmap,
         ) {
-            ControlNetPanel(node, type, controlSource, controlHint) { k, v -> onSetParam(nodeId, k, v) }
+            ControlNetPanel(
+                node, type, controlSource, cropSource, controlHint,
+                poseRow = poseRow, busy = busy,
+                onInstallPose = onInstallPose, onCancelPose = onCancelParser, onDeletePose = onDeletePose,
+            ) { k, v -> onSetParam(nodeId, k, v) }
         }
         if (popup && (cropSource != null || refSource != null || controlTile != null)) {
             InpaintEditors(

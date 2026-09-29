@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
         ) {
             com.abrah.nightmare.segment.Segmenter.trim()
             com.abrah.nightmare.segment.Parser.trim()
+            com.abrah.nightmare.pose.PoseDetector.trim()
         }
     }
 
@@ -159,6 +160,7 @@ class MainActivity : ComponentActivity() {
         // it `Parser.installed` stayed false on every phone, so the mask window
         // never resolved a pick in the background and nothing auto-picked.
         com.abrah.nightmare.segment.Parser.refresh(this)
+        com.abrah.nightmare.pose.PoseDetector.refresh(this)
         MaskDefaults.load(this)
         // ⭐ The DiT engine is a download too, since 1.5.502 — and an app
         // update wipes the older, APK-shipped copy out of the native dir.
@@ -409,6 +411,9 @@ fun HarnessScreen(
             onDeleteParser = vm::deleteParser,
             onCancelParser = vm::cancelModelInstall,
             parserRow = vm.parserRow,
+            poseRow = vm.poseRow,
+            onInstallPose = vm::installPose,
+            onDeletePose = vm::deletePose,
             parserInstalled = vm.parserRow?.installed == true,
             // ⭐ Video hidden from Add node where the chip refused it (VideoGate).
             paletteTypes = if (com.abrah.nightmare.npu.VideoGate.hidden) {
@@ -710,6 +715,9 @@ fun HarnessScreen(
                         parser = vm.parserRow,
                         onInstallParser = { askToNotify(); vm.installParser() },
                         onDeleteParser = vm::deleteParser,
+                        pose = vm.poseRow,
+                        onInstallPose = { askToNotify(); vm.installPose() },
+                        onDeletePose = vm::deletePose,
                         video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
                         onInstallVideo = { askToNotify(); vm.installVideoModels() },
                         onDeleteVideo = vm::deleteVideoModels,

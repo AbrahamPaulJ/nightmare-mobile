@@ -213,6 +213,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ Tap to select, headless (docs/SEGMENTER.md §5).
             // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
             "segmenter_install" -> segmenterInstall()
+            "pose_install" -> poseInstall()
             "segment" -> segmentProbe(arg)
             // ⭐⭐ What does a human PARSER cost on this CPU? Measurement only.
             "parse_probe" -> parseProbe(arg)
@@ -701,7 +702,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height)
         val out = java.io.File(ctx.getExternalFilesDir(null), "swap").apply { mkdirs() }
 
-        suspend fun leg(label: String, prompt: String, params: Map<String, String>): ByteArray? {
+        suspend fun leg(label: String, prompt: String, params: Map<String, String>, photo: String? = null): ByteArray? {
             if (!ensureBackend(key)) {
                 say("  $label: no backend", bad = true); return null
             }
@@ -711,12 +712,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     "model" to spec.id, "width" to res.width.toString(), "height" to res.height.toString(),
                     "steps" to "20", "cfg" to "7.5", "seed" to "42",
                 ) + params,
-                inputs = mapOf("prompt" to com.abrah.nightmare.Source("prompt", "prompt")),
+                inputs = mapOf("prompt" to com.abrah.nightmare.Source("prompt", "prompt")) +
+                    (if (photo != null) mapOf("image" to com.abrah.nightmare.Source("photo", "image")) else emptyMap()),
             )
             val wf = com.abrah.nightmare.canvas.Workflow(
                 Graph(
-                    listOf(
+                    listOfNotNull(
                         Node("prompt", "core.prompt", params = mapOf("prompt" to prompt, "negative" to "blurry, lowres")),
+                        photo?.let { Node("photo", "core.image", params = mapOf("uri" to it)) },
                         sampler,
                         Node("output", "core.output", inputs = mapOf("media" to com.abrah.nightmare.Source("generate", "image"))),
                     )
@@ -759,6 +762,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             kv["pose"]?.let {
                 add(Triple("pose", knight, mapOf(SdSampler.CONTROLNET to "openpose", SdSampler.CONTROL_IMAGE to it)))
             }
+            // ⭐ A PHOTO for openpose: the detector's path, not the skeleton's.
+            kv["posephoto"]?.let {
+                add(Triple("pose_photo", knight, mapOf(SdSampler.CONTROLNET to "openpose", SdSampler.CONTROL_IMAGE to it)))
+            }
         }
         var bad = 0
         for ((label, prompt, params) in legs) {
@@ -766,7 +773,19 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             if (png == null) { bad++; continue }
             if (png.contentEquals(base)) { bad++; say("  $label: IDENTICAL to base", bad = true) }
         }
-        say("swap: ${legs.size - bad}/${legs.size} legs rendered and differ from base; pictures in ${out.absolutePath}",
+        // ⭐⭐ The crop window governs the control picture: the node's OWN photo
+        // (nothing picked) as canny, full frame vs the middle quarter zoomed in.
+        // The two must differ, and the zoomed one must follow the zoom.
+        kv["i2i"]?.let { photo ->
+            val full = mapOf(SdSampler.CONTROLNET to "canny", "denoise" to "1.0",
+                "x" to "0.0", "y" to "0.0", "w" to "1.0", "h" to "1.0")
+            val zoom = full + mapOf("x" to "0.25", "y" to "0.25", "w" to "0.5", "h" to "0.5")
+            val a = leg("i2i_full", house, full, photo)
+            val b = leg("i2i_zoom", house, zoom, photo)
+            if (a == null || b == null) bad++
+            else if (a.contentEquals(b)) { bad++; say("  i2i: the crop did NOT reach the control", bad = true) }
+        }
+        say("swap: ${legs.size - bad}/${legs.size} legs rendered and differ from base (+ i2i crop); pictures in ${out.absolutePath}",
             bad = bad > 0)
         drainBackendLog()
     }
@@ -2635,6 +2654,19 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⚠⚠ The CLASS as well as the message. The first failure of this
             // downloader left a 0-byte file and no clue; an IOException and an
             // SSLException want opposite fixes.
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    private suspend fun poseInstall() {
+        val pose = com.abrah.nightmare.pose.PoseDetector
+        say("pose_install: ${pose.LABEL}, ${pose.BYTES} B")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                pose.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+            }
+            say("  ok   ${pose.bytesOnDisk(ctx)} B at ${pose.dir(ctx).absolutePath}")
+        } catch (e: Throwable) {
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
         }
     }

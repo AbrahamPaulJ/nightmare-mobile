@@ -291,6 +291,10 @@ fun CanvasScreen(
     onInstallParser: (() -> Unit)? = null,
     onDeleteParser: (() -> Unit)? = null,
     onCancelParser: (() -> Unit)? = null,
+    /** ⭐ SD 1.5 Swap's openpose detector — the ControlNet tab offers it. */
+    poseRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onInstallPose: (() -> Unit)? = null,
+    onDeletePose: (() -> Unit)? = null,
     /** ⭐⭐ Import a `.safetensors` adapter from inside a node's LoRA picker. */
     onImportLora: (() -> Unit)? = null,
     /** ⚠⚠ `HarnessViewModel.loraEpoch` — what re-reads `_loras` after an Add. */
@@ -597,6 +601,9 @@ fun CanvasScreen(
         onInstallParser = onInstallParser,
         onDeleteParser = onDeleteParser,
         onCancelParser = onCancelParser,
+        poseRow = poseRow,
+        onInstallPose = onInstallPose,
+        onDeletePose = onDeletePose,
         busy = busy,
         onRun = onRun,
         onCancelRun = onCancelRun,

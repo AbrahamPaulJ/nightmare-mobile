@@ -1017,6 +1017,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             id == VIDEO_INSTALL_ID -> videoRow = videoRow?.copy(progress = p)
             id == SEGMENTER_INSTALL_ID -> segmenterRow = segmenterRow?.copy(progress = p)
             id == PARSER_INSTALL_ID -> parserRow = parserRow?.copy(progress = p)
+            id == POSE_INSTALL_ID -> poseRow = poseRow?.copy(progress = p)
             translateRows.keys.any { it.installId == id } ->
                 translateRows = translateRows.mapValues { (src, row) -> if (src.installId == id) row.copy(progress = p) else row }
             modelRows.any { it.spec.id == id } ->
@@ -1166,6 +1167,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         lap("segmenter")
         refreshParser()
         lap("parser")
+        refreshPose()
+        lap("pose")
         refreshTranslation()
         lap("translation")
         refreshEmbeddings()
@@ -2230,6 +2233,76 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         com.abrah.nightmare.segment.Parser.delete(getApplication())
         say("deleted ${com.abrah.nightmare.segment.Parser.LABEL}")
         refreshParser()
+    }
+
+    // ---- the pose detector (SD 1.5 Swap's openpose) -------------------------
+
+    /**
+     * ⭐ The THIRD Tools row — [com.abrah.nightmare.pose.PoseDetector], a photo into an openpose
+     * skeleton. The parser's shape exactly: same [ToolRow], same one-download latch.
+     */
+    var poseRow by mutableStateOf<com.abrah.nightmare.ui.ToolRow?>(null)
+        private set
+
+    private val POSE_INSTALL_ID = "pose-tool"
+
+    fun refreshPose() {
+        val ctx = getApplication<Application>()
+        val pose = com.abrah.nightmare.pose.PoseDetector
+        pose.refresh(ctx)
+        poseRow = com.abrah.nightmare.ui.ToolRow(
+            label = pose.LABEL,
+            bytes = pose.BYTES,
+            installed = pose.installed,
+            onDisk = if (pose.installed) pose.bytesOnDisk(ctx) else 0L,
+            progress = if (installing == POSE_INSTALL_ID) installProgress else null,
+        )
+    }
+
+    fun installPose() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        installing = POSE_INSTALL_ID
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, com.abrah.nightmare.pose.PoseDetector.BYTES)
+        refreshPose()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                com.abrah.nightmare.pose.PoseDetector.install(
+                    ctx,
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch {
+                    say("installed ${com.abrah.nightmare.pose.PoseDetector.LABEL}")
+                    downloadSucceeded(com.abrah.nightmare.pose.PoseDetector.LABEL)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(com.abrah.nightmare.pose.PoseDetector.LABEL, modelError!!)
+                    say("install failed — $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshPose()
+                }
+            }
+        }
+    }
+
+    fun deletePose() {
+        com.abrah.nightmare.pose.PoseDetector.delete(getApplication())
+        say("deleted ${com.abrah.nightmare.pose.PoseDetector.LABEL}")
+        refreshPose()
     }
 
     // ---- prompt translation (docs/TRANSLATE.md) ----------------------------

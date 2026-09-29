@@ -1283,8 +1283,13 @@ open class ReferenceInspectorScreenshotTest {
 open class SwapInspectorScreenshotTest {
     @Test fun controlNetIsATile() = shoot("inspector-swap-controlnet", null)
     @Test fun popupControlNetTab() = shoot("swap-popup-controlnet", 1)
+    /**
+     * ⭐ openpose on the node's own PHOTO with no pose detector installed: the
+     * tab says why there is no hint and offers the download ([ToolCard]).
+     */
+    @Test fun popupOpenposeNeedsTheDetector() = shoot("swap-popup-openpose-download", 1, pose = true)
 
-    private fun shoot(name: String, tab: Int?) =
+    private fun shoot(name: String, tab: Int?, pose: Boolean = false) =
         captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
@@ -1296,10 +1301,11 @@ open class SwapInspectorScreenshotTest {
                                 "steps" to "20", "cfg" to "7.5", "seed" to "0",
                                 "model" to "yukimix_swap", "width" to "512", "height" to "512",
                                 "x" to "0.1", "y" to "0.1", "w" to "0.8", "h" to "0.8",
-                                SdSampler.CONTROLNET to "canny",
+                                SdSampler.CONTROLNET to if (pose) "openpose" else "canny",
                                 SdSampler.CONTROL_STRENGTH to "0.8",
                             ),
-                            inputs = sources(
+                            inputs = if (pose) sources("image" to "photo", "prompt" to "prompt")
+                            else sources(
                                 "image" to "photo", SdSampler.CONTROL to "pose", "prompt" to "prompt",
                             ),
                         ),
@@ -1308,7 +1314,12 @@ open class SwapInspectorScreenshotTest {
                         onDelete = {},
                         onReset = {},
                         cropSource = stripeSource(300, 220),
-                        controlSource = stripeSource(200, 320),
+                        controlSource = if (pose) null else stripeSource(200, 320),
+                        poseRow = if (pose) com.abrah.nightmare.ui.ToolRow(
+                            label = com.abrah.nightmare.pose.PoseDetector.LABEL,
+                            bytes = com.abrah.nightmare.pose.PoseDetector.BYTES,
+                            installed = false,
+                        ) else null,
                         inlinePopupTab = tab,
                     )
                 }

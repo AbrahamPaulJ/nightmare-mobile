@@ -285,6 +285,13 @@ class SdSampler(
         const val CONTROL_STRENGTH = "control_strength"
         const val CONTROL_IMAGE = "control_image"
 
+        /** ⭐ The node's crop window as [SwapInputs] takes it — the ONE reading, for the run and the tile. */
+        fun swapFrame(p: Map<String, String>) = SwapInputs.Frame(
+            p["x"]?.toFloatOrNull() ?: 0f, p["y"]?.toFloatOrNull() ?: 0f,
+            p["w"]?.toFloatOrNull() ?: 1f, p["h"]?.toFloatOrNull() ?: 1f,
+            p[CropNode.PAD],
+        )
+
         /**
          * ⭐⭐ Tap to select, on an inpaint node — what `mask.segment_model`
          * used to be a whole node for.
@@ -1429,8 +1436,10 @@ class SdSampler(
 
     /**
      * ⭐⭐ SD 1.5 Swap's per-request inputs ([SwapInputs.resolve]). The control
-     * picture is the wired [CONTROL] port's, else the one picked on the node;
-     * with ControlNet at `none` neither is read.
+     * picture: the wired [CONTROL] port's, else the one picked on the node, else
+     * the node's own photo. With a photo wired the node's crop window frames it
+     * ([SwapInputs.Frame]) so the hint lines up with the base — the user's call,
+     * 2026-09-29. With ControlNet at `none` none of this is read.
      */
     private suspend fun swapInputs(
         ctx: NodeCtx,
@@ -1447,16 +1456,20 @@ class SdSampler(
             ?: throw IllegalStateException("node \"${node.id}\": model \"${p["model"]}\" is not installed")
         val loras = lorasFor(ctx, p[LORAS])
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val photo = (inputs["image"] as? Value.Image)?.let { ctx.images.get(it.id) }
             val control = if (type == SwapInputs.NONE) null else {
                 (inputs[CONTROL] as? Value.Image)?.let { ctx.images.get(it.id) }
                     ?: p[CONTROL_IMAGE]?.takeIf { it.isNotBlank() }?.let {
                         AddObjects.load(android, it)
                             ?: throw NeedsInput("the ControlNet picture can no longer be read — pick it again")
                     }
+                    ?: photo
             }
             SwapInputs.resolve(
                 android, spec, loras, type,
-                p[CONTROL_STRENGTH]?.toDoubleOrNull() ?: 1.0, control, ctx.say,
+                p[CONTROL_STRENGTH]?.toDoubleOrNull() ?: 1.0, control,
+                frame = photo?.let { swapFrame(p) },
+                say = ctx.say,
             )
         }
     }
