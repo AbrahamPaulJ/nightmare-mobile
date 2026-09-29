@@ -1,0 +1,387 @@
+--- a/src/QnnModel.hpp
++++ b/src/QnnModel.hpp
+@@ -12,6 +12,8 @@
+ #include <cstring>
+ #include <fstream>
+ #include <iostream>
++#include <map>
++#include <set>
+ #include <vector>
+ 
+ #include "DataUtil.hpp"
+@@ -243,13 +245,17 @@
+     }
+     auto graphInfo = (*m_graphsInfo)[graphIdx];
+ 
+-    // Still exactly three tensors for an inpainting graph (sample, timestamp,
+-    // text_embedding) -- only `sample` is wider, so this check is unchanged.
+-    if (graphInfo.numInputTensors != 3) {
+-      QNN_ERROR("Expecting 3 input tensors, got %d", graphInfo.numInputTensors);
++    // Three tensors for a plain or inpainting graph (sample, timestamp,
++    // text_embedding -- inpainting only widens `sample`); a template UNet adds
++    // named LoRA / ControlNet inputs after them (writeExtraInputs).
++    if (graphInfo.numInputTensors < 3) {
++      QNN_ERROR("Expecting at least 3 input tensors, got %d",
++                graphInfo.numInputTensors);
+       returnStatus = StatusCode::FAILURE;
+       return returnStatus;
+     }
++    if (graphInfo.numInputTensors > 3 && !writeExtraInputs(graphInfo))
++      return StatusCode::FAILURE;
+ 
+     // latents
+     {
+@@ -749,6 +755,82 @@
+     return nullptr;
+   }
+ 
++  // ---- Extra UNet inputs: the swappable LoRA + ControlNet template ----------
++  // A template UNet may declare inputs past the standard three: la_i [din,R] /
++  // lb_i [R,dout] / lora_S [T] (rank-R LoRA factors, strength folded into S) and
++  // res_0..12 (ControlNet residuals, NHWC). Each is bound BY NAME and zero-filled
++  // unless set: zero S and zero residuals are the identity, so the graph renders
++  // exactly as its base checkpoint until something is set. Each input is
++  // written into its client buffer only when IT changed -- graphExecute never
++  // writes an input -- so a LoRA costs one quantization per change, and a
++  // ControlNet step rewrites its 13 residuals and nothing else.
++  // Values come from setExtraInput(), else <extra dir>/<name>.raw (float32),
++  // else zeros; `lora_S` is multiplied by the LoRA strength.
++  void setExtraInput(const std::string &name, std::vector<float> data) {
++    m_extraInputs[name] = std::move(data);
++    m_extraWritten.erase(name);
++  }
++  // A packed LoRA directory ("" = none) and its strength. Same directory at a
++  // new strength rewrites lora_S alone.
++  void setLora(const std::string &dir, float strength) {
++    if (dir != m_extraDir) {
++      m_extraDir = dir;
++      m_extraWritten.clear();
++    } else if (strength != m_loraStrength) {
++      m_extraWritten.erase("lora_S");
++    }
++    m_loraStrength = strength;
++  }
++  bool hasInput(const char *name) {
++    return ensureIoTensors() &&
++           findTensor(inputs, (*m_graphsInfo)[0].numInputTensors, name);
++  }
++
++  bool writeExtraInputs(const qnn_wrapper_api::GraphInfo_t &graphInfo) {
++    int written = 0, from_file = 0, zeroed = 0;
++    for (uint32_t i = 3; i < graphInfo.numInputTensors; ++i) {
++      const char *nm = QNN_TENSOR_GET_NAME(inputs[i]);
++      if (m_extraWritten.count(nm)) continue;
++      const size_t n = tensorElems(inputs[i]);
++      std::vector<float> buf;
++      auto it = m_extraInputs.find(nm);
++      if (it != m_extraInputs.end()) {
++        buf = it->second;
++      } else if (!m_extraDir.empty()) {
++        std::ifstream f(m_extraDir + "/" + nm + ".raw", std::ios::binary);
++        if (f) {
++          buf.resize(n);
++          f.read(reinterpret_cast<char *>(buf.data()), n * sizeof(float));
++          if (static_cast<size_t>(f.gcount()) != n * sizeof(float)) {
++            QNN_ERROR("extra input '%s': file holds %zu bytes, graph wants %zu",
++                      nm, static_cast<size_t>(f.gcount()), n * sizeof(float));
++            return false;
++          }
++          ++from_file;
++        }
++      }
++      if (buf.empty()) {
++        buf.assign(n, 0.0f);
++        ++zeroed;
++      }
++      if (buf.size() != n) {
++        QNN_ERROR("extra input '%s': %zu values, graph wants %zu", nm,
++                  buf.size(), n);
++        return false;
++      }
++      if (std::strcmp(nm, "lora_S") == 0)
++        for (auto &v : buf) v *= m_loraStrength;
++      if (!writeNamedQuantU16(graphInfo, nm, buf.data())) return false;
++      m_extraWritten.insert(nm);
++      ++written;
++    }
++    if (written > 13)  // not the per-step residual refresh
++      QNN_INFO("extra unet inputs: %d written (%d from %s, %d zero)", written,
++               from_file, m_extraDir.empty() ? "-" : m_extraDir.c_str(),
++               zeroed);
++    return true;
++  }
++
+   bool writeNamedFloat(const qnn_wrapper_api::GraphInfo_t &graphInfo,
+                        const char *name, const float *src, size_t elems) {
+     Qnn_Tensor_t *t = findTensor(inputs, graphInfo.numInputTensors, name);
+@@ -1305,6 +1387,11 @@
+   }
+ 
+  private:
++  std::map<std::string, std::vector<float>> m_extraInputs;
++  std::string m_extraDir;
++  float m_loraStrength = 1.0f;
++  std::set<std::string> m_extraWritten;
++
+   // Backing storage for the spill-fill group-registration context config.
+   // These must outlive the contextCreateFromBinary call, so they live as
+   // members rather than locals in setSpillFillGroup().
+--- a/src/PipelineSd15Npu.hpp
++++ b/src/PipelineSd15Npu.hpp
+@@ -5,6 +5,7 @@
+ #include <memory>
+ #include <stdexcept>
+ #include <string>
++#include <vector>
+ 
+ #include "Config.hpp"
+ #include "MnnUtils.hpp"
+@@ -89,6 +90,13 @@
+       status = qnn_runtime::initializeApp("UNET", unet_);
+     }
+     if (status != EXIT_SUCCESS) return false;
++    // A template UNet declares LoRA and ControlNet inputs (backend-patches
++    // 015); a plain one has three inputs and none of what follows applies.
++    tpl_lora_ = unet_->hasInput("lora_S");
++    tpl_control_ = unet_->hasInput("res_0");
++    if (tpl_lora_ || tpl_control_)
++      QNN_INFO("template unet: lora inputs %d, controlnet inputs %d",
++               tpl_lora_, tpl_control_);
+     if (patched) {
+       QNN_INFO("Releasing unet patch buffer to free memory");
+       patched.reset();
+@@ -103,6 +111,10 @@
+   }
+ 
+   bool supportsImg2Img() const override { return vae_encoder_ != nullptr; }
++  // A UNet with residual inputs makes the request parser accept
++  // `control_image` (optional here, since the VAE encoder is present) and fix
++  // the canvas at 512, the template's size.
++  bool isControlNet() const override { return tpl_control_; }
+ 
+  protected:
+   bool previewSupported() const override { return true; }
+@@ -139,7 +151,7 @@
+       throw std::runtime_error("QNN VAE enc exec failed");
+   }
+ 
+-  void runUnetStep(const GenerationRequest &, const float *latents_batch2,
++  void runUnetStep(const GenerationRequest &req, const float *latents_batch2,
+                    float timestep, bool skip_uncond, Conditioning &cond,
+                    float *out_batch2) override {
+     if (!unet_) throw std::runtime_error("QNN UNET missing");
+@@ -148,6 +160,42 @@
+     const int ts = static_cast<int>(timestep);
+     float *latents_in = const_cast<float *>(latents_batch2);
+ 
++    // Template UNet (backend-patches 015). LoRA: the request's packed
++    // directory and strength; QnnModel rewrites only what changed. ControlNet:
++    // one pass per step on the positive embedding, its 13 residuals (scaled by
++    // control_strength) shared by both CFG passes -- PipelineControlNet's
++    // convention. No control image: the residuals return to zero (the
++    // identity) once, then stay written.
++    if (tpl_lora_)
++      unet_->setLora(req.lora_dir, req.lora_strength);
++    else if (!req.lora_dir.empty())
++      throw std::invalid_argument("'lora_dir': this model has no LoRA inputs");
++    if (tpl_control_) {
++      if (!req.control_image_data.empty()) {
++        loadControlNet(req.controlnet_path);
++        latent_nhwc_.resize(single_latent_size);
++        nchwToNhwc(latents_in + single_latent_size, latent_nhwc_.data(), 4,
++                   sample_height, sample_width);
++        if (StatusCode::SUCCESS !=
++            tpl_controlnet_->executeControlnetGraphs(
++                latent_nhwc_.data(), timestep, cond.posHidden(),
++                req.control_image_data.data(), residuals_))
++          throw std::runtime_error("QNN controlnet exec failed");
++        for (size_t i = 0; i < residuals_.size(); ++i) {
++          std::vector<float> r = residuals_[i];
++          if (req.control_strength != 1.0f)
++            for (auto &v : r) v *= req.control_strength;
++          unet_->setExtraInput("res_" + std::to_string(i), std::move(r));
++        }
++        residuals_set_ = true;
++      } else if (residuals_set_) {
++        for (size_t i = 0; i < residuals_.size(); ++i)
++          unet_->setExtraInput("res_" + std::to_string(i),
++                               std::vector<float>(residuals_[i].size(), 0.0f));
++        residuals_set_ = false;
++      }
++    }
++
+     if (!skip_uncond && StatusCode::SUCCESS !=
+                             unet_->executeUnetGraphs(
+                                 latents_in, ts, cond.negHidden(), out_batch2))
+@@ -177,6 +225,33 @@
+ 
+   MNN::Interpreter *clip_interpreter_ = nullptr;
+   MNN::Session *clip_session_ = nullptr;
++
++  // The request's ControlNet context, kept loaded until a request names
++  // another; the old one is freed before the new one loads.
++  void loadControlNet(const std::string &path) {
++    if (path.empty())
++      throw std::invalid_argument(
++          "'control_image' needs 'controlnet' (a controlnet.bin path)");
++    if (path == tpl_controlnet_path_ && tpl_controlnet_) return;
++    tpl_controlnet_.reset();
++    tpl_controlnet_path_.clear();
++    tpl_controlnet_ = qnn_runtime::createModel(path, "controlnet");
++    if (!tpl_controlnet_ || qnn_runtime::initializeApp(
++                                "ControlNet", tpl_controlnet_) != EXIT_SUCCESS) {
++      tpl_controlnet_.reset();
++      throw std::runtime_error("Failed to load ControlNet " + path);
++    }
++    tpl_controlnet_path_ = path;
++    QNN_INFO("controlnet %s feeds the unet's res_0..12", path.c_str());
++  }
++
++  bool tpl_lora_ = false;
++  bool tpl_control_ = false;
++  std::unique_ptr<QnnModel> tpl_controlnet_;
++  std::string tpl_controlnet_path_;
++  std::vector<std::vector<float>> residuals_;
++  std::vector<float> latent_nhwc_;
++  bool residuals_set_ = false;
+ };
+ 
+ #endif  // PIPELINESD15NPU_HPP
+--- a/src/PipelineQnn.hpp
++++ b/src/PipelineQnn.hpp
+@@ -18,6 +18,21 @@
+  protected:
+   bool canSkipUncond() const override { return true; }
+ 
++  // Layout converters between the scheduler's NCHW latents and the NHWC
++  // tensors of the ControlNet-shaped graphs.
++  static void nchwToNhwc(const float *src, float *dst, int c, int h, int w) {
++    for (int ch = 0; ch < c; ++ch)
++      for (int y = 0; y < h; ++y)
++        for (int x = 0; x < w; ++x)
++          dst[((size_t)y * w + x) * c + ch] = src[((size_t)ch * h + y) * w + x];
++  }
++  static void nhwcToNchw(const float *src, float *dst, int c, int h, int w) {
++    for (int ch = 0; ch < c; ++ch)
++      for (int y = 0; y < h; ++y)
++        for (int x = 0; x < w; ++x)
++          dst[((size_t)ch * h + y) * w + x] = src[((size_t)y * w + x) * c + ch];
++  }
++
+   std::unique_ptr<QnnModel> unet_;
+   std::unique_ptr<QnnModel> vae_decoder_;
+   std::unique_ptr<QnnModel> vae_encoder_;
+--- a/src/PipelineControlNet.hpp
++++ b/src/PipelineControlNet.hpp
+@@ -189,19 +189,6 @@
+   }
+ 
+  private:
+-  static void nchwToNhwc(const float *src, float *dst, int c, int h, int w) {
+-    for (int ch = 0; ch < c; ++ch)
+-      for (int y = 0; y < h; ++y)
+-        for (int x = 0; x < w; ++x)
+-          dst[((size_t)y * w + x) * c + ch] = src[((size_t)ch * h + y) * w + x];
+-  }
+-  static void nhwcToNchw(const float *src, float *dst, int c, int h, int w) {
+-    for (int ch = 0; ch < c; ++ch)
+-      for (int y = 0; y < h; ++y)
+-        for (int x = 0; x < w; ++x)
+-          dst[((size_t)ch * h + y) * w + x] = src[((size_t)y * w + x) * c + ch];
+-  }
+-
+   const std::string clip_path_;
+   const std::string controlnet_path_;
+   const std::string unet_path_;
+--- a/src/PipelineControlNetInpaint.hpp
++++ b/src/PipelineControlNetInpaint.hpp
+@@ -158,19 +158,6 @@
+   }
+ 
+  private:
+-  static void nchwToNhwc(const float *src, float *dst, int c, int h, int w) {
+-    for (int ch = 0; ch < c; ++ch)
+-      for (int y = 0; y < h; ++y)
+-        for (int x = 0; x < w; ++x)
+-          dst[((size_t)y * w + x) * c + ch] = src[((size_t)ch * h + y) * w + x];
+-  }
+-  static void nhwcToNchw(const float *src, float *dst, int c, int h, int w) {
+-    for (int ch = 0; ch < c; ++ch)
+-      for (int y = 0; y < h; ++y)
+-        for (int x = 0; x < w; ++x)
+-          dst[((size_t)ch * h + y) * w + x] = src[((size_t)y * w + x) * c + ch];
+-  }
+-
+   const std::string controlnet_path_;
+   std::unique_ptr<QnnModel> controlnet_;
+ 
+--- a/src/Pipeline.hpp
++++ b/src/Pipeline.hpp
+@@ -156,6 +156,13 @@
+   float control_strength = 1.0f;
+   std::vector<float> control_image_data;  // [1,512,512,3] NHWC, 0..1
+ 
++  // Template UNet (backend-patches 015): a packed LoRA directory of
++  // <input>.raw files and its strength, and the ControlNet context that turns
++  // control_image into the UNet's residual inputs. Empty = none.
++  std::string lora_dir;
++  float lora_strength = 1.0f;
++  std::string controlnet_path;
++
+   // Ultrafix: tiled img2img over an arbitrarily large (upscaled) input.
+   // VAE encode, every UNet denoising step and the final decode all run as
+   // overlapping fixed-size tiles blended back together, so the QNN graphs
+--- a/src/RequestParser.hpp
++++ b/src/RequestParser.hpp
+@@ -85,6 +85,8 @@
+     req.height = 1024;
+   }
+   req.denoise_strength = json.value("denoise_strength", 0.6f);
++  req.lora_dir = json.value("lora_dir", std::string());
++  req.lora_strength = json.value("lora_strength", 1.0f);
+ 
+   // --- ControlNet: fixed 512 canvas, mandatory hint image -----------------
+   // The AI Hub graphs are frozen at 512x512 and that bundle has no VAE
+@@ -132,6 +134,7 @@
+       req.control_strength = json.value("control_strength", 1.0f);
+       req.has_control = true;
+     }
++    req.controlnet_path = json.value("controlnet", std::string());
+   } else if (json.contains("control_image")) {
+     throw std::invalid_argument("'control_image' requires --type controlnet");
+   }
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -705,6 +705,23 @@
+                         req.img_data.size() * sizeof(float)),
+             16);
+   }
++  // ⚠⚠ So are a control hint and a template LoRA (backend-patches 015): the
++  // same prompt and seed through another hint, ControlNet, LoRA or strength is
++  // another picture, and the second render would overwrite the first's handle.
++  std::string template_key;
++  if (!req.control_image_data.empty())
++    template_key +=
++        "ctl" +
++        Sha256::hashHex(
++            std::string(
++                reinterpret_cast<const char *>(req.control_image_data.data()),
++                req.control_image_data.size() * sizeof(float)),
++            16) +
++        "\x1f" + std::to_string(req.control_strength) + "\x1f" +
++        req.controlnet_path;
++  if (!req.lora_dir.empty())
++    template_key += "lora" + req.lora_dir + "\x1f" +
++                    std::to_string(req.lora_strength);
+   const auto t0 = std::chrono::steady_clock::now();
+   GenerationResult out;
+   {
+@@ -756,7 +773,7 @@
+                16) +
+            "" + std::to_string(req.denoise_strength);
+   }
+-  key += inpaint_key;
++  key += inpaint_key + template_key;
+   const std::string handle = "lat_" + Sha256::hashHex(key);
+ 
+   const std::string lat_hash = Sha256::hashHex(
