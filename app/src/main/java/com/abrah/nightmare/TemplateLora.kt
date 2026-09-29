@@ -1,0 +1,326 @@
+package com.abrah.nightmare
+
+import org.json.JSONObject
+import java.io.File
+import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.channels.FileChannel
+
+/**
+ * ⭐⭐ Packs a LoRA `.safetensors` into a TEMPLATE UNet's LoRA inputs.
+ *
+ * A template UNet (npuforge `notes/2026-09-29-input-lora-cn-probe.md`) carries,
+ * for each of its 160 attention/feed-forward Linears, a rank-[R] branch fed from
+ * graph INPUTS: `delta = S[t] * ((x @ A_t) @ B_t)`, `A_t` [din, R], `B_t` [R, dout].
+ * The backend reads them per request from a directory of `<input>.raw` files
+ * (`lora_dir`, backend-patches 015), so swapping a LoRA is a file write, not a
+ * conversion.
+ *
+ * A Linear applies `x @ W^T`, so `A B S = dW^T = (alpha/r) * D^T U^T` for kohya's
+ * `lora_down` D [r, din] and `lora_up` U [dout, r]. The graph's A/B inputs have a
+ * fixed ±1 window, so each is scaled to max|.| = 1 and `S = (alpha/r) * mA * mB`
+ * carries the rest. ⚠ STRENGTH is not packed: the backend multiplies `lora_S` by
+ * the request's `lora_strength`, so a strength change rewrites one 640-byte input.
+ * r < R zero-pads; r > R needs an SVD truncation and is refused for now.
+ *
+ * ⚠⚠ The target ORDER is the export's hook order, not a pattern worth
+ * re-deriving here: it ships beside the UNet as [TARGETS_FILE] and is read, never
+ * hardcoded. A reordered list would put every LoRA on the wrong layer and still
+ * render — a picture that looks like a weak LoRA, not like a bug.
+ *
+ * Mirrors npuforge's `pack_lora.py` byte for byte (TemplateLoraTest).
+ */
+object TemplateLora {
+
+    const val TARGETS_FILE = "lora_targets.json"
+
+    data class Target(val name: String, val idx: Int, val din: Int, val dout: Int)
+
+    data class Targets(val rank: Int, val list: List<Target>)
+
+    /** What a pack did, for the log and the user. */
+    data class Packed(
+        val matched: Int,
+        val total: Int,
+        val loraRank: Int,
+        val sMax: Float,
+        /** UNet LoRA keys the template has no input for (conv / LoCon layers). */
+        val unusedUnetKeys: Int,
+        /** Text-encoder keys: the template's CLIP takes no LoRA, so they are dropped. */
+        val textEncoderKeys: Int,
+    )
+
+    fun readTargets(json: String): Targets {
+        val o = JSONObject(json)
+        val arr = o.getJSONArray("targets")
+        return Targets(o.getInt("rank"), (0 until arr.length()).map { i ->
+            val t = arr.getJSONObject(i)
+            Target(t.getString("name"), t.getInt("idx"), t.getInt("din"), t.getInt("dout"))
+        })
+    }
+
+    /** The diffusers module path of a target: `...attn1.q` -> `...attn1.to_q`. */
+    fun modulePath(name: String): String {
+        val base = name.substringBeforeLast('.')
+        val leaf = name.substringAfterLast('.')
+        return if (base.endsWith(".ff")) {
+            base + if (leaf == "proj") ".net.0.proj" else ".net.2"
+        } else {
+            base + when (leaf) {
+                "q" -> ".to_q"
+                "k" -> ".to_k"
+                "v" -> ".to_v"
+                "out" -> ".to_out.0"
+                else -> throw IllegalArgumentException("unknown target leaf: $name")
+            }
+        }
+    }
+
+    /** kohya's key prefix: `lora_unet_down_blocks_0_..._attn1_to_q`. */
+    fun kohyaPrefix(name: String): String = "lora_unet_" + modulePath(name).replace('.', '_')
+
+    /**
+     * Pack [lora] for [targets] into [outDir] (emptied of `.raw` files first — a
+     * stale `la_7.raw` from the previous LoRA would be read as this one's).
+     * A target the LoRA does not train gets no file: the backend zero-fills it.
+     */
+    fun pack(lora: File, targets: Targets, outDir: File): Packed =
+        Safetensors(lora).use { st -> packFrom(st, targets, outDir) }
+
+    private fun packFrom(st: Safetensors, targets: Targets, outDir: File): Packed {
+        val keys = st.names
+        outDir.mkdirs()
+        outDir.listFiles { f -> f.name.endsWith(".raw") }?.forEach { it.delete() }
+
+        val r0 = targets.rank
+        val s = FloatArray(targets.list.size)
+        var matched = 0
+        var loraRank = 0
+        val used = HashSet<String>()
+        for (t in targets.list) {
+            val (down, up, alphaKey) = findPair(t.name, keys) ?: continue
+            used += down; used += up; alphaKey?.let { used += it }
+            val dShape = st.shape(down)
+            val uShape = st.shape(up)
+            val r = dShape[0].toInt()
+            val din = dShape.drop(1).fold(1L) { a, b -> a * b }.toInt()
+            val dout = uShape[0].toInt()
+            require(din == t.din && dout == t.dout && uShape[1].toInt() == r) {
+                "${t.name}: LoRA shape [$r, $din] / [$dout, ${uShape[1]}] does not fit the " +
+                    "template's [${t.din} -> ${t.dout}] -- not an SD 1.5 LoRA?"
+            }
+            loraRank = maxOf(loraRank, r)
+            var d = st.floats(down)            // [rk, din]
+            var u = st.floats(up)              // [dout, rk]
+            val alpha = alphaKey?.let { st.floats(it)[0].toDouble() } ?: r.toDouble()
+            var rk = r
+            if (r > r0) {
+                val (dt, ut) = truncate(d, u, r, t.din, t.dout, r0)
+                d = dt; u = ut; rk = r0
+            }
+            val mA = d.maxOf { kotlin.math.abs(it) }
+            val mB = u.maxOf { kotlin.math.abs(it) }
+            if (mA == 0f || mB == 0f) continue
+            val la = FloatArray(t.din * r0)
+            for (j in 0 until rk) for (i in 0 until t.din) la[i * r0 + j] = d[j * t.din + i] / mA
+            val lb = FloatArray(r0 * t.dout)
+            for (j in 0 until rk) for (o in 0 until t.dout) lb[j * t.dout + o] = u[o * rk + j] / mB
+            writeRaw(File(outDir, "la_${t.idx}.raw"), la)
+            writeRaw(File(outDir, "lb_${t.idx}.raw"), lb)
+            s[t.idx] = (alpha / r * mA.toDouble() * mB.toDouble()).toFloat()
+            matched++
+        }
+        writeRaw(File(outDir, "lora_S.raw"), s)
+        val unet = keys.count { (it.startsWith("lora_unet_") || it.startsWith("unet.")) && it !in used }
+        val te = keys.count { it.startsWith("lora_te") || it.startsWith("text_encoder.") }
+        return Packed(matched, targets.list.size, loraRank, s.maxOrNull() ?: 0f, unet, te)
+    }
+
+    /**
+     * The best rank-[k] approximation of `D^T U^T` (Eckart–Young), as a new
+     * down [k, din] / up [dout, k] pair: thin QR of `D^T` and of `U`, an SVD of
+     * the small `r x r` core `Rd Ru^T`, then the top [k] singular pairs split as
+     * sqrt(sigma) on each side. Doubles throughout. The FACTORS are not unique
+     * (signs, rotations inside equal singular values) but their product is, so
+     * this matches `pack_lora.py`'s torch path on the product, not the bytes.
+     */
+    private fun truncate(
+        d: FloatArray, u: FloatArray, r: Int, din: Int, dout: Int, k: Int,
+    ): Pair<FloatArray, FloatArray> {
+        // D^T: [din, r] column-major by rank (column j = row j of D); U: [dout, r].
+        val a = Array(r) { j -> DoubleArray(din) { i -> d[j * din + i].toDouble() } }
+        val b = Array(r) { j -> DoubleArray(dout) { o -> u[o * r + j].toDouble() } }
+        val ra = thinQr(a)                 // a becomes Q_d (columns), ra = R_d [r, r]
+        val rb = thinQr(b)                 // b becomes Q_u, rb = R_u
+        // core = R_d R_u^T
+        val core = Array(r) { i -> DoubleArray(r) { j -> (0 until r).sumOf { l -> ra[i][l] * rb[j][l] } } }
+        val (left, sigma, right) = jacobiSvd(core)   // core = left diag(sigma) right^T, sorted
+        val newD = FloatArray(k * din)
+        val newU = FloatArray(dout * k)
+        // Accumulate whole columns (contiguous) rather than dotting across the r arrays.
+        val accD = DoubleArray(din)
+        val accU = DoubleArray(dout)
+        for (c in 0 until k) {
+            val s = kotlin.math.sqrt(sigma[c])
+            accD.fill(0.0); accU.fill(0.0)
+            for (l in 0 until r) {
+                val cl = left[l][c]
+                val al = a[l]
+                for (i in 0 until din) accD[i] += al[i] * cl
+                val cr = right[l][c]
+                val bl = b[l]
+                for (o in 0 until dout) accU[o] += bl[o] * cr
+            }
+            for (i in 0 until din) newD[c * din + i] = (accD[i] * s).toFloat()
+            for (o in 0 until dout) newU[o * k + c] = (accU[o] * s).toFloat()
+        }
+        return newD to newU
+    }
+
+    /** Modified Gram-Schmidt, twice (re-orthogonalised). Columns in place -> Q; returns R. */
+    private fun thinQr(cols: Array<DoubleArray>): Array<DoubleArray> {
+        val n = cols.size
+        val r = Array(n) { DoubleArray(n) }
+        for (j in 0 until n) {
+            repeat(2) {
+                for (i in 0 until j) {
+                    var dot = 0.0
+                    for (x in cols[j].indices) dot += cols[i][x] * cols[j][x]
+                    r[i][j] += dot
+                    for (x in cols[j].indices) cols[j][x] -= dot * cols[i][x]
+                }
+            }
+            var nrm = 0.0
+            for (v in cols[j]) nrm += v * v
+            nrm = kotlin.math.sqrt(nrm)
+            r[j][j] = nrm
+            if (nrm > 0) for (x in cols[j].indices) cols[j][x] /= nrm
+        }
+        return r
+    }
+
+    /**
+     * One-sided Jacobi SVD of a square matrix (rows = m[i]). Returns (U, sigma, V)
+     * with sigma descending, U and V as [row][column].
+     */
+    private fun jacobiSvd(m: Array<DoubleArray>): Triple<Array<DoubleArray>, DoubleArray, Array<DoubleArray>> {
+        val n = m.size
+        // Stored as COLUMNS (w[col][row]) so every rotation walks contiguous memory.
+        val w = Array(n) { c -> DoubleArray(n) { r -> m[r][c] } }
+        val v = Array(n) { c -> DoubleArray(n).also { it[c] = 1.0 } }
+        for (sweep in 0 until 60) {
+            var off = 0.0
+            for (p in 0 until n - 1) for (q in p + 1 until n) {
+                val wp = w[p]; val wq = w[q]
+                var alpha = 0.0; var beta = 0.0; var gamma = 0.0
+                for (i in 0 until n) {
+                    alpha += wp[i] * wp[i]; beta += wq[i] * wq[i]; gamma += wp[i] * wq[i]
+                }
+                if (gamma == 0.0) continue
+                off = maxOf(off, kotlin.math.abs(gamma) / kotlin.math.sqrt(alpha * beta))
+                val zeta = (beta - alpha) / (2 * gamma)
+                val t = kotlin.math.sign(zeta).let { if (it == 0.0) 1.0 else it } /
+                    (kotlin.math.abs(zeta) + kotlin.math.sqrt(1 + zeta * zeta))
+                val c = 1 / kotlin.math.sqrt(1 + t * t)
+                val s = c * t
+                val vp = v[p]; val vq = v[q]
+                for (i in 0 until n) {
+                    val a = wp[i]; val b = wq[i]
+                    wp[i] = c * a - s * b; wq[i] = s * a + c * b
+                    val e = vp[i]; val f = vq[i]
+                    vp[i] = c * e - s * f; vq[i] = s * e + c * f
+                }
+            }
+            if (off < 1e-12) break
+        }
+        val sigma = DoubleArray(n) { j -> kotlin.math.sqrt(w[j].sumOf { it * it }) }
+        val order = (0 until n).sortedByDescending { sigma[it] }
+        val uOut = Array(n) { i -> DoubleArray(n) { c -> val j = order[c]; if (sigma[j] > 0) w[j][i] / sigma[j] else 0.0 } }
+        val vOut = Array(n) { i -> DoubleArray(n) { c -> v[order[c]][i] } }
+        return Triple(uOut, DoubleArray(n) { sigma[order[it]] }, vOut)
+    }
+
+    /** (down, up, alpha?) keys for a target, kohya first, then diffusers/PEFT. */
+    private fun findPair(name: String, keys: Set<String>): Triple<String, String, String?>? {
+        val k = kohyaPrefix(name)
+        if ("$k.lora_down.weight" in keys && "$k.lora_up.weight" in keys) {
+            return Triple("$k.lora_down.weight", "$k.lora_up.weight", "$k.alpha".takeIf { it in keys })
+        }
+        val m = modulePath(name)
+        for (p in listOf("unet.$m", "base_model.model.$m")) {
+            if ("$p.lora_A.weight" in keys && "$p.lora_B.weight" in keys) {
+                return Triple("$p.lora_A.weight", "$p.lora_B.weight", "$p.alpha".takeIf { it in keys })
+            }
+        }
+        return null
+    }
+
+    private fun writeRaw(f: File, a: FloatArray) {
+        val bb = ByteBuffer.allocate(a.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+        bb.asFloatBuffer().put(a)
+        f.outputStream().use { it.write(bb.array()) }
+    }
+
+    /**
+     * A safetensors file: an 8-byte little-endian header length, that JSON
+     * (`name -> {dtype, shape, data_offsets}`), then the data. F32, F16 and BF16.
+     */
+    private class Safetensors(file: File) : java.io.Closeable {
+        private val raf = RandomAccessFile(file, "r")
+
+        override fun close() = raf.close()
+        private val header: JSONObject
+        private val dataStart: Long
+
+        init {
+            val lenBuf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+            raf.channel.read(lenBuf, 0)
+            val len = lenBuf.getLong(0)
+            require(len in 2..(64L * 1024 * 1024)) { "not a .safetensors file (header claims $len bytes)" }
+            val hb = ByteArray(len.toInt())
+            raf.seek(8)
+            raf.readFully(hb)
+            header = JSONObject(String(hb, Charsets.UTF_8))
+            dataStart = 8 + len
+        }
+
+        val names: Set<String> = header.keys().asSequence().filter { it != "__metadata__" }.toSet()
+
+        fun shape(name: String): List<Long> {
+            val a = header.getJSONObject(name).getJSONArray("shape")
+            return (0 until a.length()).map { a.getLong(it) }
+        }
+
+        fun floats(name: String): FloatArray {
+            val t = header.getJSONObject(name)
+            val off = t.getJSONArray("data_offsets")
+            val begin = off.getLong(0)
+            val n = (off.getLong(1) - begin).toInt()
+            val bb = raf.channel.map(FileChannel.MapMode.READ_ONLY, dataStart + begin, n.toLong())
+                .order(ByteOrder.LITTLE_ENDIAN)
+            return when (val dt = t.getString("dtype")) {
+                "F32" -> FloatArray(n / 4).also { bb.asFloatBuffer().get(it) }
+                "F16" -> FloatArray(n / 2) { halfToFloat(bb.getShort(it * 2)) }
+                "BF16" -> FloatArray(n / 2) { Float.fromBits((bb.getShort(it * 2).toInt() and 0xFFFF) shl 16) }
+                else -> throw IllegalArgumentException("$name: dtype $dt is not supported")
+            }
+        }
+
+        private fun halfToFloat(h: Short): Float {
+            val bits = h.toInt() and 0xFFFF
+            val sign = (bits ushr 15) shl 31
+            val exp = (bits ushr 10) and 0x1F
+            val mant = bits and 0x3FF
+            return when (exp) {
+                0 -> if (mant == 0) Float.fromBits(sign) else {
+                    // subnormal: mant * 2^-24
+                    val v = mant * (1.0f / (1 shl 24))
+                    if (sign != 0) -v else v
+                }
+                0x1F -> Float.fromBits(sign or 0x7F800000 or (mant shl 13))
+                else -> Float.fromBits(sign or ((exp + 112) shl 23) or (mant shl 13))
+            }
+        }
+    }
+}
