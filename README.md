@@ -117,8 +117,8 @@ cost no restart, or bring your own converted `.bin`. Enlarging is a checkbox on 
 rather than a node of its own, and that node then shows what it received above what it made,
 each with its own buttons.
 
-**Thirty checkpoints, or bring your own.** Six SD 1.5, ten SDXL, nine Anima and five
-DiT in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
+**Thirty-two checkpoints, or bring your own.** Six SD 1.5, two SD 1.5 Swap, ten SDXL, nine
+Anima and five DiT in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
 [npuforge](https://github.com/AbrahamPaulJ/npuforge), which turns an SD safetensors checkpoint
 into a QNN model with no PC involved; its 9 channel inpainting exports run as real inpainting
 models, and its **SD1.5 Swap** exports take LoRAs and ControlNet per render (below). A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
@@ -155,7 +155,7 @@ detector in Models → Tools, MoveNet) or takes a ready-made skeleton as it is, 
 a depth map from a photo (Depth Anything V2 Small, 99 MB, about 1 s on an 8 Elite) or takes a
 ready-made one. The ControlNets themselves are our own QNN builds, downloaded in the app in the
 tier your chip loads — [`AbrahamPJ/nightmare-sd15-controlnet-qnn`](https://huggingface.co/AbrahamPJ/nightmare-sd15-controlnet-qnn):
-canny and depth for Snapdragon 888 / 8 Gen 1 and newer, openpose for 8 Gen 2 and newer.
+all three for 8 Gen 2 and newer; canny and depth also as a slower compatibility build for the 888 / 8 Gen 1 (not yet tested on one).
 With a photo wired into the node, that photo is the control picture by default and follows the
 node's crop window, so the hint lines up with it. **SD 1.5 Swap Inpaint** repaints a masked area
 with the same LoRAs and ControlNet (a blend inpaint: the model does not see the mask, so a big
@@ -279,6 +279,17 @@ Russian and Chinese models are Mozilla's
 [Firefox Translations](https://github.com/mozilla/firefox-translations-models) models, unmodified.
 
 **AbsoluteReality Inpaint** is Lykon's inpainting checkpoint, converted for LocalDream.
+
+**SD 1.5 Swap** models are made by [npuforge](https://github.com/AbrahamPaulJ/npuforge); the two
+defaults are Lykon's AbsoluteReality v1.8.1 and kemiaomiao's CuteYukiMix, under their authors'
+terms. Their ControlNets are our QNN builds of
+[lllyasviel's ControlNet 1.1](https://huggingface.co/lllyasviel/ControlNet-v1-1) (canny, depth,
+openpose; CreativeML OpenRAIL-M), hosted at
+[`AbrahamPJ/nightmare-sd15-controlnet-qnn`](https://huggingface.co/AbrahamPJ/nightmare-sd15-controlnet-qnn).
+The hint makers are [MoveNet MultiPose Lightning](https://huggingface.co/Xenova/movenet-multipose-lightning)
+by Google (Apache 2.0) with LocalDream's OpenPose renderer, and
+[Depth Anything V2 Small](https://huggingface.co/onnx-community/depth-anything-v2-small)
+(Apache 2.0).
 
 [LocalDream](https://github.com/AbrahamPaulJ/dreamui) is the consumer app built on the same
 backend, and it stays the simpler way to generate a picture on a phone.

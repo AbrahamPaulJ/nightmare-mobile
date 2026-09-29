@@ -203,6 +203,38 @@ Firefox Translations models (ru-en, zh-en)
     the app at the user's request; not included here.
 
 
+ControlNet 1.1 (canny, depth, openpose) for SD 1.5
+    Lvmin Zhang (lllyasviel)
+    https://huggingface.co/lllyasviel/control_v11p_sd15_canny
+    https://huggingface.co/lllyasviel/control_v11f1p_sd15_depth
+    https://huggingface.co/lllyasviel/control_v11p_sd15_openpose
+    CreativeML OpenRAIL-M; its use-based restrictions apply. Converted to QNN
+    context binaries (the openpose one by LocalDream) and re-hosted at
+    https://huggingface.co/AbrahamPJ/nightmare-sd15-controlnet-qnn, downloaded
+    by the app at the user's request; not included here.
+
+MoveNet MultiPose Lightning (the openpose detector)
+    Google; ONNX export by Xenova
+    https://huggingface.co/Xenova/movenet-multipose-lightning
+    Apache 2.0. Downloaded from its own repository at the user's request.
+    The skeleton renderer follows controlnet_aux's OpenPose drawing convention
+    and is ported from LocalDream.
+
+Depth Anything V2 Small (the depth estimator)
+    Lihe Yang et al.; ONNX export by onnx-community
+    https://huggingface.co/onnx-community/depth-anything-v2-small
+    Apache 2.0 (the Small model). Downloaded from its own repository at the
+    user's request.
+
+AbsoluteReality v1.8.1, CuteYukiMix (the SD 1.5 Swap defaults)
+    Lykon; kemiaomiao
+    Converted with npuforge (https://github.com/AbrahamPaulJ/npuforge) as
+    SD1.5 Swap and re-hosted at
+    https://huggingface.co/AbrahamPJ/nightmare-sd15-swap-models. Each
+    checkpoint's own licence and its author's permissions apply
+    (CreativeML OpenRAIL-M for SD 1.5 derivatives).
+
+
 NON-COMMERCIAL
 --------------
 
