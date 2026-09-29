@@ -38,6 +38,21 @@ class PoseDetectorTest {
         assertFalse(PoseDetector.looksLikeSkeleton(b))
     }
 
+    /** ⭐ A smooth grey gradient is a depth map; grey NOISE (a textured B&W photo) is not. */
+    @Test
+    fun aSmoothGreyMapIsADepthMapAndGreyTextureIsNot() {
+        val map = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        for (y in 0 until 256) for (x in 0 until 256) { val g = (x + y) / 2; map.setPixel(x, y, Color.rgb(g, g, g)) }
+        assertTrue(DepthEstimator.looksLikeDepthMap(map))
+        val rnd = java.util.Random(3)
+        val bw = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        for (y in 0 until 256) for (x in 0 until 256) { val g = 100 + rnd.nextInt(60); bw.setPixel(x, y, Color.rgb(g, g, g)) }
+        assertFalse(DepthEstimator.looksLikeDepthMap(bw))
+        val colour = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+        colour.eraseColor(Color.rgb(200, 90, 40))
+        assertFalse(DepthEstimator.looksLikeDepthMap(colour))
+    }
+
     /** ⚠ Mostly black, lit parts GREY — a night photo, not a drawing in pure hues. */
     @Test
     fun aDarkPhotoIsNot() {

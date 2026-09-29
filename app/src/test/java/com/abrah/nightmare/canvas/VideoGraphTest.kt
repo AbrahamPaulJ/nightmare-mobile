@@ -104,11 +104,13 @@ class VideoGraphTest {
         // ⚠ Ten since 2026-09-27: `qwen21.sample` (Qwen Image 2.1, no inpaint
         // type, rolls a seed like every other image sampler). Eleven since
         // 2026-09-28: `krea2.sample` (Krea 2 Turbo, the same shape). Twelve since
-        // 2026-09-29: `sd15swap.sample` (SD 1.5 Swap, no inpaint type).
+        // 2026-09-29: `sd15swap.sample` (SD 1.5 Swap). Fourteen with
+        // `sd15swap.inpaint` (its latent-blend inpaint), the same day.
         assertTrue(isSampler("sd15swap.sample"))
-        assertEquals(12, SAMPLER_TYPES.size)
-        assertEquals(11, IMAGE_SAMPLER_TYPES.size)
-        assertEquals(3, INPAINT_TYPES.size)
+        assertTrue(isSampler("sd15swap.inpaint"))
+        assertEquals(13, SAMPLER_TYPES.size)
+        assertEquals(12, IMAGE_SAMPLER_TYPES.size)
+        assertEquals(4, INPAINT_TYPES.size)
     }
 
     @Test

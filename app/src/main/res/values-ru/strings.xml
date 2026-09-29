@@ -208,7 +208,7 @@
     <string name="anima_seq_dit">Anima: поочерёдная загрузка DiT</string>
     <string name="anima_seq_dit_hint">Только в режиме малой памяти Anima: две половины DiT никогда не хранятся в памяти одновременно. Включите, если у вас 12 ГБ памяти, а режим малой памяти Anima всё равно не запускается. Каждый шаг медленнее.</string>
     <string name="cn_label">ControlNet</string>
-    <string name="cn_hint">canny находит контуры фото, openpose находит позу на фото или берёт готовый скелет, depth принимает готовую карту глубины</string>
+    <string name="cn_hint">canny находит контуры фото; openpose находит позу на фото или берёт готовый скелет</string>
     <string name="cn_not_installed">ControlNet %1$s ещё не установлен на этом телефоне.</string>
     <string name="cn_from_wire">Используется изображение, подключённое к control.</string>
     <string name="cn_pick">Выбрать изображение</string>
@@ -221,4 +221,7 @@
     <string name="cn_from_photo">Используется фото самого узла, обрезанное его рамкой. Выберите изображение, чтобы взять другое.</string>
     <string name="cn_pose_missing">Это фото: чтобы найти в нём позу, нужен детектор поз.</string>
     <string name="cn_no_picture_pose">Изображения ещё нет: выберите фото человека или готовый скелет, либо подключите его к control.</string>
+    <string name="depth_about">Превращает фото в карту глубины для ControlNet depth в SD 1.5 Swap. Готовой карте глубины ничего не нужно.</string>
+    <string name="cn_depth_missing">Это фото: чтобы построить по нему карту глубины, нужен оценщик глубины.</string>
+    <string name="cn_no_picture_depth">Изображения ещё нет: выберите фото или готовую карту глубины, либо подключите её к control.</string>
 </resources>

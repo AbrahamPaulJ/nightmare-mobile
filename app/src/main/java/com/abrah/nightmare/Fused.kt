@@ -428,8 +428,15 @@ class SdSampler(
 
         /** ⭐ The four registrations. One class; two arguments of difference. */
         val SD15 = SdSampler("sd15.sample", Family.SD15, inpaint = false)
-        /** ⭐ SD 1.5 Swap — LoRA + ControlNet per render; no inpaint type (no inpaint template). */
+        /** ⭐ SD 1.5 Swap — LoRA + ControlNet per render. */
         val SD15_SWAP = SdSampler("sd15swap.sample", Family.SD15_SWAP, inpaint = false)
+        /**
+         * ⭐⭐ SD 1.5 Swap INPAINT — route (a), the user's call 2026-09-29: masked
+         * img2img with the latent blend every 4-channel SD 1.5 inpaint already
+         * uses, so LoRA and ControlNet keep working inside the mask. A 9-channel
+         * Swap Inpaint TEMPLATE (route b) is the later, better-for-big-fills step.
+         */
+        val SD15_SWAP_INPAINT = SdSampler("sd15swap.inpaint", Family.SD15_SWAP, inpaint = true)
         val SDXL = SdSampler("sdxl.sample", Family.SDXL, inpaint = false)
         val SD15_INPAINT = SdSampler("sd15.inpaint", Family.SD15, inpaint = true)
         val SDXL_INPAINT = SdSampler("sdxl.inpaint", Family.SDXL, inpaint = true)
@@ -476,7 +483,10 @@ class SdSampler(
          * "it still RENDERED" class as the stale-skel noise bug. It stays out
          * until the engine's behaviour is understood. `notes/PROGRESS.md`.
          */
-        val ALL = listOf(SD15, SD15_SWAP, SDXL, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
+        val ALL = listOf(
+            SD15, SD15_SWAP, SDXL, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2,
+            SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, ANIMA_INPAINT,
+        )
 
         /**
          * ⭐⭐ The type a graph should use for [family] and [inpaint] — the one
@@ -1232,7 +1242,7 @@ class SdSampler(
         // the whole choice (the user's call, 2026-09-19). The blend below then
         // runs either way: over a 9-channel render it only re-asserts the
         // unmasked area, which that model already kept.
-        val repainted = sample(ctx, p, cond(), base, w, h, aspect, imagePng, maskPng)
+        val repainted = sample(ctx, p, cond(), base, w, h, aspect, imagePng, maskPng, template = template)
 
         // ⚠⚠ `base` then `repainted`: the mask's WHITE area is where the new
         // pixels show through. The other way round replaces everything EXCEPT

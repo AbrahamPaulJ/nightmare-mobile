@@ -34,19 +34,26 @@ object SwapInputs {
     const val CANNY = "canny"
     const val DEPTH = "depth"
     const val OPENPOSE = "openpose"
-    val TYPES = listOf(NONE, CANNY, DEPTH, OPENPOSE)
+    /**
+     * ⭐ What the ControlNet chooser offers. ⚠⚠ NO DEPTH — taken off the UI by the
+     * user 2026-09-29: the estimator ran on the CPU, and depth waits for an NPU
+     * one (`docs/ROADMAP.md` §2i). [DEPTH] and [com.abrah.nightmare.pose.DepthEstimator]
+     * stay in the code for that; a saved flow naming depth is refused by name.
+     */
+    val TYPES = listOf(NONE, CANNY, OPENPOSE)
 
-    /** ⭐ Canny is always computed; openpose is detected unless the picture is a skeleton. */
-    fun computes(type: String): Boolean = type == CANNY || type == OPENPOSE
+    /** ⭐ Canny is always computed; openpose and depth are estimated unless the picture already is one. */
+    fun computes(type: String): Boolean = type == CANNY || type == OPENPOSE || type == DEPTH
 
     /** The node's crop window — [CropNode.render]'s params, normalised to the source. */
     data class Frame(val x: Float, val y: Float, val w: Float, val h: Float, val pad: String?)
 
     /**
-     * What [hint] made. [bitmap] null with [needsPoseDetector] true: a photo for
-     * openpose and the detector is not installed — the caller offers the download.
+     * What [hint] made. [bitmap] null with [missing] set: a photo whose kind
+     * needs an estimator that is not installed ([OPENPOSE] or [DEPTH]) — the
+     * caller offers that download.
      */
-    class Hint(val bitmap: Bitmap?, val needsPoseDetector: Boolean = false)
+    class Hint(val bitmap: Bitmap?, val missing: String? = null)
 
     /** ⚠ How many LoRA packs one model keeps; each is ~100 MB at rank 64. */
     private const val KEEP_PACKS = 4
@@ -76,14 +83,29 @@ object SwapInputs {
      *   border would be an edge.
      * - openpose: a skeleton picture as it is ([PoseDetector.looksLikeSkeleton],
      *   judged on the WHOLE source); a photo through [PoseDetector.skeleton].
-     * - depth: the picture as it is.
+     * - depth: a depth map as it is ([DepthEstimator.looksLikeDepthMap]); a
+     *   photo through [DepthEstimator.depth] — estimated BEFORE the fit's
+     *   padding, so the black bars are not read as a surface.
      *
-     * ⚠ Blocking (the detector); off the main thread. [context] null = no detector.
+     * ⚠ Blocking (the estimators); off the main thread. [context] null = none.
      */
     fun hint(context: Context?, src: Bitmap, type: String, frame: Frame?): Hint {
-        val skeleton = type == OPENPOSE && com.abrah.nightmare.pose.PoseDetector.looksLikeSkeleton(src)
-        val edges = type == CANNY
-        val placed = if (frame != null) {
+        val ready = when (type) {
+            OPENPOSE -> com.abrah.nightmare.pose.PoseDetector.looksLikeSkeleton(src)
+            DEPTH -> com.abrah.nightmare.pose.DepthEstimator.looksLikeDepthMap(src)
+            else -> true
+        }
+        var missing = false
+        // ⭐ What each kind does to the placed, UNPADDED picture.
+        fun transform(b: Bitmap): Bitmap? = when {
+            type == CANNY -> cannyOf(b)
+            ready -> b
+            context == null -> null
+            type == OPENPOSE -> com.abrah.nightmare.pose.PoseDetector.skeleton(context, b)
+            type == DEPTH -> com.abrah.nightmare.pose.DepthEstimator.depth(context, b)
+            else -> b
+        }.also { if (it == null) missing = true }
+        val placed: Bitmap? = if (frame != null) {
             // ⚠ The frame is SQUARE in the node's photo's pixels; a control picture
             // of another shape would stretch under the same numbers (a squashed
             // skeleton). Same centre and width, height made square in THIS
@@ -91,22 +113,19 @@ object SwapInputs {
             val hSquare = frame.w * src.width / src.height
             val y = frame.y + (frame.h - hSquare) / 2f
             val native = (frame.w * src.width).toInt().coerceAtLeast(1)
-            if (edges && native < SIZE) {
+            if (type == CANNY && native < SIZE) {
                 upscaleEdges(cannyOf(CropNode.render(src, frame.x, y, frame.w, hSquare, native, native, frame.pad).first))
             } else {
-                val cut = CropNode.render(src, frame.x, y, frame.w, hSquare, SIZE, SIZE, frame.pad).first
-                if (edges) cannyOf(cut) else cut
+                transform(CropNode.render(src, frame.x, y, frame.w, hSquare, SIZE, SIZE, frame.pad).first)
             }
         } else {
             val scale = SIZE.toFloat() / maxOf(src.width, src.height)
             val w = (src.width * scale).toInt().coerceIn(1, SIZE)
             val h = (src.height * scale).toInt().coerceIn(1, SIZE)
-            val fitted = when {
-                !edges -> Bitmap.createScaledBitmap(src, w, h, true)
-                scale > 1f -> Bitmap.createScaledBitmap(cannyOf(src), w, h, false)
-                else -> cannyOf(Bitmap.createScaledBitmap(src, w, h, true))
-            }
-            if (w == SIZE && h == SIZE) fitted else {
+            val fitted = if (type == CANNY && scale > 1f) {
+                Bitmap.createScaledBitmap(cannyOf(src), w, h, false)
+            } else transform(Bitmap.createScaledBitmap(src, w, h, true))
+            if (fitted == null || (w == SIZE && h == SIZE)) fitted else {
                 val out = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
                 val canvas = android.graphics.Canvas(out)
                 canvas.drawColor(android.graphics.Color.BLACK)
@@ -114,10 +133,7 @@ object SwapInputs {
                 out
             }
         }
-        if (type != OPENPOSE || skeleton) return Hint(placed)
-        val pose = context?.let { com.abrah.nightmare.pose.PoseDetector.skeleton(it, placed) }
-            ?: return Hint(null, needsPoseDetector = true)
-        return Hint(pose)
+        return if (placed == null || missing) Hint(null, missing = type) else Hint(placed)
     }
 
     /**
@@ -218,6 +234,7 @@ object SwapInputs {
         if (type == NONE || type.isBlank()) {
             return Ops.TemplateInputs(loraDir = loraDir, loraStrength = loraStrength)
         }
+        if (type == DEPTH) throw NeedsInput("the depth ControlNet is not available yet — choose canny or openpose")
         require(type in TYPES) { "unknown ControlNet type \"$type\"" }
         val cn = controlnetFile(context, type)
         if (!cn.isFile) {
@@ -231,13 +248,19 @@ object SwapInputs {
             when (type) {
                 CANNY -> "finding the edges"
                 OPENPOSE -> "finding the pose"
+                DEPTH -> "finding the depth"
                 else -> "reading the $type hint"
             },
         )
         val made = hint(context, control, type, frame)
         val bitmap = made.bitmap ?: throw NeedsInput(
-            "openpose needs the ${com.abrah.nightmare.pose.PoseDetector.LABEL} to read a photo — " +
-                "download it on the ControlNet tab or in Models, Tools (a ready-made skeleton needs nothing)",
+            if (made.missing == DEPTH) {
+                "depth needs the ${com.abrah.nightmare.pose.DepthEstimator.LABEL} to read a photo — " +
+                    "download it on the ControlNet tab or in Models, Tools (a ready-made depth map needs nothing)"
+            } else {
+                "openpose needs the ${com.abrah.nightmare.pose.PoseDetector.LABEL} to read a photo — " +
+                    "download it on the ControlNet tab or in Models, Tools (a ready-made skeleton needs nothing)"
+            },
         )
         val png = ImageStore.encodePng(bitmap)
         return Ops.TemplateInputs(

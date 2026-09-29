@@ -242,6 +242,10 @@ fun ModelsScreen(
     pose: ToolRow? = null,
     onInstallPose: () -> Unit = {},
     onDeletePose: () -> Unit = {},
+    /** ⭐ The fourth Tools row — SD 1.5 Swap's depth estimator. */
+    depth: ToolRow? = null,
+    onInstallDepth: () -> Unit = {},
+    onDeleteDepth: () -> Unit = {},
 ) {
     // ⭐ Tap → first drawn frame, for the lag report of 2026-09-27 (`NmPerf`).
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -346,6 +350,7 @@ fun ModelsScreen(
     var deletingSegmenter by remember { mutableStateOf(false) }
     var deletingParser by remember { mutableStateOf(false) }
     var deletingPose by remember { mutableStateOf(false) }
+    var deletingDepth by remember { mutableStateOf(false) }
 
     // ⚠ No header and no `statusBarsPadding` any more: [LibraryScreen] owns
     // both, because this screen is now a TAB rather than a whole screen. A
@@ -442,6 +447,14 @@ fun ModelsScreen(
                                 pose, busy, onInstallPose, onCancel,
                                 detail = stringResource(R.string.pose_about),
                             ) { deletingPose = true }
+                        }
+                    }
+                    if (depth != null) {
+                        item {
+                            ToolCard(
+                                depth, busy, onInstallDepth, onCancel,
+                                detail = stringResource(R.string.depth_about),
+                            ) { deletingDepth = true }
                         }
                     }
                     // ⭐⭐ **No LoRAs or embeddings here** — the user's call,
@@ -624,6 +637,17 @@ fun ModelsScreen(
                 "by name will refuse to run until you install it again.",
             onConfirm = onDeleteParser,
             onDismiss = { deletingParser = false },
+        )
+    }
+
+    if (deletingDepth && depth != null) {
+        ConfirmDelete(
+            title = "Delete ${depth.label}?",
+            body = "Frees ${mb(depth.onDisk)} MB. Getting it back is a " +
+                "${mb(depth.bytes)} MB download. A depth ControlNet given a photo " +
+                "will refuse to run until you install it again.",
+            onConfirm = onDeleteDepth,
+            onDismiss = { deletingDepth = false },
         )
     }
 

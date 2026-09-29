@@ -214,6 +214,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
             "segmenter_install" -> segmenterInstall()
             "pose_install" -> poseInstall()
+            "depth_install" -> depthInstall()
             "segment" -> segmentProbe(arg)
             // ⭐⭐ What does a human PARSER cost on this CPU? Measurement only.
             "parse_probe" -> parseProbe(arg)
@@ -702,12 +703,15 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height)
         val out = java.io.File(ctx.getExternalFilesDir(null), "swap").apply { mkdirs() }
 
-        suspend fun leg(label: String, prompt: String, params: Map<String, String>, photo: String? = null): ByteArray? {
+        suspend fun leg(
+            label: String, prompt: String, params: Map<String, String>, photo: String? = null,
+            type: String = SdSampler.SD15_SWAP.name,
+        ): ByteArray? {
             if (!ensureBackend(key)) {
                 say("  $label: no backend", bad = true); return null
             }
             val sampler = Node(
-                "generate", SdSampler.SD15_SWAP.name,
+                "generate", type,
                 params = mapOf(
                     "model" to spec.id, "width" to res.width.toString(), "height" to res.height.toString(),
                     "steps" to "20", "cfg" to "7.5", "seed" to "42",
@@ -766,6 +770,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             kv["posephoto"]?.let {
                 add(Triple("pose_photo", knight, mapOf(SdSampler.CONTROLNET to "openpose", SdSampler.CONTROL_IMAGE to it)))
             }
+            // ⭐ depth: a ready-made map as it is, and a photo through the estimator.
+            kv["depth"]?.let {
+                add(Triple("depth_map", knight, mapOf(SdSampler.CONTROLNET to "depth", SdSampler.CONTROL_IMAGE to it)))
+            }
+            kv["depthphoto"]?.let {
+                add(Triple("depth_photo", house, mapOf(SdSampler.CONTROLNET to "depth", SdSampler.CONTROL_IMAGE to it)))
+            }
         }
         var bad = 0
         for ((label, prompt, params) in legs) {
@@ -785,7 +796,17 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             if (a == null || b == null) bad++
             else if (a.contentEquals(b)) { bad++; say("  i2i: the crop did NOT reach the control", bad = true) }
         }
-        say("swap: ${legs.size - bad}/${legs.size} legs rendered and differ from base (+ i2i crop); pictures in ${out.absolutePath}",
+        // ⭐⭐ Swap INPAINT (latent blend): a stroke over the middle of the photo,
+        // with the LoRA when one was given. Must render and differ from the photo's i2i.
+        kv["inpaint"]?.let { photo ->
+            val p = mapOf(
+                com.abrah.nightmare.MaskNode.OPS to "s0.3:0.5,0.5~0,0.02",
+                "denoise" to "0.9",
+                "x" to "0.0", "y" to "0.0", "w" to "1.0", "h" to "1.0",
+            ) + (kv["lora"]?.let { mapOf(SdSampler.LORAS to it) } ?: emptyMap())
+            if (leg("inpaint", "a small red wooden cabin", p, photo, SdSampler.SD15_SWAP_INPAINT.name) == null) bad++
+        }
+        say("swap: ${legs.size - bad}/${legs.size} legs rendered and differ from base (+ i2i crop, inpaint); pictures in ${out.absolutePath}",
             bad = bad > 0)
         drainBackendLog()
     }
@@ -2654,6 +2675,19 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⚠⚠ The CLASS as well as the message. The first failure of this
             // downloader left a 0-byte file and no clue; an IOException and an
             // SSLException want opposite fixes.
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    private suspend fun depthInstall() {
+        val d = com.abrah.nightmare.pose.DepthEstimator
+        say("depth_install: ${d.LABEL}, ${d.BYTES} B")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                d.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+            }
+            say("  ok   ${d.bytesOnDisk(ctx)} B at ${d.dir(ctx).absolutePath}")
+        } catch (e: Throwable) {
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
         }
     }

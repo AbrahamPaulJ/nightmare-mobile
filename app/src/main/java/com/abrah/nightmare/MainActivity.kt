@@ -103,6 +103,7 @@ class MainActivity : ComponentActivity() {
             com.abrah.nightmare.segment.Segmenter.trim()
             com.abrah.nightmare.segment.Parser.trim()
             com.abrah.nightmare.pose.PoseDetector.trim()
+            com.abrah.nightmare.pose.DepthEstimator.trim()
         }
     }
 
@@ -161,6 +162,7 @@ class MainActivity : ComponentActivity() {
         // never resolved a pick in the background and nothing auto-picked.
         com.abrah.nightmare.segment.Parser.refresh(this)
         com.abrah.nightmare.pose.PoseDetector.refresh(this)
+        com.abrah.nightmare.pose.DepthEstimator.refresh(this)
         MaskDefaults.load(this)
         // ⭐ The DiT engine is a download too, since 1.5.502 — and an app
         // update wipes the older, APK-shipped copy out of the native dir.
@@ -414,6 +416,9 @@ fun HarnessScreen(
             poseRow = vm.poseRow,
             onInstallPose = vm::installPose,
             onDeletePose = vm::deletePose,
+            depthRow = vm.depthRow,
+            onInstallDepth = vm::installDepth,
+            onDeleteDepth = vm::deleteDepth,
             parserInstalled = vm.parserRow?.installed == true,
             // ⭐ Video hidden from Add node where the chip refused it (VideoGate).
             paletteTypes = if (com.abrah.nightmare.npu.VideoGate.hidden) {
@@ -718,6 +723,8 @@ fun HarnessScreen(
                         pose = vm.poseRow,
                         onInstallPose = { askToNotify(); vm.installPose() },
                         onDeletePose = vm::deletePose,
+                        // ⚠ No depth estimator card: depth is off the UI until it runs on
+                        // the NPU (`docs/ROADMAP.md` §2i). The row stays wired for that.
                         video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
                         onInstallVideo = { askToNotify(); vm.installVideoModels() },
                         onDeleteVideo = vm::deleteVideoModels,

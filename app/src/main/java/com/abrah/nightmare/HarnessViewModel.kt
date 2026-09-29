@@ -1018,6 +1018,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             id == SEGMENTER_INSTALL_ID -> segmenterRow = segmenterRow?.copy(progress = p)
             id == PARSER_INSTALL_ID -> parserRow = parserRow?.copy(progress = p)
             id == POSE_INSTALL_ID -> poseRow = poseRow?.copy(progress = p)
+            id == DEPTH_INSTALL_ID -> depthRow = depthRow?.copy(progress = p)
             translateRows.keys.any { it.installId == id } ->
                 translateRows = translateRows.mapValues { (src, row) -> if (src.installId == id) row.copy(progress = p) else row }
             modelRows.any { it.spec.id == id } ->
@@ -1169,6 +1170,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         lap("parser")
         refreshPose()
         lap("pose")
+        refreshDepth()
+        lap("depth")
         refreshTranslation()
         lap("translation")
         refreshEmbeddings()
@@ -2303,6 +2306,76 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         com.abrah.nightmare.pose.PoseDetector.delete(getApplication())
         say("deleted ${com.abrah.nightmare.pose.PoseDetector.LABEL}")
         refreshPose()
+    }
+
+    // ---- the depth estimator (SD 1.5 Swap's depth) -------------------------
+
+    /**
+     * ⭐ The FOURTH Tools row — [com.abrah.nightmare.pose.DepthEstimator], a photo into a depth
+     * map. The parser's shape exactly: same [ToolRow], same one-download latch.
+     */
+    var depthRow by mutableStateOf<com.abrah.nightmare.ui.ToolRow?>(null)
+        private set
+
+    private val DEPTH_INSTALL_ID = "depth-tool"
+
+    fun refreshDepth() {
+        val ctx = getApplication<Application>()
+        val pose = com.abrah.nightmare.pose.DepthEstimator
+        pose.refresh(ctx)
+        depthRow = com.abrah.nightmare.ui.ToolRow(
+            label = pose.LABEL,
+            bytes = pose.BYTES,
+            installed = pose.installed,
+            onDisk = if (pose.installed) pose.bytesOnDisk(ctx) else 0L,
+            progress = if (installing == DEPTH_INSTALL_ID) installProgress else null,
+        )
+    }
+
+    fun installDepth() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        installing = DEPTH_INSTALL_ID
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, com.abrah.nightmare.pose.DepthEstimator.BYTES)
+        refreshDepth()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                com.abrah.nightmare.pose.DepthEstimator.install(
+                    ctx,
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch {
+                    say("installed ${com.abrah.nightmare.pose.DepthEstimator.LABEL}")
+                    downloadSucceeded(com.abrah.nightmare.pose.DepthEstimator.LABEL)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(com.abrah.nightmare.pose.DepthEstimator.LABEL, modelError!!)
+                    say("install failed — $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshDepth()
+                }
+            }
+        }
+    }
+
+    fun deleteDepth() {
+        com.abrah.nightmare.pose.DepthEstimator.delete(getApplication())
+        say("deleted ${com.abrah.nightmare.pose.DepthEstimator.LABEL}")
+        refreshDepth()
     }
 
     // ---- prompt translation (docs/TRANSLATE.md) ----------------------------

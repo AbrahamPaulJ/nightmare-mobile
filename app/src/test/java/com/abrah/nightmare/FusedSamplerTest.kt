@@ -179,6 +179,16 @@ class FusedSamplerTest {
         MaskNode.OPS to "s0.3:0.5,0.5~0,0.02",
     )
 
+    /** ⭐ Swap INPAINT: the masked render sends the Swap inputs too, and still blends. */
+    @Test
+    fun swapInpaintSendsTemplateInputsAndBlends() = runBlocking {
+        val host = RecordingHost()
+        val r = exec(host).run(graph(photo = photoFile(), params = painted, type = SdSampler.SD15_SWAP_INPAINT.name))
+        assertNull(r.error)
+        assertEquals(Ops.TemplateInputs(), host.lastTemplate)
+        assertEquals(1, host.blends)
+    }
+
     @Test
     fun aPaintedMaskBlendsInLatentSpace() = runBlocking {
         val host = RecordingHost()

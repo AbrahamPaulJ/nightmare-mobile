@@ -30,8 +30,8 @@ import com.abrah.nightmare.SwapInputs
 import com.abrah.nightmare.ui.ErrorNotice
 import com.abrah.nightmare.ui.LogTextStyle
 
-/** What the ControlNet tile shows: the hint, or why there is none. */
-internal class ControlHint(val bitmap: ImageBitmap?, val needsPoseDetector: Boolean)
+/** What the ControlNet tile shows: the hint, or which estimator it is waiting for. */
+internal class ControlHint(val bitmap: ImageBitmap?, val missing: String?)
 
 /**
  * ⭐⭐ The hint an SD 1.5 Swap node's ControlNet will see, made by the SAME
@@ -48,20 +48,21 @@ internal fun rememberControlHint(
     wired: ImageBitmap?,
     photo: ImageBitmap?,
     poseInstalled: Boolean,
+    depthInstalled: Boolean,
 ): ControlHint? {
     val ctx = LocalContext.current
     val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
     val cn = live[SdSampler.CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
     val uri = live[SdSampler.CONTROL_IMAGE].orEmpty()
     val frame = if (photo != null) SdSampler.swapFrame(live) else null
-    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, poseInstalled) {
+    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, poseInstalled, depthInstalled) {
         if (cn == SwapInputs.NONE) return@rememberOffMain null
         val src = wired?.asAndroidBitmap()
             ?: uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) }
             ?: photo?.asAndroidBitmap()
             ?: return@rememberOffMain null
         val made = SwapInputs.hint(ctx, src, cn, frame)
-        ControlHint(made.bitmap?.asImageBitmap(), made.needsPoseDetector)
+        ControlHint(made.bitmap?.asImageBitmap(), made.missing)
     }
 }
 
@@ -90,6 +91,9 @@ internal fun ControlNetPanel(
     onInstallPose: (() -> Unit)? = null,
     onCancelPose: (() -> Unit)? = null,
     onDeletePose: (() -> Unit)? = null,
+    depthRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onInstallDepth: (() -> Unit)? = null,
+    onDeleteDepth: (() -> Unit)? = null,
     onSetParam: (String, String) -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -146,16 +150,23 @@ internal fun ControlNetPanel(
                 }
             }
         }
-        if (hint?.needsPoseDetector == true || (cn == SwapInputs.OPENPOSE && poseRow?.progress != null)) {
-            ErrorNotice(stringResource(R.string.cn_pose_missing))
-            poseRow?.let { row ->
+        // ⭐ The estimator this photo needs, offered HERE — the pose detector for
+        // openpose, the depth estimator for depth. Also while one downloads, so
+        // the progress stays in view.
+        val depthKind = cn == SwapInputs.DEPTH
+        val toolRow = if (depthKind) depthRow else poseRow
+        if ((cn == SwapInputs.OPENPOSE || depthKind) &&
+            (hint?.missing == cn || toolRow?.progress != null)
+        ) {
+            ErrorNotice(stringResource(if (depthKind) R.string.cn_depth_missing else R.string.cn_pose_missing))
+            toolRow?.let { row ->
                 com.abrah.nightmare.ui.ToolCard(
                     row = row,
                     busy = busy,
-                    onInstall = { onInstallPose?.invoke() },
+                    onInstall = { (if (depthKind) onInstallDepth else onInstallPose)?.invoke() },
                     onCancel = { onCancelPose?.invoke() },
-                    detail = stringResource(R.string.pose_about),
-                    onDelete = { onDeletePose?.invoke() },
+                    detail = stringResource(if (depthKind) R.string.depth_about else R.string.pose_about),
+                    onDelete = { (if (depthKind) onDeleteDepth else onDeletePose)?.invoke() },
                 )
             }
         }
@@ -177,6 +188,7 @@ internal fun ControlNetPanel(
                     when (cn) {
                         SwapInputs.CANNY -> R.string.cn_no_picture_photo
                         SwapInputs.OPENPOSE -> R.string.cn_no_picture_pose
+                        SwapInputs.DEPTH -> R.string.cn_no_picture_depth
                         else -> R.string.cn_no_picture_hint
                     },
                 ),

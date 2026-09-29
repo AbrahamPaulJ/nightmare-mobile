@@ -71,7 +71,7 @@ class PaletteTest {
         // the engine honours the mask and then regenerates nothing inside it
         // (measured 2026-09-20, `SdSampler.ALL`). This list is what guards
         // that decision — registering it silently would show up here first.
-        assertEquals(listOf("SD 1.5", "SDXL", "Anima"), inpaint.first().map { it.paletteVariant })
+        assertEquals(listOf("SD 1.5", "SD 1.5 Swap", "SDXL", "Anima"), inpaint.first().map { it.paletteVariant })
         assertFalse(sections.getValue("generate").flatten().any { it.name.endsWith(".inpaint") })
     }
 

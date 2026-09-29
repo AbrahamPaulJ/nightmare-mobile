@@ -327,6 +327,9 @@ fun NodeInspector(
     poseRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallPose: (() -> Unit)? = null,
     onDeletePose: (() -> Unit)? = null,
+    depthRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onInstallDepth: (() -> Unit)? = null,
+    onDeleteDepth: (() -> Unit)? = null,
     busy: Boolean = false,
     /** ⭐⭐ Run from the sheet — null in a preview, which draws no bar. */
     onRun: (() -> Unit)? = null,
@@ -646,6 +649,9 @@ fun NodeInspector(
             poseRow = poseRow,
             onInstallPose = onInstallPose,
             onDeletePose = onDeletePose,
+            depthRow = depthRow,
+            onInstallDepth = onInstallDepth,
+            onDeleteDepth = onDeleteDepth,
             busy = busy,
             onReset = onReset,
             // ⚠⚠ **Not offered when the node ALREADY auto-upscales** — the
@@ -1047,6 +1053,9 @@ internal fun NodeInspectorBody(
     poseRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallPose: (() -> Unit)? = null,
     onDeletePose: (() -> Unit)? = null,
+    depthRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onInstallDepth: (() -> Unit)? = null,
+    onDeleteDepth: (() -> Unit)? = null,
     busy: Boolean = false,
     /** ⭐⭐ What made this picture — the rows for [com.abrah.nightmare.ui.ResultInfoDialog]. */
     onInfo: (() -> List<Pair<String, String>>)? = null,
@@ -1672,7 +1681,10 @@ internal fun NodeInspectorBody(
         // whether or not anything is picked yet — it is where one gets picked.
         val swap = node.type == com.abrah.nightmare.SdSampler.SD15_SWAP.name
         val controlHint = if (swap) {
-            rememberControlHint(node, type, controlSource, cropSource, poseRow?.installed == true)
+            rememberControlHint(
+                node, type, controlSource, cropSource,
+                poseRow?.installed == true, depthRow?.installed == true,
+            )
         } else null
         val controlTile = if (!swap) null else EditorTile(
             androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.cn_label), controlHint?.bitmap,
@@ -1681,6 +1693,7 @@ internal fun NodeInspectorBody(
                 node, type, controlSource, cropSource, controlHint,
                 poseRow = poseRow, busy = busy,
                 onInstallPose = onInstallPose, onCancelPose = onCancelParser, onDeletePose = onDeletePose,
+                depthRow = depthRow, onInstallDepth = onInstallDepth, onDeleteDepth = onDeleteDepth,
             ) { k, v -> onSetParam(nodeId, k, v) }
         }
         if (popup && (cropSource != null || refSource != null || controlTile != null)) {

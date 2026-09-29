@@ -295,6 +295,9 @@ fun CanvasScreen(
     poseRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallPose: (() -> Unit)? = null,
     onDeletePose: (() -> Unit)? = null,
+    depthRow: com.abrah.nightmare.ui.ToolRow? = null,
+    onInstallDepth: (() -> Unit)? = null,
+    onDeleteDepth: (() -> Unit)? = null,
     /** ⭐⭐ Import a `.safetensors` adapter from inside a node's LoRA picker. */
     onImportLora: (() -> Unit)? = null,
     /** ⚠⚠ `HarnessViewModel.loraEpoch` — what re-reads `_loras` after an Add. */
@@ -604,6 +607,9 @@ fun CanvasScreen(
         poseRow = poseRow,
         onInstallPose = onInstallPose,
         onDeletePose = onDeletePose,
+        depthRow = depthRow,
+        onInstallDepth = onInstallDepth,
+        onDeleteDepth = onDeleteDepth,
         busy = busy,
         onRun = onRun,
         onCancelRun = onCancelRun,
