@@ -116,6 +116,8 @@ interface OpHost {
         /** ⭐ An inpaint node's picture + mask, PNG — see `Ops.sample`. */
         inpaintImage: ByteArray? = null,
         inpaintMask: ByteArray? = null,
+        /** ⭐ SD 1.5 Swap's LoRA / ControlNet ([Ops.TemplateInputs]); null for every other model. */
+        template: Ops.TemplateInputs? = null,
         onProgress: (Ops.Progress) -> Unit,
     ): Ops.Result<Ops.Sampled>
 
@@ -178,6 +180,7 @@ object BackendHost : OpHost {
         width: Int, height: Int, latentHandle: String?, denoise: Double,
         scheduler: String, condHandle: String, aspect: String?,
         inpaintImage: ByteArray?, inpaintMask: ByteArray?,
+        template: Ops.TemplateInputs?,
         onProgress: (Ops.Progress) -> Unit,
         // ⚠ Named, not positional. Ops.sample grew preview arguments BEFORE
         // onProgress, and a positional forward silently bound the callback to
@@ -195,6 +198,7 @@ object BackendHost : OpHost {
         width = width, height = height, latentHandle = latentHandle, denoise = denoise,
         scheduler = scheduler, condHandle = condHandle, aspect = aspect,
         inpaintImage = inpaintImage, inpaintMask = inpaintMask,
+        template = template,
         onProgress = onProgress,
     )
 

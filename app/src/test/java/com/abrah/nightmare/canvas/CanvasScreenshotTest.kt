@@ -1270,6 +1270,52 @@ open class ReferenceInspectorScreenshotTest {
         }
 }
 
+/**
+ * ⭐⭐ **SD 1.5 Swap with a photo AND a control picture wired** — the ControlNet
+ * tile beside Crop (`docs/UI.md` §8.12), and its tab: type chips, strength, the
+ * "from the wire" note, and the canny hint made from the stripes. Added with
+ * the family (1.6.054) so the one new surface is drawn before a phone opens it.
+ * ⚠ A PORTRAIT control picture: the hint must be FITTED on black, never cropped.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w411dp-h891dp-xxhdpi")
+open class SwapInspectorScreenshotTest {
+    @Test fun controlNetIsATile() = shoot("inspector-swap-controlnet", null)
+    @Test fun popupControlNetTab() = shoot("swap-popup-controlnet", 1)
+
+    private fun shoot(name: String, tab: Int?) =
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
+            NightmareTheme(darkTheme = true) {
+                Surface(Modifier.fillMaxSize()) {
+                    NodeInspectorBody(
+                        nodeId = "generate",
+                        node = Node(
+                            "generate", SdSampler.SD15_SWAP.name,
+                            params = mapOf(
+                                "steps" to "20", "cfg" to "7.5", "seed" to "0",
+                                "model" to "yukimix_swap", "width" to "512", "height" to "512",
+                                "x" to "0.1", "y" to "0.1", "w" to "0.8", "h" to "0.8",
+                                SdSampler.CONTROLNET to "canny",
+                                SdSampler.CONTROL_STRENGTH to "0.8",
+                            ),
+                            inputs = sources(
+                                "image" to "photo", SdSampler.CONTROL to "pose", "prompt" to "prompt",
+                            ),
+                        ),
+                        type = NODE_TYPES[SdSampler.SD15_SWAP.name],
+                        onSetParam = { _, _, _ -> },
+                        onDelete = {},
+                        onReset = {},
+                        cropSource = stripeSource(300, 220),
+                        controlSource = stripeSource(200, 320),
+                        inlinePopupTab = tab,
+                    )
+                }
+            }
+        }
+}
+
 /** [CanvasScreenshotTest]'s synthetic source, for the classes beside it. */
 private fun stripeSource(w: Int, h: Int): androidx.compose.ui.graphics.ImageBitmap {
     val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)

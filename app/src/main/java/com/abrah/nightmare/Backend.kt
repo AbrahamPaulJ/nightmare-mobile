@@ -466,6 +466,25 @@ object Ops {
      * tell a stream from a buffered lump: the frames are identical either way.
      * If first ~= last ~= serverMs, nothing streamed.
      */
+    /**
+     * ⭐⭐ An SD 1.5 Swap render's per-request LoRA and ControlNet
+     * (`backend-patches/015`). Null fields are not sent: a template UNet with no
+     * LoRA and no hint is exactly the base model (zero `lora_S`, zero residuals).
+     *
+     * ⚠ The backend folds every one of these into the `/sample` handle key, but
+     * `lora_dir` by PATH — so a pack directory is named after its contents
+     * ([SwapInputs.packDir]), never reused for a different LoRA set.
+     */
+    data class TemplateInputs(
+        val loraDir: String? = null,
+        val loraStrength: Double = 1.0,
+        /** An AI Hub-contract `controlnet.bin`; loaded on first use, kept until another is named. */
+        val controlnet: String? = null,
+        /** The HINT, 512² PNG — edges, depth or a pose skeleton, already made. */
+        val controlImage: ByteArray? = null,
+        val controlStrength: Double = 1.0,
+    )
+
     data class Sampled(
         val handle: String,
         val latentSha: String,
@@ -606,6 +625,8 @@ object Ops {
          */
         inpaintImage: ByteArray? = null,
         inpaintMask: ByteArray? = null,
+        /** ⭐ SD 1.5 Swap only ([TemplateInputs]); every other model gets null. */
+        template: TemplateInputs? = null,
         onProgress: (Progress) -> Unit = {},
     ): Result<Sampled> {
         val body = JSONObject()
@@ -620,6 +641,17 @@ object Ops {
             .apply {
                 if (aspect != null) put("aspect_ratio", aspect)
                 if (condHandle != null) put("cond_handle", condHandle)
+                if (template != null) {
+                    template.loraDir?.let {
+                        put("lora_dir", it)
+                        put("lora_strength", template.loraStrength)
+                    }
+                    if (template.controlnet != null && template.controlImage != null) {
+                        put("controlnet", template.controlnet)
+                        put("control_image", android.util.Base64.encodeToString(template.controlImage, android.util.Base64.NO_WRAP))
+                        put("control_strength", template.controlStrength)
+                    }
+                }
                 if (inpaintImage != null && inpaintMask != null) {
                     put("inpaint_image", android.util.Base64.encodeToString(inpaintImage, android.util.Base64.NO_WRAP))
                     put("inpaint_mask", android.util.Base64.encodeToString(inpaintMask, android.util.Base64.NO_WRAP))

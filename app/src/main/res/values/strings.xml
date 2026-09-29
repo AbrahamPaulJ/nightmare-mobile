@@ -227,4 +227,14 @@
     <string name="anima_lowram_hint">For Anima only: load each model on demand and free it after use. Required on devices with less than 16GB RAM. Disables in-progress preview.</string>
     <string name="anima_seq_dit">Anima DiT sequential loading</string>
     <string name="anima_seq_dit_hint">Only with Anima low RAM mode: never keep both DiT halves in memory at the same time. Enable this if you have 12GB RAM but Anima low RAM mode still cannot run. Slower per step.</string>
+    <string name="cn_label">ControlNet</string>
+    <string name="cn_hint">canny finds the edges of a photo; depth and openpose take a ready-made depth map or pose skeleton</string>
+    <string name="cn_not_installed">The %1$s ControlNet is not installed on this phone yet.</string>
+    <string name="cn_from_wire">Using the picture wired into control.</string>
+    <string name="cn_pick">Choose picture</string>
+    <string name="cn_replace">Replace</string>
+    <string name="cn_clear">Delete</string>
+    <string name="cn_sees">What the ControlNet sees</string>
+    <string name="cn_no_picture_photo">No picture yet: choose a photo, or wire one into control. Its edges are found here.</string>
+    <string name="cn_no_picture_hint">No picture yet: choose a ready-made hint image, or wire one into control.</string>
 </resources>

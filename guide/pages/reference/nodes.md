@@ -6,7 +6,7 @@ There are five kinds of node. Every flow — ready-made or yours — is built fr
 |---|---|---|---|
 | [Prompt](#prompt) | Common | — | prompt |
 | [Image](#image) | Common | — | image |
-| [Image generator](#image-generator) | Generate | prompt, image (+ reference) | image |
+| [Image generator](#image-generator) | Generate | prompt, image (+ reference, + control) | image |
 | [Inpaint generator](#inpaint-generator) | Inpaint | prompt, image | image |
 | [Video generator](#video-generator) | Generate | prompt, image | video |
 | [Output](#output) | Common | media | — |
@@ -52,8 +52,8 @@ The node that makes the picture. Its **title follows what is wired into it**:
 | prompt + image | *Image to image* — or *Image edit* on FLUX.2 and Qwen Image |
 | prompt + reference | *Image edit* (FLUX.2 and Qwen Image) |
 
-The palette card is **Image** with a chip per family — **SD 1.5**, **SDXL**, **Anima**,
-**FLUX.2**, **Z-Image**, **Qwen Image**. The family decides which settings appear.
+The palette card is **Image** with a chip per family — **SD 1.5**, **SD 1.5 Swap**, **SDXL**,
+**Anima**, **FLUX.2**, **Z-Image**, **Qwen Image**. The family decides which settings appear.
 
 | setting | families | what it does |
 |---|---|---|
@@ -67,7 +67,8 @@ The palette card is **Image** with a chip per family — **SD 1.5**, **SDXL**, *
 | **Resolution** | SD 1.5 | The sizes this model supports. A new size reloads the model on the next Run |
 | **Shape** | SDXL, Anima | Crops the fixed 1024 square to an aspect. No reload |
 | **Width**, **Height** | FLUX.2, Z-Image, Qwen | 512–2048 in 64-pixel steps. No reload |
-| **LoRAs** | FLUX.2, Z-Image | Adapters on top of the model, each with a strength. [LoRAs](../models/loras.md) |
+| **LoRAs** | FLUX.2, Z-Image, SD 1.5 Swap | Adapters on top of the model, each with a strength. [LoRAs](../models/loras.md) |
+| **ControlNet** tile | SD 1.5 Swap | Type (**canny**, **depth**, **openpose** or none), strength, and the picture — chosen on the tile, or wired into **control**, which wins. Canny finds the edges of a photo; depth and openpose take a ready-made depth map or skeleton. The tile shows what the ControlNet sees. The picture is fitted into 512×512, never cropped |
 | **Crop** frame | with an image | Which part of the photo is used. Tap the picture on the node to frame it |
 | **Pad** | with an image | What fills the frame where it runs off a small photo: **Black**, **Blur**; edit models also **Green** |
 | **Allow padding** | FLUX.2, Qwen (edit) | Lets the frame zoom out past the photo; the padding is generated |

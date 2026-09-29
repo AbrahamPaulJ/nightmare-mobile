@@ -10,7 +10,9 @@ cannot be used directly — it has to be converted first. Two ways:
 
 - **On the phone, with [npuforge](https://github.com/AbrahamPaulJ/npuforge)**: it turns an SD 1.5
   `.safetensors` checkpoint into an NPU model with no PC involved. Its 9-channel inpainting
-  exports run as real inpainting models.
+  exports run as real inpainting models, and its **SD1.5 Swap** exports land in their own
+  **SD 1.5 Swap** tab and take LoRAs and ControlNet per render
+  ([nodes](../reference/nodes.md#image-generator)).
 - **A zip made for LocalDream**: converted models shared for LocalDream import unchanged.
 
 To import: open the family's tab in **Models**, tap **Import**, choose the `.zip` and give it a

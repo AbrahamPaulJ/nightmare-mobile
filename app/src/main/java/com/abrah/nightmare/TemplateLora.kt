@@ -22,7 +22,7 @@ import java.nio.channels.FileChannel
  * fixed ±1 window, so each is scaled to max|.| = 1 and `S = (alpha/r) * mA * mB`
  * carries the rest. ⚠ STRENGTH is not packed: the backend multiplies `lora_S` by
  * the request's `lora_strength`, so a strength change rewrites one 640-byte input.
- * r < R zero-pads; r > R needs an SVD truncation and is refused for now.
+ * r < R zero-pads; r > R keeps the best rank-R approximation ([truncate]).
  *
  * ⚠⚠ The target ORDER is the export's hook order, not a pattern worth
  * re-deriving here: it ships beside the UNet as [TARGETS_FILE] and is read, never
@@ -135,6 +135,97 @@ object TemplateLora {
         val unet = keys.count { (it.startsWith("lora_unet_") || it.startsWith("unet.")) && it !in used }
         val te = keys.count { it.startsWith("lora_te") || it.startsWith("text_encoder.") }
         return Packed(matched, targets.list.size, loraRank, s.maxOrNull() ?: 0f, unet, te)
+    }
+
+    /**
+     * ⭐⭐ Several LoRAs into the ONE rank-R slot, strengths BAKED — so the
+     * request's `lora_strength` is 1.0 for a merged pack.
+     *
+     * Per target the factors are stacked: `D = [s1 d1; s2 d2; …]` (each row
+     * scaled by that LoRA's `alpha/r * strength`) and `U = [u1 u2 …]`, whose
+     * product is the sum of the deltas exactly. Ranks summing to ≤ R are exact;
+     * beyond that [truncate] keeps the best rank-R approximation of the SUM,
+     * which is the optimum for the slot — truncating each LoRA first would not be.
+     *
+     * ⚠ Also the route for ONE LoRA at a negative strength: `lora_S` has a
+     * [0, 0.25] window, so a sign can only live in the factors.
+     *
+     * Targets are packed in parallel; each writes only its own files and `S` slot.
+     */
+    fun packMerged(loras: List<Pair<File, Double>>, targets: Targets, outDir: File): Packed {
+        require(loras.isNotEmpty())
+        val sts = loras.map { Safetensors(it.first) }
+        try {
+            outDir.mkdirs()
+            outDir.listFiles { f -> f.name.endsWith(".raw") }?.forEach { it.delete() }
+            val r0 = targets.rank
+            val s = FloatArray(targets.list.size)
+            val matched = java.util.concurrent.atomic.AtomicInteger()
+            val maxRank = java.util.concurrent.atomic.AtomicInteger()
+            val used = sts.map { java.util.concurrent.ConcurrentHashMap.newKeySet<String>() }
+            java.util.stream.IntStream.range(0, targets.list.size).parallel().forEach { ti ->
+                val t = targets.list[ti]
+                val ds = ArrayList<FloatArray>()
+                val us = ArrayList<FloatArray>()
+                val rs = ArrayList<Int>()
+                for ((li, st) in sts.withIndex()) {
+                    val (down, up, alphaKey) = findPair(t.name, st.names) ?: continue
+                    used[li] += down; used[li] += up; alphaKey?.let { used[li] += it }
+                    val dShape = st.shape(down)
+                    val uShape = st.shape(up)
+                    val r = dShape[0].toInt()
+                    val din = dShape.drop(1).fold(1L) { a, b -> a * b }.toInt()
+                    require(din == t.din && uShape[0].toInt() == t.dout && uShape[1].toInt() == r) {
+                        "${t.name}: ${loras[li].first.name} does not fit the template's " +
+                            "[${t.din} -> ${t.dout}] -- not an SD 1.5 LoRA?"
+                    }
+                    val alpha = alphaKey?.let { st.floats(it)[0].toDouble() } ?: r.toDouble()
+                    val scale = (alpha / r * loras[li].second).toFloat()
+                    if (scale == 0f) continue
+                    ds += st.floats(down).also { d -> for (i in d.indices) d[i] *= scale }
+                    us += st.floats(up)
+                    rs += r
+                }
+                if (rs.isEmpty()) return@forEach
+                val rTot = rs.sum()
+                maxRank.accumulateAndGet(rTot, ::maxOf)
+                var d = FloatArray(rTot * t.din)
+                var u = FloatArray(t.dout * rTot)
+                var off = 0
+                for (k in rs.indices) {
+                    val r = rs[k]
+                    System.arraycopy(ds[k], 0, d, off * t.din, r * t.din)
+                    for (o in 0 until t.dout) for (j in 0 until r) u[o * rTot + off + j] = us[k][o * r + j]
+                    off += r
+                }
+                var rk = rTot
+                if (rTot > r0) {
+                    val (dt, ut) = truncate(d, u, rTot, t.din, t.dout, r0)
+                    d = dt; u = ut; rk = r0
+                }
+                val mA = d.maxOf { kotlin.math.abs(it) }
+                val mB = u.maxOf { kotlin.math.abs(it) }
+                if (mA == 0f || mB == 0f) return@forEach
+                val la = FloatArray(t.din * r0)
+                for (j in 0 until rk) for (i in 0 until t.din) la[i * r0 + j] = d[j * t.din + i] / mA
+                val lb = FloatArray(r0 * t.dout)
+                for (j in 0 until rk) for (o in 0 until t.dout) lb[j * t.dout + o] = u[o * rk + j] / mB
+                writeRaw(File(outDir, "la_${t.idx}.raw"), la)
+                writeRaw(File(outDir, "lb_${t.idx}.raw"), lb)
+                s[t.idx] = mA * mB
+                matched.incrementAndGet()
+            }
+            writeRaw(File(outDir, "lora_S.raw"), s)
+            var unet = 0
+            var te = 0
+            for ((li, st) in sts.withIndex()) {
+                unet += st.names.count { (it.startsWith("lora_unet_") || it.startsWith("unet.")) && it !in used[li] }
+                te += st.names.count { it.startsWith("lora_te") || it.startsWith("text_encoder.") }
+            }
+            return Packed(matched.get(), targets.list.size, maxRank.get(), s.maxOrNull() ?: 0f, unet, te)
+        } finally {
+            sts.forEach { it.close() }
+        }
     }
 
     /**

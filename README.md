@@ -121,7 +121,7 @@ each with its own buttons.
 DiT in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
 [npuforge](https://github.com/AbrahamPaulJ/npuforge), which turns an SD safetensors checkpoint
 into a QNN model with no PC involved; its 9 channel inpainting exports run as real inpainting
-models. A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
+models, and its **SD1.5 Swap** exports take LoRAs and ControlNet per render (below). A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
 grouped by family and listing what is actually installed; switching family rewrites that node
 and keeps every wire. The APK carries every Hexagon architecture tier and picks the build your
 chip can load.
@@ -145,6 +145,16 @@ Z-Image generate node — a checkbox per installed file and a strength slider. I
 render starts, so changing one or moving a slider reloads nothing. The cost is the adapter's
 size: about 6% for a 160 tensor FLUX adapter, 43% for a 480 tensor Z-Image one. Stack as many
 as you like.
+
+**SD 1.5 Swap: LoRA and ControlNet on the NPU, per render.** Convert an SD 1.5 checkpoint in
+npuforge as *SD1.5 Swap* and it becomes a model whose LoRA and ControlNet are inputs rather
+than baked-in weights. Pick LoRAs on its node the same way (several are merged into its one
+rank-64 slot on the phone, once, then cached), and give it a ControlNet picture: **canny**
+finds the edges of a photo on the phone, **openpose** takes a pose skeleton, and **depth** will
+take a depth map once its ControlNet is built. Nothing is reconverted and the model is not
+reloaded. 512×512 only; about 15% slower than the same checkpoint converted plainly, and a
+ControlNet adds about 3 s a picture. The ControlNet models are not in the catalogue yet. Only the
+UNet half of a LoRA applies, as with every NPU conversion.
 
 **Embeddings.** Import a textual inversion `.safetensors` and name it in a prompt.
 

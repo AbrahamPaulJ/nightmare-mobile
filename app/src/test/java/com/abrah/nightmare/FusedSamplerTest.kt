@@ -86,6 +86,35 @@ class FusedSamplerTest {
         assertNull("txt2img must start from noise", host.lastLatentHandle)
     }
 
+    /**
+     * ⭐ SD 1.5 Swap sends its per-request inputs; plain SD 1.5 sends none. With
+     * no LoRA and ControlNet at none they are all empty — the base model — and
+     * no Android context is needed to say so.
+     */
+    @Test
+    fun onlySwapSendsTemplateInputs() = runBlocking {
+        val swap = RecordingHost()
+        assertNull(exec(swap).run(graph(type = SdSampler.SD15_SWAP.name)).error)
+        assertEquals(Ops.TemplateInputs(), swap.lastTemplate)
+        val plain = RecordingHost()
+        assertNull(exec(plain).run(graph(type = SdSampler.SD15.name)).error)
+        assertNull(plain.lastTemplate)
+    }
+
+    /**
+     * ⚠ A ControlNet that cannot be resolved (here: no model, no picture) stops
+     * the run BEFORE the backend is asked for anything — never a plain render.
+     */
+    @Test
+    fun anUnresolvableSwapControlNetNeverSamples() = runBlocking {
+        val host = RecordingHost()
+        val r = exec(host).run(
+            graph(type = SdSampler.SD15_SWAP.name, params = mapOf(SdSampler.CONTROLNET to "canny")),
+        )
+        assertTrue(r.error != null)
+        assertEquals(0, host.samples)
+    }
+
     @Test
     fun aPhotoWiredInIsImageToImage() = runBlocking {
         val host = RecordingHost()
@@ -484,6 +513,7 @@ private class RecordingHost : OpHost {
     var lastSampleHandle: String? = null
     var lastEncodeSize: Pair<Int, Int>? = null
     var lastScheduler: String? = null
+    var lastTemplate: Ops.TemplateInputs? = null
     var lastSeed: Int? = null
     var blendA: String? = null
     var blendB: String? = null
@@ -518,6 +548,7 @@ private class RecordingHost : OpHost {
         width: Int, height: Int, latentHandle: String?, denoise: Double,
         scheduler: String, condHandle: String, aspect: String?,
         inpaintImage: ByteArray?, inpaintMask: ByteArray?,
+        template: Ops.TemplateInputs?,
         onProgress: (Ops.Progress) -> Unit,
     ): Ops.Result<Ops.Sampled> {
         samples++
@@ -526,6 +557,7 @@ private class RecordingHost : OpHost {
         lastInpaintMask = inpaintMask
         lastScheduler = scheduler
         lastSeed = seed
+        lastTemplate = template
         val id = "lat_" + listOf(condHandle, steps, cfg, seed, width, height, latentHandle.orEmpty())
             .joinToString("|").hashCode().toUInt().toString(16)
         lastSampleHandle = id

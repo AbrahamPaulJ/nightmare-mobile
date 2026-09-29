@@ -157,6 +157,84 @@ class TemplateLoraTest {
     }
 
     /**
+     * ⭐ Two LoRAs merged into the one slot, strengths baked (one negative):
+     * ranks 3 + 4 fit R = 8, so `la lb S` must equal the strength-weighted SUM of
+     * their deltas exactly. A target only the first trains is its delta alone.
+     */
+    @Test
+    fun mergedPackIsTheWeightedSumOfTheDeltas() {
+        val rnd = Random(5)
+        val q = "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q"
+        val ff = "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_ff_net_0_proj"
+        fun lora(name: String, r: Int, alpha: Float, withFf: Boolean): Pair<File, List<FloatArray>> {
+            val d = FloatArray(r * 6) { rnd.nextFloat() - 0.5f }
+            val u = FloatArray(6 * r) { rnd.nextFloat() - 0.5f }
+            val dff = FloatArray(r * 6) { rnd.nextFloat() - 0.5f }
+            val uff = FloatArray(12 * r) { rnd.nextFloat() - 0.5f }
+            val f = tmp.newFile(name)
+            writeSafetensors(f, listOfNotNull(
+                Triple("$q.lora_down.weight", listOf(r, 6), d),
+                Triple("$q.lora_up.weight", listOf(6, r), u),
+                Triple("$q.alpha", listOf(), floatArrayOf(alpha)),
+                if (withFf) Triple("$ff.lora_down.weight", listOf(r, 6), dff) else null,
+                if (withFf) Triple("$ff.lora_up.weight", listOf(12, r), uff) else null,
+            ), f16 = false)
+            return f to listOf(d, u, dff, uff)
+        }
+        val (f1, t1) = lora("a.safetensors", 3, 2f, withFf = true)
+        val (f2, t2) = lora("b.safetensors", 4, 4f, withFf = false)
+        val out = tmp.newFolder("merged")
+        val p = TemplateLora.packMerged(listOf(f1 to 0.5, f2 to -1.0), TemplateLora.readTargets(targetsJson), out)
+        assertEquals(2, p.matched)
+        assertEquals(7, p.loraRank)
+        val s = raw(File(out, "lora_S.raw"))
+        assertTrue(s.all { it >= 0f })
+        fun delta(d: FloatArray, u: FloatArray, r: Int, scale: Double, dout: Int) =
+            DoubleArray(6 * dout) { k ->
+                val i = k / dout
+                val o = k % dout
+                (0 until r).sumOf { j -> d[j * 6 + i].toDouble() * u[o * r + j] } * scale
+            }
+        val q1 = delta(t1[0], t1[1], 3, 2.0 / 3 * 0.5, 6)
+        val q2 = delta(t2[0], t2[1], 4, 4.0 / 4 * -1.0, 6)
+        val wantQ = DoubleArray(q1.size) { q1[it] + q2[it] }
+        val wantFf = delta(t1[2], t1[3], 3, 3.0 / 3 * 0.5, 12)
+        for ((idx, want, dout) in listOf(Triple(0, wantQ, 6), Triple(1, wantFf, 12))) {
+            val la = raw(File(out, "la_$idx.raw"))
+            val lb = raw(File(out, "lb_$idx.raw"))
+            for (i in 0 until 6) for (o in 0 until dout) {
+                var got = 0.0
+                for (j in 0 until 8) got += la[i * 8 + j].toDouble() * lb[j * dout + o]
+                assertEquals(want[i * dout + o], got * s[idx], 1e-5)
+            }
+        }
+    }
+
+    /** ⭐ One LoRA through the merged path at 1.0 is the plain pack (strength then sent per request). */
+    @Test
+    fun mergedPackOfOneAtFullStrengthIsThePlainPack() {
+        val rnd = Random(9)
+        val q = "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q"
+        val f = tmp.newFile("one.safetensors")
+        writeSafetensors(f, listOf(
+            Triple("$q.lora_down.weight", listOf(5, 6), FloatArray(30) { rnd.nextFloat() - 0.5f }),
+            Triple("$q.lora_up.weight", listOf(6, 5), FloatArray(30) { rnd.nextFloat() - 0.5f }),
+            Triple("$q.alpha", listOf(), floatArrayOf(3f)),
+        ), f16 = false)
+        val targets = TemplateLora.readTargets(targetsJson)
+        val a = tmp.newFolder("plain")
+        val b = tmp.newFolder("merged1")
+        TemplateLora.pack(f, targets, a)
+        TemplateLora.packMerged(listOf(f to 1.0), targets, b)
+        for (name in listOf("la_0.raw", "lb_0.raw", "lora_S.raw")) {
+            val x = raw(File(a, name))
+            val y = raw(File(b, name))
+            assertEquals(x.size, y.size)
+            for (i in x.indices) assertEquals(name, x[i], y[i], 1e-6f)
+        }
+    }
+
+    /**
      * Rank above the template: a rank-12 LoRA whose product is really rank 7
      * (four of U's columns zero) must survive truncation to R = 8 EXACTLY.
      */

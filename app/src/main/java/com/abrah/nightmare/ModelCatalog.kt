@@ -58,6 +58,19 @@ enum class Family(
     val edit: Boolean = false,
 ) {
     SD15("SD 1.5", GP_SD15, GP_SD15_NEG, "sd15"),
+    /**
+     * ⭐⭐ **SD 1.5 Swap** — the user's name, 2026-09-29. An SD 1.5 checkpoint
+     * converted by npuforge into the TEMPLATE UNet whose LoRA and ControlNet
+     * residuals are graph inputs, so both change per render with no conversion
+     * (`backend-patches/015`, `../npuforge/docs/SD15-LORA-CN-TEMPLATE.md`).
+     *
+     * ⚠⚠ Its own family, not a flag on [SD15]: a PORT is per node type, and
+     * the `control` port exists only here — the FLUX.2 `reference` precedent.
+     * Same launch type ([ModelCatalog.SD15_NPU]) and prompts as SD 1.5; 512²
+     * only (the template ships no resolution patches). Recognised by
+     * [TemplateLora.TARGETS_FILE] beside the UNet ([CustomModels]).
+     */
+    SD15_SWAP("SD 1.5 Swap", GP_SD15, GP_SD15_NEG, "sd15swap"),
     SDXL("SDXL", GP_SDXL, GP_SDXL_NEG, "sdxl"),
     ANIMA("Anima", GP_ANIMA, GP_ANIMA_NEG, "anima"),
     FLUX2("FLUX.2", GP_DIT, GP_DIT_NEG, "flux2", dit = true, edit = true),
@@ -655,7 +668,9 @@ data class ModelSpec(
      * as it does `sd15npu`.
      */
     val servesPatches: Boolean
-        get() = backendType == ModelCatalog.SD15_NPU || backendType == ModelCatalog.SD15_NPU_INPAINT
+        get() = (backendType == ModelCatalog.SD15_NPU || backendType == ModelCatalog.SD15_NPU_INPAINT) &&
+            // ⚠ Swap launches as `sd15npu` too, and its template ships no patches.
+            family != Family.SD15_SWAP
 
     /**
      * ⭐ Families whose graphs are frozen at one square size and which reach a
@@ -1178,6 +1193,9 @@ object ModelCatalog {
         "tokenizer.json", "clip_v2.mnn", "pos_emb.bin", "token_emb.bin",
         "unet.bin", "vae_decoder.bin", "vae_encoder.bin",
     )
+
+    /** ⭐ SD 1.5 Swap: SD 1.5's files plus the template's LoRA target order. */
+    val SD15_SWAP_REQUIRED = SD15_REQUIRED + TemplateLora.TARGETS_FILE
 
     /**
      * ⚠⚠ SDXL's CLIP side is **two encoders**, each with its own embedding

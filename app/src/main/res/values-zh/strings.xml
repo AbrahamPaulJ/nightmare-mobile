@@ -204,4 +204,14 @@
     <string name="anima_lowram_hint">仅 Anima 生效：按需加载每个模型，用完即释放。小于 16GB 内存的设备建议开启。开启后将禁用生成过程预览。</string>
     <string name="anima_seq_dit">Anima DiT 轮流加载</string>
     <string name="anima_seq_dit_hint">仅在 Anima 低内存模式下生效：不再让 DiT 的两块同时驻留内存。如果你有 12GB 内存但 Anima 低内存模式仍无法运行，请开启此选项。每步速度会变慢。</string>
+    <string name="cn_label">ControlNet</string>
+    <string name="cn_hint">canny 提取照片的边缘；depth 和 openpose 使用现成的深度图或姿势骨架</string>
+    <string name="cn_not_installed">此手机尚未安装 %1$s ControlNet。</string>
+    <string name="cn_from_wire">使用连接到 control 的图片。</string>
+    <string name="cn_pick">选择图片</string>
+    <string name="cn_replace">替换</string>
+    <string name="cn_clear">删除</string>
+    <string name="cn_sees">ControlNet 看到的内容</string>
+    <string name="cn_no_picture_photo">还没有图片：选择一张照片，或将图片连接到 control。边缘在这里提取。</string>
+    <string name="cn_no_picture_hint">还没有图片：选择一张现成的提示图，或将图片连接到 control。</string>
 </resources>

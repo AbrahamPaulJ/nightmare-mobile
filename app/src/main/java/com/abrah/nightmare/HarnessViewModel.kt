@@ -4557,7 +4557,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val next = Graph(
             g.nodes.map {
                 when (it.id) {
-                    nodeId -> it.copy(type = newType, params = params)
+                    // ⚠ A wire into a port the new type does not declare is dropped
+                    // — SD 1.5 Swap's `control`, FLUX.2's `reference` — rather than
+                    // left pointing at a socket the node no longer draws.
+                    nodeId -> it.copy(
+                        type = newType, params = params,
+                        inputs = nodeTypes[newType]?.inputs?.map { p -> p.name }?.toSet()
+                            ?.let { ports -> it.inputs.filterKeys { k -> k in ports } } ?: it.inputs,
+                    )
                     promptId -> it.copy(
                         params = it.params +
                             mapOf("prompt" to spec.starterPrompt, "negative" to spec.starterNegative)

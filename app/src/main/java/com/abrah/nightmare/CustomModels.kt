@@ -250,7 +250,7 @@ object CustomModels {
         // ⚠ Upstream's precedence, not ours: ZIMAGE, KLEIN, ANIMA, SDXL, then
         // the two that only mean "SD 1.5" ([UPSTREAM_MARKS]).
         UPSTREAM_MARKS.firstOrNull { (name, _) -> File(dir, name).isFile }
-            ?.let { (_, family) -> return customSpec(dir, Config.read(dir), family) }
+            ?.let { (_, family) -> return customSpec(dir, Config.read(dir), swapIf(dir, family)) }
 
         val marked = listOfNotNull(
             Family.SD15.takeIf { File(dir, SD15_MARK).isFile },
@@ -276,13 +276,20 @@ object CustomModels {
             if (found.size > 1) Log.w(TAG, "skipping '${dir.name}': markers for ${found.joinToString()}")
             return null
         }
-        val spec = customSpec(dir, Config.read(dir), found.single())
+        // ⭐⭐ An SD 1.5 folder carrying the template's target list is **SD 1.5
+        // Swap** — npuforge writes [TemplateLora.TARGETS_FILE] into every Swap
+        // export, and it is the one file a LoRA pack cannot do without, so it is
+        // the claim and the requirement at once.
+        val spec = customSpec(dir, Config.read(dir), swapIf(dir, found.single()))
         // ⭐ npuforge SDXL: 3x77 tokens (`backend-patches/005`). Read, never assumed.
         val long = spec.family == Family.SDXL && runCatching {
             File(dir, LONG_CONTEXT_FILE).readText().contains(LONG_CONTEXT_231)
         }.getOrDefault(false)
         return if (long) spec.copy(promptTokens = 231) else spec
     }
+
+    private fun swapIf(dir: File, family: Family): Family =
+        if (family == Family.SD15 && File(dir, TemplateLora.TARGETS_FILE).isFile) Family.SD15_SWAP else family
 
     /**
      * ⚠ Every family-dependent field comes from [ModelCatalog]'s own constants,
@@ -315,7 +322,7 @@ object CustomModels {
     private fun familyDefaults(family: Family): Defaults = when (family) {
         // The backend's own defaults — neutral, and what every SD archive has
         // always been imported with.
-        Family.SD15, Family.SDXL -> Defaults(
+        Family.SD15, Family.SD15_SWAP, Family.SDXL -> Defaults(
             ModelCatalog.DEFAULT_SCHEDULER, ModelCatalog.DEFAULT_STEPS, ModelCatalog.DEFAULT_CFG,
         )
         // ⚠ Every published Anima checkpoint is turbo (`euler`, 10, cfg 1 in
@@ -350,6 +357,9 @@ object CustomModels {
         backendType = when (family) {
             Family.SD15 -> if (File(dir, INPAINT_MARK).isFile) ModelCatalog.SD15_NPU_INPAINT
                 else ModelCatalog.SD15_NPU
+            // ⭐ The same `--type` as SD 1.5: patch 015 finds the template's extra
+            // inputs by probing the UNet at load, so nothing at launch says "Swap".
+            Family.SD15_SWAP -> ModelCatalog.SD15_NPU
             Family.SDXL -> ModelCatalog.SDXL_NPU
             Family.ANIMA -> ModelCatalog.ANIMA_NPU
             // ⭐ Detected since 2026-09-21 — [importDit] writes [FLUX2_MARK]
@@ -366,7 +376,8 @@ object CustomModels {
         },
         resolutions = listOf(
             when (family) {
-                Family.SD15 -> ModelCatalog.SD15_NPU_RES
+                // ⚠ 512² for Swap and nothing else: the template ships no patches.
+                Family.SD15, Family.SD15_SWAP -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
                 Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2 -> ModelCatalog.DIT_RES
@@ -374,6 +385,7 @@ object CustomModels {
         ),
         requiredFiles = when (family) {
             Family.SD15 -> ModelCatalog.SD15_REQUIRED
+            Family.SD15_SWAP -> ModelCatalog.SD15_SWAP_REQUIRED
             Family.SDXL -> ModelCatalog.SDXL_REQUIRED
             Family.ANIMA -> ModelCatalog.ANIMA_REQUIRED
             Family.FLUX2, Family.ZIMAGE -> ModelCatalog.DIT_REQUIRED
@@ -392,7 +404,7 @@ object CustomModels {
         // `ModelCatalog.dit`). An imported checkpoint is the same weights as
         // the built-in, so it gets the same answer.
         lowram = when (family) {
-            Family.SD15, Family.FLUX2 -> false
+            Family.SD15, Family.SD15_SWAP, Family.FLUX2 -> false
             Family.SDXL, Family.ANIMA, Family.ZIMAGE -> true
             // ⚠ The backend runs Qwen `all=disk` whatever this says (013).
             Family.QWEN21 -> false

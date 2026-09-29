@@ -558,6 +558,10 @@ fun NodeInspector(
             // the base uses — it takes the port as an argument precisely so a
             // second picture into one node does not need a second rule.
             refSource = state.pictureInto(nodeId, types, port = "reference")?.let(imageFor),
+            // ⭐ SD 1.5 Swap's ControlNet picture — the same rule, a third port.
+            controlSource = state.pictureInto(
+                nodeId, types, port = com.abrah.nightmare.SdSampler.CONTROL,
+            )?.let(imageFor),
             // ⚠ Same upstream picture, different job: the cropper FRAMES it,
             // the mask editor is PAINTED on it. ⚠⚠ Both arrive as the PHOTO —
             // the mask is STORED in the photo's coordinates, so re-framing a
@@ -748,6 +752,12 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         )
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
+    // ⭐ SD 1.5 Swap's ControlNet knobs live in its ControlNet TILE ([ControlNetPanel]).
+    if (name in setOf(
+            com.abrah.nightmare.SdSampler.CONTROLNET, com.abrah.nightmare.SdSampler.CONTROL_STRENGTH,
+            com.abrah.nightmare.SdSampler.CONTROL_IMAGE,
+        )
+    ) return true
     // ⭐⭐⭐ **The Upscaler chooser only when `auto upscale` is ON** — the
     // user's call, 2026-09-22.
     //
@@ -922,6 +932,8 @@ internal fun NodeInspectorBody(
     cropSource: ImageBitmap? = null,
     /** ⭐ The picture wired into `reference`, if any. FLUX.2 samplers only. */
     refSource: ImageBitmap? = null,
+    /** ⭐ The picture wired into `control`, if any. SD 1.5 Swap samplers only. */
+    controlSource: ImageBitmap? = null,
     /** The picture an `image.mask` node is painted on — its upstream image. */
     maskSource: ImageBitmap? = null,
     /** ⭐ The same three actions the fullscreen viewer offers. Null hides them. */
@@ -1647,7 +1659,16 @@ internal fun NodeInspectorBody(
         // one above the other with an empty half-row between them, because
         // `paints = false` left the Mask tile's slot spare — which is exactly
         // where the Reference tile belongs.
-        if (popup && (cropSource != null || refSource != null)) {
+        // ⭐⭐ SD 1.5 Swap: the ControlNet picture is a tile of its own, present
+        // whether or not anything is picked yet — it is where one gets picked.
+        val swap = node.type == com.abrah.nightmare.SdSampler.SD15_SWAP.name
+        val controlHint = if (swap) rememberControlHint(node, controlSource) else null
+        val controlTile = if (!swap) null else EditorTile(
+            androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.cn_label), controlHint,
+        ) {
+            ControlNetPanel(node, type, controlSource, controlHint) { k, v -> onSetParam(nodeId, k, v) }
+        }
+        if (popup && (cropSource != null || refSource != null || controlTile != null)) {
             InpaintEditors(
                 node = node,
                 type = type,
@@ -1660,6 +1681,7 @@ internal fun NodeInspectorBody(
                 paints = node.type in com.abrah.nightmare.INPAINT_TYPES,
                 openCrop = cropRequest?.takeIf { it.first == nodeId }?.second,
                 openTab = cropRequestTab,
+                control = controlTile,
             )
         } else {
             cropPanel()
@@ -2730,7 +2752,7 @@ private fun CheckpointPicker(
  * ⚠ So the branch lives HERE and nothing outside this file chooses a control.
  */
 @Composable
-private fun Chooser(
+internal fun Chooser(
     label: String,
     hint: String?,
     options: List<String>,
@@ -2813,7 +2835,7 @@ private fun ChoiceDropdown(
  * and into every cache key derived from it.
  */
 @Composable
-private fun SliderRow(
+internal fun SliderRow(
     widget: Widget,
     current: String,
     onSet: (String) -> Unit,
@@ -2918,7 +2940,7 @@ private fun SliderRow(
  */
 private const val THUMB_MAX_EDGE = 384
 
-private data class EditorTile(
+internal data class EditorTile(
     val label: String,
     /** ⚠ Null while it is still being drawn off the main thread. */
     val thumb: ImageBitmap?,
@@ -2965,6 +2987,8 @@ private fun InpaintEditors(
     openCrop: Int? = null,
     /** ⭐ …on this tab — 1 (Mask) only where there is one. */
     openTab: Int = 0,
+    /** ⭐ SD 1.5 Swap's ControlNet tile, last in the row. */
+    control: EditorTile? = null,
 ) {
     // ⚠⚠ Keyed on the NODE: the inspector can now switch node under this
     // composable ([NodeStrip]), and an unkeyed `remember` would leave the
@@ -3074,6 +3098,7 @@ private fun InpaintEditors(
         if (photo != null) add(EditorTile("Crop", framed?.asImageBitmap(), cropPanel))
         if (paints && photo != null) add(EditorTile("Mask", masked, maskPanel))
         if (refPhoto != null) add(EditorTile("Reference", refFramed, refPanel))
+        control?.let { add(it) }
     }
     if (tiles.isEmpty()) return
     val labels = tiles.map { it.label }

@@ -74,6 +74,18 @@ class CustomModelsTest {
         assertFalse("SD 1.5 must not ask for --lowram", spec.lowram)
     }
 
+    /** ⭐ SD 1.5 + npuforge's LoRA target list is SD 1.5 Swap: same launch type, 512² only, no patches. */
+    @Test
+    fun swapIsRecognisedFromItsTargetList() {
+        onDisk("mine", ModelCatalog.SD15_SWAP_REQUIRED)
+        val spec = CustomModels.scan(ctx).single()
+        assertEquals(Family.SD15_SWAP, spec.family)
+        assertEquals(ModelCatalog.SD15_NPU, spec.backendType)
+        assertEquals(ModelCatalog.SD15_NPU_RES, spec.native)
+        assertFalse("the template ships no resolution patches", spec.servesPatches)
+        assertFalse(spec.lowram)
+    }
+
     @Test
     fun sdxlIsRecognisedFromItsSecondEncoder() {
         onDisk("mine", ModelCatalog.SDXL_REQUIRED)

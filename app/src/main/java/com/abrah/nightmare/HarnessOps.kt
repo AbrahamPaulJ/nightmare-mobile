@@ -187,6 +187,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "model_import" -> importModels()
             "dit_lora" -> ditLora(arg)
             "lora_node" -> loraNode(arg)
+            "swap" -> swapOp(arg)
             "loras" -> listLoras()
             "latent_blend" -> latentBlend()
             "plugin_latent" -> pluginLatentGraph()
@@ -675,6 +676,98 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             bad = same,
         )
         say("pictures in ${out.absolutePath}")
+        drainBackendLog()
+    }
+
+    /**
+     * ⭐⭐ SD 1.5 Swap end to end through the EXECUTOR — the path a tap on Run
+     * takes: `sd15swap.sample` with its LoRA and ControlNet params, one backend
+     * launch for every leg (they differ only in request fields).
+     *
+     * `--es arg "lora=a.safetensors@0.8;lora2=a.safetensors@0.6,b.safetensors@0.5;
+     * canny=/abs/photo.jpg;pose=/abs/skeleton.png;model=<id>"` — every key is
+     * optional; a leg runs only when its inputs were given. Pictures go to
+     * `files/swap/`; each leg's pixels must differ from the base's.
+     */
+    private suspend fun swapOp(arg: String?) {
+        val kv = arg.orEmpty().split(';').mapNotNull { part ->
+            part.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0].trim() to it[1].trim() }
+        }.toMap()
+        val spec = kv["model"]?.let { ModelCatalog.byId(it) }
+            ?: ModelCatalog.all.firstOrNull { it.family == com.abrah.nightmare.Family.SD15_SWAP && it.installed(ctx) }
+            ?: return say("swap: no SD 1.5 Swap model installed", bad = true)
+        say("swap: ${spec.id}; ControlNets installed: ${com.abrah.nightmare.SwapInputs.installedTypes(ctx)}")
+        val res = spec.native ?: ModelCatalog.SD15_NPU_RES
+        val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height)
+        val out = java.io.File(ctx.getExternalFilesDir(null), "swap").apply { mkdirs() }
+
+        suspend fun leg(label: String, prompt: String, params: Map<String, String>): ByteArray? {
+            if (!ensureBackend(key)) {
+                say("  $label: no backend", bad = true); return null
+            }
+            val sampler = Node(
+                "generate", SdSampler.SD15_SWAP.name,
+                params = mapOf(
+                    "model" to spec.id, "width" to res.width.toString(), "height" to res.height.toString(),
+                    "steps" to "20", "cfg" to "7.5", "seed" to "42",
+                ) + params,
+                inputs = mapOf("prompt" to com.abrah.nightmare.Source("prompt", "prompt")),
+            )
+            val wf = com.abrah.nightmare.canvas.Workflow(
+                Graph(
+                    listOf(
+                        Node("prompt", "core.prompt", params = mapOf("prompt" to prompt, "negative" to "blurry, lowres")),
+                        sampler,
+                        Node("output", "core.output", inputs = mapOf("media" to com.abrah.nightmare.Source("generate", "image"))),
+                    )
+                ),
+                positions = emptyMap(),
+            )
+            val t0 = System.currentTimeMillis()
+            val r = runWorkflow(wf, onNode = { n ->
+                say("    ${n.id.padEnd(9)} ${n.outcome.name.lowercase().padEnd(7)} ${n.ms} ms  ${n.detail}",
+                    bad = n.outcome == Outcome.FAILED)
+            })
+            if (r.error != null) {
+                say("  $label refused — ${r.error}", bad = true); return null
+            }
+            val img = r.outputs["output"] as? Value.Image ?: (r.outputs["generate"] as? Value.Image)
+            val png = img?.let { images.png(it.id) }
+            if (png == null) {
+                say("  $label produced no image", bad = true); return null
+            }
+            java.io.File(out, "$label.png").writeBytes(png)
+            say("  $label ok ${System.currentTimeMillis() - t0} ms, ${png.size} bytes")
+            return png
+        }
+
+        val lake = "a mountain lake at sunrise, pine trees, mist, detailed landscape"
+        val house = "a cozy wooden house in a meadow at sunrise, detailed"
+        val knight = "a knight in silver armor standing in a castle courtyard, detailed"
+        val base = leg("base", lake, emptyMap()) ?: return
+        val legs = buildList {
+            kv["lora"]?.let { add(Triple("lora", lake, mapOf(SdSampler.LORAS to it))) }
+            kv["lora2"]?.let { add(Triple("lora_merged", lake, mapOf(SdSampler.LORAS to it))) }
+            kv["canny"]?.let {
+                add(Triple("canny", house, mapOf(SdSampler.CONTROLNET to "canny", SdSampler.CONTROL_IMAGE to it)))
+                kv["lora"]?.let { l ->
+                    add(Triple("lora_canny", house, mapOf(
+                        SdSampler.LORAS to l, SdSampler.CONTROLNET to "canny", SdSampler.CONTROL_IMAGE to it,
+                    )))
+                }
+            }
+            kv["pose"]?.let {
+                add(Triple("pose", knight, mapOf(SdSampler.CONTROLNET to "openpose", SdSampler.CONTROL_IMAGE to it)))
+            }
+        }
+        var bad = 0
+        for ((label, prompt, params) in legs) {
+            val png = leg(label, prompt, params)
+            if (png == null) { bad++; continue }
+            if (png.contentEquals(base)) { bad++; say("  $label: IDENTICAL to base", bad = true) }
+        }
+        say("swap: ${legs.size - bad}/${legs.size} legs rendered and differ from base; pictures in ${out.absolutePath}",
+            bad = bad > 0)
         drainBackendLog()
     }
 

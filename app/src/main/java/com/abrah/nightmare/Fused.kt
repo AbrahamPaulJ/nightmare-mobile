@@ -173,6 +173,11 @@ class SdSampler(
         // errors is worse than no port. Same reasoning that keeps Z-Image out
         // of the inpaint picker.
         if (family.edit) Port("reference", "IMAGE") else null,
+        // ⭐⭐ SD 1.5 Swap's ControlNet picture — OPTIONAL: unwired, the picture
+        // picked on the node is used ([CONTROL_IMAGE]). Swap only, for the same
+        // reason `reference` is FLUX.2 only: a port that always errors is worse
+        // than no port.
+        if (family == Family.SD15_SWAP) Port(CONTROL, "IMAGE") else null,
     )
     override val outputs = listOf(Port("image", "IMAGE"))
     /** ⚠ Inpaint is its OWN palette section (the user's call, 2026-09-16). */
@@ -269,6 +274,16 @@ class SdSampler(
          * not offered on those families.
          */
         const val LORAS = "loras"
+
+        /**
+         * ⭐⭐ SD 1.5 Swap's ControlNet ([SwapInputs]): the type, its strength and
+         * the picture picked ON the node. ⚠ The [CONTROL] port, when wired, wins
+         * over the picked picture — the user's design, 2026-09-29.
+         */
+        const val CONTROL = "control"
+        const val CONTROLNET = "controlnet"
+        const val CONTROL_STRENGTH = "control_strength"
+        const val CONTROL_IMAGE = "control_image"
 
         /**
          * ⭐⭐ Tap to select, on an inpaint node — what `mask.segment_model`
@@ -406,6 +421,8 @@ class SdSampler(
 
         /** ⭐ The four registrations. One class; two arguments of difference. */
         val SD15 = SdSampler("sd15.sample", Family.SD15, inpaint = false)
+        /** ⭐ SD 1.5 Swap — LoRA + ControlNet per render; no inpaint type (no inpaint template). */
+        val SD15_SWAP = SdSampler("sd15swap.sample", Family.SD15_SWAP, inpaint = false)
         val SDXL = SdSampler("sdxl.sample", Family.SDXL, inpaint = false)
         val SD15_INPAINT = SdSampler("sd15.inpaint", Family.SD15, inpaint = true)
         val SDXL_INPAINT = SdSampler("sdxl.inpaint", Family.SDXL, inpaint = true)
@@ -452,7 +469,7 @@ class SdSampler(
          * "it still RENDERED" class as the stale-skel noise bug. It stays out
          * until the engine's behaviour is understood. `notes/PROGRESS.md`.
          */
-        val ALL = listOf(SD15, SDXL, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
+        val ALL = listOf(SD15, SD15_SWAP, SDXL, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, SD15_INPAINT, SDXL_INPAINT, ANIMA_INPAINT)
 
         /**
          * ⭐⭐ The type a graph should use for [family] and [inpaint] — the one
@@ -548,7 +565,11 @@ class SdSampler(
      * are what the inpaint is, and the user asked for them above Steps
      * (2026-09-17). ⚠ Order only; every widget is the same declaration.
      */
-    override val widgets get() = (if (family.dit) ditWidgets() else baseWidgets()).let { ws ->
+    override val widgets get() = when {
+        family.dit -> ditWidgets()
+        family == Family.SD15_SWAP -> baseWidgets() + lorasWidget() + swapWidgets()
+        else -> baseWidgets()
+    }.let { ws ->
         if (!inpaint) ws else {
             val front = listOf("denoise", MaskCropNode.ONLY_MASKED, PasteNode.STITCH)
             front.mapNotNull { n -> ws.firstOrNull { it.name == n } } + ws.filterNot { it.name in front }
@@ -793,6 +814,15 @@ class SdSampler(
         // tool. The node is retired from the palette, not deleted
         // ([SelectObjectNode.hidden]) — a graph that stops loading because a
         // type went away is the one failure a retirement must not cause.
+        lorasWidget(),
+    )
+
+    /**
+     * ⭐ The LoRA list — on the DiT families and on SD 1.5 Swap, the two kinds
+     * of model that take an adapter per render. One declaration so the two
+     * cannot drift; the inspector draws it as [com.abrah.nightmare.canvas.LoraPicker].
+     */
+    private fun lorasWidget() =
         Widget(
             LORAS, "string", "",
             hint = "adapters applied on top of this checkpoint — import them on " +
@@ -815,7 +845,20 @@ class SdSampler(
             // runs. `scale_value *= multiplier` lives inside the branch that
             // only runs once `lora_up`/`lora_down` were FOUND, so an adapter
             // that bound nothing could not answer its own multiplier.
+        )
+
+    /**
+     * ⭐⭐ SD 1.5 Swap's ControlNet knobs. ⚠ Drawn as ONE row in the inspector
+     * (type, strength, picture and the hint it makes), never as loose knobs.
+     */
+    private fun swapWidgets() = listOf(
+        Widget(
+            CONTROLNET, "string", SwapInputs.NONE, options = SwapInputs.TYPES,
+            hint = "canny finds the edges of a photo; depth and openpose take a ready-made " +
+                "depth map or pose skeleton",
         ),
+        Widget(CONTROL_STRENGTH, "float", "1.0", 0.0, 2.0),
+        Widget(CONTROL_IMAGE, "string", ""),
     )
 
     override fun contextKey(node: Node) = backendContextKey(node)
@@ -890,6 +933,9 @@ class SdSampler(
         }
         val aspect = nodeAspect(node)
             ?.takeIf { ModelCatalog.aspectTarget(it, Res(w, h)) != null }
+        // ⭐⭐ SD 1.5 Swap: the LoRA pack and the ControlNet hint, once per run and
+        // before any backend call — a missing picture should stop the run here.
+        val template = if (family == Family.SD15_SWAP) swapInputs(ctx, node, p, inputs) else null
 
         // ⚠ First, because it is the cheapest thing that can fail: a backend
         // that is not up says so here rather than after a 200 ms VAE encode.
@@ -916,7 +962,7 @@ class SdSampler(
 
         if (photo == null) {
             ctx.say("rendering")
-            val latent = sample(ctx, p, cond(), null, w, h, aspect)
+            val latent = sample(ctx, p, cond(), null, w, h, aspect, template = template)
             return VaeDecodeNode.decode(ctx, latent, w, h, aspect)
         }
 
@@ -1069,7 +1115,7 @@ class SdSampler(
         if (!masking) {
             ctx.say("re-imagining the picture")
             val base = encode(ctx, ImageStore.encodePng(padToCanvas(frame, w, h)), ENCODE_SEED, w, h)
-            val latent = sample(ctx, p, cond(), base, w, h, aspect)
+            val latent = sample(ctx, p, cond(), base, w, h, aspect, template = template)
             return VaeDecodeNode.decode(ctx, latent, w, h, aspect)
         }
 
@@ -1381,6 +1427,40 @@ class SdSampler(
         }
     }
 
+    /**
+     * ⭐⭐ SD 1.5 Swap's per-request inputs ([SwapInputs.resolve]). The control
+     * picture is the wired [CONTROL] port's, else the one picked on the node;
+     * with ControlNet at `none` neither is read.
+     */
+    private suspend fun swapInputs(
+        ctx: NodeCtx,
+        node: Node,
+        p: Map<String, String>,
+        inputs: Map<String, Value>,
+    ): Ops.TemplateInputs {
+        val type = p[CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
+        // ⚠ Nothing to pack and no hint: the base model, and no platform needed.
+        if (type == SwapInputs.NONE && LoraSpec.parse(p[LORAS]).isEmpty()) return Ops.TemplateInputs()
+        val android = ctx.android
+            ?: throw IllegalStateException("SD 1.5 Swap needs an Android context on this host")
+        val spec = ModelCatalog.byId(p["model"].orEmpty())
+            ?: throw IllegalStateException("node \"${node.id}\": model \"${p["model"]}\" is not installed")
+        val loras = lorasFor(ctx, p[LORAS])
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val control = if (type == SwapInputs.NONE) null else {
+                (inputs[CONTROL] as? Value.Image)?.let { ctx.images.get(it.id) }
+                    ?: p[CONTROL_IMAGE]?.takeIf { it.isNotBlank() }?.let {
+                        AddObjects.load(android, it)
+                            ?: throw NeedsInput("the ControlNet picture can no longer be read — pick it again")
+                    }
+            }
+            SwapInputs.resolve(
+                android, spec, loras, type,
+                p[CONTROL_STRENGTH]?.toDoubleOrNull() ?: 1.0, control, ctx.say,
+            )
+        }
+    }
+
     private suspend fun runDit(
         ctx: NodeCtx,
         node: Node,
@@ -1543,6 +1623,7 @@ class SdSampler(
         aspect: String?,
         inpaintImage: ByteArray? = null,
         inpaintMask: ByteArray? = null,
+        template: Ops.TemplateInputs? = null,
     ): String {
         val r = ctx.host.sample(
             steps = p["steps"]?.toIntOrNull() ?: 20,
@@ -1557,6 +1638,7 @@ class SdSampler(
             aspect = aspect,
             inpaintImage = inpaintImage,
             inpaintMask = inpaintMask,
+            template = template,
             onProgress = ctx.onProgress,
         )
         return when (r) {

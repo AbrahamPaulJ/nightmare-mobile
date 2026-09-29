@@ -186,7 +186,7 @@ object PromptTokens {
      * vocabulary. No counter beats a CLIP number that means nothing there.
      */
     private fun familyBudget(f: Family): Budget? = when (f) {
-        Family.SD15, Family.SDXL -> Budget.CLIP
+        Family.SD15, Family.SD15_SWAP, Family.SDXL -> Budget.CLIP
         Family.ANIMA -> Budget.ANIMA
         Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2 -> null
     }

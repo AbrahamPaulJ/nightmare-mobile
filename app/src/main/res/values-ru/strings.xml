@@ -207,4 +207,14 @@
     <string name="anima_lowram_hint">Только для Anima: каждая модель загружается по требованию и выгружается после использования. Необходимо на устройствах с памятью меньше 16 ГБ. Отключает превью во время генерации.</string>
     <string name="anima_seq_dit">Anima: поочерёдная загрузка DiT</string>
     <string name="anima_seq_dit_hint">Только в режиме малой памяти Anima: две половины DiT никогда не хранятся в памяти одновременно. Включите, если у вас 12 ГБ памяти, а режим малой памяти Anima всё равно не запускается. Каждый шаг медленнее.</string>
+    <string name="cn_label">ControlNet</string>
+    <string name="cn_hint">canny находит контуры фото; depth и openpose принимают готовую карту глубины или скелет позы</string>
+    <string name="cn_not_installed">ControlNet %1$s ещё не установлен на этом телефоне.</string>
+    <string name="cn_from_wire">Используется изображение, подключённое к control.</string>
+    <string name="cn_pick">Выбрать изображение</string>
+    <string name="cn_replace">Заменить</string>
+    <string name="cn_clear">Удалить</string>
+    <string name="cn_sees">Что видит ControlNet</string>
+    <string name="cn_no_picture_photo">Изображения ещё нет: выберите фото или подключите его к control. Контуры найдутся здесь.</string>
+    <string name="cn_no_picture_hint">Изображения ещё нет: выберите готовую подсказку или подключите её к control.</string>
 </resources>

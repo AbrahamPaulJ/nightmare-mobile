@@ -103,9 +103,11 @@ class VideoGraphTest {
         // that need re-taking first.
         // ⚠ Ten since 2026-09-27: `qwen21.sample` (Qwen Image 2.1, no inpaint
         // type, rolls a seed like every other image sampler). Eleven since
-        // 2026-09-28: `krea2.sample` (Krea 2 Turbo, the same shape).
-        assertEquals(11, SAMPLER_TYPES.size)
-        assertEquals(10, IMAGE_SAMPLER_TYPES.size)
+        // 2026-09-28: `krea2.sample` (Krea 2 Turbo, the same shape). Twelve since
+        // 2026-09-29: `sd15swap.sample` (SD 1.5 Swap, no inpaint type).
+        assertTrue(isSampler("sd15swap.sample"))
+        assertEquals(12, SAMPLER_TYPES.size)
+        assertEquals(11, IMAGE_SAMPLER_TYPES.size)
         assertEquals(3, INPAINT_TYPES.size)
     }
 

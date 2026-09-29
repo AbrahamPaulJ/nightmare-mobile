@@ -79,6 +79,7 @@ class ExecutorTest {
             width: Int, height: Int, latentHandle: String?, denoise: Double,
             scheduler: String, condHandle: String, aspect: String?,
             inpaintImage: ByteArray?, inpaintMask: ByteArray?,
+            template: Ops.TemplateInputs?,
             onProgress: (Ops.Progress) -> Unit,
         ): Ops.Result<Ops.Sampled> {
             samples++
@@ -418,6 +419,7 @@ class ExecutorTest {
                 width: Int, height: Int, latentHandle: String?, denoise: Double,
                 scheduler: String, condHandle: String, aspect: String?,
                 inpaintImage: ByteArray?, inpaintMask: ByteArray?,
+            template: Ops.TemplateInputs?,
             onProgress: (Ops.Progress) -> Unit,
             ): Ops.Result<Ops.Sampled> = Ops.Result.Err(500, "QNN execute failed: 1002")
         }

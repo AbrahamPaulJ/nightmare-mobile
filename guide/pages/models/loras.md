@@ -5,7 +5,8 @@ Two kinds of small add-on file change what a model draws without replacing it.
 ## LoRAs
 
 A **LoRA** is a small adapter (usually tens to hundreds of MB) that teaches a model a style, a
-character or a concept. In Nightmare, LoRAs work on **FLUX.2** and **Z-Image**.
+character or a concept. In Nightmare, LoRAs work on **FLUX.2**, **Z-Image** and
+**SD 1.5 Swap** (an SD 1.5 checkpoint converted in npuforge as *SD1.5 Swap*).
 
 ### Import
 
@@ -14,7 +15,7 @@ its size; the bin deletes it.
 
 ### Use
 
-1. Tap a FLUX.2 or Z-Image generator node.
+1. Tap a FLUX.2, Z-Image or SD 1.5 Swap generator node.
 2. Under **LoRAs**, tick the ones you want — a checkbox per installed file.
 3. Set each one's **strength** with its slider (1.0 is the adapter's full effect).
 4. Run.
@@ -28,6 +29,15 @@ on or off, or moving its slider, **reloads nothing**. It does cost render time, 
 its size: about 6% for a typical FLUX.2 adapter, around 40% for a large Z-Image one.
 
 If the LoRA's description names a trigger word, put that word in your prompt.
+
+### On SD 1.5 Swap
+
+An SD 1.5 Swap model has room for ONE rank-64 adapter per layer, so the LoRAs you tick are
+**merged** into it on the phone the first time that mix is used — about 10 s for one large
+LoRA, 25 s for two — and kept for next time. With a single LoRA the strength slider is free;
+changing the strengths of several makes a new merge. A LoRA trained above rank 64 is reduced to
+its best rank-64 version. Only the part of a LoRA that changes the image model applies; the
+part trained into the text encoder does not (true of every NPU conversion).
 
 ## Embeddings
 
