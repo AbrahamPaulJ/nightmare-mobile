@@ -628,9 +628,15 @@ data class ModelSpec(
      * against a ~1.2 GB install; the alternative when resolution support lands
      * is re-downloading a gigabyte to obtain them. ⚠ SDXL has none — its graphs
      * are compiled at a fixed 1024.
+     *
+     * ⚠⚠ [IpAdapter.TARGETS_FILE] too — the Swap v2 marker is OPTIONAL (a v1 model
+     * installs without it), so it is not in [requiredFiles], and the first v2
+     * download dropped it here: the model installed, rendered, and refused every
+     * reference picture as "converted before IP-Adapter" (2026-09-30, the phone).
      */
     fun wanted(name: String): Boolean =
-        name in requiredFiles || name == "vae_encoder.bin" || name.endsWith(".patch")
+        name in requiredFiles || name == "vae_encoder.bin" || name.endsWith(".patch") ||
+            name == IpAdapter.TARGETS_FILE
 
     fun installed(context: Context): Boolean = missing(context).isEmpty()
 

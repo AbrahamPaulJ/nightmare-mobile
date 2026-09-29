@@ -142,6 +142,21 @@ class ModelCatalogTest {
     }
 
     /**
+     * ⚠⚠ Swap v2's marker is OPTIONAL, so it is not a required file — and the first
+     * v2 download dropped it: installed, rendered, and refused every reference picture
+     * (2026-09-30). Every default Swap model must keep it.
+     */
+    @Test
+    fun swapModelsKeepTheIpAdapterMarker() {
+        val swap = ModelCatalog.all.filter { it.family == Family.SD15_SWAP }
+        assertTrue(swap.isNotEmpty())
+        for (spec in swap) {
+            assertTrue("${spec.id}: ${IpAdapter.TARGETS_FILE} must be kept", spec.wanted(IpAdapter.TARGETS_FILE))
+            assertTrue("${spec.id}: lora_targets.json must be kept", spec.wanted(TemplateLora.TARGETS_FILE))
+        }
+    }
+
+    /**
      * ⚠⚠ The one that would fail silently. `clip_2.mnn.weight` is CLIP-G's
      * EXTERNAL weight file -- MNN splits the bigger encoder into graph plus
      * weights, and `clip_2.mnn` will not load without it. Drop it and the
