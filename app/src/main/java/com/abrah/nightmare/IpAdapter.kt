@@ -50,8 +50,19 @@ object IpAdapter {
     const val PLUS = "plus"
     const val FACE = "face"
 
-    /** ⭐ What the node's chooser offers; Plus first — the general one. */
+    /** ⭐ The adapters there are to download; Plus first — the general one. */
     val ADAPTERS = listOf(PLUS, FACE)
+
+    /**
+     * ⭐ IP-Adapter OFF — the reference is not read, and switching to it unwires
+     * the `reference` picture (`canvas/SwapWiring.kt`). Added 2026-10-01 for the
+     * Advanced flows, which open with it off. ⚠ Not the widget's DEFAULT: an
+     * older node with no param keeps meaning Plus.
+     */
+    const val NONE = "none"
+
+    /** ⭐ What the node's chooser offers: off, then the adapters. */
+    val CHOICES = listOf(NONE) + ADAPTERS
 
     /** The token slots the template was built with. */
     const val TOKENS = 16

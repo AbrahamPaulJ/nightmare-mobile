@@ -18,26 +18,36 @@ cannot be used directly — it has to be converted first. Two ways:
 To import: open the family's tab in **Models**, tap **Import**, choose the `.zip` and give it a
 name. The app reads which family it is from the files inside.
 
-## FLUX.2 and Z-Image: a plain .safetensors
+## FLUX.2, Z-Image and Krea 2: one .safetensors or .gguf
 
-These two build their model at load time from ordinary weights, so **a fine-tune from CivitAI
-imports as-is** — no conversion, no PC.
+These build their model at load time from ordinary weights, so **a fine-tune from CivitAI or
+Hugging Face imports as-is** — no conversion, no PC. Both `.safetensors` and `.gguf` work.
 
-1. Open the **FLUX.2** or **Z-Image** tab in Models (the tab tells the app which family the file
-   is).
-2. Tap **Import** and pick the `.safetensors` file.
+1. Open the **FLUX.2**, **Z-Image** or **Krea 2** tab in Models.
+2. Tap **Import** and pick the file.
 3. Name it.
 
-The text encoder, VAE and tokenizer are shared with the family's built-in model, so an import
-costs only the size of its own weights.
+The app reads the file's tensor names: a Klein 9B fine-tune is recognised as 9B, and a file
+picked on the wrong tab is refused with the tab it belongs on.
 
-!!! note "FLUX.2 Klein 9B"
-    Only **Klein 4B** fine-tunes import. A Klein 9B `.safetensors` is recognised and refused:
-    it needs the 9B's own, larger text encoder, which imports do not use yet.
+- **Klein 4B and Z-Image** share the text encoder, VAE and tokenizer with the family's model, so
+  an import costs only its own weights (plus up to 2.6 GB once, if you have neither family).
+- **Klein 9B and Krea 2** get their own copy of their text encoder (4.8 GB and 2.6 GB), copied
+  from the built-in model if you have it, downloaded if not.
 
-!!! note "Qwen Image and Krea 2"
-    Qwen Image and Krea 2 models are `.gguf` files and cannot be imported from the phone yet. A Qwen
-    folder made by LocalDream (see below) is recognised.
+!!! warning "Size and memory"
+    A checkpoint bigger than about half your phone's RAM is marked *likely too big for this
+    phone's RAM* on its row: Android will probably close it while it renders. A smaller quant
+    (Q4_0, Q8_0 or fp8) of the same model is the fix. Q4_0, Q8_0, MXFP4 and fp8 are the formats
+    known to run on the NPU; others (Q4_K, Q6_K…) are untested.
+
+!!! warning "Z-Image .gguf"
+    A Z-Image `.gguf` imports, but in our test (Q4_0) the picture came out as noise. Use a
+    Z-Image fine-tune as an fp8 `.safetensors` for now. FLUX.2 `.gguf` files render correctly.
+
+!!! note "Qwen Image"
+    Qwen Image fine-tunes cannot be imported from the phone yet. A Qwen folder made by
+    LocalDream (see below) is recognised.
 
 ## A folder copied onto the phone
 

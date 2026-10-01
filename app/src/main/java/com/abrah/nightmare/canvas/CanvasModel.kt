@@ -607,6 +607,8 @@ fun layout(
     types: Map<String, NodeType>,
     previews: Map<String, Pair<String, Float>> = emptyMap(),
     beforePreviews: Map<String, Pair<String, Float>> = emptyMap(),
+    /** ⭐ Swap sampler id -> its ControlNet hint ([CanvasState.controlHints]). */
+    controlHints: Map<String, Pair<String, Float>> = emptyMap(),
 ): List<NodeBox> =
     workflow.graph.nodes.map { n ->
         val type = types[n.type]
@@ -671,8 +673,15 @@ fun layout(
         // [previews] is the one to show here too. ⚠ Absent for every node
         // that has no such wire, which is all of them but a FLUX.2 sampler
         // with a reference connected.
-        val refPreview = n.inputs["reference"]?.node
-            ?.let { previews[it] }
+        // ⭐ On SD 1.5 Swap the node shows its CONTROL picture instead — its
+        // `reference` is IP-Adapter's, which steers appearance, not layout (the
+        // user's call, 2026-10-01).
+        // ⚠⚠ The HINT — edges, depth, skeleton — never its source picture
+        // ([controlHints]); the source was shown at first and is what the
+        // user had to point out.
+        val swapNode = n.type == com.abrah.nightmare.SdSampler.SD15_SWAP.name ||
+            n.type == com.abrah.nightmare.SdSampler.SD15_SWAP_INPAINT.name
+        val refPreview = (if (swapNode) controlHints[n.id] else n.inputs["reference"]?.node?.let { previews[it] })
             ?.let { (id, aspect) ->
                 NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))
             }

@@ -233,7 +233,7 @@
     <string name="cn_from_wire">Using the picture wired into control.</string>
     <string name="cn_pick">Choose picture</string>
     <string name="cn_replace">Replace</string>
-    <string name="cn_clear">Delete</string>
+    <string name="cn_clear">Remove</string>
     <string name="cn_sees">What the ControlNet sees</string>
     <string name="cn_no_picture_photo">No picture yet: choose a photo, or wire one into control. Its edges are found here.</string>
     <string name="cn_no_picture_hint">No picture yet: choose a ready-made hint image, or wire one into control.</string>
@@ -255,4 +255,14 @@
     <string name="ip_old_builtin">This copy of %1$s predates IP-Adapter. Delete it in Models and download it again to use a reference picture.</string>
     <string name="ip_sees">What IP-Adapter reads (a centre square)</string>
     <string name="ip_no_picture">Choose a picture, or wire one into reference, and the render follows it.</string>
+    <string name="err_details">Error details</string>
+    <string name="err_details_note">Check it before you share it. Your prompt is left out.</string>
+    <string name="err_share">Share</string>
+    <string name="err_copy">Copy</string>
+    <string name="ram_tight">" · likely too big for this phone\'s RAM"</string>
+    <string name="pick_files">Files</string>
+    <string name="crop">Crop</string>
+    <string name="crop_done">Done</string>
+    <string name="crop_over_photo">drag to move · pinch to zoom · your photo shows underneath</string>
+    <string name="crop_gestures">drag to move · pinch to zoom</string>
 </resources>

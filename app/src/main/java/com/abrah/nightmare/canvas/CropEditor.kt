@@ -212,6 +212,13 @@ fun CropEditor(
      * are masked and will be generated, not kept.
      */
     rule: com.abrah.nightmare.PadRule = com.abrah.nightmare.PadRule.WHEN_TOO_SMALL,
+    /**
+     * ⭐⭐ A picture drawn BEHIND, filling the viewport — the render's own framed
+     * photo, so a ControlNet or IP-Adapter picture can be lined up against what
+     * it will steer (the user's call, 2026-10-01: *"show the input img behind
+     * the control img / ip like a layer"*). [source] is then drawn see-through.
+     */
+    underlay: ImageBitmap? = null,
     modifier: Modifier = Modifier,
 ) {
     val onChangeNow by rememberUpdatedState(onChange)
@@ -336,10 +343,14 @@ fun CropEditor(
             // background, which is not a colour the picture will ever have.
             drawRect(if (pad == CropNode.PAD_GREEN) Color(CropNode.GREEN_RGB) else Color.Black)
             if (pad == CropNode.PAD_BLUR) drawMirroredEdges(blurred, offset, iw, ih, size)
+            underlay?.let {
+                drawImage(image = it, dstOffset = IntOffset.Zero, dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()))
+            }
             drawImage(
                 image = source,
                 dstOffset = IntOffset(offset.x.roundToInt(), offset.y.roundToInt()),
                 dstSize = IntSize(iw, ih),
+                alpha = if (underlay != null) UNDERLAY_ALPHA else 1f,
             )
             // ⭐ Outpaint: the bars are the mask, so they are drawn as it will be.
             if (rule == com.abrah.nightmare.PadRule.OUTPAINT) {
@@ -378,6 +389,9 @@ fun CropEditor(
  * difference between seeing the frame and scrolling to find its bottom edge.
  */
 internal const val HEIGHT_SHARE = 0.5f
+
+/** ⚠ How see-through the cropped picture is over an [CropEditor] underlay. */
+internal const val UNDERLAY_ALPHA = 0.55f
 
 /** ⚠ …but never so small that a finger cannot frame anything in it. */
 internal val MIN_FRAME = 140.dp
@@ -545,6 +559,21 @@ fun CropRect.asRefParams(): List<Pair<String, String>> = listOf(
     com.abrah.nightmare.SdSampler.REF_Y to round3(y),
     com.abrah.nightmare.SdSampler.REF_W to round3(w),
     com.abrah.nightmare.SdSampler.REF_H to round3(h),
+)
+
+/** ⭐ The ControlNet picture's own region ([com.abrah.nightmare.SdSampler.CTL_X]) — [refCropRectOf]'s sibling. */
+fun ctlCropRectOf(node: com.abrah.nightmare.Node): CropRect = CropRect(
+    node.params[com.abrah.nightmare.SdSampler.CTL_X]?.toFloatOrNull() ?: 0f,
+    node.params[com.abrah.nightmare.SdSampler.CTL_Y]?.toFloatOrNull() ?: 0f,
+    node.params[com.abrah.nightmare.SdSampler.CTL_W]?.toFloatOrNull() ?: 1f,
+    node.params[com.abrah.nightmare.SdSampler.CTL_H]?.toFloatOrNull() ?: 1f,
+).clamped()
+
+fun CropRect.asCtlParams(): List<Pair<String, String>> = listOf(
+    com.abrah.nightmare.SdSampler.CTL_X to round3(x),
+    com.abrah.nightmare.SdSampler.CTL_Y to round3(y),
+    com.abrah.nightmare.SdSampler.CTL_W to round3(w),
+    com.abrah.nightmare.SdSampler.CTL_H to round3(h),
 )
 
 private fun round3(v: Float) = (Math.round(v * 1000f) / 1000f).toString()

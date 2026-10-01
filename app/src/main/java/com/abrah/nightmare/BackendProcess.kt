@@ -76,7 +76,10 @@ object BackendProcess {
      * it would not start, rather than inventing a reason.
      */
     fun failureReason(): String? = synchronized(output) {
-        val raw = output.lastOrNull {
+        // ⚠⚠ Only the NEWEST launch's lines (everything after its `exec:`). The
+        // buffer holds 400 lines across launches, and "the oldest error" taken
+        // over all of them named an earlier launch's failure as this one's.
+        val raw = output.takeWhile { !it.startsWith(EXEC_PREFIX) }.lastOrNull {
             it.contains("[ ERROR ]") || it.trimStart().startsWith("ERROR")
         } ?: return null
         // The engine prefixes `   522.3ms [ ERROR ] [dit] model_loader.cpp:270  - `.
@@ -88,6 +91,88 @@ object BackendProcess {
     }
 
     val isRunning: Boolean get() = process?.isAlive == true
+
+    private const val EXEC_PREFIX = "exec: "
+
+    /**
+     * ⭐⭐ How the last backend process ENDED — its exit code, and whether this
+     * app asked for it ([stop]). Null until one has exited.
+     *
+     * ⚠⚠ A backend lmkd kills leaves no `[ ERROR ]` line: the only evidence is
+     * the code. Android reports a signal as 128 + its number (`[exited 143]` is
+     * [stop]'s SIGTERM), so 137 is SIGKILL — memory, almost always, on a phone.
+     */
+    data class Exit(val code: Int, val atMs: Long, val byApp: Boolean, internal val pid: Int)
+
+    @Volatile
+    var lastExit: Exit? = null
+        private set
+
+    /** ⚠ The process [stop] is killing — its exit is ours, not a crash. */
+    @Volatile
+    private var stopping: Process? = null
+
+    /**
+     * ⭐⭐⭐ **Wait for a dying backend to finish dying** — up to [ms], true when
+     * it has exited and its last lines are in [output].
+     *
+     * ⚠⚠⚠ Reported 2026-10-01 (three users, 1.6.052): `generate failed http -1 —
+     * EOFException: no message`, bare. [explainOpFailure] names a dead backend
+     * only when [isRunning] is false, and the socket's EOF reaches the app
+     * BEFORE the kernel has reaped the process — so at that instant it was
+     * still "running" and the engine's own reason was never read. ⇒ Waits on
+     * the monitor's `[exited]`, not on `isAlive`: the reader thread must have
+     * drained stdout too, or the reason is still in the pipe.
+     */
+    fun awaitExit(ms: Long): Boolean {
+        val p = process ?: return true
+        val pid = System.identityHashCode(p)
+        val end = System.currentTimeMillis() + ms
+        while (System.currentTimeMillis() < end) {
+            if (lastExit?.pid == pid) return true
+            try { Thread.sleep(25) } catch (_: InterruptedException) { return false }
+        }
+        return lastExit?.pid == pid
+    }
+
+    /**
+     * ⭐ [lastExit] in words a person can act on, or null when it says nothing
+     * (a clean 0, or an exit this app asked for).
+     */
+    fun exitMeaning(exit: Exit? = lastExit): String? {
+        if (exit == null || exit.byApp) return null
+        return describeExit(exit.code)
+    }
+
+    /** ⚠ Pure, so the JVM tests reach it: Android's 128 + signal convention. */
+    fun describeExit(code: Int): String? = when (code) {
+        0 -> null
+        137 -> "killed by the system (SIGKILL) — on a phone that is almost always Android freeing memory"
+        134 -> "the engine aborted (SIGABRT) — usually an assert on something in the model it could not handle"
+        139 -> "the engine crashed (SIGSEGV)"
+        135 -> "the engine crashed (SIGBUS)"
+        143 -> "terminated (SIGTERM)"
+        in 129..159 -> "killed by signal ${code - 128}"
+        else -> "exited with code $code"
+    }
+
+    /** ⭐ The newest launch's lines (everything after its `exec:`), oldest first. */
+    fun newestLaunch(): List<String> = synchronized(output) {
+        output.takeWhile { !it.startsWith(EXEC_PREFIX) }.asReversed()
+    }
+
+    /**
+     * ⭐ The model the newest launch was FOR — kept after it dies, unlike
+     * [launchedKey], because "which checkpoint crashed" is asked afterwards.
+     */
+    @Volatile
+    var lastModelId: String? = null
+        private set
+
+    /** ⭐ The whole buffer (earlier launches too), OLDEST first — for an error report. */
+    fun tail(max: Int = 400): List<String> = synchronized(output) {
+        output.take(max).asReversed()
+    }
 
     /**
      * ⭐⭐ The [ContextKey] the RUNNING process was launched with, or null when
@@ -510,14 +595,24 @@ object BackendProcess {
                     // <bytes> > /sdcard/Download/nightmare-spillfill.txt"`
                     // lets someone try a different value with no APK change;
                     // absent, this is a no-op and nothing here changes.
+                    // ⭐⭐ The size this checkpoint's own QNN error asked for, learned
+                    // on an earlier launch ([SpillFill]). Before the diagnostic
+                    // file, so a hand-set value still wins.
+                    if (!upscalerOnly) {
+                        val sfVar = SpillFill.envFor(spec?.family)
+                        val need = SpillFill.stored(context, modelId)
+                        if (sfVar != null && need != null) put(sfVar, need.toString())
+                    }
                     readSpillFillOverride(context)?.let {
                         put("LOCALDREAM_ANIMA_SPILL_FILL_BYTES", it)
                     }
                 }
 
-                say("exec: ${cmd.joinToString(" ")}")
-                env["LOCALDREAM_ANIMA_SPILL_FILL_BYTES"]?.let {
-                    say("spill-fill override from Download/nightmare-spillfill.txt: $it bytes")
+                say(EXEC_PREFIX + cmd.joinToString(" "))
+                if (!upscalerOnly) lastModelId = modelId
+                // ⚠ Named, so a report shows which size the launch really used.
+                for (k in listOf("LOCALDREAM_SDXL_SPILL_FILL_BYTES", "LOCALDREAM_ANIMA_SPILL_FILL_BYTES")) {
+                    env[k]?.let { say("spill-fill group: $k=$it") }
                 }
                 val p = ProcessBuilder(cmd).apply {
                     directory(File(nativeDir))
@@ -600,7 +695,9 @@ object BackendProcess {
                     appContext?.let { BackendKeepAliveService.stop(it) }
                 }
             }
-            say("[exited $code]")
+            val byApp = stopping === p
+            say("[exited $code]" + if (byApp) " (stopped by the app)" else "")
+            lastExit = Exit(code, System.currentTimeMillis(), byApp, System.identityHashCode(p))
         }.apply { isDaemon = true; name = "backend-monitor" }.start()
     }
 
@@ -615,6 +712,7 @@ object BackendProcess {
         appContext?.let { BackendKeepAliveService.stop(it) }
         p?.let {
             say("[stopping]")
+            stopping = it
             it.destroy()
             // ⚠ Wait for it to be GONE before anyone relaunches: until then it
             // still holds the port, and a `/health` probe could be answered by

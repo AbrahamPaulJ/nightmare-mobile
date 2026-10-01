@@ -188,6 +188,8 @@ fun GraphCanvas(
     previews: Map<String, Pair<String, Float>> = emptyMap(),
     /** ⭐ What a before/after node RECEIVED. See [CanvasState.beforePreviews]. */
     beforePreviews: Map<String, Pair<String, Float>> = emptyMap(),
+    /** ⭐ What each Swap node's ControlNet sees. See [CanvasState.controlHints]. */
+    controlHints: Map<String, Pair<String, Float>> = emptyMap(),
     /** Resolves an image id to pixels. Null while the bitmap is not resident. */
     imageFor: (String) -> ImageBitmap? = { null },
     /**
@@ -213,7 +215,7 @@ fun GraphCanvas(
             // ⚠ Geometry in device pixels, fonts in sp. See Viewport.forDevice.
             val vp = viewport.forDevice(density)
             drawGrid(vp)
-            val boxes = layout(workflow, types, previews, beforePreviews)
+            val boxes = layout(workflow, types, previews, beforePreviews, controlHints)
             val byId = boxes.associateBy { it.id }
 
             // Edges first, so a node always sits on top of its own wires.

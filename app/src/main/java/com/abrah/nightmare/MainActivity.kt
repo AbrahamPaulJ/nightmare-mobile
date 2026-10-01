@@ -202,7 +202,12 @@ class MainActivity : ComponentActivity() {
             }
             NightmareTheme(darkTheme = dark) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    HarnessScreen(op = pending, nonce = pendingNonce, vm = vm)
+                    // ⭐ What a reportable ErrorNotice's share icon opens.
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        com.abrah.nightmare.ui.LocalErrorReport provides vm::errorReport,
+                    ) {
+                        HarnessScreen(op = pending, nonce = pendingNonce, vm = vm)
+                    }
                 }
             }
         }

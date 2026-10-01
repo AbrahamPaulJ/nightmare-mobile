@@ -9,6 +9,11 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 
 /**
@@ -35,7 +40,25 @@ import androidx.compose.ui.unit.dp
  * (nested scroll) — which is what keeps scrolling down a list from closing it.
  * The crop/mask window's old drag-to-close did not work that way, and closed
  * while the user scrolled to its checkboxes (2026-09-23, `docs/LEGACY.md`).
+ * ⭐ Content that must NEVER move the sheet wraps itself in [keepScrollInside]
+ * — Models / Flows / Results, whose lists are the whole body.
  */
+/**
+ * ⭐⭐ Scrolling inside stays inside: what a list cannot use — its overscroll at
+ * the top, a fling past its end — is consumed here instead of reaching the
+ * [PullDownSheet] above, so scrolling the list never drags the sheet. The sheet
+ * is then pulled by its non-scrolling part (a header), which is not nested
+ * scroll at all. Reported 2026-10-01 on Results: *"the item list scrolls
+ * shouldn't affect the movement of results tab"*.
+ */
+fun androidx.compose.ui.Modifier.keepScrollInside(): androidx.compose.ui.Modifier =
+    nestedScroll(ConsumeRemaining)
+
+private object ConsumeRemaining : NestedScrollConnection {
+    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset = available
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PullDownSheet(

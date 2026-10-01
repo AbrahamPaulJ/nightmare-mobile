@@ -398,6 +398,7 @@ fun CanvasScreen(
             pending = state.pending,
             previews = state.previews,
             beforePreviews = state.beforePreviews,
+            controlHints = state.controlHints,
             imageFor = imageFor,
             clipFrameFor = clipFrameFor,
             modifier = Modifier
@@ -651,7 +652,9 @@ fun CanvasScreen(
         onViewFullscreen = { id ->
             onEdit { s -> s.copy(editing = null, viewing = id, viewingNode = s.editing) }
         },
-        onSetParam = { node, name, value -> onEdit { s -> s.setParam(node, name, value) } },
+        // ⭐ Through [swapWired]: a Swap node's ControlNet / IP-Adapter pictures
+        // are wired image nodes, kept in step with the tiles (`SwapWiring.kt`).
+        onSetParam = { node, name, value -> onEdit { s -> s.setParam(node, name, value).swapWired(node, name, value, s) } },
         onSetParams = { node, values -> onEdit { s -> s.setParams(node, values) } },
         onEditMask = onEditMask,
         onTapMask = onTapMask,
@@ -1248,7 +1251,7 @@ private fun RunBar(
         // ⚠ Run failures first: they are the ones a user is waiting on.
         // ⚠ Both through [ErrorNotice]: a refused wire and a failed Run are the
         // same kind of news and were drawn two ways (`docs/UI.md` §8.5).
-        runError?.let { com.abrah.nightmare.ui.ErrorNotice(it) }
+        runError?.let { com.abrah.nightmare.ui.ErrorNotice(it, reportable = true) }
         state.message?.let { com.abrah.nightmare.ui.ErrorNotice(it) }
         // ⭐⭐ What is happening RIGHT NOW, directly above the button that
         // started it. ⚠ Below the errors and above the controls: a failure is

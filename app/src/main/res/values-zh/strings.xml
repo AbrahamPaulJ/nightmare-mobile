@@ -210,7 +210,7 @@
     <string name="cn_from_wire">使用连接到 control 的图片。</string>
     <string name="cn_pick">选择图片</string>
     <string name="cn_replace">替换</string>
-    <string name="cn_clear">删除</string>
+    <string name="cn_clear">移除</string>
     <string name="cn_sees">ControlNet 看到的内容</string>
     <string name="cn_no_picture_photo">还没有图片：选择一张照片，或将图片连接到 control。边缘在这里提取。</string>
     <string name="cn_no_picture_hint">还没有图片：选择一张现成的提示图，或将图片连接到 control。</string>
@@ -232,4 +232,14 @@
     <string name="ip_old_builtin">此 %1$s 副本早于 IP-Adapter。请在“模型”中删除并重新下载，以使用参考图片。</string>
     <string name="ip_sees">IP-Adapter 读取的内容（中心正方形）</string>
     <string name="ip_no_picture">选择一张图片，或将图片连接到 reference，生成将跟随它。</string>
+    <string name="err_details">错误详情</string>
+    <string name="err_details_note">分享前请先检查。报告中不包含你的提示词。</string>
+    <string name="err_share">分享</string>
+    <string name="err_copy">复制</string>
+    <string name="ram_tight">" · 可能超出此手机的内存"</string>
+    <string name="pick_files">文件</string>
+    <string name="crop">裁剪</string>
+    <string name="crop_done">完成</string>
+    <string name="crop_over_photo">拖动移动 · 双指缩放 · 下层显示你的照片</string>
+    <string name="crop_gestures">拖动移动 · 双指缩放</string>
 </resources>

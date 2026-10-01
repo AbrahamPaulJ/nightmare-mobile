@@ -1431,8 +1431,8 @@ object ModelCatalog {
     )
 
     /**
-     * ⭐⭐ The SD 1.5 Swap tab's two defaults — the user's pick, 2026-09-30: one
-     * realistic, one anime, converted in npuforge as *SD1.5 Swap* and hosted at
+     * ⭐⭐ The SD 1.5 Swap tab's defaults — the user's pick, 2026-09-30 (Anything V5
+     * added 2026-10-01): one realistic, two anime, converted in npuforge as *SD1.5 Swap* and hosted at
      * [SWAP_BASE_URL]. ⚠⚠ Converted ON the S25, so the UNet and VAE contexts are
      * v79 builds (npuforge compiles for the device's own arch): 8 Elite and
      * newer only, until v73 / v68 builds are made on the PC from the same
@@ -1451,6 +1451,13 @@ object ModelCatalog {
         swapModel(
             "cuteyukimix_swap", "CuteYukiMix Swap",
             "cuteyukimix_swap_v2_v79.zip", 1_309_413_181L,
+            prompt = P_ANIME_GIRL, negative = NEG_ANIME,
+        ),
+        // ⭐ The user's pick, 2026-10-01: Anything V5 (Yuno779), npuforge's own export
+        // zip hosted unchanged (it is what the user imported; same 9 files, v2).
+        swapModel(
+            "anything_v5_swap", "Anything V5 Swap",
+            "anything_v5_swap_v2_v79.zip", 1_309_614_404L,
             prompt = P_ANIME_GIRL, negative = NEG_ANIME,
         ),
     )

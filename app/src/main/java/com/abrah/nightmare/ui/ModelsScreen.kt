@@ -156,6 +156,8 @@ data class ModelRow(
     val fetchBytes: Long = 0,
     /** ⭐ [ModelSpec.ramNeeded] — non-zero: the chip could, the RAM cannot. */
     val needsRam: Long = 0,
+    /** ⭐ [com.abrah.nightmare.CustomModels.ramTight] — an import that Android will likely close. */
+    val ramTight: Boolean = false,
 )
 
 /**
@@ -362,7 +364,7 @@ fun ModelsScreen(
     // second inset here would double it.
     Column(modifier.fillMaxSize()) {
         if (error != null) {
-            ErrorNotice(error, Modifier.padding(top = 8.dp))
+            ErrorNotice(error, Modifier.padding(top = 8.dp), reportable = true)
         }
         // ⭐ "Something is happening", for the one case with no row to say so.
         if (importing != null) {
@@ -567,10 +569,12 @@ fun ModelsScreen(
                 // bare `.safetensors` says which family it is — the tab has to
                 // supply it. ⇒ One button per tab either way, never two, and
                 // the same [ImportCallout] and naming dialog everywhere.
-                // ⚠ Not Qwen Image or Krea 2: their DiTs are .gguf and the
-                // importer reads a .safetensors header ([CustomModels.ditFamilyOf]).
+                // ⭐ Krea 2 too since 1.6.069 — the importer reads a .gguf's
+                // tensor table as well (GitHub #5). ⚠ Not Qwen Image: nothing
+                // tells its checkpoints apart yet, and it edits through a
+                // vision tower an import would have to bring.
                 if (family.dit) {
-                    if (onImportDit != null && family != Family.QWEN21 && family != Family.KREA2) {
+                    if (onImportDit != null && family != Family.QWEN21) {
                         item { ImportCard(busy, onImport = { onImportDit(it, family) }, dit = true) }
                     }
                 } else if (onImport != null) {
@@ -791,10 +795,13 @@ private fun ImportCard(
             // byte-identical across both DiT families and the VAE (336 MB) is
             // not, so owning the OTHER family covers most of it but not all.
             // `CustomModels.DIT_FAMILY_AGNOSTIC` has the md5s.
-            "One .safetensors — a checkpoint from CivitAI or Hugging Face, used as it is. " +
-                "No conversion. It borrows a text encoder and this family's VAE: nothing to " +
-                "fetch if you have this family's model, 336 MB if you have the other one, " +
-                "2.6 GB if you have neither."
+            // ⭐ 1.6.069: `.gguf` too, and Klein 9B / Krea 2 fine-tunes, which
+            // bring their OWN encoder copy (`CustomModels.DitVariant`).
+            "One .safetensors or .gguf — a checkpoint from CivitAI or Hugging Face, used as " +
+                "it is. No conversion. Klein 4B and Z-Image ones borrow a text encoder and VAE " +
+                "(up to 2.6 GB to fetch, nothing if you have that model). Klein 9B and Krea 2 " +
+                "ones get their own copy (4.8 GB and 2.6 GB). A file bigger than about half " +
+                "your phone's RAM will likely be closed by Android while it renders."
         } else {
             // ⚠ Says what the app CANNOT do, because the alternative is a user
             // picking a `.safetensors` and reading "not a checkpoint" without
@@ -831,7 +838,7 @@ private fun ImportCard(
                             // ⚠ Warns BEFORE the picker, not after the copy: an
                             // import is gigabytes, and finding out afterwards
                             // that the name is permanent is finding out too late.
-                            trimmed.isEmpty() -> "Leave it empty to use the zip's file name. " +
+                            trimmed.isEmpty() -> "Leave it empty to use the file's name. " +
                                 "It becomes the folder name and the id saved into every workflow."
                             else -> "This becomes the folder name and the id saved " +
                                 "into every workflow that uses it."
@@ -850,7 +857,7 @@ private fun ImportCard(
                 Button(
                     onClick = { naming = false; onImport(trimmed) },
                     enabled = ok,
-                ) { Text("Pick a zip") }
+                ) { Text(if (dit) "Pick the file" else "Pick a zip") }
             },
             dismissButton = { TextButton(onClick = { naming = false }) { Text(stringResource(R.string.cancel)) } },
         )
@@ -976,8 +983,10 @@ private fun ModelCard(
         title = row.spec.label,
         emphasised = row.selected,
         status = when {
-            row.installed && row.selected -> stringResource(R.string.in_use_mb, mb(row.onDisk))
-            row.installed -> stringResource(R.string.installed_mb, mb(row.onDisk))
+            row.installed && row.selected -> stringResource(R.string.in_use_mb, mb(row.onDisk)) +
+                if (row.ramTight) stringResource(R.string.ram_tight) else ""
+            row.installed -> stringResource(R.string.installed_mb, mb(row.onDisk)) +
+                if (row.ramTight) stringResource(R.string.ram_tight) else ""
             // ⚠⚠ A custom model is never "not installed" and never
             // "unsupported": its files are already on the phone, so the only
             // failure it can have is being INCOMPLETE -- and it must say which

@@ -388,6 +388,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             workflowError = null
             refreshWorkflows()
         } catch (e: Exception) {
+            ErrorReport.record(e)
             workflowError = e.message ?: e.javaClass.simpleName
         }
     }
@@ -791,6 +792,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 sayNotes(loaded)
             }
         } catch (e: Exception) {
+            ErrorReport.record(e)
             workflowError = "could not open \"$name\" — ${e.message}"
         }
     }
@@ -846,6 +848,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     },
                     onFailure = {
+                        ErrorReport.record(it)
                         workflowError = "could not import that file — ${it.message}"
                     },
                 )
@@ -1230,6 +1233,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     partial = !here && spec.partial(ctx),
                     fetchBytes = if (here) 0L else spec.fetchBytes(ctx, spec.buildFor(caps)),
                     needsRam = spec.ramNeeded(caps),
+                    ramTight = here && CustomModels.ramTight(spec, ctx, caps.ramBytes),
                 )
             }
             Triple(rows, rows.filter { it.installed }.map { it.spec.id }, readVideoDisk())
@@ -1338,6 +1342,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                     installing = null
                     installProgress = null
+                    ErrorReport.record(e)
                     modelError = "import failed: ${e.message}"
                     downloadFailed(downloadLabel(name), modelError!!)
                     refreshModels()
@@ -1399,6 +1404,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                     installing = null
                     installProgress = null
+                    ErrorReport.record(e)
                     modelError = "import failed: ${e.message}"
                     downloadFailed(downloadLabel(name), modelError!!)
                     refreshModels()
@@ -1459,6 +1465,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(spec.label, modelError!!)
                     say("install failed — $modelError", bad = true)
@@ -1623,6 +1630,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(downloadLabel(VIDEO_INSTALL_ID), modelError!!)
                     say("video install — $modelError", bad = true)
@@ -1684,6 +1692,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(spec.label, modelError!!)
                     say("install failed — $modelError", bad = true)
@@ -2159,6 +2168,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(com.abrah.nightmare.segment.Segmenter.LABEL, modelError!!)
                     say("install failed — $modelError", bad = true)
@@ -2223,6 +2233,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(com.abrah.nightmare.segment.Parser.LABEL, modelError!!)
                     say("install failed — $modelError", bad = true)
@@ -2293,6 +2304,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(com.abrah.nightmare.pose.PoseDetector.LABEL, modelError!!)
                     say("install failed — $modelError", bad = true)
@@ -2363,6 +2375,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(com.abrah.nightmare.pose.DepthEstimator.LABEL, modelError!!)
                     say("install failed — $modelError", bad = true)
@@ -2454,6 +2467,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(label, modelError!!)
                     say("install failed — $modelError", bad = true)
@@ -2551,6 +2565,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 viewModelScope.launch { downloadCancelled(); say("download cancelled", bad = true) }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(label, modelError!!)
                     say("install failed — $modelError", bad = true)
@@ -2767,6 +2782,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 downloadCancelled()
                 say("move stopped — what moved is in use, the rest is listed in Settings", bad = true)
             } catch (e: Exception) {
+                ErrorReport.record(e)
                 modelError = e.message ?: e.javaClass.simpleName
                 ModelStorage.setPendingMove(ctx, null)
                 downloadFailed("Moving models", modelError!!)
@@ -2814,6 +2830,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 viewModelScope.launch {
+                    ErrorReport.record(e)
                     modelError = e.message ?: e.javaClass.simpleName
                     downloadFailed(com.abrah.nightmare.DitEngine.LABEL, modelError!!)
                     say("install failed — $modelError", bad = true)
@@ -5608,6 +5625,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun viewResult(r: com.abrah.nightmare.canvas.Result) {
+        // ⭐ Kept: the fullscreen viewer has broken twice with nothing in any log
+        // (`ResultsFullscreenTest`). `logcat -s NmViewer` says open/close and WHO closed.
+        android.util.Log.i("NmViewer", "open ${r.id}")
         viewingResult = r
         viewingResultImage = null
         viewingResultDetails = emptyList()
@@ -5638,6 +5658,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeResult() {
+        if (viewingResult != null) android.util.Log.i(
+            "NmViewer",
+            "close by " + Throwable().stackTrace.drop(1).take(4).joinToString(" < ") { "${it.fileName}:${it.lineNumber}" },
+        )
         viewingResult = null
         viewingResultImage = null
         viewingResultDetails = emptyList()
@@ -5832,8 +5856,68 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         empty.forEach { framedSigs.remove(it); framedPending.remove(it); framedJobs.remove(it)?.cancel() }
         applyBeforeAfterPreviews(graph)
+        applyControlHints(graph)
         warmPicks(graph)
     }
+
+    /**
+     * ⭐⭐ What each SD 1.5 Swap node's ControlNet SEES, for its canvas thumbnail
+     * ([com.abrah.nightmare.canvas.CanvasState.controlHints]) — the SAME
+     * [com.abrah.nightmare.SdSampler.controlHintFor] the tile draws. Off the main
+     * thread (a depth map is ~1 s), skipped unless something it reads changed.
+     */
+    private fun applyControlHints(graph: com.abrah.nightmare.Graph) {
+        val live = mutableSetOf<String>()
+        for (n in graph.nodes) {
+            if (n.type != com.abrah.nightmare.SdSampler.SD15_SWAP.name &&
+                n.type != com.abrah.nightmare.SdSampler.SD15_SWAP_INPAINT.name
+            ) continue
+            val p = com.abrah.nightmare.applyDefaults(nodeTypes[n.type]?.widgets.orEmpty(), n)
+            val cn = p[com.abrah.nightmare.SdSampler.CONTROLNET].orEmpty()
+            if (cn.isBlank() || cn == com.abrah.nightmare.SwapInputs.NONE) continue
+            val wiredId = canvas.pictureInto(n.id, nodeTypes, com.abrah.nightmare.SdSampler.CONTROL)
+            val photoId = canvas.pictureInto(n.id, nodeTypes)
+            if (wiredId == null && photoId == null) continue
+            live += n.id
+            val sig = listOf(
+                wiredId, photoId, cn, com.abrah.nightmare.SdSampler.controlIsPhoto(n),
+                p["x"], p["y"], p["w"], p["h"], p[com.abrah.nightmare.CropNode.PAD],
+                p[com.abrah.nightmare.SdSampler.CTL_X], p[com.abrah.nightmare.SdSampler.CTL_Y],
+                p[com.abrah.nightmare.SdSampler.CTL_W], p[com.abrah.nightmare.SdSampler.CTL_H],
+            ).joinToString("|")
+            if (hintSigs[n.id] == sig && n.id in canvas.controlHints) continue
+            if (hintPending[n.id] == sig) continue
+            hintPending[n.id] = sig
+            hintJobs.remove(n.id)?.cancel()
+            hintJobs[n.id] = viewModelScope.launch {
+                val done = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    runCatching {
+                        val hint = com.abrah.nightmare.SdSampler.controlHintFor(
+                            getApplication(), n, p,
+                            wiredId?.let { ops.images.get(it) }, photoId?.let { ops.images.get(it) },
+                        )?.bitmap ?: return@runCatching null
+                        ops.images.put(hint) to hint.width.toFloat() / hint.height.coerceAtLeast(1)
+                    }.getOrNull()
+                }
+                if (hintPending[n.id] != sig) return@launch
+                hintPending.remove(n.id)
+                hintJobs.remove(n.id)
+                hintSigs[n.id] = sig
+                canvas = if (done == null) canvas.copy(controlHints = canvas.controlHints - n.id)
+                else canvas.copy(controlHints = canvas.controlHints + (n.id to done))
+            }
+        }
+        // ⚠ ControlNet switched off, the picture gone, the node deleted: no hint.
+        val stale = canvas.controlHints.keys - live
+        if (stale.isNotEmpty()) {
+            canvas = canvas.copy(controlHints = canvas.controlHints - stale)
+            stale.forEach { hintSigs.remove(it); hintPending.remove(it); hintJobs.remove(it)?.cancel() }
+        }
+    }
+
+    private val hintSigs = mutableMapOf<String, String>()
+    private val hintPending = mutableMapOf<String, String>()
+    private val hintJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
 
     /** ⭐ What each framing node's preview was drawn from ([applyFramedPreviews]). */
     private val framedSigs = mutableMapOf<String, String>()
@@ -6592,7 +6676,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             if (r.error != null) {
                 // ⚠ Stops the sweep. Eight runs that all fail the same way is
                 // eight times the wait for one message.
-                runError = r.error
+                runError = learnFromFailure(r.error)
                 say("batch: stopped — ${r.error}", bad = true)
                 break
             }
@@ -6871,7 +6955,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         r.error?.let {
-            runError = it
+            runError = learnFromFailure(it)
             say("canvas: $it", bad = true)
         }
         // ⭐⭐ A node WAITING on a person ([NeedsInput]): say why, FIT it to the
@@ -6938,6 +7022,37 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * at once. `SnapshotStateList` is safe for single mutations; a compound
      * read-then-mutate is not, whatever the list is.
      */
+    /**
+     * ⭐⭐ A run that failed because the checkpoint's spill-fill group was too
+     * small ([SpillFill]) — Anima loads its UNet parts DURING the render, so
+     * this is where its error appears, not at launch. The size is learned and
+     * the backend stopped, so the next Run launches with it; the message says
+     * so. Any other failure is returned unchanged.
+     */
+    private suspend fun learnFromFailure(error: String): String {
+        val id = BackendProcess.lastModelId ?: return error
+        if (!SpillFill.learn(getApplication(), id)) return error
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
+        backend = BackendState.DOWN
+        say("spill-fill: learned ${SpillFill.stored(getApplication(), id)} bytes for $id", bad = true)
+        return "$error — this checkpoint needs a larger NPU buffer; the app has adjusted. Press Run again"
+    }
+
+    /**
+     * ⭐⭐ The report behind an [com.abrah.nightmare.ui.ErrorNotice]'s share
+     * icon ([ErrorReport]) — here because this is where the run log, the app
+     * log and the canvas's prompts all are. ⚠ Every `prompt`/`negative` on the
+     * canvas goes to the redactor, the user's call (2026-10-01).
+     */
+    fun errorReport(message: String): String {
+        val prompts = canvas.workflow.graph.nodes.flatMap { n ->
+            n.params.filterKeys { k -> k.contains("prompt", true) || k.contains("negative", true) }.values
+        }
+        val runLines = runLog.lines.map { "run  ${it.id}  ${it.text}" }
+        val appLines = synchronized(this) { log.take(80).asReversed().map { "${it.stamp}  ${it.text}" } }
+        return ErrorReport.build(getApplication(), message, runLines + appLines, prompts)
+    }
+
     @Synchronized
     fun say(text: String, bad: Boolean = false) {
         // ⚠ Mirrored to logcat, not just the on-screen list. When a scripted op

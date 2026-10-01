@@ -101,6 +101,24 @@ object Share {
     }
 
     /**
+     * ⭐ An error report ([ErrorReport]) as a `.txt`. ⚠ A file, not
+     * `EXTRA_TEXT`: 400 log lines overflow a chat message, and Copy in the
+     * dialog already covers pasting.
+     *
+     * ⚠⚠ Sent as `application/octet-stream`, not `text/plain`. Reported
+     * 2026-10-01: Telegram reads a `text/plain` attachment and posts its TEXT,
+     * split into a dozen messages that drowned the chat. A generic type
+     * arrives as the document it is; the `.txt` name still opens as text.
+     */
+    fun report(context: Context, text: String) {
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+            .format(java.util.Date())
+        val f = File(staging(context), "nightmare-error-$stamp.txt")
+        f.writeText(text)
+        send(context, uriFor(context, f), "application/octet-stream", "Share error report")
+    }
+
+    /**
      * ⭐ Several files in ONE share — a History selection (2026-09-17).
      * [entries] are file names with extensions and a writer for each.
      */

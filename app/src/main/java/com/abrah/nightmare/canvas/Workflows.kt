@@ -363,6 +363,12 @@ data class Recipe(
      * not a knob, and someone comparing phones should see that the app has it.
      */
     val minArch: Int = 0,
+    /**
+     * ⭐ A heading the Flows list draws above the first card of a run of
+     * recipes sharing it — "Advanced" (the user's call, 2026-10-01). ⚠ Not an
+     * ordering: [RECIPES] still IS the order, so a section is contiguous there.
+     */
+    val section: String? = null,
 ) {
 
     /**
@@ -464,6 +470,27 @@ val RECIPES: List<Recipe> = listOf(
     // least demanding to most (`CLAUDE.md`). A Klein edit needs an 8 Elite
     // and 6.2 GB of weights, so it sits after the upscaler and before the
     // video pair. The user's call, 2026-09-20.
+    // ⭐⭐ ADVANCED — SD 1.5 Swap with LoRA, ControlNet and IP-Adapter on the
+    // sampler, all three present and OFF (the user's call, 2026-10-01). Switching
+    // ControlNet or IP-Adapter on wires its picture in as an image node
+    // (`SwapWiring.kt`). ⚠ Here, not later: an SD 1.5-class model, so cheaper
+    // than every flow below.
+    Recipe(
+        "swap_t2i", "Text to image — LoRA, ControlNet, IP-Adapter",
+        "An SD 1.5 Swap model with LoRAs, a ControlNet and an IP-Adapter reference, " +
+            "all chosen per render on the sampler. Switch each on in its tile.",
+        { swapWorkflow(i2i = false) },
+        families = setOf(com.abrah.nightmare.Family.SD15_SWAP),
+        section = ADVANCED,
+    ),
+    Recipe(
+        "swap_i2i", "Image to image — LoRA, ControlNet, IP-Adapter",
+        "A photo re-imagined by an SD 1.5 Swap model, with the same three. ControlNet " +
+            "reads the photo itself unless you give it another picture.",
+        { swapWorkflow(i2i = true) },
+        families = setOf(com.abrah.nightmare.Family.SD15_SWAP),
+        section = ADVANCED,
+    ),
     Recipe(
         "flux_edit", com.abrah.nightmare.SdSampler.EDIT_LABEL,
         // ⚠ The requirement is IN the copy, the way the video flows state
@@ -563,6 +590,40 @@ fun inpaintWorkflow(): Workflow = Workflow(
     ),
     flowLayout("prompt", "image", "inpaint", "output"),
 )
+
+/** The Flows list's heading for the SD 1.5 Swap recipes. */
+const val ADVANCED = "Advanced"
+
+/**
+ * ⭐⭐ The Advanced flows: an SD 1.5 Swap sampler built whatever is selected
+ * (the FLUX edit's rule — [ctxKeyParams] `want`), with ControlNet and IP-Adapter
+ * explicitly OFF and no LoRA, so the three tiles start empty and switching one on
+ * is the first thing that changes the render.
+ */
+fun swapWorkflow(i2i: Boolean): Workflow {
+    val swap = com.abrah.nightmare.Family.SD15_SWAP
+    val id = "generate"
+    val off = mapOf(
+        com.abrah.nightmare.SdSampler.CONTROLNET to com.abrah.nightmare.SwapInputs.NONE,
+        com.abrah.nightmare.SdSampler.IP_ADAPTER to com.abrah.nightmare.IpAdapter.NONE,
+    )
+    val sampler = Node(
+        id, samplerType(family = swap),
+        params = ctxKeyParams(want = swap) + off + mapOf("seed" to "0") +
+            (if (i2i) mapOf("denoise" to com.abrah.nightmare.SdSampler.defaultDenoise(swap)) else emptyMap()),
+        inputs = if (i2i) sources("prompt" to "prompt", "image" to "image") else sources("prompt" to "prompt"),
+    )
+    val nodes = listOfNotNull(
+        Node("prompt", "core.prompt", params = promptParams()),
+        if (i2i) Node("image", "core.image", params = mapOf("uri" to "")) else null,
+        sampler,
+        Node("output", "core.output", inputs = sources("media" to id)),
+    )
+    return Workflow(
+        Graph(nodes),
+        if (i2i) flowLayout("prompt", "image", id, "output") else flowLayout("prompt", id, "output"),
+    )
+}
 
 /**
  * Photo in, re-imagined picture out.

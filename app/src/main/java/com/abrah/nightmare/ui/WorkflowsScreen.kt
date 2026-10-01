@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
@@ -86,7 +87,7 @@ fun WorkflowsScreen(
     // double it, and a second header would sit under the tab row.
     Column(modifier.fillMaxSize()) {
         if (error != null) {
-            ErrorNotice(error, Modifier.padding(top = 8.dp))
+            ErrorNotice(error, Modifier.padding(top = 8.dp), reportable = true)
         }
 
         // ⭐⭐ Recommended and Saved as SUB-TABS — the same pills Models uses
@@ -107,7 +108,18 @@ fun WorkflowsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (page == 0) {
-                    items(recipes, key = { "r-${it.id}" }) { r ->
+                    itemsIndexed(recipes, key = { _, r -> "r-${r.id}" }) { i, r ->
+                        // ⭐ A section's heading, above the first card of its run
+                        // ([Recipe.section]) — "Advanced", 2026-10-01.
+                        val section = r.section
+                        if (section != null && recipes.getOrNull(i - 1)?.section != section) {
+                            Text(
+                                section,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                            )
+                        }
                         // ⭐ The CARD opens it. An "Open" button beside a row whose
                         // only purpose is to be opened is a second target for one
                         // intent -- and on a phone the card is the bigger, easier one.

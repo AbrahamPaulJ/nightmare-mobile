@@ -357,7 +357,7 @@ object TemplateLora {
      * A safetensors file: an 8-byte little-endian header length, that JSON
      * (`name -> {dtype, shape, data_offsets}`), then the data. F32, F16 and BF16.
      */
-    private class Safetensors(file: File) : java.io.Closeable {
+    internal class Safetensors(file: File) : java.io.Closeable {
         private val raf = RandomAccessFile(file, "r")
 
         override fun close() = raf.close()
@@ -394,8 +394,30 @@ object TemplateLora {
                 "F32" -> FloatArray(n / 4).also { bb.asFloatBuffer().get(it) }
                 "F16" -> FloatArray(n / 2) { halfToFloat(bb.getShort(it * 2)) }
                 "BF16" -> FloatArray(n / 2) { Float.fromBits((bb.getShort(it * 2).toInt() and 0xFFFF) shl 16) }
+                // ⚠⚠ Reported 2026-10-01 (a character LoRA): `….alpha: dtype I64
+                // is not supported`. Some trainers save each module's `alpha` as
+                // an INTEGER scalar; it is a number like any other here.
+                "F64" -> FloatArray(n / 8) { bb.getDouble(it * 8).toFloat() }
+                "I64" -> FloatArray(n / 8) { bb.getLong(it * 8).toFloat() }
+                "I32" -> FloatArray(n / 4) { bb.getInt(it * 4).toFloat() }
+                "I16" -> FloatArray(n / 2) { bb.getShort(it * 2).toFloat() }
+                "I8" -> FloatArray(n) { bb.get(it).toFloat() }
+                "U8" -> FloatArray(n) { (bb.get(it).toInt() and 0xFF).toFloat() }
+                "F8_E4M3" -> FloatArray(n) { fp8e4m3(bb.get(it)) }
+                "F8_E5M2" -> FloatArray(n) { halfToFloat(((bb.get(it).toInt() and 0xFF) shl 8).toShort()) }
                 else -> throw IllegalArgumentException("$name: dtype $dt is not supported")
             }
+        }
+
+        /** FP8 E4M3FN: bias 7, no infinities, 0x7F/0xFF are NaN. */
+        private fun fp8e4m3(b: Byte): Float {
+            val v = b.toInt() and 0xFF
+            val sign = if (v and 0x80 != 0) -1f else 1f
+            val exp = (v ushr 3) and 0xF
+            val mant = v and 0x7
+            if (exp == 0xF && mant == 0x7) return Float.NaN
+            return sign * if (exp == 0) mant / 8f * (1f / 64f)
+            else (1f + mant / 8f) * Math.scalb(1f, exp - 7)
         }
 
         private fun halfToFloat(h: Short): Float {

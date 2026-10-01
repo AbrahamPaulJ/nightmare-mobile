@@ -119,6 +119,12 @@ data class CanvasState(
      */
     val previews: Map<String, Pair<String, Float>> = emptyMap(),
     /**
+     * ⭐ Swap sampler id -> (image id, aspect) of what its ControlNet SEES
+     * ([com.abrah.nightmare.SdSampler.controlHintFor]) — drawn on the node
+     * beside its picture. Filled by the view model, off the main thread.
+     */
+    val controlHints: Map<String, Pair<String, Float>> = emptyMap(),
+    /**
      * ⭐ Node id -> (image id, aspect ratio) for what a before/after node
      * RECEIVED — [NodeBox.beforePreview], drawn above [NodeBox.preview].
      * `image.upscale` only, for now.
@@ -259,7 +265,7 @@ data class CanvasState(
     val panLocked: Boolean = false,
 ) {
 
-    private fun boxes(types: Map<String, NodeType>) = layout(workflow, types, previews, beforePreviews)
+    private fun boxes(types: Map<String, NodeType>) = layout(workflow, types, previews, beforePreviews, controlHints)
 
     /**
      * A finger goes down at [world].
@@ -588,7 +594,7 @@ data class CanvasState(
                 graph = workflow.graph.connected(
                     input.nodeId, input.port.name,
                     com.abrah.nightmare.Source(output.nodeId, output.port.name),
-                )
+                ).switchingOnFor(input.nodeId, input.port.name)
             ),
             gesture = Gesture.Idle,
             message = null,

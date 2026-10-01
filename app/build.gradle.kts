@@ -51,8 +51,8 @@ android {
         // a minor bump per push, which is what the rule exists to stop. The
         // minor moves only when a release is called a release. âš  versionCode
         // stays a plain incrementing integer; Android requires that.
-        versionCode = 373
-        versionName = "1.6.067"
+        versionCode = 380
+        versionName = "1.6.074"
         ndk { abiFilters += "arm64-v8a" }
 
         // The plugin runtime and the NPU runner, both built from source.
@@ -237,4 +237,27 @@ dependencies {
 // config minus R8). It is the RELEASE gate, not the push gate.
 tasks.configureEach {
     if (name.startsWith("lintVital") && name.contains("Dev")) enabled = false
+}
+
+// ⭐⭐ `ResultsFullscreenTest` runs in its OWN JVM, after the main unit tests. It
+// composes the real `HarnessScreen` (sheet window, view model, viewer Dialog), and
+// in the shared JVM something it starts outlived it: later Compose classes failed
+// "Compose did not get idle" in the full suite only (2026-10-01). Isolated, it
+// still runs on every `testDebugUnitTest` / `verifyRoborazziDebug`.
+afterEvaluate {
+    val base = tasks.named<Test>("testDebugUnitTest")
+    base.configure { filter { excludeTestsMatching("*ResultsFullscreenTest") } }
+    val isolated = tasks.register<Test>("testResultsFullscreen") {
+        val b = base.get()
+        testClassesDirs = b.testClassesDirs
+        classpath = b.classpath
+        jvmArgumentProviders.addAll(b.jvmArgumentProviders)
+        jvmArgs(b.jvmArgs ?: emptyList<String>())
+        systemProperties(b.systemProperties)
+        javaLauncher.set(b.javaLauncher)
+        dependsOn(b.dependsOn)
+        mustRunAfter(b)
+        filter { includeTestsMatching("*ResultsFullscreenTest") }
+    }
+    base.configure { finalizedBy(isolated) }
 }

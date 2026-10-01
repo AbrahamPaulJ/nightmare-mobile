@@ -289,6 +289,57 @@ class SdSampler(
         const val CONTROL_STRENGTH = "control_strength"
         const val CONTROL_IMAGE = "control_image"
 
+        /**
+         * ⭐ The ControlNet picture's OWN crop, when it is not the node's photo
+         * (`canvas/SwapWiring.kt`) — the sibling of [REF_X]. Edited in the
+         * ControlNet tile over the framed photo; ⚠ never read when the control
+         * picture IS the photo, which follows the node's crop window instead.
+         */
+        const val CTL_X = "ctl_x"
+        const val CTL_Y = "ctl_y"
+        const val CTL_W = "ctl_w"
+        const val CTL_H = "ctl_h"
+
+        /** ⭐ Is the ControlNet picture the node's own photo — wired from the same node, or unset? */
+        fun controlIsPhoto(node: Node): Boolean {
+            val c = node.inputs[CONTROL]?.node ?: return node.params[CONTROL_IMAGE].isNullOrBlank()
+            return c == node.inputs["image"]?.node
+        }
+
+        /**
+         * ⭐⭐ What the ControlNet will SEE — canny's edges, the depth map, the
+         * skeleton — from the picture wired into `control` (else one picked on
+         * the node, else the photo). ONE function for the tile and the canvas
+         * thumbnail, so the two cannot show different things (the canvas showed
+         * the SOURCE until 2026-10-01). Null with ControlNet off or no picture.
+         */
+        fun controlHintFor(
+            context: android.content.Context?,
+            node: Node,
+            p: Map<String, String>,
+            wired: android.graphics.Bitmap?,
+            photo: android.graphics.Bitmap?,
+            picked: android.graphics.Bitmap? = null,
+        ): SwapInputs.Hint? {
+            val cn = p[CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
+            if (cn == SwapInputs.NONE) return null
+            val raw = wired ?: picked ?: photo ?: return null
+            val fromPhoto = controlIsPhoto(node)
+            val src = if (fromPhoto) raw else cropControl(raw, p)
+            val frame = if (photo != null && fromPhoto) swapFrame(p) else null
+            return SwapInputs.hint(context, src, cn, frame)
+        }
+
+        /** ⭐ [CTL_X]'s region applied to a control picture that is not the photo — ONE reading, run and tile. */
+        fun cropControl(src: android.graphics.Bitmap, p: Map<String, String>): android.graphics.Bitmap {
+            val x = p[CTL_X]?.toFloatOrNull() ?: 0f
+            val y = p[CTL_Y]?.toFloatOrNull() ?: 0f
+            val w = p[CTL_W]?.toFloatOrNull() ?: 1f
+            val h = p[CTL_H]?.toFloatOrNull() ?: 1f
+            if (x == 0f && y == 0f && w == 1f && h == 1f) return src
+            return CropNode.render(src, x, y, w, h, 0, 0, CropNode.PAD_BLACK).first
+        }
+
         /** ⭐⭐ SD 1.5 Swap's IP-Adapter: the adapter, its strength, the picture picked on the node. */
         const val IP_ADAPTER = "ip_adapter"
         const val IP_SCALE = "ip_scale"
@@ -885,12 +936,14 @@ class SdSampler(
         ),
         Widget(CONTROL_STRENGTH, "float", "1.0", 0.0, 2.0),
         Widget(CONTROL_IMAGE, "string", ""),
+        Widget(CTL_X, "float", "0"), Widget(CTL_Y, "float", "0"),
+        Widget(CTL_W, "float", "1"), Widget(CTL_H, "float", "1"),
         // ⭐⭐ IP-Adapter ([IpAdapter]): which adapter reads the reference, how
         // strongly, and a reference picked ON the node. ⚠ The `reference` wire
         // wins over the picked picture, as `control` does over [CONTROL_IMAGE].
         // Drawn as the IP-Adapter tile, never as loose knobs.
         Widget(
-            IP_ADAPTER, "string", IpAdapter.PLUS, options = IpAdapter.ADAPTERS,
+            IP_ADAPTER, "string", IpAdapter.PLUS, options = IpAdapter.CHOICES,
             hint = "plus copies the reference's subject and style; face follows a face",
         ),
         Widget(IP_SCALE, "float", SwapInputs.IP_SCALE_DEFAULT.toString(), 0.0, 1.5),
@@ -1477,8 +1530,10 @@ class SdSampler(
         inputs: Map<String, Value>,
     ): Ops.TemplateInputs {
         val type = p[CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
-        val refWired = inputs["reference"] as? Value.Image
-        val refPicked = p[IP_IMAGE]?.takeIf { it.isNotBlank() }
+        // ⚠ IP-Adapter switched off reads no reference, wired or picked.
+        val ipOff = p[IP_ADAPTER] == IpAdapter.NONE
+        val refWired = (inputs["reference"] as? Value.Image)?.takeUnless { ipOff }
+        val refPicked = p[IP_IMAGE]?.takeIf { it.isNotBlank() && !ipOff }
         // ⚠ Nothing to pack, no hint and no reference: the base model, and no platform needed.
         if (type == SwapInputs.NONE && LoraSpec.parse(p[LORAS]).isEmpty() && refWired == null && refPicked == null) {
             return Ops.TemplateInputs()
@@ -1490,6 +1545,9 @@ class SdSampler(
         val loras = lorasFor(ctx, p[LORAS])
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             val photo = (inputs["image"] as? Value.Image)?.let { ctx.images.get(it.id) }
+            // ⭐ The photo follows the node's crop window; any OTHER control picture
+            // its own region ([CTL_X]) and is then fitted (`SwapWiring.kt`).
+            val fromPhoto = controlIsPhoto(node)
             val control = if (type == SwapInputs.NONE) null else {
                 (inputs[CONTROL] as? Value.Image)?.let { ctx.images.get(it.id) }
                     ?: p[CONTROL_IMAGE]?.takeIf { it.isNotBlank() }?.let {
@@ -1497,7 +1555,7 @@ class SdSampler(
                             ?: throw NeedsInput("the ControlNet picture can no longer be read — pick it again")
                     }
                     ?: photo
-            }
+            }?.let { if (fromPhoto) it else cropControl(it, p) }
             // ⭐ The IP-Adapter reference: the `reference` wire cut by the node's
             // REF region (the FLUX.2 reference's own params), else the picture
             // picked on the node. CLIP then centre-crops it square.
@@ -1517,7 +1575,7 @@ class SdSampler(
             SwapInputs.resolve(
                 android, spec, loras, type,
                 p[CONTROL_STRENGTH]?.toDoubleOrNull() ?: 1.0, control,
-                frame = photo?.let { swapFrame(p) },
+                frame = photo?.takeIf { fromPhoto }?.let { swapFrame(p) },
                 say = ctx.say,
                 reference = reference,
                 ipAdapter = p[IP_ADAPTER].orEmpty().ifBlank { IpAdapter.PLUS },

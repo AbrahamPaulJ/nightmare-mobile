@@ -117,7 +117,7 @@ cost no restart, or bring your own converted `.bin`. Enlarging is a checkbox on 
 rather than a node of its own, and that node then shows what it received above what it made,
 each with its own buttons.
 
-**Thirty-two checkpoints, or bring your own.** Six SD 1.5, two SD 1.5 Swap, ten SDXL, nine
+**Thirty-three checkpoints, or bring your own.** Six SD 1.5, three SD 1.5 Swap, ten SDXL, nine
 Anima and five DiT in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
 [npuforge](https://github.com/AbrahamPaulJ/npuforge), which turns an SD safetensors checkpoint
 into a QNN model with no PC involved; its 9 channel inpainting exports run as real inpainting
@@ -131,10 +131,11 @@ square up to 1024, portrait and landscape. SDXL and Anima crop their fixed canva
 you choose. The DiT models take two sliders and render the size you ask for directly, and drop
 a photo on one and it sizes itself to that photo's shape.
 
-**A DiT fine-tune imports as-is.** FLUX.2 and Z-Image build their graph at load time from
-plain weights, so a Z-Image checkpoint from CivitAI is picked from storage and runs — no
-conversion, no PC. (FLUX.2 Klein 4B fine-tunes only: a Klein 9B one is refused for now.) The text encoder, VAE and tokenizer are shared with the model you already
-installed, so an import costs only the weights. A folder copied onto the phone works too — the
+**A DiT fine-tune imports as-is.** FLUX.2, Z-Image and Krea 2 build their graph at load time
+from plain weights, so a checkpoint from CivitAI or Hugging Face — `.safetensors` or `.gguf` — is
+picked from storage and runs, no conversion, no PC. Klein 4B and Z-Image imports share the text
+encoder, VAE and tokenizer with the model you already installed; Klein 9B and Krea 2 imports get
+their own copy. A file too big for the phone's RAM is flagged on its row before you run it. A folder copied onto the phone works too — the
 family is read out of the checkpoint's own tensor names, so nothing has to be declared. A folder
 that already carries LocalDream's marker file — `SDXL`, `ANIMA`, `KLEIN`, `ZIMAGE`,
 `QWEN_IMAGE_2_1`, `npucustom` or `finished` — is taken at its word, so a model directory assembled for that app imports here
@@ -156,8 +157,10 @@ a depth map from a photo (Depth Anything V2 Small, 99 MB, about 1 s on an 8 Elit
 ready-made one. The ControlNets themselves are our own QNN builds, downloaded in the app in the
 tier your chip loads — [`AbrahamPJ/nightmare-sd15-controlnet-qnn`](https://huggingface.co/AbrahamPJ/nightmare-sd15-controlnet-qnn):
 all three for 8 Gen 2 and newer; canny and depth also as a slower compatibility build for the 888 / 8 Gen 1 (not yet tested on one).
-With a photo wired into the node, that photo is the control picture by default and follows the
-node's crop window, so the hint lines up with it. **SD 1.5 Swap Inpaint** repaints a masked area
+The control picture is an image node **wired into the sampler**: switching ControlNet on wires
+the node's own photo in (it follows the crop window, so the hint lines up), or adds an image node
+when there is none; a different picture goes in its own node, with its own crop drawn over the
+photo. Two **Advanced** flows open with LoRA, ControlNet and IP-Adapter ready and switched off. **SD 1.5 Swap Inpaint** repaints a masked area
 with the same LoRAs and ControlNet (a blend inpaint: the model does not see the mask, so a big
 fill can leave a soft seam). Nothing is reconverted and the model is not
 reloaded. 512×512 only; about 15% slower than the same checkpoint converted plainly, and a
@@ -288,8 +291,8 @@ Russian and Chinese models are Mozilla's
 **AbsoluteReality Inpaint** is Lykon's inpainting checkpoint, converted for LocalDream.
 
 **SD 1.5 Swap** models are made by [npuforge](https://github.com/AbrahamPaulJ/npuforge); the two
-defaults are Lykon's AbsoluteReality v1.8.1 and kemiaomiao's CuteYukiMix, under their authors'
-terms. Their ControlNets are our QNN builds of
+defaults are Lykon's AbsoluteReality v1.8.1, kemiaomiao's CuteYukiMix and Yuno779's Anything V5,
+under their authors' terms. Their ControlNets are our QNN builds of
 [lllyasviel's ControlNet 1.1](https://huggingface.co/lllyasviel/ControlNet-v1-1) (canny, depth,
 openpose; CreativeML OpenRAIL-M), hosted at
 [`AbrahamPJ/nightmare-sd15-controlnet-qnn`](https://huggingface.co/AbrahamPJ/nightmare-sd15-controlnet-qnn).
@@ -320,6 +323,13 @@ Full text in [LICENSE](LICENSE); attribution and third party components in [NOTI
 
 The Qualcomm AI Runtime libraries the app needs at runtime are covered by Qualcomm's own terms,
 which this licence does not override. They are not in this repository.
+
+## Something failed?
+
+Tap the **share** icon on the red error message: it shows a full report — the error, the
+backend's log and how it stopped, your phone and model files, never your prompt — to copy or
+share as a `.txt`. Attach it to an [issue](https://github.com/AbrahamPaulJ/nightmare-mobile/issues).
+More in the [troubleshooting guide](https://abrahampaulj.github.io/nightmare-mobile/troubleshooting/).
 
 ## Support
 

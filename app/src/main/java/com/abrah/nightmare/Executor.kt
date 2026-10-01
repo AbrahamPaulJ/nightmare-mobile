@@ -1296,8 +1296,14 @@ class OpFailure(op: String, val code: Int, val body: String) :
  * engine left a real error, that error leads.
  */
 internal fun explainOpFailure(code: Int, body: String): String {
-    if (code != -1 || BackendProcess.isRunning) return body
-    val why = BackendProcess.failureReason()
+    if (code != -1) return body
+    // ⚠⚠ A backend that just died is still "running" for a few ms after its
+    // socket closed ([BackendProcess.awaitExit]); deciding at that instant is
+    // what showed users the bare EOFException. A live, slow one costs 1.5 s.
+    if (BackendProcess.isRunning && !BackendProcess.awaitExit(1_500)) return body
+    // ⚠ No `[ ERROR ]` line is the lmkd signature — then the exit signal is the
+    // only evidence there is, and it is named rather than dropped.
+    val why = BackendProcess.failureReason() ?: BackendProcess.exitMeaning()
     return "the backend stopped" + (why?.let { ": $it" } ?: "") +
         " — if it keeps happening, close other apps or try a smaller canvas [$body]"
 }
@@ -2871,6 +2877,9 @@ class Executor(
                 waiting = waiting ?: (node.id to (e.message ?: "needs you"))
                 NodeRun(node.id, node.type, Outcome.BLOCKED, 0, e.message ?: "needs you")
             } catch (e: Exception) {
+                // ⭐ The stack for the error report's share icon — the message
+                // below is all that reaches the screen.
+                if (stopped == null) ErrorReport.record(e)
                 stopped = stopped ?: "${node.id}: ${e.message}"
                 NodeRun(node.id, node.type, Outcome.FAILED,
                     (System.nanoTime() - n0) / 1_000_000,

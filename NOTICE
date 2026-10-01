@@ -234,8 +234,8 @@ IP-Adapter Plus / Plus Face (SD 1.5) and the CLIP ViT-H/14 image encoder
     https://huggingface.co/AbrahamPJ/nightmare-ip-adapter. Downloaded at the
     user's request.
 
-AbsoluteReality v1.8.1, CuteYukiMix (the SD 1.5 Swap defaults)
-    Lykon; kemiaomiao
+AbsoluteReality v1.8.1, CuteYukiMix, Anything V5 (the SD 1.5 Swap defaults)
+    Lykon; kemiaomiao; Yuno779
     Converted with npuforge (https://github.com/AbrahamPaulJ/npuforge) as
     SD1.5 Swap and re-hosted at
     https://huggingface.co/AbrahamPJ/nightmare-sd15-swap-models. Each

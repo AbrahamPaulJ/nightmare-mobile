@@ -13,6 +13,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
@@ -29,6 +31,51 @@ import com.abrah.nightmare.SdSampler
 import com.abrah.nightmare.SwapInputs
 import com.abrah.nightmare.ui.ErrorNotice
 import com.abrah.nightmare.ui.LogTextStyle
+
+/**
+ * ⭐ The node's photo as its base will see it ([SwapInputs.framedPhoto]) — the
+ * layer a ControlNet or IP-Adapter picture is cropped over. Null with no photo.
+ */
+@Composable
+internal fun rememberFramedPhoto(node: Node, type: NodeType?, photo: ImageBitmap?): ImageBitmap? {
+    val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
+    val frame = SdSampler.swapFrame(live)
+    return rememberOffMain(node.id, "framed photo", photo, frame) {
+        photo?.let { SwapInputs.framedPhoto(it.asAndroidBitmap(), frame).asImageBitmap() }
+    }
+}
+
+/**
+ * ⭐⭐ Crop a ControlNet / IP-Adapter picture — the SAME [CropEditor] as every
+ * other crop window (`docs/UI.md` §8.8), square because both are read square,
+ * over the framed photo when there is one so the two can be lined up.
+ */
+@Composable
+internal fun PictureCrop(
+    source: ImageBitmap,
+    rect: CropRect,
+    onChange: (CropRect) -> Unit,
+    underlay: ImageBitmap?,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        CropEditor(
+            source = source,
+            rect = rect,
+            onChange = onChange,
+            interactive = true,
+            outW = source.width,
+            aspect = 1f,
+            pad = null,
+            rule = com.abrah.nightmare.PadRule.WHEN_TOO_SMALL,
+            underlay = underlay,
+        )
+        Text(
+            stringResource(if (underlay != null) R.string.crop_over_photo else R.string.crop_gestures),
+            style = LogTextStyle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
 
 /** What the ControlNet tile shows: the hint, or which estimator it is waiting for. */
 internal class ControlHint(val bitmap: ImageBitmap?, val missing: String?)
@@ -54,14 +101,16 @@ internal fun rememberControlHint(
     val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
     val cn = live[SdSampler.CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
     val uri = live[SdSampler.CONTROL_IMAGE].orEmpty()
-    val frame = if (photo != null) SdSampler.swapFrame(live) else null
-    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, poseInstalled, depthInstalled) {
+    // ⚠ The run's own rule ([SdSampler.controlIsPhoto]): the photo follows the
+    // node's frame, any other picture its own crop ([SdSampler.CTL_X]).
+    val fromPhoto = SdSampler.controlIsPhoto(node)
+    val frame = if (photo != null && fromPhoto) SdSampler.swapFrame(live) else null
+    val region = listOf(SdSampler.CTL_X, SdSampler.CTL_Y, SdSampler.CTL_W, SdSampler.CTL_H).map { live[it] }
+    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, region, poseInstalled, depthInstalled) {
         if (cn == SwapInputs.NONE) return@rememberOffMain null
-        val src = wired?.asAndroidBitmap()
-            ?: uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) }
-            ?: photo?.asAndroidBitmap()
+        val picked = if (wired == null) uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) } else null
+        val made = SdSampler.controlHintFor(ctx, node, live, wired?.asAndroidBitmap(), photo?.asAndroidBitmap(), picked)
             ?: return@rememberOffMain null
-        val made = SwapInputs.hint(ctx, src, cn, frame)
         ControlHint(made.bitmap?.asImageBitmap(), made.missing)
     }
 }
@@ -97,13 +146,20 @@ internal fun ControlNetPanel(
     cnRows: Map<String, com.abrah.nightmare.ui.ToolRow> = emptyMap(),
     onInstallControlNet: ((String) -> Unit)? = null,
     onDeleteControlNet: ((String) -> Unit)? = null,
+    /** ⚠ One write per crop gesture — four separate ones crashed a drag (`CropEditor`). */
+    onSetParams: (Map<String, String>) -> Unit = {},
     onSetParam: (String, String) -> Unit,
 ) {
     val ctx = LocalContext.current
     val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
     val cn = live[SdSampler.CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
     val uri = live[SdSampler.CONTROL_IMAGE].orEmpty()
+    // ⭐ A pick lands in the wired image node, or a new one (`SwapWiring.kt`).
     val pick = rememberImagePick { onSetParam(SdSampler.CONTROL_IMAGE, it) }
+    val fromPhoto = SdSampler.controlIsPhoto(node)
+    var cropping by androidx.compose.runtime.saveable.rememberSaveable(node.id) {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
     // ⚠⚠ NOT `verticalScroll`: the popup body already scrolls its panel, and a
     // scrolling column inside it crashes the tab on open (the golden caught it).
     Column(
@@ -155,18 +211,34 @@ internal fun ControlNetPanel(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (wired == null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ⚠ Destructive first, primary last (`docs/UI.md` §8.1).
-                if (uri.isNotBlank()) {
-                    OutlinedButton(onClick = { onSetParam(SdSampler.CONTROL_IMAGE, "") }) {
-                        Text(stringResource(R.string.cn_clear))
-                    }
-                }
-                Button(onClick = pick) {
-                    Text(stringResource(if (uri.isBlank()) R.string.cn_pick else R.string.cn_replace))
+        // ⭐⭐ Always offered, wired or not (2026-10-01): Replace writes into the
+        // wired picture node — or a new one, when the wire is the node's own
+        // photo — and Clear unwires it. Crop is the picture's own region, for
+        // any picture that is not the photo.
+        val own = (wired != null && !fromPhoto) || uri.isNotBlank()
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // ⚠ Destructive first, primary last (`docs/UI.md` §8.1).
+            if (own) {
+                OutlinedButton(onClick = { onSetParam(SdSampler.CONTROL_IMAGE, ""); cropping = false }) {
+                    Text(stringResource(R.string.cn_clear))
                 }
             }
+            if (wired != null && !fromPhoto) {
+                OutlinedButton(onClick = { cropping = !cropping }) {
+                    Text(stringResource(if (cropping) R.string.crop_done else R.string.crop))
+                }
+            }
+            Button(onClick = pick) {
+                Text(stringResource(if (!own) R.string.cn_pick else R.string.cn_replace))
+            }
+        }
+        if (cropping && wired != null && !fromPhoto) {
+            PictureCrop(
+                source = wired,
+                rect = ctlCropRectOf(node),
+                onChange = { r -> onSetParams(r.asCtlParams().toMap()) },
+                underlay = rememberFramedPhoto(node, type, photo),
+            )
         }
         // ⭐ The estimator this photo needs, offered HERE — the pose detector for
         // openpose, the depth estimator for depth. Also while one downloads, so

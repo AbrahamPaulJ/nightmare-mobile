@@ -116,6 +116,18 @@ object CustomModels {
     const val FLUX2_MARK = "flux2.dit"
 
     /**
+     * ⭐ Ours, because upstream has no Krea 2 import and no 9B one: an imported
+     * Krea 2 checkpoint, and a FLUX.2 folder (`KLEIN`) whose weights are
+     * **Klein 9B** — same family and sampler, but its parts are the 9B's
+     * Qwen3-8B encoder, never the shared 4B one ([ModelSpec.ownDitParts]).
+     */
+    const val KREA2_MARK = "KREA2"
+    const val KLEIN9B_MARK = "KLEIN9B"
+
+    /** The DiT weights as GGUF — the backend prefers it to `dit.safetensors` (014). */
+    const val DIT_GGUF = "dit.gguf"
+
+    /**
      * ⭐⭐⭐ **UPSTREAM's marker filenames, honoured as-is.**
      *
      * Reported 2026-09-22 by a user who assembles model folders by hand:
@@ -260,6 +272,7 @@ object CustomModels {
             // before it adopted upstream's names.
             Family.ZIMAGE.takeIf { File(dir, ZIMAGE_MARK).isFile },
             Family.FLUX2.takeIf { File(dir, FLUX2_MARK).isFile },
+            Family.KREA2.takeIf { File(dir, KREA2_MARK).isFile },
         )
         // ⭐⭐⭐ **A DiT folder pushed over adb has no marker, and is a model
         // anyway** — [detectDit] reads the family out of `dit.safetensors`.
@@ -338,7 +351,22 @@ object CustomModels {
         Family.KREA2 -> Defaults("euler", 8, 1.0)
     }
 
-    private fun customSpec(dir: File, cfg: Config, family: Family): ModelSpec = ModelSpec(
+    private fun customSpec(dir: File, cfg: Config, family: Family): ModelSpec {
+        // ⭐ A FLUX.2 folder holding Klein 9B weights ([KLEIN9B_MARK]): the 9B's
+        // own parts, `te=disk` and a 768² start, exactly as the built-in 9B.
+        val klein9b = family == Family.FLUX2 && File(dir, KLEIN9B_MARK).isFile
+        // ⭐ The weights the backend will load: `dit.gguf` wins (backend 014).
+        val weights = if (File(dir, DIT_GGUF).isFile) DIT_GGUF else ModelSpec.DIT_WEIGHTS
+        return customSpec(dir, cfg, family, klein9b, weights)
+    }
+
+    private fun customSpec(
+        dir: File, cfg: Config, family: Family, klein9b: Boolean, weights: String,
+    ): ModelSpec = ModelSpec(
+        startRes = if (klein9b) Res(768, 768) else null,
+        // ⚠ Qwen and Krea 2 read their own directory only (backend 013/014);
+        // a 9B's encoder is not the family's shared one.
+        ownDitParts = klein9b || family == Family.QWEN21 || family == Family.KREA2,
         id = dir.name,
         label = cfg.label ?: dir.name,
         // ⚠⚠ EMPTY, and that is the definition of a custom model: there is no
@@ -370,8 +398,7 @@ object CustomModels {
             // marker (a LocalDream download in the shared models folder):
             // there is no .gguf import.
             Family.QWEN21 -> ModelCatalog.QWEN21
-            // ⚠ Not reached today: no upstream marker names Krea 2 and there is
-            // no .gguf import. Here so the `when` stays exhaustive and honest.
+            // ⭐ An imported Krea 2 ([KREA2_MARK], since 1.6.069).
             Family.KREA2 -> ModelCatalog.KREA2
         },
         resolutions = listOf(
@@ -388,9 +415,10 @@ object CustomModels {
             Family.SD15_SWAP -> ModelCatalog.SD15_SWAP_REQUIRED
             Family.SDXL -> ModelCatalog.SDXL_REQUIRED
             Family.ANIMA -> ModelCatalog.ANIMA_REQUIRED
-            Family.FLUX2, Family.ZIMAGE -> ModelCatalog.DIT_REQUIRED
+            // ⚠ The weights by the name actually on disk — a `.gguf` import
+            // has no `dit.safetensors`, and would read as incomplete forever.
+            Family.FLUX2, Family.ZIMAGE, Family.KREA2 -> listOf(weights) + DIT_PARTS
             Family.QWEN21 -> ModelCatalog.QWEN21_REQUIRED
-            Family.KREA2 -> ModelCatalog.KREA2_REQUIRED
         },
         // ⚠ Not a preference: SDXL's UNet and Anima's two DiT halves do not fit
         // beside their encoders at 1024², and the backend needs telling
@@ -404,7 +432,9 @@ object CustomModels {
         // `ModelCatalog.dit`). An imported checkpoint is the same weights as
         // the built-in, so it gets the same answer.
         lowram = when (family) {
-            Family.SD15, Family.SD15_SWAP, Family.FLUX2 -> false
+            Family.SD15, Family.SD15_SWAP -> false
+            // ⚠ The 9B is `lowram` (te=disk) like its built-in; 4B is not.
+            Family.FLUX2 -> klein9b
             Family.SDXL, Family.ANIMA, Family.ZIMAGE -> true
             // ⚠ The backend runs Qwen `all=disk` whatever this says (013).
             Family.QWEN21 -> false
@@ -426,6 +456,31 @@ object CustomModels {
         minHtpArch = if (family.dit) ModelCatalog.DIT_MIN_ARCH else 0,
         isCustom = true,
     )
+
+    /**
+     * ⭐⭐ **An imported DiT that is probably too big for this phone's RAM** —
+     * a WARNING, never a refusal (the user's call, 2026-10-01: an estimate that
+     * guesses wrong must not block a file that would have run).
+     *
+     * ⚠ The line is the weights against [DIT_RAM_SHARE] of `MemTotal`, from
+     * the 12 GB S25 Ultra (11.4 GB visible): Z-Image's 6.16 GB DiT renders
+     * (te=disk), Krea 2's 6.84 GB was reaped while loading, Klein 9B's 5.6 GB
+     * renders at 768² and is sometimes reaped at 1024² (`docs/DIT.md` §9c).
+     * 0.55 × 11.4 = 6.3 GB sits between the two. Reported 2026-10-01: a 9.74 GB
+     * Q8_0 Klein 9B on a 16 GB phone failed with a bare EOF — 9.74 > 8.7.
+     */
+    fun ramTight(spec: ModelSpec, context: Context, ramBytes: Long): Boolean {
+        if (!spec.isCustom || !spec.isDit || ramBytes <= 0L) return false
+        val d = spec.dir(context)
+        val weights = listOf(File(d, DIT_GGUF), File(d, ModelSpec.DIT_WEIGHTS)).firstOrNull { it.isFile }
+            ?: return false
+        return weights.length() > ramBytes * DIT_RAM_SHARE
+    }
+
+    const val DIT_RAM_SHARE = 0.55
+
+    /** ⚠ A DiT package's parts besides its weights — the same three in every family but Qwen. */
+    private val DIT_PARTS = listOf("llm.gguf", "vae.safetensors", "tokenizer.json")
 
     // ---- importing -------------------------------------------------------
 
@@ -553,13 +608,14 @@ object CustomModels {
     ): ModelSpec {
         require(isValidName(name)) { "\"$name\" is not a usable directory name" }
         require(!isReserved(name)) { "\"$name\" is the id of a built-in model; pick another name" }
-        val mark = markOf(family)
 
         // ⚠⚠⚠ **Checked BEFORE the gigabytes.** Copying 6 GB and failing at
         // Run leaves a dead 8.8 GB directory and minutes of a person's time
         // spent to learn something the first kilobyte could have said.
         onProgress(ModelInstaller.Progress("checking the file", 0, 0))
-        checkSafetensors(open, expect = family)
+        val head = ditHeader(open)
+        val variant = checkDit(head, expect = family)
+        val mark = markOf(variant.family)
 
         val dir = File(ModelCatalog.root(context), name)
         // ⚠ A retry after a failure starts clean, exactly as [import] does.
@@ -583,8 +639,9 @@ object CustomModels {
             // checkpoint is 4-9 GB, so a failure to produce them should not cost
             // the bigger copy. ⚠ `dir` exists already because the VAE lands in
             // it ([ensureDitParts]).
-            ensureDitParts(context, family, dir, onProgress, isCancelled)
-            val dest = File(dir, ModelSpec.DIT_WEIGHTS)
+            ensureDitParts(context, variant, dir, onProgress, isCancelled)
+            // ⭐ A `.gguf` keeps its format: the engine picks the loader by name.
+            val dest = File(dir, if (head.gguf) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
             open().use { input ->
                 dest.outputStream().buffered(BUFFER).use { outS ->
                     val buf = ByteArray(BUFFER)
@@ -601,6 +658,7 @@ object CustomModels {
             }
             if (dest.length() <= 0L) throw java.io.IOException("the picked file was empty")
             File(dir, mark).writeBytes(ByteArray(0))
+            if (variant == DitVariant.KLEIN_9B) File(dir, KLEIN9B_MARK).writeBytes(ByteArray(0))
             // ⭐ The weights are the user's, so their SIZE is not ours to check
             // ([ModelSpec.BRING_YOUR_OWN]).
             File(dir, ModelSpec.BRING_YOUR_OWN).writeBytes(ByteArray(0))
@@ -701,11 +759,22 @@ object CustomModels {
      * existence. A half-fetched 2.2 GB text encoder is a real file of the right
      * name, and [ModelSpec.missing] would call the import complete.
      */
-    internal fun ditPartsPlan(context: Context, family: Family, modelDir: File): List<PartStep> {
-        // ⚠ Never a package with its own parts: FLUX.2 Klein 9B is FLUX.2 too,
-        // and its 8B text encoder is not what a FLUX.2 import runs with.
-        val donor = ModelCatalog.builtIn.firstOrNull { it.family == family && it.isDit && !it.ownDitParts }
+    internal fun ditPartsPlan(context: Context, family: Family, modelDir: File): List<PartStep> =
+        ditPartsPlan(context, DitVariant.defaultFor(family), modelDir)
+
+    /**
+     * ⭐⭐ [variant]'s parts. A variant with its OWN parts (Klein 9B, Krea 2 —
+     * [ModelSpec.ownDitParts]) gets every one in the model's own directory,
+     * because the backend reads them from nowhere else for Krea and the shared
+     * directory holds the WRONG encoder for the 9B. ⚠ That costs a copy per
+     * import (4.8 GB for the 9B's encoder): FUSE storage has no links, and the
+     * alternative is a backend change.
+     */
+    internal fun ditPartsPlan(context: Context, variant: DitVariant, modelDir: File): List<PartStep> {
+        val family = variant.family
+        val donor = ModelCatalog.builtIn.firstOrNull { it.id == variant.donorId }
             ?: throw IOException("${family.label} has no built-in package to take its parts from")
+        if (variant.ownParts) return ownPartsPlan(context, donor, modelDir)
         val shared = File(ModelCatalog.root(context), DIT_SHARED)
         // ⚠ Where each file has to END UP. The two family-agnostic ones are
         // read from [DIT_SHARED] by `ditFile()`; the VAE is read from the
@@ -720,7 +789,7 @@ object CustomModels {
             ModelCatalog.root(context).listFiles().orEmpty().filter { it.isDirectory && it != own }
 
         return donor.files
-            .filter { it.name != ModelSpec.DIT_WEIGHTS }
+            .filter { it.name != ModelSpec.DIT_WEIGHTS && it.name != DIT_GGUF }
             .mapNotNull { f ->
                 val dest = destOf(f.name)
                 if (dest.length() == f.bytes) return@mapNotNull null
@@ -749,6 +818,27 @@ object CustomModels {
     }
 
     /**
+     * ⭐ Own parts: everything into [modelDir], copied from wherever on the
+     * device a file of that name has the exact published size — the donor
+     * built-in first — and downloaded otherwise. ⚠ Size and name together are
+     * the proof here: the files are multi-GB and the families' parts differ in
+     * size (Qwen3-8B 4,787,332,640 B vs Qwen3-VL-8B 4,787,333,600 B).
+     */
+    private fun ownPartsPlan(context: Context, donor: ModelSpec, modelDir: File): List<PartStep> {
+        val own = donor.dir(context)
+        val roots = listOf(own) + ModelCatalog.root(context).listFiles().orEmpty()
+            .filter { it.isDirectory && it != own && it != modelDir }
+        return donor.files
+            .filter { it.name != ModelSpec.DIT_WEIGHTS && it.name != DIT_GGUF }
+            .mapNotNull { f ->
+                val dest = File(modelDir, f.name)
+                if (dest.length() == f.bytes) return@mapNotNull null
+                val src = roots.map { File(it, f.name) }.firstOrNull { it.length() == f.bytes }
+                PartStep(f, dest, src)
+            }
+    }
+
+    /**
      * ⭐⭐⭐ **Puts the text encoder, VAE and tokenizer where an imported
      * checkpoint's backend will find them — copying them from any model on the
      * device that has them, and DOWNLOADING them if none does.**
@@ -765,12 +855,13 @@ object CustomModels {
      */
     private fun ensureDitParts(
         context: Context,
-        family: Family,
+        variant: DitVariant,
         modelDir: File,
         onProgress: (ModelInstaller.Progress) -> Unit,
         isCancelled: () -> Boolean,
     ) {
-        val plan = ditPartsPlan(context, family, modelDir)
+        val family = variant.family
+        val plan = ditPartsPlan(context, variant, modelDir)
         if (plan.isEmpty()) return
         // ⚠⚠ The DOWNLOAD only, not the copies. A copy needs the space too,
         // but `copyTo` reports ENOSPC perfectly well and the copy path behaved
@@ -811,7 +902,8 @@ object CustomModels {
         // always true; it is the same model either way.
         Family.ZIMAGE -> "ZIMAGE"
         Family.FLUX2 -> "KLEIN"
-        else -> throw IllegalArgumentException("$family does not import a plain .safetensors")
+        Family.KREA2 -> KREA2_MARK
+        else -> throw IllegalArgumentException("$family does not import a single weights file")
     }
 
     /**
@@ -886,6 +978,10 @@ object CustomModels {
         val signatures = mapOf(
             Family.ZIMAGE to listOf("cap_embedder", "noise_refiner.", "context_refiner.", "attention.qkv."),
             Family.FLUX2 to listOf("double_blocks.", "single_blocks.", "img_in.", "txt_in."),
+            // ⭐ Krea 2's own names, read off `gguf-org/krea-2-gguf` 2026-10-01:
+            // `txtfusion.*`, `tproj`, `tmlp`, `blocks.N.attn.qknorm` — none of
+            // them FLUX's or Lumina2's.
+            Family.KREA2 to listOf("txtfusion.", "tproj.", "tmlp.", "qknorm."),
         )
         val hits = signatures.filterValues { keys -> keys.count(header::contains) >= 2 }.keys
         return hits.singleOrNull()
@@ -923,22 +1019,68 @@ object CustomModels {
      * deliberately, not overlooked.
      */
     private fun detectDit(dir: File): Family? {
-        val weights = File(dir, ModelSpec.DIT_WEIGHTS)
-        if (!weights.isFile || weights.length() <= 0L) return null
-        val header = runCatching { safetensorsHeader { weights.inputStream() } }.getOrNull() ?: return null
+        val weights = listOf(File(dir, DIT_GGUF), File(dir, ModelSpec.DIT_WEIGHTS))
+            .firstOrNull { it.isFile && it.length() > 0L } ?: return null
+        val header = runCatching { ditHeader { weights.inputStream() }.json }.getOrNull() ?: return null
         val family = ditFamilyOf(header) ?: return null
-        // ⚠ Not adopted: it would launch with the 4B encoder ([isKlein9b]).
+        // ⭐ A 9B launches with its OWN parts ([KLEIN9B_MARK]); the folder must
+        // hold them, or it reads as incomplete — which says what is missing.
         if (family == Family.FLUX2 && isKlein9b(header)) {
-            Log.w(TAG, "'${dir.name}' is a FLUX.2 Klein 9B checkpoint; importing those is not supported")
-            return null
+            runCatching { File(dir, KLEIN9B_MARK).createNewFile() }
         }
         runCatching { File(dir, markOf(family)).createNewFile() }
         Log.i(TAG, "adopted '${dir.name}' as $family from its tensor names")
         return family
     }
 
-    private fun checkSafetensors(open: () -> InputStream, expect: Family? = null) {
-        val json = safetensorsHeader(open)
+    /**
+     * ⭐ A DiT file's header, either format: a `.gguf`'s tensor table rendered
+     * as safetensors-shaped JSON ([GgufHeader]), so one set of signatures reads
+     * both. [types] is the weight types — GGUF only; empty for safetensors.
+     */
+    class DitHead(val json: String, val gguf: Boolean, val types: Set<String>)
+
+    fun ditHeader(open: () -> InputStream): DitHead {
+        val magic = ByteArray(4)
+        open().use {
+            if (it.readNBytes(magic, 0, 4) != 4) throw IOException("this file is too small to be a checkpoint")
+        }
+        if (!magic.contentEquals(GgufHeader.MAGIC)) return DitHead(safetensorsHeader(open), false, emptySet())
+        val head = open().use { it.readNBytes(GGUF_HEAD_BYTES) }
+        val t = GgufHeader.parse(head)
+        return DitHead(t.json, true, t.types)
+    }
+
+    /** ⚠ A DiT GGUF's table is 15–50 KB; 8 MB not being enough means it is not one. */
+    private const val GGUF_HEAD_BYTES = 8 shl 20
+
+    /**
+     * ⭐⭐ The four checkpoint kinds an import can be, each with the built-in
+     * whose parts it runs with ([ditPartsPlan]).
+     */
+    enum class DitVariant(val family: Family, val donorId: String, val ownParts: Boolean) {
+        KLEIN_4B(Family.FLUX2, "flux2_klein_4b", false),
+        KLEIN_9B(Family.FLUX2, "flux2_klein_9b", true),
+        ZIMAGE(Family.ZIMAGE, "z_image_turbo", false),
+        KREA2(Family.KREA2, "krea2_turbo", true);
+
+        companion object {
+            /** When the file's names say nothing, the tab's family decides. */
+            fun defaultFor(family: Family): DitVariant = when (family) {
+                Family.ZIMAGE -> ZIMAGE
+                Family.KREA2 -> KREA2
+                else -> KLEIN_4B
+            }
+        }
+    }
+
+    /**
+     * ⭐ Refuses the cheap mistakes and says which [DitVariant] this is.
+     * ⚠⚠ Klein 9B is no longer refused (2026-10-01, users bringing 9B
+     * fine-tunes): it imports with the 9B's own Qwen3-8B parts.
+     */
+    internal fun checkDit(head: DitHead, expect: Family?): DitVariant {
+        val json = head.json
         // ⚠⚠ Named signatures of the families that do NOT import this way.
         // Picking an SD or SDXL checkpoint here is the likely mistake, and
         // those need the conversion pipeline, not a copy.
@@ -966,12 +1108,11 @@ object CustomModels {
                     "import it on the ${actual.label} tab"
             )
         }
-        if (actual == Family.FLUX2 && isKlein9b(json)) {
-            throw java.io.IOException(
-                "that is a FLUX.2 Klein 9B checkpoint. Importing Klein 9B models is not " +
-                    "supported yet; only Klein 4B ones import"
-            )
-        }
+        val family = actual ?: expect ?: throw IOException(
+            "nothing in this file says which model family it is — import it on its family's tab"
+        )
+        return if (family == Family.FLUX2 && isKlein9b(json)) DitVariant.KLEIN_9B
+        else DitVariant.defaultFor(family)
     }
 
     fun import(
@@ -1089,7 +1230,8 @@ object CustomModels {
     ): List<String> {
         val files = inbox(context).listFiles().orEmpty().filter {
             it.isFile && (it.extension.equals("zip", ignoreCase = true) ||
-                it.extension.equals("safetensors", ignoreCase = true))
+                it.extension.equals("safetensors", ignoreCase = true) ||
+                it.extension.equals("gguf", ignoreCase = true))
         }
         if (files.isEmpty()) return emptyList()
         return files.map { file ->
@@ -1097,7 +1239,9 @@ object CustomModels {
             // ⚠ The family suffix is stripped from the NAME as well — a model
             // called `my-flux.flux2` would be a directory with a dot in it and a
             // name the user did not choose.
-            val dit = if (file.extension.equals("safetensors", ignoreCase = true)) {
+            val single = file.extension.equals("safetensors", ignoreCase = true) ||
+                file.extension.equals("gguf", ignoreCase = true)
+            val dit = if (single) {
                 val suffix = stem.substringAfterLast('.', "")
                 DIT_INBOX_FAMILIES[suffix.lowercase()]
             } else null
@@ -1105,10 +1249,10 @@ object CustomModels {
             try {
                 val spec = if (dit != null) {
                     importDit(context, name, dit, { file.inputStream() }, onProgress)
-                } else if (file.extension.equals("safetensors", ignoreCase = true)) {
+                } else if (single) {
                     throw IOException(
-                        "a .safetensors needs its family in the name — " +
-                            "$name.<${DIT_INBOX_FAMILIES.keys.joinToString("|")}>.safetensors"
+                        "a .${file.extension} needs its family in the name — " +
+                            "$name.<${DIT_INBOX_FAMILIES.keys.joinToString("|")}>.${file.extension}"
                     )
                 } else {
                     import(context, name, { file.inputStream() }, onProgress)
@@ -1132,6 +1276,7 @@ object CustomModels {
     private val DIT_INBOX_FAMILIES = mapOf(
         "flux2" to Family.FLUX2,
         "zimage" to Family.ZIMAGE,
+        "krea2" to Family.KREA2,
     )
 
     // ---- config.json -----------------------------------------------------

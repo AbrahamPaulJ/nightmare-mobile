@@ -180,6 +180,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "model_install" -> installModel(arg)
             "model_delete" -> deleteModel(arg)
             "model_use" -> useModel(arg)
+            "spillfill" -> spillFillOp(arg)
             "resolutions" -> listResolutions()
             "res_use" -> useResolution(arg)
             "aspect" -> aspectProbe(arg)
@@ -1688,7 +1689,15 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * That is why the canvas screen is opened deliberately rather than being
      * the app's first screen.
      */
-    fun nodeTypes(): Map<String, NodeType> = plugins.types
+    fun nodeTypes(): Map<String, NodeType> = try {
+        plugins.types
+    } catch (e: LinkageError) {
+        // ⚠ No plugin engine (libnmjs.so did not load — a JVM test, or a broken
+        // install): the built-in nodes still work, and the canvas must not die
+        // for want of plugins. `ResultsFullscreenTest` composes the real screen.
+        android.util.Log.w("HarnessOps", "plugin runtime unavailable — built-in nodes only", e)
+        NODE_TYPES
+    }
 
     /**
      * Run a workflow, reporting each node as it settles.
@@ -4205,9 +4214,47 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         return launchBackend(upscalerOnly = true)
     }
 
+    /**
+     * ⭐ `spillfill` — the [SpillFill] store, for proving its retry on a phone:
+     * `<model>=<bytes>` sets (0 clears; a value BELOW the need forces the QNN
+     * error the retry learns from), `sdxl_lowram=0|1` sets that real preference
+     * (the group exists only without `--lowram`), a bare model id prints.
+     */
+    private fun spillFillOp(arg: String?) {
+        val (k, v) = arg.orEmpty().split('=', limit = 2).let { it[0] to it.getOrNull(1) }
+        when {
+            k == "sdxl_lowram" && v != null -> {
+                Prefs.setLowRam(ctx, Prefs.KEY_SDXL_LOWRAM, v == "1")
+                say("spillfill: sdxl lowram = ${Prefs.lowRam(ctx).sdxl}")
+            }
+            v != null -> {
+                SpillFill.setForTest(ctx, k, v.toLongOrNull() ?: 0L)
+                say("spillfill: $k = ${SpillFill.stored(ctx, k)}")
+            }
+            else -> say("spillfill: $k = ${SpillFill.stored(ctx, k)}")
+        }
+    }
+
     suspend fun launchBackend(
         want: ContextKey? = null,
         upscalerOnly: Boolean = false,
+    ): Boolean {
+        if (launchOnce(want, upscalerOnly)) return true
+        // ⭐⭐ A checkpoint whose QNN contexts need a bigger spill-fill group than
+        // the backend's constant ([SpillFill]): QNN printed the size, so launch
+        // once more with it. ⚠ Once — [SpillFill.learn] is false when the size
+        // is not new, which is what makes this a retry and not a loop.
+        val modelId = want?.model ?: SelectedModel.id
+        if (upscalerOnly || !SpillFill.learn(ctx, modelId)) return false
+        say("this checkpoint needs a larger spill-fill buffer " +
+            "(${SpillFill.stored(ctx, modelId)} bytes) — starting again with it")
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
+        return launchOnce(want, upscalerOnly)
+    }
+
+    private suspend fun launchOnce(
+        want: ContextKey?,
+        upscalerOnly: Boolean,
     ): Boolean {
         val models = BackendProcess.modelsDir(ctx)
         say("models dir: ${models.absolutePath}")
@@ -4225,20 +4272,32 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             BackendProcess.Start.Ok -> {
                 say("launched, waiting for /health…")
                 var up = false
-                repeat(45) {
-                    if (!up) {
-                        if (Backend.probe("/health").code == 200) {
-                            up = true
-                            sink.backend(BackendState.UP)
-                            say("serving after ~${it + 1}s")
-                        } else {
-                            kotlinx.coroutines.delay(1000)
-                        }
+                var died = false
+                for (s in 1..45) {
+                    if (Backend.probe("/health").code == 200) {
+                        up = true
+                        sink.backend(BackendState.UP)
+                        say("serving after ~${s}s")
+                        break
                     }
+                    // ⚠ A backend that already EXITED will never answer: waiting
+                    // out the 45 s only delays its reason (a QNN init failure
+                    // exits in ~3 s).
+                    if (!BackendProcess.isRunning) { died = true; break }
+                    kotlinx.coroutines.delay(1000)
                 }
                 if (!up) {
+                    // ⚠ Its last lines may still be in the pipe; the reason and
+                    // [SpillFill]'s number are in them.
+                    if (died) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        BackendProcess.awaitExit(1_500)
+                    }
                     sink.backend(BackendState.DOWN)
-                    say("no /health after 45s — backend output follows", bad = true)
+                    say(
+                        if (died) "the backend exited before serving — its output follows"
+                        else "no /health after 45s — backend output follows",
+                        bad = true,
+                    )
                     drainBackendLog()
                 }
                 return up

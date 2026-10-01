@@ -13,6 +13,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
@@ -42,7 +44,10 @@ internal fun rememberIpSquare(node: Node, type: NodeType?, wired: ImageBitmap?):
     val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
     val uri = live[SdSampler.IP_IMAGE].orEmpty()
     val region = listOf(SdSampler.REF_X, SdSampler.REF_Y, SdSampler.REF_W, SdSampler.REF_H).map { live[it] }
-    return rememberOffMain(node.id, "ip square", uri, wired, region) {
+    // ⚠ Off reads nothing, so it shows nothing ([IpAdapter.NONE]).
+    val off = live[SdSampler.IP_ADAPTER] == IpAdapter.NONE
+    return rememberOffMain(node.id, "ip square", uri, wired, region, off) {
+        if (off) return@rememberOffMain null
         val src = wired?.asAndroidBitmap()?.let { b ->
             com.abrah.nightmare.CropNode.render(
                 b,
@@ -75,8 +80,14 @@ internal fun IpAdapterPanel(
     onInstall: ((String) -> Unit)? = null,
     onCancel: (() -> Unit)? = null,
     onDelete: ((String) -> Unit)? = null,
+    /** The node's photo, drawn under the reference while it is cropped. */
+    photo: ImageBitmap? = null,
+    onSetParams: (Map<String, String>) -> Unit = {},
     onSetParam: (String, String) -> Unit,
 ) {
+    var cropping by androidx.compose.runtime.saveable.rememberSaveable(node.id) {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
     val ctx = LocalContext.current
     val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
     val adapter = live[SdSampler.IP_ADAPTER].orEmpty().ifBlank { IpAdapter.PLUS }
@@ -97,10 +108,11 @@ internal fun IpAdapterPanel(
         Chooser(
             label = stringResource(R.string.ip_label),
             hint = stringResource(R.string.ip_hint),
-            options = IpAdapter.ADAPTERS,
+            options = IpAdapter.CHOICES,
             current = adapter,
             onPick = { onSetParam(SdSampler.IP_ADAPTER, it) },
         )
+        if (adapter == IpAdapter.NONE) return@Column
         val row = rows[IpAdapter.rowKey(adapter)]
         if (row != null && (!row.installed || row.progress != null)) {
             ErrorNotice(stringResource(R.string.ip_not_installed, IpAdapter.label(adapter)))
@@ -122,18 +134,33 @@ internal fun IpAdapterPanel(
                 style = LogTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ⚠ Destructive first, primary last (`docs/UI.md` §8.1).
-                if (uri.isNotBlank()) {
-                    OutlinedButton(onClick = { onSetParam(SdSampler.IP_IMAGE, "") }) {
-                        Text(stringResource(R.string.cn_clear))
-                    }
-                }
-                Button(onClick = pick) {
-                    Text(stringResource(if (uri.isBlank()) R.string.cn_pick else R.string.cn_replace))
+        }
+        // ⭐⭐ Always offered (2026-10-01): Replace writes into the wired picture
+        // node (`SwapWiring.kt`), Clear unwires it, Crop is its REF region.
+        val own = wired != null || uri.isNotBlank()
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // ⚠ Destructive first, primary last (`docs/UI.md` §8.1).
+            if (own) {
+                OutlinedButton(onClick = { onSetParam(SdSampler.IP_IMAGE, ""); cropping = false }) {
+                    Text(stringResource(R.string.cn_clear))
                 }
             }
+            if (wired != null) {
+                OutlinedButton(onClick = { cropping = !cropping }) {
+                    Text(stringResource(if (cropping) R.string.crop_done else R.string.crop))
+                }
+            }
+            Button(onClick = pick) {
+                Text(stringResource(if (!own) R.string.cn_pick else R.string.cn_replace))
+            }
+        }
+        if (cropping && wired != null) {
+            PictureCrop(
+                source = wired,
+                rect = refCropRectOf(node),
+                onChange = { r -> onSetParams(r.asRefParams().toMap()) },
+                underlay = rememberFramedPhoto(node, type, photo),
+            )
         }
         if (square != null) {
             Text(stringResource(R.string.ip_sees), style = MaterialTheme.typography.titleSmall)

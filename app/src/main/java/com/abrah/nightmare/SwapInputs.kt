@@ -90,6 +90,16 @@ object SwapInputs {
      *
      * ⚠ Blocking (the estimators); off the main thread. [context] null = none.
      */
+    /**
+     * ⭐ The node's photo as the base will see it — [hint]'s own cut, at [SIZE]².
+     * The underlay a ControlNet / IP-Adapter picture is lined up against.
+     */
+    fun framedPhoto(src: Bitmap, frame: Frame): Bitmap {
+        val hSquare = frame.w * src.width / src.height
+        val y = frame.y + (frame.h - hSquare) / 2f
+        return CropNode.render(src, frame.x, y, frame.w, hSquare, SIZE, SIZE, frame.pad).first
+    }
+
     fun hint(context: Context?, src: Bitmap, type: String, frame: Frame?): Hint {
         val ready = when (type) {
             OPENPOSE -> com.abrah.nightmare.pose.PoseDetector.looksLikeSkeleton(src)

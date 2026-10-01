@@ -213,7 +213,7 @@
     <string name="cn_from_wire">Используется изображение, подключённое к control.</string>
     <string name="cn_pick">Выбрать изображение</string>
     <string name="cn_replace">Заменить</string>
-    <string name="cn_clear">Удалить</string>
+    <string name="cn_clear">Убрать</string>
     <string name="cn_sees">Что видит ControlNet</string>
     <string name="cn_no_picture_photo">Изображения ещё нет: выберите фото или подключите его к control. Контуры найдутся здесь.</string>
     <string name="cn_no_picture_hint">Изображения ещё нет: выберите готовую подсказку или подключите её к control.</string>
@@ -235,4 +235,14 @@
     <string name="ip_old_builtin">Эта копия %1$s старше IP-Adapter. Удалите её в «Моделях» и скачайте заново, чтобы использовать эталонное изображение.</string>
     <string name="ip_sees">Что читает IP-Adapter (центральный квадрат)</string>
     <string name="ip_no_picture">Выберите изображение или подключите его к reference — рендер будет следовать ему.</string>
+    <string name="err_details">Подробности ошибки</string>
+    <string name="err_details_note">Проверьте перед отправкой. Ваш промпт в отчёт не входит.</string>
+    <string name="err_share">Поделиться</string>
+    <string name="err_copy">Копировать</string>
+    <string name="ram_tight">" · скорее всего, слишком велика для памяти телефона"</string>
+    <string name="pick_files">Файлы</string>
+    <string name="crop">Обрезать</string>
+    <string name="crop_done">Готово</string>
+    <string name="crop_over_photo">перетащите · масштаб щипком · под картинкой ваше фото</string>
+    <string name="crop_gestures">перетащите · масштаб щипком</string>
 </resources>

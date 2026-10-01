@@ -35,8 +35,10 @@ phone; the same button undoes it. See [Settings → Translation](settings.md#tra
 
 ## Image
 
-A photo from your gallery. Tap **Choose** to pick one (**Change** once there is one); it appears on the node
-straight away, no Run needed. The picture's own buttons swap it or clear it.
+A photo from your gallery. Tap **Choose** to pick one (**Change** once there is one) — it opens
+your phone's **photo picker**; **Files** beside it opens the file browser instead, for a
+picture that is not in your gallery. It appears on the node straight away, no Run needed. The
+picture's own buttons swap it or clear it.
 
 <figure markdown>
   ![The Image node before a photo is chosen](../img/inspector-load-image.png){ .screen }
@@ -68,8 +70,8 @@ The palette card is **Image** with a chip per family — **SD 1.5**, **SD 1.5 Sw
 | **Shape** | SDXL, Anima | Crops the fixed 1024 square to an aspect. No reload |
 | **Width**, **Height** | FLUX.2, Z-Image, Qwen | 512–2048 in 64-pixel steps. No reload |
 | **LoRAs** | FLUX.2, Z-Image, SD 1.5 Swap | Adapters on top of the model, each with a strength. [LoRAs](../models/loras.md) |
-| **ControlNet** tile | SD 1.5 Swap | Type (**canny**, **depth**, **openpose** or none), strength, and the picture — wired into **control**, else chosen on the tile, else the node's own photo. With a photo wired, the picture follows the node's **crop window**; with none it is fitted into 512×512, never cropped. Canny finds the edges; openpose finds the pose in a photo (the **Pose Detector**, 19 MB) or uses a skeleton as it is; depth makes a depth map from a photo (the **Depth Estimator**, 99 MB, about 1 s) or uses a ready-made one. Each ControlNet (about 370 MB) and each estimator is a download offered on the tile and in Models → Tools; a ControlNet not yet built for your chip says so The tile shows what the ControlNet sees |
-| **IP-Adapter** tile | SD 1.5 Swap (npuforge 1.0.7+ and the defaults) | A reference picture the render follows — wired into **reference** (cut by the **Reference** region), else chosen on the tile. **plus** carries its subject and style, **face** a face; strength 0–1.5 (0.6 to start). The encoder (1.3 GB, about 6 s a picture) and each adapter are downloads offered on the tile and in Models → Tools. The tile shows the square the encoder reads. An older Swap model says to convert it again (or, for a default, to download it again) |
+| **ControlNet** tile | SD 1.5 Swap | Type (**canny**, **depth**, **openpose** or none), strength, and the picture — always an image node wired into **control**: switching a type on wires the node's own photo in (image to image) or adds an image node (text to image); **Replace** puts a different picture in its own node, **none** removes the wire. The node's own photo follows its **crop window**; any other picture has its own **Crop** (drawn over the photo). Canny finds the edges; openpose finds the pose in a photo (the **Pose Detector**, 19 MB) or uses a skeleton as it is; depth makes a depth map from a photo (the **Depth Estimator**, 99 MB, about 1 s) or uses a ready-made one. Each ControlNet (about 370 MB) and each estimator is a download offered on the tile and in Models → Tools; a ControlNet not yet built for your chip says so The tile shows what the ControlNet sees |
+| **IP-Adapter** tile | SD 1.5 Swap (npuforge 1.0.7+ and the defaults) | A reference picture the render follows — an image node wired into **reference**, added when you pick **plus** or **face** (**none** removes the wire), with its own **Crop** over the photo. **plus** carries its subject and style, **face** a face; strength 0–1.5 (0.6 to start). The encoder (1.3 GB, about 6 s a picture) and each adapter are downloads offered on the tile and in Models → Tools. The tile shows the square the encoder reads. An older Swap model says to convert it again (or, for a default, to download it again) |
 | **Crop** frame | with an image | Which part of the photo is used. Tap the picture on the node to frame it |
 | **Pad** | with an image | What fills the frame where it runs off a small photo: **Black**, **Blur**; edit models also **Green** |
 | **Allow padding** | FLUX.2, Qwen (edit) | Lets the frame zoom out past the photo; the padding is generated |

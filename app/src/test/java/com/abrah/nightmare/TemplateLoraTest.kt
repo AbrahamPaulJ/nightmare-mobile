@@ -332,4 +332,29 @@ class TemplateLoraTest {
         assertEquals(321, refFiles.size)
         for (f in refFiles) assertArrayEquals(f.name, f.readBytes(), File(out, f.name).readBytes())
     }
+    /**
+     * ⚠⚠ Reported 2026-10-01 from a character LoRA: `….alpha: dtype I64 is not
+     * supported`. Some trainers write `alpha` as an integer scalar; FP8 is read
+     * too, for the same reason.
+     */
+    @Test
+    fun integerAndFp8TensorsReadAsNumbers() {
+        val f = tmp.newFile("ints.safetensors")
+        val i64 = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(16L).array()
+        val f8 = byteArrayOf(0x38, 0xC0.toByte()) // E4M3: 1.0, -2.0
+        val header = JSONObject()
+            .put("a.alpha", JSONObject().put("dtype", "I64").put("shape", JSONArray())
+                .put("data_offsets", JSONArray(listOf(0, 8))))
+            .put("b.weight", JSONObject().put("dtype", "F8_E4M3").put("shape", JSONArray(listOf(2)))
+                .put("data_offsets", JSONArray(listOf(8, 10))))
+            .toString().toByteArray()
+        f.outputStream().use { o ->
+            o.write(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(header.size.toLong()).array())
+            o.write(header); o.write(i64); o.write(f8)
+        }
+        TemplateLora.Safetensors(f).use { st ->
+            assertEquals(16f, st.floats("a.alpha").single(), 0f)
+            assertArrayEquals(floatArrayOf(1f, -2f), st.floats("b.weight"), 0f)
+        }
+    }
 }

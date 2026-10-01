@@ -1,8 +1,18 @@
 # Troubleshooting
 
 Find your symptom below. If it is not here, or the fix does not work, please
-[open an issue](https://github.com/AbrahamPaulJ/nightmare-mobile/issues) with the
-**run log** attached — the copy button on the log above Run copies it — and your phone model.
+[open an issue](https://github.com/AbrahamPaulJ/nightmare-mobile/issues) with an
+**error report** attached.
+
+## Sending an error report
+
+A failed Run, download, import or flow shows a red message with a **share** icon at its right
+end. Tap it to see the full report: the error, the app's stack trace, the backend's own log and
+how it stopped, and your phone, chip, RAM and model files. **Your prompt is left out.** Read it,
+then **Copy** it or **Share** it as a `.txt` file to attach to an issue.
+
+A message like *"the backend stopped: killed by the system (SIGKILL)"* almost always means the
+phone ran out of memory: close other apps, or pick a smaller canvas or a smaller model.
 
 ## A flow is dimmed and will not open
 

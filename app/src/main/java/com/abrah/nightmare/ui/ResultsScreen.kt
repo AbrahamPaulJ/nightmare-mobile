@@ -342,7 +342,29 @@ fun ResultsScreen(
             modifier = Modifier.fillMaxWidth().weight(1.1f).padding(top = 10.dp),
         ) { i ->
             val r = items[i]
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    // ⭐ Observe-only (Initial pass, nothing consumed): did a touch
+                    // reach the big frame at all? With `NmViewer: open` from the
+                    // view model it splits "the tap never arrived" from "it
+                    // arrived and was not a click" — the fullscreen viewer broke
+                    // twice with nothing in any log (2026-09-27, 2026-10-01).
+                    .pointerInput(r.id) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                e.changes.filter { it.pressed && !it.previousPressed }.forEach {
+                                    android.util.Log.i("NmViewer", "down on ${r.id} selecting=$selecting picture=${imageFor(r.id) != null || thumbnailFor(r.id) != null}")
+                                }
+                                e.changes.filter { !it.pressed && it.previousPressed }.forEach {
+                                    android.util.Log.i("NmViewer", "up on ${r.id} consumed=${it.isConsumed}")
+                                }
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
                 val clip = r.videoPath
                 // ⭐⭐ A clip PLAYS in the big frame, looping — the same player the
                 // fullscreen viewer uses. ⚠ Only the page in view, so a swipe

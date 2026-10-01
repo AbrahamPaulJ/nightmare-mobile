@@ -48,6 +48,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -777,6 +778,8 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
             com.abrah.nightmare.SdSampler.CONTROL_IMAGE,
             com.abrah.nightmare.SdSampler.IP_ADAPTER, com.abrah.nightmare.SdSampler.IP_SCALE,
             com.abrah.nightmare.SdSampler.IP_IMAGE,
+            com.abrah.nightmare.SdSampler.CTL_X, com.abrah.nightmare.SdSampler.CTL_Y,
+            com.abrah.nightmare.SdSampler.CTL_W, com.abrah.nightmare.SdSampler.CTL_H,
         )
     ) return true
     // ⭐⭐⭐ **The Upscaler chooser only when `auto upscale` is ON** — the
@@ -1702,8 +1705,14 @@ internal fun NodeInspectorBody(
                 poseRow?.installed == true, depthRow?.installed == true,
             )
         } else null
+        // ⭐ "Empty" = switched off or no picture to read: a + rather than grey.
+        val cnOff = node.params[com.abrah.nightmare.SdSampler.CONTROLNET].orEmpty()
+            .ifBlank { com.abrah.nightmare.SwapInputs.NONE } == com.abrah.nightmare.SwapInputs.NONE
+        val controlEmpty = cnOff || (controlSource == null && cropSource == null &&
+            node.params[com.abrah.nightmare.SdSampler.CONTROL_IMAGE].isNullOrBlank())
         val controlTile = if (!swap) null else EditorTile(
             androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.cn_label), controlHint?.bitmap,
+            empty = controlEmpty,
         ) {
             ControlNetPanel(
                 node, type, controlSource, cropSource, controlHint,
@@ -1711,18 +1720,24 @@ internal fun NodeInspectorBody(
                 onInstallPose = onInstallPose, onCancelPose = onCancelParser, onDeletePose = onDeletePose,
                 depthRow = depthRow, onInstallDepth = onInstallDepth, onDeleteDepth = onDeleteDepth,
                 cnRows = cnRows, onInstallControlNet = onInstallControlNet, onDeleteControlNet = onDeleteControlNet,
+                onSetParams = { onSetParams(nodeId, it) },
             ) { k, v -> onSetParam(nodeId, k, v) }
         }
         // ⭐⭐ …and its IP-Adapter tile: the square the encoder will read, present
         // whether or not a reference is chosen yet — it is where one gets picked.
         val ipSquare = if (swap) rememberIpSquare(node, type, refSource) else null
+        val ipEmpty = node.params[com.abrah.nightmare.SdSampler.IP_ADAPTER] == com.abrah.nightmare.IpAdapter.NONE ||
+            (refSource == null && node.params[com.abrah.nightmare.SdSampler.IP_IMAGE].isNullOrBlank())
         val ipTile = if (!swap) null else EditorTile(
             androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.ip_label), ipSquare,
+            empty = ipEmpty,
         ) {
             IpAdapterPanel(
                 node, type, refSource, ipSquare,
                 busy = busy, rows = cnRows,
                 onInstall = onInstallControlNet, onCancel = onCancelParser, onDelete = onDeleteControlNet,
+                photo = cropSource,
+                onSetParams = { onSetParams(nodeId, it) },
             ) { k, v -> onSetParam(nodeId, k, v) }
         }
         if (popup && (cropSource != null || refSource != null || controlTile != null)) {
@@ -3002,6 +3017,12 @@ internal data class EditorTile(
     val label: String,
     /** ⚠ Null while it is still being drawn off the main thread. */
     val thumb: ImageBitmap?,
+    /**
+     * ⭐ Nothing to show YET because nothing is chosen — drawn as a centred +,
+     * not a grey slot that reads as broken (the user's call, 2026-10-01). ⚠ Not
+     * the same as a null [thumb], which is also "still drawing".
+     */
+    val empty: Boolean = false,
     val panel: @Composable () -> Unit,
 )
 
@@ -3154,9 +3175,12 @@ private fun InpaintEditors(
         if (outW0 > 0 && outH0 > 0) outW0.toFloat() / outH0
         else framed?.let { it.width.toFloat() / it.height.coerceAtLeast(1) } ?: 1f
     val tiles = buildList {
-        if (photo != null) add(EditorTile("Crop", framed?.asImageBitmap(), cropPanel))
-        if (paints && photo != null) add(EditorTile("Mask", masked, maskPanel))
-        if (refPhoto != null) add(EditorTile("Reference", refFramed, refPanel))
+        if (photo != null) add(EditorTile("Crop", framed?.asImageBitmap(), panel = cropPanel))
+        if (paints && photo != null) add(EditorTile("Mask", masked, panel = maskPanel))
+        // ⚠⚠ Not on SD 1.5 Swap: there the `reference` picture is IP-Adapter's,
+        // and its tile crops it (the same `ref_*` region) — two tiles showing
+        // one picture read as two inputs (reported 2026-10-01).
+        if (refPhoto != null && ip == null) add(EditorTile("Reference", refFramed, panel = refPanel))
         control?.let { add(it) }
         ip?.let { add(it) }
     }
@@ -3189,7 +3213,16 @@ private fun InpaintEditors(
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .clickable { open = i }
                 val thumb = tile.thumb
-                if (thumb == null) Box(thumbModifier)
+                if (thumb == null && tile.empty) {
+                    Box(thumbModifier, contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = "choose a picture for ${tile.label}",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(36.dp),
+                        )
+                    }
+                } else if (thumb == null) Box(thumbModifier)
                 else androidx.compose.foundation.Image(
                     bitmap = thumb,
                     contentDescription = "edit the ${tile.label.lowercase()}",
@@ -3654,8 +3687,21 @@ private fun ChoiceRow(
  *
  * ⚠ `OpenDocument`, not `GetContent`: only the former's URIs can be persisted.
  * `GetContent` hands back a one-shot grant that looks identical until it stops
- * working.
+ * working. ⭐ The PHOTO PICKER's URIs persist too (`PickVisualMedia`, Android's
+ * "persist media file access"), which is what lets it be the default.
  */
+/**
+ * ⭐⭐ The two ways to choose a picture: [photos] (the system photo picker, the
+ * default — the user's call, 2026-10-01: *"use photo & video picker instead of
+ * the file app"*) and [files] (the document picker, for a picture the gallery
+ * does not index — a PNG in an app folder). Invoking it opens [photos], so every
+ * caller that took a `() -> Unit` keeps working; [ImageActions] and the empty
+ * frame offer [files] as a small "Files" button.
+ */
+internal class ImagePick(val photos: () -> Unit, val files: () -> Unit) : () -> Unit {
+    override fun invoke() = photos()
+}
+
 /**
  ⭐ The system picker, as a plain `() -> Unit` anything can call.
  *
@@ -3665,15 +3711,13 @@ private fun ChoiceRow(
  * when the result arrives: the picker runs while this activity is stopped.
  */
 @Composable
-internal fun rememberImagePick(onPicked: (String) -> Unit): () -> Unit {
+internal fun rememberImagePick(onPicked: (String) -> Unit): ImagePick {
     val ctx = LocalContext.current
     // ⚠ Read through `rememberUpdatedState`: the launcher outlives the
     // composition that made it, so a captured callback would write the chosen
     // photo into a node the user has since navigated away from.
     val current = rememberUpdatedState(onPicked)
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
+    val onResult: (android.net.Uri?) -> Unit = { uri ->
         if (uri != null) {
             try {
                 ctx.contentResolver.takePersistableUriPermission(
@@ -3687,7 +3731,21 @@ internal fun rememberImagePick(onPicked: (String) -> Unit): () -> Unit {
             current.value(uri.toString())
         }
     }
-    return { launcher.launch(arrayOf("image/*")) }
+    // ⚠ Both registered unconditionally, for the reason in the note above.
+    val media = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia(), onResult)
+    val docs = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), onResult)
+    return remember(media, docs) {
+        ImagePick(
+            photos = {
+                media.launch(
+                    androidx.activity.result.PickVisualMediaRequest(
+                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                    ),
+                )
+            },
+            files = { docs.launch(arrayOf("image/*")) },
+        )
+    }
 }
 
 /**
@@ -3780,6 +3838,7 @@ private fun ImagePicker(
                     modifier = Modifier.size(44.dp),
                 )
             }
+            FilesButton(pick.files)
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ImageActions(
@@ -3828,6 +3887,8 @@ internal fun ImageActions(onPick: () -> Unit, onClear: () -> Unit, tint: Color? 
             tint = tint ?: MaterialTheme.colorScheme.primary,
         )
     }
+    // ⭐ The document picker, for a picture the photo picker does not show.
+    (onPick as? ImagePick)?.let { FilesButton(it.files, tint) }
     // ⚠ Removes the PICTURE, not the node. Both are destructive and they sit two
     // rows apart in this sheet, which is why this one carries a label saying so
     // rather than being a second bare bin.
@@ -3836,6 +3897,18 @@ internal fun ImageActions(onPick: () -> Unit, onClear: () -> Unit, tint: Color? 
             Icons.Filled.Delete,
             contentDescription = "remove this picture from the node",
             tint = tint ?: MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
+/** ⭐ "Files" — [ImagePick.files], beside the gallery icon and under the empty frame. */
+@Composable
+internal fun FilesButton(onClick: () -> Unit, tint: Color? = null) {
+    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp)) {
+        Text(
+            stringResource(R.string.pick_files),
+            color = tint ?: MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelMedium,
         )
     }
 }

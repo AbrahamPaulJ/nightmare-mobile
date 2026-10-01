@@ -12,7 +12,7 @@ which phones can run it; inside a family, models differ in style.
 | family | models | size each | draws | style | needs |
 |---|---|---|---|---|---|
 | **SD 1.5** | 6 | ~1 GB | 512–1024 | Fast; realistic, anime and general mixes | Snapdragon 888+ |
-| **SD 1.5 Swap** *(experimental)* | AbsoluteReality, CuteYukiMix, or your own npuforge conversion | ~1.3 GB | 512 | LoRAs, ControlNet (canny, depth, openpose) and an IP-Adapter reference picture chosen per render | defaults: 8 Elite+; your own conversion: the phone that made it |
+| **SD 1.5 Swap** *(experimental)* | AbsoluteReality, CuteYukiMix, Anything V5, or your own npuforge conversion | ~1.3 GB | 512 | LoRAs, ControlNet (canny, depth, openpose) and an IP-Adapter reference picture chosen per render | defaults: 8 Elite+; your own conversion: the phone that made it |
 | **SDXL** | 10 | ~3.5 GB | 1024 | Sharper, better composition | 8 Gen 3+ |
 | **Anima** | 9 | ~4.3 GB | 1024 | Anime; slow (about 80 s a picture) | 8 Gen 3+ |
 | **FLUX.2** | Klein 4B, Klein 9B | 6.7 GB, 10.7 GB | 512–2048 | Understands sentences; edits photos. 9B: more detail, slower, starts at 768 | 8 Elite+ |

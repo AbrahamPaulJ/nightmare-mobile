@@ -122,10 +122,16 @@ fun LibraryScreen(
                 )
             }
         }
-        when (tab) {
-            LibraryTab.MODELS -> models()
-            LibraryTab.FLOWS -> flows()
-            LibraryTab.RESULTS -> results()
+        // ⭐⭐ The tab's list scrolls ONLY the list ([keepScrollInside]): the sheet
+        // is pulled down by the header above, never by the list hitting its top
+        // (the user's call, 2026-10-01). ⚠ Around all three tabs — the same sheet,
+        // the same rule.
+        Column(Modifier.fillMaxWidth().weight(1f).keepScrollInside()) {
+            when (tab) {
+                LibraryTab.MODELS -> models()
+                LibraryTab.FLOWS -> flows()
+                LibraryTab.RESULTS -> results()
+            }
         }
     }
 }
