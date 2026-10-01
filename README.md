@@ -41,7 +41,8 @@ readily as 1024 square. Changing the size costs no reload. Snapdragon 8 Elite or
 **FLUX.2 Klein 9B** is the bigger Klein: the same editing and LoRAs as the 4B, with an 8B text
 encoder. It is 10.7 GB and tight on a 12 GB phone, so it starts at 768 square (about a minute
 a picture); 1024 works but may be closed by Android when other apps hold memory. **Krea 2
-Turbo** is text to image only and needs a phone with 16 GB of RAM: on 12 GB it does not load.
+Turbo** is text to image only and needs a phone with 16 GB of RAM: on 12 GB it does not load; on a
+24 GB OnePlus 13 a user measured about 2 min 40 s a picture.
 
 **Qwen Image 2.1.** A 7B image model with an 8B vision-language model reading the prompt, so
 it follows long instructions and can put legible text in a picture. It generates and it edits:
