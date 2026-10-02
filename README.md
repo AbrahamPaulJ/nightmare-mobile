@@ -122,7 +122,8 @@ each with its own buttons.
 Anima and five DiT in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
 [npuforge](https://github.com/AbrahamPaulJ/npuforge), which turns an SD safetensors checkpoint
 into a QNN model with no PC involved; its 9 channel inpainting exports run as real inpainting
-models, and its **SD1.5 Swap** exports take LoRAs and ControlNet per render (below). A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
+models, its v-prediction exports automatically select the backend's v-prediction mode, and its
+**SD1.5 Swap** exports take LoRAs and ControlNet per render (below). A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
 grouped by family and listing what is actually installed; switching family rewrites that node
 and keeps every wire. The APK carries every Hexagon architecture tier and picks the build your
 chip can load.

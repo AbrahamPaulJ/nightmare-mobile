@@ -12,11 +12,16 @@ cannot be used directly — it has to be converted first. Two ways:
   `.safetensors` checkpoint into an NPU model with no PC involved. Its 9-channel inpainting
   exports run as real inpainting models, and its **SD1.5 Swap** exports land in their own
   **SD 1.5 Swap** tab and take LoRAs and ControlNet per render
-  ([nodes](../reference/nodes.md#image-generator)).
+  ([nodes](../reference/nodes.md#image-generator)). NPuForge 1.0.8 and later also marks
+  v-prediction packages, which Nightmare enables automatically.
 - **A zip made for LocalDream**: converted models shared for LocalDream import unchanged.
 
 To import: open the family's tab in **Models**, tap **Import**, choose the `.zip` and give it a
 name. The app reads which family it is from the files inside.
+
+If a package contains LocalDream's empty `V_PRED` marker, Nightmare launches the
+native backend in v-prediction mode. Packages without it keep the existing epsilon
+behavior.
 
 ## FLUX.2, Z-Image and Krea 2: one .safetensors or .gguf
 

@@ -243,6 +243,25 @@ class CustomModelsTest {
         assertFalse(File(root(), "brought/output_1024").exists())
     }
 
+    @Test
+    fun importPreservesEmptyVPredictionMarkerForLaunch() {
+        val zip = File.createTempFile("vpred-model", ".zip")
+        ZipOutputStream(zip.outputStream()).use { output ->
+            for (name in ModelCatalog.SD15_REQUIRED) {
+                output.putNextEntry(ZipEntry(name))
+                output.write("x".toByteArray())
+                output.closeEntry()
+            }
+            output.putNextEntry(ZipEntry(BackendProcess.V_PRED_MARKER))
+            output.closeEntry()
+        }
+        val spec = CustomModels.import(ctx, "vpred", { zip.inputStream() })
+        val marker = File(spec.dir(ctx), BackendProcess.V_PRED_MARKER)
+        assertTrue(marker.isFile)
+        assertEquals(0L, marker.length())
+        assertEquals(listOf("--use_v_pred"), BackendProcess.vPredictionArgs(spec.dir(ctx)))
+    }
+
     /**
      * ⚠⚠ **A REAL archive from Windows PowerShell's `Compress-Archive`**, which
      * writes `\` separators in violation of the ZIP spec.

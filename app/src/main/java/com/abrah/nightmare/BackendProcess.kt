@@ -35,6 +35,18 @@ object BackendProcess {
     /** ⭐ Where its Hexagon skels ride in the APK — copied into the runtime dir. */
     const val DIT_ASSETS = "ditlibs"
     private const val RUNTIME_DIR = "qnnruntime"
+    /** Upstream-compatible package marker for a v-prediction checkpoint. */
+    const val V_PRED_MARKER = "V_PRED"
+
+    /** Launch-bound flag derived solely from the selected model directory. */
+    internal fun vPredictionArgs(model: File): List<String> =
+        if (File(model, V_PRED_MARKER).isFile) listOf("--use_v_pred") else emptyList()
+
+    internal fun modelLaunchArgs(backendType: String, model: File): List<String> = buildList {
+        add("--type"); add(backendType)
+        add("--model_dir"); add(model.absolutePath)
+        addAll(vPredictionArgs(model))
+    }
 
     @Volatile
     private var process: Process? = null
@@ -519,8 +531,7 @@ object BackendProcess {
                         // else about a diffusion launch is skipped.
                         add("--upscaler_mode")
                     } else {
-                        add("--type"); add(ModelCatalog.backendTypeOf(modelId))
-                        add("--model_dir"); add(model.absolutePath)
+                        addAll(modelLaunchArgs(ModelCatalog.backendTypeOf(modelId), model))
                     }
                     // ⭐ Always the runtime dir. ⚠ It used to be the NATIVE
                     // dir for DiT types (upstream BackendService's shape),
@@ -609,6 +620,9 @@ object BackendProcess {
                 }
 
                 say(EXEC_PREFIX + cmd.joinToString(" "))
+                if ("--use_v_pred" in cmd) {
+                    say("v-prediction: $V_PRED_MARKER marker detected; backend flag enabled")
+                }
                 if (!upscalerOnly) lastModelId = modelId
                 // ⚠ Named, so a report shows which size the launch really used.
                 for (k in listOf("LOCALDREAM_SDXL_SPILL_FILL_BYTES", "LOCALDREAM_ANIMA_SPILL_FILL_BYTES")) {
