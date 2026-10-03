@@ -1,0 +1,156 @@
+--- a/src/QnnModel.hpp
++++ b/src/QnnModel.hpp
+@@ -486,27 +486,36 @@
+     auto graphInfo = (*m_graphsInfo)[0];
+     const size_t latent_elems = 4 * (size_t)sample_width * sample_height;
+     const size_t hid = text_embedding_size + text_embedding_size_2;
+-    Qnn_Tensor_t *ts =
+-        findTensor(inputs, graphInfo.numInputTensors, "timestamp");
+-    if (!ts) {
+-      QNN_ERROR("sdxl masked unet: missing input 'timestamp'");
+-      return StatusCode::FAILURE;
+-    }
+-    static_cast<int32_t *>(QNN_TENSOR_GET_CLIENT_BUF(*ts).data)[0] = timestep;
+-    if (!writeNamedFloat(graphInfo, "sample", sample, latent_elems) ||
+-        !writeNamedFloat(graphInfo, "encoder_hidden_states",
++    // Dtype-aware (patch 018): Mr.J's graph is float32 IO, npuforge's SDXL Swap
++    // template u16-quantized IO with an INT_32 timestamp.
++    const float ts_f = static_cast<float>(timestep);
++    if (!writeNamedInput(graphInfo, "timestamp", &ts_f, 1) ||
++        !writeNamedInput(graphInfo, "sample", sample, latent_elems) ||
++        !writeNamedInput(graphInfo, "encoder_hidden_states",
+                          encoder_hidden_states, (size_t)seq_len * hid) ||
+-        !writeNamedFloat(graphInfo, "encoder_attention_mask", mask, seq_len) ||
+-        !writeNamedFloat(graphInfo, "text_embeds", text_embeds,
++        !writeNamedInput(graphInfo, "encoder_attention_mask", mask, seq_len) ||
++        !writeNamedInput(graphInfo, "text_embeds", text_embeds,
+                          text_embedding_size_2) ||
+-        !writeNamedFloat(graphInfo, "time_ids", time_ids, 6))
++        !writeNamedInput(graphInfo, "time_ids", time_ids, 6))
++      return StatusCode::FAILURE;
++    // The SDXL Swap template's LoRA / ControlNet / IP-Adapter inputs: bound by
++    // name from the request's lora_dir, else zeros (the identity) -- 015's rule.
++    if (graphInfo.numInputTensors > 6 && !writeExtraInputs(graphInfo, 0, true))
+       return StatusCode::FAILURE;
+     if (!runGraph(graphInfo, "sdxl masked unet")) return StatusCode::FAILURE;
+     Qnn_Tensor_t *o =
+         findTensor(outputs, graphInfo.numOutputTensors, "output");
+     if (!o) o = &outputs[0];
+-    memcpy(out_sample, QNN_TENSOR_GET_CLIENT_BUF(*o).data,
+-           latent_elems * sizeof(float));
++    if (QNN_TENSOR_GET_DATA_TYPE(*o) == QNN_DATATYPE_FLOAT_32) {
++      memcpy(out_sample, QNN_TENSOR_GET_CLIENT_BUF(*o).data,
++             latent_elems * sizeof(float));
++    } else if (tensorElems(*o) != latent_elems ||
++               qnn::tools::iotensor::StatusCode::SUCCESS !=
++                   m_ioTensor.convertToFloatInto(out_sample, o)) {
++      QNN_ERROR("sdxl masked unet: cannot read output (type 0x%x)",
++                (unsigned)QNN_TENSOR_GET_DATA_TYPE(*o));
++      return StatusCode::FAILURE;
++    }
+     return StatusCode::SUCCESS;
+   }
+ 
+@@ -793,10 +802,24 @@
+     return t ? tensorElems(*t) : 0;
+   }
+ 
+-  bool writeExtraInputs(const qnn_wrapper_api::GraphInfo_t &graphInfo) {
++  // The six inputs the SDXL (231 masked) UNet step writes itself (patch 018).
++  static bool isSdxlStandardInput(const char *nm) {
++    static const char *kStd[] = {"sample", "timestamp", "encoder_hidden_states",
++                                 "encoder_attention_mask", "text_embeds",
++                                 "time_ids"};
++    for (const char *s : kStd)
++      if (std::strcmp(nm, s) == 0) return true;
++    return false;
++  }
++
++  // `first`: SD1.5 templates put their extras after the standard three; the SDXL
++  // Swap template is bound wholly by name, so it passes 0 and skips its six.
++  bool writeExtraInputs(const qnn_wrapper_api::GraphInfo_t &graphInfo,
++                        uint32_t first = 3, bool skipSdxlStandard = false) {
+     int written = 0, from_file = 0, zeroed = 0;
+-    for (uint32_t i = 3; i < graphInfo.numInputTensors; ++i) {
++    for (uint32_t i = first; i < graphInfo.numInputTensors; ++i) {
+       const char *nm = QNN_TENSOR_GET_NAME(inputs[i]);
++      if (skipSdxlStandard && isSdxlStandardInput(nm)) continue;
+       if (m_extraWritten.count(nm)) continue;
+       const size_t n = tensorElems(inputs[i]);
+       std::vector<float> buf;
+@@ -838,6 +861,47 @@
+     return true;
+   }
+ 
++  // ⚠⚠ DTYPE-AWARE input write, by name (patch 018). Mr.J's SDXL UNet (npuforge's
++  // plain SDXL) declares float32 IO; npuforge's SDXL SWAP template declares every
++  // input UFIXED_POINT_16 (and `timestamp` INT_32) -- memcpy of float32 into its
++  // u16 client buffer overruns it by 2x. Float32 is copied, INT_32 cast, u16
++  // quantized through the tensor's own encoding.
++  bool writeNamedInput(const qnn_wrapper_api::GraphInfo_t &graphInfo,
++                       const char *name, const float *src, size_t elems) {
++    Qnn_Tensor_t *t = findTensor(inputs, graphInfo.numInputTensors, name);
++    if (!t) {
++      QNN_ERROR("missing input tensor '%s'", name);
++      return false;
++    }
++    if (tensorElems(*t) != elems) {
++      QNN_ERROR("input '%s': %zu values, graph wants %zu", name, elems,
++                tensorElems(*t));
++      return false;
++    }
++    switch (QNN_TENSOR_GET_DATA_TYPE(*t)) {
++    case QNN_DATATYPE_FLOAT_32:
++      memcpy(QNN_TENSOR_GET_CLIENT_BUF(*t).data, src, elems * sizeof(float));
++      return true;
++    case QNN_DATATYPE_INT_32: {
++      int32_t *dst = static_cast<int32_t *>(QNN_TENSOR_GET_CLIENT_BUF(*t).data);
++      for (size_t i = 0; i < elems; ++i) dst[i] = static_cast<int32_t>(src[i]);
++      return true;
++    }
++    case QNN_DATATYPE_UFIXED_POINT_16: {
++      auto qp = QNN_TENSOR_GET_QUANT_PARAMS(*t);
++      qnn::tools::datautil::floatToTfN(
++          static_cast<uint16_t *>(QNN_TENSOR_GET_CLIENT_BUF(*t).data),
++          const_cast<float *>(src), qp.scaleOffsetEncoding.offset,
++          qp.scaleOffsetEncoding.scale, elems);
++      return true;
++    }
++    default:
++      QNN_ERROR("input '%s': unsupported data type 0x%x", name,
++                (unsigned)QNN_TENSOR_GET_DATA_TYPE(*t));
++      return false;
++    }
++  }
++
+   bool writeNamedFloat(const qnn_wrapper_api::GraphInfo_t &graphInfo,
+                        const char *name, const float *src, size_t elems) {
+     Qnn_Tensor_t *t = findTensor(inputs, graphInfo.numInputTensors, name);
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -195,12 +195,19 @@
+       throw std::runtime_error("QNN VAE enc SDXL exec failed");
+   }
+ 
+-  void beginDenoise(const GenerationRequest &) override {
+-    if (!lowram_ || unet_) return;
+-    // The encode stage is over once the UNet is needed; never hold both.
+-    releaseVaeEncoder();
+-    unet_ = qnn_runtime::createAndInitModel(unet_path_, "unet");
+-    QNN_INFO("[lowram] SDXL UNET loaded");
++  void beginDenoise(const GenerationRequest &req) override {
++    if (lowram_ && !unet_) {
++      // The encode stage is over once the UNet is needed; never hold both.
++      releaseVaeEncoder();
++      unet_ = qnn_runtime::createAndInitModel(unet_path_, "unet");
++      QNN_INFO("[lowram] SDXL UNET loaded");
++    }
++    // npuforge's SDXL Swap template (patch 018): LoRA per request, exactly as
++    // PipelineSd15Npu does it (015). A model without LoRA inputs refuses one.
++    if (unet_ && unet_->hasInput("lora_S"))
++      unet_->setLora(req.lora_dir, req.lora_strength);
++    else if (!req.lora_dir.empty())
++      throw std::invalid_argument("'lora_dir': this model has no LoRA inputs");
+   }
+ 
+   void runUnetStep(const GenerationRequest &, const float *latents_batch2,

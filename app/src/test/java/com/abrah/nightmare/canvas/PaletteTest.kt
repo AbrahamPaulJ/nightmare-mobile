@@ -71,7 +71,7 @@ class PaletteTest {
         // the engine honours the mask and then regenerates nothing inside it
         // (measured 2026-09-20, `SdSampler.ALL`). This list is what guards
         // that decision — registering it silently would show up here first.
-        assertEquals(listOf("SD 1.5", "SD 1.5 Swap", "SDXL", "Anima"), inpaint.first().map { it.paletteVariant })
+        assertEquals(listOf("SD 1.5", "SD 1.5 Swap", "SDXL", "SDXL Swap", "Anima"), inpaint.first().map { it.paletteVariant })
         assertFalse(sections.getValue("generate").flatten().any { it.name.endsWith(".inpaint") })
     }
 
@@ -79,7 +79,7 @@ class PaletteTest {
         val generate = sections.getValue("generate")
         val sd = generate.single { card -> card.any { it.name == SdSampler.SDXL.name } }
         assertEquals(
-            listOf("sd15.sample", "sd15swap.sample", "sdxl.sample", "anima.sample", "flux2.sample", "zimage.sample", "qwen21.sample", "krea2.sample"),
+            listOf("sd15.sample", "sd15swap.sample", "sdxl.sample", "sdxlswap.sample", "anima.sample", "flux2.sample", "zimage.sample", "qwen21.sample", "krea2.sample"),
             sd.map { it.name },
         )
     }

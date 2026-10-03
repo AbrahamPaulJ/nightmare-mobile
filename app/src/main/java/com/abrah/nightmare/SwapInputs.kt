@@ -210,7 +210,7 @@ object SwapInputs {
                 dir.deleteRecursively()
                 throw IllegalStateException(
                     "no layer of this model matched ${loras.joinToString { it.first.name }} — " +
-                        "is it an SD 1.5 LoRA?",
+                        "is it a LoRA for this model's family (SD 1.5 or SDXL)?",
                 )
             }
         }

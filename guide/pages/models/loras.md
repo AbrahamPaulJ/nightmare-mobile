@@ -5,8 +5,10 @@ Two kinds of small add-on file change what a model draws without replacing it.
 ## LoRAs
 
 A **LoRA** is a small adapter (usually tens to hundreds of MB) that teaches a model a style, a
-character or a concept. In Nightmare, LoRAs work on **FLUX.2**, **Z-Image** and
-**SD 1.5 Swap** (an SD 1.5 checkpoint converted in npuforge as *SD1.5 Swap*).
+character or a concept. In Nightmare, LoRAs work on **FLUX.2**, **Z-Image**,
+**SD 1.5 Swap** (an SD 1.5 checkpoint converted in npuforge as *SD1.5 Swap*) and
+**SDXL Swap** (an SDXL checkpoint converted in npuforge 1.0.10 or newer as *SDXL Swap*, with
+LoRA ticked).
 
 ### Import
 
@@ -15,7 +17,7 @@ its size; the bin deletes it.
 
 ### Use
 
-1. Tap a FLUX.2, Z-Image or SD 1.5 Swap generator node.
+1. Tap a FLUX.2, Z-Image, SD 1.5 Swap or SDXL Swap generator node.
 2. Under **LoRAs**, tick the ones you want — a checkbox per installed file.
 3. Set each one's **strength** with its slider (1.0 is the adapter's full effect).
 4. Run.
@@ -38,6 +40,13 @@ LoRA, 25 s for two — and kept for next time. With a single LoRA the strength s
 changing the strengths of several makes a new merge. A LoRA trained above rank 64 is reduced to
 its best rank-64 version. Only the part of a LoRA that changes the image model applies; the
 part trained into the text encoder does not (true of every NPU conversion).
+
+### On SDXL Swap
+
+The same, with **SDXL** LoRAs: an SDXL Swap model has 700 rank-64 slots, filled on the phone the
+first time a mix is used and kept for next time. LoRAs written with either layer naming
+(diffusers or SGM) are read. SDXL Swap is new: ControlNet and IP-Adapter are not offered on it
+yet, and npuforge's SDXL Swap conversion takes about an hour on the phone.
 
 ## Embeddings
 

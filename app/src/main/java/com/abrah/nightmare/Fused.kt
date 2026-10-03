@@ -498,6 +498,10 @@ class SdSampler(
          */
         val SD15_SWAP_INPAINT = SdSampler("sd15swap.inpaint", Family.SD15_SWAP, inpaint = true)
         val SDXL = SdSampler("sdxl.sample", Family.SDXL, inpaint = false)
+        /** ⭐ SDXL Swap — LoRA per render (ControlNet / IP-Adapter inputs stay zero, [Family.SDXL_SWAP]). */
+        val SDXL_SWAP = SdSampler("sdxlswap.sample", Family.SDXL_SWAP, inpaint = false)
+        /** ⭐ SDXL Swap inpaint — SDXL's own route: masked img2img with the latent blend, LoRA kept. */
+        val SDXL_SWAP_INPAINT = SdSampler("sdxlswap.inpaint", Family.SDXL_SWAP, inpaint = true)
         val SD15_INPAINT = SdSampler("sd15.inpaint", Family.SD15, inpaint = true)
         val SDXL_INPAINT = SdSampler("sdxl.inpaint", Family.SDXL, inpaint = true)
         val ANIMA = SdSampler("anima.sample", Family.ANIMA, inpaint = false)
@@ -544,8 +548,8 @@ class SdSampler(
          * until the engine's behaviour is understood. `notes/PROGRESS.md`.
          */
         val ALL = listOf(
-            SD15, SD15_SWAP, SDXL, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2,
-            SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, ANIMA_INPAINT,
+            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2,
+            SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, SDXL_SWAP_INPAINT, ANIMA_INPAINT,
         )
 
         /**
@@ -645,6 +649,8 @@ class SdSampler(
     override val widgets get() = when {
         family.dit -> ditWidgets()
         family == Family.SD15_SWAP -> baseWidgets() + lorasWidget() + swapWidgets()
+        // ⭐ LoRA only: SDXL ControlNet and IP-Adapter models do not exist on the phone yet.
+        family == Family.SDXL_SWAP -> baseWidgets() + lorasWidget()
         else -> baseWidgets()
     }.let { ws ->
         if (!inpaint) ws else {
@@ -1024,7 +1030,11 @@ class SdSampler(
             ?.takeIf { ModelCatalog.aspectTarget(it, Res(w, h)) != null }
         // ⭐⭐ SD 1.5 Swap: the LoRA pack and the ControlNet hint, once per run and
         // before any backend call — a missing picture should stop the run here.
-        val template = if (family == Family.SD15_SWAP) swapInputs(ctx, node, p, inputs) else null
+        val template = when (family) {
+            Family.SD15_SWAP -> swapInputs(ctx, node, p, inputs)
+            Family.SDXL_SWAP -> sdxlSwapInputs(ctx, node, p)
+            else -> null
+        }
 
         // ⚠ First, because it is the cheapest thing that can fail: a backend
         // that is not up says so here rather than after a 200 ms VAE encode.
@@ -1523,6 +1533,23 @@ class SdSampler(
      * ([SwapInputs.Frame]) so the hint lines up with the base — the user's call,
      * 2026-09-29. With ControlNet at `none` none of this is read.
      */
+    /**
+     * ⭐ SDXL Swap's per-render input: the LoRA pack only ([SwapInputs.resolve] with no
+     * ControlNet and no reference). The pack follows the model's own `lora_targets.json`
+     * (700 targets) and is cached per LoRA set like SD 1.5 Swap's ([SwapInputs.packDir]).
+     */
+    private suspend fun sdxlSwapInputs(ctx: NodeCtx, node: Node, p: Map<String, String>): Ops.TemplateInputs {
+        if (LoraSpec.parse(p[LORAS]).isEmpty()) return Ops.TemplateInputs()
+        val android = ctx.android
+            ?: throw IllegalStateException("SDXL Swap needs an Android context on this host")
+        val spec = ModelCatalog.byId(p["model"].orEmpty())
+            ?: throw IllegalStateException("node \"${node.id}\": model \"${p["model"]}\" is not installed")
+        val loras = lorasFor(ctx, p[LORAS])
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            SwapInputs.resolve(android, spec, loras, SwapInputs.NONE, 1.0, null, null, say = ctx.say)
+        }
+    }
+
     private suspend fun swapInputs(
         ctx: NodeCtx,
         node: Node,

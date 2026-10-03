@@ -177,7 +177,7 @@ object Prefs {
      * whatever this says).
      */
     fun lowRamFor(context: Context, spec: ModelSpec): Boolean = when (spec.family) {
-        Family.SDXL -> lowRam(context).sdxl
+        Family.SDXL, Family.SDXL_SWAP -> lowRam(context).sdxl
         Family.ANIMA -> lowRam(context).anima
         else -> spec.lowram
     }

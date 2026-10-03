@@ -108,9 +108,12 @@ class VideoGraphTest {
         // `sd15swap.inpaint` (its latent-blend inpaint), the same day.
         assertTrue(isSampler("sd15swap.sample"))
         assertTrue(isSampler("sd15swap.inpaint"))
-        assertEquals(13, SAMPLER_TYPES.size)
-        assertEquals(12, IMAGE_SAMPLER_TYPES.size)
-        assertEquals(4, INPAINT_TYPES.size)
+        // 2026-10-03: `sdxlswap.sample` / `sdxlswap.inpaint` (SDXL Swap, LoRA per render).
+        assertTrue(isSampler("sdxlswap.sample"))
+        assertTrue(isSampler("sdxlswap.inpaint"))
+        assertEquals(15, SAMPLER_TYPES.size)
+        assertEquals(14, IMAGE_SAMPLER_TYPES.size)
+        assertEquals(5, INPAINT_TYPES.size)
     }
 
     @Test

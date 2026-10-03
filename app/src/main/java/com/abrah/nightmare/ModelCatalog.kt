@@ -72,6 +72,18 @@ enum class Family(
      */
     SD15_SWAP("SD 1.5 Swap", GP_SD15, GP_SD15_NEG, "sd15swap"),
     SDXL("SDXL", GP_SDXL, GP_SDXL_NEG, "sdxl"),
+    /**
+     * ⭐⭐ **SDXL Swap** — an SDXL checkpoint converted by npuforge (1.0.10+) into
+     * the SDXL Swap TEMPLATE UNet (`../npuforge/docs/SDXL-SWAP-TEMPLATE.md`): its
+     * LoRA (700 rank-64 targets), ControlNet residuals and IP-Adapter K/V are
+     * graph inputs. **This app feeds the LoRA** (`backend-patches/018` binds them
+     * by name on the 231-masked SDXL path); ControlNet and IP-Adapter inputs stay
+     * zero — the identity — until their SDXL models exist on the phone.
+     * Same launch type, prompts and 1024² as [SDXL]; its own family for the
+     * [SD15_SWAP] reason (the LoRA widget is per node type). Recognised by
+     * [TemplateLora.TARGETS_FILE] beside an SDXL UNet ([CustomModels]).
+     */
+    SDXL_SWAP("SDXL Swap", GP_SDXL, GP_SDXL_NEG, "sdxlswap"),
     ANIMA("Anima", GP_ANIMA, GP_ANIMA_NEG, "anima"),
     FLUX2("FLUX.2", GP_DIT, GP_DIT_NEG, "flux2", dit = true, edit = true),
     ZIMAGE("Z-Image", GP_DIT, GP_DIT_NEG, "zimage", dit = true),
@@ -687,7 +699,7 @@ data class ModelSpec(
      * an aspect chip is the truth.
      */
     val fixedCanvas: Boolean
-        get() = family == Family.SDXL || family == Family.ANIMA
+        get() = family == Family.SDXL || family == Family.SDXL_SWAP || family == Family.ANIMA
 
     /**
      * ⭐⭐ The patch file [res] needs, or null when it needs none.
@@ -1221,6 +1233,9 @@ object ModelCatalog {
         "clip_2.mnn", "clip_2.mnn.weight", "pos_emb_2.bin", "token_emb_2.bin",
         "unet.bin", "vae_decoder.bin", "vae_encoder.bin",
     )
+
+    /** ⭐ SDXL Swap: SDXL's files plus the LoRA target list the packer cannot do without. */
+    val SDXL_SWAP_REQUIRED = SDXL_REQUIRED + TemplateLora.TARGETS_FILE
 
     /**
      * ⭐ What `--type anima` needs — the backend's own list (`main.cpp`,

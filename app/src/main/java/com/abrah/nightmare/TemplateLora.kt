@@ -108,7 +108,7 @@ object TemplateLora {
             val dout = uShape[0].toInt()
             require(din == t.din && dout == t.dout && uShape[1].toInt() == r) {
                 "${t.name}: LoRA shape [$r, $din] / [$dout, ${uShape[1]}] does not fit the " +
-                    "template's [${t.din} -> ${t.dout}] -- not an SD 1.5 LoRA?"
+                    "template's [${t.din} -> ${t.dout}] -- a LoRA for another model family?"
             }
             loraRank = maxOf(loraRank, r)
             var d = st.floats(down)            // [rk, din]
@@ -177,7 +177,7 @@ object TemplateLora {
                     val din = dShape.drop(1).fold(1L) { a, b -> a * b }.toInt()
                     require(din == t.din && uShape[0].toInt() == t.dout && uShape[1].toInt() == r) {
                         "${t.name}: ${loras[li].first.name} does not fit the template's " +
-                            "[${t.din} -> ${t.dout}] -- not an SD 1.5 LoRA?"
+                            "[${t.din} -> ${t.dout}] -- a LoRA for another model family?"
                     }
                     val alpha = alphaKey?.let { st.floats(it)[0].toDouble() } ?: r.toDouble()
                     val scale = (alpha / r * loras[li].second).toFloat()
@@ -333,10 +333,37 @@ object TemplateLora {
     }
 
     /** (down, up, alpha?) keys for a target, kohya first, then diffusers/PEFT. */
+    /**
+     * ⭐ The LDM / SGM block path of a diffusers target, or null: many SDXL LoRAs (kohya on SGM
+     * checkpoints) name `lora_unet_input_blocks_4_1_transformer_blocks_0_attn1_to_q` where the
+     * diffusers form is `..._down_blocks_1_attentions_0_...`. One formula holds for SD 1.5 and
+     * SDXL: down block b, attention a -> input_blocks.{3b+a+1}.1; up -> output_blocks.{3b+a}.1;
+     * mid -> middle_block.1. Mirrors npuforge's SDXL packer (both naming forms, rel 1.9e-6).
+     */
+    internal fun sgmPath(name: String): String? {
+        val m = modulePath(name)
+        Regex("""^down_blocks\.(\d+)\.attentions\.(\d+)\.(.+)$""").find(m)?.let { r ->
+            val (b, a, rest) = r.destructured
+            return "input_blocks.${3 * b.toInt() + a.toInt() + 1}.1.$rest"
+        }
+        Regex("""^up_blocks\.(\d+)\.attentions\.(\d+)\.(.+)$""").find(m)?.let { r ->
+            val (b, a, rest) = r.destructured
+            return "output_blocks.${3 * b.toInt() + a.toInt()}.1.$rest"
+        }
+        return if (m.startsWith("mid_block.attentions.0.")) "middle_block.1." + m.removePrefix("mid_block.attentions.0.")
+        else null
+    }
+
     private fun findPair(name: String, keys: Set<String>): Triple<String, String, String?>? {
         val k = kohyaPrefix(name)
         if ("$k.lora_down.weight" in keys && "$k.lora_up.weight" in keys) {
             return Triple("$k.lora_down.weight", "$k.lora_up.weight", "$k.alpha".takeIf { it in keys })
+        }
+        sgmPath(name)?.let { sgm ->
+            val s = "lora_unet_" + sgm.replace('.', '_')
+            if ("$s.lora_down.weight" in keys && "$s.lora_up.weight" in keys) {
+                return Triple("$s.lora_down.weight", "$s.lora_up.weight", "$s.alpha".takeIf { it in keys })
+            }
         }
         val m = modulePath(name)
         for (p in listOf("unet.$m", "base_model.model.$m")) {

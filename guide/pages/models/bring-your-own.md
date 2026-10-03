@@ -12,7 +12,9 @@ cannot be used directly — it has to be converted first. Two ways:
   `.safetensors` checkpoint into an NPU model with no PC involved. Its 9-channel inpainting
   exports run as real inpainting models, and its **SD1.5 Swap** exports land in their own
   **SD 1.5 Swap** tab and take LoRAs and ControlNet per render
-  ([nodes](../reference/nodes.md#image-generator)). NPuForge 1.0.8 and later also marks
+  ([nodes](../reference/nodes.md#image-generator)). npuforge 1.0.10's **SDXL Swap** exports with
+  LoRA ticked land in an **SDXL Swap** tab and take SDXL LoRAs per render
+  ([LoRAs](loras.md#on-sdxl-swap)). NPuForge 1.0.8 and later also marks
   v-prediction packages, which Nightmare enables automatically.
 - **A zip made for LocalDream**: converted models shared for LocalDream import unchanged.
 

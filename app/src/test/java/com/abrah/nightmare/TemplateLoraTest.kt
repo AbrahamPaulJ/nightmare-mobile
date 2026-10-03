@@ -357,4 +357,52 @@ class TemplateLoraTest {
             assertArrayEquals(floatArrayOf(1f, -2f), st.floats("b.weight"), 0f)
         }
     }
+
+    /** ⭐ SDXL LoRAs often carry LDM/SGM block names; one formula covers SD 1.5 and SDXL. */
+    @Test
+    fun sgmPathFollowsLdmBlockNumbering() {
+        assertEquals("input_blocks.4.1.transformer_blocks.0.attn1.to_q",
+            TemplateLora.sgmPath("down_blocks.1.attentions.0.transformer_blocks.0.attn1.q"))
+        assertEquals("input_blocks.8.1.transformer_blocks.9.attn2.to_out.0",
+            TemplateLora.sgmPath("down_blocks.2.attentions.1.transformer_blocks.9.attn2.out"))
+        assertEquals("input_blocks.2.1.transformer_blocks.0.ff.net.0.proj",
+            TemplateLora.sgmPath("down_blocks.0.attentions.1.transformer_blocks.0.ff.proj"))
+        assertEquals("output_blocks.2.1.transformer_blocks.0.attn1.to_k",
+            TemplateLora.sgmPath("up_blocks.0.attentions.2.transformer_blocks.0.attn1.k"))
+        assertEquals("output_blocks.3.1.transformer_blocks.1.ff.net.2",
+            TemplateLora.sgmPath("up_blocks.1.attentions.0.transformer_blocks.1.ff.out"))
+        assertEquals("middle_block.1.transformer_blocks.7.attn1.to_v",
+            TemplateLora.sgmPath("mid_block.attentions.0.transformer_blocks.7.attn1.v"))
+    }
+
+    /** The same LoRA under SGM names packs to the very bytes it packs to under diffusers names. */
+    @Test
+    fun sgmNamedLoraPacksLikeDiffusersNamed() {
+        val rnd = Random(11)
+        val targets = TemplateLora.readTargets(targetsJson)
+        val r = 4
+        fun tensors(sgm: Boolean) = targets.list.flatMap { t ->
+            val k = if (sgm) "lora_unet_" + TemplateLora.sgmPath(t.name)!!.replace('.', '_')
+                else TemplateLora.kohyaPrefix(t.name)
+            listOf(
+                Triple("$k.lora_down.weight", listOf(r, t.din), FloatArray(r * t.din) { rnd.nextFloat() - 0.5f }),
+                Triple("$k.lora_up.weight", listOf(t.dout, r), FloatArray(t.dout * r) { rnd.nextFloat() - 0.5f }),
+                Triple("$k.alpha", emptyList(), floatArrayOf(2f)),
+            )
+        }
+        val diffusers = tensors(sgm = false)
+        // the SAME values, renamed
+        val sgmNames = tensors(sgm = true).map { it.first }
+        val sgm = diffusers.mapIndexed { i, (_, shape, data) -> Triple(sgmNames[i], shape, data) }
+        val fd = tmp.newFile("d.safetensors").also { writeSafetensors(it, diffusers, f16 = false) }
+        val fs = tmp.newFile("s.safetensors").also { writeSafetensors(it, sgm, f16 = false) }
+        val od = tmp.newFolder("od"); val os = tmp.newFolder("os")
+        val pd = TemplateLora.pack(fd, targets, od)
+        val ps = TemplateLora.pack(fs, targets, os)
+        assertEquals(targets.list.size, pd.matched)
+        assertEquals(pd.matched, ps.matched)
+        val names = od.list()!!.sorted()
+        assertEquals(names, os.list()!!.sorted())
+        for (n in names) assertArrayEquals(n, File(od, n).readBytes(), File(os, n).readBytes())
+    }
 }

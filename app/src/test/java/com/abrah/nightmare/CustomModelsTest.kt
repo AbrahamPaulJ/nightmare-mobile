@@ -86,6 +86,17 @@ class CustomModelsTest {
         assertFalse(spec.lowram)
     }
 
+    /** ⭐ SDXL + the target list (npuforge 1.0.10 with a feature kept) is SDXL Swap: SDXL's launch. */
+    @Test
+    fun sdxlSwapIsRecognisedFromItsTargetList() {
+        onDisk("mine", ModelCatalog.SDXL_SWAP_REQUIRED)
+        val spec = CustomModels.scan(ctx).single()
+        assertEquals(Family.SDXL_SWAP, spec.family)
+        assertEquals(ModelCatalog.SDXL_NPU, spec.backendType)
+        assertEquals(ModelCatalog.SDXL_NPU_RES, spec.native)
+        assertTrue("SDXL Swap follows SDXL's --lowram", spec.lowram)
+    }
+
     @Test
     fun sdxlIsRecognisedFromItsSecondEncoder() {
         onDisk("mine", ModelCatalog.SDXL_REQUIRED)

@@ -39,7 +39,7 @@ object SpillFill {
 
     /** The backend's env var for this family's group, or null when it has none. */
     fun envFor(family: Family?): String? = when (family) {
-        Family.SDXL -> "LOCALDREAM_SDXL_SPILL_FILL_BYTES"
+        Family.SDXL, Family.SDXL_SWAP -> "LOCALDREAM_SDXL_SPILL_FILL_BYTES"
         Family.ANIMA -> "LOCALDREAM_ANIMA_SPILL_FILL_BYTES"
         else -> null
     }

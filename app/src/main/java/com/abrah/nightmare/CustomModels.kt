@@ -295,14 +295,19 @@ object CustomModels {
         // the claim and the requirement at once.
         val spec = customSpec(dir, Config.read(dir), swapIf(dir, found.single()))
         // ⭐ npuforge SDXL: 3x77 tokens (`backend-patches/005`). Read, never assumed.
-        val long = spec.family == Family.SDXL && runCatching {
+        val long = (spec.family == Family.SDXL || spec.family == Family.SDXL_SWAP) && runCatching {
             File(dir, LONG_CONTEXT_FILE).readText().contains(LONG_CONTEXT_231)
         }.getOrDefault(false)
         return if (long) spec.copy(promptTokens = 231) else spec
     }
 
-    private fun swapIf(dir: File, family: Family): Family =
-        if (family == Family.SD15 && File(dir, TemplateLora.TARGETS_FILE).isFile) Family.SD15_SWAP else family
+    private fun swapIf(dir: File, family: Family): Family = when {
+        !File(dir, TemplateLora.TARGETS_FILE).isFile -> family
+        family == Family.SD15 -> Family.SD15_SWAP
+        // ⭐ npuforge 1.0.10+ writes it beside an SDXL Swap UNet that kept a feature.
+        family == Family.SDXL -> Family.SDXL_SWAP
+        else -> family
+    }
 
     /**
      * ⚠ Every family-dependent field comes from [ModelCatalog]'s own constants,
@@ -335,7 +340,7 @@ object CustomModels {
     private fun familyDefaults(family: Family): Defaults = when (family) {
         // The backend's own defaults — neutral, and what every SD archive has
         // always been imported with.
-        Family.SD15, Family.SD15_SWAP, Family.SDXL -> Defaults(
+        Family.SD15, Family.SD15_SWAP, Family.SDXL, Family.SDXL_SWAP -> Defaults(
             ModelCatalog.DEFAULT_SCHEDULER, ModelCatalog.DEFAULT_STEPS, ModelCatalog.DEFAULT_CFG,
         )
         // ⚠ Every published Anima checkpoint is turbo (`euler`, 10, cfg 1 in
@@ -389,6 +394,8 @@ object CustomModels {
             // inputs by probing the UNet at load, so nothing at launch says "Swap".
             Family.SD15_SWAP -> ModelCatalog.SD15_NPU
             Family.SDXL -> ModelCatalog.SDXL_NPU
+            // ⭐ Same `--type` as SDXL: patch 018 probes the UNet for `lora_S` at load.
+            Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU
             Family.ANIMA -> ModelCatalog.ANIMA_NPU
             // ⭐ Detected since 2026-09-21 — [importDit] writes [FLUX2_MARK]
             // and [ZIMAGE_MARK], so these two are reached by a real import.
@@ -405,7 +412,7 @@ object CustomModels {
             when (family) {
                 // ⚠ 512² for Swap and nothing else: the template ships no patches.
                 Family.SD15, Family.SD15_SWAP -> ModelCatalog.SD15_NPU_RES
-                Family.SDXL -> ModelCatalog.SDXL_NPU_RES
+                Family.SDXL, Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
                 Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2 -> ModelCatalog.DIT_RES
             },
@@ -414,6 +421,7 @@ object CustomModels {
             Family.SD15 -> ModelCatalog.SD15_REQUIRED
             Family.SD15_SWAP -> ModelCatalog.SD15_SWAP_REQUIRED
             Family.SDXL -> ModelCatalog.SDXL_REQUIRED
+            Family.SDXL_SWAP -> ModelCatalog.SDXL_SWAP_REQUIRED
             Family.ANIMA -> ModelCatalog.ANIMA_REQUIRED
             // ⚠ The weights by the name actually on disk — a `.gguf` import
             // has no `dit.safetensors`, and would read as incomplete forever.
@@ -435,7 +443,7 @@ object CustomModels {
             Family.SD15, Family.SD15_SWAP -> false
             // ⚠ The 9B is `lowram` (te=disk) like its built-in; 4B is not.
             Family.FLUX2 -> klein9b
-            Family.SDXL, Family.ANIMA, Family.ZIMAGE -> true
+            Family.SDXL, Family.SDXL_SWAP, Family.ANIMA, Family.ZIMAGE -> true
             // ⚠ The backend runs Qwen `all=disk` whatever this says (013).
             Family.QWEN21 -> false
             // ⚠ Same as Qwen: the backend runs Krea 2 `all=disk` (014).
