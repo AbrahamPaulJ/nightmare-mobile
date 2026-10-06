@@ -10,15 +10,15 @@ cannot be used directly — it has to be converted first. Two ways:
 
 - **On the phone, with [npuforge](https://github.com/AbrahamPaulJ/npuforge)**: it turns an SD 1.5
   `.safetensors` checkpoint into an NPU model with no PC involved. Its 9-channel inpainting
-  exports run as real inpainting models, and its **SD1.5 Swap** exports land in their own
-  **SD 1.5 Swap** tab and take LoRAs and ControlNet per render
-  ([nodes](../reference/nodes.md#image-generator)). npuforge 1.0.10's **SDXL Swap** exports with
-  LoRA ticked land in an **SDXL Swap** tab and take SDXL LoRAs per render
+  exports run as real inpainting models, and its **SD1.5 Swap** exports appear under the
+  **SD 1.5 Swap** family and take LoRAs and ControlNet per render
+  ([nodes](../reference/nodes.md#image-generator)). npuforge 1.0.11's **SDXL Swap** exports with
+  LoRA ticked appear under the **SDXL Swap** family and take SDXL LoRAs per render
   ([LoRAs](loras.md#on-sdxl-swap)). NPuForge 1.0.8 and later also marks
   v-prediction packages, which Nightmare enables automatically.
 - **A zip made for LocalDream**: converted models shared for LocalDream import unchanged.
 
-To import: open the family's tab in **Models**, tap **Import**, choose the `.zip` and give it a
+To import: open the family's page in **Models** (**Family ▾**), tap **Import**, choose the `.zip` and give it a
 name. The app reads which family it is from the files inside.
 
 If a package contains LocalDream's empty `V_PRED` marker, Nightmare launches the

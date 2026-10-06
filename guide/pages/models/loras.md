@@ -8,7 +8,7 @@ A **LoRA** is a small adapter (usually tens to hundreds of MB) that teaches a mo
 character or a concept. In Nightmare, LoRAs work on **FLUX.2**, **Z-Image**,
 **SD 1.5 Swap** (an SD 1.5 checkpoint converted in npuforge as *SD1.5 Swap*) and
 **SDXL Swap** (an SDXL checkpoint converted in npuforge 1.0.10 or newer as *SDXL Swap*, with
-LoRA ticked).
+LoRA ticked; 1.0.11 offers LoRA as SDXL Swap's only feature).
 
 ### Import
 

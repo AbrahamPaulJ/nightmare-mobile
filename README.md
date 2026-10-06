@@ -103,8 +103,9 @@ cannot run says so instead of opening.
 
 **Move between nodes without leaving the sheet.** Open a node and every node in the flow is
 a card along the top, in the order the graph runs. Tap one, or swipe sideways, and the
-inspector slides to the next. The crop and mask editors open over the picture and close with
-a drag downward.
+inspector slides to the next. The crop and mask editors open over the picture. Every sheet
+closes the same three ways: pull its top bar down, tap the ✕, or tap the canvas above it — and
+nothing inside a sheet can close it by accident while you scroll or swipe.
 
 **Download from a mirror.** Every model file comes from Hugging Face by default, and Settings
 can point that at hf-mirror.com or any base address you give it. One setting covers the
@@ -125,14 +126,15 @@ cost no restart, or bring your own converted `.bin`. Enlarging is a checkbox on 
 rather than a node of its own, and that node then shows what it received above what it made,
 each with its own buttons.
 
-**Thirty-three checkpoints, or bring your own.** Six SD 1.5, three SD 1.5 Swap, ten SDXL, nine
-Anima and five DiT in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
+**Thirty-five checkpoints, or bring your own.** Six SD 1.5, three SD 1.5 Swap, ten SDXL, two
+SDXL Swap, nine Anima and five DiT in the catalogue. Import a converted checkpoint as a zip, or convert one on the phone with
 [npuforge](https://github.com/AbrahamPaulJ/npuforge), which turns an SD safetensors checkpoint
 into a QNN model with no PC involved; its 9 channel inpainting exports run as real inpainting
 models, its v-prediction exports automatically select the backend's v-prediction mode, and its
-**SD1.5 Swap** exports take LoRAs and ControlNet per render (below); its **SDXL Swap** exports (npuforge 1.0.10, LoRA
-ticked) take SDXL LoRAs per render, 1024×1024, and with *Inpaint* ticked are real inpainting
-models that see the mask — ControlNet and IP-Adapter on SDXL Swap are not offered yet.
+**SD1.5 Swap** exports take LoRAs and ControlNet per render (below); its **SDXL Swap** exports (npuforge 1.0.11, LoRA
+ticked) take SDXL LoRAs per render and prompts up to 462 tokens, at 1024×1024. Inpaint,
+ControlNet and IP-Adapter on SDXL Swap are not offered yet: an SDXL Swap inpaint conversion
+renders blotchy fills, so inpaint with the plain SDXL Swap model instead.
 Two SDXL Swap models download in the app (8 Elite and newer): **Illustrious XL v1.0** and
 **Juggernaut XL Ragnarok**, hosted at
 [`AbrahamPJ/nightmare-sdxl-swap-models`](https://huggingface.co/AbrahamPJ/nightmare-sdxl-swap-models). A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
@@ -271,7 +273,8 @@ Labs and [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) by Ton
 fp8 weights by [Kijai](https://huggingface.co/Kijai/Z-Image_comfy_fp8_scaled).
 [Qwen Image 2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) is by the Qwen team under the
 Qwen Research License, in [leejet's GGUF](https://huggingface.co/leejet/Qwen-Image-2.1-GGUF)
-with the VAE from [Comfy-Org](https://huggingface.co/Comfy-Org/Qwen-Image-2.1); its text encoder
+(phones under 16 GB) or [unsloth's FP8](https://huggingface.co/unsloth/Qwen-Image-2.1-FP8)
+(16 GB and up), with the VAE from [Comfy-Org](https://huggingface.co/Comfy-Org/Qwen-Image-2.1); its text encoder
 is [Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) (Apache 2.0) in
 [bartowski's GGUF](https://huggingface.co/bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF).
 [FLUX.2 klein 9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B) is by Black Forest
@@ -318,6 +321,9 @@ The hint makers are [MoveNet MultiPose Lightning](https://huggingface.co/Xenova/
 by Google (Apache 2.0) with LocalDream's OpenPose renderer, and
 [Depth Anything V2 Small](https://huggingface.co/onnx-community/depth-anything-v2-small)
 (Apache 2.0).
+
+The interface is set in [Inter](https://github.com/rsms/inter) (SIL Open Font License 1.1),
+bundled in the app.
 
 [LocalDream](https://github.com/AbrahamPaulJ/dreamui) is the consumer app built on the same
 backend, and it stays the simpler way to generate a picture on a phone.

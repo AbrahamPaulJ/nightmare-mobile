@@ -115,9 +115,11 @@ Qwen3-4B text encoder, DiT VAEs
     Downloaded by the app at the user's request; not included here.
 
 Qwen Image 2.1
-    Qwen team (Hangzhou Tongyi Laboratory); GGUF by leejet; VAE repackaged by Comfy-Org
+    Qwen team (Hangzhou Tongyi Laboratory); GGUF by leejet (phones under 16 GB); FP8 by
+    unsloth (16 GB and up); VAE repackaged by Comfy-Org
     https://huggingface.co/Qwen/Qwen-Image-2.1
     https://huggingface.co/leejet/Qwen-Image-2.1-GGUF
+    https://huggingface.co/unsloth/Qwen-Image-2.1-FP8
     https://huggingface.co/Comfy-Org/Qwen-Image-2.1
     Qwen Research License. Downloaded by the app at the user's request; not
     included here.
