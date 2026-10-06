@@ -345,6 +345,10 @@ object BackendProcess {
     private fun readDitBackendOverride(context: Context): String? =
         readDiagnosticFile(context, "nightmare-dit-backend.txt")?.takeIf { it.isNotEmpty() }
 
+    /** ⚠ DIAGNOSTIC, same shape: `nightmare-dit-params.txt` → `--dit_params_backend`. */
+    private fun readDitParamsOverride(context: Context): String? =
+        readDiagnosticFile(context, "nightmare-dit-params.txt")?.takeIf { it.isNotEmpty() }
+
     /**
      * ⚠⚠⚠ **In the app's OWN external files dir, not `Download/`.** Under
      * scoped storage this app can `stat` a file another app owns in Downloads
@@ -555,6 +559,13 @@ object BackendProcess {
                     // switches (defaults from this phone's RAM) — [Prefs.lowRamFor].
                     val lowram = !upscalerOnly && spec != null && Prefs.lowRamFor(context, spec)
                     if (lowram) add("--lowram")
+                    // ⚠ Diagnostic, absent on every ordinary launch: the DiT
+                    // engine's parameter residency, e.g. `te=disk` — how Qwen's
+                    // FP8 DiT is A/B'd at upstream alpha.4's residency against
+                    // our `all=disk` (backend 022 lets this win).
+                    if (!upscalerOnly && spec?.family?.dit == true) {
+                        readDitParamsOverride(context)?.let { add("--dit_params_backend"); add(it) }
+                    }
                     // ⭐ Only meaningful WITH --lowram, as upstream passes it.
                     if (lowram && spec?.family == Family.ANIMA && Prefs.lowRam(context).animaSeqDit) {
                         add("--anima_seq_dit")

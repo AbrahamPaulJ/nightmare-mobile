@@ -110,7 +110,7 @@
     <string name="mask_tap_hint">Коснитесь объекта, чтобы выбрать его. Ещё раз — больше, и ещё раз — снять выбор.</string>
     <string name="tools">Инструменты</string>
     <string name="tools_note">Небольшие помощники, работающие на процессоре телефона. Подключите к схеме, чтобы использовать.</string>
-    <string name="segmenter_about">Коснитесь объекта в маске Inpaint, чтобы выбрать его. Подключите узел Segment model к Inpaint.</string>
+    <string name="segmenter_about">Коснитесь объекта в маске Inpaint, чтобы выбрать его. Включите «Enable tap to select» в редакторе маски.</string>
     <string name="download_source">Источник загрузки</string>
     <string name="download_source_note">Откуда скачиваются файлы моделей. Измените, если Hugging Face работает медленно или недоступен — настройка действует для всех моделей, апскейлеров, сегментатора и видеомоделей.</string>
     <string name="source_huggingface">Hugging Face</string>
@@ -215,6 +215,8 @@
     <string name="cn_replace">Заменить</string>
     <string name="cn_clear">Убрать</string>
     <string name="cn_sees">Что видит ControlNet</string>
+    <string name="cn_saved">Управляющее изображение сохранено в галерею</string>
+    <string name="cn_save_failed">Не удалось сохранить управляющее изображение:</string>
     <string name="cn_no_picture_photo">Изображения ещё нет: выберите фото или подключите его к control. Контуры найдутся здесь.</string>
     <string name="cn_no_picture_hint">Изображения ещё нет: выберите готовую подсказку или подключите её к control.</string>
     <string name="pose_about">Превращает фото в скелет openpose для ControlNet в SD 1.5 Swap. Готовому скелету ничего не нужно.</string>
@@ -245,4 +247,28 @@
     <string name="crop_done">Готово</string>
     <string name="crop_over_photo">перетащите · масштаб щипком · под картинкой ваше фото</string>
     <string name="crop_gestures">перетащите · масштаб щипком</string>
+    <!-- Models browser (2026-10-05) -->
+    <string name="mb_kind_all">Все</string>
+    <string name="mb_kind_generate">Генерация</string>
+    <string name="mb_kind_edit">Правка</string>
+    <string name="mb_kind_inpaint">Дорисовка</string>
+    <string name="mb_search_hint">Поиск моделей, напр. \"anime\", \"inpaint\", \"flux\"</string>
+    <string name="mb_family">Семейство: %1$s</string>
+    <string name="mb_all_families">Все семейства</string>
+    <string name="mb_section_installed">Установлены (%1$d)</string>
+    <string name="mb_section_available">Доступны (%1$d)</string>
+    <string name="mb_section_unsupported">Не для этого телефона (%1$d)</string>
+    <string name="mb_status_installed">Установлена</string>
+    <string name="mb_status_not_installed">Не установлена</string>
+    <string name="mb_status_in_use">Используется</string>
+    <string name="mb_status_incomplete">Неполная</string>
+    <string name="mb_models_count">Моделей: %1$d</string>
+    <string name="mb_sub_base">Базовые</string>
+    <string name="mb_sub_imported">Импорт</string>
+    <string name="mb_no_match">Нет подходящих моделей.</string>
+    <string name="mb_group_classic">Классическая диффузия</string>
+    <string name="mb_group_dit">Современные DiT</string>
+    <string name="mb_back">Назад</string>
+    <string name="mb_more">Ещё</string>
+    <string name="flows_open">Открыть</string>
 </resources>

@@ -181,6 +181,9 @@ object CustomModels {
     const val LONG_CONTEXT_FILE = "qnn_context.txt"
     const val LONG_CONTEXT_231 = "231_masked_v1"
 
+    /** `<N>_masked_v1`: 231 (plain SDXL, 3 chunks) or 462 (SDXL Swap v2, 6). */
+    private val LONG_CONTEXT = Regex("""(\d+)_masked_v1""")
+
     /**
      * The scan result, as a process-global.
      *
@@ -262,7 +265,7 @@ object CustomModels {
         // ⚠ Upstream's precedence, not ours: ZIMAGE, KLEIN, ANIMA, SDXL, then
         // the two that only mean "SD 1.5" ([UPSTREAM_MARKS]).
         UPSTREAM_MARKS.firstOrNull { (name, _) -> File(dir, name).isFile }
-            ?.let { (_, family) -> return customSpec(dir, Config.read(dir), swapIf(dir, family)) }
+            ?.let { (_, family) -> return longIf(dir, customSpec(dir, Config.read(dir), swapIf(dir, family))) }
 
         val marked = listOfNotNull(
             Family.SD15.takeIf { File(dir, SD15_MARK).isFile },
@@ -293,12 +296,23 @@ object CustomModels {
         // Swap** — npuforge writes [TemplateLora.TARGETS_FILE] into every Swap
         // export, and it is the one file a LoRA pack cannot do without, so it is
         // the claim and the requirement at once.
-        val spec = customSpec(dir, Config.read(dir), swapIf(dir, found.single()))
-        // ⭐ npuforge SDXL: 3x77 tokens (`backend-patches/005`). Read, never assumed.
-        val long = (spec.family == Family.SDXL || spec.family == Family.SDXL_SWAP) && runCatching {
-            File(dir, LONG_CONTEXT_FILE).readText().contains(LONG_CONTEXT_231)
-        }.getOrDefault(false)
-        return if (long) spec.copy(promptTokens = 231) else spec
+        return longIf(dir, customSpec(dir, Config.read(dir), swapIf(dir, found.single())))
+    }
+
+    /**
+     * ⭐ npuforge SDXL: N = 3x77 or 6x77 tokens (`backend-patches/005`, the
+     * backend parses the same marker). Read, never assumed.
+     *
+     * ⚠ On BOTH of [specFor]'s returns: npuforge writes upstream's `SDXL`
+     * marker beside `qnn_context.txt`, so the marker branch is the one its
+     * imports take — the counter read 77 on every one until 1.6.077.
+     */
+    private fun longIf(dir: File, spec: ModelSpec): ModelSpec {
+        if (spec.family != Family.SDXL && spec.family != Family.SDXL_SWAP) return spec
+        val n = runCatching {
+            LONG_CONTEXT.find(File(dir, LONG_CONTEXT_FILE).readText())?.groupValues?.get(1)?.toInt()
+        }.getOrNull() ?: return spec
+        return if (n > 77 && n % 77 == 0) spec.copy(promptTokens = n) else spec
     }
 
     private fun swapIf(dir: File, family: Family): Family = when {
@@ -426,7 +440,8 @@ object CustomModels {
             // ⚠ The weights by the name actually on disk — a `.gguf` import
             // has no `dit.safetensors`, and would read as incomplete forever.
             Family.FLUX2, Family.ZIMAGE, Family.KREA2 -> listOf(weights) + DIT_PARTS
-            Family.QWEN21 -> ModelCatalog.QWEN21_REQUIRED
+            // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
+            Family.QWEN21 -> listOf(weights) + ModelCatalog.QWEN21_PARTS
         },
         // ⚠ Not a preference: SDXL's UNet and Anima's two DiT halves do not fit
         // beside their encoders at 1024², and the backend needs telling

@@ -70,11 +70,11 @@ fun ImportCallout(
                 )
                 Text(
                     body,
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 warning?.let {
-                    Text(it, style = LogTextStyle, color = MaterialTheme.colorScheme.error)
+                    Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.error)
                 }
             }
             Button(onClick = onImport, enabled = enabled) { Text(buttonLabel) }

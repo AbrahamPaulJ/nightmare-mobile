@@ -60,8 +60,14 @@ object TemplateLora {
         })
     }
 
-    /** The diffusers module path of a target: `...attn1.q` -> `...attn1.to_q`. */
+    /**
+     * The diffusers module path of a target: `...attn1.q` -> `...attn1.to_q`. SDXL Swap v2's
+     * appended Linears name the module itself plus `.w` (`...resnets.0.time_emb_proj.w`,
+     * `conv_shortcut.w` -- a 1x1 conv, so kohya's [r, cin, 1, 1] flattens to the same [r, din]
+     * -- and `proj_in.w` / `proj_out.w`); npuforge `pack_lora_sdxl2.py`'s rule.
+     */
     fun modulePath(name: String): String {
+        if (name.endsWith(".w")) return name.removeSuffix(".w")
         val base = name.substringBeforeLast('.')
         val leaf = name.substringAfterLast('.')
         return if (base.endsWith(".ff")) {
@@ -339,9 +345,25 @@ object TemplateLora {
      * diffusers form is `..._down_blocks_1_attentions_0_...`. One formula holds for SD 1.5 and
      * SDXL: down block b, attention a -> input_blocks.{3b+a+1}.1; up -> output_blocks.{3b+a}.1;
      * mid -> middle_block.1. Mirrors npuforge's SDXL packer (both naming forms, rel 1.9e-6).
+     * Resnets (v2's `time_emb_proj` / `conv_shortcut` targets): down b, resnet j ->
+     * input_blocks.{3b+j+1}.0; up -> output_blocks.{3b+j}.0; mid j -> middle_block.{2j}; the leaf
+     * becomes `emb_layers.1` / `skip_connection` (npuforge `sdxl_keys.py`).
      */
     internal fun sgmPath(name: String): String? {
         val m = modulePath(name)
+        fun resLeaf(rest: String) = rest.replace("time_emb_proj", "emb_layers.1").replace("conv_shortcut", "skip_connection")
+        Regex("""^down_blocks\.(\d+)\.resnets\.(\d+)\.(.+)$""").find(m)?.let { r ->
+            val (b, j, rest) = r.destructured
+            return "input_blocks.${3 * b.toInt() + j.toInt() + 1}.0.${resLeaf(rest)}"
+        }
+        Regex("""^up_blocks\.(\d+)\.resnets\.(\d+)\.(.+)$""").find(m)?.let { r ->
+            val (b, j, rest) = r.destructured
+            return "output_blocks.${3 * b.toInt() + j.toInt()}.0.${resLeaf(rest)}"
+        }
+        Regex("""^mid_block\.resnets\.(\d+)\.(.+)$""").find(m)?.let { r ->
+            val (j, rest) = r.destructured
+            return "middle_block.${2 * j.toInt()}.${resLeaf(rest)}"
+        }
         Regex("""^down_blocks\.(\d+)\.attentions\.(\d+)\.(.+)$""").find(m)?.let { r ->
             val (b, a, rest) = r.destructured
             return "input_blocks.${3 * b.toInt() + a.toInt() + 1}.1.$rest"

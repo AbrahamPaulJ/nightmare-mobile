@@ -1,5 +1,8 @@
 package com.abrah.nightmare
 
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
+
 /**
  * The executor: a topologically ordered walk of a [Graph] that runs only the
  * nodes whose result it does not already have.
@@ -1888,8 +1891,17 @@ object MaskNode : NodeType {
             .equals("true", ignoreCase = true)
         val picks = if (auto) pickTargets(params).map { MaskOp.Pick(it) } else emptyList()
         if (raw == null && picks.isEmpty()) return null
+        // ⚠ Memoised like [MaskState.decode]: the re-ENCODE cost as much as the
+        // parse, and this runs per knob per recomposition (2026-10-05).
+        val key = (raw ?: "") + " " + picks.joinToString(",") { it.target }
+        synchronized(opsMemo) { opsMemo[key] }?.let { return it }
         val stored = MaskState.decode(raw)
         return stored.copy(ops = picks + stored.ops.filterNot { it is MaskOp.Pick }).encode()
+            .also { synchronized(opsMemo) { opsMemo[key] = it } }
+    }
+
+    private val opsMemo = object : LinkedHashMap<String, String>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 16
     }
 
     /** The node's auto mask chips; Clothes until someone picks otherwise. */
@@ -2847,11 +2859,24 @@ class Executor(
 
             val n0 = System.nanoTime()
             val r = try {
+                // ⭐⭐⭐ **A node's work never runs on the main thread** (1.6.083).
+                // simpleperf on the phone, 2026-10-06, an inpaint run: 49% of the
+                // MAIN thread was `SdSampler.run` — PNG encode 17%, the inpaint
+                // composite 14.5%, `LoadImageNode`'s decode 13%, crop 8% — and the
+                // Results sheet's slide stuttered over it. From the canvas the run
+                // is on `Dispatchers.Main`, so the node goes to Default and its
+                // callbacks come BACK to main in order (`relay`, FIFO).
+                // ⚠ Only from main: a harness op or a JVM test calls from its own
+                // thread, and is left exactly as it was.
+                val outer = currentCoroutineContext()
+                val fromMain = outer[kotlin.coroutines.ContinuationInterceptor] is kotlinx.coroutines.MainCoroutineDispatcher
+                val relay = kotlinx.coroutines.CoroutineScope(outer)
+                fun back(f: () -> Unit) { if (fromMain) relay.launch { f() } else f() }
                 val ctx = NodeCtx(
                     host, images, android,
-                    onProgress = { p -> onProgress(node.id, p.step, p.total) },
-                    say = { line -> onLog(node.id, line) },
-                    warn = { line -> onLog(node.id, line); onWarn(node.id, line) },
+                    onProgress = { p -> back { onProgress(node.id, p.step, p.total) } },
+                    say = { line -> back { onLog(node.id, line) } },
+                    warn = { line -> back { onLog(node.id, line); onWarn(node.id, line) } },
                     wanted = wanted,
                     ancestorTypes = ancestorTypes(node.id, order),
                 )
@@ -2861,7 +2886,11 @@ class Executor(
                 // result the node never produced -- and it would only show up
                 // once a widget had a default, which is to say once plugins
                 // existed.
-                val produced = type.runPorts(ctx, node.copy(params = params), inputs)
+                val produced = if (fromMain) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                        type.runPorts(ctx, node.copy(params = params), inputs)
+                    }
+                } else type.runPorts(ctx, node.copy(params = params), inputs)
                 if (type.cacheable) {
                     produced.forEach { (portName, pv) -> cache.put(portKey(key, portName), pv) }
                 }

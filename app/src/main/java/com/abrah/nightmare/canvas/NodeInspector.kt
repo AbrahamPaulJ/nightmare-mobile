@@ -113,7 +113,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.lazy.items
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.MeasureTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -636,6 +637,14 @@ fun NodeInspector(
             onClearImage = { onClearImage(nodeId) },
             onImportLora = onImportLora,
             loraEpoch = loraEpoch,
+            onAddToPrompt = com.abrah.nightmare.LoraNotes.promptNodeOf(state.workflow.graph, nodeId)
+                ?.let { pid ->
+                    { add: String ->
+                        val now = state.workflow.graph.byId[pid]?.params?.get("prompt").orEmpty()
+                        val next = com.abrah.nightmare.LoraNotes.appendToPrompt(now, add)
+                        if (next != now) onSetParam(pid, "prompt", next)
+                    }
+                },
             // ⚠ Only on a node that HAS a picture and acts on it — the same
             // `actsOnItsPicture` rule the star and the disk follow.
             onInstallSegmenter = onInstallSegmenter,
@@ -797,10 +806,11 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // popup, under the picture they change — never loose in the knob list
     // (the user's call, 2026-09-17).
     if (node.type in com.abrah.nightmare.INPAINT_TYPES && (name == "grow" || name == "feather")) return true
-    // ⭐ No Pad on image-to-image (asked for 2026-09-17): it cannot pad
-    // ([com.abrah.nightmare.PadRule.NEVER]), so the choice of fill cannot matter.
+    // ⭐ No Pad on image-to-image (asked for 2026-09-17): its bars are always the
+    // blurred mirror and are cut from the output ([com.abrah.nightmare.PadRule.ZOOM]),
+    // so the choice of fill cannot matter.
     if (name == com.abrah.nightmare.CropNode.PAD &&
-        com.abrah.nightmare.padRuleOf(node) == com.abrah.nightmare.PadRule.NEVER
+        com.abrah.nightmare.padRuleOf(node).hidesPadChoice
     ) return true
 
     if (node.type !in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) return false
@@ -1019,6 +1029,12 @@ internal fun NodeInspectorBody(
     onImportLora: (() -> Unit)? = null,
     /** ⚠⚠ See [NodeInspector]'s copy — it is what re-reads `_loras`. */
     loraEpoch: Int = 0,
+    /**
+     * ⭐ A LoRA note's "Add to prompt": appends to the `core.prompt` node wired
+     * into this sampler ([com.abrah.nightmare.LoraNotes.promptNodeOf]). Null
+     * when there is none — the button is then dimmed and says why.
+     */
+    onAddToPrompt: ((String) -> Unit)? = null,
     /** ⭐⭐ Enlarge this node's picture — see [PictureActions.onUpscale]. */
     onUpscale: (() -> Unit)? = null,
     /** ⭐⭐ Why it is dimmed — see [PictureActions.upscaleDisabledReason]. */
@@ -1137,7 +1153,7 @@ internal fun NodeInspectorBody(
                 )
                 Text(
                     node.type,
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
@@ -1438,7 +1454,7 @@ internal fun NodeInspectorBody(
                         "1.0 uses your picture as the starting point AND as a reference " +
                         "telling the model to keep it — so the result usually comes back " +
                         "unchanged. Set Denoise to 1.0 to edit.",
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -1465,7 +1481,7 @@ internal fun NodeInspectorBody(
             // this panel is answering.
             Text(
                 "drag to move · pinch to zoom",
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // ⭐⭐ What the reference COSTS, measured, where the decision is
@@ -1482,7 +1498,7 @@ internal fun NodeInspectorBody(
                         "${(refCost.first.toLong() * refCost.second * 384 / (512L * 512L))} MB per " +
                         "picture. Above 512x512 this has not completed on a 12 GB phone; " +
                         "drop the resolution if the run is killed.",
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -1524,7 +1540,7 @@ internal fun NodeInspectorBody(
                     outW = outW,
                     aspect = cropAspect(node, src.width, src.height, type),
                     // ⚠ The fill the node will RENDER — black, blurred or green.
-                    pad = if (padRule == com.abrah.nightmare.PadRule.NEVER) null
+                    pad = if (padRule.hidesPadChoice) null
                     else node.params[CropNode.PAD]
                         ?: type?.widgets?.firstOrNull { it.name == CropNode.PAD }?.default,
                     rule = padRule,
@@ -1543,7 +1559,7 @@ internal fun NodeInspectorBody(
                         "this picture is ${src.width}x${src.height}, smaller than the " +
                             "${outW}x$outH being asked for — the bars are padding, not a crop. " +
                             "Enlarging it instead would only make it soft.",
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -1551,7 +1567,7 @@ internal fun NodeInspectorBody(
                     if (cropLocked) "locked · unlock to move or zoom" + (if (outW > 0) " · out ${outW}x$outH" else "")
                     else if (outW > 0) "drag to move · pinch to zoom · out ${outW}x$outH"
                     else "drag to move · pinch to zoom · the frame is the output, at its own size",
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 // ⭐⭐ *Allow padding* — FLUX.2 edit only ([SdSampler.ALLOW_PAD]),
@@ -1579,7 +1595,7 @@ internal fun NodeInspectorBody(
                         )
                     }
                 }
-                if (popup && padRule != com.abrah.nightmare.PadRule.NEVER) {
+                if (popup && !padRule.hidesPadChoice) {
                     type?.widgets?.firstOrNull { it.name == CropNode.PAD }?.let { w ->
                         ChoiceRow(
                             label = w.name.knobLabel,
@@ -1769,7 +1785,7 @@ internal fun NodeInspectorBody(
             Text(
                 "no picture to paint on yet — wire an image into this node, and " +
                     "the picture appears here as soon as it can be worked out.",
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1790,7 +1806,7 @@ internal fun NodeInspectorBody(
                     "No picture yet — choose one on the Load Image node this is wired to."
                 else
                     "Wire an image into this node to frame it.",
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1810,7 +1826,7 @@ internal fun NodeInspectorBody(
         // ⚠ On an inpaint node the chooser is drawn IN the Crop tab of its popup
         // (the user's call, 2026-09-17), so not here as well — and never on an
         // image-to-image node, which cannot pad at all ([com.abrah.nightmare.PadRule.NEVER]).
-        val padHere = padWidget?.takeIf { !popup && padRule != com.abrah.nightmare.PadRule.NEVER }
+        val padHere = padWidget?.takeIf { !popup && !padRule.hidesPadChoice }
         // ⭐⭐ The pad chooser sits DIRECTLY under the framing view, because it
         // answers a question the framing view has just raised: the bars appear
         // as soon as the frame runs off the picture, and "black or mirrored" is
@@ -2079,12 +2095,23 @@ internal fun NodeInspectorBody(
                     f.isFile && f.extension.equals("safetensors", ignoreCase = true)
                 }.orEmpty().map { it.name to it.length() }.sortedBy { it.first.lowercase() }
             }
+            // ⭐ Notes beside the files ([com.abrah.nightmare.LoraNotes]); re-read
+            // with the list, written straight back on save.
+            val loraDir = com.abrah.nightmare.BackendProcess.lorasDir(ctx)
+            var loraNotes by remember(pickingLoras, loraEpoch) {
+                mutableStateOf(com.abrah.nightmare.LoraNotes.read(loraDir))
+            }
             LoraPicker(
                 installed = installed,
                 spec = node.params[com.abrah.nightmare.SdSampler.LORAS].orEmpty(),
                 onSet = { onSetParam(nodeId, com.abrah.nightmare.SdSampler.LORAS, it) },
                 onDismiss = { pickingLoras = false },
                 onImport = onImportLora,
+                notes = loraNotes,
+                onSaveNote = { name, note ->
+                    loraNotes = com.abrah.nightmare.LoraNotes.write(loraDir, name, note)
+                },
+                onAddToPrompt = onAddToPrompt,
             )
         }
 
@@ -2109,7 +2136,7 @@ internal fun NodeInspectorBody(
             Text(
                 if (type == null) "unknown node type — is its plugin loaded?"
                 else "this node has no widgets",
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -2197,7 +2224,7 @@ internal fun NodeInspectorBody(
                             Text(
                                 "Batching " + picked.size + " values: " +
                                     picked.joinToString(", "),
-                                style = LogTextStyle,
+                                style = NoteTextStyle,
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -2381,7 +2408,7 @@ internal fun NodeInspectorBody(
                         Text(w.name.knobLabel, style = MaterialTheme.typography.bodyMedium)
                         Text(
                             "Batching " + vals.size + " values: " + vals.joinToString(", "),
-                            style = LogTextStyle,
+                            style = NoteTextStyle,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -2460,7 +2487,7 @@ internal fun NodeInspectorBody(
                     supportingText = {
                         Text(
                             why ?: w.hint.orEmpty(),
-                            style = LogTextStyle,
+                            style = NoteTextStyle,
                             // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -2503,7 +2530,7 @@ internal fun NodeInspectorBody(
                     } else ""
                     Text(
                         why ?: w.hint ?: (w.type + range),
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -2575,7 +2602,7 @@ internal fun NodeInspectorBody(
         if (node.inputs.isNotEmpty()) {
             Text(
                 "inputs: " + node.inputs.entries.joinToString(", ") { "${it.key} ← ${it.value}" },
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -2726,7 +2753,7 @@ private fun LoraRow(
                 // is where the old text field's one useful sentence went.
                 why ?: if (entries.isEmpty()) widget.hint ?: "None"
                 else com.abrah.nightmare.LoraSpec.summary(entries),
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
                 color = if (why != null || entries.isEmpty())
                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -2876,7 +2903,7 @@ private fun ChoiceDropdown(
                 {
                     Text(
                         it,
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -2994,7 +3021,7 @@ internal fun SliderRow(
             modifier = Modifier.fillMaxWidth(),
         )
         widget.hint?.let {
-            Text(it, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -3530,7 +3557,7 @@ private fun BatchDialog(
                     !isRange -> {
                         Text(
                             "pick up to " + com.abrah.nightmare.BatchParams.MAX_PER_AXIS,
-                            style = LogTextStyle,
+                            style = NoteTextStyle,
                         )
                         Row(
                             Modifier.horizontalScroll(rememberScrollState()),
@@ -3593,7 +3620,7 @@ private fun BatchDialog(
                         else -> armedValues.size.toString() + " runs · " +
                             armedValues.joinToString(", ")
                     },
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = if (why != null) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -3672,7 +3699,7 @@ private fun ChoiceRow(
             }
         }
         hint?.let {
-            Text(it, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -3858,7 +3885,7 @@ private fun ImagePicker(
                 // nothing still gets something shorter than this.
                 Text(
                     displayNameOf(current),
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -3937,7 +3964,7 @@ internal fun SizePill(width: Int, height: Int, tint: Color? = null) {
     ) {
         Text(
             "${width}x$height",
-            style = LogTextStyle,
+            style = MeasureTextStyle,
             color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -3996,7 +4023,7 @@ internal fun SeedRow(
                 compact -> seed
                 else -> "seed $seed"
             },
-            style = LogTextStyle,
+            style = NoteTextStyle,
             color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
         )
         // ⚠ No copy button when there is no number: a button that copies the
@@ -4074,7 +4101,7 @@ internal fun BoolKnobRow(
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             hint?.let {
-                Text(it, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

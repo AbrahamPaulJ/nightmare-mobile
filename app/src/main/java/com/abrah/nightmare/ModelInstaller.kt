@@ -108,8 +108,8 @@ object ModelInstaller {
         // out of a download cache would need twice the space for no reason.
         // A file already present at its full size is skipped by [fetch], which
         // is what lets an interrupted 7 GB install pick up where it stopped.
-        if (spec.files.isNotEmpty()) {
-            val need = spec.files.sumOf { f ->
+        if (spec.active.isNotEmpty()) {
+            val need = spec.active.sumOf { f ->
                 val have = File(modelDir, f.name).takeIf { it.isFile }?.length() ?: 0L
                 (f.bytes - have).coerceAtLeast(0L)
             }
@@ -119,9 +119,9 @@ object ModelInstaller {
             // — which reads as "it started over" (reported 2026-09-19).
             // Upstream reports packageOffset + done against the package total
             // for the same reason.
-            val total = spec.files.sumOf { it.bytes }
+            val total = spec.active.sumOf { it.bytes }
             var before = 0L
-            for (f in spec.files) {
+            for (f in spec.active) {
                 fetch(f.url, File(modelDir, f.name), f.bytes, "downloading", { p ->
                     onProgress(Progress(p.phase, before + p.done, total))
                 }, isCancelled)

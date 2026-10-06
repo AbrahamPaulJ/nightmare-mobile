@@ -249,6 +249,22 @@ data class MaskState(
          */
         fun decode(text: String?): MaskState {
             if (text.isNullOrBlank()) return MaskState()
+            // ⭐⭐⭐ MEMOISED (2026-10-05). The inspector's `hiddenKnob` (once per
+            // knob, every recomposition) and the canvas's `drawNode` (every
+            // frame) decoded the same string over and over: 33% of the MAIN
+            // thread in a simpleperf capture on the S25, growing with every
+            // stroke — `toFloatOrNull` runs a regex per number. A [MaskState]
+            // is immutable, so one parse per distinct string is exact.
+            synchronized(decoded) { decoded[text] }?.let { return it }
+            return parse(text).also { synchronized(decoded) { decoded[text] = it } }
+        }
+
+        /** ⚠ A handful: the inpaint nodes on the canvas plus the edit in flight. */
+        private val decoded = object : LinkedHashMap<String, MaskState>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MaskState>?) = size > 16
+        }
+
+        private fun parse(text: String): MaskState {
             return try {
                 val (bodyText, tail) = text.split("~").let {
                     it[0] to it.getOrNull(1).orEmpty()

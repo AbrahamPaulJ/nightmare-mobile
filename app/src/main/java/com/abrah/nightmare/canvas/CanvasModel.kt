@@ -633,10 +633,10 @@ fun layout(
         // that says which prompt this is.
         //
         // ⚠ Counted, not measured — this function is Compose-free and
-        // unit-tested, and a `TextMeasurer` is neither. The font IS monospace
-        // (the renderer draws it at [Sizes.PROSE_FONT_SP] in `FontFamily.
-        // Monospace`), so characters-per-line is arithmetic rather than a
-        // guess: a monospace advance is ~0.6 em.
+        // unit-tested, and a `TextMeasurer` is neither. The renderer draws it
+        // in Inter at [Sizes.PROSE_FONT_SP] (monospace until 2026-10-06); 0.6 em
+        // was the monospace advance and is kept as Inter's CEILING — prose
+        // averages ~0.5 em, so it overcounts lines rather than hiding a tail.
         // ⚠ One extra line of slack, because the wrap breaks on WORDS — a long
         // word pushed to the next line makes the true count one more than the
         // character count implies.

@@ -139,7 +139,7 @@
     <string name="mask_tap_hint">Tap an object to select it. Tap it again for more of it, and once more to let it go.</string>
     <string name="tools">Tools</string>
     <string name="tools_note">Small helpers that run on the phone\'s CPU. Wire one into a flow to use it.</string>
-    <string name="segmenter_about">Tap an object in an Inpaint mask to select it. Wire a Segment model node into Inpaint.</string>
+    <string name="segmenter_about">Tap an object in an Inpaint mask to select it. Turn on “Enable tap to select” in the mask editor.</string>
     <string name="loras_title">LoRAs</string>
     <string name="loras_body">A style or character as a small adapter file, applied on top of a checkpoint. FLUX.2 and Z‑Image only — pick one on a sampler node’s LoRAs knob.</string>
     <string name="embeddings_title">Embeddings</string>
@@ -235,6 +235,8 @@
     <string name="cn_replace">Replace</string>
     <string name="cn_clear">Remove</string>
     <string name="cn_sees">What the ControlNet sees</string>
+    <string name="cn_saved">Control picture saved to the gallery</string>
+    <string name="cn_save_failed">Could not save the control picture:</string>
     <string name="cn_no_picture_photo">No picture yet: choose a photo, or wire one into control. Its edges are found here.</string>
     <string name="cn_no_picture_hint">No picture yet: choose a ready-made hint image, or wire one into control.</string>
     <string name="pose_about">Turns a photo into an openpose skeleton for SD 1.5 Swap\'s ControlNet. A ready-made skeleton needs nothing.</string>
@@ -265,4 +267,28 @@
     <string name="crop_done">Done</string>
     <string name="crop_over_photo">drag to move · pinch to zoom · your photo shows underneath</string>
     <string name="crop_gestures">drag to move · pinch to zoom</string>
+    <!-- Models browser (2026-10-05) -->
+    <string name="mb_kind_all">All</string>
+    <string name="mb_kind_generate">Generate</string>
+    <string name="mb_kind_edit">Edit</string>
+    <string name="mb_kind_inpaint">Inpaint</string>
+    <string name="mb_search_hint">Search models, e.g. \"anime\", \"inpaint\", \"flux\"</string>
+    <string name="mb_family">Family: %1$s</string>
+    <string name="mb_all_families">All families</string>
+    <string name="mb_section_installed">Installed (%1$d)</string>
+    <string name="mb_section_available">Available (%1$d)</string>
+    <string name="mb_section_unsupported">Not for this phone (%1$d)</string>
+    <string name="mb_status_installed">Installed</string>
+    <string name="mb_status_not_installed">Not installed</string>
+    <string name="mb_status_in_use">In use</string>
+    <string name="mb_status_incomplete">Incomplete</string>
+    <string name="mb_models_count">%1$d models</string>
+    <string name="mb_sub_base">Base</string>
+    <string name="mb_sub_imported">Imported</string>
+    <string name="mb_no_match">No models match.</string>
+    <string name="mb_group_classic">Classic diffusion</string>
+    <string name="mb_group_dit">Modern DiT</string>
+    <string name="mb_back">Back</string>
+    <string name="mb_more">More</string>
+    <string name="flows_open">Open</string>
 </resources>

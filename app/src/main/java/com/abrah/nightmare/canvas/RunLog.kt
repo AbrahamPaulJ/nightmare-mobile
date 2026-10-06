@@ -41,7 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.abrah.nightmare.Outcome
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.MeasureTextStyle
 
 /** ⭐ A knob armed for a sweep, as the run bar shows it. */
 data class ArmedSweep(
@@ -271,7 +271,7 @@ fun RunLogPanel(
                         st.value != null -> "seed locked: ${st.value}"
                         else -> "seed: random"
                     }.let { t -> st.label?.let { "$it · $t" } ?: t },
-                    style = LogTextStyle,
+                    style = MeasureTextStyle,
                     color = if (st.value != null) {
                         MaterialTheme.colorScheme.primary
                     } else {
@@ -362,7 +362,7 @@ fun RunLogPanel(
                         Text(
                             "Batching " + a.count + " " + a.param.knobWord +
                                 (if (a.values.isEmpty()) "" else ": " + a.values.joinToString(", ")),
-                            style = LogTextStyle,
+                            style = MeasureTextStyle,
                             color = MaterialTheme.colorScheme.primary,
                             // ⚠ THE fix: the label may take every line it needs
                             // and the button keeps its own space regardless.
@@ -385,7 +385,7 @@ fun RunLogPanel(
                 if (armed.size > 1) {
                     Text(
                         "= " + armed.fold(1) { n, a -> n * a.count } + " runs",
-                        style = LogTextStyle,
+                        style = MeasureTextStyle,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -413,7 +413,7 @@ fun RunLogPanel(
             ) {
                 Text(
                     stringResource(R.string.batch_progress, p.first, p.second),
-                    style = LogTextStyle,
+                    style = MeasureTextStyle,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 TextButton(onClick = onCancelBatch) {
@@ -460,7 +460,7 @@ fun RunLogPanel(
                     // node, or a completed run reads as one still in progress.
                     else -> "done"
                 },
-                style = LogTextStyle,
+                style = MeasureTextStyle,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -471,7 +471,7 @@ fun RunLogPanel(
                     // is the number worth keeping, and the one a user asks for
                     // after the fact.
                     formatMs(elapsed),
-                    style = LogTextStyle,
+                    style = MeasureTextStyle,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -575,7 +575,7 @@ fun RunLogPanel(
                         pluralStringResource(
                             R.plurals.kept_in_results, state.keptCount, state.keptCount,
                         ),
-                        style = LogTextStyle,
+                        style = MeasureTextStyle,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
@@ -612,7 +612,7 @@ fun RunLogPanel(
                 for (l in lines) {
                     Text(
                         "${l.id}  ${l.text}",
-                        style = LogTextStyle,
+                        style = MeasureTextStyle,
                         fontSize = 11.sp,
                         // ⚠ No maxLines and no ellipsis: wrapping is the whole
                         // point. A log that hides its own tail is worse than one

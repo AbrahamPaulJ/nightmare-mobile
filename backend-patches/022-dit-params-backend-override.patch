@@ -1,0 +1,23 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -461,13 +461,14 @@
+     // it is Qwen only until FLUX.2/Z-Image are measured with it.
+     //
+     // Krea 2 Turbo is 9.5 GB on disk (a 6.8 GB MXFP4 DiT), so it runs like
+-    // Qwen. An explicit --dit_params_backend beats --lowram for the others:
+-    // it is how FLUX.2 Klein 9B is measured and, if it has to be, shipped.
++    // Qwen. An explicit --dit_params_backend beats EVERYTHING (since 022): it
++    // is how FLUX.2 Klein 9B was measured, and how Qwen's FP8 DiT is measured
++    // at upstream alpha.4's te=disk against our all=disk.
+     const std::string params_backend =
+-        own_only                          ? "all=disk"
+-        : !opts.dit_params_backend.empty() ? opts.dit_params_backend
+-        : opts.lowram                     ? "te=disk"
+-                                          : "";
++        !opts.dit_params_backend.empty() ? opts.dit_params_backend
++        : own_only                       ? "all=disk"
++        : opts.lowram                    ? "te=disk"
++                                         : "";
+     // DIAGNOSTIC override, read once at launch. Answering "does a runtime
+     // LoRA reach HTP-resident weights" needs the SAME build to run the same
+     // request on the CPU path, and nothing else can ask that question.

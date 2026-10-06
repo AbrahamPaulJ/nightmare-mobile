@@ -537,7 +537,7 @@ private fun DrawScope.drawNode(
         TextStyle(
             color = CanvasColors.label,
             fontSize = sizeSp.sp,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = com.abrah.nightmare.ui.Inter,
         ),
         overflow = TextOverflow.Ellipsis,
         maxLines = 1,
@@ -607,7 +607,7 @@ private fun DrawScope.drawNode(
                 TextStyle(
                     color = CanvasColors.label,
                     fontSize = (9f * textZoom).sp,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = com.abrah.nightmare.ui.Inter,
                 ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -622,7 +622,7 @@ private fun DrawScope.drawNode(
                     TextStyle(
                         color = if (c.over) CanvasColors.failed else CanvasColors.label,
                         fontSize = (9f * textZoom).sp,
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = com.abrah.nightmare.ui.Inter,
                     ),
                     maxLines = 1,
                 )
@@ -646,7 +646,7 @@ private fun DrawScope.drawNode(
                     color = if (value.isBlank() || box.type?.widgets?.firstOrNull { it.name == field }?.locked != null)
                         CanvasColors.label else CanvasColors.title,
                     fontSize = (Sizes.PROSE_FONT_SP * textZoom).sp,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = com.abrah.nightmare.ui.Inter,
                 ),
                 // ⚠⚠⚠ **Clamped to what FITS AT THIS ZOOM, not to the line
                 // count the layout worked out.**
@@ -714,7 +714,7 @@ private fun DrawScope.drawNode(
         val style = TextStyle(
             color = CanvasColors.failed,
             fontSize = (10f * textZoom).sp,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = com.abrah.nightmare.ui.Inter,
         )
         // ⚠⚠ A positive constraint, always. `drawText(measurer, string, …)`
         // derives its own from the canvas and asks for a negative width for
@@ -807,7 +807,7 @@ private fun DrawScope.drawPortLabel(
     val style = TextStyle(
         color = CanvasColors.label,
         fontSize = (10f * zoom).sp,
-        fontFamily = FontFamily.Monospace,
+        fontFamily = com.abrah.nightmare.ui.Inter,
     )
     // ⚠ Half the node less the inset the label already sits at: the two
     // sides' labels share the width and must not meet in the middle.

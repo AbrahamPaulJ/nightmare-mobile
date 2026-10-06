@@ -476,12 +476,50 @@ class FusedSamplerTest {
         assertEquals("the inpaint repainted", 1, host.blends)
     }
 
-    /** ⭐ DreamUI's rule, per kind: inpaint may pad, image-to-image never. */
+    /**
+     * ⭐ Per kind: inpaint outpaints its bars; image-to-image zooms out and cuts
+     * them away (2026-10-05, it never padded before); FLUX.2 edit with *Allow
+     * padding* keeps them.
+     */
     @Test
-    fun onlyInpaintMayPad() {
+    fun padRulesPerKind() {
         assertEquals(PadRule.OUTPAINT, padRuleFor(SdSampler.SDXL_INPAINT.name))
-        assertEquals(PadRule.NEVER, padRuleFor(SdSampler.SD15.name))
+        assertEquals(PadRule.ZOOM, padRuleFor(SdSampler.SD15.name))
+        assertEquals(PadRule.ZOOM, padRuleFor(SdSampler.ZIMAGE.name))
         assertEquals(PadRule.WHEN_TOO_SMALL, padRuleFor("image.crop"))
+        val flux = Node("f", SdSampler.FLUX2.name, mapOf(SdSampler.ALLOW_PAD to "true"))
+        assertEquals(PadRule.PAD, padRuleOf(flux))
+        assertTrue(!SdSampler.zoomsOut(flux.type, flux.params))
+        // ⚠ The model sees the blurred mirror on a zoom node, whatever Pad says.
+        assertEquals(CropNode.PAD_BLUR, SdSampler.padFill(SdSampler.SD15.name, mapOf(CropNode.PAD to CropNode.PAD_BLACK)))
+        assertEquals(CropNode.PAD_GREEN, SdSampler.padFill(SdSampler.SD15_INPAINT.name, mapOf(CropNode.PAD to CropNode.PAD_GREEN)))
+    }
+
+    /**
+     * ⭐⭐ Image-to-image zoomed out: the render is cut back to the PHOTO's
+     * region — a 1.5x frame round a square photo keeps the middle 42 of 64 px
+     * (ceil 10.67 .. floor 53.33, rounded inwards so no bar survives).
+     */
+    @Test
+    fun zoomedOutImageToImageKeepsOnlyThePhoto() = runBlocking {
+        val zoomed = mapOf("x" to "-0.25", "y" to "-0.25", "w" to "1.5", "h" to "1.5")
+        val r = exec(RecordingHost()).run(graph(photo = photoFile(), params = zoomed, type = SdSampler.SD15.name))
+        assertNull(r.error)
+        val out = r.outputs["sample"] as Value.Image
+        assertEquals(42, out.w)
+        assertEquals(42, out.h)
+        // ⚠ A frame inside the photo is untouched.
+        val inside = mapOf("x" to "0.1", "y" to "0.1", "w" to "0.8", "h" to "0.8")
+        val r2 = exec(RecordingHost()).run(graph(photo = photoFile2(), params = inside, type = SdSampler.SD15.name))
+        assertNull(r2.error)
+        assertEquals(64, (r2.outputs["sample"] as Value.Image).w)
+    }
+
+    @Test
+    fun photoPixelsRoundInwards() {
+        val f = CropGeometry.photoInFrame(-0.25f, -0.25f, 1.5f, 1.5f)!!
+        assertArrayEquals(intArrayOf(11, 11, 42, 42), CropGeometry.photoPixels(f, 64, 64))
+        assertNull(CropGeometry.photoPixels(Frame(0.5f, 0.5f, 0.5f, 0.6f), 64, 64))
     }
 
     @Test

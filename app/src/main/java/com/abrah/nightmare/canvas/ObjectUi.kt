@@ -53,7 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.abrah.nightmare.AddObjects
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 import com.abrah.nightmare.MaskOp
 import com.abrah.nightmare.MaskState
 import com.abrah.nightmare.MaskTaps
@@ -210,13 +210,13 @@ internal fun ObjectChooser(
                     Text("Choose your object(s)", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "Mask what to take. Separate areas become separate objects, each placed on its own.",
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val src = source
                     when {
                         failed -> com.abrah.nightmare.ui.ErrorNotice("this photo cannot be read — pick another")
-                        src == null -> Text("opening the photo…", style = LogTextStyle)
+                        src == null -> Text("opening the photo…", style = NoteTextStyle)
                         else -> {
                             val image = remember(src) { src.asImageBitmap() }
                             val shown = remember(mask, warmed, src) {
@@ -302,7 +302,7 @@ internal fun ObjectChooser(
                                     }
                                 }
                             }
-                            if (busy) Text("reading the photo…", style = LogTextStyle)
+                            if (busy) Text("reading the photo…", style = NoteTextStyle)
                         }
                     }
                 }

@@ -36,7 +36,7 @@ fun ConfirmDelete(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { Text(body, style = LogTextStyle) },
+        text = { Text(body, style = NoteTextStyle) },
         confirmButton = {
             // ⚠ Dismiss BEFORE acting: the action often closes the surface this
             // dialog belongs to, and a flag left set re-opens it over the next

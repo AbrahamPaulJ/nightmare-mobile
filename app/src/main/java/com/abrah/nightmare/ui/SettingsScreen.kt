@@ -223,7 +223,7 @@ fun SettingsScreen(
                             // finished of the two rather than pretending otherwise.
                             Text(
                                 stringResource(R.string.theme_canvas_note),
-                                style = LogTextStyle,
+                                style = NoteTextStyle,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -258,7 +258,7 @@ fun SettingsScreen(
                         )
                         Text(
                             stringResource(R.string.battery_body),
-                            style = LogTextStyle,
+                            style = NoteTextStyle,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         OutlinedButton(onClick = onRequestBatteryUnrestricted) {
@@ -276,7 +276,7 @@ fun SettingsScreen(
                     Text(stringResource(R.string.memory_title), style = MaterialTheme.typography.labelLarge)
                     Text(
                         stringResource(R.string.memory_note),
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     com.abrah.nightmare.canvas.BoolKnobRow(
@@ -325,7 +325,7 @@ fun SettingsScreen(
                                     Text(row.name, style = MaterialTheme.typography.titleSmall)
                                     Text(
                                         stringResource(R.string.installed_mb, row.bytes shr 20),
-                                        style = LogTextStyle,
+                                        style = NoteTextStyle,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -364,7 +364,7 @@ fun SettingsScreen(
                                     Text(row.name, style = MaterialTheme.typography.titleSmall)
                                     Text(
                                         stringResource(R.string.installed_mb, row.bytes shr 20),
-                                        style = LogTextStyle,
+                                        style = NoteTextStyle,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -387,7 +387,7 @@ fun SettingsScreen(
             Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     stringResource(R.string.translation_note),
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 for ((source, row) in translateRows.orEmpty()) {
@@ -412,7 +412,7 @@ fun SettingsScreen(
                 Text(stringResource(R.string.models_folder), style = MaterialTheme.typography.labelLarge)
                 Text(
                     stringResource(R.string.models_folder_note),
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 val inDownload = modelsPlace == com.abrah.nightmare.ModelStorage.Place.DOWNLOAD
@@ -431,7 +431,7 @@ fun SettingsScreen(
                 if (inDownload && !storageAccess) {
                     Text(
                         stringResource(R.string.models_folder_no_access),
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.error,
                     )
                     OutlinedButton(onClick = { onModelsPlace(com.abrah.nightmare.ModelStorage.Place.DOWNLOAD) }) {
@@ -462,7 +462,7 @@ fun SettingsScreen(
                                 if (inDownload) R.string.models_folder_app else R.string.models_folder_download,
                             ),
                         ),
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     OutlinedButton(onClick = { onModelsPlace(modelsPlace) }, enabled = !installing) {
@@ -492,7 +492,7 @@ fun SettingsScreen(
                 )
                 Text(
                     stringResource(R.string.download_source_note),
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 // ⚠ Radios, not chips: the custom row owns a text field, which
@@ -554,7 +554,7 @@ fun SettingsScreen(
                 )
                 Text(
                     stringResource(R.string.clean_temp_body),
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedButton(
@@ -574,7 +574,7 @@ fun SettingsScreen(
                 if (scanned == 0L) {
                     Text(
                         stringResource(R.string.clean_temp_none),
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -684,7 +684,7 @@ private fun SourceRow(
         Column(Modifier.weight(1f)) {
             Text(label)
             detail?.let {
-                Text(it, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

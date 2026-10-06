@@ -57,7 +57,7 @@ fun CrashNotice(report: CrashReport.Report, onDismiss: () -> Unit) {
                     )
                     Text(
                         it,
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         // ⚠ Horizontal too: a tombstone's register dump is wide
                         // and wrapping it makes it unreadable as a dump.

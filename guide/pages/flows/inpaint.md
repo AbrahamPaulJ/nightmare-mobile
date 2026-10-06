@@ -33,7 +33,13 @@ Remove something, replace it, change clothes, fix a face, or extend the photo pa
 
 Any SD 1.5, SDXL or Anima model inpaints. **AbsoluteReality Inpaint** (in Models → SD 1.5) is
 a dedicated inpainting model: it sees the hole and the pixels around it, so the new part fits
-better, especially for large areas. Use it when you can.
+better, especially for large areas. Use it when you can. An SD 1.5 Swap or SDXL Swap model
+converted in npuforge with **Inpaint** ticked is one too.
+
+**Z-Image**, **Qwen Image** and **Krea 2** inpaint as well, by redrawing the area around your
+mask at the **Denoise** strength and blending the result back along the mask. They do not see
+the hole the way an inpainting model does, so they are best for changing what is there
+(Denoise 0.5–0.8) rather than filling a large empty area. FLUX.2 does not inpaint yet.
 
 ## The mask editor
 

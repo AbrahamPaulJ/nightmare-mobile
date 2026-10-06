@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.abrah.nightmare.NodeType
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 import com.abrah.nightmare.ui.SwipeTabs
 
 /**
@@ -265,7 +265,7 @@ private fun PaletteCard(card: List<NodeType>, onPick: (NodeType) -> Unit, modifi
         if (first.about.isNotBlank()) {
             Text(
                 first.about,
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -276,7 +276,7 @@ private fun PaletteCard(card: List<NodeType>, onPick: (NodeType) -> Unit, modifi
         if (first.name.contains(':')) {
             Text(
                 first.name.substringBeforeLast(':'),
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )

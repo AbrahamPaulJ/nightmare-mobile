@@ -63,6 +63,7 @@ class VideoDeleteConfirmTest {
     @Test
     fun tappingDeleteAsksRatherThanDeleting() {
         screen()
+        rule.onNodeWithText("Video").performClick()
         rule.onNodeWithText("Delete").performClick()
         // ⚠⚠ The assertion that matters: the tap alone must destroy nothing.
         assertEquals("Delete must ask, not delete", 0, deletes)
@@ -74,6 +75,7 @@ class VideoDeleteConfirmTest {
     @Test
     fun cancellingKeepsIt() {
         screen()
+        rule.onNodeWithText("Video").performClick()
         rule.onNodeWithText("Delete").performClick()
         // ⚠ `Cancel`, as every confirm in the app says since the design review
         // (`ConfirmDelete`) — this one alone said `Keep`.
@@ -84,6 +86,7 @@ class VideoDeleteConfirmTest {
     @Test
     fun confirmingActuallyDeletes() {
         screen()
+        rule.onNodeWithText("Video").performClick()
         rule.onNodeWithText("Delete").performClick()
         // ⚠ The dialog's own Delete, which is the second node with that text.
         rule.onAllNodesWithText("Delete")[1].performClick()

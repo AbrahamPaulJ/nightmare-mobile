@@ -1,24 +1,27 @@
 # Download, switch and delete
 
-Open **Models**. Along the top is a tab per family (swipe sideways for more): **SD 1.5**,
-**SDXL**, **Anima**, **FLUX.2**, **Z-Image**, **Qwen Image**, then **Upscalers** and **Video**.
-Installed models are listed first, the one in use at the very top. A note under the tabs gives
-the family's typical size and anything to know before downloading.
+Open **Models**. Along the top are chips by what a model does — **All**, **Generate**, **Edit**,
+**Inpaint**, then **Video**, **Upscalers** and **Tools** — with a search box under them
+(try `anime`, `inpaint`, `flux`) and a **Family** menu that opens one family's own page, with
+its typical size and anything to know before downloading.
 
-## Reading a row
+The list has three parts: **Installed** (the model in use first), **Available**, and, folded
+away at the bottom, **Not for this phone** — models your chip or RAM cannot run.
 
-Each row shows the model's name, a status line, and its family, size and build:
+## Reading a card
+
+Each card shows the model's name, coloured badges (family, size, *Inpaint* for a dedicated
+inpainting model, *Imported* for your own), and a status line: the chip it needs, a dot and a
+word, and the size.
 
 | status | meaning | button |
 |---|---|---|
-| **in use** · 1237 MB | Installed and selected | **In use** |
-| **installed** · 1237 MB | Installed, not selected | **Delete**, **Use** |
-| **not installed** · 1008 MB download | Available to download | **Download** |
-| **incomplete** · missing *file* | A file is gone (deleted, or a download broke) | **Repair** |
-| **this device cannot run it** | Your chip is too old for this model | none |
+| ● **In use** · 1.21 GB | Installed and selected | **Use** (opens a flow with it) |
+| ● **Installed** · 1.21 GB | Installed, not selected | **Use** |
+| ● **Not installed** · 1.15 GB | Available to download | **Download** |
+| ● **Incomplete** | A file is gone (deleted, or a download broke) | **Repair** (in ⋮) |
 
-The last part of the line (`8gen2`, `8gen3`, …) is the build your chip gets. The app picks it
-for you — a model is built separately for each generation of NPU.
+**⋮** holds **Delete** (not offered for the model in use) and **Repair**.
 
 ## Download
 
@@ -34,7 +37,7 @@ node and pick under **Checkpoint**.
 
 ## Delete
 
-**Delete** asks first, and tells you how many MB it frees and how much it would cost to
+**⋮ → Delete** asks first, and tells you how many MB it frees and how much it would cost to
 download again. Deleting the model in use selects another one.
 
 ## Repair

@@ -211,6 +211,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // switches the place and moves ONLY those items; `app|…` moves them back.
             "models_place" -> modelsPlaceProbe(arg)
             "dit_edit" -> ditEdit(arg)
+            "dit_bench" -> ditBench(arg)
             // ⭐ Tap to select, headless (docs/SEGMENTER.md §5).
             // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
             "segmenter_install" -> segmenterInstall()
@@ -840,6 +841,64 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         say("swap: ${legs.size - bad}/${legs.size} legs rendered and differ from base (+ i2i crop, inpaint); pictures in ${out.absolutePath}",
             bad = bad > 0)
         drainBackendLog()
+    }
+
+    /**
+     * ⭐ `dit_bench` + `--es arg "t2i,20"` | `"edit,4"`: ONE timed render on the
+     * selected DiT model at its size, seed 12345 — for A/Bs a step count or an
+     * engine/residency change (Qwen's FP8 DiT, 2026-10-06). `edit` is the native
+     * base-only edit (denoise 1, no reference) of `dit_bench/base.png`, made at
+     * 4 steps on first use and reused after, so only the edit is timed.
+     */
+    private suspend fun ditBench(arg: String?) {
+        val parts = arg.orEmpty().split(",")
+        // ⚠ An optional third part names the model: run from the FOREGROUND
+        // (`am start … MainActivity`), the Activity restores the canvas and
+        // selects ITS model first, so the selection cannot be relied on.
+        val id = parts.getOrNull(2)?.trim()?.takeIf { it.isNotEmpty() } ?: SelectedModel.id
+        val spec = ModelCatalog.byId(id)
+        if (spec?.isDit != true) return say("dit_bench needs a DiT model; $id is not one", bad = true)
+        val mode = parts.getOrNull(0)?.trim().orEmpty()
+        val steps = parts.getOrNull(1)?.trim()?.toIntOrNull()
+        if (mode !in setOf("t2i", "edit") || steps == null) return say("dit_bench: arg is t2i|edit,<steps>[,<model id>]", bad = true)
+        val res = if (spec.id == SelectedModel.id) SelectedModel.res else spec.native
+        val dir = java.io.File(ctx.getExternalFilesDir(null), "dit_bench").apply { mkdirs() }
+        val negative = "worst quality, low quality, blurry, lowres, watermark, text"
+        if (!ensureBackend(ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height))) {
+            return say("dit_bench: no backend", bad = true)
+        }
+        var base: ByteArray? = null
+        if (mode == "edit") {
+            val f = java.io.File(dir, "base.png")
+            if (!f.isFile) {
+                say("dit_bench: making base.png (4 steps, untimed)")
+                when (val r = Ops.generate(
+                    prompt = "a red brick house beside a lake, clear sky, photorealistic",
+                    negative = negative, steps = 4, cfg = 1.0, seed = 12345,
+                    width = res.width, height = res.height,
+                )) {
+                    is Ops.Result.Err -> return say("dit_bench: base FAILED http ${r.code} — ${r.body.take(200)}", bad = true)
+                    is Ops.Result.Ok -> f.writeBytes(r.value.png)
+                }
+            }
+            base = f.readBytes()
+        }
+        val t0 = System.currentTimeMillis()
+        val r = Ops.generate(
+            prompt = if (mode == "edit") "make it winter, snow on the roof and ground"
+                else "a lovely cat holding a sign that says 'Nightmare',",
+            negative = negative, steps = steps, cfg = 1.0, seed = 12345,
+            width = res.width, height = res.height,
+            imagePng = base, denoise = 1.0,
+        )
+        val ms = System.currentTimeMillis() - t0
+        when (r) {
+            is Ops.Result.Err -> say("dit_bench ${spec.id} $mode,$steps FAILED after $ms ms — http ${r.code} ${r.body.take(200)}", bad = true)
+            is Ops.Result.Ok -> {
+                java.io.File(dir, "${spec.id}_${mode}_$steps.png").writeBytes(r.value.png)
+                say("dit_bench ${spec.id} $mode,$steps ${res.width}x${res.height}  $ms ms")
+            }
+        }
     }
 
     private suspend fun ditEdit(arg: String?) {
@@ -3648,7 +3707,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 textNode(),
                 Node(
                     "sample", com.abrah.nightmare.SdSampler.SD15.name,
+                    // ⚠ `model` is required since the sampler took one; without it
+                    // this op refused before the plugin ran (found 2026-10-06).
                     params = mapOf(
+                        "model" to SelectedModel.id,
                         "steps" to FIXTURE_STEPS, "cfg" to "7.5", "seed" to "42",
                     ),
                     inputs = sources("cond" to "text"),

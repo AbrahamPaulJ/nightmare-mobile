@@ -49,7 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.abrah.nightmare.canvas.CanvasScreen
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.MeasureTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 import com.abrah.nightmare.ui.NightmareTheme
 import com.abrah.nightmare.ui.ScreenHeader
 import com.abrah.nightmare.ui.DeviceSheet
@@ -227,7 +228,9 @@ class MainActivity : ComponentActivity() {
 
     private fun takeOp(intent: Intent?) {
         val op = intent?.getStringExtra(EXTRA_OP) ?: return
-        pending = op
+        // ⚠ The `arg` extra too, as `OpService` reads it — it was dropped here,
+        // so a foreground `dit_bench t2i,20` arrived with no arguments (2026-10-06).
+        pending = op + (intent.getStringExtra(OpService.EXTRA_ARG)?.let { " $it" } ?: "")
         pendingNonce++
     }
 
@@ -631,7 +634,6 @@ fun HarnessScreen(
                 ) notifyAsk.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }
             LibraryScreen(
-                version = com.abrah.nightmare.BuildConfig.VERSION_NAME,
                 tab = vm.libraryTab,
                 onTab = vm::switchLibraryTab,
                 models = {
@@ -1166,7 +1168,7 @@ private fun SampleProgress(progress: Pair<Int, Int>) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             "sampling  $step / $total",
-            style = LogTextStyle,
+            style = MeasureTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         LinearProgressIndicator(
@@ -1218,7 +1220,7 @@ private fun Header(version: String = HARNESS_VERSION, onBack: () -> Unit = {}) {
     ) {
         Text(
             version,
-            style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -1247,7 +1249,7 @@ private fun StatusRow(state: BackendState) {
                     .background(dot)
             )
             Text(
-                "backend  " + label + "  :" + Backend.PORT, style = LogTextStyle,
+                "backend  " + label + "  :" + Backend.PORT, style = MeasureTextStyle,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -1256,7 +1258,7 @@ private fun StatusRow(state: BackendState) {
         // It said "dreamshaper (dev fixture)" for as long as that was true and
         // would have kept saying it afterwards.
         Text(
-            "model     " + SelectedModel.id, style = LogTextStyle,
+            "model     " + SelectedModel.id, style = MeasureTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -1354,7 +1356,7 @@ private fun LogPane(log: List<LogLine>, modifier: Modifier = Modifier) {
         if (log.isEmpty()) {
             item {
                 Text(
-                    "no output yet", style = LogTextStyle,
+                    "no output yet", style = MeasureTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1362,12 +1364,12 @@ private fun LogPane(log: List<LogLine>, modifier: Modifier = Modifier) {
         items(log) { line ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    line.stamp, style = LogTextStyle,
+                    line.stamp, style = MeasureTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     line.text,
-                    style = LogTextStyle,
+                    style = MeasureTextStyle,
                     color = if (line.bad) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurface,
                 )

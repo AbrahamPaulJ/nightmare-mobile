@@ -95,7 +95,8 @@ object CropGeometry {
         return when (rule) {
             PadRule.NEVER -> cover
             // ⭐ DreamUI's `padScale`: "the whole photo fits", then √2 further.
-            PadRule.OUTPAINT, PadRule.PAD -> minOf(viewW / imgW, viewH / imgH) / OUTPAINT_LIMIT
+            PadRule.OUTPAINT, PadRule.PAD, PadRule.ZOOM ->
+                minOf(viewW / imgW, viewH / imgH) / OUTPAINT_LIMIT
             PadRule.WHEN_TOO_SMALL -> if (outW <= 0) cover else minOf(cover, viewW / outW)
         }
     }
@@ -120,6 +121,20 @@ object CropGeometry {
      * ⚠ A rounding step of slack: the params are stored to three decimals, and
      * a frame flush with an edge must not grow a sliver of padding.
      */
+    /**
+     * ⭐ [photo] (fractions of a frame) as a pixel rect `[x, y, w, h]` of a
+     * [w]x[h] render, or null when it is empty. Rounded inwards so no bar pixel
+     * survives the cut. [PadRule.ZOOM]'s output crop.
+     */
+    fun photoPixels(photo: Frame, w: Int, h: Int): IntArray? {
+        val l = kotlin.math.ceil(photo.left * w - 1e-3f).toInt().coerceIn(0, w)
+        val t = kotlin.math.ceil(photo.top * h - 1e-3f).toInt().coerceIn(0, h)
+        val r = kotlin.math.floor(photo.right * w + 1e-3f).toInt().coerceIn(0, w)
+        val b = kotlin.math.floor(photo.bottom * h + 1e-3f).toInt().coerceIn(0, h)
+        if (r - l < 1 || b - t < 1) return null
+        return intArrayOf(l, t, r - l, b - t)
+    }
+
     fun photoInFrame(x: Float, y: Float, w: Float, h: Float): Frame? {
         val eps = 2e-3f
         if (w <= 0f || h <= 0f) return null
@@ -147,7 +162,10 @@ enum class PadRule {
     /** Bars only when the photo cannot fill the demanded size. The video node (and `image.crop`, until it was deleted). */
     WHEN_TOO_SMALL,
 
-    /** Always cover the frame. Image-to-image. */
+    /**
+     * Always cover the frame. ⚠ No sampler uses it since 2026-10-05 (image-to-
+     * image moved to [ZOOM]); kept as the rule a frame that must cover asks for.
+     */
     NEVER,
 
     /** Zoom out to [CropGeometry.OUTPAINT_LIMIT]; the bars are masked. Inpaint. */
@@ -161,6 +179,22 @@ enum class PadRule {
      * that means "masked".
      */
     PAD,
+
+    /**
+     * ⭐⭐ IMAGE-TO-IMAGE (the user's call, 2026-10-05): zoom out as far as
+     * [OUTPAINT] — "the same √2 logic as inpaint" — so a subject can be made
+     * smaller in the frame. The model is fed the bars filled with the blurred
+     * mirror ([CropNode.PAD_BLUR], [SdSampler.padFill]) and they are CUT AWAY
+     * from the output ([SdSampler.keepPhotoOnly]): only the photo's own region
+     * comes back. ⚠ So the editor draws them as a CHECKERBOARD — none of them
+     * is kept, and neither "masked" blue nor a real fill would say that.
+     */
+    ZOOM,
+
+    ;
+
+    /** ⚠ The Pad chooser is hidden: nothing to choose (NEVER) or fixed to the mirror (ZOOM). */
+    val hidesPadChoice get() = this == NEVER || this == ZOOM
 }
 
 /**
@@ -174,7 +208,7 @@ fun padRuleOf(node: Node): PadRule =
 /** ⚠ The ONE place a node type's [PadRule] is decided — editor and sampler both ask. */
 fun padRuleFor(type: String): PadRule = when (type) {
     in INPAINT_TYPES -> PadRule.OUTPAINT
-    in IMAGE_SAMPLER_TYPES -> PadRule.NEVER
+    in IMAGE_SAMPLER_TYPES -> PadRule.ZOOM
     else -> PadRule.WHEN_TOO_SMALL
 }
 

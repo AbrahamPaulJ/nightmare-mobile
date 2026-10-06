@@ -13,6 +13,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
@@ -130,45 +133,7 @@ fun WorkflowsScreen(
                         // "Unsupported" treatment for a whole flow
                         // ([Recipe.runsOnDevice]).
                         val ok = r.runsOnDevice(caps)
-                        Card(
-                            Modifier.fillMaxWidth()
-                                .then(
-                                    if (ok) Modifier.clickable { onOpenRecipe(r) }
-                                    else Modifier,
-                                ),
-                        ) {
-                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                // ⚠ Dimmed rather than recoloured: the card still reads
-                                // as one of the list, just not for this phone.
-                                val fade = if (ok) 1f else 0.45f
-                                Text(
-                                    r.label,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = fade),
-                                )
-                                Text(
-                                    r.about,
-                                    style = LogTextStyle,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = fade),
-                                )
-                                if (!ok) {
-                                    // ⚠⚠ Names THIS phone, not just the requirement.
-                                    // "Needs an 8 Elite" leaves a person to work out
-                                    // what they are holding; the Device sheet states
-                                    // the same two numbers.
-                                    Text(
-                                        stringResource(
-                                            R.string.flow_unsupported,
-                                            caps.soc.ifEmpty { "this chip" },
-                                            caps.arch,
-                                            r.minArch,
-                                        ),
-                                        style = LogTextStyle,
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                }
-                            }
-                        }
+                        RecipeCard(r, ok, caps) { onOpenRecipe(r) }
                     }
                 } else {
                     if (saved.isEmpty()) {
@@ -180,7 +145,7 @@ fun WorkflowsScreen(
                                 // longer has one, so copy pointing at a button on this
                                 // screen would send the user looking for it here.
                                 "Nothing saved yet — build a flow on the canvas, then press Save there.",
-                                style = LogTextStyle,
+                                style = NoteTextStyle,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -340,4 +305,72 @@ private fun NameDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/**
+ * ⭐⭐ A flow, in the Models card's style (the user's call, 2026-10-05):
+ * rounded, its name, a chip badge, what it does, and Open on the right.
+ * ⚠ The whole card opens it too — the bigger target on a phone. A flow this
+ * phone cannot run is dimmed, does not open, and says why ([Recipe.runsOnDevice]).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun RecipeCard(
+    r: Recipe,
+    ok: Boolean,
+    caps: com.abrah.nightmare.DeviceProbe.Caps,
+    onOpen: () -> Unit,
+) {
+    val fade = if (ok) 1f else 0.45f
+    Card(
+        Modifier.fillMaxWidth().then(if (ok) Modifier.clickable(onClick = onOpen) else Modifier),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(
+                    r.label,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = fade),
+                )
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (r.minArch > 68) Badge(archLabel(r.minArch))
+                    r.section?.let { Badge(it, MaterialTheme.colorScheme.primary) }
+                }
+                Text(
+                    r.about,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = fade),
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                if (!ok) {
+                    // ⚠⚠ Names THIS phone, not just the requirement.
+                    Text(
+                        stringResource(
+                            R.string.flow_unsupported,
+                            caps.soc.ifEmpty { "this chip" },
+                            caps.arch,
+                            r.minArch,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+            if (ok) {
+                androidx.compose.material3.Button(onClick = onOpen) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.flows_open))
+                }
+            }
+        }
+    }
 }

@@ -172,6 +172,10 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="keeps a loaded model resident while the app is backgrounded" />
         </service>
+        <!-- ⭐ Lets `simpleperf` / Perfetto sample this build from adb shell, which a
+             release-signed APK otherwise refuses — how UI-thread lag is MEASURED
+             instead of guessed (2026-10-05). It grants nothing to other apps. -->
+        <profileable android:shell="true" />
     </application>
 
 </manifest>

@@ -568,6 +568,33 @@ class CustomModelsTest {
         assertEquals(231, CustomModels.scan(ctx).single().promptTokens)
     }
 
+    /** ⚠ What npuforge really writes: upstream's `SDXL` marker AND the context file. */
+    @Test fun anNpuforgeSdxlWithItsMarkerReadsItsLongContext() {
+        onDisk("forge", ModelCatalog.SDXL_REQUIRED)
+        File(root(), "forge/SDXL").writeText("")
+        File(root(), "forge/qnn_context.txt").writeText("231_masked_v1")
+        assertEquals(231, CustomModels.scan(ctx).single().promptTokens)
+    }
+
+    @Test fun anNpuforgeSdxlSwapReadsItsLongContext() {
+        onDisk("forge", ModelCatalog.SDXL_SWAP_REQUIRED)
+        File(root(), "forge/SDXL").writeText("")
+        File(root(), "forge/qnn_context.txt").writeText("231_masked_v1")
+        val spec = CustomModels.scan(ctx).single()
+        assertEquals(Family.SDXL_SWAP, spec.family)
+        assertEquals(231, spec.promptTokens)
+    }
+
+    /** ⭐ SDXL Swap v2 (npuforge 1.0.11): six chunks, `462_masked_v1`. */
+    @Test fun anSdxlSwapV2ReadsItsSixChunks() {
+        onDisk("forge", ModelCatalog.SDXL_SWAP_REQUIRED)
+        File(root(), "forge/SDXL").writeText("")
+        File(root(), "forge/qnn_context.txt").writeText("462_masked_v1")
+        val spec = CustomModels.scan(ctx).single()
+        assertEquals(Family.SDXL_SWAP, spec.family)
+        assertEquals(462, spec.promptTokens)
+    }
+
     @Test fun aPcSdxlStaysAt77() {
         onDisk("pc", ModelCatalog.SDXL_REQUIRED)
         assertEquals(77, CustomModels.scan(ctx).single().promptTokens)

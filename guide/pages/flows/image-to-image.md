@@ -36,9 +36,12 @@ The generator draws at a fixed size and shape, so the photo is **framed** to tha
 Tap the picture on the generator node (or **Crop** in its sheet) to open the framing view:
 drag the photo to move it and pinch to zoom; the frame is exactly what will be sent.
 
+You can also zoom *out* past the photo's edges (up to twice its area), which makes the subject
+smaller in the frame. The part outside the photo shows as a **checkerboard**: the model sees it
+filled with the photo's own edges, mirrored and blurred, but it is **cut away from the result**,
+so only the photo's own area comes back. The photo is never stretched.
+
 <figure markdown>
   ![The framing view for image to image](../img/i2i-popup-crop.png){ .screen }
+  <figcaption>Zoomed out a little: the checkerboard strip is not part of the result.</figcaption>
 </figure>
-
-If the photo is smaller than the frame, the gaps are filled with **Pad**: black, or the photo's
-own edges blurred. The photo is never stretched.

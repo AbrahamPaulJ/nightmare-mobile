@@ -52,6 +52,8 @@ object PromptTokens {
          * content tokens plus two per chunk used.
          */
         CLIP_LONG(231, weighted = true),
+        /** npuforge's SDXL Swap v2 template: SIX chunks (`462_masked_v1`), counted as [CLIP_LONG]. */
+        CLIP_LONG_6(462, weighted = true),
         /**
          * ⚠ Anima: T5 against `anima_text_seq_len` (512), plus ONE trailing
          * EOS and no BOS — `TextEncoder::tokenizeInfo`'s Anima branch. ⚠⚠ Never
@@ -137,10 +139,10 @@ object PromptTokens {
                 (if (budget == Budget.ANIMA) {
                     val tok = t5 ?: return null
                     segments.sumOf { tok.encodeRaw(it).size } + 1
-                } else if (budget == Budget.CLIP_LONG) {
+                } else if (budget == Budget.CLIP_LONG || budget == Budget.CLIP_LONG_6) {
                     val tok = clip ?: return null
                     val content = segments.sumOf { tok.encodeRaw(it).size }
-                    content + 2 * ((content + 74) / 75).coerceIn(1, 3)
+                    content + 2 * ((content + 74) / 75).coerceIn(1, budget.max / 77)
                 } else {
                     val tok = clip ?: return null
                     segments.sumOf { tok.encodeRaw(it).size } + 2
@@ -178,7 +180,11 @@ object PromptTokens {
     }
 
     private fun specBudget(spec: ModelSpec): Budget? =
-        if (spec.promptTokens > 77) Budget.CLIP_LONG else familyBudget(spec.family)
+        when {
+            spec.promptTokens >= Budget.CLIP_LONG_6.max -> Budget.CLIP_LONG_6
+            spec.promptTokens > 77 -> Budget.CLIP_LONG
+            else -> familyBudget(spec.family)
+        }
 
     /**
      * ⚠ Null for the DiT families: they read the prompt WHOLE through a Qwen3

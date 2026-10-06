@@ -54,7 +54,7 @@ fun DeviceSheet(caps: DeviceProbe.Caps, onDismiss: () -> Unit) {
                         "⚠ This build ships no QNN libraries for v${caps.arch}, " +
                             "so the NPU cannot start. Staged: " +
                             DeviceProbe.STAGED_ARCHES.joinToString { "v$it" } + ".",
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.error,
                     )
                     Spacer()
@@ -88,7 +88,7 @@ fun DeviceSheet(caps: DeviceProbe.Caps, onDismiss: () -> Unit) {
                         "Measured on the first backend start; until then this is " +
                             "a table lookup, and an unlisted chip is assumed to be " +
                             "the oldest we support.",
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -101,10 +101,10 @@ fun DeviceSheet(caps: DeviceProbe.Caps, onDismiss: () -> Unit) {
 @Composable
 private fun Field(name: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(name, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = LogTextStyle, fontWeight = FontWeight.Medium)
+        Text(name, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = NoteTextStyle, fontWeight = FontWeight.Medium)
     }
 }
 
 @Composable
-private fun Spacer() = Text("", style = LogTextStyle)
+private fun Spacer() = Text("", style = NoteTextStyle)

@@ -83,7 +83,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import com.abrah.nightmare.NodeType
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.MeasureTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.input.pointer.positionChanged
@@ -1085,7 +1086,7 @@ private fun TopBar(
                 )
                 Text(
                     flowName + if (flowDirty) " •" else "",
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     fontSize = 11.sp,
                     color = if (flowDirty) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1095,7 +1096,7 @@ private fun TopBar(
         if (loadLine != null) {
             Text(
                 loadLine,
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 // ⚠ No maxLines, no overflow: this is the line that carries the
@@ -1176,13 +1177,13 @@ private fun SaveWorkflowDialog(
                 if (why != null && name.isNotBlank()) {
                     Text(
                         why,
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.error,
                     )
                 } else if (initial.isNotBlank() && name.trim() == initial) {
                     Text(
                         stringResource(R.string.save_replaces),
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -1302,7 +1303,7 @@ private fun RunBar(
                 // promise the backend does not make.
                 "$plannedLoads model load${if (plannedLoads == 1) "" else "s"} this run " +
                     "— about ${plannedLoads * 7 / 2} s of loading",
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
             )
@@ -1393,7 +1394,7 @@ private fun RunBar(
             ) {
             Text(
                 "${"%.1f".format(state.viewport.scale)}x",
-                style = LogTextStyle,
+                style = MeasureTextStyle,
                 fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1568,7 +1569,7 @@ private fun SelectionBar(
     ) {
         Text(
             "$count of $total selected",
-            style = LogTextStyle,
+            style = NoteTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             maxLines = 1,
@@ -1923,7 +1924,7 @@ private fun FullscreenImage(
             if (onPick == null && seed == null && onSave == null) {
                 Text(
                     if (scale > 1.01f) "double tap to fit" else "tap to close",
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = Color.White.copy(alpha = 0.6f),
                 )
             }
@@ -2136,7 +2137,7 @@ private fun ModelSwapDialog(
                         "${swap.spec.label} is ${swap.spec.family.label}, not ${from.label}. " +
                             "The sampler changes family — every wire is kept — and it " +
                             "renders at ${swap.spec.native}.",
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -2218,7 +2219,7 @@ private fun SwapRadio(
             detail?.let {
                 Text(
                     it,
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis,

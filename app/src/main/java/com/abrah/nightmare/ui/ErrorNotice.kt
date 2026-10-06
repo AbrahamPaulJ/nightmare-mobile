@@ -73,7 +73,7 @@ fun ErrorNotice(text: String, modifier: Modifier = Modifier, reportable: Boolean
     ) {
         Text(
             text,
-            style = LogTextStyle,
+            style = NoteTextStyle,
             color = MaterialTheme.colorScheme.onErrorContainer,
             modifier = Modifier.weight(1f, fill = false),
         )
@@ -115,7 +115,7 @@ fun ErrorDetails(text: String, onDismiss: () -> Unit) {
                 )
                 Text(
                     text,
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .heightIn(max = 420.dp)

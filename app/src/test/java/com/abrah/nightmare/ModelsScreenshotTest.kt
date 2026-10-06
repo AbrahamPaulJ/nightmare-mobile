@@ -46,9 +46,6 @@ open class ModelsScreenshotTest {
         captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 LibraryScreen(
-                    // ⚠ FIXED, so a release does not break this golden — see
-                    // `LibraryScreen.version`.
-                    version = "0.0.0",
                     tab = tab,
                     onTab = {},
                     models = { if (tab == LibraryTab.MODELS) body() },
@@ -395,9 +392,6 @@ open class ModelsScreenshotTest {
         captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 LibraryScreen(
-                    // ⚠ FIXED, so a release does not break this golden — see
-                    // `LibraryScreen.version`.
-                    version = "0.0.0",
                     tab = LibraryTab.RESULTS, onTab = {},
                     models = {}, flows = {},
                     results = {

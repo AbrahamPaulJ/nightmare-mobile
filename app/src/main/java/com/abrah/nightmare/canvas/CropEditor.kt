@@ -352,6 +352,16 @@ fun CropEditor(
                 dstSize = IntSize(iw, ih),
                 alpha = if (underlay != null) UNDERLAY_ALPHA else 1f,
             )
+            // ⭐ Image-to-image zoomed out: the bars are cut from the output, so
+            // they are drawn as NOTHING — a checkerboard ([PadRule.ZOOM]).
+            if (rule == com.abrah.nightmare.PadRule.ZOOM) {
+                drawCheckerboard(
+                    com.abrah.nightmare.Frame(
+                        offset.x / size.width, offset.y / size.height,
+                        (offset.x + iw) / size.width, (offset.y + ih) / size.height,
+                    ),
+                )
+            }
             // ⭐ Outpaint: the bars are the mask, so they are drawn as it will be.
             if (rule == com.abrah.nightmare.PadRule.OUTPAINT) {
                 drawPadding(
@@ -476,6 +486,50 @@ internal fun DrawScope.drawPadding(photo: com.abrah.nightmare.Frame, alpha: Floa
     )) {
         if (x1y1.x - x0 <= 0f || x1y1.y - y0 <= 0f) continue
         drawRect(c, topLeft = Offset(x0, y0), size = Size(x1y1.x - x0, x1y1.y - y0))
+    }
+}
+
+/**
+ * ⭐⭐ The bars of a [com.abrah.nightmare.PadRule.ZOOM] frame as small black-and-
+ * white squares — the universal "nothing here" — over everything outside
+ * [photo] (fractions of this draw area). Asked for 2026-10-05: an image-to-image
+ * render keeps only the photo, so its bars must not look like picture.
+ */
+internal fun DrawScope.drawCheckerboard(photo: com.abrah.nightmare.Frame, cell: Float = 12.dp.toPx()) {
+    val l = (photo.left * size.width).coerceIn(0f, size.width)
+    val t = (photo.top * size.height).coerceIn(0f, size.height)
+    val r = (photo.right * size.width).coerceIn(0f, size.width)
+    val b = (photo.bottom * size.height).coerceIn(0f, size.height)
+    if (l <= 0f && t <= 0f && r >= size.width && b >= size.height) return
+    val light = Color(0xFFFFFFFF)
+    val dark = Color(0xFFBDBDBD)
+    var y = 0f
+    var row = 0
+    while (y < size.height) {
+        var x = 0f
+        var col = 0
+        while (x < size.width) {
+            val x1 = minOf(x + cell, size.width)
+            val y1 = minOf(y + cell, size.height)
+            // ⚠ Only the parts of the cell outside the photo: four bands, as
+            // [drawPadding] does, so a cell straddling the edge is clipped.
+            for ((bx0, by0, bx1, by1) in listOf(
+                floatArrayOf(x, y, x1, minOf(y1, t)),
+                floatArrayOf(x, maxOf(y, b), x1, y1),
+                floatArrayOf(x, maxOf(y, t), minOf(x1, l), minOf(y1, b)),
+                floatArrayOf(maxOf(x, r), maxOf(y, t), x1, minOf(y1, b)),
+            )) {
+                if (bx1 - bx0 <= 0f || by1 - by0 <= 0f) continue
+                drawRect(
+                    if ((row + col) % 2 == 0) light else dark,
+                    topLeft = Offset(bx0, by0), size = Size(bx1 - bx0, by1 - by0),
+                )
+            }
+            x += cell
+            col++
+        }
+        y += cell
+        row++
     }
 }
 

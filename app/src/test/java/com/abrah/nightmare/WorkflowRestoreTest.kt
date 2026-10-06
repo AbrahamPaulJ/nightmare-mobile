@@ -303,6 +303,14 @@ class WorkflowRestoreTest {
     @Test
     fun aFreshViewModelAlreadyKnowsTheModelCatalogue() {
         val vm = HarnessViewModel(app)
+        // ⚠ Filled OFF the main thread since 2026-10-05 (the rows read cost a
+        // 1 s freeze): still with nothing opened, just not synchronously. Wait
+        // for it — a bounded wait, so a fill that never comes still fails.
+        val deadline = System.currentTimeMillis() + 10_000
+        while (vm.modelRows.isEmpty() && System.currentTimeMillis() < deadline) {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
         assertTrue(
             "nothing was opened, so nothing filled it: " + vm.modelRows.size,
             vm.modelRows.isNotEmpty(),

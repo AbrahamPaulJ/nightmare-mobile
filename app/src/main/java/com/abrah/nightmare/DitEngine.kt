@@ -58,10 +58,16 @@ object DitEngine {
      * working, which is exactly what tag-pinning is for: the core refuses a
      * mismatched ABI outright, so old core + new engine must never meet.
      *
-     * ⭐ The THIRD engine, current: upstream v3.0.0-alpha.3 (Qwen Image 2.1)
-     * plus our LoRA fields, ABI **105** (`backend-patches/dit/003`) — 1xx
-     * because our previous LoRA engine and upstream's alpha.3 both called
-     * themselves 5 over different structs.
+     * The THIRD engine: upstream v3.0.0-alpha.3 (Qwen Image 2.1) plus our LoRA
+     * fields, ABI **105** (`backend-patches/dit/003`) — 1xx because our previous
+     * LoRA engine and upstream's alpha.3 both called themselves 5 over
+     * different structs.
+     *
+     * ⭐ The FOURTH engine, current: upstream v3.0.0-alpha.4 (the fused DiT
+     * modulation, ~20% per step; Qwen 2.1's FP8 loader), `dit/003` unchanged,
+     * STILL ABI 105 — the header did not move, so the backend did not either.
+     * ⚠ Its v79/v81 skels came from the same CI run (37434737157) and ship in
+     * this APK's `assets/ditlibs`: a new engine is a new URL AND new skels.
      *
      * ⚠ So: a NEW engine build gets a new filename at a new tag, and this
      * constant changes with it — [isInstalled] compares the stamp against this
@@ -74,14 +80,14 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi105/dit-engine-abi105.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi105-a4/dit-engine-abi105-a4.zip"
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_058_406L
+    const val BYTES = 23_062_800L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 55_636_880L
+    const val FILE_BYTES = 55_644_848L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -91,7 +97,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "2a5c78ced4e151a20752a40c945f4692a4841856fffc85c7206405461d583443"
+    private const val SHA256 = "8651746f372cbd8311d23cb07a7159ebc3bf84fbb0ec6bf5f373d807e30ee8af"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

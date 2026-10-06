@@ -1,0 +1,140 @@
+--- a/src/PipelineSdxl.hpp	2026-10-04 21:33:49.228484100 +1030
++++ b/src/PipelineSdxl.hpp	2026-10-04 21:33:49.267151300 +1030
+@@ -33,9 +33,10 @@
+         vae_decoder_path_(std::move(vae_decoder_path)),
+         vae_encoder_path_(std::move(vae_encoder_path)),
+         lowram_(lowram),
+-        long_ctx_(readLongContext(model_dir)) {
+-    if (long_ctx_)
+-      QNN_INFO("SDXL long context: 231_masked_v1 (3x77 tokens + mask)");
++        long_seq_(readLongContext(model_dir)) {
++    if (long_seq_)
++      QNN_INFO("SDXL long context: %d_masked_v1 (%dx77 tokens + mask)",
++               long_seq_, long_seq_ / 77);
+   }
+ 
+   ~PipelineSdxl() override { releaseClips(); }
+@@ -144,10 +145,11 @@
+   bool vaeTilingSupported() const override { return true; }
+   int vaeTilePixelSize() const override { return 1024; }
+ 
+-  // 231 for an npuforge `231_masked_v1` UNet, else xororz's 77. Every buffer
+-  // (Conditioning, the prompt cache, the /encode_text handle) is sized from
+-  // this, so the whole pipeline follows it.
+-  int textSeqLen() const override { return long_ctx_ ? kLongSeq : 77; }
++  // N for an npuforge `N_masked_v1` UNet (231 = 3 chunks, the SDXL Swap v2
++  // template's 462 = 6), else xororz's 77. Every buffer (Conditioning, the
++  // prompt cache, the /encode_text handle) is sized from this, so the whole
++  // pipeline follows it.
++  int textSeqLen() const override { return long_seq_ ? long_seq_ : 77; }
+ 
+   void encodeText(const ProcessedPromptPair &prompts, bool need_negative,
+                   bool need_positive, Conditioning &cond) override {
+@@ -155,7 +157,7 @@
+     if (!clip_interpreter_ || !clip2_interpreter_)
+       throw std::runtime_error("SDXL CLIP interpreters not initialized!");
+ 
+-    if (long_ctx_) {
++    if (long_seq_) {
+       if (need_negative)
+         runChunkedClip(prompts.negative_embeddings,
+                        prompts.negative_embeddings_2, prompts.ids.data(),
+@@ -163,7 +165,7 @@
+       if (need_positive)
+         runChunkedClip(prompts.positive_embeddings,
+                        prompts.positive_embeddings_2,
+-                       prompts.ids.data() + kLongSeq, cond.posHidden(),
++                       prompts.ids.data() + long_seq_, cond.posHidden(),
+                        cond.posPooled());
+       if (lowram_) releaseClips();
+       return;
+@@ -220,23 +222,23 @@
+     float *latents_in = const_cast<float *>(latents_batch2);
+     float *time_ids = cond.time_ids.data();
+ 
+-    if (long_ctx_) {
++    if (long_seq_) {
+       std::vector<float> neg_mask = chunkMask(cond.negHidden());
+       std::vector<float> pos_mask = chunkMask(cond.posHidden());
+       if (!skip_uncond &&
+           StatusCode::SUCCESS != unet_->executeUnetGraphsSDXLMasked(
+-                                     latents_in, ts, cond.negHidden(), kLongSeq,
++                                     latents_in, ts, cond.negHidden(), long_seq_,
+                                      neg_mask.data(), cond.negPooled(),
+                                      time_ids, out_batch2))
+         throw std::runtime_error(
+-            "QNN UNET SDXL (231 masked) exec failed (uncond)");
++            "QNN UNET SDXL (masked) exec failed (uncond)");
+       if (StatusCode::SUCCESS !=
+           unet_->executeUnetGraphsSDXLMasked(
+-              latents_in + single_latent_size, ts, cond.posHidden(), kLongSeq,
++              latents_in + single_latent_size, ts, cond.posHidden(), long_seq_,
+               pos_mask.data(), cond.posPooled(), time_ids + 6,
+               out_batch2 + single_latent_size))
+         throw std::runtime_error(
+-            "QNN UNET SDXL (231 masked) exec failed (cond)");
++            "QNN UNET SDXL (masked) exec failed (cond)");
+       return;
+     }
+ 
+@@ -433,14 +435,19 @@
+            text_embedding_size_2 * sizeof(float));
+   }
+ 
+-  static constexpr int kLongSeq = 231;
+-
+-  // npuforge marks its SDXL graph contract in the model directory.
+-  static bool readLongContext(const std::string &model_dir) {
++  // npuforge marks its SDXL graph contract in the model directory:
++  // `<N>_masked_v1`, N a multiple of 77 (231 plain SDXL, 462 SDXL Swap v2).
++  // 0 = no marker (xororz's 77-token graph).
++  static int readLongContext(const std::string &model_dir) {
+     std::ifstream f(std::filesystem::path(model_dir) / "qnn_context.txt");
+     std::string line;
+-    return f && std::getline(f, line) &&
+-           line.find("231_masked_v1") != std::string::npos;
++    if (!f || !std::getline(f, line)) return 0;
++    const size_t at = line.find("_masked_v1");
++    if (at == std::string::npos) return 0;
++    size_t b = at;
++    while (b > 0 && line[b - 1] >= '0' && line[b - 1] <= '9') b--;
++    const int n = b < at ? std::atoi(line.substr(b, at - b).c_str()) : 0;
++    return n > 77 && n % 77 == 0 ? n : 0;
+   }
+ 
+   // Each chunk through both encoders; a chunk the prompt does not reach
+@@ -449,9 +456,9 @@
+                       const std::vector<float> &emb2, const int *ids,
+                       float *out_hidden, float *out_pooled) {
+     const size_t hid = text_embedding_size + text_embedding_size_2;
+-    std::fill(out_hidden, out_hidden + kLongSeq * hid, 0.0f);
++    std::fill(out_hidden, out_hidden + long_seq_ * hid, 0.0f);
+     std::vector<float> pooled(text_embedding_size_2);
+-    for (int c = 0; c < kLongSeq / 77; c++) {
++    for (int c = 0; c < long_seq_ / 77; c++) {
+       if (ids[77 * c] != 49406) continue;
+       std::vector<float> e1(emb1.begin() + 77 * c * text_embedding_size,
+                             emb1.begin() + 77 * (c + 1) * text_embedding_size);
+@@ -467,10 +474,10 @@
+   // from the hidden state rather than carried beside it, so a conditioning
+   // restored from the prompt cache or an /encode_text handle (hidden + pooled
+   // only) gets the right mask too.
+-  static std::vector<float> chunkMask(const float *hidden) {
++  std::vector<float> chunkMask(const float *hidden) const {
+     const size_t hid = text_embedding_size + text_embedding_size_2;
+-    std::vector<float> mask(kLongSeq, 0.0f);
+-    for (int c = 0; c < kLongSeq / 77; c++) {
++    std::vector<float> mask(long_seq_, 0.0f);
++    for (int c = 0; c < long_seq_ / 77; c++) {
+       bool any = false;
+       for (size_t i = 0; i < 77 * hid && !any; i++)
+         any = hidden[77 * c * hid + i] != 0.0f;
+@@ -486,7 +493,7 @@
+   const std::string vae_decoder_path_;
+   const std::string vae_encoder_path_;
+   const bool lowram_;
+-  const bool long_ctx_;
++  const int long_seq_;
+ 
+   MNN::Interpreter *clip_interpreter_ = nullptr;
+   MNN::Interpreter *clip2_interpreter_ = nullptr;

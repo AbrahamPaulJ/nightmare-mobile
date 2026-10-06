@@ -1,8 +1,14 @@
 package com.abrah.nightmare.ui
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -67,18 +73,6 @@ fun LibraryScreen(
     flows: @Composable () -> Unit,
     results: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
-    /**
-     * ⭐⭐ The build, shown beside the name here as it is on the canvas.
-     *
-     * ⚠⚠⚠ A PARAMETER, for the same reason `CanvasScreen.version` is one —
-     * and this file got it wrong FIRST: reading `BuildConfig.VERSION_NAME`
-     * inside the body baked the version into fifteen `ModelsScreenshotTest`
-     * goldens, so every release would break them. That trap was fixed on the
-     * canvas the day before and recreated here the day after, which is the
-     * N−1-of-N shape (`docs/ARCHITECTURE.md` §5.6) in its purest form: the same
-     * mistake, in the second of two places, by the same hand.
-     */
-    version: String = "",
 ) {
     // ⭐⭐⭐ **BOTH insets, here, for all three tabs.**
     //
@@ -100,23 +94,51 @@ fun LibraryScreen(
     Column(
         modifier.fillMaxSize().navigationBarsPadding().padding(16.dp),
     ) {
-        // ⭐ The APP's name and logo, not the tab's — the tab row directly under
-        // it already says Models / Flows / Results, so a title repeating it was
-        // redundant (the user's call, 2026-09-17).
-        BrandHeader(version = version)
+        // ⚠ No name and logo here since 1.6.083 (the user's call, 2026-10-06):
+        // the canvas header right behind the sheet already shows them.
+        // ⭐⭐⭐ **The underline moves on the TAP's frame** (the user, 2026-10-06:
+        // the purple line was "so delayed"). Two causes, both removed: Material's
+        // indicator GLIDES for 250 ms, and it could not start until the frame
+        // that composed the new tab's whole list had finished. So the row draws
+        // [picked] at once with no animation, and the list follows a frame later.
+        var picked by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(tab) }
+        androidx.compose.runtime.LaunchedEffect(tab) { picked = tab }
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
         TabRow(
-            selectedTabIndex = tab.ordinal,
-            containerColor = MaterialTheme.colorScheme.background,
+            selectedTabIndex = picked.ordinal,
+            indicator = { positions ->
+                val at = positions[picked.ordinal]
+                androidx.compose.foundation.layout.Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .wrapContentSize(androidx.compose.ui.Alignment.BottomStart)
+                        .offset(x = at.left)
+                        .width(at.width)
+                        .height(3.dp)
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            },
+            // ⚠ The sheet's own colour shows through — `background` drew a darker
+            // box once the header above it went (1.6.084).
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         ) {
             for (t in LibraryTab.entries) {
                 Tab(
-                    selected = t == tab,
-                    onClick = { onTab(t) },
+                    selected = t == picked,
+                    onClick = {
+                        if (t != picked) {
+                            picked = t
+                            scope.launch {
+                                androidx.compose.runtime.withFrameNanos { }
+                                onTab(t)
+                            }
+                        }
+                    },
                     text = {
                         Text(
                             t.label,
-                            fontWeight = if (t == tab) FontWeight.SemiBold else FontWeight.Normal,
+                            fontWeight = if (t == picked) FontWeight.SemiBold else FontWeight.Normal,
                         )
                     },
                 )
@@ -137,26 +159,6 @@ fun LibraryScreen(
 }
 
 /**
- * ⭐⭐ "Nightmare", stylised, beside the logo. ⚠ No ✕ since 2026-09-26: the
- * library is a pull-down sheet, closed the way the node sheet is (the user's call).
- */
-@Composable
-fun BrandHeader(
-    modifier: Modifier = Modifier,
-    /** ⚠ Shown here too since 2026-09-22 — the canvas is not the only screen
-     * someone reads a version off. Empty hides it (a golden, a preview). */
-    version: String = "",
-) {
-    Row(
-        modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-    ) {
-        BrandMark(Modifier.weight(1f, fill = false), version = version)
-    }
-}
-
-/**
  * ⭐⭐⭐ **The logo and the wordmark, and the ONE place they are drawn.**
  *
  * ⚠⚠ Extracted 2026-09-22, when the canvas asked for the same mark: *"in
@@ -165,8 +167,7 @@ fun BrandHeader(
  * must agree call the SAME function (`CLAUDE.md`); a second copy of a gradient,
  * a letter-spacing and a corner radius is a second copy that stops agreeing.
  *
- * ⚠ [BrandHeader] adds the ✕; the canvas has nothing to close, so it draws
- * this alone.
+ * ⚠ The canvas header is now its only caller (the library dropped it, 1.6.083).
  */
 @Composable
 fun BrandMark(modifier: Modifier = Modifier, version: String = "") {
@@ -188,7 +189,7 @@ fun BrandMark(modifier: Modifier = Modifier, version: String = "") {
             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
             letterSpacing = (-0.5).sp,
         )
-        val versionStyle = LogTextStyle.copy(fontSize = 10.sp)
+        val versionStyle = NoteTextStyle.copy(fontSize = 10.sp)
         val versionW = if (version.isEmpty()) 0.dp else with(density) {
             measurer.measure("v$version", versionStyle).size.width.toDp() + 12.dp
         }

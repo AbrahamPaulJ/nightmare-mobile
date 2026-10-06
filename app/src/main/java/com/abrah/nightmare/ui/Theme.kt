@@ -9,6 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
@@ -17,25 +19,42 @@ import androidx.compose.ui.unit.sp
  * node-category colors must be stable across devices or a shared screenshot
  * stops meaning anything.
  */
-val NightSurface = Color(0xFF0B0B10)   // keep in step with res/values/colors.xml
-private val NightSurfaceHigh = Color(0xFF14141C)
-private val NightOutline = Color(0xFF2A2A38)
-private val NightOn = Color(0xFFE6E6F0)
-private val NightOnMuted = Color(0xFF8E8EA6)
+/**
+ * ⭐⭐ The 2026-10-05 look — the user's concept art: a deep violet-black ground,
+ * cards one step lighter, a violet primary. ⚠ Every container role is SET:
+ * Material's dark defaults are blue-grey and showed through on any surface
+ * that asked for one this scheme left out.
+ */
+val NightSurface = Color(0xFF0D0A14)   // keep in step with res/values/colors.xml
+private val NightSurfaceHigh = Color(0xFF1C1729)
+private val NightOutline = Color(0xFF2F2840)
+private val NightOn = Color(0xFFECE8F6)
+private val NightOnMuted = Color(0xFF9C95B3)
 
-/** The one accent. Node *category* is the only other thing that earns a hue. */
-private val Ember = Color(0xFF9B6BFF)
+/** The one accent. Node *category* and model *family* are the only other hues. */
+private val Ember = Color(0xFF8B5CF6)
 
 private val NightmareDark = darkColorScheme(
     primary = Ember,
-    onPrimary = Color(0xFF12061F),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF3B2A6B),
+    onPrimaryContainer = Color(0xFFE9DDFF),
+    secondaryContainer = Color(0xFF2A2140),
+    onSecondaryContainer = Color(0xFFE6DEFF),
     surface = NightSurface,
     onSurface = NightOn,
     surfaceVariant = NightSurfaceHigh,
     onSurfaceVariant = NightOnMuted,
+    surfaceTint = Ember,
+    surfaceContainerLowest = Color(0xFF09070F),
+    surfaceContainerLow = Color(0xFF13101C),
+    surfaceContainer = Color(0xFF181424),
+    surfaceContainerHigh = Color(0xFF201A2E),
+    surfaceContainerHighest = Color(0xFF282138),
     background = NightSurface,
     onBackground = NightOn,
     outline = NightOutline,
+    outlineVariant = Color(0xFF2A2338),
     error = Color(0xFFFF6B6B),
 )
 
@@ -52,6 +71,8 @@ private val LightOnMuted = Color(0xFF5E5E6E)
 
 private val NightmareLight = lightColorScheme(
     primary = Color(0xFF7C4DFF),
+    secondaryContainer = Color(0xFFEDE5FF),
+    onSecondaryContainer = Color(0xFF21143F),
     onPrimary = Color.White,
     background = Color.White,
     onBackground = LightOn,
@@ -70,8 +91,18 @@ private val NightmareLight = lightColorScheme(
     error = Color(0xFFD93838),
 )
 
-/** Monospace for anything an agent or a human reads as a measurement. */
-val LogTextStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+/**
+ * ⭐ The small Inter text every panel, card and note uses. Was monospace
+ * (`LogTextStyle`) until the user found Inter "not changed" on 1.6.082 —
+ * 2026-10-06 they chose Inter everywhere except true measurements.
+ */
+val NoteTextStyle: TextStyle by lazy { TextStyle(fontFamily = Inter, fontSize = 12.sp) }
+
+/**
+ * ⚠ Monospace ONLY for a true measurement — the run log, the backend log,
+ * a progress counter, a size in pixels or MB. Prose goes in [NoteTextStyle].
+ */
+val MeasureTextStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
 
 @Composable
 fun NightmareTheme(
@@ -83,10 +114,59 @@ fun NightmareTheme(
     com.abrah.nightmare.canvas.CanvasColors.light = !darkTheme
     MaterialTheme(
         colorScheme = if (darkTheme) NightmareDark else NightmareLight,
-        typography = Typography(),
+        typography = InterTypography,
+        shapes = androidx.compose.material3.Shapes(
+            small = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            medium = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+            large = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        ),
         content = content,
     )
 }
+
+/**
+ * ⭐⭐ **Inter** — the concept art's typeface (the user's ask, 2026-10-05),
+ * bundled (`res/font`, SIL OFL, `NOTICE`) rather than a downloadable Google
+ * font: a sideloaded phone may have no Play services to fetch one.
+ * ⚠ [MeasureTextStyle] stays monospace — it is for measurements and logs.
+ */
+val Inter = FontFamily(
+    androidx.compose.ui.text.font.Font(com.abrah.nightmare.R.font.inter_regular, FontWeight.Normal),
+    androidx.compose.ui.text.font.Font(com.abrah.nightmare.R.font.inter_medium, FontWeight.Medium),
+    androidx.compose.ui.text.font.Font(com.abrah.nightmare.R.font.inter_semibold, FontWeight.SemiBold),
+    androidx.compose.ui.text.font.Font(com.abrah.nightmare.R.font.inter_bold, FontWeight.Bold),
+)
+
+private val InterTypography: Typography = Typography().let { t ->
+    fun TextStyle.inter() = copy(fontFamily = Inter)
+    Typography(
+        displayLarge = t.displayLarge.inter(), displayMedium = t.displayMedium.inter(),
+        displaySmall = t.displaySmall.inter(), headlineLarge = t.headlineLarge.inter(),
+        headlineMedium = t.headlineMedium.inter(), headlineSmall = t.headlineSmall.inter(),
+        titleLarge = t.titleLarge.inter().copy(fontWeight = FontWeight.SemiBold),
+        titleMedium = t.titleMedium.inter().copy(fontWeight = FontWeight.SemiBold),
+        titleSmall = t.titleSmall.inter(),
+        bodyLarge = t.bodyLarge.inter(), bodyMedium = t.bodyMedium.inter(), bodySmall = t.bodySmall.inter(),
+        labelLarge = t.labelLarge.inter(), labelMedium = t.labelMedium.inter(), labelSmall = t.labelSmall.inter(),
+    )
+}
+
+/**
+ * ⭐⭐ One colour per model FAMILY — the concept art's badges (the user's
+ * call, 2026-10-05): SD 1.5 blue, the Swaps green, SDXL amber, Anima violet,
+ * the DiT families teal, video pink. ⚠ Wherever a family is NAMED — a card's
+ * badge, a chip — it wears this, so the colour means the same thing app-wide.
+ */
+fun familyColor(f: com.abrah.nightmare.Family): Color = when (f) {
+    com.abrah.nightmare.Family.SD15 -> Color(0xFF5B8DEF)
+    com.abrah.nightmare.Family.SD15_SWAP, com.abrah.nightmare.Family.SDXL_SWAP -> Color(0xFF34C38F)
+    com.abrah.nightmare.Family.SDXL -> Color(0xFFF2A93B)
+    com.abrah.nightmare.Family.ANIMA -> Color(0xFFA77BFF)
+    else -> if (f.dit) Color(0xFF2EC4C4) else Color(0xFF9C95B3)
+}
+
+/** ⭐ The video models' badge — not a [com.abrah.nightmare.Family]. */
+val VideoColor = Color(0xFFFF6FAE)
 
 /**
  * ⭐ The star that keeps a picture in Results.

@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.abrah.nightmare.AddObjects
 import com.abrah.nightmare.Node
 import com.abrah.nightmare.NodeType
@@ -30,7 +31,7 @@ import com.abrah.nightmare.R
 import com.abrah.nightmare.SdSampler
 import com.abrah.nightmare.SwapInputs
 import com.abrah.nightmare.ui.ErrorNotice
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 
 /**
  * ⭐ The node's photo as its base will see it ([SwapInputs.framedPhoto]) — the
@@ -39,7 +40,7 @@ import com.abrah.nightmare.ui.LogTextStyle
 @Composable
 internal fun rememberFramedPhoto(node: Node, type: NodeType?, photo: ImageBitmap?): ImageBitmap? {
     val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
-    val frame = SdSampler.swapFrame(live)
+    val frame = SdSampler.swapFrame(node.type, live)
     return rememberOffMain(node.id, "framed photo", photo, frame) {
         photo?.let { SwapInputs.framedPhoto(it.asAndroidBitmap(), frame).asImageBitmap() }
     }
@@ -71,7 +72,7 @@ internal fun PictureCrop(
         )
         Text(
             stringResource(if (underlay != null) R.string.crop_over_photo else R.string.crop_gestures),
-            style = LogTextStyle,
+            style = NoteTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -104,7 +105,7 @@ internal fun rememberControlHint(
     // ⚠ The run's own rule ([SdSampler.controlIsPhoto]): the photo follows the
     // node's frame, any other picture its own crop ([SdSampler.CTL_X]).
     val fromPhoto = SdSampler.controlIsPhoto(node)
-    val frame = if (photo != null && fromPhoto) SdSampler.swapFrame(live) else null
+    val frame = if (photo != null && fromPhoto) SdSampler.swapFrame(node.type, live) else null
     val region = listOf(SdSampler.CTL_X, SdSampler.CTL_Y, SdSampler.CTL_W, SdSampler.CTL_H).map { live[it] }
     return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, region, poseInstalled, depthInstalled) {
         if (cn == SwapInputs.NONE) return@rememberOffMain null
@@ -202,12 +203,12 @@ internal fun ControlNetPanel(
         when {
             wired != null -> Text(
                 stringResource(R.string.cn_from_wire),
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             uri.isBlank() && photo != null -> Text(
                 stringResource(R.string.cn_from_photo),
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -263,6 +264,45 @@ internal fun ControlNetPanel(
         val shown = hint?.bitmap
         if (shown != null) {
             Text(stringResource(R.string.cn_sees), style = MaterialTheme.typography.titleSmall)
+            // ⭐ ⬇ Save the map itself — a canny / depth / pose picture is worth
+            // keeping and loading back into an image node (asked for 2026-10-05).
+            // The SAME `PictureActions` every picture's row is (`docs/UI.md` §8.3),
+            // with only the download offered, and ABOVE the picture (§8.18).
+            val savedMsg = stringResource(R.string.cn_saved)
+            val failedMsg = stringResource(R.string.cn_save_failed)
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            Row {
+                PictureActions(
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    deleteTint = MaterialTheme.colorScheme.error,
+                    isClip = false,
+                    onDelete = null,
+                    onKeep = null,
+                    onDownload = {
+                        scope.launch {
+                            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                runCatching {
+                                    com.abrah.nightmare.ImageSaver.saveBitmap(
+                                        ctx, shown.asAndroidBitmap(),
+                                        "nightmare-control-$cn-" + System.currentTimeMillis(),
+                                    )
+                                }
+                            }
+                            android.widget.Toast.makeText(
+                                ctx,
+                                ok.fold({ savedMsg }, { failedMsg + " " + it.message }),
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                    onShare = null,
+                    onStar = null,
+                    kept = false,
+                    favourite = false,
+                    starKeptTint = MaterialTheme.colorScheme.primary,
+                    starIdleTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Image(
                 bitmap = shown,
                 contentDescription = stringResource(R.string.cn_sees),
@@ -282,7 +322,7 @@ internal fun ControlNetPanel(
                         else -> R.string.cn_no_picture_hint
                     },
                 ),
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

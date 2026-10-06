@@ -108,7 +108,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.lazy.items
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -616,7 +616,7 @@ internal fun MaskToolbar(
             Text(
                 stringResource(R.string.objects_place_hint) +
                     if (placeQueue.isNotEmpty()) " · " + stringResource(R.string.objects_more, placeQueue.size) else "",
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
@@ -842,7 +842,7 @@ internal fun MaskToolbar(
         // ⭐ What a finger does on an object layer — there is no tool to pick.
         if (onObjects && placing == null) Text(
             stringResource(R.string.objects_layer_hint),
-            style = LogTextStyle,
+            style = NoteTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         // ⚠ PIXELS at 512, exactly as DreamUI reads it out: `radius * 2 * 512`
@@ -906,7 +906,7 @@ internal fun MaskToolbar(
                     pickNote != null -> pickNote!!
                     else -> stringResource(R.string.mask_pick_hint)
                 },
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = if (pickNote != null && !picking) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -922,7 +922,7 @@ internal fun MaskToolbar(
                     tapNote != null -> tapNote!!
                     else -> stringResource(R.string.mask_tap_hint)
                 },
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = if (tapNote != null && !tapping) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -985,7 +985,7 @@ internal fun MaskToolbar(
                     )
                 }
             },
-            style = LogTextStyle,
+            style = NoteTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         // ⭐⭐⭐ **Tap to select lives HERE, in the mask editor** — the user's
@@ -1137,7 +1137,7 @@ internal fun MaskToolbar(
                             com.abrah.nightmare.MaskDefaults.set(context, com.abrah.nightmare.AddObjects.ENABLE, v)
                         },
                     )
-                    objectNote?.let { Text(it, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    objectNote?.let { Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     if (objectsOn) {
                         // ⚠ No per-object rows any more: an object is moved,
                         // turned and removed on its own LAYER, above.
@@ -1146,7 +1146,7 @@ internal fun MaskToolbar(
                         if (objects.isNotEmpty() && (nodeParams["denoise"]?.toFloatOrNull() ?: 1f) >= 0.99f) {
                             Text(
                                 stringResource(R.string.objects_denoise_hint),
-                                style = LogTextStyle,
+                                style = NoteTextStyle,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }

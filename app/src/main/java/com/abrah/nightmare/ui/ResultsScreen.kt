@@ -184,7 +184,7 @@ fun ResultsScreen(
                 "Nothing kept yet.\n\nRun something and press the star or the disk. " +
                     "The graph that made it is kept too, so you can reopen the whole " +
                     "flow later — not just look at the picture.",
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 16.dp),
             )
@@ -231,7 +231,7 @@ fun ResultsScreen(
                     )
                     Text(
                         "Upscaling with $what… it appears here as a new result.",
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
@@ -314,7 +314,7 @@ fun ResultsScreen(
         if (items.isEmpty()) {
             Text(
                 "Nothing starred yet — press the star on a picture to find it here.",
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 16.dp),
             )
@@ -403,7 +403,7 @@ fun ResultsScreen(
             if (selecting) {
                 Text(
                     "${selected.size} selected",
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 8.dp),
                 )
@@ -508,14 +508,27 @@ fun ResultsScreen(
                 shown.prompt?.takeIf { it.isNotBlank() },
                 "${results.size} kept · ${onDiskBytes shr 20} MB",
             ).joinToString(" · "),
-            style = LogTextStyle,
+            style = NoteTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         // ⭐ The grid — small previews. Tap shows it above; long-press selects,
         // and while selecting a tap toggles.
+        // ⭐⭐ It FOLLOWS the frame: a swipe to a picture whose preview is off
+        // screen scrolls that preview into view (the user's ask, 2026-10-06).
+        // ⚠ Only when not already fully visible — a tap on a visible preview
+        // must not make the grid jump under the finger.
+        val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+        LaunchedEffect(shownIndex) {
+            val info = grid.layoutInfo
+            val seen = info.visibleItemsInfo.firstOrNull { it.index == shownIndex }
+            val inside = seen != null && seen.offset.y >= info.viewportStartOffset &&
+                seen.offset.y + seen.size.height <= info.viewportEndOffset
+            if (!inside) grid.animateScrollToItem(shownIndex)
+        }
         androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+            state = grid,
             columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(88.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -852,7 +865,7 @@ fun ResultViewer(
                 Text(
                     "${pager.currentPage + 1} / ${items.size}" +
                         current.batchLabel.let { if (it.isBlank()) "" else "   $it" },
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = androidx.compose.ui.graphics.Color.White,
                 )
             }
@@ -1125,7 +1138,7 @@ private fun BatchCard(
                         // near-identical pictures says nothing without it.
                         Text(
                             item.batchLabel,
-                            style = LogTextStyle,
+                            style = NoteTextStyle,
                             fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1288,13 +1301,13 @@ private fun ResultCardHeader(
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(
                 "  $meta",
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(label, style = LogTextStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(label, style = NoteTextStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Row(
             Modifier.fillMaxWidth().padding(top = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -1492,7 +1505,7 @@ private fun UnreadablePicture(
     Box(modifier, contentAlignment = Alignment.Center) {
         Text(
             "can't read this picture",
-            style = LogTextStyle,
+            style = NoteTextStyle,
             color = color,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             modifier = Modifier.padding(6.dp),
@@ -1598,7 +1611,7 @@ fun UpscalePicker(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     stringResource(R.string.upscale_body),
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 // ⭐⭐ 2x / 3x / 4x — local-dream's choice (the user's ask,
@@ -1632,15 +1645,15 @@ fun UpscalePicker(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(u.spec.label)
-                            Text(u.spec.about, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                            Text(u.spec.about, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                         }
                         when {
                             u.installed -> Button(onClick = { onPick(u.spec.id, upscaleScale) }) { Text(stringResource(R.string.use)) }
-                            u.progress != null -> Text("${u.progress.done shr 20} / ${u.progress.total shr 20} MB", style = LogTextStyle)
+                            u.progress != null -> Text("${u.progress.done shr 20} / ${u.progress.total shr 20} MB", style = MeasureTextStyle)
                             u.build != null -> OutlinedButton(onClick = { onInstall(u.spec) }) {
                                 Text("${u.build.bytes shr 20} MB")
                             }
-                            else -> Text(stringResource(R.string.cannot_run_it), style = LogTextStyle)
+                            else -> Text(stringResource(R.string.cannot_run_it), style = NoteTextStyle)
                         }
                     }
                 }
@@ -1690,7 +1703,7 @@ private fun ResultFilterDialog(
                 if (models.isEmpty()) {
                     Text(
                         "Nothing kept here names a model yet.",
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
                     )

@@ -326,7 +326,7 @@ class SdSampler(
             val raw = wired ?: picked ?: photo ?: return null
             val fromPhoto = controlIsPhoto(node)
             val src = if (fromPhoto) raw else cropControl(raw, p)
-            val frame = if (photo != null && fromPhoto) swapFrame(p) else null
+            val frame = if (photo != null && fromPhoto) swapFrame(node.type, p) else null
             return SwapInputs.hint(context, src, cn, frame)
         }
 
@@ -346,10 +346,10 @@ class SdSampler(
         const val IP_IMAGE = "ip_image"
 
         /** ⭐ The node's crop window as [SwapInputs] takes it — the ONE reading, for the run and the tile. */
-        fun swapFrame(p: Map<String, String>) = SwapInputs.Frame(
+        fun swapFrame(type: String, p: Map<String, String>) = SwapInputs.Frame(
             p["x"]?.toFloatOrNull() ?: 0f, p["y"]?.toFloatOrNull() ?: 0f,
             p["w"]?.toFloatOrNull() ?: 1f, p["h"]?.toFloatOrNull() ?: 1f,
-            p[CropNode.PAD],
+            padFill(type, p),
         )
 
         /**
@@ -395,6 +395,27 @@ class SdSampler(
          * ⚠ Off in a new flow; drawn in the CROP window beside Pad.
          */
         const val ALLOW_PAD = "allow_pad"
+
+        /**
+         * ⭐⭐ Whether a node of [type] with params [p] runs under [PadRule.ZOOM]:
+         * every image-to-image sampler except a FLUX.2 edit with *Allow
+         * padding* (that one KEEPS its bars, [PadRule.PAD]). The same answer
+         * [padRuleOf] gives, from the params alone, so the run can ask it.
+         */
+        fun zoomsOut(type: String, p: Map<String, String>): Boolean {
+            val t = ALL.firstOrNull { it.name == type } ?: return false
+            return !t.inpaint && !(t.family.edit && p[ALLOW_PAD].equals("true", ignoreCase = true))
+        }
+
+        /**
+         * ⭐⭐ The fill the MODEL sees in the bars — the ONE reading for the run,
+         * the DiT run and the Swap hint. On [PadRule.ZOOM] it is always the
+         * blurred mirror (the user picked "mirrored edges", 2026-10-05; a hard
+         * mirror was replaced by this one for its seam — [CropNode.PAD_BLUR]),
+         * elsewhere the node's own Pad choice.
+         */
+        fun padFill(type: String, p: Map<String, String>): String =
+            if (zoomsOut(type, p)) CropNode.PAD_BLUR else p[CropNode.PAD] ?: CropNode.PAD_BLACK
 
         /** Whether [node] is a FLUX.2 edit that may pad — [padRuleOf] asks. */
         fun allowsPad(node: Node): Boolean {
@@ -507,22 +528,30 @@ class SdSampler(
         val ANIMA = SdSampler("anima.sample", Family.ANIMA, inpaint = false)
         val ANIMA_INPAINT = SdSampler("anima.inpaint", Family.ANIMA, inpaint = true)
         /**
-         * ⭐⭐ The DiT families. ⚠ **FLUX.2 has an inpaint type since 1.5.507
-         * and Z-Image does not**, and that asymmetry is the engine's, not a
-         * preference: ABI 3 gave `PipelineDit` a `mask_image`, but the clean
-         * reference latent that makes a masked redraw understand the picture
-         * around the hole is gated on `DIT_MODEL_FLUX2_KLEIN`. Z-Image's mask
-         * is NOT gated, so it would render a masked img2img with no reference
-         * — the mechanism without the quality, looking identical in the
-         * picker. It is left out rather than offered as a lesser thing.
-         * `docs/MODELS.md` §9.
+         * ⭐⭐ The DiT families.
          */
         val FLUX2 = SdSampler("flux2.sample", Family.FLUX2, inpaint = false)
         val ZIMAGE = SdSampler("zimage.sample", Family.ZIMAGE, inpaint = false)
-        /** ⭐ Qwen Image 2.1 (upstream 440899f) — a native edit model like FLUX.2, no inpaint type. */
+        /** ⭐ Qwen Image 2.1 (upstream 440899f) — a native edit model like FLUX.2. */
         val QWEN21 = SdSampler("qwen21.sample", Family.QWEN21, inpaint = false)
-        /** ⭐ Krea 2 Turbo — text to image only, like Z-Image; no inpaint type. */
+        /** ⭐ Krea 2 Turbo — text to image, like Z-Image. */
         val KREA2 = SdSampler("krea2.sample", Family.KREA2, inpaint = false)
+        /**
+         * ⭐⭐ **DiT inpaint = masked img2img of the cut + the feathered paste
+         * back** — Z-Image, Qwen Image 2.1 and Krea 2 (the user's call,
+         * 2026-10-05; asked for on Z-Image). ONE `/generate` with the cut and
+         * its mask ([runDitMasked]); the engine's `mask_image` is gated only for
+         * Klein's reference, so on these it is a plain masked img2img, and
+         * [finishInpaint] composites it along the mask either way — a model
+         * whose engine ignored the mask would still only change the painted
+         * area. ⚠ There is no per-step latent blend on this path (the DiT
+         * backend refuses `/latent_blend`), so a fill at denoise 1.0 can
+         * mismatch its surroundings; 0.5–0.8 is the useful range.
+         * `docs/MODELS.md` §9.
+         */
+        val ZIMAGE_INPAINT = SdSampler("zimage.inpaint", Family.ZIMAGE, inpaint = true)
+        val QWEN21_INPAINT = SdSampler("qwen21.inpaint", Family.QWEN21, inpaint = true)
+        val KREA2_INPAINT = SdSampler("krea2.inpaint", Family.KREA2, inpaint = true)
         /**
          * ⚠⚠⚠ **`flux2.inpaint` is BUILT and NOT REGISTERED, on purpose.**
          * Everything behind it works — [runDitMasked] sends `mask` on
@@ -550,6 +579,7 @@ class SdSampler(
         val ALL = listOf(
             SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2,
             SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, SDXL_SWAP_INPAINT, ANIMA_INPAINT,
+            ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT,
         )
 
         /**
@@ -613,6 +643,9 @@ class SdSampler(
 
         fun defaultDenoise(family: Family): String =
             if (family.edit) "1.0" else "0.65"
+
+        /** ⭐ What every inpaint node is born with — see the `denoise` widget. */
+        const val INPAINT_DENOISE = "0.65"
 
         fun canInpaint(family: Family): Boolean =
             ALL.any { it.family == family && it.inpaint }
@@ -718,7 +751,10 @@ class SdSampler(
             hint = "0 = a new picture every Run. Type the seed shown on the node to get that one back.",
         ),
         // ⚠ Read only when a picture is wired AND `start_from` is `image`.
-        Widget("denoise", "float", defaultDenoise(family), 0.0, 1.0),
+        // ⚠ An INPAINT node starts at 0.65 on every family: FLUX.2 / Qwen's 1.0
+        // is their EDIT mode, and on a masked img2img it would repaint the whole
+        // cut with nothing tying it to its surroundings.
+        Widget("denoise", "float", if (inpaint) INPAINT_DENOISE else defaultDenoise(family), 0.0, 1.0),
         Widget(
             "scheduler", "string", defaultSpec().scheduler,
             options = ModelCatalog.schedulersFor(family),
@@ -1208,14 +1244,14 @@ class SdSampler(
         val (frame, frameRect) = CropNode.render(
             photoIn, fx, fy, fw, fh,
             if (masking) 0 else tw, if (masking) 0 else th,
-            p[CropNode.PAD] ?: CropNode.PAD_BLACK,
+            padFill(node.type, p),
         )
 
         if (!masking) {
             ctx.say("re-imagining the picture")
             val base = encode(ctx, ImageStore.encodePng(padToCanvas(frame, w, h)), ENCODE_SEED, w, h)
             val latent = sample(ctx, p, cond(), base, w, h, aspect, template = template)
-            return VaeDecodeNode.decode(ctx, latent, w, h, aspect)
+            return keepPhotoOnly(ctx, node, p, VaeDecodeNode.decode(ctx, latent, w, h, aspect))
         }
 
         // ⭐⭐⭐ **The mask is painted in the PHOTO's coordinates, not the
@@ -1306,11 +1342,10 @@ class SdSampler(
         // unpainted area drifts in colour and the patch stops joining up
         // (the seam bug of 2026-09-15).
         //
-        // ⚠ Klein only. Z-Image reaches `PipelineDit` too and its mask is NOT
-        // gated there, but `native_edit` is Klein-only, so Z-Image would get a
-        // masked img2img with no reference — the mechanism without the quality.
-        // It is kept out of the picker instead of being offered as a lesser
-        // thing that looks the same. `docs/MODELS.md` §9.
+        // ⭐ Z-Image, Qwen 2.1 and Krea 2 come here too (2026-10-05): with no
+        // Klein reference it is a masked img2img of the cut, and the composite
+        // below confines it to the mask ([SdSampler.ZIMAGE_INPAINT]).
+        // `docs/MODELS.md` §9.
         if (family.dit) {
             val patchBmp = runDitMasked(ctx, node, p, prompt, imagePng, maskPng, w, h)
             return finishInpaint(ctx, node, p, photoIn, frame, frameRect, cut, patchBmp)
@@ -1469,7 +1504,10 @@ class SdSampler(
             height = h,
             imagePng = imagePng,
             maskPng = maskPng,
-            denoise = p["denoise"]?.toDoubleOrNull() ?: defaultDenoise(family).toDouble(),
+            denoise = p["denoise"]?.toDoubleOrNull() ?: INPAINT_DENOISE.toDouble(),
+            // ⚠ The same LoRAs [runDit] sends: the node shows the picker, so a
+            // masked render that dropped them would ignore what it displays.
+            loras = lorasFor(ctx, p[LORAS]),
             onProgress = ctx.onProgress,
         )
         val out = when (r) {
@@ -1602,7 +1640,7 @@ class SdSampler(
             SwapInputs.resolve(
                 android, spec, loras, type,
                 p[CONTROL_STRENGTH]?.toDoubleOrNull() ?: 1.0, control,
-                frame = photo?.takeIf { fromPhoto }?.let { swapFrame(p) },
+                frame = photo?.takeIf { fromPhoto }?.let { swapFrame(node.type, p) },
                 say = ctx.say,
                 reference = reference,
                 ipAdapter = p[IP_ADAPTER].orEmpty().ifBlank { IpAdapter.PLUS },
@@ -1632,7 +1670,7 @@ class SdSampler(
                 src,
                 p["x"]?.toFloatOrNull() ?: 0f, p["y"]?.toFloatOrNull() ?: 0f,
                 p["w"]?.toFloatOrNull() ?: 1f, p["h"]?.toFloatOrNull() ?: 1f,
-                w, h, p[CropNode.PAD] ?: CropNode.PAD_BLACK,
+                w, h, padFill(node.type, p),
             )
             ImageStore.encodePng(frame)
         }
@@ -1720,7 +1758,30 @@ class SdSampler(
         }
         val bmp = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
-        return Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
+        val made = Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
+        return if (png == null) made else keepPhotoOnly(ctx, node, p, made)
+    }
+
+    /**
+     * ⭐⭐ [PadRule.ZOOM]'s other half: an image-to-image render zoomed out past
+     * the photo comes back as the PHOTO's region only — the bars were context
+     * for the model, not output (the user's call, 2026-10-05). A frame inside
+     * the photo, or a node that keeps its bars ([PadRule.PAD]), is unchanged.
+     *
+     * ⚠ Cut at the rendered picture's own pixels from [CropGeometry.photoInFrame]
+     * — the same fractions the editor's checkerboard is drawn from.
+     */
+    private fun keepPhotoOnly(ctx: NodeCtx, node: Node, p: Map<String, String>, img: Value.Image): Value.Image {
+        if (!zoomsOut(node.type, p)) return img
+        val f = CropGeometry.photoInFrame(
+            p["x"]?.toFloatOrNull() ?: 0f, p["y"]?.toFloatOrNull() ?: 0f,
+            p["w"]?.toFloatOrNull() ?: 1f, p["h"]?.toFloatOrNull() ?: 1f,
+        ) ?: return img
+        val bmp = ctx.images.get(img.id) ?: return img
+        val r = CropGeometry.photoPixels(f, bmp.width, bmp.height) ?: return img
+        val out = android.graphics.Bitmap.createBitmap(bmp, r[0], r[1], r[2], r[3])
+        ctx.say("[zoom] kept the photo's ${out.width}x${out.height} of the ${bmp.width}x${bmp.height} render")
+        return Value.Image(ctx.images.put(out), out.width, out.height)
     }
 
     /**

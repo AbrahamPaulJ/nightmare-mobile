@@ -46,8 +46,9 @@ Turbo** is text to image only and needs a phone with 16 GB of RAM: on 12 GB it d
 
 **Qwen Image 2.1.** A 7B image model with an 8B vision-language model reading the prompt, so
 it follows long instructions and can put legible text in a picture. It generates and it edits:
-its text encoder sees the photos you give it, not just their latents. It is 10.8 GB, so on a
-12 GB phone it loads one part at a time and gives each back before the next. That makes it
+its text encoder sees the photos you give it, not just their latents. It is 10.8 GB on a 12 GB
+phone, which loads one part at a time and gives each back before the next; a 16 GB phone gets
+a higher-precision FP8 build instead (13.8 GB), which does not fit in 12. That makes it
 slower than FLUX.2 (about 4 minutes for a 1024 square picture on an 8 Elite, longer for an
 edit), and worth it when the prompt is hard.
 
@@ -74,7 +75,13 @@ photo's layer.
 **Outpainting.** An inpaint frame may zoom out past the photo, up to twice its area, and the
 padding is generated. What fills it first is your choice: black, the photo's own edges blurred,
 or pure green (`#00FF00`) for an outpaint LoRA trained on a green screen. An image edit gets the
-same with `Allow padding` in its crop window.
+same with `Allow padding` in its crop window. Image to image zooms out the same way to make the
+subject smaller in the frame: the model sees the photo's edges mirrored and blurred around it,
+the editor shows that band as a checkerboard, and only the photo's own area comes back.
+
+**Inpaint on Z-Image, Qwen Image and Krea 2.** The area around the mask is redrawn at the Denoise
+strength and blended back along the mask, so these models can change what is there (0.5–0.8
+works best); they do not see the hole the way an inpainting checkpoint does.
 
 **Image editing with FLUX.2 Klein or Qwen Image 2.1.** A photo and a prompt: the whole
 picture is re-rendered to follow it rather than nudged, so the composition survives and the
@@ -124,8 +131,11 @@ Anima and five DiT in the catalogue. Import a converted checkpoint as a zip, or 
 into a QNN model with no PC involved; its 9 channel inpainting exports run as real inpainting
 models, its v-prediction exports automatically select the backend's v-prediction mode, and its
 **SD1.5 Swap** exports take LoRAs and ControlNet per render (below); its **SDXL Swap** exports (npuforge 1.0.10, LoRA
-ticked) take SDXL LoRAs per render, 1024×1024 — ControlNet and IP-Adapter on SDXL Swap are not
-offered yet. A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
+ticked) take SDXL LoRAs per render, 1024×1024, and with *Inpaint* ticked are real inpainting
+models that see the mask — ControlNet and IP-Adapter on SDXL Swap are not offered yet.
+Two SDXL Swap models download in the app (8 Elite and newer): **Illustrious XL v1.0** and
+**Juggernaut XL Ragnarok**, hosted at
+[`AbrahamPJ/nightmare-sdxl-swap-models`](https://huggingface.co/AbrahamPJ/nightmare-sdxl-swap-models). A model with a file deleted says which one and offers Repair. Every generate node has its own checkpoint picker,
 grouped by family and listing what is actually installed; switching family rewrites that node
 and keeps every wire. The APK carries every Hexagon architecture tier and picks the build your
 chip can load.
@@ -149,7 +159,8 @@ unchanged.
 Z-Image generate node — a checkbox per installed file and a strength slider. It binds while the
 render starts, so changing one or moving a slider reloads nothing. The cost is the adapter's
 size: about 6% for a 160 tensor FLUX adapter, 43% for a 480 tensor Z-Image one. Stack as many
-as you like.
+as you like. The ⋮ beside each LoRA keeps a note for it — trigger words on the first line, then
+the settings it wants — with Copy, and Add to prompt for the trigger words.
 
 **SD 1.5 Swap: LoRA, ControlNet and IP-Adapter on the NPU, per render.** Convert an SD 1.5
 checkpoint in npuforge as *SD1.5 Swap* and it becomes a model whose LoRA, ControlNet and (since

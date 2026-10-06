@@ -1,5 +1,17 @@
 package com.abrah.nightmare.canvas
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.LoraSpec
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 
 /**
  * ⭐⭐⭐ **Pick LoRAs by tapping them, and set each one's strength on a slider.**
@@ -60,11 +72,20 @@ fun LoraPicker(
      * been a button.
      */
     onImport: (() -> Unit)? = null,
+    /** ⭐ Each LoRA's note ([com.abrah.nightmare.LoraNotes]), by file name. */
+    notes: Map<String, String> = emptyMap(),
+    /** ⭐ Save one note. Null hides the ⋮ — a golden has no folder to write to. */
+    onSaveNote: ((name: String, note: String) -> Unit)? = null,
+    /**
+     * ⭐ Append text to the prompt wired into this sampler. Null = no prompt node
+     * to append to; the button is then DIMMED and says why (`docs/UI.md` §8.18).
+     */
+    onAddToPrompt: ((String) -> Unit)? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("LoRAs") },
-        text = { LoraPickerContent(installed, spec, onSet, onImport) },
+        text = { LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt) },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
         // ⚠ The dismiss SLOT, so Add sits left of Done — the same
         // "destructive-or-secondary left, primary right" order `InstalledActions`
@@ -84,7 +105,21 @@ fun LoraPickerContent(
     spec: String,
     onSet: (String) -> Unit,
     onImport: (() -> Unit)? = null,
+    notes: Map<String, String> = emptyMap(),
+    onSaveNote: ((name: String, note: String) -> Unit)? = null,
+    onAddToPrompt: ((String) -> Unit)? = null,
 ) {
+    // ⭐ Which LoRA's note is open, if any.
+    var noting by remember { mutableStateOf<String?>(null) }
+    noting?.let { name ->
+        LoraNoteDialog(
+            name = name,
+            note = notes[name].orEmpty(),
+            onSave = { onSaveNote?.invoke(name, it) },
+            onAddToPrompt = onAddToPrompt,
+            onDismiss = { noting = null },
+        )
+    }
     // ⚠ Seeded from the param and re-seeded when it changes, so the sheet shows
     // what the node actually carries rather than a copy that drifted.
     var chosen by remember(spec) { mutableStateOf(LoraSpec.parse(spec)) }
@@ -110,7 +145,7 @@ fun LoraPickerContent(
             if (onImport != null) "No LoRAs on this phone yet. Add one and it will appear here."
             else "No LoRAs on this phone yet. Import a .safetensors on the Settings " +
                 "tab and it will appear here.",
-            style = LogTextStyle,
+            style = NoteTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         return
@@ -142,10 +177,28 @@ fun LoraPickerContent(
                         // sees it here rather than at Run.
                         if (missing) "not on this phone — import it or untick it"
                         else "${(sizes[name] ?: 0L) shr 20} MB",
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = if (missing) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                // ⭐⭐ ⋮ = this LoRA's note. A dot beside it says one exists, so
+                // the LoRAs that have a recipe written down are findable at a
+                // glance (the mockup's indicator).
+                if (onSaveNote != null) {
+                    if (!notes[name].isNullOrBlank()) {
+                        Box(
+                            Modifier.size(6.dp).clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                        )
+                    }
+                    IconButton(onClick = { noting = name }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Filled.MoreVert,
+                            contentDescription = "note for $name",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
             // ⚠ Only for a LoRA that is ON. A slider under an unticked row is a
@@ -187,4 +240,80 @@ fun LoraPickerContent(
             }
         }
     }
+}
+
+/**
+ * ⭐⭐ One LoRA's note: trigger words on the first line, then whatever helps —
+ * strength, sampler, what it is good for. Copy takes the whole note; "Add to
+ * prompt" appends the first line to the prompt wired into this sampler.
+ *
+ * ⚠⚠ SAVED ON CLOSE, however it closes — Done, back, or a tap outside. A
+ * field the user typed into and then dismissed must not silently discard what
+ * they typed (the inspector's own rule, [NodeInspector]).
+ */
+@Composable
+fun LoraNoteDialog(
+    name: String,
+    note: String,
+    onSave: (String) -> Unit,
+    onAddToPrompt: ((String) -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    var text by remember(name) { mutableStateOf(note) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    fun close() {
+        if (text != note) onSave(text)
+        onDismiss()
+    }
+    fun toast(msg: String) =
+        android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+    AlertDialog(
+        onDismissRequest = ::close,
+        title = { Text(name, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 4,
+                    maxLines = 10,
+                    placeholder = {
+                        Text(
+                            "Trigger words on the first line, then strength, " +
+                                "settings, how to use it…",
+                            style = NoteTextStyle,
+                        )
+                    },
+                )
+                val trigger = com.abrah.nightmare.LoraNotes.trigger(text)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = text.isNotBlank(),
+                        onClick = {
+                            clipboard.setText(androidx.compose.ui.text.AnnotatedString(text.trim()))
+                            toast("Note copied")
+                        },
+                    ) { Text("Copy") }
+                    // ⚠ DIMMED, never removed, and it says why (`docs/UI.md`
+                    // §8.18): the row must not change shape with the graph.
+                    OutlinedButton(
+                        enabled = trigger != null,
+                        onClick = {
+                            val t = trigger ?: return@OutlinedButton
+                            if (onAddToPrompt == null) {
+                                toast("No prompt node is wired into this sampler — copy it instead")
+                            } else {
+                                onAddToPrompt(t)
+                                toast("Added to the prompt: $t")
+                            }
+                        },
+                        modifier = if (onAddToPrompt == null) Modifier.alpha(0.38f) else Modifier,
+                    ) { Text("Add to prompt") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = ::close) { Text("Done") } },
+    )
 }

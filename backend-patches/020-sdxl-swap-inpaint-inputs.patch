@@ -1,0 +1,305 @@
+--- a/src/Pipeline.hpp
++++ b/src/Pipeline.hpp
+@@ -9,6 +9,7 @@
+ #include <functional>
+ #include <iostream>
+ #include <memory>
++#include <numeric>
+ #include <stdexcept>
+ #include <string>
+ #include <vector>
+@@ -572,6 +573,92 @@
+     latents = xt::eval(vaeScale() * latents);
+   }
+ 
++  // mask plane (latent grid, 1 = repaint) + VAE latent of the image with the
++  // masked region blanked -- the inpainting conditioning. Shared by the
++  // 9-channel PipelineSd15Inpaint (it concatenates them into the UNet input),
++  // the SD 1.5 Swap v3 template (its `mask` / `masked_latent` inputs, patch
++  // 017) and the SDXL Swap template's inpaint branch (patch 020) -- which is
++  // why it lives HERE: vaeToLatents scales by the family's own factor
++  // (0.18215 / 0.13025) and the latent grid is sample_width x sample_height.
++  // Mirrors StableDiffusionInpaintPipeline's construction so
++  // the runtime input distribution matches what the graph was calibrated on.
++  void prepareInpaintConditioning(const GenerationRequest &req) {
++    const size_t plane = (size_t)sample_width * sample_height;
++    const size_t px = (size_t)req.width * req.height;
++
++    // ⭐⭐ NO MASK = REPAINT THE WHOLE FRAME (nightmare-mobile, 2026-09-19).
++    // This used to throw, which made a 9-channel checkpoint an inpaint-only
++    // model. With the mask all ones, `image * (mask < 0.5)` is zero
++    // everywhere, so the masked-image latent is the encode of a mid-grey
++    // frame -- exactly what diffusers' StableDiffusionInpaintPipeline feeds
++    // for a full mask -- and the same graph serves txt2img (no image at all)
++    // and img2img (the image arrives as the starting latent, not here).
++    std::vector<float> masked_image(3 * px, 0.0f);
++    if (!req.has_mask) {
++      mask_lat_.assign(plane, 1.0f);
++    } else {
++      if (!req.img2img || req.img_data.empty())
++        throw std::invalid_argument("inpainting requires an input image");
++      if (req.mask_data.size() < plane)
++        throw std::invalid_argument("mask_data too small for latent grid");
++
++      // --- mask channel ----------------------------------------------------
++      // RequestParser already decoded the mask straight to the latent grid
++      // and replicated it across all 4 channels; we need exactly one plane.
++      mask_lat_.assign(req.mask_data.begin(), req.mask_data.begin() + plane);
++
++      // --- masked-image latent --------------------------------------------
++      // img_data is NCHW in [-1, 1] (RequestParser: pixel/127.5 - 1), which
++      // is the same convention diffusers uses, so `image * (mask < 0.5)` maps
++      // directly: the masked region becomes 0, i.e. mid-grey.
++      if (req.img_data.size() < 3 * px || req.mask_data_full.size() < px)
++        throw std::invalid_argument("image/mask buffers too small");
++
++      for (int c = 0; c < 3; ++c) {
++        const float *src = req.img_data.data() + (size_t)c * px;
++        float *dst = masked_image.data() + (size_t)c * px;
++        // mask_data_full is [1,3,H,W] with the same value in every channel;
++        // channel 0 is representative.
++        const float *m = req.mask_data_full.data();
++        for (size_t i = 0; i < px; ++i) dst[i] = (m[i] < 0.5f) ? src[i] : 0.0f;
++      }
++    }
++
++    // ⚠ Not vaeEncode() directly. The VAE encoder graph is fixed at 512x512,
++    // but vaeEncode copies `3 * output_width * output_height` elements into its
++    // input tensor -- so at 768x512 it wrote 1,179,648 elements into a 786,432
++    // buffer and the server died with SIGSEGV/SEGV_ACCERR before the first
++    // step. 512x512 survived only because there the two are equal.
++    //
++    // encodePixelsToLatentStats() tiles when the input exceeds the graph, which
++    // is what the ordinary img2img path has always done; inpaint conditioning
++    // was the one caller that bypassed it. Found by the first non-square
++    // inpaint ever run (AbsoluteReality 768x512, 2026-08-12).
++    xt::xarray<float> masked_nchw =
++        xt::adapt(masked_image, std::vector<int>{1, 3, req.height, req.width});
++    std::vector<float> enc_mean, enc_std;
++    encodePixelsToLatentStats(req, masked_nchw, enc_mean, enc_std);
++
++    // Take the distribution mean rather than sampling it. The masked-image
++    // latent is pure conditioning -- it is not the tensor being denoised -- so
++    // the sampling noise would only add variance to the signal telling the
++    // model what the surroundings look like.
++    xt::xarray<float> lat =
++        xt::adapt(enc_mean, {1, 4, sample_height, sample_width});
++    vaeToLatents(lat);  // model-space scaling, as diffusers does
++    masked_lat_.assign(lat.begin(), lat.end());
++
++    std::cout << "Inpaint conditioning ready: mask coverage "
++              << (int)(100.0f *
++                       (std::accumulate(mask_lat_.begin(), mask_lat_.end(),
++                                        0.0f) /
++                        (float)plane))
++              << "%" << std::endl;
++  }
++
++  std::vector<float> mask_lat_;    // [1,1,h,w], 1 = repaint
++  std::vector<float> masked_lat_;  // [1,4,h,w], model-space
++
+   TextEncoder &text_encoder_;
+   const std::string model_dir_;
+   const bool sdxl_;
+--- a/src/PipelineSd15Npu.hpp
++++ b/src/PipelineSd15Npu.hpp
+@@ -161,89 +161,6 @@
+     masked_lat_.shrink_to_fit();
+   }
+ 
+-  // mask plane (64x64, 1 = repaint) + VAE latent of the image with the masked
+-  // region blanked -- the inpainting conditioning. Shared by the 9-channel
+-  // PipelineSd15Inpaint (it concatenates them into the UNet input) and the
+-  // Swap v3 template (its `mask` / `masked_latent` inputs, patch 017).
+-  // Mirrors StableDiffusionInpaintPipeline's construction so
+-  // the runtime input distribution matches what the graph was calibrated on.
+-  void prepareInpaintConditioning(const GenerationRequest &req) {
+-    const size_t plane = (size_t)sample_width * sample_height;
+-    const size_t px = (size_t)req.width * req.height;
+-
+-    // ⭐⭐ NO MASK = REPAINT THE WHOLE FRAME (nightmare-mobile, 2026-09-19).
+-    // This used to throw, which made a 9-channel checkpoint an inpaint-only
+-    // model. With the mask all ones, `image * (mask < 0.5)` is zero
+-    // everywhere, so the masked-image latent is the encode of a mid-grey
+-    // frame -- exactly what diffusers' StableDiffusionInpaintPipeline feeds
+-    // for a full mask -- and the same graph serves txt2img (no image at all)
+-    // and img2img (the image arrives as the starting latent, not here).
+-    std::vector<float> masked_image(3 * px, 0.0f);
+-    if (!req.has_mask) {
+-      mask_lat_.assign(plane, 1.0f);
+-    } else {
+-      if (!req.img2img || req.img_data.empty())
+-        throw std::invalid_argument("inpainting requires an input image");
+-      if (req.mask_data.size() < plane)
+-        throw std::invalid_argument("mask_data too small for latent grid");
+-
+-      // --- mask channel ----------------------------------------------------
+-      // RequestParser already decoded the mask straight to the latent grid
+-      // and replicated it across all 4 channels; we need exactly one plane.
+-      mask_lat_.assign(req.mask_data.begin(), req.mask_data.begin() + plane);
+-
+-      // --- masked-image latent --------------------------------------------
+-      // img_data is NCHW in [-1, 1] (RequestParser: pixel/127.5 - 1), which
+-      // is the same convention diffusers uses, so `image * (mask < 0.5)` maps
+-      // directly: the masked region becomes 0, i.e. mid-grey.
+-      if (req.img_data.size() < 3 * px || req.mask_data_full.size() < px)
+-        throw std::invalid_argument("image/mask buffers too small");
+-
+-      for (int c = 0; c < 3; ++c) {
+-        const float *src = req.img_data.data() + (size_t)c * px;
+-        float *dst = masked_image.data() + (size_t)c * px;
+-        // mask_data_full is [1,3,H,W] with the same value in every channel;
+-        // channel 0 is representative.
+-        const float *m = req.mask_data_full.data();
+-        for (size_t i = 0; i < px; ++i) dst[i] = (m[i] < 0.5f) ? src[i] : 0.0f;
+-      }
+-    }
+-
+-    // ⚠ Not vaeEncode() directly. The VAE encoder graph is fixed at 512x512,
+-    // but vaeEncode copies `3 * output_width * output_height` elements into its
+-    // input tensor -- so at 768x512 it wrote 1,179,648 elements into a 786,432
+-    // buffer and the server died with SIGSEGV/SEGV_ACCERR before the first
+-    // step. 512x512 survived only because there the two are equal.
+-    //
+-    // encodePixelsToLatentStats() tiles when the input exceeds the graph, which
+-    // is what the ordinary img2img path has always done; inpaint conditioning
+-    // was the one caller that bypassed it. Found by the first non-square
+-    // inpaint ever run (AbsoluteReality 768x512, 2026-08-12).
+-    xt::xarray<float> masked_nchw =
+-        xt::adapt(masked_image, std::vector<int>{1, 3, req.height, req.width});
+-    std::vector<float> enc_mean, enc_std;
+-    encodePixelsToLatentStats(req, masked_nchw, enc_mean, enc_std);
+-
+-    // Take the distribution mean rather than sampling it. The masked-image
+-    // latent is pure conditioning -- it is not the tensor being denoised -- so
+-    // the sampling noise would only add variance to the signal telling the
+-    // model what the surroundings look like.
+-    xt::xarray<float> lat =
+-        xt::adapt(enc_mean, {1, 4, sample_height, sample_width});
+-    vaeToLatents(lat);  // model-space scaling (x 0.18215), as diffusers does
+-    masked_lat_.assign(lat.begin(), lat.end());
+-
+-    std::cout << "Inpaint conditioning ready: mask coverage "
+-              << (int)(100.0f *
+-                       (std::accumulate(mask_lat_.begin(), mask_lat_.end(),
+-                                        0.0f) /
+-                        (float)plane))
+-              << "%" << std::endl;
+-  }
+-
+-  std::vector<float> mask_lat_;    // [1,1,h,w], 1 = repaint
+-  std::vector<float> masked_lat_;  // [1,4,h,w], model-space
+-
+   void encodeText(const ProcessedPromptPair &prompts, bool need_negative,
+                   bool need_positive, Conditioning &cond) override {
+     if (!clip_interpreter_ || !clip_session_)
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -6,6 +6,7 @@
+ #include <cstdint>
+ #include <filesystem>
+ #include <fstream>
++#include <iterator>
+ #include <vector>
+ #include <cstdlib>
+ #include <memory>
+@@ -33,10 +34,13 @@
+         vae_decoder_path_(std::move(vae_decoder_path)),
+         vae_encoder_path_(std::move(vae_encoder_path)),
+         lowram_(lowram),
+-        long_seq_(readLongContext(model_dir)) {
++        long_seq_(readLongContext(model_dir)),
++        tpl_inpaint_(readSwapInpaint(model_dir)) {
+     if (long_seq_)
+       QNN_INFO("SDXL long context: %d_masked_v1 (%dx77 tokens + mask)",
+                long_seq_, long_seq_ / 77);
++    if (tpl_inpaint_)
++      QNN_INFO("SDXL Swap inpaint branch: mask + masked_latent fed per render");
+   }
+ 
+   ~PipelineSdxl() override { releaseClips(); }
+@@ -151,6 +155,15 @@
+   // pipeline follows it.
+   int textSeqLen() const override { return long_seq_ ? long_seq_ : 77; }
+ 
++  // ⭐⭐ An SDXL Swap conversion with the Inpaint chip (patch 020) is an
++  // inpainting model: /sample then hands it the picture and mask (main.cpp)
++  // and beginDenoise feeds them to the UNet's `mask` / `masked_latent`
++  // inputs, as 017 does for SD 1.5. Before 020 they were dropped here and
++  // 018 zero-filled both inputs -- mask 0 tells the model "nothing to repaint,
++  // and the picture is a blank latent", so the hole came back muddy and
++  // ignored the prompt (Illustrious XL, reported 2026-10-05).
++  bool isInpaintModel() const override { return tpl_inpaint_; }
++
+   void encodeText(const ProcessedPromptPair &prompts, bool need_negative,
+                   bool need_positive, Conditioning &cond) override {
+     if (lowram_) loadClipsIfNeeded();
+@@ -198,6 +211,9 @@
+   }
+ 
+   void beginDenoise(const GenerationRequest &req) override {
++    // ⚠ FIRST: the masked-image latent needs the VAE encoder, and lowram
++    // releases the encoder below before the UNet loads (never both held).
++    if (tpl_inpaint_) prepareInpaintConditioning(req);
+     if (lowram_ && !unet_) {
+       // The encode stage is over once the UNet is needed; never hold both.
+       releaseVaeEncoder();
+@@ -210,6 +226,17 @@
+       unet_->setLora(req.lora_dir, req.lora_strength);
+     else if (!req.lora_dir.empty())
+       throw std::invalid_argument("'lora_dir': this model has no LoRA inputs");
++    // Both CFG passes read the same two planes; QnnModel quantizes each into
++    // its input once per request.
++    if (tpl_inpaint_) {
++      if (!unet_ || !unet_->hasInput("mask") ||
++          !unet_->hasInput("masked_latent"))
++        throw std::runtime_error(
++            "swap_features.json lists \"inp\" but the UNet has no "
++            "mask / masked_latent inputs");
++      unet_->setExtraInput("mask", mask_lat_);
++      unet_->setExtraInput("masked_latent", masked_lat_);
++    }
+   }
+ 
+   void runUnetStep(const GenerationRequest &, const float *latents_batch2,
+@@ -256,6 +283,10 @@
+   }
+ 
+   void endDenoise() override {
++    mask_lat_.clear();
++    mask_lat_.shrink_to_fit();
++    masked_lat_.clear();
++    masked_lat_.shrink_to_fit();
+     if (!lowram_ || !unet_) return;
+     unet_.reset();
+     QNN_INFO("[lowram] SDXL UNET released");
+@@ -450,6 +481,21 @@
+     return n > 77 && n % 77 == 0 ? n : 0;
+   }
+ 
++  // npuforge writes `swap_features.json` beside an SDXL Swap export:
++  // {"template":"sdxl_swap_v2","features":["inp", ...]} -- the features its
++  // UNet kept. Read from the file, not unet_->hasInput(): in --lowram the UNet
++  // is not loaded when /sample asks isInpaintModel(). beginDenoise checks the
++  // inputs are really there once it is.
++  static bool readSwapInpaint(const std::string &model_dir) {
++    std::ifstream f(std::filesystem::path(model_dir) / "swap_features.json");
++    if (!f) return false;
++    const std::string s((std::istreambuf_iterator<char>(f)),
++                        std::istreambuf_iterator<char>());
++    const size_t at = s.find("\"features\"");
++    return at != std::string::npos &&
++           s.find("\"inp\"", at) != std::string::npos;
++  }
++
+   // Each chunk through both encoders; a chunk the prompt does not reach
+   // (ids[77*c] != BOS) stays zero. Pooled comes from the FIRST chunk.
+   void runChunkedClip(const std::vector<float> &emb1,
+@@ -494,6 +540,7 @@
+   const std::string vae_encoder_path_;
+   const bool lowram_;
+   const int long_seq_;
++  const bool tpl_inpaint_;
+ 
+   MNN::Interpreter *clip_interpreter_ = nullptr;
+   MNN::Interpreter *clip2_interpreter_ = nullptr;

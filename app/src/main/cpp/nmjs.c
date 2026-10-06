@@ -292,6 +292,11 @@ Java_com_abrah_nightmare_JsRuntime_nativeEval(JNIEnv *env, jobject self, jlong p
     const char *name = (*env)->GetStringUTFChars(env, jname, NULL);
     js->deadline_ms = budgetMs > 0 ? now_ms() + budgetMs : 0;
 
+    // ⚠⚠ The stack top is THIS thread's, re-read per call: quickjs-ng records
+    // it once in JS_NewRuntime, and since 1.6.083 the executor runs nodes on a
+    // Dispatchers.Default worker, not the thread that made the runtime — whose
+    // limit would make every check on another stack meaningless.
+    JS_UpdateStackTop(js->rt);
     JSValue v = JS_Eval(js->ctx, code, strlen(code), name, JS_EVAL_TYPE_GLOBAL);
 
     js->deadline_ms = 0;

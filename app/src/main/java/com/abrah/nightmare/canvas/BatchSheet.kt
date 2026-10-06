@@ -31,7 +31,7 @@ import com.abrah.nightmare.BatchSpec
 import com.abrah.nightmare.BatchValues
 import com.abrah.nightmare.Graph
 import com.abrah.nightmare.NodeType
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 
 /**
  * ⭐⭐ **Build a sweep, and see what it costs before it starts.**
@@ -109,7 +109,7 @@ fun BatchSheet(
                 if (choices.isEmpty()) {
                     Text(
                         stringResource(R.string.batch_nothing_to_sweep),
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.error,
                     )
                     return@Column
@@ -157,7 +157,7 @@ fun BatchSheet(
                             spec.runCount,
                         ) + "  ·  " + values.joinToString(", ")
                     },
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = if (values.isEmpty() && text.isNotBlank()) {
                         MaterialTheme.colorScheme.error
                     } else {
@@ -168,7 +168,7 @@ fun BatchSheet(
                 // Results would be a surprise the size of eight renders.
                 Text(
                     stringResource(R.string.batch_kept),
-                    style = LogTextStyle,
+                    style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

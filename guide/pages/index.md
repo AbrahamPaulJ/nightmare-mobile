@@ -62,7 +62,7 @@ step.
 | Snapdragon 8 Elite and newer | + FLUX.2, Z-Image, Qwen Image, video; Krea 2 with 16 GB of RAM |
 
 - **Storage**: models are downloaded separately, from about 1 GB (an SD 1.5 model) to
-  10.8 GB (Qwen Image). The app tells you each size before you download.
+  13.8 GB (Qwen Image on a 16 GB phone). The app tells you each size before you download.
 - **Memory**: 8 GB of RAM runs the SD 1.5 models; 12 GB runs everything but Krea 2, some of
   it slowly (FLUX.2 Klein 9B starts at 768 to stay inside it); Krea 2 needs 16 GB.
 

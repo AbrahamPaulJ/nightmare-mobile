@@ -691,6 +691,34 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * a few times a minute while the canvas is up, because the number worth
      * seeing is the one DURING a render.
      */
+    /**
+     * ⭐⭐ [ModelSpec.loadedBytes] once per model, OFF the main thread.
+     *
+     * ⚠⚠ It walks the model's whole directory — on shared storage, with the
+     * Swap LoRA packs and the prompt cache inside it — and [refreshLoad] asked
+     * every 2 s on the main thread: 21.7% of it after an SDXL render, measured
+     * with simpleperf on 2026-10-05 (the lag swiping between nodes). A
+     * checkpoint's resident size does not change while it is loaded.
+     */
+    private fun residentBytesOf(spec: ModelSpec): Long {
+        residentSizes[spec.id]?.let { return it }
+        if (residentSizing.add(spec.id)) {
+            val ctx = getApplication<Application>()
+            viewModelScope.launch {
+                val n = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { spec.loadedBytes(ctx) }.getOrDefault(0L)
+                }
+                residentSizes[spec.id] = n
+                residentSizing.remove(spec.id)
+                refreshLoad()
+            }
+        }
+        return 0L
+    }
+
+    private val residentSizes = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val residentSizing = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     fun refreshLoad() {
         val ctx = getApplication<Application>()
         val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
@@ -723,7 +751,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             resident = spec?.label,
             // ⚠ The SAME function the residency gate uses, or the bar would
             // state a size the release decision disagrees with.
-            residentBytes = spec?.loadedBytes(ctx) ?: 0L,
+            residentBytes = spec?.let { residentBytesOf(it) } ?: 0L,
             // ⭐⭐ The OTHER route to the NPU. ⚠ Cheap in the same way the rest
             // of this is: a map size behind a lock, no file and no IPC.
             npuGraphs = com.abrah.nightmare.npu.QnnRunner.Resident.count(),
@@ -877,7 +905,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     val modelLabel: String
         get() {
             val spec = ModelCatalog.byId(SelectedModel.id) ?: return SelectedModel.id
-            val here = spec.installed(getApplication())
+            // ⚠⚠ From the last refresh, not the DISK: this getter is read during
+            // composition, and `installed()` stats every file of the spec —
+            // 3.9% of the main thread in the 2026-10-05 capture.
+            // ⚠ …except before the first refresh has landed (an empty list), so
+            // a cold start does not flash "(not installed)".
+            val ids = ModelCatalog.installedIds
+            val here = if (ids.isEmpty()) spec.installed(getApplication()) else spec.id in ids
             return if (here) spec.label else "${spec.label} (not installed)"
         }
 
@@ -1134,8 +1168,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      *   (`NmPerf`, 2026-09-27). ⚠ Every other caller keeps the synchronous
      *   form: it may read [modelRows] on the very next line.
      */
-    fun refreshModels(offMain: Boolean = false) {
+    /**
+     * ⚠⚠ [offMain] is the DEFAULT since 2026-10-05: every model switch and every
+     * delete called this on the main thread and the rows read took 1.0–1.2 s —
+     * `Skipped 128 frames` on each switch, measured on the S25 (`NmPerf`). No
+     * caller reads [modelRows] synchronously afterwards; the one thing that must
+     * move at once, the SELECTED tick, is updated from the old rows first.
+     */
+    fun refreshModels(offMain: Boolean = true) {
         val ctx = getApplication<Application>()
+        // ⚠ Installs, deletes and imports all come through here: sizes re-read.
+        residentSizes.clear()
         // ⭐⭐⭐ **The shade's backstop.** An ONGOING row with nothing
         // installing is a row nobody will ever end — and the user cannot swipe
         // it away, because `setOngoing(true)` forbids it.
@@ -1213,6 +1256,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val caps = DeviceProbe.caps()
         val gen = ++rowsGen
         val read: () -> Triple<List<com.abrah.nightmare.ui.ModelRow>, List<String>, VideoDisk> = {
+            ModelCatalog.reclaimObsolete(ctx)
             val rows =
             specs.map { spec ->
                 val here = spec.installed(ctx)
@@ -1252,6 +1296,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         if (offMain) {
+            // ⭐ The tapped chip shows its tick NOW; sizes and files follow.
+            modelRows = modelRows.map { it.copy(selected = it.spec.id == selected) }
             viewModelScope.launch {
                 val t1 = System.nanoTime()
                 val got = withContext(Dispatchers.IO) { read() }
@@ -3081,8 +3127,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteModel(spec: ModelSpec) {
         val ctx = getApplication<Application>()
+        // ⚠⚠ The FILES go on IO: a 3 GB SDXL folder on the shared-storage FUSE
+        // mount took 4.9 s, all of it on the main thread (`Skipped 582 frames`,
+        // 2026-10-05). Everything after it — the selection, the log — is main.
+        viewModelScope.launch {
+            val gone = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { ModelInstaller.delete(ctx, spec) }
+            }
+            gone.fold(
+                onSuccess = { afterDelete(ctx, spec) },
+                onFailure = { e ->
+                    modelError = e.message
+                    say("could not delete — ${e.message}", bad = true)
+                    refreshModels()
+                },
+            )
+        }
+    }
+
+    private fun afterDelete(ctx: Application, spec: ModelSpec) {
         try {
-            ModelInstaller.delete(ctx, spec)
             say("deleted ${spec.label}")
             // ⚠⚠ The SELECTION has to move with it. `SelectedModel` names a
             // catalogue entry, which still resolves after the files are gone --
@@ -7076,7 +7140,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun stopBackend() = run("stop backend") { ops.stopBackend() }
 
     /** Dispatch for an op named by intent (MainActivity.EXTRA_OP). */
-    fun runOp(op: String) = run(op) { ops.run(op) }
+    fun runOp(op: String) {
+        // ⚠ `op arg` from MainActivity.takeOp: one string, so the pending
+        // state stays a single value.
+        val name = op.substringBefore(' ')
+        val arg = op.substringAfter(' ', "").takeIf { it.isNotEmpty() }
+        run(name) { ops.run(name, arg) }
+    }
 
     /**
      * ⚠ These are honest stubs, not silent no-ops. A harness button that logs

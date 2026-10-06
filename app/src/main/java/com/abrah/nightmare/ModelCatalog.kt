@@ -299,6 +299,13 @@ data class Build(
      * recoverable, hiding is not.
      */
     val minRamBytes: Long = 0L,
+    /**
+     * ⭐ A plain-file package's files FOR THIS BUILD — empty means the model's
+     * own [ModelSpec.files]. Qwen Image 2.1 is the one user (2026-10-06): its FP8
+     * DiT needs the 16 GB class (measured: the 6.8 GB DiT got the FOREGROUND app
+     * lmkd-killed on the 12 GB S25 Ultra), so it ships Q4_0 below that.
+     */
+    val files: List<RemoteFile> = emptyList(),
 ) {
     fun runsOn(caps: DeviceProbe.Caps): Boolean =
         caps.arch >= minArch && caps.vtcmMb >= minVtcmMb && ramOk(caps)
@@ -539,6 +546,15 @@ data class ModelSpec(
     fun buildFor(caps: DeviceProbe.Caps): Build? = builds.firstOrNull { it.runsOn(caps) }
 
     /**
+     * ⭐ The files THIS phone installs and runs: the [buildFor] build's own list
+     * ([Build.files]) when it has one, else [files]. ⚠ Every reader of a DiT
+     * package's files reads this — `missing`, `fetchBytes`, the installer — or a
+     * 16 GB phone would be told its Q4_0 Qwen is installed while FP8 is its build.
+     */
+    val active: List<RemoteFile>
+        get() = buildFor(DeviceProbe.caps())?.files?.takeIf { it.isNotEmpty() } ?: files
+
+    /**
      * ⭐ The RAM this model needs when RAM is the ONLY reason [buildFor] is null
      * — so the row can say "needs a 16 GB phone" instead of blaming the chip.
      * 0 when the chip is the problem, or nothing is.
@@ -568,7 +584,7 @@ data class ModelSpec(
         // ⚠⚠ A plain-file package is downloaded IN PLACE, so an interrupted
         // download leaves a real file of the right name and the wrong size.
         // Existence alone would call a half-fetched 4 GB DiT installed.
-        if (files.isNotEmpty()) {
+        if (active.isNotEmpty()) {
             // ⭐⭐⭐ **…unless the user brought their own DiT weights.**
             //
             // ⭐⭐ A DiT family loads a plain `.safetensors` at run time — there
@@ -588,7 +604,7 @@ data class ModelSpec(
             // VAE and tokenizer are OURS, shared by every model of the family,
             // and nobody has a reason to replace one.
             val byo = File(d, BRING_YOUR_OWN).exists()
-            return files.filter {
+            return active.filter {
                 val len = File(d, it.name).length()
                 if (byo && it.name == DIT_WEIGHTS) len <= 0L else len != it.bytes
             }.map { it.name }
@@ -669,8 +685,8 @@ data class ModelSpec(
      * keeps the whole-archive download.
      */
     fun fetchBytes(context: Context, build: Build?): Long =
-        if (files.isNotEmpty()) {
-            files.sumOf { f ->
+        if (active.isNotEmpty()) {
+            active.sumOf { f ->
                 val have = File(dir(context), f.name).takeIf { it.isFile }?.length() ?: 0L
                 (f.bytes - have).coerceAtLeast(0L)
             }
@@ -975,8 +991,34 @@ object ModelCatalog {
 
     /** ⭐ What the backend checks for in a DiT package dir (`main.cpp`) — plus the tokenizer it loads for every type. */
     val DIT_REQUIRED = listOf("dit.safetensors", "llm.gguf", "vae.safetensors", "tokenizer.json")
-    /** ⭐ Qwen Image 2.1's package — a GGUF DiT and the VLM's vision tower (`main.cpp`, 013). */
+    /** ⭐ Qwen Image 2.1's two DiTs — the 16 GB class's FP8 (alpha.4) and everyone else's Q4_0. */
+    val QWEN21_FP8 = RemoteFile(HF + "unsloth/Qwen-Image-2.1-FP8/resolve/main/Qwen-Image-2.1-FP8.safetensors", "dit.safetensors", 7_122_877_560L)
+    val QWEN21_Q4 = RemoteFile(HF + "leejet/Qwen-Image-2.1-GGUF/resolve/main/qwen_image_2.1-Q4_0.gguf", "dit.gguf", 4_197_494_816L)
+    /** ⭐ Qwen Image 2.1's package — a DiT of either build and the VLM's vision tower (`main.cpp`, 013). */
     val QWEN21_REQUIRED = listOf("dit.gguf", "llm.gguf", "llm_vision.gguf", "vae.safetensors", "tokenizer.json")
+    /** ⭐ Qwen's parts beside its DiT, for an import whose DiT may be either format. */
+    val QWEN21_PARTS = QWEN21_REQUIRED.drop(1)
+
+    /**
+     * ⭐⭐ Qwen Image 2.1's two builds share a directory, and backend 014 loads a
+     * `dit.gguf` in preference to `dit.safetensors` — so the build this phone
+     * does NOT run has its DiT deleted, or a stray Q4_0 would shadow FP8 on a
+     * 16 GB phone and a stray FP8 would cost a 12 GB one 7 GB for nothing.
+     * ⚠ Only at the EXACT size this catalogue shipped: a user's own weights in
+     * that dir are theirs. ⚠ Built-in dir only: an import's DiT is its weights.
+     */
+    fun reclaimObsolete(context: Context) {
+        val spec = byId("qwen_image_2_1") ?: return
+        val want = spec.active.firstOrNull { it.name.startsWith("dit.") } ?: return
+        for (other in listOf(QWEN21_FP8, QWEN21_Q4)) {
+            if (other.name == want.name) continue
+            val f = File(spec.dir(context), other.name)
+            if (f.isFile && f.length() == other.bytes && f.delete()) {
+                android.util.Log.i("ModelCatalog", "reclaimed Qwen Image 2.1 ${other.name} — this phone's build is ${want.name}")
+            }
+        }
+    }
+
     /** ⭐ Krea 2 Turbo's package — a GGUF DiT, no vision tower (`main.cpp`, 014). */
     val KREA2_REQUIRED = listOf("dit.gguf", "llm.gguf", "vae.safetensors", "tokenizer.json")
 
@@ -1238,6 +1280,16 @@ object ModelCatalog {
     val SDXL_SWAP_REQUIRED = SDXL_REQUIRED + TemplateLora.TARGETS_FILE
 
     /**
+     * ⭐⭐ A CATALOGUE SDXL Swap v2: also its 462-token marker and its feature list.
+     * ⚠⚠ The installer extracts ONLY [ModelSpec.wanted] files, and without
+     * `qnn_context.txt` the backend reads a 462-token UNet as xororz's 77 —
+     * so a download would have been a model that cannot render. Imports keep
+     * [SDXL_SWAP_REQUIRED]: they bring their own folder.
+     */
+    val SDXL_SWAP_V2_REQUIRED =
+        SDXL_SWAP_REQUIRED + CustomModels.LONG_CONTEXT_FILE + "swap_features.json"
+
+    /**
      * ⭐ What `--type anima` needs — the backend's own list (`main.cpp`,
      * `createPipeline`), plus `vae_encoder.bin` for the reason SDXL's has it.
      *
@@ -1277,6 +1329,13 @@ object ModelCatalog {
     // asked for — the reason the old ones were copied from DreamUI unchanged.
 
     /** ⚠ Upstream's one anime negative, shared by its three SD 1.5 anime models and Illustrious. */
+    /**
+     * ⭐ A searchable style word for a catalogue model — the Models search box
+     * finds "anime" checkpoints by the anime negative they all share, since no
+     * tag list exists to search (2026-10-05).
+     */
+    fun styleWords(spec: ModelSpec): String = if (spec.negative == NEG_ANIME) "anime" else ""
+
     private const val NEG_ANIME =
         "lowres, bad anatomy, bad hands, missing fingers, extra fingers, " +
             "bad arms, missing legs, missing arms, poorly drawn face, bad face, " +
@@ -1333,7 +1392,18 @@ object ModelCatalog {
      *
      * ⚠ Not stable across a [CustomModels.scan] — by design.
      */
-    val all: List<ModelSpec> get() = builtIn + CustomModels.registered
+    val all: List<ModelSpec>
+        get() {
+            // ⚠⚠ Memoised on the scan's list IDENTITY (`CustomModels.scan`
+            // replaces it, never mutates it): [byId] is called during
+            // composition, and rebuilding ~60 specs per call was 5% of the main
+            // thread in the 2026-10-05 capture.
+            val reg = CustomModels.registered
+            allMemo?.let { (r, a) -> if (r === reg) return a }
+            return (builtIn + reg).also { allMemo = reg to it }
+        }
+
+    @Volatile private var allMemo: Pair<List<ModelSpec>, List<ModelSpec>>? = null
 
     /**
      * ⭐⭐ The ids that are ON THE PHONE, cached so a caller with no
@@ -1374,7 +1444,15 @@ object ModelCatalog {
      * id here is skipped by the scan, because [byId] returns the first match
      * and a shadowed built-in would point its downloads at the user's files.
      */
-    val builtIn: List<ModelSpec> get() = sd15Models + swapModels + sdxlModels + animaModels + ditModels
+    // ⚠ `by lazy`, not a getter (it rebuilt the list per call) and not a plain
+    // val (it would read the lists below before they are initialised).
+    val builtIn: List<ModelSpec> by lazy {
+        sd15Models + swapModels + sdxlModels +
+            // ⚠ An entry whose archive size is not known yet (still uploading) is
+            // not offered: `missing()` checks exact sizes, so it could not install.
+            sdxlSwapModels.filter { m -> m.builds.all { it.bytes > 0 } } +
+            animaModels + ditModels
+    }
 
     /** ⚠ Kept as its own list so a family can be counted, filtered and tested. */
     /**
@@ -1492,6 +1570,50 @@ object ModelCatalog {
     )
 
     const val SWAP_BASE_URL = "https://huggingface.co/AbrahamPJ/nightmare-sd15-swap-models/resolve/main/"
+
+    /**
+     * ⭐⭐ The SDXL Swap tab's defaults — the user's pick, 2026-10-05: Illustrious
+     * XL v1.0 (anime) and Juggernaut XL Ragnarok (realism), converted ON the S25
+     * by npuforge 1.0.11 as SDXL Swap v2 with LoRA (462 tokens, v79 contexts) and
+     * hosted unchanged at [SDXL_SWAP_BASE_URL]. ⚠ Not the inpaint conversions:
+     * a plain one does text and image to image, and inpaints by blend.
+     */
+    val sdxlSwapModels: List<ModelSpec> = listOf(
+        sdxlSwap(
+            "illustrious_xl_swap", "Illustrious XL Swap",
+            "illustrious_xl_v1_swap_v2_v79.zip", ILLUSTRIOUS_SWAP_BYTES,
+            prompt = P_ILLUSTRIOUS, negative = NEG_ANIME,
+        ),
+        sdxlSwap(
+            "juggernaut_xl_swap", "Juggernaut XL Swap",
+            "juggernaut_xl_ragnarok_swap_v2_v79.zip", JUGGERNAUT_SWAP_BYTES,
+            prompt = P_SDXL, negative = NEG_GENERAL,
+        ),
+    )
+
+    private fun sdxlSwap(
+        id: String, label: String, archive: String, bytes: Long,
+        prompt: String, negative: String,
+    ) = ModelSpec(
+        id = id,
+        label = label,
+        builds = listOf(Build(TIER_DIT, archive, bytes, DIT_MIN_ARCH, 8)),
+        prompt = prompt,
+        negative = negative,
+        family = Family.SDXL_SWAP,
+        backendType = SDXL_NPU,
+        resolutions = listOf(SDXL_NPU_RES),
+        baseUrl = SDXL_SWAP_BASE_URL,
+        requiredFiles = SDXL_SWAP_V2_REQUIRED,
+        tier = TIER_DIT,
+        minHtpArch = DIT_MIN_ARCH,
+        lowram = true,
+        promptTokens = 462,
+    )
+
+    const val SDXL_SWAP_BASE_URL = "https://huggingface.co/AbrahamPJ/nightmare-sdxl-swap-models/resolve/main/"
+    private const val ILLUSTRIOUS_SWAP_BYTES = 3_886_127_457L
+    private const val JUGGERNAUT_SWAP_BYTES = 3_886_131_553L
 
     val sd15Models: List<ModelSpec> = listOf(
         sd15(
@@ -1726,13 +1848,15 @@ object ModelCatalog {
         minRamBytes: Long = 0L,
         /** ⚠ See [ModelSpec.startRes]. */
         startRes: Res? = null,
+        /** ⭐ Per-RAM builds, best first, each with its own [Build.files] (Qwen). Null = one build of [files]. */
+        builds: List<Build>? = null,
     ) = ModelSpec(
         startRes = startRes,
         lowram = lowram,
         ownDitParts = ownDitParts,
         id = id,
         label = label,
-        builds = listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, DIT_MIN_ARCH, 8, minRamBytes = minRamBytes)),
+        builds = builds ?: listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, DIT_MIN_ARCH, 8, minRamBytes = minRamBytes)),
         prompt = prompt,
         negative = "",
         family = family,
@@ -1882,31 +2006,44 @@ object ModelCatalog {
                 RemoteFile(HF + "Qwen/Qwen3-8B/resolve/main/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
             ),
         ),
-        // ⭐ Qwen Image 2.1 — upstream local-dream v3.0.0-alpha.3 (440899f),
-        // file for file, sizes HEAD-checked 2026-09-27. A Q4_0 GGUF DiT plus
-        // Qwen3-VL-8B as the text encoder; `llm_vision.gguf` is its vision
-        // tower, which native EDITING needs (a reference reaches the prompt
-        // through it). 20 steps at cfg 1, upstream's defaults.
+        // ⭐ Qwen Image 2.1 — upstream local-dream v3.0.0-alpha.3 (440899f) and
+        // alpha.4 (18be9aa), sizes HEAD-checked. A DiT plus Qwen3-VL-8B as the
+        // text encoder; `llm_vision.gguf` is its vision tower, which native
+        // EDITING needs. 20 steps at cfg 1, upstream's defaults.
         //
-        // ⚠ 10.8 GB against a 12 GB phone, so the backend always runs it
-        // `all=disk` — each of TE, DiT and VAE loaded for its stage and dropped
-        // after (backend-patches/013). No `lowram` needed here: that flag is the
-        // weaker `te=disk`, and `main.cpp` does not read it for this type.
+        // ⭐⭐ TWO BUILDS BY RAM (the user's call, 2026-10-06): alpha.4 moved the
+        // DiT to unsloth's FP8 (7.1 GB, 6.8 GB of params) — and on the 12 GB S25
+        // Ultra, with the app IN FRONT, the text encoder ran (3.74 GB) and lmkd
+        // killed the app 2 s into the FP8 DiT load (`docs/DIT.md` §9b). So FP8 is
+        // the 16 GB class's build and Q4_0 (4.2 GB, 4.0 GB of params; ran here on
+        // 2026-09-28) is everyone else's. The parts beside the DiT are shared.
         //
+        // ⚠ Whatever the build, the backend runs it `all=disk` — each of TE, DiT
+        // and VAE loaded for its stage and dropped (backend-patches/013, 022).
         // ⚠ Every file lives in the model's OWN directory: `_dit_shared` holds
         // FLUX.2/Z-Image's Qwen3-4B encoder and VAE, which are not these.
-        dit(
-            "qwen_image_2_1", "Qwen Image 2.1", Family.QWEN21, QWEN21, steps = 20,
-            prompt = "a lovely cat holding a sign that says 'Qwen Image 2.1',",
-            ownDitParts = true,
-            files = listOf(
-                RemoteFile(HF + "leejet/Qwen-Image-2.1-GGUF/resolve/main/qwen_image_2.1-Q4_0.gguf", "dit.gguf", 4_197_494_816L),
+        // ⚠ [reclaimObsolete] deletes the OTHER build's DiT: backend 014 loads a
+        // `dit.gguf` in preference to `dit.safetensors`.
+        run {
+            val parts = listOf(
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-8B-Instruct-Q4_0.gguf", "llm.gguf", 4_787_333_600L),
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-8B-Instruct-f16.gguf", "llm_vision.gguf", 1_159_029_920L),
                 RemoteFile(HF + "Qwen/Qwen3-VL-8B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
                 RemoteFile(HF + "Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors", "vae.safetensors", 675_509_688L),
-            ),
-        ),
+            )
+            val fp8 = listOf(QWEN21_FP8) + parts
+            val q4 = listOf(QWEN21_Q4) + parts
+            dit(
+                "qwen_image_2_1", "Qwen Image 2.1", Family.QWEN21, QWEN21, steps = 20,
+                prompt = "a lovely cat holding a sign that says 'Qwen Image 2.1',",
+                ownDitParts = true,
+                files = q4,
+                builds = listOf(
+                    Build(TIER_DIT, "", fp8.sumOf { it.bytes }, DIT_MIN_ARCH, 8, minRamBytes = Prefs.LOWRAM_BELOW_BYTES, files = fp8),
+                    Build(TIER_DIT, "", q4.sumOf { it.bytes }, DIT_MIN_ARCH, 8, files = q4),
+                ),
+            )
+        },
     )
 
     fun byId(id: String): ModelSpec? = all.firstOrNull { it.id == id }

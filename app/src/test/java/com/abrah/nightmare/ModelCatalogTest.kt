@@ -320,6 +320,25 @@ class ModelCatalogTest {
     }
 
     /**
+     * ⭐ Qwen Image 2.1: FP8 on the 16 GB class, Q4_0 below it — never refused.
+     * The FP8 DiT got the foreground app lmkd-killed on the 12 GB S25 Ultra
+     * (2026-10-06, `docs/DIT.md` §9b). ⚠ Unknown RAM is offered the BEST build.
+     */
+    @Test
+    fun qwenShipsFp8OnlyToSixteenGigabytePhones() {
+        val qwen = ModelCatalog.byId("qwen_image_2_1")!!
+        val twelve = 11_379_968L * 1024
+        val sixteen = 15L shl 30
+        fun dit(ram: Long) = qwen.buildFor(caps(79, 8, ram))!!.files.first { it.name.startsWith("dit.") }
+        assertEquals(ModelCatalog.QWEN21_Q4, dit(twelve))
+        assertEquals(ModelCatalog.QWEN21_FP8, dit(sixteen))
+        assertEquals(ModelCatalog.QWEN21_FP8, dit(0L))
+        assertEquals(0L, qwen.ramNeeded(caps(79, 8, twelve)))
+        // ⚠ Each build's size is its own files' sum — the installer's only integrity check.
+        for (b in qwen.builds) assertEquals(b.files.sumOf { it.bytes }, b.bytes)
+    }
+
+    /**
      * ⭐ Klein 9B STARTS at 768² (5 of 5 there, 3 of 4 at 1024² on 12 GB) —
      * and ⚠ its context key does not move with it: [ModelSpec.native] is
      * still the DiT constant every DiT process is keyed on.

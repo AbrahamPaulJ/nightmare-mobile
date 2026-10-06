@@ -22,7 +22,7 @@ changes. *Make it winter*, *turn the car red*, *put a hat on the dog*.
 
 | | FLUX.2 Klein 4B | Qwen Image 2.1 |
 |---|---|---|
-| Download | 6.7 GB | 10.8 GB |
+| Download | 6.7 GB | 10.8 GB (13.8 GB FP8 on a 16 GB phone) |
 | Speed (edit, 8 Elite) | about a minute at 512 | about 14 minutes at 1024 |
 | Strength | Fast, good at style and scene changes | Follows long instructions; reads the photo with a vision model; can write legible text |
 | Best size | **512 × 512** with a reference (see below) | smaller sizes are much faster |

@@ -375,6 +375,55 @@ class TemplateLoraTest {
             TemplateLora.sgmPath("mid_block.attentions.0.transformer_blocks.7.attn1.v"))
     }
 
+    /** ⭐ SDXL Swap v2's `.w` Linears: the module itself; resnet names as npuforge `sdxl_keys.to_ldm` maps them. */
+    @Test
+    fun v2LinearTargetsNameTheirModule() {
+        assertEquals("down_blocks.1.resnets.0.conv_shortcut",
+            TemplateLora.modulePath("down_blocks.1.resnets.0.conv_shortcut.w"))
+        assertEquals("input_blocks.4.0.skip_connection",
+            TemplateLora.sgmPath("down_blocks.1.resnets.0.conv_shortcut.w"))
+        assertEquals("output_blocks.2.0.emb_layers.1",
+            TemplateLora.sgmPath("up_blocks.0.resnets.2.time_emb_proj.w"))
+        assertEquals("middle_block.2.emb_layers.1",
+            TemplateLora.sgmPath("mid_block.resnets.1.time_emb_proj.w"))
+        assertEquals("input_blocks.4.1.proj_in",
+            TemplateLora.sgmPath("down_blocks.1.attentions.0.proj_in.w"))
+        assertEquals("output_blocks.6.0.skip_connection",
+            TemplateLora.sgmPath("up_blocks.2.resnets.0.conv_shortcut.w"))
+        assertEquals("input_blocks.2.0.emb_layers.1",
+            TemplateLora.sgmPath("down_blocks.0.resnets.1.time_emb_proj.w"))
+    }
+
+    /** A kohya 1x1 conv LoRA (`[r, cin, 1, 1]` / `[cout, r, 1, 1]`) packs into a `.w` target like a Linear one. */
+    @Test
+    fun aConvShortcutLoraPacksIntoItsLinearTarget() {
+        val targets = TemplateLora.readTargets(
+            """{"rank": 4, "targets": [{"name": "down_blocks.1.resnets.0.conv_shortcut.w", "idx": 0, "din": 3, "dout": 2}]}""")
+        val k = "lora_unet_input_blocks_4_0_skip_connection"
+        val down = floatArrayOf(1f, 2f, 3f, 4f, 5f, 6f)      // [r=2, cin=3, 1, 1]
+        val up = floatArrayOf(1f, 0.5f, -1f, 2f)             // [cout=2, r=2, 1, 1]
+        val f = tmp.newFile("conv.safetensors").also {
+            writeSafetensors(it, listOf(
+                Triple("$k.lora_down.weight", listOf(2, 3, 1, 1), down),
+                Triple("$k.lora_up.weight", listOf(2, 2, 1, 1), up),
+                Triple("$k.alpha", emptyList(), floatArrayOf(2f)),
+            ), f16 = false)
+        }
+        val out = tmp.newFolder("conv")
+        val p = TemplateLora.pack(f, targets, out)
+        assertEquals(1, p.matched)
+        assertEquals(0, p.unusedUnetKeys)
+        fun raw(n: String) = java.nio.ByteBuffer.wrap(File(out, n).readBytes())
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN).asFloatBuffer().let { b -> FloatArray(b.remaining()).also { b.get(it) } }
+        val la = raw("la_0.raw"); val lb = raw("lb_0.raw"); val s = raw("lora_S.raw")[0]
+        // A B S = dW^T = (alpha/r) D^T U^T
+        for (i in 0 until 3) for (o in 0 until 2) {
+            val want = (0 until 2).sumOf { j -> (down[j * 3 + i] * up[o * 2 + j]).toDouble() }
+            val got = (0 until 4).sumOf { j -> (la[i * 4 + j] * lb[j * 2 + o]).toDouble() } * s
+            assertEquals(want, got, 1e-5)
+        }
+    }
+
     /** The same LoRA under SGM names packs to the very bytes it packs to under diffusers names. */
     @Test
     fun sgmNamedLoraPacksLikeDiffusersNamed() {

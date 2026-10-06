@@ -31,7 +31,7 @@ import com.abrah.nightmare.NodeType
 import com.abrah.nightmare.R
 import com.abrah.nightmare.SdSampler
 import com.abrah.nightmare.ui.ErrorNotice
-import com.abrah.nightmare.ui.LogTextStyle
+import com.abrah.nightmare.ui.NoteTextStyle
 
 /**
  * ⭐⭐ The square IP-Adapter will read — [IpAdapter.square] of the `reference`
@@ -131,7 +131,7 @@ internal fun IpAdapterPanel(
         if (wired != null) {
             Text(
                 stringResource(R.string.ip_from_wire),
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -176,7 +176,7 @@ internal fun IpAdapterPanel(
         } else {
             Text(
                 stringResource(R.string.ip_no_picture),
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

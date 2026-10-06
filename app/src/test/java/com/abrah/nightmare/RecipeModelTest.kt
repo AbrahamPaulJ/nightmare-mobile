@@ -227,13 +227,16 @@ class RecipeModelTest {
     }
 
     /**
-     * ⚠ Z-Image and FLUX.2 by NAME, because they are the two the report was
-     * about and a rule can be right in general while the catalogue quietly
-     * stops containing the case that mattered.
+     * ⚠ The DiT families by NAME, because a rule can be right in general while
+     * the catalogue quietly stops containing the case that mattered. Z-Image,
+     * Qwen 2.1 and Krea 2 inpaint since 2026-10-05 (masked img2img + the
+     * composite); FLUX.2's type stays unregistered (`SdSampler.ALL`).
      */
     @Test
-    fun theDitFamiliesCannotInpaint() {
-        assertTrue("Z-Image gained an inpaint type", !SdSampler.canInpaint(Family.ZIMAGE))
+    fun theDitInpaintRegistry() {
+        assertTrue("Z-Image lost its inpaint type", SdSampler.canInpaint(Family.ZIMAGE))
+        assertTrue("Qwen 2.1 lost its inpaint type", SdSampler.canInpaint(Family.QWEN21))
+        assertTrue("Krea 2 lost its inpaint type", SdSampler.canInpaint(Family.KREA2))
         assertTrue("FLUX.2 gained an inpaint type", !SdSampler.canInpaint(Family.FLUX2))
         assertTrue("SD 1.5 lost its inpaint type", SdSampler.canInpaint(Family.SD15))
     }

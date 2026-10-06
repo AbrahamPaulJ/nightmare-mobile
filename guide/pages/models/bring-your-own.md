@@ -30,12 +30,12 @@ behavior.
 These build their model at load time from ordinary weights, so **a fine-tune from CivitAI or
 Hugging Face imports as-is** — no conversion, no PC. Both `.safetensors` and `.gguf` work.
 
-1. Open the **FLUX.2**, **Z-Image** or **Krea 2** tab in Models.
+1. In Models, open **Family ▾ → FLUX.2**, **Z-Image** or **Krea 2**.
 2. Tap **Import** and pick the file.
 3. Name it.
 
 The app reads the file's tensor names: a Klein 9B fine-tune is recognised as 9B, and a file
-picked on the wrong tab is refused with the tab it belongs on.
+picked on the wrong family's page is refused with the family it belongs to.
 
 - **Klein 4B and Z-Image** share the text encoder, VAE and tokenizer with the family's model, so
   an import costs only its own weights (plus up to 2.6 GB once, if you have neither family).

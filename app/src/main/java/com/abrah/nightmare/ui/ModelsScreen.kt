@@ -288,7 +288,7 @@ fun ModelsScreen(
                         Text(
                             "The flow on the canvas has not been saved — opening one of " +
                                 "these replaces it.",
-                            style = LogTextStyle,
+                            style = NoteTextStyle,
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
@@ -309,7 +309,7 @@ fun ModelsScreen(
                                 Text(r.label, fontWeight = FontWeight.Medium)
                                 Text(
                                     r.about,
-                                    style = LogTextStyle,
+                                    style = NoteTextStyle,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -384,7 +384,7 @@ fun ModelsScreen(
                         // size is unknown until it is read, so there is no
                         // honest percentage to show during the unpack.
                         importProgress?.phase ?: stringResource(R.string.importing_working),
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     // ⚠ Indeterminate whenever the total is unknown, which is
@@ -402,43 +402,55 @@ fun ModelsScreen(
                 }
             }
         }
-        // ⭐⭐ One sub-tab per FAMILY, swipeable.
-        //
-        // ⚠ Fifteen rows in one list is not merely long, it is misleading: an
-        // SD 1.5 entry and an SDXL entry look alike and differ by 3.5x in
-        // download, by a whole generation of chip, and in what they can even
-        // run on. The split is the honest presentation of a catalogue with two
-        // families in it, and it is where a third would go.
-        //
-        // ⚠ Built from the rows actually PRESENT rather than from a hardcoded
-        // pair, so a family with no entries shows no tab instead of an empty
-        // page — and adding one needs no change here.
+        // ⭐⭐⭐ **The Models BROWSER** — the user's concept art, 2026-10-05
+        // ([ModelBrowser.kt]). Capability chips replaced the swipeable family
+        // tabs, which competed with the sheet's own swipes; a search box and a
+        // Family menu under them; Installed, then Available, then the models
+        // this phone cannot run in a collapsed section of their own (the user:
+        // *"so user only sees whats supported"*). A family opens its own page.
         val families = Family.entries.filter { f -> rows.any { it.spec.family == f } }
-        // ⚠⚠ Upscalers get their OWN tab rather than rows among the
-        // checkpoints. They are not a third family — they are a different kind
-        // of model entirely (`Upscalers.kt`): 8-24 MB rather than 1-3.7 GB, no
-        // launch contract, and nothing to "use". A row that looked like a
-        // checkpoint but had no Use button would read as a broken checkpoint.
-        val hasUpscalers = upscalers.isNotEmpty()
-        SwipeTabs(
-            labels = families.map { it.label } +
-                (if (hasUpscalers) listOf(stringResource(R.string.upscalers)) else emptyList()) +
-                (if (video != null) listOf(stringResource(R.string.video)) else emptyList()) +
-                (if (segmenter != null || parser != null) listOf(stringResource(R.string.tools)) else emptyList()),
-            modifier = Modifier.padding(top = 8.dp),
-        ) { page ->
-            // ⚠ LAST again, after Video, so adding it moved no existing index.
-            if ((segmenter != null || parser != null) &&
-                page == families.size + (if (hasUpscalers) 1 else 0) + (if (video != null) 1 else 0)
-            ) {
-                LazyColumn(
-                    Modifier.fillMaxWidth().padding(top = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+        // ⚠ With no checkpoints but the video models, opens on Video — what the
+        // family tabs did when the video tab was page 0 (a real state: a phone
+        // that downloaded only the video models).
+        var kind by androidx.compose.runtime.saveable.rememberSaveable {
+            mutableStateOf(if (rows.isEmpty() && video != null) ModelKind.VIDEO else ModelKind.ALL)
+        }
+        var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+        var familyPage by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Family?>(null) }
+        var sub by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(SubKind.ALL) }
+        var showUnsupported by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+        val kinds = buildList {
+            add(ModelKind.ALL)
+            add(ModelKind.GENERATE)
+            if (rows.any { it.spec.family.edit }) add(ModelKind.EDIT)
+            if (rows.any { it.spec.isInpaintModel() }) add(ModelKind.INPAINT)
+            if (video != null) add(ModelKind.VIDEO)
+            if (upscalers.isNotEmpty()) add(ModelKind.UPSCALE)
+            if (segmenter != null || parser != null) add(ModelKind.TOOLS)
+        }
+        // ⚠ Back leaves the family page before it leaves the screen.
+        if (familyPage != null) androidx.activity.compose.BackHandler { familyPage = null }
+        val fp = familyPage
+        if (fp == null) {
+            androidx.compose.foundation.layout.Box(Modifier.padding(top = 8.dp)) { PillRow(kinds, kind, { kindLabel(it) }) { kind = it } }
+        }
+        if (fp == null && kind == ModelKind.VIDEO && video != null) {
+            VideoModelsTab(
+                video, busy, onInstallVideo, onCancel,
+                onConfirmDelete = { deletingVideo = true },
+                onProbe = onProbeVideo,
+                onUse = onUseVideo,
+            )
+        } else LazyColumn(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            when {
+                fp == null && kind == ModelKind.TOOLS -> {
                     item {
                         Text(
                             stringResource(R.string.tools_note),
-                            style = LogTextStyle,
+                            style = NoteTextStyle,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -475,40 +487,15 @@ fun ModelsScreen(
                             ) { deletingDepth = true }
                         }
                     }
-                    // ⭐⭐ **No LoRAs or embeddings here** — the user's call,
-                    // 2026-09-26: Settings already imports, lists and deletes
-                    // both, so this tab is the models a TOOL runs on.
                 }
-                return@SwipeTabs
-            }
-            // ⚠ LAST, after the upscalers, so adding it moved no existing index.
-            if (video != null && page == families.size + (if (hasUpscalers) 1 else 0)) {
-                VideoModelsTab(
-                    video, busy, onInstallVideo, onCancel,
-                    onConfirmDelete = { deletingVideo = true },
-                    onProbe = onProbeVideo,
-                    onUse = onUseVideo,
-                )
-                return@SwipeTabs
-            }
-            if (hasUpscalers && page == families.size) {
-                LazyColumn(
-                    Modifier.fillMaxWidth().padding(top = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                fp == null && kind == ModelKind.UPSCALE -> {
                     item {
                         Text(
-                            // ⚠ The contrast with the checkpoint tabs is the
-                            // point: these are megabytes, not gigabytes, and a
-                            // user who has learned to fear this screen's
-                            // download sizes should be told immediately.
                             stringResource(R.string.upscalers_note),
-                            style = LogTextStyle,
+                            style = NoteTextStyle,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    // ⭐ Bring your own — a bare `.bin`, same shape as
-                    // checkpoint import. Reported 2026-09-18.
                     if (onImportUpscaler != null) {
                         item {
                             ImportCallout(
@@ -527,109 +514,75 @@ fun ModelsScreen(
                         )
                     }
                 }
-                return@SwipeTabs
-            }
-            val family = families[page]
-            // ⭐ Installed first, and the one in use at the very top.
-            //
-            // ⚠ The catalogue order is a curator's order -- it says which
-            // checkpoints are worth having. Once a user HAS some, that stops
-            // being the useful order: what they came here to do is switch
-            // between the ones already on the phone, and those were scattered
-            // among ten they have not downloaded. ⚠ Stable within each group,
-            // so the curated order still shows through.
-            val shown = rows.filter { it.spec.family == family }
-                .sortedByDescending { (if (it.selected) 2 else 0) + (if (it.installed) 1 else 0) }
-            LazyColumn(
-                Modifier.fillMaxWidth().padding(top = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                // ⚠⚠ Says the size out loud, PER FAMILY, and inside the page so
-                // it describes the list under it. A gigabyte is a thing a person
-                // should be told about BEFORE they tap, not discovered
-                // afterwards on a mobile plan -- and one sentence covering both
-                // families had to say "1 GB or 3.5 GB", which is the shape of
-                // warning people learn to skip.
-                // ⭐⭐ Bring your own checkpoint, FIRST in the list.
-                //
-                // ⚠ It was at the bottom, below fifteen catalogue rows, on the
-                // reasoning that it is the rarer path — and it was simply not
-                // found. A user who already has a checkpoint is not browsing
-                // ours, and making them scroll past all of it to reach the one
-                // thing they came for is the wrong default. Reported from the
-                // phone 2026-09-10.
-                //
-                // ⚠ On every family tab, because the family is INFERRED from the
-                // archive rather than chosen — a zip picked on the SD 1.5 tab
-                // that turns out to be SDXL lands correctly on the other one.
-                // ⭐⭐⭐ **The same card, and on a DiT tab a different FILE.**
-                //
-                // ⚠⚠ The note above stops holding for FLUX.2 and Z-Image. A DiT
-                // package is not a zip and carries no marker, so nothing about a
-                // bare `.safetensors` says which family it is — the tab has to
-                // supply it. ⇒ One button per tab either way, never two, and
-                // the same [ImportCallout] and naming dialog everywhere.
-                // ⭐ Krea 2 too since 1.6.069 — the importer reads a .gguf's
-                // tensor table as well (GitHub #5). ⚠ Not Qwen Image: nothing
-                // tells its checkpoints apart yet, and it edits through a
-                // vision tower an import would have to bring.
-                if (family.dit) {
-                    if (onImportDit != null && family != Family.QWEN21) {
-                        item { ImportCard(busy, onImport = { onImportDit(it, family) }, dit = true) }
+                else -> {
+                    if (fp == null) {
+                        item { SearchBox(query, { query = it }) }
+                        item {
+                            FamilyMenu(families.map { f -> f to rows.count { it.spec.family == f } }) {
+                                familyPage = it
+                                sub = SubKind.ALL
+                            }
+                        }
+                    } else {
+                        item {
+                            FamilyHeader(fp, rows.count { it.spec.family == fp }, familyNote(fp)) { familyPage = null }
+                        }
+                        // ⚠ Sub-chips only when there is a choice to make.
+                        val subs = SubKind.entries.filter { s ->
+                            s == SubKind.ALL || rows.any { it.spec.family == fp && matchesSub(it.spec, s) }
+                        }
+                        if (subs.size > 2) item { PillRow(subs, sub, { subLabel(it) }) { sub = it } }
+                        // ⭐ Bring your own, on the family's page — a DiT family takes
+                        // a `.safetensors` and needs the family said ([CustomModels.importDit]).
+                        if (fp.dit) {
+                            if (onImportDit != null && fp != Family.QWEN21) {
+                                item { ImportCard(busy, onImport = { onImportDit(it, fp) }, dit = true) }
+                            }
+                        } else if (onImport != null) {
+                            item { ImportCard(busy, onImport) }
+                        }
                     }
-                } else if (onImport != null) {
-                    item { ImportCard(busy, onImport) }
-                }
-                item {
-                    Text(
-                        when (family) {
-                            Family.SD15 -> "About 1 GB each. Use Wi-Fi."
-                            // ⭐ Two defaults, or any conversion of your own.
-                            Family.SD15_SWAP -> "About 1.3 GB each. LoRAs and ControlNet are " +
-                                "chosen per render, 512×512 only. Convert your own SD 1.5 " +
-                                "checkpoint in npuforge as SD1.5 Swap and import the zip here."
-                            // ⭐ No defaults yet: only the user's own conversions.
-                            Family.SDXL_SWAP -> "LoRAs are chosen per render, 1024×1024. Convert " +
-                                "your own SDXL checkpoint in npuforge (1.0.10 or newer) as SDXL Swap " +
-                                "with LoRA ticked, and import the zip here."
-                            // ⚠ Measured 2026-09-16 on an 11.4 GB phone: 6.4 s a
-                            // step, and killed by Android while other apps were
-                            // in use. Said here, before 4 GB is downloaded.
-                            Family.ANIMA -> "About 4.3 GB each, and ~9 GB free while it " +
-                                "unpacks. Slow: about 80 s a picture. Close other apps " +
-                                "while it renders. Use Wi-Fi."
-                            // ⚠ Plain files straight into place, so no unpack
-                            // headroom — but only an 8 Elite or newer runs them.
-                            // ⚠ Klein 9B is 10.7 GB and streams its text
-                            // encoder from disk, so it is the slower of the two.
-                            Family.FLUX2 -> "Klein 4B about 6.7 GB, Klein 9B about 10.7 GB " +
-                                "and slower. 8 Elite or newer only. Any size from 512 to " +
-                                "2048. Use Wi-Fi."
-                            // ⚠⚠ Said before 8.8 GB is downloaded: upstream's own
-                            // build crashes on the dev phone (8 Elite), and works
-                            // on some 8 Elite Gen 5 phones (the user, 2026-09-19).
-                            Family.ZIMAGE -> "About 8.8 GB. 8 Elite or newer only. Still " +
-                                "maturing: it crashes on some 8 Elite phones. Use Wi-Fi."
-                            // ⚠ 10.8 GB on disk against a 12 GB phone: it loads one
-                            // part at a time, so it is slower than FLUX.2.
-                            Family.QWEN21 -> "About 10.8 GB. 8 Elite or newer only. Edits " +
-                                "and generates; slower than FLUX.2. Use Wi-Fi."
-                            // ⚠ Loads one part at a time like Qwen (all=disk).
-                            // Not an edit model: the fork's own edits fail.
-                            Family.KREA2 -> "About 9.5 GB. 8 Elite or newer only. Text to " +
-                                "image only; it does not edit. Use Wi-Fi."
-                            // ⚠ The free-space figure is the one that surprises:
-                            // the archive and its unpacked copy are both on disk
-                            // at once, so a 3.5 GB download needs ~7.5 GB free.
-                            else -> "About 3.5 GB each, and ~7.5 GB free while " +
-                                "it unpacks. Use Wi-Fi."
-                        },
-                        style = LogTextStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    val sec = sectionsOf(
+                        rows,
+                        if (fp == null) kind else ModelKind.ALL,
+                        if (fp == null) query else "",
+                        fp,
+                        if (fp == null) SubKind.ALL else sub,
                     )
-                }
-                items(shown, key = { it.spec.id }) { row ->
-                    ModelCard(row, busy, onInstall, onCancel, { deleting = it }, onSelect)
+                    val card: @Composable (ModelRow) -> Unit = { row ->
+                        ModelCardV2(row, busy, onInstall, onCancel, { deleting = it }, onSelect)
+                    }
+                    if (sec.installed.isNotEmpty()) {
+                        item { SectionHeader(stringResource(R.string.mb_section_installed, sec.installed.size)) }
+                        items(sec.installed, key = { "i_" + it.spec.id }) { card(it) }
+                    }
+                    if (sec.available.isNotEmpty()) {
+                        item { SectionHeader(stringResource(R.string.mb_section_available, sec.available.size)) }
+                        items(sec.available, key = { "a_" + it.spec.id }) { card(it) }
+                    }
+                    if (sec.unsupported.isNotEmpty()) {
+                        item {
+                            SectionHeader(
+                                stringResource(R.string.mb_section_unsupported, sec.unsupported.size),
+                                collapsed = !showUnsupported,
+                            ) { showUnsupported = !showUnsupported }
+                        }
+                        if (showUnsupported) items(sec.unsupported, key = { "u_" + it.spec.id }) { card(it) }
+                    }
+                    if (sec.isEmpty) {
+                        item {
+                            Text(
+                                stringResource(R.string.mb_no_match),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 16.dp),
+                            )
+                        }
+                    }
+                    // ⭐ The generic zip import closes the main list: the family is
+                    // read from the archive, so no page has to be chosen first.
+                    if (fp == null && onImport != null) item { ImportCard(busy, onImport) }
+                    item { androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 16.dp)) }
                 }
             }
         }
@@ -761,6 +714,54 @@ fun ModelsScreen(
 }
 
 /**
+ * ⭐ What a family page says under its name — sizes, chips, speed — the line
+ * each family TAB used to open with, said BEFORE gigabytes are downloaded.
+ */
+@Composable
+private fun familyNote(family: Family): String = when (family) {
+        Family.SD15 -> "About 1 GB each. Use Wi-Fi."
+        // ⭐ Two defaults, or any conversion of your own.
+        Family.SD15_SWAP -> "About 1.3 GB each. LoRAs and ControlNet are " +
+            "chosen per render, 512×512 only. Convert your own SD 1.5 " +
+            "checkpoint in npuforge as SD1.5 Swap and import the zip here."
+        // ⭐ Two defaults since 2026-10-05, or any conversion of your own.
+        Family.SDXL_SWAP -> "About 3.9 GB each. LoRAs are chosen per render, 1024×1024, " +
+            "8 Elite or newer. Convert your own SDXL checkpoint in npuforge (1.0.11 or " +
+            "newer) as SDXL Swap with LoRA ticked, and import the zip here."
+        // ⚠ Measured 2026-09-16 on an 11.4 GB phone: 6.4 s a
+        // step, and killed by Android while other apps were
+        // in use. Said here, before 4 GB is downloaded.
+        Family.ANIMA -> "About 4.3 GB each, and ~9 GB free while it " +
+            "unpacks. Slow: about 80 s a picture. Close other apps " +
+            "while it renders. Use Wi-Fi."
+        // ⚠ Plain files straight into place, so no unpack
+        // headroom — but only an 8 Elite or newer runs them.
+        // ⚠ Klein 9B is 10.7 GB and streams its text
+        // encoder from disk, so it is the slower of the two.
+        Family.FLUX2 -> "Klein 4B about 6.7 GB, Klein 9B about 10.7 GB " +
+            "and slower. 8 Elite or newer only. Any size from 512 to " +
+            "2048. Use Wi-Fi."
+        // ⚠⚠ Said before 8.8 GB is downloaded: upstream's own
+        // build crashes on the dev phone (8 Elite), and works
+        // on some 8 Elite Gen 5 phones (the user, 2026-09-19).
+        Family.ZIMAGE -> "About 8.8 GB. 8 Elite or newer only. Still " +
+            "maturing: it crashes on some 8 Elite phones. Use Wi-Fi."
+        // ⚠ 10.8 GB on disk against a 12 GB phone: it loads one
+        // part at a time, so it is slower than FLUX.2.
+        Family.QWEN21 -> "About 10.8 GB. 8 Elite or newer only. Edits " +
+            "and generates; slower than FLUX.2. Use Wi-Fi."
+        // ⚠ Loads one part at a time like Qwen (all=disk).
+        // Not an edit model: the fork's own edits fail.
+        Family.KREA2 -> "About 9.5 GB. 8 Elite or newer only. Text to " +
+            "image only; it does not edit. Use Wi-Fi."
+        // ⚠ The free-space figure is the one that surprises:
+        // the archive and its unpacked copy are both on disk
+        // at once, so a 3.5 GB download needs ~7.5 GB free.
+        else -> "About 3.5 GB each, and ~7.5 GB free while " +
+            "it unpacks. Use Wi-Fi."
+}
+
+/**
  * The "import a zip" row, plus the name dialog.
  *
  * ⚠⚠ A name is asked for BEFORE the picker opens, and it is not optional. The
@@ -847,7 +848,7 @@ private fun ImportCard(
                             else -> "This becomes the folder name and the id saved " +
                                 "into every workflow that uses it."
                         },
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = if (reserved) {
                             MaterialTheme.colorScheme.error
                         } else {
@@ -923,10 +924,10 @@ internal fun DownloadCard(
                         } else {
                             status
                         },
-                        style = LogTextStyle,
+                        style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(detail, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(detail, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Column {
             if (stacked) {
@@ -964,7 +965,7 @@ internal fun DownloadCard(
                     LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
                 }
                 // ⭐ The phase under the bar: which file, or "extracting".
-                Text(progress.phase, style = LogTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(progress.phase, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         }
@@ -973,79 +974,6 @@ internal fun DownloadCard(
 
 /** ⚠ Fields on a status or detail line are joined by ONE separator (§8.1). */
 private fun fields(vararg parts: String?): String = parts.filterNotNull().filter { it.isNotBlank() }.joinToString(" · ")
-
-@Composable
-private fun ModelCard(
-    row: ModelRow,
-    busy: Boolean,
-    onInstall: (ModelSpec) -> Unit,
-    onCancel: () -> Unit,
-    onDelete: (ModelSpec) -> Unit,
-    onUse: (ModelSpec) -> Unit,
-) {
-    DownloadCard(
-        title = row.spec.label,
-        emphasised = row.selected,
-        status = when {
-            row.installed && row.selected -> stringResource(R.string.in_use_mb, mb(row.onDisk)) +
-                if (row.ramTight) stringResource(R.string.ram_tight) else ""
-            row.installed -> stringResource(R.string.installed_mb, mb(row.onDisk)) +
-                if (row.ramTight) stringResource(R.string.ram_tight) else ""
-            // ⚠⚠ A custom model is never "not installed" and never
-            // "unsupported": its files are already on the phone, so the only
-            // failure it can have is being INCOMPLETE -- and it must say which
-            // files, because nothing else would ever tell the user.
-            row.spec.isCustom -> stringResource(R.string.incomplete_missing, row.missing.joinToString())
-            // ⭐⭐ A built-in with files DELETED names them and what the repair
-            // costs, rather than reading as never downloaded (2026-09-27).
-            row.build != null && row.partial ->
-                stringResource(R.string.incomplete_repair_mb, row.missing.joinToString(), mb(row.fetchBytes))
-            // ⚠⚠ The size of the build THIS DEVICE would get, not of the
-            // preferred one: they differ by up to 60 MB between tiers.
-            row.build != null -> stringResource(R.string.not_installed_mb, mb(row.build.bytes))
-            // ⭐ The chip could run it and the RAM cannot: say which. ⚠ One
-            // class today ([Prefs.LOWRAM_BELOW_BYTES], the 16 GB phones).
-            row.needsRam > 0 -> stringResource(R.string.needs_16gb_ram)
-            else -> stringResource(R.string.cannot_run_it)
-        },
-        // ⭐ Family, NATIVE size, and the BUILD TIER -- `_min` is ~2.5x slower
-        // per image than `_8gen2`, and a user comparing phones deserves to see
-        // why. ⚠ An imported model says "imported" where a built-in names its
-        // tier: its family and size were INFERRED from the files.
-        detail = fields(
-            row.spec.family.label,
-            row.spec.native.toString(),
-            when {
-                row.spec.isCustom -> "imported"
-                row.build != null -> row.build.tier.removePrefix("_")
-                else -> null
-            },
-        ),
-        progress = row.progress,
-    ) {
-        when {
-            row.progress != null -> OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-            // ⚠ No delete on the model in use: removing it would leave the
-            // backend pointed at a directory that is gone.
-            row.installed && row.selected ->
-                OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.in_use)) }
-            row.installed ->
-                InstalledActions(busy, onDelete = { onDelete(row.spec) }, onUse = { onUse(row.spec) })
-            // ⚠⚠ An INCOMPLETE import: the only action is to delete it. There
-            // is no Download that could complete it. ⚠ `Delete`, not `Remove`:
-            // the dialog it opens says Delete, and one action has one verb.
-            row.spec.isCustom ->
-                OutlinedButton(onClick = { onDelete(row.spec) }, enabled = !busy) { Text(stringResource(R.string.delete)) }
-            // ⚠⚠ No build this HTP can load: DISABLED and saying why, rather
-            // than failing after a multi-gigabyte download.
-            row.build == null ->
-                OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.unsupported)) }
-            else -> Button(onClick = { onInstall(row.spec) }, enabled = !busy) {
-                Text(stringResource(if (row.partial) R.string.repair else R.string.download))
-            }
-        }
-    }
-}
 
 /**
  * ⭐⭐ The video models, as one row on their own tab.
@@ -1082,7 +1010,7 @@ private fun VideoModelsTab(
         item {
             Text(
                 stringResource(R.string.video_models_note, gb(row.totalBytes)),
-                style = LogTextStyle,
+                style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

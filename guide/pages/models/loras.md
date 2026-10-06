@@ -32,6 +32,14 @@ its size: about 6% for a typical FLUX.2 adapter, around 40% for a large Z-Image 
 
 If the LoRA's description names a trigger word, put that word in your prompt.
 
+### Notes
+
+The **⋮** beside each LoRA opens a note for it: its trigger words, the strength and settings it
+works best with, anything you would otherwise have to remember. Put the **trigger words on the
+first line**. In the note, **Copy** copies the whole note and **Add to prompt** adds the first
+line to the prompt wired into that generator. A dot beside the ⋮ marks a LoRA that has a note.
+Notes are kept next to the LoRA files, so they stay when the app is updated.
+
 ### On SD 1.5 Swap
 
 An SD 1.5 Swap model has room for ONE rank-64 adapter per layer, so the LoRAs you tick are

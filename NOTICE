@@ -242,6 +242,18 @@ AbsoluteReality v1.8.1, CuteYukiMix, Anything V5 (the SD 1.5 Swap defaults)
     checkpoint's own licence and its author's permissions apply
     (CreativeML OpenRAIL-M for SD 1.5 derivatives).
 
+Illustrious XL v1.0, Juggernaut XL Ragnarok (the SDXL Swap defaults)
+    OnomaAI Research; RunDiffusion
+    Converted with npuforge as SDXL Swap v2 and re-hosted at
+    https://huggingface.co/AbrahamPJ/nightmare-sdxl-swap-models. Illustrious
+    XL v1.0 is under CreativeML Open RAIL++-M; Juggernaut XL under CreativeML
+    Open RAIL-M with RunDiffusion's terms (no paid API deployment without
+    their licence). Each licence's use restrictions apply.
+
+Inter (the app's typeface, bundled in app/src/main/res/font)
+    Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)
+    SIL Open Font License 1.1 (https://openfontlicense.org).
+
 
 NON-COMMERCIAL
 --------------

@@ -107,7 +107,7 @@
     <string name="mask_tap_hint">点按物体即可选中。再点一次选中更多，再点一次取消选择。</string>
     <string name="tools">工具</string>
     <string name="tools_note">在手机 CPU 上运行的小助手。接入流程即可使用。</string>
-    <string name="segmenter_about">在 Inpaint 蒙版中点按物体即可选中。将 Segment model 节点接入 Inpaint。</string>
+    <string name="segmenter_about">在 Inpaint 蒙版中点按物体即可选中。在蒙版编辑器中勾选“Enable tap to select”即可使用。</string>
     <string name="download_source">下载源</string>
     <string name="download_source_note">从哪里下载模型文件。如果 Hugging Face 在你所在的地区很慢或无法访问，请修改此项 — 它对所有模型、超分模型、分割模型和视频模型都生效。</string>
     <string name="source_huggingface">Hugging Face</string>
@@ -212,6 +212,8 @@
     <string name="cn_replace">替换</string>
     <string name="cn_clear">移除</string>
     <string name="cn_sees">ControlNet 看到的内容</string>
+    <string name="cn_saved">控制图已保存到相册</string>
+    <string name="cn_save_failed">无法保存控制图：</string>
     <string name="cn_no_picture_photo">还没有图片：选择一张照片，或将图片连接到 control。边缘在这里提取。</string>
     <string name="cn_no_picture_hint">还没有图片：选择一张现成的提示图，或将图片连接到 control。</string>
     <string name="pose_about">为 SD 1.5 Swap 的 ControlNet 将照片转换为 openpose 骨架。现成的骨架无需此模型。</string>
@@ -242,4 +244,28 @@
     <string name="crop_done">完成</string>
     <string name="crop_over_photo">拖动移动 · 双指缩放 · 下层显示你的照片</string>
     <string name="crop_gestures">拖动移动 · 双指缩放</string>
+    <!-- Models browser (2026-10-05) -->
+    <string name="mb_kind_all">全部</string>
+    <string name="mb_kind_generate">生成</string>
+    <string name="mb_kind_edit">编辑</string>
+    <string name="mb_kind_inpaint">局部重绘</string>
+    <string name="mb_search_hint">搜索模型，例如 \"anime\"、\"inpaint\"、\"flux\"</string>
+    <string name="mb_family">系列：%1$s</string>
+    <string name="mb_all_families">全部系列</string>
+    <string name="mb_section_installed">已安装 (%1$d)</string>
+    <string name="mb_section_available">可下载 (%1$d)</string>
+    <string name="mb_section_unsupported">本机不支持 (%1$d)</string>
+    <string name="mb_status_installed">已安装</string>
+    <string name="mb_status_not_installed">未安装</string>
+    <string name="mb_status_in_use">使用中</string>
+    <string name="mb_status_incomplete">不完整</string>
+    <string name="mb_models_count">%1$d 个模型</string>
+    <string name="mb_sub_base">基础</string>
+    <string name="mb_sub_imported">导入</string>
+    <string name="mb_no_match">没有匹配的模型。</string>
+    <string name="mb_group_classic">经典扩散</string>
+    <string name="mb_group_dit">新一代 DiT</string>
+    <string name="mb_back">返回</string>
+    <string name="mb_more">更多</string>
+    <string name="flows_open">打开</string>
 </resources>
