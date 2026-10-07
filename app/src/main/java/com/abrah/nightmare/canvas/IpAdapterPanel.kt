@@ -113,16 +113,18 @@ internal fun IpAdapterPanel(
             onPick = { onSetParam(SdSampler.IP_ADAPTER, it) },
         )
         if (adapter == IpAdapter.NONE) return@Column
-        val row = rows[IpAdapter.rowKey(adapter)]
+        // ⭐ The head for this model's family ([IpAdapter.adapterFor]): SDXL Swap reads its own.
+        val head = IpAdapter.adapterFor(spec?.family, adapter)
+        val row = rows[IpAdapter.rowKey(head)]
         if (row != null && (!row.installed || row.progress != null)) {
-            ErrorNotice(stringResource(R.string.ip_not_installed, IpAdapter.label(adapter)))
+            ErrorNotice(stringResource(R.string.ip_not_installed, IpAdapter.label(head)))
             com.abrah.nightmare.ui.ToolCard(
                 row = row,
                 busy = busy,
-                onInstall = { onInstall?.invoke(IpAdapter.rowKey(adapter)) },
+                onInstall = { onInstall?.invoke(IpAdapter.rowKey(head)) },
                 onCancel = { onCancel?.invoke() },
                 detail = stringResource(R.string.ip_about),
-                onDelete = { onDelete?.invoke(IpAdapter.rowKey(adapter)) },
+                onDelete = { onDelete?.invoke(IpAdapter.rowKey(head)) },
             )
         }
         type?.widgets?.firstOrNull { it.name == SdSampler.IP_SCALE }?.let { w ->

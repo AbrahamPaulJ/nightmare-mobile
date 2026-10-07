@@ -41,6 +41,44 @@ object Prefs {
         theme = Theme.entries.firstOrNull { it.name == raw } ?: Theme.SYSTEM
         downloadBase = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
             .getString(KEY_MIRROR, null)?.takeIf { it.isNotBlank() } ?: HF_ORIGIN
+        civitaiKey = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getString(KEY_CIVITAI_KEY, null).orEmpty()
+        matureContent = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getBoolean(KEY_MATURE, false)
+    }
+
+    // ---- the LoRA browser (`docs/LORA-BROWSER.md`) ---------------------------
+
+    private const val KEY_CIVITAI_KEY = "civitai_api_key"
+    private const val KEY_MATURE = "civitai_mature"
+
+    /**
+     * ⭐ The person's own CivitAI API key — 32 of the 40 most-downloaded LoRAs
+     * refuse a download without one (measured 2026-10-07). Blank = none.
+     * ⚠ App-private preferences, never logged, never put in a URL: it travels
+     * only as an `Authorization` header to CivitAI ([LoraSources]).
+     */
+    var civitaiKey: String = ""
+        private set
+
+    fun setCivitaiKey(context: Context, value: String) {
+        civitaiKey = value.trim()
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString(KEY_CIVITAI_KEY, civitaiKey).apply()
+    }
+
+    /**
+     * ⭐ Show mature content — search civitai.red instead of civitai.com. OFF by
+     * default (the user's call, 2026-10-07): since April 2026 civitai.com
+     * answers with SFW results only, civitai.red with everything.
+     */
+    var matureContent: Boolean = false
+        private set
+
+    fun setMatureContent(context: Context, value: Boolean) {
+        matureContent = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_MATURE, value).apply()
     }
 
     fun setTheme(context: Context, value: Theme) {
@@ -62,9 +100,9 @@ object Prefs {
      * eight constants in five files ([ModelCatalog.SD15_BASE_URL] and friends,
      * [Upscalers], [segment.Segmenter], [npu.VideoInstaller]), so rebasing them
      * all would mean touching every one and keeping them in step forever. ⇒
-     * one substitution at the two places that actually open a connection
-     * ([apply]), which cannot go out of step with a catalogue entry because it
-     * never reads one.
+     * one substitution where a connection is opened ([apply] — in
+     * [ModelInstaller.fetch] and in [LoraSources]'s Hugging Face calls), which
+     * cannot go out of step with a catalogue entry because it never reads one.
      *
      * ⚠ Only `huggingface.co` is rewritten. The DiT engine comes from a
      * GitHub release tag and is deliberately left alone ([DitEngine]): a mirror

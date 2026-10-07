@@ -15,7 +15,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.abrah.nightmare.R
 import com.abrah.nightmare.ui.ConfirmDelete
 
 /** ⚠ Long enough to swallow a double tap, short enough not to block a retry. */
@@ -152,14 +154,18 @@ fun PictureActions(
     // viewer on a new picture is a new download.
     var lastDownload by remember { mutableStateOf(0L) }
     var confirming by remember { mutableStateOf(false) }
-    val what = if (isClip) "clip" else "picture"
-
     // ⚠⚠ **CLEAR, not delete** (the user's call, 2026-09-17): on a node this
     // empties the node; the picture is gone only if nothing else holds it. An
     // AUTOSAVED History copy goes with it; a hand-kept one stays.
     onDelete?.let {
         IconButton(onClick = { confirming = true }, modifier = small) {
-            Icon(Icons.Filled.Delete, contentDescription = "clear this $what", tint = deleteTint)
+            Icon(
+                Icons.Filled.Delete,
+                contentDescription = stringResource(
+                    if (isClip) R.string.picture_cd_clear_clip else R.string.picture_cd_clear_picture,
+                ),
+                tint = deleteTint,
+            )
         }
     }
     // ⭐ 💾 Keep — into Results, with the flow that made it.
@@ -175,8 +181,10 @@ fun PictureActions(
                 if (kept) Icons.Filled.Check else com.abrah.nightmare.ui.SaveIcon,
                 contentDescription = when {
                     keepDisabledReason != null -> keepDisabledReason
-                    kept -> "kept in Results"
-                    else -> "keep this $what in Results"
+                    kept -> stringResource(R.string.picture_cd_kept)
+                    else -> stringResource(
+                        if (isClip) R.string.picture_cd_keep_clip else R.string.picture_cd_keep_picture,
+                    )
                 },
                 // ⚠ Dimmed rather than hidden: the row must not change shape
                 // depending on a setting on another node.
@@ -211,26 +219,40 @@ fun PictureActions(
         ) {
             Icon(
                 com.abrah.nightmare.ui.DownloadIcon,
-                contentDescription = "save this $what to the gallery",
+                contentDescription = stringResource(
+                    if (isClip) R.string.picture_cd_save_clip else R.string.picture_cd_save_picture,
+                ),
                 tint = tint,
             )
         }
     }
     onShare?.let { share ->
         IconButton(onClick = share, modifier = small) {
-            Icon(com.abrah.nightmare.ui.ShareIcon, contentDescription = "share this $what", tint = tint)
+            Icon(
+                com.abrah.nightmare.ui.ShareIcon,
+                contentDescription = stringResource(
+                    if (isClip) R.string.picture_cd_share_clip else R.string.picture_cd_share_picture,
+                ),
+                tint = tint,
+            )
         }
     }
     onSendTo?.takeIf { !isClip }?.let { send ->
         IconButton(onClick = send, modifier = small) {
-            Icon(com.abrah.nightmare.ui.SendToIcon, contentDescription = "send this picture to a flow", tint = tint)
+            Icon(
+                com.abrah.nightmare.ui.SendToIcon,
+                contentDescription = stringResource(R.string.picture_cd_send_to_flow),
+                tint = tint,
+            )
         }
     }
     onStar?.let { star ->
         IconButton(onClick = star, modifier = small) {
             Icon(
                 Icons.Filled.Star,
-                contentDescription = if (favourite) "remove from favourites" else "keep and favourite",
+                contentDescription = stringResource(
+                    if (favourite) R.string.results_cd_remove_favourite else R.string.picture_cd_keep_favourite,
+                ),
                 // ⚠⚠ The TINT carries the state, and it follows FAVOURITE rather
                 // than kept: the star's own job is the flag now, and one that lit
                 // up because the disk had been tapped would say the wrong thing.
@@ -252,7 +274,7 @@ fun PictureActions(
         ) {
             Icon(
                 com.abrah.nightmare.ui.UpscaleIcon,
-                contentDescription = upscaleDisabledReason ?: "upscale this picture",
+                contentDescription = upscaleDisabledReason ?: stringResource(R.string.results_cd_upscale_picture),
                 // ⚠ Dimmed rather than hidden — see [upscaleDisabledReason].
                 tint = if (upscaleDisabledReason != null) tint.copy(alpha = 0.38f) else tint,
             )
@@ -262,7 +284,9 @@ fun PictureActions(
         IconButton(onClick = info, modifier = small) {
             Icon(
                 Icons.Filled.Info,
-                contentDescription = "what made this $what",
+                contentDescription = stringResource(
+                    if (isClip) R.string.picture_cd_info_clip else R.string.picture_cd_info_picture,
+                ),
                 tint = tint,
             )
         }
@@ -270,14 +294,15 @@ fun PictureActions(
 
     if (confirming && onDelete != null) {
         ConfirmDelete(
-            title = deleteTitle ?: "Clear this $what?",
-            confirmLabel = "Clear",
+            title = deleteTitle ?: stringResource(
+                if (isClip) R.string.picture_clear_clip_title else R.string.picture_clear_picture_title,
+            ),
+            confirmLabel = stringResource(R.string.picture_clear),
             // ⚠ Says whether there is another copy — the render is often the only one.
-            body = deleteBody ?: ("The node goes back to empty. " + when {
-                downloaded -> "You saved it to the gallery, so that copy stays."
-                kept -> "If autosave kept it, it goes from History too; a copy you kept or starred stays."
-                else -> "It has NOT been saved to the gallery, and Run will make a " +
-                    "different one unless the seed is locked."
+            body = deleteBody ?: stringResource(when {
+                downloaded -> R.string.picture_clear_saved_body
+                kept -> R.string.picture_clear_kept_body
+                else -> R.string.picture_clear_unsaved_body
             }),
             onConfirm = onDelete,
             onDismiss = { confirming = false },

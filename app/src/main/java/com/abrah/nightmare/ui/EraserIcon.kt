@@ -301,6 +301,15 @@ val RemoveObjectIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
  * ⭐ Material's `translate` (文A) — the prompt box's translate button
  * (`docs/TRANSLATE.md`). Declared, not depended on, like every icon here.
  */
+/** ⭐ The prompt's describe button — Material "image search": a picture being read. */
+val DescribeIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("ImageSearch",
+        "M18 13v7H4V6h5.02c.05-.71.22-1.38.48-2H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-5l-2-2z" +
+            "m-1.5 5h-11l2.75-3.53 1.96 2.36 2.75-3.54zm2.8-9.11c.44-.7.7-1.51.7-2.39C20 4.01 17.99 2 15.5 2" +
+            "S11 4.01 11 6.5s2.01 4.5 4.49 4.5c.88 0 1.7-.26 2.39-.7L21 13.42 22.42 12 19.3 8.89z" +
+            "M15.5 9C14.12 9 13 7.88 13 6.5S14.12 4 15.5 4 18 5.12 18 6.5 16.88 9 15.5 9z")
+}
+
 val TranslateIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
     materialIcon("Translate",
         "M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17" +

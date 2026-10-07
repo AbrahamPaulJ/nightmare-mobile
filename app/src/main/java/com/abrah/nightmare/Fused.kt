@@ -60,11 +60,11 @@ object PromptNode : NodeType {
     override val widgets get() = listOf(
         Widget(
             "prompt", "string", SelectedModel.spec.starterPrompt,
-            hint = "what to draw",
+            hintRes = R.string.hint_what_draw,
         ),
         Widget(
             "negative", "string", SelectedModel.spec.starterNegative,
-            hint = "what to keep out of the picture",
+            hintRes = R.string.hint_negative,
         ),
     )
 
@@ -176,12 +176,14 @@ class SdSampler(
         // port name for the same idea — a picture the render reads but does not
         // redraw — cut by the same REF region. ⚠ A Swap model converted before
         // IP-Adapter refuses it with a message ([SwapInputs.resolve]).
-        if (family.edit || family == Family.SD15_SWAP) Port("reference", "IMAGE") else null,
+        // ⭐ SDXL Swap too since 1.6.101 (backend 024).
+        if (family.edit || family == Family.SD15_SWAP || family == Family.SDXL_SWAP) Port("reference", "IMAGE") else null,
         // ⭐⭐ SD 1.5 Swap's ControlNet picture — OPTIONAL: unwired, the picture
         // picked on the node is used ([CONTROL_IMAGE]). Swap only, for the same
         // reason `reference` is FLUX.2 only: a port that always errors is worse
         // than no port.
-        if (family == Family.SD15_SWAP) Port(CONTROL, "IMAGE") else null,
+        // ⭐ SDXL Swap too since 1.6.101 (backend 023).
+        if (family == Family.SD15_SWAP || family == Family.SDXL_SWAP) Port(CONTROL, "IMAGE") else null,
     )
     override val outputs = listOf(Port("image", "IMAGE"))
     /** ⚠ Inpaint is its OWN palette section (the user's call, 2026-09-16). */
@@ -519,10 +521,27 @@ class SdSampler(
          */
         val SD15_SWAP_INPAINT = SdSampler("sd15swap.inpaint", Family.SD15_SWAP, inpaint = true)
         val SDXL = SdSampler("sdxl.sample", Family.SDXL, inpaint = false)
-        /** ⭐ SDXL Swap — LoRA per render (ControlNet / IP-Adapter inputs stay zero, [Family.SDXL_SWAP]). */
+        /** ⭐ SDXL Swap — LoRA, ControlNet and IP-Adapter per render ([Family.SDXL_SWAP], backends 018, 023, 024). */
         val SDXL_SWAP = SdSampler("sdxlswap.sample", Family.SDXL_SWAP, inpaint = false)
         /** ⭐ SDXL Swap inpaint — SDXL's own route: masked img2img with the latent blend, LoRA kept. */
         val SDXL_SWAP_INPAINT = SdSampler("sdxlswap.inpaint", Family.SDXL_SWAP, inpaint = true)
+
+        /**
+         * ⭐⭐ A Swap node of EITHER family — the ones with ControlNet / IP-Adapter pictures.
+         * ⚠ The ONE answer: four places asked "SD 1.5 Swap?" by type name and SDXL Swap
+         * would have missed each (wiring, canvas hint, hint refresh) — 2026-10-07.
+         */
+        fun isSwapType(type: String): Boolean = type == SD15_SWAP.name || type == SD15_SWAP_INPAINT.name ||
+            type == SDXL_SWAP.name || type == SDXL_SWAP_INPAINT.name
+
+        /**
+         * ⭐ What a port is CALLED on screen. On a Swap node `reference` is IP-Adapter's picture,
+         * so it says so (the user, 2026-10-07: *"call it ipadapter … rather than reference, it
+         * gets confusing"*). ⚠ The WIRE keeps the name `reference` — saved flows, the executor
+         * and FLUX.2's own reference all read it ([docs/UI.md] §8.13b).
+         */
+        fun portLabel(type: String?, port: String): String =
+            if (port == "reference" && type != null && isSwapType(type)) "ipadapter" else port
         val SD15_INPAINT = SdSampler("sd15.inpaint", Family.SD15, inpaint = true)
         val SDXL_INPAINT = SdSampler("sdxl.inpaint", Family.SDXL, inpaint = true)
         val ANIMA = SdSampler("anima.sample", Family.ANIMA, inpaint = false)
@@ -681,9 +700,9 @@ class SdSampler(
      */
     override val widgets get() = when {
         family.dit -> ditWidgets()
-        family == Family.SD15_SWAP -> baseWidgets() + lorasWidget() + swapWidgets()
-        // ⭐ LoRA only: SDXL ControlNet and IP-Adapter models do not exist on the phone yet.
-        family == Family.SDXL_SWAP -> baseWidgets() + lorasWidget()
+        family == Family.SD15_SWAP -> baseWidgets() + lorasWidget() + controlWidgets() + ipWidgets()
+        // ⭐ LoRA + ControlNet + IP-Adapter (backends 023, 024).
+        family == Family.SDXL_SWAP -> baseWidgets() + lorasWidget() + controlWidgets() + ipWidgets()
         else -> baseWidgets()
     }.let { ws ->
         if (!inpaint) ws else {
@@ -706,21 +725,19 @@ class SdSampler(
         // happens there, so the switch for it is there ([NodeInspector]).
         if (inpaint) Widget(
             TAP_SELECT, "bool", MaskDefaults.of(TAP_SELECT),
-            hint = "tap an object in the mask editor to select it, instead of " +
-                "painting it by hand",
+            hintRes = R.string.hint_tap_select,
         ) else null,
         // ⚠ Same list and same reason as [TAP_SELECT] above — inpaint only,
         // and NOT `ditWidgets()`, which is the one list no inpaint sampler uses.
         if (inpaint) Widget(
             PICK_SELECT, "bool", MaskDefaults.of(PICK_SELECT),
-            hint = "mask clothes, face, hair, shoes or a bag automatically, on " +
-                "every new photo, instead of painting it by hand",
+            hintRes = R.string.hint_pick_select,
         ) else null,
         // ⭐⭐ Enable Add Objects — the user's design, 2026-09-23 ([AddObjects]).
         // ⚠ Inpaint only: the objects are blended in through a mask.
         if (inpaint) Widget(
             AddObjects.ENABLE, "bool", MaskDefaults.of(AddObjects.ENABLE),
-            hint = "take objects from another photo, place them, and repaint only their edges",
+            hintRes = R.string.objects_enable_hint,
         ) else null,
         // ⚠ EVERY sampler, not only inpaint: image-to-image has a crop window
         // too, and both were asked for. `ditWidgets()` is built from this list,
@@ -730,11 +747,7 @@ class SdSampler(
             // ⚠ Two sentences, because the two node kinds do two different
             // things: inpaint may pad, image-to-image never does and so crops
             // (the user saw the padding missing on i2i, 2026-09-23).
-            hint = if (inpaint) {
-                "fit the whole photo, padded where it does not fill the frame — no crop window"
-            } else {
-                "centre-crop the photo to the frame, at the size closest to its shape — no crop window"
-            },
+            hintRes = if (inpaint) R.string.hint_auto_crop_inpaint else R.string.hint_auto_crop_image,
         ),
         // ⚠⚠ Defaults from the MODEL, not from a literal. A distilled checkpoint
         // publishes something like 10 steps at cfg 1.5, and this app's 20/7.5
@@ -748,7 +761,7 @@ class SdSampler(
         // rather than returning the cached picture unchanged.
         Widget(
             "seed", "int", "0",
-            hint = "0 = a new picture every Run. Type the seed shown on the node to get that one back.",
+            hintRes = R.string.hint_seed_picture,
         ),
         // ⚠ Read only when a picture is wired AND `start_from` is `image`.
         // ⚠ An INPAINT node starts at 0.65 on every family: FLUX.2 / Qwen's 1.0
@@ -758,7 +771,7 @@ class SdSampler(
         Widget(
             "scheduler", "string", defaultSpec().scheduler,
             options = ModelCatalog.schedulersFor(family),
-            hint = "the sampler; a distilled model usually needs the one its author published",
+            hintRes = R.string.hint_sampler,
         ),
         // ⚠⚠ **No `start from` knob.** The user's call, 2026-09-15: *"start from
         // is decided by whether an image is connected, simple as that."* It
@@ -777,7 +790,7 @@ class SdSampler(
         // and [CropEditor] work on this node with no second spelling to keep in
         // step. ⚠ Normalised so a saved flow re-pointed at a photo of a
         // different size still means the same framing.
-        Widget("x", "float", "0.0", 0.0, 1.0, hint = "drag the frame on the picture"),
+        Widget("x", "float", "0.0", 0.0, 1.0, hintRes = R.string.hint_drag_frame),
         Widget("y", "float", "0.0", 0.0, 1.0),
         Widget("w", "float", "1.0", 0.0, 1.0),
         Widget("h", "float", "1.0", 0.0, 1.0),
@@ -794,7 +807,7 @@ class SdSampler(
         // ⚠⚠ Hidden from the knob list like x/y/w/h are ([hiddenKnob]) — they
         // are dragged on the picture, and four more loose sliders under the
         // size control is the duplicate the 2026-09-18 report named.
-        Widget(REF_X, "float", "0.0", 0.0, 1.0, hint = "drag the region on the reference"),
+        Widget(REF_X, "float", "0.0", 0.0, 1.0, hintRes = R.string.hint_drag_reference),
         Widget(REF_Y, "float", "0.0", 0.0, 1.0),
         Widget(REF_W, "float", "1.0", 0.0, 1.0),
         Widget(REF_H, "float", "1.0", 0.0, 1.0),
@@ -807,9 +820,7 @@ class SdSampler(
         Widget(
             REF_MAX, "string", REF_ORIGINAL,
             options = REF_SIZES,
-            hint = "the longest edge the reference is sent at, its own aspect kept. " +
-                "This does NOT change memory — a reference is encoded at your output " +
-                "size whatever you send — it only changes how much detail the model reads",
+            hintRes = R.string.hint_reference_edge,
         ),
         // ⚠ Drawn as the tick/pencil in the Crop title row, never as a checkbox
         // in the knob list ([hiddenKnob]).
@@ -832,13 +843,13 @@ class SdSampler(
             CropNode.PAD, "string",
             if (inpaint) CropNode.PAD_BLUR else CropNode.PAD_BLACK,
             options = padOptions(family, inpaint),
-            hint = "what fills the frame where it runs off the photo",
+            hintRes = R.string.hint_pad,
         ),
         // ⭐ An edit model only: may the frame run off the photo at all ([ALLOW_PAD]).
         *(if (family.edit && !inpaint) arrayOf(
             Widget(
                 ALLOW_PAD, "bool", "false",
-                hint = "zoom out past the photo and fill the rest with the Pad choice — green for an outpaint LoRA",
+                hintRes = R.string.hint_allow_pad,
             ),
         ) else emptyArray()),
         // ⭐ The painting itself — `image.mask`'s params, moved. ⚠ A real param
@@ -847,21 +858,21 @@ class SdSampler(
         // hashed into the cache key, so leaving these on a `sample` node would
         // put a mask nobody can edit into the key of every render it makes.
         *(if (!inpaint) emptyArray() else arrayOf(
-            Widget(MaskNode.OPS, "string", "", hint = "paint the area to redo"),
+            Widget(MaskNode.OPS, "string", "", hintRes = R.string.hint_paint_redo),
             Widget(
                 "grow", "float", MaskNode.GROW_DEFAULT.toString(),
                 MaskNode.GROW_MIN.toDouble(), MaskNode.GROW_MAX.toDouble(),
-                hint = "grow or shrink a tapped or picked area",
+                hintRes = R.string.hint_mask_grow,
             ),
-            Widget("feather", "float", "0.0", 0.0, 0.2, hint = "soften the mask edge"),
+            Widget("feather", "float", "0.0", 0.0, 0.2, hintRes = R.string.hint_mask_feather),
             // ⭐⭐ DreamUI's two inpaint toggles, unchanged in meaning.
             Widget(
                 MaskCropNode.ONLY_MASKED, "bool", "true",
-                hint = "render a crop around the mask: more detail where you painted",
+                hintRes = R.string.hint_only_masked_short,
             ),
             Widget(
                 PasteNode.STITCH, "bool", "false",
-                hint = "off: the result is the frame you chose. on: it is pasted back into the whole photo",
+                hintRes = R.string.hint_stitch_short,
             ),
         )),
         // ⚠⚠ **No `encode seed`.** A VAE latent is mean + std * noise, so this
@@ -901,16 +912,15 @@ class SdSampler(
         // this moves. Nothing else in the sheet could tell a person that.
         Widget(
             "cfg", "float", defaultSpec().cfg.toString(), 1.0, 20.0, fine = true,
-            hint = "1 is what these models are distilled for. Above 1 the negative prompt " +
-                "starts being read, and each step costs about twice as long",
+            hintRes = R.string.hint_cfg_distilled,
         ),
         // ⭐ The hint goes on WIDTH alone, not on both: it describes the pair,
         // and saying it twice under two adjacent sliders is noise.
         Widget(
             "width", "int", ModelCatalog.DIT_RES.width.toString(),
             ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.DIT_MAX.toDouble(), step = ModelCatalog.DIT_STEP,
-            hint = "any size in ${ModelCatalog.DIT_STEP}-pixel steps, either edge — no reload, " +
-                "and a bigger picture takes proportionally longer",
+            hintRes = R.string.hint_dit_size,
+            hintArgs = listOf(ModelCatalog.DIT_STEP),
         ),
         Widget(
             "height", "int", ModelCatalog.DIT_RES.height.toString(),
@@ -944,8 +954,7 @@ class SdSampler(
     private fun lorasWidget() =
         Widget(
             LORAS, "string", "",
-            hint = "adapters applied on top of this checkpoint — import them on " +
-                "the Settings tab",
+            hintRes = R.string.hint_loras,
             // ⚠⚠⚠ **This was LOCKED on Z-Image for one release, and the lock
             // was wrong.** 1.6.0 greyed it out on the reading that a Z-Image
             // adapter binds zero tensors. The evidence for that was the ABSENCE
@@ -967,26 +976,28 @@ class SdSampler(
         )
 
     /**
-     * ⭐⭐ SD 1.5 Swap's ControlNet knobs. ⚠ Drawn as ONE row in the inspector
+     * ⭐⭐ A Swap model's ControlNet knobs. ⚠ Drawn as ONE row in the inspector
      * (type, strength, picture and the hint it makes), never as loose knobs.
      */
-    private fun swapWidgets() = listOf(
+    private fun controlWidgets() = listOf(
         Widget(
             CONTROLNET, "string", SwapInputs.NONE, options = SwapInputs.TYPES,
-            hint = "canny finds the edges of a photo; depth and openpose take a ready-made " +
-                "depth map or pose skeleton",
+            hintRes = R.string.hint_controlnet,
         ),
         Widget(CONTROL_STRENGTH, "float", "1.0", 0.0, 2.0),
         Widget(CONTROL_IMAGE, "string", ""),
         Widget(CTL_X, "float", "0"), Widget(CTL_Y, "float", "0"),
         Widget(CTL_W, "float", "1"), Widget(CTL_H, "float", "1"),
+    )
+
+    private fun ipWidgets() = listOf(
         // ⭐⭐ IP-Adapter ([IpAdapter]): which adapter reads the reference, how
         // strongly, and a reference picked ON the node. ⚠ The `reference` wire
         // wins over the picked picture, as `control` does over [CONTROL_IMAGE].
         // Drawn as the IP-Adapter tile, never as loose knobs.
         Widget(
             IP_ADAPTER, "string", IpAdapter.PLUS, options = IpAdapter.CHOICES,
-            hint = "plus copies the reference's subject and style; face follows a face",
+            hintRes = R.string.hint_ip_adapter,
         ),
         Widget(IP_SCALE, "float", SwapInputs.IP_SCALE_DEFAULT.toString(), 0.0, 1.5),
         Widget(IP_IMAGE, "string", ""),
@@ -1067,10 +1078,14 @@ class SdSampler(
         // ⭐⭐ SD 1.5 Swap: the LoRA pack and the ControlNet hint, once per run and
         // before any backend call — a missing picture should stop the run here.
         val template = when (family) {
-            Family.SD15_SWAP -> swapInputs(ctx, node, p, inputs)
-            Family.SDXL_SWAP -> sdxlSwapInputs(ctx, node, p)
+            // ⭐ ONE path for both Swap families (SDXL's ControlNet: backend 023).
+            Family.SD15_SWAP, Family.SDXL_SWAP -> swapInputs(ctx, node, p, inputs)
             else -> null
         }
+        // ⚠⚠⚠ The hint and the K/V are made; let the CPU picture models go BEFORE the
+        // backend loads the UNet and a ControlNet — IP-Adapter's 1.6 GB held through an
+        // SDXL Swap render got the foreground app killed ([PictureModels]).
+        if (template != null) PictureModels.releaseAll()
 
         // ⚠ First, because it is the cheapest thing that can fail: a backend
         // that is not up says so here rather than after a 200 ms VAE encode.
@@ -1082,7 +1097,7 @@ class SdSampler(
         // below still encode exactly once between them.
         var condCache: String? = null
         suspend fun cond(): String = condCache ?: run {
-            ctx.say("reading the prompt")
+            ctx.say(ctx.text(R.string.run_reading_prompt, "reading the prompt"))
             when (val r = ctx.host.encodeText(prompt.positive, prompt.negative)) {
                 is Ops.Result.Ok -> r.value.handle
                 is Ops.Result.Err -> throw OpFailure("encode_text", r.code, r.body)
@@ -1096,7 +1111,7 @@ class SdSampler(
         val photo = inputs["image"] as? Value.Image
 
         if (photo == null) {
-            ctx.say("rendering")
+            ctx.say(ctx.text(R.string.run_rendering, "rendering"))
             val latent = sample(ctx, p, cond(), null, w, h, aspect, template = template)
             return VaeDecodeNode.decode(ctx, latent, w, h, aspect)
         }
@@ -1130,7 +1145,7 @@ class SdSampler(
         // ([MaskOp.ObjectRing]) — but only while its object is there.
         val placedObjects = if (inpaint) AddObjects.of(p) else emptyList()
         if (inpaint && AddObjects.withoutDeadRings(stored, placedObjects).isEmpty && !padded) {
-            throw NeedsInput("nothing masked — paint an area, then Run again")
+            throw NeedsInput(ctx.text(R.string.run_nothing_masked, "nothing masked — paint an area, then Run again"))
         }
         // ⚠⚠ Still gated to a CHAINED picture, unlike the check above: a plain
         // photo's mask is cleared the moment the photo changes
@@ -1140,7 +1155,10 @@ class SdSampler(
             val on = p[MaskNode.PAINTED_ON].orEmpty()
             if (!stored.isEmpty && on.isNotBlank() && on != photo.id) {
                 throw NeedsInput(
-                    "the picture you painted on has changed — repaint it, or undo the change upstream"
+                    ctx.text(
+                        R.string.run_painted_picture_changed,
+                        "the picture you painted on has changed — repaint it, or undo the change upstream",
+                    )
                 )
             }
         }
@@ -1155,8 +1173,11 @@ class SdSampler(
                 (android == null || !com.abrah.nightmare.segment.Segmenter.isInstalled(android))
             ) {
                 throw IllegalStateException(
-                    "node \"${node.id}\": this mask was tapped — download " +
-                        "${com.abrah.nightmare.segment.Segmenter.LABEL} in Models, Tools"
+                    ctx.text(
+                        R.string.run_download_tap_segmenter,
+                        "node \"%1\$s\": this mask was tapped — download %2\$s in Models, Tools",
+                        node.id, com.abrah.nightmare.segment.Segmenter.LABEL,
+                    )
                 )
             }
             // ⚠ The PARSER is a different download, so it is a different
@@ -1166,13 +1187,16 @@ class SdSampler(
                 (android == null || !com.abrah.nightmare.segment.Parser.isInstalled(android))
             ) {
                 throw IllegalStateException(
-                    "node \"${node.id}\": this mask was picked by name — download " +
-                        "${com.abrah.nightmare.segment.Parser.LABEL} in Models, Tools"
+                    ctx.text(
+                        R.string.run_download_auto_segmenter,
+                        "node \"%1\$s\": this mask was picked by name — download %2\$s in Models, Tools",
+                        node.id, com.abrah.nightmare.segment.Parser.LABEL,
+                    )
                 )
             }
             ctx.say(
-                if (MaskTaps.hasTaps(stored)) "finding the objects you tapped"
-                else "finding what you picked"
+                if (MaskTaps.hasTaps(stored)) ctx.text(R.string.run_finding_tapped_objects, "finding the objects you tapped")
+                else ctx.text(R.string.run_finding_picked_objects, "finding what you picked")
             )
             MaskTaps.resolve(
                 stored,
@@ -1193,11 +1217,19 @@ class SdSampler(
             (MaskTaps.hasPicks(stored) || MaskTaps.hasTaps(stored))
         ) {
             val names = stored.ops.filterIsInstance<MaskOp.Pick>()
-                .mapNotNull { com.abrah.nightmare.segment.Parser.target(it.target)?.label?.lowercase() }
+                .mapNotNull { com.abrah.nightmare.segment.Parser.target(it.target) }
+                .map { target ->
+                    ctx.android?.getString(target.labelRes)?.lowercase() ?: target.label.lowercase()
+                }
             throw NeedsInput(
-                if (names.isEmpty()) "nothing found where you tapped — paint an area, then Run again"
-                else "no ${names.joinToString(" or ")} found in this picture — paint an area, " +
-                    "or pick something else in the mask editor"
+                if (names.isEmpty()) ctx.text(
+                    R.string.run_nothing_found_tapped,
+                    "nothing found where you tapped — paint an area, then Run again",
+                ) else ctx.text(
+                    R.string.run_named_objects_not_found,
+                    "no %1\$s found in this picture — paint an area, or pick something else in the mask editor",
+                    names.joinToString(ctx.text(R.string.word_or, " or ")),
+                )
             )
         }
         // ⭐⭐⭐ **Add Objects**: the objects pasted onto the photo, and each
@@ -1208,14 +1240,17 @@ class SdSampler(
         val objectRender = if (placedObjects.isEmpty()) null else {
             val android = ctx.android
                 ?: throw IllegalStateException("node \"${node.id}\": placing objects needs a platform context")
-            ctx.say("placing the objects")
+            ctx.say(ctx.text(R.string.run_placing_objects, "placing the objects"))
             AddObjects.render(
                 src, placedObjects,
                 load = { uri -> AddObjects.load(android, uri) },
                 resolve = { source, mask -> AddObjects.resolveOn(android, source, mask) },
             ).also { r ->
                 if (r.missing.isNotEmpty()) throw NeedsInput(
-                    "an object's source photo can no longer be read — add it again in the mask editor"
+                    ctx.text(
+                        R.string.run_object_source_missing,
+                        "an object\'s source photo can no longer be read — add it again in the mask editor",
+                    )
                 )
             }
         }
@@ -1248,7 +1283,7 @@ class SdSampler(
         )
 
         if (!masking) {
-            ctx.say("re-imagining the picture")
+            ctx.say(ctx.text(R.string.run_reimagining_picture, "re-imagining the picture"))
             val base = encode(ctx, ImageStore.encodePng(padToCanvas(frame, w, h)), ENCODE_SEED, w, h)
             val latent = sample(ctx, p, cond(), base, w, h, aspect, template = template)
             return keepPhotoOnly(ctx, node, p, VaeDecodeNode.decode(ctx, latent, w, h, aspect))
@@ -1283,7 +1318,10 @@ class SdSampler(
         // ⭐⭐ "Only masked" — the render window is a crop around the painting,
         // so the detail lands where the finger was.
         val cut = MaskCropNode.cut(frame, maskBmp, tw, th, flag(MaskCropNode.ONLY_MASKED))
-        ctx.say(if (paintedAll.isEmpty) "filling the padding" else "repainting the area you marked")
+        ctx.say(
+            if (paintedAll.isEmpty) ctx.text(R.string.run_filling_padding, "filling the padding")
+            else ctx.text(R.string.run_repainting_marked_area, "repainting the area you marked")
+        )
         val imagePng = ImageStore.encodePng(padToCanvas(cut.image, w, h))
         // ⚠ On the CANVAS, black outside the aspect rectangle: that is the
         // part the decode cuts away, so it keeps the base.
@@ -1493,7 +1531,7 @@ class SdSampler(
         w: Int,
         h: Int,
     ): android.graphics.Bitmap {
-        ctx.say("repainting the area you marked")
+        ctx.say(ctx.text(R.string.run_repainting_marked_area, "repainting the area you marked"))
         val r = ctx.host.generate(
             prompt = prompt.positive,
             negative = prompt.negative,
@@ -1571,43 +1609,32 @@ class SdSampler(
      * ([SwapInputs.Frame]) so the hint lines up with the base — the user's call,
      * 2026-09-29. With ControlNet at `none` none of this is read.
      */
-    /**
-     * ⭐ SDXL Swap's per-render input: the LoRA pack only ([SwapInputs.resolve] with no
-     * ControlNet and no reference). The pack follows the model's own `lora_targets.json`
-     * (700 targets) and is cached per LoRA set like SD 1.5 Swap's ([SwapInputs.packDir]).
-     */
-    private suspend fun sdxlSwapInputs(ctx: NodeCtx, node: Node, p: Map<String, String>): Ops.TemplateInputs {
-        if (LoraSpec.parse(p[LORAS]).isEmpty()) return Ops.TemplateInputs()
-        val android = ctx.android
-            ?: throw IllegalStateException("SDXL Swap needs an Android context on this host")
-        val spec = ModelCatalog.byId(p["model"].orEmpty())
-            ?: throw IllegalStateException("node \"${node.id}\": model \"${p["model"]}\" is not installed")
-        val loras = lorasFor(ctx, p[LORAS])
-        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-            SwapInputs.resolve(android, spec, loras, SwapInputs.NONE, 1.0, null, null, say = ctx.say)
-        }
-    }
-
     private suspend fun swapInputs(
         ctx: NodeCtx,
         node: Node,
         p: Map<String, String>,
         inputs: Map<String, Value>,
     ): Ops.TemplateInputs {
+        // ⭐⭐ A feature the conversion dropped is IGNORED, whatever the node says — its
+        // control is dimmed ([ModelFeatures.missingReason]), and a dimmed control must
+        // never change a render (a flow saved on another model may still name one).
+        val has = ModelCatalog.byId(p["model"].orEmpty())?.featureSet ?: ModelFeatures.defaultFor(family)
         val type = p[CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
+            .takeIf { ModelFeatures.CONTROLNET in has } ?: SwapInputs.NONE
         // ⚠ IP-Adapter switched off reads no reference, wired or picked.
-        val ipOff = p[IP_ADAPTER] == IpAdapter.NONE
+        val ipOff = p[IP_ADAPTER] == IpAdapter.NONE || ModelFeatures.IP_ADAPTER !in has
         val refWired = (inputs["reference"] as? Value.Image)?.takeUnless { ipOff }
         val refPicked = p[IP_IMAGE]?.takeIf { it.isNotBlank() && !ipOff }
+        val loraSpec = p[LORAS].takeIf { ModelFeatures.LORA in has }
         // ⚠ Nothing to pack, no hint and no reference: the base model, and no platform needed.
-        if (type == SwapInputs.NONE && LoraSpec.parse(p[LORAS]).isEmpty() && refWired == null && refPicked == null) {
+        if (type == SwapInputs.NONE && LoraSpec.parse(loraSpec).isEmpty() && refWired == null && refPicked == null) {
             return Ops.TemplateInputs()
         }
         val android = ctx.android
-            ?: throw IllegalStateException("SD 1.5 Swap needs an Android context on this host")
+            ?: throw IllegalStateException("a Swap model needs an Android context on this host")
         val spec = ModelCatalog.byId(p["model"].orEmpty())
             ?: throw IllegalStateException("node \"${node.id}\": model \"${p["model"]}\" is not installed")
-        val loras = lorasFor(ctx, p[LORAS])
+        val loras = lorasFor(ctx, loraSpec)
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             val photo = (inputs["image"] as? Value.Image)?.let { ctx.images.get(it.id) }
             // ⭐ The photo follows the node's crop window; any OTHER control picture
@@ -1617,7 +1644,10 @@ class SdSampler(
                 (inputs[CONTROL] as? Value.Image)?.let { ctx.images.get(it.id) }
                     ?: p[CONTROL_IMAGE]?.takeIf { it.isNotBlank() }?.let {
                         AddObjects.load(android, it)
-                            ?: throw NeedsInput("the ControlNet picture can no longer be read — pick it again")
+                            ?: throw NeedsInput(ctx.text(
+                                R.string.run_controlnet_picture_missing,
+                                "the ControlNet picture can no longer be read — pick it again",
+                            ))
                     }
                     ?: photo
             }?.let { if (fromPhoto) it else cropControl(it, p) }
@@ -1635,7 +1665,10 @@ class SdSampler(
                 ).first
             } ?: refPicked?.let {
                 AddObjects.load(android, it)
-                    ?: throw NeedsInput("the IP-Adapter picture can no longer be read — pick it again")
+                    ?: throw NeedsInput(ctx.text(
+                        R.string.run_ip_adapter_picture_missing,
+                        "the IP-Adapter picture can no longer be read — pick it again",
+                    ))
             }
             SwapInputs.resolve(
                 android, spec, loras, type,
@@ -1643,7 +1676,8 @@ class SdSampler(
                 frame = photo?.takeIf { fromPhoto }?.let { swapFrame(node.type, p) },
                 say = ctx.say,
                 reference = reference,
-                ipAdapter = p[IP_ADAPTER].orEmpty().ifBlank { IpAdapter.PLUS },
+                // ⭐ The family's head for the node's choice ([IpAdapter.adapterFor]).
+                ipAdapter = IpAdapter.adapterFor(family, p[IP_ADAPTER].orEmpty().ifBlank { IpAdapter.PLUS }),
                 ipScale = p[IP_SCALE]?.toDoubleOrNull() ?: SwapInputs.IP_SCALE_DEFAULT,
             )
         }
@@ -1732,10 +1766,10 @@ class SdSampler(
         }
         ctx.say(
             when {
-                referencePng != null && png == null -> "rendering from your reference"
-                referencePng != null -> "re-imagining the picture with your reference"
-                png == null -> "rendering"
-                else -> "re-imagining the picture"
+                referencePng != null && png == null -> ctx.text(R.string.run_rendering_from_reference, "rendering from your reference")
+                referencePng != null -> ctx.text(R.string.run_reimagining_with_reference, "re-imagining the picture with your reference")
+                png == null -> ctx.text(R.string.run_rendering, "rendering")
+                else -> ctx.text(R.string.run_reimagining_picture, "re-imagining the picture")
             }
         )
         val r = ctx.host.generate(
@@ -1961,13 +1995,12 @@ object MediaOutputNode : NodeType {
     override val widgets = listOf(
         // ⭐ ON by default: placing this node IS the statement that this is the
         // result you want back, and Results is private to the app.
-        Widget(AUTOSAVE, "bool", "true", hint = "keep every Run in Results"),
+        Widget(AUTOSAVE, "bool", "true", hintRes = R.string.hint_autosave),
         // ⭐⭐ OFF by default: an upscale costs seconds and a download, and a
         // flow that quietly did it would surprise someone on their first Run.
         Widget(
             UPSCALE, "bool", "false",
-            hint = "enlarge the result before keeping it — the picture above " +
-                "stays as the before",
+            hintRes = R.string.hint_auto_upscale,
         ),
         // ⚠⚠ The OPTIONS are the INSTALLED set and the DEFAULT is the first of
         // them, exactly as `image.upscale` declares it — the same trap applies:
@@ -1978,7 +2011,7 @@ object MediaOutputNode : NodeType {
             UPSCALER, "string",
             (UpscalerCatalog.installedIds.firstOrNull() ?: UpscalerCatalog.ALL.first().id),
             options = UpscalerCatalog.installedIds.ifEmpty { UpscalerCatalog.ALL.map { it.id } },
-            hint = "which upscaler weights to use — install them under Models",
+            hintRes = R.string.hint_upscaler,
         ),
         // ⭐ How much larger (the user's ask, 2026-09-26). ⚠ Capped at
         // [UpscaleNode.MAX_OUT_EDGE]: a render too big for this falls back to
@@ -1986,7 +2019,7 @@ object MediaOutputNode : NodeType {
         Widget(
             SCALE, "string", "4x",
             options = UpscaleNode.SCALES,
-            hint = "how much larger — a picture that would pass 4096 px gets the largest size that fits",
+            hintRes = R.string.hint_upscale_scale,
         ),
         // ⚠⚠ **No `name` box.** It was the filename prefix for the gallery
         // write this node used to do, and that write is gone — autosave keeps
@@ -2037,13 +2070,20 @@ object MediaOutputNode : NodeType {
             // *"nothing happens"*, reported 2026-09-27.
             if (scale == null) {
                 ctx.warn(
-                    "Not upscaled: ${media.w}x${media.h} would pass " +
-                        "${UpscaleNode.MAX_OUT_EDGE} px even at 2x"
+                    ctx.text(
+                        R.string.run_not_upscaled_too_large,
+                        "Not upscaled: %1\$dx%2\$d would pass %3\$d px even at 2x",
+                        media.w, media.h, UpscaleNode.MAX_OUT_EDGE,
+                    )
                 )
                 return media
             }
             if (scale < wanted) {
-                ctx.warn("Upscaled ${scale}x, not ${wanted}x — ${wanted}x would pass ${UpscaleNode.MAX_OUT_EDGE} px")
+                ctx.warn(ctx.text(
+                    R.string.run_upscaled_smaller,
+                    "Upscaled %1\$dx, not %2\$dx — %2\$dx would pass %3\$d px",
+                    scale, wanted, UpscaleNode.MAX_OUT_EDGE,
+                ))
             }
             return UpscaleNode.upscaleTo(ctx, node.id, media, params[UPSCALER].orEmpty(), scale)
         }

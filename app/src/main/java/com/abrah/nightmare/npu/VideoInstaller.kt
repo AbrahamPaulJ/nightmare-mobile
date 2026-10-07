@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.StatFs
 import android.util.Log
 import com.abrah.nightmare.ModelInstaller
+import com.abrah.nightmare.R
 import java.io.File
 import java.io.IOException
 
@@ -192,7 +193,7 @@ object VideoInstaller {
                     url = "$REPO/$path",
                     dest = file,
                     bytes = bytes,
-                    label = "downloading $name",
+                    label = ctx.getString(R.string.video_downloading_file, name),
                     onProgress = { p ->
                         onProgress(ModelInstaller.Progress(p.phase, base + p.done, total))
                     },

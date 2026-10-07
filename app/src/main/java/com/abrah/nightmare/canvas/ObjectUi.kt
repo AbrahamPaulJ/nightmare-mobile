@@ -47,12 +47,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.abrah.nightmare.AddObjects
+import com.abrah.nightmare.R
 import com.abrah.nightmare.ui.NoteTextStyle
 import com.abrah.nightmare.MaskOp
 import com.abrah.nightmare.MaskState
@@ -207,16 +209,16 @@ internal fun ObjectChooser(
                     Modifier.weight(1f).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("Choose your object(s)", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.objects_choose), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Mask what to take. Separate areas become separate objects, each placed on its own.",
+                        stringResource(R.string.objects_choose_hint),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val src = source
                     when {
-                        failed -> com.abrah.nightmare.ui.ErrorNotice("this photo cannot be read — pick another")
-                        src == null -> Text("opening the photo…", style = NoteTextStyle)
+                        failed -> com.abrah.nightmare.ui.ErrorNotice(stringResource(R.string.objects_this_unreadable))
+                        src == null -> Text(stringResource(R.string.objects_opening_photo), style = NoteTextStyle)
                         else -> {
                             val image = remember(src) { src.asImageBitmap() }
                             val shown = remember(mask, warmed, src) {
@@ -251,25 +253,25 @@ internal fun ObjectChooser(
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 FilterChip(tool == MaskTool.BRUSH, { tool = MaskTool.BRUSH }, label = {
-                                    Icon(com.abrah.nightmare.ui.BrushIcon, "Paint", Modifier.size(18.dp))
+                                    Icon(com.abrah.nightmare.ui.BrushIcon, stringResource(R.string.cd_paint), Modifier.size(18.dp))
                                 })
                                 FilterChip(tool == MaskTool.ERASE, { tool = MaskTool.ERASE }, label = {
-                                    Icon(com.abrah.nightmare.ui.EraserIcon, "Erase", Modifier.size(18.dp))
+                                    Icon(com.abrah.nightmare.ui.EraserIcon, stringResource(R.string.cd_erase), Modifier.size(18.dp))
                                 })
                                 if (canTap) FilterChip(tool == MaskTool.TAP, { tool = MaskTool.TAP }, label = {
-                                    Icon(com.abrah.nightmare.ui.TapObjectIcon, "Select an object", Modifier.size(18.dp))
+                                    Icon(com.abrah.nightmare.ui.TapObjectIcon, stringResource(R.string.cd_tap_object), Modifier.size(18.dp))
                                 })
                                 IconButton(onClick = { history.undo(mask) { mask = it } }, enabled = history.canUndo) {
-                                    Icon(com.abrah.nightmare.ui.UndoIcon, "Undo the last stroke", Modifier.size(18.dp))
+                                    Icon(com.abrah.nightmare.ui.UndoIcon, stringResource(R.string.cd_undo_stroke), Modifier.size(18.dp))
                                 }
                                 IconButton(onClick = { history.redo(mask) { mask = it } }, enabled = history.canRedo) {
-                                    Icon(com.abrah.nightmare.ui.RedoIcon, "Redo", Modifier.size(18.dp))
+                                    Icon(com.abrah.nightmare.ui.RedoIcon, stringResource(R.string.cd_redo_stroke), Modifier.size(18.dp))
                                 }
                                 IconButton(onClick = { mask = mask.plus(MaskOp.Invert) }) {
-                                    Icon(com.abrah.nightmare.ui.InvertMaskIcon, "Invert the mask", Modifier.size(18.dp))
+                                    Icon(com.abrah.nightmare.ui.InvertMaskIcon, stringResource(R.string.cd_invert_mask), Modifier.size(18.dp))
                                 }
                                 IconButton(onClick = { mask = mask.cleared() }, enabled = !mask.isEmpty) {
-                                    Icon(com.abrah.nightmare.ui.ClearLayersIcon, "Clear the mask", Modifier.size(18.dp))
+                                    Icon(com.abrah.nightmare.ui.ClearLayersIcon, stringResource(R.string.cd_clear_mask), Modifier.size(18.dp))
                                 }
                             }
                             if (tool == MaskTool.BRUSH || tool == MaskTool.ERASE) {
@@ -297,12 +299,12 @@ internal fun ObjectChooser(
                                                     }
                                                 }
                                             },
-                                            label = { Text(t.label) },
+                                            label = { Text(stringResource(t.labelRes)) },
                                         )
                                     }
                                 }
                             }
-                            if (busy) Text("reading the photo…", style = NoteTextStyle)
+                            if (busy) Text(stringResource(R.string.objects_reading_photo), style = NoteTextStyle)
                         }
                     }
                 }
@@ -310,9 +312,9 @@ internal fun ObjectChooser(
                     Modifier.fillMaxWidth().padding(top = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                 ) {
-                    OutlinedButton(onClick = onCancel) { Text("Cancel") }
+                    OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
                     Button(onClick = { onDone(mask.encode()) }, enabled = source != null && !mask.isEmpty && !busy) {
-                        Text("Done")
+                        Text(stringResource(R.string.crop_done))
                     }
                 }
             }

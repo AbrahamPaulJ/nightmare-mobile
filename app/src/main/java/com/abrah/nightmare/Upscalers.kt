@@ -69,6 +69,8 @@ data class UpscalerSpec(
     val remoteDir: String,
     /** ⚠ Best-first — [buildFor] takes the FIRST one this device can load. */
     val builds: List<UpscalerBuild>,
+    @androidx.annotation.StringRes val labelRes: Int? = null,
+    @androidx.annotation.StringRes val aboutRes: Int? = null,
 ) {
     fun dir(context: Context): File = File(BackendProcess.modelsDir(context), id)
 
@@ -132,6 +134,8 @@ object UpscalerCatalog {
                 UpscalerBuild("8gen1", 11_286_672L, ARCH_8GEN1, 8),
                 UpscalerBuild("min", 10_492_056L, ARCH_MIN, 2),
             ),
+            labelRes = R.string.upscaler_anime_label,
+            aboutRes = R.string.upscaler_anime_about,
         ),
         UpscalerSpec(
             id = "upscaler_realistic",
@@ -143,6 +147,8 @@ object UpscalerCatalog {
                 UpscalerBuild("8gen1", 23_662_592L, ARCH_8GEN1, 8),
                 UpscalerBuild("min", 21_647_360L, ARCH_MIN, 2),
             ),
+            labelRes = R.string.upscaler_realistic_label,
+            aboutRes = R.string.upscaler_realistic_about,
         ),
     )
 

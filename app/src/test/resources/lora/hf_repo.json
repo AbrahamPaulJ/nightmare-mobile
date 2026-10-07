@@ -1,0 +1,330 @@
+{
+ "id": "ntc-ai/SDXL-LoRA-slider.anime",
+ "author": "ntc-ai",
+ "downloads": 771,
+ "cardData": {
+  "language": [
+   "en"
+  ],
+  "thumbnail": "images/anime_17_3.0.png",
+  "widget": [
+   {
+    "text": "anime",
+    "output": {
+     "url": "https://huggingface.co/ntc-ai/SDXL-LoRA-slider.anime/resolve/main/images/anime_17_3.0.png"
+    }
+   },
+   {
+    "text": "anime",
+    "output": {
+     "url": "https://huggingface.co/ntc-ai/SDXL-LoRA-slider.anime/resolve/main/images/anime_19_3.0.png"
+    }
+   },
+   {
+    "text": "anime",
+    "output": {
+     "url": "https://huggingface.co/ntc-ai/SDXL-LoRA-slider.anime/resolve/main/images/anime_20_3.0.png"
+    }
+   },
+   {
+    "text": "anime",
+    "output": {
+     "url": "https://huggingface.co/ntc-ai/SDXL-LoRA-slider.anime/resolve/main/images/anime_21_3.0.png"
+    }
+   },
+   {
+    "text": "anime",
+    "output": {
+     "url": "https://huggingface.co/ntc-ai/SDXL-LoRA-slider.anime/resolve/main/images/anime_22_3.0.png"
+    }
+   }
+  ],
+  "tags": [
+   "text-to-image",
+   "stable-diffusion-xl",
+   "lora",
+   "template:sd-lora",
+   "template:sdxl-lora",
+   "sdxl-sliders",
+   "ntcai.xyz-sliders",
+   "concept",
+   "diffusers"
+  ],
+  "license": "mit",
+  "inference": false,
+  "instance_prompt": "anime",
+  "base_model": "stabilityai/stable-diffusion-xl-base-1.0"
+ },
+ "siblings": [
+  {
+   "rfilename": ".gitattributes",
+   "blobId": "f6b1f326ca4ab7cf0c8798856f8fe0020ff82d58",
+   "size": 1561
+  },
+  {
+   "rfilename": "README.md",
+   "blobId": "c3aafb6204f166c9a2ce0a6f5c10675f01f43d8d",
+   "size": 3416
+  },
+  {
+   "rfilename": "anime.safetensors",
+   "blobId": "6e2ff0535586a022108ab99ad9dfee697c4a53da",
+   "size": 8789076,
+   "lfs": {
+    "sha256": "996f4ac936d328c0db1c8c43abe6e1b1ae92c61416fd5df5d6d3787c3e5ccf7b",
+    "size": 8789076,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_17_-1.5.png",
+   "blobId": "4cd96133c4925438ccd23d1c537da6b21c5ee58c",
+   "size": 1676582,
+   "lfs": {
+    "sha256": "04e5d66f8fc2ab68a9f3a796ed63c0cfc78ce4d186b8a46d569eed82a7de640a",
+    "size": 1676582,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_17_-3.0.png",
+   "blobId": "25b88c4b06d4f04f73cff47bc36b1442be349221",
+   "size": 1680198,
+   "lfs": {
+    "sha256": "2abc6ede3c8431652b13ac302f6e6c0db91484ddbedece5a786b565d7af81999",
+    "size": 1680198,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_17_0.0.png",
+   "blobId": "9e6eec23d1804d8608c0f4343239d09be65d1f7c",
+   "size": 1671096,
+   "lfs": {
+    "sha256": "4c4d325ef7c18241e555a01e1eb600c6d127b30b83d354fa4e5dead79bcf8432",
+    "size": 1671096,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_17_1.5.png",
+   "blobId": "cac9f326899439e57d3a5c05668a2f3f316356dc",
+   "size": 1665495,
+   "lfs": {
+    "sha256": "ca20b2ce74d39cf634906f43f8f57ea993c3e8c4733233d65d208c5e52258061",
+    "size": 1665495,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_17_3.0.png",
+   "blobId": "3fcc9157f88b1fe6a7a34deb42ee0c0203edad7a",
+   "size": 1638273,
+   "lfs": {
+    "sha256": "aa06f689f89e21c9d23f00aa5223e8fd2a11920fffb98a3434723f9a36d45e27",
+    "size": 1638273,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_19_-1.5.png",
+   "blobId": "a428a47099c535d516cbd94815e1b1cab91f9035",
+   "size": 1772846,
+   "lfs": {
+    "sha256": "f7c534abf45b307f120afac6c8f6d7b94d5f5df5458dd1d93e482b14038c1748",
+    "size": 1772846,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_19_-3.0.png",
+   "blobId": "0c83d45f814cafe7cec1385bcd9f8e09be1b8976",
+   "size": 1774073,
+   "lfs": {
+    "sha256": "c7a530d077f72713f11e01b76574934dcde3480b11494947f55c50991596fa2f",
+    "size": 1774073,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_19_0.0.png",
+   "blobId": "8e1d58d9c3ad87df1e6b2fc7697b50bddd10f61b",
+   "size": 1748188,
+   "lfs": {
+    "sha256": "f91a89289696a6095d833258c963467918226d9559e6592fe674c31980e73897",
+    "size": 1748188,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_19_1.5.png",
+   "blobId": "233a81a35dddc379b52222d1fbcd6d29a580960e",
+   "size": 1733729,
+   "lfs": {
+    "sha256": "c15b72280d2e485792d275c97ed316e0e69512431b96cb19667c30789ce1957a",
+    "size": 1733729,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_19_3.0.png",
+   "blobId": "0e80df05bae064585d14c2a3acfc2ffc2cc449fd",
+   "size": 1738393,
+   "lfs": {
+    "sha256": "d6e8e0d90bd8b0b190c65534e0384e2d97089792fa94f081388991bd1edf3aec",
+    "size": 1738393,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_20_-1.5.png",
+   "blobId": "1e7722e86b1beecd90e3293056fdcb048f2263eb",
+   "size": 1569143,
+   "lfs": {
+    "sha256": "c78988d886e945ecdaf5236e1bf8ce59d07ec429c29fbc57e7d80797e3b49ecd",
+    "size": 1569143,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_20_-3.0.png",
+   "blobId": "b75e21881e42bc28e4996d8cce8fe5ef389709cf",
+   "size": 1546421,
+   "lfs": {
+    "sha256": "7a1d7b46ecdaba079a3af9ce396877b1fcfd948d378464e90d5a829ef1c699e4",
+    "size": 1546421,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_20_0.0.png",
+   "blobId": "5d98c82e86daec1bebd8d2c0f7ab6f85bc63c1b1",
+   "size": 1577597,
+   "lfs": {
+    "sha256": "c9f85d1d97da1316970b28798804b2d78a0827a5b0dbfe4d7704b6dc22b3b240",
+    "size": 1577597,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_20_1.5.png",
+   "blobId": "3e6dc5c989a2594623ee070888c9fc90d713ffef",
+   "size": 1545090,
+   "lfs": {
+    "sha256": "edfc6e10fae18f5934c839050c389bce50298391b4e6e64311a3e3f0db733d20",
+    "size": 1545090,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_20_3.0.png",
+   "blobId": "4cb502b4817df2917b1e6e48a030aaee9d06c4fb",
+   "size": 1491946,
+   "lfs": {
+    "sha256": "091dffaca1fac209968c362033812c11b355dfbc47f1f69bbfec96a6fb8ce517",
+    "size": 1491946,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_21_-1.5.png",
+   "blobId": "dde68b2e20614953af1e26661b547f130c4ded24",
+   "size": 1854815,
+   "lfs": {
+    "sha256": "61c802405b74fafdb1b8aed09c9def45cf89ad51826500181f6faeac64d85085",
+    "size": 1854815,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_21_-3.0.png",
+   "blobId": "1614bfb83898f57ef09b66f208d0de6c6114f093",
+   "size": 1877396,
+   "lfs": {
+    "sha256": "4facc6bd9fefd023026b57607bbf88a24d6b2aed6d4d12c7d9eae3bbfe605284",
+    "size": 1877396,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_21_0.0.png",
+   "blobId": "4dfcdedbb2b20fc3dbe311fb390e3b0888340071",
+   "size": 1821606,
+   "lfs": {
+    "sha256": "ef10a9939af868f4f8e9a09131505c178ca81bfe64b551663a68915d78b9ff8b",
+    "size": 1821606,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_21_1.5.png",
+   "blobId": "5738a58439452151034f4ddbab4e5dcdaa8d5c3f",
+   "size": 1787445,
+   "lfs": {
+    "sha256": "8bb029da7ad6e3a5e20fdfe3e8a2911890b50da8616d771cfcc58f314e000afb",
+    "size": 1787445,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_21_3.0.png",
+   "blobId": "6e60726c0944414a74d4e16a280db9593f3dadaf",
+   "size": 1764010,
+   "lfs": {
+    "sha256": "b6407112e273962b1eb301c26ea61519c5c7f936e221cee9cf223ba5c42b2c95",
+    "size": 1764010,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_22_-1.5.png",
+   "blobId": "75646d60fa1678c965ba2b2e751959bd919d5e4e",
+   "size": 1551828,
+   "lfs": {
+    "sha256": "5428579bdac38c7d2d5270fb3ab474f5eea7ee36d4758b175f8dc4ebb80a2beb",
+    "size": 1551828,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_22_-3.0.png",
+   "blobId": "8c9463a9e51e5910796865fdd4e8812a8be51baa",
+   "size": 1574456,
+   "lfs": {
+    "sha256": "c56fe5418a433f4ade9694916b1a6b375a527f9f0431700cf6dc47638319a22c",
+    "size": 1574456,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_22_0.0.png",
+   "blobId": "3f0ee172bb18dd71008baa14c39a156a3dbcd292",
+   "size": 1507245,
+   "lfs": {
+    "sha256": "14f4e3222b6228ff9f6be38b224c5948cc38bc8b0a361ea726a5f840ca393135",
+    "size": 1507245,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_22_1.5.png",
+   "blobId": "440ea9c9eac70db7f84db529bfc53180c1b63085",
+   "size": 1483650,
+   "lfs": {
+    "sha256": "93f86f961010197ff7db503dcc2375f7137fc9756f618c538b69a7203b52575d",
+    "size": 1483650,
+    "pointerSize": 132
+   }
+  },
+  {
+   "rfilename": "images/anime_22_3.0.png",
+   "blobId": "d370784b2f8b616adb487bdc945088a7d06840bc",
+   "size": 1472266,
+   "lfs": {
+    "sha256": "a987c1fe08edb3de137c11a6c47320630a2c17b94d1aff3933b306e2d874e5a8",
+    "size": 1472266,
+    "pointerSize": 132
+   }
+  }
+ ]
+}

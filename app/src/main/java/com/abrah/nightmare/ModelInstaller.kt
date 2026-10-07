@@ -240,8 +240,8 @@ object ModelInstaller {
             from = 0L
         }
 
-        // ⭐⭐ The mirror, applied HERE and not in the catalogue — one of the
-        // two places in the app that open a connection ([Prefs.apply]).
+        // ⭐⭐ The mirror, applied HERE and not in the catalogue ([Prefs.apply];
+        // [LoraSources] applies it to its Hugging Face API calls too).
         val from_ = Prefs.apply(url)
         val conn = (URL(from_).openConnection() as HttpURLConnection).apply {
             connectTimeout = 30_000

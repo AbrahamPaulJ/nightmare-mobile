@@ -177,9 +177,11 @@ internal fun ControlNetPanel(
         if (cn == SwapInputs.NONE) return@Column
         // ⭐ The ControlNet itself: downloaded HERE when missing (`docs/UI.md` §8.1),
         // or said plainly when no build exists for this phone's chip.
-        val cnRow = cnRows[cn]
+        // ⭐ SDXL Swap's own ControlNet (`sdxl_<type>`), SD 1.5's by its bare type.
+        val cnId = com.abrah.nightmare.ControlNetCatalog.idFor((type as? SdSampler)?.family, cn)
+        val cnRow = cnRows[cnId]
         if (cnRow == null) {
-            if (!SwapInputs.controlnetFile(ctx, cn).isFile) {
+            if (!SwapInputs.controlnetFile(ctx, cnId).isFile) {
                 ErrorNotice(stringResource(R.string.cn_not_for_chip, cn))
             }
         } else if (!cnRow.installed || cnRow.progress != null) {
@@ -187,10 +189,10 @@ internal fun ControlNetPanel(
             com.abrah.nightmare.ui.ToolCard(
                 row = cnRow,
                 busy = busy,
-                onInstall = { onInstallControlNet?.invoke(cn) },
+                onInstall = { onInstallControlNet?.invoke(cnId) },
                 onCancel = { onCancelPose?.invoke() },
                 detail = stringResource(R.string.cn_about),
-                onDelete = { onDeleteControlNet?.invoke(cn) },
+                onDelete = { onDeleteControlNet?.invoke(cnId) },
             )
         }
         type?.widgets?.firstOrNull { it.name == SdSampler.CONTROL_STRENGTH }?.let { w ->

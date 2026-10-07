@@ -48,7 +48,9 @@ class BackendKeepAliveService : Service() {
         // ⚠ FIRST, before anything else can throw — same trap OpService's own
         // comment names: a service started with startForegroundService() that
         // does not call startForeground() within ~5 s is killed outright.
-        val n: Notification = notification(intent?.getStringExtra(EXTRA_TEXT) ?: TEXT_MODEL)
+        val n: Notification = notification(
+            intent?.getStringExtra(EXTRA_TEXT) ?: getString(R.string.notification_keeping_model)
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
@@ -76,7 +78,7 @@ class BackendKeepAliveService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Model loaded", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL, getString(R.string.notification_model_loaded_channel), NotificationManager.IMPORTANCE_LOW)
             )
         }
         return Notification.Builder(this, CHANNEL)
@@ -92,15 +94,15 @@ class BackendKeepAliveService : Service() {
         private const val NOTIFICATION_ID = 2
 
         private const val EXTRA_TEXT = "text"
-        private const val TEXT_MODEL = "keeping a loaded model in memory"
 
         /**
          * ⚠ Idempotent: starting an already-started foreground service is a no-op.
          * ⭐ [text] says WHY — a models-folder move ([ModelStorage]) holds the
          * process up the same way a resident checkpoint does.
          */
-        fun start(context: Context, text: String = TEXT_MODEL) {
-            val intent = Intent(context, BackendKeepAliveService::class.java).putExtra(EXTRA_TEXT, text)
+        fun start(context: Context, text: String? = null) {
+            val shown = text ?: context.getString(R.string.notification_keeping_model)
+            val intent = Intent(context, BackendKeepAliveService::class.java).putExtra(EXTRA_TEXT, shown)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {

@@ -1300,17 +1300,27 @@ open class SwapInspectorScreenshotTest {
      */
     @Test fun popupIpAdapterTab() = shoot("swap-popup-ipadapter", 2)
 
-    private fun shoot(name: String, tab: Int?, pose: Boolean = false, inpaint: Boolean = false) =
+    /**
+     * ⭐ SDXL Swap has the same two tiles (backends 023, 024) — and on a conversion that
+     * kept only LoRA (the built-in Illustrious, [com.abrah.nightmare.ModelFeatures]) both are
+     * DIMMED, never removed (the user's call, 2026-10-07).
+     */
+    @Test fun sdxlLoraOnlyDimsControlNetAndIp() = shoot("inspector-sdxlswap-dimmed", null, sdxl = true)
+    /** ⭐ …and the dimmed tile opens on its reason, not on controls that would do nothing. */
+    @Test fun sdxlDimmedTileSaysWhy() = shoot("sdxlswap-popup-no-controlnet", 1, sdxl = true)
+
+    private fun shoot(name: String, tab: Int?, pose: Boolean = false, inpaint: Boolean = false, sdxl: Boolean = false) =
         captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, name)) {
             NightmareTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
                     NodeInspectorBody(
                         nodeId = "generate",
                         node = Node(
-                            "generate", if (inpaint) SdSampler.SD15_SWAP_INPAINT.name else SdSampler.SD15_SWAP.name,
+                            "generate", swapType(inpaint, sdxl),
                             params = mapOf(
                                 "steps" to "20", "cfg" to "7.5", "seed" to "0",
-                                "model" to "yukimix_swap", "width" to "512", "height" to "512",
+                                "model" to if (sdxl) "illustrious_xl_swap" else "yukimix_swap",
+                                "width" to if (sdxl) "1024" else "512", "height" to if (sdxl) "1024" else "512",
                                 "x" to "0.1", "y" to "0.1", "w" to "0.8", "h" to "0.8",
                                 SdSampler.CONTROLNET to if (pose) "openpose" else "canny",
                                 SdSampler.CONTROL_STRENGTH to "0.8",
@@ -1320,7 +1330,7 @@ open class SwapInspectorScreenshotTest {
                                 "image" to "photo", SdSampler.CONTROL to "pose", "prompt" to "prompt",
                             ),
                         ),
-                        type = NODE_TYPES[if (inpaint) SdSampler.SD15_SWAP_INPAINT.name else SdSampler.SD15_SWAP.name],
+                        type = NODE_TYPES[swapType(inpaint, sdxl)],
                         onSetParam = { _, _, _ -> },
                         onDelete = {},
                         onReset = {},
@@ -1337,6 +1347,12 @@ open class SwapInspectorScreenshotTest {
                 }
             }
         }
+}
+
+private fun swapType(inpaint: Boolean, sdxl: Boolean) = when {
+    sdxl -> SdSampler.SDXL_SWAP.name
+    inpaint -> SdSampler.SD15_SWAP_INPAINT.name
+    else -> SdSampler.SD15_SWAP.name
 }
 
 /** [CanvasScreenshotTest]'s synthetic source, for the classes beside it. */
@@ -1395,6 +1411,40 @@ open class TranslateScreenshotTest {
                         onDelete = {},
                         onReset = {},
                         onTranslate = { _, _, _ -> },
+                    )
+                }
+            }
+        }
+}
+
+/**
+ * ⭐⭐ The describe button on the prompt's border, LEFT of Translate when both
+ * show (`docs/FLORENCE.md`); the negative has neither.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w411dp-h891dp-xxhdpi")
+open class DescribeScreenshotTest {
+    @Test
+    fun aPromptOffersDescribeBesideTranslate() =
+        captureRoboImage(filePath = com.abrah.nightmare.goldenPath(this, "inspector-prompt-describe")) {
+            NightmareTheme(darkTheme = true) {
+                Surface(Modifier.fillMaxSize()) {
+                    NodeInspectorBody(
+                        nodeId = "prompt",
+                        node = Node(
+                            "prompt", "core.prompt",
+                            params = mapOf(
+                                "prompt" to "красивая девушка в красном платье, (длинные волосы:1.2), 8k",
+                                "negative" to "blurry, lowres",
+                            ),
+                        ),
+                        type = NODE_TYPES["core.prompt"],
+                        onSetParam = { _, _, _ -> },
+                        onDelete = {},
+                        onReset = {},
+                        onTranslate = { _, _, _ -> },
+                        onDescribe = { _, _, _ -> },
                     )
                 }
             }

@@ -122,6 +122,14 @@ fun SettingsScreen(
     onLowRam: (String, Boolean) -> Unit = { _, _ -> },
     onDownloadBase: (String) -> Unit = {},
     /**
+     * ⭐ The LoRA browser's two settings (`docs/LORA-BROWSER.md`). ⚠ Parameters,
+     * for the reason [downloadBase] is one. Null [civitaiKey] hides the section.
+     */
+    civitaiKey: String? = null,
+    onCivitaiKey: (String) -> Unit = {},
+    matureContent: Boolean = false,
+    onMatureContent: (Boolean) -> Unit = {},
+    /**
      * ⭐ Deletes what [TempCleaner] listed. ⚠ The SCAN happens here (it
      * needs no state), the delete goes to the caller so one owner reports
      * what was freed.
@@ -445,7 +453,7 @@ fun SettingsScreen(
                     DownloadCard(
                         title = stringResource(R.string.models_moving),
                         emphasised = false,
-                        status = "${moving.done shr 20} / ${moving.total shr 20} MB",
+                        status = stringResource(R.string.results_mb_progress, moving.done shr 20, moving.total shr 20),
                         detail = moving.phase,
                         progress = moving,
                     ) {
@@ -539,6 +547,28 @@ fun SettingsScreen(
                     )
                 }
             }
+            // ⭐⭐ **CivitAI** — the key most downloads need and the mature switch
+            // (civitai.red instead of civitai.com, off by default — the user's
+            // call, 2026-10-07). The key field is the browser's own
+            // [CivitaiKeyField], so the two places cannot disagree.
+            if (civitaiKey != null) {
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(stringResource(R.string.lb_civitai_title), style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        stringResource(R.string.lb_civitai_note),
+                        style = NoteTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    CivitaiKeyField(civitaiKey, onCivitaiKey)
+                    com.abrah.nightmare.canvas.BoolKnobRow(
+                        stringResource(R.string.lb_mature), stringResource(R.string.lb_mature_hint),
+                        matureContent, onMatureContent,
+                    )
+                }
+            }
             // ⭐⭐ **Clean temp files** — ported from upstream at the user's ask,
             // 2026-09-20. ⚠⚠ It SCANS first and shows the total, because the
             // honest question is "delete 3.4 GB?" and not "delete some files?".
@@ -601,10 +631,8 @@ fun SettingsScreen(
         )
     }
     deletingLora?.let { name ->
-        ConfirmDelete(
-            title = "Delete $name?",
-            body = "Any node that names it refuses to run until you import it " +
-                "again or untick it.",
+        com.abrah.nightmare.canvas.ConfirmDeleteLora(
+            name,
             onConfirm = { onDeleteLora?.invoke(name) },
             onDismiss = { deletingLora = null },
         )
@@ -640,9 +668,11 @@ fun SettingsScreen(
     deletingTranslation?.let { source ->
         val row = translateRows?.get(source)
         ConfirmDelete(
-            title = "Delete ${row?.label ?: source.name}?",
-            body = "Frees ${(row?.onDisk ?: 0L) shr 20} MB. Getting it back is a " +
-                "${source.bytes shr 20} MB download, asked for the next time you translate.",
+            title = stringResource(R.string.models_delete_title, row?.label ?: source.name),
+            body = stringResource(
+                R.string.settings_delete_translation_body,
+                (row?.onDisk ?: 0L) shr 20, source.bytes shr 20,
+            ),
             onConfirm = { onDeleteTranslation(source) },
             onDismiss = { deletingTranslation = null },
         )
@@ -650,9 +680,8 @@ fun SettingsScreen(
 
     deletingEmbedding?.let { name ->
         ConfirmDelete(
-            title = "Delete $name?",
-            body = "Any prompt naming it renders without that embedding — no error, " +
-                "just the ordinary tokens instead.",
+            title = stringResource(R.string.models_delete_title, name),
+            body = stringResource(R.string.settings_delete_embedding_body),
             onConfirm = { onDeleteEmbedding?.invoke(name) },
             onDismiss = { deletingEmbedding = null },
         )

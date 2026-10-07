@@ -679,8 +679,7 @@ fun layout(
         // ⚠⚠ The HINT — edges, depth, skeleton — never its source picture
         // ([controlHints]); the source was shown at first and is what the
         // user had to point out.
-        val swapNode = n.type == com.abrah.nightmare.SdSampler.SD15_SWAP.name ||
-            n.type == com.abrah.nightmare.SdSampler.SD15_SWAP_INPAINT.name
+        val swapNode = com.abrah.nightmare.SdSampler.isSwapType(n.type)
         val refPreview = (if (swapNode) controlHints[n.id] else n.inputs["reference"]?.node?.let { previews[it] })
             ?.let { (id, aspect) ->
                 NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))
@@ -1121,6 +1120,46 @@ private val KNOB_OVERRIDES = mapOf(
     "ip_image" to "IP-Adapter picture",
 )
 
+private val KNOB_RESOURCES = mapOf(
+    "cfg" to com.abrah.nightmare.R.string.knob_cfg,
+    "loras" to com.abrah.nightmare.R.string.knob_loras,
+    "out_w" to com.abrah.nightmare.R.string.knob_output_width,
+    "out_h" to com.abrah.nightmare.R.string.knob_output_height,
+    "w" to com.abrah.nightmare.R.string.knob_width,
+    "h" to com.abrah.nightmare.R.string.knob_height,
+    "uri" to com.abrah.nightmare.R.string.knob_picture,
+    "stitch" to com.abrah.nightmare.R.string.knob_stitch,
+    "ip_scale" to com.abrah.nightmare.R.string.knob_ip_strength,
+    "ip_adapter" to com.abrah.nightmare.R.string.knob_ip_adapter,
+    "ip_image" to com.abrah.nightmare.R.string.knob_ip_picture,
+    "prompt" to com.abrah.nightmare.R.string.knob_prompt,
+    "negative" to com.abrah.nightmare.R.string.knob_negative,
+    "seed" to com.abrah.nightmare.R.string.knob_seed,
+    "steps" to com.abrah.nightmare.R.string.knob_steps,
+    "scheduler" to com.abrah.nightmare.R.string.knob_scheduler,
+    "denoise" to com.abrah.nightmare.R.string.knob_denoise,
+    "model" to com.abrah.nightmare.R.string.knob_model,
+    "width" to com.abrah.nightmare.R.string.knob_width,
+    "height" to com.abrah.nightmare.R.string.knob_height,
+    "x" to com.abrah.nightmare.R.string.knob_x,
+    "y" to com.abrah.nightmare.R.string.knob_y,
+    "pad" to com.abrah.nightmare.R.string.knob_pad,
+    "grow" to com.abrah.nightmare.R.string.knob_grow,
+    "feather" to com.abrah.nightmare.R.string.knob_feather,
+    "controlnet" to com.abrah.nightmare.R.string.knob_controlnet,
+    "upscaler" to com.abrah.nightmare.R.string.knob_upscaler,
+    "scale" to com.abrah.nightmare.R.string.knob_scale,
+    "name" to com.abrah.nightmare.R.string.knob_name,
+    "save" to com.abrah.nightmare.R.string.knob_save,
+    "auto_crop" to com.abrah.nightmare.R.string.knob_auto_crop,
+    "allow_pad" to com.abrah.nightmare.R.string.knob_allow_padding,
+    "auto_upscale" to com.abrah.nightmare.R.string.knob_auto_upscale,
+    "autosave" to com.abrah.nightmare.R.string.knob_autosave,
+    "only_masked" to com.abrah.nightmare.R.string.knob_only_masked,
+    "tap_select" to com.abrah.nightmare.R.string.knob_tap_select,
+    "pick_select" to com.abrah.nightmare.R.string.knob_pick_select,
+)
+
 /**
  * ⭐⭐ What a KNOB is called on screen — `cfg` → `CFG`, `out_w` → `Output width`,
  * `denoise` → `Denoise`.
@@ -1139,3 +1178,10 @@ val String.knobLabel: String
 /** ⚠ The same label inside a sentence: `Batching 4 denoise values`, `4 CFG values`. */
 val String.knobWord: String
     get() = knobLabel.let { if (it == it.uppercase()) it else it.lowercase() }
+
+fun String.knobLabel(context: android.content.Context): String =
+    KNOB_RESOURCES[this]?.let(context::getString) ?: knobLabel
+
+fun String.knobWord(context: android.content.Context): String = knobLabel(context).let {
+    if (it == it.uppercase()) it else it.lowercase()
+}

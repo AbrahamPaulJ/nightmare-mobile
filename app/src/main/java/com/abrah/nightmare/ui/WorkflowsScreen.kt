@@ -144,7 +144,7 @@ fun WorkflowsScreen(
                                 // ⚠ And it names where Save actually IS: this screen no
                                 // longer has one, so copy pointing at a button on this
                                 // screen would send the user looking for it here.
-                                "Nothing saved yet — build a flow on the canvas, then press Save there.",
+                                stringResource(R.string.flows_empty_saved),
                                 style = NoteTextStyle,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -183,7 +183,10 @@ fun WorkflowsScreen(
                                     // is worked on, and the name chosen in the first
                                     // thirty seconds is rarely the one that fits.
                                     IconButton(onClick = { renaming = w.name }) {
-                                        Icon(Icons.Filled.Create, contentDescription = "rename \"${w.name}\"")
+                                        Icon(
+                                            Icons.Filled.Create,
+                                            contentDescription = stringResource(R.string.flows_cd_rename, w.name),
+                                        )
                                     }
                                     // ⭐ Share the flow as the same JSON the Import
                                     // button accepts — so what you send is what someone
@@ -194,7 +197,7 @@ fun WorkflowsScreen(
                                         // 2026-09-11) — here it meant Share, one tab away.
                                         Icon(
                                             com.abrah.nightmare.ui.ShareIcon,
-                                            contentDescription = "share \"${w.name}\"",
+                                            contentDescription = stringResource(R.string.flows_cd_share, w.name),
                                         )
                                     }
                                     // ⚠⚠ Behind a confirm now. This deleted a workflow on
@@ -203,7 +206,7 @@ fun WorkflowsScreen(
                                     IconButton(onClick = { deleting = w.name }) {
                                         Icon(
                                             Icons.Filled.Delete,
-                                            contentDescription = "delete \"${w.name}\"",
+                                            contentDescription = stringResource(R.string.flows_cd_delete, w.name),
                                             tint = MaterialTheme.colorScheme.error,
                                         )
                                     }
@@ -249,9 +252,9 @@ fun WorkflowsScreen(
 
     renaming?.let { from ->
         NameDialog(
-            title = "Rename \"$from\"",
+            title = stringResource(R.string.flows_rename_title, from),
             initial = from,
-            confirm = "Rename",
+            confirm = stringResource(R.string.flows_rename),
             onDismiss = { renaming = null },
             onConfirm = { onRenameSaved(from, it); renaming = null },
         )
@@ -259,12 +262,10 @@ fun WorkflowsScreen(
 
     deleting?.let { name ->
         ConfirmDelete(
-            title = "Delete \"$name\"?",
+            title = stringResource(R.string.flows_delete_title, name),
             // ⚠ Names what goes and what does not (`docs/UI.md` §7.5) — "this
             // cannot be undone" alone is the ceremony that rule forbids.
-            body = "The saved flow goes and cannot be brought back. Pictures kept in " +
-                "Results keep their own copy of the flow that made them, and the " +
-                "canvas is not touched.",
+            body = stringResource(R.string.flows_delete_body),
             onConfirm = { onDeleteSaved(name) },
             onDismiss = { deleting = null },
         )
@@ -293,7 +294,7 @@ private fun NameDialog(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.name)) },
                 singleLine = true,
             )
         },
@@ -303,7 +304,7 @@ private fun NameDialog(
                 enabled = name.isNotBlank() && name.trim() != initial,
             ) { Text(confirm) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -333,7 +334,7 @@ private fun RecipeCard(
         ) {
             Column(Modifier.weight(1f).padding(end = 8.dp)) {
                 Text(
-                    r.label,
+                    r.labelRes?.let { stringResource(it) } ?: r.label,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = fade),
                 )
@@ -345,7 +346,7 @@ private fun RecipeCard(
                     r.section?.let { Badge(it, MaterialTheme.colorScheme.primary) }
                 }
                 Text(
-                    r.about,
+                    r.aboutRes?.let { stringResource(it) } ?: r.about,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = fade),
                     modifier = Modifier.padding(top = 6.dp),

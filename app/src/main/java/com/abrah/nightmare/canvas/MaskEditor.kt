@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.toSize
 import com.abrah.nightmare.MaskRaster
 import com.abrah.nightmare.MaskState
 import com.abrah.nightmare.MaskStrokeData
+import com.abrah.nightmare.R
 import kotlin.math.pow
 
 /** Translucent red, so the photo stays visible under what you are painting. */
@@ -444,7 +446,7 @@ fun MaskEditor(
         ) {
             Image(
                 bitmap = source,
-                contentDescription = "the picture being masked",
+                contentDescription = stringResource(R.string.cd_picture_being_masked),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )

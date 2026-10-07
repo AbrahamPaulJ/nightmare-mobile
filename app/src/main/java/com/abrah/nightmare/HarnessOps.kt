@@ -223,6 +223,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "segment" -> segmentProbe(arg)
             // ⭐⭐ What does a human PARSER cost on this CPU? Measurement only.
             "parse_probe" -> parseProbe(arg)
+            // ⭐ Florence-2 on the CPU, timed — feasibility only. `--es arg "base,caption,4"`.
+            // ⭐ The prompt's describe button, headless and timed (docs/FLORENCE.md).
+            // `--es arg "short"` / `"detailed|/sdcard/Download/x.jpg"`; no path = the newest saved picture.
+            "describe_install" -> describeInstall(arg)
+            "describe" -> describeProbe(arg)
             else -> say("unknown intent op \"$op\"", bad = true)
         }
     }
@@ -703,6 +708,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val spec = kv["model"]?.let { ModelCatalog.byId(it) }
             ?: ModelCatalog.all.firstOrNull { it.family == com.abrah.nightmare.Family.SD15_SWAP && it.installed(ctx) }
             ?: return say("swap: no SD 1.5 Swap model installed", bad = true)
+        // ⭐ An SDXL Swap model runs on its own node type (ControlNet / IP: backends 023, 024).
+        val sdxl = spec.family == com.abrah.nightmare.Family.SDXL_SWAP
         say("swap: ${spec.id}; ControlNets installed: ${com.abrah.nightmare.SwapInputs.installedTypes(ctx)}")
         val res = spec.native ?: ModelCatalog.SD15_NPU_RES
         val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height)
@@ -710,7 +717,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
 
         suspend fun leg(
             label: String, prompt: String, params: Map<String, String>, photo: String? = null,
-            type: String = SdSampler.SD15_SWAP.name,
+            type: String = if (sdxl) SdSampler.SDXL_SWAP.name else SdSampler.SD15_SWAP.name,
         ): ByteArray? {
             if (!ensureBackend(key)) {
                 say("  $label: no backend", bad = true); return null
@@ -827,13 +834,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 "denoise" to "0.9",
                 "x" to "0.0", "y" to "0.0", "w" to "1.0", "h" to "1.0",
             ) + (kv["lora"]?.let { mapOf(SdSampler.LORAS to it) } ?: emptyMap())
-            if (leg("inpaint", "a small red wooden cabin", p, photo, SdSampler.SD15_SWAP_INPAINT.name) == null) bad++
+            if (leg("inpaint", "a small red wooden cabin", p, photo, if (sdxl) SdSampler.SDXL_SWAP_INPAINT.name else SdSampler.SD15_SWAP_INPAINT.name) == null) bad++
             // ⭐ …and with canny taken from the node's OWN photo — the ControlNet
             // must reach the inpaint path too (the missing tile, 2026-09-30).
             if (kv.containsKey("inpaintcn")) {
                 val cn = leg(
                     "inpaint_canny", "a small red wooden cabin", p + (SdSampler.CONTROLNET to "canny"),
-                    photo, SdSampler.SD15_SWAP_INPAINT.name,
+                    photo, if (sdxl) SdSampler.SDXL_SWAP_INPAINT.name else SdSampler.SD15_SWAP_INPAINT.name,
                 )
                 if (cn == null) bad++
             }
@@ -2060,6 +2067,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         /** ⚠ The caller's registry — the VM avoids building the plugin host for a plugin-free graph. */
         types: Map<String, NodeType> = nodeTypes(),
     ): Boolean {
+        // ⚠⚠ The prompt's describe models hold up to ~2 GB at their peak and their
+        // idle window is a minute, and "describe, then Run" is the flow they exist
+        // for — a checkpoint load must not meet them (`PictureModels`' lmkd note).
+        DescribeMode.models.forEach { it.trim() }
         val namesNoKey = runCatching { contextKeyModels(graph, types).isEmpty() }.getOrDefault(false)
         if (namesNoKey) return ensureBackend(noModel = true)
         return ensureBackend(launchKeyFor(graph, types, BackendProcess.launchedKey))
@@ -2826,6 +2837,55 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("  ok   ${d.bytesOnDisk(ctx)} B at ${d.dir(ctx).absolutePath}")
         } catch (e: Throwable) {
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    /** `describe_install [sentences|tags]` — one of the prompt's describe models, both when blank. */
+    private suspend fun describeInstall(arg: String?) {
+        val which = when (arg?.trim()) {
+            "sentences" -> listOf(ImageCaption)
+            "tags" -> listOf(ImageTagger)
+            else -> DescribeMode.models
+        }
+        for (c in which) {
+            say("describe_install: ${c.label}, ${c.bytes} B")
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    c.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+                }
+                say("  ok   ${c.bytesOnDisk(ctx)} B")
+            } catch (e: Throwable) {
+                say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+            }
+        }
+    }
+
+    /**
+     * ⭐ The describe button's own call, timed: twice on one picture (cold, warm),
+     * with the peak RSS. `short` / `detailed` / `tags`, then `|<path>`.
+     */
+    private suspend fun describeProbe(arg: String?) {
+        val parts = arg.orEmpty().split("|")
+        val mode = DescribeMode.entries.firstOrNull { it.name.equals(parts[0].trim(), ignoreCase = true) } ?: DescribeMode.SHORT
+        val path = parts.getOrNull(1)?.takeIf { it.isNotBlank() }
+        val photo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            if (path != null) BitmapFactory.decodeFile(path)
+            else newestSavedImage()?.let { AddObjects.load(ctx, it) }
+        }
+        if (photo == null) return say("describe: no photo (${path ?: "nothing saved"})", bad = true)
+        if (!mode.model.isInstalled(ctx)) return say("describe: ${mode.model.label} not installed — run describe_install", bad = true)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            for (k in 0 until 2) {
+                val t = System.nanoTime()
+                val text = when (mode) {
+                    DescribeMode.TAGS -> ImageTagger.tags(ctx, photo)
+                    DescribeMode.SHORT -> ImageCaption.caption(ctx, photo, ImageCaption.Length.SHORT)
+                    DescribeMode.DETAILED -> ImageCaption.caption(ctx, photo, ImageCaption.Length.DETAILED)
+                }
+                val hwm = java.io.File("/proc/self/status").readLines().firstOrNull { it.startsWith("VmHWM") }
+                say("  ${mode.name.lowercase()} ${if (k == 0) "cold" else "warm"} ${(System.nanoTime() - t) / 1_000_000} ms ${hwm.orEmpty()}")
+                say("  \"$text\"")
+            }
         }
     }
 

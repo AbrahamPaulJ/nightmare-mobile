@@ -1,0 +1,183 @@
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -35,12 +35,15 @@
+         vae_encoder_path_(std::move(vae_encoder_path)),
+         lowram_(lowram),
+         long_seq_(readLongContext(model_dir)),
+-        tpl_inpaint_(readSwapInpaint(model_dir)) {
++        tpl_inpaint_(readSwapFeature(model_dir, "inp")),
++        tpl_control_(readSwapFeature(model_dir, "cn")) {
+     if (long_seq_)
+       QNN_INFO("SDXL long context: %d_masked_v1 (%dx77 tokens + mask)",
+                long_seq_, long_seq_ / 77);
+     if (tpl_inpaint_)
+       QNN_INFO("SDXL Swap inpaint branch: mask + masked_latent fed per render");
++    if (tpl_control_)
++      QNN_INFO("SDXL Swap ControlNet: res_0..9 fed per step (023)");
+   }
+ 
+   ~PipelineSdxl() override { releaseClips(); }
+@@ -164,6 +167,12 @@
+   // ignored the prompt (Illustrious XL, reported 2026-10-05).
+   bool isInpaintModel() const override { return tpl_inpaint_; }
+ 
++  // ⭐ An SDXL Swap conversion that kept ControlNet (023): `/generate` and
++  // `/sample` then accept `control_image` (1024) + `control_strength` +
++  // `controlnet` (the path of an SDXL ControlNet context). From
++  // swap_features.json, as inpaint: in --lowram the UNet is not loaded yet.
++  bool isControlNet() const override { return tpl_control_; }
++
+   void encodeText(const ProcessedPromptPair &prompts, bool need_negative,
+                   bool need_positive, Conditioning &cond) override {
+     if (lowram_) loadClipsIfNeeded();
+@@ -222,6 +231,24 @@
+     }
+     // npuforge's SDXL Swap template (patch 018): LoRA per request, exactly as
+     // PipelineSd15Npu does it (015). A model without LoRA inputs refuses one.
++    // ControlNet (023): the hint as NCHW once per request; the ControlNet runs
++    // per step in runUnetStep.
++    control_nchw_.clear();
++    if (tpl_control_ && !req.control_image_data.empty()) {
++      if (!unet_ || !unet_->hasInput("res_0"))
++        throw std::runtime_error(
++            "swap_features.json lists \"cn\" but the UNet has no res_0..9 "
++            "inputs");
++      const size_t plane = (size_t)req.width * req.height;
++      if (req.control_image_data.size() != 3 * plane)
++        throw std::invalid_argument("control_image: expected 3 x " +
++                                    std::to_string(plane) + " values");
++      control_nchw_.resize(3 * plane);
++      for (size_t i = 0; i < plane; ++i)
++        for (size_t c = 0; c < 3; ++c)
++          control_nchw_[c * plane + i] = req.control_image_data[i * 3 + c];
++      loadControlNet(req.controlnet_path);
++    }
+     if (unet_ && unet_->hasInput("lora_S"))
+       unet_->setLora(req.lora_dir, req.lora_strength);
+     else if (!req.lora_dir.empty())
+@@ -239,7 +266,7 @@
+     }
+   }
+ 
+-  void runUnetStep(const GenerationRequest &, const float *latents_batch2,
++  void runUnetStep(const GenerationRequest &req, const float *latents_batch2,
+                    float timestep, bool skip_uncond, Conditioning &cond,
+                    float *out_batch2) override {
+     if (!unet_) throw std::runtime_error("QNN UNET missing");
+@@ -248,6 +275,38 @@
+     const int ts = static_cast<int>(timestep);
+     float *latents_in = const_cast<float *>(latents_batch2);
+     float *time_ids = cond.time_ids.data();
++
++    // ControlNet (023): one pass per step on the positive side (latent,
++    // first 77 tokens, pooled, time ids), its 10 residuals scaled by
++    // control_strength and shared by both CFG passes -- 015's convention.
++    // No hint: the residuals return to zero (the identity) once.
++    if (tpl_control_) {
++      if (!control_nchw_.empty()) {
++        const auto t0 = std::chrono::steady_clock::now();
++        if (StatusCode::SUCCESS !=
++            controlnet_->executeSdxlControlnet(
++                latents_in + single_latent_size, timestep, cond.posHidden(),
++                cond.posPooled(), time_ids + 6, control_nchw_.data(),
++                residuals_))
++          throw std::runtime_error("QNN SDXL controlnet exec failed");
++        for (size_t i = 0; i < residuals_.size(); ++i) {
++          std::vector<float> r = residuals_[i];
++          if (req.control_strength != 1.0f)
++            for (auto &v : r) v *= req.control_strength;
++          unet_->setExtraInput("res_" + std::to_string(i), std::move(r));
++        }
++        residuals_set_ = true;
++        QNN_INFO("SDXL controlnet step %.0f ms",
++                 std::chrono::duration<double, std::milli>(
++                     std::chrono::steady_clock::now() - t0)
++                     .count());
++      } else if (residuals_set_) {
++        for (size_t i = 0; i < residuals_.size(); ++i)
++          unet_->setExtraInput("res_" + std::to_string(i),
++                               std::vector<float>(residuals_[i].size(), 0.0f));
++        residuals_set_ = false;
++      }
++    }
+ 
+     if (long_seq_) {
+       std::vector<float> neg_mask = chunkMask(cond.negHidden());
+@@ -287,6 +346,9 @@
+     mask_lat_.shrink_to_fit();
+     masked_lat_.clear();
+     masked_lat_.shrink_to_fit();
++    control_nchw_.clear();
++    control_nchw_.shrink_to_fit();
++    if (lowram_ && controlnet_) releaseControlNet();
+     if (!lowram_ || !unet_) return;
+     unet_.reset();
+     QNN_INFO("[lowram] SDXL UNET released");
+@@ -311,6 +373,7 @@
+   // generate() exits (normal return or exception).
+   void releaseTransientModels() override {
+     if (!lowram_) return;
++    if (controlnet_) releaseControlNet();
+     if (clip_interpreter_ || clip2_interpreter_) releaseClips();
+     if (unet_) {
+       unet_.reset();
+@@ -486,14 +549,42 @@
+   // UNet kept. Read from the file, not unet_->hasInput(): in --lowram the UNet
+   // is not loaded when /sample asks isInpaintModel(). beginDenoise checks the
+   // inputs are really there once it is.
+-  static bool readSwapInpaint(const std::string &model_dir) {
++  // ⚠ Inside the `features` ARRAY only (023): 020 searched for the name
++  // anywhere after "features", and npuforge's schema-2 manifest carries a
++  // `detail` object keyed by feature name (it keeps `features` last so 020
++  // still reads it right; this no longer depends on that).
++  static bool readSwapFeature(const std::string &model_dir, const char *name) {
+     std::ifstream f(std::filesystem::path(model_dir) / "swap_features.json");
+     if (!f) return false;
+     const std::string s((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+-    const size_t at = s.find("\"features\"");
+-    return at != std::string::npos &&
+-           s.find("\"inp\"", at) != std::string::npos;
++    const size_t key = s.find("\"features\"");
++    if (key == std::string::npos) return false;
++    const size_t open = s.find('[', key);
++    const size_t close = open == std::string::npos ? open : s.find(']', open);
++    if (close == std::string::npos) return false;
++    return s.substr(open, close - open).find(std::string("\"") + name + "\"") !=
++           std::string::npos;
++  }
++
++  // The request's ControlNet context, kept until a request names another
++  // (015's rule); --lowram releases it with the UNet.
++  void loadControlNet(const std::string &path) {
++    if (path.empty())
++      throw std::invalid_argument(
++          "'control_image' needs 'controlnet' (an SDXL controlnet.bin path)");
++    if (path == controlnet_path_ && controlnet_) return;
++    controlnet_.reset();
++    controlnet_path_.clear();
++    controlnet_ = qnn_runtime::createAndInitModel(path, "controlnet");
++    controlnet_path_ = path;
++    QNN_INFO("SDXL controlnet %s feeds the unet's res_0..9", path.c_str());
++  }
++
++  void releaseControlNet() {
++    controlnet_.reset();
++    controlnet_path_.clear();
++    QNN_INFO("[lowram] SDXL ControlNet released");
+   }
+ 
+   // Each chunk through both encoders; a chunk the prompt does not reach
+@@ -541,6 +632,12 @@
+   const bool lowram_;
+   const int long_seq_;
+   const bool tpl_inpaint_;
++  const bool tpl_control_;
++  std::unique_ptr<QnnModel> controlnet_;
++  std::string controlnet_path_;
++  std::vector<float> control_nchw_;
++  std::vector<std::vector<float>> residuals_;
++  bool residuals_set_ = false;
+ 
+   MNN::Interpreter *clip_interpreter_ = nullptr;
+   MNN::Interpreter *clip2_interpreter_ = nullptr;

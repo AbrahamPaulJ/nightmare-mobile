@@ -35,7 +35,7 @@ import com.abrah.nightmare.SwapInputs
  */
 internal fun CanvasState.swapWired(nodeId: String, name: String, value: String, before: CanvasState): CanvasState {
     val node = workflow.graph.byId[nodeId] ?: return this
-    if (node.type != SdSampler.SD15_SWAP.name && node.type != SdSampler.SD15_SWAP_INPAINT.name) return this
+    if (!SdSampler.isSwapType(node.type)) return this
     val was = before.workflow.graph.byId[nodeId]?.params
     return when (name) {
         SdSampler.CONTROLNET -> {
@@ -61,13 +61,13 @@ internal fun CanvasState.swapWired(nodeId: String, name: String, value: String, 
             when {
                 off && !wasOff -> unwire(nodeId, "reference", dropNode = true)
                 !off && wasOff && node.inputs["reference"] == null ->
-                    withPictureNode(nodeId, "reference", "reference", node.params[SdSampler.IP_IMAGE].orEmpty())
+                    withPictureNode(nodeId, "reference", "ipadapter", node.params[SdSampler.IP_IMAGE].orEmpty())
                         .clearingParam(nodeId, SdSampler.IP_IMAGE)
                 else -> this
             }
         }
         SdSampler.CONTROL_IMAGE -> picked(nodeId, SdSampler.CONTROL, "control", SdSampler.CONTROL_IMAGE, value)
-        SdSampler.IP_IMAGE -> picked(nodeId, "reference", "reference", SdSampler.IP_IMAGE, value)
+        SdSampler.IP_IMAGE -> picked(nodeId, "reference", "ipadapter", SdSampler.IP_IMAGE, value)
         else -> this
     }
 }
@@ -186,7 +186,7 @@ private fun CanvasState.withPictureNode(nodeId: String, port: String, base: Stri
  */
 internal fun com.abrah.nightmare.Graph.switchingOnFor(nodeId: String, port: String): com.abrah.nightmare.Graph {
     val n = byId[nodeId] ?: return this
-    if (n.type != SdSampler.SD15_SWAP.name && n.type != SdSampler.SD15_SWAP_INPAINT.name) return this
+    if (!SdSampler.isSwapType(n.type)) return this
     return when (port) {
         "reference" -> if (n.params[SdSampler.IP_ADAPTER] == IpAdapter.NONE) {
             withParam(nodeId, SdSampler.IP_ADAPTER, IpAdapter.PLUS)
@@ -196,6 +196,33 @@ internal fun com.abrah.nightmare.Graph.switchingOnFor(nodeId: String, port: Stri
         } else this
         else -> this
     }
+}
+
+/**
+ * ⭐⭐ The mirror of [switchingOnFor]: a Swap node whose `reference` or `control`
+ * wire is REMOVED on the canvas switches that tool to none (the user, 2026-10-07:
+ * *"when i remove a control image from graph view, node view should switch to
+ * None for controlnet. same for ipadapter"*). A tool left on with nothing wired
+ * would fall back to the node's own photo — a ControlNet the person just took away.
+ */
+internal fun com.abrah.nightmare.Graph.switchingOffFor(nodeId: String, port: String): com.abrah.nightmare.Graph {
+    val n = byId[nodeId] ?: return this
+    if (!SdSampler.isSwapType(n.type) || n.inputs[port] != null) return this
+    return when (port) {
+        "reference" -> withParam(nodeId, SdSampler.IP_ADAPTER, IpAdapter.NONE)
+        SdSampler.CONTROL -> withParam(nodeId, SdSampler.CONTROLNET, SwapInputs.NONE)
+        else -> this
+    }
+}
+
+/** ⭐ [switchingOffFor] for every Swap node that [removed] fed — deleting the picture node removes its wires too. */
+internal fun com.abrah.nightmare.Graph.switchingOffAfterRemoving(
+    before: com.abrah.nightmare.Graph,
+    removed: String,
+): com.abrah.nightmare.Graph = before.nodes.fold(this) { g, n ->
+    listOf("reference", SdSampler.CONTROL)
+        .filter { n.inputs[it]?.node == removed }
+        .fold(g) { acc, port -> acc.switchingOffFor(n.id, port) }
 }
 
 private const val PICTURE_STEP_X = 420f

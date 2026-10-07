@@ -53,6 +53,7 @@ fun BatchSheet(
     onDismiss: () -> Unit,
     onRun: (BatchSpec) -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     // ⚠⚠⚠ **NUMERIC widgets only, and DERIVED ones excluded.** The first
     // version filtered on "not a context key and not a dropdown", which let
     // through `uri`, `prompt`, `negative`, the mask's `ops` blob and the crop's
@@ -132,7 +133,9 @@ fun BatchSheet(
                         FilterChip(
                             selected = on,
                             onClick = { picked = c },
-                            label = { Text("${c.first}  ${c.second.knobWord}", fontSize = 12.sp) },
+                            label = {
+                                Text(stringResource(R.string.batch_node_knob, c.first, c.second.knobWord(context)), fontSize = 12.sp)
+                            },
                             shape = RoundedCornerShape(10.dp),
                         )
                     }

@@ -340,6 +340,9 @@ data class Widget(
      * size 512–2048, but only in 256-px steps (upstream's `DitResolution`).
      */
     val step: Int? = null,
+    /** Built-in localized replacement for [hint]; plugin hints continue to use [hint]. */
+    @androidx.annotation.StringRes val hintRes: Int? = null,
+    val hintArgs: List<Any> = emptyList(),
 ) {
     /** True for the kinds that want a numeric keyboard rather than a text one. */
     val numeric: Boolean get() = type == "int" || type == "float"

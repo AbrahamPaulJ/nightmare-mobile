@@ -59,7 +59,7 @@ object DownloadNotice {
             nm.createNotificationChannel(
                 // ⚠ LOW: a download that pinged and buzzed on every percent
                 // would be the last time anyone left notifications on.
-                NotificationChannel(CHANNEL, "Downloads", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL, ctx.getString(R.string.notification_downloads_channel), NotificationManager.IMPORTANCE_LOW)
             )
         }
         nm
@@ -79,7 +79,7 @@ object DownloadNotice {
             // ⚠ The PHASE, not just a percentage: "unpacking" at 100% of the
             // download is not "done", and a bar sitting full for two minutes
             // reads as a hang.
-            .setContentText(if (pct != null) "$phase · $pct%" else phase)
+            .setContentText(if (pct != null) ctx.getString(R.string.notification_progress, phase, pct) else phase)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true)
             // ⚠ Indeterminate when there is no total, rather than a bar pinned
@@ -101,7 +101,11 @@ object DownloadNotice {
         val nm = manager(ctx) ?: return
         val n = Notification.Builder(ctx, CHANNEL)
             .setContentTitle(label)
-            .setContentText(detail ?: if (ok) "ready to use" else "download failed")
+            .setContentText(
+                detail ?: ctx.getString(
+                    if (ok) R.string.notification_ready_to_use else R.string.notification_download_failed
+                )
+            )
             .setSmallIcon(
                 if (ok) android.R.drawable.stat_sys_download_done
                 else android.R.drawable.stat_notify_error

@@ -33,8 +33,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.LoraSpec
+import com.abrah.nightmare.R
 import com.abrah.nightmare.ui.NoteTextStyle
 
 /**
@@ -72,6 +74,11 @@ fun LoraPicker(
      * been a button.
      */
     onImport: (() -> Unit)? = null,
+    /**
+     * ⭐⭐ "Search online" — the LoRA browser (`docs/LORA-BROWSER.md`), on this
+     * node's family. Null hides it: a golden, or a family it does not serve.
+     */
+    onBrowse: (() -> Unit)? = null,
     /** ⭐ Each LoRA's note ([com.abrah.nightmare.LoraNotes]), by file name. */
     notes: Map<String, String> = emptyMap(),
     /** ⭐ Save one note. Null hides the ⋮ — a golden has no folder to write to. */
@@ -81,16 +88,39 @@ fun LoraPicker(
      * to append to; the button is then DIMMED and says why (`docs/UI.md` §8.18).
      */
     onAddToPrompt: ((String) -> Unit)? = null,
+    /** ⭐ Replace that prompt's text with the trigger words; null exactly when [onAddToPrompt] is. */
+    onReplacePrompt: ((String) -> Unit)? = null,
+    /**
+     * ⭐⭐ Delete the file from `_loras` — the SAME `HarnessViewModel.deleteLora`
+     * Settings → Add-ons calls, behind the same [ConfirmDeleteLora]. Null hides it.
+     */
+    onDelete: ((String) -> Unit)? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("LoRAs") },
-        text = { LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt) },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        // ⚠ The dismiss SLOT, so Add sits left of Done — the same
+        title = { Text(stringResource(R.string.loras_title)) },
+        text = {
+            LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt, onReplacePrompt, onDelete)
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
+        // ⚠ The dismiss SLOT, so Files sits left of Done — the same
         // "destructive-or-secondary left, primary right" order `InstalledActions`
         // and `PictureActions` keep (`docs/UI.md` §8.1, §8.3).
-        dismissButton = onImport?.let { { TextButton(onClick = it) { Text("Add") } } },
+        // ⭐ Search online sits beside Files: both are ways to get a LoRA in.
+        // ⭐ FILES, not "Add" — it opens the file browser, and "Add" read as adding the
+        // LoRA to the node (the user's call, 2026-10-08). The same word as `FilesButton`.
+        dismissButton = if (onImport == null && onBrowse == null) null else {
+            {
+                Row {
+                    onImport?.let { TextButton(onClick = it) { Text(androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.pick_files)) } }
+                    onBrowse?.let {
+                        TextButton(onClick = it) {
+                            Text(androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.lb_open))
+                        }
+                    }
+                }
+            }
+        },
     )
 }
 
@@ -108,18 +138,9 @@ fun LoraPickerContent(
     notes: Map<String, String> = emptyMap(),
     onSaveNote: ((name: String, note: String) -> Unit)? = null,
     onAddToPrompt: ((String) -> Unit)? = null,
+    onReplacePrompt: ((String) -> Unit)? = null,
+    onDelete: ((String) -> Unit)? = null,
 ) {
-    // ⭐ Which LoRA's note is open, if any.
-    var noting by remember { mutableStateOf<String?>(null) }
-    noting?.let { name ->
-        LoraNoteDialog(
-            name = name,
-            note = notes[name].orEmpty(),
-            onSave = { onSaveNote?.invoke(name, it) },
-            onAddToPrompt = onAddToPrompt,
-            onDismiss = { noting = null },
-        )
-    }
     // ⚠ Seeded from the param and re-seeded when it changes, so the sheet shows
     // what the node actually carries rather than a copy that drifted.
     var chosen by remember(spec) { mutableStateOf(LoraSpec.parse(spec)) }
@@ -127,6 +148,35 @@ fun LoraPickerContent(
     fun commit(next: List<LoraSpec.Entry>) {
         chosen = next
         onSet(LoraSpec.format(next))
+    }
+
+    // ⭐ Which LoRA's note is open, if any; which one is being deleted.
+    var noting by remember { mutableStateOf<String?>(null) }
+    var deleting by remember { mutableStateOf<String?>(null) }
+    noting?.let { name ->
+        LoraNoteDialog(
+            name = name,
+            note = notes[name].orEmpty(),
+            onSave = { onSaveNote?.invoke(name, it) },
+            onAddToPrompt = onAddToPrompt,
+            onReplacePrompt = onReplacePrompt,
+            onDelete = onDelete?.let { { deleting = name } },
+            onDismiss = { noting = null },
+        )
+    }
+    deleting?.let { name ->
+        ConfirmDeleteLora(
+            name,
+            onConfirm = {
+                noting = null
+                // ⚠ Unticked on THIS node too: deleting a LoRA from the node
+                // that uses it means "not this one", and leaving it named would
+                // only make the next Run refuse.
+                if (chosen.any { it.name == name }) commit(chosen.filterNot { it.name == name })
+                onDelete?.invoke(name)
+            },
+            onDismiss = { deleting = null },
+        )
     }
 
     // ⚠⚠ Chosen ones FIRST and in their own order, then everything else
@@ -142,9 +192,8 @@ fun LoraPickerContent(
         Text(
             // ⚠ It names the button below it rather than another screen. The
             // Settings tab still imports; it is no longer the only way.
-            if (onImport != null) "No LoRAs on this phone yet. Add one and it will appear here."
-            else "No LoRAs on this phone yet. Import a .safetensors on the Settings " +
-                "tab and it will appear here.",
+            if (onImport != null) stringResource(R.string.lora_none_add)
+            else stringResource(R.string.lora_none_settings),
             style = NoteTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -175,8 +224,8 @@ fun LoraPickerContent(
                         // adapter is tens of megabytes and a merged checkpoint
                         // is gigabytes, and someone who picked the wrong file
                         // sees it here rather than at Run.
-                        if (missing) "not on this phone — import it or untick it"
-                        else "${(sizes[name] ?: 0L) shr 20} MB",
+                        if (missing) stringResource(R.string.lora_missing)
+                        else stringResource(R.string.device_mb, (sizes[name] ?: 0L) shr 20),
                         style = NoteTextStyle,
                         color = if (missing) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -185,7 +234,8 @@ fun LoraPickerContent(
                 // ⭐⭐ ⋮ = this LoRA's note. A dot beside it says one exists, so
                 // the LoRAs that have a recipe written down are findable at a
                 // glance (the mockup's indicator).
-                if (onSaveNote != null) {
+                // ⚠ Not on a missing file: there is nothing to note or delete.
+                if (onSaveNote != null && !missing) {
                     if (!notes[name].isNullOrBlank()) {
                         Box(
                             Modifier.size(6.dp).clip(CircleShape)
@@ -195,7 +245,7 @@ fun LoraPickerContent(
                     IconButton(onClick = { noting = name }, modifier = Modifier.size(36.dp)) {
                         Icon(
                             Icons.Filled.MoreVert,
-                            contentDescription = "note for $name",
+                            contentDescription = stringResource(R.string.lora_cd_note, name),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -251,6 +301,7 @@ fun LoraPickerContent(
  * field the user typed into and then dismissed must not silently discard what
  * they typed (the inspector's own rule, [NodeInspector]).
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun LoraNoteDialog(
     name: String,
@@ -258,6 +309,10 @@ fun LoraNoteDialog(
     onSave: (String) -> Unit,
     onAddToPrompt: ((String) -> Unit)?,
     onDismiss: () -> Unit,
+    /** ⭐ Replace the wired prompt with the trigger words — beside "Add to prompt", same rules. */
+    onReplacePrompt: ((String) -> Unit)? = null,
+    /** ⭐ Opens [ConfirmDeleteLora]; null hides Delete. */
+    onDelete: (() -> Unit)? = null,
 ) {
     var text by remember(name) { mutableStateOf(note) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -281,39 +336,75 @@ fun LoraNoteDialog(
                     maxLines = 10,
                     placeholder = {
                         Text(
-                            "Trigger words on the first line, then strength, " +
-                                "settings, how to use it…",
+                            stringResource(R.string.lora_note_hint),
                             style = NoteTextStyle,
                         )
                     },
                 )
                 val trigger = com.abrah.nightmare.LoraNotes.trigger(text)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // ⭐ A FlowRow: three buttons do not fit one dialog-wide row.
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     OutlinedButton(
                         enabled = text.isNotBlank(),
                         onClick = {
                             clipboard.setText(androidx.compose.ui.text.AnnotatedString(text.trim()))
-                            toast("Note copied")
+                            toast(ctx.getString(R.string.lora_note_copied))
                         },
-                    ) { Text("Copy") }
+                    ) { Text(stringResource(R.string.err_copy)) }
                     // ⚠ DIMMED, never removed, and it says why (`docs/UI.md`
                     // §8.18): the row must not change shape with the graph.
-                    OutlinedButton(
-                        enabled = trigger != null,
-                        onClick = {
-                            val t = trigger ?: return@OutlinedButton
-                            if (onAddToPrompt == null) {
-                                toast("No prompt node is wired into this sampler — copy it instead")
-                            } else {
-                                onAddToPrompt(t)
-                                toast("Added to the prompt: $t")
-                            }
-                        },
-                        modifier = if (onAddToPrompt == null) Modifier.alpha(0.38f) else Modifier,
-                    ) { Text("Add to prompt") }
+                    // ⭐ Add appends; Replace swaps the whole prompt for the
+                    // trigger words (asked for 2026-10-07). No confirm on Replace:
+                    // replacing is the button's whole meaning.
+                    for ((label, act, done) in listOf(
+                        Triple(stringResource(R.string.lora_add_prompt), onAddToPrompt, R.string.lora_added_prompt),
+                        Triple(stringResource(R.string.lora_replace_prompt), onReplacePrompt, R.string.lora_prompt_replaced),
+                    )) {
+                        OutlinedButton(
+                            enabled = trigger != null,
+                            onClick = {
+                                val t = trigger ?: return@OutlinedButton
+                                if (act == null) {
+                                    toast(ctx.getString(R.string.lora_no_prompt))
+                                } else {
+                                    act(t)
+                                    toast(ctx.getString(done, t))
+                                }
+                            },
+                            modifier = if (act == null) Modifier.alpha(0.38f) else Modifier,
+                        ) { Text(label) }
+                    }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = ::close) { Text("Done") } },
+        // ⚠ Delete in the dismiss slot, left of Done — destructive left,
+        // primary right (`docs/UI.md` §8.1). It asks first ([ConfirmDeleteLora]).
+        dismissButton = onDelete?.let {
+            {
+                TextButton(onClick = it) {
+                    Text(
+                        androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = ::close) { Text(stringResource(R.string.crop_done)) } },
+    )
+}
+
+/**
+ * ⭐ "Delete <LoRA>?" — ONE confirm for both places a LoRA file is deleted
+ * (Settings → Add-ons and the node's ⋮), so the two name the same cost (§8.2).
+ */
+@Composable
+fun ConfirmDeleteLora(name: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    com.abrah.nightmare.ui.ConfirmDelete(
+        title = stringResource(R.string.lora_delete_title, name),
+        body = stringResource(R.string.lora_delete_body),
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
     )
 }

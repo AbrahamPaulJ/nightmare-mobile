@@ -12,8 +12,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.CrashReport
+import com.abrah.nightmare.R
 
 /**
  * ⭐⭐ **What killed the app last time, the next time it opens.**
@@ -34,7 +36,7 @@ import com.abrah.nightmare.CrashReport
 fun CrashNotice(report: CrashReport.Report, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Last time, something went wrong") },
+        title = { Text(stringResource(R.string.crash_title)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(report.headline, style = MaterialTheme.typography.bodyMedium)
@@ -44,14 +46,14 @@ fun CrashNotice(report: CrashReport.Report, onDismiss: () -> Unit) {
                 // an entire section about that knob being the output size.
                 report.doing?.let {
                     Text(
-                        "It happened while $it.",
+                        stringResource(R.string.crash_during, it),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
                 report.trace?.let {
                     Text(
-                        "Details",
+                        stringResource(R.string.crash_details),
                         style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
                     )
@@ -68,6 +70,6 @@ fun CrashNotice(report: CrashReport.Report, onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
     )
 }

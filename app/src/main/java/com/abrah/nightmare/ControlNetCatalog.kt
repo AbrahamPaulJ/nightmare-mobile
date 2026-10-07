@@ -28,10 +28,36 @@ object ControlNetCatalog {
     const val REPO = "AbrahamPJ/nightmare-sd15-controlnet-qnn"
     private const val BASE = "https://huggingface.co/$REPO/resolve/main"
 
+    /** ⭐ SDXL Swap's ControlNets (backend 023): QAIRT 2.50 contexts per Hexagon arch. */
+    const val SDXL_REPO = "AbrahamPJ/nightmare-sdxl-controlnet-qnn"
+    private const val SDXL_BASE = "https://huggingface.co/$SDXL_REPO/resolve/main"
+
     data class Build(val path: String, val bytes: Long)
 
-    /** One TYPE: its builds per tier. A missing tier = not offered on those chips. */
-    data class Entry(val type: String, val label: String, val v73: Build?, val min: Build?)
+    /**
+     * One TYPE for one family: its builds per tier. A missing tier = not offered on those chips.
+     * ⭐ SD 1.5's are by tier ([v73] / [min]); SDXL's by exact arch ([byArch]: 75, 79, 81 — a
+     * phone takes the highest at or below its own).
+     */
+    data class Entry(
+        val type: String,
+        val label: String,
+        val v73: Build?,
+        val min: Build?,
+        val family: Family = Family.SD15_SWAP,
+        val byArch: Map<Int, Build> = emptyMap(),
+        val base: String = BASE,
+    ) {
+        /** ⭐ The key of its file, its download row and its install — [idFor]. */
+        val id: String get() = idFor(family, type)
+    }
+
+    /**
+     * ⭐⭐ One ControlNet = one id: SD 1.5's keep their bare type (`canny`, the files and rows
+     * that already exist), SDXL's are `sdxl_<type>` — a different network for the same idea.
+     */
+    fun idFor(family: Family?, type: String): String =
+        if (family == Family.SDXL_SWAP) "sdxl_$type" else type
 
     val ENTRIES = listOf(
         // ⭐ Our own build (2026-09-30) — AI Hub's canny is v79-only.
@@ -50,13 +76,49 @@ object ControlNetCatalog {
             v73 = Build("openpose/controlnet_8gen2.bin", 370_966_640L),
             min = null,
         ),
+        // ⭐⭐ SDXL (npuforge `docs/SDXL-SWAP-TEMPLATE.md` §7b; hosted 2026-10-07): canny and depth
+        // openrail++ as their diffusers sources; openpose is thibaud's, whose card defers to
+        // OpenPose's (non-commercial) licence — hosted at the user's call, 2026-10-07.
+        Entry(
+            SwapInputs.CANNY, "SDXL Canny ControlNet", v73 = null, min = null,
+            family = Family.SDXL_SWAP, base = SDXL_BASE,
+            byArch = mapOf(
+                75 to Build("canny/controlnet_v75.bin", 1_287_945_272L),
+                79 to Build("canny/controlnet_v79.bin", 1_286_491_192L),
+                81 to Build("canny/controlnet_v81.bin", 1_294_216_248L),
+            ),
+        ),
+        Entry(
+            SwapInputs.DEPTH, "SDXL Depth ControlNet", v73 = null, min = null,
+            family = Family.SDXL_SWAP, base = SDXL_BASE,
+            byArch = mapOf(
+                75 to Build("depth/controlnet_v75.bin", 1_288_334_392L),
+                79 to Build("depth/controlnet_v79.bin", 1_286_433_848L),
+                81 to Build("depth/controlnet_v81.bin", 1_294_036_024L),
+            ),
+        ),
+        Entry(
+            SwapInputs.OPENPOSE, "SDXL Openpose ControlNet", v73 = null, min = null,
+            family = Family.SDXL_SWAP, base = SDXL_BASE,
+            byArch = mapOf(
+                75 to Build("openpose/controlnet_v75.bin", 1_287_969_848L),
+                79 to Build("openpose/controlnet_v79.bin", 1_286_593_592L),
+                81 to Build("openpose/controlnet_v81.bin", 1_294_060_600L),
+            ),
+        ),
     )
 
-    fun entry(type: String): Entry? = ENTRIES.firstOrNull { it.type == type }
+    /** The entry for [id] ([idFor]). */
+    fun entry(id: String): Entry? = ENTRIES.firstOrNull { it.id == id }
 
-    /** This phone's build of [type], or null when there is none for its chip. */
-    fun buildFor(type: String, caps: DeviceProbe.Caps = DeviceProbe.caps()): Build? {
-        val e = entry(type) ?: return null
+    /** This phone's build of [id], or null when there is none for its chip. */
+    fun buildFor(id: String, caps: DeviceProbe.Caps = DeviceProbe.caps()): Build? {
+        val e = entry(id) ?: return null
+        if (e.byArch.isNotEmpty()) {
+            // ⚠ An UNKNOWN chip is offered the v79 build — the arch most SDXL Swap phones have.
+            val arch = if (caps.known) caps.arch else 79
+            return e.byArch.filterKeys { it <= arch }.maxByOrNull { it.key }?.value
+        }
         // ⚠ An UNKNOWN chip is offered the v73 build (`DeviceProbe.Caps.known`'s rule
         // for flows: an unknown chip is offered everything).
         return if (!caps.known || caps.arch >= 73) e.v73 ?: e.min else e.min
@@ -80,7 +142,7 @@ object ControlNetCatalog {
         val target = SwapInputs.controlnetFile(context, type)
         target.parentFile?.mkdirs()
         val part = File(target.parentFile, "${target.name}.part")
-        UpscalerCatalog.download("$BASE/${b.path}", part, b.bytes, onProgress, isCancelled)
+        UpscalerCatalog.download("${entry(type)!!.base}/${b.path}", part, b.bytes, onProgress, isCancelled)
         if (part.length() != b.bytes) {
             val got = part.length()
             part.delete()

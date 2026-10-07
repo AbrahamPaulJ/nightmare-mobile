@@ -289,6 +289,14 @@ class NodeCtx(
     val ancestorTypes: Set<String> = emptySet(),
 )
 
+/** App resources on-device; the exact English fallback keeps headless JVM graph tests context-free. */
+internal fun NodeCtx.text(
+    @androidx.annotation.StringRes id: Int,
+    fallback: String,
+    vararg args: Any,
+): String = android?.getString(id, *args)
+    ?: if (args.isEmpty()) fallback else String.format(java.util.Locale.ROOT, fallback, *args)
+
 /**
  * A node type: what it costs to run, what backend it needs, and how to run it.
  *
@@ -626,8 +634,8 @@ internal fun aspectWidget(spec: ModelSpec = SelectedModel.spec): Array<Widget> =
         Widget(
             "aspect", "string", ModelCatalog.DEFAULT_ASPECT,
             options = ModelCatalog.ASPECTS,
-            hint = "this family renders a fixed ${spec.native} and crops to shape — " +
-                "it costs no reload, but a wider picture is not a bigger one",
+            hintRes = R.string.hint_fixed_family_shape,
+            hintArgs = listOf(spec.native),
         )
     )
 
@@ -1070,7 +1078,7 @@ object SampleNode : NodeType {
         // instead of returning the cached picture unchanged.
         Widget(
             "seed", "int", "0",
-            hint = "0 = a new picture every Run. Type the seed shown on the node to get that one back.",
+            hintRes = R.string.hint_seed_picture,
         ),
         // ⚠ Only read when `latent` is connected. 1.0 renoises completely,
         // which is txt2img with extra steps -- the backend defaults to 0.6 for
@@ -1089,7 +1097,7 @@ object SampleNode : NodeType {
         Widget(
             "scheduler", "string", SelectedModel.spec.scheduler,
             options = ModelCatalog.SCHEDULERS,
-            hint = "the sampler; a distilled model usually needs the one its author published",
+            hintRes = R.string.hint_sampler,
         ),
         // ⚠ model / width / height are the CONTEXT KEY (§4), not ordinary
         // knobs: changing either costs a backend relaunch, and v1 pins one key
@@ -1456,11 +1464,11 @@ object TextEncodeNode : NodeType {
     override val widgets get() = listOf(
         Widget(
             "prompt", "string", SelectedModel.spec.starterPrompt,
-            hint = "what to draw — the sampler reads it through the cond wire",
+            hintRes = R.string.hint_prompt_cond,
         ),
         Widget(
             "negative", "string", SelectedModel.spec.starterNegative,
-            hint = "what to keep out of the picture",
+            hintRes = R.string.hint_negative,
         ),
     )
 
@@ -1511,7 +1519,7 @@ object VaeEncodeNode : NodeType {
         // this one would re-encode the source image every Run for no benefit.
         Widget(
             "seed", "int", "42",
-            hint = "encoding noise, not the picture seed — it changes the result only slightly, so leave it fixed. The sample node's seed is the one that matters.",
+            hintRes = R.string.hint_encoding_noise_picture,
         ),
     )
 
@@ -1841,14 +1849,14 @@ object MaskNode : NodeType {
         // ⚠ Hidden from typing in practice but still a real param, because it is
         // what a saved workflow stores -- the same reason `crop` keeps its four
         // number fields beside the framing view.
-        Widget(OPS, "string", "", hint = "paint on the picture above"),
+        Widget(OPS, "string", "", hintRes = R.string.hint_paint_picture_above),
         // ⚠ Grow defaults to ZERO here where DreamUI defaults to 10/512: its
         // default exists for segmenter regions that trace an object's true edge
         // and need slack. Every op here is a brush stroke that is already the
         // size the finger asked for, so growing it is a second invisible
         // brush-size control fighting the real one.
-        Widget("grow", "float", GROW_DEFAULT.toString(), GROW_MIN.toDouble(), GROW_MAX.toDouble(), hint = "grow or shrink a tapped or picked area"),
-        Widget("feather", "float", "0.0", 0.0, 0.2, hint = "soften the mask edge"),
+        Widget("grow", "float", GROW_DEFAULT.toString(), GROW_MIN.toDouble(), GROW_MAX.toDouble(), hintRes = R.string.hint_mask_grow),
+        Widget("feather", "float", "0.0", 0.0, 0.2, hintRes = R.string.hint_mask_feather),
         // ⚠ Not locked HERE: the inspector locks `out_w`/`out_h` with the
         // consumer'''s own reason the moment this node feeds something that
         // demands a size, exactly as it does for `crop`.
@@ -1979,9 +1987,7 @@ object MaskCropNode : NodeType {
     override val widgets = listOf(
         Widget(
             ONLY_MASKED, "bool", "true",
-            hint = "Generate over a crop around the mask: more detail where you painted, " +
-                "and the rest of the picture keeps its full resolution. Ignored when the " +
-                "mask covers most of the picture.",
+            hintRes = R.string.hint_only_masked_full,
         ),
         Widget("out_w", "int", "0", 0.0, 8192.0),
         Widget("out_h", "int", "0", 0.0, 8192.0),
@@ -2114,8 +2120,7 @@ object PasteNode : NodeType {
     override val widgets = listOf(
         Widget(
             STITCH, "bool", "false",
-            hint = "Off: the result is the frame you chose. On: it is pasted back into the " +
-                "whole original photo, at the photo's own size.",
+            hintRes = R.string.hint_stitch_full,
         ),
     )
 
@@ -2363,7 +2368,7 @@ object UpscaleNode : NodeType {
             UPSCALER, "string",
             (UpscalerCatalog.installedIds.firstOrNull() ?: UpscalerCatalog.ALL.first().id),
             options = UpscalerCatalog.installedIds.ifEmpty { UpscalerCatalog.ALL.map { it.id } },
-            hint = "which upscaler weights to use — install them under Models",
+            hintRes = R.string.hint_upscaler,
         ),
     )
 

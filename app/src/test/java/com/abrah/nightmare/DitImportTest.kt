@@ -34,8 +34,7 @@ class DitImportTest {
     }
 
     private fun sparse(f: File, bytes: Long) {
-        f.parentFile?.mkdirs()
-        java.io.RandomAccessFile(f, "rw").use { it.setLength(bytes) }
+        sparseFile(f, bytes)
     }
 
     private fun installBuiltIn(spec: ModelSpec = zimage) {

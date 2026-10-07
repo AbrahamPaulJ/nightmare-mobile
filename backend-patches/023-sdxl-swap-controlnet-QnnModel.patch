@@ -1,0 +1,42 @@
+--- a/src/QnnModel.hpp
++++ b/src/QnnModel.hpp
+@@ -1185,6 +1185,39 @@
+     return StatusCode::SUCCESS;
+   }
+ 
++  // SDXL ControlNet (backend-patches 023; npuforge docs/SDXL-SWAP-TEMPLATE.md
++  // §7b), bound BY NAME through the dtype-aware writeNamedInput (018):
++  // sample [1,4,128,128] NCHW, timestep [1] float, encoder_hidden_states
++  // [1,77,2048] (the FIRST chunk -- diffusers' SDXL ControlNet has no text
++  // mask), text_embeds [1,1280], time_ids [1,6], controlnet_cond
++  // [1,3,1024,1024] NCHW in [0,1] -> res_0..9 NHWC at conditioning scale 1,
++  // exactly the SDXL Swap UNet's residual inputs.
++  StatusCode executeSdxlControlnet(const float *sample, float timestep,
++                                   const float *ehs77, const float *text_embeds,
++                                   const float *time_ids,
++                                   const float *cond_nchw,
++                                   std::vector<std::vector<float>> &out10) {
++    if (!ensureIoTensors()) return StatusCode::FAILURE;
++    auto graphInfo = (*m_graphsInfo)[0];
++    if (!writeNamedInput(graphInfo, "sample", sample, 4 * 128 * 128) ||
++        !writeNamedInput(graphInfo, "timestep", &timestep, 1) ||
++        !writeNamedInput(graphInfo, "encoder_hidden_states", ehs77,
++                         77 * 2048) ||
++        !writeNamedInput(graphInfo, "text_embeds", text_embeds, 1280) ||
++        !writeNamedInput(graphInfo, "time_ids", time_ids, 6) ||
++        !writeNamedInput(graphInfo, "controlnet_cond", cond_nchw,
++                         3 * 1024 * 1024))
++      return StatusCode::FAILURE;
++    if (!runGraph(graphInfo, "controlnet")) return StatusCode::FAILURE;
++    out10.resize(10);
++    for (int i = 0; i < 10; ++i) {
++      const std::string nm = "res_" + std::to_string(i);
++      if (!readNamedFloat(graphInfo, nm.c_str(), out10[i]))
++        return StatusCode::FAILURE;
++    }
++    return StatusCode::SUCCESS;
++  }
++
+   // Size the 13 residual buffers from the UNET graph itself and zero them.
+   //
+   // Adding zero at a skip connection is the identity, so a zero-filled residual

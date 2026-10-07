@@ -1,5 +1,6 @@
 package com.abrah.nightmare
 
+import com.abrah.nightmare.ui.LoraBrowserContent
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -44,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -101,10 +103,8 @@ class MainActivity : ComponentActivity() {
             level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
             level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
         ) {
-            com.abrah.nightmare.segment.Segmenter.trim()
-            com.abrah.nightmare.segment.Parser.trim()
-            com.abrah.nightmare.pose.PoseDetector.trim()
-            com.abrah.nightmare.pose.DepthEstimator.trim()
+            // ⭐ All five, IP-Adapter included — it was missing here ([PictureModels]).
+            PictureModels.releaseAll()
         }
     }
 
@@ -296,21 +296,20 @@ fun HarnessScreen(
     vm.pendingOpen?.let { p ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = vm::dismissPendingOpen,
-            title = { Text("Open \"" + p.label + "\"?") },
+            title = { Text(stringResource(R.string.flow_open_unsaved_title, p.label)) },
             text = {
                 Text(
-                    "The flow on the canvas has unsaved edits. Opening this one " +
-                        "replaces it, and the edits are gone."
+                    stringResource(R.string.flow_open_unsaved_body)
                 )
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = vm::confirmPendingOpen) {
-                    Text("Open anyway")
+                    Text(stringResource(R.string.flow_open_anyway))
                 }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = vm::dismissPendingOpen) {
-                    Text("Keep editing")
+                    Text(stringResource(R.string.flow_keep_editing))
                 }
             },
         )
@@ -372,6 +371,27 @@ fun HarnessScreen(
                 onDismiss = vm::cancelUpscaleNode,
             )
         }
+        // ⭐⭐ Get LoRAs — opened from a node's LoRA list, on that node's family
+        // (`docs/LORA-BROWSER.md`). The SAME pull-down sheet as Models and
+        // Settings; it opens over the picker, which re-reads `_loras` on
+        // [HarnessViewModel.loraEpoch] when it comes back.
+        vm.loraBrowser?.let { target ->
+            com.abrah.nightmare.ui.PullDownSheet(onDismiss = vm::closeLoraBrowser) {
+                LoraBrowserContent(
+                    initialTarget = target,
+                    installed = vm.loraRows.map { it.name }.toSet(),
+                    fetch = vm.loraFetch,
+                    fetchError = vm.loraFetchError,
+                    // ⚠ One download at a time, whatever is downloading (§8.1).
+                    busy = vm.working,
+                    civitaiKey = vm.civitaiKey,
+                    mature = vm.matureContent,
+                    onSaveKey = vm::chooseCivitaiKey,
+                    onDownload = vm::downloadLora,
+                    onCancel = vm::cancelModelInstall,
+                )
+            }
+        }
         // ⭐⭐ Every picture the graph can make without the NPU, kept current
         // as the user works -- the chosen photo on `load_image`, the framed one
         // on `crop`. ⚠ The trigger lives in `HarnessViewModel.updateCanvas`
@@ -388,6 +408,9 @@ fun HarnessScreen(
             // is composition-scoped and these two screens are never composed
             // together; both call the one `HarnessViewModel.importLora`.
             onImportLora = { canvasLoraPicker.launch(arrayOf("application/octet-stream", "*/*")) },
+            onBrowseLoras = vm::openLoraBrowser,
+            // ⭐ The SAME delete Settings → Add-ons runs, from the node's ⋮.
+            onDeleteLora = vm::deleteLora,
             loraEpoch = vm.loraEpoch,
             // ⭐⭐ Enlarge what an output made — it opens the SAME upscaler
             // chooser Results uses, then edits the flow and Runs.
@@ -545,6 +568,7 @@ fun HarnessScreen(
             onTapMask = vm::tapMask,
             onPickMask = vm::pickMask,
             onTranslate = vm::translatePrompt,
+            onDescribe = vm::describePicture,
             onCancelRun = vm::cancelRun,
             onSetResolution = vm::setNodeResolution,
             onSetAspect = vm::selectAspect,
@@ -736,6 +760,9 @@ fun HarnessScreen(
                         depth = vm.depthRow,
                         onInstallDepth = { askToNotify(); vm.installDepth() },
                         onDeleteDepth = vm::deleteDepth,
+                        describe = vm.describeRows,
+                        onInstallDescribe = { askToNotify(); vm.installDescribe(it) },
+                        onDeleteDescribe = vm::deleteDescribe,
                         controlnets = vm.cnRows,
                         onInstallControlNet = { askToNotify(); vm.installControlNet(it) },
                         onDeleteControlNet = vm::deleteControlNet,
@@ -947,6 +974,11 @@ fun HarnessScreen(
             onDeleteEmbedding = vm::deleteEmbedding,
             downloadBase = vm.downloadBase,
             onDownloadBase = vm::chooseDownloadBase,
+            // ⭐ The LoRA browser's two settings (`docs/LORA-BROWSER.md`).
+            civitaiKey = vm.civitaiKey,
+            onCivitaiKey = vm::chooseCivitaiKey,
+            matureContent = vm.matureContent,
+            onMatureContent = vm::chooseMatureContent,
             lowRam = vm.lowRam,
             onLowRam = vm::chooseLowRam,
             onCleanTemp = vm::cleanTempFiles,
@@ -993,6 +1025,7 @@ fun HarnessScreen(
  */
 @Composable
 private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessViewModel) {
+    val displayLabel = if (m is HarnessViewModel.MissingModel.Describe) vm.describeLabel(m.model) else m.label
     val bytes = vm.missingBytes(m)
     val size = if (bytes >= 1L shl 30) String.format(java.util.Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
     else "${bytes shr 20} MB"
@@ -1005,11 +1038,13 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
         title = {
             Text(
                 when {
-                    done -> "${m.label} is ready"
+                    done -> stringResource(R.string.model_ready, displayLabel)
                     // ⚠ Not "this flow": a translate tap is not a Run.
                     m is HarnessViewModel.MissingModel.Translate ->
                         androidx.compose.ui.res.stringResource(R.string.translate_needs_title)
-                    else -> "This flow needs a model"
+                    m is HarnessViewModel.MissingModel.Describe ->
+                        androidx.compose.ui.res.stringResource(R.string.describe_needs_title)
+                    else -> stringResource(R.string.model_needed_title)
                 }
             )
         },
@@ -1017,26 +1052,25 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     when {
-                        done && m is HarnessViewModel.MissingModel.Translate -> "Downloaded."
-                        done -> "Downloaded. Run the flow now?"
+                        done && (m is HarnessViewModel.MissingModel.Translate || m is HarnessViewModel.MissingModel.Describe) -> stringResource(R.string.model_downloaded)
+                        done -> stringResource(R.string.model_downloaded_run)
                         m is HarnessViewModel.MissingModel.Checkpoint && m.substitute && m.wanted.isNotBlank() ->
-                            "\"${m.wanted}\" is not on this phone and has no download — it was " +
-                                "imported somewhere else. Download ${m.label} ($size) and use it " +
-                                "for this flow instead?"
+                            stringResource(R.string.model_substitute_body, m.wanted, displayLabel, size)
                         // ⭐ The language pair by its NAME, not the enum's code,
                         // and a promise that the tap needs no repeating.
                         m is HarnessViewModel.MissingModel.Translate ->
                             androidx.compose.ui.res.stringResource(
                                 R.string.translate_needs_body,
-                                vm.translateRows[m.source]?.label ?: m.label, size,
+                                vm.translateRows[m.source]?.label ?: displayLabel, size,
                             )
+                        m is HarnessViewModel.MissingModel.Describe ->
+                            androidx.compose.ui.res.stringResource(R.string.describe_needs_body, vm.describeLabel(m.model), size)
                         repair.isNotEmpty() -> androidx.compose.ui.res.stringResource(
-                            R.string.repair_body, m.label, repair.joinToString(), size,
+                            R.string.repair_body, displayLabel, repair.joinToString(), size,
                         )
                         m is HarnessViewModel.MissingModel.Segment ->
-                            "${m.label} is not installed — this flow's Segment model node needs it. " +
-                                "Download it ($size)?"
-                        else -> "${m.label} is not installed. Download it ($size)?"
+                            stringResource(R.string.model_segment_needed, displayLabel, size)
+                        else -> stringResource(R.string.model_not_installed, displayLabel, size)
                     }
                 )
                 if (progress != null) {
@@ -1045,27 +1079,30 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        "${progress.done shr 20} of ${progress.total shr 20} MB · ${progress.phase}",
+                        stringResource(
+                            R.string.model_download_progress,
+                            progress.done shr 20, progress.total shr 20, progress.phase,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 } else if (!done) {
-                    Text("Use Wi-Fi.", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.model_use_wifi), style = MaterialTheme.typography.bodySmall)
                 }
                 vm.modelError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
             when {
-                // ⚠ A translation model has nothing to Run — the prompt it was
-                // fetched for is translated the moment it lands.
-                done && m is HarnessViewModel.MissingModel.Translate ->
-                    androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) { Text("OK") }
+                // ⚠ A translation or describe model has nothing to Run — the
+                // prompt it was fetched for is written the moment it lands.
+                done && (m is HarnessViewModel.MissingModel.Translate || m is HarnessViewModel.MissingModel.Describe) ->
+                    androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) { Text(stringResource(R.string.ok)) }
                 done -> androidx.compose.material3.Button(onClick = {
                     vm.dismissMissingModel()
                     vm.runCanvasOrBatch()
-                }) { Text("Run") }
+                }) { Text(stringResource(R.string.run)) }
                 progress != null -> androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) {
-                    Text("Hide")
+                    Text(stringResource(R.string.model_hide))
                 }
                 else -> androidx.compose.material3.Button(onClick = { vm.downloadMissingModel() }) {
                     Text(androidx.compose.ui.res.stringResource(if (repair.isNotEmpty()) R.string.repair else R.string.download))
@@ -1075,10 +1112,12 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
         dismissButton = {
             if (progress != null) {
                 androidx.compose.material3.TextButton(onClick = { vm.cancelModelInstall(); vm.dismissMissingModel() }) {
-                    Text("Cancel download")
+                    Text(stringResource(R.string.model_cancel_download))
                 }
             } else if (!done) {
-                androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) { Text("Not now") }
+                androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) {
+                    Text(stringResource(R.string.model_not_now))
+                }
             }
         },
     )
@@ -1167,7 +1206,7 @@ private fun SampleProgress(progress: Pair<Int, Int>) {
     val (step, total) = progress
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            "sampling  $step / $total",
+            stringResource(R.string.harness_sampling_progress, step, total),
             style = MeasureTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1187,7 +1226,7 @@ private fun SampleProgress(progress: Pair<Int, Int>) {
 private fun DecodedImage(image: ImageBitmap) {
     Image(
         bitmap = image,
-        contentDescription = "the latest vae_decode output",
+        contentDescription = stringResource(R.string.harness_cd_latest_vae),
         contentScale = ContentScale.Fit,
         modifier = Modifier
             .fillMaxWidth()

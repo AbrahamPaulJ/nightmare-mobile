@@ -12,6 +12,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.abrah.nightmare.R
 
 /**
  * ⭐⭐ The top of every screen that sits OVER the canvas — Models, Flows and the
@@ -65,7 +67,7 @@ fun ScreenHeader(
                     Icons.Filled.Close,
                     // ⚠ Names the DESTINATION, not the glyph. "close" tells a
                     // screen-reader user nothing they cannot already tell.
-                    contentDescription = "close $title — back to the canvas",
+                    contentDescription = stringResource(R.string.cd_close_screen, title),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

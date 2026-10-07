@@ -39,16 +39,20 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.size
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.abrah.nightmare.R
 
 /** The two halves of the library: what you can render WITH, and what you can render. */
 /**
  * ⚠ RESULTS is last because it is where you go AFTER making something, and
  * the other two are where you go before.
  */
-enum class LibraryTab(val label: String) {
+enum class LibraryTab(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
     // ⚠ "Results", kept — it was renamed History for a day and the user asked
     // for the name back (2026-09-17); only the LAYOUT follows DreamUI's History.
-    MODELS("Models"), FLOWS("Flows"), RESULTS("Results")
+    MODELS("Models", R.string.nav_models),
+    FLOWS("Flows", R.string.nav_flows),
+    RESULTS("Results", R.string.nav_results),
 }
 
 /**
@@ -137,7 +141,7 @@ fun LibraryScreen(
                     },
                     text = {
                         Text(
-                            t.label,
+                            stringResource(t.labelRes),
                             fontWeight = if (t == picked) FontWeight.SemiBold else FontWeight.Normal,
                         )
                     },

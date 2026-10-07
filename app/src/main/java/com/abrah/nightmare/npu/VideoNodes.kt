@@ -10,6 +10,7 @@ import com.abrah.nightmare.Port
 import com.abrah.nightmare.str
 import com.abrah.nightmare.Value
 import com.abrah.nightmare.Widget
+import com.abrah.nightmare.R
 import java.io.File
 import java.security.MessageDigest
 
@@ -102,20 +103,20 @@ object VideoSampleNode : NodeType {
         // beyond that.
         Widget(
             "seed", "int", "0",
-            hint = "0 = a new clip every Run. Type the seed shown on the node to get it back.",
+            hintRes = R.string.hint_seed_clip,
         ),
         Widget(
             "upscale", "bool", "true",
             // ⚠ 1024x640 / 512x320 — width first, which is the way round the
             // frames actually come out. Neodragon's docs use (h, w).
-            hint = "2x to 1024x640 with QuickSRNet. Off renders 512x320 and is a little faster.",
+            hintRes = R.string.hint_video_upscale,
         ),
         // ⭐⭐ The framing, exactly as the SD samplers carry it — `image.crop`'s
         // own param names, so `CropEditor` drives this node too with no second
         // spelling. ⚠ The crop NODE is gone from the i2v recipe: the sampler
         // fits whatever it is given, which is the rule the image path already
         // follows (docs/ARCHITECTURE.md §5.7).
-        Widget("x", "float", "0.0", 0.0, 1.0, hint = "drag the frame on the picture"),
+        Widget("x", "float", "0.0", 0.0, 1.0, hintRes = R.string.hint_drag_frame),
         Widget("y", "float", "0.0", 0.0, 1.0),
         Widget("w", "float", "1.0", 0.0, 1.0),
         Widget("h", "float", "1.0", 0.0, 1.0),
@@ -435,7 +436,7 @@ object VideoOutputNode : NodeType {
     override val widgets = listOf(
         Widget(
             "save", "bool", "true",
-            hint = "write an MP4 to Movies/Nightmare, which outlives the app's cache",
+            hintRes = R.string.hint_video_save,
         ),
         Widget("name", "string", "nightmare"),
     )

@@ -1,0 +1,696 @@
+{
+ "items": [
+  {
+   "id": 58390,
+   "name": "Detail Tweaker LoRA (细节调整LoRA)",
+   "allowNoCredit": true,
+   "allowCommercialUse": [],
+   "allowDerivatives": true,
+   "allowDifferentLicense": true,
+   "type": "LORA",
+   "minor": false,
+   "sfwOnly": false,
+   "poi": false,
+   "nsfw": false,
+   "nsfwLevel": 3,
+   "availability": "Public",
+   "userId": 275939,
+   "hasActivePaidAccess": false,
+   "baseModels": [
+    "SD 1.5"
+   ],
+   "cosmetic": null,
+   "supportsGeneration": false,
+   "stats": {
+    "downloadCount": 581905,
+    "thumbsUpCount": 33538,
+    "thumbsDownCount": 15,
+    "commentCount": 0,
+    "tippedAmountCount": 3518
+   },
+   "creator": {
+    "username": "CyberAIchemist",
+    "image": null
+   },
+   "tags": [
+    "lora",
+    "concept",
+    "anime",
+    "photorealistic",
+    "detailed",
+    "undetailed"
+   ],
+   "modelVersions": [
+    {
+     "id": 62833,
+     "index": 0,
+     "name": "v1.0",
+     "baseModel": "SD 1.5",
+     "baseModelType": "Standard",
+     "publishedAt": "2023-05-05T07:28:19.122Z",
+     "flags": 0,
+     "availability": "Public",
+     "nsfwLevel": 3,
+     "trainedWords": [],
+     "vaeId": null,
+     "coveredNext": false,
+     "paidAccess": null,
+     "stats": {
+      "downloadCount": 581924,
+      "thumbsUpCount": 33538,
+      "thumbsDownCount": 15
+     },
+     "supportsGeneration": false,
+     "files": [
+      {
+       "id": 44319,
+       "sizeKB": 36973.8046875,
+       "name": "add_detail.safetensors",
+       "overrideName": null,
+       "type": "Model",
+       "pickleScanResult": "Success",
+       "pickleScanMessage": "No Pickle imports",
+       "virusScanResult": "Success",
+       "virusScanMessage": null,
+       "scannedAt": "2023-05-05T06:50:46.007Z",
+       "metadata": {
+        "format": "SafeTensor",
+        "size": null,
+        "fp": null
+       },
+       "hashes": {
+        "AutoV1": "2DAE719F",
+        "AutoV2": "47AAAF0D29",
+        "SHA256": "47AAAF0D2945CA937151D61304946DD229B3F072140B85484BC93E38F2A6E2F7",
+        "CRC32": "F1D60397",
+        "BLAKE3": "5664139789418CE9328FB4E71FF9380FFDBBA2268747A40C428ED9D35501C047",
+        "AutoV3": "7C6BAD76EB54",
+        "SHA256_12": "47AAAF0D2945"
+       },
+       "downloadUrl": "https://civitai.com/api/download/models/62833",
+       "primary": true
+      }
+     ],
+     "images": [
+      {
+       "id": 692411,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8db45d23-7bcf-4979-8b35-0e7779c5a8f8/original=true/692411.jpeg",
+       "nsfwLevel": 1,
+       "width": 1920,
+       "height": 3840,
+       "hash": "UHHfVC~pI8M{XqkDact3RpRlocofXWkDjEob",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      },
+      {
+       "id": 692487,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5db97082-a909-4c3e-b6d1-2a46318f29a0/original=true/692487.jpeg",
+       "nsfwLevel": 1,
+       "width": 3840,
+       "height": 2154,
+       "hash": "UlI}YIaej@ae_4WBWVjZ?voffkj?%Nj]a}of",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      }
+     ],
+     "downloadUrl": "https://civitai.com/api/download/models/62833"
+    }
+   ]
+  },
+  {
+   "id": 122359,
+   "name": "Detail Tweaker XL",
+   "allowNoCredit": false,
+   "allowCommercialUse": [
+    "Image",
+    "RentCivit",
+    "Rent"
+   ],
+   "allowDerivatives": true,
+   "allowDifferentLicense": false,
+   "type": "LORA",
+   "minor": false,
+   "sfwOnly": false,
+   "poi": false,
+   "nsfw": false,
+   "nsfwLevel": 5,
+   "availability": "Public",
+   "userId": 1969604,
+   "hasActivePaidAccess": false,
+   "baseModels": [
+    "SDXL 1.0"
+   ],
+   "cosmetic": null,
+   "supportsGeneration": true,
+   "stats": {
+    "downloadCount": 456242,
+    "thumbsUpCount": 43699,
+    "thumbsDownCount": 68,
+    "commentCount": 0,
+    "tippedAmountCount": 12535
+   },
+   "creator": {
+    "username": "w4r10ck",
+    "image": null
+   },
+   "tags": [
+    "detailed",
+    "enhancer",
+    "undetailed",
+    "detail",
+    "concept"
+   ],
+   "modelVersions": [
+    {
+     "id": 135867,
+     "index": 0,
+     "name": "v1.0",
+     "baseModel": "SDXL 1.0",
+     "baseModelType": "Standard",
+     "publishedAt": "2023-08-07T14:55:02.627Z",
+     "flags": 0,
+     "availability": "Public",
+     "nsfwLevel": 1,
+     "trainedWords": [],
+     "vaeId": null,
+     "coveredNext": true,
+     "paidAccess": null,
+     "stats": {
+      "downloadCount": 451432,
+      "thumbsUpCount": 43544,
+      "thumbsDownCount": 67
+     },
+     "supportsGeneration": true,
+     "files": [
+      {
+       "id": 99264,
+       "sizeKB": 223097.9921875,
+       "name": "add-detail-xl.safetensors",
+       "overrideName": null,
+       "type": "Model",
+       "pickleScanResult": "Success",
+       "pickleScanMessage": "No Pickle imports",
+       "virusScanResult": "Success",
+       "virusScanMessage": null,
+       "scannedAt": "2023-08-07T14:55:53.517Z",
+       "metadata": {
+        "format": "SafeTensor",
+        "size": null,
+        "fp": null
+       },
+       "hashes": {
+        "AutoV1": "29A40D2E",
+        "AutoV2": "0D9BD1B873",
+        "SHA256": "0D9BD1B873A7863E128B4672E3E245838858F71469A3CEC58123C16C06F83BD7",
+        "CRC32": "A94E124F",
+        "BLAKE3": "595854A2079ABB9AF0FD84830DDF1142ABFFAA70DEBF51C25C2E73A248CB11CA",
+        "AutoV3": "9C783C8CE46C",
+        "SHA256_12": "0D9BD1B873A7"
+       },
+       "downloadUrl": "https://civitai.com/api/download/models/135867",
+       "primary": true
+      }
+     ],
+     "images": [
+      {
+       "id": 1917130,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/217179cb-87a0-4e96-8d77-e410f757aba0/original=true/1917130.jpeg",
+       "nsfwLevel": 1,
+       "width": 2698,
+       "height": 1158,
+       "hash": "UUHK;5WYoJR*~qWCj[j[_Ns:a}of_3s:azof",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      },
+      {
+       "id": 1917133,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/1132c8aa-053e-468b-9f80-32a071f73f57/original=true/1917133.jpeg",
+       "nsfwLevel": 1,
+       "width": 2698,
+       "height": 1158,
+       "hash": "UWDb~Kofa|of?vj[j[kC~WbHj[kC~qoffkof",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      }
+     ],
+     "downloadUrl": "https://civitai.com/api/download/models/135867"
+    },
+    {
+     "id": 133241,
+     "index": 1,
+     "name": "v0.3",
+     "baseModel": "SDXL 1.0",
+     "baseModelType": "Standard",
+     "publishedAt": "2023-08-04T07:53:00.654Z",
+     "flags": 0,
+     "availability": "Public",
+     "nsfwLevel": 5,
+     "trainedWords": [],
+     "vaeId": null,
+     "coveredNext": true,
+     "paidAccess": null,
+     "stats": {
+      "downloadCount": 4810,
+      "thumbsUpCount": 583,
+      "thumbsDownCount": 1
+     },
+     "supportsGeneration": true,
+     "files": [
+      {
+       "id": 97113,
+       "sizeKB": 166544.4453125,
+       "name": "tweak-detail-xl.safetensors",
+       "overrideName": null,
+       "type": "Model",
+       "pickleScanResult": "Success",
+       "pickleScanMessage": "No Pickle imports",
+       "virusScanResult": "Success",
+       "virusScanMessage": null,
+       "scannedAt": "2023-08-04T07:25:45.241Z",
+       "metadata": {
+        "format": "SafeTensor",
+        "size": null,
+        "fp": null
+       },
+       "hashes": {
+        "AutoV1": "25D7E652",
+        "AutoV2": "A5E633C9AF",
+        "SHA256": "A5E633C9AFD9D12DA2D34A2FD691E74D3E5FDA19DF8AD4B73B7F94E65F1FB168",
+        "CRC32": "0B1AB6FD",
+        "BLAKE3": "E207C3548FDB9E7F929E925D313AA4F3C656BC6813F2873EC8A0C130215FCA3E",
+        "AutoV3": "2FE68B23E748",
+        "SHA256_12": "A5E633C9AFD9"
+       },
+       "downloadUrl": "https://civitai.com/api/download/models/133241",
+       "primary": true
+      }
+     ],
+     "images": [
+      {
+       "id": 1867497,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/fe78b324-2c06-419f-9465-d9a56d6a6276/original=true/1867497.jpeg",
+       "nsfwLevel": 1,
+       "width": 3072,
+       "height": 1166,
+       "hash": "UUF~5Js:oeae~qofayfP_3t7ayof?wWBjtWB",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      },
+      {
+       "id": 1867498,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b9f5c0ff-7833-43d8-8a7f-3f36ccf30d5e/original=true/1867498.jpeg",
+       "nsfwLevel": 1,
+       "width": 3072,
+       "height": 1166,
+       "hash": "UbFsi9t7aekW-@jZj[oL-iWBWXV@?abFfPj[",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      }
+     ],
+     "downloadUrl": "https://civitai.com/api/download/models/133241"
+    }
+   ]
+  },
+  {
+   "id": 82098,
+   "name": "Add More Details - Detail Enhancer / Tweaker (细节调整) LoRA",
+   "allowNoCredit": true,
+   "allowCommercialUse": [
+    "Image",
+    "RentCivit",
+    "Rent"
+   ],
+   "allowDerivatives": true,
+   "allowDifferentLicense": true,
+   "type": "LORA",
+   "minor": false,
+   "sfwOnly": false,
+   "poi": false,
+   "nsfw": false,
+   "nsfwLevel": 3,
+   "availability": "Public",
+   "userId": 53515,
+   "hasActivePaidAccess": false,
+   "baseModels": [
+    "SD 1.5"
+   ],
+   "cosmetic": null,
+   "supportsGeneration": true,
+   "stats": {
+    "downloadCount": 409369,
+    "thumbsUpCount": 21293,
+    "thumbsDownCount": 14,
+    "commentCount": 0,
+    "tippedAmountCount": 3374
+   },
+   "creator": {
+    "username": "Lykon",
+    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/3b119431-445f-4b21-aba6-87a5ee9518ef/width=96/Lykon.jpeg"
+   },
+   "tags": [
+    "portraits",
+    "lora",
+    "tool",
+    "detail tweaker",
+    "detail",
+    "landscape",
+    "backgrounds",
+    "detailer",
+    "enhancer",
+    "details"
+   ],
+   "modelVersions": [
+    {
+     "id": 87153,
+     "index": 0,
+     "name": "v1.0",
+     "baseModel": "SD 1.5",
+     "baseModelType": "Standard",
+     "publishedAt": "2023-06-01T17:50:20.439Z",
+     "flags": 0,
+     "availability": "Public",
+     "nsfwLevel": 3,
+     "trainedWords": [],
+     "vaeId": null,
+     "coveredNext": true,
+     "paidAccess": null,
+     "stats": {
+      "downloadCount": 409369,
+      "thumbsUpCount": 21293,
+      "thumbsDownCount": 14
+     },
+     "supportsGeneration": true,
+     "files": [
+      {
+       "id": 59655,
+       "sizeKB": 9324.0185546875,
+       "name": "more_details.safetensors",
+       "overrideName": null,
+       "type": "Model",
+       "pickleScanResult": "Success",
+       "pickleScanMessage": "No Pickle imports",
+       "virusScanResult": "Success",
+       "virusScanMessage": null,
+       "scannedAt": "2023-06-01T17:51:26.439Z",
+       "metadata": {
+        "format": "SafeTensor",
+        "size": null,
+        "fp": "fp16"
+       },
+       "hashes": {
+        "AutoV1": "6CA57A45",
+        "AutoV2": "D9CF2F88DE",
+        "SHA256": "D9CF2F88DEC53A8DD8C09ABA2B1D67963B265EBDF8255660F5BCD7F1C8EDBA33",
+        "CRC32": "2689A350",
+        "BLAKE3": "F11043E61653E9554B228ABD28720AD6DD21294F6C2452DA6D8ADC8AAFC1E38D",
+        "AutoV3": "3B8AA1D351EF",
+        "SHA256_12": "D9CF2F88DEC5"
+       },
+       "downloadUrl": "https://civitai.com/api/download/models/87153",
+       "primary": true
+      }
+     ],
+     "images": [
+      {
+       "id": 995787,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c1697174-7c8d-4bde-b053-7b1ec0692b64/original=true/995787.jpeg",
+       "nsfwLevel": 1,
+       "width": 1197,
+       "height": 1708,
+       "hash": "UcJaTG9Gbvoe~WR*t7xu%Lxajat7t7WBxtWB",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": false,
+       "hasPositivePrompt": false,
+       "onSite": false,
+       "remixOfId": null
+      },
+      {
+       "id": 995798,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5157d52c-8b21-4e48-a726-8ea220617d12/original=true/995798.jpeg",
+       "nsfwLevel": 1,
+       "width": 4000,
+       "height": 1301,
+       "hash": "UmNdEu~ptS%Ox]WYs.o0tSWBj[a|%NjYaef6",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      }
+     ],
+     "downloadUrl": "https://civitai.com/api/download/models/87153"
+    }
+   ]
+  },
+  {
+   "id": 25995,
+   "name": "blindbox/大概是盲盒",
+   "allowNoCredit": false,
+   "allowCommercialUse": [],
+   "allowDerivatives": true,
+   "allowDifferentLicense": false,
+   "type": "LORA",
+   "minor": false,
+   "sfwOnly": false,
+   "poi": false,
+   "nsfw": false,
+   "nsfwLevel": 1,
+   "availability": "Public",
+   "userId": 266262,
+   "hasActivePaidAccess": false,
+   "baseModels": [
+    "SD 1.5"
+   ],
+   "cosmetic": null,
+   "supportsGeneration": false,
+   "stats": {
+    "downloadCount": 307072,
+    "thumbsUpCount": 14253,
+    "thumbsDownCount": 1,
+    "commentCount": 0,
+    "tippedAmountCount": 770
+   },
+   "creator": {
+    "username": "samecorner",
+    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/bc322522-813d-49c0-ad3e-ff199e180f00/width=96/samecorner.jpeg"
+   },
+   "tags": [
+    "anime",
+    "artstyle",
+    "cute",
+    "chibi",
+    "style"
+   ],
+   "modelVersions": [
+    {
+     "id": 32988,
+     "index": 0,
+     "name": "blindbox_v1_mix",
+     "baseModel": "SD 1.5",
+     "baseModelType": "Standard",
+     "publishedAt": "2023-04-01T06:55:32.660Z",
+     "flags": 0,
+     "availability": "Public",
+     "nsfwLevel": 1,
+     "trainedWords": [
+      "full body, chibi,"
+     ],
+     "vaeId": null,
+     "coveredNext": false,
+     "paidAccess": null,
+     "stats": {
+      "downloadCount": 293094,
+      "thumbsUpCount": 4689,
+      "thumbsDownCount": 1
+     },
+     "supportsGeneration": false,
+     "files": [
+      {
+       "id": 27171,
+       "sizeKB": 147567.2177734375,
+       "name": "blindbox_v1_mix.safetensors",
+       "overrideName": null,
+       "type": "Model",
+       "pickleScanResult": "Success",
+       "pickleScanMessage": "No Pickle imports",
+       "virusScanResult": "Success",
+       "virusScanMessage": null,
+       "scannedAt": "2023-04-01T06:56:16.680Z",
+       "metadata": {
+        "format": "SafeTensor",
+        "size": "full",
+        "fp": "fp16"
+       },
+       "hashes": {
+        "AutoV1": "088B509A",
+        "AutoV2": "525491E628",
+        "SHA256": "525491E6289D1912839C0BB5E3C3C390FEAD13C46CDD435C1B6A6AB3EA9AC14F",
+        "CRC32": "01B4AF78",
+        "BLAKE3": "78195C5CFF4C6D83A61B0D6B836D59F85EFEE66FBB953758E4B2AF0389F8A802",
+        "AutoV3": "EE3FBE5A8576",
+        "SHA256_12": "525491E6289D"
+       },
+       "downloadUrl": "https://civitai.com/api/download/models/32988",
+       "primary": true
+      }
+     ],
+     "images": [
+      {
+       "id": 375791,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f39bbb06-3d4b-40cf-36ef-0abac596a000/original=true/375791.jpeg",
+       "nsfwLevel": 1,
+       "width": 864,
+       "height": 1152,
+       "hash": "UEJ8FW^j.m9cBrJ6NNo4KLS4r:XO*IbuMeMz",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      },
+      {
+       "id": 375790,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/6f2286b2-8738-4cce-0cac-2284f2400f00/original=true/375790.jpeg",
+       "nsfwLevel": 1,
+       "width": 864,
+       "height": 1152,
+       "hash": "UFJ7OD0f9F~W68RO9F%19@M{-;D*9Z-:snRk",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      }
+     ],
+     "downloadUrl": "https://civitai.com/api/download/models/32988"
+    },
+    {
+     "id": 48150,
+     "index": 1,
+     "name": "blindbox_v3",
+     "baseModel": "SD 1.5",
+     "baseModelType": "Standard",
+     "publishedAt": "2023-04-17T14:47:04.489Z",
+     "flags": 0,
+     "availability": "Public",
+     "nsfwLevel": 1,
+     "trainedWords": [],
+     "vaeId": null,
+     "coveredNext": false,
+     "paidAccess": null,
+     "stats": {
+      "downloadCount": 6895,
+      "thumbsUpCount": 9051,
+      "thumbsDownCount": 0
+     },
+     "supportsGeneration": false,
+     "files": [
+      {
+       "id": 35621,
+       "sizeKB": 147567.572265625,
+       "name": "blindbox_v3.safetensors",
+       "overrideName": null,
+       "type": "Model",
+       "pickleScanResult": "Success",
+       "pickleScanMessage": "No Pickle imports",
+       "virusScanResult": "Success",
+       "virusScanMessage": null,
+       "scannedAt": "2023-04-17T14:47:11.244Z",
+       "metadata": {
+        "format": "SafeTensor",
+        "size": null,
+        "fp": "fp16"
+       },
+       "hashes": {
+        "AutoV1": "A96CA9BA",
+        "AutoV2": "976D161B85",
+        "SHA256": "976D161B85C7DE755C2084A94FF3645127862CEC3EE3A6F44721C51C743FD96F",
+        "CRC32": "9F77C609",
+        "BLAKE3": "5B31A30C50248C0FC00A2928299CC08D97C62C8DED038E566157BE5797074192",
+        "AutoV3": "F221DBFED0D8",
+        "SHA256_12": "976D161B85C7"
+       },
+       "downloadUrl": "https://civitai.com/api/download/models/48150",
+       "primary": true
+      }
+     ],
+     "images": [
+      {
+       "id": 517448,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/82dd913f-4038-4e0f-7f1f-06494208d700/original=true/517448.jpeg",
+       "nsfwLevel": 1,
+       "width": 864,
+       "height": 1152,
+       "hash": "U9G*+#0000~Wq?-;4:xtt,D%-VM|01^+^jD*",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      },
+      {
+       "id": 517449,
+       "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d04be295-b26c-42d2-bd3f-be26c74c7000/original=true/517449.jpeg",
+       "nsfwLevel": 1,
+       "width": 864,
+       "height": 1152,
+       "hash": "UIEn|zskE0~VI]%0t3-pM_E2kCE20fs:IVE2",
+       "type": "image",
+       "minor": false,
+       "poi": false,
+       "hasMeta": true,
+       "hasPositivePrompt": true,
+       "onSite": false,
+       "remixOfId": null
+      }
+     ],
+     "downloadUrl": "https://civitai.com/api/download/models/48150"
+    }
+   ]
+  }
+ ],
+ "metadata": {
+  "nextCursor": "287830|23769|12597",
+  "nextPage": "https://civitai.com/api/v1/models?types=LORA&limit=4&sort=Most%20Downloaded&baseModels=SDXL%201.0&baseModels=Illustrious&baseModels=SD%201.5&cursor=287830%7C23769%7C12597"
+ }
+}

@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.Family
 import com.abrah.nightmare.ModelCatalog
+import com.abrah.nightmare.ModelFeatures
 import com.abrah.nightmare.ModelSpec
 import com.abrah.nightmare.R
 
@@ -83,10 +84,13 @@ enum class SubKind { ALL, BASE, INPAINT, IMPORTED }
  * Swap conversion with Inpaint ticked. ⚠ Not "can inpaint": nearly every family
  * can (by blend), so a chip on that would list everything.
  */
-fun ModelSpec.isInpaintModel(): Boolean =
-    backendType == ModelCatalog.SD15_NPU_INPAINT ||
+fun ModelSpec.isInpaintModel(): Boolean = when (family) {
+    // ⭐ A Swap conversion says so itself ([ModelFeatures]) — never its name, which the user may change.
+    Family.SD15_SWAP, Family.SDXL_SWAP -> ModelFeatures.INPAINT in featureSet
+    else -> backendType == ModelCatalog.SD15_NPU_INPAINT ||
         id.contains("inpaint", ignoreCase = true) ||
         label.contains("inpaint", ignoreCase = true)
+}
 
 /** ⭐ Whether a CHECKPOINT row belongs under [kind]. Video/Upscale/Tools hold no checkpoints. */
 fun matchesKind(spec: ModelSpec, kind: ModelKind): Boolean = when (kind) {
@@ -216,7 +220,15 @@ internal fun <T> PillRow(items: List<T>, selected: T, label: @Composable (T) -> 
 }
 
 @Composable
-internal fun SearchBox(query: String, onQuery: (String) -> Unit, modifier: Modifier = Modifier) {
+internal fun SearchBox(
+    query: String,
+    onQuery: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    /** ⭐ The placeholder; the Models browser's when null. The LoRA browser passes its own. */
+    hint: String? = null,
+    /** ⭐ Enter — the LoRA browser searches at once instead of waiting out its debounce. */
+    onSubmit: (() -> Unit)? = null,
+) {
     OutlinedTextField(
         value = query,
         onValueChange = onQuery,
@@ -224,9 +236,13 @@ internal fun SearchBox(query: String, onQuery: (String) -> Unit, modifier: Modif
         singleLine = true,
         shape = RoundedCornerShape(16.dp),
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        // ⚠ Only with [onSubmit]: the Models browser's keyboard stays as it was.
+        keyboardOptions = if (onSubmit == null) androidx.compose.foundation.text.KeyboardOptions.Default
+        else androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { onSubmit?.invoke() }),
         placeholder = {
             Text(
-                stringResource(R.string.mb_search_hint),
+                hint ?: stringResource(R.string.mb_search_hint),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -382,6 +398,12 @@ internal fun ModelCardV2(
                         Badge(spec.family.label, familyColor(spec.family))
                         Badge("${spec.native.width}×${spec.native.height}")
                         if (spec.isInpaintModel()) Badge(stringResource(R.string.mb_kind_inpaint), MaterialTheme.colorScheme.primary)
+                        // ⭐ What a Swap conversion takes per render ([ModelFeatures]) — what its node offers.
+                        if (spec.family == Family.SD15_SWAP || spec.family == Family.SDXL_SWAP) {
+                            if (ModelFeatures.LORA in spec.featureSet) Badge("LoRA")
+                            if (ModelFeatures.CONTROLNET in spec.featureSet) Badge(stringResource(R.string.cn_label))
+                            if (ModelFeatures.IP_ADAPTER in spec.featureSet) Badge(stringResource(R.string.ip_label))
+                        }
                         if (spec.isCustom) Badge(stringResource(R.string.mb_sub_imported))
                     }
                 }
@@ -413,7 +435,9 @@ internal fun ModelCardV2(
 @Composable
 private fun StatusLine(row: ModelRow, modifier: Modifier) {
     val spec = row.spec
-    val arch = row.build?.minArch ?: spec.minHtpArch
+    // ⚠ With no build for THIS phone (a RAM gate: Krea 2 on 12 GB) the label is the
+    // lowest arch any build needs — `minHtpArch` alone is 68 for a DiT and read "888+".
+    val arch = row.build?.minArch ?: spec.builds.minOfOrNull { it.minArch } ?: spec.minHtpArch
     val (dot, word) = when {
         row.selected && row.installed -> MaterialTheme.colorScheme.primary to stringResource(R.string.mb_status_in_use)
         row.installed -> Color(0xFF34C38F) to stringResource(R.string.mb_status_installed)
@@ -519,28 +543,12 @@ private fun ModelMenu(row: ModelRow, busy: Boolean, onInstall: (ModelSpec) -> Un
 @Composable
 internal fun FamilyHeader(family: Family, count: Int, note: String, onBack: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        // ⭐ The WHOLE row is Back, not just the 48dp arrow: the user missed it
-        // on the first tap (2026-10-06) and asked for a bigger target.
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 64.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .clickable(onClickLabel = stringResource(R.string.mb_back), onClick = onBack),
-            verticalAlignment = Alignment.CenterVertically,
+        BackRow(
+            family.label,
+            stringResource(if (family.isModern()) R.string.mb_group_dit else R.string.mb_group_classic) +
+                " · " + stringResource(R.string.mb_models_count, count),
+            onBack,
         ) {
-            Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.mb_back))
-            }
-            Column(Modifier.weight(1f)) {
-                Text(family.label, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
-                Text(
-                    stringResource(if (family.isModern()) R.string.mb_group_dit else R.string.mb_group_classic) +
-                        " · " + stringResource(R.string.mb_models_count, count),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             Box(Modifier.padding(end = 8.dp).size(12.dp).clip(CircleShape).background(familyColor(family)))
         }
         Surface(
@@ -556,6 +564,102 @@ internal fun FamilyHeader(family: Family, count: Int, note: String, onBack: () -
             )
         }
         Spacer(Modifier.height(4.dp))
+    }
+}
+
+/**
+ * ⭐ The top of a page one level into a browser — a family's models, one LoRA:
+ * arrow, title, a quiet line under it. Shared so the two cannot drift.
+ * ⭐ The WHOLE row is Back, not just the 48dp arrow: the user missed it on the
+ * first tap (2026-10-06) and asked for a bigger target.
+ */
+@Composable
+internal fun BackRow(
+    title: String,
+    subtitle: String?,
+    onBack: () -> Unit,
+    trailing: @Composable () -> Unit = {},
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClickLabel = stringResource(R.string.mb_back), onClick = onBack),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.mb_back))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        trailing()
+    }
+}
+
+/**
+ * ⭐ A pill that opens a list — the [Pill] look, outlined, with ▾. For a choice
+ * that sits in a row of pills but has too many words to be pills itself
+ * (the LoRA browser's sort order).
+ */
+@Composable
+internal fun <T> PillMenu(
+    items: List<T>,
+    selected: T,
+    label: @Composable (T) -> String,
+    modifier: Modifier = Modifier,
+    onSelect: (T) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Surface(
+            onClick = { open = true },
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+            Row(
+                Modifier.padding(start = 16.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    label(selected),
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (k in items) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            label(k),
+                            color = if (k == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        )
+                    },
+                    onClick = { open = false; onSelect(k) },
+                )
+            }
+        }
     }
 }
 

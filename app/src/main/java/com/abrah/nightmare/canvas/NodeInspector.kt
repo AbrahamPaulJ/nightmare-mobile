@@ -7,6 +7,9 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
@@ -71,6 +74,7 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.clickable
@@ -280,6 +284,10 @@ fun NodeInspector(
      * Null (a golden, a preview) hides the Add button.
      */
     onImportLora: (() -> Unit)? = null,
+    /** ⭐⭐ Get LoRAs — opens the browser on the node's family (`docs/LORA-BROWSER.md`); null hides it. */
+    onBrowseLoras: ((com.abrah.nightmare.LoraSources.Target) -> Unit)? = null,
+    /** ⭐ Delete a LoRA file from the picker's ⋮ (`HarnessViewModel.deleteLora`); null hides it. */
+    onDeleteLora: ((String) -> Unit)? = null,
     /**
      * ⚠⚠ Bumped by `HarnessViewModel.refreshLoras`. The picker reads the
      * DIRECTORY, which cannot be stale but also cannot be observed, so this is
@@ -321,6 +329,12 @@ fun NodeInspector(
      * draws no button — a preview has no engine.
      */
     onTranslate: ((node: String, param: String, done: (String) -> Unit) -> Unit)? = null,
+    /**
+     * ⭐⭐ Describe a picture into words for the prompt (`docs/FLORENCE.md`) —
+     * `HarnessViewModel.describePicture`: a canvas image id or a photo URI and a
+     * [com.abrah.nightmare.DescribeMode]; [done] gets the text or null. ⚠ Null draws no button.
+     */
+    onDescribe: ((picture: String, mode: com.abrah.nightmare.DescribeMode, done: (String?) -> Unit) -> Unit)? = null,
     parserInstalled: Boolean = true,
     parserRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallParser: (() -> Unit)? = null,
@@ -494,6 +508,10 @@ fun NodeInspector(
             // ⚠ Read HERE for the same reason: what a prompt is measured
             // against depends on what it is WIRED into.
             promptBudget = com.abrah.nightmare.PromptTokens.budgetFor(state.workflow.graph, nodeId),
+            describePictures = if (onDescribe != null && node.type == com.abrah.nightmare.PromptNode.name) {
+                describePictures(state, types, imageFor)
+            } else emptyList(),
+            describeDefault = com.abrah.nightmare.DescribeMode.defaultFor(state.workflow.graph, nodeId),
             installedModels = installedModels,
             onSetModel = onSetModel,
             preview = shownId?.let(imageFor),
@@ -525,10 +543,8 @@ fun NodeInspector(
                         // — *"why do both the delete icons do the same fucking
                         // thing"*, 2026-09-22.
                         onDelete = onDropReceived?.let { { it(nodeId) } },
-                        deleteTitle = "Drop the original?",
-                        deleteBody = "The upscaled picture below stays and becomes the " +
-                            "only one on this node. The original is not saved anywhere " +
-                            "unless you kept it — Run brings it back.",
+                        deleteTitle = stringResource(R.string.inspector_drop_original_title),
+                        deleteBody = stringResource(R.string.inspector_drop_original_body),
                         onKeep = { onKeepImage(id) },
                         onDownload = { onSaveImage(id) },
                         onShare = { onShareImage(id) },
@@ -636,6 +652,8 @@ fun NodeInspector(
             },
             onClearImage = { onClearImage(nodeId) },
             onImportLora = onImportLora,
+            onBrowseLoras = onBrowseLoras,
+            onDeleteLora = onDeleteLora,
             loraEpoch = loraEpoch,
             onAddToPrompt = com.abrah.nightmare.LoraNotes.promptNodeOf(state.workflow.graph, nodeId)
                 ?.let { pid ->
@@ -645,6 +663,9 @@ fun NodeInspector(
                         if (next != now) onSetParam(pid, "prompt", next)
                     }
                 },
+            // ⭐ The same prompt node, its text swapped for the trigger words.
+            onReplacePrompt = com.abrah.nightmare.LoraNotes.promptNodeOf(state.workflow.graph, nodeId)
+                ?.let { pid -> { text: String -> onSetParam(pid, "prompt", text) } },
             // ⚠ Only on a node that HAS a picture and acts on it — the same
             // `actsOnItsPicture` rule the star and the disk follow.
             onInstallSegmenter = onInstallSegmenter,
@@ -654,6 +675,7 @@ fun NodeInspector(
             onCancelSegmenter = onCancelSegmenter,
             onPickMask = onPickMask,
             onTranslate = onTranslate,
+            onDescribe = onDescribe,
             parserInstalled = parserInstalled,
             parserRow = parserRow,
             onInstallParser = onInstallParser,
@@ -942,6 +964,12 @@ internal fun NodeInspectorBody(
     canSweep: Boolean = true,
     /** ⭐ What this node's prose is counted against — [com.abrah.nightmare.PromptTokens.budgetFor]. */
     promptBudget: com.abrah.nightmare.PromptTokens.Budget? = null,
+    /** ⭐ The canvas's pictures the describe button offers — [describePictures]. */
+    describePictures: List<DescribePicture> = emptyList(),
+    /** ⭐ The chip the describe dialog opens on — [com.abrah.nightmare.DescribeMode.defaultFor]. */
+    describeDefault: com.abrah.nightmare.DescribeMode = com.abrah.nightmare.DescribeMode.DETAILED,
+    /** ⚠ Whether a mode's model is on the phone — the tests answer for it. */
+    describeReady: (com.abrah.nightmare.DescribeMode) -> Boolean = { it.model.installed },
     installedModels: List<CheckpointChoice> = emptyList(),
     onSetModel: (String, String) -> Unit = { _, _ -> },
     /** The picture this node is showing, if any. */
@@ -1027,6 +1055,10 @@ internal fun NodeInspectorBody(
     onClearImage: () -> Unit = {},
     /** ⭐⭐ Import a `.safetensors` from inside the LoRA picker; null hides Add. */
     onImportLora: (() -> Unit)? = null,
+    /** ⭐⭐ Get LoRAs — opens the browser on the node's family (`docs/LORA-BROWSER.md`); null hides it. */
+    onBrowseLoras: ((com.abrah.nightmare.LoraSources.Target) -> Unit)? = null,
+    /** ⭐ Delete a LoRA file from the picker's ⋮; null hides it. */
+    onDeleteLora: ((String) -> Unit)? = null,
     /** ⚠⚠ See [NodeInspector]'s copy — it is what re-reads `_loras`. */
     loraEpoch: Int = 0,
     /**
@@ -1035,6 +1067,8 @@ internal fun NodeInspectorBody(
      * when there is none — the button is then dimmed and says why.
      */
     onAddToPrompt: ((String) -> Unit)? = null,
+    /** ⭐ "Replace prompt": that node's text becomes the trigger words. Null exactly when [onAddToPrompt] is. */
+    onReplacePrompt: ((String) -> Unit)? = null,
     /** ⭐⭐ Enlarge this node's picture — see [PictureActions.onUpscale]. */
     onUpscale: (() -> Unit)? = null,
     /** ⭐⭐ Why it is dimmed — see [PictureActions.upscaleDisabledReason]. */
@@ -1073,6 +1107,12 @@ internal fun NodeInspectorBody(
      * draws no button — a preview has no engine.
      */
     onTranslate: ((node: String, param: String, done: (String) -> Unit) -> Unit)? = null,
+    /**
+     * ⭐⭐ Describe a picture into words for the prompt (`docs/FLORENCE.md`) —
+     * `HarnessViewModel.describePicture`: a canvas image id or a photo URI and a
+     * [com.abrah.nightmare.DescribeMode]; [done] gets the text or null. ⚠ Null draws no button.
+     */
+    onDescribe: ((picture: String, mode: com.abrah.nightmare.DescribeMode, done: (String?) -> Unit) -> Unit)? = null,
     parserInstalled: Boolean = true,
     parserRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallParser: (() -> Unit)? = null,
@@ -1238,7 +1278,11 @@ internal fun NodeInspectorBody(
                 LoraRow(
                     widget = w,
                     value = node.params[w.name].orEmpty(),
-                    why = w.locked,
+                    // ⭐ A Swap conversion without LoRA says so ([com.abrah.nightmare.ModelFeatures]).
+                    why = w.locked ?: com.abrah.nightmare.ModelFeatures.missingReason(
+                        com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty()),
+                        com.abrah.nightmare.ModelFeatures.LORA,
+                    ),
                     onOpen = { pickingLoras = true },
                 )
             }
@@ -1363,8 +1407,8 @@ internal fun NodeInspectorBody(
             // fixed-canvas family, which has one resolution and so draws none.
             type?.widgets.orEmpty().firstOrNull { it.name == "aspect" }?.takeIf { sized == null }?.let { w ->
                 Chooser(
-                    label = w.name.knobLabel,
-                    hint = w.hint,
+                    label = w.name.localizedKnobLabel(),
+                    hint = w.localizedHint(),
                     options = w.options.orEmpty(),
                     current = node.params[w.name] ?: w.default.orEmpty(),
                     // ⚠⚠ Graph-wide on a SAMPLER only ([onSetAspect]); a crop
@@ -1408,8 +1452,8 @@ internal fun NodeInspectorBody(
                 ?.takeIf { popup }
                 ?.let { w ->
                     Chooser(
-                        label = "Reference size",
-                        hint = w.hint,
+                        label = stringResource(R.string.inspector_reference_size),
+                        hint = w.localizedHint(),
                         options = w.options.orEmpty(),
                         current = node.params[w.name] ?: w.default.orEmpty(),
                         onPick = { onSetParam(nodeId, w.name, it) },
@@ -1418,14 +1462,13 @@ internal fun NodeInspectorBody(
                 }
             if (!popup) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Reference",
+                    stringResource(R.string.inspector_reference),
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                 )
             }
             Text(
-                "the part of this picture the model reads. It is not redrawn, " +
-                    "and it keeps its own shape — it is never fitted to your output size.",
+                stringResource(R.string.inspector_reference_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1450,10 +1493,7 @@ internal fun NodeInspectorBody(
                     .firstOrNull { it.name == "denoise" }?.default?.toFloatOrNull()
             if (refDenoise != null && refDenoise < 1f) {
                 Text(
-                    "⚠ Denoise is $refDenoise. With a reference wired, anything below " +
-                        "1.0 uses your picture as the starting point AND as a reference " +
-                        "telling the model to keep it — so the result usually comes back " +
-                        "unchanged. Set Denoise to 1.0 to edit.",
+                    stringResource(R.string.inspector_reference_denoise_warning, refDenoise),
                     style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -1480,7 +1520,7 @@ internal fun NodeInspectorBody(
             // — two editors that look alike and read differently is the report
             // this panel is answering.
             Text(
-                "drag to move · pinch to zoom",
+                stringResource(R.string.crop_gestures),
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1493,11 +1533,12 @@ internal fun NodeInspectorBody(
             val refCost = framingOutSize(node, type)
             if (refCost.first.toLong() * refCost.second > 512L * 512L) {
                 Text(
-                    "⚠ a reference is encoded at your output size, not its own, so " +
-                        "${refCost.first}x${refCost.second} costs about " +
-                        "${(refCost.first.toLong() * refCost.second * 384 / (512L * 512L))} MB per " +
-                        "picture. Above 512x512 this has not completed on a 12 GB phone; " +
-                        "drop the resolution if the run is killed.",
+                    stringResource(
+                        R.string.inspector_reference_cost_warning,
+                        refCost.first,
+                        refCost.second,
+                        refCost.first.toLong() * refCost.second * 384 / (512L * 512L),
+                    ),
                     style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -1521,7 +1562,7 @@ internal fun NodeInspectorBody(
                 // above the other with nothing saying which was which.
                 // ⚠ Not in the popup: its tab already says Crop. ⚠ The video
                 // node's crop LOCK went 2026-09-27 (the user's call); the title stays.
-                if (!popup) Text("Crop", style = MaterialTheme.typography.titleSmall)
+                if (!popup) Text(stringResource(R.string.crop), style = MaterialTheme.typography.titleSmall)
                 CropEditor(
                     source = src,
                     rect = cropRectOf(node),
@@ -1556,17 +1597,17 @@ internal fun NodeInspectorBody(
                     CropGeometry.needsPadding(src.width, src.height, outW, outH)
                 ) {
                     Text(
-                        "this picture is ${src.width}x${src.height}, smaller than the " +
-                            "${outW}x$outH being asked for — the bars are padding, not a crop. " +
-                            "Enlarging it instead would only make it soft.",
+                        stringResource(R.string.inspector_picture_too_small, src.width, src.height, outW, outH),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Text(
-                    if (cropLocked) "locked · unlock to move or zoom" + (if (outW > 0) " · out ${outW}x$outH" else "")
-                    else if (outW > 0) "drag to move · pinch to zoom · out ${outW}x$outH"
-                    else "drag to move · pinch to zoom · the frame is the output, at its own size",
+                    if (cropLocked) {
+                        if (outW > 0) stringResource(R.string.inspector_crop_locked_out, outW, outH)
+                        else stringResource(R.string.inspector_crop_locked)
+                    } else if (outW > 0) stringResource(R.string.inspector_crop_gestures_out, outW, outH)
+                    else stringResource(R.string.inspector_crop_gestures_frame),
                     style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1578,8 +1619,8 @@ internal fun NodeInspectorBody(
                 if (popup) {
                     type?.widgets?.firstOrNull { it.name == com.abrah.nightmare.SdSampler.ALLOW_PAD }?.let { w ->
                         BoolKnobRow(
-                            label = "Allow padding",
-                            hint = w.hint,
+                            label = stringResource(R.string.inspector_allow_padding),
+                            hint = w.localizedHint(),
                             checked = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true),
                             onChange = { v ->
                                 val r = cropRectOf(node)
@@ -1598,8 +1639,8 @@ internal fun NodeInspectorBody(
                 if (popup && !padRule.hidesPadChoice) {
                     type?.widgets?.firstOrNull { it.name == CropNode.PAD }?.let { w ->
                         ChoiceRow(
-                            label = w.name.knobLabel,
-                            hint = w.hint,
+                            label = w.name.localizedKnobLabel(),
+                            hint = w.localizedHint(),
                             options = w.options.orEmpty(),
                             current = node.params[w.name] ?: w.default.orEmpty(),
                             onPick = { onSetParam(nodeId, w.name, it) },
@@ -1612,8 +1653,8 @@ internal fun NodeInspectorBody(
                 if (popup) {
                     type?.widgets?.firstOrNull { it.name == com.abrah.nightmare.SdSampler.AUTO_CROP }?.let { w ->
                         BoolKnobRow(
-                            label = "Enable auto crop",
-                            hint = w.hint,
+                            label = stringResource(R.string.inspector_enable_auto_crop),
+                            hint = w.localizedHint(),
                             checked = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true),
                             onChange = { v -> onSetParam(nodeId, w.name, v.toString()) },
                         )
@@ -1624,7 +1665,7 @@ internal fun NodeInspectorBody(
         val maskPanel: @Composable () -> Unit = {
             // ⭐⭐ The mask node's real interface.
             maskSource?.let { raw ->
-                if (!popup) Text("Mask", style = MaterialTheme.typography.titleSmall)
+                if (!popup) Text(stringResource(R.string.inspector_mask), style = MaterialTheme.typography.titleSmall)
                 // ⭐⭐⭐ **Painted on the FRAMED picture, and it follows the crop.**
                 //
                 // Asked for 2026-09-15: *"mask should track the crop and update
@@ -1714,7 +1755,10 @@ internal fun NodeInspectorBody(
         // Swap INPAINT node with no ControlNet tile — a picture wired into its
         // `control` port was silently ignored (ControlNet stayed `none`), reported
         // from the phone 2026-09-30.
-        val swap = (type as? com.abrah.nightmare.SdSampler)?.family == com.abrah.nightmare.Family.SD15_SWAP
+        val swapFamily = (type as? com.abrah.nightmare.SdSampler)?.family
+        // ⭐ ControlNet and IP-Adapter on both Swap families (SDXL: backends 023, 024).
+        val swap = swapFamily == com.abrah.nightmare.Family.SD15_SWAP || swapFamily == com.abrah.nightmare.Family.SDXL_SWAP
+        val ipSwap = swap
         val controlHint = if (swap) {
             rememberControlHint(
                 node, type, controlSource, cropSource,
@@ -1726,9 +1770,16 @@ internal fun NodeInspectorBody(
             .ifBlank { com.abrah.nightmare.SwapInputs.NONE } == com.abrah.nightmare.SwapInputs.NONE
         val controlEmpty = cnOff || (controlSource == null && cropSource == null &&
             node.params[com.abrah.nightmare.SdSampler.CONTROL_IMAGE].isNullOrBlank())
+        // ⭐⭐ What this conversion kept ([com.abrah.nightmare.ModelFeatures]): a dropped
+        // feature's tile stays where it is, dimmed, and opens on the reason (the
+        // user's call, 2026-10-07) — the node's shape never changes with the model.
+        val nodeSpec = com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())
+        val cnMissing = com.abrah.nightmare.ModelFeatures.missingReason(nodeSpec, com.abrah.nightmare.ModelFeatures.CONTROLNET)
+        val ipMissing = com.abrah.nightmare.ModelFeatures.missingReason(nodeSpec, com.abrah.nightmare.ModelFeatures.IP_ADAPTER)
         val controlTile = if (!swap) null else EditorTile(
             androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.cn_label), controlHint?.bitmap,
             empty = controlEmpty,
+            unavailable = cnMissing,
         ) {
             ControlNetPanel(
                 node, type, controlSource, cropSource, controlHint,
@@ -1741,12 +1792,13 @@ internal fun NodeInspectorBody(
         }
         // ⭐⭐ …and its IP-Adapter tile: the square the encoder will read, present
         // whether or not a reference is chosen yet — it is where one gets picked.
-        val ipSquare = if (swap) rememberIpSquare(node, type, refSource) else null
+        val ipSquare = if (ipSwap) rememberIpSquare(node, type, refSource) else null
         val ipEmpty = node.params[com.abrah.nightmare.SdSampler.IP_ADAPTER] == com.abrah.nightmare.IpAdapter.NONE ||
             (refSource == null && node.params[com.abrah.nightmare.SdSampler.IP_IMAGE].isNullOrBlank())
-        val ipTile = if (!swap) null else EditorTile(
+        val ipTile = if (!ipSwap) null else EditorTile(
             androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.ip_label), ipSquare,
             empty = ipEmpty,
+            unavailable = ipMissing,
         ) {
             IpAdapterPanel(
                 node, type, refSource, ipSquare,
@@ -1783,8 +1835,7 @@ internal fun NodeInspectorBody(
         // notes that say "wire a picture in" — the framing one below covers both.
         if (maskSource == null && node.type in PAINTS && node.type !in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
             Text(
-                "no picture to paint on yet — wire an image into this node, and " +
-                    "the picture appears here as soon as it can be worked out.",
+                stringResource(R.string.inspector_no_picture_to_paint),
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1803,9 +1854,9 @@ internal fun NodeInspectorBody(
             // are genuinely missing input -- nothing wired, or no photo picked.
             Text(
                 if (node.inputs.containsKey("image"))
-                    "No picture yet — choose one on the Load Image node this is wired to."
+                    stringResource(R.string.inspector_no_picture_load)
                 else
-                    "Wire an image into this node to frame it.",
+                    stringResource(R.string.inspector_wire_image),
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1834,8 +1885,8 @@ internal fun NodeInspectorBody(
         // numbers, which is nowhere near the thing it changes.
         padHere?.let { w ->
             ChoiceRow(
-                label = w.name.knobLabel,
-                hint = w.hint,
+                label = w.name.localizedKnobLabel(),
+                hint = w.localizedHint(),
                 options = w.options.orEmpty(),
                 current = node.params[w.name] ?: w.default.orEmpty(),
                 onPick = { onSetParam(nodeId, w.name, it) },
@@ -1888,7 +1939,7 @@ internal fun NodeInspectorBody(
                 Text(
                     // ⚠ "Original" / "Upscaled" — the user's words, 2026-09-23,
                     // replacing Received / Made: they name what each picture IS.
-                    "Original",
+                    stringResource(R.string.inspector_original),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1918,7 +1969,7 @@ internal fun NodeInspectorBody(
                 // so nothing is cropped to achieve it.
                 FramedPicture(
                     bitmap = bmp,
-                    contentDescription = "the original picture, before upscaling",
+                    contentDescription = stringResource(R.string.inspector_cd_original),
                     box = Modifier.height(pictureCap(pair = true)),
                     onClick = onViewBeforeFullscreen,
                 )
@@ -1956,7 +2007,7 @@ internal fun NodeInspectorBody(
             // plain, unlabelled picture, exactly as before.
             if (beforeImage != null) {
                 Text(
-                    "Upscaled",
+                    stringResource(R.string.inspector_upscaled),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1978,10 +2029,9 @@ internal fun NodeInspectorBody(
                         // ENLARGEMENT and leaves that one as the node's output.
                         // With no pair, it empties the node as it always did.
                         onDelete = if (beforeImage != null) onDropEnlargement else onClearOutput,
-                        deleteTitle = if (beforeImage != null) "Drop the upscaled picture?" else null,
+                        deleteTitle = if (beforeImage != null) stringResource(R.string.inspector_drop_upscaled_title) else null,
                         deleteBody = if (beforeImage != null) {
-                            "The original above becomes this node's output. Auto " +
-                                "upscale stays on, so the next Run upscales again."
+                            stringResource(R.string.inspector_drop_upscaled_body)
                         } else null,
                         onKeep = onKeepImage,
                         onDownload = { onSaveImage() },
@@ -2031,14 +2081,14 @@ internal fun NodeInspectorBody(
             if (node.type == "core.image" || node.type == "core.output") {
                 FramedPicture(
                     bitmap = shown,
-                    contentDescription = "this node's image",
+                    contentDescription = stringResource(R.string.inspector_cd_node_image),
                     box = if (beforeImage != null) Modifier.height(pictureCap(pair = true))
                     else Modifier.heightIn(max = pictureCap()),
                     onClick = onViewFullscreen,
                 )
             } else Image(
                 bitmap = shown,
-                contentDescription = "this node's image",
+                contentDescription = stringResource(R.string.inspector_cd_node_image),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2107,11 +2157,17 @@ internal fun NodeInspectorBody(
                 onSet = { onSetParam(nodeId, com.abrah.nightmare.SdSampler.LORAS, it) },
                 onDismiss = { pickingLoras = false },
                 onImport = onImportLora,
+                // ⭐ Only where this family's LoRAs can be searched (SD 1.5 / SDXL Swap).
+                onBrowse = (type as? com.abrah.nightmare.SdSampler)?.family
+                    ?.let { com.abrah.nightmare.LoraSources.Target.of(it) }
+                    ?.let { t -> onBrowseLoras?.let { cb -> { cb(t) } } },
                 notes = loraNotes,
                 onSaveNote = { name, note ->
                     loraNotes = com.abrah.nightmare.LoraNotes.write(loraDir, name, note)
                 },
                 onAddToPrompt = onAddToPrompt,
+                onReplacePrompt = onReplacePrompt,
+                onDelete = onDeleteLora,
             )
         }
 
@@ -2134,8 +2190,8 @@ internal fun NodeInspectorBody(
             // knobs and a node whose type failed to load look identical
             // otherwise, and one of those is a bug.
             Text(
-                if (type == null) "unknown node type — is its plugin loaded?"
-                else "this node has no widgets",
+                if (type == null) stringResource(R.string.inspector_unknown_node_type)
+                else stringResource(R.string.inspector_no_widgets),
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2220,10 +2276,13 @@ internal fun NodeInspectorBody(
                         .map { if (w.name == "scheduler") ModelCatalog.schedulerLabel(it) else it }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(w.name.knobLabel, style = MaterialTheme.typography.bodyMedium)
+                            Text(w.name.localizedKnobLabel(), style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Batching " + picked.size + " values: " +
+                                stringResource(
+                                    R.string.inspector_batching_values,
+                                    picked.size,
                                     picked.joinToString(", "),
+                                ),
                                 style = NoteTextStyle,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -2254,8 +2313,8 @@ internal fun NodeInspectorBody(
                     }
                     val karrasOffered = allowed.any { it.endsWith("_karras") }
                     ChoiceDropdown(
-                        label = w.name.knobLabel,
-                        hint = w.hint,
+                        label = w.name.localizedKnobLabel(),
+                        hint = w.localizedHint(),
                         options = samplers.map { it.second },
                         current = samplers.firstOrNull { it.first == base }?.second
                             ?: ModelCatalog.schedulerLabel(cur),
@@ -2309,8 +2368,8 @@ internal fun NodeInspectorBody(
                 // off-screen — a control that hides its own state. [Chooser] is
                 // where that is decided, for every choice in this sheet.
                 Chooser(
-                    label = w.name.knobLabel,
-                    hint = w.hint,
+                    label = w.name.localizedKnobLabel(),
+                    hint = w.localizedHint(),
                     options = options,
                     current = node.params[w.name] ?: w.default.orEmpty(),
                     onPick = { pick(it) },
@@ -2336,7 +2395,7 @@ internal fun NodeInspectorBody(
             val why = when {
                 (w.name == "out_w" || w.name == "out_h") && sized != null -> sized.reason()
                 (w.name == "out_w" || w.name == "out_h") && conflict != null ->
-                    "two consumers disagree — ${conflict.reason()}"
+                    stringResource(R.string.inspector_consumers_disagree, conflict.reason())
                 else -> w.locked
             }
             // ⚠⚠ Drawn ABOVE, directly under the checkpoint picker, because a
@@ -2372,8 +2431,9 @@ internal fun NodeInspectorBody(
             if (w.name == com.abrah.nightmare.SdSampler.PICK_SELECT) continue
             if (w.type == "bool") {
                 BoolKnobRow(
-                    label = if (why != null) "${w.name.knobLabel}  (locked)" else w.name.knobLabel,
-                    hint = why ?: w.hint,
+                    label = if (why != null) stringResource(R.string.knob_locked, w.name.localizedKnobLabel())
+                    else w.name.localizedKnobLabel(),
+                    hint = why ?: w.localizedHint(),
                     checked = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true),
                     enabled = why == null,
                     onChange = { v -> if (why == null) onSetParam(nodeId, w.name, v.toString()) },
@@ -2405,9 +2465,13 @@ internal fun NodeInspectorBody(
                 val vals = com.abrah.nightmare.BatchParams.valuesOf(w.name, armedSpec)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(w.name.knobLabel, style = MaterialTheme.typography.bodyMedium)
+                        Text(w.name.localizedKnobLabel(), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "Batching " + vals.size + " values: " + vals.joinToString(", "),
+                            stringResource(
+                                R.string.inspector_batching_values,
+                                vals.size,
+                                vals.joinToString(", "),
+                            ),
                             style = NoteTextStyle,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -2466,13 +2530,32 @@ internal fun NodeInspectorBody(
             val seeded = remember(nodeId, w.name) {
                 mutableStateOf(TextFieldValue(current, TextRange(current.length)))
             }
+            // ⭐⭐ A PROSE box always holds a TextFieldValue now — the tag toolbar
+            // needs the caret ([PromptToolbar]). ⚠⚠ The note above is why it is
+            // SYNCED: when the param changes from what this box last saw and is not
+            // what the box holds, the write came from outside (translate, describe,
+            // a checkpoint's prompt) and replaces it. ⚠ Keyed on the CHANGE, not on
+            // "differs": a recomposition that still carries the old param while a
+            // typed letter is in flight must not undo the letter.
+            val seenParam = remember(nodeId, w.name) { mutableStateOf(current) }
+            if (isProse && current != seenParam.value) {
+                seenParam.value = current
+                if (current != seeded.value.text) seeded.value = TextFieldValue(current, TextRange(current.length))
+            }
+            var proseFocused by remember(nodeId, w.name) { mutableStateOf(false) }
+            val history = remember(nodeId, w.name) { com.abrah.nightmare.PromptTags.History() }
+            var historyTick by remember(nodeId, w.name) { mutableStateOf(0) }
             if (wanted) {
                 LaunchedEffect(nodeId, w.name) { fieldFocus.requestFocus() }
             }
-            if (wanted) {
+            if (wanted || isProse) {
                 OutlinedTextField(
                     value = seeded.value,
                     onValueChange = { v ->
+                        if (isProse && v.text != seeded.value.text) {
+                            history.record(seeded.value.text, System.currentTimeMillis(), coalesce = true)
+                            historyTick++
+                        }
                         seeded.value = v
                         if (why == null) {
                             onSetParam(
@@ -2485,12 +2568,43 @@ internal fun NodeInspectorBody(
                     enabled = why == null,
                     label = { ProseLabel(w.name, why, if (isProse) com.abrah.nightmare.PromptTokens.count(if (wanted) seeded.value.text else current, promptBudget) else null) },
                     supportingText = {
-                        Text(
-                            why ?: w.hint.orEmpty(),
-                            style = NoteTextStyle,
-                            // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        // ⭐⭐ The tag toolbar takes the hint's line while the box is
+                        // being edited — attached to the box, above the keyboard.
+                        if (isProse && proseFocused && why == null) {
+                            val apply: ((String, Int) -> Pair<String, Int>?) -> Unit = { edit ->
+                                val v = seeded.value
+                                edit(v.text, v.selection.start)?.let { (text, caret) ->
+                                    history.record(v.text, System.currentTimeMillis(), coalesce = false)
+                                    historyTick++
+                                    seeded.value = TextFieldValue(text, TextRange(caret))
+                                    onSetParam(nodeId, w.name, text)
+                                }
+                            }
+                            val jump: (String?) -> Unit = { text ->
+                                if (text != null) {
+                                    historyTick++
+                                    seeded.value = TextFieldValue(text, TextRange(text.length))
+                                    onSetParam(nodeId, w.name, text)
+                                }
+                            }
+                            PromptToolbar(
+                                canUndo = historyTick >= 0 && history.canUndo,
+                                canRedo = historyTick >= 0 && history.canRedo,
+                                onHeavier = { apply { t, c -> com.abrah.nightmare.PromptTags.adjustWeight(t, c, 0.1) } },
+                                onLighter = { apply { t, c -> com.abrah.nightmare.PromptTags.adjustWeight(t, c, -0.1) } },
+                                onDelete = { apply(com.abrah.nightmare.PromptTags::deleteTag) },
+                                onAdd = { apply(com.abrah.nightmare.PromptTags::addTagAfter) },
+                                onUndo = { jump(history.undo(seeded.value.text)) },
+                                onRedo = { jump(history.redo(seeded.value.text)) },
+                            )
+                        } else {
+                            Text(
+                                why ?: w.localizedHint().orEmpty(),
+                                style = NoteTextStyle,
+                                // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     },
                     singleLine = !isProse,
                     minLines = if (isProse) 3 else 1,
@@ -2498,7 +2612,8 @@ internal fun NodeInspectorBody(
                     keyboardOptions = KeyboardOptions(
                         keyboardType = if (w.numeric) KeyboardType.Number else KeyboardType.Text,
                     ),
-                    modifier = Modifier.fillMaxWidth().focusRequester(fieldFocus),
+                    modifier = Modifier.fillMaxWidth().focusRequester(fieldFocus)
+                        .onFocusChanged { proseFocused = it.isFocused },
                 )
             } else {
             OutlinedTextField(
@@ -2529,7 +2644,7 @@ internal fun NodeInspectorBody(
                         "  ${w.min}..${w.max}"
                     } else ""
                     Text(
-                        why ?: w.hint ?: (w.type + range),
+                        why ?: w.localizedHint() ?: (w.type + range),
                         style = NoteTextStyle,
                         // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2559,15 +2674,32 @@ internal fun NodeInspectorBody(
             // line and appears with the first Cyrillic letter, reflowing the
             // text under the finger. ⚠ Shown only for Russian/Chinese text,
             // detected from the characters, and never on a locked field.
-            if (isProse && why == null && onTranslate != null) {
+            // ⭐⭐ **Describe sits in the same border row, LEFT of Translate**
+            // (`docs/FLORENCE.md`, the user's call 2026-10-08) — positive prompt
+            // only, always shown: it needs no text to qualify.
+            if (isProse && why == null && (onTranslate != null || onDescribe != null)) {
+                val name = w.name
+                val show: (String) -> Unit = { text ->
+                    if (wanted || isProse) seeded.value = TextFieldValue(text, TextRange(text.length))
+                }
+                Row(Modifier.align(Alignment.TopEnd)) {
+                if (name == "prompt" && onDescribe != null) {
+                    DescribeToggle(
+                        prompt = current,
+                        pictures = describePictures,
+                        defaultMode = describeDefault,
+                        isReady = describeReady,
+                        onDescribe = onDescribe,
+                        onWrite = { text ->
+                            onSetParam(nodeId, name, text)
+                            show(text)
+                        },
+                    )
+                }
                 val undo = translated[w.name]?.takeIf { it.second == current }
-                val canTranslate = undo == null &&
+                val canTranslate = onTranslate != null && undo == null &&
                     remember(current) { com.abrah.nightmare.PromptTranslate.detect(current) } != null
-                if (undo != null || canTranslate) {
-                    val name = w.name
-                    val show: (String) -> Unit = { text ->
-                        if (wanted) seeded.value = TextFieldValue(text, TextRange(text.length))
-                    }
+                if (onTranslate != null && (undo != null || canTranslate)) {
                     TranslateToggle(
                         undo = undo != null,
                         onClick = {
@@ -2583,8 +2715,8 @@ internal fun NodeInspectorBody(
                                 }
                             }
                         },
-                        modifier = Modifier.align(Alignment.TopEnd),
                     )
+                }
                 }
             }
             }
@@ -2601,7 +2733,10 @@ internal fun NodeInspectorBody(
         // mean two mental models for one thing.
         if (node.inputs.isNotEmpty()) {
             Text(
-                "inputs: " + node.inputs.entries.joinToString(", ") { "${it.key} ← ${it.value}" },
+                stringResource(
+                    R.string.inspector_inputs,
+                    node.inputs.entries.joinToString(", ") { "${it.key} ← ${it.value}" },
+                ),
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2637,21 +2772,20 @@ internal fun NodeInspectorBody(
             // directly — which is `docs/UI.md` §5's blind spot exactly: a test
             // that does not drive the production wiring cannot see it.
             if (onReset != null && node.type != "core.image") {
-                TextButton(onClick = { confirmingReset = true }) { Text("Reset node") }
+                TextButton(onClick = { confirmingReset = true }) { Text(stringResource(R.string.inspector_reset_node)) }
             }
             TextButton(onClick = { confirmingDelete = true }) {
-                Text("Delete node", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.inspector_delete_node), color = MaterialTheme.colorScheme.error)
             }
         }
     }
 
     if (confirmingReset && onReset != null) {
         com.abrah.nightmare.ui.ConfirmDelete(
-            title = "Reset this node?",
-            confirmLabel = "Reset",
+            title = stringResource(R.string.inspector_reset_title),
+            confirmLabel = stringResource(R.string.inspector_reset),
             // ⚠ Says exactly what survives, because the word "reset" does not.
-            body = "Every knob on \"$nodeId\" goes back to its default. Its wires, " +
-                "its place on the canvas and any picture on it stay.",
+            body = stringResource(R.string.inspector_reset_body, nodeId),
             onConfirm = { onReset(nodeId) },
             onDismiss = { confirmingReset = false },
         )
@@ -2740,7 +2874,8 @@ private fun LoraRow(
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                if (why != null) "${widget.name.knobLabel}  (locked)" else widget.name.knobLabel,
+                if (why != null) stringResource(R.string.knob_locked, widget.name.localizedKnobLabel())
+                else widget.name.localizedKnobLabel(),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
@@ -2751,7 +2886,7 @@ private fun LoraRow(
                 // ⚠⚠ Otherwise the HINT when nothing is picked, not the word
                 // "None". The golden for this row showed it bare, and a bare row
                 // is where the old text field's one useful sentence went.
-                why ?: if (entries.isEmpty()) widget.hint ?: "None"
+                why ?: if (entries.isEmpty()) widget.localizedHint() ?: stringResource(R.string.inspector_none)
                 else com.abrah.nightmare.LoraSpec.summary(entries),
                 style = NoteTextStyle,
                 // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
@@ -2762,7 +2897,7 @@ private fun LoraRow(
         }
         if (why == null) {
             TextButton(onClick = onOpen) {
-                Text(if (entries.isEmpty()) "Choose" else "Change")
+                Text(stringResource(if (entries.isEmpty()) R.string.inspector_choose else R.string.inspector_change))
             }
         }
     }
@@ -2787,7 +2922,12 @@ private fun CheckpointPicker(
             value = here?.label ?: currentId,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Checkpoint" + (here?.family?.let { " · ${it.label}" } ?: "")) },
+            label = {
+                Text(
+                    here?.family?.let { stringResource(R.string.inspector_checkpoint_family, it.label) }
+                        ?: stringResource(R.string.inspector_checkpoint)
+                )
+            },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
             modifier = Modifier
                 .fillMaxWidth()
@@ -2828,7 +2968,7 @@ private fun CheckpointPicker(
             // which is a refusal the user did not ask for.
             if (here == null && currentId.isNotBlank()) {
                 DropdownMenuItem(
-                    text = { Text("$currentId · not installed") },
+                    text = { Text(stringResource(R.string.inspector_not_installed, currentId)) },
                     onClick = {},
                     enabled = false,
                 )
@@ -2991,7 +3131,7 @@ internal fun SliderRow(
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
-            "${widget.name.knobLabel}   " +
+            widget.name.localizedKnobLabel() + "   " +
                 if (isInt) shown.roundToInt().toString()
                 else fixed(shown, decimalsAt(shown)),
             style = MaterialTheme.typography.bodyMedium,
@@ -3020,7 +3160,7 @@ internal fun SliderRow(
             onValueChangeFinished = onCommit ?: {},
             modifier = Modifier.fillMaxWidth(),
         )
-        widget.hint?.let {
+        widget.localizedHint()?.let {
             Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -3050,6 +3190,11 @@ internal data class EditorTile(
      * the same as a null [thumb], which is also "still drawing".
      */
     val empty: Boolean = false,
+    /**
+     * ⭐ Why this model cannot use it ([com.abrah.nightmare.ModelFeatures.missingReason]):
+     * the tile is drawn dimmed and its tab shows this sentence instead of [panel].
+     */
+    val unavailable: String? = null,
     val panel: @Composable () -> Unit,
 )
 
@@ -3202,12 +3347,12 @@ private fun InpaintEditors(
         if (outW0 > 0 && outH0 > 0) outW0.toFloat() / outH0
         else framed?.let { it.width.toFloat() / it.height.coerceAtLeast(1) } ?: 1f
     val tiles = buildList {
-        if (photo != null) add(EditorTile("Crop", framed?.asImageBitmap(), panel = cropPanel))
-        if (paints && photo != null) add(EditorTile("Mask", masked, panel = maskPanel))
+        if (photo != null) add(EditorTile(stringResource(R.string.crop), framed?.asImageBitmap(), panel = cropPanel))
+        if (paints && photo != null) add(EditorTile(stringResource(R.string.inspector_mask), masked, panel = maskPanel))
         // ⚠⚠ Not on SD 1.5 Swap: there the `reference` picture is IP-Adapter's,
         // and its tile crops it (the same `ref_*` region) — two tiles showing
         // one picture read as two inputs (reported 2026-10-01).
-        if (refPhoto != null && ip == null) add(EditorTile("Reference", refFramed, panel = refPanel))
+        if (refPhoto != null && ip == null) add(EditorTile(stringResource(R.string.inspector_reference), refFramed, panel = refPanel))
         control?.let { add(it) }
         ip?.let { add(it) }
     }
@@ -3216,7 +3361,8 @@ private fun InpaintEditors(
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         tiles.forEachIndexed { i, tile ->
             Column(
-                Modifier.weight(1f),
+                // ⚠ Dimmed, never removed (`docs/UI.md` §8.18): still tappable — it opens on the reason.
+                Modifier.weight(1f).then(if (tile.unavailable != null) Modifier.alpha(0.38f) else Modifier),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(tile.label, style = MaterialTheme.typography.titleSmall)
@@ -3244,7 +3390,7 @@ private fun InpaintEditors(
                     Box(thumbModifier, contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.Filled.Add,
-                            contentDescription = "choose a picture for ${tile.label}",
+                            contentDescription = stringResource(R.string.inspector_cd_choose_tile, tile.label),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(36.dp),
                         )
@@ -3252,7 +3398,7 @@ private fun InpaintEditors(
                 } else if (thumb == null) Box(thumbModifier)
                 else androidx.compose.foundation.Image(
                     bitmap = thumb,
-                    contentDescription = "edit the ${tile.label.lowercase()}",
+                    contentDescription = stringResource(R.string.inspector_cd_edit_tile, tile.label.lowercase()),
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                     modifier = thumbModifier,
                 )
@@ -3267,7 +3413,8 @@ private fun InpaintEditors(
     // index kept across that would open a tab that is no longer there.
     val tab = (open ?: return).coerceIn(0, tiles.lastIndex)
     val body: @Composable () -> Unit = {
-        InpaintPopupBody(tab, labels, onTab = { open = it }, tiles[tab].panel)
+        val t = tiles[tab]
+        InpaintPopupBody(tab, labels, onTab = { open = it }, t.unavailable?.let { why -> { UnavailableNotice(why) } } ?: t.panel)
     }
     if (inlineTab != null) {
         Box(Modifier.fillMaxWidth().height(760.dp)) { body() }
@@ -3281,6 +3428,20 @@ private fun InpaintEditors(
     com.abrah.nightmare.ui.PullDownSheet(onDismiss = { open = null }) {
         Box(Modifier.fillMaxWidth().height(dialogH * 0.92f)) { body() }
     }
+}
+
+/**
+ * ⭐ A tile's tab when the model cannot use it ([EditorTile.unavailable]): the reason, in
+ * ordinary hint grey — information, not a failure (`docs/UI.md` §8.5).
+ */
+@Composable
+private fun UnavailableNotice(why: String) {
+    Text(
+        why,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+    )
 }
 
 /**
@@ -3407,6 +3568,225 @@ private fun BatchToggle(armed: String?, onClick: () -> Unit) {
             tint = if (armed != null) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+/**
+ * ⭐⭐ The prompt box's tag toolbar, shown while the box is being edited — local-dream's
+ * (`PromptTagTextField`), the user's ask 2026-10-08. ↑ / ↓ the weight of the tag
+ * under the caret, ✕ delete it, + a new one after it, then undo / redo. The edits
+ * are [com.abrah.nightmare.PromptTags]; 32dp buttons, [PictureActions]' size.
+ */
+@Composable
+private fun PromptToolbar(
+    canUndo: Boolean,
+    canRedo: Boolean,
+    onHeavier: () -> Unit,
+    onLighter: () -> Unit,
+    onDelete: () -> Unit,
+    onAdd: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+) {
+    @Composable
+    fun B(icon: androidx.compose.ui.graphics.vector.ImageVector, what: Int, enabled: Boolean = true, onClick: () -> Unit) =
+        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(32.dp)) {
+            Icon(icon, contentDescription = stringResource(what), modifier = Modifier.size(20.dp))
+        }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        B(androidx.compose.material.icons.Icons.Filled.KeyboardArrowUp, R.string.tag_heavier, onClick = onHeavier)
+        B(androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown, R.string.tag_lighter, onClick = onLighter)
+        B(androidx.compose.material.icons.Icons.Filled.Close, R.string.tag_delete, onClick = onDelete)
+        B(androidx.compose.material.icons.Icons.Filled.Add, R.string.tag_add, onClick = onAdd)
+        Spacer(Modifier.width(12.dp))
+        B(com.abrah.nightmare.ui.UndoIcon, R.string.tag_undo, enabled = canUndo, onClick = onUndo)
+        B(com.abrah.nightmare.ui.RedoIcon, R.string.tag_redo, enabled = canRedo, onClick = onRedo)
+    }
+}
+
+/** A picture on the canvas the describe button can read — its node's name, its image id. */
+internal data class DescribePicture(val label: String, val imageId: String, val bitmap: ImageBitmap?)
+
+/**
+ * ⭐ Every picture on the canvas a person would mean by "this one": what an IMAGE
+ * node holds (the i2i photo, a reference) and what an OUTPUT node made. ⚠ Not the
+ * samplers' own previews — those are the output's picture a second time.
+ */
+internal fun describePictures(
+    state: CanvasState,
+    types: Map<String, com.abrah.nightmare.NodeType>,
+    imageFor: (String) -> ImageBitmap?,
+): List<DescribePicture> =
+    state.workflow.graph.nodes
+        .filter { it.type == "core.image" || it.type == com.abrah.nightmare.MediaOutputNode.name }
+        .mapNotNull { n ->
+            val id = state.previews[n.id]?.first ?: return@mapNotNull null
+            DescribePicture(com.abrah.nightmare.nodeNameOf(n, types).primary, id, imageFor(id))
+        }
+        .distinctBy { it.imageId }
+
+/**
+ * ⭐⭐ The prompt's describe button (`docs/FLORENCE.md`) — [TranslateToggle]'s
+ * look, and ONE dialog that walks three steps: pick a picture, wait, then (when
+ * the prompt already has text) add or replace.
+ *
+ * ⚠ The decisions are the user's, 2026-10-08: a button with a picker and NO wire
+ * (the prompt node stays a source, and a port here would read like the sampler's
+ * `reference`, which copies a look, not words); ask before touching text already
+ * there; sentences now, booru tags later.
+ *
+ * ⚠⚠ The photo picker is registered HERE, unconditionally — not inside the
+ * dialog's `if`, which flips while the picker is up ([rememberImagePick]).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DescribeToggle(
+    prompt: String,
+    pictures: List<DescribePicture>,
+    defaultMode: com.abrah.nightmare.DescribeMode,
+    onDescribe: (picture: String, mode: com.abrah.nightmare.DescribeMode, done: (String?) -> Unit) -> Unit,
+    onWrite: (String) -> Unit,
+    /** ⚠ Read at the TAP — whether "Describing…" is true, or a download popup is coming. */
+    isReady: (com.abrah.nightmare.DescribeMode) -> Boolean,
+) {
+    var open by remember { mutableStateOf(false) }
+    // ⭐ Opens on the checkpoint's kind (tags for an anime model) — the user's call, 2026-10-08.
+    var mode by androidx.compose.runtime.saveable.rememberSaveable(defaultMode) { mutableStateOf(defaultMode) }
+    var working by remember { mutableStateOf(false) }
+    var offer by remember { mutableStateOf<String?>(null) }
+    // ⚠ The text as it is when the caption LANDS, not when the tap happened.
+    val latest = androidx.compose.runtime.rememberUpdatedState(prompt)
+    // ⚠ A dialog closed while describing must not write when the caption lands.
+    var ticket by remember { mutableStateOf(0) }
+    val start: (String) -> Unit = { picture ->
+        // ⚠⚠ A missing model is NOT "Describing…". Reported from the phone,
+        // 2026-10-08: the spinner sat over the download popup, so it read as
+        // working while nothing would happen until the person pressed Download.
+        // ⇒ Step aside for the popup; the caption, when the download lands, opens
+        // the dialog again at the add/replace question (or fills an empty prompt).
+        val ready = isReady(mode)
+        working = ready
+        if (!ready) open = false
+        val mine = ++ticket
+        onDescribe(picture, mode) { caption ->
+            if (mine != ticket) return@onDescribe
+            working = false
+            when {
+                caption.isNullOrBlank() -> open = false
+                latest.value.isBlank() -> { onWrite(caption); open = false }
+                else -> { offer = caption; open = true }
+            }
+        }
+    }
+    val pick = rememberImagePick { uri -> start(uri) }
+    val close: () -> Unit = { open = false; working = false; offer = null; ticket += 1 }
+
+    Surface(
+        color = androidx.compose.material3.BottomSheetDefaults.ContainerColor,
+        shape = CircleShape,
+        modifier = Modifier.padding(end = 8.dp).offset(y = (-8).dp),
+    ) {
+        IconButton(onClick = { open = true }, modifier = Modifier.size(32.dp)) {
+            Icon(
+                com.abrah.nightmare.ui.DescribeIcon,
+                contentDescription = stringResource(R.string.describe_action),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+    if (!open) return
+    val caption = offer
+    when {
+        // ⭐ §8.10's ALTERNATIVES shape: tappable rows, one Cancel — choosing is
+        // the confirmation. ⚠ The caption is SHOWN, so nothing is written unread.
+        caption != null -> AlertDialog(
+            onDismissRequest = close,
+            title = { Text(stringResource(R.string.describe_offer_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(caption, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = {
+                        onWrite(com.abrah.nightmare.ImageCaption.appended(latest.value, caption)); close()
+                    }) { Text(stringResource(R.string.describe_add)) }
+                    TextButton(onClick = { onWrite(caption); close() }) {
+                        Text(stringResource(R.string.describe_replace))
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
+        )
+        working -> AlertDialog(
+            onDismissRequest = close,
+            title = { Text(stringResource(R.string.describe_action)) },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp))
+                    Text(stringResource(R.string.describe_working), style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
+        )
+        else -> AlertDialog(
+            onDismissRequest = close,
+            title = { Text(stringResource(R.string.describe_action)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val words = mapOf(
+                        com.abrah.nightmare.DescribeMode.SHORT to stringResource(R.string.describe_short),
+                        com.abrah.nightmare.DescribeMode.DETAILED to stringResource(R.string.describe_detailed),
+                        com.abrah.nightmare.DescribeMode.TAGS to stringResource(R.string.describe_tags),
+                    )
+                    Chooser(
+                        label = stringResource(R.string.describe_length),
+                        hint = stringResource(
+                            if (mode == com.abrah.nightmare.DescribeMode.TAGS) R.string.describe_tags_hint else R.string.describe_words_hint,
+                        ),
+                        options = words.values.toList(),
+                        current = words.getValue(mode),
+                        onPick = { w -> mode = words.entries.first { it.value == w }.key },
+                    )
+                    Text(stringResource(R.string.describe_on_canvas), style = MaterialTheme.typography.labelLarge)
+                    if (pictures.isEmpty()) {
+                        Text(
+                            stringResource(R.string.describe_none_on_canvas),
+                            style = NoteTextStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            for (p in pictures) {
+                                Column(
+                                    Modifier.width(72.dp).clickable { start(p.imageId) },
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Box(
+                                        Modifier.size(72.dp).clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    ) {
+                                        p.bitmap?.let {
+                                            Image(it, contentDescription = p.label, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                                        }
+                                    }
+                                    Text(p.label, style = NoteTextStyle, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                    androidx.compose.material3.OutlinedButton(onClick = pick, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.describe_from_phone))
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
@@ -3546,7 +3926,7 @@ private fun BatchDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sweep " + widget.name.knobWord) },
+        title = { Text(stringResource(R.string.inspector_sweep_title, widget.name.localizedKnobWord())) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
@@ -3556,7 +3936,7 @@ private fun BatchDialog(
                     // ⭐ SCHEDULER: a set, with no order to make a range from.
                     !isRange -> {
                         Text(
-                            "pick up to " + com.abrah.nightmare.BatchParams.MAX_PER_AXIS,
+                            stringResource(R.string.inspector_pick_up_to, com.abrah.nightmare.BatchParams.MAX_PER_AXIS),
                             style = NoteTextStyle,
                         )
                         Row(
@@ -3577,7 +3957,7 @@ private fun BatchDialog(
                     }
                     // ⭐ RANGE: from, to, and a step that only gets coarser.
                     else -> {
-                        Text("from  " + fixed(from, dp), style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.inspector_from, fixed(from, dp)), style = MaterialTheme.typography.bodyMedium)
                         Slider(
                             value = from,
                             onValueChange = {
@@ -3588,7 +3968,7 @@ private fun BatchDialog(
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
-                            "to  " + fixed(snappedTo, dp),
+                            stringResource(R.string.inspector_to, fixed(snappedTo, dp)),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Slider(
@@ -3599,7 +3979,7 @@ private fun BatchDialog(
                         )
                         // ⚠⚠ In MULTIPLES of the knob's own increment, so it can
                         // never go finer than the knob itself moves.
-                        Text("step  " + fixed(step, dp), style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.inspector_step, fixed(step, dp)), style = MaterialTheme.typography.bodyMedium)
                         Slider(
                             // ⚠ Shows the FITTED value, so the handle sits where
                             // the sweep actually is rather than where the drag
@@ -3616,9 +3996,12 @@ private fun BatchDialog(
                 // replaces having to understand a grammar.
                 Text(
                     why ?: when {
-                        armedValues.isEmpty() -> "not sweeping — this knob keeps its value"
-                        else -> armedValues.size.toString() + " runs · " +
-                            armedValues.joinToString(", ")
+                        armedValues.isEmpty() -> stringResource(R.string.inspector_not_sweeping)
+                        else -> stringResource(
+                            R.string.inspector_sweep_runs,
+                            armedValues.size,
+                            armedValues.joinToString(", "),
+                        )
                     },
                     style = NoteTextStyle,
                     color = if (why != null) MaterialTheme.colorScheme.error
@@ -3630,15 +4013,15 @@ private fun BatchDialog(
             TextButton(
                 onClick = { onSet(spec); onDismiss() },
                 enabled = why == null,
-            ) { Text(if (armedValues.isEmpty()) "Release" else "Arm") }
+            ) { Text(stringResource(if (armedValues.isEmpty()) R.string.inspector_release else R.string.inspector_arm)) }
         },
         dismissButton = {
             // ⚠ Release reachable WITHOUT dragging a slider to nothing — one
             // tap, the same as the run bar's ✕.
             if (com.abrah.nightmare.BatchParams.armed(node, widget.name) != null) {
-                TextButton(onClick = { onSet(""); onDismiss() }) { Text("Release") }
+                TextButton(onClick = { onSet(""); onDismiss() }) { Text(stringResource(R.string.inspector_release)) }
             } else {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             }
         },
     )
@@ -3724,6 +4107,11 @@ private fun ChoiceRow(
  * does not index — a PNG in an app folder). Invoking it opens [photos], so every
  * caller that took a `() -> Unit` keeps working; [ImageActions] and the empty
  * frame offer [files] as a small "Files" button.
+ *
+ * ⚠⚠ [photos] on a phone WITHOUT Android's photo picker (no Google services on
+ * Android ≤ 12 — Chinese phones) opens the phone's own GALLERY app, which shows
+ * every album; androidx's own fallback there is the file browser, where a Xiaomi
+ * user could not find their albums (report, 2026-10-08).
  */
 internal class ImagePick(val photos: () -> Unit, val files: () -> Unit) : () -> Unit {
     override fun invoke() = photos()
@@ -3758,17 +4146,47 @@ internal fun rememberImagePick(onPicked: (String) -> Unit): ImagePick {
             current.value(uri.toString())
         }
     }
-    // ⚠ Both registered unconditionally, for the reason in the note above.
+    // ⚠ All registered unconditionally, for the reason in the note above.
     val media = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia(), onResult)
     val docs = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), onResult)
-    return remember(media, docs) {
+    // ⭐ The phone's own Gallery app (`ACTION_PICK`) — [ImagePick]'s note.
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        onResult(r.data?.data)
+    }
+    val openGallery: () -> Unit = {
+        try {
+            gallery.launch(
+                Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                    .setType("image/*"),
+            )
+        } catch (e: android.content.ActivityNotFoundException) {
+            docs.launch(arrayOf("image/*"))
+        }
+    }
+    // ⚠⚠ Asked BEFORE the Gallery opens, and the Gallery opens whatever the answer:
+    // its URI cannot be persisted (`takePersistableUriPermission` throws), so only
+    // "Photos and videos" keeps a flow's picture readable after a restart. A
+    // denied permission answers at once with no dialog, so this never nags.
+    val askPhotos = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { openGallery() }
+    return remember(media, docs, gallery, askPhotos) {
         ImagePick(
             photos = {
-                media.launch(
-                    androidx.activity.result.PickVisualMediaRequest(
-                        ActivityResultContracts.PickVisualMedia.ImageOnly,
-                    ),
-                )
+                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(ctx)) {
+                    media.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                        ),
+                    )
+                } else {
+                    val perm = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        android.Manifest.permission.READ_MEDIA_IMAGES
+                    } else {
+                        android.Manifest.permission.READ_EXTERNAL_STORAGE
+                    }
+                    if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, perm) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) openGallery() else askPhotos.launch(perm)
+                }
             },
             files = { docs.launch(arrayOf("image/*")) },
         )
@@ -3860,7 +4278,7 @@ private fun ImagePicker(
             ) {
                 Icon(
                     Icons.Filled.Add,
-                    contentDescription = "choose an image",
+                    contentDescription = stringResource(R.string.inspector_cd_choose_image),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(44.dp),
                 )
@@ -3910,7 +4328,7 @@ internal fun ImageActions(onPick: () -> Unit, onClear: () -> Unit, tint: Color? 
     IconButton(onClick = onPick) {
         Icon(
             painterResource(R.drawable.ic_gallery),
-            contentDescription = "choose a different picture",
+            contentDescription = stringResource(R.string.inspector_cd_choose_different),
             tint = tint ?: MaterialTheme.colorScheme.primary,
         )
     }
@@ -3922,7 +4340,7 @@ internal fun ImageActions(onPick: () -> Unit, onClear: () -> Unit, tint: Color? 
     IconButton(onClick = onClear) {
         Icon(
             Icons.Filled.Delete,
-            contentDescription = "remove this picture from the node",
+            contentDescription = stringResource(R.string.inspector_cd_remove_picture),
             tint = tint ?: MaterialTheme.colorScheme.error,
         )
     }
@@ -4019,9 +4437,9 @@ internal fun SeedRow(
     ) {
         Text(
             when {
-                seed == null -> "seed random"
+                seed == null -> stringResource(R.string.inspector_seed_random)
                 compact -> seed
-                else -> "seed $seed"
+                else -> stringResource(R.string.inspector_seed_value, seed)
             },
             style = NoteTextStyle,
             color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
@@ -4032,7 +4450,7 @@ internal fun SeedRow(
             IconButton(onClick = { clipboard.setText(AnnotatedString(value)) }) {
                 Icon(
                     painterResource(R.drawable.ic_copy),
-                    contentDescription = "copy the seed",
+                    contentDescription = stringResource(R.string.inspector_cd_copy_seed),
                     tint = tint ?: MaterialTheme.colorScheme.primary,
                 )
             }
@@ -4041,7 +4459,9 @@ internal fun SeedRow(
             IconButton(onClick = it) {
                 Icon(
                     if (locked) Icons.Filled.Lock else com.abrah.nightmare.ui.LockOpenIcon,
-                    contentDescription = if (locked) "let the seed roll again" else "keep this seed for the next Run",
+                    contentDescription = stringResource(
+                        if (locked) R.string.inspector_cd_release_seed else R.string.inspector_cd_keep_seed,
+                    ),
                     tint = tint ?: MaterialTheme.colorScheme.primary,
                 )
             }
@@ -4071,7 +4491,10 @@ internal const val BRUSH_MAX = 0.25f
 @Composable
 private fun ProseLabel(name: String, why: String?, count: com.abrah.nightmare.PromptTokens.Count?) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(if (why != null) "${name.knobLabel}  (locked)" else name.knobLabel)
+        Text(
+            if (why != null) stringResource(R.string.knob_locked, name.localizedKnobLabel())
+            else name.localizedKnobLabel()
+        )
         if (count != null) {
             Text(
                 "  ${count.label}",
@@ -4178,3 +4601,12 @@ internal fun <T : Any> rememberOffMain(owner: Any?, label: String, vararg keys: 
     }
     return held.value
 }
+@Composable
+private fun Widget.localizedHint(): String? =
+    hintRes?.let { stringResource(it, *hintArgs.toTypedArray()) } ?: hint
+
+@Composable
+private fun String.localizedKnobLabel(): String = knobLabel(LocalContext.current)
+
+@Composable
+private fun String.localizedKnobWord(): String = knobWord(LocalContext.current)

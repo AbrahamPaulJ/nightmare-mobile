@@ -50,8 +50,22 @@ object IpAdapter {
     const val PLUS = "plus"
     const val FACE = "face"
 
+    /**
+     * ⭐ SDXL Swap's heads (backend 024): the same SHARED encoder, a head per adapter that writes
+     * the SDXL template's 70 `ipk_j` / `ipv_j` (npuforge `docs/SDXL-SWAP-TEMPLATE.md` §7a).
+     */
+    const val SDXL_PLUS = "sdxl_plus"
+    const val SDXL_FACE = "sdxl_face"
+
     /** ⭐ The adapters there are to download; Plus first — the general one. */
-    val ADAPTERS = listOf(PLUS, FACE)
+    val ADAPTERS = listOf(PLUS, FACE, SDXL_PLUS, SDXL_FACE)
+
+    /**
+     * ⭐⭐ The head a node's choice ([CHOICES]: plus / face) means for its model's family —
+     * the node stores the CHOICE, so a flow moved between families keeps its meaning.
+     */
+    fun adapterFor(family: Family?, choice: String): String =
+        if (family == Family.SDXL_SWAP && choice in listOf(PLUS, FACE)) "sdxl_$choice" else choice
 
     /**
      * ⭐ IP-Adapter OFF — the reference is not read, and switching to it unwires
@@ -61,8 +75,8 @@ object IpAdapter {
      */
     const val NONE = "none"
 
-    /** ⭐ What the node's chooser offers: off, then the adapters. */
-    val CHOICES = listOf(NONE) + ADAPTERS
+    /** ⭐ What the node's chooser offers: off, then the adapters ([adapterFor] picks the family's head). */
+    val CHOICES = listOf(NONE, PLUS, FACE)
 
     /** The token slots the template was built with. */
     const val TOKENS = 16
@@ -98,6 +112,9 @@ object IpAdapter {
     val HEADS = mapOf(
         PLUS to Part("ip_plus_head_w8qdq.onnx", 49_514_510L),
         FACE to Part("ip_face_head_w8qdq.onnx", 49_514_510L),
+        // ⭐ SDXL: worst K/V cosine through the int16 encoder 0.99978 (Plus), 0.99995 (Face).
+        SDXL_PLUS to Part("ip_plus_sdxl_head_w8qdq.onnx", 425_119_893L),
+        SDXL_FACE to Part("ip_face_sdxl_head_w8qdq.onnx", 425_119_893L),
     )
 
     fun dir(context: Context): File = File(BackendProcess.modelsDir(context), ID)
@@ -167,6 +184,8 @@ object IpAdapter {
 
     fun label(adapter: String) = when (adapter) {
         FACE -> "IP-Adapter Plus Face"
+        SDXL_PLUS -> "SDXL IP-Adapter Plus"
+        SDXL_FACE -> "SDXL IP-Adapter Plus Face"
         else -> "IP-Adapter Plus"
     }
 

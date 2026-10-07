@@ -10,9 +10,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import com.abrah.nightmare.DeviceProbe
 import com.abrah.nightmare.ModelCatalog
+import com.abrah.nightmare.R
 
 /**
  * ⭐⭐ What this phone's NPU is, and what that means for the catalogue.
@@ -31,18 +33,19 @@ import com.abrah.nightmare.ModelCatalog
 fun DeviceSheet(caps: DeviceProbe.Caps, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("This device") },
+        title = { Text(stringResource(R.string.device_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(androidx.compose.ui.unit.Dp(2f))) {
-                Field("chip", caps.soc.ifBlank { "unknown" })
-                Field("HTP arch", "v${caps.arch}")
-                Field("VTCM", "${caps.vtcmMb} MB")
+                Field(stringResource(R.string.device_chip), caps.soc.ifBlank { stringResource(R.string.device_unknown) })
+                Field(stringResource(R.string.device_htp_arch), stringResource(R.string.device_arch_value, caps.arch))
+                Field(stringResource(R.string.device_vtcm), stringResource(R.string.device_mb, caps.vtcmMb))
                 Field(
-                    "source",
+                    stringResource(R.string.device_source),
                     // ⚠⚠ `--device_info` reads arch and VTCM from the hardware
                     // and needs no model, no context and no server — so the
                     // answer is available before a gigabyte is committed to.
-                    if (caps.measured) "measured from the HTP" else "assumed from the chip name",
+                    if (caps.measured) stringResource(R.string.device_measured)
+                    else stringResource(R.string.device_assumed),
                 )
                 Spacer()
 
@@ -51,9 +54,11 @@ fun DeviceSheet(caps: DeviceProbe.Caps, onDismiss: () -> Unit) {
                 // installed, and the error names neither the arch nor the file.
                 if (!caps.staged) {
                     Text(
-                        "⚠ This build ships no QNN libraries for v${caps.arch}, " +
-                            "so the NPU cannot start. Staged: " +
-                            DeviceProbe.STAGED_ARCHES.joinToString { "v$it" } + ".",
+                        stringResource(
+                            R.string.device_qnn_missing,
+                            caps.arch,
+                            DeviceProbe.STAGED_ARCHES.joinToString { "v$it" },
+                        ),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -70,31 +75,32 @@ fun DeviceSheet(caps: DeviceProbe.Caps, onDismiss: () -> Unit) {
                 // supported model. This line is about OUR catalogue against
                 // this chip, and a custom model makes no arch claim at all.
                 val runnable = ModelCatalog.builtIn.count { it.buildFor(caps) != null }
-                Field("models it can run", "$runnable of ${ModelCatalog.builtIn.size}")
+                Field(
+                    stringResource(R.string.device_models_runnable),
+                    stringResource(R.string.device_of_total, runnable, ModelCatalog.builtIn.size),
+                )
                 val tiers = ModelCatalog.sd15Models.firstOrNull()?.buildFor(caps)?.tier
-                if (tiers != null) Field("SD 1.5 build", tiers.removePrefix("_"))
+                if (tiers != null) Field(stringResource(R.string.device_sd15_build), tiers.removePrefix("_"))
                 Field(
                     "SDXL",
-                    if (ModelCatalog.sdxlModels.first().buildFor(caps) != null) "supported"
+                    if (ModelCatalog.sdxlModels.first().buildFor(caps) != null) stringResource(R.string.device_supported)
                     // ⚠ Names the requirement rather than saying "no": xororz
                     // publishes SDXL as _8gen3 only, so this is a property of
                     // what exists upstream, not a choice of ours.
-                    else "needs v75+ with 8 MB — no other build is published",
+                    else stringResource(R.string.device_sdxl_requirement),
                 )
 
                 if (!caps.measured) {
                     Spacer()
                     Text(
-                        "Measured on the first backend start; until then this is " +
-                            "a table lookup, and an unlisted chip is assumed to be " +
-                            "the oldest we support.",
+                        stringResource(R.string.device_measure_note),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
     )
 }
 

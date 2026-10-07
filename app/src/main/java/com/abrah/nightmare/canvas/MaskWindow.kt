@@ -123,7 +123,9 @@ import androidx.compose.material3.Card
  * what it does.
  */
 
-private enum class MaskParam(val label: String) { SIZE("Size"), GROW("Grow"), FEATHER("Feather") }
+private enum class MaskParam(@androidx.annotation.StringRes val labelRes: Int) {
+    SIZE(R.string.knob_size), GROW(R.string.knob_grow), FEATHER(R.string.knob_feather),
+}
 
 /**
  * ⭐⭐ DreamUI's shared mask slider: a dropdown naming the parameter, the track,
@@ -160,9 +162,9 @@ private fun MaskParamSlider(
         MaskParam.FEATHER -> 0f..featherMax to feather
     }
     val shown = when (param) {
-        MaskParam.SIZE -> "${(brush * 2 * 512).roundToInt()} px"
-        MaskParam.GROW -> "${(grow * 512).roundToInt()} px"
-        MaskParam.FEATHER -> "${(feather * 512).roundToInt()} px"
+        MaskParam.SIZE -> stringResource(R.string.mask_pixels, (brush * 2 * 512).roundToInt())
+        MaskParam.GROW -> stringResource(R.string.mask_pixels, (grow * 512).roundToInt())
+        MaskParam.FEATHER -> stringResource(R.string.mask_pixels, (feather * 512).roundToInt())
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box {
@@ -170,16 +172,16 @@ private fun MaskParamSlider(
                 onClick = { menu = true },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
             ) {
-                Text(param.label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Text(stringResource(param.labelRes), style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 Icon(
                     androidx.compose.material.icons.Icons.Filled.ArrowDropDown,
-                    contentDescription = "choose what the slider sets",
+                    contentDescription = stringResource(R.string.cd_choose_mask_slider),
                     modifier = Modifier.size(18.dp),
                 )
             }
             androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 for (o in options) {
-                    DropdownMenuItem(text = { Text(o.label) }, onClick = { param = o; menu = false })
+                    DropdownMenuItem(text = { Text(stringResource(o.labelRes)) }, onClick = { param = o; menu = false })
                 }
             }
         }
@@ -892,7 +894,7 @@ internal fun MaskToolbar(
                                 }
                             }
                         },
-                        label = { Text(t.label, style = MaterialTheme.typography.labelLarge) },
+                        label = { Text(stringResource(t.labelRes), style = MaterialTheme.typography.labelLarge) },
                         shape = RoundedCornerShape(10.dp),
                     )
                 }
@@ -1027,7 +1029,7 @@ internal fun MaskToolbar(
                         // ⚠ "Enable tap to select" — the user's wording,
                         // 2026-09-23, replacing "Show tap to select icon".
                         Text(
-                            "Enable tap to select",
+                            stringResource(R.string.mask_enable_tap_select),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )

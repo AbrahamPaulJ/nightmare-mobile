@@ -1,0 +1,131 @@
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -228,6 +228,7 @@
+       releaseVaeEncoder();
+       unet_ = qnn_runtime::createAndInitModel(unet_path_, "unet");
+       QNN_INFO("[lowram] SDXL UNET loaded");
++      ip_bound_ = -1;  // 024: a fresh UNet has no IP side bound
+     }
+     // npuforge's SDXL Swap template (patch 018): LoRA per request, exactly as
+     // PipelineSd15Npu does it (015). A model without LoRA inputs refuses one.
+@@ -253,6 +254,15 @@
+       unet_->setLora(req.lora_dir, req.lora_strength);
+     else if (!req.lora_dir.empty())
+       throw std::invalid_argument("'lora_dir': this model has no LoRA inputs");
++    // IP-Adapter (024 = 016 on SDXL): ipk_<j> / ipv_<j> per attn2 layer (70),
++    // found once the UNet is loaded (in --lowram that is only now). The
++    // request's `ip_dir` holds pos/ and neg/ K/V; no ip_dir = zeros.
++    if (unet_ && ip_inputs_.empty()) discoverIp();
++    if (!ip_inputs_.empty())
++      loadIp(req.ip_dir);
++    else if (!req.ip_dir.empty())
++      throw std::invalid_argument(
++          "'ip_dir': this model has no IP-Adapter inputs");
+     // Both CFG passes read the same two planes; QnnModel quantizes each into
+     // its input once per request.
+     if (tpl_inpaint_) {
+@@ -311,6 +321,9 @@
+     if (long_seq_) {
+       std::vector<float> neg_mask = chunkMask(cond.negHidden());
+       std::vector<float> pos_mask = chunkMask(cond.posHidden());
++      // ⚠⚠ 016's rule: the uncond pass gets the zeros-image K/V (neg/), the
++      // cond pass the reference's -- sharing them cancels the IP effect.
++      if (!skip_uncond) bindIp(ip_neg_, 0);
+       if (!skip_uncond &&
+           StatusCode::SUCCESS != unet_->executeUnetGraphsSDXLMasked(
+                                      latents_in, ts, cond.negHidden(), long_seq_,
+@@ -318,6 +331,7 @@
+                                      time_ids, out_batch2))
+         throw std::runtime_error(
+             "QNN UNET SDXL (masked) exec failed (uncond)");
++      bindIp(ip_pos_, 1);
+       if (StatusCode::SUCCESS !=
+           unet_->executeUnetGraphsSDXLMasked(
+               latents_in + single_latent_size, ts, cond.posHidden(), long_seq_,
+@@ -328,11 +342,13 @@
+       return;
+     }
+ 
++    if (!skip_uncond) bindIp(ip_neg_, 0);
+     if (!skip_uncond &&
+         StatusCode::SUCCESS != unet_->executeUnetGraphsSDXL(
+                                    latents_in, ts, cond.negHidden(),
+                                    cond.negPooled(), time_ids, out_batch2))
+       throw std::runtime_error("QNN UNET SDXL exec failed (uncond)");
++    bindIp(ip_pos_, 1);
+ 
+     if (StatusCode::SUCCESS !=
+         unet_->executeUnetGraphsSDXL(
+@@ -581,6 +597,60 @@
+     QNN_INFO("SDXL controlnet %s feeds the unet's res_0..9", path.c_str());
+   }
+ 
++  // 016's three helpers, verbatim in behaviour (PipelineSd15Npu.hpp).
++  void discoverIp() {
++    for (int i = 0;; ++i) {
++      const std::string k = "ipk_" + std::to_string(i);
++      const std::string v = "ipv_" + std::to_string(i);
++      const size_t nk = unet_->inputElems(k.c_str());
++      const size_t nv = unet_->inputElems(v.c_str());
++      if (!nk || !nv) break;
++      ip_inputs_.push_back({k, nk});
++      ip_inputs_.push_back({v, nv});
++    }
++    if (!ip_inputs_.empty())
++      QNN_INFO("SDXL Swap IP-Adapter: %zu layers (024)", ip_inputs_.size() / 2);
++  }
++
++  void loadIp(const std::string &dir) {
++    if (ip_loaded_ && dir == ip_dir_) return;
++    ip_pos_.assign(ip_inputs_.size(), {});
++    ip_neg_.assign(ip_inputs_.size(), {});
++    for (size_t i = 0; i < ip_inputs_.size(); ++i) {
++      const auto &in = ip_inputs_[i];
++      for (int side = 0; side < 2; ++side) {
++        auto &buf = side ? ip_pos_[i] : ip_neg_[i];
++        buf.assign(in.second, 0.0f);
++        if (dir.empty()) continue;
++        const std::string path =
++            dir + (side ? "/pos/" : "/neg/") + in.first + ".raw";
++        std::ifstream f(path, std::ios::binary);
++        if (!f) throw std::invalid_argument("'ip_dir': missing " + path);
++        f.read(reinterpret_cast<char *>(buf.data()), in.second * sizeof(float));
++        if (static_cast<size_t>(f.gcount()) != in.second * sizeof(float))
++          throw std::invalid_argument("'ip_dir': " + path + " holds " +
++                                      std::to_string(f.gcount()) +
++                                      " bytes, the graph wants " +
++                                      std::to_string(in.second * 4));
++      }
++    }
++    ip_dir_ = dir;
++    ip_loaded_ = true;
++    ip_bound_ = -1;
++    QNN_INFO("ip-adapter inputs: %s", dir.empty() ? "none" : dir.c_str());
++  }
++
++  // side 0 = uncond (neg), 1 = cond (pos); a no-op when already bound, and
++  // with no ip_dir both sides are zeros, so the first bind is the last.
++  void bindIp(const std::vector<std::vector<float>> &set, int side) {
++    if (ip_inputs_.empty() || ip_bound_ == side ||
++        (ip_dir_.empty() && ip_bound_ >= 0))
++      return;
++    for (size_t i = 0; i < ip_inputs_.size(); ++i)
++      unet_->setExtraInput(ip_inputs_[i].first, set[i]);
++    ip_bound_ = side;
++  }
++
+   void releaseControlNet() {
+     controlnet_.reset();
+     controlnet_path_.clear();
+@@ -638,6 +708,11 @@
+   std::vector<float> control_nchw_;
+   std::vector<std::vector<float>> residuals_;
+   bool residuals_set_ = false;
++  std::vector<std::pair<std::string, size_t>> ip_inputs_;
++  std::vector<std::vector<float>> ip_pos_, ip_neg_;
++  std::string ip_dir_;
++  bool ip_loaded_ = false;
++  int ip_bound_ = -1;
+ 
+   MNN::Interpreter *clip_interpreter_ = nullptr;
+   MNN::Interpreter *clip2_interpreter_ = nullptr;

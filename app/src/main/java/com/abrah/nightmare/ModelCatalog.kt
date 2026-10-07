@@ -497,7 +497,16 @@ data class ModelSpec(
      * The user can still slide it up; a node's own size is never overwritten.
      */
     val startRes: Res? = null,
+    /**
+     * ⭐⭐ What this conversion takes per render — [ModelFeatures.LORA], `CONTROLNET`,
+     * `IP_ADAPTER`, `INPAINT` — read from its `swap_features.json` at import
+     * ([ModelFeatures.of]). Null = a built-in entry: its family's default.
+     */
+    val features: Set<String>? = null,
 ) {
+    /** ⭐ [features], or the family's default when the spec does not say ([ModelFeatures]). */
+    val featureSet: Set<String> get() = features ?: ModelFeatures.defaultFor(family)
+
     /** ⭐ Rendered by the DiT engine through `/generate` — see [Family.dit]. */
     val isDit: Boolean get() = family.dit
 
@@ -664,7 +673,7 @@ data class ModelSpec(
      */
     fun wanted(name: String): Boolean =
         name in requiredFiles || name == "vae_encoder.bin" || name.endsWith(".patch") ||
-            name == IpAdapter.TARGETS_FILE
+            name == IpAdapter.TARGETS_FILE || name == ModelFeatures.FILE
 
     fun installed(context: Context): Boolean = missing(context).isEmpty()
 

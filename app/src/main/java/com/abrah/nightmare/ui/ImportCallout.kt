@@ -15,6 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.abrah.nightmare.R
 
 /**
  * ⭐⭐ "Bring something of your own in" — the one card shape every importer uses.
@@ -43,7 +45,7 @@ fun ImportCallout(
     body: String,
     onImport: () -> Unit,
     modifier: Modifier = Modifier,
-    buttonLabel: String = "Import",
+    buttonLabel: String? = null,
     enabled: Boolean = true,
     warning: String? = null,
 ) {
@@ -77,7 +79,9 @@ fun ImportCallout(
                     Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.error)
                 }
             }
-            Button(onClick = onImport, enabled = enabled) { Text(buttonLabel) }
+            Button(onClick = onImport, enabled = enabled) {
+                Text(buttonLabel ?: stringResource(R.string.flows_import_flow))
+            }
         }
     }
 }

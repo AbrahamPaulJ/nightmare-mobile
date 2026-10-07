@@ -1,0 +1,14 @@
+--- a/src/RequestParser.hpp
++++ b/src/RequestParser.hpp
+@@ -98,8 +98,9 @@
+   // a mask and ships its own encoder, so gate the rejection on the encoder
+   // actually being absent rather than on the pipeline being ControlNet-shaped.
+   if (controlnet) {
+-    req.width = 512;
+-    req.height = 512;
++    // ⚠ SDXL Swap with ControlNet (023): its ControlNet reads a 1024 hint.
++    req.width = sdxl ? 1024 : 512;
++    req.height = sdxl ? 1024 : 512;
+     if (!img2img_available && (json.contains("image") || json.contains("mask")))
+       throw std::invalid_argument(
+           "img2img/inpaint not supported with this controlnet model "

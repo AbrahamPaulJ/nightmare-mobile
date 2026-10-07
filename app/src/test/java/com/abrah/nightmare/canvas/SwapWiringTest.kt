@@ -174,6 +174,37 @@ class SwapWiringTest {
         assertEquals(IpAdapter.FACE, face.byId["generate"]!!.params[SdSampler.IP_ADAPTER])
     }
 
+    /**
+     * ⭐ The mirror: a `control` / `reference` wire REMOVED on the canvas — or the picture
+     * node deleted — switches that tool to none (the user, 2026-10-07).
+     */
+    @Test
+    fun aWireRemovedOnTheCanvasSwitchesTheToolOff() {
+        val on = state(i2i = true).workflow.graph
+            .withParam("generate", SdSampler.CONTROLNET, SwapInputs.DEPTH)
+            .withParam("generate", SdSampler.IP_ADAPTER, IpAdapter.FACE)
+            .connected("generate", SdSampler.CONTROL, "image").connected("generate", "reference", "image")
+        val cn = on.disconnected("generate", SdSampler.CONTROL).switchingOffFor("generate", SdSampler.CONTROL)
+        assertEquals(SwapInputs.NONE, cn.byId["generate"]!!.params[SdSampler.CONTROLNET])
+        assertEquals("the other tool keeps its choice", IpAdapter.FACE, cn.byId["generate"]!!.params[SdSampler.IP_ADAPTER])
+        val ip = on.disconnected("generate", "reference").switchingOffFor("generate", "reference")
+        assertEquals(IpAdapter.NONE, ip.byId["generate"]!!.params[SdSampler.IP_ADAPTER])
+        // ⭐ Deleting the picture node (it fed both) switches both off.
+        val s = CanvasState(Workflow(on, state(i2i = true).workflow.positions)).removeNode("image")
+        val gen = s.workflow.graph.byId["generate"]!!
+        assertEquals(SwapInputs.NONE, gen.params[SdSampler.CONTROLNET])
+        assertEquals(IpAdapter.NONE, gen.params[SdSampler.IP_ADAPTER])
+    }
+
+    /** ⭐ On a Swap node the `reference` dot reads "ipadapter"; elsewhere it stays `reference`. */
+    @Test
+    fun theReferencePortIsCalledIpAdapterOnSwapNodes() {
+        assertEquals("ipadapter", SdSampler.portLabel(SdSampler.SDXL_SWAP.name, "reference"))
+        assertEquals("ipadapter", SdSampler.portLabel(swap, "reference"))
+        assertEquals("reference", SdSampler.portLabel(SdSampler.FLUX2.name, "reference"))
+        assertEquals(SdSampler.CONTROL, SdSampler.portLabel(swap, SdSampler.CONTROL))
+    }
+
     /** ⚠ Not a Swap node: nothing happens. */
     @Test
     fun otherSamplersAreLeftAlone() {

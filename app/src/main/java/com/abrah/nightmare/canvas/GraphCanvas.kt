@@ -210,6 +210,7 @@ fun GraphCanvas(
 
 ) {
     val measurer = rememberTextMeasurer()
+    val context = androidx.compose.ui.platform.LocalContext.current
     Box(modifier.background(CanvasColors.background)) {
         Canvas(Modifier.fillMaxSize()) {
             // ⚠ Geometry in device pixels, fonts in sp. See Viewport.forDevice.
@@ -260,7 +261,7 @@ fun GraphCanvas(
             // exactly how a "pop out" stops reading as one.
             for (box in boxes.sortedBy { if (it.id in selected) 1 else 0 }) {
                 drawNode(box, vp, viewport.scale, measurer, box.id in selected,
-                    status[box.id], imageFor, clipFrameFor, types)
+                    status[box.id], imageFor, clipFrameFor, types, context)
             }
 
             // ⭐⭐ The picked wire's controls, LAST, so they sit over every node
@@ -366,7 +367,8 @@ private fun DrawScope.drawNode(
     imageFor: (String) -> ImageBitmap?,
     clipFrameFor: (String) -> ImageBitmap? = { null },
     /** ⚠ For [com.abrah.nightmare.nodeNameOf] — a plugin's type is in here and not in `NODE_TYPES`. */
-    types: Map<String, NodeType> = com.abrah.nightmare.NODE_TYPES,
+    types: Map<String, NodeType>,
+    context: android.content.Context,
 ) {
     val tl = viewport.toScreen(box.topLeft)
     val w = box.width * viewport.scale
@@ -603,7 +605,7 @@ private fun DrawScope.drawNode(
             val maxLines = prose.lines.getOrElse(i) { prose.maxLines }
             val cap = measurer.measure(
                 // ⚠ The inspector's label for the same field (`knobLabel`).
-                field.knobLabel,
+                field.knobLabel(context),
                 TextStyle(
                     color = CanvasColors.label,
                     fontSize = (9f * textZoom).sp,
@@ -695,7 +697,8 @@ private fun DrawScope.drawNode(
     val portRoom = Sizes.PORT_SPACING * viewport.scale
     box.inputs.forEachIndexed { i, port ->
         drawPort(viewport.toScreen(box.inputPort(i)), port.type, viewport.scale)
-        drawPortLabel(measurer, viewport.toScreen(box.inputPort(i)), port.name,
+        drawPortLabel(measurer, viewport.toScreen(box.inputPort(i)),
+            com.abrah.nightmare.SdSampler.portLabel(box.node.type, port.name),
             viewport.scale, textZoom, true, w, portRoom)
     }
     box.outputs.forEachIndexed { i, port ->

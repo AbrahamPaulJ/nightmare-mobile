@@ -27,10 +27,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.abrah.nightmare.NodeType
+import com.abrah.nightmare.R
 import com.abrah.nightmare.ui.NoteTextStyle
 import com.abrah.nightmare.ui.SwipeTabs
 
@@ -89,7 +91,7 @@ fun NodePaletteContent(
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Add a node", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+        Text(stringResource(R.string.palette_add_node), fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
         val tabs = paletteTabs(types)
         // ⭐ The same pills as the Models and Flows sub-tabs ([SwipeTabs]).
         SwipeTabs(
@@ -174,11 +176,50 @@ private val FAMILY_ORDER = com.abrah.nightmare.Family.entries.map { it.label }
  */
 private val CHIP_CENTRE = 6.dp
 
+@Composable
 private fun tabTitle(tab: String): String = when (tab) {
-    "common" -> "Common"
-    "generate" -> "Generate"
-    "inpaint" -> "Inpaint"
+    "common" -> stringResource(R.string.palette_tab_common)
+    "generate" -> stringResource(R.string.palette_tab_generate)
+    "inpaint" -> stringResource(R.string.palette_tab_inpaint)
     else -> tab.replaceFirstChar { it.uppercase() }
+}
+
+@Composable
+private fun paletteName(type: NodeType): String {
+    val id = when (type.paletteName) {
+        "Image" -> R.string.palette_node_image
+        "Inpaint" -> R.string.palette_node_inpaint
+        "Video" -> R.string.palette_node_video
+        "Segment model" -> R.string.palette_node_segment_model
+        "prompt" -> R.string.palette_node_prompt
+        "output" -> R.string.palette_node_output
+        "image" -> R.string.palette_node_image
+        "sample_legacy" -> R.string.palette_node_sample_legacy
+        "vae_decode" -> R.string.palette_node_vae_decode
+        "clip_encode" -> R.string.palette_node_clip_encode
+        "vae_encode" -> R.string.palette_node_vae_encode
+        "mask" -> R.string.palette_node_mask
+        "mask_crop" -> R.string.palette_node_mask_crop
+        "paste" -> R.string.palette_node_paste
+        "latent_blend" -> R.string.palette_node_latent_blend
+        "upscale" -> R.string.palette_node_upscale
+        "first_frame" -> R.string.palette_node_first_frame
+        else -> null
+    }
+    return id?.let { stringResource(it) }
+        ?: type.paletteName.replaceFirstChar { it.uppercase() }
+}
+
+@Composable
+private fun paletteAbout(type: NodeType): String {
+    val id = when (type.about) {
+        "paint an area of a photo and re-imagine only that" -> R.string.palette_about_inpaint
+        "a prompt, or a prompt and a photo, into a picture" -> R.string.palette_about_image
+        "a prompt, or a prompt and a photo, into a 2 second clip" -> R.string.palette_about_video
+        "wire into Inpaint, then tap objects in its mask editor to select them" -> R.string.palette_about_segment_model
+        else -> null
+    }
+    return id?.let { stringResource(it) } ?: type.about
 }
 
 // ⚠ For the wrapping chip row below — the same opt-in `RunLog`'s seed chips use.
@@ -186,6 +227,8 @@ private fun tabTitle(tab: String): String = when (tab) {
 @Composable
 private fun PaletteCard(card: List<NodeType>, onPick: (NodeType) -> Unit, modifier: Modifier) {
     val first = card.first()
+    val shownName = paletteName(first)
+    val shownAbout = paletteAbout(first)
     // ⭐ Tapping the card itself adds the SELECTED model's family when this card
     // offers it — the node a person most likely wants — else the first chip.
     val preferred = card.firstOrNull { it.paletteVariant == com.abrah.nightmare.SelectedModel.spec.family.label }
@@ -215,7 +258,7 @@ private fun PaletteCard(card: List<NodeType>, onPick: (NodeType) -> Unit, modifi
                     .background(CanvasColors.forCategory(first.category))
             )
             Text(
-                first.paletteName.replaceFirstChar { it.uppercase() },
+                shownName,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 softWrap = false,
@@ -250,7 +293,7 @@ private fun PaletteCard(card: List<NodeType>, onPick: (NodeType) -> Unit, modifi
                             color = MaterialTheme.colorScheme.secondaryContainer,
                         ) {
                             Text(
-                                variant.paletteVariant ?: variant.paletteName,
+                                variant.paletteVariant ?: paletteName(variant),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 maxLines = 1,
@@ -262,9 +305,9 @@ private fun PaletteCard(card: List<NodeType>, onPick: (NodeType) -> Unit, modifi
                 }
             }
         }
-        if (first.about.isNotBlank()) {
+        if (shownAbout.isNotBlank()) {
             Text(
-                first.about,
+                shownAbout,
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,

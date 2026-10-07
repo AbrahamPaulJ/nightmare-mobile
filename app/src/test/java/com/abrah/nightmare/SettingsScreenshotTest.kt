@@ -45,6 +45,8 @@ open class SettingsScreenshotTest {
                     modelsPlace = if (downloadFolder) ModelStorage.Place.DOWNLOAD else ModelStorage.Place.APP,
                     storageAccess = !downloadFolder,
                     strandedModels = if (downloadFolder) 3 to (12L shl 30) else 0 to 0L,
+                    // ⭐ The CivitAI section (LoRA browser key + mature switch), no key yet.
+                    civitaiKey = "",
                 )
                 }
             }

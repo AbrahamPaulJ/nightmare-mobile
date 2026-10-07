@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import com.abrah.nightmare.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -287,6 +288,12 @@ fun CanvasScreen(
     onPickMask: ((node: String, target: String, done: (String?) -> Unit) -> Unit)? = null,
     /** ⭐⭐ Translate a prompt into English — [NodeInspectorBody]'s `onTranslate`. */
     onTranslate: ((node: String, param: String, done: (String) -> Unit) -> Unit)? = null,
+    /**
+     * ⭐⭐ Describe a picture into words for the prompt (`docs/FLORENCE.md`) —
+     * `HarnessViewModel.describePicture`: a canvas image id or a photo URI and a
+     * [com.abrah.nightmare.DescribeMode]; [done] gets the text or null. ⚠ Null draws no button.
+     */
+    onDescribe: ((picture: String, mode: com.abrah.nightmare.DescribeMode, done: (String?) -> Unit) -> Unit)? = null,
     parserInstalled: Boolean = true,
     parserRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallParser: (() -> Unit)? = null,
@@ -305,6 +312,10 @@ fun CanvasScreen(
     onDeleteControlNet: ((String) -> Unit)? = null,
     /** ⭐⭐ Import a `.safetensors` adapter from inside a node's LoRA picker. */
     onImportLora: (() -> Unit)? = null,
+    /** ⭐⭐ Get LoRAs — opens the browser on the node's family (`docs/LORA-BROWSER.md`); null hides it. */
+    onBrowseLoras: ((com.abrah.nightmare.LoraSources.Target) -> Unit)? = null,
+    /** ⭐ Delete a LoRA file from a node's picker (`HarnessViewModel.deleteLora`); null hides it. */
+    onDeleteLora: ((String) -> Unit)? = null,
     /** ⚠⚠ `HarnessViewModel.loraEpoch` — what re-reads `_loras` after an Add. */
     loraEpoch: Int = 0,
     /**
@@ -466,7 +477,7 @@ fun CanvasScreen(
                 IconButton(onClick = { saving = true }, modifier = Modifier.size(36.dp)) {
                     Icon(
                         com.abrah.nightmare.ui.SaveIcon,
-                        contentDescription = "save this flow",
+                        contentDescription = stringResource(R.string.canvas_cd_save_flow),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -605,6 +616,7 @@ fun CanvasScreen(
         onCancelSegmenter = onCancelSegmenter,
         onPickMask = onPickMask,
         onTranslate = onTranslate,
+        onDescribe = onDescribe,
         parserInstalled = parserInstalled,
         parserRow = parserRow,
         onInstallParser = onInstallParser,
@@ -624,6 +636,8 @@ fun CanvasScreen(
         onCancelRun = onCancelRun,
         onInspectNode = onInspectNode,
         onImportLora = onImportLora,
+        onBrowseLoras = onBrowseLoras,
+        onDeleteLora = onDeleteLora,
         loraEpoch = loraEpoch,
         status = status,
         onClearImage = onClearImage,
@@ -1582,7 +1596,7 @@ private fun SelectionBar(
                 onClick = onSelectAll,
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-            ) { Text("All", fontSize = 12.sp) }
+            ) { Text(stringResource(R.string.all), fontSize = 12.sp) }
         }
         // ⭐⭐ Clone — asked for 2026-09-22. ⚠ BEFORE the bin, because the row
         // is ordered by consequence and the destructive one comes last here
@@ -1591,7 +1605,7 @@ private fun SelectionBar(
         IconButton(onClick = onClone, enabled = count > 0) {
             Icon(
                 com.abrah.nightmare.ui.CloneIcon,
-                contentDescription = "duplicate the selected nodes",
+                contentDescription = stringResource(R.string.canvas_cd_duplicate_selected),
                 tint = if (count > 0) MaterialTheme.colorScheme.onSurfaceVariant
                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
             )
@@ -1602,7 +1616,7 @@ private fun SelectionBar(
         IconButton(onClick = onDelete, enabled = count > 0) {
             Icon(
                 Icons.Filled.Delete,
-                contentDescription = "delete the selected nodes",
+                contentDescription = stringResource(R.string.canvas_cd_delete_selected),
                 tint = if (count > 0) {
                     MaterialTheme.colorScheme.error
                 } else {
@@ -1611,7 +1625,7 @@ private fun SelectionBar(
             )
         }
         IconButton(onClick = onDone) {
-            Icon(Icons.Filled.Close, contentDescription = "clear the selection")
+            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.canvas_cd_clear_selection))
         }
     }
 }
@@ -1800,7 +1814,7 @@ private fun FullscreenImage(
             ) { page ->
                 Image(
                     bitmap = pages[page],
-                    contentDescription = "the picture, full screen",
+                    contentDescription = stringResource(R.string.canvas_cd_picture_fullscreen),
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
@@ -1816,7 +1830,7 @@ private fun FullscreenImage(
         } else {
         Image(
             bitmap = image,
-            contentDescription = "the picture, full screen",
+            contentDescription = stringResource(R.string.canvas_cd_picture_fullscreen),
             // ⚠ Fit, never Crop: this is the one place the whole image must be
             // visible, and cropping here would hide the edges of what was made.
             contentScale = ContentScale.Fit,
@@ -2084,10 +2098,10 @@ internal fun Modifier.viewerPicture(
 @Composable
 internal fun ConfirmDeleteNodes(ids: List<String>, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     com.abrah.nightmare.ui.ConfirmDelete(
-        title = if (ids.size == 1) "Delete \"${ids[0]}\"?" else "Delete ${ids.size} nodes?",
-        body = (if (ids.size == 1) "" else ids.joinToString(", ") + "\n\n") +
-            "Every wire into or out of " + (if (ids.size == 1) "it" else "them") +
-            " goes too, and this cannot be undone.",
+        title = if (ids.size == 1) stringResource(R.string.canvas_delete_node_title, ids[0])
+        else pluralStringResource(R.plurals.canvas_delete_nodes_title, ids.size, ids.size),
+        body = if (ids.size == 1) stringResource(R.string.canvas_delete_node_body)
+        else stringResource(R.string.canvas_delete_nodes_body, ids.joinToString(", ")),
         onConfirm = onConfirm,
         onDismiss = onDismiss,
     )
@@ -2129,46 +2143,54 @@ private fun ModelSwapDialog(
     var takeRecipe by remember(swap) { mutableStateOf(swap.takeRecipeDefault) }
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("Switch to ${swap.spec.label}") },
+        title = { Text(stringResource(R.string.canvas_switch_title, swap.spec.label)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 swap.fromFamily?.let { from ->
                     Text(
-                        "${swap.spec.label} is ${swap.spec.family.label}, not ${from.label}. " +
-                            "The sampler changes family — every wire is kept — and it " +
-                            "renders at ${swap.spec.native}.",
+                        stringResource(
+                            R.string.canvas_switch_family,
+                            swap.spec.label,
+                            swap.spec.family.label,
+                            from.label,
+                            swap.spec.native,
+                        ),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 swap.promptNode?.let { id ->
                     SwapChoice(
-                        heading = "Prompt on “$id”",
+                        heading = stringResource(R.string.canvas_switch_prompt_on, id),
                         takeTheirs = takePrompt,
                         onChange = { takePrompt = it },
-                        theirs = "Use ${swap.spec.label}’s prompts (recommended)",
+                        theirs = stringResource(R.string.canvas_switch_use_prompts, swap.spec.label),
                         // ⚠ Both fields, because the negative is half of a
                         // checkpoint's style and is the one nobody re-reads.
-                        detail = swap.prompt + "\n— " + swap.negative.ifBlank { "no negative" },
-                        mine = "Keep the prompt I have",
+                        detail = stringResource(
+                            R.string.canvas_switch_prompt_detail,
+                            swap.prompt,
+                            swap.negative.ifBlank { stringResource(R.string.canvas_switch_no_negative) },
+                        ),
+                        mine = stringResource(R.string.canvas_switch_keep_prompt),
                     )
                 }
                 swap.recipe?.let { r ->
                     SwapChoice(
-                        heading = "Sampling settings",
+                        heading = stringResource(R.string.canvas_switch_sampling_settings),
                         takeTheirs = takeRecipe,
                         onChange = { takeRecipe = it },
-                        theirs = "Use ${swap.spec.label}’s settings (recommended)",
+                        theirs = stringResource(R.string.canvas_switch_use_settings, swap.spec.label),
                         detail = r,
-                        mine = "Keep my steps, CFG and scheduler",
+                        mine = stringResource(R.string.canvas_switch_keep_settings),
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(swap, takeRecipe, takePrompt) }) { Text("Switch") }
+            TextButton(onClick = { onConfirm(swap, takeRecipe, takePrompt) }) { Text(stringResource(R.string.canvas_switch)) }
         },
-        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

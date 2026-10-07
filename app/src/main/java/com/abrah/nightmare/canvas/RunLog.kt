@@ -207,6 +207,7 @@ fun RunLogPanel(
     // property of the canvas rather than of the last run, and the panel is the
     // only thing above Run that persists between them.
     if (state.idle && seeds.isEmpty() && armed.isEmpty() && batch == null) return
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // ⚠⚠ A ticking clock, not a value pushed from the view model. The elapsed
     // time has to advance while NOTHING is happening -- an SDXL sampler emits
@@ -267,10 +268,10 @@ fun RunLogPanel(
                     // success. Reported from the phone twice. ⇒ An edit that
                     // cannot find its anchor must FAIL, not carry on.
                     when {
-                        seedSweep != null -> "Batching " + seedSweep + " seeds"
-                        st.value != null -> "seed locked: ${st.value}"
-                        else -> "seed: random"
-                    }.let { t -> st.label?.let { "$it · $t" } ?: t },
+                        seedSweep != null -> pluralStringResource(R.plurals.log_batching_seeds, seedSweep, seedSweep)
+                        st.value != null -> stringResource(R.string.log_seed_locked, st.value)
+                        else -> stringResource(R.string.log_seed_random)
+                    }.let { t -> st.label?.let { stringResource(R.string.log_labeled_status, it, t) } ?: t },
                     style = MeasureTextStyle,
                     color = if (st.value != null) {
                         MaterialTheme.colorScheme.primary
@@ -291,7 +292,7 @@ fun RunLogPanel(
                     }, modifier = Modifier.size(28.dp)) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = "release the seed sweep",
+                            contentDescription = stringResource(R.string.log_cd_release_seed_sweep),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(15.dp),
                         )
@@ -309,9 +310,9 @@ fun RunLogPanel(
                         if (st.value != null) Icons.Filled.Lock
                         else com.abrah.nightmare.ui.LockOpenIcon,
                         contentDescription = if (st.value != null) {
-                            "release the seed, so every Run makes a new picture"
+                            stringResource(R.string.cd_unlock_seed)
                         } else {
-                            "lock the last seed, so every Run makes the same picture"
+                            stringResource(R.string.cd_lock_seed)
                         },
                         tint = if (st.value != null) {
                             MaterialTheme.colorScheme.primary
@@ -360,8 +361,14 @@ fun RunLogPanel(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "Batching " + a.count + " " + a.param.knobWord +
-                                (if (a.values.isEmpty()) "" else ": " + a.values.joinToString(", ")),
+                            if (a.values.isEmpty()) {
+                                stringResource(R.string.log_batching_knob, a.count, a.param.knobWord(context))
+                            } else {
+                                stringResource(
+                                    R.string.log_batching_knob_values,
+                                    a.count, a.param.knobWord(context), a.values.joinToString(", "),
+                                )
+                            },
                             style = MeasureTextStyle,
                             color = MaterialTheme.colorScheme.primary,
                             // ⚠ THE fix: the label may take every line it needs
@@ -374,7 +381,10 @@ fun RunLogPanel(
                         ) {
                             Icon(
                                 Icons.Filled.Close,
-                                contentDescription = "release the " + a.param.knobWord + " batch",
+                                contentDescription = stringResource(
+                                    R.string.log_cd_release_knob_batch,
+                                    a.param.knobWord(context),
+                                ),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(14.dp),
                             )
@@ -384,7 +394,7 @@ fun RunLogPanel(
                 // ⚠ The product, only when there is one to state.
                 if (armed.size > 1) {
                     Text(
-                        "= " + armed.fold(1) { n, a -> n * a.count } + " runs",
+                        stringResource(R.string.log_total_runs, armed.fold(1) { n, a -> n * a.count }),
                         style = MeasureTextStyle,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -458,7 +468,7 @@ fun RunLogPanel(
                     state.running && state.totalMs == null -> stringResource(R.string.run_starting)
                     // ⚠ Named as finished rather than left showing the last
                     // node, or a completed run reads as one still in progress.
-                    else -> "done"
+                    else -> stringResource(R.string.log_done)
                 },
                 style = MeasureTextStyle,
                 fontSize = 12.sp,
@@ -495,7 +505,7 @@ fun RunLogPanel(
                     ) {
                         Icon(
                             com.abrah.nightmare.ui.CopyIcon,
-                            contentDescription = "copy the run log",
+                            contentDescription = stringResource(R.string.cd_copy_log),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp),
                         )
@@ -512,7 +522,7 @@ fun RunLogPanel(
                 ) {
                     Icon(
                         Icons.Filled.Close,
-                        contentDescription = "hide the run log",
+                        contentDescription = stringResource(R.string.cd_hide_log),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp),
                     )

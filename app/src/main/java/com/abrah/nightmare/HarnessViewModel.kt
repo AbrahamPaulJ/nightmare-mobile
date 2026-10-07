@@ -60,6 +60,8 @@ data class ResultTags(val models: Set<String>, val text: String)
 class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     private val clock = SimpleDateFormat("HH:mm:ss", Locale.US)
+    private fun text(@androidx.annotation.StringRes id: Int, vararg args: Any): String =
+        getApplication<Application>().getString(id, *args)
 
     val log = mutableStateListOf<LogLine>()
     var backend by mutableStateOf(BackendState.UNKNOWN)
@@ -516,7 +518,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val dir = java.io.File(getApplication<Application>().filesDir, "sent").apply { mkdirs() }
             val file = java.io.File(dir, "sent_${System.currentTimeMillis()}.png")
             if (!runCatching { write(file) }.getOrDefault(false)) {
-                withContext(kotlinx.coroutines.Dispatchers.Main) { toast("That picture could not be read") }
+                withContext(kotlinx.coroutines.Dispatchers.Main) { toast(text(R.string.run_picture_unreadable)) }
                 return@launch
             }
             fun takesPicture(g: Graph) = g.nodes.any { it.type == "core.image" }
@@ -1024,7 +1026,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // 8.6 GB DOWNLOAD lit the "Importing …" banner. Reported from the
         // phone, 2026-09-13: *"why does it say importing when i download"*.
         // ⇒ Name the thing that is not an import, rather than inferring it.
-        ?.takeIf { it != VIDEO_INSTALL_ID && ModelCatalog.byId(it) == null }
+        // ⚠ …and a LoRA from the browser is a download too, for the same reason.
+        ?.takeIf { it != VIDEO_INSTALL_ID && !it.startsWith(LORA_INSTALL_PREFIX) && ModelCatalog.byId(it) == null }
 
     /** The phase/bytes of [importing], or null. */
     val importProgress: ModelInstaller.Progress? get() = if (importing != null) installProgress else null
@@ -1056,6 +1059,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             id == PARSER_INSTALL_ID -> parserRow = parserRow?.copy(progress = p)
             id == POSE_INSTALL_ID -> poseRow = poseRow?.copy(progress = p)
             id == DEPTH_INSTALL_ID -> depthRow = depthRow?.copy(progress = p)
+            describeRows.keys.any { it.installId == id } ->
+                describeRows = describeRows.mapValues { (m, row) -> if (m.installId == id) row.copy(progress = p) else row }
+            id.startsWith(LORA_INSTALL_PREFIX) -> loraFetch = id.removePrefix(LORA_INSTALL_PREFIX) to p
             id.startsWith(CN_INSTALL_PREFIX) -> id.removePrefix(CN_INSTALL_PREFIX).let { t ->
                 cnRows = cnRows.mapValues { (k, row) -> if (k == t) row.copy(progress = p) else row }
             }
@@ -1131,7 +1137,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         VIDEO_INSTALL_ID -> "Video models"
         MOVE_ID -> "Moving models"
         SEGMENTER_INSTALL_ID -> com.abrah.nightmare.segment.Segmenter.LABEL
-        else -> ModelCatalog.byId(id)?.label ?: UpscalerCatalog.byId(id)?.label ?: id
+        else -> loraLabels[id] ?: ModelCatalog.byId(id)?.label ?: UpscalerCatalog.byId(id)?.label ?: id
     }
 
     /**
@@ -1142,12 +1148,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun downloadSucceeded(label: String) {
         DownloadNotice.done(getApplication(), label, ok = true)
-        toast("$label downloaded")
+        toast(text(R.string.model_downloaded_named, label))
     }
 
     private fun downloadFailed(label: String, why: String) {
         DownloadNotice.done(getApplication(), label, ok = false, detail = why)
-        toast("$label failed — $why")
+        toast(text(R.string.model_download_failed, label, why))
     }
 
     /** ⚠ Stopped by the user: no outcome to report, so the row simply goes. */
@@ -1221,6 +1227,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         lap("pose")
         refreshDepth()
         lap("depth")
+        refreshDescribe()
+        lap("describe")
         refreshControlNets()
         lap("controlnets")
         refreshTranslation()
@@ -1371,8 +1379,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         downloadSucceeded(spec.label)
                         selectModel(spec)
                     } else {
-                        modelError = "${spec.label} imported but is incomplete: " +
-                            "missing ${missing.joinToString()}"
+                        modelError = text(R.string.models_import_incomplete, spec.label, missing.joinToString())
                         downloadFailed(spec.label, modelError!!)
                     }
                     refreshModels()
@@ -1389,7 +1396,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     installing = null
                     installProgress = null
                     ErrorReport.record(e)
-                    modelError = "import failed: ${e.message}"
+                    modelError = text(R.string.models_import_failed, e.message.toString())
                     downloadFailed(downloadLabel(name), modelError!!)
                     refreshModels()
                 }
@@ -1433,8 +1440,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         downloadSucceeded(spec.label)
                         selectModel(spec)
                     } else {
-                        modelError = "${spec.label} imported but is incomplete: " +
-                            "missing ${missing.joinToString()}"
+                        modelError = text(R.string.models_import_incomplete, spec.label, missing.joinToString())
                         downloadFailed(spec.label, modelError!!)
                     }
                     refreshModels()
@@ -1451,7 +1457,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     installing = null
                     installProgress = null
                     ErrorReport.record(e)
-                    modelError = "import failed: ${e.message}"
+                    modelError = text(R.string.models_import_failed, e.message.toString())
                     downloadFailed(downloadLabel(name), modelError!!)
                     refreshModels()
                 }
@@ -1470,11 +1476,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val build = spec.buildFor(DeviceProbe.caps())
         if (build == null) {
             modelError = if (spec.ramNeeded(DeviceProbe.caps()) > 0)
-                "${spec.label} needs a phone with 16 GB of RAM; this one has " +
-                    "${DeviceProbe.caps().ramBytes shr 30} GB"
-            else "${spec.label} needs an HTP arch of " +
-                "${spec.builds.minOf { it.minArch }} or newer; this device reports " +
-                "${DeviceProbe.caps().arch}"
+                text(R.string.models_needs_ram, spec.label, DeviceProbe.caps().ramBytes shr 30)
+            else text(
+                R.string.models_needs_arch,
+                spec.label, spec.builds.minOf { it.minArch }, DeviceProbe.caps().arch,
+            )
             installing = null
             return
         }
@@ -1774,13 +1780,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // was a button that did nothing (reported 2026-09-27).
         val spec = UpscalerCatalog.byId(upscalerId)
         if (spec == null) {
-            toast("upscale failed — no upscaler named $upscalerId")
+            toast(text(R.string.upscale_no_upscaler, upscalerId))
             return
         }
         val file = results.imageFile(id)
         if (!file.isFile) {
             say("that picture's file is gone", bad = true)
-            toast("upscale failed — that picture's file is gone")
+            toast(text(R.string.upscale_picture_gone))
             return
         }
         // ⚠⚠ The PATH, not a `file://` URI — [MediaOutputNode.upscaleGraph].
@@ -1788,11 +1794,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val wf = com.abrah.nightmare.canvas.Workflow(g, emptyMap())
         val refused = run("upscale") {
             upscalingResult = spec.label
-            toast("Upscaling with ${spec.label}…")
+            toast(text(R.string.upscale_with, spec.label))
             try {
                 if (!ops.ensureBackendFor(g, nodeTypes)) {
                     say("upscale: no backend", bad = true)
-                    toast("could not start the backend to upscale")
+                    toast(text(R.string.upscale_backend_failed))
                     return@run
                 }
                 // ⚠⚠ The output node PASSES THROUGH a picture it will not
@@ -1808,16 +1814,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     // ⚠ Logged AND toasted: a toast alone left nothing to read
                     // when this failed on the phone (2026-09-17).
                     say("upscale failed — $why", bad = true)
-                    toast("upscale failed — $why")
+                    toast(text(R.string.upscale_failed, why))
                     return@run
                 }
                 keepResult(img.id, flow = wf)
-                toast("Upscaled — kept as a new result")
+                toast(text(R.string.upscale_kept))
             } finally {
                 upscalingResult = null
             }
         }
-        refused?.let { toast("Not upscaled: $it") }
+        refused?.let { toast(text(R.string.upscale_not_done, it)) }
     }
 
     /**
@@ -1844,9 +1850,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val shown = canvas.rendered[nodeId] ?: canvas.previews[nodeId]?.first
         val bmp = shown?.let { imageFor(it) }
         val no = when {
-            working -> "something is already running — try again when it finishes"
+            working -> text(R.string.run_already_running)
             bmp != null -> com.abrah.nightmare.ui.upscaleRefusal(
-                bmp.width, bmp.height, isClip = clipForImage(shown) != null, busyWith = upscalingResult,
+                getApplication(), bmp.width, bmp.height,
+                isClip = clipForImage(shown) != null, busyWith = upscalingResult,
             )
             else -> null
         }
@@ -1880,7 +1887,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         upscaleNodePick = null
         val node = canvas.workflow.graph.byId[nodeId] ?: return
         if (node.type != MediaOutputNode.name) {
-            toast("Upscaling is a checkbox on the output node")
+            toast(text(R.string.upscale_output_checkbox))
             return
         }
         // ⭐⭐⭐ **It TICKS the checkbox; it does not add a node.**
@@ -2015,6 +2022,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             override val label get() = source.name
             override val installId get() = source.installId
         }
+
+        /** ⭐ One of the prompt's describe models (`docs/FLORENCE.md`) — asked at the first tap, like [Translate]. */
+        data class Describe(val model: com.abrah.nightmare.DescribeModel) : MissingModel {
+            override val label get() = model.label
+            override val installId get() = model.installId
+        }
     }
 
     var missingModel by mutableStateOf<MissingModel?>(null)
@@ -2031,6 +2044,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         is MissingModel.Upscale -> m.spec.buildFor(DeviceProbe.caps())?.bytes ?: 0L
         MissingModel.Engine -> com.abrah.nightmare.DitEngine.BYTES
         is MissingModel.Translate -> m.source.bytes
+        is MissingModel.Describe -> m.model.bytes
     }
 
     /**
@@ -2058,6 +2072,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             is MissingModel.Upscale -> upscalerRows.any { it.spec.id == m.spec.id && it.installed }
             MissingModel.Engine -> com.abrah.nightmare.DitEngine.installed
             is MissingModel.Translate -> translateRows[m.source]?.installed == true
+            is MissingModel.Describe -> describeRows[m.model]?.installed == true
         }
 
     /**
@@ -2089,8 +2104,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // ⚠⚠ A model half-way through a folder move is ON the phone: never
             // offer to download it again (the user's call, 2026-09-27).
             if (ModelStorage.strandedModel(ctx, id)) {
-                runError = "${spec?.label ?: id} is partly still in the other models folder — " +
-                    "finish the move in Settings → Downloads"
+                runError = text(R.string.models_finish_move, spec?.label ?: id)
                 return false
             }
             val offer = spec?.takeIf { !it.isCustom && it.buildFor(caps) != null }
@@ -2160,10 +2174,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             is MissingModel.Upscale -> installUpscaler(m.spec)
             MissingModel.Engine -> installDitEngine()
             is MissingModel.Translate -> installTranslation(m.source)
+            is MissingModel.Describe -> installDescribe(m.model)
         }
     }
 
     fun dismissMissingModel() {
+        // ⚠ A describe waiting on this popup will never run: say so, or the
+        // prompt box's dialog spins on "Describing…" forever. ⚠ Not on Hide —
+        // the download goes on and the describe still happens when it lands.
+        (missingModel as? MissingModel.Describe)?.let { if (installing != it.installId) cancelPendingDescribe() }
         missingModel = null
     }
 
@@ -2450,15 +2469,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshControlNets() {
         val ctx = getApplication<Application>()
+        // ⭐ Keyed by ID ([ControlNetCatalog.idFor]): `canny` is SD 1.5's, `sdxl_canny` SDXL's.
         cnRows = ControlNetCatalog.ENTRIES.mapNotNull { e ->
-            val b = ControlNetCatalog.buildFor(e.type) ?: return@mapNotNull null
-            val ok = ControlNetCatalog.isInstalled(ctx, e.type)
-            e.type to com.abrah.nightmare.ui.ToolRow(
+            val b = ControlNetCatalog.buildFor(e.id) ?: return@mapNotNull null
+            val ok = ControlNetCatalog.isInstalled(ctx, e.id)
+            e.id to com.abrah.nightmare.ui.ToolRow(
                 label = e.label,
                 bytes = b.bytes,
                 installed = ok,
-                onDisk = if (ok) ControlNetCatalog.bytesOnDisk(ctx, e.type) else 0L,
-                progress = if (installing == CN_INSTALL_PREFIX + e.type) installProgress else null,
+                onDisk = if (ok) ControlNetCatalog.bytesOnDisk(ctx, e.id) else 0L,
+                progress = if (installing == CN_INSTALL_PREFIX + e.id) installProgress else null,
             )
         }.toMap() + IpAdapter.ADAPTERS.associate { a ->
             // ⭐ IP-Adapter rides in the same map (keys `ip_<adapter>`): it is a Swap
@@ -2544,6 +2564,137 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         com.abrah.nightmare.pose.DepthEstimator.delete(getApplication())
         say("deleted ${com.abrah.nightmare.pose.DepthEstimator.LABEL}")
         refreshDepth()
+    }
+
+    // ---- the prompt's describe button (docs/FLORENCE.md) -------------------
+
+    /**
+     * ⭐ Models → Tools' rows for the describe models — sentences
+     * ([com.abrah.nightmare.ImageCaption]) and tags ([com.abrah.nightmare.ImageTagger]).
+     * [translateRows]' shape: one map, the same [ToolRow], the one-download latch.
+     */
+    var describeRows by mutableStateOf<Map<com.abrah.nightmare.DescribeModel, com.abrah.nightmare.ui.ToolRow>>(emptyMap())
+        private set
+
+    fun describeLabel(model: com.abrah.nightmare.DescribeModel): String = text(model.labelRes)
+
+    fun refreshDescribe() {
+        val ctx = getApplication<Application>()
+        describeRows = com.abrah.nightmare.DescribeMode.models.associateWith { m ->
+            m.refresh(ctx)
+            com.abrah.nightmare.ui.ToolRow(
+                label = describeLabel(m),
+                bytes = m.bytes,
+                installed = m.installed,
+                onDisk = if (m.installed) m.bytesOnDisk(ctx) else 0L,
+                progress = if (installing == m.installId) installProgress else null,
+            )
+        }
+    }
+
+    /**
+     * ⭐ The describe a tap asked for while its model was missing — (run, cancel).
+     * Run the moment the download lands, so the user does not tap twice
+     * ([pendingTranslation]'s rule); cancelled when the popup is dismissed.
+     */
+    private var pendingDescribe: Pair<() -> Unit, () -> Unit>? = null
+
+    fun installDescribe(model: com.abrah.nightmare.DescribeModel) {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        installing = model.installId
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, model.bytes)
+        refreshDescribe()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                model.install(
+                    ctx,
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch {
+                    val label = describeLabel(model)
+                    say(text(R.string.models_installed_named, label))
+                    downloadSucceeded(label)
+                    installing = null
+                    installProgress = null
+                    refreshDescribe()
+                    pendingDescribe?.let { (go, _) ->
+                        pendingDescribe = null
+                        if (missingModel is MissingModel.Describe) missingModel = null
+                        go()
+                    }
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch { cancelPendingDescribe(); downloadCancelled(); say("download cancelled", bad = true) }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    cancelPendingDescribe()
+                    ErrorReport.record(e)
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(describeLabel(model), modelError!!)
+                    say("install failed — $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshDescribe()
+                }
+            }
+        }
+    }
+
+    private fun cancelPendingDescribe() {
+        pendingDescribe?.let { (_, cancel) -> pendingDescribe = null; cancel() }
+    }
+
+    fun deleteDescribe(model: com.abrah.nightmare.DescribeModel) {
+        model.delete(getApplication())
+        say(text(R.string.models_deleted_named, describeLabel(model)))
+        refreshDescribe()
+    }
+
+    /**
+     * ⭐⭐ A picture into words or tags, for the prompt box's describe button.
+     * [picture] is a canvas image id or a photo's URI; [done] gets the text, or
+     * null when it did not happen (a failure is toasted). ⚠ Writes NOTHING — the
+     * prompt box decides add vs replace, because only it can ask.
+     *
+     * ⚠ A missing model asks with the SAME popup a missing checkpoint does
+     * ([MissingModel.Describe]) and describes when it lands.
+     */
+    fun describePicture(picture: String, mode: com.abrah.nightmare.DescribeMode, done: (String?) -> Unit) {
+        val ctx = getApplication<Application>()
+        if (!mode.model.isInstalled(ctx)) {
+            pendingDescribe = Pair({ describePicture(picture, mode, done) }, { done(null) })
+            refreshDescribe()
+            missingModel = MissingModel.Describe(mode.model)
+            return
+        }
+        viewModelScope.launch {
+            val out = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    val photo = ops.images.get(picture) ?: com.abrah.nightmare.AddObjects.load(ctx, picture)
+                        ?: throw java.io.IOException(ctx.getString(com.abrah.nightmare.R.string.describe_unreadable))
+                    val text = when (mode) {
+                        com.abrah.nightmare.DescribeMode.TAGS -> com.abrah.nightmare.ImageTagger.tags(ctx, photo)
+                        com.abrah.nightmare.DescribeMode.SHORT ->
+                            com.abrah.nightmare.ImageCaption.caption(ctx, photo, com.abrah.nightmare.ImageCaption.Length.SHORT)
+                        com.abrah.nightmare.DescribeMode.DETAILED ->
+                            com.abrah.nightmare.ImageCaption.caption(ctx, photo, com.abrah.nightmare.ImageCaption.Length.DETAILED)
+                    }
+                    text ?: throw java.io.IOException(mode.model.label)
+                }
+            }
+            out.onSuccess { done(it) }.onFailure { e ->
+                ErrorReport.record(e)
+                toast(ctx.getString(com.abrah.nightmare.R.string.describe_failed, e.message ?: e.javaClass.simpleName))
+                done(null)
+            }
+        }
     }
 
     // ---- prompt translation (docs/TRANSLATE.md) ----------------------------
@@ -2805,7 +2956,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 ops.stopBackend()
                 // ⭐ Held up like a resident model — AFTER the stop, which
                 // stops the keep-alive with the backend.
-                BackendKeepAliveService.start(ctx, "moving models")
+                BackendKeepAliveService.start(ctx, text(R.string.notification_moving_models))
                 ModelStorage.setPendingMove(ctx, from)
                 ModelStorage.setPlace(ctx, plan.to)
                 modelsPlace = plan.to
@@ -2979,9 +3130,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 result.fold(
                     onSuccess = { name ->
                         say("imported LoRA $name")
-                        refreshLoras()
-                        // ⚠⚠ A LoRA is cached by NAME — see [HarnessOps.dropNodeCache].
-                        ops.dropNodeCache()
+                        loraAdded()
                     },
                     onFailure = { e ->
                         modelError = "LoRA import failed: ${e.message}"
@@ -2990,6 +3139,128 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    /**
+     * ⭐ After a LoRA lands in `_loras` — by import or by the browser. ONE
+     * function, so the two ways in cannot drift apart.
+     * ⚠⚠ A LoRA is cached by NAME — see [HarnessOps.dropNodeCache].
+     */
+    private fun loraAdded() {
+        refreshLoras()
+        ops.dropNodeCache()
+    }
+
+    // ---- the LoRA browser (`docs/LORA-BROWSER.md`) ---------------------------
+
+    private val LORA_INSTALL_PREFIX = "lora-"
+
+    /** ⚠ What [downloadLabel] calls a LoRA download — the hit's name, by install id. */
+    private val loraLabels = mutableMapOf<String, String>()
+
+    /**
+     * ⭐ The browser's download in flight: its version id and progress. Driven by
+     * [tickProgress] like every other installer's row; null when none.
+     */
+    var loraFetch by mutableStateOf<Pair<String, ModelInstaller.Progress>?>(null)
+        private set
+
+    /**
+     * ⭐ Why the last browser download failed, by version id. ⚠ The EXCEPTION,
+     * not its message: a [LoraSources.Failure] decides which sentence the browser
+     * says (region / key / early access), and a message cannot be matched safely.
+     */
+    var loraFetchError by mutableStateOf<Pair<String, Throwable>?>(null)
+        private set
+
+    /**
+     * ⭐⭐ Download one LoRA version into `_loras` ([LoraInstall]).
+     *
+     * ⚠⚠ The SAME one-download latch as every installer ([installing]),
+     * [tickProgress], the shade notice and [cancelModelInstall] — a second
+     * download running beside a checkpoint's would split one connection two ways
+     * and leave two progress owners.
+     */
+    fun downloadLora(label: String, version: LoraSources.Version) {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        val id = LORA_INSTALL_PREFIX + version.id
+        loraLabels[id] = label
+        installing = id
+        cancelInstall = false
+        loraFetchError = null
+        val start = ModelInstaller.Progress("starting", 0, version.file?.bytes ?: 0)
+        installProgress = start
+        loraFetch = version.id to start
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val name = LoraInstall.install(
+                    ctx, version, Prefs.civitaiKey.ifBlank { null },
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch {
+                    say("downloaded LoRA $name")
+                    loraAdded()
+                    downloadSucceeded(label)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    // ⚠ A site saying no (region, key, early access) is not a bug to report.
+                    if (e !is LoraSources.Failure) ErrorReport.record(e)
+                    loraFetchError = version.id to e
+                    downloadFailed(label, e.message ?: e.javaClass.simpleName)
+                    say("LoRA download failed — ${e.message}", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    loraFetch = null
+                }
+            }
+        }
+    }
+
+    fun clearLoraFetchError() { loraFetchError = null }
+
+    /** ⭐ The browser, open on this family's LoRAs; null when closed. */
+    var loraBrowser by mutableStateOf<LoraSources.Target?>(null)
+        private set
+
+    fun openLoraBrowser(target: LoraSources.Target) {
+        loraFetchError = null
+        refreshLoras()
+        loraBrowser = target
+    }
+
+    fun closeLoraBrowser() { loraBrowser = null }
+
+    /**
+     * ⭐ STATE copies of [Prefs.civitaiKey] / [Prefs.matureContent] — a screen
+     * reading the plain `Prefs` field never recomposes ([downloadBase]'s note).
+     */
+    var civitaiKey by mutableStateOf(Prefs.civitaiKey)
+        private set
+    var matureContent by mutableStateOf(Prefs.matureContent)
+        private set
+
+    fun chooseCivitaiKey(value: String) {
+        Prefs.setCivitaiKey(getApplication(), value)
+        civitaiKey = Prefs.civitaiKey
+        toast(getApplication<Application>().getString(R.string.lb_key_saved))
+        // ⚠ A refusal that the new key may answer is stale now.
+        if (loraFetchError?.second is LoraSources.Failure) loraFetchError = null
+    }
+
+    fun chooseMatureContent(value: Boolean) {
+        Prefs.setMatureContent(getApplication(), value)
+        matureContent = value
     }
 
     fun importEmbedding(uri: android.net.Uri) {
@@ -3220,7 +3491,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun askUse(spec: ModelSpec) {
         pendingUse = PendingUse(
             spec,
-            title = "Use ${spec.label}",
+            title = text(R.string.models_use_named, spec.label),
             // ⚠⚠ Only the flows this CHECKPOINT can run. `usesCheckpoint`
             // alone offered Inpaint on Z-Image ([Recipe.runsOn]).
             offer = com.abrah.nightmare.canvas.RECIPES.filter { it.runsOn(spec) },
@@ -3232,7 +3503,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun askUseUpscaler(label: String) {
         pendingUse = PendingUse(
             spec = null,
-            title = "Use $label",
+            title = text(R.string.models_use_named, label),
             offer = com.abrah.nightmare.canvas.recipesWithId("upscale"),
             unsavedFlow = unsavedFlow(),
         )
@@ -3242,7 +3513,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun askUseVideo() {
         pendingUse = PendingUse(
             spec = null,
-            title = "Use the video models",
+            title = text(R.string.models_use_video),
             offer = com.abrah.nightmare.canvas.recipesWithId("t2v", "i2v"),
             unsavedFlow = unsavedFlow(),
         )
@@ -4118,7 +4389,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         val node = canvas.workflow.graph.byId[nodeId] ?: return done(null)
         val par = com.abrah.nightmare.segment.Parser
-        val label = par.target(target)?.label ?: target
+        val label = par.target(target)?.let { ctx.getString(it.labelRes) } ?: target
         // ⚠ The chips are the node's `pick_targets` and nothing else
         // ([com.abrah.nightmare.MaskNode.opsOf]) — toggling one edits that list.
         val current = com.abrah.nightmare.MaskNode.pickTargets(node.params)
@@ -4127,9 +4398,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             return done(null)
         }
         val photo = canvas.pictureInto(nodeId, nodeTypes)?.let { ops.images.get(it) }
-            ?: return done("no picture to pick from yet — choose one on the image node")
+            ?: return done(text(R.string.mask_no_picture_to_pick))
         if (!par.isInstalled(ctx)) {
-            return done("download ${par.LABEL} in Models, Tools, to auto segment")
+            return done(text(R.string.mask_download_parser, par.LABEL))
         }
         if (!par.isWarm(photo)) toast(ctx.getString(R.string.parser_loading))
         viewModelScope.launch {
@@ -4137,10 +4408,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching { par.pick(ctx, photo, target) }
             }.getOrElse {
                 say("pick failed — ${it.message}", bad = true)
-                return@launch done("could not pick: ${it.message ?: it.javaClass.simpleName}")
+                return@launch done(text(R.string.mask_pick_failed, it.message ?: it.javaClass.simpleName))
             }
             if (found == null) {
-                return@launch done("no $label in this picture")
+                return@launch done(text(R.string.mask_target_not_found, label))
             }
             rememberPicks(nodeId, com.abrah.nightmare.MaskNode.pickTargets(
                 canvas.workflow.graph.byId[nodeId]?.params.orEmpty(),
@@ -4361,7 +4632,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // ⚠ Toasted too: every OUTCOME of a save is announced the same
             // way, or the one that fails is the one nobody hears about.
             say("that picture is no longer in memory — Run again to remake it", bad = true)
-            toast("That picture is no longer in memory — Run again")
+            toast(text(R.string.run_picture_not_in_memory))
             return
         }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -4379,14 +4650,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 where.fold(
                     onSuccess = {
                         say("saved " + what + " to " + it)
-                        toast(
-                            if (clip != null) "Clip saved to the gallery"
-                            else "Saved to the gallery"
-                        )
+                        toast(text(if (clip != null) R.string.save_clip_gallery else R.string.save_gallery))
                     },
                     onFailure = {
                         say("could not save the " + what + " — ${it.message}", bad = true)
-                        toast("Could not save: " + it.message)
+                        toast(text(R.string.save_failed, it.message.toString()))
                     },
                 )
             }
@@ -4780,8 +5048,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (!spec.installed(ctx)) {
             val missing = spec.missing(ctx)
             toast(
-                if (missing.isEmpty()) "${spec.label} is not installed"
-                else "${spec.label} is incomplete — missing ${missing.joinToString()}"
+                if (missing.isEmpty()) text(R.string.models_named_not_installed, spec.label)
+                else text(R.string.models_named_incomplete, spec.label, missing.joinToString())
             )
             return
         }
@@ -5282,13 +5550,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // there is the whole reason `ResultsStore` copies it ([Result.videoPath]).
         keptClip(id)?.let { clip ->
             runCatching { Share.video(getApplication(), clip, "nightmare-" + id) }
-                .onFailure { toast("Could not share: " + it.message) }
+                .onFailure { toast(text(R.string.share_failed, it.message.toString())) }
             return
         }
         val png = results.fullBytes(id)
-        if (png == null) { toast("That picture is missing"); return }
+        if (png == null) { toast(text(R.string.share_picture_missing)); return }
         runCatching { Share.image(getApplication(), png, "nightmare-" + id) }
-            .onFailure { toast("Could not share: " + it.message) }
+            .onFailure { toast(text(R.string.share_failed, it.message.toString())) }
     }
 
     /** ⚠ See [clipForImage] for why the FILE decides, not a stored flag. */
@@ -5304,27 +5572,27 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun shareResultFlow(id: String) {
         val loaded = results.flow(id)
-        if (loaded == null) { toast("That flow could not be read"); return }
+        if (loaded == null) { toast(text(R.string.share_flow_unreadable)); return }
         runCatching {
             Share.workflow(
                 getApplication(),
                 loaded.workflow.toJson(nodeTypes, loaded.view),
                 resultFlowName(id),
             )
-        }.onFailure { toast("Could not share: " + it.message) }
+        }.onFailure { toast(text(R.string.share_failed, it.message.toString())) }
     }
 
     /** ⭐ Share a SAVED workflow from the Flows tab. */
     fun shareSavedWorkflow(name: String) {
         val loaded = runCatching { store.load(name) }.getOrNull()
-        if (loaded == null) { toast("\"" + name + "\" could not be read"); return }
+        if (loaded == null) { toast(text(R.string.share_named_flow_unreadable, name)); return }
         runCatching {
             Share.workflow(
                 getApplication(),
                 loaded.workflow.toJson(nodeTypes, loaded.view),
                 name,
             )
-        }.onFailure { toast("Could not share: " + it.message) }
+        }.onFailure { toast(text(R.string.share_failed, it.message.toString())) }
     }
 
     /**
@@ -5339,17 +5607,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⭐⭐ The clip, when this node made one — see [clipForImage].
         clipForImage(imageId)?.let { clip ->
             runCatching { Share.video(getApplication(), clip, name) }
-                .onFailure { toast("Could not share: " + it.message) }
+                .onFailure { toast(text(R.string.share_failed, it.message.toString())) }
             return
         }
         // ⚠⚠ The bitmap, for the reason [saveImage] gives.
         val bmp = ops.images.get(imageId)
         if (bmp == null) {
-            toast("That picture is no longer in memory — Run again")
+            toast(text(R.string.run_picture_not_in_memory))
             return
         }
         runCatching { Share.image(getApplication(), bmp, name) }
-            .onFailure { toast("Could not share: " + it.message) }
+            .onFailure { toast(text(R.string.share_failed, it.message.toString())) }
     }
 
     fun saveResultsToGallery(ids: Collection<String>) {
@@ -5389,10 +5657,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         else -> "" + (ok - clips) + " + " + clips +
                             (if (clips == 1) " clip" else " clips")
                     }
-                    toast("Saved " + what + " to the gallery")
+                    toast(text(R.string.save_count_gallery, what))
                     say("saved " + what + " to the gallery")
                 } else {
-                    toast("Could not save: " + (lastError ?: "nothing to save"))
+                    toast(text(R.string.save_failed, lastError ?: text(R.string.save_nothing)))
                     say("could not save — " + lastError, bad = true)
                 }
             }
@@ -5638,7 +5906,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         out += "Mask" to "${m.ops.size - taps} strokes, $taps tapped"
                     }
                 }
-                else -> if (v.isNotBlank()) out += w.name.knobLabel to v
+                else -> if (v.isNotBlank()) out += w.name.knobLabel(getApplication()) to v
             }
         }
         if (width > 0) out += "Output" to "${width}x$height"
@@ -5685,7 +5953,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 com.abrah.nightmare.Share.many(ctx, entries, mime, "Share")
             }
-        }.onFailure { toast("Could not share: " + it.message) }
+        }.onFailure { toast(text(R.string.share_failed, it.message.toString())) }
     }
 
     fun viewResult(r: com.abrah.nightmare.canvas.Result) {
@@ -5933,9 +6201,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyControlHints(graph: com.abrah.nightmare.Graph) {
         val live = mutableSetOf<String>()
         for (n in graph.nodes) {
-            if (n.type != com.abrah.nightmare.SdSampler.SD15_SWAP.name &&
-                n.type != com.abrah.nightmare.SdSampler.SD15_SWAP_INPAINT.name
-            ) continue
+            if (!com.abrah.nightmare.SdSampler.isSwapType(n.type)) continue
             val p = com.abrah.nightmare.applyDefaults(nodeTypes[n.type]?.widgets.orEmpty(), n)
             val cn = p[com.abrah.nightmare.SdSampler.CONTROLNET].orEmpty()
             if (cn.isBlank() || cn == com.abrah.nightmare.SwapInputs.NONE) continue
@@ -6147,10 +6413,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val picks = mask.ops.filterIsInstance<com.abrah.nightmare.MaskOp.Pick>()
         if (picks.any { com.abrah.nightmare.segment.Parser.cachedPick(photo, it.target) != null }) return
+        val ctx = getApplication<Application>()
         val names = picks.mapNotNull {
-            com.abrah.nightmare.segment.Parser.target(it.target)?.label?.lowercase()
+            com.abrah.nightmare.segment.Parser.target(it.target)?.let { target ->
+                ctx.getString(target.labelRes).lowercase()
+            }
         }
-        toast("no ${names.joinToString(" or ")} found in this picture — paint the area to repaint")
+        toast(text(R.string.mask_objects_not_found, names.joinToString(text(R.string.word_or))))
         canvas = canvas.copy(
             editing = nodeId,
             cropRequest = nodeId to ((canvas.cropRequest?.second ?: 0) + 1),
@@ -6631,7 +6900,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val rolled = spec.rollSeeds()
         val combos = rolled.expand()
         if (combos.isEmpty()) {
-            runError = "nothing to sweep — check the values"
+            runError = text(R.string.batch_nothing_to_sweep_values)
             return@run
         }
         if (!modelsPresentOrAsk()) return@run
@@ -6647,9 +6916,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val terminals = terminalImageNodes(canvas.workflow.graph, typesFor(canvas.workflow.graph))
         if (terminals.size != 1) {
             runError = if (terminals.isEmpty()) {
-                "nothing to collect — this graph makes no final picture"
+                text(R.string.batch_nothing_to_collect)
             } else {
-                "two endings (${terminals.joinToString(", ")}) — a sweep needs one"
+                text(R.string.batch_two_endings, terminals.joinToString(", "))
             }
             say("batch: $runError", bad = true)
             return@run

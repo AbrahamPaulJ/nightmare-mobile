@@ -32,6 +32,20 @@ object Backend {
     private const val BASE = "http://127.0.0.1:$PORT"
 
     /**
+     * ⭐⭐ Every connection to the backend — and NEVER through a proxy.
+     *
+     * ⚠⚠⚠ Found 2026-10-07 with a phone-wide HTTP proxy set (`settings put global
+     * http_proxy`, to test the LoRA browser from Australia): `HttpURLConnection`
+     * follows the system proxy even for `127.0.0.1`, because that legacy setting
+     * carries no exclusion list. The proxy then tried to reach "127.0.0.1:8189" on
+     * ITS side, timed out, and a running backend read as "start failed — already
+     * running". Any user behind a system proxy (a work Wi-Fi, a proxy app) would
+     * have hit the same thing. The backend is on this phone; no proxy can reach it.
+     */
+    private fun open(path: String): HttpURLConnection =
+        URL("$BASE$path").openConnection(java.net.Proxy.NO_PROXY) as HttpURLConnection
+
+    /**
      * Milliseconds. Generous: a cold backend takes 4-5 s to answer /health.
      *
      * ⚠⚠ **A PROBE timeout, and only that.** It is the right number for
@@ -126,7 +140,7 @@ object Backend {
     suspend fun postForBytes(path: String, json: String): BinaryResponse =
         withContext(Dispatchers.IO) {
             val started = System.nanoTime()
-            val conn = (URL("$BASE$path").openConnection() as HttpURLConnection).apply {
+            val conn = open(path).apply {
                 requestMethod = "POST"
                 // ⚠ CONNECT stays short -- reaching a local socket is instant or
                 // it is broken. Only the READ waits on a stage load.
@@ -191,7 +205,7 @@ object Backend {
         readTimeoutMs: Int = TIMEOUT_MS,
     ): BinaryResponse = withContext(Dispatchers.IO) {
         val started = System.nanoTime()
-        val conn = (URL("$BASE$path").openConnection() as HttpURLConnection).apply {
+        val conn = open(path).apply {
             requestMethod = "POST"
             connectTimeout = TIMEOUT_MS
             readTimeout = readTimeoutMs
@@ -244,7 +258,7 @@ object Backend {
     ): Response =
         withContext(Dispatchers.IO) {
             val started = System.nanoTime()
-            val conn = (URL("$BASE$path").openConnection() as HttpURLConnection).apply {
+            val conn = open(path).apply {
                 requestMethod = method
                 connectTimeout = TIMEOUT_MS
                 readTimeout = readTimeoutMs
@@ -338,7 +352,7 @@ object Backend {
     ): Response = withContext(Dispatchers.IO) {
         val started = System.nanoTime()
         fun sinceMs() = (System.nanoTime() - started) / 1_000_000
-        val conn = (URL("$BASE$path").openConnection() as HttpURLConnection).apply {
+        val conn = open(path).apply {
             requestMethod = "POST"
             connectTimeout = TIMEOUT_MS
             readTimeout = readTimeoutMs

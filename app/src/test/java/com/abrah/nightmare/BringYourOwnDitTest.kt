@@ -33,11 +33,9 @@ class BringYourOwnDitTest {
 
     /** Every file at its published size — a normal, complete install. */
     private fun writeStock() {
-        for (f in spec.files) File(dir(), f.name).writeBytes(ByteArray(0)).also {
-            // ⚠ Sparse: a 6 GB test file is not on. `setLength` gives the size
-            // `missing()` reads without the bytes.
-            java.io.RandomAccessFile(File(dir(), f.name), "rw").use { raf -> raf.setLength(f.bytes) }
-        }
+        // ⚠ Sparse: a 6 GB test file is not on — `sparseFile` gives the size
+        // `missing()` reads without the bytes, on NTFS too.
+        for (f in spec.files) sparseFile(File(dir(), f.name), f.bytes)
     }
 
     @After

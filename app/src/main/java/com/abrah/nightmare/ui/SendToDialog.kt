@@ -16,8 +16,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.HarnessViewModel
+import com.abrah.nightmare.R
 import com.abrah.nightmare.canvas.Recipe
 
 /**
@@ -44,31 +46,40 @@ fun SendToDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Send to") },
+        title = { Text(stringResource(R.string.send_to_title)) },
         text = {
             Column(
                 Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 if (choices.current.isNotEmpty()) {
-                    Section("This flow")
-                    choices.current.forEach { id -> Choice("“$id”", "replace its picture") { onCurrent(id) } }
+                    Section(stringResource(R.string.send_to_this_flow))
+                    choices.current.forEach { id ->
+                        Choice("“$id”", stringResource(R.string.send_to_replace_picture)) { onCurrent(id) }
+                    }
                 }
                 if (choices.recipes.isNotEmpty()) {
-                    Section("Flows")
-                    choices.recipes.forEach { r -> Choice(r.label, "open it with this picture") { onRecipe(r) } }
+                    Section(stringResource(R.string.nav_flows))
+                    choices.recipes.forEach { r ->
+                        Choice(
+                            r.labelRes?.let { stringResource(it) } ?: r.label,
+                            stringResource(R.string.send_to_open_with_picture),
+                        ) { onRecipe(r) }
+                    }
                 }
                 if (choices.saved.isNotEmpty()) {
-                    Section("Saved")
-                    choices.saved.forEach { n -> Choice(n, "open it with this picture") { onSaved(n) } }
+                    Section(stringResource(R.string.flows_saved))
+                    choices.saved.forEach { n ->
+                        Choice(n, stringResource(R.string.send_to_open_with_picture)) { onSaved(n) }
+                    }
                 }
                 if (choices.current.isEmpty() && choices.recipes.isEmpty() && choices.saved.isEmpty()) {
-                    Text("No flow takes a picture.", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.send_to_none), style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

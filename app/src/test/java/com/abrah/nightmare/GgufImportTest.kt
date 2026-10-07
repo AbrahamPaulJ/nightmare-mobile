@@ -69,7 +69,7 @@ class GgufImportTest {
 
     private fun sparse(f: File, bytes: Long) {
         f.parentFile?.mkdirs()
-        java.io.RandomAccessFile(f, "rw").use { it.setLength(bytes) }
+        sparseFile(f, bytes)
     }
 
     /** The built-in a variant takes its parts from, as sparse files of the right sizes. */

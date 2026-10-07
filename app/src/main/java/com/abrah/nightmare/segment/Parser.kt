@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.abrah.nightmare.BackendProcess
 import com.abrah.nightmare.ModelInstaller
+import com.abrah.nightmare.R
 import com.abrah.nightmare.UpscalerCatalog
 import java.io.File
 import java.io.IOException
@@ -60,6 +61,7 @@ object Parser {
         val id: String,
         val label: String,
         val labels: IntArray,
+        @androidx.annotation.StringRes val labelRes: Int,
         /** ⚠ Face only — see [ParseMask]'s rule 4. */
         val topmostOnly: Boolean = false,
     ) {
@@ -70,14 +72,14 @@ object Parser {
     }
 
     val TARGETS = listOf(
-        Target("clothes", "Clothes", intArrayOf(4, 5, 6, 7, 8, 17)),
+        Target("clothes", "Clothes", intArrayOf(4, 5, 6, 7, 8, 17), R.string.mask_target_clothes),
         // ⭐ FACE, not Head — the user's call, 2026-09-23: Head swept in the
         // hair, which has its own chip. ⚠ The face label alone, and only its
         // topmost region: ATR labels a bare midriff Face too ([ParseMask]).
-        Target("face", "Face", intArrayOf(11), topmostOnly = true),
-        Target("hair", "Hair", intArrayOf(2)),
-        Target("shoes", "Shoes", intArrayOf(9, 10)),
-        Target("bag", "Bag", intArrayOf(16)),
+        Target("face", "Face", intArrayOf(11), R.string.mask_target_face, topmostOnly = true),
+        Target("hair", "Hair", intArrayOf(2), R.string.mask_target_hair),
+        Target("shoes", "Shoes", intArrayOf(9, 10), R.string.mask_target_shoes),
+        Target("bag", "Bag", intArrayOf(16), R.string.mask_target_bag),
     )
 
     /**

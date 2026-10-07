@@ -94,13 +94,16 @@ object SwapInputs {
      * ⭐ The node's photo as the base will see it — [hint]'s own cut, at [SIZE]².
      * The underlay a ControlNet / IP-Adapter picture is lined up against.
      */
-    fun framedPhoto(src: Bitmap, frame: Frame): Bitmap {
+    fun framedPhoto(src: Bitmap, frame: Frame, size: Int = SIZE): Bitmap {
         val hSquare = frame.w * src.width / src.height
         val y = frame.y + (frame.h - hSquare) / 2f
-        return CropNode.render(src, frame.x, y, frame.w, hSquare, SIZE, SIZE, frame.pad).first
+        return CropNode.render(src, frame.x, y, frame.w, hSquare, size, size, frame.pad).first
     }
 
-    fun hint(context: Context?, src: Bitmap, type: String, frame: Frame?): Hint {
+    /** ⭐ The hint's side: SD 1.5's ControlNet is a 512² graph, SDXL's a 1024² one (backend 023). */
+    fun sizeFor(family: Family): Int = if (family == Family.SDXL_SWAP) 1024 else SIZE
+
+    fun hint(context: Context?, src: Bitmap, type: String, frame: Frame?, size: Int = SIZE): Hint {
         val ready = when (type) {
             OPENPOSE -> com.abrah.nightmare.pose.PoseDetector.looksLikeSkeleton(src)
             DEPTH -> com.abrah.nightmare.pose.DepthEstimator.looksLikeDepthMap(src)
@@ -124,23 +127,23 @@ object SwapInputs {
             val hSquare = frame.w * src.width / src.height
             val y = frame.y + (frame.h - hSquare) / 2f
             val native = (frame.w * src.width).toInt().coerceAtLeast(1)
-            if (type == CANNY && native < SIZE) {
-                upscaleEdges(cannyOf(CropNode.render(src, frame.x, y, frame.w, hSquare, native, native, frame.pad).first))
+            if (type == CANNY && native < size) {
+                upscaleEdges(cannyOf(CropNode.render(src, frame.x, y, frame.w, hSquare, native, native, frame.pad).first), size)
             } else {
-                transform(CropNode.render(src, frame.x, y, frame.w, hSquare, SIZE, SIZE, frame.pad).first)
+                transform(CropNode.render(src, frame.x, y, frame.w, hSquare, size, size, frame.pad).first)
             }
         } else {
-            val scale = SIZE.toFloat() / maxOf(src.width, src.height)
-            val w = (src.width * scale).toInt().coerceIn(1, SIZE)
-            val h = (src.height * scale).toInt().coerceIn(1, SIZE)
+            val scale = size.toFloat() / maxOf(src.width, src.height)
+            val w = (src.width * scale).toInt().coerceIn(1, size)
+            val h = (src.height * scale).toInt().coerceIn(1, size)
             val fitted = if (type == CANNY && scale > 1f) {
                 Bitmap.createScaledBitmap(cannyOf(src), w, h, false)
             } else transform(Bitmap.createScaledBitmap(src, w, h, true))
-            if (fitted == null || (w == SIZE && h == SIZE)) fitted else {
-                val out = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+            if (fitted == null || (w == size && h == size)) fitted else {
+                val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
                 val canvas = android.graphics.Canvas(out)
                 canvas.drawColor(android.graphics.Color.BLACK)
-                canvas.drawBitmap(fitted, ((SIZE - w) / 2).toFloat(), ((SIZE - h) / 2).toFloat(), null)
+                canvas.drawBitmap(fitted, ((size - w) / 2).toFloat(), ((size - h) / 2).toFloat(), null)
                 out
             }
         }
@@ -152,7 +155,7 @@ object SwapInputs {
      * then scaled up WITHOUT filtering: upscaling first blurs every step below
      * canny's threshold (a 160 px region at ×3.2 came back black, the golden).
      */
-    private fun upscaleEdges(e: Bitmap): Bitmap = Bitmap.createScaledBitmap(e, SIZE, SIZE, false)
+    private fun upscaleEdges(e: Bitmap, size: Int): Bitmap = Bitmap.createScaledBitmap(e, size, size, false)
 
     private fun cannyOf(b: Bitmap): Bitmap {
         val w = b.width
@@ -267,10 +270,12 @@ object SwapInputs {
             return Ops.TemplateInputs(loraDir = loraDir, loraStrength = loraStrength, ipDir = ipDir)
         }
         require(type in TYPES) { "unknown ControlNet type \"$type\"" }
-        val cn = controlnetFile(context, type)
+        // ⭐ SDXL Swap reads its own ControlNet (`sdxl_<type>`, [ControlNetCatalog.idFor]).
+        val id = ControlNetCatalog.idFor(spec.family, type)
+        val cn = controlnetFile(context, id)
         if (!cn.isFile) {
             throw NeedsInput(
-                if (ControlNetCatalog.buildFor(type) == null) "the $type ControlNet is not available for this phone's chip yet"
+                if (ControlNetCatalog.buildFor(id) == null) "the $type ControlNet is not available for this model or phone yet"
                 else "download the $type ControlNet first — on the node's ControlNet tab or in Models, Tools",
             )
         }
@@ -286,7 +291,7 @@ object SwapInputs {
                 else -> "reading the $type hint"
             },
         )
-        val made = hint(context, control, type, frame)
+        val made = hint(context, control, type, frame, sizeFor(spec.family))
         val bitmap = made.bitmap ?: throw NeedsInput(
             if (made.missing == DEPTH) {
                 "depth needs the ${com.abrah.nightmare.pose.DepthEstimator.LABEL} to read a photo — " +

@@ -248,6 +248,9 @@ fun ModelsScreen(
     depth: ToolRow? = null,
     onInstallDepth: () -> Unit = {},
     onDeleteDepth: () -> Unit = {},
+    describe: Map<com.abrah.nightmare.DescribeModel, ToolRow> = emptyMap(),
+    onInstallDescribe: (com.abrah.nightmare.DescribeModel) -> Unit = {},
+    onDeleteDescribe: (com.abrah.nightmare.DescribeModel) -> Unit = {},
     /** ⭐ SD 1.5 Swap's ControlNets — one row per type built for this chip. */
     controlnets: Map<String, ToolRow> = emptyMap(),
     onInstallControlNet: (String) -> Unit = {},
@@ -286,8 +289,7 @@ fun ModelsScreen(
                     // that always warns is one people learn to tap through.
                     if (p.unsavedFlow) {
                         Text(
-                            "The flow on the canvas has not been saved — opening one of " +
-                                "these replaces it.",
+                            stringResource(R.string.models_unsaved_flow_warning),
                             style = NoteTextStyle,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -306,9 +308,9 @@ fun ModelsScreen(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                                Text(r.label, fontWeight = FontWeight.Medium)
+                                Text(r.labelRes?.let { stringResource(it) } ?: r.label, fontWeight = FontWeight.Medium)
                                 Text(
-                                    r.about,
+                                    r.aboutRes?.let { stringResource(it) } ?: r.about,
                                     style = NoteTextStyle,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -329,7 +331,7 @@ fun ModelsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
-                            "Keep the flow on the canvas",
+                            stringResource(R.string.models_keep_canvas_flow),
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                         )
                     }
@@ -337,7 +339,7 @@ fun ModelsScreen(
             },
             // ⚠ ONE action button. Choosing a flow IS the confirmation, so
             // there is nothing for a confirm button to do.
-            confirmButton = { TextButton(onClick = onCancelUse) { Text("Cancel") } },
+            confirmButton = { TextButton(onClick = onCancelUse) { Text(stringResource(R.string.cancel)) } },
         )
     }
 
@@ -357,6 +359,7 @@ fun ModelsScreen(
     var deletingParser by remember { mutableStateOf(false) }
     var deletingPose by remember { mutableStateOf(false) }
     var deletingDepth by remember { mutableStateOf(false) }
+    var deletingDescribe by remember { mutableStateOf<com.abrah.nightmare.DescribeModel?>(null) }
     var deletingControlNet by remember { mutableStateOf<String?>(null) }
 
     // ⚠ No header and no `statusBarsPadding` any more: [LibraryScreen] owns
@@ -426,7 +429,7 @@ fun ModelsScreen(
             if (rows.any { it.spec.isInpaintModel() }) add(ModelKind.INPAINT)
             if (video != null) add(ModelKind.VIDEO)
             if (upscalers.isNotEmpty()) add(ModelKind.UPSCALE)
-            if (segmenter != null || parser != null) add(ModelKind.TOOLS)
+            if (segmenter != null || parser != null || describe.isNotEmpty()) add(ModelKind.TOOLS)
         }
         // ⚠ Back leaves the family page before it leaves the screen.
         if (familyPage != null) androidx.activity.compose.BackHandler { familyPage = null }
@@ -485,6 +488,16 @@ fun ModelsScreen(
                                 depth, busy, onInstallDepth, onCancel,
                                 detail = stringResource(R.string.depth_about),
                             ) { deletingDepth = true }
+                        }
+                    }
+                    for ((m, row) in describe) {
+                        item {
+                            ToolCard(
+                                row, busy, { onInstallDescribe(m) }, onCancel,
+                                detail = stringResource(
+                                    if (m == com.abrah.nightmare.ImageTagger) R.string.tagger_about else R.string.describe_about,
+                                ),
+                            ) { deletingDescribe = m }
                         }
                     }
                 }
@@ -593,14 +606,13 @@ fun ModelsScreen(
     // copies with two dismiss labels and two confirm styles.
     deletingUpscaler?.let { spec ->
         val row = upscalers.firstOrNull { it.spec.id == spec.id }
+        val label = spec.labelRes?.let { stringResource(it) } ?: spec.label
         ConfirmDelete(
-            title = "Delete ${spec.label}?",
-            body = "Frees ${mb(row?.onDisk ?: 0L)} MB. Getting it back is a " +
-                "${mb(row?.build?.bytes ?: 0L)} MB download. " +
-                // ⚠ Says what else changes, as the checkpoint dialog does —
-                // here it is a FLOW that breaks, not a selection.
-                "Any flow with an Upscale node set to it will fail until " +
-                "you install it again.",
+            title = stringResource(R.string.models_delete_title, label),
+            body = stringResource(
+                R.string.models_delete_upscaler_body,
+                mb(row?.onDisk ?: 0L), mb(row?.build?.bytes ?: 0L),
+            ),
             onConfirm = { onDeleteUpscaler(spec) },
             onDismiss = { deletingUpscaler = null },
         )
@@ -608,10 +620,8 @@ fun ModelsScreen(
 
     if (deletingParser && parser != null) {
         ConfirmDelete(
-            title = "Delete ${parser.label}?",
-            body = "Frees ${mb(parser.onDisk)} MB. Getting it back is a " +
-                "${mb(parser.bytes)} MB download. Any flow with a mask picked " +
-                "by name will refuse to run until you install it again.",
+            title = stringResource(R.string.models_delete_title, parser.label),
+            body = stringResource(R.string.models_delete_parser_body, mb(parser.onDisk), mb(parser.bytes)),
             onConfirm = onDeleteParser,
             onDismiss = { deletingParser = false },
         )
@@ -620,13 +630,11 @@ fun ModelsScreen(
     deletingControlNet?.let { type ->
         controlnets[type]?.let { row ->
             ConfirmDelete(
-                title = "Delete ${row.label}?",
+                title = stringResource(R.string.models_delete_title, row.label),
                 body = if (type.startsWith(com.abrah.nightmare.IpAdapter.ROW_PREFIX)) {
-                    "Swap flows with a reference picture will ask for it again. The image " +
-                        "encoder is shared, and goes with the last IP-Adapter deleted."
+                    stringResource(R.string.models_delete_ip_adapter_body)
                 } else {
-                    "Frees ${mb(row.onDisk)} MB. Getting it back is a " +
-                        "${mb(row.bytes)} MB download. Swap flows using $type will ask for it again."
+                    stringResource(R.string.models_delete_controlnet_body, mb(row.onDisk), mb(row.bytes), type)
                 },
                 onConfirm = { onDeleteControlNet(type) },
                 onDismiss = { deletingControlNet = null },
@@ -634,12 +642,21 @@ fun ModelsScreen(
         }
     }
 
+    deletingDescribe?.let { m ->
+        describe[m]?.let { row ->
+            ConfirmDelete(
+                title = stringResource(R.string.models_delete_title, row.label),
+                body = stringResource(R.string.models_delete_describe_body, mb(row.onDisk), mb(row.bytes)),
+                onConfirm = { onDeleteDescribe(m) },
+                onDismiss = { deletingDescribe = null },
+            )
+        }
+    }
+
     if (deletingDepth && depth != null) {
         ConfirmDelete(
-            title = "Delete ${depth.label}?",
-            body = "Frees ${mb(depth.onDisk)} MB. Getting it back is a " +
-                "${mb(depth.bytes)} MB download. A depth ControlNet given a photo " +
-                "will refuse to run until you install it again.",
+            title = stringResource(R.string.models_delete_title, depth.label),
+            body = stringResource(R.string.models_delete_depth_body, mb(depth.onDisk), mb(depth.bytes)),
             onConfirm = onDeleteDepth,
             onDismiss = { deletingDepth = false },
         )
@@ -647,10 +664,8 @@ fun ModelsScreen(
 
     if (deletingPose && pose != null) {
         ConfirmDelete(
-            title = "Delete ${pose.label}?",
-            body = "Frees ${mb(pose.onDisk)} MB. Getting it back is a " +
-                "${mb(pose.bytes)} MB download. An openpose ControlNet given a photo " +
-                "will refuse to run until you install it again.",
+            title = stringResource(R.string.models_delete_title, pose.label),
+            body = stringResource(R.string.models_delete_pose_body, mb(pose.onDisk), mb(pose.bytes)),
             onConfirm = onDeletePose,
             onDismiss = { deletingPose = false },
         )
@@ -658,10 +673,8 @@ fun ModelsScreen(
 
     if (deletingSegmenter && segmenter != null) {
         ConfirmDelete(
-            title = "Delete ${segmenter.label}?",
-            body = "Frees ${mb(segmenter.onDisk)} MB. Getting it back is a " +
-                "${mb(segmenter.bytes)} MB download. Any flow with a tapped mask " +
-                "will refuse to run until you install it again.",
+            title = stringResource(R.string.models_delete_title, segmenter.label),
+            body = stringResource(R.string.models_delete_segmenter_body, mb(segmenter.onDisk), mb(segmenter.bytes)),
             onConfirm = onDeleteSegmenter,
             onDismiss = { deletingSegmenter = false },
         )
@@ -689,23 +702,19 @@ fun ModelsScreen(
     deleting?.let { spec ->
         val row = rows.firstOrNull { it.spec.id == spec.id }
         ConfirmDelete(
-            title = "Delete ${spec.label}?",
-            body = buildString {
-                append("Frees ${mb(row?.onDisk ?: 0L)} MB. ")
-                // ⚠⚠ A custom model has NO archive -- there is no URL that
-                // could produce it again. The user's own zip is the only way
-                // back, and they have to still have it.
+            title = stringResource(R.string.models_delete_title, spec.label),
+            body = run {
                 val bytes = row?.build?.bytes ?: spec.best?.bytes
-                if (spec.isCustom || bytes == null) {
-                    append("You imported it, so getting it back means importing the zip again.")
-                } else {
-                    append("Getting it back is a ${mb(bytes)} MB download.")
-                }
-                // ⚠ Says what ELSE changes. The selection moving is not
-                // something a user would predict from "delete".
-                if (row?.selected == true) {
-                    append("\n\nIt is the model in use, so another will be selected.")
-                }
+                val custom = spec.isCustom || bytes == null
+                stringResource(
+                    when {
+                        custom && row?.selected == true -> R.string.models_delete_custom_selected_body
+                        custom -> R.string.models_delete_custom_body
+                        row?.selected == true -> R.string.models_delete_downloaded_selected_body
+                        else -> R.string.models_delete_downloaded_body
+                    },
+                    mb(row?.onDisk ?: 0L), mb(bytes ?: 0L),
+                )
             },
             onConfirm = { onDelete(spec) },
             onDismiss = { deleting = null },
@@ -718,48 +727,36 @@ fun ModelsScreen(
  * each family TAB used to open with, said BEFORE gigabytes are downloaded.
  */
 @Composable
-private fun familyNote(family: Family): String = when (family) {
-        Family.SD15 -> "About 1 GB each. Use Wi-Fi."
+private fun familyNote(family: Family): String = stringResource(when (family) {
+        Family.SD15 -> R.string.models_family_sd15
         // ⭐ Two defaults, or any conversion of your own.
-        Family.SD15_SWAP -> "About 1.3 GB each. LoRAs and ControlNet are " +
-            "chosen per render, 512×512 only. Convert your own SD 1.5 " +
-            "checkpoint in npuforge as SD1.5 Swap and import the zip here."
+        Family.SD15_SWAP -> R.string.models_family_sd15_swap
         // ⭐ Two defaults since 2026-10-05, or any conversion of your own.
-        Family.SDXL_SWAP -> "About 3.9 GB each. LoRAs are chosen per render, 1024×1024, " +
-            "8 Elite or newer. Convert your own SDXL checkpoint in npuforge (1.0.11 or " +
-            "newer) as SDXL Swap with LoRA ticked, and import the zip here."
+        Family.SDXL_SWAP -> R.string.models_family_sdxl_swap
         // ⚠ Measured 2026-09-16 on an 11.4 GB phone: 6.4 s a
         // step, and killed by Android while other apps were
         // in use. Said here, before 4 GB is downloaded.
-        Family.ANIMA -> "About 4.3 GB each, and ~9 GB free while it " +
-            "unpacks. Slow: about 80 s a picture. Close other apps " +
-            "while it renders. Use Wi-Fi."
+        Family.ANIMA -> R.string.models_family_anima
         // ⚠ Plain files straight into place, so no unpack
         // headroom — but only an 8 Elite or newer runs them.
         // ⚠ Klein 9B is 10.7 GB and streams its text
         // encoder from disk, so it is the slower of the two.
-        Family.FLUX2 -> "Klein 4B about 6.7 GB, Klein 9B about 10.7 GB " +
-            "and slower. 8 Elite or newer only. Any size from 512 to " +
-            "2048. Use Wi-Fi."
+        Family.FLUX2 -> R.string.models_family_flux2
         // ⚠⚠ Said before 8.8 GB is downloaded: upstream's own
         // build crashes on the dev phone (8 Elite), and works
         // on some 8 Elite Gen 5 phones (the user, 2026-09-19).
-        Family.ZIMAGE -> "About 8.8 GB. 8 Elite or newer only. Still " +
-            "maturing: it crashes on some 8 Elite phones. Use Wi-Fi."
+        Family.ZIMAGE -> R.string.models_family_zimage
         // ⚠ 10.8 GB on disk against a 12 GB phone: it loads one
         // part at a time, so it is slower than FLUX.2.
-        Family.QWEN21 -> "About 10.8 GB. 8 Elite or newer only. Edits " +
-            "and generates; slower than FLUX.2. Use Wi-Fi."
+        Family.QWEN21 -> R.string.models_family_qwen
         // ⚠ Loads one part at a time like Qwen (all=disk).
         // Not an edit model: the fork's own edits fail.
-        Family.KREA2 -> "About 9.5 GB. 8 Elite or newer only. Text to " +
-            "image only; it does not edit. Use Wi-Fi."
+        Family.KREA2 -> R.string.models_family_krea
         // ⚠ The free-space figure is the one that surprises:
         // the archive and its unpacked copy are both on disk
         // at once, so a 3.5 GB download needs ~7.5 GB free.
-        else -> "About 3.5 GB each, and ~7.5 GB free while " +
-            "it unpacks. Use Wi-Fi."
-}
+        else -> R.string.models_family_other
+})
 
 /**
  * The "import a zip" row, plus the name dialog.
@@ -783,7 +780,7 @@ private fun ImportCard(
     // ⚠ [ImportCallout] owns the look; this file owns the naming dialog that
     // follows. The three importers in the app share one card shape.
     ImportCallout(
-        title = "Import a checkpoint",
+        title = stringResource(R.string.models_import_checkpoint),
         body = if (dit) {
             // ⭐⭐⭐ The exception to the sentence below, and it is worth being
             // plain about: a DiT family has no context binary. The engine reads
@@ -802,17 +799,13 @@ private fun ImportCard(
             // `CustomModels.DIT_FAMILY_AGNOSTIC` has the md5s.
             // ⭐ 1.6.069: `.gguf` too, and Klein 9B / Krea 2 fine-tunes, which
             // bring their OWN encoder copy (`CustomModels.DitVariant`).
-            "One .safetensors or .gguf — a checkpoint from CivitAI or Hugging Face, used as " +
-                "it is. No conversion. Klein 4B and Z-Image ones borrow a text encoder and VAE " +
-                "(up to 2.6 GB to fetch, nothing if you have that model). Klein 9B and Krea 2 " +
-                "ones get their own copy (4.8 GB and 2.6 GB). A file bigger than about half " +
-                "your phone's RAM will likely be closed by Android while it renders."
+            stringResource(R.string.models_import_dit_body)
         } else {
             // ⚠ Says what the app CANNOT do, because the alternative is a user
             // picking a `.safetensors` and reading "not a checkpoint" without
             // knowing why. Conversion is a PC step and there is no runtime
             // compiler on the NPU — for these families.
-            "A zip of QNN model files, converted on a PC. SD 1.5, SDXL or Anima — it works out which."
+            stringResource(R.string.models_import_qnn_body)
         },
         enabled = !busy,
         onImport = { name = ""; naming = true },
@@ -827,26 +820,24 @@ private fun ImportCard(
             (com.abrah.nightmare.CustomModels.isValidName(trimmed) && !reserved)
         AlertDialog(
             onDismissRequest = { naming = false },
-            title = { Text("Name it") },
+            title = { Text(stringResource(R.string.models_name_it)) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
                         singleLine = true,
-                        label = { Text("Model name") },
+                        label = { Text(stringResource(R.string.models_model_name)) },
                     )
                     Text(
                         when {
-                            reserved -> "That is a built-in model's name; pick another."
-                            trimmed.isNotEmpty() && !ok -> "No slashes, colons or leading dots."
+                            reserved -> stringResource(R.string.models_name_reserved)
+                            trimmed.isNotEmpty() && !ok -> stringResource(R.string.models_name_invalid)
                             // ⚠ Warns BEFORE the picker, not after the copy: an
                             // import is gigabytes, and finding out afterwards
                             // that the name is permanent is finding out too late.
-                            trimmed.isEmpty() -> "Leave it empty to use the file's name. " +
-                                "It becomes the folder name and the id saved into every workflow."
-                            else -> "This becomes the folder name and the id saved " +
-                                "into every workflow that uses it."
+                            trimmed.isEmpty() -> stringResource(R.string.models_name_empty_hint)
+                            else -> stringResource(R.string.models_name_hint)
                         },
                         style = NoteTextStyle,
                         color = if (reserved) {
@@ -862,7 +853,7 @@ private fun ImportCard(
                 Button(
                     onClick = { naming = false; onImport(trimmed) },
                     enabled = ok,
-                ) { Text(if (dit) "Pick the file" else "Pick a zip") }
+                ) { Text(stringResource(if (dit) R.string.models_pick_file else R.string.models_pick_zip)) }
             },
             dismissButton = { TextButton(onClick = { naming = false }) { Text(stringResource(R.string.cancel)) } },
         )
@@ -1097,15 +1088,17 @@ private fun UpscalerCard(
     onDelete: (UpscalerSpec) -> Unit,
     onUse: (UpscalerSpec) -> Unit = {},
 ) {
+    val label = row.spec.labelRes?.let { stringResource(it) } ?: row.spec.label
+    val about = row.spec.aboutRes?.let { stringResource(it) } ?: row.spec.about
     DownloadCard(
-        title = row.spec.label,
+        title = label,
         emphasised = false,
         status = when {
             row.installed -> stringResource(R.string.installed_mb, mb(row.onDisk))
             row.build != null -> stringResource(R.string.not_installed_mb, mb(row.build.bytes))
             else -> stringResource(R.string.cannot_run_it)
         },
-        detail = fields(row.spec.about, row.build?.tier),
+        detail = fields(about, row.build?.tier),
         progress = row.progress,
     ) {
         when {

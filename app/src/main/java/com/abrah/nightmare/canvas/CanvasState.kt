@@ -289,7 +289,10 @@ data class CanvasState(
                 WireButton.CONFIRM -> {
                     val w = wire!!
                     copy(
-                        workflow = workflow.copy(graph = workflow.graph.disconnected(w.toNode, w.toPort)),
+                        // ⭐ A Swap tool loses its picture → it goes to none ([switchingOffFor]).
+                        workflow = workflow.copy(
+                            graph = workflow.graph.disconnected(w.toNode, w.toPort).switchingOffFor(w.toNode, w.toPort),
+                        ),
                         gesture = Gesture.Idle,
                         wire = null,
                         wireConfirming = false,
@@ -909,7 +912,8 @@ data class CanvasState(
      */
     fun removeNode(id: String) = copy(
         workflow = Workflow(
-            graph = workflow.graph.without(id),
+            // ⭐ A deleted ControlNet / IP-Adapter picture node switches its tool off ([switchingOffAfterRemoving]).
+            graph = workflow.graph.without(id).switchingOffAfterRemoving(workflow.graph, id),
             positions = workflow.positions - id,
         ),
         // ⚠ The picture goes with the node. Leaving it behind makes the map

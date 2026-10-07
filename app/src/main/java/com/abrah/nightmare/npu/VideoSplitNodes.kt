@@ -9,6 +9,7 @@ import com.abrah.nightmare.NodeType
 import com.abrah.nightmare.Port
 import com.abrah.nightmare.Value
 import com.abrah.nightmare.Widget
+import com.abrah.nightmare.R
 import com.abrah.nightmare.str
 import java.io.File
 import java.util.Random
@@ -151,7 +152,7 @@ object VideoClipEncodeNode : VideoNode() {
     override val widgets = listOf(
         Widget(
             "prompt", "string", "a cat walking through tall grass, cinematic",
-            hint = "what to animate",
+            hintRes = R.string.hint_video_prompt,
         ),
     )
 
@@ -223,7 +224,7 @@ object VideoFirstFrameNode : VideoNode() {
     override val outputs = listOf(Port("image", "IMAGE"))
 
     override val widgets = listOf(
-        Widget("seed", "int", "0", hint = "0 = a new first frame every Run. Type the seed shown on the node to get that one back."),
+        Widget("seed", "int", "0", hintRes = R.string.hint_seed_first_frame),
     )
 
     /** ⚠ It makes exactly the size the video path animates. */
@@ -270,7 +271,7 @@ object VideoVaeEncodeNode : VideoNode() {
     override val outputs = listOf(Port("latent", "VIDEO_LATENT"))
 
     override val widgets = listOf(
-        Widget("seed", "int", "0", hint = "encoding noise, not the clip seed — it changes the result only slightly, so leave it fixed. The sample node's seed is the one that matters."),
+        Widget("seed", "int", "0", hintRes = R.string.hint_encoding_noise_clip),
     )
 
     override fun requiredInputSize(node: Node, port: String): Pair<Int, Int>? =
@@ -320,7 +321,7 @@ object VideoSampleSplitNode : VideoNode() {
     override val outputs = listOf(Port("latent", "VIDEO_LATENT"))
 
     override val widgets = listOf(
-        Widget("seed", "int", "0", hint = "0 = a new clip every Run. Type the seed shown on the node to get that one back."),
+        Widget("seed", "int", "0", hintRes = R.string.hint_seed_clip_that_one),
     )
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
@@ -394,7 +395,7 @@ object VideoVaeDecodeNode : VideoNode() {
     override val widgets = listOf(
         Widget(
             "upscale", "bool", "true",
-            hint = "2x to 1024x640 with QuickSRNet. Off renders 512x320 and is a little faster.",
+            hintRes = R.string.hint_video_upscale,
         ),
     )
 

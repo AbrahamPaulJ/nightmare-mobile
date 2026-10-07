@@ -388,6 +388,8 @@ object CustomModels {
         ownDitParts = klein9b || family == Family.QWEN21 || family == Family.KREA2,
         id = dir.name,
         label = cfg.label ?: dir.name,
+        // ⭐ What the conversion kept ([ModelFeatures]) — the node dims the rest.
+        features = ModelFeatures.of(dir, family),
         // ⚠⚠ EMPTY, and that is the definition of a custom model: there is no
         // URL that could produce these files. It is also why [ModelSpec.best]
         // is nullable — see the note there.

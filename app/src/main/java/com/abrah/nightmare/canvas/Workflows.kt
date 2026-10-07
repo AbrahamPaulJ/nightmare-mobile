@@ -4,6 +4,7 @@ import com.abrah.nightmare.Graph
 import com.abrah.nightmare.ModelCatalog
 import com.abrah.nightmare.Node
 import com.abrah.nightmare.SelectedModel
+import com.abrah.nightmare.R
 import com.abrah.nightmare.sources
 
 /**
@@ -369,6 +370,8 @@ data class Recipe(
      * ordering: [RECIPES] still IS the order, so a section is contiguous there.
      */
     val section: String? = null,
+    @androidx.annotation.StringRes val labelRes: Int? = null,
+    @androidx.annotation.StringRes val aboutRes: Int? = null,
 ) {
 
     /**
@@ -437,6 +440,8 @@ val RECIPES: List<Recipe> = listOf(
         "txt2img", "Text to image",
         "A prompt in, a picture out. The one to start with.",
         ::defaultWorkflow,
+        labelRes = R.string.flow_txt2img_name,
+        aboutRes = R.string.flow_txt2img_about,
     ),
     Recipe(
         "img2img", "Image to image",
@@ -445,12 +450,16 @@ val RECIPES: List<Recipe> = listOf(
         // ⚠ Not an edit model (FLUX.2, Qwen Image): there the job is an EDIT
         // and has its own card, further down where its requirements put it.
         families = com.abrah.nightmare.Family.entries.filterNot { it.edit }.toSet(),
+        labelRes = R.string.flow_img2img_name,
+        aboutRes = R.string.flow_img2img_about,
     ),
     Recipe(
         "inpaint", "Inpaint — paint an area to redo",
         "Paint over part of a photo and only that part is re-imagined. Open the " +
             "sampler and tap Mask to paint.",
         ::inpaintWorkflow,
+        labelRes = R.string.flow_inpaint_name,
+        aboutRes = R.string.flow_inpaint_about,
     ),
     // ⚠⚠ **Upscale sits with the picture flows, before the video ones.** The
     // user's call, 2026-09-15. It is a PICTURE flow — a photo in, a bigger
@@ -463,6 +472,8 @@ val RECIPES: List<Recipe> = listOf(
             "the upscaler is its own small model, installed under Models.",
         ::upscaleWorkflow,
         usesCheckpoint = false,
+        labelRes = R.string.flow_upscale_name,
+        aboutRes = R.string.flow_upscale_about,
     ),
     // ⭐⭐⭐ **Image edit — FLUX.2 only, and placed by what it COSTS.**
     //
@@ -482,6 +493,8 @@ val RECIPES: List<Recipe> = listOf(
         { swapWorkflow(i2i = false) },
         families = setOf(com.abrah.nightmare.Family.SD15_SWAP),
         section = ADVANCED,
+        labelRes = R.string.flow_swap_t2i_name,
+        aboutRes = R.string.flow_swap_t2i_about,
     ),
     Recipe(
         "swap_i2i", "Image to image — LoRA, ControlNet, IP-Adapter",
@@ -490,6 +503,8 @@ val RECIPES: List<Recipe> = listOf(
         { swapWorkflow(i2i = true) },
         families = setOf(com.abrah.nightmare.Family.SD15_SWAP),
         section = ADVANCED,
+        labelRes = R.string.flow_swap_i2i_name,
+        aboutRes = R.string.flow_swap_i2i_about,
     ),
     Recipe(
         "flux_edit", com.abrah.nightmare.SdSampler.EDIT_LABEL,
@@ -503,6 +518,8 @@ val RECIPES: List<Recipe> = listOf(
         ::fluxEditWorkflow,
         families = com.abrah.nightmare.Family.entries.filter { it.edit }.toSet(),
         minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
+        labelRes = R.string.flow_flux_edit_name,
+        aboutRes = R.string.flow_flux_edit_about,
     ),
     Recipe(
         "t2v", "Text to video",
@@ -520,6 +537,8 @@ val RECIPES: List<Recipe> = listOf(
         // table. This is the cheap gate for a LIST, which cannot bring the QNN
         // backend up to draw a card.
         minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
+        labelRes = R.string.flow_t2v_name,
+        aboutRes = R.string.flow_t2v_about,
     ),
     Recipe(
         "i2v", "Image to video",
@@ -532,6 +551,8 @@ val RECIPES: List<Recipe> = listOf(
         ::imageToVideoWorkflow,
         usesCheckpoint = false,
         minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
+        labelRes = R.string.flow_i2v_name,
+        aboutRes = R.string.flow_i2v_about,
     ),
 )
 

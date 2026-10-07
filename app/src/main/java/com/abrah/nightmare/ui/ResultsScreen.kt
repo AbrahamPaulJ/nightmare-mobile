@@ -64,6 +64,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import com.abrah.nightmare.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -161,6 +162,7 @@ fun ResultsScreen(
     /** ⭐ Send the shown picture into a flow ([SendToDialog]). */
     onSendTo: (Result) -> Unit = {},
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     // ⚠ One dialog for the whole list, not one per card — the same reason the
     // models screen hoists its delete confirm.
     var deleting by remember { mutableStateOf<Result?>(null) }
@@ -176,14 +178,13 @@ fun ResultsScreen(
     var confirmingDownload by remember { mutableStateOf(false) }
     /** ⭐ The ids a Share popup is asking about — one, or the selection. */
     var sharing by remember { mutableStateOf<List<String>?>(null) }
+    val onlyPictureToFlow = stringResource(R.string.results_only_picture_to_flow)
 
     Column(modifier.fillMaxSize()) {
         if (results.isEmpty()) {
             // ⚠⚠ Says HOW to fill it.
             Text(
-                "Nothing kept yet.\n\nRun something and press the star or the disk. " +
-                    "The graph that made it is kept too, so you can reopen the whole " +
-                    "flow later — not just look at the picture.",
+                stringResource(R.string.results_empty),
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 16.dp),
@@ -230,7 +231,7 @@ fun ResultsScreen(
                         Modifier.size(16.dp), strokeWidth = 2.dp,
                     )
                     Text(
-                        "Upscaling with $what… it appears here as a new result.",
+                        stringResource(R.string.results_upscaling_notice, what),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
@@ -253,7 +254,7 @@ fun ResultsScreen(
                     border = if (on) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
                     Text(
-                        if (fav) "Favourites" else "All",
+                        stringResource(if (fav) R.string.results_favourites else R.string.all),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Medium,
                         color = if (on) MaterialTheme.colorScheme.onSecondaryContainer
@@ -271,7 +272,7 @@ fun ResultsScreen(
             IconButton(onClick = { filtering = true }, modifier = Modifier.size(36.dp)) {
                 Icon(
                     FilterIcon,
-                    contentDescription = "filter these results",
+                    contentDescription = stringResource(R.string.results_cd_filter),
                     tint = if (filtered) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -292,7 +293,7 @@ fun ResultsScreen(
                 ) {
                     Icon(
                         Icons.Filled.Close,
-                        contentDescription = "clear the filter",
+                        contentDescription = stringResource(R.string.results_cd_clear_filter),
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -313,7 +314,7 @@ fun ResultsScreen(
         }
         if (items.isEmpty()) {
             Text(
-                "Nothing starred yet — press the star on a picture to find it here.",
+                stringResource(R.string.results_no_favourites),
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 16.dp),
@@ -402,7 +403,7 @@ fun ResultsScreen(
             val onSurface = MaterialTheme.colorScheme.onSurface
             if (selecting) {
                 Text(
-                    "${selected.size} selected",
+                    stringResource(R.string.results_selected, selected.size),
                     style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 8.dp),
@@ -411,27 +412,39 @@ fun ResultsScreen(
                 // branch. The share also does the Spacer's old job of pushing
                 // the controls away from the count.
                 val small = Modifier.weight(1f).height(40.dp)
-                TextButton(onClick = onSelectAll, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("All") }
+                TextButton(onClick = onSelectAll, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text(stringResource(R.string.all))
+                }
                 // ⭐ Star the selection — no confirm, a star is one tap to undo.
                 val allStarred = all.filter { it.id in selected }.let { sel -> sel.isNotEmpty() && sel.all { it.favourite } }
                 IconButton(onClick = onStarSelected, modifier = small) {
                     Icon(
                         Icons.Filled.Star,
-                        contentDescription = if (allStarred) "unstar the selected" else "star the selected",
+                        contentDescription = stringResource(
+                            if (allStarred) R.string.results_cd_unstar_selected else R.string.results_cd_star_selected,
+                        ),
                         tint = if (allStarred) StarKept else StarIdle,
                     )
                 }
                 IconButton(onClick = { deletingSelection = true }, modifier = small) {
-                    Icon(Icons.Filled.Delete, contentDescription = "delete the selected", tint = MaterialTheme.colorScheme.error)
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = stringResource(R.string.results_cd_delete_selected),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
                 }
                 IconButton(onClick = { confirmingDownload = true }, modifier = small) {
-                    Icon(DownloadIcon, contentDescription = "save the selected to the gallery", tint = onSurface)
+                    Icon(
+                        DownloadIcon,
+                        contentDescription = stringResource(R.string.results_cd_save_selected),
+                        tint = onSurface,
+                    )
                 }
                 IconButton(onClick = { sharing = selected.toList() }, modifier = small) {
-                    Icon(ShareIcon, contentDescription = "share the selected", tint = onSurface)
+                    Icon(ShareIcon, contentDescription = stringResource(R.string.results_cd_share_selected), tint = onSurface)
                 }
                 IconButton(onClick = onClearSelection, modifier = small) {
-                    Icon(Icons.Filled.Close, contentDescription = "stop selecting", tint = onSurface)
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.results_cd_stop_selecting), tint = onSurface)
                 }
             } else {
                 // ⚠⚠⚠ **An EQUAL SHARE of the row each, not a fixed size.**
@@ -452,37 +465,39 @@ fun ResultsScreen(
                 IconButton(onClick = { onToggleFavourite(shown) }, modifier = small) {
                     Icon(
                         Icons.Filled.Star,
-                        contentDescription = if (shown.favourite) "remove from favourites" else "add to favourites",
+                        contentDescription = stringResource(
+                            if (shown.favourite) R.string.results_cd_remove_favourite else R.string.results_cd_add_favourite,
+                        ),
                         tint = if (shown.favourite) StarKept else StarIdle,
                     )
                 }
                 IconButton(onClick = { onSave(shown) }, modifier = small) {
-                    Icon(DownloadIcon, contentDescription = "save to the gallery", tint = onSurface)
+                    Icon(DownloadIcon, contentDescription = stringResource(R.string.results_cd_save_gallery), tint = onSurface)
                 }
                 IconButton(onClick = { sharing = listOf(shown.id) }, modifier = small) {
-                    Icon(ShareIcon, contentDescription = "share", tint = onSurface)
+                    Icon(ShareIcon, contentDescription = stringResource(R.string.err_share), tint = onSurface)
                 }
                 // ⭐ Send into a flow, after share. ⚠ Shown on a clip too and
                 // refusing by name, as Upscale does beside it.
                 IconButton(onClick = {
-                    if (shown.videoPath != null) onToast("Only a picture can be sent into a flow")
+                    if (shown.videoPath != null) onToast(onlyPictureToFlow)
                     else onSendTo(shown)
                 }, modifier = small) {
-                    Icon(SendToIcon, contentDescription = "send this picture to a flow", tint = onSurface)
+                    Icon(SendToIcon, contentDescription = stringResource(R.string.picture_cd_send_to_flow), tint = onSurface)
                 }
                 // ⚠ Always SHOWN, refusing by name (the user's call, 2026-09-17):
                 // a button that vanishes on a clip teaches nothing.
                 IconButton(onClick = {
-                    val no = upscaleRefusal(shown.width, shown.height, shown.videoPath != null, upscaling)
+                    val no = upscaleRefusal(context, shown.width, shown.height, shown.videoPath != null, upscaling)
                     if (no != null) onToast(no) else upscalingPick = shown
                 }, modifier = small) {
                     Icon(
-                        UpscaleIcon, contentDescription = "upscale this picture",
+                        UpscaleIcon, contentDescription = stringResource(R.string.results_cd_upscale_picture),
                         tint = onSurface.copy(alpha = if (upscaling == null) 1f else 0.38f),
                     )
                 }
                 IconButton(onClick = { info = shown }, modifier = small) {
-                    Icon(Icons.Filled.Info, contentDescription = "what made this picture", tint = onSurface)
+                    Icon(Icons.Filled.Info, contentDescription = stringResource(R.string.picture_cd_info_picture), tint = onSurface)
                 }
                 // ⭐⭐⭐ **A normal icon in the row** — the user's call,
                 // 2026-09-22: *"make the open result icon same size and space it
@@ -506,7 +521,7 @@ fun ResultsScreen(
         Text(
             listOfNotNull(
                 shown.prompt?.takeIf { it.isNotBlank() },
-                "${results.size} kept · ${onDiskBytes shr 20} MB",
+                stringResource(R.string.results_kept_mb, results.size, onDiskBytes shr 20),
             ).joinToString(" · "),
             style = NoteTextStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -569,17 +584,17 @@ fun ResultsScreen(
         val n = ids.size
         AlertDialog(
             onDismissRequest = { sharing = null },
-            title = { Text(if (n > 1) "Share $n" else "Share") },
+            title = { Text(pluralStringResource(R.plurals.results_share_count, n, n)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = { sharing = null; onShareResults(ids, false) },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (n > 1) "Share $n images" else "Share image") }
+                    ) { Text(pluralStringResource(R.plurals.results_share_images, n, n)) }
                     OutlinedButton(
                         onClick = { sharing = null; onShareResults(ids, true) },
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (n > 1) "Share $n workflows" else "Share workflow") }
+                    ) { Text(pluralStringResource(R.plurals.results_share_workflows, n, n)) }
                 }
             },
             confirmButton = {},
@@ -590,15 +605,16 @@ fun ResultsScreen(
     if (confirmingDownload) {
         AlertDialog(
             onDismissRequest = { confirmingDownload = false },
-            title = { Text("Save ${selected.size} to the gallery?") },
+            title = { Text(stringResource(R.string.results_save_selected_title, selected.size)) },
             text = {
                 Text(
-                    "Each is written to Pictures/${com.abrah.nightmare.ImageSaver.FOLDER} as a full-size " +
-                        "file — a large selection can take a while and a lot of space."
+                    stringResource(R.string.results_save_selected_body, com.abrah.nightmare.ImageSaver.FOLDER)
                 )
             },
             confirmButton = {
-                Button(onClick = { confirmingDownload = false; onSaveSelected() }) { Text("Save ${selected.size}") }
+                Button(onClick = { confirmingDownload = false; onSaveSelected() }) {
+                    Text(stringResource(R.string.results_save_count, selected.size))
+                }
             },
             dismissButton = { TextButton(onClick = { confirmingDownload = false }) { Text(stringResource(R.string.cancel)) } },
         )
@@ -609,10 +625,9 @@ fun ResultsScreen(
     // user's call, 2026-09-15 — one word). `docs/UI.md` §8.2.
     deletingBatch?.let { g ->
         ConfirmDelete(
-            title = "Delete this batch?",
-            body = "All ${g.size} pictures and the flows that made them go, and " +
-                "this cannot be undone.\n\nCopies saved to the gallery are not affected.",
-            confirmLabel = "Delete ${g.size}",
+            title = stringResource(R.string.results_delete_batch_title),
+            body = stringResource(R.string.results_delete_batch_body, g.size),
+            confirmLabel = stringResource(R.string.results_delete_count, g.size),
             onConfirm = { onDeleteGroup(g) },
             onDismiss = { deletingBatch = null },
         )
@@ -620,10 +635,9 @@ fun ResultsScreen(
 
     if (deletingSelection) {
         ConfirmDelete(
-            title = "Delete ${selected.size} pictures?",
-            body = "Each picture and the flow that made it both go, and this " +
-                "cannot be undone.\n\nCopies saved to the gallery are not affected.",
-            confirmLabel = "Delete ${selected.size}",
+            title = stringResource(R.string.results_delete_selected_title, selected.size),
+            body = stringResource(R.string.results_delete_selected_body),
+            confirmLabel = stringResource(R.string.results_delete_count, selected.size),
             onConfirm = onDeleteSelected,
             onDismiss = { deletingSelection = false },
         )
@@ -631,8 +645,8 @@ fun ResultsScreen(
 
     deleting?.let { r ->
         ConfirmDelete(
-            title = "Delete this picture?",
-            body = RESULT_DELETE_BODY,
+            title = stringResource(R.string.results_delete_picture_title),
+            body = stringResource(R.string.results_delete_picture_body),
             onConfirm = { onDelete(r) },
             onDismiss = { deleting = null },
         )
@@ -698,6 +712,7 @@ fun ResultViewer(
     onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
     onToast: (String) -> Unit = {},
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var upscalingPick by remember { mutableStateOf<Result?>(null) }
     val pager = androidx.compose.foundation.pager.rememberPagerState(
         initialPage = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
@@ -924,9 +939,9 @@ fun ResultViewer(
                     Icon(
                         Icons.Filled.Star,
                         contentDescription = if (current.favourite) {
-                            "remove from favourites"
+                            stringResource(R.string.results_cd_remove_favourite)
                         } else {
-                            "add to favourites"
+                            stringResource(R.string.results_cd_add_favourite)
                         },
                         tint = if (current.favourite) com.abrah.nightmare.ui.StarKept
                             else androidx.compose.ui.graphics.Color.White,
@@ -942,7 +957,7 @@ fun ResultViewer(
             IconButton(onClick = { onSave(current) }, modifier = viewerIcon) {
                 Icon(
                     com.abrah.nightmare.ui.DownloadIcon,
-                    contentDescription = "save to the gallery",
+                    contentDescription = stringResource(R.string.results_cd_save_gallery),
                     tint = androidx.compose.ui.graphics.Color.White,
                 )
             }
@@ -952,7 +967,7 @@ fun ResultViewer(
             IconButton(onClick = { onShare(current) }, modifier = viewerIcon) {
                 Icon(
                     ShareIcon,
-                    contentDescription = "share this picture",
+                    contentDescription = stringResource(R.string.picture_cd_share_picture),
                     tint = androidx.compose.ui.graphics.Color.White,
                 )
             }
@@ -962,7 +977,7 @@ fun ResultViewer(
                 IconButton(onClick = { send(current) }, modifier = viewerIcon) {
                     Icon(
                         SendToIcon,
-                        contentDescription = "send this picture to a flow",
+                        contentDescription = stringResource(R.string.picture_cd_send_to_flow),
                         tint = androidx.compose.ui.graphics.Color.White,
                     )
                 }
@@ -973,13 +988,13 @@ fun ResultViewer(
             onUpscale?.let {
                 IconButton(onClick = {
                     val no = upscaleRefusal(
-                        current.width, current.height, current.videoPath != null, upscaling,
+                        context, current.width, current.height, current.videoPath != null, upscaling,
                     )
                     if (no != null) onToast(no) else upscalingPick = current
                 }, modifier = viewerIcon) {
                     Icon(
                         UpscaleIcon,
-                        contentDescription = "upscale this picture",
+                        contentDescription = stringResource(R.string.results_cd_upscale_picture),
                         tint = androidx.compose.ui.graphics.Color.White
                             .copy(alpha = if (upscaling == null) 1f else 0.38f),
                     )
@@ -988,7 +1003,7 @@ fun ResultViewer(
             IconButton(onClick = { showInfo = !showInfo }, modifier = viewerIcon) {
                 Icon(
                     Icons.Filled.Info,
-                    contentDescription = "what made this picture",
+                    contentDescription = stringResource(R.string.picture_cd_info_picture),
                     tint = androidx.compose.ui.graphics.Color.White,
                 )
             }
@@ -1023,8 +1038,8 @@ fun ResultViewer(
         if (confirmingDelete) {
             // ⚠ The SAME body as the card's confirm — one constant, not two copies.
             ConfirmDelete(
-                title = "Delete this picture?",
-                body = RESULT_DELETE_BODY,
+                title = stringResource(R.string.results_delete_picture_title),
+                body = stringResource(R.string.results_delete_picture_body),
                 onConfirm = { onDelete(current) },
                 onDismiss = { confirmingDelete = false },
             )
@@ -1089,7 +1104,7 @@ private fun BatchCard(
     ) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ResultCardHeader(
-                title = "${group.size} pictures",
+                title = pluralStringResource(R.plurals.results_pictures, group.size, group.size),
                 label = cover.label,
                 meta = listOfNotNull(cover.model, "${cover.width}x${cover.height}")
                     .joinToString("  "),
@@ -1343,7 +1358,8 @@ private fun ResultCardHeader(
                     Icon(
                         Icons.Filled.Star,
                         contentDescription =
-                            if (favourite) "remove from favourites" else "add to favourites",
+                            if (favourite) stringResource(R.string.results_cd_remove_favourite)
+                            else stringResource(R.string.results_cd_add_favourite),
                         tint = if (favourite) com.abrah.nightmare.ui.StarKept
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
@@ -1356,7 +1372,7 @@ private fun ResultCardHeader(
             IconButton(onClick = onSave, modifier = Modifier.size(32.dp)) {
                 Icon(
                     com.abrah.nightmare.ui.DownloadIcon,
-                    contentDescription = "save to the gallery",
+                    contentDescription = stringResource(R.string.results_cd_save_gallery),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )
@@ -1380,7 +1396,7 @@ private fun ResultCardHeader(
             IconButton(onClick = onShareFlow, modifier = Modifier.size(32.dp)) {
                 Icon(
                     ShareIcon,
-                    contentDescription = "share the flow that made it",
+                    contentDescription = stringResource(R.string.results_cd_share_flow),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )
@@ -1407,10 +1423,6 @@ private fun ResultCardHeader(
 
 
 /** ⚠ One body for deleting one result, wherever it is asked from. */
-private const val RESULT_DELETE_BODY =
-    "The picture and the flow that made it both go, and this cannot be undone.\n\n" +
-        "A copy you saved to the gallery is not affected."
-
 /** ⭐ One small preview in History's grid. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -1468,7 +1480,7 @@ private fun HistoryThumb(
             ) {
                 Icon(
                     androidx.compose.material.icons.Icons.Filled.PlayArrow,
-                    contentDescription = "a clip",
+                    contentDescription = stringResource(R.string.results_cd_clip),
                     tint = Color.White,
                     modifier = Modifier.size(20.dp),
                 )
@@ -1504,7 +1516,7 @@ private fun UnreadablePicture(
 ) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Text(
-            "can't read this picture",
+            stringResource(R.string.results_unreadable),
             style = NoteTextStyle,
             color = color,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -1524,7 +1536,7 @@ fun ResultInfoDialog(details: List<Pair<String, String>>, onClose: () -> Unit) {
     val all = details.joinToString("\n") { (k, v) -> "$k: $v" }
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text("Info") },
+        title = { Text(stringResource(R.string.results_info)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
@@ -1548,10 +1560,10 @@ fun ResultInfoDialog(details: List<Pair<String, String>>, onClose: () -> Unit) {
             TextButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(all)) }) {
                 Icon(CopyIcon, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.size(6.dp))
-                Text("Copy all")
+                Text(stringResource(R.string.results_copy_all))
             }
         },
-        confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.close)) } },
     )
 }
 
@@ -1573,15 +1585,23 @@ private var upscaleScale by androidx.compose.runtime.mutableIntStateOf(com.abrah
  * ⚠ It REFUSES BY NAME rather than hiding the button (the user's call,
  * 2026-09-17): a control that vanishes on a clip teaches nothing.
  */
-fun upscaleRefusal(width: Int, height: Int, isClip: Boolean, busyWith: String?): String? = when {
-    busyWith != null -> "Already upscaling with $busyWith"
-    isClip -> "Upscale works on pictures, not clips"
+fun upscaleRefusal(
+    context: android.content.Context,
+    width: Int,
+    height: Int,
+    isClip: Boolean,
+    busyWith: String?,
+): String? = when {
+    busyWith != null -> context.getString(R.string.upscale_already_running, busyWith)
+    isClip -> context.getString(R.string.upscale_pictures_only)
     // ⭐⭐ Refused only when not even 2x fits [UpscaleNode.MAX_OUT_EDGE]; the
     // chooser dims the scales that do not fit ([UpscalePicker]).
     com.abrah.nightmare.UpscaleNode.fittingScale(width, height, 2) == null ->
-        "Too big to upscale: ${width}x$height. Pictures up to " +
-            "${com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE / 2} px on the long edge only " +
-            "(${com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE} px after 2x)."
+        context.getString(
+            R.string.upscale_too_big,
+            width, height, com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE / 2,
+            com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE,
+        )
     else -> null
 }
 
@@ -1642,16 +1662,18 @@ fun UpscalePicker(
                     }
                 }
                 for (u in upscalers) {
+                    val upscalerLabel = u.spec.labelRes?.let { stringResource(it) } ?: u.spec.label
+                    val upscalerAbout = u.spec.aboutRes?.let { stringResource(it) } ?: u.spec.about
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(u.spec.label)
-                            Text(u.spec.about, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                            Text(upscalerLabel)
+                            Text(upscalerAbout, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                         }
                         when {
                             u.installed -> Button(onClick = { onPick(u.spec.id, upscaleScale) }) { Text(stringResource(R.string.use)) }
-                            u.progress != null -> Text("${u.progress.done shr 20} / ${u.progress.total shr 20} MB", style = MeasureTextStyle)
+                            u.progress != null -> Text(stringResource(R.string.results_mb_progress, u.progress.done shr 20, u.progress.total shr 20), style = MeasureTextStyle)
                             u.build != null -> OutlinedButton(onClick = { onInstall(u.spec) }) {
-                                Text("${u.build.bytes shr 20} MB")
+                                Text(stringResource(R.string.device_mb, u.build.bytes shr 20))
                             }
                             else -> Text(stringResource(R.string.cannot_run_it), style = NoteTextStyle)
                         }
@@ -1687,7 +1709,7 @@ private fun ResultFilterDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Filter") },
+        title = { Text(stringResource(R.string.results_filter)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
@@ -1697,19 +1719,19 @@ private fun ResultFilterDialog(
                     value = query,
                     onValueChange = onQuery,
                     singleLine = true,
-                    label = { Text("Search prompts") },
+                    label = { Text(stringResource(R.string.results_search_prompts)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (models.isEmpty()) {
                     Text(
-                        "Nothing kept here names a model yet.",
+                        stringResource(R.string.results_no_models),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 } else {
                     Text(
-                        "Models",
+                        stringResource(R.string.nav_models),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
@@ -1726,7 +1748,7 @@ private fun ResultFilterDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        dismissButton = { TextButton(onClick = onClear) { Text("Clear") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
+        dismissButton = { TextButton(onClick = onClear) { Text(stringResource(R.string.picture_clear)) } },
     )
 }
