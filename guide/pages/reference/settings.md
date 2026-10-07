@@ -77,7 +77,16 @@ same in either place.
 
 Where model files are fetched from: **Hugging Face** (default), **hf-mirror.com**, or a
 **Custom** base address. Change it if Hugging Face is slow or blocked where you are — it applies
-to every model, upscaler, segmenter, pose detector, depth estimator, ControlNets, translation model and the video models.
+to every model, upscaler, segmenter, pose detector, depth estimator, ControlNets, translation model, the describe and tagger models and the video models.
+
+### CivitAI
+
+Used by **Search online** in a node's LoRA list ([LoRAs](../models/loras.md)):
+
+- **CivitAI API key** — most CivitAI LoRAs download only with your own free key (civitai.com →
+  Account settings → API Keys). It is kept on this phone and sent only to CivitAI.
+- **Show mature content** — off by default. When on, searches go to civitai.red, which
+  includes NSFW LoRAs and previews.
 
 ### Clean temp files
 

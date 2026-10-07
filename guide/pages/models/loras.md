@@ -10,10 +10,43 @@ character or a concept. In Nightmare, LoRAs work on **FLUX.2**, **Z-Image**,
 **SDXL Swap** (an SDXL checkpoint converted in npuforge 1.0.10 or newer as *SDXL Swap*, with
 LoRA ticked; 1.0.11 offers LoRA as SDXL Swap's only feature).
 
+### Download from CivitAI or Hugging Face
+
+On an **SD 1.5 Swap** or **SDXL Swap** generator node, open **LoRAs** and tap **Search
+online**. The **Get LoRAs** sheet opens on the most popular LoRAs for that node's family.
+
+<figure markdown>
+  ![Get LoRAs](../img/lora-browser.png){ .screen }
+</figure>
+
+- **SD 1.5 / SDXL** at the top picks the family. SDXL includes Illustrious, Pony and NoobAI
+  LoRAs, which all run on SDXL Swap.
+- **Type to search.** Results update as you type. You can also paste a CivitAI model link or a
+  Hugging Face repo link to open that LoRA directly.
+- **CivitAI / Hugging Face** picks the site, and **Popular ▾** sets the order (Popular, Top
+  rated, Newest).
+- Tap a LoRA to see its versions (on Hugging Face, its files). Each one shows its size,
+  base model and trigger words. **Download** saves it straight into your LoRAs. The bar
+  shows progress and **Cancel** stops it. The file is checked against the hash CivitAI
+  publishes, and the trigger words become the LoRA's note.
+
+**CivitAI needs your API key for most downloads.** It's free: civitai.com → Account settings →
+API Keys. Paste it in the box shown in the sheet, or in **Settings → Downloads → CivitAI**. The key
+stays on your phone and is sent only to CivitAI. **Show mature content** (off by default)
+searches civitai.red, which includes NSFW LoRAs.
+
+!!! note "CivitAI search is blocked in some countries"
+    In Australia, for example, CivitAI refuses searches, and the sheet tells you so. Pasting
+    a CivitAI model link still works, and downloads still work with your key. You can also use
+    Hugging Face or a VPN.
+
+Only LoRAs for SD 1.5 Swap and SDXL Swap are offered here. LoRAs for FLUX.2 and Z-Image are
+imported as files (below).
+
 ### Import
 
 **Settings → Add-ons → LoRAs → Import**, and pick the `.safetensors` file. It is listed with
-its size; the bin deletes it.
+its size; the bin deletes it. The **Files** button in a node's LoRA list does the same.
 
 ### Use
 
@@ -36,9 +69,21 @@ If the LoRA's description names a trigger word, put that word in your prompt.
 
 The **⋮** beside each LoRA opens a note for it: its trigger words, the strength and settings it
 works best with, anything you would otherwise have to remember. Put the **trigger words on the
-first line**. In the note, **Copy** copies the whole note and **Add to prompt** adds the first
-line to the prompt wired into that generator. A dot beside the ⋮ marks a LoRA that has a note.
-Notes are kept next to the LoRA files, so they stay when the app is updated.
+first line**. A LoRA downloaded with **Search online** comes with its trigger words already
+filled in. In the note:
+
+- **Copy** copies the whole note.
+- **Add to prompt** adds the first line to the end of the prompt wired into that generator.
+- **Replace prompt** replaces that prompt's text with the first line.
+
+A dot beside the ⋮ marks a LoRA that has a note. Notes are kept next to the LoRA files, so they
+stay when the app is updated.
+
+### Delete
+
+**Delete** in a LoRA's ⋮ removes the file from the phone, after asking. If the LoRA was ticked
+on that node, it is unticked too. Any other node that uses it will refuse to run until you add
+it again or untick it. **Settings → Add-ons → LoRAs** deletes LoRAs too.
 
 ### On SD 1.5 Swap
 
@@ -53,8 +98,9 @@ part trained into the text encoder does not (true of every NPU conversion).
 
 The same, with **SDXL** LoRAs: an SDXL Swap model has 700 rank-64 slots, filled on the phone the
 first time a mix is used and kept for next time. LoRAs written with either layer naming
-(diffusers or SGM) are read. SDXL Swap is new: ControlNet and IP-Adapter are not offered on it
-yet, and npuforge's SDXL Swap conversion takes about an hour on the phone.
+(diffusers or SGM) are read. From npuforge 1.0.12 an SDXL Swap conversion can also keep
+ControlNet and IP-Adapter ([nodes](../reference/nodes.md#image-generator)); npuforge's SDXL Swap
+conversion takes about an hour on the phone.
 
 ## Embeddings
 

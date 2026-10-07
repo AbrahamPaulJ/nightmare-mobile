@@ -57,6 +57,13 @@ MNN
     https://github.com/alibaba/MNN
     Apache 2.0. Used for CPU and GPU model execution paths.
 
+ONNX Runtime
+    Microsoft
+    https://github.com/microsoft/onnxruntime
+    MIT licensed. The com.microsoft.onnxruntime:onnxruntime-android library,
+    shipped inside the APK; runs the CPU picture helpers (segmenter, parser,
+    pose, depth, IP-Adapter, the describe and tag models).
+
 Real-ESRGAN x4plus anime 6B, 4x UltraSharpV2 Lite
     Upscaler weights, converted and published by xororz.
     Downloaded by the app at the user's request; not included here.
@@ -176,6 +183,24 @@ SegFormer-B2 clothes (ATR human parser)
     huggingface.co/AbrahamPJ/segformer-b2-clothes-onnx; downloaded by the app at
     the user's request; not included here.
 
+Florence-2 PromptGen v2.0 (base)
+    MiaoshouAI, fine-tuned from Microsoft's Florence-2-base-ft; ONNX graphs by
+    onnx-community
+    https://huggingface.co/MiaoshouAI/Florence-2-base-PromptGen-v2.0
+    https://huggingface.co/microsoft/Florence-2-base-ft
+    https://huggingface.co/onnx-community/Florence-2-base-ft
+    MIT licensed. A prompt from a picture (the prompt box's describe button).
+    PromptGen's weights put into onnx-community's graphs, the language half
+    quantized to int8, and hosted at huggingface.co/AbrahamPJ/florence2-promptgen-onnx;
+    downloaded by the app at the user's request; not included here.
+
+WD ViT Tagger v3
+    SmilingWolf
+    https://huggingface.co/SmilingWolf/wd-vit-tagger-v3
+    Apache 2.0. Danbooru tags from a picture (the describe button's Tags).
+    Unmodified, downloaded by the app from SmilingWolf's repository at the
+    user's request; not included here.
+
 Foxlet Translate
     yinvoke
     https://github.com/yinvoke/foxlet-translate
@@ -214,6 +239,23 @@ ControlNet 1.1 (canny, depth, openpose) for SD 1.5
     context binaries (the openpose one by LocalDream) and re-hosted at
     https://huggingface.co/AbrahamPJ/nightmare-sd15-controlnet-qnn, downloaded
     by the app at the user's request; not included here.
+
+SDXL ControlNets (canny, depth, openpose) for SDXL Swap
+    Hugging Face diffusers team; Thibaud Zamora
+    https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0
+    https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0
+    https://huggingface.co/thibaud/controlnet-openpose-sdxl-1.0
+    Canny and depth: CreativeML Open RAIL++-M; its use-based restrictions
+    apply. Openpose: its card refers to OpenPose's licence (CMU, non-commercial
+    use). Converted to QNN context binaries per chip and re-hosted at
+    https://huggingface.co/AbrahamPJ/nightmare-sdxl-controlnet-qnn, downloaded
+    by the app at the user's request; not included here.
+
+IP-Adapter Plus / Plus Face SDXL heads
+    Tencent AI Lab (h94/IP-Adapter, sdxl_models), Apache 2.0
+    Converted to ONNX (int8 weights) beside the SD 1.5 heads at
+    https://huggingface.co/AbrahamPJ/nightmare-ip-adapter. Downloaded at the
+    user's request.
 
 MoveNet MultiPose Lightning (the openpose detector)
     Google; ONNX export by Xenova

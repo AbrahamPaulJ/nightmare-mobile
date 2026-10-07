@@ -12,9 +12,10 @@ cannot be used directly — it has to be converted first. Two ways:
   `.safetensors` checkpoint into an NPU model with no PC involved. Its 9-channel inpainting
   exports run as real inpainting models, and its **SD1.5 Swap** exports appear under the
   **SD 1.5 Swap** family and take LoRAs and ControlNet per render
-  ([nodes](../reference/nodes.md#image-generator)). npuforge 1.0.11's **SDXL Swap** exports with
-  LoRA ticked appear under the **SDXL Swap** family and take SDXL LoRAs per render
-  ([LoRAs](loras.md#on-sdxl-swap)). NPuForge 1.0.8 and later also marks
+  ([nodes](../reference/nodes.md#image-generator)). npuforge's **SDXL Swap** exports appear under the
+  **SDXL Swap** family and take SDXL LoRAs per render ([LoRAs](loras.md#on-sdxl-swap)); from npuforge
+  1.0.12 they can also keep **ControlNet** and **IP-Adapter**. A conversion has only the features
+  ticked when it was made: the others are dimmed on its node, and tapping one says so. NPuForge 1.0.8 and later also marks
   v-prediction packages, which Nightmare enables automatically.
 - **A zip made for LocalDream**: converted models shared for LocalDream import unchanged.
 
