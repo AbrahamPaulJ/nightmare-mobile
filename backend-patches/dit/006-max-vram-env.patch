@@ -1,0 +1,18 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index e4910f8..ecaf78c 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -162,6 +162,13 @@ dit_ctx *engine_create(const dit_ctx_params *params) {
+   if (params->backend && params->backend[0]) sd_params.backend = params->backend;
+   if (params->params_backend && params->params_backend[0])
+     sd_params.params_backend = params->params_backend;
++  // nightmare: a per-device GiB budget for weights and runner buffers, read
++  // from the environment so dit_ctx_params (the ABI) does not move. Below HTP
++  // v79 one fastrpc session maps ~3 GB, and FLUX.2 Klein 4B's 4.1 GB DiT,
++  // planned as ONE graph segment, failed to map on every 8 Gen 3 report. A
++  // budget makes the graph cut split it into segments that fit.
++  const char *max_vram = std::getenv("DIT_MAX_VRAM");
++  if (max_vram && max_vram[0]) sd_params.max_vram = max_vram;
+   // 0 is "unset": leave whatever sd_ctx_params_init chose.
+   if (params->lora_apply_mode > 0 &&
+       params->lora_apply_mode < LORA_APPLY_MODE_COUNT) {
