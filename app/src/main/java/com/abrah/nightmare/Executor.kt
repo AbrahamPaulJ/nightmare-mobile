@@ -1317,6 +1317,12 @@ object VaeDecodeNode : NodeType {
  * neither needs that space.
  */
 internal fun npuSpaceRefused(body: String, log: Iterable<String>): String? {
+    // ⭐ The DiT engine's form of the same wall: the DSP would not map more weights (the first 8 Gen 3
+    // report, OnePlus SM8650, 2026-10-10 — `ggml-hex: HTP0 buffer mapping failed`).
+    if ("DiT generation failed" in body && log.any { "buffer mapping failed" in it || "fastrpc_mmap failed" in it }) {
+        return "this phone's NPU could not map the model's weights — try a smaller canvas, and please " +
+            "share this report (8 Gen 3 support is new) [${body.take(80)}]"
+    }
     val m = Regex("""Failed init QNN model: (\w+)""").find(body) ?: return null
     if (log.none { "Failed to find available PD" in it }) return null
     val what = if (m.groupValues[1] == "controlnet") "the ControlNet" else m.groupValues[1]

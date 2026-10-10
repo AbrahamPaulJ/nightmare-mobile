@@ -565,8 +565,16 @@ object BackendProcess {
                     // engine's parameter residency, e.g. `te=disk` — how Qwen's
                     // FP8 DiT is A/B'd at upstream alpha.4's residency against
                     // our `all=disk` (backend 022 lets this win).
+                    // ⭐⭐ …and `all=disk` on a chip below v79 (the 8 Gen 3, alpha). The first 8 Gen 3
+                    // report (OnePlus SM8650, 2026-10-10): the v75 skel ran the text encoder on the NPU
+                    // (1.46 GB mapped), then the DSP refused to map the next 86 MB of Klein 4B's
+                    // weights — `ggml-hex: HTP0 buffer mapping failed … fastrpc_mmap failed`, at 512²
+                    // and 1024² alike. The NPU process cannot hold the resident set the S25 holds;
+                    // weights on disk are mapped per step, as Qwen always runs (`docs/DIT.md` §9e).
                     if (!upscalerOnly && spec?.family?.dit == true) {
-                        readDitParamsOverride(context)?.let { add("--dit_params_backend"); add(it) }
+                        val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
+                        (readDitParamsOverride(context) ?: "all=disk".takeIf { belowV79 })
+                            ?.let { add("--dit_params_backend"); add(it) }
                     }
                     // ⭐ Only meaningful WITH --lowram, as upstream passes it.
                     if (lowram && spec?.family == Family.ANIMA && Prefs.lowRam(context).animaSeqDit) {
