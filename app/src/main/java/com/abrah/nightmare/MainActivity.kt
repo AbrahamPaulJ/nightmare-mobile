@@ -1,5 +1,7 @@
 package com.abrah.nightmare
 
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import com.abrah.nightmare.ui.LoraBrowserContent
 import android.content.Intent
 import android.os.Bundle
@@ -35,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -149,6 +152,8 @@ class MainActivity : ComponentActivity() {
         // against it. Loading late would render the first graph against the
         // previous selection.
         SelectedModel.load(this)
+        // ⭐ The API, if it was left on (`api/ApiService.kt`).
+        runCatching { com.abrah.nightmare.api.ApiService.syncWith(this) }
         // ⚠ Before NODE_TYPES is touched: the upscale node's default and its
         // dropdown read this cache, and an empty one makes a new node default to
         // an upscaler that may not be installed.
@@ -250,6 +255,21 @@ fun HarnessScreen(
     nonce: Int = 0,
     vm: HarnessViewModel = viewModel(),
 ) {
+    // ⭐ The sidebar (`ui/ShellDrawer.kt`) and its Save flow, which opens the canvas's own dialog.
+    var drawerOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var saveRequest by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // ⭐ …and the "Save, then open" answer of the unsaved-flow dialog raises the same one.
+    LaunchedEffect(vm.saveAsk) { if (vm.saveAsk > 0) saveRequest++ }
+    // ⭐⭐ A sidebar tap's destination is composed two frames later, after the sidebar has gone
+    // (the user, 2026-10-09: "delay when i click models … i can see it disappear late").
+    val shellScope = androidx.compose.runtime.rememberCoroutineScope()
+    val openLater: (() -> Unit) -> Unit = { open ->
+        shellScope.launch {
+            androidx.compose.runtime.withFrameNanos { }
+            androidx.compose.runtime.withFrameNanos { }
+            open()
+        }
+    }
     // One probe on open. A harness that makes you press a button to learn
     // whether anything is running wastes the first second of every session.
     // ⚠ Skipped when this composition was started BY an op. Both effects run on
@@ -302,14 +322,19 @@ fun HarnessScreen(
                     stringResource(R.string.flow_open_unsaved_body)
                 )
             },
+            // ⭐ Three answers, one dialog everywhere a flow is opened (Use, Flows, Results — the
+            // user's call, 2026-10-10): Save (then open), Open anyway, Cancel.
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = vm::confirmPendingOpen) {
-                    Text(stringResource(R.string.flow_open_anyway))
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = vm::dismissPendingOpen) {
-                    Text(stringResource(R.string.flow_keep_editing))
+                androidx.compose.foundation.layout.Row {
+                    androidx.compose.material3.TextButton(onClick = vm::dismissPendingOpen) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                    androidx.compose.material3.TextButton(onClick = vm::confirmPendingOpen) {
+                        Text(stringResource(R.string.flow_open_anyway))
+                    }
+                    androidx.compose.material3.TextButton(onClick = vm::savePendingOpen) {
+                        Text(stringResource(R.string.save))
+                    }
                 }
             },
         )
@@ -318,6 +343,25 @@ fun HarnessScreen(
     // ⭐ Send a picture into a flow — from the canvas viewer or Results, so drawn
     // here, above both. ⚠ Before the unsaved-flow confirm in the view model's
     // order of events: choosing a flow here may raise that one next.
+    // ⭐⭐ First launch: which view to open on (the user's call, 2026-10-08). Changeable in Settings.
+    if (vm.askView) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.view_ask_title)) },
+            text = { Text(stringResource(R.string.view_ask_body)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { vm.chooseDefaultView(MainView.NODES) }) {
+                    Text(stringResource(R.string.view_ask_nodes))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { vm.chooseDefaultView(MainView.GRAPH) }) {
+                    Text(stringResource(R.string.view_ask_graph))
+                }
+            },
+        )
+    }
+
     vm.pendingSend?.let { s ->
         com.abrah.nightmare.ui.SendToDialog(
             choices = s,
@@ -470,6 +514,7 @@ fun HarnessScreen(
             onReleaseSweep = vm::releaseSweep,
             onBack = { vm.setCanvasVisible(false) },
             runError = vm.runError,
+            onDismissRunError = vm::dismissRunError,
             runLog = vm.runLog,
             onCloseRunLog = vm::clearRunLog,
             modelLabel = vm.modelLabel,
@@ -479,85 +524,47 @@ fun HarnessScreen(
             // somewhere. Saved name first, then the result's, then neither.
             flowName = vm.activeFlow.name ?: vm.openedResultName ?: "unsaved flow",
             flowDirty = vm.activeFlow.dirty,
-            loadLine = vm.load?.let { l ->
-                // ⚠⚠ Formatted HERE rather than in the view model: the STRING is
-                // presentation, the numbers are not.
-                //
-                // ⚠ This shipped once as a literal "holding ${'$'}it · ${'$'}free/${'$'}total GB
-                // free" on the phone — over-escaped in the edit that wrote it,
-                // so Kotlin saw the dollar signs as text. A template that
-                // renders its own placeholders is not a subtle bug and it still
-                // reached a device, because nothing here is covered by a golden.
-                val free = "%.1f".format(l.ramFreeBytes / 1e9)
-                val total = "%.1f".format(l.ramTotalBytes / 1e9)
-                // ⚠⚠ The model is named in BOTH states, and that matters: the
-                // name used to have its own row and removing that row must not
-                // cost the answer to "which checkpoint am I on". `resident` is
-                // null when no process is up, and then the selected name is
-                // still the honest thing to show — marked idle so it is not
-                // read as "loaded".
-                // ⭐⭐⭐ The IN-PROCESS NPU wins the line while it is holding
-                // something, because it is the thing actually running.
-                //
-                // ⚠⚠ Without this the bar described a video render as
-                // "AbsoluteReality (idle)" — naming an SD checkpoint that was
-                // not involved, and calling the machine idle while 13 context
-                // binaries were mapped on the NPU. Reported from the phone,
-                // 2026-09-13: *"why is the video model not shown in the top bar,
-                // it just shows sd1.5 model as idle"*. The two routes to the NPU
-                // are independent (`docs/NEODRAGON.md` §3), so the readout has
-                // to ask both rather than assume the server is the only one.
-                val holding = when {
-                    // Something is mapped on the NPU right now.
-                    // ⚠ A COLON after "holding" — the user's call, 2026-09-22.
-                    // ⚠⚠ The literal is here, not `R.string.canvas_holding`:
-                    // this line has never used that resource, and changing the
-                    // string alone did nothing on the phone.
-                    l.npuGraphs > 0 ->
-                        "holding: ${com.abrah.nightmare.npu.NpuFiles.LABEL}" +
-                            "  ·  ${l.npuGraphs} graph" + (if (l.npuGraphs == 1) "" else "s")
-                    // A backend process is up with a checkpoint in it.
-                    l.resident != null -> "holding: ${l.resident}"
-                    // ⭐⭐ Nothing is loaded — so name what the OPEN FLOW would
-                    // use, not what the picker happens to be set to. A video
-                    // flow does not touch a checkpoint, and saying
-                    // "QteaMix (idle)" over a t2v graph described a model that
-                    // will never be loaded by anything on the canvas.
-                    !l.graphNeedsCheckpoint ->
-                        if (l.graphIsVideo) {
-                            // ⚠ Not "(idle)" while a clip is rendering: the
-                            // contexts are mapped a few seconds in, and the
-                            // window before that was described as idle.
-                            com.abrah.nightmare.npu.NpuFiles.LABEL +
-                                if (l.running) " (loading…)" else " (idle)"
-                        } else "no checkpoint needed"
-                    // ⭐⭐⭐ Nothing resident — so name what THIS GRAPH will load.
-                    //
-                    // ⚠⚠ It said `vm.modelLabel`, the global picker. Since a node
-                    // can carry its own checkpoint (2026-09-15) that is simply a
-                    // different question, and changing a sampler's model left the
-                    // bar naming the old one. `graphModels` is the graph's own
-                    // answer; the rule is the one the branch above already
-                    // follows.
-                    else -> {
-                        val names = l.graphModels
-                        val head = names.firstOrNull() ?: vm.modelLabel
-                        // ⚠ A graph may name TWO checkpoints now, and the bar has
-                        // one line. Say the first and how many more, rather than
-                        // picking one and implying it is the only one.
-                        val more = if (names.size > 1) " +${names.size - 1}" else ""
-                        // ⚠ "loading…" rather than "(idle)" while a run is in
-                        // flight — a backend launch is 2.3-5 s and the poll is
-                        // every 2 s, so the launch window read as idle.
-                        head + more + if (l.running) " (loading…)" else " (idle)"
-                    }
-                }
-                "$holding  ·  $free/$total GB free"
+            ram = vm.load?.let { l ->
+                val sl = shellLoadOf(l, vm.modelLabel)
+                stringResource(R.string.shell_ram, sl.ramFree, sl.ramTotal)
             },
+            onMenu = { drawerOpen = true },
+            saveRequest = saveRequest,
             onModels = { vm.setModelsVisible(true) },
             onWorkflows = { vm.setWorkflowsVisible(true) },
             onResults = { vm.setResultsVisible(true) },
-            onDeviceInfo = { vm.setDeviceInfoVisible(true) },
+            // ⚠ The FLOW view, also while a library sheet is up: the canvas stays itself behind it.
+            mainView = vm.canvasView,
+            onView = vm::openDestination,
+            nodesVertical = vm.nodesVertical,
+            // ⭐⭐ The Agent view — a full page below the top bar (the user's call, 2026-10-08: the
+            // panel fought the keyboard and covered Run).
+            agentContent = { m ->
+                val a = vm.agent
+                // ⭐ On its own card, like the Default view's pages (`PanelCard`, the user's containers).
+                com.abrah.nightmare.ui.PanelCard(m.padding(horizontal = com.abrah.nightmare.ui.SCREEN_GUTTER).padding(top = 8.dp)) {
+                    com.abrah.nightmare.ui.AgentScreen(
+                        com.abrah.nightmare.ui.AgentUi(
+                            items = a.items, busy = a.busy, config = a.config, mode = a.mode,
+                            models = a.models, modelsLoading = a.modelsLoading, modelsError = a.modelsError,
+                            runLog = vm.runLog, profiles = a.profiles, attached = a.attached,
+                            // ⚠ Only while the agent is working: a download from the browser is not the chat's.
+                            download = vm.loraDownload.takeIf { a.busy },
+                            runAspect = com.abrah.nightmare.canvas.runAspect(vm.canvas.workflow.graph, vm.nodeTypes),
+                        ),
+                        com.abrah.nightmare.ui.AgentActions(
+                            onSend = a::send, onStop = a::stop, onNewChat = a::newChat,
+                            onMode = { a.mode = it }, onAnswer = a::answer,
+                            onSaveConfig = a::saveConfig, onLoadModels = a::loadModels,
+                            onUseProfile = a::useProfile, onDeleteProfile = a::deleteProfile,
+                            onAttach = a::attach, onDetach = a::detach,
+                            onCancelDownload = vm::cancelModelInstall,
+                        ),
+                        // ⚠ No `imePadding` here: the page's own insets take the keyboard (`belowChrome`).
+                        Modifier.padding(com.abrah.nightmare.ui.PANEL_PAD),
+                    )
+                }
+            },
             imageFor = vm::imageFor,
             // ⚠⚠ Not `onGesture` for these: a whole state captured at composition
             // time and written back late REVERTS the graph. See
@@ -574,6 +581,8 @@ fun HarnessScreen(
             onSetAspect = vm::selectAspect,
             validateWorkflowName = vm::workflowNameError,
             onClearImage = vm::clearImage,
+            onSaveDrawing = vm::saveDrawing,
+            onBlankPicture = { vm.blankPicture(it) },
             onInspectNode = vm::inspectNode,
             onSaveImage = vm::saveImage,
             onShareImage = vm::shareNodeImage,
@@ -590,6 +599,7 @@ fun HarnessScreen(
             isKept = vm::isKept,
             onClearOutput = vm::clearOutput,
             onSave = vm::saveWorkflowAs,
+            onSaveDismiss = vm::cancelOpenAfterSave,
             savedAs = vm.currentWorkflowName,
             suggestedName = vm.suggestedFlowName(),
             // ⚠⚠⚠ **INSTALLED only** — downloaded or imported, nothing else.
@@ -636,13 +646,32 @@ fun HarnessScreen(
             )
         }
 
+    // ⭐⭐⭐ The sidebar. ⚠ Drawn by whatever is on top: the canvas, or — through the sheet's
+    // `overlay` — the open sheet, which is its own window and covers anything the activity draws.
+    // One lambda, so the places cannot differ. ⚠⚠ Every destination CLOSES the other sheet first:
+    // Settings asked for from inside Models used to open behind it and look dead (the user,
+    // 2026-10-10: "settings cant be opened from models/flows/results").
+    val sidebar: @Composable () -> Unit = {
+        com.abrah.nightmare.ui.ShellDrawer(
+            open = drawerOpen,
+            onClose = { drawerOpen = false },
+            version = BuildConfig.VERSION_NAME,
+            onModels = { vm.setCanvasVisible(true); openLater { vm.setModelsVisible(true) } },
+            onFlows = { vm.setCanvasVisible(true); openLater { vm.setWorkflowsVisible(true) } },
+            onResults = { vm.setCanvasVisible(true); openLater { vm.setResultsVisible(true) } },
+            flowName = vm.activeFlow.name ?: vm.openedResultName ?: stringResource(R.string.drawer_unsaved_flow),
+            flowDirty = vm.activeFlow.dirty,
+            onSaveFlow = { vm.closeLibrary(); vm.setCanvasVisible(true); saveRequest++ },
+            load = vm.load?.let { shellLoadOf(it, vm.modelLabel) },
+            onSettings = { vm.closeLibrary(); openLater { vm.setCanvasVisible(false) } },
+            onAbout = { vm.setDeviceInfoVisible(true) },
+        )
+    }
+    // ⭐⭐ Models / Flows / Results are SHEETS over the canvas again, like Settings (the user's call
+    // 2026-10-10, reversing Violet Studio's destinations-under-the-shell of 2026-10-08).
+    // ⚠ The sheet handles Back itself (its Dialog's dismiss), so the gesture never leaves the app.
     if (vm.libraryOpen) {
-        com.abrah.nightmare.ui.PullDownSheet(onDismiss = { vm.closeLibrary() }) {
-            // ⚠⚠ Every screen the app puts OVER the canvas handles back itself, or
-            // the gesture leaves the app entirely -- there is one activity and no
-            // back stack, so the system's default is "finish". Found on the
-            // fullscreen viewer, 2026-09-09; these two had it just as badly.
-            BackHandler { vm.closeLibrary() }
+        com.abrah.nightmare.ui.PullDownSheet(onDismiss = vm::closeLibrary, onMenu = { drawerOpen = true }, overlay = sidebar) {
             // ⭐⭐ Asked AT the first Download, not at launch: that is the
             // moment the answer means something. Android 13+ drops every
             // notification silently without it, and the shade is where a
@@ -660,6 +689,8 @@ fun HarnessScreen(
             LibraryScreen(
                 tab = vm.libraryTab,
                 onTab = vm::switchLibraryTab,
+                showTabs = false,
+                onMenu = { drawerOpen = true },
                 models = {
                     // ⭐ The zip picker for an imported checkpoint.
                     //
@@ -714,6 +745,7 @@ fun HarnessScreen(
                         // something long", which is what [working] is for.
                         busy = vm.working,
                         error = vm.modelError,
+                        onDismissError = vm::dismissModelError,
                         onInstall = { askToNotify(); vm.installModel(it) },
                         onCancel = vm::cancelModelInstall,
                         onDelete = vm::deleteModel,
@@ -800,6 +832,7 @@ fun HarnessScreen(
                         unreadable = vm::resultUnreadable,
                         detailsFor = vm::detailsOf,
                         onUpscale = { r, u, s -> vm.upscaleResult(r.id, u, s) },
+                        onUltraFix = vm::ultrafixResult,
                         upscalers = vm.upscalerRows,
                         onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
                         upscaling = vm.upscalingResult,
@@ -824,6 +857,7 @@ fun HarnessScreen(
                         },
                         saved = vm.savedWorkflows,
                         error = vm.workflowError,
+                        onDismissError = vm::dismissWorkflowError,
                         onOpenRecipe = vm::openRecipe,
                         onOpenSaved = vm::openSaved,
                         onDeleteSaved = vm::deleteSaved,
@@ -884,6 +918,7 @@ fun HarnessScreen(
                         upscalers = vm.upscalerRows,
                         upscaling = vm.upscalingResult,
                         onUpscale = { r, u, s -> vm.upscaleResult(r.id, u, s) },
+                        onUltraFix = vm::ultrafixResult,
                         onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
                         onToast = vm::toast,
                     ) }
@@ -893,9 +928,12 @@ fun HarnessScreen(
         return
     }
 
-    if (vm.showCanvas) return
+    if (vm.showCanvas) {
+        sidebar()
+        return
+    }
 
-    com.abrah.nightmare.ui.PullDownSheet(onDismiss = { vm.setCanvasVisible(true) }) {
+    com.abrah.nightmare.ui.PullDownSheet(onDismiss = { vm.setCanvasVisible(true) }, onMenu = { drawerOpen = true }, overlay = sidebar) {
 
         // ⚠⚠ **Settings is one page now** — Community and Diagnostics (the op
         // harness) were removed 2026-09-19, at the user's ask: a pack still loads
@@ -916,6 +954,12 @@ fun HarnessScreen(
         // ⚠ Same reasoning again: `.safetensors` has no registered MIME type, so
         // the filter has to be wide and the EXTENSION is what validates
         // ([HarnessViewModel.importLora]).
+        // ⭐ Tag autocomplete's CSVs: which dictionary the picker is for, captured before it opens.
+        var tagPickTranslation by remember { mutableStateOf(false) }
+        val tagPicker = rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+        ) { uri -> if (uri != null) vm.importTags(uri, tagPickTranslation) }
+        LaunchedEffect(Unit) { vm.refreshTags() }
         val settingsLoraPicker = rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
         ) { uri -> if (uri != null) vm.importLora(uri) }
@@ -947,6 +991,7 @@ fun HarnessScreen(
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
+        androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshApi() }
         com.abrah.nightmare.ui.SettingsScreen(
             theme = vm.theme,
             onTheme = vm::chooseTheme,
@@ -979,6 +1024,14 @@ fun HarnessScreen(
             onCivitaiKey = vm::chooseCivitaiKey,
             matureContent = vm.matureContent,
             onMatureContent = vm::chooseMatureContent,
+            api = com.abrah.nightmare.ui.ApiState(vm.apiOn, vm.apiToken, vm.apiAddresses),
+            onApi = vm::chooseApi,
+            onRegenerateApiToken = vm::regenerateApiToken,
+            defaultView = vm.defaultViewChoice,
+            onDefaultView = vm::chooseDefaultView,
+            nodesVertical = vm.nodesVertical,
+            onNodesVertical = vm::chooseNodesVertical,
+            onMenu = { drawerOpen = true },
             lowRam = vm.lowRam,
             onLowRam = vm::chooseLowRam,
             onCleanTemp = vm::cleanTempFiles,
@@ -996,6 +1049,16 @@ fun HarnessScreen(
             onModelsPlace = vm::chooseModelsPlace,
             onConfirmMove = vm::confirmMove,
             onDismissMove = vm::dismissMove,
+            tags = vm.tagState,
+            tagProgress = vm.tagProgress,
+            onTagsEnabled = vm::chooseTagsEnabled,
+            onDownloadTags = vm::downloadTags,
+            onCancelTags = vm::cancelTagDownload,
+            onImportTags = { translation ->
+                tagPickTranslation = translation
+                tagPicker.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "*/*"))
+            },
+            onClearTags = vm::clearTags,
         )
         // ⭐ The system's All files access page, opened when a person picks
         // `Download/Nightmare` without it ([HarnessViewModel.chooseModelsPlace]).
@@ -1495,4 +1558,35 @@ private fun PreviewSampling() = NightmareTheme {
         progress = 9 to 22,
         onNotWired = { _, _ -> },
     )
+}
+
+/**
+ * ⭐⭐ What the sidebar's Model card says — the checkpoint (or video model) and its state — and the
+ * RAM the pill beside the seed shows. Moved from the status line under the brand (2026-10-09).
+ *
+ * ⚠⚠ The rules it keeps, each from a phone report: the IN-PROCESS NPU wins while it holds
+ * something, because it is what is running (a video render was described as "AbsoluteReality
+ * (idle)", 2026-09-13); with nothing loaded it names what THIS GRAPH will load, not the global
+ * picker (a node carries its own checkpoint since 2026-09-15); a flow that needs no checkpoint
+ * says so; two checkpoints read "first +1"; "Loading" while a run is in flight, because a
+ * backend launch (2.3–5 s) outlasts the 2 s poll.
+ */
+internal fun shellLoadOf(l: HarnessViewModel.CanvasLoad, fallback: String): com.abrah.nightmare.ui.ShellLoad {
+    val free = "%.1f".format(l.ramFreeBytes / 1e9)
+    val total = "%.1f".format(l.ramTotalBytes / 1e9)
+    val idleOr = if (l.running) com.abrah.nightmare.ui.LoadState.LOADING else com.abrah.nightmare.ui.LoadState.IDLE
+    val (model, state) = when {
+        l.npuGraphs > 0 -> "${com.abrah.nightmare.npu.NpuFiles.LABEL} · ${l.npuGraphs} graph" +
+            (if (l.npuGraphs == 1) "" else "s") to com.abrah.nightmare.ui.LoadState.LOADED
+        l.resident != null -> l.resident to com.abrah.nightmare.ui.LoadState.LOADED
+        !l.graphNeedsCheckpoint ->
+            if (l.graphIsVideo) com.abrah.nightmare.npu.NpuFiles.LABEL to idleOr
+            else "no checkpoint needed" to com.abrah.nightmare.ui.LoadState.NONE
+        else -> {
+            val names = l.graphModels
+            val more = if (names.size > 1) " +${names.size - 1}" else ""
+            (names.firstOrNull() ?: fallback) + more to idleOr
+        }
+    }
+    return com.abrah.nightmare.ui.ShellLoad(model, state, free, total)
 }

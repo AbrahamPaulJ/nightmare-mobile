@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +41,8 @@ fun ScreenHeader(
     /** ⚠ Null draws no ✕ — a panel inside a [PullDownSheet] closes by pulling. */
     onClose: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    /** ⭐ The ☰ before the title — the sidebar, from inside the four sheets (the user, 2026-10-10). */
+    onMenu: (() -> Unit)? = null,
     /** Shown just before the ✕ — the harness puts its version here. */
     trailing: @Composable () -> Unit = {},
 ) {
@@ -48,6 +51,10 @@ fun ScreenHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // ⚠ The canvas shell's own ☰ (`TopBar`): same icon, same place, so it reads as one control.
+        if (onMenu != null) IconButton(onClick = onMenu) {
+            Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.shell_menu))
+        }
         // ⚠⚠ The colour is EXPLICIT, and that is a bug fix. Models and Flows
         // set none, so their titles took `LocalContentColor`, which outside a
         // `Surface` is BLACK -- drawn on a 0xFF0B0B10 canvas. Both headlines
@@ -59,6 +66,7 @@ fun ScreenHeader(
             title,
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             trailing()

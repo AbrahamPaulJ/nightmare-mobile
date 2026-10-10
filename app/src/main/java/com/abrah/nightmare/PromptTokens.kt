@@ -129,7 +129,9 @@ object PromptTokens {
     }
 
     /** Null when the text is blank, there is no budget, or that budget's vocabulary is not loaded. */
-    fun count(text: String, budget: Budget?): Count? {
+    fun count(raw: String, budget: Budget?): Count? {
+        // ⭐ `<lora:…>` tags never reach the encoder ([PromptLoras]), so they cost no tokens.
+        val text = PromptLoras.extract(raw).text
         if (budget == null || text.isBlank()) return null
         val key = "${budget.name}:$text"
         val used = synchronized(cache) {

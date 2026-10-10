@@ -144,6 +144,18 @@ interface OpHost {
     ): Ops.Result<Ops.Decoded> = Ops.Result.Err(501, "this host cannot run a whole-render model")
 
     /**
+     * ⭐ UltraFix — Local Dream's tiled repair of [png] at its own size ([UltraFix]), through
+     * `/generate`. The sampler's Hires fix runs it after its ×2 upscale. Refused by default, as
+     * [generate] is, so an old fake says so by name.
+     */
+    suspend fun ultrafix(
+        png: ByteArray, width: Int, height: Int,
+        prompt: String, negative: String, steps: Int, cfg: Double, seed: Int, denoise: Double,
+        tileSize: Int, scheduler: String,
+        onProgress: (Ops.Progress) -> Unit,
+    ): Ops.Result<Ops.Decoded> = Ops.Result.Err(501, "this host cannot run UltraFix")
+
+    /**
      * ⚠ **mask = 1 takes [b]**, matching `/generate`'s own per-step blend where
      * the mask means "repaint". Blending the other way round produces a
      * plausible picture with the wrong region replaced and raises nothing.
@@ -219,6 +231,18 @@ object BackendHost : OpHost {
         prompt = prompt, negative = negative, steps = steps, cfg = cfg, seed = seed,
         width = width, height = height, imagePng = imagePng, denoise = denoise,
         maskPng = maskPng, referencePngs = referencePngs, loras = loras,
+        onProgress = onProgress,
+    )
+
+    override suspend fun ultrafix(
+        png: ByteArray, width: Int, height: Int,
+        prompt: String, negative: String, steps: Int, cfg: Double, seed: Int, denoise: Double,
+        tileSize: Int, scheduler: String,
+        onProgress: (Ops.Progress) -> Unit,
+    ) = Ops.generate(
+        prompt = prompt, negative = negative, steps = steps, cfg = cfg, seed = seed,
+        width = width, height = height, imagePng = png, denoise = denoise,
+        ultrafix = true, tileSize = tileSize, scheduler = scheduler,
         onProgress = onProgress,
     )
 
@@ -1281,6 +1305,25 @@ object VaeDecodeNode : NodeType {
     }
 }
 
+/**
+ * ⭐ A second NPU context that found no room — said in words, with the way round it.
+ *
+ * ⚠⚠ One HTP process holds just under 4 GB of contexts (a 4.02 GB one failed on the S25,
+ * npuforge `SDXL-SWAP-TEMPLATE.md`), so SDXL Swap's 2.7 GB UNet plus a ControlNet (QNN's
+ * estimate 1.57 GB) always needs a SECOND DSP session. The S25 opens one; an HONOR SM8650 (8 Gen 3)
+ * refused all three (`openSessionForPriority failed … rpc status 0x3ff`, then *"Failed to find
+ * available PD for contextId 2 … context size estimate 1568580864"*), 2026-10-10. Whether every
+ * 8 Gen 3 refuses is not known. IP-Adapter's head runs on the CPU and LoRA rides in the UNet, so
+ * neither needs that space.
+ */
+internal fun npuSpaceRefused(body: String, log: Iterable<String>): String? {
+    val m = Regex("""Failed init QNN model: (\w+)""").find(body) ?: return null
+    if (log.none { "Failed to find available PD" in it }) return null
+    val what = if (m.groupValues[1] == "controlnet") "the ControlNet" else m.groupValues[1]
+    return "this phone's NPU had no room for $what beside the model, and would not open a second " +
+        "space for it — run without it (LoRA and IP-Adapter still work) [${body.take(80)}]"
+}
+
 /** ⚠ Carries the backend's own words. Its error bodies name the real problem. */
 class OpFailure(op: String, val code: Int, val body: String) :
     RuntimeException("$op failed http $code — ${explainOpFailure(code, body).take(200)}")
@@ -1307,6 +1350,7 @@ class OpFailure(op: String, val code: Int, val body: String) :
  * engine left a real error, that error leads.
  */
 internal fun explainOpFailure(code: Int, body: String): String {
+    npuSpaceRefused(body, BackendProcess.newestLaunch())?.let { return it }
     if (code != -1) return body
     // ⚠⚠ A backend that just died is still "running" for a few ms after its
     // socket closed ([BackendProcess.awaitExit]); deciding at that instant is
@@ -1350,7 +1394,8 @@ object LoadImageNode : NodeType {
      */
     override val defaultId = "image"
     // ⚠ 3: pictures are decoded UPRIGHT now (EXIF orientation, `ImageStore.decode`).
-    override val version = "3"
+    // ⚠ 4: a `drawing` layer is painted over the picture (`canvas/DrawWindow.kt`).
+    override val version = "4"
     override val inputs = emptyList<Port>()
     override val outputs = listOf(Port("image", "IMAGE"))
     /** ⚠ `source`, with the prompt: it is where a flow STARTS, not a pixel op. */
@@ -1359,7 +1404,12 @@ object LoadImageNode : NodeType {
     override val widgets = listOf(
         // A content:// URI from the picker, or an absolute path.
         Widget("uri", "string", ""),
+        // ⭐ A doodle over it: a transparent PNG (`files/drawings/`), stretched to the picture.
+        Widget(DRAWING, "string", ""),
     )
+
+    /** ⭐ The doodle layer's param — `canvas/DrawWindow.kt` writes it, [run] paints it. */
+    const val DRAWING = "drawing"
 
     override fun contextKey(node: Node): ContextKey? = null
 
@@ -1406,7 +1456,25 @@ object LoadImageNode : NodeType {
             ?: throw IllegalArgumentException(
                 "node \"${node.id}\": $uri is not an image this device can decode"
             )
-        return Value.Image(ctx.images.put(decoded), decoded.width, decoded.height)
+        val out = withDrawing(decoded, node.str(DRAWING))
+        return Value.Image(ctx.images.put(out), out.width, out.height)
+    }
+
+    /**
+     * ⭐ [picture] with the drawing at [path] painted over it, stretched to fit (the layer is the
+     * picture's shape, at most 2048 long). ⚠ A missing or unreadable layer leaves the picture as
+     * it is: a doodle is never a reason for a render to fail.
+     */
+    internal fun withDrawing(picture: android.graphics.Bitmap, path: String): android.graphics.Bitmap {
+        if (path.isBlank()) return picture
+        val layer = runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull() ?: return picture
+        val out = picture.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+        android.graphics.Canvas(out).drawBitmap(
+            layer, null, android.graphics.Rect(0, 0, out.width, out.height),
+            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG),
+        )
+        layer.recycle()
+        return out
     }
 }
 

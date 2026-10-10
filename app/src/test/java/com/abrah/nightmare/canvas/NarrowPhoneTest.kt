@@ -55,7 +55,7 @@ class NarrowPhoneTest {
                     backendUp = true,
                     flowName = "unsaved flow",
                     flowDirty = true,
-                    loadLine = "Z-Image Turbo (idle) · 4.7/11.7 GB free",
+                    ram = "RAM 4.7 / 11.7 GB free",
                 )
             }
         }
@@ -63,7 +63,7 @@ class NarrowPhoneTest {
 
     private fun assertDrawn() {
         screen()
-        for (cd in listOf("save this flow", "Settings")) {
+        for (cd in listOf("save this flow", "Menu", "What the three views are")) {
             val b = rule.onNodeWithContentDescription(cd).getBoundsInRoot()
             assertTrue("$cd squeezed to ${b.width}", b.width >= 24.dp)
         }

@@ -39,6 +39,8 @@ open class SettingsScreenshotTest {
                     embeddings = emptyList(),
                     onImportEmbedding = {},
                     translateRows = rows,
+                    // ⭐ Tag autocomplete with the Danbooru list installed, no translations yet.
+                    tags = TagDictionary.State(true, "danbooru.csv", 140_782, null, 0),
                     initialPage = page,
                     // ⭐ The models folder in Download/, access revoked, and
                     // models left behind in app storage — every line it can draw.
@@ -47,12 +49,17 @@ open class SettingsScreenshotTest {
                     strandedModels = if (downloadFolder) 3 to (12L shl 30) else 0 to 0L,
                     // ⭐ The CivitAI section (LoRA browser key + mature switch), no key yet.
                     civitaiKey = "",
+                    // ⭐ The local API, on: its address and token (`docs/AGENT-API.md` §3).
+                    api = com.abrah.nightmare.ui.ApiState(true, "3f9c2a7e1d4b8c6a0e5f7d9b2c4a6e8f1b3d5c7a9e0f2d4b", listOf("192.168.0.4", "100.101.102.103")),
                 )
                 }
             }
         }
 
-    @Test fun general() = shoot("settings-general", 0)
-    @Test fun translation() = shoot("settings-translation", 2)
-    @Test fun downloads() = shoot("settings-downloads", 3, downloadFolder = true)
+    // ⭐ The five groups (2026-10-10). ⚠ No Performance tab here: no memory switches are passed and
+    // the battery is unrestricted, so it is hidden — Advanced is page 3.
+    @Test fun appearance() = shoot("settings-appearance", 0)
+    @Test fun prompts() = shoot("settings-prompts", 1)
+    @Test fun models() = shoot("settings-models", 2, downloadFolder = true)
+    @Test fun advanced() = shoot("settings-advanced", 3)
 }

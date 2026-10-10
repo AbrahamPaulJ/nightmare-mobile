@@ -3,6 +3,7 @@ package com.abrah.nightmare.ui
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.Assert.assertEquals
@@ -64,6 +65,8 @@ class VideoDeleteConfirmTest {
     fun tappingDeleteAsksRatherThanDeleting() {
         screen()
         rule.onNodeWithText("Video").performClick()
+        // ⚠ Delete lives in ⋮ since the add-on cards became `AddonCard` (2026-10-09).
+        rule.onNodeWithContentDescription("More").performClick()
         rule.onNodeWithText("Delete").performClick()
         // ⚠⚠ The assertion that matters: the tap alone must destroy nothing.
         assertEquals("Delete must ask, not delete", 0, deletes)
@@ -76,6 +79,8 @@ class VideoDeleteConfirmTest {
     fun cancellingKeepsIt() {
         screen()
         rule.onNodeWithText("Video").performClick()
+        // ⚠ Delete lives in ⋮ since the add-on cards became `AddonCard` (2026-10-09).
+        rule.onNodeWithContentDescription("More").performClick()
         rule.onNodeWithText("Delete").performClick()
         // ⚠ `Cancel`, as every confirm in the app says since the design review
         // (`ConfirmDelete`) — this one alone said `Keep`.
@@ -87,9 +92,10 @@ class VideoDeleteConfirmTest {
     fun confirmingActuallyDeletes() {
         screen()
         rule.onNodeWithText("Video").performClick()
+        // ⚠ Delete lives in ⋮ since the add-on cards became `AddonCard` (2026-10-09).
+        rule.onNodeWithContentDescription("More").performClick()
         rule.onNodeWithText("Delete").performClick()
-        // ⚠ The dialog's own Delete, which is the second node with that text.
-        rule.onAllNodesWithText("Delete")[1].performClick()
+        rule.onAllNodesWithText("Delete")[0].performClick() // the dialog's: the menu closed on its tap
         assertEquals(1, deletes)
     }
 }

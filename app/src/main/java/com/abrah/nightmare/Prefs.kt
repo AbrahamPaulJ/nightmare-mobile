@@ -45,6 +45,35 @@ object Prefs {
             .getString(KEY_CIVITAI_KEY, null).orEmpty()
         matureContent = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
             .getBoolean(KEY_MATURE, false)
+        val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        defaultView = MainView.entries.firstOrNull { it.name == p.getString(KEY_VIEW, null) }
+        nodesVertical = p.getBoolean(KEY_NODES_VERTICAL, false)
+    }
+
+    // ---- the three views (the user's design, 2026-10-08) ----------------------
+
+    private const val KEY_VIEW = "default_view"
+    private const val KEY_NODES_VERTICAL = "nodes_vertical"
+
+    /**
+     * ⭐ What the app opens on. NULL until the person has been asked (first launch: Nodes for
+     * beginners, Graph for advanced). ⚠ Agent is never a default — it needs a key first.
+     */
+    var defaultView: MainView? = null
+        private set
+
+    fun setDefaultView(context: Context, value: MainView) {
+        defaultView = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(KEY_VIEW, value.name).apply()
+    }
+
+    /** ⭐ The Nodes view top to bottom instead of swiped left to right. */
+    var nodesVertical: Boolean = false
+        private set
+
+    fun setNodesVertical(context: Context, value: Boolean) {
+        nodesVertical = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_NODES_VERTICAL, value).apply()
     }
 
     // ---- the LoRA browser (`docs/LORA-BROWSER.md`) ---------------------------
@@ -219,4 +248,15 @@ object Prefs {
         Family.ANIMA -> lowRam(context).anima
         else -> spec.lowram
     }
+}
+
+/**
+ * ⭐⭐ The six destinations of the shell (the user's design, 2026-10-08 — Violet Studio): the
+ * library's three, then the three views of one flow. ⚠ The ORDER is the 3 × 2 tile grid's.
+ */
+enum class MainView {
+    MODELS, FLOWS, RESULTS, AGENT, NODES, GRAPH;
+
+    /** ⭐ A view of the flow (Agent · Nodes · Graph), not a library destination. */
+    val isCanvas get() = this == AGENT || this == NODES || this == GRAPH
 }

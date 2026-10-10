@@ -1,6 +1,7 @@
 package com.abrah.nightmare
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -30,7 +31,7 @@ class UnknownChipGateTest {
      */
     @Test
     fun anUnknownNewerChipIsNotFlooredToV68() {
-        for (soc in listOf("SM8850-AC", "SM8860", "SM8950", "SM9050P")) {
+        for (soc in listOf("SM8850-AC", "SM8860")) {
             val arch = DeviceProbe.archFromPartNumber(soc)
             assertNotNull("$soc was not recognised as newer than $newestKnown", arch)
             assertTrue(
@@ -66,19 +67,43 @@ class UnknownChipGateTest {
     }
 
     /**
-     * ⭐⭐ The arch it lands on must be one the APK actually ships libraries
-     * for. Guessing an arch whose Skel is absent makes NPU init fail outright
-     * with an error that names neither the arch nor the file — strictly worse
-     * than saying "unsupported".
+     * ⭐⭐ Within the newest generation the guess is an arch the APK ships libraries for.
+     * Guessing an arch whose Skel is absent makes NPU init fail outright with an error that
+     * names neither the arch nor the file.
      */
     @Test
     fun theGuessedArchIsOneWeShipLibrariesFor() {
-        val arch = DeviceProbe.archFromPartNumber("SM8950")
+        val arch = DeviceProbe.archFromPartNumber("SM8860")
         assertNotNull(arch)
         assertTrue(
             "guessed v$arch, which is not in STAGED_ARCHES ${DeviceProbe.STAGED_ARCHES}",
             arch in DeviceProbe.STAGED_ARCHES,
         )
+    }
+
+    /**
+     * ⭐⭐⭐ A whole generation newer (SM8950 / SM8975 — the 8 Elite Gen 6, reported 2026-10-09
+     * as npuforge's "Device Creation failure") is NOT handed v81: no Skel here knows its HTP.
+     * It is marked newer-than-staged, and every NPU gate refuses it.
+     */
+    @Test
+    fun aNewerGenerationIsRefusedNotGuessed() {
+        for (soc in listOf("SM8950", "SM8975", "SM9050P")) {
+            val arch = DeviceProbe.archFromPartNumber(soc)
+            assertEquals("$soc", DeviceProbe.NEWER_THAN_STAGED, arch)
+            val caps = DeviceProbe.Caps(arch!!, 8, measured = false, soc = soc)
+            assertTrue("$soc not flagged", caps.npuTooNew)
+            assertTrue("$soc counted as unknown — it would be offered everything", caps.known)
+            assertFalse("$soc offered a v68 context", caps.supportsArch(68))
+        }
+    }
+
+    /** ⚠ A MEASURED arch without a Skel here (say v85) is refused the same way. */
+    @Test
+    fun aMeasuredUnstagedArchRunsNothing() {
+        val caps = DeviceProbe.Caps(85, 8, measured = true, soc = "SM8975")
+        assertFalse(caps.supportsArch(79))
+        assertTrue(caps.npuTooNew)
     }
 
     /**

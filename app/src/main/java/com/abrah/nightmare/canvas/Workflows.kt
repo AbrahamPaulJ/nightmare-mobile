@@ -255,8 +255,8 @@ private fun flowLayout(vararg ids: String): Map<String, Pt> {
  * ⚠⚠⚠ **The clearance under the floating top bar, and it is a WORLD
  * number on purpose.**
  *
- * The bar is drawn over the canvas and is up to three rows — tabs, flow name,
- * load line — which is ~125dp. A recipe opens at the scale `CanvasState.fitted`
+ * The bar is drawn over the canvas and is up to four rows — nav, views (Agent · Nodes · Graph,
+ * 2026-10-08), flow name, load line — which is ~170dp. A recipe opens at the scale `CanvasState.fitted`
  * picks (~0.32 for the shape below), so the clearance on screen is `TOP * scale`
  * dp on every device: the density cancels, which is why this is not an offset
  * applied to the viewport. `Viewport.offset` is in device PIXELS and nothing
@@ -267,7 +267,7 @@ private fun flowLayout(vararg ids: String): Map<String, Pt> {
  * bug the 120 was chosen to fix, reappearing because the ZOOM changed and the
  * two numbers were never re-checked together.
  */
-private const val TOP = 500f
+private const val TOP = 720f
 
 /**
  * ⭐ [positions] moved so the graph's top-left node sits where a recipe's first
@@ -488,7 +488,7 @@ val RECIPES: List<Recipe> = listOf(
     // than every flow below.
     Recipe(
         "swap_t2i", "Text to image — LoRA, ControlNet, IP-Adapter",
-        "An SD 1.5 Swap model with LoRAs, a ControlNet and an IP-Adapter reference, " +
+        "A Swap model (SD 1.5 or SDXL) with LoRAs, a ControlNet and an IP-Adapter reference, " +
             "all chosen per render on the sampler. Switch each on in its tile.",
         { swapWorkflow(i2i = false) },
         families = setOf(com.abrah.nightmare.Family.SD15_SWAP),
@@ -498,7 +498,7 @@ val RECIPES: List<Recipe> = listOf(
     ),
     Recipe(
         "swap_i2i", "Image to image — LoRA, ControlNet, IP-Adapter",
-        "A photo re-imagined by an SD 1.5 Swap model, with the same three. ControlNet " +
+        "A photo re-imagined by a Swap model, with the same three. ControlNet " +
             "reads the photo itself unless you give it another picture.",
         { swapWorkflow(i2i = true) },
         families = setOf(com.abrah.nightmare.Family.SD15_SWAP),
@@ -517,7 +517,7 @@ val RECIPES: List<Recipe> = listOf(
             "image 1 and image 2 in the prompt.",
         ::fluxEditWorkflow,
         families = com.abrah.nightmare.Family.entries.filter { it.edit }.toSet(),
-        minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
+        minArch = com.abrah.nightmare.ModelCatalog.DIT_GGML_MIN_ARCH,
         labelRes = R.string.flow_flux_edit_name,
         aboutRes = R.string.flow_flux_edit_about,
     ),

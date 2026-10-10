@@ -243,9 +243,35 @@ object CustomModels {
                 }
             }
             .sortedBy { it.label.lowercase() }
+            .let { own -> own + localDream(builtIn + own.map { it.id }) }
         scanned = found
         Log.i(TAG, "scan found ${found.size}: ${found.joinToString { "${it.id}(${it.family})" }}")
         return found
+    }
+
+    /**
+     * ⭐⭐ Local Dream's own models in its public folder ([LocalDreamModels]): its imports (by its
+     * markers — never a guess, never a marker written) and its SDXL built-ins this catalogue lacks.
+     * Each carries its folder as [ModelSpec.home]. ⚠ An id this app already has (a built-in, or
+     * one of our imports) is skipped: ours wins, and a catalogue id resolves to Local Dream's copy
+     * through [ModelSpec.dir] anyway. ⚠ A CPU (MNN) model — `unet.mnn`, no `unet.bin` — is skipped:
+     * this app has no CPU path.
+     */
+    private fun localDream(taken: Set<String>): List<ModelSpec> {
+        if (!LocalDreamModels.available()) return emptyList()
+        return LocalDreamModels.root().listFiles().orEmpty()
+            .filter { it.isDirectory && it.name !in taken && !it.name.startsWith("_") }
+            .filterNot { File(it, "unet.mnn").isFile && !File(it, "unet.bin").isFile }
+            .mapNotNull { dir ->
+                val family = LocalDreamModels.SDXL_BUILT_INS[dir.name]?.let { Family.SDXL }
+                    ?: UPSTREAM_MARKS.firstOrNull { (name, _) -> File(dir, name).isFile }?.second
+                    ?: return@mapNotNull null
+                val cfg = Config.read(dir)
+                val label = LocalDreamModels.SDXL_BUILT_INS[dir.name] ?: cfg.label ?: dir.name
+                longIf(dir, customSpec(dir, cfg, swapIf(dir, family)))
+                    .copy(label = label, home = dir.absolutePath)
+            }
+            .sortedBy { it.label.lowercase() }
     }
 
     /**
@@ -478,7 +504,8 @@ object CustomModels {
         // package has no context binary at all — the arch floor belongs to
         // `libdit_engine.so`, is the same for every checkpoint of the family,
         // and is the number the built-in entries and the Flows gate both use.
-        minHtpArch = if (family.dit) ModelCatalog.DIT_MIN_ARCH else 0,
+        // ⭐ An imported DiT may be any dtype; v75 runs a quantised one on the NPU ([ModelCatalog.DIT_GGML_MIN_ARCH]).
+        minHtpArch = if (family.dit) ModelCatalog.DIT_GGML_MIN_ARCH else 0,
         isCustom = true,
     )
 

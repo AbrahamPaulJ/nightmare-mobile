@@ -192,3 +192,76 @@ val AddObjectIcon: ImageVector by lazy {
     }
 }
 
+
+/** ⭐ Stop (Material's `stop` square) — the agent's input row while it works. */
+val StopIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Stop",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).run {
+        addPath(pathData = PathParser().parsePathString("M6 6h12v12H6z").toNodes(), fill = SolidColor(Color.White))
+        build()
+    }
+}
+
+/** ⭐ One glyph per shell tile (Material shapes, drawn here — no icons-extended, docs/UI.md). */
+private fun glyph(name: String, path: String): ImageVector = ImageVector.Builder(
+    name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f,
+).run {
+    addPath(pathData = PathParser().parsePathString(path).toNodes(), fill = SolidColor(Color.White))
+    build()
+}
+
+/** Models — stacked layers. */
+val ModelsIcon: ImageVector by lazy {
+    glyph("Models", "M11.99 18.54l-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27-7.38 5.74zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27L12 16z")
+}
+
+/** Flows — a dashboard of cards. */
+val FlowsIcon: ImageVector by lazy {
+    glyph("Flows", "M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z")
+}
+
+/** Results — a picture. */
+val ResultsIcon: ImageVector by lazy {
+    glyph("Results", "M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z")
+}
+
+/** Agent — a chat bubble. */
+val AgentIcon: ImageVector by lazy {
+    glyph("Agent", "M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z")
+}
+
+/** Nodes — settings sliders: one step's knobs at a time. */
+val NodesIcon: ImageVector by lazy {
+    glyph("Nodes", "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z")
+}
+
+/** Graph — connected nodes. */
+val GraphIcon: ImageVector by lazy {
+    glyph("Graph", "M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3z")
+}
+
+/** Expand — a chevron down. */
+val ChevronDownIcon: ImageVector by lazy { glyph("ChevronDown", "M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z") }
+
+/** Collapse — a chevron up. */
+val ChevronUpIcon: ImageVector by lazy { glyph("ChevronUp", "M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z") }
+
+/** A model — a cube (the sidebar's Model card). */
+val CubeIcon: ImageVector by lazy {
+    glyph("Cube", "M12 2 3 7v10l9 5 9-5V7l-9-5zm0 2.3 6.9 3.8L12 11.9 5.1 8.1 12 4.3zM5 9.8l6 3.4v6.6l-6-3.4V9.8zm8 10v-6.6l6-3.4v6.6l-6 3.4z")
+}
+
+/** RAM — a chip (Material `memory`). */
+val ChipIcon: ImageVector by lazy {
+    glyph("Chip", "M15 9H9v6h6V9zm-2 4h-2v-2h2v2zm8-2V9h-2V7c0-1.1-.9-2-2-2h-2V3h-2v2h-2V3H9v2H7c-1.1 0-2 .9-2 2v2H3v2h2v2H3v2h2v2c0 1.1.9 2 2 2h2v2h2v-2h2v2h2v-2h2c1.1 0 2-.9 2-2v-2h2v-2h-2v-2h2zm-4 6H7V7h10v10z")
+}
+
+/** A flow file — a page with a folded corner (Material `insert_drive_file`, outlined). */
+val FileIcon: ImageVector by lazy {
+    glyph("File", "M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z")
+}

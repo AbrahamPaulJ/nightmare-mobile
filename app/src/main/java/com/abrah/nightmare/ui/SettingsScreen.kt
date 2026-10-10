@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,6 +36,9 @@ import androidx.compose.ui.res.stringResource
 import com.abrah.nightmare.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.Prefs
 
@@ -120,6 +124,17 @@ fun SettingsScreen(
      */
     lowRam: Prefs.LowRam? = null,
     onLowRam: (String, Boolean) -> Unit = { _, _ -> },
+    /** ⭐ The local API (`docs/AGENT-API.md`). ⚠ A parameter, for the reason [downloadBase] is one. Null hides it. */
+    api: ApiState? = null,
+    onApi: (Boolean) -> Unit = {},
+    onRegenerateApiToken: () -> Unit = {},
+    /** ⭐ The view the app opens on, and the Nodes view's direction (the user's three views). */
+    defaultView: com.abrah.nightmare.MainView = com.abrah.nightmare.MainView.NODES,
+    onDefaultView: (com.abrah.nightmare.MainView) -> Unit = {},
+    nodesVertical: Boolean = false,
+    onNodesVertical: (Boolean) -> Unit = {},
+    /** ⭐ The header's ☰ — the sidebar, from inside the sheet, as on Models / Flows / Results. */
+    onMenu: (() -> Unit)? = null,
     onDownloadBase: (String) -> Unit = {},
     /**
      * ⭐ The LoRA browser's two settings (`docs/LORA-BROWSER.md`). ⚠ Parameters,
@@ -157,6 +172,18 @@ fun SettingsScreen(
     onModelsPlace: (com.abrah.nightmare.ModelStorage.Place) -> Unit = {},
     onConfirmMove: () -> Unit = {},
     onDismissMove: () -> Unit = {},
+    /**
+     * ⭐ Tag autocomplete's dictionaries ([com.abrah.nightmare.TagDictionary]). ⚠ A parameter, for
+     * the reason [downloadBase] is one. Null hides the card.
+     */
+    tags: com.abrah.nightmare.TagDictionary.State? = null,
+    tagProgress: com.abrah.nightmare.ModelInstaller.Progress? = null,
+    onTagsEnabled: (Boolean) -> Unit = {},
+    onDownloadTags: () -> Unit = {},
+    onCancelTags: () -> Unit = {},
+    /** True = the translation dictionary. */
+    onImportTags: (Boolean) -> Unit = {},
+    onClearTags: (Boolean) -> Unit = {},
     /** ⚠ For a golden, which cannot swipe. */
     initialPage: Int = 0,
     modifier: Modifier = Modifier,
@@ -164,6 +191,8 @@ fun SettingsScreen(
     var deletingEmbedding by remember { mutableStateOf<String?>(null) }
     var deletingLora by remember { mutableStateOf<String?>(null) }
     var deletingTranslation by remember { mutableStateOf<com.abrah.nightmare.PromptTranslate.Source?>(null) }
+    /** Which dictionary is being deleted: false the tags, true the translations. */
+    var deletingTags by remember { mutableStateOf<Boolean?>(null) }
     // ⚠⚠ Hoisted to the function, not the Column that draws the button:
     // the confirm dialog below is a sibling of the whole layout, and a state
     // declared in the Column is invisible to it.
@@ -177,7 +206,10 @@ fun SettingsScreen(
     // ⭐ Which pages exist — Translation only when there are rows to draw
     // (null hides a section, the same convention as every slot here).
     val pages = listOfNotNull(
-        Page.GENERAL, Page.ADDONS, Page.TRANSLATION.takeIf { translateRows != null }, Page.DOWNLOADS,
+        Page.APPEARANCE, Page.PROMPTS, Page.MODELS,
+        // ⚠ Hidden when it would be empty (a golden with no memory switches, an unrestricted battery).
+        Page.PERFORMANCE.takeIf { lowRam != null || !batteryUnrestricted },
+        Page.ADVANCED,
     )
     Column(
         // ⚠⚠ Its OWN insets: Settings is not a [LibraryScreen] tab, so the
@@ -189,7 +221,8 @@ fun SettingsScreen(
         modifier.fillMaxSize().navigationBarsPadding().padding(16.dp),
     ) {
         // ⚠ No ✕: Settings is a pull-down sheet since 2026-09-26 ([PullDownSheet]).
-        ScreenHeader(stringResource(R.string.settings), onClose = null)
+        // ⭐ No ☰ of its own — the main bar's, in the sheet's gap, is the one (2026-10-10).
+        ScreenHeader(stringResource(R.string.settings), onClose = null, onMenu = null)
         SwipeTabs(
             labels = pages.map { stringResource(it.label) },
             modifier = Modifier.weight(1f).padding(top = 8.dp),
@@ -201,149 +234,81 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
         when (pages[index]) {
-        Page.GENERAL -> {
-            // ⚠⚠ THREE choices, not a dark-mode switch. "Follow the system" cannot
-            // be expressed as on/off, and a bare switch would pin the app to
-            // whatever the phone was when it was first opened with no way back.
-            // `Prefs.Theme` has the same note.
-            for (t in Prefs.Theme.entries) {
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    RadioButton(selected = theme == t, onClick = { onTheme(t) })
-                    Column {
-                        Text(
-                            stringResource(
-                                when (t) {
-                                    Prefs.Theme.SYSTEM -> R.string.theme_system
-                                    Prefs.Theme.DARK -> R.string.theme_dark
-                                    Prefs.Theme.LIGHT -> R.string.theme_light
-                                }
-                            ),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        if (t == Prefs.Theme.LIGHT) {
-                            // ⚠ Said out loud rather than discovered. The canvas is
-                            // drawn from its own palette (`CanvasColors`) and was
-                            // designed dark; light is honest about being the less
-                            // finished of the two rather than pretending otherwise.
-                            Text(
-                                stringResource(R.string.theme_canvas_note),
-                                style = NoteTextStyle,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-            // ⭐⭐ **Whether a render survives the app leaving the foreground.**
-            //
-            // ⚠⚠ A foreground service now holds this app's process priority up
-            // for as long as a checkpoint is resident (`BackendKeepAliveService`),
-            // which is the actual fix for a user report, 2026-09-18: the backend
-            // process died in the background roughly 4 times in 10, and the whole
-            // workflow reset on return. But on some OEMs — this device's Samsung
-            // One UI among them — a foreground service alone is not always
-            // enough against the battery manager's own app-level kill list, and
-            // this is the second, user-visible half of that fix: one tap to ask
-            // the OS not to restrict this app at all.
-            // ⚠ Shown only while NOT already exempt — once granted there is
-            // nothing to ask for, and a card that never goes away reads as
-            // unresolved even after the user said yes.
-            if (!batteryUnrestricted) {
-                Card(
-                    Modifier.fillMaxWidth().padding(top = 10.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    ),
-                ) {
-                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            stringResource(R.string.battery_title),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Text(
-                            stringResource(R.string.battery_body),
-                            style = NoteTextStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        OutlinedButton(onClick = onRequestBatteryUnrestricted) {
-                            Text(stringResource(R.string.battery_allow))
-                        }
-                    }
-                }
-            }
-            // ⭐ Upstream's low-RAM switches, drawn with the app's one bool
-            // control (`BoolKnobRow`, docs/UI.md §8.9a). Sequential DiT is only
-            // meaningful with Anima low RAM on, so it is disabled without it —
-            // upstream hides it; a disabled row keeps the layout still.
-            if (lowRam != null) {
-                Column(Modifier.fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(stringResource(R.string.memory_title), style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        stringResource(R.string.memory_note),
-                        style = NoteTextStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    com.abrah.nightmare.canvas.BoolKnobRow(
-                        stringResource(R.string.sdxl_lowram), stringResource(R.string.sdxl_lowram_hint),
-                        lowRam.sdxl, { onLowRam(Prefs.KEY_SDXL_LOWRAM, it) },
-                    )
-                    com.abrah.nightmare.canvas.BoolKnobRow(
-                        stringResource(R.string.anima_lowram), stringResource(R.string.anima_lowram_hint),
-                        lowRam.anima, { onLowRam(Prefs.KEY_ANIMA_LOWRAM, it) },
-                    )
-                    com.abrah.nightmare.canvas.BoolKnobRow(
-                        stringResource(R.string.anima_seq_dit), stringResource(R.string.anima_seq_dit_hint),
-                        lowRam.animaSeqDit, { onLowRam(Prefs.KEY_ANIMA_SEQ_DIT, it) },
-                        enabled = lowRam.anima,
-                    )
-                }
-            }
-        }
-        Page.ADDONS -> {
-            // ⭐⭐ LoRAs — import / list / delete, above the embeddings and
-            // built from the same two pieces ([ImportCallout] + a row card).
-            //
-            // ⚠ Above rather than below because a LoRA is the one a person
-            // comes here for: it is picked on a node, so the picker sends them
-            // here by name. An embedding is named in a prompt and needs no trip.
-            if (onImportLora != null) {
-                Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ImportCallout(
-                        title = stringResource(R.string.loras_title),
-                        body = stringResource(R.string.loras_body),
-                        onImport = onImportLora,
-                    )
-                    for (row in loras.orEmpty()) {
-                        Card(
-                            Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            ),
+        // ⭐⭐ Five groups (the user's call, 2026-10-10): what it looks like, what goes into a
+        // prompt, where models come from, what it costs the phone, and the rest.
+        Page.APPEARANCE -> Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                StudioCard {
+                    SectionHeading(stringResource(R.string.theme_title))
+                    // ⚠⚠ THREE choices, not a dark-mode switch: "follow the system" is not on/off.
+                    for (t in Prefs.Theme.entries) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onTheme(t) },
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(row.name, style = MaterialTheme.typography.titleSmall)
-                                    Text(
-                                        stringResource(R.string.installed_mb, row.bytes shr 20),
-                                        style = NoteTextStyle,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                if (onDeleteLora != null) {
-                                    OutlinedButton(onClick = { deletingLora = row.name }) {
-                                        Text(stringResource(R.string.delete))
-                                    }
+                            RadioButton(selected = theme == t, onClick = { onTheme(t) })
+                            Column {
+                                Text(
+                                    stringResource(
+                                        when (t) {
+                                            Prefs.Theme.SYSTEM -> R.string.theme_system
+                                            Prefs.Theme.DARK -> R.string.theme_dark
+                                            Prefs.Theme.LIGHT -> R.string.theme_light
+                                        },
+                                    ),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                if (t == Prefs.Theme.LIGHT) {
+                                    Text(stringResource(R.string.theme_canvas_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
+                    }
+                }
+                // ⭐ The views (2026-10-08): which one opens, and Nodes side to side or top to bottom.
+                // ⚠ Agent is not offered as the default — it needs a key first.
+                StudioCard {
+                    SectionHeading(stringResource(R.string.views_title), stringResource(R.string.views_note))
+                    Row(Modifier.fillMaxWidth()) {
+                        for (v in listOf(com.abrah.nightmare.MainView.NODES, com.abrah.nightmare.MainView.GRAPH)) {
+                            Row(
+                                Modifier.weight(1f).clickable { onDefaultView(v) },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = defaultView == v, onClick = { onDefaultView(v) })
+                                Text(
+                                    stringResource(if (v == com.abrah.nightmare.MainView.NODES) R.string.views_open_nodes else R.string.views_open_graph),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                            }
+                        }
+                    }
+                    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                    com.abrah.nightmare.canvas.BoolKnobRow(
+                        stringResource(R.string.views_nodes_vertical), stringResource(R.string.views_nodes_vertical_hint),
+                        nodesVertical, onNodesVertical,
+                    )
+                }
+        }
+        Page.PROMPTS -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (tags != null) {
+                TagDictionaryCard(tags, tagProgress, onTagsEnabled, onDownloadTags, onCancelTags, onImportTags) { deletingTags = it }
+            }
+            if (translateRows != null) {
+                // ⭐⭐ The two language models behind a prompt box's translate
+                // button (`docs/TRANSLATE.md`) — the SAME [ToolCard] the Models
+                // tab's Tools page draws, so a download here has its size, bar and
+                // Cancel (`docs/UI.md` §8.2).
+                Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.translation_note),
+                        style = NoteTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    for ((source, row) in translateRows.orEmpty()) {
+                        ToolCard(
+                            row, installing, { onInstallTranslation(source) }, onCancelInstall,
+                            detail = stringResource(R.string.translate_about),
+                        ) { deletingTranslation = source }
                     }
                 }
             }
@@ -387,26 +352,7 @@ fun SettingsScreen(
                 }
             }
         }
-        Page.TRANSLATION -> {
-            // ⭐⭐ The two language models behind a prompt box's translate
-            // button (`docs/TRANSLATE.md`) — the SAME [ToolCard] the Models
-            // tab's Tools page draws, so a download here has its size, bar and
-            // Cancel (`docs/UI.md` §8.2).
-            Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    stringResource(R.string.translation_note),
-                    style = NoteTextStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                for ((source, row) in translateRows.orEmpty()) {
-                    ToolCard(
-                        row, installing, { onInstallTranslation(source) }, onCancelInstall,
-                        detail = stringResource(R.string.translate_about),
-                    ) { deletingTranslation = source }
-                }
-            }
-        }
-        Page.DOWNLOADS -> {
+        Page.MODELS -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             // ⭐⭐⭐ **Where models live** ([com.abrah.nightmare.ModelStorage]) —
             // the user's ask, 2026-09-26: a folder a file picker can reach.
             // ⚠ Radios, the SAME [SourceRow] the download source below uses:
@@ -435,6 +381,12 @@ fun SettingsScreen(
                     detail = "Download/" + com.abrah.nightmare.ModelStorage.FOLDER,
                     selected = inDownload,
                     onSelect = { onModelsPlace(com.abrah.nightmare.ModelStorage.Place.DOWNLOAD) },
+                )
+                // ⭐ Local Dream's folder, used in place (`LocalDreamModels`) — needs the same access.
+                Text(
+                    stringResource(R.string.ld_folder_note),
+                    style = NoteTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (inDownload && !storageAccess) {
                     Text(
@@ -511,39 +463,59 @@ fun SettingsScreen(
                 var custom by remember(base) {
                     mutableStateOf(if (isOrigin || isMirror) "" else base)
                 }
+                // ⭐⭐ Custom is SELECTED on the tap, before any URL exists — Local Dream's way (the
+                // user, 2026-10-10: the radio "cant be selected"). It used to select only once a
+                // URL had been saved, so tapping it did nothing visible. The field is pre-filled
+                // with `https://` and focused; the URL is saved on Done or when the field loses
+                // focus (LD's `onFocusChanged`), and only once something follows the scheme.
+                var customPicked by remember { mutableStateOf(false) }
+                val customOn = customPicked || (!isOrigin && !isMirror)
+                val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                val commit = {
+                    val url = custom.trim()
+                    if (url.removePrefix("https://").removePrefix("http://").isNotBlank() && url != base) onDownloadBase(url)
+                }
                 SourceRow(
                     label = stringResource(R.string.source_huggingface),
                     detail = Prefs.HF_ORIGIN,
-                    selected = isOrigin,
-                    onSelect = { onDownloadBase(Prefs.HF_ORIGIN) },
+                    selected = isOrigin && !customPicked,
+                    onSelect = { customPicked = false; onDownloadBase(Prefs.HF_ORIGIN) },
                 )
                 SourceRow(
                     label = stringResource(R.string.source_mirror),
                     detail = Prefs.HF_MIRROR,
-                    selected = isMirror,
-                    onSelect = { onDownloadBase(Prefs.HF_MIRROR) },
+                    selected = isMirror && !customPicked,
+                    onSelect = { customPicked = false; onDownloadBase(Prefs.HF_MIRROR) },
                 )
                 SourceRow(
                     label = stringResource(R.string.source_custom),
                     detail = null,
-                    selected = !isOrigin && !isMirror,
-                    // ⚠ Selecting it with nothing typed yet must not blank the
-                    // setting, so it commits only what is there.
-                    onSelect = { if (custom.isNotBlank()) onDownloadBase(custom) },
+                    selected = customOn,
+                    onSelect = {
+                        customPicked = true
+                        if (custom.isBlank()) custom = "https://"
+                    },
                 ) {
+                    androidx.compose.runtime.LaunchedEffect(customPicked) {
+                        if (customPicked) runCatching { focus.requestFocus() }
+                    }
                     OutlinedTextField(
                         value = custom,
-                        onValueChange = { custom = it },
+                        onValueChange = { custom = it; customPicked = true },
                         singleLine = true,
                         label = { Text(stringResource(R.string.source_custom_hint)) },
-                        // ⚠⚠ Committed on DONE, never per keystroke: every
+                        // ⚠⚠ Committed on DONE or focus loss, never per keystroke: every
                         // character would otherwise be a saved preference, and
                         // half a URL is a working setting that fetches nothing.
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = { if (custom.isNotBlank()) onDownloadBase(custom) },
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Done,
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        keyboardActions = KeyboardActions(onDone = { commit() }),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focus)
+                            .onFocusChanged { if (!it.isFocused && customOn) commit() },
                     )
                 }
             }
@@ -569,6 +541,82 @@ fun SettingsScreen(
                     )
                 }
             }
+            // ⭐⭐ LoRAs — import / list / delete, above the embeddings and
+            // built from the same two pieces ([ImportCallout] + a row card).
+            //
+            // ⚠ Above rather than below because a LoRA is the one a person
+            // comes here for: it is picked on a node, so the picker sends them
+            // here by name. An embedding is named in a prompt and needs no trip.
+            if (onImportLora != null) {
+                Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ImportCallout(
+                        title = stringResource(R.string.loras_title),
+                        body = stringResource(R.string.loras_body),
+                        onImport = onImportLora,
+                    )
+                    for (row in loras.orEmpty()) {
+                        Card(
+                            Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(row.name, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        stringResource(R.string.installed_mb, row.bytes shr 20),
+                                        style = NoteTextStyle,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                if (onDeleteLora != null) {
+                                    OutlinedButton(onClick = { deletingLora = row.name }) {
+                                        Text(stringResource(R.string.delete))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Page.PERFORMANCE -> Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // ⭐ Upstream's low-RAM switches (`docs/UI.md` §8.9a's one bool control).
+                if (lowRam != null) {
+                    StudioCard {
+                        SectionHeading(stringResource(R.string.memory_title), stringResource(R.string.memory_note))
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.sdxl_lowram), stringResource(R.string.sdxl_lowram_hint),
+                            lowRam.sdxl, { onLowRam(Prefs.KEY_SDXL_LOWRAM, it) },
+                        )
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.anima_lowram), stringResource(R.string.anima_lowram_hint),
+                            lowRam.anima, { onLowRam(Prefs.KEY_ANIMA_LOWRAM, it) },
+                        )
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.anima_seq_dit), stringResource(R.string.anima_seq_dit_hint),
+                            lowRam.animaSeqDit, { onLowRam(Prefs.KEY_ANIMA_SEQ_DIT, it) },
+                            enabled = lowRam.anima,
+                        )
+                    }
+                }
+                // ⭐ Shown only while the battery manager may stop the app — see BackendKeepAliveService.
+                if (!batteryUnrestricted) {
+                    StudioCard {
+                        SectionHeading(stringResource(R.string.battery_title), stringResource(R.string.battery_body))
+                        OutlinedButton(onClick = onRequestBatteryUnrestricted, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
+                            Text(stringResource(R.string.battery_allow))
+                        }
+                    }
+                }
+        }
+        Page.ADVANCED -> Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (api != null) ApiSection(api, onApi, onRegenerateApiToken)
             // ⭐⭐ **Clean temp files** — ported from upstream at the user's ask,
             // 2026-09-20. ⚠⚠ It SCANS first and shows the total, because the
             // honest question is "delete 3.4 GB?" and not "delete some files?".
@@ -678,6 +726,15 @@ fun SettingsScreen(
         )
     }
 
+    deletingTags?.let { translation ->
+        ConfirmDelete(
+            title = stringResource(if (translation) R.string.tag_translation else R.string.tag_dictionary),
+            body = stringResource(R.string.tag_delete_body),
+            onConfirm = { onClearTags(translation) },
+            onDismiss = { deletingTags = null },
+        )
+    }
+
     deletingEmbedding?.let { name ->
         ConfirmDelete(
             title = stringResource(R.string.models_delete_title, name),
@@ -704,12 +761,15 @@ private fun SourceRow(
     onSelect: () -> Unit,
     content: @Composable (() -> Unit)? = null,
 ) {
+    // ⭐ The whole row is the target, not only the 20dp circle.
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        Modifier.fillMaxWidth()
+            .selectable(selected = selected, onClick = onSelect, role = androidx.compose.ui.semantics.Role.RadioButton)
+            .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        RadioButton(selected = selected, onClick = onSelect)
+        RadioButton(selected = selected, onClick = null)
         Column(Modifier.weight(1f)) {
             Text(label)
             detail?.let {
@@ -722,15 +782,157 @@ private fun SourceRow(
     if (selected) content?.invoke()
 }
 
-/** ⭐ Settings' pages, in pill order. */
+/** ⭐ Settings' pages, in pill order — the five groups (2026-10-10). */
 private enum class Page(val label: Int) {
-    GENERAL(R.string.settings_general),
-    ADDONS(R.string.settings_addons),
-    TRANSLATION(R.string.settings_translation),
-    DOWNLOADS(R.string.settings_downloads),
+    APPEARANCE(R.string.settings_appearance),
+    PROMPTS(R.string.settings_prompts),
+    MODELS(R.string.settings_models),
+    PERFORMANCE(R.string.settings_performance),
+    ADVANCED(R.string.settings_advanced),
 }
 
 /** ⚠ MB below a gigabyte, one decimal of GB above — the unit the Models tab uses. */
 private fun sizeLabel(bytes: Long): String =
     if (bytes >= 1L shl 30) String.format(java.util.Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
     else "${bytes shr 20} MB"
+
+/** ⭐ What Settings shows of the API: on/off, its token, the addresses it listens on. */
+data class ApiState(val on: Boolean, val token: String, val addresses: List<String>)
+
+/**
+ * ⭐ Settings → API: the switch, then — while on — where to reach it and the token every call
+ * but `/info` carries (`docs/AGENT-API.md` §3). The token's Copy uses the clipboard; New token
+ * cuts off every client holding the old one.
+ */
+@Composable
+private fun ApiSection(api: ApiState, onApi: (Boolean) -> Unit, onRegenerate: () -> Unit) {
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var revealed by remember { mutableStateOf(false) }
+    var rotating by remember { mutableStateOf(false) }
+    StudioCard {
+        SectionHeading(stringResource(R.string.api_title), stringResource(R.string.api_note))
+        com.abrah.nightmare.canvas.BoolKnobRow(
+            stringResource(R.string.api_switch), stringResource(R.string.api_switch_hint, com.abrah.nightmare.api.ApiSettings.PORT),
+            api.on, onApi,
+        )
+        if (!api.on) return@StudioCard
+        if (api.addresses.isEmpty()) {
+            Text(stringResource(R.string.api_no_network), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // ⭐ Each address on its own row with Copy (Violet Studio).
+        for (a in api.addresses) {
+            val url = "http://$a:${com.abrah.nightmare.api.ApiSettings.PORT}"
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(url, style = metaValueStyle(), modifier = Modifier.weight(1f))
+                CopyAction(url)
+            }
+        }
+        Text(stringResource(R.string.api_token_label), style = MaterialTheme.typography.labelLarge)
+        // ⭐⭐ The token is a credential: hidden until Reveal (the pack — and a screenshot of Settings
+        // must not leak it).
+        MetaPill {
+            Text(
+                if (revealed) api.token else "•••• •••• •••• ••••",
+                style = metaValueStyle(),
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            androidx.compose.material3.TextButton(onClick = { revealed = !revealed }) {
+                Text(stringResource(if (revealed) R.string.api_hide else R.string.api_reveal))
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // ⚠ Destructive first, primary last (`docs/UI.md` §8.1). Rotating asks: clients holding
+            // the old token stop working.
+            OutlinedButton(onClick = { rotating = true }, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.api_regenerate))
+            }
+            androidx.compose.material3.Button(
+                onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(api.token)) },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f),
+            ) { Text(stringResource(R.string.api_copy)) }
+        }
+    }
+    if (rotating) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { rotating = false },
+            title = { Text(stringResource(R.string.api_rotate_title)) },
+            text = { Text(stringResource(R.string.api_rotate_body)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { rotating = false; onRegenerate() }) { Text(stringResource(R.string.api_regenerate)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { rotating = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+}
+
+/**
+ * ⭐⭐ Settings → Prompts → Tag autocomplete (Local Dream's, 2026-10-10): the switch, then the tag
+ * dictionary — Download (a1111-tagcomplete's Danbooru list, hosted with the models) or Import a
+ * CSV — and the optional translation dictionary, import only. Each row says what is installed.
+ */
+@Composable
+private fun TagDictionaryCard(
+    s: com.abrah.nightmare.TagDictionary.State,
+    progress: com.abrah.nightmare.ModelInstaller.Progress?,
+    onEnabled: (Boolean) -> Unit,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onImport: (Boolean) -> Unit,
+    onDelete: (Boolean) -> Unit,
+) {
+    StudioCard(Modifier.padding(top = 8.dp)) {
+        com.abrah.nightmare.canvas.BoolKnobRow(
+            stringResource(R.string.tag_autocomplete), stringResource(R.string.tag_autocomplete_hint),
+            s.enabled, onEnabled,
+        )
+        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        Text(stringResource(R.string.tag_dictionary), style = MaterialTheme.typography.labelLarge)
+        Text(
+            s.mainName?.let { stringResource(R.string.tag_dictionary_status, it, s.mainCount) }
+                ?: stringResource(R.string.tag_dictionary_none),
+            style = NoteTextStyle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (progress != null) {
+            if (progress.total > 0) {
+                androidx.compose.material3.LinearProgressIndicator(progress = { progress.fraction }, modifier = Modifier.fillMaxWidth())
+            } else {
+                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (s.mainName == null) {
+                    androidx.compose.material3.Button(onClick = onDownload) { Text(stringResource(R.string.download)) }
+                }
+                OutlinedButton(onClick = { onImport(false) }) {
+                    Text(stringResource(if (s.mainName == null) R.string.tag_import else R.string.tag_replace))
+                }
+                if (s.mainName != null) {
+                    OutlinedButton(onClick = { onDelete(false) }) { Text(stringResource(R.string.delete)) }
+                }
+            }
+        }
+        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        Text(stringResource(R.string.tag_translation), style = MaterialTheme.typography.labelLarge)
+        Text(
+            s.translationName?.let { stringResource(R.string.tag_translation_status, it, s.translationCount) }
+                ?: stringResource(R.string.tag_translation_none),
+            style = NoteTextStyle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { onImport(true) }) {
+                Text(stringResource(if (s.translationName == null) R.string.tag_import else R.string.tag_replace))
+            }
+            if (s.translationName != null) {
+                OutlinedButton(onClick = { onDelete(true) }) { Text(stringResource(R.string.delete)) }
+            }
+        }
+    }
+}

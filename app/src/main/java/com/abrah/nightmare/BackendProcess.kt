@@ -473,7 +473,9 @@ object BackendProcess {
                     )
                 }
 
-                val model = File(modelsDir(context), modelId)
+                // ⭐ The model's own resolution ([ModelSpec.dir]) — Local Dream's folder when the
+                // files are there and not here ([LocalDreamModels]).
+                val model = ModelCatalog.byId(modelId)?.dir(context) ?: File(modelsDir(context), modelId)
                 // ⚠ Only an ordinary launch needs a model directory. An
                 // upscale-only server has none by definition.
                 if (!upscalerOnly && !model.isDirectory) {
@@ -618,12 +620,13 @@ object BackendProcess {
                     // lets someone try a different value with no APK change;
                     // absent, this is a no-op and nothing here changes.
                     // ⭐⭐ The size this checkpoint's own QNN error asked for, learned
-                    // on an earlier launch ([SpillFill]). Before the diagnostic
-                    // file, so a hand-set value still wins.
+                    // on an earlier launch ([SpillFill]), or `0` when its group could
+                    // not be made at all. Before the diagnostic file, so a hand-set
+                    // value still wins.
                     if (!upscalerOnly) {
                         val sfVar = SpillFill.envFor(spec?.family)
-                        val need = SpillFill.stored(context, modelId)
-                        if (sfVar != null && need != null) put(sfVar, need.toString())
+                        val value = SpillFill.envValue(context, modelId)
+                        if (sfVar != null && value != null) put(sfVar, value)
                     }
                     readSpillFillOverride(context)?.let {
                         put("LOCALDREAM_ANIMA_SPILL_FILL_BYTES", it)

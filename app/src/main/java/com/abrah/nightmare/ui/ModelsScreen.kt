@@ -158,6 +158,8 @@ data class ModelRow(
     val needsRam: Long = 0,
     /** ⭐ [com.abrah.nightmare.CustomModels.ramTight] — an import that Android will likely close. */
     val ramTight: Boolean = false,
+    /** ⭐ Its files are Local Dream's ([com.abrah.nightmare.LocalDreamModels]): a badge, no Delete. */
+    val fromLocalDream: Boolean = false,
 )
 
 /**
@@ -172,6 +174,7 @@ fun ModelsScreen(
     rows: List<ModelRow>,
     busy: Boolean,
     error: String?,
+    onDismissError: () -> Unit = {},
     onInstall: (ModelSpec) -> Unit,
     onCancel: () -> Unit,
     onDelete: (ModelSpec) -> Unit,
@@ -285,15 +288,8 @@ fun ModelsScreen(
             title = { Text(p.title) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // ⚠⚠ The warning first, and ONLY when it is true. A dialog
-                    // that always warns is one people learn to tap through.
-                    if (p.unsavedFlow) {
-                        Text(
-                            stringResource(R.string.models_unsaved_flow_warning),
-                            style = NoteTextStyle,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
+                    // ⚠ No unsaved warning here since 2026-10-10: choosing a flow goes through
+                    // the one open guard, which asks Save / Open anyway / Cancel when it matters.
                     // ⚠⚠ The offer is computed by the CALLER
                     // ([HarnessViewModel.PendingUse.offer]) and not filtered here.
                     // It used to be `recipes.filter { it.usesCheckpoint }`, which
@@ -317,24 +313,8 @@ fun ModelsScreen(
                             }
                         }
                     }
-                    // ⭐ …and the old behaviour, named: keep what is open and
-                    // just point it at this checkpoint.
-                    // ⚠⚠ CHECKPOINTS only. An upscaler and the video models are
-                    // not selected globally, so there is nothing for "keep the
-                    // flow" to do — offering it would be a button that closes the
-                    // dialog and changes nothing.
-                    if (p.spec != null) Surface(
-                        onClick = { onConfirmUse(p.spec, null) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.Transparent,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            stringResource(R.string.models_keep_canvas_flow),
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        )
-                    }
+                    // ⚠ No "keep the flow on the canvas" since 2026-10-10 (the user's call): Use
+                    // means open a flow with this model.
                 }
             },
             // ⚠ ONE action button. Choosing a flow IS the confirmation, so
@@ -367,7 +347,7 @@ fun ModelsScreen(
     // second inset here would double it.
     Column(modifier.fillMaxSize()) {
         if (error != null) {
-            ErrorNotice(error, Modifier.padding(top = 8.dp), reportable = true)
+            ErrorNotice(error, Modifier.padding(top = 8.dp), reportable = true, onClose = onDismissError)
         }
         // ⭐ "Something is happening", for the one case with no row to say so.
         if (importing != null) {
@@ -475,9 +455,18 @@ fun ModelsScreen(
                         item {
                             ToolCard(
                                 row, busy, { onInstallControlNet(type) }, onCancel,
+                                // ⭐ SDXL's need a conversion that kept the feature (GitHub, 2026-10-10:
+                                // "downloaded them, the tiles are empty" on a LoRA-only Illustrious).
                                 detail = stringResource(
-                                    if (type.startsWith(com.abrah.nightmare.IpAdapter.ROW_PREFIX)) R.string.ip_about
-                                    else R.string.cn_about,
+                                    when {
+                                        type.startsWith(com.abrah.nightmare.IpAdapter.ROW_PREFIX) ->
+                                            if ("sdxl_" in type) R.string.ip_about_sdxl else R.string.ip_about
+                                        // ⚠ 8 Gen 3: it may not fit beside the UNet (`npuSpaceRefused`, 2026-10-10).
+                                        "sdxl_" in type && com.abrah.nightmare.DeviceProbe.caps().let { it.known && it.arch < 79 } ->
+                                            R.string.cn_about_sdxl_v75
+                                        "sdxl_" in type -> R.string.cn_about_sdxl
+                                        else -> R.string.cn_about
+                                    },
                                 ),
                             ) { deletingControlNet = type }
                         }
@@ -1006,61 +995,22 @@ private fun VideoModelsTab(
             )
         }
         item {
-            DownloadCard(
+            // ⚠⚠ The canary's verdict, in the one place a user is about to spend 8 GB. It runs a
+            // real context binary rather than consulting a chip list — `docs/DEVICES.md` §2.
+            AddonCard(
                 title = stringResource(R.string.video_models),
-                emphasised = false,
-                status = when {
-                    row.complete -> stringResource(R.string.installed_mb, mb(row.installedBytes))
-                    else -> stringResource(R.string.mb_of_total, mb(row.installedBytes), mb(row.totalBytes))
-                },
-                // ⚠⚠ The canary's verdict, in the one place a user is about to
-                // spend 8 GB. It runs a real context binary rather than
-                // consulting a chip list — `docs/DEVICES.md` §2.
-                detail = when (row.supported) {
-                    false -> stringResource(R.string.cannot_run_it)
-                    else -> stringResource(R.string.video_about)
-                },
+                detail = stringResource(R.string.video_about),
+                installed = row.complete,
+                sizeBytes = if (row.complete) row.installedBytes else row.totalBytes,
+                busy = busy,
                 progress = row.progress,
-            ) {
-                when {
-                    row.progress != null ->
-                        OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-                    row.supported == false ->
-                        OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.unsupported)) }
-                    row.complete ->
-                        InstalledActions(busy, onDelete = onConfirmDelete, onUse = onUse)
-                    else -> Button(onClick = onInstall, enabled = !busy) { Text(stringResource(R.string.download)) }
-                }
-            }
-        }
-    }
-}
-
-/**
- * ⭐⭐⭐ **The actions on an INSTALLED model: Delete left, Use right.**
- *
- * ⚠⚠⚠ Reported from the phone 2026-09-20, angrily and rightly: the
- * upscaler and video cards shipped Use on the LEFT and no spacing at all,
- * under a comment of mine claiming they matched the checkpoint rows. They
- * did not. I asserted the convention instead of reading it, which is the
- * one failure `CLAUDE.md` opens with — **find the sibling before you write
- * the thing** — and a comment that states a rule it breaks is worse than no
- * comment, because the next reader believes it.
- *
- * ⇒ There is now ONE of these and three callers, so a fourth card cannot
- * invent a fourth order. The shape, from the checkpoint row that always had
- * it right: **outlined Delete, filled Use, `Arrangement.spacedBy(8.dp)`**.
- * Destructive first, primary last where the thumb lands — the same order
- * `PictureActions` uses (`docs/UI.md` §8.3).
- */
-@Composable
-private fun InstalledActions(busy: Boolean, onDelete: () -> Unit, onUse: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onDelete, enabled = !busy) {
-            Text(stringResource(R.string.delete))
-        }
-        Button(onClick = onUse, enabled = !busy) {
-            Text(stringResource(R.string.use))
+                onCancel = onCancel,
+                onInstall = onInstall.takeIf { row.supported != false },
+                onDelete = onConfirmDelete,
+                onUse = onUse,
+                partial = !row.complete && row.installedBytes > 0,
+                unsupportedNote = if (row.supported == false) stringResource(R.string.cannot_run_it) else null,
+            )
         }
     }
 }
@@ -1090,30 +1040,23 @@ private fun UpscalerCard(
 ) {
     val label = row.spec.labelRes?.let { stringResource(it) } ?: row.spec.label
     val about = row.spec.aboutRes?.let { stringResource(it) } ?: row.spec.about
-    DownloadCard(
+    AddonCard(
         title = label,
-        emphasised = false,
-        status = when {
-            row.installed -> stringResource(R.string.installed_mb, mb(row.onDisk))
-            row.build != null -> stringResource(R.string.not_installed_mb, mb(row.build.bytes))
-            else -> stringResource(R.string.cannot_run_it)
-        },
-        detail = fields(about, row.build?.tier),
+        detail = about,
+        badges = listOfNotNull(row.build?.tier),
+        installed = row.installed,
+        sizeBytes = if (row.installed) row.onDisk else row.build?.bytes,
+        busy = busy,
         progress = row.progress,
-    ) {
-        when {
-            row.progress != null ->
-                OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-            row.installed ->
-                InstalledActions(busy, onDelete = { onDelete(row.spec) }, onUse = { onUse(row.spec) })
-            row.build == null ->
-                OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.unsupported)) }
-            else -> Button(onClick = { onInstall(row.spec) }, enabled = !busy) { Text(stringResource(R.string.download)) }
-        }
-    }
+        onCancel = onCancel,
+        onInstall = row.build?.let { { onInstall(row.spec) } },
+        onDelete = { onDelete(row.spec) },
+        onUse = { onUse(row.spec) },
+        unsupportedNote = if (!row.installed && row.build == null) stringResource(R.string.cannot_run_it) else null,
+    )
 }
 
-/** ⚠ [UpscalerCard]'s shape: no Use, one action, the shared [DownloadCard]. */
+/** ⚠ [UpscalerCard]'s shape without Use — the shared [AddonCard], wherever a tool is offered (Tools tab, panels, Settings). */
 @Composable
 internal fun ToolCard(
     row: ToolRow,
@@ -1124,22 +1067,17 @@ internal fun ToolCard(
     detail: String = stringResource(R.string.segmenter_about),
     onDelete: () -> Unit,
 ) {
-    DownloadCard(
+    AddonCard(
         title = row.label,
-        emphasised = false,
-        status = if (row.installed) stringResource(R.string.installed_mb, mb(row.onDisk))
-        else stringResource(R.string.not_installed_mb, mb(row.bytes)),
         detail = detail,
+        installed = row.installed,
+        sizeBytes = if (row.installed) row.onDisk else row.bytes,
+        busy = busy,
         progress = row.progress,
-    ) {
-        when {
-            row.progress != null ->
-                OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-            row.installed ->
-                OutlinedButton(onClick = onDelete, enabled = !busy) { Text(stringResource(R.string.delete)) }
-            else -> Button(onClick = onInstall, enabled = !busy) { Text(stringResource(R.string.download)) }
-        }
-    }
+        onCancel = onCancel,
+        onInstall = onInstall,
+        onDelete = onDelete,
+    )
 }
 
 private fun mb(bytes: Long): Long = bytes shr 20

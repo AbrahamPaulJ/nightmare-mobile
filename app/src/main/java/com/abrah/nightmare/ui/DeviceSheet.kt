@@ -54,7 +54,12 @@ fun DeviceSheet(caps: DeviceProbe.Caps, onDismiss: () -> Unit) {
                 // installed, and the error names neither the arch nor the file.
                 if (!caps.staged) {
                     Text(
-                        stringResource(
+                        // ⭐ A chip newer than every Skel we ship says so in words, not "v99".
+                        if (caps.npuTooNew) stringResource(
+                            R.string.device_npu_too_new,
+                            caps.soc.ifEmpty { "?" },
+                            "v" + (DeviceProbe.STAGED_ARCHES.maxOrNull() ?: 0),
+                        ) else stringResource(
                             R.string.device_qnn_missing,
                             caps.arch,
                             DeviceProbe.STAGED_ARCHES.joinToString { "v$it" },

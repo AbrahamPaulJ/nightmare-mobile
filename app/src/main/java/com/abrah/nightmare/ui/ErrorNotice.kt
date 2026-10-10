@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,14 +62,20 @@ val LocalErrorReport = staticCompositionLocalOf<((String) -> String)?> { null }
  * ⚠ A LOCKED knob is not a failure and does not use this.
  */
 @Composable
-fun ErrorNotice(text: String, modifier: Modifier = Modifier, reportable: Boolean = false) {
+fun ErrorNotice(
+    text: String,
+    modifier: Modifier = Modifier,
+    reportable: Boolean = false,
+    /** ⭐ A ✕ after the share icon (the user, 2026-10-09) — only where the error can be cleared. */
+    onClose: (() -> Unit)? = null,
+) {
     val report = LocalErrorReport.current.takeIf { reportable }
     var shown by remember { mutableStateOf<String?>(null) }
     Row(
         modifier
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.errorContainer)
-            .padding(start = 10.dp, end = if (report != null) 0.dp else 10.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 10.dp, end = if (report != null || onClose != null) 0.dp else 10.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -84,6 +91,16 @@ fun ErrorNotice(text: String, modifier: Modifier = Modifier, reportable: Boolean
                 Icon(
                     ShareIcon,
                     contentDescription = stringResource(R.string.err_details),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        if (onClose != null) {
+            IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Filled.Close,
+                    contentDescription = stringResource(R.string.cd_close),
                     tint = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.size(18.dp),
                 )

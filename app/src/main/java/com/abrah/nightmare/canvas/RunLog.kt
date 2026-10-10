@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -30,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -134,6 +138,14 @@ data class RunLogState(
 ) {
     val running: Boolean get() = startedAtMs > 0L
     val idle: Boolean get() = !running && lines.isEmpty() && totalMs == null
+
+    /**
+     * ⭐⭐ [step] as people read it — a PERCENTAGE, for the reason [step] gives. The ONE label:
+     * the run panel and Chat's live line both call it (Chat printed `21/22` for a 20-step run,
+     * the user, 2026-10-10).
+     */
+    val stepLabel: String?
+        get() = step?.takeIf { it.second > 0 }?.let { (s, t) -> "${s * 100 / t}%" }
 }
 
 /** `1.2s` / `24.3s` / `1m04s` — short enough to sit in a status line. */
@@ -160,6 +172,8 @@ fun RunLogPanel(
      * "forever", and it sits over the canvas's bottom edge.
      */
     onClose: () -> Unit = {},
+    /** ⭐ A [RunFrame] is showing the lines while the run goes: leave them out until it ends. */
+    linesInFrame: Boolean = false,
     /** ⭐ Open the Results tab — the destination of the "kept" row. */
     onResults: () -> Unit = {},
     /**
@@ -201,6 +215,8 @@ fun RunLogPanel(
     /** ⭐ Which run of how many, while a sweep is going. Null when it is not. */
     batch: Pair<Int, Int>? = null,
     onCancelBatch: () -> Unit = {},
+    /** ⭐ RAM, worded ("4.2 / 11.7"): a pill at the seed row's end (the sidebar mock, 2026-10-09). */
+    ram: String? = null,
     modifier: Modifier = Modifier,
 ) {
     // ⚠ The seed row keeps this panel up with nothing else to report: it is a
@@ -240,7 +256,8 @@ fun RunLogPanel(
         // first sampler only, so in generate -> inpaint the inpaint's own seed had
         // no lock anywhere above Run. ⚠ Wrapping chips, not a column: two fit one
         // line, and a third moves down instead of pushing Run off the screen.
-        if (seeds.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
+        if (seeds.isNotEmpty()) Row(verticalAlignment = Alignment.Top) { androidx.compose.foundation.layout.FlowRow(
+            Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) { seeds.forEach { st ->
@@ -325,6 +342,7 @@ fun RunLogPanel(
                 }
             }
         } }
+        ram?.let { RamPill(it) } }
         // ⚠⚠ **Only when there is a run to describe.** Closing the panel clears
         // the state, but the seed row above is a property of the CANVAS rather
         // than of a run, so the panel stays up — and this row then rendered
@@ -435,7 +453,12 @@ fun RunLogPanel(
         // the status row, the PROGRESS BAR and the per-node lines together.
         // ⚠ The bar belongs with the lines it is describing; drawn outside the
         // container it read as a separate widget that happened to be nearby.
-        if (!state.idle) {
+        // ⭐ Left to the output page's [RunFrame] while a Default view run goes (2026-10-10:
+        // the bar here was redundant); back with the total and the lines once it ends.
+        // ⭐ After a Default view run the lines stay FOLDED (the user, 2026-10-10: they covered the
+        // picture just made) — the status row and the total, a chevron to open them.
+        var logOpen by remember(state.startedAtMs, state.totalMs) { mutableStateOf(false) }
+        if (!state.idle && !(linesInFrame && state.running)) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -452,8 +475,7 @@ fun RunLogPanel(
             Text(
                 when {
                     // ⚠ A percentage, not "step n/m" -- see [RunLogState.step].
-                    state.now != null && state.step != null && state.step.second > 0 ->
-                        "${state.now}  ${state.step.first * 100 / state.step.second}%"
+                    state.now != null && state.stepLabel != null -> "${state.now}  ${state.stepLabel}"
                     state.now != null -> "${state.now}…"
                     // ⚠⚠ **A run that has STARTED but has no node yet is not
                     // "done".** `now` is null both before the first node begins
@@ -495,6 +517,16 @@ fun RunLogPanel(
                 // noise: there is nothing complete to copy, and "hide" competes
                 // for the eye with the progress it would hide. Asked for from
                 // the phone, 2026-09-10.
+                if (linesInFrame && !state.running && state.lines.isNotEmpty()) {
+                    IconButton(onClick = { logOpen = !logOpen }, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            if (logOpen) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
+                            contentDescription = stringResource(if (logOpen) R.string.cd_fold_log else R.string.cd_open_log),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
                 if (!state.running && state.lines.isNotEmpty()) {
                     val clipboard = LocalClipboardManager.current
                     IconButton(
@@ -600,7 +632,7 @@ fun RunLogPanel(
                 }
             }
         }
-        val lines = state.lines.takeLast(MAX_LINES)
+        val lines = if (linesInFrame && (state.running || !logOpen)) emptyList() else state.lines.takeLast(MAX_LINES)
         if (lines.isNotEmpty()) {
             val scroll = rememberScrollState()
             // ⚠ Follows the tail, so a running graph shows the node it is on
@@ -712,4 +744,18 @@ private fun brief(detail: String): String {
         it.startsWith("img_") || it.startsWith("lat_") || it.startsWith("cond_")
     }.joinToString(" ").replace(Regex("\b(image|latent|cond)\b"), "").trim()
     return if (kept.isEmpty()) "" else "  ·  $kept"
+}
+
+/** ⭐ RAM as a pill at the seed row's end — the seed pill's height, ground and type. */
+@Composable
+private fun RamPill(text: String) {
+    Row(
+        Modifier.height(28.dp).clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(com.abrah.nightmare.ui.ChipIcon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MeasureTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
 }

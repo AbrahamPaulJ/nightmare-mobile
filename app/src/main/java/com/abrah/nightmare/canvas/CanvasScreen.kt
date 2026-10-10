@@ -1,5 +1,13 @@
 package com.abrah.nightmare.canvas
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.border
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.selected
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.horizontalScroll
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -66,6 +74,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,6 +87,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.withFrameMillis
@@ -140,6 +156,8 @@ fun CanvasScreen(
      * exactly like a button that did nothing.
      */
     runError: String? = null,
+    /** ⭐ The ✕ on that error. */
+    onDismissRunError: () -> Unit = {},
     /** ⭐ What is running now, and what the last run cost — `RunLog.kt`. */
     runLog: RunLogState = RunLogState(),
     /** Dismiss the run log. ⚠ Hides it; it does not cancel the render. */
@@ -150,13 +168,28 @@ fun CanvasScreen(
     /** ⭐ The active flow's name, and whether it has unsaved edits. */
     flowName: String? = null,
     flowDirty: Boolean = false,
-    /** ⭐ One line of measured load: free RAM, and what the backend holds. */
-    loadLine: String? = null,
+    /** ⭐ "free / total" RAM, already worded — the pill beside the seed (the sidebar mock). */
+    ram: String? = null,
+    /** ⭐ Open the sidebar (`ui/ShellDrawer.kt`, drawn by `MainActivity`). */
+    onMenu: () -> Unit = {},
+    /** ⭐ What the view toggle shows while a sidebar tap is on its way somewhere — see `MainActivity`. */
+    toggleView: com.abrah.nightmare.MainView? = null,
+    /** ⭐ Bumped by the sidebar's Save flow: opens THIS screen's save dialog, the one ⭐ save uses. */
+    saveRequest: Int = 0,
+    /** The save dialog closed without saving — a pending "save, then open" is dropped. */
+    onSaveDismiss: () -> Unit = {},
     onModels: () -> Unit = {},
     onResults: () -> Unit = {},
     onWorkflows: () -> Unit = {},
-    /** ⭐ Open the device sheet — HTP arch and VTCM. */
-    onDeviceInfo: () -> Unit = {},
+    /** ⭐⭐ Which of the three views shows (`com.abrah.nightmare.MainView`) and how to switch. */
+    mainView: com.abrah.nightmare.MainView = com.abrah.nightmare.MainView.GRAPH,
+    onView: (com.abrah.nightmare.MainView) -> Unit = {},
+    /** ⭐ The Nodes view top to bottom (Settings). */
+    nodesVertical: Boolean = false,
+    /** ⭐ The Agent view's body, below the top bar (`ui/AgentScreen.kt`). */
+    agentContent: @Composable (Modifier) -> Unit = {},
+    /** ⭐ The shell's height, for a destination drawn below it from outside (the library). */
+    onShellHeight: (androidx.compose.ui.unit.Dp) -> Unit = {},
     /**
      * Save the canvas under this name.
      *
@@ -243,6 +276,9 @@ fun CanvasScreen(
      * view model's job, and it is the only thing that may touch that map.
      */
     onClearImage: (String) -> Unit = {},
+    /** ⭐ The Draw window on an image node — `HarnessViewModel.saveDrawing` / `blankPicture`. */
+    onSaveDrawing: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
+    onBlankPicture: (String) -> Unit = {},
     /** ⭐ Switch which node the inspector shows — the node strip. */
     onInspectNode: (String) -> Unit = {},
     /** ⭐ Write a rendered image to the gallery. */
@@ -344,7 +380,15 @@ fun CanvasScreen(
     // sure" are not graph state, and putting them in `CanvasState` would autosave
     // them and restore them on a cold start.
     var saving by remember { mutableStateOf(false) }
+    LaunchedEffect(saveRequest) { if (saveRequest > 0) saving = true }
     // ⚠ Which node's ⓘ is open in the fullscreen viewer, or null.
+    // ⭐ The chrome's heights, so the Nodes and Agent views sit between the top bar and the Run bar.
+    var topBarPx by remember { mutableIntStateOf(0) }
+    var runBarPx by remember { mutableIntStateOf(0) }
+    val chrome = androidx.compose.ui.platform.LocalDensity.current
+    val topPad = with(chrome) { topBarPx.toDp() }
+    val bottomPad = with(chrome) { runBarPx.toDp() }
+    LaunchedEffect(topPad) { onShellHeight(topPad) }
     var showingNodeInfo by remember { mutableStateOf<String?>(null) }
     // ⚠ The add-node offer in flight: the plan and where the node will go.
     var confirmingDelete by remember { mutableStateOf(false) }
@@ -399,7 +443,7 @@ fun CanvasScreen(
             }
         }
 
-        GraphCanvas(
+        if (mainView == com.abrah.nightmare.MainView.GRAPH) GraphCanvas(
             workflow = state.workflow,
             types = types,
             viewport = state.viewport,
@@ -444,68 +488,24 @@ fun CanvasScreen(
         // could not say which had produced it -- and it covered whatever was
         // underneath. Previews are drawn ON the node that made them.
 
-        // ⭐⭐⭐ **The brand, the version and the icons are INSIDE the card**,
-        // with the destinations under them — the user's call, 2026-09-22.
-        //
-        // ⚠⚠⚠ **The icons VANISHED for one build and this is why.** They
-        // were a sibling of the card in a `Row`, with no weight on either and a
-        // weighted `Spacer` between. A Compose `Row` measures its UNWEIGHTED
-        // children first, against the full width — so the card, whose width is
-        // a flow name and a load line we do not choose, took everything and the
-        // icons were measured at zero. On the golden's shorter strings there
-        // was room left over, so nothing caught it. ⇒ Anything that must not be
-        // squeezed out goes in the SAME container as what would squeeze it.
-        //
-        // ⚠⚠ The version was briefly a sibling OUTSIDE the card for the same
-        // bad reason, which cost the card its full width. It belongs beside the
-        // name (the user, 2026-09-22), so the card is simply the container
-        // again and nothing sits next to it.
+        // ⚠⚠ Anything that must not be squeezed out goes in the SAME container as what would
+        // squeeze it: the save icon vanished once as a sibling of an unweighted brand card.
         TopBar(
-            backendUp = backendUp,
-            flowName = flowName,
-            flowDirty = flowDirty,
-            loadLine = loadLine,
-            onModels = onModels,
-            onResults = onResults,
-            onWorkflows = onWorkflows,
+            onMenu = onMenu,
+            onSave = { saving = true },
+            mainView = toggleView ?: mainView,
             version = version,
-            modifier = Modifier.align(Alignment.TopStart).statusBarsPadding(),
-            icons = {
-                // ⭐ Save the canvas. ⚠ FIRST, i.e. leftmost of the three,
-                // because it is the only one that acts on the graph rather than
-                // opening something about the app.
-                IconButton(onClick = { saving = true }, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        com.abrah.nightmare.ui.SaveIcon,
-                        contentDescription = stringResource(R.string.canvas_cd_save_flow),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                // ⭐ What this phone's NPU actually is — it answers the question
-                // a failed render raises, and the arch/VTCM pair answers most.
-                IconButton(onClick = onDeviceInfo, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        Icons.Filled.Info,
-                        contentDescription = stringResource(R.string.cd_device_info),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                // ⚠⚠ A GEAR, and it opens Settings — not the wrench that opened
-                // the op harness. ⚠⚠⚠ The harness is NOT behind Settings; it is
-                // reachable only through `OpService` over adb
-                // (`notes/HANDOFF.md` §5), and a run that refuses carries the
-                // backend's own reason in its chip instead.
-                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        Icons.Filled.Settings,
-                        contentDescription = stringResource(R.string.cd_settings),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
+            onView = onView,
+            modifier = Modifier.align(Alignment.TopStart).onSizeChanged { topBarPx = it.height }
+                .background(MaterialTheme.colorScheme.background).statusBarsPadding(),
         )
 
-        RunBar(
+        // ⭐ The three flow views share the Run bar (seeds, Run / Cancel); Nodes and Agent drop the
+        // graph's own buttons, and Agent its log — the chat shows the run as it goes. ⚠ None in
+        // the library destinations.
+        if (mainView.isCanvas) RunBar(
+            graphControls = mainView == com.abrah.nightmare.MainView.GRAPH,
+            ram = ram,
             plannedLoads = plannedLoads,
             onResults = onResults,
             state = state,
@@ -528,8 +528,12 @@ fun CanvasScreen(
             // taken back (`docs/UI.md` §8.2).
             onCloneSelected = { onEdit { s -> s.cloneSelected() } },
             onClearSelection = { onEdit { s -> s.clearSelection() } },
-            runError = runError,
-            runLog = runLog,
+            runError = runError.takeIf { mainView != com.abrah.nightmare.MainView.AGENT },
+            onDismissRunError = onDismissRunError,
+            onDismissMessage = { onEdit { s -> s.copy(message = null) } },
+            runLog = if (mainView == com.abrah.nightmare.MainView.AGENT) RunLogState() else runLog,
+            // ⭐ The frame carries the lines while it runs ([RunFrame]); the panel shows them after.
+            logInFrame = mainView == com.abrah.nightmare.MainView.NODES,
             onCloseRunLog = onCloseRunLog,
             // ⚠⚠ ANY sampler ([com.abrah.nightmare.SAMPLER_TYPES]), not just
             // `sd.sample`: the text-to-video recipe rolls a seed like every
@@ -537,7 +541,8 @@ fun CanvasScreen(
             // could not be asked for again. Reported from the phone, 2026-09-12.
             // ⭐⭐ EVERY sampler, in graph order — one lock each (2026-09-17). The
             // label only appears when there is more than one to tell apart.
-            seeds = state.workflow.graph.nodes.filter {
+            // ⚠ No seed row in the Agent view — the chat is the space there (the user, 2026-10-09).
+            seeds = if (mainView == com.abrah.nightmare.MainView.AGENT) emptyList() else state.workflow.graph.nodes.filter {
                 com.abrah.nightmare.isSampler(it.type)
             }.let { samplers ->
                 samplers.map { n ->
@@ -564,6 +569,7 @@ fun CanvasScreen(
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .onSizeChanged { runBarPx = it.height }
                 // ⚠⚠ The app is edge-to-edge (`enableEdgeToEdge`), so without
                 // this the whole bar sits UNDER the navigation bar: on a gesture
                 // -nav phone the buttons are half-covered and the bottom strip
@@ -571,7 +577,7 @@ fun CanvasScreen(
                 // "+ node" could not be pressed at all. Reported from a real
                 // phone, 2026-09-08 -- no golden caught it, because the goldens
                 // render GraphCanvas without the bar.
-                .navigationBarsPadding()
+                .windowInsetsPadding(com.abrah.nightmare.ui.BottomSafe)
                 // Gesture-nav phones report a small navigation inset but still
                 // reserve a taller strip for the back gesture; the extra keeps
                 // the row clear of it.
@@ -579,6 +585,9 @@ fun CanvasScreen(
         )
     }
 
+    if (mainView == com.abrah.nightmare.MainView.AGENT) {
+        agentContent(Modifier.fillMaxSize().padding(top = topPad).windowInsetsPadding(belowChrome(bottomPad)))
+    }
     // ⚠ Outside the Box, so the sheet's scrim covers the run bar too. Inside it
     // the bar would sit on top of the scrim and still be tappable, which is how
     // a graph gets run while its own inspector is open.
@@ -601,7 +610,12 @@ fun CanvasScreen(
         onEdit { s -> s.consumePickRequest() }
         launchImagePick()
     }
-    NodeInspector(
+    // ⚠ Only where a node page belongs: the Nodes view draws it inline, Graph as a sheet.
+    if (mainView == com.abrah.nightmare.MainView.GRAPH || mainView == com.abrah.nightmare.MainView.NODES) NodeInspector(
+        // ⭐⭐ A Default view run: the output page shows the run's FRAME, log inside ([RunFrame]).
+        // The pages stay — the run opens on the output, and a swipe still leaves it (2026-10-10).
+        runFrame = runLog.takeIf { mainView == com.abrah.nightmare.MainView.NODES && it.running },
+        runFrameAspect = runAspect(state.workflow.graph, types),
         state = state,
         types = types,
         onUpscale = onUpscaleNode,
@@ -632,15 +646,23 @@ fun CanvasScreen(
         onInstallControlNet = onInstallControlNet,
         onDeleteControlNet = onDeleteControlNet,
         busy = busy,
-        onRun = onRun,
+        // ⚠ Inline, the canvas's Run bar sits under the pages; a second Run would be one too many.
+        onRun = onRun.takeIf { mainView == com.abrah.nightmare.MainView.GRAPH },
         onCancelRun = onCancelRun,
         onInspectNode = onInspectNode,
+        inline = if (mainView == com.abrah.nightmare.MainView.NODES) {
+            Modifier.fillMaxSize().padding(top = topPad + 8.dp).windowInsetsPadding(belowChrome(bottomPad))
+        } else null,
+        // ⭐ The Default view's layout only; Advanced's inspector stays left-right cards (2026-10-10).
+        vertical = nodesVertical && mainView == com.abrah.nightmare.MainView.NODES,
         onImportLora = onImportLora,
         onBrowseLoras = onBrowseLoras,
         onDeleteLora = onDeleteLora,
         loraEpoch = loraEpoch,
         status = status,
         onClearImage = onClearImage,
+        onSaveDrawing = onSaveDrawing,
+        onBlankPicture = onBlankPicture,
         onSaveImage = onSaveImage,
         onShareImage = onShareImage,
         onSendImage = onSendImage,
@@ -918,7 +940,7 @@ fun CanvasScreen(
         SaveWorkflowDialog(
             initial = savedAs.orEmpty(),
             suggested = suggestedName,
-            onDismiss = { saving = false },
+            onDismiss = { saving = false; onSaveDismiss() },
             onSave = { saving = false; onSave(it) },
             validate = validateWorkflowName,
         )
@@ -949,175 +971,187 @@ fun CanvasScreen(
 }
 
 /**
- * ⭐ Model, backend state, and the way to the model picker.
- *
- * ⚠ It exists because the canvas is now the app's FIRST screen: everything the
- * harness used to explain -- which model, whether a server is running, where to
- * get one -- has to be visible to someone who never sees the harness.
+ * ⭐⭐⭐ The shell (the user's sidebar mock, 2026-10-09): ☰ · the brand · Save, then the three VIEWS
+ * as one segmented toggle with an ⓘ that says what each is. Models / Flows / Results, the flow's
+ * name, the model and RAM moved to the sidebar (`ui/ShellDrawer.kt`); RAM also sits beside the
+ * seed. ⚠ It replaced a 3 × 2 tile grid and a status row (`docs/LEGACY.md` §9).
+ * ⚠ The recipes' TOP clears this header (`Workflows.kt`): chrome and node positions go together.
  */
 @Composable
 private fun TopBar(
-    backendUp: Boolean,
-    /**
-     * ⭐ The flow on the canvas, and whether it has unsaved edits. Null hides
-     * the row — a preview and a golden have no view model.
-     */
-    flowName: String? = null,
-    flowDirty: Boolean = false,
-    /** ⭐ What the device is carrying. Null while it has not been measured. */
-    loadLine: String? = null,
-    onModels: () -> Unit,
-    onWorkflows: () -> Unit,
-    onResults: () -> Unit,
+    onMenu: () -> Unit,
+    onSave: () -> Unit,
+    mainView: com.abrah.nightmare.MainView,
+    onView: (com.abrah.nightmare.MainView) -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * ⭐⭐ The save / device / settings icons, drawn at the RIGHT END of the
-     * brand row INSIDE this card (the user's call, 2026-09-22).
-     *
-     * ⚠⚠ A slot rather than three more callbacks, because what matters is
-     * that they share a container with the brand: outside it they were a
-     * sibling with no weight and got measured to zero width.
-     */
-    icons: @Composable RowScope.() -> Unit = {},
-    /** ⭐ The build, beside the name — see [CanvasScreen.version]. */
+    /** ⭐ The build, beside the name (the user, 2026-10-09: "show version number in main page"). */
     version: String = "",
 ) {
-    // ⚠⚠ TWO rows, and the model name is the SECOND one. It used to sit inline
-    // ahead of the buttons, which made the row's layout depend on the length of
-    // a name we do not choose: "AnythingV5" fits and "Pony Diffusion v6 XL"
-    // pushes Save off the edge of a 384dp phone. SDXL is what made that
-    // concrete -- its labels are two and three words -- but the bar was always
-    // one long checkpoint name away from breaking.
-    //
-    // ⇒ The buttons come first and their row is fixed; the name gets a line to
-    // itself underneath, where growing costs nothing.
+    var explaining by remember { mutableStateOf(false) }
     Column(
         modifier
-            // ⚠⚠ The status-bar inset moved OUT to the header Column that now
-            // owns this row and the icons — an inset applied twice in one
-            // stack pushes the second thing down by the notch again
-            // (`docs/UI.md` §7.2).
-            //
-            // ⚠⚠⚠ **12 + 4 = 16, which is what `LibraryScreen` pads to**, and
-            // that is the whole reason for these numbers. Reported 2026-09-22:
-            // *"the name and icon are slightly shifting when i go to models
-            // view"*. They were 12+10 across and 6+4 down against the library's
-            // flat 16, so the logo jumped a few dp in both axes on every trip
-            // between the two screens — small enough to look like a rendering
-            // fault rather than a layout one.
-            .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 6.dp)
-            // ⚠ A background, because the canvas scrolls UNDER this bar: the
-            // default graph puts a node within a few dp of the top, and without
-            // a ground the model name is drawn over the node's title.
-            .clip(RoundedCornerShape(14.dp))
-            .background(CanvasColors.nodeBody.copy(alpha = 0.92f))
-            .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 5.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 8.dp),
+        // ⚠ 12dp under the brand: at 6 the views row sat against the logo (the user, 2026-10-09).
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // ⭐⭐⭐ **The brand, LEFT, in the position Models / Flows / Results
-        // put it** — asked for so it does not jump when you switch screens —
-        // and the icons at the right end of the same row.
-        // ⚠ [com.abrah.nightmare.ui.BrandMark] is the ONE function all four
-        // surfaces draw; a second copy of the gradient is a second copy that
-        // drifts. ⚠ No ✕ here: the canvas is what the others close back to.
-        Row(
-            Modifier.fillMaxWidth(),
-            // ⚠⚠⚠ SpaceBetween and a `fill = false` weight on the mark, NOT a
-            // weighted Spacer: the mark is then measured LAST, so the icons are
-            // never the thing that runs out of room. The Spacer version drew no
-            // gear on a 384dp phone — see [com.abrah.nightmare.ui.BrandMark].
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // ⭐⭐⭐ The mark, the name AND the version, all from the ONE
-            // function the library screens draw ([com.abrah.nightmare.ui.BrandMark]).
-            // The version used to be a second `Text` here, which is how two
-            // surfaces start disagreeing about a `v` prefix.
-            com.abrah.nightmare.ui.BrandMark(Modifier.weight(1f, fill = false), version = version)
-            icons()
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedButton(
-                onClick = onModels,
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-            ) { Text(stringResource(R.string.nav_models), fontSize = 12.sp) }
-            OutlinedButton(
-                onClick = onWorkflows,
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-            ) { Text(stringResource(R.string.nav_flows), fontSize = 12.sp) }
-            // ⭐ Results, reachable from the canvas. ⚠ It was a TAB with no
-            // door: you could only get to it by opening Models or Flows first
-            // and then noticing a third tab, which nobody did.
-            OutlinedButton(
-                onClick = onResults,
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-            ) { Text(stringResource(R.string.nav_results), fontSize = 12.sp) }
-            // ⚠ Save is NOT here any more. It moved to the icon row at the top
-            // RIGHT (beside ⓘ and the wrench), because this row is destinations
-            // — "go to Models", "go to Flows" — and Save is an action on the
-            // canvas you are already looking at. Mixing the two made a row of
-            // three words where only two of them navigated.
-        }
-        // ⭐⭐ Under the buttons: the dot, the flow, and the load.
-        //
-        // ⚠⚠ **The model name is NOT on a row of its own, and that is the fix.**
-        // It had one, and the load line underneath said "holding <the same
-        // name>" — the checkpoint printed twice, two lines apart. It appears
-        // once now, inside the load line, where it is doing work: "holding X"
-        // says the model AND that a process is up for it.
-        //
-        // ⚠⚠⚠ **WRAPPED, never ellipsised.** Both lines used to be `maxLines =
-        // 1` with `TextOverflow.Ellipsis` and a `weight`, so a long checkpoint
-        // name — which is most of the SDXL catalogue — was cut mid-word and the
-        // load figures after it vanished entirely. Asked for from the phone,
-        // 2026-09-10: *do not "..." the held model, wrap it, and let the
-        // container cover it.* The bar is a `Column`, so it grows to whatever
-        // these need; nothing here has a fixed height to break.
-        if (flowName != null) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                // ⚠ Top, not Center: the flow name may now be two lines, and a
-                // centred dot beside a two-line block floats in the middle of it.
-                verticalAlignment = Alignment.Top,
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = onMenu,
+                // ⭐ Reported for the sheets' live copy ([com.abrah.nightmare.ui.ShellAnchors]).
+                modifier = Modifier.onGloballyPositioned { c ->
+                    val p = c.positionOnScreen()
+                    com.abrah.nightmare.ui.ShellAnchors.menu = androidx.compose.ui.geometry.Rect(
+                        p.x, p.y, p.x + c.size.width, p.y + c.size.height,
+                    )
+                },
             ) {
-                // ⚠ The backend light. ⚠ Nudged down by 4dp so it sits on the
-                // FIRST line's optical centre rather than the row's.
-                Box(
-                    Modifier
-                        .padding(top = 4.dp)
-                        .size(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(
-                            if (backendUp) CanvasColors.ran
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                )
-                Text(
-                    flowName + if (flowDirty) " •" else "",
-                    style = NoteTextStyle,
-                    fontSize = 11.sp,
-                    color = if (flowDirty) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.shell_menu))
+            }
+            // ⭐ Clear of the ☰ (the user's mock, 2026-10-10: the logo touched it).
+            Spacer(Modifier.width(8.dp))
+            // ⚠ The ONLY weighted child: with a weighted Spacer beside it the two split the room and
+            // the wordmark was cut to "Nightma" at 320dp. `BrandMark` shrinks its own type to fit.
+            com.abrah.nightmare.ui.BrandMark(Modifier.weight(1f), version = version)
+            IconButton(onClick = onSave) {
+                Icon(
+                    com.abrah.nightmare.ui.SaveIcon,
+                    contentDescription = stringResource(R.string.canvas_cd_save_flow),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        if (loadLine != null) {
-            Text(
-                loadLine,
-                style = NoteTextStyle,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                // ⚠ No maxLines, no overflow: this is the line that carries the
-                // model name, and losing its tail is losing the free-RAM figure
-                // the row exists for.
-                modifier = Modifier.fillMaxWidth(),
-            )
+        // ⭐⭐ The toggle lights on the TAP's frame; the view is switched on the next one — drawing a
+        // whole view in the same frame held the highlight back (the user, 2026-10-08).
+        // ⚠ The tap's own pick wins until the view has changed; otherwise the view itself. Never a
+        // copy updated by an effect: that lagged a frame, the slow frame (2026-10-09).
+        var tapped by remember { mutableStateOf<com.abrah.nightmare.MainView?>(null) }
+        LaunchedEffect(mainView) { tapped = null }
+        val picked = tapped ?: mainView
+        val tileScope = rememberCoroutineScope()
+        val go: (com.abrah.nightmare.MainView) -> Unit = { v ->
+            tapped = v
+            tileScope.launch {
+                androidx.compose.runtime.withFrameNanos { }
+                onView(v)
+            }
+        }
+        // ⭐ Only on the three views: Models, Flows and Results get the room (the user, 2026-10-09);
+        // Back or the sidebar leaves them.
+        if (mainView.isCanvas) Row(
+            Modifier.fillMaxWidth().padding(start = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ViewToggle(picked, go, Modifier.weight(1f))
+            IconButton(onClick = { explaining = true }) {
+                Icon(
+                    Icons.Outlined.Info, contentDescription = stringResource(R.string.views_info_cd),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp),
+                )
+            }
+        }
+    }
+    if (explaining) ViewsInfoDialog { explaining = false }
+}
+
+/** ⭐ The ⓘ beside the views: what Chat, Default and Advanced each are. */
+@Composable
+private fun ViewsInfoDialog(onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        title = { Text(stringResource(R.string.views_info_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                for ((icon, name, body) in listOf(
+                    Triple(com.abrah.nightmare.ui.AgentIcon, R.string.agent_title, R.string.views_info_chat),
+                    Triple(com.abrah.nightmare.ui.NodesIcon, R.string.view_nodes, R.string.views_info_default),
+                    Triple(com.abrah.nightmare.ui.GraphIcon, R.string.view_graph, R.string.views_info_advanced),
+                )) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 2.dp).size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(stringResource(name), style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                Text(stringResource(R.string.views_info_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+    )
+}
+
+/**
+ * ⭐⭐ The bottom of a page drawn over the canvas (Agent, Nodes): the Run bar, or the keyboard when
+ * it is up — whichever is TALLER, never both. ⚠ Both were added once (the bar's height outside, an
+ * `imePadding` inside), and with the keyboard up the Agent's chat and text box got zero height —
+ * the keyboard already covers the bar (phone screenshot, 2026-10-09).
+ */
+@Composable
+internal fun belowChrome(runBar: androidx.compose.ui.unit.Dp): WindowInsets =
+    WindowInsets.ime.union(WindowInsets(bottom = runBar))
+
+/**
+ * ⭐⭐ Chat · Default · Advanced as one segmented control, the chosen one filled violet.
+ * ⭐⭐ **Evenly SPACED, not evenly sized** (the user, 2026-10-09: "text and icons should be evenly
+ * spaced from each other even if it means the card area is different for each"): each part is its
+ * content's width plus an equal share of what is left, so "Chat" no longer floats in a wide box
+ * while "Advanced" touches its edges.
+ */
+@Composable
+private fun ViewToggle(selected: com.abrah.nightmare.MainView, onPick: (com.abrah.nightmare.MainView) -> Unit, modifier: Modifier) {
+    val shape = RoundedCornerShape(12.dp)
+    // ⚠ Icons only where the three fit with them: at 320dp "Advanced" ellipsised beside its icon.
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        val icons = maxWidth >= 290.dp
+        androidx.compose.ui.layout.Layout(
+            content = {
+                for (v in com.abrah.nightmare.MainView.entries.filter { it.isCanvas }) {
+                    val on = v == selected
+                    val (icon, label) = when (v) {
+                        com.abrah.nightmare.MainView.AGENT -> com.abrah.nightmare.ui.AgentIcon to R.string.agent_title
+                        com.abrah.nightmare.MainView.NODES -> com.abrah.nightmare.ui.NodesIcon to R.string.view_nodes
+                        else -> com.abrah.nightmare.ui.GraphIcon to R.string.view_graph
+                    }
+                    val content = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                    Row(
+                        Modifier.clip(RoundedCornerShape(9.dp))
+                            .background(if (on) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
+                            .semantics { this.selected = on }
+                            .clickable { onPick(v) }
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (icons) {
+                            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(stringResource(label), style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(48.dp).clip(shape)
+                .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(3.dp),
+        ) { parts, c ->
+            val gap = 3.dp.roundToPx()
+            val natural = parts.map { it.maxIntrinsicWidth(c.maxHeight) }
+            val room = c.maxWidth - gap * (parts.size - 1)
+            val extra = ((room - natural.sum()) / parts.size).coerceAtLeast(0)
+            // ⚠ Too narrow even so: share the room by content, never overflow the pill.
+            val widths = if (natural.sum() <= room) natural.map { it + extra }
+            else natural.map { (it.toLong() * room / natural.sum()).toInt() }
+            val placed = parts.mapIndexed { k, m -> m.measure(androidx.compose.ui.unit.Constraints.fixed(widths[k], c.maxHeight)) }
+            layout(c.maxWidth, c.maxHeight) {
+                var x = 0
+                placed.forEach { it.place(x, 0); x += it.width + gap }
+            }
         }
     }
 }
@@ -1241,7 +1275,11 @@ private fun RunBar(
     /** ⭐⭐ Duplicate the selection — [CanvasState.cloneSelected]. */
     onCloneSelected: () -> Unit = {},
     runError: String? = null,
+    onDismissRunError: () -> Unit = {},
+    onDismissMessage: () -> Unit = {},
     runLog: RunLogState = RunLogState(),
+    /** ⭐ True when a [RunFrame] shows the log's lines during a run, so the panel leaves them out. */
+    logInFrame: Boolean = false,
     onCloseRunLog: () -> Unit = {},
     /**
      * ⚠ Computed by the caller, which is the only scope with the run status and
@@ -1252,12 +1290,21 @@ private fun RunBar(
     onToggleSeed: (String) -> Unit = {},
     /** ⭐ Backend relaunches this graph will cost. 0 on a single-checkpoint one. */
     plannedLoads: Int = 0,
+    /** ⚠ False in the Nodes view: no + Node, no zoom or pan locks — there is no graph on screen. */
+    graphControls: Boolean = true,
+    /** ⭐ The RAM pill beside the seed — [RunLogPanel]. */
+    ram: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    // ⭐⭐ Its own card (`PanelCard`), the page's card's edges: [SCREEN_GUTTER] out, [PANEL_PAD] in
+    // (the user, 2026-10-10: containers, and one margin from both edges).
+    com.abrah.nightmare.ui.PanelCard(
+        modifier.fillMaxWidth().padding(horizontal = com.abrah.nightmare.ui.SCREEN_GUTTER).padding(top = 8.dp),
+    ) {
     Column(
-        modifier
+        Modifier
             .fillMaxWidth()
-            .padding(12.dp),
+            .padding(com.abrah.nightmare.ui.PANEL_PAD),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // ⚠ The refusal from the last gesture, shown here rather than as a
@@ -1266,8 +1313,8 @@ private fun RunBar(
         // ⚠ Run failures first: they are the ones a user is waiting on.
         // ⚠ Both through [ErrorNotice]: a refused wire and a failed Run are the
         // same kind of news and were drawn two ways (`docs/UI.md` §8.5).
-        runError?.let { com.abrah.nightmare.ui.ErrorNotice(it, reportable = true) }
-        state.message?.let { com.abrah.nightmare.ui.ErrorNotice(it) }
+        runError?.let { com.abrah.nightmare.ui.ErrorNotice(it, reportable = true, onClose = onDismissRunError) }
+        state.message?.let { com.abrah.nightmare.ui.ErrorNotice(it, onClose = onDismissMessage) }
         // ⭐⭐ What is happening RIGHT NOW, directly above the button that
         // started it. ⚠ Below the errors and above the controls: a failure is
         // the more urgent thing to read, and Run must stay at the bottom edge
@@ -1280,6 +1327,7 @@ private fun RunBar(
         RunLogPanel(
             runLog,
             onClose = onCloseRunLog,
+            linesInFrame = logInFrame,
             // ⚠ The same callback the top bar's Results button uses, so the
             // two cannot land anywhere different.
             onResults = onResults,
@@ -1298,6 +1346,7 @@ private fun RunBar(
             onRelease = onReleaseSweep,
             batch = batchProgress,
             onCancelBatch = onCancelBatch,
+            ram = ram,
         )
 
         // ⭐⭐⭐ **What the relaunches will cost, BEFORE the button is pressed.**
@@ -1366,7 +1415,7 @@ private fun RunBar(
             // Removed at the user's request, 2026-09-10: the Batch button. It
             // opened a second way to build a sweep, and there is only one now
             // — arm a knob from its own node.
-            OutlinedButton(
+            if (graphControls) OutlinedButton(
                 onClick = onAdd,
                 shape = RoundedCornerShape(12.dp),
                 // ⚠ 14 rather than M3's 24: the label is two characters and a
@@ -1397,12 +1446,17 @@ private fun RunBar(
                 .weight(1f, fill = false)
                 .padding(horizontal = 8.dp)
                 .defaultMinSize(minWidth = RUN_WIDTH)
-            RunButton(busy = busy, onRun = onRun, onCancelRun = onCancelRun, modifier = runModifier)
+            // ⚠ Alone (Default, Chat) it spans the card with NO inset of its own: its 8dp each side
+            // put it further in than everything above it (the user, 2026-10-10).
+            RunButton(
+                busy = busy, onRun = onRun, onCancelRun = onCancelRun,
+                modifier = if (graphControls) runModifier else Modifier.weight(1f),
+            )
             // ⚠ The right slot: the zoom readout, then the two locks. It WRAPS
             // its content — see the note on the left slot; every item in here is
             // a fixed size, so a weight would only steal room from the one slot
             // that needs it.
-            Row(
+            if (graphControls) Row(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1435,6 +1489,7 @@ private fun RunBar(
             )
             }
         }
+    }
     }
 }
 
@@ -1905,9 +1960,9 @@ private fun FullscreenImage(
             Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = 16.dp, start = 8.dp, end = 8.dp),
+                .padding(bottom = 20.dp, start = 8.dp, end = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             // ⚠ The lock goes INSIDE the seed's own container, not in the
             // loose row: a lock icon beside save and delete has no visible subject.

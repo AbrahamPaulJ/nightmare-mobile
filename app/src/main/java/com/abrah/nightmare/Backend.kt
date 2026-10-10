@@ -820,6 +820,14 @@ object Ops {
          * answer that reflects actual tensor shapes.
          */
         loras: List<Pair<String, Double>> = emptyList(),
+        /**
+         * ⭐ UltraFix ([UltraFix]): tiled img2img over a picture larger than the UNet graph —
+         * [width]x[height] are the PICTURE's (multiples of 8), [tileSize] the graph's.
+         * ⚠ SD 1.5 / SDXL QNN only; no mask, no ControlNet (`RequestParser.hpp`).
+         */
+        ultrafix: Boolean = false,
+        tileSize: Int = 512,
+        scheduler: String? = null,
         onProgress: (Progress) -> Unit = {},
     ): Result<Decoded> {
         val body = JSONObject()
@@ -839,6 +847,11 @@ object Ops {
                 if (maskPng != null) {
                     put("mask", android.util.Base64.encodeToString(maskPng, android.util.Base64.NO_WRAP))
                 }
+                if (ultrafix) {
+                    put("ultrafix", true)
+                    put("tile_size", tileSize)
+                }
+                scheduler?.let { put("scheduler", it) }
                 if (loras.isNotEmpty()) {
                     put(
                         "loras",

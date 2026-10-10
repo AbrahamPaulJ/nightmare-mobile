@@ -1,9 +1,14 @@
 package com.abrah.nightmare
 
+import com.abrah.nightmare.canvas.asCtlParams
+import com.abrah.nightmare.canvas.asRefParams
+import com.abrah.nightmare.canvas.ctlCropRectOf
+import com.abrah.nightmare.canvas.refCropRectOf
 import com.abrah.nightmare.canvas.asParams
 import com.abrah.nightmare.canvas.knobLabel
 
 import android.app.Application
+import com.abrah.nightmare.ui.isInpaintModel
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.runtime.getValue
@@ -174,6 +179,78 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     var lowRam by mutableStateOf(Prefs.lowRam(getApplication()))
         private set
 
+    // ---- Tag autocomplete ([TagDictionary]; Settings → Prompts) ------------------------------
+
+    /** ⭐ What Settings shows of the dictionaries. ⚠ Read off main ([refreshTags]): it counts lines. */
+    var tagState by mutableStateOf<TagDictionary.State?>(null)
+        private set
+    var tagProgress by mutableStateOf<ModelInstaller.Progress?>(null)
+        private set
+    @Volatile private var tagCancel = false
+
+    fun refreshTags() {
+        val app = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val s = TagDictionary.state(app)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { tagState = s }
+        }
+    }
+
+    fun chooseTagsEnabled(on: Boolean) {
+        TagDictionary.setEnabled(getApplication(), on)
+        refreshTags()
+    }
+
+    fun downloadTags() {
+        if (tagProgress != null) return
+        val app = getApplication<Application>()
+        tagCancel = false
+        tagProgress = ModelInstaller.Progress("starting", 0, TagDictionary.DOWNLOAD_BYTES)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                TagDictionary.download(
+                    app,
+                    onProgress = { p -> viewModelScope.launch { if (tagProgress != null) tagProgress = p } },
+                    isCancelled = { tagCancel },
+                )
+                viewModelScope.launch { say("tag dictionary installed") }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch { say("tag dictionary download cancelled", bad = true) }
+            } catch (e: Exception) {
+                ErrorReport.record(e)
+                viewModelScope.launch { toast(e.message ?: e.javaClass.simpleName) }
+            } finally {
+                viewModelScope.launch { tagProgress = null }
+                refreshTags()
+            }
+        }
+    }
+
+    fun cancelTagDownload() { tagCancel = true }
+
+    fun importTags(uri: android.net.Uri, translation: Boolean) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val name = runCatching {
+                app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            }.getOrNull() ?: "import.csv"
+            try {
+                val n = TagDictionary.import(app, uri, name, translation)
+                viewModelScope.launch { say("imported $name: $n ${if (translation) "translations" else "tags"}") }
+            } catch (e: Exception) {
+                ErrorReport.record(e)
+                viewModelScope.launch { toast(e.message ?: e.javaClass.simpleName) }
+            }
+            refreshTags()
+        }
+    }
+
+    fun clearTags(translation: Boolean) {
+        TagDictionary.clear(getApplication(), translation)
+        refreshTags()
+    }
+
     /**
      * ⭐ Flip one low-RAM switch. ⚠ `--lowram` binds at LAUNCH, so a backend of
      * the family it governs is stopped: the next Run relaunches with the new
@@ -263,8 +340,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- workflows -------------------------------------------------------
 
-    var showWorkflows by mutableStateOf(false)
-        private set
+    // ⭐⭐ Flows / Results are DESTINATIONS since 2026-10-08 (Violet Studio): "showing" means that
+    // tile is selected. Every older caller that opened or closed the library still works.
+    var showWorkflows: Boolean
+        get() = mainView == MainView.FLOWS || mainView == MainView.RESULTS
+        private set(on) {
+            if (on && !showWorkflows) showView(if (lastLibraryTab == com.abrah.nightmare.ui.LibraryTab.RESULTS) MainView.RESULTS else MainView.FLOWS)
+            if (!on && showWorkflows) showView(lastFlowView)
+        }
 
     var savedWorkflows by mutableStateOf<List<SavedWorkflow>>(emptyList())
         private set
@@ -272,13 +355,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     var workflowError by mutableStateOf<String?>(null)
         private set
 
+    /** ⭐ The ✕ on the Flows error. */
+    fun dismissWorkflowError() { workflowError = null }
+
     /** ⭐ Open the library straight onto Results, from the canvas. */
     fun setResultsVisible(on: Boolean) {
         showWorkflows = on
         workflowError = null
         if (on) {
             libraryTab = com.abrah.nightmare.ui.LibraryTab.RESULTS
-            refreshResults()
+            afterNextFrame { refreshResults() }
         }
     }
 
@@ -287,7 +373,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         workflowError = null
         if (on) {
             libraryTab = com.abrah.nightmare.ui.LibraryTab.FLOWS
-            refreshWorkflows()
+            afterNextFrame { refreshWorkflows() }
         }
     }
 
@@ -389,6 +475,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             say("saved \"${name.trim()}\"")
             workflowError = null
             refreshWorkflows()
+            openAfterSave?.let { open -> openAfterSave = null; open() }
         } catch (e: Exception) {
             ErrorReport.record(e)
             workflowError = e.message ?: e.javaClass.simpleName
@@ -471,6 +558,34 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun dismissPendingOpen() { pendingOpen = null }
+
+    /**
+     * ⭐ The third answer to [pendingOpen]: SAVE, then open. A flow with a name is saved over
+     * itself at once; an unnamed one gets the save dialog ([saveAsk]), and the open waits for
+     * [saveWorkflowAs] — or is dropped if the dialog is dismissed ([cancelOpenAfterSave]).
+     */
+    fun savePendingOpen() {
+        val p = pendingOpen ?: return
+        pendingOpen = null
+        val name = currentWorkflowName
+        if (name != null) {
+            saveWorkflowAs(name)
+            if (!activeFlow.dirty) p.open()
+            return
+        }
+        openAfterSave = p.open
+        closeLibrary()
+        setCanvasVisible(true)
+        saveAsk++
+    }
+
+    /** ⭐ Bumped to raise the canvas's save dialog from the view model ([savePendingOpen]). */
+    var saveAsk by mutableStateOf(0)
+        private set
+
+    private var openAfterSave: (() -> Unit)? = null
+
+    fun cancelOpenAfterSave() { openAfterSave = null }
 
     /**
      * ⭐ What opening a saved flow CHANGED in it — a deleted node type rebuilt
@@ -919,15 +1034,22 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- models ----------------------------------------------------------
 
-    var showModels by mutableStateOf(false)
-        private set
+    var showModels: Boolean
+        get() = mainView == MainView.MODELS
+        private set(on) {
+            if (on) showView(MainView.MODELS) else if (showModels) showView(lastFlowView)
+        }
 
     fun setModelsVisible(on: Boolean) {
         if (on) Perf.markModelsOpened()
         showModels = on
         if (on) {
             libraryTab = com.abrah.nightmare.ui.LibraryTab.MODELS
-            refreshModels(offMain = true)
+            // ⚠⚠ AFTER the screen has drawn (the user, 2026-10-08: "a delay before it shows as
+            // selected … i want it snappy"). refreshModels does a dozen disk scans on main before
+            // its off-main part; on the tap's frame they held the tile and the screen back. The rows
+            // from the last refresh show at once and update a moment later.
+            afterNextFrame { refreshModels(offMain = true) }
             // ⭐⭐⭐ An UNKNOWN chip is measured here, not left as a guess.
             //
             // ⚠⚠ This screen is where the guess does its damage: every SDXL,
@@ -963,8 +1085,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * a recipe against their checkpoints should not be returned to Models every
      * time they look away.
      */
-    var libraryTab by mutableStateOf(com.abrah.nightmare.ui.LibraryTab.MODELS)
-        private set
+    private var lastLibraryTab = com.abrah.nightmare.ui.LibraryTab.MODELS
+    var libraryTab: com.abrah.nightmare.ui.LibraryTab
+        get() = when (mainView) {
+            MainView.MODELS -> com.abrah.nightmare.ui.LibraryTab.MODELS
+            MainView.FLOWS -> com.abrah.nightmare.ui.LibraryTab.FLOWS
+            MainView.RESULTS -> com.abrah.nightmare.ui.LibraryTab.RESULTS
+            else -> lastLibraryTab
+        }
+        private set(t) {
+            lastLibraryTab = t
+            if (libraryOpen) {
+                showView(
+                    when (t) {
+                        com.abrah.nightmare.ui.LibraryTab.MODELS -> MainView.MODELS
+                        com.abrah.nightmare.ui.LibraryTab.FLOWS -> MainView.FLOWS
+                        com.abrah.nightmare.ui.LibraryTab.RESULTS -> MainView.RESULTS
+                    },
+                )
+            }
+        }
 
     fun switchLibraryTab(t: com.abrah.nightmare.ui.LibraryTab) {
         libraryTab = t
@@ -985,6 +1125,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     var modelError by mutableStateOf<String?>(null)
         private set
+
+    /** ⭐ The ✕ on the Models error. */
+    fun dismissModelError() { modelError = null }
 
     /**
      * ⭐⭐ **How the app died last time, if it did** — null on every ordinary
@@ -1286,6 +1429,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     fetchBytes = if (here) 0L else spec.fetchBytes(ctx, spec.buildFor(caps)),
                     needsRam = spec.ramNeeded(caps),
                     ramTight = here && CustomModels.ramTight(spec, ctx, caps.ramBytes),
+                    fromLocalDream = here && spec.fromLocalDream(ctx),
                 )
             }
             Triple(rows, rows.filter { it.installed }.map { it.spec.id }, readVideoDisk())
@@ -1697,15 +1841,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * ⚠⚠ Deletes the GRAPHS only, never the host-side weights. Those cannot
-     * be re-downloaded (`docs/NEODRAGON.md` §6), so removing them would take
-     * something the user may have no way to get back.
-     */
+    /** ⭐ Graphs and host-side weights both — the download brings both back ([VideoInstaller.deleteAll]). */
     fun deleteVideoModels() {
-        val dir = com.abrah.nightmare.npu.NpuFiles.ctxDir(getApplication())
-        val n = dir.listFiles()?.count { it.isFile && it.delete() } ?: 0
-        say("deleted $n video graph(s)")
+        val n = com.abrah.nightmare.npu.VideoInstaller.deleteAll(getApplication())
+        say("deleted $n video file(s)")
         refreshVideoModels()
     }
 
@@ -1819,6 +1958,96 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 keepResult(img.id, flow = wf)
                 toast(text(R.string.upscale_kept))
+            } finally {
+                upscalingResult = null
+            }
+        }
+        refused?.let { toast(text(R.string.upscale_not_done, it)) }
+    }
+
+    /**
+     * ⭐⭐ **UltraFix** on a kept picture ([UltraFix]) — from the upscale chooser in Results and the
+     * viewer. The picture's own model when it is an installed SD 1.5 / SDXL one, else the selected;
+     * the picture at full size (snapped to multiples of 8) through `/generate` with `ultrafix`.
+     * ⚠ Every way out TOASTS, as [upscaleResult]'s do: Results does not show the run log.
+     */
+    fun ultrafixResult(r: com.abrah.nightmare.canvas.Result, p: UltraFix.Params) {
+        val ctx = getApplication<Application>()
+        UltraFix.save(ctx, p)
+        val usable = { s: ModelSpec? ->
+            s?.takeIf { UltraFix.tileFor(it.family) != null && !it.isInpaintModel() && it.installed(ctx) }
+        }
+        val spec = usable(r.model?.let { ModelCatalog.byId(it) }) ?: usable(ModelCatalog.byId(SelectedModel.id))
+        if (spec == null) {
+            toast(text(R.string.ultrafix_no_model))
+            return
+        }
+        val tile = UltraFix.tileFor(spec.family)!!
+        val file = results.imageFile(r.id)
+        if (!file.isFile) {
+            toast(text(R.string.upscale_picture_gone))
+            return
+        }
+        if (minOf(r.width, r.height) < tile) {
+            toast(text(R.string.ultrafix_too_small, tile))
+            return
+        }
+        val res = spec.native ?: ModelCatalog.SD15_NPU_RES
+        val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height)
+        val refused = run("ultrafix") {
+            upscalingResult = "UltraFix"
+            toast(text(R.string.ultrafix_started, spec.label))
+            try {
+                if (!ops.ensureBackend(key)) {
+                    say("ultrafix: no backend", bad = true)
+                    toast(text(R.string.upscale_backend_failed))
+                    return@run
+                }
+                val input = withContext(Dispatchers.IO) {
+                    val src = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@withContext null
+                    val (w, h) = UltraFix.snap(src.width, src.height)
+                    val b = if (w == src.width && h == src.height) src else android.graphics.Bitmap.createScaledBitmap(src, w, h, true)
+                    val out = java.io.ByteArrayOutputStream()
+                    b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                    Triple(out.toByteArray(), w, h)
+                }
+                if (input == null) {
+                    toast(text(R.string.upscale_picture_gone))
+                    return@run
+                }
+                val prompt = if (p.qualityPrompt) UltraFix.QUALITY_PROMPT else r.prompt.orEmpty().ifBlank { UltraFix.QUALITY_PROMPT }
+                say("ultrafix: ${spec.id} ${input.second}x${input.third}, tile $tile, ${p.denoiseSteps}/${p.steps} steps")
+                when (val out = Ops.generate(
+                    prompt = prompt, negative = spec.negative, steps = p.steps, cfg = spec.cfg,
+                    seed = kotlin.random.Random.nextInt(1, Int.MAX_VALUE),
+                    width = input.second, height = input.third, imagePng = input.first,
+                    denoise = UltraFix.strength(p.denoiseSteps, p.steps),
+                    ultrafix = true, tileSize = tile, scheduler = spec.scheduler,
+                )) {
+                    is Ops.Result.Err -> {
+                        say("ultrafix failed — http ${out.code} ${out.body.take(200)}", bad = true)
+                        toast(text(R.string.ultrafix_failed, out.body.take(160)))
+                    }
+                    is Ops.Result.Ok -> {
+                        val bmp = withContext(Dispatchers.IO) {
+                            android.graphics.BitmapFactory.decodeByteArray(out.value.png, 0, out.value.png.size)
+                        }
+                        if (bmp == null) {
+                            toast(text(R.string.ultrafix_failed, "no picture"))
+                            return@run
+                        }
+                        val id = ops.images.put(bmp)
+                        // ⚠ A one-node flow naming the source, so the kept picture says where it came from.
+                        keepResult(
+                            id,
+                            flow = com.abrah.nightmare.canvas.Workflow(
+                                Graph(listOf(Node("ultrafix", "core.image", params = mapOf("uri" to file.absolutePath)))),
+                                emptyMap(),
+                            ),
+                        )
+                        toast(text(R.string.ultrafix_kept))
+                    }
+                }
             } finally {
                 upscalingResult = null
             }
@@ -3229,6 +3458,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearLoraFetchError() { loraFetchError = null }
 
+    /** ⭐ [loraFetch] with the LoRA's NAME — what the chat's download card shows. */
+    val loraDownload: Pair<String, ModelInstaller.Progress>?
+        get() = loraFetch?.let { (v, p) -> (loraLabels[LORA_INSTALL_PREFIX + v] ?: v) to p }
+
     /** ⭐ The browser, open on this family's LoRAs; null when closed. */
     var loraBrowser by mutableStateOf<LoraSources.Target?>(null)
         private set
@@ -3261,6 +3494,138 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun chooseMatureContent(value: Boolean) {
         Prefs.setMatureContent(getApplication(), value)
         matureContent = value
+    }
+
+    /**
+     * ⭐⭐ The agent (`docs/AGENT-API.md` §4): its chat lives here so it survives the panel
+     * closing. It edits and runs THIS canvas ([com.abrah.nightmare.agent.VmCanvasHost]), so its
+     * renders autosave to Results like any Run.
+     */
+    val agent: com.abrah.nightmare.agent.AgentSession by lazy {
+        com.abrah.nightmare.agent.AgentSession(
+            getApplication(),
+            com.abrah.nightmare.api.ApiCore(getApplication(), ops, holder = "agent"),
+            com.abrah.nightmare.agent.VmCanvasHost(this),
+            viewModelScope,
+        )
+    }
+
+    /**
+     * ⭐⭐ Which of the three views is showing (the user's design, 2026-10-08) — Agent, Nodes (the
+     * inspector's pages, full screen) or Graph. Opens on [Prefs.defaultView]; until the person has
+     * chosen one, on Nodes with the question asked ([askView]).
+     */
+    var mainView by mutableStateOf(Prefs.defaultView ?: MainView.NODES)
+        private set
+    var askView by mutableStateOf(Prefs.defaultView == null)
+        private set
+    /** ⭐ What Settings shows as the default view. */
+    var defaultViewChoice by mutableStateOf(Prefs.defaultView ?: MainView.NODES)
+        private set
+    var nodesVertical by mutableStateOf(Prefs.nodesVertical)
+        private set
+
+    /**
+     * ⭐ Run [block] once the frame AFTER the next has started — i.e. after a view change has been
+     * drawn. ⚠ Main thread. A plain `launch` runs before the frame, which is the delay this avoids.
+     */
+    private fun afterNextFrame(block: () -> Unit) {
+        val c = runCatching { android.view.Choreographer.getInstance() }.getOrNull() ?: return block()
+        c.postFrameCallback { c.postFrameCallback { block() } }
+    }
+
+    /** ⭐ The flow view (Agent · Nodes · Graph) last shown — where leaving the library returns. */
+    private var lastFlowView: MainView = Prefs.defaultView ?: MainView.NODES
+
+    /** ⭐ The flow view the canvas shows — [mainView], or the last one while a library sheet is up. */
+    val canvasView: MainView get() = if (mainView.isCanvas) mainView else lastFlowView
+
+    fun showView(v: MainView) {
+        // ⚠ The Nodes view pages by `editing`; carried into Graph it would open the sheet at once.
+        if (v == MainView.GRAPH && mainView != MainView.GRAPH) editCanvas { it.copy(editing = null) }
+        if (v.isCanvas) lastFlowView = v
+        mainView = v
+    }
+
+    /**
+     * ⭐⭐ A shell tile tapped. The library's three go through their own openers, which refresh
+     * what they list (models off main, saved flows, results).
+     */
+    fun openDestination(v: MainView) = when (v) {
+        MainView.MODELS -> setModelsVisible(true)
+        MainView.FLOWS -> setWorkflowsVisible(true)
+        MainView.RESULTS -> setResultsVisible(true)
+        else -> showView(v)
+    }
+
+    fun chooseDefaultView(v: MainView) {
+        Prefs.setDefaultView(getApplication(), v)
+        defaultViewChoice = v
+        askView = false
+        showView(v)
+    }
+
+    fun chooseNodesVertical(on: Boolean) {
+        Prefs.setNodesVertical(getApplication(), on)
+        nodesVertical = on
+    }
+
+    // ⭐ The agent's handle on the canvas (`agent/CanvasHost.kt`) — thin, so the rules stay here.
+    internal val installingNow: Boolean get() = installing != null
+    internal fun openForAgent(w: Workflow, recipeId: String?) {
+        openWorkflow(w)
+        openedRecipeId = recipeId
+    }
+    internal fun runJobNow(): kotlinx.coroutines.Job? = runJob
+
+    /** ⚠ True while the AGENT's `run` tool is waiting on a canvas Run — its tool reports the result. */
+    @Volatile internal var agentRunning = false
+
+    /**
+     * ⭐⭐ Where a finished Run's picture is shown (the user's call, 2026-10-08): the Nodes view
+     * turns to the output node; Run pressed in the Agent view puts the picture in the chat; a run
+     * the AGENT started reports through its own tool; Graph stays put — a builder keeps their place.
+     */
+    private fun afterCanvasRun(r: GraphRun) {
+        if (r.error != null || agentRunning) return
+        val outs = canvas.workflow.graph.nodes.filter { it.type == MediaOutputNode.name && r.outputs[it.id] != null }
+        val first = outs.firstOrNull() ?: return
+        when (mainView) {
+            MainView.NODES -> editCanvas { it.copy(editing = first.id) }
+            MainView.AGENT -> agent.showPictures(
+                outs.mapNotNull { n -> canvas.previews[n.id]?.first?.let { ops.images.get(it) } },
+            )
+            else -> Unit
+        }
+    }
+    internal fun imageOf(id: String): android.graphics.Bitmap? = ops.images.get(id)
+
+    /** ⭐ Settings → API (`docs/AGENT-API.md`): on/off, its token and where it listens. */
+    var apiOn by mutableStateOf(com.abrah.nightmare.api.ApiSettings.enabled(app))
+        private set
+    var apiToken by mutableStateOf("")
+        private set
+    var apiAddresses by mutableStateOf(emptyList<String>())
+        private set
+
+    /** ⚠ Read again whenever Settings shows: the notification's Stop changes it behind this. */
+    fun refreshApi() {
+        val ctx = getApplication<Application>()
+        apiOn = com.abrah.nightmare.api.ApiSettings.enabled(ctx)
+        apiToken = if (apiOn) com.abrah.nightmare.api.ApiSettings.token(ctx) else ""
+        apiAddresses = if (apiOn) com.abrah.nightmare.api.ApiService.addresses() else emptyList()
+    }
+
+    fun chooseApi(on: Boolean) {
+        val ctx = getApplication<Application>()
+        com.abrah.nightmare.api.ApiSettings.setEnabled(ctx, on)
+        com.abrah.nightmare.api.ApiService.syncWith(ctx)
+        refreshApi()
+    }
+
+    fun regenerateApiToken() {
+        com.abrah.nightmare.api.ApiSettings.regenerate(getApplication())
+        refreshApi()
     }
 
     fun importEmbedding(uri: android.net.Uri) {
@@ -3346,7 +3711,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * even have open.
      */
     fun deleteUpscaler(spec: UpscalerSpec) {
-        UpscalerCatalog.delete(getApplication(), spec)
+        val ctx = getApplication<Application>()
+        // ⚠ Local Dream's copy is used in place and never deleted from here ([LocalDreamModels]).
+        if (LocalDreamModels.owns(spec.dir(ctx))) {
+            modelError = ctx.getString(R.string.ld_delete_refused, spec.label)
+            return
+        }
+        UpscalerCatalog.delete(ctx, spec)
         say("deleted ${spec.label}")
         refreshUpscalers()
     }
@@ -3528,23 +3899,21 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun confirmUse(spec: ModelSpec?, recipe: com.abrah.nightmare.canvas.Recipe?) {
         pendingUse = null
-        // ⚠ Null for an upscaler or the video models: there is no global
-        // selection to make, only a flow to open.
-        spec?.let { selectModel(it) }
-        // ⚠ AFTER the model is set: a recipe reads [SelectedModel] as it builds,
-        // so building first would lay out a flow pointed at the old checkpoint
-        // and then retarget it — two writes where one will do, and the first one
-        // visible.
-        recipe?.let {
-            // ⚠ The UNGUARDED one: this dialog already said "unsaved flows will
-            // be replaced" before listing the flows. See [openRecipeNow].
-            openRecipeNow(it)
-            // ⭐ …and get out of the way. Choosing a flow is asking to work on
-            // it; leaving the library open means the user's next act is always
-            // to close a screen they are done with. The user's call, 2026-09-15.
-            // ⚠ Only when a flow was chosen — "keep the current flow" is a
-            // change to the CANVAS's model, and closing the tab under someone
-            // who came to browse checkpoints would take the list away mid-scroll.
+        if (recipe == null) {
+            // ⚠ Null for an upscaler or the video models: there is no global selection to make.
+            spec?.let { selectModel(it) }
+            return
+        }
+        // ⚠ GUARDED since 2026-10-10: the Use dialog no longer warns, so an unsaved canvas is
+        // asked about here — Save / Open anyway / Cancel ([pendingOpen]) — and nothing, the
+        // model included, changes until it is answered.
+        val label = recipe.labelRes?.let { r -> text(r) } ?: recipe.label
+        guardedOpen(label) {
+            // ⚠ The model FIRST: a recipe reads [SelectedModel] as it builds, so building first
+            // would lay out a flow pointed at the old checkpoint and then retarget it.
+            spec?.let { selectModel(it) }
+            openRecipeNow(recipe)
+            // ⭐ …and get out of the way: choosing a flow is asking to work on it (2026-09-15).
             closeLibrary()
         }
     }
@@ -3766,22 +4135,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 (types[graph.byId[id]?.type] as? SdSampler)?.family?.let { it != spec.family } == true
             }
             editCanvas { s ->
-                s.copy(
-                    workflow = s.workflow.copy(
-                        graph = Graph(
-                            s.workflow.graph.nodes.map { n ->
-                                val p = changes[n.id] ?: return@map n
-                                val sampler = types[n.type] as? SdSampler
-                                val newType = if (sampler != null && sampler.family != spec.family) {
-                                    SdSampler.typeFor(spec.family, sampler.inpaint)
-                                } else {
-                                    n.type
-                                }
-                                n.copy(type = newType, params = n.params + p)
-                            }
-                        )
-                    )
-                )
+                s.copy(workflow = s.workflow.copy(graph = com.abrah.nightmare.retargetedGraph(s.workflow.graph, types, spec, res)))
             }
             say(
                 "  retargeted ${changes.size} node${if (changes.size == 1) "" else "s"} on the canvas" +
@@ -4244,6 +4598,32 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             )
             out = out.setParams(n.id, fitted.asParams().toMap())
         }
+        // ⭐⭐ …and a Swap node's ControlNet / IP-Adapter regions, which take the
+        // render's shape too (`PictureCrop`, the user's call, 2026-10-08). ⚠ An
+        // untouched region (the whole picture) is left alone: it is fitted to
+        // whatever shape the render has ([com.abrah.nightmare.canvas.pictureRegion]).
+        for (n in after.workflow.graph.nodes) {
+            if (!com.abrah.nightmare.SdSampler.isSwapType(n.type)) continue
+            val old = before.workflow.graph.byId[n.id] ?: continue
+            val type = types[n.type]
+            val oldSize = com.abrah.nightmare.canvas.framingOutSize(old, type)
+            val newSize = com.abrah.nightmare.canvas.framingOutSize(n, type)
+            if (oldSize == newSize || newSize.first <= 0 || newSize.second <= 0) continue
+            val regions = listOf(
+                Triple(com.abrah.nightmare.SdSampler.CONTROL, ::ctlCropRectOf) { r: com.abrah.nightmare.canvas.CropRect -> r.asCtlParams() },
+                Triple("reference", ::refCropRectOf) { r: com.abrah.nightmare.canvas.CropRect -> r.asRefParams() },
+            )
+            for ((port, rectOf, params) in regions) {
+                val now = out.workflow.graph.byId[n.id] ?: continue
+                val rect = rectOf(now)
+                if (rect == com.abrah.nightmare.canvas.CropRect.WHOLE || rect != rectOf(old)) continue
+                val src = after.pictureInto(n.id, nodeTypes, port)?.let { ops.images.get(it) } ?: continue
+                val fitted = com.abrah.nightmare.canvas.refitToAspect(
+                    rect, src.width, src.height, newSize.first.toFloat() / newSize.second,
+                )
+                out = out.setParams(n.id, params(fitted).toMap())
+            }
+        }
         return out
     }
 
@@ -4450,8 +4830,47 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * ⚠ Their SIGNATURES go too, or the next refresh finds the node unchanged
      * and never asks again.
      */
+    /**
+     * ⭐⭐ The Draw window's Done (`canvas/DrawWindow.kt`): the layer as a PNG under
+     * `files/drawings/`, set as the image node's `drawing`; null removes the drawing.
+     * ⚠ The old file is NOT deleted: a saved flow may still name it.
+     */
+    fun saveDrawing(nodeId: String, layer: android.graphics.Bitmap?) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val path = layer?.let { bmp ->
+                withContext(Dispatchers.IO) {
+                    val dir = java.io.File(ctx.filesDir, "drawings").apply { mkdirs() }
+                    val f = java.io.File(dir, "${nodeId}_${System.currentTimeMillis()}.png")
+                    f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    f.absolutePath
+                }
+            }.orEmpty()
+            editCanvas { s -> s.setParam(nodeId, LoadImageNode.DRAWING, path) }
+        }
+    }
+
+    /** ⭐ "Blank page": a white 1024² picture on an empty image node, to draw on from scratch. */
+    fun blankPicture(nodeId: String, then: () -> Unit = {}) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val path = withContext(Dispatchers.IO) {
+                val dir = java.io.File(ctx.filesDir, "drawings").apply { mkdirs() }
+                val f = java.io.File(dir, "blank_${System.currentTimeMillis()}.png")
+                val bmp = android.graphics.Bitmap.createBitmap(1024, 1024, android.graphics.Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(android.graphics.Color.WHITE)
+                f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                bmp.recycle()
+                f.absolutePath
+            }
+            editCanvas { s -> s.setParam(nodeId, "uri", path).setParam(nodeId, LoadImageNode.DRAWING, "") }
+            then()
+        }
+    }
+
     fun clearImage(nodeId: String) {
-        editCanvas { s -> s.setParam(nodeId, "uri", "") }
+        // ⚠ The doodle goes with the picture it was drawn on.
+        editCanvas { s -> s.setParam(nodeId, "uri", "").setParam(nodeId, LoadImageNode.DRAWING, "") }
         val graph = canvas.workflow.graph
         fun downstream(id: String) = id == nodeId || graph.dependsOn(id, nodeId)
         canvas = canvas.copy(
@@ -6761,6 +7180,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     var runError by mutableStateOf<String?>(null)
         private set
 
+    /** ⭐ The ✕ on the Run error. */
+    fun dismissRunError() { runError = null }
+
     /**
      * ⭐⭐ What the canvas shows WHILE it renders — `canvas/RunLog.kt`.
      *
@@ -7036,11 +7458,23 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * separate Batch button beside an armed sweep would leave plain Run quietly
      * ignoring the thing the bar says is on.
      */
+    /** ⭐ The node a run from Chat opens on — the output; consumed by [runCanvas]. */
+    private var runStartsOn: String? = null
+
     fun runCanvasOrBatch() {
-        // ⚠ A sweep shows the canvas too — the same rule as [runCanvas].
-        canvas = canvas.copy(editing = null, cropRequest = null)
+        // ⭐ Run from Chat goes to the Default view's OUTPUT page — what the run is making
+        // (the user's call, 2026-10-10). Elsewhere a sweep shows the canvas — [runCanvas]'s rule.
+        // ⭐ …and a Default view run focuses its output page too, where the run's frame is drawn
+        // (2026-10-10) — the other pages stay a swipe away.
+        val output = if (mainView == MainView.AGENT || mainView == MainView.NODES) {
+            canvas.workflow.graph.nodes.lastOrNull { it.type == MediaOutputNode.name }?.id
+        } else null
+        runStartsOn = output
+        canvas = canvas.copy(editing = output, cropRequest = null)
+        if (output != null && mainView == MainView.AGENT) showView(MainView.NODES)
         val axes = BatchParams.axesOf(canvas.workflow.graph)
         if (axes.isEmpty()) { runCanvas(); return }
+        runStartsOn = null
         runBatch(BatchSpec(axes))
     }
 
@@ -7122,7 +7556,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // sheet closes so the run is watched where it happens, and its errors
         // land where they are already shown. ⚠ `editing` is then the signal
         // that the person opened something DURING the run ([openOutputAfter]).
-        canvas = canvas.copy(editing = null, cropRequest = null)
+        // ⭐ …except a run from Chat, which starts ON the output ([runStartsOn]).
+        canvas = canvas.copy(editing = runStartsOn, cropRequest = null)
+        runStartsOn = null
         fitChainedImageToImage()
         canvasStatus.clear()
         runError = null
@@ -7287,6 +7723,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
+        afterCanvasRun(r)
         r.error?.let {
             runError = learnFromFailure(it)
             say("canvas: $it", bad = true)
@@ -7367,8 +7804,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (!SpillFill.learn(getApplication(), id)) return error
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
         backend = BackendState.DOWN
-        say("spill-fill: learned ${SpillFill.stored(getApplication(), id)} bytes for $id", bad = true)
-        return "$error — this checkpoint needs a larger NPU buffer; the app has adjusted. Press Run again"
+        say("spill-fill: learned ${SpillFill.describe(getApplication(), id)} for $id", bad = true)
+        return "$error — this checkpoint needs a different NPU buffer; the app has adjusted. Press Run again"
     }
 
     /**
@@ -7512,6 +7949,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             say("$label ignored — already running", bad = true)
             return "something is already running — try again when it finishes"
         }
+        // ⭐ The API may be rendering on the same backend ([RunLock]).
+        if (!RunLock.tryAcquire("canvas", reentrant = true)) {
+            say("$label ignored — the API is rendering", bad = true)
+            runError = text(R.string.api_busy_rendering)
+            return runError
+        }
         busy = true
         // ⚠ Both ends, for the same reason [applyNodeModel] does it: the
         // readout must stop saying "idle" the moment Run is pressed, not up to
@@ -7546,6 +7989,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 // breadcrumb left behind turns the next routine reclaim into a
                 // false crash report — the one thing this was asked not to do.
                 CrashReport.clear(getApplication())
+                RunLock.release("canvas")
                 settleRunLog()
                 busy = false
                 runJob = null

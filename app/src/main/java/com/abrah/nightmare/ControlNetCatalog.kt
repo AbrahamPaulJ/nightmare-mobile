@@ -11,8 +11,9 @@ import java.io.IOException
  * chip TIER, installed as `models/_controlnet/<type>.bin` ([SwapInputs.controlnetFile]).
  *
  * ⚠ The tier is the phone's, not a preference: `8gen2` is a Hexagon v73 context
- * (8 Gen 2 and newer — newer chips load older-arch contexts), `min` a v68 one
- * with 2 MB VTCM for the chips below v73 (888, 8 Gen 1). A type with no build for
+ * (8 Gen 2 and newer — newer chips load older-arch contexts), `8gen1` a v69 one with 8 MB
+ * VTCM (8 Gen 1 / 8+ Gen 1 — built 2026-10-09 after an 8 Gen 1 user's `_min` canny failed
+ * to load), `min` a v68 one with 2 MB VTCM for the rest below v73 (888). A type with no build for
  * this phone's tier is offered as "not available for this chip" — never a
  * download that fails at load. ⚠⚠ Both are QAIRT 2.49 contexts: they need fp16
  * on the NPU, which 8s Gen 4 (SM8735) lacks.
@@ -44,6 +45,8 @@ object ControlNetCatalog {
         val label: String,
         val v73: Build?,
         val min: Build?,
+        /** ⭐ The v69 / 8 MB tier (8 Gen 1), ahead of [min] on those phones. */
+        val v69: Build? = null,
         val family: Family = Family.SD15_SWAP,
         val byArch: Map<Int, Build> = emptyMap(),
         val base: String = BASE,
@@ -65,16 +68,19 @@ object ControlNetCatalog {
             SwapInputs.CANNY, "Canny ControlNet",
             v73 = Build("canny/controlnet_8gen2.bin", 370_987_120L),
             min = Build("canny/controlnet_min.bin", 373_538_888L),
+            v69 = Build("canny/controlnet_8gen1.bin", 369_672_304L),
         ),
         Entry(
             SwapInputs.DEPTH, "Depth ControlNet",
             v73 = Build("depth/controlnet_8gen2.bin", 371_146_864L),
             min = Build("depth/controlnet_min.bin", 373_518_408L),
+            v69 = Build("depth/controlnet_8gen1.bin", 369_705_072L),
         ),
         Entry(
             SwapInputs.OPENPOSE, "Openpose ControlNet",
             v73 = Build("openpose/controlnet_8gen2.bin", 370_966_640L),
             min = null,
+            v69 = Build("openpose/controlnet_8gen1.bin", 369_692_784L),
         ),
         // ⭐⭐ SDXL (npuforge `docs/SDXL-SWAP-TEMPLATE.md` §7b; hosted 2026-10-07): canny and depth
         // openrail++ as their diffusers sources; openpose is thibaud's, whose card defers to
@@ -114,6 +120,8 @@ object ControlNetCatalog {
     /** This phone's build of [id], or null when there is none for its chip. */
     fun buildFor(id: String, caps: DeviceProbe.Caps = DeviceProbe.caps()): Build? {
         val e = entry(id) ?: return null
+        // ⚠ A known chip with no Skel here (an 8 Elite Gen 6) runs no context at all.
+        if (caps.known && !caps.staged) return null
         if (e.byArch.isNotEmpty()) {
             // ⚠ An UNKNOWN chip is offered the v79 build — the arch most SDXL Swap phones have.
             val arch = if (caps.known) caps.arch else 79
@@ -121,7 +129,11 @@ object ControlNetCatalog {
         }
         // ⚠ An UNKNOWN chip is offered the v73 build (`DeviceProbe.Caps.known`'s rule
         // for flows: an unknown chip is offered everything).
-        return if (!caps.known || caps.arch >= 73) e.v73 ?: e.min else e.min
+        return when {
+            !caps.known || caps.arch >= 73 -> e.v73 ?: e.min
+            caps.arch >= 69 && caps.vtcmMb >= 8 -> e.v69 ?: e.min
+            else -> e.min
+        }
     }
 
     fun isInstalled(context: Context, type: String): Boolean {

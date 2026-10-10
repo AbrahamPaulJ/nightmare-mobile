@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
@@ -149,6 +150,8 @@ fun ResultsScreen(
     detailsFor: (Result) -> List<Pair<String, String>> = { emptyList() },
     /** ⭐ Upscale with an installed upscaler; the enlarged picture becomes a new item. */
     onUpscale: (Result, String, Int) -> Unit = { _, _, _ -> },
+    /** ⭐ UltraFix ([com.abrah.nightmare.UltraFix]) from the same chooser; null hides it. */
+    onUltraFix: ((Result, com.abrah.nightmare.UltraFix.Params) -> Unit)? = null,
     upscalers: List<UpscalerRow> = emptyList(),
     onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
     /** ⭐ Non-null while an upscale runs, naming it. */
@@ -332,8 +335,12 @@ fun ResultsScreen(
         LaunchedEffect(pager.settledPage, items.size) {
             items.getOrNull(pager.settledPage)?.let { if (it.id != shownId) shownId = it.id }
         }
+        // ⚠⚠ A JUMP, not `animateScrollToPage` (the user, 2026-10-10: a second quick tap on the grid
+        // "isnt registered"). A tap during the slide cancelled it, the pager SETTLED where it had
+        // stopped, and the effect above wrote that page's id over the second tap — so it took a
+        // third. A jump finishes in the frame; a swipe still slides under the finger.
         LaunchedEffect(shownIndex) {
-            if (pager.currentPage != shownIndex) pager.animateScrollToPage(shownIndex)
+            if (pager.currentPage != shownIndex) pager.scrollToPage(shownIndex)
         }
         val shown = items.getOrNull(pager.currentPage) ?: items.first()
 
@@ -387,9 +394,13 @@ fun ResultsScreen(
                             contentDescription = stringResource(R.string.cd_open_fullscreen),
                             // ⚠ Fit, not Crop: the honest view, edges included.
                             contentScale = ContentScale.Fit,
+                            // ⚠⚠ Sized to the PICTURE's shape before the clip (the user, 2026-10-10:
+                            // "add rounded corner for image in focus"): clipping the whole frame
+                            // rounded the letterbox, and the picture inside kept square corners.
+                            // The fullscreen viewer stays square.
                             modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(10.dp))
+                                .aspectRatio(bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
+                                .clip(RoundedCornerShape(12.dp))
                                 .clickable { if (selecting) onToggleSelect(r) else onView(r) },
                         )
                     } ?: run { if (unreadable(r.id)) UnreadablePicture() }
@@ -544,9 +555,10 @@ fun ResultsScreen(
         }
         androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
             state = grid,
-            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(88.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            // ⭐ Three across with 8dp gutters (Violet Studio) — four or more on a wide screen.
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(104.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 6.dp),
         ) {
             items(items.size, key = { items[it].id }) { i ->
@@ -567,9 +579,12 @@ fun ResultsScreen(
 
     info?.let { r -> ResultInfoDialog(detailsFor(r)) { info = null } }
 
+    var ultrafixing by remember { mutableStateOf<Result?>(null) }
+    ultrafixing?.let { r -> UltraFixFor(r, onUltraFix) { ultrafixing = null } }
     upscalingPick?.let { r ->
         UpscalePicker(
             upscalers = upscalers,
+            onUltraFix = onUltraFix?.let { { upscalingPick = null; ultrafixing = r } },
             onPick = { id, scale -> upscalingPick = null; onUpscale(r, id, scale) },
             width = r.width,
             height = r.height,
@@ -711,6 +726,7 @@ fun ResultViewer(
     onUpscale: ((Result, String, Int) -> Unit)? = null,
     onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
     onToast: (String) -> Unit = {},
+    onUltraFix: ((Result, com.abrah.nightmare.UltraFix.Params) -> Unit)? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var upscalingPick by remember { mutableStateOf<Result?>(null) }
@@ -853,9 +869,11 @@ fun ResultViewer(
             Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = 16.dp),
+                .padding(bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            // ⭐ Room between the size / seed pills and the page count under them (the user,
+            // 2026-10-09: the pills sat on top of the pagination).
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             // ⭐⭐ The SIZE first, in its own pill, then the seed in its own —
             // asked for 2026-09-22, and the same pair the canvas viewer draws.
@@ -1045,9 +1063,12 @@ fun ResultViewer(
             )
         }
         // ⚠ The SAME chooser the Results row opens — see [UpscalePicker].
+        var ultrafixing by remember { mutableStateOf<Result?>(null) }
+        ultrafixing?.let { r -> UltraFixFor(r, onUltraFix) { ultrafixing = null } }
         upscalingPick?.let { r ->
             UpscalePicker(
                 upscalers = upscalers,
+                onUltraFix = onUltraFix?.let { { upscalingPick = null; ultrafixing = r } },
                 onPick = { id, scale -> upscalingPick = null; onUpscale?.invoke(r, id, scale) },
                 width = r.width,
                 height = r.height,
@@ -1422,7 +1443,9 @@ private fun ResultCardHeader(
 }
 
 
-/** ⚠ One body for deleting one result, wherever it is asked from. */
+/** ⭐ A grid thumbnail's corners — its clip AND its ring, so the two cannot disagree. */
+private val ThumbShape = RoundedCornerShape(8.dp)
+
 /** ⭐ One small preview in History's grid. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -1439,7 +1462,7 @@ private fun HistoryThumb(
     Box(
         Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(ThumbShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
@@ -1461,10 +1484,13 @@ private fun HistoryThumb(
                 Modifier
                     .matchParentSize()
                     .border(
+                        // ⭐ Violet Studio: the picture in the frame wears the accent; a multi-select
+                        // pick the filled violet, thicker.
                         width = if (picked) 3.dp else 2.dp,
-                        color = if (picked) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outline,
-                        shape = RoundedCornerShape(8.dp),
+                        color = if (picked) MaterialTheme.colorScheme.primary else Accent,
+                        // ⚠ The thumbnail's own shape — a 12dp ring on an 8dp picture left
+                        // the corners mismatched (the user, 2026-10-10).
+                        shape = ThumbShape,
                     ),
             )
         }
@@ -1594,14 +1620,8 @@ fun upscaleRefusal(
 ): String? = when {
     busyWith != null -> context.getString(R.string.upscale_already_running, busyWith)
     isClip -> context.getString(R.string.upscale_pictures_only)
-    // ⭐⭐ Refused only when not even 2x fits [UpscaleNode.MAX_OUT_EDGE]; the
-    // chooser dims the scales that do not fit ([UpscalePicker]).
-    com.abrah.nightmare.UpscaleNode.fittingScale(width, height, 2) == null ->
-        context.getString(
-            R.string.upscale_too_big,
-            width, height, com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE / 2,
-            com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE,
-        )
+    // ⚠ NOT refused when no scale fits [UpscaleNode.MAX_OUT_EDGE] any more: the chooser dims
+    // every scale and Use, and still offers UltraFix — the job a picture that large is for.
     else -> null
 }
 
@@ -1622,6 +1642,8 @@ fun UpscalePicker(
     /** ⭐ The picture's size, to dim the scales that would pass the cap; null offers all. */
     width: Int? = null,
     height: Int? = null,
+    /** ⭐ UltraFix on this picture instead ([com.abrah.nightmare.UltraFix]); null hides the section. */
+    onUltraFix: (() -> Unit)? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     AlertDialog(
@@ -1670,7 +1692,7 @@ fun UpscalePicker(
                             Text(upscalerAbout, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                         }
                         when {
-                            u.installed -> Button(onClick = { onPick(u.spec.id, upscaleScale) }) { Text(stringResource(R.string.use)) }
+                            u.installed -> Button(onClick = { onPick(u.spec.id, upscaleScale) }, enabled = fits(upscaleScale)) { Text(stringResource(R.string.use)) }
                             u.progress != null -> Text(stringResource(R.string.results_mb_progress, u.progress.done shr 20, u.progress.total shr 20), style = MeasureTextStyle)
                             u.build != null -> OutlinedButton(onClick = { onInstall(u.spec) }) {
                                 Text(stringResource(R.string.device_mb, u.build.bytes shr 20))
@@ -1678,6 +1700,20 @@ fun UpscalePicker(
                             else -> Text(stringResource(R.string.cannot_run_it), style = NoteTextStyle)
                         }
                     }
+                }
+                if (!fits(2)) {
+                    Text(stringResource(R.string.upscale_none_fits), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // ⭐⭐ UltraFix — redraw the detail at THIS size (Local Dream's, `UltraFix.kt`).
+                onUltraFix?.let { go ->
+                    val big = width == null || height == null || minOf(width, height) >= 512
+                    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                    Text(stringResource(R.string.ultrafix_section), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        stringResource(if (big) R.string.ultrafix_about else R.string.ultrafix_needs),
+                        style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(onClick = go, enabled = big) { Text(stringResource(R.string.ultrafix_open)) }
                 }
             }
         },
@@ -1750,5 +1786,16 @@ private fun ResultFilterDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
         dismissButton = { TextButton(onClick = onClear) { Text(stringResource(R.string.picture_clear)) } },
+    )
+}
+
+/** ⭐ The UltraFix dialog for [r], seeded with the last settings; confirm runs it. */
+@Composable
+private fun UltraFixFor(r: Result, onUltraFix: ((Result, com.abrah.nightmare.UltraFix.Params) -> Unit)?, onClose: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    UltraFixDialog(
+        start = remember { com.abrah.nightmare.UltraFix.load(ctx) },
+        onConfirm = { p -> onClose(); onUltraFix?.invoke(r, p) },
+        onDismiss = onClose,
     )
 }

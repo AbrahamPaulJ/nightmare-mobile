@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- ⚠ INTERNET is for localhost only. The backend is an HTTP server in this
-         same app's process tree; nothing leaves the device, and "generates
-         entirely offline" is the product claim (docs/ARCHITECTURE.md section 7).
+    <!-- ⚠ INTERNET: the backend is an HTTP server on localhost in this app's
+         process tree; model / LoRA downloads; and the local API (api/ApiService,
+         off by default, LAN-only, token-protected). Generating stays entirely
+         offline — the product claim (docs/ARCHITECTURE.md section 7).
          Any future plugin download must be host-mediated and manifest-declared,
          never a raw socket from JS. -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -139,6 +140,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
             android:label="@string/app_name"
             android:theme="@style/Theme.Nightmare">
             <intent-filter>
@@ -180,6 +182,17 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="keeps a loaded model resident while the app is backgrounded" />
+        </service>
+        <!-- ApiService: the local API (docs/AGENT-API.md), only while Settings → API is on.
+             Its notification says it is listening and carries Stop. Not exported: the
+             network is reached through its socket, never through an intent. -->
+        <service
+            android:name=".api.ApiService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="serves the user's own image flows to devices on their local network" />
         </service>
         <!-- ⭐ Lets `simpleperf` / Perfetto sample this build from adb shell, which a
              release-signed APK otherwise refuses — how UI-thread lag is MEASURED

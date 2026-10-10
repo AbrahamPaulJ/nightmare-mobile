@@ -89,7 +89,8 @@ object ModelInstaller {
         onProgress: (Progress) -> Unit,
         isCancelled: () -> Boolean,
     ) {
-        val modelDir = spec.dir(context).apply { mkdirs() }
+        // ⚠ OUR folder, always — never Local Dream's, even when its copy is the one in use.
+        val modelDir = spec.ownDir(context).apply { mkdirs() }
         val cache = ModelCatalog.downloads(context).apply { mkdirs() }
 
         // ⭐⭐ The DiT engine rides along with the WEIGHTS, here rather than in
@@ -178,6 +179,10 @@ object ModelInstaller {
     fun delete(context: Context, spec: ModelSpec, force: Boolean = false) {
         if (!force && spec.id == SelectedModel.id) {
             throw IllegalStateException("\"${spec.label}\" is the selected model; pick another first")
+        }
+        // ⚠⚠ Never in Local Dream's folder (the user, 2026-10-09: used in place, never deleted).
+        if (spec.fromLocalDream(context)) {
+            throw IllegalStateException(context.getString(R.string.ld_delete_refused, spec.label))
         }
         spec.dir(context).deleteRecursively()
         // ⚠ EVERY tier's archive, not just the one we would pick today: a

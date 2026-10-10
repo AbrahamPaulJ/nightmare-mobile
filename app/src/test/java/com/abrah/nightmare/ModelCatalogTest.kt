@@ -32,7 +32,7 @@ class ModelCatalogTest {
         for (m in ModelCatalog.all.filter { it.files.isNotEmpty() }) {
             assertEquals("${m.id}: duplicate file name", m.files.size, m.files.map { it.name }.toSet().size)
             assertEquals("${m.id}: files must be exactly what the backend loads", m.requiredFiles.toSet(), m.files.map { it.name }.toSet())
-            assertTrue("${m.id}: DiT is v79+ only", m.builds.all { it.minArch >= 79 })
+            assertTrue("${m.id}: DiT is v75+ only", m.builds.all { it.minArch >= ModelCatalog.DIT_GGML_MIN_ARCH })
         }
     }
 
@@ -314,9 +314,33 @@ class ModelCatalogTest {
         assertEquals(Prefs.LOWRAM_BELOW_BYTES, krea.ramNeeded(caps(79, 8, twelve)))
         assertTrue(krea.buildFor(caps(79, 8, sixteen)) != null)
         assertTrue(krea.buildFor(caps(79, 8, 0L)) != null)
-        // ⚠ The chip, not the RAM, is what refuses an 8 Gen 3 — and the row must say so.
-        assertEquals(0L, krea.ramNeeded(caps(75, 8, twelve)))
+        // ⚠ An 8 Gen 3 runs Krea's MXFP4 since 1.6.125 (alpha), so on 12 GB it is the RAM that
+        // refuses — and the row must say so. An 8 Gen 2 is refused by the chip (no RAM figure).
+        assertEquals(Prefs.LOWRAM_BELOW_BYTES, krea.ramNeeded(caps(75, 8, twelve)))
+        assertEquals(0L, krea.ramNeeded(caps(73, 8, twelve)))
         assertTrue(klein9.buildFor(caps(79, 8, twelve)) != null)
+    }
+
+    /**
+     * ⭐ 8 Gen 3 (v75) DiT, alpha (`docs/DIT.md` §9e): the quantised builds only. FP8 stays v79 —
+     * below it the engine runs `F8_E4M3` matmuls on the CPU — and Qwen hands a v75 phone its
+     * Q4_0 build whatever its RAM.
+     */
+    @Test
+    fun anEightGenThreeGetsTheQuantisedDitBuildsOnly() {
+        val sixteen = 15L shl 30
+        val v75 = caps(75, 8, sixteen)
+        assertTrue(ModelCatalog.byId("flux2_klein_9b")!!.buildFor(v75) != null)
+        assertTrue(ModelCatalog.byId("krea2_turbo")!!.buildFor(v75) != null)
+        // ⭐ Klein 4B: its Q8_0 GGUF on v75, the FP8 on v79 (two builds, Qwen's way).
+        val klein4 = ModelCatalog.byId("flux2_klein_4b")!!
+        assertTrue(klein4.buildFor(v75)!!.files.any { it.name == "dit.gguf" })
+        assertTrue(klein4.buildFor(caps(79, 8, sixteen))!!.files.any { it.name == "dit.safetensors" })
+        assertEquals(null, ModelCatalog.byId("z_image_turbo")!!.buildFor(v75))
+        val qwen = ModelCatalog.byId("qwen_image_2_1")!!
+        assertTrue(qwen.buildFor(v75)!!.files.any { it.name == "dit.gguf" })
+        assertTrue(qwen.buildFor(caps(79, 8, sixteen))!!.files.any { it.name == "dit.safetensors" })
+        assertEquals(null, ModelCatalog.byId("flux2_klein_9b")!!.buildFor(caps(73, 8, sixteen)))
     }
 
     /**

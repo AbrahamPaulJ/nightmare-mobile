@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +52,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
@@ -94,6 +97,14 @@ private object ConsumeRemaining : NestedScrollConnection {
     override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
 }
 
+/**
+ * ⭐ Where the main bar's ☰ is on SCREEN, so a sheet (its own window) can put a live one over it.
+ * ⚠ Screen coordinates: the sheet's window and the activity's need not share an origin.
+ */
+object ShellAnchors {
+    var menu by mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
+}
+
 /** ⚠ The gap above the sheet, under the status bar: tall enough to aim a thumb at. */
 private val GAP = 56.dp
 
@@ -109,6 +120,17 @@ private val BAR_GAP = 12.dp
 @Composable
 fun PullDownSheet(
     onDismiss: () -> Unit,
+    /**
+     * ⭐ Drawn over the sheet, full window — the sidebar (`ShellDrawer`) opened by a sheet's ☰.
+     * ⚠ The sheet is its own window, so nothing the activity draws can cover it.
+     */
+    overlay: @Composable () -> Unit = {},
+    /**
+     * ⭐ The sidebar from the main bar's OWN ☰, live in the gap above the sheet (the user's mock,
+     * 2026-10-10: one ☰, not one per sheet). Drawn where [ShellAnchors.menu] says the main bar
+     * put it, so it sits exactly over the dimmed one. Null draws none.
+     */
+    onMenu: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -171,6 +193,25 @@ fun PullDownSheet(
                     .background(Color.Black.copy(alpha = 0.40f * shown))
                     .pointerInput(Unit) { detectTapGestures { close() } },
             )
+            // ⭐ The main bar's ☰, undimmed and live, over its dimmed self ([ShellAnchors]).
+            val menuAt = ShellAnchors.menu
+            if (onMenu != null && menuAt != null) {
+                var origin by remember { mutableStateOf<Offset?>(null) }
+                Box(
+                    Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionOnScreen() },
+                ) {
+                    origin?.let { o ->
+                        IconButton(
+                            onClick = onMenu,
+                            modifier = Modifier
+                                .offset { IntOffset((menuAt.left - o.x).roundToInt(), (menuAt.top - o.y).roundToInt()) }
+                                .size(with(density) { menuAt.width.toDp() }, with(density) { menuAt.height.toDp() }),
+                        ) {
+                            Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.shell_menu))
+                        }
+                    }
+                }
+            }
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -231,6 +272,7 @@ fun PullDownSheet(
                         .consumeWindowInsets(padded),
                 ) { content() }
             }
+            overlay()
         }
     }
 }
@@ -252,7 +294,13 @@ private fun bottomInset(window: android.view.Window?): androidx.compose.ui.unit.
         val decor = window?.decorView
         if (decor != null) {
             androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(decor) { v, insets ->
-                val nav = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars()).bottom
+                // ⭐ [bottomSafePx]: the gesture zone and a floor too — an OEM gesture mode can
+                // report the nav bar as 0 (an iQOO 12 cut a button in half, 2026-10-10).
+                val nav = bottomSafePx(
+                    insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars()).bottom,
+                    insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.mandatorySystemGestures()).bottom,
+                    with(density) { MIN_BOTTOM.roundToPx() },
+                )
                 val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime()).bottom
                 // ⭐⭐ The user's words, 2026-10-06: *"leave some space alone at
                 // the bottom the size of a nav bar"* — the list ending flush at

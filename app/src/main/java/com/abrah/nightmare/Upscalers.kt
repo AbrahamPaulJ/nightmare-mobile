@@ -53,7 +53,7 @@ data class UpscalerBuild(
     val minVtcmMb: Int,
 ) {
     fun runsOn(caps: DeviceProbe.Caps): Boolean =
-        caps.arch >= minArch && caps.vtcmMb >= minVtcmMb
+        caps.supportsArch(minArch) && caps.vtcmMb >= minVtcmMb
 }
 
 /**
@@ -72,7 +72,16 @@ data class UpscalerSpec(
     @androidx.annotation.StringRes val labelRes: Int? = null,
     @androidx.annotation.StringRes val aboutRes: Int? = null,
 ) {
-    fun dir(context: Context): File = File(BackendProcess.modelsDir(context), id)
+    fun dir(context: Context): File {
+        val own = ownDir(context)
+        if (File(own, UpscalerCatalog.FILE_NAME).let { it.isFile && it.length() > 0 }) return own
+        // ⭐ Local Dream keeps the same `upscaler_<kind>/upscaler.bin` ([LocalDreamModels]).
+        val ld = LocalDreamModels.dirFor(id) ?: return own
+        return if (File(ld, UpscalerCatalog.FILE_NAME).let { it.isFile && it.length() > 0 }) ld else own
+    }
+
+    /** ⚠ Where an install writes and a delete removes — never Local Dream's folder. */
+    fun ownDir(context: Context): File = File(BackendProcess.modelsDir(context), id)
 
     /**
      * ⚠⚠ The file the BACKEND is told to open, by absolute device path. The
@@ -300,7 +309,7 @@ object UpscalerCatalog {
         onProgress: (ModelInstaller.Progress) -> Unit,
         isCancelled: () -> Boolean = { false },
     ) {
-        val dir = spec.dir(context).apply { mkdirs() }
+        val dir = spec.ownDir(context).apply { mkdirs() }
         val dest = spec.file(context)
         val part = File(dir, "${FILE_NAME}.part")
         val url = "$BASE_URL${spec.remoteDir}/upscaler_${build.tier}.bin"
@@ -325,7 +334,7 @@ object UpscalerCatalog {
 
     /** ⚠ The whole directory, `.part` leftovers included. */
     fun delete(context: Context, spec: UpscalerSpec) {
-        spec.dir(context).deleteRecursively()
+        spec.ownDir(context).deleteRecursively()
     }
 
     /**

@@ -1,5 +1,8 @@
 package com.abrah.nightmare.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -56,6 +59,7 @@ fun WorkflowsScreen(
     recipes: List<Recipe>,
     saved: List<SavedWorkflow>,
     error: String?,
+    onDismissError: () -> Unit = {},
     onOpenRecipe: (Recipe) -> Unit,
     onOpenSaved: (String) -> Unit,
     onDeleteSaved: (String) -> Unit,
@@ -90,7 +94,7 @@ fun WorkflowsScreen(
     // double it, and a second header would sit under the tab row.
     Column(modifier.fillMaxSize()) {
         if (error != null) {
-            ErrorNotice(error, Modifier.padding(top = 8.dp), reportable = true)
+            ErrorNotice(error, Modifier.padding(top = 8.dp), reportable = true, onClose = onDismissError)
         }
 
         // ⭐⭐ Recommended and Saved as SUB-TABS — the same pills Models uses
@@ -323,15 +327,26 @@ private fun RecipeCard(
     onOpen: () -> Unit,
 ) {
     val fade = if (ok) 1f else 0.45f
+    // ⭐ Violet Studio: a plum card with a quiet border, an icon tile naming the kind of flow, the
+    // text, and one Open.
     Card(
         Modifier.fillMaxWidth().then(if (ok) Modifier.clickable(onClick = onOpen) else Modifier),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            androidx.compose.foundation.layout.Box(
+                Modifier.size(48.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(recipeIcon(r.id), contentDescription = null, tint = Accent.copy(alpha = fade), modifier = Modifier.size(24.dp))
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f).padding(end = 8.dp)) {
                 Text(
                     r.labelRes?.let { stringResource(it) } ?: r.label,
@@ -366,7 +381,7 @@ private fun RecipeCard(
                 }
             }
             if (ok) {
-                androidx.compose.material3.Button(onClick = onOpen) {
+                androidx.compose.material3.Button(onClick = onOpen, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
                     Text(stringResource(R.string.flows_open))
@@ -374,4 +389,15 @@ private fun RecipeCard(
             }
         }
     }
+}
+
+/** ⭐ The icon a recipe's card wears — what kind of flow it is, at a glance (Violet Studio). */
+private fun recipeIcon(id: String): androidx.compose.ui.graphics.vector.ImageVector = when (id) {
+    "txt2img", "swap_t2i" -> ResultsIcon
+    "img2img", "swap_i2i" -> SendToIcon
+    "inpaint" -> EraserIcon
+    "upscale" -> UpscaleIcon
+    "flux_edit" -> Icons.Filled.Edit
+    "t2v", "i2v" -> Icons.Filled.PlayArrow
+    else -> FlowsIcon
 }

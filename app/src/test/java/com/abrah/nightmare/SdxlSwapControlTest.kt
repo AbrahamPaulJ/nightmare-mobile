@@ -35,6 +35,21 @@ class SdxlSwapControlTest {
         assertEquals("canny/controlnet_8gen2.bin", ControlNetCatalog.buildFor("canny", caps(79))!!.path)
     }
 
+    /**
+     * ⭐ SD 1.5's three tiers (2026-10-09): an 8 Gen 1 (v69, 8 MB) gets the `8gen1` build —
+     * its `_min` canny failed to load on a user's phone — and openpose now reaches it; a v68
+     * with 2 MB keeps `min`; a chip newer than every Skel here gets nothing.
+     */
+    @Test
+    fun sd15TiersByChip() {
+        assertEquals("canny/controlnet_8gen1.bin", ControlNetCatalog.buildFor("canny", caps(69, "SM8450"))!!.path)
+        assertEquals("openpose/controlnet_8gen1.bin", ControlNetCatalog.buildFor("openpose", caps(69, "SM8450"))!!.path)
+        val v68 = DeviceProbe.Caps(arch = 68, vtcmMb = 2, measured = true, soc = "SM8350")
+        assertEquals("depth/controlnet_min.bin", ControlNetCatalog.buildFor("depth", v68)!!.path)
+        assertNull(ControlNetCatalog.buildFor("openpose", v68))
+        assertNull(ControlNetCatalog.buildFor("canny", caps(DeviceProbe.NEWER_THAN_STAGED, "SM8950")))
+    }
+
     @Test
     fun theHintIsTheFamilysSize() {
         assertEquals(512, SwapInputs.sizeFor(Family.SD15_SWAP))

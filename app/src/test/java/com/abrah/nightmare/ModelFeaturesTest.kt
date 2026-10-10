@@ -67,4 +67,25 @@ class ModelFeaturesTest {
         // ⚠ Not a Swap family: no such control, so nothing to explain.
         assertNull(ModelFeatures.missingReason(spec.copy(family = Family.SDXL), ModelFeatures.CONTROLNET))
     }
+
+    /**
+     * ⭐ The hosted Illustrious XL Swap gained ControlNet + IP-Adapter in 1.6.122. A copy
+     * downloaded before keeps a LoRA-only graph, and its own file wins over the spec: the
+     * tile stays dim and says to download again — not to convert, which a built-in cannot.
+     */
+    @Test
+    fun anOldDownloadOfABuiltInIsToldToDownloadAgain() {
+        val illustrious = ModelCatalog.byId("illustrious_xl_swap")!!
+        assertEquals(setOf("lora", "cn", "ip"), illustrious.featureSet)
+        try {
+            ModelFeatures.setInstalledForTest(illustrious.id, setOf("lora"))
+            assertEquals(setOf("lora"), illustrious.featureSet)
+            assertTrue(ModelFeatures.missingReason(illustrious, ModelFeatures.CONTROLNET)!!.contains("download it again"))
+            // ⚠ Juggernaut's hosted zip is still LoRA-only: converting again is the answer there.
+            val juggernaut = ModelCatalog.byId("juggernaut_xl_swap")!!
+            assertTrue(ModelFeatures.missingReason(juggernaut, ModelFeatures.CONTROLNET)!!.contains("Convert it again"))
+        } finally {
+            ModelFeatures.setInstalledForTest(illustrious.id, null)
+        }
+    }
 }

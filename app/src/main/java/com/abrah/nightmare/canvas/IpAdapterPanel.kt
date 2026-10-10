@@ -35,7 +35,7 @@ import com.abrah.nightmare.ui.NoteTextStyle
 
 /**
  * ⭐⭐ The square IP-Adapter will read — [IpAdapter.square] of the `reference`
- * wire's picture (cut by the node's REF region, as the run cuts it), else of the
+ * wire's picture (cut by the node's REF region, as the run cuts it: [SdSampler.ipReference]), else of the
  * picture picked on the node. Off the main thread; null with no picture.
  */
 @Composable
@@ -46,16 +46,10 @@ internal fun rememberIpSquare(node: Node, type: NodeType?, wired: ImageBitmap?):
     val region = listOf(SdSampler.REF_X, SdSampler.REF_Y, SdSampler.REF_W, SdSampler.REF_H).map { live[it] }
     // ⚠ Off reads nothing, so it shows nothing ([IpAdapter.NONE]).
     val off = live[SdSampler.IP_ADAPTER] == IpAdapter.NONE
-    return rememberOffMain(node.id, "ip square", uri, wired, region, off) {
+    val aspect = SdSampler.swapAspect(node, live)
+    return rememberOffMain(node.id, "ip square", uri, wired, region, off, aspect) {
         if (off) return@rememberOffMain null
-        val src = wired?.asAndroidBitmap()?.let { b ->
-            com.abrah.nightmare.CropNode.render(
-                b,
-                region[0]?.toFloatOrNull() ?: 0f, region[1]?.toFloatOrNull() ?: 0f,
-                region[2]?.toFloatOrNull() ?: 1f, region[3]?.toFloatOrNull() ?: 1f,
-                0, 0, com.abrah.nightmare.CropNode.PAD_BLACK,
-            ).first
-        } ?: uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) }
+        val src = wired?.asAndroidBitmap()?.let { b -> SdSampler.ipReference(b, node, live) } ?: uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) }
             ?: return@rememberOffMain null
         IpAdapter.square(src).asImageBitmap()
     }
@@ -162,6 +156,7 @@ internal fun IpAdapterPanel(
                 rect = refCropRectOf(node),
                 onChange = { r -> onSetParams(r.asRefParams().toMap()) },
                 underlay = rememberFramedPhoto(node, type, photo),
+                aspect = SdSampler.swapAspect(node, live),
             )
         }
         if (square != null) {

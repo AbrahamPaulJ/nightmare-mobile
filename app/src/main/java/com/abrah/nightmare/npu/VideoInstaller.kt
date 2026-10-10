@@ -140,6 +140,18 @@ object VideoInstaller {
         missing(ctx).isEmpty() && missingAssets(ctx).isEmpty()
 
     /**
+     * ⭐ Delete the graphs AND the host-side weights this installer fetched; the count deleted.
+     * ⚠ The weights were once kept because they could not be fetched again — they are
+     * [ASSET_BYTES] in the download since 2026-09-13, and keeping them left [installedBytes]
+     * above zero, so the card said Repair after a Delete (the user, 2026-10-10).
+     */
+    fun deleteAll(ctx: Context): Int {
+        val graphs = NpuFiles.ctxDir(ctx).listFiles()?.count { it.isFile && it.delete() } ?: 0
+        val assets = ASSET_BYTES.keys.count { java.io.File(NpuFiles.assetsDir(ctx), it).delete() }
+        return graphs + assets
+    }
+
+    /**
      * Fetches every missing graph, resuming whatever is half-there.
      *
      * ⚠ Blocking. Call it off the main thread.

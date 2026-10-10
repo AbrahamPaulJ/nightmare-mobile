@@ -77,7 +77,40 @@ fun LibraryScreen(
     flows: @Composable () -> Unit,
     results: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
+    /** ⚠ False under the shell, whose tiles ARE the tabs (Violet Studio, 2026-10-08). */
+    showTabs: Boolean = true,
+    /** ⭐ The header's ☰ — the sidebar, from inside the sheet. Null draws none. */
+    onMenu: (() -> Unit)? = null,
 ) {
+    if (!showTabs) {
+        // ⭐⭐ A [PullDownSheet] again, like Settings (the user, 2026-10-10: "make models, flows,
+        // results just like settings — sheet with top bar and close btn"). Settings' layout: the
+        // header (☰ + title) under the sheet's bar, the page filling the rest.
+        Column(modifier.fillMaxSize().navigationBarsPadding().padding(16.dp)) {
+            ScreenHeader(
+                stringResource(
+                    when (tab) {
+                        LibraryTab.MODELS -> R.string.nav_models
+                        LibraryTab.FLOWS -> R.string.nav_flows
+                        LibraryTab.RESULTS -> R.string.nav_results
+                    },
+                ),
+                onClose = null,
+                // ⭐ No ☰ of its own: the main bar's, in the gap above the sheet, is the one
+                // ([PullDownSheet]'s `onMenu`, the user's mock 2026-10-10).
+                onMenu = null,
+            )
+            // ⚠ The list scrolls only the list — the sheet is pulled by its bar ([keepScrollInside]).
+            Column(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp).keepScrollInside()) {
+                when (tab) {
+                    LibraryTab.MODELS -> models()
+                    LibraryTab.FLOWS -> flows()
+                    LibraryTab.RESULTS -> results()
+                }
+            }
+        }
+        return
+    }
     // ⭐⭐⭐ **BOTH insets, here, for all three tabs.**
     //
     // ⚠⚠⚠ Reported from the phone 2026-09-20: Models, Flows and Results
@@ -294,10 +327,19 @@ fun SwipeTabs(
      * pill: a heading would be tappable and would page to something.
      */
     dividerBefore: Int? = null,
+    /** ⭐ Space before the first pill — the Nodes view's card lines its pills up with its fields. */
+    edge: androidx.compose.ui.unit.Dp = 4.dp,
     page: @Composable (Int) -> Unit,
 ) {
     val state = rememberPagerState(initialPage = initialPage, pageCount = { labels.size })
     androidx.compose.runtime.LaunchedEffect(state.currentPage) { onPage(state.currentPage) }
+    // ⭐ A page chosen from OUTSIDE — the Nodes view turning to the output node after a Run.
+    // ⚠ Never mid-swipe, and a no-op when the caller's page is the one already showing.
+    androidx.compose.runtime.LaunchedEffect(initialPage) {
+        if (initialPage != state.currentPage && !state.isScrollInProgress && initialPage in labels.indices) {
+            state.animateScrollToPage(initialPage)
+        }
+    }
     val scope = rememberCoroutineScope()
 
     // ⭐ Keeps the selected pill on screen when a swipe lands on one that is
@@ -320,7 +362,7 @@ fun SwipeTabs(
         androidx.compose.foundation.lazy.LazyRow(
             state = row,
             modifier = Modifier.fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = edge),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(labels.size) { i ->

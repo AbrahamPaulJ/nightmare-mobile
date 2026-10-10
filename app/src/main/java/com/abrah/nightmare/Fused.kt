@@ -248,6 +248,8 @@ class SdSampler(
     override val showsResult = false
 
     companion object {
+        /** ⭐ The Hires fix switch ([hiresFix]); the id is the row's words ("Hires fix"). */
+        const val HIRES = "hires_fix"
         const val START_FROM = "start_from"
         const val FROM_NOISE = "noise"
         const val FROM_IMAGE = "image"
@@ -326,20 +328,60 @@ class SdSampler(
             val cn = p[CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
             if (cn == SwapInputs.NONE) return null
             val raw = wired ?: picked ?: photo ?: return null
-            val fromPhoto = controlIsPhoto(node)
-            val src = if (fromPhoto) raw else cropControl(raw, p)
-            val frame = if (photo != null && fromPhoto) swapFrame(node.type, p) else null
-            return SwapInputs.hint(context, src, cn, frame)
+            return SwapInputs.hint(context, raw, cn, controlFrame(node, p, photo != null), aspect = swapAspect(node, p))
         }
 
-        /** ⭐ [CTL_X]'s region applied to a control picture that is not the photo — ONE reading, run and tile. */
-        fun cropControl(src: android.graphics.Bitmap, p: Map<String, String>): android.graphics.Bitmap {
-            val x = p[CTL_X]?.toFloatOrNull() ?: 0f
-            val y = p[CTL_Y]?.toFloatOrNull() ?: 0f
-            val w = p[CTL_W]?.toFloatOrNull() ?: 1f
-            val h = p[CTL_H]?.toFloatOrNull() ?: 1f
-            if (x == 0f && y == 0f && w == 1f && h == 1f) return src
-            return CropNode.render(src, x, y, w, h, 0, 0, CropNode.PAD_BLACK).first
+        /**
+         * ⭐⭐ The region of the control picture the hint is cut from — ONE reading, run and tile:
+         * the node's crop window when the picture IS the photo, else its own [CTL_X] region
+         * (black past the picture: "nothing here" to all three kinds). Null with no photo and
+         * the photo as the control picture — the whole picture, contained.
+         */
+        fun controlFrame(node: Node, p: Map<String, String>, hasPhoto: Boolean): SwapInputs.Frame? =
+            if (controlIsPhoto(node)) swapFrame(node.type, p).takeIf { hasPhoto }
+            else SwapInputs.Frame(
+                p[CTL_X]?.toFloatOrNull() ?: 0f, p[CTL_Y]?.toFloatOrNull() ?: 0f,
+                p[CTL_W]?.toFloatOrNull() ?: 1f, p[CTL_H]?.toFloatOrNull() ?: 1f,
+                CropNode.PAD_BLACK,
+            )
+
+        /**
+         * ⭐⭐ The IP-Adapter reference as the encoder will read it — the `reference` picture cut
+         * by [REF_X]'s region (black past the picture: it may be zoomed out √2, like an inpaint
+         * frame), then letterboxed SQUARE ([IpAdapter.square] centre-crops, and a region shaped
+         * like the render would lose its sides). ONE function for the run and the tile.
+         */
+        fun ipReference(src: android.graphics.Bitmap, node: Node, p: Map<String, String>): android.graphics.Bitmap {
+            // ⚠ The untouched region is the whole picture FITTED in the render's shape — what
+            // the crop window opens on ([com.abrah.nightmare.canvas.pictureRegion]).
+            val r = com.abrah.nightmare.canvas.pictureRegion(
+                com.abrah.nightmare.canvas.CropRect(
+                    p[REF_X]?.toFloatOrNull() ?: 0f, p[REF_Y]?.toFloatOrNull() ?: 0f,
+                    p[REF_W]?.toFloatOrNull() ?: 1f, p[REF_H]?.toFloatOrNull() ?: 1f,
+                ),
+                src.width, src.height, swapAspect(node, p),
+            )
+            val region = CropNode.render(src, r.x, r.y, r.w, r.h, 0, 0, CropNode.PAD_BLACK).first
+            val side = maxOf(region.width, region.height)
+            return if (region.width == region.height) region else padToCanvas(region, side, side)
+        }
+
+        /**
+         * ⭐⭐ The render's shape (width / height) — the ASPECT's rectangle on a fixed-canvas
+         * family, the render size otherwise ([SdSampler.framesTo]). The shape a ControlNet /
+         * IP-Adapter crop window takes, and the box the hint is placed in.
+         */
+        fun swapAspect(node: Node, p: Map<String, String>): Float {
+            val (w, h) = framedSize(node.copy(params = p))
+            return if (w > 0 && h > 0) w.toFloat() / h else 1f
+        }
+
+        /** [SdSampler.framesTo], for a caller holding no type. */
+        fun framedSize(node: Node): Pair<Int, Int> {
+            val w = node.params["width"]?.toIntOrNull() ?: 0
+            val h = node.params["height"]?.toIntOrNull() ?: 0
+            val t = nodeAspect(node)?.let { ModelCatalog.aspectTarget(it, Res(w, h)) }
+            return if (t != null) t.width to t.height else w to h
         }
 
         /** ⭐⭐ SD 1.5 Swap's IP-Adapter: the adapter, its strength, the picture picked on the node. */
@@ -773,6 +815,9 @@ class SdSampler(
             options = ModelCatalog.schedulersFor(family),
             hintRes = R.string.hint_sampler,
         ),
+        // ⭐⭐ Hires fix — SD 1.5 / SDXL text- and image-to-image ([hiresFix]). OFF: it costs
+        // an upscale and a tiled redraw on every Run.
+        if (!inpaint && UltraFix.tileFor(family) != null) Widget(HIRES, "bool", "false", hintRes = R.string.hint_hires_fix) else null,
         // ⚠⚠ **No `start from` knob.** The user's call, 2026-09-15: *"start from
         // is decided by whether an image is connected, simple as that."* It
         // shipped as a switch so a flow could flip without rewiring — which is
@@ -1033,12 +1078,7 @@ class SdSampler(
      * this through `framingOutSize`, and [run] cuts to the same size, so what is
      * framed is what is rendered.
      */
-    override fun framesTo(node: Node): Pair<Int, Int> {
-        val w = node.params["width"]?.toIntOrNull() ?: 0
-        val h = node.params["height"]?.toIntOrNull() ?: 0
-        val t = nodeAspect(node)?.let { ModelCatalog.aspectTarget(it, Res(w, h)) }
-        return if (t != null) t.width to t.height else w to h
-    }
+    override fun framesTo(node: Node): Pair<Int, Int> = framedSize(node)
 
     /** ⭐ The photo's extent inside an OUTPAINT frame, or null — [CropGeometry.photoInFrame]. */
     private fun paddingOf(p: Map<String, String>): Frame? =
@@ -1048,17 +1088,20 @@ class SdSampler(
         )
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
-        val p = effectiveParams(node)
-        fun str(k: String) = p[k].orEmpty()
-        fun num(k: String) = p[k]?.toDoubleOrNull() ?: 0.0
-        fun int(k: String) = p[k]?.toIntOrNull() ?: 0
-        fun flag(k: String) = p[k].equals("true", ignoreCase = true)
-
-        val prompt = inputs["prompt"] as? Value.Prompt
+        val wired = inputs["prompt"] as? Value.Prompt
             ?: throw IllegalArgumentException(
                 "node \"${node.id}\": nothing is wired into \"prompt\" — " +
                     "drag a Prompt node out of the palette and connect it"
             )
+        // ⭐ `<lora:name:w>` tags leave the text here and join the LoRA list ([PromptLoras]).
+        val pos = PromptLoras.extract(wired.positive)
+        val neg = PromptLoras.extract(wired.negative)
+        val prompt = if (pos.tags.isEmpty() && neg.tags.isEmpty()) wired else Value.Prompt(pos.text, neg.text)
+        val p = withPromptLoras(ctx, node, effectiveParams(node), pos.tags)
+        fun str(k: String) = p[k].orEmpty()
+        fun num(k: String) = p[k]?.toDoubleOrNull() ?: 0.0
+        fun int(k: String) = p[k]?.toIntOrNull() ?: 0
+        fun flag(k: String) = p[k].equals("true", ignoreCase = true)
         val w = int("width")
         val h = int("height")
         // ⭐⭐ A DiT model renders whole, so it leaves here — EXCEPT an inpaint
@@ -1113,7 +1156,7 @@ class SdSampler(
         if (photo == null) {
             ctx.say(ctx.text(R.string.run_rendering, "rendering"))
             val latent = sample(ctx, p, cond(), null, w, h, aspect, template = template)
-            return VaeDecodeNode.decode(ctx, latent, w, h, aspect)
+            return hiresFix(ctx, node, p, prompt, VaeDecodeNode.decode(ctx, latent, w, h, aspect))
         }
 
         val src = ctx.images.get(photo.id)
@@ -1286,7 +1329,7 @@ class SdSampler(
             ctx.say(ctx.text(R.string.run_reimagining_picture, "re-imagining the picture"))
             val base = encode(ctx, ImageStore.encodePng(padToCanvas(frame, w, h)), ENCODE_SEED, w, h)
             val latent = sample(ctx, p, cond(), base, w, h, aspect, template = template)
-            return keepPhotoOnly(ctx, node, p, VaeDecodeNode.decode(ctx, latent, w, h, aspect))
+            return hiresFix(ctx, node, p, prompt, keepPhotoOnly(ctx, node, p, VaeDecodeNode.decode(ctx, latent, w, h, aspect)))
         }
 
         // ⭐⭐⭐ **The mask is painted in the PHOTO's coordinates, not the
@@ -1579,6 +1622,40 @@ class SdSampler(
     }
 
     /**
+     * ⭐ The prompt's `<lora:…>` tags ([PromptLoras]) merged into [LORAS] — on a node whose
+     * model takes LoRAs (the picker is drawn and unlocked; a Swap conversion that kept LoRA).
+     * A tag naming no installed file, or any tag on a model without LoRAs, is skipped and
+     * the run says so — the text is already stripped either way.
+     */
+    private fun withPromptLoras(
+        ctx: NodeCtx,
+        node: Node,
+        p: Map<String, String>,
+        tags: List<PromptLoras.Tag>,
+    ): Map<String, String> {
+        if (tags.isEmpty()) return p
+        val picker = widgets.firstOrNull { it.name == LORAS }
+        val spec = ModelCatalog.byId(p["model"].orEmpty())
+        val takes = picker != null && picker.locked == null &&
+            (spec == null || spec.family.dit || ModelFeatures.LORA in spec.featureSet)
+        if (!takes) {
+            ctx.warn(ctx.text(R.string.run_lora_tags_unused, "LoRA tags in the prompt were left out — this model takes no LoRAs"))
+            return p
+        }
+        val installed = ctx.android?.let { BackendProcess.lorasDir(it).list()?.toList() }.orEmpty()
+        val add = tags.mapNotNull { t ->
+            PromptLoras.resolve(t.name, installed)?.let { LoraSpec.Entry(it, t.strength) }
+                ?: run {
+                    ctx.warn(ctx.text(R.string.run_lora_tag_missing, "LoRA \"%1\$s\" from the prompt is not installed — skipped", t.name))
+                    null
+                }
+        }
+        if (add.isEmpty()) return p
+        ctx.say("  LoRAs from the prompt: " + LoraSpec.summary(add))
+        return p + (LORAS to PromptLoras.merge(p[LORAS], add))
+    }
+
+    /**
      * ⭐ The [LORAS] string, resolved against [dir]. Separated from
      * [lorasFor] so it can be tested without an Android context.
      */
@@ -1638,8 +1715,7 @@ class SdSampler(
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             val photo = (inputs["image"] as? Value.Image)?.let { ctx.images.get(it.id) }
             // ⭐ The photo follows the node's crop window; any OTHER control picture
-            // its own region ([CTL_X]) and is then fitted (`SwapWiring.kt`).
-            val fromPhoto = controlIsPhoto(node)
+            // its own region ([CTL_X]) — both placed in the render's aspect box ([controlFrame]).
             val control = if (type == SwapInputs.NONE) null else {
                 (inputs[CONTROL] as? Value.Image)?.let { ctx.images.get(it.id) }
                     ?: p[CONTROL_IMAGE]?.takeIf { it.isNotBlank() }?.let {
@@ -1650,19 +1726,14 @@ class SdSampler(
                             ))
                     }
                     ?: photo
-            }?.let { if (fromPhoto) it else cropControl(it, p) }
+            }
             // ⭐ The IP-Adapter reference: the `reference` wire cut by the node's
-            // REF region (the FLUX.2 reference's own params), else the picture
-            // picked on the node. CLIP then centre-crops it square.
+            // REF region, letterboxed square ([ipReference]), else the picture
+            // picked on the node (which CLIP centre-crops square).
             val reference = refWired?.let { r ->
                 val bmp = ctx.images.get(r.id)
                     ?: throw IllegalStateException("node \"${node.id}\": image ${r.id} is no longer in the store")
-                CropNode.render(
-                    bmp,
-                    p[REF_X]?.toFloatOrNull() ?: 0f, p[REF_Y]?.toFloatOrNull() ?: 0f,
-                    p[REF_W]?.toFloatOrNull() ?: 1f, p[REF_H]?.toFloatOrNull() ?: 1f,
-                    0, 0, CropNode.PAD_BLACK,
-                ).first
+                ipReference(bmp, node, p)
             } ?: refPicked?.let {
                 AddObjects.load(android, it)
                     ?: throw NeedsInput(ctx.text(
@@ -1673,7 +1744,8 @@ class SdSampler(
             SwapInputs.resolve(
                 android, spec, loras, type,
                 p[CONTROL_STRENGTH]?.toDoubleOrNull() ?: 1.0, control,
-                frame = photo?.takeIf { fromPhoto }?.let { swapFrame(node.type, p) },
+                frame = controlFrame(node, p, photo != null),
+                aspect = swapAspect(node, p),
                 say = ctx.say,
                 reference = reference,
                 // ⭐ The family's head for the node's choice ([IpAdapter.adapterFor]).
@@ -1805,6 +1877,57 @@ class SdSampler(
      * ⚠ Cut at the rendered picture's own pixels from [CropGeometry.photoInFrame]
      * — the same fractions the editor's checkerboard is drawn from.
      */
+    /**
+     * ⭐⭐⭐ **Hires fix** ([HIRES], the user's call 2026-10-10): the render ×2 with the first installed
+     * upscaler, then Local Dream's UltraFix over it — the detail redrawn tile by tile at the larger
+     * size, with this node's prompt and the Steps / Denoise steps last set in the UltraFix dialog
+     * ([UltraFix.load]). ⚠ Same backend, no relaunch: `/upscale` loads its weights per request and
+     * `/generate` with `ultrafix` runs this model's own graph per tile.
+     * ⚠ Every way it does NOT happen keeps the render and WARNS — a picture is never lost to it.
+     */
+    private suspend fun hiresFix(ctx: NodeCtx, node: Node, p: Map<String, String>, prompt: Value.Prompt, img: Value.Image): Value.Image {
+        if (!p[HIRES].equals("true", ignoreCase = true)) return img
+        val tile = UltraFix.tileFor(family) ?: return img
+        // ⚠ Not `android`: a local of that name shadows the package (`upscaleTo` has the same note).
+        val appCtx = ctx.android
+        val upscaler = UpscalerCatalog.installedIds.firstOrNull()
+        if (upscaler == null) {
+            ctx.warn(ctx.text(R.string.run_hires_no_upscaler, "Hires fix skipped: no upscaler installed — download one in Models"))
+            return img
+        }
+        if (UpscaleNode.fittingScale(img.w, img.h, 2) == null) {
+            ctx.warn(ctx.text(R.string.run_hires_too_large, "Hires fix skipped: %1\$dx%2\$d is too large to double", img.w, img.h))
+            return img
+        }
+        ctx.say(ctx.text(R.string.run_hires_upscaling, "hires fix: upscaling ×2"))
+        val big = UpscaleNode.upscaleTo(ctx, node.id, img, upscaler, 2)
+        val bmp = ctx.images.get(big.id)
+            ?: throw IllegalStateException("node \"${node.id}\": the upscaled picture vanished from the store")
+        val (w, h) = UltraFix.snap(bmp.width, bmp.height)
+        val src = if (w == bmp.width && h == bmp.height) bmp else android.graphics.Bitmap.createScaledBitmap(bmp, w, h, true)
+        val u = appCtx?.let { UltraFix.load(it) } ?: UltraFix.Params()
+        ctx.say(ctx.text(R.string.run_hires_redrawing, "hires fix: redrawing the detail at %1\$dx%2\$d", w, h))
+        val r = ctx.host.ultrafix(
+            png = ImageStore.encodePng(src), width = w, height = h,
+            prompt = if (u.qualityPrompt) UltraFix.QUALITY_PROMPT else prompt.positive,
+            negative = prompt.negative,
+            steps = u.steps,
+            cfg = p["cfg"]?.toDoubleOrNull() ?: defaultSpec().cfg,
+            seed = p["seed"]?.toIntOrNull()?.takeIf { it != 0 } ?: kotlin.random.Random.nextInt(1, Int.MAX_VALUE),
+            denoise = UltraFix.strength(u.denoiseSteps, u.steps),
+            tileSize = tile,
+            scheduler = p["scheduler"]?.takeIf { it.isNotBlank() } ?: defaultSpec().scheduler,
+            onProgress = ctx.onProgress,
+        )
+        val out = when (r) {
+            is Ops.Result.Ok -> r.value
+            is Ops.Result.Err -> throw OpFailure("ultrafix", r.code, r.body)
+        }
+        val fixed = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
+            ?: throw IllegalStateException("node \"${node.id}\": the hires picture would not decode")
+        return Value.Image(ctx.images.put(fixed), fixed.width, fixed.height)
+    }
+
     private fun keepPhotoOnly(ctx: NodeCtx, node: Node, p: Map<String, String>, img: Value.Image): Value.Image {
         if (!zoomsOut(node.type, p)) return img
         val f = CropGeometry.photoInFrame(

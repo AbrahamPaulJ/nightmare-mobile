@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
@@ -95,12 +97,16 @@ fun LoraPicker(
      * Settings → Add-ons calls, behind the same [ConfirmDeleteLora]. Null hides it.
      */
     onDelete: ((String) -> Unit)? = null,
+    /** ⭐ Each file's date and base ([com.abrah.nightmare.LoraLibrary]); null = names and sizes only. */
+    library: List<com.abrah.nightmare.LoraLibrary.Item>? = null,
+    /** ⭐ The base this node takes — its filter chip comes first. */
+    nodeBase: com.abrah.nightmare.LoraLibrary.Base? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.loras_title)) },
         text = {
-            LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt, onReplacePrompt, onDelete)
+            LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt, onReplacePrompt, onDelete, library, nodeBase)
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
         // ⚠ The dismiss SLOT, so Files sits left of Done — the same
@@ -140,6 +146,8 @@ fun LoraPickerContent(
     onAddToPrompt: ((String) -> Unit)? = null,
     onReplacePrompt: ((String) -> Unit)? = null,
     onDelete: ((String) -> Unit)? = null,
+    library: List<com.abrah.nightmare.LoraLibrary.Item>? = null,
+    nodeBase: com.abrah.nightmare.LoraLibrary.Base? = null,
 ) {
     // ⚠ Seeded from the param and re-seeded when it changes, so the sheet shows
     // what the node actually carries rather than a copy that drifted.
@@ -182,11 +190,23 @@ fun LoraPickerContent(
     // ⚠⚠ Chosen ones FIRST and in their own order, then everything else
     // alphabetically. The order in the param is the order the engine applies
     // them in, so re-sorting the list would silently re-sort the stack.
-    val installedNames = installed.map { it.first }.toSet()
-    val rows = (chosen.map { it.name }.distinct() + installed.map { it.first }
-        .filter { name -> chosen.none { it.name == name } }
-        .sortedBy { it.lowercase() })
-    val sizes = installed.toMap()
+    // ⭐⭐ The library view (a user, 2026-10-09: "sorting like ComfyUI's LoRA Manager"): sort by
+    // name / newest / most used / size, filter by base model and by name, favourites first.
+    // ⚠⚠ The CHOSEN ones stay first and in their own order, whatever the sort and filter: the order
+    // in the param is the order the engine applies them in, and a LoRA that is on must stay visible.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val items = library ?: installed.map { com.abrah.nightmare.LoraLibrary.Item(it.first, it.second, 0L, com.abrah.nightmare.LoraLibrary.Base.OTHER) }
+    var sort by remember { mutableStateOf(com.abrah.nightmare.LoraLibrary.Sort.NAME) }
+    var base by remember { mutableStateOf<com.abrah.nightmare.LoraLibrary.Base?>(null) }
+    var query by remember { mutableStateOf("") }
+    var favourites by remember { mutableStateOf(com.abrah.nightmare.LoraLibrary.favourites(ctx)) }
+    val uses = remember { com.abrah.nightmare.LoraLibrary.uses(ctx) }
+    val bases = items.map { it.base }.distinct().sortedBy { if (it == nodeBase) -1 else it.ordinal }
+    val arranged = com.abrah.nightmare.LoraLibrary.arrange(items, sort, base, query, favourites, uses)
+    val installedNames = items.map { it.name }.toSet()
+    val rows = chosen.map { it.name }.distinct() + arranged.map { it.name }.filter { name -> chosen.none { it.name == name } }
+    val sizes = items.associate { it.name to it.bytes }
+    val baseOf = items.associate { it.name to it.base }
 
     if (rows.isEmpty()) {
         Text(
@@ -202,15 +222,44 @@ fun LoraPickerContent(
 
     Column(
         Modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // ⭐ The controls, once there is something to sort.
+        if (items.size >= 2) {
+            // ⚠ The sort menu OUTSIDE the scrolling chips: its label is weighted, and inside a
+            // horizontal scroll it was measured to nothing (the golden showed a bare arrow).
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                com.abrah.nightmare.ui.PillMenu(
+                    com.abrah.nightmare.LoraLibrary.Sort.entries, sort,
+                    { stringResource(sortLabel(it)) },
+                ) { sort = it }
+                if (bases.size > 1) Row(
+                    Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    com.abrah.nightmare.ui.Pill(stringResource(R.string.lora_base_all), base == null) { base = null }
+                    for (b in bases) com.abrah.nightmare.ui.Pill(b.label, base == b) { base = if (base == b) null else b }
+                }
+            }
+            if (items.size >= 8) {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it }, singleLine = true,
+                    placeholder = { Text(stringResource(R.string.lora_search_installed)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
         for (name in rows) {
             val entry = chosen.firstOrNull { it.name == name }
             val missing = name !in installedNames
+            // ⭐ Violet Studio: each LoRA a card; a chosen one tinted with a violet edge, its
+            // strength inside it (the actual 0–2 range, 1.0 at the middle).
+            com.abrah.nightmare.ui.StudioCard(selected = entry != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
                     checked = entry != null,
                     onCheckedChange = { on ->
+                        if (on) com.abrah.nightmare.LoraLibrary.markUsed(ctx, name)
                         commit(
                             if (on) chosen + LoraSpec.Entry(name, LoraSpec.FULL)
                             else chosen.filterNot { it.name == name },
@@ -219,6 +268,9 @@ fun LoraPickerContent(
                 )
                 Column(Modifier.weight(1f)) {
                     Text(name, style = MaterialTheme.typography.bodyMedium)
+                    baseOf[name]?.takeIf { it != com.abrah.nightmare.LoraLibrary.Base.OTHER }?.let { b ->
+                        Text(b.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
                     Text(
                         // ⚠ The MB is why the size is carried at all: an
                         // adapter is tens of megabytes and a merged checkpoint
@@ -235,6 +287,21 @@ fun LoraPickerContent(
                 // the LoRAs that have a recipe written down are findable at a
                 // glance (the mockup's indicator).
                 // ⚠ Not on a missing file: there is nothing to note or delete.
+                // ⭐ Favourite: the app's one star, its colour the state (`PictureActions`).
+                if (!missing) {
+                    val fav = name in favourites
+                    IconButton(onClick = {
+                        com.abrah.nightmare.LoraLibrary.setFavourite(ctx, name, !fav)
+                        favourites = com.abrah.nightmare.LoraLibrary.favourites(ctx)
+                    }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Filled.Star,
+                            contentDescription = stringResource(if (fav) R.string.lora_cd_unfavourite else R.string.lora_cd_favourite, name),
+                            tint = if (fav) com.abrah.nightmare.ui.Warning else MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
                 if (onSaveNote != null && !missing) {
                     if (!notes[name].isNullOrBlank()) {
                         Box(
@@ -255,7 +322,7 @@ fun LoraPickerContent(
             // control for a thing that will not happen.
             if (entry != null) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 4.dp),
+                    Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Slider(
@@ -281,12 +348,15 @@ fun LoraPickerContent(
                         // which is the half that actually matters.
                         modifier = Modifier.weight(1f),
                     )
-                    Text(
-                        LoraSpec.number(entry.strength),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(start = 8.dp).width(40.dp),
-                    )
+                    com.abrah.nightmare.ui.MetaPill(modifier = Modifier.padding(start = 8.dp)) {
+                        Text(
+                            LoraSpec.number(entry.strength),
+                            style = com.abrah.nightmare.ui.metaValueStyle(),
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                    }
                 }
+            }
             }
         }
     }
@@ -407,4 +477,11 @@ fun ConfirmDeleteLora(name: String, onConfirm: () -> Unit, onDismiss: () -> Unit
         onConfirm = onConfirm,
         onDismiss = onDismiss,
     )
+}
+
+private fun sortLabel(s: com.abrah.nightmare.LoraLibrary.Sort): Int = when (s) {
+    com.abrah.nightmare.LoraLibrary.Sort.NAME -> R.string.lora_sort_name
+    com.abrah.nightmare.LoraLibrary.Sort.NEWEST -> R.string.lora_sort_newest
+    com.abrah.nightmare.LoraLibrary.Sort.MOST_USED -> R.string.lora_sort_used
+    com.abrah.nightmare.LoraLibrary.Sort.SIZE -> R.string.lora_sort_size
 }

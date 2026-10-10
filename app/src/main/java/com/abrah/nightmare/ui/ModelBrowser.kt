@@ -404,7 +404,8 @@ internal fun ModelCardV2(
                             if (ModelFeatures.CONTROLNET in spec.featureSet) Badge(stringResource(R.string.cn_label))
                             if (ModelFeatures.IP_ADAPTER in spec.featureSet) Badge(stringResource(R.string.ip_label))
                         }
-                        if (spec.isCustom) Badge(stringResource(R.string.mb_sub_imported))
+                        if (spec.isCustom && !row.fromLocalDream) Badge(stringResource(R.string.mb_sub_imported))
+                        if (row.fromLocalDream) Badge(stringResource(R.string.mb_local_dream), MaterialTheme.colorScheme.tertiary)
                     }
                 }
                 ModelMenu(row, busy, onInstall, onDelete)
@@ -504,7 +505,8 @@ private fun ModelAction(
 /** ⭐ ⋮ — Delete (refused on the model in use) and Repair. */
 @Composable
 private fun ModelMenu(row: ModelRow, busy: Boolean, onInstall: (ModelSpec) -> Unit, onDelete: (ModelSpec) -> Unit) {
-    val canDelete = (row.installed || row.spec.isCustom || row.partial) && row.progress == null
+    // ⚠ Never Local Dream's files — it keeps them, and deletes them itself.
+    val canDelete = (row.installed || row.spec.isCustom || row.partial) && row.progress == null && !row.fromLocalDream
     val canRepair = row.partial && row.build != null && row.progress == null
     if (!canDelete && !canRepair) {
         Spacer(Modifier.size(40.dp))
@@ -538,6 +540,127 @@ private fun ModelMenu(row: ModelRow, busy: Boolean, onInstall: (ModelSpec) -> Un
         }
     }
 }
+
+/**
+ * ⭐⭐⭐ **An add-on's card** — a video model, an upscaler, a tool (segmenter, parser, pose, depth,
+ * describe, ControlNet, IP-Adapter): [ModelCardV2]'s shape, so the Video, Upscalers and Tools tabs
+ * match the checkpoint tabs (the user, 2026-10-09: "still legacy"). Name, what it is for and ⋮ on
+ * top; the status dot with its size and the one action below; progress under that.
+ * ⚠ Delete lives in ⋮ as on a checkpoint; [onDelete] only ASKS (each caller's confirm).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun AddonCard(
+    title: String,
+    detail: String?,
+    installed: Boolean,
+    /** On disk when installed, else what a download fetches; null = not known. */
+    sizeBytes: Long?,
+    busy: Boolean,
+    progress: com.abrah.nightmare.ModelInstaller.Progress?,
+    onCancel: () -> Unit,
+    /** Null when there is nothing to fetch for this phone ([unsupportedNote] says why). */
+    onInstall: (() -> Unit)?,
+    onDelete: () -> Unit,
+    onUse: (() -> Unit)? = null,
+    badges: List<String> = emptyList(),
+    /** Some files present, some not: an "Incomplete" dot and Repair. */
+    partial: Boolean = false,
+    unsupportedNote: String? = null,
+) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                    Text(
+                        title, style = MaterialTheme.typography.titleMedium,
+                        color = if (unsupportedNote != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (badges.isNotEmpty()) {
+                        FlowRow(
+                            Modifier.padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) { badges.forEach { Badge(it) } }
+                    }
+                    detail?.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            it, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
+                }
+                if ((installed || partial) && progress == null) {
+                    var open by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { open = true }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.mb_more))
+                        }
+                        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.delete)) },
+                                enabled = !busy,
+                                onClick = { open = false; onDelete() },
+                            )
+                        }
+                    }
+                } else Spacer(Modifier.size(40.dp))
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    val (dot, word) = when {
+                        installed -> Color(0xFF34C38F) to stringResource(R.string.mb_status_installed)
+                        // ⚠ Not while it is fetching: a download under way is not "Incomplete".
+                        partial && progress == null -> MaterialTheme.colorScheme.error to stringResource(R.string.mb_status_incomplete)
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant to stringResource(R.string.mb_status_not_installed)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            listOfNotNull(word, sizeBytes?.let(::addonSize)).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    unsupportedNote?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                when {
+                    progress != null -> OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+                    installed && onUse != null -> Button(onClick = onUse, enabled = !busy) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.use))
+                    }
+                    installed || onInstall == null -> {}
+                    else -> OutlinedButton(onClick = onInstall, enabled = !busy) {
+                        Text(stringResource(if (partial) R.string.repair else R.string.download))
+                    }
+                }
+            }
+            progress?.let { p ->
+                if (p.total > 0) {
+                    LinearProgressIndicator(progress = { p.fraction }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp))
+                } else {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp))
+                }
+                Text(
+                    if (p.total > 0) stringResource(R.string.mb_of_total, p.done shr 20, p.total shr 20) + " · " + p.phase else p.phase,
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** ⚠ An add-on can be 30 MB or 8 GB: MB under a gigabyte, GB over it. */
+private fun addonSize(bytes: Long): String =
+    if (bytes >= 1L shl 30) gb2(bytes) else "${bytes shr 20} MB"
 
 /** ⭐ A family page's header: back, the family's name, its count, its note. */
 @Composable

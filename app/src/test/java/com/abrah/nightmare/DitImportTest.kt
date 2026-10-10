@@ -113,8 +113,8 @@ class DitImportTest {
         assertEquals("cfg", builtIn.cfg, spec.cfg, 0.0)
         assertEquals("scheduler", builtIn.scheduler, spec.scheduler)
         // ⚠ The arch floor belongs to the engine, so an import knows it even
-        // though a QNN import cannot know its own.
-        assertEquals("arch floor", ModelCatalog.DIT_MIN_ARCH, spec.minHtpArch)
+        // though a QNN import cannot know its own — v75 since 1.6.125 (`docs/DIT.md` §9e).
+        assertEquals("arch floor", ModelCatalog.DIT_GGML_MIN_ARCH, spec.minHtpArch)
         assertEquals("lowram", builtIn.lowram, spec.lowram)
     }
 

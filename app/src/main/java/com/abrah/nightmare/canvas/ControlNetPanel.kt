@@ -41,15 +41,22 @@ import com.abrah.nightmare.ui.NoteTextStyle
 internal fun rememberFramedPhoto(node: Node, type: NodeType?, photo: ImageBitmap?): ImageBitmap? {
     val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
     val frame = SdSampler.swapFrame(node.type, live)
-    return rememberOffMain(node.id, "framed photo", photo, frame) {
-        photo?.let { SwapInputs.framedPhoto(it.asAndroidBitmap(), frame).asImageBitmap() }
+    val aspect = SdSampler.swapAspect(node, live)
+    return rememberOffMain(node.id, "framed photo", photo, frame, aspect) {
+        photo?.let { SwapInputs.framedPhoto(it.asAndroidBitmap(), frame, aspect).asImageBitmap() }
     }
 }
 
 /**
  * ⭐⭐ Crop a ControlNet / IP-Adapter picture — the SAME [CropEditor] as every
- * other crop window (`docs/UI.md` §8.8), square because both are read square,
- * over the framed photo when there is one so the two can be lined up.
+ * other crop window (`docs/UI.md` §8.8), over the framed photo when there is one
+ * so the two can be lined up.
+ *
+ * ⭐⭐ The RENDER's shape ([SdSampler.swapAspect]) and the inpaint crop's √2
+ * zoom-out (the user's call, 2026-10-08) — [com.abrah.nightmare.PadRule.PAD]:
+ * the bars are real pixels, black, as the hint and the reference send them.
+ * ⚠ An untouched region (the whole picture) opens as the whole picture fitted
+ * in that shape ([wholePhotoFraming]) — what the run reads for it.
  */
 @Composable
 internal fun PictureCrop(
@@ -57,17 +64,18 @@ internal fun PictureCrop(
     rect: CropRect,
     onChange: (CropRect) -> Unit,
     underlay: ImageBitmap?,
+    aspect: Float,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         CropEditor(
             source = source,
-            rect = rect,
+            rect = pictureRegion(rect, source.width, source.height, aspect),
             onChange = onChange,
             interactive = true,
-            outW = source.width,
-            aspect = 1f,
+            outW = 0,
+            aspect = aspect,
             pad = null,
-            rule = com.abrah.nightmare.PadRule.WHEN_TOO_SMALL,
+            rule = com.abrah.nightmare.PadRule.PAD,
             underlay = underlay,
         )
         Text(
@@ -77,6 +85,10 @@ internal fun PictureCrop(
         )
     }
 }
+
+/** ⭐ A ControlNet / IP-Adapter region as framed: the untouched whole picture is the picture fitted in [aspect]. */
+internal fun pictureRegion(rect: CropRect, srcW: Int, srcH: Int, aspect: Float): CropRect =
+    if (rect == CropRect.WHOLE) wholePhotoFraming(srcW, srcH, aspect, com.abrah.nightmare.PadRule.PAD) else rect
 
 /** What the ControlNet tile shows: the hint, or which estimator it is waiting for. */
 internal class ControlHint(val bitmap: ImageBitmap?, val missing: String?)
@@ -107,7 +119,8 @@ internal fun rememberControlHint(
     val fromPhoto = SdSampler.controlIsPhoto(node)
     val frame = if (photo != null && fromPhoto) SdSampler.swapFrame(node.type, live) else null
     val region = listOf(SdSampler.CTL_X, SdSampler.CTL_Y, SdSampler.CTL_W, SdSampler.CTL_H).map { live[it] }
-    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, region, poseInstalled, depthInstalled) {
+    val aspect = SdSampler.swapAspect(node, live)
+    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, region, aspect, poseInstalled, depthInstalled) {
         if (cn == SwapInputs.NONE) return@rememberOffMain null
         val picked = if (wired == null) uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) } else null
         val made = SdSampler.controlHintFor(ctx, node, live, wired?.asAndroidBitmap(), photo?.asAndroidBitmap(), picked)
@@ -241,6 +254,7 @@ internal fun ControlNetPanel(
                 rect = ctlCropRectOf(node),
                 onChange = { r -> onSetParams(r.asCtlParams().toMap()) },
                 underlay = rememberFramedPhoto(node, type, photo),
+                aspect = SdSampler.swapAspect(node, live),
             )
         }
         // ⭐ The estimator this photo needs, offered HERE — the pose detector for

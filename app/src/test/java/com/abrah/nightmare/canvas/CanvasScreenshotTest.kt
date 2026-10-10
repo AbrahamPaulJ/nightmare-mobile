@@ -319,6 +319,33 @@ open class CanvasScreenshotTest {
      * twice, with the state carried entirely by tint. This golden is the only
      * check that the shackle really opens and that the two marks differ.
      */
+    /**
+     * ⭐⭐ The Nodes view (the user's three views, 2026-10-08): the inspector's pages full screen
+     * under the top bar, the Run bar without the graph's own buttons — side to side, and top to
+     * bottom.
+     */
+    @Test
+    fun theNodesView() = shoot("screen-nodes") {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+            CanvasScreen(
+                version = GOLDEN_VERSION, state = opened(), types = NODE_TYPES, status = emptyMap(),
+                busy = false, image = null, onGesture = {}, onRun = {}, onBack = {},
+                mainView = com.abrah.nightmare.MainView.NODES,
+            )
+        }
+    }
+
+    @Test
+    fun theNodesViewTopToBottom() = shoot("screen-nodes-vertical") {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+            CanvasScreen(
+                version = GOLDEN_VERSION, state = opened(), types = NODE_TYPES, status = emptyMap(),
+                busy = false, image = null, onGesture = {}, onRun = {}, onBack = {},
+                mainView = com.abrah.nightmare.MainView.NODES, nodesVertical = true,
+            )
+        }
+    }
+
     @Test
     fun theScreenWithBothLocks() = shoot("screen-locked") {
         CanvasScreen(
@@ -435,7 +462,7 @@ open class CanvasScreenshotTest {
             backendUp = true,
             flowName = "Text to video",
             flowDirty = true,
-            loadLine = "holding Neodragon (video) · 6.1/11.4 GB free",
+            ram = "RAM 6.1 / 11.4 GB free",
         )
     }
 
@@ -801,6 +828,27 @@ open class CanvasScreenshotTest {
                 ),
                 spec = "anime-lines.safetensors@0.8, gone.safetensors@1.2",
                 onSet = {},
+            )
+        }
+    }
+
+    /**
+     * ⭐ The library view (2026-10-09): the sort menu and base chips, a base under each name, a
+     * favourite's star lit — and the chosen one still first whatever the sort.
+     */
+    @Test
+    fun theLoraPickerSortsAndFilters() = shoot("lora-picker-library") {
+        Surface {
+            LoraPickerContent(
+                installed = emptyList(),
+                spec = "film-grain.safetensors@1.0",
+                onSet = {},
+                library = listOf(
+                    com.abrah.nightmare.LoraLibrary.Item("anime-lines.safetensors", 88L shl 20, 3L, com.abrah.nightmare.LoraLibrary.Base.SDXL),
+                    com.abrah.nightmare.LoraLibrary.Item("film-grain.safetensors", 42L shl 20, 1L, com.abrah.nightmare.LoraLibrary.Base.SD15),
+                    com.abrah.nightmare.LoraLibrary.Item("pixel-art.safetensors", 120L shl 20, 2L, com.abrah.nightmare.LoraLibrary.Base.SDXL),
+                ),
+                nodeBase = com.abrah.nightmare.LoraLibrary.Base.SDXL,
             )
         }
     }

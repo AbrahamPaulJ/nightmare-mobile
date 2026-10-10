@@ -25,37 +25,49 @@ import androidx.compose.ui.unit.sp
  * Material's dark defaults are blue-grey and showed through on any surface
  * that asked for one this scheme left out.
  */
-val NightSurface = Color(0xFF0D0A14)   // keep in step with res/values/colors.xml
-private val NightSurfaceHigh = Color(0xFF1C1729)
-private val NightOutline = Color(0xFF2F2840)
-private val NightOn = Color(0xFFECE8F6)
-private val NightOnMuted = Color(0xFF9C95B3)
+val NightSurface = Color(0xFF0D0914)   // keep in step with res/values/colors.xml
+
+// ⭐⭐ Violet Studio (the user's design pack, 2026-10-08) — its exact tokens. Plum cards a step
+// over a near-black ground, one violet for filled actions (#8B4DEE: white on it is 4.78:1;
+// the brighter #985CFF is the ACCENT — focus, accent text — never a button fill).
+private val NightCard = Color(0xFF1B1428)        // surface: cards, fields, navigation
+private val NightRaised = Color(0xFF251B36)      // surfaceRaised: sheets, selected secondary
+private val NightBorder = Color(0xFF3A2B50)
+private val NightOn = Color(0xFFF4EFFA)
+private val NightOnMuted = Color(0xFFB6A6C8)     // 7.88:1 on a card
 
 /** The one accent. Node *category* and model *family* are the only other hues. */
-private val Ember = Color(0xFF8B5CF6)
+private val Ember = Color(0xFF8B4DEE)
+/** ⭐ Focus outlines and accent text on dark — not a fill. */
+val Accent = Color(0xFF985CFF)
+/** ⭐ Ready / succeeded. ⚠ Readiness only — never unsaved work. */
+val Success = Color(0xFF6FE3AE)
+/** ⭐ Unsaved changes, caution. */
+val Warning = Color(0xFFF4C16C)
 
 private val NightmareDark = darkColorScheme(
     primary = Ember,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFF3B2A6B),
-    onPrimaryContainer = Color(0xFFE9DDFF),
-    secondaryContainer = Color(0xFF2A2140),
-    onSecondaryContainer = Color(0xFFE6DEFF),
+    primaryContainer = Color(0xFF35204F),
+    onPrimaryContainer = NightOn,
+    secondary = Accent,
+    secondaryContainer = Color(0xFF35204F),
+    onSecondaryContainer = NightOn,
     surface = NightSurface,
     onSurface = NightOn,
-    surfaceVariant = NightSurfaceHigh,
+    surfaceVariant = NightCard,
     onSurfaceVariant = NightOnMuted,
     surfaceTint = Ember,
-    surfaceContainerLowest = Color(0xFF09070F),
-    surfaceContainerLow = Color(0xFF13101C),
-    surfaceContainer = Color(0xFF181424),
-    surfaceContainerHigh = Color(0xFF201A2E),
-    surfaceContainerHighest = Color(0xFF282138),
+    surfaceContainerLowest = Color(0xFF09060F),
+    surfaceContainerLow = Color(0xFF140F1F),
+    surfaceContainer = NightCard,
+    surfaceContainerHigh = NightRaised,
+    surfaceContainerHighest = Color(0xFF2E2242),
     background = NightSurface,
     onBackground = NightOn,
-    outline = NightOutline,
-    outlineVariant = Color(0xFF2A2338),
-    error = Color(0xFFFF6B6B),
+    outline = NightBorder,
+    outlineVariant = Color(0xFF2C2140),
+    error = Color(0xFFFF7B92),
 )
 
 /**
@@ -142,12 +154,18 @@ private val InterTypography: Typography = Typography().let { t ->
     Typography(
         displayLarge = t.displayLarge.inter(), displayMedium = t.displayMedium.inter(),
         displaySmall = t.displaySmall.inter(), headlineLarge = t.headlineLarge.inter(),
-        headlineMedium = t.headlineMedium.inter(), headlineSmall = t.headlineSmall.inter(),
-        titleLarge = t.titleLarge.inter().copy(fontWeight = FontWeight.SemiBold),
-        titleMedium = t.titleMedium.inter().copy(fontWeight = FontWeight.SemiBold),
+        headlineMedium = t.headlineMedium.inter(),
+        // ⭐ Violet Studio's scale: screen title 24/30, section 18/24, card title 16/22 (all
+        // semibold), label 14/20 medium, supporting 13/18, metadata 12/16.
+        headlineSmall = t.headlineSmall.inter().copy(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold),
+        titleLarge = t.titleLarge.inter().copy(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+        titleMedium = t.titleMedium.inter().copy(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
         titleSmall = t.titleSmall.inter(),
-        bodyLarge = t.bodyLarge.inter(), bodyMedium = t.bodyMedium.inter(), bodySmall = t.bodySmall.inter(),
-        labelLarge = t.labelLarge.inter(), labelMedium = t.labelMedium.inter(), labelSmall = t.labelSmall.inter(),
+        bodyLarge = t.bodyLarge.inter(), bodyMedium = t.bodyMedium.inter(),
+        bodySmall = t.bodySmall.inter().copy(fontSize = 13.sp, lineHeight = 18.sp),
+        labelLarge = t.labelLarge.inter().copy(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
+        labelMedium = t.labelMedium.inter(),
+        labelSmall = t.labelSmall.inter().copy(fontSize = 12.sp, lineHeight = 16.sp),
     )
 }
 

@@ -308,7 +308,7 @@ data class Build(
     val files: List<RemoteFile> = emptyList(),
 ) {
     fun runsOn(caps: DeviceProbe.Caps): Boolean =
-        caps.arch >= minArch && caps.vtcmMb >= minVtcmMb && ramOk(caps)
+        caps.supportsArch(minArch) && caps.vtcmMb >= minVtcmMb && ramOk(caps)
 
     /** ⚠ See [minRamBytes]. */
     fun ramOk(caps: DeviceProbe.Caps): Boolean =
@@ -461,6 +461,11 @@ data class ModelSpec(
      */
     val isCustom: Boolean = false,
     /**
+     * ⭐ An absolute folder this model lives in, outside the models root — Local Dream's imports
+     * ([LocalDreamModels]). Null for everything else: [dir] is then root + [id].
+     */
+    val home: String? = null,
+    /**
      * ⭐ How many CLIP tokens the UNet reads: 77, or 231 for an npuforge SDXL
      * export (`qnn_context.txt` = `231_masked_v1` — three 77-token chunks and an
      * attention mask; `backend-patches/005`). Only the prompt COUNT reads it:
@@ -505,7 +510,7 @@ data class ModelSpec(
     val features: Set<String>? = null,
 ) {
     /** ⭐ [features], or the family's default when the spec does not say ([ModelFeatures]). */
-    val featureSet: Set<String> get() = features ?: ModelFeatures.defaultFor(family)
+    val featureSet: Set<String> get() = ModelFeatures.installed(id) ?: features ?: ModelFeatures.defaultFor(family)
 
     /** ⭐ Rendered by the DiT engine through `/generate` — see [Family.dit]. */
     val isDit: Boolean get() = family.dit
@@ -585,11 +590,30 @@ data class ModelSpec(
 
     fun url(b: Build): String = baseUrl + b.archive
 
-    fun dir(context: Context): File = File(ModelCatalog.root(context), id)
+    /**
+     * ⭐⭐ Where this model's files are: [home] if it has one; else this app's own folder — unless
+     * that copy is not complete and Local Dream's is ([LocalDreamModels], used in place).
+     * ⚠ Our own copy wins whenever it is complete, and an incomplete one of ours with no complete
+     * Local Dream copy stays ours, so Repair and Delete still act on our folder.
+     */
+    fun dir(context: Context): File {
+        home?.let { return File(it) }
+        val own = ownDir(context)
+        if (missingIn(own).isEmpty()) return own
+        val ld = LocalDreamModels.dirFor(id) ?: return own
+        return if (missingIn(ld).isEmpty()) ld else own
+    }
+
+    /** ⚠ This app's folder for the model, whether or not the files are there. */
+    fun ownDir(context: Context): File = File(ModelCatalog.root(context), id)
+
+    /** ⭐ Its files are Local Dream's — shown as such, used in place, never deleted from here. */
+    fun fromLocalDream(context: Context): Boolean = LocalDreamModels.owns(dir(context))
 
     /** Required files that are absent — i.e. why the backend cannot start. */
-    fun missing(context: Context): List<String> {
-        val d = dir(context)
+    fun missing(context: Context): List<String> = missingIn(dir(context))
+
+    private fun missingIn(d: File): List<String> {
         // ⚠⚠ A plain-file package is downloaded IN PLACE, so an interrupted
         // download leaves a real file of the right name and the wrong size.
         // Existence alone would call a half-fetched 4 GB DiT installed.
@@ -1021,7 +1045,7 @@ object ModelCatalog {
         val want = spec.active.firstOrNull { it.name.startsWith("dit.") } ?: return
         for (other in listOf(QWEN21_FP8, QWEN21_Q4)) {
             if (other.name == want.name) continue
-            val f = File(spec.dir(context), other.name)
+            val f = File(spec.ownDir(context), other.name)
             if (f.isFile && f.length() == other.bytes && f.delete()) {
                 android.util.Log.i("ModelCatalog", "reclaimed Qwen Image 2.1 ${other.name} — this phone's build is ${want.name}")
             }
@@ -1586,12 +1610,16 @@ object ModelCatalog {
      * by npuforge 1.0.11 as SDXL Swap v2 with LoRA (462 tokens, v79 contexts) and
      * hosted unchanged at [SDXL_SWAP_BASE_URL]. ⚠ Not the inpaint conversions:
      * a plain one does text and image to image, and inpaints by blend.
+     * ⭐ Illustrious is npuforge 1.0.12's LoRA + ControlNet + IP-Adapter conversion since
+     * 1.6.122 (`_v3_`; a user had downloaded the SDXL ControlNets and found its tiles dim).
+     * A copy downloaded before keeps its own `swap_features.json` ([ModelFeatures.installed]).
      */
     val sdxlSwapModels: List<ModelSpec> = listOf(
         sdxlSwap(
             "illustrious_xl_swap", "Illustrious XL Swap",
-            "illustrious_xl_v1_swap_v2_v79.zip", ILLUSTRIOUS_SWAP_BYTES,
+            "illustrious_xl_v1_swap_v3_v79.zip", ILLUSTRIOUS_SWAP_BYTES,
             prompt = P_ILLUSTRIOUS, negative = NEG_ANIME,
+            features = setOf(ModelFeatures.LORA, ModelFeatures.CONTROLNET, ModelFeatures.IP_ADAPTER),
         ),
         sdxlSwap(
             "juggernaut_xl_swap", "Juggernaut XL Swap",
@@ -1603,12 +1631,14 @@ object ModelCatalog {
     private fun sdxlSwap(
         id: String, label: String, archive: String, bytes: Long,
         prompt: String, negative: String,
+        features: Set<String>? = null,
     ) = ModelSpec(
         id = id,
         label = label,
         builds = listOf(Build(TIER_DIT, archive, bytes, DIT_MIN_ARCH, 8)),
         prompt = prompt,
         negative = negative,
+        features = features,
         family = Family.SDXL_SWAP,
         backendType = SDXL_NPU,
         resolutions = listOf(SDXL_NPU_RES),
@@ -1621,7 +1651,7 @@ object ModelCatalog {
     )
 
     const val SDXL_SWAP_BASE_URL = "https://huggingface.co/AbrahamPJ/nightmare-sdxl-swap-models/resolve/main/"
-    private const val ILLUSTRIOUS_SWAP_BYTES = 3_886_127_457L
+    private const val ILLUSTRIOUS_SWAP_BYTES = 3_899_749_590L
     private const val JUGGERNAUT_SWAP_BYTES = 3_886_131_553L
 
     val sd15Models: List<ModelSpec> = listOf(
@@ -1859,13 +1889,15 @@ object ModelCatalog {
         startRes: Res? = null,
         /** ⭐ Per-RAM builds, best first, each with its own [Build.files] (Qwen). Null = one build of [files]. */
         builds: List<Build>? = null,
+        /** ⭐ The chip floor: [DIT_GGML_MIN_ARCH], or [DIT_MIN_ARCH] for FP8 weights. */
+        minArch: Int = DIT_GGML_MIN_ARCH,
     ) = ModelSpec(
         startRes = startRes,
         lowram = lowram,
         ownDitParts = ownDitParts,
         id = id,
         label = label,
-        builds = builds ?: listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, DIT_MIN_ARCH, 8, minRamBytes = minRamBytes)),
+        builds = builds ?: listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, minArch, 8, minRamBytes = minRamBytes)),
         prompt = prompt,
         negative = "",
         family = family,
@@ -1896,9 +1928,38 @@ object ModelCatalog {
      */
     const val DIT_MIN_ARCH = 79
 
+    /**
+     * ⭐⭐ **The floor for the ggml DiT engine's QUANTISED builds — v75, the 8 Gen 3 (alpha).**
+     *
+     * The engine's own source (happyyzy/ggml `f875862`, what `dit-engine-abi105-a4` and Local Dream
+     * alpha.5 both build) has v73/v75 code paths and builds a v75 skel; upstream ships only v79/v81
+     * to save APK size. Ours is built from that exact tree (`assets/ditlibs/libggml-htp-v75.so`,
+     * `docs/DIT.md` §9e). ⚠⚠ FP8 weights stay at [DIT_MIN_ARCH]: below v79 the engine refuses
+     * `F8_E4M3` matmuls on the NPU (`opt_arch < 79`) and runs them on the CPU — so Klein 4B and Qwen
+     * each have an FP8 build at v79 and a GGUF build for v75 (Q8_0 / Q4_0), and Z-Image Turbo (FP8 only;
+     * its Q4_0 GGUF renders noise, PROGRESS) keeps v79.
+     * ⚠ Built and op-matched on a PC; NOT yet run on a v75 phone (2026-10-10).
+     */
+    const val DIT_GGML_MIN_ARCH = 75
+
+    /** ⚠ Klein 4B's shared parts — the text encoder, VAE and tokenizer both its builds load. */
+    private val KLEIN4B_PARTS = listOf(
+        RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/llm.gguf", "llm.gguf", 2_262_670_048L),
+        RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
+        RemoteFile(HF + "Qwen/Qwen3-4B/resolve/main/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
+    )
+    private val KLEIN4B_FP8 = listOf(
+        RemoteFile(HF + "black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors", "dit.safetensors", 4_070_624_520L),
+    ) + KLEIN4B_PARTS
+    /** ⭐ The 8 Gen 3 build: leejet's Q8_0 (the 9B's author), `dit.gguf` — backend 014 loads it first. */
+    private val KLEIN4B_Q8 = listOf(
+        RemoteFile(HF + "leejet/FLUX.2-klein-4B-GGUF/resolve/main/flux-2-klein-4b-Q8_0.gguf", "dit.gguf", 4_300_629_440L),
+    ) + KLEIN4B_PARTS
+
     val ditModels: List<ModelSpec> = listOf(
         dit(
             "flux2_klein_4b", "FLUX.2 Klein 4B", Family.FLUX2, KLEIN, steps = 4,
+            files = KLEIN4B_FP8,
             // ⭐⭐⭐ **NO `lowram`, and the reason it was switched on was
             // a misreading.** It was set in 1.5.514 and reverted 2026-09-20.
             //
@@ -1930,11 +1991,11 @@ object ModelCatalog {
             //
             // ⇒ Klein is 57% of RAM and stays resident; it needs no staging.
             // Z-Image below is a different case and keeps its own `lowram`.
-            files = listOf(
-                RemoteFile(HF + "black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors", "dit.safetensors", 4_070_624_520L),
-                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/llm.gguf", "llm.gguf", 2_262_670_048L),
-                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
-                RemoteFile(HF + "Qwen/Qwen3-4B/resolve/main/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
+            // ⭐ Two builds, Qwen's way: Black Forest Labs' FP8 on v79+, leejet's Q8_0 GGUF on an 8 Gen 3
+            // — below v79 the engine runs FP8 matmuls on the CPU ([DIT_GGML_MIN_ARCH], `docs/DIT.md` §9e).
+            builds = listOf(
+                Build(TIER_DIT, "", KLEIN4B_FP8.sumOf { it.bytes }, DIT_MIN_ARCH, 8, files = KLEIN4B_FP8),
+                Build(TIER_DIT, "", KLEIN4B_Q8.sumOf { it.bytes }, DIT_GGML_MIN_ARCH, 8, files = KLEIN4B_Q8),
             ),
         ),
         // ⭐⭐⭐ **`lowram` because it does not FIT, measured 2026-09-19.** This
@@ -1960,6 +2021,7 @@ object ModelCatalog {
         // that one renders on this phone.
         dit(
             "z_image_turbo", "Z-Image Turbo", Family.ZIMAGE, ZIMAGE, steps = 8,
+            minArch = DIT_MIN_ARCH, // ⚠ FP8 weights ([DIT_GGML_MIN_ARCH])
             lowram = true,
             files = listOf(
                 RemoteFile(HF + "Kijai/Z-Image_comfy_fp8_scaled/resolve/main/z-image-turbo_fp8_scaled_e4m3fn_KJ.safetensors", "dit.safetensors", 6_158_115_074L),
@@ -2049,7 +2111,8 @@ object ModelCatalog {
                 files = q4,
                 builds = listOf(
                     Build(TIER_DIT, "", fp8.sumOf { it.bytes }, DIT_MIN_ARCH, 8, minRamBytes = Prefs.LOWRAM_BELOW_BYTES, files = fp8),
-                    Build(TIER_DIT, "", q4.sumOf { it.bytes }, DIT_MIN_ARCH, 8, files = q4),
+                    // ⭐ Q4_0: also the build a v75 phone takes, whatever its RAM ([DIT_GGML_MIN_ARCH]).
+                    Build(TIER_DIT, "", q4.sumOf { it.bytes }, DIT_GGML_MIN_ARCH, 8, files = q4),
                 ),
             )
         },
@@ -2150,6 +2213,7 @@ object SelectedModel {
     fun refresh(context: Context) {
         perModel.clear()
         resolutions = spec.availableResolutions(context)
+        ModelFeatures.refreshInstalled(context)
     }
 
     private val perModel = java.util.concurrent.ConcurrentHashMap<String, List<Res>>()

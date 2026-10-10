@@ -72,45 +72,37 @@ object SwapInputs {
         TYPES.filter { it != NONE && controlnetFile(context, it).isFile }
 
     /**
-     * ⭐⭐ The hint the ControlNet sees, from [src], at the template's [SIZE]².
+     * ⭐⭐ The hint the ControlNet sees, from [src], at the template's [size]².
      *
-     * [frame] (the node's crop window) cuts it exactly as the sampler cuts the
-     * base ([CropNode.render]). Without one it is FITTED and padded black —
-     * ⚠⚠ never centre-cropped: a portrait skeleton cropped square lost its head
-     * and feet (2026-09-29). Black is "nothing here" in all three kinds.
+     * [frame] is the REGION of [src] the hint is cut from — the node's crop window
+     * when the picture is the photo, the picture's own region otherwise
+     * ([SdSampler.controlFrame]); null is the whole picture. ⭐⭐ It is placed in the
+     * render's ASPECT BOX ([aspectBox]), centred on the square canvas as the backend
+     * centres the aspect rectangle, contained (never stretched) and black everywhere
+     * else. Black is "nothing here" in all three kinds — and the bars are cut away by
+     * the decode anyway. ⚠⚠ Until 1.6.110 the frame was squared on its WIDTH, so a
+     * portrait aspect lost the top and bottom of what was framed.
+     *
+     * ⚠⚠ The frame may hang off the picture (a crop zoomed out √2): only the part
+     * that IS picture is transformed — canny's edges, the depth, the skeleton —
+     * so the picture's border never becomes an edge or a surface.
      *
      * - canny: white edges ([Canny], OpenCV's 100/200 — what the AI Hub branch
-     *   was built against). ⚠ Found BEFORE the fit's padding, or the pad's
-     *   border would be an edge.
+     *   was built against).
      * - openpose: a skeleton picture as it is ([PoseDetector.looksLikeSkeleton],
      *   judged on the WHOLE source); a photo through [PoseDetector.skeleton].
      * - depth: a depth map as it is ([DepthEstimator.looksLikeDepthMap]); a
-     *   photo through [DepthEstimator.depth] — estimated BEFORE the fit's
-     *   padding, so the black bars are not read as a surface.
+     *   photo through [DepthEstimator.depth].
      *
      * ⚠ Blocking (the estimators); off the main thread. [context] null = none.
      */
-    /**
-     * ⭐ The node's photo as the base will see it — [hint]'s own cut, at [SIZE]².
-     * The underlay a ControlNet / IP-Adapter picture is lined up against.
-     */
-    fun framedPhoto(src: Bitmap, frame: Frame, size: Int = SIZE): Bitmap {
-        val hSquare = frame.w * src.width / src.height
-        val y = frame.y + (frame.h - hSquare) / 2f
-        return CropNode.render(src, frame.x, y, frame.w, hSquare, size, size, frame.pad).first
-    }
-
-    /** ⭐ The hint's side: SD 1.5's ControlNet is a 512² graph, SDXL's a 1024² one (backend 023). */
-    fun sizeFor(family: Family): Int = if (family == Family.SDXL_SWAP) 1024 else SIZE
-
-    fun hint(context: Context?, src: Bitmap, type: String, frame: Frame?, size: Int = SIZE): Hint {
+    fun hint(context: Context?, src: Bitmap, type: String, frame: Frame?, size: Int = SIZE, aspect: Float = 1f): Hint {
         val ready = when (type) {
             OPENPOSE -> com.abrah.nightmare.pose.PoseDetector.looksLikeSkeleton(src)
             DEPTH -> com.abrah.nightmare.pose.DepthEstimator.looksLikeDepthMap(src)
             else -> true
         }
         var missing = false
-        // ⭐ What each kind does to the placed, UNPADDED picture.
         fun transform(b: Bitmap): Bitmap? = when {
             type == CANNY -> cannyOf(b)
             ready -> b
@@ -119,43 +111,79 @@ object SwapInputs {
             type == DEPTH -> com.abrah.nightmare.pose.DepthEstimator.depth(context, b)
             else -> b
         }.also { if (it == null) missing = true }
-        val placed: Bitmap? = if (frame != null) {
-            // ⚠ The frame is SQUARE in the node's photo's pixels; a control picture
-            // of another shape would stretch under the same numbers (a squashed
-            // skeleton). Same centre and width, height made square in THIS
-            // picture's pixels — for the photo itself that changes nothing.
-            val hSquare = frame.w * src.width / src.height
-            val y = frame.y + (frame.h - hSquare) / 2f
-            val native = (frame.w * src.width).toInt().coerceAtLeast(1)
-            if (type == CANNY && native < size) {
-                upscaleEdges(cannyOf(CropNode.render(src, frame.x, y, frame.w, hSquare, native, native, frame.pad).first), size)
-            } else {
-                transform(CropNode.render(src, frame.x, y, frame.w, hSquare, size, size, frame.pad).first)
-            }
+        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(out).drawColor(android.graphics.Color.BLACK)
+        val p = placement(src.width, src.height, frame ?: WHOLE, size, aspect)
+            ?: return Hint(out)
+        val native = Math.round(p.part.w * src.width).coerceAtLeast(1)
+        val nativeH = Math.round(p.part.h * src.height).coerceAtLeast(1)
+        val piece = if (type == CANNY && native < p.w) {
+            upscaleEdges(cannyOf(CropNode.render(src, p.part.x, p.part.y, p.part.w, p.part.h, native, nativeH, null).first), p.w, p.h)
         } else {
-            val scale = size.toFloat() / maxOf(src.width, src.height)
-            val w = (src.width * scale).toInt().coerceIn(1, size)
-            val h = (src.height * scale).toInt().coerceIn(1, size)
-            val fitted = if (type == CANNY && scale > 1f) {
-                Bitmap.createScaledBitmap(cannyOf(src), w, h, false)
-            } else transform(Bitmap.createScaledBitmap(src, w, h, true))
-            if (fitted == null || (w == size && h == size)) fitted else {
-                val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-                val canvas = android.graphics.Canvas(out)
-                canvas.drawColor(android.graphics.Color.BLACK)
-                canvas.drawBitmap(fitted, ((size - w) / 2).toFloat(), ((size - h) / 2).toFloat(), null)
-                out
-            }
+            transform(CropNode.render(src, p.part.x, p.part.y, p.part.w, p.part.h, p.w, p.h, null).first)
         }
-        return if (placed == null || missing) Hint(null, missing = type) else Hint(placed)
+        if (piece == null || missing) return Hint(null, missing = type)
+        android.graphics.Canvas(out).drawBitmap(piece, p.left.toFloat(), p.top.toFloat(), null)
+        return Hint(out)
     }
+
+    private val WHOLE = Frame(0f, 0f, 1f, 1f, null)
+
+    /**
+     * ⭐ The render's aspect rectangle on a [size]² canvas — `aspect` is width / height.
+     * ⚠ Rounded like [ModelCatalog.aspectTarget] is not (it snaps to 8): a hint pixel or
+     * two off the band edge is black either way.
+     */
+    fun aspectBox(size: Int, aspect: Float): Pair<Int, Int> =
+        if (aspect <= 0f || aspect == 1f) size to size
+        else if (aspect > 1f) size to Math.round(size / aspect).coerceIn(1, size)
+        else Math.round(size * aspect).coerceIn(1, size) to size
+
+    /**
+     * Where the picture-covered part of [frame] lands on the [size]² hint: [part] (normalised
+     * to the picture) drawn [w]x[h] at ([left], [top]). Null when the frame holds no picture.
+     */
+    internal class Placement(val part: Frame, val left: Int, val top: Int, val w: Int, val h: Int)
+
+    internal fun placement(srcW: Int, srcH: Int, frame: Frame, size: Int, aspect: Float): Placement? {
+        val (bw, bh) = aspectBox(size, aspect)
+        val pw = frame.w * srcW
+        val ph = frame.h * srcH
+        if (pw <= 0f || ph <= 0f) return null
+        val s = minOf(bw / pw, bh / ph)
+        val ox = (size - pw * s) / 2f
+        val oy = (size - ph * s) / 2f
+        val l = frame.x.coerceAtLeast(0f)
+        val t = frame.y.coerceAtLeast(0f)
+        val r = (frame.x + frame.w).coerceAtMost(1f)
+        val b = (frame.y + frame.h).coerceAtMost(1f)
+        if (r <= l || b <= t) return null
+        return Placement(
+            Frame(l, t, r - l, b - t, null),
+            Math.round(ox + (l - frame.x) * srcW * s), Math.round(oy + (t - frame.y) * srcH * s),
+            Math.round((r - l) * srcW * s).coerceAtLeast(1), Math.round((b - t) * srcH * s).coerceAtLeast(1),
+        )
+    }
+
+    /**
+     * ⭐ The node's photo as the base will see it — its crop window, with its own pad
+     * fill, at the render's [aspect]. The underlay a ControlNet / IP-Adapter picture is
+     * lined up against, in a crop window of the same shape.
+     */
+    fun framedPhoto(src: Bitmap, frame: Frame, aspect: Float, size: Int = SIZE): Bitmap {
+        val (w, h) = aspectBox(size, aspect)
+        return CropNode.render(src, frame.x, frame.y, frame.w, frame.h, w, h, frame.pad).first
+    }
+
+    /** ⭐ The hint's side: SD 1.5's ControlNet is a 512² graph, SDXL's a 1024² one (backend 023). */
+    fun sizeFor(family: Family): Int = if (family == Family.SDXL_SWAP) 1024 else SIZE
 
     /**
      * ⚠ Edges of a picture SMALLER than the hint are found at its own size and
      * then scaled up WITHOUT filtering: upscaling first blurs every step below
      * canny's threshold (a 160 px region at ×3.2 came back black, the golden).
      */
-    private fun upscaleEdges(e: Bitmap, size: Int): Bitmap = Bitmap.createScaledBitmap(e, size, size, false)
+    private fun upscaleEdges(e: Bitmap, w: Int, h: Int): Bitmap = Bitmap.createScaledBitmap(e, w, h, false)
 
     private fun cannyOf(b: Bitmap): Bitmap {
         val w = b.width
@@ -239,6 +267,8 @@ object SwapInputs {
         control: Bitmap?,
         frame: Frame?,
         say: (String) -> Unit = {},
+        /** ⭐ The render's shape, width / height ([SdSampler.swapAspect]) — the hint's box. */
+        aspect: Float = 1f,
         /** ⭐ IP-Adapter's reference picture ([IpAdapter]); null = none. */
         reference: Bitmap? = null,
         ipAdapter: String = IpAdapter.PLUS,
@@ -291,7 +321,7 @@ object SwapInputs {
                 else -> "reading the $type hint"
             },
         )
-        val made = hint(context, control, type, frame, sizeFor(spec.family))
+        val made = hint(context, control, type, frame, sizeFor(spec.family), aspect)
         val bitmap = made.bitmap ?: throw NeedsInput(
             if (made.missing == DEPTH) {
                 "depth needs the ${com.abrah.nightmare.pose.DepthEstimator.LABEL} to read a photo — " +

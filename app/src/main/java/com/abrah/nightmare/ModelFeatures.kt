@@ -54,10 +54,39 @@ object ModelFeatures {
     }
 
     /**
-     * ⭐ Why [spec]'s node cannot use [feature] — null when it can, or when the family has
-     * no such control at all (that is not this function's question).
+     * ⭐⭐ What each Swap model's INSTALLED files say ([read]), by id — it wins over the spec
+     * ([ModelSpec.featureSet]). A built-in's hosted zip can gain features (Illustrious XL Swap:
+     * LoRA-only until 1.6.122, then LoRA + ControlNet + IP-Adapter), and a copy downloaded
+     * before keeps the old graph; only its own file can say which one this phone has.
+     * ⚠ Filled by [refreshInstalled], never read from disk on a getter.
      */
-    fun missingReason(spec: ModelSpec?, feature: String): String? {
+    private val installedFeatures = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
+
+    fun installed(id: String): Set<String>? = installedFeatures[id]
+
+    /** ⚠ Tests only: what [refreshInstalled] would have read; null clears. */
+    internal fun setInstalledForTest(id: String, features: Set<String>?) {
+        if (features == null) installedFeatures.remove(id) else installedFeatures[id] = features
+    }
+
+    /** ⚠ Disk — called by `SelectedModel.refresh` (load, set, every install and delete). */
+    fun refreshInstalled(context: android.content.Context) {
+        val now = HashMap<String, Set<String>>()
+        for (s in ModelCatalog.all) {
+            if (s.family != Family.SD15_SWAP && s.family != Family.SDXL_SWAP) continue
+            read(s.dir(context))?.let { now[s.id] = it }
+        }
+        installedFeatures.keys.retainAll(now.keys)
+        installedFeatures.putAll(now)
+    }
+
+    /**
+     * ⭐ Why [spec]'s node cannot use [feature]: the sentence's string resource and the
+     * feature's name — null when it can, or when the family has no such control at all
+     * (that is not this function's question). A built-in whose hosted zip has it was
+     * downloaded before it did: download again. Anything else: convert again.
+     */
+    fun missing(spec: ModelSpec?, feature: String): Pair<Int, String>? {
         if (spec == null || spec.family != Family.SD15_SWAP && spec.family != Family.SDXL_SWAP) return null
         if (feature in spec.featureSet) return null
         val name = when (feature) {
@@ -66,6 +95,16 @@ object ModelFeatures {
             IP_ADAPTER -> "IP-Adapter"
             else -> "inpaint"
         }
-        return "This conversion has no $name. Convert it again in npuforge with $name ticked."
+        val hosted = !spec.isCustom && feature in (spec.features ?: defaultFor(spec.family))
+        return (if (hosted) R.string.feature_missing_builtin else R.string.feature_missing_convert) to name
+    }
+
+    /** [missing] in English, for logs, the API and tests. */
+    fun missingReason(spec: ModelSpec?, feature: String): String? = missing(spec, feature)?.let { (res, name) ->
+        if (res == R.string.feature_missing_builtin) {
+            "This download of the model has no $name. Delete it and download it again to get the version that has it."
+        } else {
+            "This conversion has no $name. Convert it again in npuforge with $name ticked."
+        }
     }
 }

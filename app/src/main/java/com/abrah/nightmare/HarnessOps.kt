@@ -161,6 +161,15 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "plugin_zip" -> installZips()
             "preview" -> previewCost()
             "canvas_run" -> canvasRun()
+            // ⭐ The local API on / off with no screen (`docs/AGENT-API.md`): `--es arg on|off`.
+            // ⚠ Logs the token — this is the developer harness, on the owner's own logcat.
+            "api" -> {
+                com.abrah.nightmare.api.ApiSettings.setEnabled(ctx, arg != "off")
+                com.abrah.nightmare.api.ApiService.syncWith(ctx)
+                say("api: ${if (arg != "off") "on" else "off"} " +
+                    com.abrah.nightmare.api.ApiService.addresses().joinToString { "$it:${com.abrah.nightmare.api.ApiSettings.PORT}" } +
+                    " token ${com.abrah.nightmare.api.ApiSettings.token(ctx)}")
+            }
             "workflow_io" -> workflowRoundTrip()
             "save_image" -> saveImage()
             // ⭐ The reported upscale-save bug, isolated. `--es arg 4096`.
@@ -189,6 +198,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "dit_lora" -> ditLora(arg)
             "lora_node" -> loraNode(arg)
             "swap" -> swapOp(arg)
+            "ultrafix" -> ultrafixOp(arg)
+            "hires" -> hiresOp()
             "loras" -> listLoras()
             "latent_blend" -> latentBlend()
             "plugin_latent" -> pluginLatentGraph()
@@ -692,6 +703,43 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     }
 
     /**
+     * ⭐ UltraFix through `/generate` (`UltraFix.kt`): `--es arg "model=<id>;src=/abs.png;size=1024"`.
+     * The picture is stretched to size² and repaired in tiles of the family's graph size;
+     * writes `files/ultrafix/{in,out}.png` and the time. ⚠ size must be ≥ the tile.
+     */
+    private suspend fun ultrafixOp(arg: String?) {
+        val kv = arg.orEmpty().split(';').mapNotNull { part ->
+            part.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0].trim() to it[1].trim() }
+        }.toMap()
+        val spec = kv["model"]?.let { ModelCatalog.byId(it) } ?: return say("ultrafix: model=<id> needed", bad = true)
+        val tile = UltraFix.tileFor(spec.family) ?: return say("ultrafix: ${spec.family} has no UltraFix", bad = true)
+        val size = kv["size"]?.toIntOrNull() ?: (tile * 2)
+        val src = kv["src"]?.let { android.graphics.BitmapFactory.decodeFile(it) } ?: return say("ultrafix: src=<png> needed", bad = true)
+        say("ultrafix: ${spec.id} at ${spec.dir(ctx).absolutePath}; ${size}x$size, tile $tile")
+        val res = spec.native ?: ModelCatalog.SD15_NPU_RES
+        if (!ensureBackend(ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height))) {
+            return say("ultrafix: no backend", bad = true)
+        }
+        val big = android.graphics.Bitmap.createScaledBitmap(src, size, size, true)
+        val out = java.io.File(ctx.getExternalFilesDir(null), "ultrafix").apply { mkdirs() }
+        val png = java.io.ByteArrayOutputStream().also { big.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        java.io.File(out, "in.png").writeBytes(png)
+        val p = UltraFix.Params()
+        val t0 = System.currentTimeMillis()
+        when (val r = Ops.generate(
+            prompt = UltraFix.QUALITY_PROMPT, negative = spec.negative, steps = p.steps, cfg = spec.cfg, seed = 42,
+            width = size, height = size, imagePng = png, denoise = UltraFix.strength(p.denoiseSteps, p.steps),
+            ultrafix = true, tileSize = tile, scheduler = spec.scheduler,
+        )) {
+            is Ops.Result.Err -> say("ultrafix FAILED http ${r.code} — ${r.body.take(300)}", bad = true)
+            is Ops.Result.Ok -> {
+                java.io.File(out, "out.png").writeBytes(r.value.png)
+                say("ultrafix ok ${System.currentTimeMillis() - t0} ms, ${r.value.png.size} bytes -> ${out.absolutePath}/out.png")
+            }
+        }
+    }
+
+    /**
      * ⭐⭐ SD 1.5 Swap end to end through the EXECUTOR — the path a tap on Run
      * takes: `sd15swap.sample` with its LoRA and ControlNet params, one backend
      * launch for every leg (they differ only in request fields).
@@ -1098,6 +1146,43 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     .onFailure { say("  translate $code FAILED ${ms} ms: ${it.message}", bad = true) }
             }
         }
+    }
+
+    /**
+     * ⭐ The sampler's Hires fix ([SdSampler.HIRES]) through the EXECUTOR: the default flow on the
+     * selected model, seed 12345, the switch on. Writes `files/hires/out.png` and logs its size and
+     * the time — a 512² SD 1.5 render should come back 1024².
+     */
+    private suspend fun hiresOp() {
+        val dir = java.io.File(ctx.getExternalFilesDir(null), "hires").apply { mkdirs() }
+        val types = nodeTypes()
+        val w0 = com.abrah.nightmare.canvas.defaultWorkflow()
+        val g = deriveSizes(
+            w0.graph.copy(
+                nodes = w0.graph.nodes.map {
+                    when {
+                        it.type == "core.prompt" -> it.copy(params = it.params + ("prompt" to "masterpiece, best quality, a cat on grass"))
+                        it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES ->
+                            it.copy(params = it.params + mapOf("seed" to "12345", SdSampler.HIRES to "true"))
+                        else -> it
+                    }
+                }
+            ),
+            types,
+        )
+        val key = contextKeyModels(g, types).singleOrNull()?.let { m ->
+            contextKeyResolutions(g, types).singleOrNull()?.let { res ->
+                ContextKey(ModelCatalog.backendTypeOf(m), m, res.width, res.height)
+            }
+        }
+        if (!ensureBackend(key)) return say("hires: no backend", bad = true)
+        val t0 = System.currentTimeMillis()
+        val r = runWorkflow(com.abrah.nightmare.canvas.Workflow(g, emptyMap()))
+        if (r.error != null) return say("hires: refused — ${r.error}", bad = true)
+        val img = r.outputs.values.filterIsInstance<Value.Image>().lastOrNull() ?: return say("hires: no picture", bad = true)
+        val png = images.png(img.id) ?: return say("hires: evicted", bad = true)
+        java.io.File(dir, "out.png").writeBytes(png)
+        say("hires ok ${img.w}x${img.h} in ${System.currentTimeMillis() - t0} ms -> ${dir.absolutePath}/out.png")
     }
 
     private suspend fun t2i() {
@@ -1891,8 +1976,22 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         for (why in sizeMismatches(workflow.graph, nodeTypes())) {
             say("⚠ size: $why", bad = true)
         }
+        // ⭐⭐ An empty ControlNet / IP-Adapter / image-to-image picture is a
+        // warning, not a failed run ([skipEmptyPictures], the user's call, 2026-10-08).
+        val (runnable, skipped) = skipEmptyPictures(workflow.graph)
+        for (s in skipped) {
+            val swap = workflow.graph.byId[s.consumer]?.type?.let { SdSampler.isSwapType(it) } == true
+            val line = when (s.port) {
+                SdSampler.CONTROL -> ctx.getString(R.string.run_skip_controlnet, s.imageNode)
+                "reference" -> ctx.getString(if (swap) R.string.run_skip_ipadapter else R.string.run_skip_reference, s.imageNode)
+                else -> ctx.getString(R.string.run_skip_image, s.imageNode)
+            }
+            say("⚠ $line")
+            onLog(s.consumer, line)
+            onWarn(s.consumer, line)
+        }
         val rolled = mutableMapOf<String, Int>()
-        val nodes = workflow.graph.nodes.map { n ->
+        val nodes = runnable.nodes.map { n ->
             // ⚠ The DEFAULT comes from the node's own type, not from
             // `SampleNode`: two samplers declare a `seed` widget and hardcoding
             // one of them would read the wrong default for the other.
@@ -4363,13 +4462,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     ): Boolean {
         if (launchOnce(want, upscalerOnly)) return true
         // ⭐⭐ A checkpoint whose QNN contexts need a bigger spill-fill group than
-        // the backend's constant ([SpillFill]): QNN printed the size, so launch
-        // once more with it. ⚠ Once — [SpillFill.learn] is false when the size
-        // is not new, which is what makes this a retry and not a loop.
+        // the backend's constant, or no group at all ([SpillFill]): launch once
+        // more with what the log taught. ⚠ Once — [SpillFill.learn] is false when
+        // nothing is new, which is what makes this a retry and not a loop.
         val modelId = want?.model ?: SelectedModel.id
         if (upscalerOnly || !SpillFill.learn(ctx, modelId)) return false
-        say("this checkpoint needs a larger spill-fill buffer " +
-            "(${SpillFill.stored(ctx, modelId)} bytes) — starting again with it")
+        say("this checkpoint needs ${SpillFill.describe(ctx, modelId)} — starting again with it")
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
         return launchOnce(want, upscalerOnly)
     }

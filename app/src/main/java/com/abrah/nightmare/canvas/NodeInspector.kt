@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -226,6 +227,9 @@ fun looseNodes(graph: com.abrah.nightmare.Graph): Set<String> {
 fun NodeInspector(
     state: CanvasState,
     types: Map<String, NodeType>,
+    /** ⭐ The run in progress, drawn on the OUTPUT page as a [RunFrame] — Default view only. */
+    runFrame: RunLogState? = null,
+    runFrameAspect: Float = 1f,
     onSetParam: (node: String, name: String, value: String) -> Unit,
     onSetParams: (node: String, values: Map<String, String>) -> Unit,
     /** ⚠⚠ A transform — `HarnessViewModel.editMask`, and the reason it exists. */
@@ -259,6 +263,10 @@ fun NodeInspector(
     status: Map<String, NodeStatus> = emptyMap(),
     /** Forget the picture on a `load_image` node. ⚠ The VM owns previews. */
     onClearImage: (String) -> Unit = {},
+    /** ⭐ The Draw window's Done on an image node — the layer, or null to remove it. */
+    onSaveDrawing: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
+    /** ⭐ A white page on an empty image node, to draw on. */
+    onBlankPicture: (String) -> Unit = {},
     /** ⭐ The same three the fullscreen viewer offers — see the body's note. */
     onSaveImage: (String) -> Unit = {},
     /** ⭐ Hand a node's picture to another app. */
@@ -356,8 +364,18 @@ fun NodeInspector(
     /** ⭐⭐ What made this picture, for the ⓘ dialog. */
     detailsOf: ((String) -> List<Pair<String, String>>)? = null,
     onInspectNode: (String) -> Unit = {},
+    /**
+     * ⭐⭐ Null = the SHEET over the graph; a modifier = drawn INLINE as the Nodes view (the
+     * user's three views, 2026-10-08) — the same pages, never a copy of them.
+     */
+    inline: Modifier? = null,
+    /** ⭐ The Nodes view top to bottom, every node one under another, instead of swiped pages. */
+    vertical: Boolean = false,
 ) {
-    val nodeId = state.editing ?: return
+    val ordered = nodeStripOrder(state.workflow)
+    // ⚠ The Nodes view always shows SOMETHING: with no node chosen it opens on the first.
+    val nodeId = state.editing?.takeIf { state.workflow.graph.byId[it] != null }
+        ?: (if (inline != null) ordered.firstOrNull()?.id else null) ?: return
     val node = state.workflow.graph.byId[nodeId] ?: return
     val type = types[node.type]
     // ⚠ A retry for the install that happened after launch: the first checkpoint
@@ -369,11 +387,12 @@ fun NodeInspector(
         }
     }
 
-    val ordered = nodeStripOrder(state.workflow)
     val here = ordered.indexOfFirst { it.id == nodeId }.coerceAtLeast(0)
     // ⭐⭐ The shared pull-down sheet — its long-pull rule lives there
-    // ([com.abrah.nightmare.ui.PullDownSheet]).
-    com.abrah.nightmare.ui.PullDownSheet(onDismiss = onDismiss) {
+    // ([com.abrah.nightmare.ui.PullDownSheet]) — or the Nodes view's page.
+    // ⭐ One side padding for the pills and the fields: the card's, or the sheet's.
+    val gutter = if (inline != null) com.abrah.nightmare.ui.PANEL_PAD else 20.dp
+    InspectorFrame(inline, onDismiss) {
         // ⭐⭐⭐ **The nodes are PAGES, and the pager is [SwipeTabs]** — the
         // same one the Models sub-tabs use, which is where the asked-for feel
         // comes from: the next node peeks in as the finger moves instead of
@@ -398,34 +417,8 @@ fun NodeInspector(
         // ⚠ The pager is the source of truth while the sheet is open;
         // `state.editing` follows it through [onInspectNode] on settle.
         Column(Modifier.fillMaxHeight()) {
-        com.abrah.nightmare.ui.SwipeTabs(
-            // ⭐⭐⭐ The SAME name the canvas box draws
-            // ([com.abrah.nightmare.nodeNameOf]). It was `it.id`, and an id is
-            // frozen at creation — a node added as SD 1.5 and switched to
-            // FLUX.2 kept announcing itself as `sd15_generate` here while the
-            // box beside it already said "FLUX.2 Image edit".
-            labels = ordered.map { com.abrah.nightmare.nodeNameOf(it, types).primary },
-            // ⭐⭐ Where the main flow ends and the loose nodes begin
-            // ([looseNodes]). Null when every node is in the flow, which is the
-            // ordinary case and draws no rule at all.
-            dividerBefore = run {
-                val loose = looseNodes(state.workflow.graph)
-                if (loose.isEmpty()) null
-                else ordered.indexOfFirst { it.id in loose }.takeIf { it > 0 }
-            },
-            fillHeight = true,
-            initialPage = here,
-            onPage = { i -> ordered.getOrNull(i)?.let { onInspectNode(it.id) } },
-            // ⚠ weight, not fillMaxHeight: the pinned Run bar below takes its
-            // height first, and the pages scroll above it.
-            modifier = Modifier.weight(1f),
-        ) { page ->
-        // ⚠⚠ Shadows the outer `node`/`nodeId`/`type` ON PURPOSE: every line
-        // below was written against one node and now renders whichever page
-        // it is on. Reading the node from `state.editing` here instead would
-        // draw the SETTLED node into the page peeking in, so a swipe would
-        // show the same node twice and then snap.
-        val node = ordered.getOrNull(page) ?: return@SwipeTabs
+        // ⭐ One node's page — the pager's and the top-to-bottom list's, so the two cannot differ.
+        val pageOf: @Composable (com.abrah.nightmare.Node, Boolean) -> Unit = { node, scrolls ->
         @Suppress("NAME_SHADOWING") val nodeId = node.id
         @Suppress("NAME_SHADOWING") val type = types[node.type]
         // ⭐⭐ Upscale is the one before/after exception to "a renderer's own
@@ -467,8 +460,15 @@ fun NodeInspector(
             }
         NodeInspectorBody(
             nodeId, node, type, onSetParam, onSetParams, onEditMask, onDelete,
+            runFrame = runFrame,
+            runFrameAspect = runFrameAspect,
             onRename = onRename,
             onTapMask = onTapMask,
+            scrolls = scrolls,
+            // ⭐ The Nodes view keeps a node's page to its settings: Reset / Delete live in Graph
+            // (the user, 2026-10-09).
+            nodeActions = inline == null,
+            gutter = gutter,
             // ⚠ Read HERE, like `demand` above and for the same reason: the body
             // must stay a function of its arguments so the goldens can render
             // it, and this list is a cached disk scan.
@@ -651,6 +651,8 @@ fun NodeInspector(
                 onSetParam(lock.sampler, k, v)
             },
             onClearImage = { onClearImage(nodeId) },
+            onSaveDrawing = { onSaveDrawing(nodeId, it) },
+            onBlankPicture = { onBlankPicture(nodeId) },
             onImportLora = onImportLora,
             onBrowseLoras = onBrowseLoras,
             onDeleteLora = onDeleteLora,
@@ -722,6 +724,50 @@ fun NodeInspector(
             }
         }
         }
+        if (vertical) {
+            // ⭐ Top to bottom (Settings → Nodes view): no pills, no pages — each node's own
+            // title heads it as the list scrolls.
+            // ⭐ Lazy, so the list can be turned to a node — the output, after a Run.
+            val list = androidx.compose.foundation.lazy.rememberLazyListState()
+            LaunchedEffect(nodeId) {
+                val i = ordered.indexOfFirst { it.id == nodeId }
+                if (i > 0) list.animateScrollToItem(i)
+            }
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f), state = list) {
+                ordered.forEachIndexed { i, n ->
+                    item(key = n.id) {
+                        if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(horizontal = gutter, vertical = 4.dp))
+                        pageOf(n, false)
+                    }
+                }
+            }
+        } else {
+        com.abrah.nightmare.ui.SwipeTabs(
+            // ⭐⭐⭐ The SAME name the canvas box draws
+            // ([com.abrah.nightmare.nodeNameOf]). It was `it.id`, and an id is
+            // frozen at creation — a node added as SD 1.5 and switched to
+            // FLUX.2 kept announcing itself as `sd15_generate` here while the
+            // box beside it already said "FLUX.2 Image edit".
+            labels = ordered.map { com.abrah.nightmare.nodeNameOf(it, types).primary },
+            // ⭐⭐ Where the main flow ends and the loose nodes begin
+            // ([looseNodes]). Null when every node is in the flow, which is the
+            // ordinary case and draws no rule at all.
+            dividerBefore = run {
+                val loose = looseNodes(state.workflow.graph)
+                if (loose.isEmpty()) null
+                else ordered.indexOfFirst { it.id in loose }.takeIf { it > 0 }
+            },
+            fillHeight = true,
+            edge = if (inline != null) com.abrah.nightmare.ui.PANEL_PAD else 4.dp,
+            initialPage = here,
+            onPage = { i -> ordered.getOrNull(i)?.let { onInspectNode(it.id) } },
+            // ⚠ weight, not fillMaxHeight: the pinned Run bar below takes its
+            // height first, and the pages scroll above it.
+            modifier = Modifier.weight(1f),
+        ) { page ->
+            ordered.getOrNull(page)?.let { pageOf(it, true) }
+        }
+        }
         // ⭐⭐⭐ **Run, pinned under every page** — the user's call, 2026-09-23:
         // *"show run button persisting at bottom regardless of scroll level for
         // node view"*. ⚠ Never greyed out: Run always runs, and what is missing is
@@ -732,7 +778,8 @@ fun NodeInspector(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
+                    // ⭐ [com.abrah.nightmare.ui.BottomSafe], not the nav bar alone (an iQOO 12, 2026-10-10).
+                    .windowInsetsPadding(com.abrah.nightmare.ui.BottomSafe)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 RunButton(
@@ -1053,6 +1100,8 @@ internal fun NodeInspectorBody(
     seedLock: SeedLock? = null,
     onToggleSeedLock: (SeedLock) -> Unit = {},
     onClearImage: () -> Unit = {},
+    onSaveDrawing: (android.graphics.Bitmap?) -> Unit = {},
+    onBlankPicture: () -> Unit = {},
     /** ⭐⭐ Import a `.safetensors` from inside the LoRA picker; null hides Add. */
     onImportLora: (() -> Unit)? = null,
     /** ⭐⭐ Get LoRAs — opens the browser on the node's family (`docs/LORA-BROWSER.md`); null hides it. */
@@ -1135,6 +1184,15 @@ internal fun NodeInspectorBody(
     /** ⭐ [CanvasState.cropRequest] — open the Crop popup when it names this node. */
     cropRequest: Pair<String, Int>? = null,
     cropRequestTab: Int = 0,
+    /** ⚠ False inside the top-to-bottom Nodes view, which scrolls every node as one list. */
+    scrolls: Boolean = true,
+    /** ⚠ False in the Nodes view: no Reset / Delete node there — the graph is where nodes go. */
+    nodeActions: Boolean = true,
+    /** ⭐ The page's side padding: the sheet's 20dp, or the Nodes view card's [com.abrah.nightmare.ui.PANEL_PAD]. */
+    gutter: androidx.compose.ui.unit.Dp = 20.dp,
+    /** ⭐ [NodeInspector]'s run frame, for the output page. */
+    runFrame: RunLogState? = null,
+    runFrameAspect: Float = 1f,
 ) {
     // ⚠ Local: an unanswered confirm is not something to persist, same as every
     // other one in the app.
@@ -1151,10 +1209,9 @@ internal fun NodeInspectorBody(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = gutter)
             .padding(bottom = 20.dp)
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState()),
+            .then(if (scrolls) Modifier.navigationBarsPadding().verticalScroll(rememberScrollState()) else Modifier),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
@@ -1279,7 +1336,7 @@ internal fun NodeInspectorBody(
                     widget = w,
                     value = node.params[w.name].orEmpty(),
                     // ⭐ A Swap conversion without LoRA says so ([com.abrah.nightmare.ModelFeatures]).
-                    why = w.locked ?: com.abrah.nightmare.ModelFeatures.missingReason(
+                    why = w.locked ?: missingText(
                         com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty()),
                         com.abrah.nightmare.ModelFeatures.LORA,
                     ),
@@ -1774,8 +1831,8 @@ internal fun NodeInspectorBody(
         // feature's tile stays where it is, dimmed, and opens on the reason (the
         // user's call, 2026-10-07) — the node's shape never changes with the model.
         val nodeSpec = com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())
-        val cnMissing = com.abrah.nightmare.ModelFeatures.missingReason(nodeSpec, com.abrah.nightmare.ModelFeatures.CONTROLNET)
-        val ipMissing = com.abrah.nightmare.ModelFeatures.missingReason(nodeSpec, com.abrah.nightmare.ModelFeatures.IP_ADAPTER)
+        val cnMissing = missingText(nodeSpec, com.abrah.nightmare.ModelFeatures.CONTROLNET)
+        val ipMissing = missingText(nodeSpec, com.abrah.nightmare.ModelFeatures.IP_ADAPTER)
         val controlTile = if (!swap) null else EditorTile(
             androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.cn_label), controlHint?.bitmap,
             empty = controlEmpty,
@@ -1992,6 +2049,13 @@ internal fun NodeInspectorBody(
                 onClear = onClearImage,
                 emptyHeight = pictureCap(),
             )
+            DrawControls(
+                nodeId = nodeId,
+                uri = node.params["uri"].orEmpty(),
+                drawing = node.params[com.abrah.nightmare.LoadImageNode.DRAWING].orEmpty(),
+                onSaveDrawing = onSaveDrawing,
+                onBlankPicture = onBlankPicture,
+            )
         }
         // ⚠⚠ …and NOT on a `mask` node either, for the same reason plus a
         // sharper one: the mask's own output is a black-and-white raster, and
@@ -2001,7 +2065,15 @@ internal fun NodeInspectorBody(
         // controls off the screen. It still appears on the node ON THE CANVAS,
         // where it is the only thing that shows what the node produces.
         // Asked for from the phone, 2026-09-10.
-        preview?.takeIf { cropSource == null && maskSource == null }?.let { still ->
+        // ⭐⭐ While a Default view run goes, the output page shows the run where its picture will
+        // be — the frame at the render's shape, log inside, no popup ([RunFrame], 2026-10-10).
+        if (runFrame != null && node.type == "core.output") {
+            RunFrame(
+                runFrame, runFrameAspect,
+                Modifier.fillMaxWidth().heightIn(max = pictureCap()),
+                fullLogOnTap = false,
+            )
+        } else preview?.takeIf { cropSource == null && maskSource == null }?.let { still ->
             // ⭐ Only labelled when there is a "Received" picture above it to
             // read against — every other node with a preview still shows one
             // plain, unlabelled picture, exactly as before.
@@ -2145,6 +2217,12 @@ internal fun NodeInspectorBody(
                     f.isFile && f.extension.equals("safetensors", ignoreCase = true)
                 }.orEmpty().map { it.name to it.length() }.sortedBy { it.first.lowercase() }
             }
+            // ⭐ Each file's date and base (headers only, cached), read off the main thread.
+            val library by androidx.compose.runtime.produceState<List<com.abrah.nightmare.LoraLibrary.Item>?>(null, pickingLoras, loraEpoch) {
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    com.abrah.nightmare.LoraLibrary.list(com.abrah.nightmare.BackendProcess.lorasDir(ctx))
+                }
+            }
             // ⭐ Notes beside the files ([com.abrah.nightmare.LoraNotes]); re-read
             // with the list, written straight back on save.
             val loraDir = com.abrah.nightmare.BackendProcess.lorasDir(ctx)
@@ -2168,6 +2246,8 @@ internal fun NodeInspectorBody(
                 onAddToPrompt = onAddToPrompt,
                 onReplacePrompt = onReplacePrompt,
                 onDelete = onDeleteLora,
+                library = library,
+                nodeBase = com.abrah.nightmare.LoraLibrary.Base.of((type as? com.abrah.nightmare.SdSampler)?.family),
             )
         }
 
@@ -2220,6 +2300,8 @@ internal fun NodeInspectorBody(
 
         for (w in widgets) {
             if (w.name == picked) continue
+            // ⚠ The doodle layer is drawn, never typed (`DrawWindow.kt`).
+            if (node.type == "core.image" && w.name == com.abrah.nightmare.LoadImageNode.DRAWING) continue
             // ⭐⭐⭐ **A knob that cannot matter is not drawn** — §5.7, and the
             // price of fusing ten nodes into one.
             if (hiddenKnob(node, w.name)) continue
@@ -2587,6 +2669,12 @@ internal fun NodeInspectorBody(
                                     onSetParam(nodeId, w.name, text)
                                 }
                             }
+                            // ⭐ Tag autocomplete ([com.abrah.nightmare.TagDictionary]), above the toolbar.
+                            // ⚠ One Column: the slot is a Box, and two children would overlap.
+                            Column {
+                            TagSuggestions(seeded.value) { range, tag ->
+                                apply { t, _ -> com.abrah.nightmare.TagDictionary.complete(t, range, tag) }
+                            }
                             PromptToolbar(
                                 canUndo = historyTick >= 0 && history.canUndo,
                                 canRedo = historyTick >= 0 && history.canRedo,
@@ -2597,6 +2685,7 @@ internal fun NodeInspectorBody(
                                 onUndo = { jump(history.undo(seeded.value.text)) },
                                 onRedo = { jump(history.redo(seeded.value.text)) },
                             )
+                            }
                         } else {
                             Text(
                                 why ?: w.localizedHint().orEmpty(),
@@ -2753,7 +2842,7 @@ internal fun NodeInspectorBody(
         // node and every wire on it with no undo. Every other destructive
         // action in the app already asks -- multi-select delete, a saved flow,
         // a model -- and this was the one that did not. `docs/UI.md` §5.
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (nodeActions) Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             // ⭐⭐ **Reset — the knobs back to their defaults**, asked for
             // 2026-09-22. ⚠ Behind a confirm like Delete beside it: it is not
             // undoable and it can throw away a prompt somebody typed.
@@ -2771,12 +2860,19 @@ internal fun NodeInspectorBody(
             // every screenshot test, because the goldens call this function
             // directly — which is `docs/UI.md` §5's blind spot exactly: a test
             // that does not drive the production wiring cannot see it.
+            // ⭐ Violet Studio: Reset a quiet outlined button, Delete a red one — equal width, side by side.
             if (onReset != null && node.type != "core.image") {
-                TextButton(onClick = { confirmingReset = true }) { Text(stringResource(R.string.inspector_reset_node)) }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { confirmingReset = true }, shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                ) { Text(stringResource(R.string.inspector_reset_node)) }
             }
-            TextButton(onClick = { confirmingDelete = true }) {
-                Text(stringResource(R.string.inspector_delete_node), color = MaterialTheme.colorScheme.error)
-            }
+            androidx.compose.material3.OutlinedButton(
+                onClick = { confirmingDelete = true }, shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
+                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+            ) { Text(stringResource(R.string.inspector_delete_node)) }
         }
     }
 
@@ -4373,18 +4469,10 @@ internal fun FilesButton(onClick: () -> Unit, tint: Color? = null) {
  */
 @Composable
 internal fun SizePill(width: Int, height: Int, tint: Color? = null) {
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background((tint ?: MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.12f))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "${width}x$height",
-            style = MeasureTextStyle,
-            color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    // ⭐ [com.abrah.nightmare.ui.MetaPill] — the same height, typeface and corners as the seed beside it.
+    // A [tint] means it sits over a picture (the fullscreen viewers).
+    com.abrah.nightmare.ui.MetaPill(onPicture = tint != null) {
+        Text("$width × $height", style = com.abrah.nightmare.ui.metaValueStyle(), modifier = Modifier.padding(end = 8.dp))
     }
 }
 
@@ -4418,54 +4506,42 @@ internal fun SeedRow(
     compact: Boolean = false,
 ) {
     val clipboard = LocalClipboardManager.current
-    // ⚠⚠ ONE bordered container around the number and both of its actions.
-    //
-    // The lock sat loose in a row of unrelated icons — save, delete, lock —
-    // where nothing said WHAT it locked, and a lock icon with no subject reads
-    // as "lock the app" or "lock the canvas". Enclosing it with the seed makes
-    // the association structural rather than something the user has to infer
-    // from adjacency. Reported from the phone 2026-09-10.
-    Row(
-        if (compact) Modifier else Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                (tint ?: MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.12f)
-            )
-            .padding(start = 10.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
+    val muted = if (tint != null) tint.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val iconTint = if (tint != null) tint else com.abrah.nightmare.ui.Accent
+    val parts: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        if (!compact) Text(stringResource(R.string.inspector_seed_label), style = MaterialTheme.typography.labelLarge, color = muted)
         Text(
-            when {
-                seed == null -> stringResource(R.string.inspector_seed_random)
-                compact -> seed
-                else -> stringResource(R.string.inspector_seed_value, seed)
-            },
-            style = NoteTextStyle,
-            color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+            seed ?: stringResource(R.string.inspector_seed_random_short),
+            style = com.abrah.nightmare.ui.metaValueStyle(),
+            color = if (tint != null) tint else MaterialTheme.colorScheme.onSurface,
         )
-        // ⚠ No copy button when there is no number: a button that copies the
-        // word "random" is worse than no button.
+        // ⚠ 36dp targets with 18dp glyphs — inside a 36dp pill a 48dp IconButton made the
+        // pill taller than the size pill beside it.
         seed?.let { value ->
-            IconButton(onClick = { clipboard.setText(AnnotatedString(value)) }) {
+            IconButton(onClick = { clipboard.setText(AnnotatedString(value)) }, modifier = Modifier.size(36.dp)) {
                 Icon(
                     painterResource(R.drawable.ic_copy),
                     contentDescription = stringResource(R.string.inspector_cd_copy_seed),
-                    tint = tint ?: MaterialTheme.colorScheme.primary,
+                    tint = iconTint, modifier = Modifier.size(18.dp),
                 )
             }
         }
         onToggleLock?.let {
-            IconButton(onClick = it) {
+            IconButton(onClick = it, modifier = Modifier.size(36.dp)) {
                 Icon(
                     if (locked) Icons.Filled.Lock else com.abrah.nightmare.ui.LockOpenIcon,
                     contentDescription = stringResource(
                         if (locked) R.string.inspector_cd_release_seed else R.string.inspector_cd_keep_seed,
                     ),
-                    tint = tint ?: MaterialTheme.colorScheme.primary,
+                    tint = iconTint, modifier = Modifier.size(18.dp),
                 )
             }
         }
+    }
+    if (compact) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp), content = parts)
+    } else {
+        com.abrah.nightmare.ui.MetaPill(onPicture = tint != null, content = parts)
     }
 }
 
@@ -4519,15 +4595,8 @@ internal fun BoolKnobRow(
     onChange: (Boolean) -> Unit,
     enabled: Boolean = true,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = checked, enabled = enabled, onCheckedChange = onChange)
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            hint?.let {
-                Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
+    // ⭐ Violet Studio (2026-10-08): every bool is the shared switch row, label left, Switch right.
+    com.abrah.nightmare.ui.SwitchRow(label, hint, checked, onChange, enabled = enabled)
 }
 
 /**
@@ -4610,3 +4679,133 @@ private fun String.localizedKnobLabel(): String = knobLabel(LocalContext.current
 
 @Composable
 private fun String.localizedKnobWord(): String = knobWord(LocalContext.current)
+
+/**
+ * ⭐ Where the inspector's pages live: the pull-down sheet over the graph, or — [inline] set —
+ * the Nodes view's page, on a Surface (content colour) that keeps clear of the keyboard.
+ */
+@Composable
+private fun InspectorFrame(
+    inline: Modifier?,
+    onDismiss: () -> Unit,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    if (inline == null) {
+        com.abrah.nightmare.ui.PullDownSheet(onDismiss = onDismiss, content = content)
+    } else {
+        // ⭐ On its own card ([com.abrah.nightmare.ui.PanelCard]); the pages pad by PANEL_PAD.
+        com.abrah.nightmare.ui.PanelCard(inline.padding(horizontal = com.abrah.nightmare.ui.SCREEN_GUTTER)) {
+            Column(Modifier.fillMaxSize().padding(top = 8.dp), content = content) // ⚠ the keyboard: `belowChrome`
+        }
+    }
+}
+
+/**
+ * ⭐⭐ Draw on the image node's picture (`DrawWindow.kt`): **Draw** with a picture, **Blank page**
+ * without one (a white page, then the window), and **Clear drawing** once there is one.
+ */
+@Composable
+private fun DrawControls(
+    nodeId: String,
+    uri: String,
+    drawing: String,
+    onSaveDrawing: (android.graphics.Bitmap?) -> Unit,
+    onBlankPicture: () -> Unit,
+) {
+    var open by remember(nodeId) { mutableStateOf(false) }
+    var afterBlank by remember(nodeId) { mutableStateOf(false) }
+    LaunchedEffect(uri) { if (afterBlank && uri.isNotBlank()) { afterBlank = false; open = true } }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (uri.isNotBlank()) {
+            com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Edit, stringResource(R.string.draw_on_picture), { open = true })
+        } else {
+            com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Edit, stringResource(R.string.draw_blank), { afterBlank = true; onBlankPicture() })
+        }
+        if (drawing.isNotBlank()) {
+            com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Delete, stringResource(R.string.draw_clear_drawing), { onSaveDrawing(null) })
+        }
+    }
+    if (open) DrawSheet(uri, drawing, onDone = { onSaveDrawing(it); open = false }, onCancel = { open = false })
+}
+
+/** ⭐ The window in the app's sheet, with the picture and the layer so far decoded off the main thread. */
+@Composable
+private fun DrawSheet(uri: String, drawing: String, onDone: (android.graphics.Bitmap?) -> Unit, onCancel: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val loaded by androidx.compose.runtime.produceState<Pair<ImageBitmap, android.graphics.Bitmap?>?>(null, uri, drawing) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val bytes = if (uri.startsWith("content://")) {
+                    context.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { it.readBytes() }
+                } else java.io.File(uri).readBytes()
+                val photo = bytes?.let { com.abrah.nightmare.ImageStore().decode(it, DrawLayer.MAX_EDGE) }
+                val layer = drawing.takeIf { it.isNotBlank() }?.let { android.graphics.BitmapFactory.decodeFile(it) }
+                photo?.let { it.asImageBitmap() to layer }
+            }.getOrNull()
+        }
+    }
+    com.abrah.nightmare.ui.PullDownSheet(onDismiss = onCancel) {
+        val l = loaded
+        if (l == null) {
+            Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator()
+            }
+        } else {
+            // ⚠ Scrolls on a short phone; the canvas consumes its own drag, so drawing never scrolls.
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                DrawWindow(photo = l.first, existing = l.second, onDone = onDone, onCancel = onCancel)
+            }
+        }
+    }
+}
+
+/**
+ * ⭐ [com.abrah.nightmare.ModelFeatures.missing] in the phone's language — the dimmed
+ * LoRA / ControlNet / IP-Adapter control's reason.
+ */
+@Composable
+private fun missingText(spec: com.abrah.nightmare.ModelSpec?, feature: String): String? =
+    com.abrah.nightmare.ModelFeatures.missing(spec, feature)?.let { (res, name) ->
+        androidx.compose.ui.res.stringResource(res, name)
+    }
+
+/**
+ * ⭐ Tag autocomplete under a prompt box (Local Dream's, the user's ask 2026-10-10): the
+ * dictionary's matches for the word being typed, most-used first, as a scrolling row of chips —
+ * a tap replaces the word ([com.abrah.nightmare.TagDictionary.complete]). Nothing is drawn when
+ * it is switched off, no dictionary is installed, or nothing matches.
+ * ⚠ The search runs off the main thread: 140k entries per keystroke is not a frame's work.
+ */
+@Composable
+private fun TagSuggestions(value: TextFieldValue, onPick: (IntRange, String) -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    if (!remember { com.abrah.nightmare.TagDictionary.active(ctx) }) return
+    val range = com.abrah.nightmare.TagDictionary.wordAt(value.text, value.selection.start)
+    val word = range?.let { value.text.substring(it) }.orEmpty()
+    val found by androidx.compose.runtime.produceState(emptyList<com.abrah.nightmare.TagDictionary.Suggestion>(), word) {
+        this.value = if (word.isBlank()) emptyList() else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.abrah.nightmare.TagDictionary.ensureLoaded(ctx)
+            com.abrah.nightmare.TagDictionary.suggest(word)
+        }
+    }
+    if (range == null || found.isEmpty()) return
+    androidx.compose.foundation.lazy.LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+    ) {
+        items(found.size) { i ->
+            val s = found[i]
+            androidx.compose.material3.SuggestionChip(
+                onClick = { onPick(range, s.tag) },
+                label = {
+                    Text(
+                        s.tag.replace('_', ' ') + (s.translation?.let { " · $it" } ?: "") +
+                            (s.alias?.let { "  ← $it" } ?: ""),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                    )
+                },
+            )
+        }
+    }
+}

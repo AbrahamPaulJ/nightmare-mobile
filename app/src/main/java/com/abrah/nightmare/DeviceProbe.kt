@@ -117,8 +117,15 @@ object DeviceProbe {
          */
         val known: Boolean get() = measured || arch != FLOOR_ARCH
 
-        /** ⚠ A floor, never an allowlist: newer archs run older contexts. */
-        fun supportsArch(min: Int): Boolean = arch >= min
+        /**
+         * ⚠ A floor, never an allowlist: newer archs run older contexts — but only an arch the APK
+         * ships a Skel for ([staged]). An 8 Elite Gen 6 (2026-10-09, "Device Creation failure")
+         * is newer than every Skel we have, so it runs nothing on the NPU, old contexts included.
+         */
+        fun supportsArch(min: Int): Boolean = staged && arch >= min
+
+        /** ⭐ A chip whose NPU is newer than every arch this APK's runtime knows. */
+        val npuTooNew: Boolean get() = arch > (STAGED_ARCHES.maxOrNull() ?: 0)
     }
 
     /** Set once [measure] succeeds. ⚠ Volatile: written on IO, read on main. */
@@ -192,6 +199,12 @@ object DeviceProbe {
      * we know. An unknown chip BELOW that is genuinely unknown — Qualcomm's
      * numbering is only roughly chronological (SM8635 is an "8s Gen 3" with
      * less than 8 MB of VTCM) — so those keep the floor.
+     *
+     * ⚠⚠ And only within the newest GENERATION (the same hundred: SM885x, SM8860). A part
+     * number a whole generation on (SM8950, SM8975 — the 8 Elite Gen 6) carries a new HTP,
+     * and was handed v81 until a user's npuforge compile died with "Device Creation failure"
+     * (2026-10-09): no Skel here knows it. It gets [NEWER_THAN_STAGED], which every NPU
+     * gate refuses ([Caps.supportsArch]) and the device sheet explains.
      */
     internal fun archFromPartNumber(soc: String): Int? {
         if (!soc.startsWith("SM")) return null
@@ -199,8 +212,12 @@ object DeviceProbe {
             ?: return null
         val newestKnown = SOC_TO_ARCH.keys.mapNotNull { partNumberOf(it) }.maxOrNull() ?: return null
         if (n < newestKnown) return null
+        if (n / 100 > newestKnown / 100) return NEWER_THAN_STAGED
         return SOC_TO_ARCH.values.maxOrNull()
     }
+
+    /** ⚠ Not an arch: "newer than every Skel this APK ships" — see [archFromPartNumber]. */
+    const val NEWER_THAN_STAGED = 99
 
     private fun partNumberOf(soc: String): Int? =
         soc.dropWhile { !it.isDigit() }.takeWhile { it.isDigit() }.toIntOrNull()
