@@ -84,6 +84,8 @@ nav:
       - Nodes and their settings: reference/nodes.md
       - Results: reference/results.md
       - Settings: reference/settings.md
+      - Local API: reference/api.md
+      - Chat: reference/agent.md
       - Memory and speed: reference/memory.md
   - Troubleshooting: troubleshooting.md
   - Glossary: glossary.md

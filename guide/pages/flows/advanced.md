@@ -1,11 +1,11 @@
 # Advanced: LoRA, ControlNet and IP-Adapter
 
-*Text to image and image to image on an **SD 1.5 Swap** model, with all three tools on the
-generator.*
+*Text to image and image to image on a **Swap** model (SD 1.5 or SDXL), with all three tools on
+the generator.*
 
 Under **Advanced** in Flows there are two cards: **Text to image** and **Image to image —
-LoRA, ControlNet, IP-Adapter**. Both open with an SD 1.5 Swap model and with every tool
-**switched off**, so nothing changes until you turn one on. Open the generator node to find
+LoRA, ControlNet, IP-Adapter**. Both open with an SD 1.5 Swap model — pick an SDXL Swap model
+in Models and the flow follows it — and with every tool **switched off**, so nothing changes until you turn one on. Open the generator node to find
 them: **LoRA** in its settings, **ControlNet** and **IP-Adapter** as tiles beside the picture.
 
 ## ControlNet
@@ -39,7 +39,14 @@ map or skeleton — next to its picture.
 ## Cropping a ControlNet or reference picture
 
 When the picture is not your img2img photo, the tile has a **Crop** button. It opens the same
-crop window as everywhere else — drag to move, pinch to zoom — square, because both are read
-square. In **image to image** your photo is drawn **underneath**, as it will be rendered, with
-the control or reference picture see-through on top, so you can line them up. **Done** closes
-it.
+crop window as everywhere else — drag to move, pinch to zoom — shaped like the render: change
+the generator's aspect ratio and the window (and a crop you made) follows. You can zoom *out*
+past the picture's edges, as in inpaint, to make its subject smaller; the empty part is sent
+black. Until you crop, the whole picture is used. In **image to image** your photo is drawn
+**underneath**, as it will be rendered, with the control or reference picture see-through on
+top, so you can line them up. **Done** closes it. IP-Adapter reads a square, so a crop that
+is not square reaches it with black bars above and below (or at the sides).
+
+An **empty** ControlNet or IP-Adapter picture does not stop a Run: the run log warns and
+renders without it. An empty image-to-image photo renders from the prompt alone (an inpaint
+still needs its photo).

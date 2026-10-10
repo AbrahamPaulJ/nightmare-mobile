@@ -45,7 +45,7 @@ SDXL and Anima models can either stay fully loaded (faster, with a live preview 
 render) or load each part on demand and free it after use (**low RAM mode**). Below 16 GB of
 RAM, low RAM mode is **required**.
 
-**Settings → General → Memory** has a switch for each, set automatically from your phone's RAM.
+**Settings → Performance → Memory** has a switch for each, set automatically from your phone's RAM.
 You only need to touch them if:
 
 - you have **16 GB** and an SDXL or Anima model is killed during a render → turn low RAM mode

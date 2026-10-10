@@ -17,7 +17,7 @@ Nightmare is not on the Play Store. It is installed from its GitHub releases pag
 
 ## Check what your phone can run
 
-Tap the **ⓘ** button at the top right of the main screen. It shows your chip, its NPU
+Open the sidebar (☰ at the top left) and tap **About**. It shows your chip, its NPU
 generation ("HTP arch", for example v79 for a Snapdragon 8 Elite) and its fast on-chip memory
 ("VTCM").
 
@@ -27,7 +27,7 @@ You rarely need these numbers yourself: every model row in **Models** and every 
 
 !!! info "A chip the app does not recognise"
     A brand-new Snapdragon may not be in the app's tables yet. The app then offers you
-    everything rather than hiding it, and measures the chip when you open the ⓘ panel. If a
+    everything rather than hiding it, and measures the chip when you open **About**. If a
     model then fails to start, that is the reason — please report the chip name.
 
 ## Let it run in the background
@@ -35,7 +35,7 @@ You rarely need these numbers yourself: every model row in **Models** and every 
 A render can take from a few seconds to several minutes. Some phones (Samsung especially) stop
 apps that are not on screen to save battery, which ends the render.
 
-If Settings → General shows a card titled **Keep rendering in the background**, tap
+If Settings → Performance shows a card titled **Keep rendering in the background**, tap
 **Allow in background**. That is all it needs; the card disappears once it is allowed.
 
 ## Next

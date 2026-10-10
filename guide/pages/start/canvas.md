@@ -12,18 +12,51 @@ controls around it.
 
 | control | what it does |
 |---|---|
+| ☰ (menu) | Opens the sidebar — see below |
+| 💾 (save) | Save this flow under a name. It is pre-filled with the flow it came from. |
+| **Chat · Default · Advanced** | The three views of the same flow — see below |
+| **ⓘ** | What each of the three views is |
+
+### Three views of one flow
+
+- **Default** — one step at a time: swipe between the prompt, the generate step and the output
+  (or, with **Default view top to bottom** in Settings, scroll through them). The easy way in.
+- **Advanced** — the whole flow as connected boxes, for building your own.
+- **Chat** — ask for pictures in words; an AI model you bring your own key for builds and runs
+  the flow. [Chat](../reference/agent.md)
+
+All three edit the same flow, and Run is at the bottom of each. The view's page and the Run
+bar (seed, memory, Run, the run log and errors) each sit on their own card. The first time you open the app
+it asks which one to start on; change it in **Settings → Appearance → Views**.
+
+<figure markdown>
+  ![The Default view](../img/screen-nodes.png){ .screen }
+</figure>
+
+Beside the seed, above Run, is how much memory the phone has free, e.g. `RAM 4.9 / 11.7 GB free`.
+
+## The sidebar
+
+The ☰ at the top left opens it — on the main screen and at the top of Models, Flows, Results
+and Settings. Close it with ✕, a tap beside it, a swipe left or Back.
+
+**Models**, **Flows**, **Results** and **Settings** open as sheets over the flow, each with its
+name at the top and ✕ to close (or pull the sheet's top bar down, or tap above it). Picking
+another one from the sidebar replaces the sheet.
+
+| part | what it shows |
+|---|---|
 | **Models** | Download, switch and delete models. [Models](../models/index.md) |
 | **Flows** | Ready-made flows (**Recommended**) and your own (**Saved**). [Flows](../flows/index.md) |
 | **Results** | Every picture and clip you have made, with the flow that made it. [Results](../reference/results.md) |
-| 💾 (save) | Save this flow under a name. It is pre-filled with the flow it came from. |
-| **ⓘ** | This phone's chip and NPU. [Install](install.md#check-what-your-phone-can-run) |
-| ⚙ (gear) | Settings. [Settings](../reference/settings.md) |
+| **Current flow** | The flow's name, **Unsaved** when it has changes that are not saved, and **Save flow** |
+| **Model** | The model this flow uses and its state — **Idle**, **Loading** or **Loaded** — and the free memory |
+| **Settings** | [Settings](../reference/settings.md) |
+| **About** | This phone's chip and NPU. [Install](install.md#check-what-your-phone-can-run) |
 
-The line under the buttons tells you the state of things:
-
-- the flow's name, or **unsaved flow** with a dot when it has changes that are not saved;
-- the model that is loaded and whether it is busy, e.g. `AbsoluteReality (idle)`;
-- how much memory the phone has free, e.g. `4.9/11.7 GB free`.
+<figure markdown>
+  ![The sidebar](../img/sidebar.png){ .screen }
+</figure>
 
 ## Nodes and wires
 
@@ -96,7 +129,11 @@ The new node appears in the middle of the screen. Wire it in, set it up, and Run
 **Run** runs the whole flow. Nodes whose settings and inputs have not changed since the last
 Run are **not** run again — change the prompt, and only the generator and what follows it runs.
 
-While it runs, the **run log** above the button shows:
+While it runs, the **Default view** turns to the output page, where the picture's frame — the
+shape of what it is making — carries the log along its bottom edge: the node running now and its
+progress as a percentage, then the latest lines. The other steps are still a swipe away. When it
+is done the picture takes the frame's place, and the full log is in the panel above Run. In the
+Advanced view the **run log** above the button shows, as it runs:
 
 - the node running now and its progress as a percentage;
 - each finished node and how long it took;

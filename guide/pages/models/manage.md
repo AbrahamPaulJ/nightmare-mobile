@@ -27,7 +27,7 @@ word, and the size.
 
 Tap **Download**. The row shows the size, a progress bar and **Cancel**. Models are large —
 use Wi-Fi. If Hugging Face is slow or blocked where you are, change the download source in
-[Settings → Downloads](../reference/settings.md#download-source).
+[Settings → Models](../reference/settings.md#download-source).
 
 ## Use
 

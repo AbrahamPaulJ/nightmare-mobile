@@ -20,14 +20,19 @@ and it downloads on first use; the app shows which ones your phone can run.
 | chip | runs |
 |---|---|
 | Snapdragon 888 and newer | SD 1.5 |
-| 8 Gen 3 and newer | SDXL, Anima |
-| 8 Elite and newer | FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1, SDXL Swap, text and image to video |
-| 8 Elite + 16 GB RAM | Krea 2 Turbo |
+| 8 Gen 3 and newer | SDXL, Anima; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1, your own quantised (GGUF) DiT |
+| 8 Elite and newer | Z-Image Turbo, SDXL Swap, text and image to video, and all of the above |
+| 16 GB RAM | Krea 2 Turbo (8 Elite; alpha on 8 Gen 3) |
 
 ## Features
 
 ### The canvas
 - **Built for a phone** — big ports, snap to connect, pinch to zoom; the picture appears on the node that made it.
+- **Local Dream's models, no second download** — models Local Dream keeps in `Download/LocalDream` are listed and run in place, never changed or deleted.
+- **UltraFix** — Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
+- **Hires fix** — one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
+- **LoRA library** — sort LoRAs by name, newest, most used or size, filter by base model, star favourites.
+- **Draw on a picture** — doodle shapes and colours over the image node's photo (or a blank page) and let image to image make them real.
 - **Recipes** — text to image, image to image, inpaint, upscale, image edit, text / image to video and two Advanced flows, listed from least to most demanding; one your phone can't run says so.
 - **Several checkpoints in one graph** — each generate node has its own model; the run loads each once and tells you the cost first.
 - **Batching** — sweep seed, steps, CFG, denoise or scheduler; two at once makes a grid. Every result keeps the graph that made it.
@@ -57,6 +62,8 @@ and it downloads on first use; the app shows which ones your phone can run.
 ### Prompts
 - **A prompt from a picture** — describe any picture on the canvas or in your gallery: **Short** or **Detailed** sentences (Florence-2 PromptGen), or **Tags** in Danbooru style for anime models (WD tagger).
 - **A tag toolbar** — while you type: make the tag under the cursor heavier or lighter, delete it, add one after it, undo, redo.
+- **Tag autocomplete** — matching Danbooru tags under the prompt box as you type, most used first; one tap downloads the list, or import your own CSV, plus an optional translation CSV to search in your own language.
+- **`<lora:name:0.8>` in a prompt** — a prompt pasted from CivitAI applies the LoRAs it names (when you have them) and the tags never reach the text encoder.
 - **Translate** — a Russian or Chinese prompt to English, offline (Firefox Translations), keeping weights like `(long hair:1.2)`.
 
 ### Your phone, your files
@@ -64,7 +71,10 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Models where you can see them** — optionally in `Download/Nightmare`, surviving an uninstall.
 - **Download from a mirror** — hf-mirror.com or any address, for every model the app fetches.
 - **Your RAM back** — the model is released when you leave; low-RAM switches for SDXL and Anima.
-- **Offline and private** — nothing is uploaded, no account; a failure report never includes your prompt.
+- **Three views of one flow** — **Default** (one step at a time, the easy way in), **Advanced** (the whole flow as connected boxes) and **Chat**; Models, Flows, Results, the current flow and the loaded model live in a sidebar; Models, Flows, Results and Settings open as sheets over the flow.
+- **An agent** — ask for pictures in words: an AI model you bring your own key for (OpenRouter, OpenAI, DeepSeek, xAI, Groq or a local server) builds the flow on your canvas, finds and downloads LoRAs, uses a picture you attach, runs it and shows you the picture; no picture is ever sent to the AI model ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/agent/)).
+- **A local API** — a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; token-protected, off by default ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
+- **Offline and private** — nothing is uploaded, no account (the optional agent talks to the provider you choose); a failure report never includes your prompt.
 
 The [user guide](https://abrahampaulj.github.io/nightmare-mobile/) explains each of these, with measurements.
 
@@ -114,7 +124,7 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 
 | model | by | licence | notes |
 |---|---|---|---|
-| [FLUX.2 klein 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8) | Black Forest Labs | Apache 2.0 | text encoder and VAEs converted by [zhiyuanasad](https://huggingface.co/zhiyuanasad/flux2_klein_adreno) |
+| [FLUX.2 klein 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8) | Black Forest Labs | Apache 2.0 | [leejet's GGUF](https://huggingface.co/leejet/FLUX.2-klein-4B-GGUF) on 8 Gen 3; text encoder and VAEs converted by [zhiyuanasad](https://huggingface.co/zhiyuanasad/flux2_klein_adreno) |
 | [FLUX.2 klein 9B](https://huggingface.co/black-forest-labs/FLUX.2-klein-9B) | Black Forest Labs | FLUX Non-Commercial | [leejet's GGUF](https://huggingface.co/leejet/FLUX.2-klein-9B-GGUF); [Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) encoder (Apache 2.0, [bartowski's GGUF](https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF)) |
 | [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) | Tongyi-MAI | Apache 2.0 | fp8 weights by [Kijai](https://huggingface.co/Kijai/Z-Image_comfy_fp8_scaled) |
 | [Qwen Image 2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) | Qwen team | Qwen Research License | [leejet's GGUF](https://huggingface.co/leejet/Qwen-Image-2.1-GGUF) / [unsloth's FP8](https://huggingface.co/unsloth/Qwen-Image-2.1-FP8); VAE by [Comfy-Org](https://huggingface.co/Comfy-Org/Qwen-Image-2.1); [Qwen3-VL-8B](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) encoder (Apache 2.0, [bartowski](https://huggingface.co/bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF)) |
@@ -139,6 +149,7 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 | [Florence-2 PromptGen v2.0](https://huggingface.co/MiaoshouAI/Florence-2-base-PromptGen-v2.0) | MiaoshouAI, on Microsoft's [Florence-2](https://huggingface.co/microsoft/Florence-2-base-ft) | MIT | describe: sentences, [as ONNX](https://huggingface.co/AbrahamPJ/florence2-promptgen-onnx) on onnx-community's graphs |
 | [WD ViT tagger v3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3) | SmilingWolf | Apache 2.0 | describe: tags |
 | [Firefox Translations](https://github.com/mozilla/firefox-translations-models) (ru, zh → en) | Mozilla | MPL-2.0 | prompt translation |
+| [Danbooru tag list](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete) (`danbooru.csv`) | Dominik Reh (a1111-sd-webui-tagcomplete) | MIT | tag autocomplete, [hosted here](https://huggingface.co/AbrahamPJ/nightmare-tags) |
 
 ## Licence
 

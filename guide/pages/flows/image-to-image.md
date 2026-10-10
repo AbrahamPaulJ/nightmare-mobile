@@ -20,6 +20,17 @@ and let the model redraw it with more detail.
 4. Tap the **Image to image** node and set **Denoise** (below).
 5. **Run.**
 
+## Draw on it first
+
+Under the picture on the **image** node, **Draw** opens a drawing window over the photo: a brush
+with colour swatches and a hue slider, **Size**, **Opacity**, **Softness**, an **Eraser**, undo
+and redo. Paint a rough shape or a blob of colour where you want something, tap **Done**, and run —
+image to image follows your colours and shapes (a denoise around 0.6–0.75 turns a doodle into
+something real). The photo itself is kept: the drawing is a layer on it, so you can reopen it,
+erase it, or **Clear drawing**.
+
+No photo? **Blank page** starts you on a white page instead.
+
 ## Denoise: how much changes
 
 **Denoise** runs from 0 to 1:

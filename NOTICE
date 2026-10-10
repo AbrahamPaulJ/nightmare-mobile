@@ -106,8 +106,9 @@ ggml
     MIT licensed. Inside the DiT engine.
 
 FLUX.2 [klein] 4B
-    Black Forest Labs
+    Black Forest Labs; GGUF by leejet (Snapdragon 8 Gen 3)
     https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8
+    https://huggingface.co/leejet/FLUX.2-klein-4B-GGUF
     Apache 2.0. Downloaded by the app at the user's request; not included here.
 
 Z-Image Turbo
@@ -200,6 +201,13 @@ WD ViT Tagger v3
     Apache 2.0. Danbooru tags from a picture (the describe button's Tags).
     Unmodified, downloaded by the app from SmilingWolf's repository at the
     user's request; not included here.
+
+Danbooru tag list (danbooru.csv)
+    Dominik Reh, from a1111-sd-webui-tagcomplete
+    https://github.com/DominikDoom/a1111-sd-webui-tagcomplete
+    MIT licensed. Tag autocomplete under a prompt box. Copied unchanged with its
+    licence to huggingface.co/AbrahamPJ/nightmare-tags; downloaded by the app at
+    the user's request; not included here.
 
 Foxlet Translate
     yinvoke

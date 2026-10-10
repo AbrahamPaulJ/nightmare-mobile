@@ -31,7 +31,7 @@ online**. The **Get LoRAs** sheet opens on the most popular LoRAs for that node'
   publishes, and the trigger words become the LoRA's note.
 
 **CivitAI needs your API key for most downloads.** It's free: civitai.com → Account settings →
-API Keys. Paste it in the box shown in the sheet, or in **Settings → Downloads → CivitAI**. The key
+API Keys. Paste it in the box shown in the sheet, or in **Settings → Models → CivitAI**. The key
 stays on your phone and is sent only to CivitAI. **Show mature content** (off by default)
 searches civitai.red, which includes NSFW LoRAs.
 
@@ -45,7 +45,7 @@ imported as files (below).
 
 ### Import
 
-**Settings → Add-ons → LoRAs → Import**, and pick the `.safetensors` file. It is listed with
+**Settings → Models → LoRAs → Import**, and pick the `.safetensors` file. It is listed with
 its size; the bin deletes it. The **Files** button in a node's LoRA list does the same.
 
 ### Use
@@ -65,6 +65,24 @@ its size: about 6% for a typical FLUX.2 adapter, around 40% for a large Z-Image 
 
 If the LoRA's description names a trigger word, put that word in your prompt.
 
+### In the prompt: `<lora:name:0.8>`
+
+A prompt copied from CivitAI often names its LoRAs inline, as `<lora:name:0.8>`. Nightmare reads
+those tags: each is taken **out of the prompt** before it reaches the text encoder, and if the name
+matches a LoRA you have installed (with or without `.safetensors`), it is applied at that weight on
+top of the node's LoRA list — the tag wins if both name the same one. A tag for a LoRA you do not
+have, or any tag on a model that takes no LoRAs, is skipped and the run log says so. Tags do not
+count toward the prompt's token limit.
+
+### Sort, filter and favourites
+
+With two or more LoRAs, the list has a **sort** menu — **Name**, **Newest**, **Most used** (how
+often you tick it) or **Size** — and chips for each **base model** found among your files (SD 1.5,
+SDXL, FLUX, Z-Image, Qwen), the node's own first. The base is read from the file itself and shown
+under each name. Tap the **star** to make a LoRA a favourite: favourites come first. With eight or
+more, a search box filters by name. The LoRAs ticked on the node always stay at the top, in the
+order they are applied.
+
 ### Notes
 
 The **⋮** beside each LoRA opens a note for it: its trigger words, the strength and settings it
@@ -83,7 +101,7 @@ stay when the app is updated.
 
 **Delete** in a LoRA's ⋮ removes the file from the phone, after asking. If the LoRA was ticked
 on that node, it is unticked too. Any other node that uses it will refuse to run until you add
-it again or untick it. **Settings → Add-ons → LoRAs** deletes LoRAs too.
+it again or untick it. **Settings → Models → LoRAs** deletes LoRAs too.
 
 ### On SD 1.5 Swap
 
@@ -99,7 +117,8 @@ part trained into the text encoder does not (true of every NPU conversion).
 The same, with **SDXL** LoRAs: an SDXL Swap model has 700 rank-64 slots, filled on the phone the
 first time a mix is used and kept for next time. LoRAs written with either layer naming
 (diffusers or SGM) are read. From npuforge 1.0.12 an SDXL Swap conversion can also keep
-ControlNet and IP-Adapter ([nodes](../reference/nodes.md#image-generator)); npuforge's SDXL Swap
+ControlNet and IP-Adapter ([nodes](../reference/nodes.md#image-generator)), as the default
+Illustrious XL Swap does; npuforge's SDXL Swap
 conversion takes about an hour on the phone.
 
 ## Embeddings
@@ -107,5 +126,5 @@ conversion takes about an hour on the phone.
 An **embedding** (textual inversion) is a tiny file holding one trained concept — often a
 style, or a "negative" such as a quality fix.
 
-**Settings → Add-ons → Embeddings → Import**, pick the `.safetensors`, and then **name it in
+**Settings → Prompts → Embeddings → Import**, pick the `.safetensors`, and then **name it in
 a prompt** (or the negative prompt) to use it.
