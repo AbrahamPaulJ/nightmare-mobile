@@ -52,7 +52,7 @@ android {
         // minor moves only when a release is called a release. âš  versionCode
         // stays a plain incrementing integer; Android requires that.
         versionCode = 434
-        versionName = "1.6.128"
+        versionName = "1.6.127"
         ndk { abiFilters += "arm64-v8a" }
 
         // The plugin runtime and the NPU runner, both built from source.
