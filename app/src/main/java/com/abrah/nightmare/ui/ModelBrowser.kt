@@ -436,9 +436,10 @@ internal fun ModelCardV2(
 @Composable
 private fun StatusLine(row: ModelRow, modifier: Modifier) {
     val spec = row.spec
-    // ⚠ With no build for THIS phone (a RAM gate: Krea 2 on 12 GB) the label is the
-    // lowest arch any build needs — `minHtpArch` alone is 68 for a DiT and read "888+".
-    val arch = row.build?.minArch ?: spec.builds.minOfOrNull { it.minArch } ?: spec.minHtpArch
+    // ⭐ Which phones can run it — the LOWEST floor of any build, never this phone's build: an S25
+    // takes Klein 4B's FP8 (v79) and the card read "8 Elite+" for a model the 8 Gen 3 runs too
+    // (the user, 2026-10-10); SD 1.5 read "8 Gen 2+" for models whose `_min` build runs from the 888.
+    val arch = spec.builds.minOfOrNull { it.minArch } ?: spec.minHtpArch
     val (dot, word) = when {
         row.selected && row.installed -> MaterialTheme.colorScheme.primary to stringResource(R.string.mb_status_in_use)
         row.installed -> Color(0xFF34C38F) to stringResource(R.string.mb_status_installed)
