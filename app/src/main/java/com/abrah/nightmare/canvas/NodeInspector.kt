@@ -4777,7 +4777,7 @@ private fun missingText(spec: com.abrah.nightmare.ModelSpec?, feature: String): 
  * ⚠ The search runs off the main thread: 140k entries per keystroke is not a frame's work.
  */
 @Composable
-private fun TagSuggestions(value: TextFieldValue, onPick: (IntRange, String) -> Unit) {
+internal fun TagSuggestions(value: TextFieldValue, onPick: (IntRange, String) -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     if (!remember { com.abrah.nightmare.TagDictionary.active(ctx) }) return
     val range = com.abrah.nightmare.TagDictionary.wordAt(value.text, value.selection.start)
@@ -4789,12 +4789,16 @@ private fun TagSuggestions(value: TextFieldValue, onPick: (IntRange, String) -> 
         }
     }
     if (range == null || found.isEmpty()) return
-    androidx.compose.foundation.lazy.LazyRow(
+    // ⚠ A scrolling Row, NOT a LazyRow: Material3's text field asks its supporting slot for its
+    // intrinsic height, which a lazy list (SubcomposeLayout) throws on — the app died on the first
+    // suggestion (TagSuggestionsTest). At most [TagDictionary.suggest]'s 12 chips, so nothing to virtualise.
+    Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth()
+            .horizontalScroll(androidx.compose.foundation.rememberScrollState())
+            .padding(vertical = 2.dp),
     ) {
-        items(found.size) { i ->
-            val s = found[i]
+        for (s in found) {
             androidx.compose.material3.SuggestionChip(
                 onClick = { onPick(range, s.tag) },
                 label = {

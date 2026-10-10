@@ -1,0 +1,14 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -1748,6 +1748,11 @@
+ }
+ 
+ int main(int argc, char **argv) {
++  // stdout is a pipe to the app, so stdio block-buffers it: everything the DiT
++  // engine logged after the last std::endl ("Req Rcvd") sat in this process
++  // and never reached an error report while the backend lived (an 8 Gen 3
++  // report, 2026-10-10, ended at the request line). One line, one write.
++  setvbuf(stdout, nullptr, _IOLBF, 0);
+   if (!qnn::log::initializeLogging()) {
+     std::cerr << "ERROR: Init logging failed!\n";
+     return EXIT_FAILURE;
