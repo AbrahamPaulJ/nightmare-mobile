@@ -243,7 +243,11 @@ jobs:
           cp assets/ditlibs/libggml-htp-v79.so assets/ditlibs/libggml-htp-v81.so "$GITHUB_WORKSPACE/out/"
           # ⭐ v75 (8 Gen 3, alpha since 1.6.125): upstream builds it and then DELETES it from
           # assets (APK size), so it is taken from the ggml build dir. `ModelCatalog.DIT_GGML_MIN_ARCH`.
-          cp cpp/dit/build/android/sdcpp/ggml/src/ggml-hexagon/libggml-htp-v75.so "$GITHUB_WORKSPACE/out/"
+          # ⚠ Only when this build made one: upstream's arch list is v79 v81, so it usually does
+          # NOT, and the v75 skel in the APK is the PC build from the same ggml
+          # (`dit-engine-abi105-a4/assets/ditlibs/README-v75.txt`). Run 38089788580 died here.
+          V75=cpp/dit/build/android/sdcpp/ggml/src/ggml-hexagon/libggml-htp-v75.so
+          if [ -f "$V75" ]; then cp "$V75" "$GITHUB_WORKSPACE/out/"; else echo "no v75 skel in this build"; fi
           cd "$GITHUB_WORKSPACE/out"
           zip -j -X "dit-engine-abi${ABI_VERSION}.zip" libdit_engine.so
 
