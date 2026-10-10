@@ -63,7 +63,11 @@ object DitEngine {
      * LoRA engine and upstream's alpha.3 both called themselves 5 over
      * different structs.
      *
-     * ⭐ The FOURTH engine, current: upstream v3.0.0-alpha.4 (the fused DiT
+     * ⭐ The FIFTH engine, current (1.6.129): the fourth + `dit/006`, which reads a VRAM budget
+     * from `DIT_MAX_VRAM` so an 8 Gen 3 splits a DiT it cannot map whole ([BackendProcess]).
+     * Its v79/v81 skels are byte-identical to the fourth's (CI run 38090219858; ggml unchanged).
+     *
+     * The FOURTH engine: upstream v3.0.0-alpha.4 (the fused DiT
      * modulation, ~20% per step; Qwen 2.1's FP8 loader), `dit/003` unchanged,
      * STILL ABI 105 — the header did not move, so the backend did not either.
      * ⚠ Its v79/v81 skels came from the same CI run (37434737157) and ship in
@@ -80,14 +84,14 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi105-a4/dit-engine-abi105-a4.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi105-a4-vram/dit-engine-abi105-a4-vram.zip"
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_062_800L
+    const val BYTES = 23_062_370L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 55_644_848L
+    const val FILE_BYTES = 55_644_880L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -97,7 +101,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "8651746f372cbd8311d23cb07a7159ebc3bf84fbb0ec6bf5f373d807e30ee8af"
+    private const val SHA256 = "3146510b9923473b14a312de2d100ee3c2df60249beb14969335db47ac427097"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

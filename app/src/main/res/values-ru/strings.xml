@@ -564,6 +564,7 @@
     <string name="flow_open_unsaved_title">Открыть «%1$s»?</string>
     <string name="flow_open_unsaved_body">На холсте есть несохранённые изменения. Открытие этого процесса заменит его, и изменения будут потеряны.</string>
     <string name="flow_open_anyway">Всё равно открыть</string>
+    <string name="models_keep_canvas_flow">Оставить процесс на холсте</string>
     <string name="model_ready">%1$s готова</string>
     <string name="model_needed_title">Для этого процесса нужна модель</string>
     <string name="model_downloaded">Загружено.</string>
@@ -932,6 +933,12 @@
     <string name="draw_done">Готово</string>
     <string name="draw_on_picture">Рисовать</string>
     <string name="draw_blank">Чистый лист</string>
+    <string name="draw_pick">Пипетка</string>
+    <string name="draw_more_colors">Другие цвета</string>
+    <string name="draw_choose_color">Выберите цвет</string>
+    <string name="draw_use_color">Выбрать</string>
+    <string name="controlnet_build_8gen1">сборка для 8 Gen 1</string>
+    <string name="controlnet_build_older">сборка для старых чипов</string>
     <string name="draw_clear_drawing">Стереть рисунок</string>
     <string name="mb_local_dream">Local Dream</string>
     <string name="ld_delete_refused">%1$s находится в папке Local Dream (Download/LocalDream). Nightmare использует её там и никогда не удаляет — удалите её в Local Dream.</string>

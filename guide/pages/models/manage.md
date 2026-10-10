@@ -31,8 +31,9 @@ use Wi-Fi. If Hugging Face is slow or blocked where you are, change the download
 
 ## Use
 
-**Use** selects the model: new flows open with it, and the generator nodes on the canvas
-switch to it (keeping every wire). Each generator node can also have its own model — tap the
+**Use** asks what to do with the model: pick one of the flows it can run to open that flow with
+it, or **Keep the flow on the canvas** to leave your flow as it is and just switch its generator
+nodes to this model (keeping every wire and your settings). Each generator node can also have its own model — tap the
 node and pick under **Checkpoint**.
 
 ## Delete

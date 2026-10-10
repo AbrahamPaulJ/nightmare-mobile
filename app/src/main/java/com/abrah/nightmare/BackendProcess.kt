@@ -349,6 +349,10 @@ object BackendProcess {
     private fun readDitParamsOverride(context: Context): String? =
         readDiagnosticFile(context, "nightmare-dit-params.txt")?.takeIf { it.isNotEmpty() }
 
+    /** ⚠ Diagnostic: the engine's VRAM budget (`DIT_MAX_VRAM`, GiB) on any chip. */
+    private fun readDitMaxVramOverride(context: Context): String? =
+        readDiagnosticFile(context, "nightmare-dit-max-vram.txt")?.takeIf { it.isNotEmpty() }
+
     /**
      * ⚠⚠⚠ **In the app's OWN external files dir, not `Download/`.** Under
      * scoped storage this app can `stat` a file another app owns in Downloads
@@ -607,6 +611,17 @@ object BackendProcess {
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }
                         readDitLoraModeOverride(context)?.let { put("NM_DIT_LORA_MODE", it) }
+                        // ⭐⭐ The engine's VRAM budget in GiB (`backend-patches/dit/006`). Below v79
+                        // one FastRPC session maps ~3.1 GB (ggml-hexagon's `HTP_OP_MAX_VMEM_DEFAULT`),
+                        // and Klein 4B's 4.1 GB DiT planned as ONE graph segment failed to map on
+                        // every 8 Gen 3 (1.6.128's report: TE 1.46 GB mapped and released, then the
+                        // DiT's blocks ran out ~1 s in; Qwen's 5.1 GB encoder the same way). A budget
+                        // makes the graph cut split it. 2 GiB leaves room for the compute buffers.
+                        // ⚠ `nightmare-dit-max-vram.txt` overrides it on ANY chip — how the split is
+                        // proven on a v79 phone, which never needs it (`docs/DIT.md` §9e).
+                        val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
+                        (readDitMaxVramOverride(context) ?: "2".takeIf { belowV79 })
+                            ?.let { put("DIT_MAX_VRAM", it) }
                         val dsp = listOf(
                             runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",
                         ).joinToString(";")

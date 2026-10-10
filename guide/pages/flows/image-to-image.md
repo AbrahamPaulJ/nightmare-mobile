@@ -24,7 +24,9 @@ and let the model redraw it with more detail.
 
 Under the picture on the **image** node, **Draw** opens a drawing window over the photo: a brush
 with colour swatches and a hue slider, **Size**, **Opacity**, **Softness**, an **Eraser**, undo
-and redo. Paint a rough shape or a blob of colour where you want something, tap **Done**, and run —
+and redo. Two fingers zoom and pan for detail work; one finger always paints. **Pick colour**
+takes the next colour you touch from the picture, and the rainbow **+** swatch opens a picker for
+any colour. Paint a rough shape or a blob of colour where you want something, tap **Done**, and run —
 image to image follows your colours and shapes (a denoise around 0.6–0.75 turns a doodle into
 something real). The photo itself is kept: the drawing is a layer on it, so you can reopen it,
 erase it, or **Clear drawing**.

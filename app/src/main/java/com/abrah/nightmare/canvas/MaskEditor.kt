@@ -61,14 +61,14 @@ private const val UNDER_ALPHA = 0.2f
 /** ⚠ The overlay is rasterised at this edge, then scaled — not at screen size. */
 private const val OVERLAY_DIM = 384
 
-private const val MAX_ZOOM = 6f
+internal const val MAX_ZOOM = 6f
 
 /**
  * ⚠ Pinch gain. A raw spread ratio feels dead on a small canvas; the exponent
  * is applied ONCE to an absolute ratio rather than per event, so it cannot
  * drift.
  */
-private const val PINCH_GAIN = 1.6f
+internal const val PINCH_GAIN = 1.6f
 
 /**
  * Whether a stroke adds coverage or takes it away — or, with a segmenter wired,

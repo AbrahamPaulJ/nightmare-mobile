@@ -576,6 +576,7 @@
     <string name="flow_open_unsaved_title">Open "%1$s"?</string>
     <string name="flow_open_unsaved_body">The flow on the canvas has unsaved edits. Opening this one replaces it, and the edits are gone.</string>
     <string name="flow_open_anyway">Open anyway</string>
+    <string name="models_keep_canvas_flow">Keep the flow on the canvas</string>
     <string name="model_ready">%1$s is ready</string>
     <string name="model_needed_title">This flow needs a model</string>
     <string name="model_downloaded">Downloaded.</string>
@@ -936,6 +937,12 @@
     <string name="draw_done">Done</string>
     <string name="draw_on_picture">Draw</string>
     <string name="draw_blank">Blank page</string>
+    <string name="draw_pick">Pick colour</string>
+    <string name="draw_more_colors">More colours</string>
+    <string name="draw_choose_color">Choose a colour</string>
+    <string name="draw_use_color">Use</string>
+    <string name="controlnet_build_8gen1">8 Gen 1 build</string>
+    <string name="controlnet_build_older">older-chip build</string>
     <string name="draw_clear_drawing">Clear drawing</string>
     <string name="mb_local_dream">Local Dream</string>
     <string name="ld_delete_refused">%1$s is in Local Dream\'s folder (Download/LocalDream). Nightmare uses it there and never deletes it — delete it in Local Dream.</string>

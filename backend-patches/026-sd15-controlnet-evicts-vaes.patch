@@ -1,0 +1,107 @@
+--- a/src/PipelineSd15Npu.hpp
++++ b/src/PipelineSd15Npu.hpp
+@@ -126,7 +126,11 @@
+     return true;
+   }
+ 
+-  bool supportsImg2Img() const override { return vae_encoder_ != nullptr; }
++  // ⚠ Not "loaded now": a tight phone evicts the encoder for the ControlNet
++  // (loadControlNet) and reloads it when it is next needed.
++  bool supportsImg2Img() const override {
++    return vae_encoder_ != nullptr || (vae_tight_ && !vae_encoder_path_.empty());
++  }
+   // A UNet with residual inputs makes the request parser accept
+   // `control_image` (optional here, since the VAE encoder is present) and fix
+   // the canvas at 512, the template's size.
+@@ -186,6 +190,7 @@
+ 
+   void vaeEncode(const GenerationRequest &, const float *image, float *mean,
+                  float *std_dev) override {
++    if (vae_tight_) ensureVae(vae_encoder_, vae_encoder_path_, "vae_encoder", "VAEEncoder");
+     if (!vae_encoder_) throw std::runtime_error("QNN VAE Enc missing");
+     if (StatusCode::SUCCESS != vae_encoder_->executeVaeEncoderGraphs(
+                                    const_cast<float *>(image), mean, std_dev))
+@@ -265,6 +270,7 @@
+ 
+   void vaeDecode(const GenerationRequest &, const float *latents,
+                  float *pixels) override {
++    if (vae_tight_) ensureVae(vae_decoder_, vae_decoder_path_, "vae_decoder", "VAEDecoder");
+     if (!vae_decoder_) throw std::runtime_error("QNN VAE Dec missing");
+     if (StatusCode::SUCCESS != vae_decoder_->executeVaeDecoderGraphs(
+                                    const_cast<float *>(latents), pixels))
+@@ -281,6 +287,36 @@
+   MNN::Interpreter *clip_interpreter_ = nullptr;
+   MNN::Session *clip_session_ = nullptr;
+ 
++  // Set once a ControlNet only fitted with the VAEs released (loadControlNet).
++  bool vae_tight_ = false;
++
++  void releaseVaes() {
++    vae_decoder_.reset();
++    vae_encoder_.reset();
++  }
++
++  // Reload one VAE in tight mode; the ControlNet makes room if it has to, and
++  // the next ControlNet step loads it again.
++  void ensureVae(std::unique_ptr<QnnModel> &model, const std::string &path,
++                 const char *name, const char *app) {
++    if (model || path.empty()) return;
++    auto load = [&]() {
++      model = qnn_runtime::createModel(path, name);
++      if (!model || qnn_runtime::initializeApp(app, model) != EXIT_SUCCESS) {
++        model.reset();
++        return false;
++      }
++      return true;
++    };
++    if (load()) return;
++    if (tpl_controlnet_) {
++      QNN_WARN("%s did not fit beside the controlnet: releasing it", app);
++      tpl_controlnet_.reset();
++      tpl_controlnet_path_.clear();
++      if (load()) return;
++    }
++    throw std::runtime_error(std::string("Failed to reload ") + app);
++  }
+ 
+   // The request's ControlNet context, kept loaded until a request names
+   // another; the old one is freed before the new one loads.
+@@ -291,11 +327,33 @@
+     if (path == tpl_controlnet_path_ && tpl_controlnet_) return;
+     tpl_controlnet_.reset();
+     tpl_controlnet_path_.clear();
+-    tpl_controlnet_ = qnn_runtime::createModel(path, "controlnet");
+-    if (!tpl_controlnet_ || qnn_runtime::initializeApp(
+-                                "ControlNet", tpl_controlnet_) != EXIT_SUCCESS) {
+-      tpl_controlnet_.reset();
+-      throw std::runtime_error("Failed to load ControlNet " + path);
++    auto load = [&]() {
++      tpl_controlnet_ = qnn_runtime::createModel(path, "controlnet");
++      if (!tpl_controlnet_ || qnn_runtime::initializeApp(
++                                  "ControlNet", tpl_controlnet_) != EXIT_SUCCESS) {
++        tpl_controlnet_.reset();
++        return false;
++      }
++      return true;
++    };
++    // ⚠⚠ A tight phone (an 8 Gen 1, 7.5 GB, 2026-10-11): the NPU would not
++    // map the ControlNet's 367 MB beside the UNet and BOTH VAEs ("fastrpc
++    // memory map ... failed", "Failed to find available PD"). Neither VAE runs
++    // while the ControlNet does -- the encoder before the steps, the decoder
++    // after -- so they are evicted and the load retried; from then on they
++    // reload when needed and evict the ControlNet in turn (ensureVae).
++    if (vae_tight_) releaseVaes();
++    if (!load()) {
++      if (vae_tight_ || (!vae_decoder_ && !vae_encoder_))
++        throw std::runtime_error("Failed to load ControlNet " + path +
++                                 ": the NPU could not map it beside the UNet");
++      QNN_WARN("controlnet did not fit beside the VAEs: evicting them and retrying");
++      vae_tight_ = true;
++      releaseVaes();
++      if (!load())
++        throw std::runtime_error("Failed to load ControlNet " + path +
++                                 ": the NPU could not map it beside the UNet, "
++                                 "even with the VAEs released");
+     }
+     tpl_controlnet_path_ = path;
+     QNN_INFO("controlnet %s feeds the unet's res_0..12", path.c_str());

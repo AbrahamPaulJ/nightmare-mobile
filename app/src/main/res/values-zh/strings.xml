@@ -549,6 +549,7 @@
     <string name="flow_open_unsaved_title">打开“%1$s”？</string>
     <string name="flow_open_unsaved_body">画布上的流程有未保存的编辑。打开此流程会替换它，并丢失这些编辑。</string>
     <string name="flow_open_anyway">仍然打开</string>
+    <string name="models_keep_canvas_flow">保留画布上的流程</string>
     <string name="model_ready">%1$s 已就绪</string>
     <string name="model_needed_title">此流程需要模型</string>
     <string name="model_downloaded">下载完成。</string>
@@ -905,6 +906,12 @@
     <string name="draw_done">完成</string>
     <string name="draw_on_picture">绘制</string>
     <string name="draw_blank">空白画布</string>
+    <string name="draw_pick">取色</string>
+    <string name="draw_more_colors">更多颜色</string>
+    <string name="draw_choose_color">选择颜色</string>
+    <string name="draw_use_color">使用</string>
+    <string name="controlnet_build_8gen1">8 Gen 1 专用版</string>
+    <string name="controlnet_build_older">旧芯片版</string>
     <string name="draw_clear_drawing">清除绘制</string>
     <string name="mb_local_dream">Local Dream</string>
     <string name="ld_delete_refused">%1$s 位于 Local Dream 的文件夹（Download/LocalDream）。Nightmare 在原处使用它，从不删除——请在 Local Dream 中删除。</string>

@@ -2703,7 +2703,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val b = ControlNetCatalog.buildFor(e.id) ?: return@mapNotNull null
             val ok = ControlNetCatalog.isInstalled(ctx, e.id)
             e.id to com.abrah.nightmare.ui.ToolRow(
-                label = e.label,
+                label = ControlNetCatalog.buildLabelRes(e.id)?.let { "${e.label} · ${text(it)}" } ?: e.label,
                 bytes = b.bytes,
                 installed = ok,
                 onDisk = if (ok) ControlNetCatalog.bytesOnDisk(ctx, e.id) else 0L,

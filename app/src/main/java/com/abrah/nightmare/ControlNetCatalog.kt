@@ -136,6 +136,22 @@ object ControlNetCatalog {
         }
     }
 
+    /**
+     * ⭐ The string naming this phone's build of [id] when it is NOT the common one — the 8 Gen 1
+     * (v69) or the older-chip (`min`) build — or null. An 8 Gen 1 user read "Canny ControlNet",
+     * the same words as before their build existed, and concluded nothing had changed (2026-10-11).
+     */
+    fun buildLabelRes(id: String, caps: DeviceProbe.Caps = DeviceProbe.caps()): Int? {
+        val e = entry(id) ?: return null
+        val b = buildFor(id, caps) ?: return null
+        return when {
+            e.byArch.isNotEmpty() -> null
+            b == e.v69 -> R.string.controlnet_build_8gen1
+            b == e.min && e.v73 != e.min -> R.string.controlnet_build_older
+            else -> null
+        }
+    }
+
     fun isInstalled(context: Context, type: String): Boolean {
         val b = buildFor(type) ?: return false
         return SwapInputs.controlnetFile(context, type).length() == b.bytes

@@ -313,8 +313,23 @@ fun ModelsScreen(
                             }
                         }
                     }
-                    // ⚠ No "keep the flow on the canvas" since 2026-10-10 (the user's call): Use
-                    // means open a flow with this model.
+                    // ⭐ …and the old behaviour, named: keep what is open and just point it at this
+                    // checkpoint ([HarnessViewModel.confirmUse] with no recipe). ⚠ Taken out
+                    // 2026-10-10 and reported missing by a user the next day, so it is back.
+                    // ⚠⚠ CHECKPOINTS only: an upscaler and the video models are not selected
+                    // globally, so "keep the flow" would close the dialog and change nothing.
+                    if (p.spec != null) Surface(
+                        onClick = { onConfirmUse(p.spec, null) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Transparent,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            stringResource(R.string.models_keep_canvas_flow),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        )
+                    }
                 }
             },
             // ⚠ ONE action button. Choosing a flow IS the confirmation, so
