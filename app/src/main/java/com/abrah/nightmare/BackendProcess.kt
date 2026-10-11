@@ -354,6 +354,16 @@ object BackendProcess {
         readDiagnosticFile(context, "nightmare-dit-max-vram.txt")?.takeIf { it.isNotEmpty() }
 
     /**
+     * ⚠ Diagnostic: `nightmare-dit-env.txt`, one `KEY=VALUE` per line, added to a DiT launch's
+     * environment — ggml-hexagon's own switches (`GGML_HEXAGON_ARCH=75` runs the v75 skel on a
+     * v79 phone, which is how an 8 Gen 3 render is reproduced on the S25; `docs/DIT.md` §9e).
+     */
+    private fun readDitEnvOverride(context: Context): Map<String, String> =
+        readDiagnosticFile(context, "nightmare-dit-env.txt").orEmpty().lineSequence()
+            .mapNotNull { line -> line.trim().split('=', limit = 2).takeIf { it.size == 2 && it[0].isNotBlank() } }
+            .associate { (k, v) -> k.trim() to v.trim() }
+
+    /**
      * ⚠⚠⚠ **In the app's OWN external files dir, not `Download/`.** Under
      * scoped storage this app can `stat` a file another app owns in Downloads
      * but cannot READ it — `isFile` says true and `readText` throws, and a
@@ -622,6 +632,13 @@ object BackendProcess {
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
                         (readDitMaxVramOverride(context) ?: "2".takeIf { belowV79 })
                             ?.let { put("DIT_MAX_VRAM", it) }
+                        // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
+                        // up blocks) computes garbage: 1.6.131's 8 Gen 3 renders came back solid red /
+                        // black. Reproduced on the S25 with the v75 skel forced (`GGML_HEXAGON_ARCH=75`):
+                        // stripes; the VAE on CPU, or ONLY this op on CPU, gives the v79 picture within
+                        // 1/255, at 65 s against 59 s (`docs/DIT.md` §9e). ggml-hexagon's own op filter.
+                        if (belowV79) put("GGML_HEXAGON_OPFILTER", "CONV_2D_UPSCALE")
+                        putAll(readDitEnvOverride(context))
                         val dsp = listOf(
                             runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",
                         ).joinToString(";")

@@ -63,6 +63,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
@@ -328,7 +331,14 @@ fun ResultsScreen(
         // ⭐⭐ The big frame SWIPES between results, and the grid follows it
         // (the user's call, 2026-09-17). ⚠ Two effects, one per direction, each
         // a no-op when the other side already agrees — so they cannot chase.
-        val shownIndex = items.indexOfFirst { it.id == shownId }.coerceAtLeast(0)
+        // ⚠⚠ A shown picture that is GONE (deleted, filtered away) means the one that took its
+        // index, not index 0 (the user, 2026-10-11: after a delete the grid ignored every tap
+        // until Favourites and back). 0 sent the pager to page 0 while it settled where it was,
+        // and the two effects below wrote over each other forever — `ResultsDeleteTest`.
+        var lastShownIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        val shownIndex = items.indexOfFirst { it.id == shownId }
+            .takeIf { it >= 0 } ?: lastShownIndex.coerceIn(0, items.lastIndex)
+        androidx.compose.runtime.SideEffect { lastShownIndex = shownIndex }
         val pager = androidx.compose.foundation.pager.rememberPagerState(
             initialPage = shownIndex, pageCount = { items.size },
         )
@@ -1446,6 +1456,8 @@ private fun ResultCardHeader(
 /** ⭐ A grid thumbnail's corners — its clip AND its ring, so the two cannot disagree. */
 private val ThumbShape = RoundedCornerShape(8.dp)
 
+internal const val RESULT_THUMB_TAG = "result_thumb"
+
 /** ⭐ One small preview in History's grid. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -1464,7 +1476,10 @@ private fun HistoryThumb(
             .aspectRatio(1f)
             .clip(ThumbShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            // ⭐ "In the frame" as `selected`, so a test can see which thumb the frame shows.
+            .testTag(RESULT_THUMB_TAG)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .semantics { selected = inFrame },
     ) {
         thumb?.let {
             Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())

@@ -63,7 +63,10 @@ object DitEngine {
      * LoRA engine and upstream's alpha.3 both called themselves 5 over
      * different structs.
      *
-     * ⭐ The FIFTH engine, current (1.6.129): the fourth + `dit/006`, which reads a VRAM budget
+     * ⭐ The SIXTH engine, current (1.6.133): the fifth + `dit/007`, graph-cut points in Qwen Image
+     * 2.1's DiT so the budget can split it too (CI run 38105032541; skels unchanged).
+     *
+     * The FIFTH engine (1.6.129): the fourth + `dit/006`, which reads a VRAM budget
      * from `DIT_MAX_VRAM` so an 8 Gen 3 splits a DiT it cannot map whole ([BackendProcess]).
      * Its v79/v81 skels are byte-identical to the fourth's (CI run 38090219858; ggml unchanged).
      *
@@ -84,14 +87,14 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi105-a4-vram/dit-engine-abi105-a4-vram.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi105-a4-qwencut/dit-engine-abi105-a4-qwencut.zip"
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_062_370L
+    const val BYTES = 23_062_642L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 55_644_880L
+    const val FILE_BYTES = 55_645_936L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -101,7 +104,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "3146510b9923473b14a312de2d100ee3c2df60249beb14969335db47ac427097"
+    private const val SHA256 = "4d9864ddd0de612646eec5387534a22c9c107357b00d5439c59c3b93d79b5881"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 
