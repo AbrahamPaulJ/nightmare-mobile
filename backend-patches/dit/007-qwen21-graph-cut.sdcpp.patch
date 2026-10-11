@@ -1,0 +1,18 @@
+diff --git a/src/model/diffusion/qwen_image_2_1.hpp b/src/model/diffusion/qwen_image_2_1.hpp
+index c331ac1..4937930 100644
+--- a/src/model/diffusion/qwen_image_2_1.hpp
++++ b/src/model/diffusion/qwen_image_2_1.hpp
+@@ -367,9 +367,13 @@ namespace Qwen {
+                 }
+                 joint = joint == nullptr ? h : ggml_concat(ctx->ggml_ctx, joint, h, 1);
+             }
++            // nightmare dit/007: cut points, as qwen_image.hpp has, so a VRAM budget can split
++            // the DiT (an 8 Gen 3 maps ~3.1 GB per NPU session; 2.1 at Q4_0 is 4.97 GB).
++            sd::ggml_graph_cut::mark_graph_cut(joint, "qwen_image_2_1.prelude", "joint");
+             for (int i = 0; i < config.num_layers; ++i) {
+                 auto block = std::dynamic_pointer_cast<QwenImage21TransformerBlock>(blocks["transformer_blocks." + std::to_string(i)]);
+                 joint      = block->forward(ctx, joint, mod, pe, token_indices, zero_shift, layout, masks);
++                sd::ggml_graph_cut::mark_graph_cut(joint, "qwen_image_2_1.transformer_blocks." + std::to_string(i), "joint");
+             }
+             joint      = ggml_ext_slice(ctx->ggml_ctx, joint, 1, layout.prefix_length, joint->ne[1]);
+             auto scale = std::dynamic_pointer_cast<Linear>(blocks["norm_out.linear"])->forward(ctx, ggml_ext_chunk(ctx->ggml_ctx, time, 2, 1)[0]);
