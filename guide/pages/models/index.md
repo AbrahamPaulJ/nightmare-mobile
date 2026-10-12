@@ -18,6 +18,7 @@ which phones can run it; inside a family, models differ in style.
 | **FLUX.2** | Klein 4B, Klein 9B | 6.7 GB, 10.7 GB | 512–2048 | Understands sentences; edits photos. 9B: more detail, slower, starts at 768 | 8 Gen 3+ (alpha on 8 Gen 3, where the 4B is a Q8_0 GGUF: 6.9 GB in all) |
 | **Z-Image** | Turbo | 8.8 GB | 512–2048 | Photorealistic, fast for its size | 8 Elite+ |
 | **Qwen Image** | 2.1 | 10.8 GB (16 GB phone: 13.8 GB FP8) | 512–2048 | Follows long instructions, legible text; edits photos; slow | 8 Gen 3+ (alpha on 8 Gen 3, which always takes the 10.8 GB build) |
+| **Anima DiT** | Turbo 1.1 | 3.2 GB (4.2 GB download, converted on the phone) | 512–2048 | Anime; about a minute at 1024 | 8 Gen 3+ (alpha on 8 Gen 3) |
 | **Krea 2** | Turbo | 9.5 GB | 512–2048 | Text to image only | 16 GB RAM, and 8 Elite+ (alpha on 8 Gen 3) |
 
 Besides picture models, **Models** also holds:

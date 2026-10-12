@@ -58,7 +58,7 @@ step.
 | chip | can run |
 |---|---|
 | Snapdragon 888 and newer | SD 1.5 models, upscaling |
-| Snapdragon 8 Gen 3 and newer | + SDXL and Anima; **alpha:** FLUX.2, Qwen Image, Krea 2 (16 GB) |
+| Snapdragon 8 Gen 3 and newer | + SDXL and Anima; **alpha:** FLUX.2, Qwen Image, Anima DiT, Krea 2 (16 GB) |
 | Snapdragon 8 Elite and newer | + Z-Image, video; Krea 2 with 16 GB of RAM |
 
 - **Storage**: models are downloaded separately, from about 1 GB (an SD 1.5 model) to

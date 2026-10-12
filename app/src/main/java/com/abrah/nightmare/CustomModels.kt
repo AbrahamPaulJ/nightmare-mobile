@@ -122,6 +122,8 @@ object CustomModels {
      * Qwen3-8B encoder, never the shared 4B one ([ModelSpec.ownDitParts]).
      */
     const val KREA2_MARK = "KREA2"
+    /** ⭐ Ours: an Anima `.safetensors` imported for the DiT engine ([Family.ANIMA_DIT]). */
+    const val ANIMA_DIT_MARK = "ANIMADIT"
     const val KLEIN9B_MARK = "KLEIN9B"
 
     /** The DiT weights as GGUF — the backend prefers it to `dit.safetensors` (014). */
@@ -302,6 +304,7 @@ object CustomModels {
             Family.ZIMAGE.takeIf { File(dir, ZIMAGE_MARK).isFile },
             Family.FLUX2.takeIf { File(dir, FLUX2_MARK).isFile },
             Family.KREA2.takeIf { File(dir, KREA2_MARK).isFile },
+            Family.ANIMA_DIT.takeIf { File(dir, ANIMA_DIT_MARK).isFile },
         )
         // ⭐⭐⭐ **A DiT folder pushed over adb has no marker, and is a model
         // anyway** — [detectDit] reads the family out of `dit.safetensors`.
@@ -394,6 +397,8 @@ object CustomModels {
         Family.QWEN21 -> Defaults("euler", 20, 1.0)
         // Krea 2 Turbo: the fork's README runs 8 steps at cfg 1.
         Family.KREA2 -> Defaults("euler", 8, 1.0)
+        // Anima's official turbo: CFG 1, 8–12 steps; the QNN packages' 10.
+        Family.ANIMA_DIT -> Defaults("euler", 10, 1.0)
     }
 
     private fun customSpec(dir: File, cfg: Config, family: Family): ModelSpec {
@@ -411,7 +416,7 @@ object CustomModels {
         startRes = if (klein9b) Res(768, 768) else null,
         // ⚠ Qwen and Krea 2 read their own directory only (backend 013/014);
         // a 9B's encoder is not the family's shared one.
-        ownDitParts = klein9b || family == Family.QWEN21 || family == Family.KREA2,
+        ownDitParts = klein9b || family == Family.QWEN21 || family == Family.KREA2 || family == Family.ANIMA_DIT,
         id = dir.name,
         label = cfg.label ?: dir.name,
         // ⭐ What the conversion kept ([ModelFeatures]) — the node dims the rest.
@@ -449,6 +454,8 @@ object CustomModels {
             Family.QWEN21 -> ModelCatalog.QWEN21
             // ⭐ An imported Krea 2 ([KREA2_MARK], since 1.6.069).
             Family.KREA2 -> ModelCatalog.KREA2
+            // ⚠ Krea 2's launch on purpose: "own files, no edit" (ModelCatalog's entry).
+            Family.ANIMA_DIT -> ModelCatalog.KREA2
         },
         resolutions = listOf(
             when (family) {
@@ -456,7 +463,7 @@ object CustomModels {
                 Family.SD15, Family.SD15_SWAP -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL, Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
-                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2 -> ModelCatalog.DIT_RES
+                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT -> ModelCatalog.DIT_RES
             },
         ),
         requiredFiles = when (family) {
@@ -467,7 +474,7 @@ object CustomModels {
             Family.ANIMA -> ModelCatalog.ANIMA_REQUIRED
             // ⚠ The weights by the name actually on disk — a `.gguf` import
             // has no `dit.safetensors`, and would read as incomplete forever.
-            Family.FLUX2, Family.ZIMAGE, Family.KREA2 -> listOf(weights) + DIT_PARTS
+            Family.FLUX2, Family.ZIMAGE, Family.KREA2, Family.ANIMA_DIT -> listOf(weights) + DIT_PARTS
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
             Family.QWEN21 -> listOf(weights) + ModelCatalog.QWEN21_PARTS
         },
@@ -491,6 +498,8 @@ object CustomModels {
             Family.QWEN21 -> false
             // ⚠ Same as Qwen: the backend runs Krea 2 `all=disk` (014).
             Family.KREA2 -> false
+            // ⚠ The same launch as Krea 2 (all=disk); 3.1 GB of parts fit anyway.
+            Family.ANIMA_DIT -> false
         },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which
         // HTP it was compiled for — `QnnSystemContext` gives the IO contract
@@ -955,6 +964,7 @@ object CustomModels {
         Family.ZIMAGE -> "ZIMAGE"
         Family.FLUX2 -> "KLEIN"
         Family.KREA2 -> KREA2_MARK
+        Family.ANIMA_DIT -> ANIMA_DIT_MARK
         else -> throw IllegalArgumentException("$family does not import a single weights file")
     }
 
@@ -1034,6 +1044,8 @@ object CustomModels {
             // `txtfusion.*`, `tproj`, `tmlp`, `blocks.N.attn.qknorm` — none of
             // them FLUX's or Lumina2's.
             Family.KREA2 to listOf("txtfusion.", "tproj.", "tmlp.", "qknorm."),
+            // ⭐ Anima (Cosmos-Predict2 + its LLM adapter): no other family has these.
+            Family.ANIMA_DIT to listOf("llm_adapter.", "t_embedder.", "x_embedder.", "adaln_modulation_self_attn"),
         )
         val hits = signatures.filterValues { keys -> keys.count(header::contains) >= 2 }.keys
         return hits.singleOrNull()
@@ -1114,13 +1126,15 @@ object CustomModels {
         KLEIN_4B(Family.FLUX2, "flux2_klein_4b", false),
         KLEIN_9B(Family.FLUX2, "flux2_klein_9b", true),
         ZIMAGE(Family.ZIMAGE, "z_image_turbo", false),
-        KREA2(Family.KREA2, "krea2_turbo", true);
+        KREA2(Family.KREA2, "krea2_turbo", true),
+        ANIMA(Family.ANIMA_DIT, "anima_turbo_1_1", true);
 
         companion object {
             /** When the file's names say nothing, the tab's family decides. */
             fun defaultFor(family: Family): DitVariant = when (family) {
                 Family.ZIMAGE -> ZIMAGE
                 Family.KREA2 -> KREA2
+                Family.ANIMA_DIT -> ANIMA
                 else -> KLEIN_4B
             }
         }
@@ -1329,6 +1343,7 @@ object CustomModels {
         "flux2" to Family.FLUX2,
         "zimage" to Family.ZIMAGE,
         "krea2" to Family.KREA2,
+        "anima" to Family.ANIMA_DIT,
     )
 
     // ---- config.json -----------------------------------------------------

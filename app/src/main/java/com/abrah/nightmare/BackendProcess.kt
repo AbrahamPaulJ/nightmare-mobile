@@ -645,7 +645,15 @@ object BackendProcess {
                         // ⭐ And `CONCAT`: Qwen 2.1's Wan VAE crashed the v75 skel inside `op_concat`
                         // (`dspqueue_read failed 0x2e`, the vivo report); on the S25 forced to v75 it
                         // reproduced, and with CONCAT on the CPU it renders the v79 picture (mean 0.64/255).
-                        if (belowV79) put("GGML_HEXAGON_OPFILTER", "CONV_2D_UPSCALE|CONCAT")
+                        // ⭐ And `ADD` for Anima on ANY chip: the HTP's generic add computes some of
+                        // its 7 remaining adds a step wrong (its LLM adapter's, the `temb` one) and the
+                        // picture comes back black; on the CPU it is right and costs nothing measurable
+                        // (14.0 vs 14.4 s at 512², `docs/ANIMA-GGML.md` §3).
+                        val ops = listOfNotNull(
+                            "CONV_2D_UPSCALE|CONCAT".takeIf { belowV79 },
+                            "ADD".takeIf { spec?.family == Family.ANIMA_DIT },
+                        )
+                        if (ops.isNotEmpty()) put("GGML_HEXAGON_OPFILTER", ops.joinToString("|"))
                         putAll(readDitEnvOverride(context))
                         val dsp = listOf(
                             runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",

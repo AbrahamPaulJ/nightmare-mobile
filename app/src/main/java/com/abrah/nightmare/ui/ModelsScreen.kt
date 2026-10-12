@@ -742,6 +742,8 @@ private fun familyNote(family: Family): String = stringResource(when (family) {
         // ⚠ Loads one part at a time like Qwen (all=disk).
         // Not an edit model: the fork's own edits fail.
         Family.KREA2 -> R.string.models_family_krea
+        // ⚠ The 4.2 GB download and the converted 2.3 GB are on disk at once.
+        Family.ANIMA_DIT -> R.string.models_family_animadit
         // ⚠ The free-space figure is the one that surprises:
         // the archive and its unpacked copy are both on disk
         // at once, so a 3.5 GB download needs ~7.5 GB free.

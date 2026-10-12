@@ -79,6 +79,9 @@ object ModelInstaller {
         }
     }
 
+    /** ⭐ Where a [RemoteFile.convert] file's download waits for its conversion. */
+    private fun sourceOf(out: File) = File(out.parentFile, out.name + ".source")
+
     /** ⚠ Model ids with an install running — see [install]. */
     private val inFlight: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
@@ -111,8 +114,14 @@ object ModelInstaller {
         // is what lets an interrupted 7 GB install pick up where it stopped.
         if (spec.active.isNotEmpty()) {
             val need = spec.active.sumOf { f ->
-                val have = File(modelDir, f.name).takeIf { it.isFile }?.length() ?: 0L
-                (f.bytes - have).coerceAtLeast(0L)
+                val out = File(modelDir, f.name)
+                val have = out.takeIf { it.isFile }?.length() ?: 0L
+                when {
+                    f.convert == null -> (f.bytes - have).coerceAtLeast(0L)
+                    have == f.bytes -> 0L
+                    // ⚠ A conversion holds its source and its output at once.
+                    else -> f.sourceBytes - (sourceOf(out).takeIf { it.isFile }?.length() ?: 0L) + f.bytes
+                }
             }
             requireFreeSpace(modelDir, need)
             // ⭐⭐ ONE bar for the whole package, not one per file. Per file, it
@@ -120,13 +129,36 @@ object ModelInstaller {
             // — which reads as "it started over" (reported 2026-09-19).
             // Upstream reports packageOffset + done against the package total
             // for the same reason.
-            val total = spec.active.sumOf { it.bytes }
+            val total = spec.active.sumOf { maxOf(it.bytes, it.sourceBytes) }
             var before = 0L
             for (f in spec.active) {
-                fetch(f.url, File(modelDir, f.name), f.bytes, "downloading", { p ->
-                    onProgress(Progress(p.phase, before + p.done, total))
-                }, isCancelled)
-                before += f.bytes
+                val out = File(modelDir, f.name)
+                val convert = f.convert
+                if (convert == null) {
+                    fetch(f.url, out, f.bytes, "downloading", { p ->
+                        onProgress(Progress(p.phase, before + p.done, total))
+                    }, isCancelled)
+                } else if (!(out.isFile && out.length() == f.bytes)) {
+                    // ⭐ Download the source beside the output (resumable, size-checked like
+                    // any file), convert into a `.part`, check the EXACT size, then rename:
+                    // a half-written output must never pass for an installed one.
+                    val src = sourceOf(out)
+                    fetch(f.url, src, f.sourceBytes, "downloading", { p ->
+                        onProgress(Progress(p.phase, before + p.done, total))
+                    }, isCancelled)
+                    val part = File(modelDir, f.name + ".part")
+                    convert.run(src, part, { done, all ->
+                        onProgress(Progress("converting", before + done * f.sourceBytes / all.coerceAtLeast(1L), total))
+                    }, isCancelled)
+                    if (part.length() != f.bytes) {
+                        part.delete()
+                        throw IOException("${f.name}: converted to ${part.length()} bytes, expected ${f.bytes}")
+                    }
+                    if (!part.renameTo(out)) throw IOException("could not move ${part.name} into place")
+                    src.delete()
+                    Log.i(TAG, "converted ${f.name} (${f.bytes} bytes) from a ${f.sourceBytes}-byte download")
+                }
+                before += maxOf(f.bytes, f.sourceBytes)
             }
             val missing = spec.missing(context)
             if (missing.isNotEmpty()) {

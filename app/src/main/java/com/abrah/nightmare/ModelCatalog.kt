@@ -8,7 +8,25 @@ import java.io.File
  * backend expects it to be called, and its exact served size — THE integrity
  * check, exactly as a zip's byte count is ([ModelInstaller.fetch]).
  */
-data class RemoteFile(val url: String, val name: String, val bytes: Long)
+data class RemoteFile(
+    val url: String,
+    val name: String,
+    val bytes: Long,
+    /**
+     * ⭐ Set when [name] is MADE on the phone from what [url] serves (Anima's
+     * official BF16 DiT → Q8_0 GGUF, [AnimaGguf]): the download is
+     * [sourceBytes] long, fetched beside the output, converted, size-checked
+     * against [bytes] and deleted. [bytes] stays the installed file's size, so
+     * every "is it installed" check is unchanged.
+     */
+    val sourceBytes: Long = 0L,
+    val convert: Converter? = null,
+)
+
+/** ⭐ Turns a downloaded source file into the file the backend loads ([RemoteFile.convert]). */
+fun interface Converter {
+    fun run(src: java.io.File, dst: java.io.File, onProgress: (done: Long, total: Long) -> Unit, isCancelled: () -> Boolean)
+}
 
 /**
  * ⭐ What a checkpoint IS, as opposed to which files it ships.
@@ -93,6 +111,15 @@ enum class Family(
      * own README shows its edits failing (the user's call, 2026-09-28).
      */
     KREA2("Krea 2", GP_DIT, GP_DIT_NEG, "krea2", dit = true),
+    /**
+     * ⭐⭐ **Anima on the DiT engine** (`docs/ANIMA-GGML.md`): the same model as
+     * [ANIMA], rendered whole by `libdit_engine.so` instead of QNN context
+     * binaries — so any size, any Anima `.safetensors`, and faster (56 s vs 82 s
+     * at 1024², 10 steps). Its own family because the node vocabulary is the
+     * DiT one ([dit]), not [ANIMA]'s latent-handle samplers. Anima's own tag
+     * prompts, not the DiT sentences: the text encoder is the same Qwen3-0.6B.
+     */
+    ANIMA_DIT("Anima DiT", GP_ANIMA, GP_ANIMA_NEG, "animadit", dit = true),
 }
 
 // ---- the general-purpose prompts --------------------------------------------
@@ -2051,6 +2078,34 @@ object ModelCatalog {
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
                 RemoteFile(HF + "Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors", "vae.safetensors", 253_815_318L),
                 RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+            ),
+        ),
+        // ⭐⭐ Anima Turbo 1.1 on the DiT engine (`docs/ANIMA-GGML.md`): circlestone's
+        // OFFICIAL turbo (CFG 1, 8–12 steps), the one users asked for over the DMD
+        // merges the QNN packages are. 56 s at 1024², 10 steps, against 82 s on QNN.
+        //
+        // ⚠ The DiT is downloaded as the official BF16 file and converted on the
+        // phone to Q8_0 ([AnimaGguf]): nothing re-hosted, and Q8_0 renders the same
+        // picture 16% faster in 1.8 GB less NPU memory. The text encoder is
+        // Qwen3-0.6B-Base, the VAE Anima's own; sizes HEAD-checked 2026-10-13.
+        //
+        // ⚠ Launched as `--type krea2`, the backend's shape for "own files, no
+        // edit" (`main.cpp`): the engine detects Anima from the weights and reads
+        // `kind` only for reference presets — the Krea 2 precedent itself.
+        // ⚠ Needs `GGML_HEXAGON_OPFILTER` to include ADD ([BackendProcess]).
+        dit(
+            "anima_turbo_1_1", "Anima Turbo 1.1", Family.ANIMA_DIT, KREA2, steps = 10,
+            prompt = "",
+            ownDitParts = true,
+            files = listOf(
+                RemoteFile(
+                    HF + "circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-turbo-v1.1.safetensors",
+                    "dit.gguf", AnimaGguf.TURBO_11_BYTES,
+                    sourceBytes = 4_182_230_656L, convert = AnimaGguf.converter,
+                ),
+                RemoteFile(HF + "mradermacher/Qwen3-0.6B-Base-GGUF/resolve/main/Qwen3-0.6B-Base.Q8_0.gguf", "llm.gguf", 639_447_232L),
+                RemoteFile(HF + "circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors", "vae.safetensors", 253_806_246L),
+                RemoteFile(HF + "Qwen/Qwen3-0.6B-Base/resolve/main/tokenizer.json", "tokenizer.json", 7_031_645L),
             ),
         ),
         // ⭐ FLUX.2 Klein 9B — the same architecture as 4B, so the same family,

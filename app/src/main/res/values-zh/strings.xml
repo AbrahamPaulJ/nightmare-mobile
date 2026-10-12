@@ -534,6 +534,7 @@
     <string name="models_family_zimage">约 8.8 GB。仅支持 8 Elite 或更新芯片。仍在完善中：某些 8 Elite 手机上会崩溃。请使用 Wi-Fi。</string>
     <string name="models_family_qwen">约 10.8 GB。支持 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。可编辑和生成，速度比 FLUX.2 慢。请使用 Wi-Fi。</string>
     <string name="models_family_krea">约 9.5 GB。仅限 16 GB 内存的手机，8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。只能文生图，不能编辑。请使用 Wi-Fi。</string>
+    <string name="models_family_animadit">约 3.2 GB。下载 Anima 官方 4.2 GB 文件并在手机上转换，安装时需要约 7.5 GB 可用空间。1024² 每张图片约 1 分钟，支持 512 起的任意尺寸。需要 8 Gen 3 或更新芯片。不是编辑模型。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>
     <string name="models_import_dit_body">一个 .safetensors 或 .gguf 检查点，可来自 CivitAI 或 Hugging Face，直接使用，无需转换。Klein 4B 和 Z-Image 会借用文本编码器和 VAE（最多需下载 2.6 GB；已有该模型则无需下载）。Klein 9B 和 Krea 2 会获取自己的副本（分别为 4.8 GB 和 2.6 GB）。大于手机约一半内存的文件在渲染时很可能被 Android 关闭。</string>

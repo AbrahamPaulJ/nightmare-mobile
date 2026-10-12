@@ -561,6 +561,7 @@
     <string name="models_family_zimage">About 8.8 GB. 8 Elite or newer only. Still maturing: it crashes on some 8 Elite phones. Use Wi-Fi.</string>
     <string name="models_family_qwen">About 10.8 GB. 8 Gen 3 or newer (alpha on 8 Gen 3). Edits and generates; slower than FLUX.2. Use Wi-Fi.</string>
     <string name="models_family_krea">About 9.5 GB. 16 GB phones only, 8 Gen 3 or newer (alpha on 8 Gen 3). Text to image only; it does not edit. Use Wi-Fi.</string>
+    <string name="models_family_animadit">About 3.2 GB. Downloads Anima\'s official 4.2 GB file and converts it on the phone, so it needs ~7.5 GB free while it installs. About 1 minute a picture at 1024², any size from 512. 8 Gen 3 or newer. Not an edit model. Use Wi-Fi.</string>
     <string name="models_family_other">About 3.5 GB each, and ~7.5 GB free while it unpacks. Use Wi-Fi.</string>
     <string name="models_import_checkpoint">Import a checkpoint</string>
     <string name="models_import_dit_body">One .safetensors or .gguf. A checkpoint from CivitAI or Hugging Face, used as it is. No conversion. Klein 4B and Z-Image ones borrow a text encoder and VAE (up to 2.6 GB to fetch, nothing if you have that model). Klein 9B and Krea 2 ones get their own copy (4.8 GB and 2.6 GB). A file bigger than about half your phone\'s RAM will likely be closed by Android while it renders.</string>

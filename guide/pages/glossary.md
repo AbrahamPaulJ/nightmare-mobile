@@ -1,7 +1,7 @@
 # Glossary
 
 **CFG**: "classifier-free guidance": how strictly the model follows the prompt. Higher is more
-literal; too high burns the colours. FLUX.2, Z-Image, Qwen Image and Krea 2 are made for 1.
+literal; too high burns the colours. FLUX.2, Z-Image, Qwen Image, Krea 2 and Anima DiT are made for 1.
 
 **Checkpoint**: a model file (or set of files) that draws pictures. Used interchangeably with
 *model*.
@@ -18,7 +18,7 @@ instruction: FLUX.2 Klein and Qwen Image 2.1.
 **Embedding**: a tiny file holding one trained concept, used by writing its name in a prompt.
 
 **Family**: a group of models that work the same way: SD 1.5, SDXL, Anima, FLUX.2, Z-Image,
-Qwen Image, Krea 2.
+Qwen Image, Krea 2, Anima DiT.
 
 **Flow**: a set of nodes wired together for one job. The app ships ready-made ones; you can
 save your own.

@@ -111,11 +111,11 @@ class VideoGraphTest {
         // 2026-10-03: `sdxlswap.sample` / `sdxlswap.inpaint` (SDXL Swap, LoRA per render).
         assertTrue(isSampler("sdxlswap.sample"))
         assertTrue(isSampler("sdxlswap.inpaint"))
-        // 2026-10-05: `zimage.inpaint`, `qwen21.inpaint`, `krea2.inpaint` (DiT masked img2img).
+        // 2026-10-05: `zimage.inpaint`, `qwen21.inpaint`, `krea2.inpaint` (DiT masked img2img); 2026-10-13: `animadit.*`.
         assertTrue(isSampler("zimage.inpaint"))
-        assertEquals(18, SAMPLER_TYPES.size)
-        assertEquals(17, IMAGE_SAMPLER_TYPES.size)
-        assertEquals(8, INPAINT_TYPES.size)
+        assertEquals(20, SAMPLER_TYPES.size)
+        assertEquals(19, IMAGE_SAMPLER_TYPES.size)
+        assertEquals(9, INPAINT_TYPES.size)
     }
 
     @Test

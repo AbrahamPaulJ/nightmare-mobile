@@ -26,12 +26,12 @@ If a package contains LocalDream's empty `V_PRED` marker, Nightmare launches the
 native backend in v-prediction mode. Packages without it keep the existing epsilon
 behavior.
 
-## FLUX.2, Z-Image and Krea 2: one .safetensors or .gguf
+## FLUX.2, Z-Image, Krea 2 and Anima: one .safetensors or .gguf
 
 These build their model at load time from ordinary weights, so **a fine-tune from CivitAI or
 Hugging Face imports as-is**. No conversion, no PC. Both `.safetensors` and `.gguf` work.
 
-1. In Models, open **Family ▾ → FLUX.2**, **Z-Image** or **Krea 2**.
+1. In Models, open **Family ▾ → FLUX.2**, **Z-Image**, **Krea 2** or **Anima DiT**.
 2. Tap **Import** and pick the file.
 3. Name it.
 
@@ -42,6 +42,9 @@ picked on the wrong family's page is refused with the family it belongs to.
   an import costs only its own weights (plus up to 2.6 GB once, if you have neither family).
 - **Klein 9B and Krea 2** get their own copy of their text encoder (4.8 GB and 2.6 GB), copied
   from the built-in model if you have it, downloaded if not.
+- **Anima** takes its text encoder and VAE (0.9 GB) from Anima Turbo 1.1 the same way. An
+  imported `.safetensors` runs as it is: about 20% slower than the built-in, which the app
+  converts to Q8_0. A Q8_0 `.gguf` runs at the built-in's speed.
 
 !!! warning "Size and memory"
     A checkpoint bigger than about half your phone's RAM is marked *likely too big for this

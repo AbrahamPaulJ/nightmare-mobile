@@ -603,6 +603,8 @@ class SdSampler(
         val QWEN21 = SdSampler("qwen21.sample", Family.QWEN21, inpaint = false)
         /** ⭐ Krea 2 Turbo — text to image, like Z-Image. */
         val KREA2 = SdSampler("krea2.sample", Family.KREA2, inpaint = false)
+        /** ⭐ Anima on the DiT engine (`docs/ANIMA-GGML.md`) — text to image, like Krea 2. */
+        val ANIMA_DIT = SdSampler("animadit.sample", Family.ANIMA_DIT, inpaint = false)
         /**
          * ⭐⭐ **DiT inpaint = masked img2img of the cut + the feathered paste
          * back** — Z-Image, Qwen Image 2.1 and Krea 2 (the user's call,
@@ -619,6 +621,7 @@ class SdSampler(
         val ZIMAGE_INPAINT = SdSampler("zimage.inpaint", Family.ZIMAGE, inpaint = true)
         val QWEN21_INPAINT = SdSampler("qwen21.inpaint", Family.QWEN21, inpaint = true)
         val KREA2_INPAINT = SdSampler("krea2.inpaint", Family.KREA2, inpaint = true)
+        val ANIMA_DIT_INPAINT = SdSampler("animadit.inpaint", Family.ANIMA_DIT, inpaint = true)
         /**
          * ⚠⚠⚠ **`flux2.inpaint` is BUILT and NOT REGISTERED, on purpose.**
          * Everything behind it works — [runDitMasked] sends `mask` on
@@ -644,9 +647,9 @@ class SdSampler(
          * until the engine's behaviour is understood. `notes/PROGRESS.md`.
          */
         val ALL = listOf(
-            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2,
+            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT,
             SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, SDXL_SWAP_INPAINT, ANIMA_INPAINT,
-            ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT,
+            ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT, ANIMA_DIT_INPAINT,
         )
 
         /**

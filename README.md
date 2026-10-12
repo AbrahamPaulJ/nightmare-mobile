@@ -20,7 +20,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 | chip | runs |
 |---|---|
 | Snapdragon 888 and newer | SD 1.5 |
-| 8 Gen 3 and newer | SDXL, Anima; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1, your own quantised (GGUF) DiT |
+| 8 Gen 3 and newer | SDXL, Anima; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1, Anima Turbo 1.1 on the DiT engine, your own quantised (GGUF) DiT |
 | 8 Elite and newer | Z-Image Turbo, SDXL Swap, text and image to video, and all of the above |
 | 16 GB RAM | Krea 2 Turbo (8 Elite; alpha on 8 Gen 3) |
 
@@ -40,9 +40,9 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Results**: star, save, share, reopen any picture as the flow that made it.
 
 ### Models
-- **35 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
-- **FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1, Krea 2 Turbo**: any size from 512 to 2048 in 64 px steps, no reload to change it.
-- **Bring your own**: import a converted checkpoint, convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge), or drop in a FLUX.2 / Z-Image / Krea 2 `.safetensors` or `.gguf` fine-tune as it is.
+- **36 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
+- **FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1, Krea 2 Turbo, Anima Turbo 1.1**: any size from 512 to 2048 in 64 px steps, no reload to change it.
+- **Bring your own**: import a converted checkpoint, convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge), or drop in a FLUX.2 / Z-Image / Krea 2 / Anima `.safetensors` or `.gguf` fine-tune as it is.
 - **Upscalers**: RealESRGAN anime and 4x UltraSharp V2 Lite, or your own; a checkbox on the output node.
 - **A real inpainting model**: AbsoluteReality Inpaint sees the hole it fills.
 
@@ -112,7 +112,7 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 | project | by | licence | used for |
 |---|---|---|---|
 | [local-dream](https://github.com/xororz/local-dream) | xororz | CC BY-NC 4.0 | the inference server this app forks |
-| [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) + [Hexagon work](https://github.com/happyyzy/stable-diffusion.cpp) | leejet, happyyzy | MIT | the DiT engine (FLUX.2, Z-Image, Qwen Image, Krea 2) |
+| [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) + [Hexagon work](https://github.com/happyyzy/stable-diffusion.cpp) | leejet, happyyzy | MIT | the DiT engine (FLUX.2, Z-Image, Qwen Image, Krea 2, Anima) |
 | [ggml](https://github.com/ggml-org/ggml) | ggml authors | MIT | under stable-diffusion.cpp |
 | Qualcomm AI Runtime (QNN) | Qualcomm | Qualcomm's terms | the NPU; not in this repository |
 | [MNN](https://github.com/alibaba/MNN) | Alibaba | Apache 2.0 | CPU and GPU model paths |
@@ -132,6 +132,7 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 | [Krea 2 Turbo](https://huggingface.co/krea/Krea-2-Turbo) | Krea | [Krea 2 Community License](https://krea.ai/krea-2-licensing) | [gguf-org MXFP4 GGUF](https://huggingface.co/gguf-org/krea-2-gguf); [Qwen3-VL-4B](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) encoder (Apache 2.0, [bartowski](https://huggingface.co/bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF)); [Wan 2.1 VAE](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (Apache 2.0) |
 | [Neodragon](https://huggingface.co/Qualcomm-AI-Research/Neodragon) | Qualcomm AI Research | BSD-3-Clause-Clear + model card terms | text and image to video, converted for the NPU |
 | [SSD-1B](https://huggingface.co/segmind/SSD-1B) | Segmind | Apache 2.0 | the video's first frame |
+| [Anima Turbo 1.1](https://huggingface.co/circlestone-labs/Anima) | CircleStone Labs, built on NVIDIA Cosmos | [CircleStone Labs Non-Commercial License](https://huggingface.co/circlestone-labs/Anima/blob/main/LICENSE.md) and the [NVIDIA Open Model License](https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/) | downloaded as published and converted to Q8_0 on the phone; [Qwen3-0.6B-Base](https://huggingface.co/Qwen/Qwen3-0.6B-Base) encoder (Apache 2.0, [mradermacher GGUF](https://huggingface.co/mradermacher/Qwen3-0.6B-Base-GGUF)); Qwen-Image VAE (Apache 2.0) |
 | SD 1.5, SDXL, Anima catalogue and upscalers | their authors, converted by xororz | each model's licence | via local-dream |
 | AbsoluteReality v1.8.1 / Inpaint, CuteYukiMix, Anything V5 | Lykon, kemiaomiao, Yuno779 | CreativeML OpenRAIL-M | SD 1.5 Swap defaults, [our conversions](https://huggingface.co/AbrahamPJ/nightmare-sd15-swap-models) |
 | Illustrious XL v1.0, Juggernaut XL Ragnarok | OnomaAI Research, RunDiffusion | OpenRAIL++-M; OpenRAIL-M + RunDiffusion's terms | SDXL Swap defaults, [our conversions](https://huggingface.co/AbrahamPJ/nightmare-sdxl-swap-models) |
