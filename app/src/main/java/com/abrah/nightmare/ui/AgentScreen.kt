@@ -138,6 +138,8 @@ fun AgentScreen(
     modifier: Modifier = Modifier,
 ) {
     var setup by rememberSaveable { mutableStateOf(!ui.config.ready) }
+    // ⭐ A setup that is not ready (no key, no model) shows the setup, never an empty chat that cannot send.
+    LaunchedEffect(ui.config.ready) { if (!ui.config.ready) setup = true }
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.agent_title), style = MaterialTheme.typography.titleLarge)
@@ -561,7 +563,10 @@ private fun AgentSetup(ui: AgentUi, act: AgentActions, onSave: (SetupInput) -> U
         )
         Button(
             onClick = { onSave(SetupInput(provider, base, model, key.ifBlank { null }, instructions, profileName.ifBlank { null })) },
-            enabled = model.isNotBlank() && (provider != Provider.CUSTOM || base.isNotBlank()),
+            // ⚠ A cloud provider needs a key, typed now or saved before: without one the setup closed
+            // and every Send was refused in silence, the box clearing (the user, 2026-10-12).
+            enabled = model.isNotBlank() && (provider != Provider.CUSTOM || base.isNotBlank()) &&
+                (provider == Provider.CUSTOM || key.isNotBlank() || ui.config.hasKey),
         ) { Text(stringResource(R.string.save)) }
     }
 }

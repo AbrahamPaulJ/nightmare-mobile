@@ -63,7 +63,13 @@ class AgentSession(
     fun send(text: String) {
         val t = text.trim()
         val picture = attached
-        if ((t.isEmpty() && picture == null) || busy || !config.ready) return
+        if ((t.isEmpty() && picture == null) || busy) return
+        // ⚠ Said, not swallowed: a refused Send used to clear the box and show nothing.
+        if (!config.ready) {
+            android.util.Log.i("Agent", "send refused: setup not ready (model=${config.model.isNotBlank()} key=${config.hasKey})")
+            items += ChatItem.Error(ctx.getString(com.abrah.nightmare.R.string.agent_not_ready))
+            return
+        }
         // ⭐ The start choice travels with the chat's FIRST message, where the model reads it once.
         val first = items.none { it is ChatItem.User }
         items += ChatItem.User(t)
@@ -85,7 +91,7 @@ class AgentSession(
                         AgentTools(ctx, core, host, ::ask) { attachments.toMap() },
                         AgentTools.systemPrompt(language(), config.instructions),
                     ).also { agent = it }
-                    a.send(sent, emit = { item -> scope.launch(Dispatchers.Main) { items += item } }, cancelled = { stopping })
+                    a.send(sent, emit = { item -> scope.launch(Dispatchers.Main) { items += explained(item) } }, cancelled = { stopping })
                 }
             } catch (e: Exception) {
                 items += ChatItem.Error(e.message ?: e.javaClass.simpleName)
@@ -243,6 +249,18 @@ class AgentSession(
             modelsLoading = false
             r.onSuccess { models[provider] = it }.onFailure { modelsError = it.message }
         }
+    }
+
+    /**
+     * ⭐ OpenRouter's credit refusals (HTTP 402: "requires more credits", "would exceed your available
+     * credits given your current in-flight requests") said in the person's words, with what to do;
+     * the provider's own sentence stays under it. Measured 2026-10-12: a key with no credits gets a
+     * few cents of leeway, then every paid model refuses, and only credits or a free model help.
+     */
+    private fun explained(item: ChatItem): ChatItem {
+        if (item !is ChatItem.Error || config.provider != Provider.OPENROUTER) return item
+        if ("(HTTP 402)" !in item.text || "image or video output" in item.text) return item
+        return ChatItem.Error(ctx.getString(com.abrah.nightmare.R.string.agent_openrouter_credits) + "\n\n" + item.text)
     }
 
     private fun client() =

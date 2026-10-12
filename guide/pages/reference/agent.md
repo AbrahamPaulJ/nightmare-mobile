@@ -22,8 +22,9 @@ The first time, the agent shows its setup (the ⚙ brings it back):
 - **Model**: start typing in the box and pick from the provider's models as they filter. The
   model must support **tool calling**; it does not need to see pictures. With OpenRouter the list
   shows only models the chat can run on your key: they call tools, hold a long enough
-  conversation, and one reply fits your credits (with no credits, the free models). You can still
-  type any model's name.
+  conversation, and a reply fits what your credits allow per request (with few or no credits, the
+  cheap and free models). If a reply would cost more than that, the chat asks for a shorter one
+  instead of failing. You can still type any model's name.
 - **Your instructions** (optional): added to the agent's own, such as a style, a language, or what is fine.
 - **Save as a setup named…** (optional): keep this provider, model, key and instructions under a
   name; **Saved setups** at the top of the setup switches between them.

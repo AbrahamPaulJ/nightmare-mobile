@@ -851,6 +851,8 @@
     <string name="agent_note">Агент представляет собой ИИ-модель с вашим собственным ключом. Он смотрит, что установлено, выбирает схему, пишет описание и запускает её здесь. Ваши сообщения и ответы его инструментов отправляются выбранному провайдеру; картинки остаются на телефоне, если он не попросит посмотреть на одну. Сам Nightmare никуда ничего не отправляет.</string>
     <string name="agent_provider">Провайдер</string>
     <string name="agent_base_url">Адрес (совместимый с OpenAI, оканчивается на /v1)</string>
+    <string name="agent_openrouter_credits">OpenRouter: на этом ключе закончились средства для этой модели. Пополните баланс на openrouter.ai/settings/credits или выберите бесплатную модель (её имя оканчивается на :free).</string>
+    <string name="agent_not_ready">Чат ещё не настроен: добавьте ключ API и модель в ⚙ (настройка чата).</string>
     <string name="agent_key">API-ключ</string>
     <string name="agent_key_saved">сохранён: оставьте пустым, чтобы не менять</string>
     <string name="agent_get_key">Получить ключ %1$s</string>

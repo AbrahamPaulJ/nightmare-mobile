@@ -859,6 +859,8 @@
     <string name="agent_note">The agent is an AI model you bring your own key for. It reads what is installed, picks a flow, writes the prompt and runs it here. Your messages and its tools’ answers are sent to the provider you choose; pictures stay on the phone unless it asks to look at one. Nightmare itself never sends anything anywhere.</string>
     <string name="agent_provider">Provider</string>
     <string name="agent_base_url">Address (OpenAI-compatible, ending in /v1)</string>
+    <string name="agent_openrouter_credits">OpenRouter: this key has run out of credits for this model. Add credits at openrouter.ai/settings/credits, or pick a free model (its name ends in :free).</string>
+    <string name="agent_not_ready">The chat is not set up yet: add your API key and a model in ⚙ (Chat setup).</string>
     <string name="agent_key">API key</string>
     <string name="agent_key_saved">saved. Leave empty to keep it</string>
     <string name="agent_get_key">Get a key from %1$s</string>

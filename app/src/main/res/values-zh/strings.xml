@@ -830,6 +830,8 @@
     <string name="agent_note">代理是使用你自己密钥的 AI 模型。它会查看已安装的内容、选择工作流、编写提示词并在这里运行。你的消息和工具的回复会发送给你选择的服务商；除非它要求查看某张图片，图片都留在手机上。Nightmare 本身不会向任何地方发送任何内容。</string>
     <string name="agent_provider">服务商</string>
     <string name="agent_base_url">地址（兼容 OpenAI，以 /v1 结尾）</string>
+    <string name="agent_openrouter_credits">OpenRouter：此密钥的额度不足以使用这个模型。请在 openrouter.ai/settings/credits 充值，或选择免费模型（名称以 :free 结尾）。</string>
+    <string name="agent_not_ready">聊天尚未设置：请在 ⚙（聊天设置）中添加 API 密钥和模型。</string>
     <string name="agent_key">API 密钥</string>
     <string name="agent_key_saved">已保存，留空则保持不变</string>
     <string name="agent_get_key">获取 %1$s 密钥</string>

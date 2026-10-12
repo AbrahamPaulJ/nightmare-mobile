@@ -52,10 +52,23 @@ class LlmClient(
 ) : ChatModel {
 
     override fun complete(messages: JSONArray, tools: JSONArray): JSONObject {
+        if (!capReply) return send(messages, tools, null)
+        return try {
+            send(messages, tools, REPLY_TOKENS)
+        } catch (e: LlmError) {
+            // ⭐ "You requested up to 8192 tokens, but can only afford 2471": ask for what the credits
+            // allow instead of failing (the user's account, 2026-10-12). Too little to answer → the error.
+            val afford = affordable(e.message.orEmpty()) ?: throw e
+            if (afford < MIN_REPLY_TOKENS) throw e
+            send(messages, tools, afford)
+        }
+    }
+
+    private fun send(messages: JSONArray, tools: JSONArray, maxTokens: Int?): JSONObject {
         val body = JSONObject()
             .put("model", model)
             .put("messages", messages)
-        if (capReply) body.put("max_tokens", REPLY_TOKENS)
+        maxTokens?.let { body.put("max_tokens", it) }
         if (tools.length() > 0) body.put("tools", tools).put("tool_choice", "auto")
         val reply = JSONObject(request("POST", "/chat/completions", body.toString()))
         val choice = reply.optJSONArray("choices")?.optJSONObject(0)
@@ -71,25 +84,38 @@ class LlmClient(
     fun models(chatOnly: Boolean = false): List<String> {
         val reply = JSONObject(request("GET", "/models", null))
         val data = reply.optJSONArray("data") ?: return emptyList()
-        val balance = if (chatOnly) balance() else null
+        val all = (0 until data.length()).mapNotNull { data.optJSONObject(it) }
+        val budget = if (chatOnly) runCatching { perRequestBudget(all) }.getOrNull() else null
         val today = java.time.LocalDate.now().toString()
-        return (0 until data.length()).mapNotNull { data.optJSONObject(it) }
-            .filter { !chatOnly || fitsChat(it, balance, today) }
+        return all.filter { !chatOnly || fitsChat(it, budget, today) }
             .mapNotNull { it.optString("id").takeIf { s -> s.isNotBlank() } }.sorted()
     }
 
     /**
-     * ⭐ What this key can still spend, in dollars, or null when the provider will not say:
-     * OpenRouter's `/credits` (bought minus used) and `/key` (the key's own limit; `is_free_tier` =
-     * never bought any, so nothing to spend). The smaller wins.
+     * ⭐⭐ The dollars ONE request may cost on this key, measured, not read: neither `/credits` nor
+     * `/key` says it. Measured 2026-10-12 on the user's account (no credits bought, usage above
+     * zero): OpenRouter still let each request cost up to $0.0206, the SAME on every model, and its
+     * refusal states it: "can only afford N" × the model's completion price. So: ask a paid model
+     * for its whole output limit; the refusal costs nothing and gives N. Not refused = a key with
+     * real credits (it answered "OK" for a fraction of a cent): null, no price check, as for any
+     * probe that says nothing usable.
      */
-    private fun balance(): Double? {
-        val credits = runCatching { JSONObject(request("GET", "/credits", null)).optJSONObject("data") }.getOrNull()
-        val keyInfo = runCatching { JSONObject(request("GET", "/key", null)).optJSONObject("data") }.getOrNull()
-        val bought = credits?.takeIf { it.has("total_credits") }?.let { it.optDouble("total_credits") - it.optDouble("total_usage", 0.0) }
-        val keyLeft = keyInfo?.takeIf { it.has("limit_remaining") && !it.isNull("limit_remaining") }?.optDouble("limit_remaining")
-        val never = 0.0.takeIf { bought == null && keyInfo?.optBoolean("is_free_tier") == true }
-        return listOfNotNull(bought, keyLeft, never).minOrNull()
+    private fun perRequestBudget(all: List<JSONObject>): Double? {
+        val probe = all.firstOrNull { m ->
+            val cp = m.optJSONObject("pricing")?.optString("completion")?.toDoubleOrNull() ?: 0.0
+            cp > 0 && !m.optString("id").endsWith(":batch") &&
+                (m.optJSONObject("top_provider")?.optInt("max_completion_tokens", 0) ?: 0) >= 32_000
+        } ?: return null
+        val cp = probe.getJSONObject("pricing").getString("completion").toDouble()
+        val maxOut = probe.getJSONObject("top_provider").getInt("max_completion_tokens")
+        val body = JSONObject().put("model", probe.getString("id")).put("max_tokens", maxOut)
+            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Reply with OK.")))
+        return try {
+            request("POST", "/chat/completions", body.toString())
+            null
+        } catch (e: LlmError) {
+            affordable(e.message.orEmpty())?.let { it * cp }
+        }
     }
 
     private fun request(method: String, path: String, body: String?): String {
@@ -127,41 +153,57 @@ class LlmClient(
         /** ⭐ The cap [capReply] sends; tool calls are short, but a reasoning model thinks inside it. */
         const val REPLY_TOKENS = 8_192
 
+        /** ⭐ The least reply worth asking for: a tool call or two, or a short answer. */
+        const val MIN_REPLY_TOKENS = 1_024
+
         /**
          * ⭐ Context the chat needs: its instructions and tool list are ~2.5k tokens, and every
          * `get_canvas` answer stays in the history, so a few turns pass 16k.
          */
         const val CHAT_MIN_CONTEXT = 32_768
 
-        /** What one model call is costed at for [fitsChat]: a long conversation's prompt + [REPLY_TOKENS]. */
-        private const val TURN_PROMPT_TOKENS = 24_000
+        /** A few turns of conversation, what [fitsChat] costs a model call's prompt at. */
+        const val TURN_PROMPT_TOKENS = 8_000
+
+        private val AFFORD = Regex("can only afford (\\d+)")
+
+        /** ⭐ The N in OpenRouter's "can only afford N" refusal, or null. */
+        fun affordable(error: String): Int? = AFFORD.find(error)?.groupValues?.get(1)?.toIntOrNull()
 
         /**
-         * ⭐⭐ Whether the chat can run on OpenRouter model [m] (one `/models` entry) — what its
-         * refusals were, read back as rules: no tool calling ("No endpoints found that support
-         * tool use"), a context the conversation outgrows, an expired id, and the credits ("requires
-         * more credits, or fewer max_tokens"): one turn must cost no more than [balance] (null =
-         * unknown, not checked). Free models always fit; a router's variable price (`-1`) fits only
-         * when the balance is unknown.
+         * ⚠ Ids that refuse the chat whatever the key, seen in the probe of 2026-10-12: free models
+         * "only available on agentic harnesses" (HTTP 403).
          */
-        fun fitsChat(m: JSONObject, balance: Double?, today: String): Boolean {
+        private val REFUSES_CHAT = setOf("thinkingmachines/inkling:free", "thinkingmachines/inkling-small:free")
+
+        /**
+         * ⭐⭐ Whether the chat can run on OpenRouter model [m] (one `/models` entry). The chat's real
+         * first request went to all 390 tool models on the user's key (2026-10-12) and every refusal
+         * became a rule: no tool calling; a `:batch` id ("cannot be used with the chat/completions
+         * endpoint", 76 of them); image or video output ("requires at least $1.00 in balance");
+         * [REFUSES_CHAT]; a context the conversation outgrows; an expired id; and the credits: a turn
+         * ([TURN_PROMPT_TOKENS] in, [MIN_REPLY_TOKENS] out) must cost no more than [budget], the
+         * dollars one request may cost (null = unknown, not checked). Free models always fit; a
+         * router's variable price (`-1`) only when the budget is unknown.
+         */
+        fun fitsChat(m: JSONObject, budget: Double?, today: String): Boolean {
+            val id = m.optString("id")
+            if (id.endsWith(":batch") || id in REFUSES_CHAT) return false
             val params = m.optJSONArray("supported_parameters") ?: return false
             if ((0 until params.length()).none { params.optString(it) == "tools" }) return false
             val out = m.optJSONObject("architecture")?.optJSONArray("output_modalities")
-            if (out != null && (0 until out.length()).none { out.optString(it) == "text" }) return false
+            val outs = out?.let { o -> (0 until o.length()).map { o.optString(it) } }.orEmpty()
+            if (out != null && "text" !in outs) return false
+            if ((budget ?: 0.0) < 1.0 && ("image" in outs || "video" in outs)) return false
             if (m.optInt("context_length", 0) < CHAT_MIN_CONTEXT) return false
             val expires = m.optString("expiration_date").takeIf { !m.isNull("expiration_date") && it.isNotBlank() }
             if (expires != null && expires < today) return false
-            // ⚠ Set on an authenticated `/models`: the tokens this account's credits allow per request.
-            m.optJSONObject("per_request_limits")?.let { lim ->
-                if (lim.optDouble("prompt_tokens", Double.MAX_VALUE) < TURN_PROMPT_TOKENS) return false
-                if (lim.optDouble("completion_tokens", Double.MAX_VALUE) < REPLY_TOKENS) return false
-            }
-            if (balance == null) return true
             val price = m.optJSONObject("pricing")
             fun p(k: String) = price?.optString(k)?.toDoubleOrNull() ?: 0.0
+            if (p("prompt") == 0.0 && p("completion") == 0.0 && p("request") == 0.0) return true
+            if (budget == null) return true
             if (p("prompt") < 0 || p("completion") < 0) return false
-            return TURN_PROMPT_TOKENS * p("prompt") + REPLY_TOKENS * p("completion") + p("request") <= balance
+            return TURN_PROMPT_TOKENS * p("prompt") + MIN_REPLY_TOKENS * p("completion") + p("request") <= budget
         }
 
         /** The provider's own error sentence, when its body has one. */
