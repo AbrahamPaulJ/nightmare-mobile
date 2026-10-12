@@ -1,0 +1,80 @@
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -226,6 +226,15 @@
+     if (lowram_ && !unet_) {
+       // The encode stage is over once the UNet is needed; never hold both.
+       releaseVaeEncoder();
++      // ⚠⚠ Nor the DECODER (027). releaseTransientModels() frees it only when
++      // generate() exits, and the app's op surface decodes through /vae_decode,
++      // which never does — so the previous render's decoder was still mapped when
++      // the next /sample loaded the UNet. On a v75 phone (S24 Ultra, GitHub #11)
++      // the UNet's 2.9 GB estimate no longer fit the first session and QNN could
++      // not open a second one (unsigned PD unsupported): every SECOND SDXL render
++      // failed "Failed init QNN model: unet". Local Dream calls /generate, so it
++      // never held both.
++      releaseVaeDecoder();
+       unet_ = qnn_runtime::createAndInitModel(unet_path_, "unet");
+       QNN_INFO("[lowram] SDXL UNET loaded");
+       ip_bound_ = -1;  // 024: a fresh UNet has no IP side bound
+@@ -395,10 +404,7 @@
+       unet_.reset();
+       QNN_INFO("[lowram] SDXL UNET released");
+     }
+-    if (vae_decoder_) {
+-      vae_decoder_.reset();
+-      QNN_INFO("[lowram] SDXL VAE Decoder released");
+-    }
++    releaseVaeDecoder();
+     if (vae_encoder_) releaseVaeEncoder();
+   }
+ 
+@@ -494,6 +500,12 @@
+     QNN_INFO("[lowram] SDXL VAE Encoder released");
+   }
+ 
++  void releaseVaeDecoder() {
++    if (!vae_decoder_) return;
++    vae_decoder_.reset();
++    QNN_INFO("[lowram] SDXL VAE Decoder released");
++  }
++
+   // Encoder 1 (CLIP-L): 77x768 -> last_hidden_state 77x768.
+   // Encoder 2 (CLIP-G): 77x1280 -> last_hidden_state 77x1280 + pooled_output
+   // 77x1280 (exported without pooling; we select the EOS row here as the true
+--- a/src/PipelineAnima.hpp
++++ b/src/PipelineAnima.hpp
+@@ -222,6 +222,9 @@
+     if (!lowram_) return;
+     // The encode stage is over once the UNet is needed; never hold both.
+     releaseVaeEncoder();
++    // ⚠⚠ Nor the previous render's DECODER: /vae_decode never runs
++    // releaseTransientModels() (027, PipelineSdxl has the whole story).
++    releaseVaeDecoder();
+     // Sequential-DiT loads/releases each half inside every step, so there is
+     // nothing to pre-load here.
+     if (!seq_dit_) loadUnetPartsIfNeeded();
+@@ -270,10 +273,7 @@
+     if (!lowram_) return;
+     releaseClip();
+     releaseUnetParts();
+-    if (vae_decoder_) {
+-      vae_decoder_.reset();
+-      QNN_INFO("[lowram] Anima VAE Decoder released");
+-    }
++    releaseVaeDecoder();
+     releaseVaeEncoder();
+   }
+ 
+@@ -424,6 +424,12 @@
+     if (lowram_) QNN_INFO("[lowram] Anima VAE Encoder released");
+   }
+ 
++  void releaseVaeDecoder() {
++    if (!vae_decoder_) return;
++    vae_decoder_.reset();
++    if (lowram_) QNN_INFO("[lowram] Anima VAE Decoder released");
++  }
++
+   static void applyChannelAffine(xt::xarray<float> &latents, bool invert) {
+     const auto &sh = latents.shape();
+     const size_t batch = sh.size() >= 4 ? sh[0] : 1;

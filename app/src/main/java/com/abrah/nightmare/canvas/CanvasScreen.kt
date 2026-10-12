@@ -279,6 +279,9 @@ fun CanvasScreen(
     /** ⭐ The Draw window on an image node — `HarnessViewModel.saveDrawing` / `blankPicture`. */
     onSaveDrawing: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
     onBlankPicture: (String) -> Unit = {},
+    /** ⭐ The Default view's Swap flow / Remove input ([com.abrah.nightmare.HarnessViewModel.swapFlows]). */
+    swapFlows: List<com.abrah.nightmare.canvas.SwapFlow>? = null,
+    onSwapFlow: (com.abrah.nightmare.canvas.Recipe) -> Unit = {},
     /** ⭐ Switch which node the inspector shows — the node strip. */
     onInspectNode: (String) -> Unit = {},
     /** ⭐ Write a rendered image to the gallery. */
@@ -443,6 +446,21 @@ fun CanvasScreen(
             }
         }
 
+        // ⭐ The first time Advanced shows this flow, frame the whole graph ([CanvasState.framedIn]).
+        // ⚠ Waits for both bars to be measured: they sit OVER the canvas, so the visible part is
+        // what lies between them.
+        val graphShown = mainView == com.abrah.nightmare.MainView.GRAPH
+        LaunchedEffect(graphShown, state.framePending, canvasSize, topBarPx, runBarPx) {
+            if (graphShown && state.framePending && canvasSize.width > 0 && topBarPx > 0 && runBarPx > 0) {
+                onEdit { s ->
+                    s.framedIn(
+                        types, canvasSize.width.toFloat(), canvasSize.height.toFloat(), chrome.density,
+                        topPx = topBarPx.toFloat(), bottomPx = runBarPx.toFloat(),
+                    )
+                }
+            }
+        }
+
         if (mainView == com.abrah.nightmare.MainView.GRAPH) GraphCanvas(
             workflow = state.workflow,
             types = types,
@@ -493,6 +511,8 @@ fun CanvasScreen(
         TopBar(
             onMenu = onMenu,
             onSave = { saving = true },
+            onResults = onResults,
+            modelLabel = modelLabel,
             mainView = toggleView ?: mainView,
             version = version,
             onView = onView,
@@ -663,6 +683,8 @@ fun CanvasScreen(
         onClearImage = onClearImage,
         onSaveDrawing = onSaveDrawing,
         onBlankPicture = onBlankPicture,
+        swapFlows = swapFlows,
+        onSwapFlow = onSwapFlow,
         onSaveImage = onSaveImage,
         onShareImage = onShareImage,
         onSendImage = onSendImage,
@@ -902,7 +924,7 @@ fun CanvasScreen(
                 upscaleDisabledReason = viewedNode
                     ?.let { state.workflow.graph.byId[it] }
                     ?.takeIf { com.abrah.nightmare.MediaOutputNode.autoUpscales(it) }
-                    ?.let { "this output already enlarges every render — untick auto upscale to choose" },
+                    ?.let { "this output already enlarges every render. Untick auto upscale to choose" },
                 onInfo = viewedNode
                     ?.takeIf { !viewedIsInput && detailsOfNode != null }
                     ?.let { n -> { showingNodeInfo = n } },
@@ -971,7 +993,7 @@ fun CanvasScreen(
 }
 
 /**
- * ⭐⭐⭐ The shell (the user's sidebar mock, 2026-10-09): ☰ · the brand · Save, then the three VIEWS
+ * ⭐⭐⭐ The shell (the user's sidebar mock, 2026-10-09): ☰ · the brand · Save · Results, then the three VIEWS
  * as one segmented toggle with an ⓘ that says what each is. Models / Flows / Results, the flow's
  * name, the model and RAM moved to the sidebar (`ui/ShellDrawer.kt`); RAM also sits beside the
  * seed. ⚠ It replaced a 3 × 2 tile grid and a status row (`docs/LEGACY.md` §9).
@@ -981,6 +1003,10 @@ fun CanvasScreen(
 private fun TopBar(
     onMenu: () -> Unit,
     onSave: () -> Unit,
+    /** ⭐ Results, right of Save (the user, 2026-10-11): the sidebar's row, one tap closer. */
+    onResults: () -> Unit,
+    /** ⭐ The model the flow renders with, beside the view button (the user's mock, 2026-10-11). */
+    modelLabel: String,
     mainView: com.abrah.nightmare.MainView,
     onView: (com.abrah.nightmare.MainView) -> Unit,
     modifier: Modifier = Modifier,
@@ -1021,6 +1047,15 @@ private fun TopBar(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // ⚠ The sidebar's own icon and words ([com.abrah.nightmare.ui.ShellDrawer]), so the two
+            // ways in look like one thing.
+            IconButton(onClick = onResults) {
+                Icon(
+                    com.abrah.nightmare.ui.ResultsIcon,
+                    contentDescription = stringResource(R.string.nav_results),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         // ⭐⭐ The toggle lights on the TAP's frame; the view is switched on the next one — drawing a
         // whole view in the same frame held the highlight back (the user, 2026-10-08).
@@ -1044,7 +1079,26 @@ private fun TopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ViewToggle(picked, go, Modifier.weight(1f))
+            ViewSwitch(picked, go)
+            // ⭐ The model, back on the main screen (the user, 2026-10-11; it left with the status
+            // row in 1.6.117). ⚠ WRAPPED, never cut: most names are long, and the old row's rule
+            // was "do not ... the held model" (2026-09-10).
+            Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                if (modelLabel.isNotBlank()) Text(
+                    stringResource(R.string.current_model).uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    letterSpacing = 1.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    modelLabel,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             IconButton(onClick = { explaining = true }) {
                 Icon(
                     Icons.Outlined.Info, contentDescription = stringResource(R.string.views_info_cd),
@@ -1096,61 +1150,64 @@ internal fun belowChrome(runBar: androidx.compose.ui.unit.Dp): WindowInsets =
     WindowInsets.ime.union(WindowInsets(bottom = runBar))
 
 /**
- * ⭐⭐ Chat · Default · Advanced as one segmented control, the chosen one filled violet.
- * ⭐⭐ **Evenly SPACED, not evenly sized** (the user, 2026-10-09: "text and icons should be evenly
- * spaced from each other even if it means the card area is different for each"): each part is its
- * content's width plus an equal share of what is left, so "Chat" no longer floats in a wide box
- * while "Advanced" touches its edges.
+ * ⭐⭐ The view button (the user's mock, 2026-10-11): the CURRENT view, filled violet, so the model
+ * name gets the room the three-part toggle took. ⚠ Two targets in one pill, the user's call: the
+ * ⇄ steps to the next view (Chat, Default, Advanced, round again); the icon and name open a menu
+ * of all three. It replaced the segmented toggle (`docs/LEGACY.md` §9).
  */
 @Composable
-private fun ViewToggle(selected: com.abrah.nightmare.MainView, onPick: (com.abrah.nightmare.MainView) -> Unit, modifier: Modifier) {
-    val shape = RoundedCornerShape(12.dp)
-    // ⚠ Icons only where the three fit with them: at 320dp "Advanced" ellipsised beside its icon.
-    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
-        val icons = maxWidth >= 290.dp
-        androidx.compose.ui.layout.Layout(
-            content = {
-                for (v in com.abrah.nightmare.MainView.entries.filter { it.isCanvas }) {
-                    val on = v == selected
-                    val (icon, label) = when (v) {
-                        com.abrah.nightmare.MainView.AGENT -> com.abrah.nightmare.ui.AgentIcon to R.string.agent_title
-                        com.abrah.nightmare.MainView.NODES -> com.abrah.nightmare.ui.NodesIcon to R.string.view_nodes
-                        else -> com.abrah.nightmare.ui.GraphIcon to R.string.view_graph
-                    }
-                    val content = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                    Row(
-                        Modifier.clip(RoundedCornerShape(9.dp))
-                            .background(if (on) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
-                            .semantics { this.selected = on }
-                            .clickable { onPick(v) }
-                            .padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (icons) {
-                            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                        }
-                        Text(stringResource(label), style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth().height(48.dp).clip(shape)
-                .border(1.dp, MaterialTheme.colorScheme.outline, shape)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(3.dp),
-        ) { parts, c ->
-            val gap = 3.dp.roundToPx()
-            val natural = parts.map { it.maxIntrinsicWidth(c.maxHeight) }
-            val room = c.maxWidth - gap * (parts.size - 1)
-            val extra = ((room - natural.sum()) / parts.size).coerceAtLeast(0)
-            // ⚠ Too narrow even so: share the room by content, never overflow the pill.
-            val widths = if (natural.sum() <= room) natural.map { it + extra }
-            else natural.map { (it.toLong() * room / natural.sum()).toInt() }
-            val placed = parts.mapIndexed { k, m -> m.measure(androidx.compose.ui.unit.Constraints.fixed(widths[k], c.maxHeight)) }
-            layout(c.maxWidth, c.maxHeight) {
-                var x = 0
-                placed.forEach { it.place(x, 0); x += it.width + gap }
+private fun ViewSwitch(selected: com.abrah.nightmare.MainView, onPick: (com.abrah.nightmare.MainView) -> Unit) {
+    val views = com.abrah.nightmare.MainView.entries.filter { it.isCanvas }
+    fun glyph(v: com.abrah.nightmare.MainView) = when (v) {
+        com.abrah.nightmare.MainView.AGENT -> com.abrah.nightmare.ui.AgentIcon to R.string.agent_title
+        com.abrah.nightmare.MainView.NODES -> com.abrah.nightmare.ui.NodesIcon to R.string.view_nodes
+        else -> com.abrah.nightmare.ui.GraphIcon to R.string.view_graph
+    }
+    var menu by remember { mutableStateOf(false) }
+    val outer = RoundedCornerShape(12.dp)
+    val on = MaterialTheme.colorScheme.onPrimary
+    Box {
+        Row(
+            Modifier.height(48.dp).clip(outer)
+                .border(1.dp, MaterialTheme.colorScheme.outline, outer)
+                .padding(3.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(MaterialTheme.colorScheme.primary),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val (icon, label) = glyph(selected)
+            val choose = stringResource(R.string.views_choose_cd)
+            Row(
+                Modifier.fillMaxHeight()
+                    .clickable(onClickLabel = choose) { menu = true }
+                    .padding(start = 12.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(icon, contentDescription = null, tint = on, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(label), style = MaterialTheme.typography.labelLarge, color = on, maxLines = 1)
+            }
+            Box(
+                Modifier.fillMaxHeight()
+                    .clickable { onPick(views[(views.indexOf(selected) + 1) % views.size]) }
+                    .padding(horizontal = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    com.abrah.nightmare.ui.SwapIcon,
+                    contentDescription = stringResource(R.string.views_next_cd),
+                    tint = on, modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            for (v in views) {
+                val (icon, label) = glyph(v)
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(stringResource(label)) },
+                    leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    onClick = { menu = false; onPick(v) },
+                )
             }
         }
     }
@@ -1365,7 +1422,7 @@ private fun RunBar(
                 // because it is a range and a precise-looking number would be a
                 // promise the backend does not make.
                 "$plannedLoads model load${if (plannedLoads == 1) "" else "s"} this run " +
-                    "— about ${plannedLoads * 7 / 2} s of loading",
+                    "(about ${plannedLoads * 7 / 2} s of loading)",
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),

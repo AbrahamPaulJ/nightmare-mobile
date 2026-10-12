@@ -1047,7 +1047,7 @@ object ModelCatalog {
             if (other.name == want.name) continue
             val f = File(spec.ownDir(context), other.name)
             if (f.isFile && f.length() == other.bytes && f.delete()) {
-                android.util.Log.i("ModelCatalog", "reclaimed Qwen Image 2.1 ${other.name} — this phone's build is ${want.name}")
+                android.util.Log.i("ModelCatalog", "reclaimed Qwen Image 2.1 ${other.name}. This phone's build is ${want.name}")
             }
         }
     }
@@ -1938,7 +1938,7 @@ object ModelCatalog {
      * `F8_E4M3` matmuls on the NPU (`opt_arch < 79`) and runs them on the CPU — so Klein 4B and Qwen
      * each have an FP8 build at v79 and a GGUF build for v75 (Q8_0 / Q4_0), and Z-Image Turbo (FP8 only;
      * its Q4_0 GGUF renders noise, PROGRESS) keeps v79.
-     * ⚠ Built and op-matched on a PC; NOT yet run on a v75 phone (2026-10-10).
+     * ✅ FLUX.2 Klein and Qwen 2.1 render on an 8 Gen 3 since 1.6.133 (user, 2026-10-11; `docs/DIT.md` §9e).
      */
     const val DIT_GGML_MIN_ARCH = 75
 
@@ -2282,7 +2282,7 @@ object SelectedModel {
      */
     fun setRes(context: Context, newRes: Res) {
         require(spec.serves(context, newRes)) {
-            "\"${spec.label}\" cannot render $newRes — it serves ${spec.sizesServedText(context)}"
+            "\"${spec.label}\" cannot render $newRes. It serves ${spec.sizesServedText(context)}"
         }
         res = newRes
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

@@ -320,7 +320,7 @@ fun sizeRefusal(
 
     val promise = runCatching { producerType.outputSize(producer) }.getOrNull()
         ?: return "$toNode needs ${want.first}x${want.second} and $fromNode " +
-            "cannot promise a size — put a Crop between them"
+            "cannot promise a size. Put a Crop between them"
     if (promise != want) {
         return "$toNode needs ${want.first}x${want.second}, " +
             "$fromNode makes ${promise.first}x${promise.second}"

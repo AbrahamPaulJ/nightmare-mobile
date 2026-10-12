@@ -1,6 +1,6 @@
 # Add Objects
 
-*Paste a real object from another photo into the one you are repainting — only its edges are
+*Paste a real object from another photo into the one you are repainting. Only its edges are
 repainted, so it blends in while its middle stays exactly as photographed.*
 
 Use it for virtual try-on (a jacket from a shop photo onto a person), putting a product into a
@@ -35,7 +35,7 @@ photo in the same Run.
 
 ## Tips
 
-- Objects blend best at **denoise below 1.0** — about **0.7** is a good start.
+- Objects blend best at **denoise below 1.0**: about **0.7** is a good start.
 - Choose the object generously but cleanly: a tight mask leaves less edge for the model to
   blend; a sloppy one carries the old background along.
 - A cut takes the object's whole bounding box from the chosen mask, so if you masked two

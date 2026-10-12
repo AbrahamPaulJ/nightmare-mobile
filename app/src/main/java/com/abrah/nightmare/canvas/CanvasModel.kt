@@ -1118,6 +1118,7 @@ private val KNOB_OVERRIDES = mapOf(
     "ip_scale" to "IP strength",
     "ip_adapter" to "IP-Adapter",
     "ip_image" to "IP-Adapter picture",
+    "enlarge" to "Enlarge ×2",
 )
 
 private val KNOB_RESOURCES = mapOf(
@@ -1154,6 +1155,7 @@ private val KNOB_RESOURCES = mapOf(
     "auto_crop" to com.abrah.nightmare.R.string.knob_auto_crop,
     "allow_pad" to com.abrah.nightmare.R.string.knob_allow_padding,
     "auto_upscale" to com.abrah.nightmare.R.string.knob_auto_upscale,
+    "enlarge" to com.abrah.nightmare.R.string.knob_enlarge,
     "autosave" to com.abrah.nightmare.R.string.knob_autosave,
     "only_masked" to com.abrah.nightmare.R.string.knob_only_masked,
     "tap_select" to com.abrah.nightmare.R.string.knob_tap_select,

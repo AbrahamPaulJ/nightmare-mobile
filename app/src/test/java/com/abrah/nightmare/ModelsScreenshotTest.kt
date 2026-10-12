@@ -241,7 +241,7 @@ open class ModelsScreenshotTest {
         ModelsScreen(
             rows = rows(installed = setOf(V1_MODEL), selected = V1_MODEL),
             busy = false,
-            error = "the download stopped short — 871 of 1007 MB arrived " +
+            error = "the download stopped short. 871 of 1007 MB arrived " +
                 "(QteaMix_qnn2.28_8gen2.zip). Download again to resume.",
             onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
         )

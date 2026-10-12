@@ -479,7 +479,7 @@ open class CanvasScreenshotTest {
             busy = false,
             image = null,
             onGesture = {}, onRun = {}, onBack = {},
-            runError = "no model installed — open Models and download one",
+            runError = "no model installed. Open Models and download one",
             modelLabel = "AbsoluteReality (not installed)",
             backendUp = false,
         )

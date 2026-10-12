@@ -96,7 +96,9 @@ class CanvasTouchTest {
         Workflow(
             com.abrah.nightmare.Graph(listOf(Node("s", "sd15.sample"))),
             mapOf("s" to Pt(40f, 240f)),
-        )
+        ),
+        // ⚠ These taps aim at fixed coordinates: the first-open framing would move the node.
+        framePending = false,
     )
 
     /**

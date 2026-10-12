@@ -246,6 +246,11 @@ val GraphIcon: ImageVector by lazy {
 }
 
 /** Expand — a chevron down. */
+/** ⇄ Swap: the view button's next-view half, and Swap flow (Material `swap_horiz`). */
+val SwapIcon: ImageVector by lazy {
+    glyph("Swap", "M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z")
+}
+
 val ChevronDownIcon: ImageVector by lazy { glyph("ChevronDown", "M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z") }
 
 /** Collapse — a chevron up. */

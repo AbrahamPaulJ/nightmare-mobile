@@ -305,7 +305,10 @@ class RecipeModelTest {
         // ⚠ The list is not filtered by device, so the card states its own
         // requirement — that sentence is the gate.
         assertTrue("the card does not say it is FLUX.2 only", edit.about.contains("FLUX.2"))
-        assertTrue("the card does not state a device", edit.about.contains("8 Elite"))
+        // ⚠ The chip it names is the one `minArch` gates on, so the copy cannot
+        // drift from the gate (it said "8 Elite" after the gate dropped to v75).
+        val chip = com.abrah.nightmare.ui.archLabel(edit.minArch).removeSuffix("+")
+        assertTrue("the card does not name $chip", edit.about.contains(chip))
     }
 
     /**

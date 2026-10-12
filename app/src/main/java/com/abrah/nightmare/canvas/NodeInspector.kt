@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -267,6 +268,8 @@ fun NodeInspector(
     onSaveDrawing: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
     /** ⭐ A white page on an empty image node, to draw on. */
     onBlankPicture: (String) -> Unit = {},
+    swapFlows: List<com.abrah.nightmare.canvas.SwapFlow>? = null,
+    onSwapFlow: (com.abrah.nightmare.canvas.Recipe) -> Unit = {},
     /** ⭐ The same three the fullscreen viewer offers — see the body's note. */
     onSaveImage: (String) -> Unit = {},
     /** ⭐ Hand a node's picture to another app. */
@@ -653,6 +656,8 @@ fun NodeInspector(
             onClearImage = { onClearImage(nodeId) },
             onSaveDrawing = { onSaveDrawing(nodeId, it) },
             onBlankPicture = { onBlankPicture(nodeId) },
+            swapFlows = swapFlows,
+            onSwapFlow = onSwapFlow,
             onImportLora = onImportLora,
             onBrowseLoras = onBrowseLoras,
             onDeleteLora = onDeleteLora,
@@ -714,7 +719,7 @@ fun NodeInspector(
             // one must be upscalable again, even with the box still ticked.
             upscaleDisabledReason =
                 if (com.abrah.nightmare.MediaOutputNode.autoUpscales(node) && beforeId != null) {
-                    "this output already enlarges every render — untick auto upscale to choose"
+                    "this output already enlarges every render. Untick auto upscale to choose"
                 } else null,
             onInfo = detailsOf?.takeIf { previewId != null }?.let { d -> { d(nodeId) } },
         )
@@ -942,6 +947,8 @@ private val PAINTS = com.abrah.nightmare.PAINTS_PICTURE_TYPES
  * it — a golden that passes while showing none of the thing it is named for.
  * The body is ordinary layout and goldens normally.
  */
+// ⚠ For `BringIntoViewRequester` (the Upscaled picture after an enlarging run).
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun NodeInspectorBody(
     nodeId: String,
@@ -1102,6 +1109,9 @@ internal fun NodeInspectorBody(
     onClearImage: () -> Unit = {},
     onSaveDrawing: (android.graphics.Bitmap?) -> Unit = {},
     onBlankPicture: () -> Unit = {},
+    /** ⭐ Swap flow on the sampler's page, Remove input on the picture's: Default view only. */
+    swapFlows: List<com.abrah.nightmare.canvas.SwapFlow>? = null,
+    onSwapFlow: (com.abrah.nightmare.canvas.Recipe) -> Unit = {},
     /** ⭐⭐ Import a `.safetensors` from inside the LoRA picker; null hides Add. */
     onImportLora: (() -> Unit)? = null,
     /** ⭐⭐ Get LoRAs — opens the browser on the node's family (`docs/LORA-BROWSER.md`); null hides it. */
@@ -1205,6 +1215,19 @@ internal fun NodeInspectorBody(
     // button is an UNDO while the field still holds exactly that English, and
     // stops being one the moment the text is edited (`docs/TRANSLATE.md`).
     var translated by remember(nodeId) { mutableStateOf<Map<String, Pair<String, String>>>(emptyMap()) }
+    // ⭐⭐ A Default view run that ENLARGED this output ends on the Upscaled picture, not on the
+    // Original above it (the user, 2026-10-11): the new picture was below the fold. ⚠ Only when
+    // a run ends here — opening the page later keeps its top. ⚠ Keyed on the pair too: the
+    // Original can land a frame after the run frame goes.
+    val upscaledFocus = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    var ranHere by remember(nodeId) { mutableStateOf(false) }
+    LaunchedEffect(runFrame != null, beforeImage != null) {
+        if (runFrame != null) ranHere = true
+        else if (ranHere && beforeImage != null) {
+            ranHere = false
+            upscaledFocus.bringIntoView()
+        }
+    }
 
     Column(
         Modifier
@@ -1248,7 +1271,9 @@ internal fun NodeInspectorBody(
                         )
                     },
                 )
-                Text(
+                // ⚠ The type id (`core.image`) in Advanced only: the Default view is for people who
+                // never see the graph, and the id meant nothing there (the user, 2026-10-11).
+                if (nodeActions) Text(
                     node.type,
                     style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1296,6 +1321,33 @@ internal fun NodeInspectorBody(
         // not something to persist. ⚠⚠ Declared HERE rather than beside the
         // other knob-popup state below, because [LoraRow] is now drawn under
         // the checkpoint picker and a Kotlin local has to exist before its use.
+        // ⭐⭐ Swap flow and Remove input (the user's ask, 2026-10-11): the Default view only
+        // ([nodeActions] is Advanced's sheet), and only a one-sampler flow ([swapFlows] null else).
+        // Advanced just shows the graph the swap produced.
+        if (!nodeActions && swapFlows != null) {
+            if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && swapFlows.size > 1) {
+                var choosing by remember(nodeId) { mutableStateOf(false) }
+                com.abrah.nightmare.ui.LabeledAction(
+                    com.abrah.nightmare.ui.SwapIcon, stringResource(R.string.swap_flow), { choosing = true },
+                )
+                if (choosing) SwapFlowDialog(swapFlows, onPick = { choosing = false; onSwapFlow(it) }, onDismiss = { choosing = false })
+            }
+            if (node.type == "core.image") swapFlows.firstOrNull { !it.takesPicture }?.let { t2i ->
+                var confirming by remember(nodeId) { mutableStateOf(false) }
+                com.abrah.nightmare.ui.LabeledAction(
+                    Icons.Filled.Close, stringResource(R.string.remove_input), { confirming = true },
+                )
+                if (confirming) androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { confirming = false },
+                    title = { Text(stringResource(R.string.remove_input_title)) },
+                    text = { Text(stringResource(R.string.remove_input_body)) },
+                    confirmButton = {
+                        TextButton(onClick = { confirming = false; onSwapFlow(t2i.recipe) }) { Text(stringResource(R.string.remove_input)) }
+                    },
+                    dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
+                )
+            }
+        }
         var pickingLoras by remember(nodeId) { mutableStateOf(false) }
         // ⚠ Whether ⓘ is open. Local, keyed on the node, same as the picker.
         var showingInfo by remember(nodeId) { mutableStateOf(false) }
@@ -2043,18 +2095,23 @@ internal fun NodeInspectorBody(
         // call, 2026-09-22. ⚠ With no picture chosen this IS the picture's
         // slot, so the framed + stands where the photo will stand.
         if (node.type == "core.image") {
+            // ⭐ Blank page lives IN the empty frame now (the user's mock, 2026-10-11); the draw
+            // sheet opens once the blank picture has landed ([DrawControls]).
+            var afterBlank by remember(nodeId) { mutableStateOf(false) }
             ImagePicker(
                 current = node.params["uri"].orEmpty(),
                 onPicked = { uri -> onSetParam(nodeId, "uri", uri) },
                 onClear = onClearImage,
                 emptyHeight = pictureCap(),
+                onBlank = { afterBlank = true; onBlankPicture() },
             )
             DrawControls(
                 nodeId = nodeId,
                 uri = node.params["uri"].orEmpty(),
                 drawing = node.params[com.abrah.nightmare.LoadImageNode.DRAWING].orEmpty(),
                 onSaveDrawing = onSaveDrawing,
-                onBlankPicture = onBlankPicture,
+                afterBlank = afterBlank,
+                onBlankHandled = { afterBlank = false },
             )
         }
         // ⚠⚠ …and NOT on a `mask` node either, for the same reason plus a
@@ -2154,8 +2211,10 @@ internal fun NodeInspectorBody(
                 FramedPicture(
                     bitmap = shown,
                     contentDescription = stringResource(R.string.inspector_cd_node_image),
-                    box = if (beforeImage != null) Modifier.height(pictureCap(pair = true))
-                    else Modifier.heightIn(max = pictureCap()),
+                    box = if (beforeImage != null) {
+                        Modifier.height(pictureCap(pair = true))
+                            .bringIntoViewRequester(upscaledFocus)
+                    } else Modifier.heightIn(max = pictureCap()),
                     onClick = onViewFullscreen,
                 )
             } else Image(
@@ -4333,6 +4392,8 @@ private fun ImagePicker(
     onPicked: (String) -> Unit,
     onClear: () -> Unit,
     emptyHeight: androidx.compose.ui.unit.Dp = 140.dp,
+    /** ⭐ "Blank page", the frame's right half; null draws the old single + frame. */
+    onBlank: (() -> Unit)? = null,
 ) {
     val pick = rememberImagePick(onPicked)
 
@@ -4358,7 +4419,7 @@ private fun ImagePicker(
                     .fillMaxWidth()
                     .height(emptyHeight)
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable(onClick = pick)
+                    .then(if (onBlank == null) Modifier.clickable(onClick = pick) else Modifier)
                     .drawBehind {
                         drawRoundRect(
                             color = outline,
@@ -4372,12 +4433,28 @@ private fun ImagePicker(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
+                if (onBlank == null) Icon(
                     Icons.Filled.Add,
                     contentDescription = stringResource(R.string.inspector_cd_choose_image),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(44.dp),
-                )
+                ) else Row(Modifier.fillMaxSize()) {
+                    // ⭐⭐ Two halves, a dashed divider between (the user's mock, 2026-10-11): a picture
+                    // from the phone, or a blank page to draw on. ⚠ Each half is its own target.
+                    PickerHalf(Icons.Filled.Add, R.string.pick_add_image, R.string.pick_add_image_sub, pick, Modifier.weight(1f))
+                    val divider = MaterialTheme.colorScheme.outlineVariant
+                    Box(
+                        Modifier.fillMaxHeight().width(2.dp).padding(vertical = 2.dp).drawBehind {
+                            drawLine(
+                                divider, androidx.compose.ui.geometry.Offset(size.width / 2, 0f),
+                                androidx.compose.ui.geometry.Offset(size.width / 2, size.height),
+                                strokeWidth = 2.dp.toPx(),
+                                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 10f)),
+                            )
+                        },
+                    )
+                    PickerHalf(Icons.Filled.Edit, R.string.draw_blank, R.string.draw_blank_sub, onBlank, Modifier.weight(1f))
+                }
             }
             FilesButton(pick.files)
         } else {
@@ -4409,6 +4486,75 @@ private fun ImagePicker(
         }
     }
 
+}
+
+/**
+ * ⭐ Swap flow's list: the flows this model runs, the open one marked. ⚠ Rows like the Use dialog's
+ * ([com.abrah.nightmare.ui.ModelsScreen]), so the two lists of flows read as one thing.
+ */
+@Composable
+private fun SwapFlowDialog(
+    flows: List<com.abrah.nightmare.canvas.SwapFlow>,
+    onPick: (com.abrah.nightmare.canvas.Recipe) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.swap_flow)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.swap_flow_note), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                for (f in flows) {
+                    val r = f.recipe
+                    Surface(
+                        onClick = { if (!f.current) onPick(r) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (f.current) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                            Text(
+                                (r.labelRes?.let { stringResource(it) } ?: r.label) +
+                                    if (f.current) "  ·  " + stringResource(R.string.swap_flow_current) else "",
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Text(
+                                r.aboutRes?.let { stringResource(it) } ?: r.about,
+                                style = NoteTextStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+/** ⭐ One half of the empty picture frame: an icon, a title and a line under it. */
+@Composable
+private fun PickerHalf(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    @androidx.annotation.StringRes title: Int,
+    @androidx.annotation.StringRes sub: Int,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    Column(
+        modifier.fillMaxHeight().clickable(onClick = onClick).padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
+        Spacer(Modifier.height(10.dp))
+        Text(stringResource(title), style = MaterialTheme.typography.titleMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(
+            stringResource(sub), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+    }
 }
 
 /**
@@ -4710,16 +4856,16 @@ private fun DrawControls(
     uri: String,
     drawing: String,
     onSaveDrawing: (android.graphics.Bitmap?) -> Unit,
-    onBlankPicture: () -> Unit,
+    /** ⭐ Blank page was tapped in the empty frame ([ImagePicker]); open the sheet once it lands. */
+    afterBlank: Boolean,
+    onBlankHandled: () -> Unit,
 ) {
     var open by remember(nodeId) { mutableStateOf(false) }
-    var afterBlank by remember(nodeId) { mutableStateOf(false) }
-    LaunchedEffect(uri) { if (afterBlank && uri.isNotBlank()) { afterBlank = false; open = true } }
+    LaunchedEffect(uri, afterBlank) { if (afterBlank && uri.isNotBlank()) { onBlankHandled(); open = true } }
+    if (uri.isBlank() && drawing.isBlank()) return
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (uri.isNotBlank()) {
             com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Edit, stringResource(R.string.draw_on_picture), { open = true })
-        } else {
-            com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Edit, stringResource(R.string.draw_blank), { afterBlank = true; onBlankPicture() })
         }
         if (drawing.isNotBlank()) {
             com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Delete, stringResource(R.string.draw_clear_drawing), { onSaveDrawing(null) })

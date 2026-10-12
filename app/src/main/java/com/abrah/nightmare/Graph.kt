@@ -227,7 +227,7 @@ const val V1_MODEL = "absolutereality"
  * `contextKeyRetarget` was written to rescue people from.
  */
 const val CONTEXT_KEY_LOCK =
-    "bound when the backend launches — open Models to change the checkpoint"
+    "bound when the backend launches. Open Models to change the checkpoint"
 
 /**
  * `(type, model, resolution)` -- the three things bound at BACKEND LAUNCH

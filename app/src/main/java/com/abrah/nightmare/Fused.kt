@@ -250,6 +250,12 @@ class SdSampler(
     companion object {
         /** ⭐ The Hires fix switch ([hiresFix]); the id is the row's words ("Hires fix"). */
         const val HIRES = "hires_fix"
+        /**
+         * ⭐ Enlarge ×2 ([enlarge]) — every sampler WITHOUT [HIRES] (the user's call, 2026-10-11): the
+         * render through the first installed upscaler, nothing redrawn, so whatever is wired next
+         * (an inpaint fixing faces) gets the big picture. ⚠ One of the two per node, never both.
+         */
+        const val ENLARGE = "enlarge"
         const val START_FROM = "start_from"
         const val FROM_NOISE = "noise"
         const val FROM_IMAGE = "image"
@@ -817,7 +823,8 @@ class SdSampler(
         ),
         // ⭐⭐ Hires fix — SD 1.5 / SDXL text- and image-to-image ([hiresFix]). OFF: it costs
         // an upscale and a tiled redraw on every Run.
-        if (!inpaint && UltraFix.tileFor(family) != null) Widget(HIRES, "bool", "false", hintRes = R.string.hint_hires_fix) else null,
+        if (hasHires) Widget(HIRES, "bool", "false", hintRes = R.string.hint_hires_fix)
+        else Widget(ENLARGE, "bool", "false", hintRes = R.string.hint_enlarge),
         // ⚠⚠ **No `start from` knob.** The user's call, 2026-09-15: *"start from
         // is decided by whether an image is connected, simple as that."* It
         // shipped as a switch so a flow could flip without rewiring — which is
@@ -1087,10 +1094,17 @@ class SdSampler(
             p["w"]?.toFloatOrNull() ?: 1f, p["h"]?.toFloatOrNull() ?: 1f,
         )
 
-    override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
+    /** ⭐ Where [HIRES] is offered: SD 1.5 / SDXL text- and image-to-image. Everywhere else, [ENLARGE]. */
+    private val hasHires: Boolean get() = !inpaint && UltraFix.tileFor(family) != null
+
+    // ⭐ ONE exit for every family's render, so [ENLARGE] cannot be missed by the next return added.
+    override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
+        render(ctx, node, inputs).let { v -> if (v is Value.Image) enlarge(ctx, node, v) else v }
+
+    private suspend fun render(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
         val wired = inputs["prompt"] as? Value.Prompt
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": nothing is wired into \"prompt\" — " +
+                "node \"${node.id}\": nothing is wired into \"prompt\". " +
                     "drag a Prompt node out of the palette and connect it"
             )
         // ⭐ `<lora:name:w>` tags leave the text here and join the LoRA list ([PromptLoras]).
@@ -1188,7 +1202,7 @@ class SdSampler(
         // ([MaskOp.ObjectRing]) — but only while its object is there.
         val placedObjects = if (inpaint) AddObjects.of(p) else emptyList()
         if (inpaint && AddObjects.withoutDeadRings(stored, placedObjects).isEmpty && !padded) {
-            throw NeedsInput(ctx.text(R.string.run_nothing_masked, "nothing masked — paint an area, then Run again"))
+            throw NeedsInput(ctx.text(R.string.run_nothing_masked, "nothing masked. Paint an area, then Run again"))
         }
         // ⚠⚠ Still gated to a CHAINED picture, unlike the check above: a plain
         // photo's mask is cleared the moment the photo changes
@@ -1200,7 +1214,7 @@ class SdSampler(
                 throw NeedsInput(
                     ctx.text(
                         R.string.run_painted_picture_changed,
-                        "the picture you painted on has changed — repaint it, or undo the change upstream",
+                        "the picture you painted on has changed. Repaint it, or undo the change upstream",
                     )
                 )
             }
@@ -1218,7 +1232,7 @@ class SdSampler(
                 throw IllegalStateException(
                     ctx.text(
                         R.string.run_download_tap_segmenter,
-                        "node \"%1\$s\": this mask was tapped — download %2\$s in Models, Tools",
+                        "node \"%1\$s\": this mask was tapped. Download %2\$s in Models, Tools",
                         node.id, com.abrah.nightmare.segment.Segmenter.LABEL,
                     )
                 )
@@ -1232,7 +1246,7 @@ class SdSampler(
                 throw IllegalStateException(
                     ctx.text(
                         R.string.run_download_auto_segmenter,
-                        "node \"%1\$s\": this mask was picked by name — download %2\$s in Models, Tools",
+                        "node \"%1\$s\": this mask was picked by name. Download %2\$s in Models, Tools",
                         node.id, com.abrah.nightmare.segment.Parser.LABEL,
                     )
                 )
@@ -1267,10 +1281,10 @@ class SdSampler(
             throw NeedsInput(
                 if (names.isEmpty()) ctx.text(
                     R.string.run_nothing_found_tapped,
-                    "nothing found where you tapped — paint an area, then Run again",
+                    "nothing found where you tapped. Paint an area, then Run again",
                 ) else ctx.text(
                     R.string.run_named_objects_not_found,
-                    "no %1\$s found in this picture — paint an area, or pick something else in the mask editor",
+                    "no %1\$s found in this picture. Paint an area, or pick something else in the mask editor",
                     names.joinToString(ctx.text(R.string.word_or, " or ")),
                 )
             )
@@ -1292,7 +1306,7 @@ class SdSampler(
                 if (r.missing.isNotEmpty()) throw NeedsInput(
                     ctx.text(
                         R.string.run_object_source_missing,
-                        "an object\'s source photo can no longer be read — add it again in the mask editor",
+                        "an object\'s source photo can no longer be read. Add it again in the mask editor",
                     )
                 )
             }
@@ -1639,14 +1653,14 @@ class SdSampler(
         val takes = picker != null && picker.locked == null &&
             (spec == null || spec.family.dit || ModelFeatures.LORA in spec.featureSet)
         if (!takes) {
-            ctx.warn(ctx.text(R.string.run_lora_tags_unused, "LoRA tags in the prompt were left out — this model takes no LoRAs"))
+            ctx.warn(ctx.text(R.string.run_lora_tags_unused, "LoRA tags in the prompt were left out. This model takes no LoRAs"))
             return p
         }
         val installed = ctx.android?.let { BackendProcess.lorasDir(it).list()?.toList() }.orEmpty()
         val add = tags.mapNotNull { t ->
             PromptLoras.resolve(t.name, installed)?.let { LoraSpec.Entry(it, t.strength) }
                 ?: run {
-                    ctx.warn(ctx.text(R.string.run_lora_tag_missing, "LoRA \"%1\$s\" from the prompt is not installed — skipped", t.name))
+                    ctx.warn(ctx.text(R.string.run_lora_tag_missing, "LoRA \"%1\$s\" from the prompt is not installed. Skipped", t.name))
                     null
                 }
         }
@@ -1672,7 +1686,7 @@ class SdSampler(
             val file = java.io.File(dir, e.name)
             if (!file.isFile) {
                 throw IllegalStateException(
-                    "LoRA \"${e.name}\" is not in ${dir.name} — import it first",
+                    "LoRA \"${e.name}\" is not in ${dir.name}. Import it first",
                 )
             }
             file.absolutePath to e.strength
@@ -1722,7 +1736,7 @@ class SdSampler(
                         AddObjects.load(android, it)
                             ?: throw NeedsInput(ctx.text(
                                 R.string.run_controlnet_picture_missing,
-                                "the ControlNet picture can no longer be read — pick it again",
+                                "the ControlNet picture can no longer be read. Pick it again",
                             ))
                     }
                     ?: photo
@@ -1738,7 +1752,7 @@ class SdSampler(
                 AddObjects.load(android, it)
                     ?: throw NeedsInput(ctx.text(
                         R.string.run_ip_adapter_picture_missing,
-                        "the IP-Adapter picture can no longer be read — pick it again",
+                        "the IP-Adapter picture can no longer be read. Pick it again",
                     ))
             }
             SwapInputs.resolve(
@@ -1881,8 +1895,12 @@ class SdSampler(
      * ⭐⭐⭐ **Hires fix** ([HIRES], the user's call 2026-10-10): the render ×2 with the first installed
      * upscaler, then Local Dream's UltraFix over it — the detail redrawn tile by tile at the larger
      * size, with this node's prompt and the Steps / Denoise steps last set in the UltraFix dialog
-     * ([UltraFix.load]). ⚠ Same backend, no relaunch: `/upscale` loads its weights per request and
-     * `/generate` with `ultrafix` runs this model's own graph per tile.
+     * ([UltraFix.load]). `/upscale` loads its weights per request and `/generate` with `ultrafix`
+     * runs this model's own graph per tile — ⚠⚠ which must be the SQUARE native graph, the key
+     * Results' UltraFix launches ([HarnessViewModel.ultrafixResult]). A render at a resolution
+     * patch (512x768) holds a 64x96 graph, and a 64x64 tile through it read and wrote past its
+     * buffers: SIGSEGV on the first UNet call (2026-10-11). So it switches to the native key
+     * first, through the executor ([NodeCtx.switchKey]), and the next keyed node switches back.
      * ⚠ Every way it does NOT happen keeps the render and WARNS — a picture is never lost to it.
      */
     private suspend fun hiresFix(ctx: NodeCtx, node: Node, p: Map<String, String>, prompt: Value.Prompt, img: Value.Image): Value.Image {
@@ -1892,7 +1910,7 @@ class SdSampler(
         val appCtx = ctx.android
         val upscaler = UpscalerCatalog.installedIds.firstOrNull()
         if (upscaler == null) {
-            ctx.warn(ctx.text(R.string.run_hires_no_upscaler, "Hires fix skipped: no upscaler installed — download one in Models"))
+            ctx.warn(ctx.text(R.string.run_hires_no_upscaler, "Hires fix skipped: no upscaler installed. Download one in Models"))
             return img
         }
         if (UpscaleNode.fittingScale(img.w, img.h, 2) == null) {
@@ -1901,6 +1919,13 @@ class SdSampler(
         }
         ctx.say(ctx.text(R.string.run_hires_upscaling, "hires fix: upscaling ×2"))
         val big = UpscaleNode.upscaleTo(ctx, node.id, img, upscaler, 2)
+        val spec = ModelCatalog.byId(p["model"].orEmpty()) ?: defaultSpec()
+        val native = spec.native
+        val square = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, native.width, native.height)
+        if (backendContextKey(node) != square && ctx.switchKey?.invoke(square) != true) {
+            ctx.warn(ctx.text(R.string.run_hires_no_square, "Hires fix skipped: could not load the model at %1\$dx%2\$d for it", native.width, native.height))
+            return img
+        }
         val bmp = ctx.images.get(big.id)
             ?: throw IllegalStateException("node \"${node.id}\": the upscaled picture vanished from the store")
         val (w, h) = UltraFix.snap(bmp.width, bmp.height)
@@ -1926,6 +1951,30 @@ class SdSampler(
         val fixed = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the hires picture would not decode")
         return Value.Image(ctx.images.put(fixed), fixed.width, fixed.height)
+    }
+
+    /**
+     * ⭐⭐ **Enlarge ×2** ([ENLARGE]): the finished render through the first installed upscaler —
+     * the hires fix's first half, with no redraw, so it works on EVERY family (a DiT has no UltraFix).
+     * Asked for 2026-10-11: Z-Image text to image, enlarged, then an inpaint fixing the faces —
+     * "Only masked" renders the crop at the model's size, so the bigger the source, the more
+     * detail the face gets back. ⚠ Every way it does not happen keeps the render and WARNS, as
+     * [hiresFix] does. ⚠ `/upscale` runs in whatever backend is up, a DiT one included
+     * (backend 008), so no relaunch.
+     */
+    private suspend fun enlarge(ctx: NodeCtx, node: Node, img: Value.Image): Value.Image {
+        if (hasHires || !effectiveParams(node)[ENLARGE].equals("true", ignoreCase = true)) return img
+        val upscaler = UpscalerCatalog.installedIds.firstOrNull()
+        if (upscaler == null) {
+            ctx.warn(ctx.text(R.string.run_enlarge_no_upscaler, "Not enlarged: no upscaler installed. Download one in Models"))
+            return img
+        }
+        if (UpscaleNode.fittingScale(img.w, img.h, 2) == null) {
+            ctx.warn(ctx.text(R.string.run_enlarge_too_large, "Not enlarged: %1\$dx%2\$d is too large to double", img.w, img.h))
+            return img
+        }
+        ctx.say(ctx.text(R.string.run_enlarging, "enlarging ×2"))
+        return UpscaleNode.upscaleTo(ctx, node.id, img, upscaler, 2)
     }
 
     private fun keepPhotoOnly(ctx: NodeCtx, node: Node, p: Map<String, String>, img: Value.Image): Value.Image {
@@ -2204,7 +2253,7 @@ object MediaOutputNode : NodeType {
             if (scale < wanted) {
                 ctx.warn(ctx.text(
                     R.string.run_upscaled_smaller,
-                    "Upscaled %1\$dx, not %2\$dx — %2\$dx would pass %3\$d px",
+                    "Upscaled %1\$dx, not %2\$dx. %2\$dx would pass %3\$d px",
                     scale, wanted, UpscaleNode.MAX_OUT_EDGE,
                 ))
             }

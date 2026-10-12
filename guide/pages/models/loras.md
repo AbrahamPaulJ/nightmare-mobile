@@ -51,7 +51,7 @@ its size; the bin deletes it. The **Files** button in a node's LoRA list does th
 ### Use
 
 1. Tap a FLUX.2, Z-Image, SD 1.5 Swap or SDXL Swap generator node.
-2. Under **LoRAs**, tick the ones you want — a checkbox per installed file.
+2. Under **LoRAs**, tick the ones you want. A checkbox per installed file.
 3. Set each one's **strength** with its slider (1.0 is the adapter's full effect).
 4. Run.
 
@@ -70,14 +70,14 @@ If the LoRA's description names a trigger word, put that word in your prompt.
 A prompt copied from CivitAI often names its LoRAs inline, as `<lora:name:0.8>`. Nightmare reads
 those tags: each is taken **out of the prompt** before it reaches the text encoder, and if the name
 matches a LoRA you have installed (with or without `.safetensors`), it is applied at that weight on
-top of the node's LoRA list — the tag wins if both name the same one. A tag for a LoRA you do not
+top of the node's LoRA list. The tag wins if both name the same one. A tag for a LoRA you do not
 have, or any tag on a model that takes no LoRAs, is skipped and the run log says so. Tags do not
 count toward the prompt's token limit.
 
 ### Sort, filter and favourites
 
-With two or more LoRAs, the list has a **sort** menu — **Name**, **Newest**, **Most used** (how
-often you tick it) or **Size** — and chips for each **base model** found among your files (SD 1.5,
+With two or more LoRAs, the list has a **sort** menu. **Name**, **Newest**, **Most used** (how
+often you tick it) or **Size**: and chips for each **base model** found among your files (SD 1.5,
 SDXL, FLUX, Z-Image, Qwen), the node's own first. The base is read from the file itself and shown
 under each name. Tap the **star** to make a LoRA a favourite: favourites come first. With eight or
 more, a search box filters by name. The LoRAs ticked on the node always stay at the top, in the
@@ -106,8 +106,8 @@ it again or untick it. **Settings → Models → LoRAs** deletes LoRAs too.
 ### On SD 1.5 Swap
 
 An SD 1.5 Swap model has room for ONE rank-64 adapter per layer, so the LoRAs you tick are
-**merged** into it on the phone the first time that mix is used — about 10 s for one large
-LoRA, 25 s for two — and kept for next time. With a single LoRA the strength slider is free;
+**merged** into it on the phone the first time that mix is used, about 10 s for one large
+LoRA or 25 s for two, and kept for next time. With a single LoRA the strength slider is free;
 changing the strengths of several makes a new merge. A LoRA trained above rank 64 is reduced to
 its best rank-64 version. Only the part of a LoRA that changes the image model applies; the
 part trained into the text encoder does not (true of every NPU conversion).
@@ -123,7 +123,7 @@ conversion takes about an hour on the phone.
 
 ## Embeddings
 
-An **embedding** (textual inversion) is a tiny file holding one trained concept — often a
+An **embedding** (textual inversion) is a tiny file holding one trained concept. Often a
 style, or a "negative" such as a quality fix.
 
 **Settings → Prompts → Embeddings → Import**, pick the `.safetensors`, and then **name it in

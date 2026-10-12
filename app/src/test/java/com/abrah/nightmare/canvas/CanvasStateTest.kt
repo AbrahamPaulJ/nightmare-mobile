@@ -839,6 +839,31 @@ class CanvasStateTest {
      * it at [Sizes.NODE_WIDTH] (190) put its right half past the edge, which is
      * a node nobody knows is there.
      */
+    /**
+     * ⭐⭐ Advanced's first frame ([CanvasState.framedIn]): every recipe's nodes land inside the part
+     * of the screen between the bars, centred left to right, never above 1× — even moved far from
+     * the origin, where the old width-only fit opened onto a corner (the user, 2026-10-11).
+     */
+    @Test
+    fun framingPutsEveryNodeBetweenTheBarsAndCentred() {
+        val wPx = 1080f; val hPx = 2340f; val d = 2.625f; val top = 430f; val bottom = 330f
+        for (recipe in RECIPES) {
+            val base = recipe.build()
+            val far = base.copy(positions = base.positions.mapValues { (_, p) -> Pt(p.x + 3000f, p.y + 2000f) })
+            val s = CanvasState(far).framedIn(NODE_TYPES, wPx, hPx, d, top, bottom)
+            val v = s.viewport.forDevice(d)
+            assertTrue(!s.framePending)
+            assertTrue("${recipe.id}: zoomed past 1x", s.viewport.scale <= 1f)
+            val boxes = layout(far, NODE_TYPES)
+            val l = boxes.minOf { v.toScreen(it.topLeft).x }
+            val r = boxes.maxOf { v.toScreen(Pt(it.topLeft.x + it.width, 0f)).x }
+            val t = boxes.minOf { v.toScreen(it.topLeft).y }
+            assertTrue("${recipe.id}: off the left/right", l >= 0f && r <= wPx)
+            assertTrue("${recipe.id}: under the top bar", t >= top)
+            assertEquals("${recipe.id}: not centred", l, wPx - r, 2f)
+        }
+    }
+
     @Test
     fun aFittedViewPutsEveryRecipeOnScreen() {
         // ⚠⚠ 360, the NARROW baseline `fitted` targets — not this phone's

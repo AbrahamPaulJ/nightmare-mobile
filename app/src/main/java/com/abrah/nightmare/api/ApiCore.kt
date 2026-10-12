@@ -94,7 +94,7 @@ class ApiCore(private val ctx: Context, val ops: HarnessOps, private val holder:
             throw ApiError(400, "that saved flow cannot be read: ${e.message}")
         }
         else -> RECIPES.firstOrNull { it.id == id }?.build?.invoke()
-            ?: throw ApiError(404, "no flow \"$id\" — list_flows / GET /flows names them")
+            ?: throw ApiError(404, "no flow \"$id\". List_flows / GET /flows names them")
     }
 
     fun flowSchema(id: String): JSONObject = schemaOf(id, workflowFor(id), ops.nodeTypes())
@@ -147,7 +147,7 @@ class ApiCore(private val ctx: Context, val ops: HarnessOps, private val holder:
         } else workflowFor(req.flow!!)
         val spec = req.model?.let { id ->
             ModelCatalog.byId(id)?.takeIf { it.installed(ctx) }
-                ?: throw ApiError(409, "model \"$id\" is not installed — list_models / GET /models lists what is")
+                ?: throw ApiError(409, "model \"$id\" is not installed. List_models / GET /models lists what is")
         }
         val runId = "r" + System.currentTimeMillis().toString(36)
         var graph = applyOverrides(base.graph, types, req, spec) { node, b64 -> upload(runId, node, b64) }
@@ -170,7 +170,7 @@ class ApiCore(private val ctx: Context, val ops: HarnessOps, private val holder:
     fun run(p: Prepared, event: (String, JSONObject) -> Unit = { _, _ -> }): RunResult {
         if (!RunLock.tryAcquire(holder)) {
             throw ApiError(409, when (RunLock.heldBy) {
-                "canvas" -> "the app is rendering — try again when it finishes"
+                "canvas" -> "the app is rendering. Try again when it finishes"
                 else -> "already rendering (${RunLock.heldBy})"
             })
         }
@@ -236,12 +236,12 @@ class ApiCore(private val ctx: Context, val ops: HarnessOps, private val holder:
             val id = applyDefaults(t.widgets, n)["model"].orEmpty()
             val spec = ModelCatalog.byId(id)
             if (spec == null || !spec.installed(ctx)) return "node \"${n.id}\" needs model \"$id\", which is not installed"
-            if (spec.isDit && !DitEngine.isInstalled(ctx)) return "${spec.label} needs the DiT engine — download it in the app first"
+            if (spec.isDit && !DitEngine.isInstalled(ctx)) return "${spec.label} needs the DiT engine. Download it in the app first"
         }
         // ⚠ An empty picture node the run cannot skip ([skipEmptyPictures]) would fail; say it now.
         val (left, _) = skipEmptyPictures(graph)
         left.nodes.firstOrNull { it.type == "core.image" && it.params["uri"].isNullOrBlank() }?.let {
-            return "image node \"${it.id}\" has no picture — send one"
+            return "image node \"${it.id}\" has no picture. Send one"
         }
         return null
     }

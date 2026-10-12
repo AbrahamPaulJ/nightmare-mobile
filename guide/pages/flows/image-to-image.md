@@ -9,13 +9,13 @@ and let the model redraw it with more detail.
 
 !!! note "FLUX.2 and Qwen Image use Image edit instead"
     These two are edit models: give them a photo and they re-render it to follow an
-    instruction. That is its own flow — see [Image edit](image-edit.md).
+    instruction. That is its own flow. See [Image edit](image-edit.md).
 
 ## Steps
 
 1. **Flows → Image to image.**
 2. Tap the **image** node and choose a photo. It appears on the node straight away.
-3. Tap the **prompt** node and describe the result you want — describe the *whole* picture, not
+3. Tap the **prompt** node and describe the result you want. Describe the *whole* picture, not
    just the change.
 4. Tap the **Image to image** node and set **Denoise** (below).
 5. **Run.**
@@ -26,12 +26,13 @@ Under the picture on the **image** node, **Draw** opens a drawing window over th
 with colour swatches and a hue slider, **Size**, **Opacity**, **Softness**, an **Eraser**, undo
 and redo. Two fingers zoom and pan for detail work; one finger always paints. **Pick colour**
 takes the next colour you touch from the picture, and the rainbow **+** swatch opens a picker for
-any colour. Paint a rough shape or a blob of colour where you want something, tap **Done**, and run —
-image to image follows your colours and shapes (a denoise around 0.6–0.75 turns a doodle into
+any colour. Paint a rough shape or a blob of colour where you want something, tap **Done**, and run.
+Image to image follows your colours and shapes (a denoise around 0.6–0.75 turns a doodle into
 something real). The photo itself is kept: the drawing is a layer on it, so you can reopen it,
 erase it, or **Clear drawing**.
 
-No photo? **Blank page** starts you on a white page instead.
+No photo? An empty **image** node offers two halves: **Add image** to pick one, or **Blank
+page** to start on a white page and draw.
 
 ## Denoise: how much changes
 

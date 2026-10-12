@@ -56,6 +56,16 @@ class UltraFixTest {
         }
     }
 
+    /** ⭐ Enlarge ×2 ([SdSampler.ENLARGE]) is on every sampler Hires fix is not — one of the two, never both. */
+    @Test
+    fun everySamplerHasHiresFixOrEnlargeNeverBoth() {
+        for (t in NODE_TYPES.values.filterIsInstance<SdSampler>()) {
+            val names = t.widgets.map { it.name }
+            assertEquals(t.name, 1, names.count { it == SdSampler.HIRES || it == SdSampler.ENLARGE })
+        }
+        assertEquals(true, NODE_TYPES["sd15.inpaint"]!!.widgets.any { it.name == SdSampler.ENLARGE })
+    }
+
     private fun shoot(name: String, content: @androidx.compose.runtime.Composable () -> Unit) {
         rule.setContent {
             NightmareTheme(darkTheme = true) {

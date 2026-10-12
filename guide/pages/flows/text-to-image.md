@@ -30,7 +30,7 @@ The model families read prompts differently:
   **文A** button on the prompt box (SD 1.5 and SDXL only read English). See
   [Settings → Prompts → Translation](../reference/settings.md#translation).
 - No words for it? The **picture button** on the prompt box describes a picture you already
-  have — a render on the canvas or a photo from your gallery — as sentences or, for anime
+  have, either a render on the canvas or a photo from your gallery, as sentences or, for anime
   models, Danbooru tags, and writes that into the prompt ([Prompt node](../reference/nodes.md#prompt)).
 
 ## The generator's settings
@@ -49,15 +49,15 @@ Tap the **Text to image** node:
 | **Seed** | The starting noise | `0` = a new picture every Run. Type a seed shown on a node to get that picture back |
 | **Scheduler** | The sampling method | A distilled model usually needs the one its author published |
 | **Karras sigmas** | A different noise schedule | Try it for smoother detail on SD models |
-| **Resolution** / **Shape** / **Width, Height** | The picture's size | Depends on the family — below |
+| **Resolution** / **Shape** / **Width, Height** | The picture's size | Depends on the family. Below |
 
 ### Size, per family
 
-- **SD 1.5** — pick a **Resolution** from the sizes the model supports (512 square up to 1024,
+- **SD 1.5**: pick a **Resolution** from the sizes the model supports (512 square up to 1024,
   portrait and landscape). A different size reloads the model on the next Run.
-- **SDXL and Anima** — these draw a fixed 1024 square; **Shape** crops it to the aspect you
+- **SDXL and Anima**: these draw a fixed 1024 square; **Shape** crops it to the aspect you
   choose. No reload.
-- **FLUX.2, Z-Image, Qwen Image, Krea 2** — **Width** and **Height** sliders, any size from 512
+- **FLUX.2, Z-Image, Qwen Image, Krea 2**: **Width** and **Height** sliders, any size from 512
   to 2048 in 64-pixel steps. No reload. Bigger takes longer, roughly in proportion to the area.
   FLUX.2 Klein 9B starts at 768: on a 12 GB phone, 1024 may be closed by Android when other
   apps hold memory.

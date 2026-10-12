@@ -240,7 +240,7 @@ object SwapInputs {
             if (packed.matched == 0) {
                 dir.deleteRecursively()
                 throw IllegalStateException(
-                    "no layer of this model matched ${loras.joinToString { it.first.name }} — " +
+                    "no layer of this model matched ${loras.joinToString { it.first.name }}. " +
                         "is it a LoRA for this model's family (SD 1.5 or SDXL)?",
                 )
             }
@@ -283,16 +283,16 @@ object SwapInputs {
             if (!IpAdapter.supports(modelDir)) {
                 throw NeedsInput(
                     if (spec in ModelCatalog.builtIn) {
-                        "this copy of ${spec.label} predates IP-Adapter — delete it in Models and " +
+                        "this copy of ${spec.label} predates IP-Adapter. Delete it in Models and " +
                             "download it again to use a reference picture, or unwire the reference"
                     } else {
-                        "this model was converted before IP-Adapter — convert it again with npuforge " +
+                        "this model was converted before IP-Adapter. Convert it again with npuforge " +
                             "(SD1.5 Swap) to use a reference picture, or unwire the reference"
                     },
                 )
             }
             if (!IpAdapter.isInstalled(context, ipAdapter)) {
-                throw NeedsInput("download IP-Adapter first — on the node's IP-Adapter tab or in Models, Tools")
+                throw NeedsInput("download IP-Adapter first. On the node's IP-Adapter tab or in Models, Tools")
             }
             IpAdapter.ipDir(context, modelDir, ref, ipAdapter, ipScale, say).absolutePath
         }
@@ -306,11 +306,11 @@ object SwapInputs {
         if (!cn.isFile) {
             throw NeedsInput(
                 if (ControlNetCatalog.buildFor(id) == null) "the $type ControlNet is not available for this model or phone yet"
-                else "download the $type ControlNet first — on the node's ControlNet tab or in Models, Tools",
+                else "download the $type ControlNet first. On the node's ControlNet tab or in Models, Tools",
             )
         }
         control ?: throw NeedsInput(
-            "ControlNet $type needs a picture — pick one on the node or wire one into control, " +
+            "ControlNet $type needs a picture. Pick one on the node or wire one into control, " +
                 "or set ControlNet to none",
         )
         say(
@@ -324,10 +324,10 @@ object SwapInputs {
         val made = hint(context, control, type, frame, sizeFor(spec.family), aspect)
         val bitmap = made.bitmap ?: throw NeedsInput(
             if (made.missing == DEPTH) {
-                "depth needs the ${com.abrah.nightmare.pose.DepthEstimator.LABEL} to read a photo — " +
+                "depth needs the ${com.abrah.nightmare.pose.DepthEstimator.LABEL} to read a photo. " +
                     "download it on the ControlNet tab or in Models, Tools (a ready-made depth map needs nothing)"
             } else {
-                "openpose needs the ${com.abrah.nightmare.pose.PoseDetector.LABEL} to read a photo — " +
+                "openpose needs the ${com.abrah.nightmare.pose.PoseDetector.LABEL} to read a photo. " +
                     "download it on the ControlNet tab or in Models, Tools (a ready-made skeleton needs nothing)"
             },
         )

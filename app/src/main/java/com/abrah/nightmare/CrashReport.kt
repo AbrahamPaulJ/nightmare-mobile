@@ -178,6 +178,6 @@ object CrashReport {
             else -> "the app closed unexpectedly"
         }
         val detail = exit.description?.trim()?.takeIf { it.isNotEmpty() }
-        return if (detail != null) "$what — $detail" else what
+        return if (detail != null) "$what. $detail" else what
     }
 }

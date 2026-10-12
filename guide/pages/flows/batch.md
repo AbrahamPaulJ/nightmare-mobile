@@ -1,6 +1,6 @@
 # Batching
 
-*Run a flow many times with one setting varied each time — or two, as a grid.*
+*Run a flow many times with one setting varied each time, or two as a grid.*
 
 Use it to try eight seeds of the same prompt, find the right CFG, or compare step counts
 side by side.
@@ -22,7 +22,7 @@ side by side.
     Underneath, the dialog shows how many runs that makes and the values it read.
 4. Tap **Run N** (N is the number of runs). The setting's icon turns violet while it is armed.
 
-Arm **two** settings and the batch runs every combination — a grid, for example 3 CFG values ×
+Arm **two** settings and the batch runs every combination, a grid such as 3 CFG values ×
 4 step counts = 12 pictures.
 
 While it runs, the bar shows `batch 3 of 12`. **Stop after this one** finishes the current
@@ -31,4 +31,4 @@ picture and stops.
 ## Where the pictures go
 
 Every run is kept in **Results**, grouped as one card, each picture with the exact flow that
-made it — so the one you like can be reopened with its settings and seed.
+made it, so the one you like can be reopened with its settings and seed.

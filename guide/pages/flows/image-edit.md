@@ -2,7 +2,7 @@
 
 *A photo and a prompt: the whole picture is re-rendered to follow it, rather than nudged.*
 
-**Nodes:** Prompt and Image → Image edit → Output. **Needs a Snapdragon 8 Elite or newer** and
+**Nodes:** Prompt and Image → Image edit → Output. **Needs a Snapdragon 8 Gen 3 or newer** (alpha on 8 Gen 3) and
 one of the edit models: **FLUX.2 Klein** (4B or 9B) or **Qwen Image 2.1**.
 
 Where [Image to image](image-to-image.md) repaints a photo loosely, an edit model reads the
@@ -33,7 +33,7 @@ Start with FLUX.2. Reach for Qwen when FLUX.2 does not understand what you asked
 
 The Image edit node has a second input, **reference**. Wire another Image node into it and
 you can combine two pictures: in the prompt, the base photo is **image 1** and the reference is
-**image 2** — `put the jacket from image 2 on the person in image 1`.
+**image 2**: `put the jacket from image 2 on the person in image 1`.
 
 <figure markdown>
   ![The Image edit node with a reference](../img/inspector-flux-reference.png){ .screen }
@@ -46,7 +46,7 @@ this picture*.
     With FLUX.2, a reference is processed at your **output** size, not its own. On a 12 GB
     phone a 1024 × 1024 edit with a reference runs out of memory; 512 × 512 finishes in about
     a minute. The Reference tab warns you when the size is too big. For Qwen, reference editing
-    is new — please report how it goes.
+    is new. Please report how it goes.
 
 ## Denoise and padding
 

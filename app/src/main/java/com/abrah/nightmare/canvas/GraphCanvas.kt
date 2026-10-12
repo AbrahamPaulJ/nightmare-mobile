@@ -641,7 +641,7 @@ private fun DrawScope.drawNode(
             val body = measurer.measure(
                 // ⚠ A placeholder rather than nothing, so an empty box still
                 // has a line's height and reads as "empty" instead of "broken".
-                value.ifBlank { "—" },
+                value.ifBlank { "-" },
                 TextStyle(
                     // ⚠ Grey too when the field is LOCKED — a value you cannot
                     // change (`mask.segment_model`'s one model) reads as a fact.

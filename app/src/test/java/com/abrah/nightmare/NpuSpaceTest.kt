@@ -17,7 +17,7 @@ class NpuSpaceTest {
     fun theControlNetThatFoundNoRoomIsSaidInWords() {
         val s = npuSpaceRefused("Failed init QNN model: controlnet", log)!!
         assertTrue(s.contains("no room for the ControlNet"))
-        assertTrue(s.contains("run without it"))
+        assertTrue(s.contains("run without it", ignoreCase = true))
         // ⚠ The backend's own words are kept.
         assertTrue(s.contains("Failed init QNN model: controlnet"))
     }

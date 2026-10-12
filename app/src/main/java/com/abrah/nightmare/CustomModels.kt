@@ -1156,12 +1156,12 @@ object CustomModels {
         val actual = ditFamilyOf(json)
         if (expect != null && actual != null && actual != expect) {
             throw java.io.IOException(
-                "that is a ${actual.label} checkpoint, not a ${expect.label} one — " +
+                "that is a ${actual.label} checkpoint, not a ${expect.label} one. " +
                     "import it on the ${actual.label} tab"
             )
         }
         val family = actual ?: expect ?: throw IOException(
-            "nothing in this file says which model family it is — import it on its family's tab"
+            "nothing in this file says which model family it is. Import it on its family's tab"
         )
         return if (family == Family.FLUX2 && isKlein9b(json)) DitVariant.KLEIN_9B
         else DitVariant.defaultFor(family)
@@ -1303,7 +1303,7 @@ object CustomModels {
                     importDit(context, name, dit, { file.inputStream() }, onProgress)
                 } else if (single) {
                     throw IOException(
-                        "a .${file.extension} needs its family in the name — " +
+                        "a .${file.extension} needs its family in the name. " +
                             "$name.<${DIT_INBOX_FAMILIES.keys.joinToString("|")}>.${file.extension}"
                     )
                 } else {
@@ -1315,11 +1315,11 @@ object CustomModels {
                     "ok   ${spec.id} -> ${spec.family.label} ${spec.native}, " +
                         "${spec.bytesOnDisk(context) shr 20} MB"
                 } else {
-                    "warn ${spec.id} incomplete — missing ${missing.joinToString()}"
+                    "warn ${spec.id} incomplete. Missing ${missing.joinToString()}"
                 }
             } catch (e: Exception) {
                 // ⚠ The file is KEPT on failure so a retry needs no second push.
-                "FAIL $name — ${e.message}"
+                "FAIL $name. ${e.message}"
             }
         }
     }

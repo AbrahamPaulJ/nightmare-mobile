@@ -78,8 +78,8 @@ abstract class VideoNode : NodeType {
         if (missing.isNotEmpty()) {
             throw IllegalStateException(
                 "node \"${node.id}\": ${missing.size} video model(s) not on this device " +
-                    "(${missing.take(3).joinToString()}${if (missing.size > 3) ", …" else ""}) " +
-                    "— install them under Models > Video"
+                    "(${missing.take(3).joinToString()}${if (missing.size > 3) ", …" else ""})" +
+                    ". Install them under Models > Video"
             )
         }
         val weights = NpuFiles.missingAssets(a)
@@ -201,7 +201,7 @@ object VideoClipEncodeNode : VideoNode() {
                 "frame_cond",
             )
         } else {
-            Log.i(TAG, "frame_cond unwired — clipl not loaded")
+            Log.i(TAG, "frame_cond unwired. Clipl not loaded")
         }
         out
     }
@@ -240,7 +240,7 @@ object VideoFirstFrameNode : VideoNode() {
                 )
             val b = TensorStore.get(h.id)
                 ?: throw IllegalStateException(
-                    "node \"${node.id}\": that conditioning has been evicted — Run again"
+                    "node \"${node.id}\": that conditioning has been evicted. Run again"
                 )
             val seed = node.params["seed"]?.toLongOrNull() ?: 0L
             val used = if (seed == 0L) System.currentTimeMillis() else seed
@@ -337,10 +337,10 @@ object VideoSampleSplitNode : VideoNode() {
                     "node \"${node.id}\": input \"latent\" is not connected"
                 )
             val cb = TensorStore.get(ch.id) ?: throw IllegalStateException(
-                "node \"${node.id}\": that conditioning has been evicted — Run again"
+                "node \"${node.id}\": that conditioning has been evicted. Run again"
             )
             val lb = TensorStore.get(lh.id) ?: throw IllegalStateException(
-                "node \"${node.id}\": that latent has been evicted — Run again"
+                "node \"${node.id}\": that latent has been evicted. Run again"
             )
             val seed = node.params["seed"]?.toLongOrNull() ?: 0L
             val used = if (seed == 0L) System.currentTimeMillis() else seed
@@ -408,7 +408,7 @@ object VideoVaeDecodeNode : VideoNode() {
                     "node \"${node.id}\": input \"latent\" is not connected"
                 )
             val lb = TensorStore.get(lh.id) ?: throw IllegalStateException(
-                "node \"${node.id}\": that latent has been evicted — Run again"
+                "node \"${node.id}\": that latent has been evicted. Run again"
             )
             val v = Video(a, runner(ctx, node)) { ctx.say(it.trim()); Log.i("ndVaeDecode", it) }
             ctx.say("decoding")

@@ -88,7 +88,7 @@ class VmCanvasHost(
     override fun loras() = main { vm.loraRows.map { it.name } }
 
     override fun downloadLora(label: String, version: LoraSources.Version): String? {
-        if (main { vm.installingNow }) return "another download is running — try again when it finishes"
+        if (main { vm.installingNow }) return "another download is running. Try again when it finishes"
         main { vm.downloadLora(label, version) }
         while (main { vm.installingNow }) Thread.sleep(500)
         return main { vm.loraFetchError?.let { it.second.message ?: "the download failed" } }

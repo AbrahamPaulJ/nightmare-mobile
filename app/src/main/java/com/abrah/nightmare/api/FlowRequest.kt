@@ -134,7 +134,7 @@ fun applyOverrides(
 /** [v] for widget [k] of [t], or a 400 naming what is wrong. */
 private fun checked(t: NodeType, id: String, k: String, v: String): String {
     val w: Widget = t.widgets.firstOrNull { it.name == k }
-        ?: throw ApiError(400, "node \"$id\" (${t.name}) has no \"$k\" — it has ${t.widgets.joinToString { it.name }}")
+        ?: throw ApiError(400, "node \"$id\" (${t.name}) has no \"$k\". It has ${t.widgets.joinToString { it.name }}")
     w.options?.let { opts ->
         // ⚠ `aspect` and `loras` carry free text the chips only suggest; the rest are closed lists.
         if (k != "aspect" && k != "loras" && opts.isNotEmpty() && v !in opts) {

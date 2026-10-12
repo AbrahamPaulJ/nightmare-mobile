@@ -127,7 +127,7 @@ class BackendFailureReasonTest {
     fun aDeadBackendWithNothingToSayStillReadsAsDead() {
         BackendProcess.output.clear()
         val msg = explainOpFailure(-1, "EOFException: no message")
-        assertTrue(msg.startsWith("the backend stopped —"))
+        assertTrue(msg.startsWith("the backend stopped."))
         assertTrue(msg.contains("EOFException"))
     }
 

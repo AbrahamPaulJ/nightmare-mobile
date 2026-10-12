@@ -374,6 +374,7 @@ private fun RecipeCard(
                             caps.soc.ifEmpty { "this chip" },
                             caps.arch,
                             r.minArch,
+                            archLabel(r.minArch),
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,

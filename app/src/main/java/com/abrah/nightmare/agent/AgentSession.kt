@@ -123,7 +123,7 @@ class AgentSession(
             caption?.let { append("Description: $it ") }
             tags?.let { append("Tags: $it ") }
             if (caption == null && tags == null) append("No description models are installed on the phone; ask what it shows if you need to. ")
-            append("Use it with set_params input_images {imageNodeId: \"$id\"} — the photo of img2img / flux_edit, or a Swap flow's control or IP-Adapter picture node.]")
+            append("Use it with set_params input_images {imageNodeId: \"$id\"}: the photo of img2img / flux_edit, or a Swap flow's control or IP-Adapter picture node.]")
         }
     }
 

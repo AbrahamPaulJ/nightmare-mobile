@@ -1,7 +1,7 @@
 # Nightmare Mobile
 
 **A node graph for image and video generation on Android, running on the Qualcomm Hexagon NPU.**
-Text to image, image to image, inpainting, upscaling, image editing and text to video — all on
+Text to image, image to image, inpainting, upscaling, image editing and text to video. All on
 the phone. No server, no account, no cloud.
 
 <p align="center">
@@ -27,54 +27,55 @@ and it downloads on first use; the app shows which ones your phone can run.
 ## Features
 
 ### The canvas
-- **Built for a phone** — big ports, snap to connect, pinch to zoom; the picture appears on the node that made it.
-- **Local Dream's models, no second download** — models Local Dream keeps in `Download/LocalDream` are listed and run in place, never changed or deleted.
-- **UltraFix** — Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
-- **Hires fix** — one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
-- **LoRA library** — sort LoRAs by name, newest, most used or size, filter by base model, star favourites.
-- **Draw on a picture** — doodle shapes and colours over the image node's photo (or a blank page) and let image to image make them real; pinch to zoom, pick a colour from the picture or any colour from a picker.
-- **Recipes** — text to image, image to image, inpaint, upscale, image edit, text / image to video and two Advanced flows, listed from least to most demanding; one your phone can't run says so.
-- **Several checkpoints in one graph** — each generate node has its own model; the run loads each once and tells you the cost first.
-- **Batching** — sweep seed, steps, CFG, denoise or scheduler; two at once makes a grid. Every result keeps the graph that made it.
-- **Results** — star, save, share, reopen any picture as the flow that made it.
+- **Built for a phone**: big ports, snap to connect, pinch to zoom; the picture appears on the node that made it.
+- **Local Dream's models, no second download**: models Local Dream keeps in `Download/LocalDream` are listed and run in place, never changed or deleted.
+- **UltraFix**: Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
+- **Hires fix**: one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
+  Every other model has **Enlarge ×2** instead, so its picture can be enlarged and passed on to an inpaint that fixes faces.
+- **LoRA library**: sort LoRAs by name, newest, most used or size, filter by base model, star favourites.
+- **Draw on a picture**: doodle shapes and colours over the image node's photo (or a blank page) and let image to image make them real; pinch to zoom, pick a colour from the picture or any colour from a picker.
+- **Recipes**: text to image, image to image, inpaint, upscale, image edit, text / image to video and two Advanced flows, listed from least to most demanding; one your phone can't run says so.
+- **Several checkpoints in one graph**: each generate node has its own model; the run loads each once and tells you the cost first.
+- **Batching**: sweep seed, steps, CFG, denoise or scheduler; two at once makes a grid. Every result keeps the graph that made it.
+- **Results**: star, save, share, reopen any picture as the flow that made it.
 
 ### Models
-- **35 checkpoints in the catalogue** — SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
-- **FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1, Krea 2 Turbo** — any size from 512 to 2048 in 64 px steps, no reload to change it.
-- **Bring your own** — import a converted checkpoint, convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge), or drop in a FLUX.2 / Z-Image / Krea 2 `.safetensors` or `.gguf` fine-tune as it is.
-- **Upscalers** — RealESRGAN anime and 4x UltraSharp V2 Lite, or your own; a checkbox on the output node.
-- **A real inpainting model** — AbsoluteReality Inpaint sees the hole it fills.
+- **35 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
+- **FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1, Krea 2 Turbo**: any size from 512 to 2048 in 64 px steps, no reload to change it.
+- **Bring your own**: import a converted checkpoint, convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge), or drop in a FLUX.2 / Z-Image / Krea 2 `.safetensors` or `.gguf` fine-tune as it is.
+- **Upscalers**: RealESRGAN anime and 4x UltraSharp V2 Lite, or your own; a checkbox on the output node.
+- **A real inpainting model**: AbsoluteReality Inpaint sees the hole it fills.
 
 ### Editing
-- **Inpaint and outpaint** — paint a mask, or zoom the frame out past the photo and the padding is generated.
-- **Tap to select** — tap an object and the mask follows its outline (Segment Anything 2.1).
-- **Auto mask by name** — Clothes, Face, Hair, Shoes or Bag, found in every new photo.
-- **Add Objects** — paste an object from another photo; only its edges are repainted.
-- **Image editing** — FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with an optional second reference picture.
-- **Text and image to video** — 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon).
+- **Inpaint and outpaint**: paint a mask, or zoom the frame out past the photo and the padding is generated.
+- **Tap to select**: tap an object and the mask follows its outline (Segment Anything 2.1).
+- **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
+- **Add Objects**: paste an object from another photo; only its edges are repainted.
+- **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with an optional second reference picture.
+- **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon).
 
 ### LoRA, ControlNet and IP-Adapter
-- **LoRAs per render** — on FLUX.2, Z-Image and Swap models: tick, set strength, no reload. A note per LoRA keeps its trigger words.
-- **Get LoRAs in the app** — search CivitAI and Hugging Face filtered to the model's family, or paste a link; hash-checked downloads.
-- **SD 1.5 Swap and SDXL Swap** — npuforge conversions whose LoRA, **ControlNet** (canny, depth, openpose) and **IP-Adapter** (Plus, Face) are chosen per render; pose and depth are found from a photo on the phone.
-- **Embeddings** — import a textual inversion and name it in a prompt.
+- **LoRAs per render**: on FLUX.2, Z-Image and Swap models: tick, set strength, no reload. A note per LoRA keeps its trigger words.
+- **Get LoRAs in the app**: search CivitAI and Hugging Face filtered to the model's family, or paste a link; hash-checked downloads.
+- **SD 1.5 Swap and SDXL Swap**: npuforge conversions whose LoRA, **ControlNet** (canny, depth, openpose) and **IP-Adapter** (Plus, Face) are chosen per render; pose and depth are found from a photo on the phone.
+- **Embeddings**: import a textual inversion and name it in a prompt.
 
 ### Prompts
-- **A prompt from a picture** — describe any picture on the canvas or in your gallery: **Short** or **Detailed** sentences (Florence-2 PromptGen), or **Tags** in Danbooru style for anime models (WD tagger).
-- **A tag toolbar** — while you type: make the tag under the cursor heavier or lighter, delete it, add one after it, undo, redo.
-- **Tag autocomplete** — matching Danbooru tags under the prompt box as you type, most used first; one tap downloads the list, or import your own CSV, plus an optional translation CSV to search in your own language.
-- **`<lora:name:0.8>` in a prompt** — a prompt pasted from CivitAI applies the LoRAs it names (when you have them) and the tags never reach the text encoder.
-- **Translate** — a Russian or Chinese prompt to English, offline (Firefox Translations), keeping weights like `(long hair:1.2)`.
+- **A prompt from a picture**: describe any picture on the canvas or in your gallery: **Short** or **Detailed** sentences (Florence-2 PromptGen), or **Tags** in Danbooru style for anime models (WD tagger).
+- **A tag toolbar**: while you type: make the tag under the cursor heavier or lighter, delete it, add one after it, undo, redo.
+- **Tag autocomplete**: matching Danbooru tags under the prompt box as you type, most used first; one tap downloads the list, or import your own CSV, plus an optional translation CSV to search in your own language.
+- **`<lora:name:0.8>` in a prompt**: a prompt pasted from CivitAI applies the LoRAs it names (when you have them) and the tags never reach the text encoder.
+- **Translate**: a Russian or Chinese prompt to English, offline (Firefox Translations), keeping weights like `(long hair:1.2)`.
 
 ### Your phone, your files
-- **English, Chinese and Russian** — the app follows your phone's language.
-- **Models where you can see them** — optionally in `Download/Nightmare`, surviving an uninstall.
-- **Download from a mirror** — hf-mirror.com or any address, for every model the app fetches.
-- **Your RAM back** — the model is released when you leave; low-RAM switches for SDXL and Anima.
-- **Three views of one flow** — **Default** (one step at a time, the easy way in), **Advanced** (the whole flow as connected boxes) and **Chat**; Models, Flows, Results, the current flow and the loaded model live in a sidebar; Models, Flows, Results and Settings open as sheets over the flow.
-- **An agent** — ask for pictures in words: an AI model you bring your own key for (OpenRouter, OpenAI, DeepSeek, xAI, Groq or a local server) builds the flow on your canvas, finds and downloads LoRAs, uses a picture you attach, runs it and shows you the picture; no picture is ever sent to the AI model ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/agent/)).
-- **A local API** — a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; token-protected, off by default ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
-- **Offline and private** — nothing is uploaded, no account (the optional agent talks to the provider you choose); a failure report never includes your prompt.
+- **English, Chinese and Russian**: the app follows your phone's language.
+- **Models where you can see them**: optionally in `Download/Nightmare`, surviving an uninstall.
+- **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches.
+- **Your RAM back**: the model is released when you leave; low-RAM switches for SDXL and Anima.
+- **Three views of one flow**: **Default** (one step at a time, the easy way in), **Advanced** (the whole flow as connected boxes) and **Chat**, switched from one button beside the current model; in **Default**, **Swap flow** moves to another flow for the same model keeping your prompt and settings. Models, Flows, Results and the current flow live in a sidebar; Models, Flows, Results and Settings open as sheets over the flow.
+- **An agent**: ask for pictures in words: an AI model you bring your own key for (OpenRouter, OpenAI, DeepSeek, xAI, Groq or a local server) builds the flow on your canvas, finds and downloads LoRAs, uses a picture you attach, runs it and shows you the picture; no picture is ever sent to the AI model ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/agent/)).
+- **A local API**: a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; token-protected, off by default ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
+- **Offline and private**: nothing is uploaded, no account (the optional agent talks to the provider you choose); a failure report never includes your prompt.
 
 The [user guide](https://abrahampaulj.github.io/nightmare-mobile/) explains each of these, with measurements.
 
@@ -83,11 +84,11 @@ The [user guide](https://abrahampaulj.github.io/nightmare-mobile/) explains each
 A generate node is one node to you and several ops underneath: `encode_text`, `vae_encode`,
 `sample`, `latent_blend` and `vae_decode` are separate endpoints on the inference server, and
 conditionings and latents move between them as handles that never cross the wire. The node set is
-deliberately small — an NPU has no runtime compiler, so the inside of a compiled pipeline cannot be
+deliberately small. An NPU has no runtime compiler, so the inside of a compiled pipeline cannot be
 recombined on the phone anyway.
 
 **Writing a node (experimental):** a JSON manifest plus a small JavaScript file, zipped into the
-app's plugin directory — no toolchain, no app release. Four worked examples are in
+app's plugin directory. No toolchain, no app release. Four worked examples are in
 [`examples/`](examples/). The format can still change, and an imported script is code you did not
 write.
 
@@ -101,7 +102,7 @@ clones and builds it and copies the AAR into `app/libs/`.
 ## Credits
 
 **The NPU work is not ours.** The C++ inference server is a fork of
-[xororz/local-dream](https://github.com/xororz/local-dream) — the QNN pipelines, model conversions,
+[xororz/local-dream](https://github.com/xororz/local-dream): the QNN pipelines, model conversions,
 per-chip build tiers and device gating come from there, as do the checkpoint and upscaler archives
 the app downloads. Anyone interested in how Stable Diffusion runs on a Hexagon NPU should start
 there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE).
@@ -154,20 +155,20 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 ## Licence
 
 **CC BY-NC 4.0**, inherited from [xororz/local-dream](https://github.com/xororz/local-dream) rather
-than chosen; no further restrictions are added. Share it, fork it, build on it — don't sell it or
+than chosen; no further restrictions are added. Share it, fork it, build on it. Don't sell it or
 ship it inside something you sell. Full text in [LICENSE](LICENSE); third-party components in
 [NOTICE](NOTICE). The Qualcomm AI Runtime is under Qualcomm's own terms and is not in this repository.
 
 ## Something failed?
 
-Tap the **share** icon on the red error message: it shows a full report — the error, the backend's
-log, your phone and model files, never your prompt — to copy or share as a `.txt`. Attach it to an
+Tap the **share** icon on the red error message: it shows a full report with the error, the backend's
+log, your phone and model files, but never your prompt. Copy or share it as a `.txt`, then attach it to an
 [issue](https://github.com/AbrahamPaulJ/nightmare-mobile/issues). More in the
 [troubleshooting guide](https://abrahampaulj.github.io/nightmare-mobile/troubleshooting/).
 
 ## Support
 
-[buymeacoffee.com/abrahampaulj](https://buymeacoffee.com/abrahampaulj) — tips are welcome and change
+[buymeacoffee.com/abrahampaulj](https://buymeacoffee.com/abrahampaulj): tips are welcome and change
 nothing: the app stays free, offline and CC BY-NC, and nothing is gated behind them.
 
 <sub>**Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile Stable

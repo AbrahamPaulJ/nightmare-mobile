@@ -313,23 +313,9 @@ fun ModelsScreen(
                             }
                         }
                     }
-                    // ⭐ …and the old behaviour, named: keep what is open and just point it at this
-                    // checkpoint ([HarnessViewModel.confirmUse] with no recipe). ⚠ Taken out
-                    // 2026-10-10 and reported missing by a user the next day, so it is back.
-                    // ⚠⚠ CHECKPOINTS only: an upscaler and the video models are not selected
-                    // globally, so "keep the flow" would close the dialog and change nothing.
-                    if (p.spec != null) Surface(
-                        onClick = { onConfirmUse(p.spec, null) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.Transparent,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            stringResource(R.string.models_keep_canvas_flow),
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        )
-                    }
+                    // ⚠⚠ No "Keep the flow on the canvas" row: removed for good by the user,
+                    // 2026-10-11 (it went 2026-10-10, came back on one user's report, and went
+                    // again) — `docs/LEGACY.md` §9. Use always opens a flow.
                 }
             },
             // ⚠ ONE action button. Choosing a flow IS the confirmation, so
@@ -742,7 +728,7 @@ private fun familyNote(family: Family): String = stringResource(when (family) {
         // in use. Said here, before 4 GB is downloaded.
         Family.ANIMA -> R.string.models_family_anima
         // ⚠ Plain files straight into place, so no unpack
-        // headroom — but only an 8 Elite or newer runs them.
+        // headroom. 8 Gen 3 takes the GGUF builds ([ModelCatalog.DIT_GGML_MIN_ARCH]).
         // ⚠ Klein 9B is 10.7 GB and streams its text
         // encoder from disk, so it is the slower of the two.
         Family.FLUX2 -> R.string.models_family_flux2

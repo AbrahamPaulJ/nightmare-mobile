@@ -275,7 +275,7 @@ private fun migrateUpscaleNodes(
     }
     notes += "removed the upscale node" + (if (ups.size == 1) " " else "s ") +
         ups.keys.joinToString(", ") { "\"$it\"" } +
-        " — upscaling is a checkbox on the output node now" +
+        ". Upscaling is a checkbox on the output node now" +
         (if (moved > 0) ", and it is switched on there" else "")
     return out to positions.filterKeys { it !in ups }
 }
@@ -318,7 +318,7 @@ private fun migrateCropNodes(
     }
     notes += "removed the crop node" + (if (crops.size == 1) " " else "s ") +
         crops.keys.joinToString(", ") { "\"$it\"" } +
-        " — crop nodes no longer exist; the framing moved onto the node each fed"
+        ". Crop nodes no longer exist; the framing moved onto the node each fed"
     return out to positions.filterKeys { it !in crops }
 }
 

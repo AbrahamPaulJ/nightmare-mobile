@@ -135,7 +135,7 @@ object UpscalerCatalog {
         UpscalerSpec(
             id = "upscaler_anime",
             label = "Anime 4x",
-            about = "RealESRGAN x4plus anime 6B — for illustration and anime. " +
+            about = "RealESRGAN x4plus anime 6B: for illustration and anime. " +
                 "Flattens skin and fabric texture on a photo.",
             remoteDir = "realesrgan_x4plus_anime_6b",
             builds = listOf(
@@ -149,7 +149,7 @@ object UpscalerCatalog {
         UpscalerSpec(
             id = "upscaler_realistic",
             label = "Realistic 4x",
-            about = "4x UltraSharp V2 Lite — for photos and realistic renders.",
+            about = "4x UltraSharp V2 Lite: for photos and realistic renders.",
             remoteDir = "4x_UltraSharpV2_Lite",
             builds = listOf(
                 UpscalerBuild("8gen2", 23_461_888L, ARCH_8GEN2, 8),
@@ -199,7 +199,7 @@ object UpscalerCatalog {
                     UpscalerSpec(
                         id = dir.name,
                         label = dir.name,
-                        about = "Imported — ${dir.name}.",
+                        about = "Imported: ${dir.name}.",
                         remoteDir = "",
                         // ⚠ Empty, like a custom checkpoint's: there is no URL
                         // that could produce this file, and an empty list is

@@ -263,9 +263,47 @@ data class CanvasState(
      * the VIEW must not lock the graph.
      */
     val panLocked: Boolean = false,
+    /**
+     * ⭐ The Advanced view frames the graph the first time it shows this flow ([framedIn]). True on
+     * every freshly built state — a flow opened, the app restored — and cleared by the frame.
+     */
+    val framePending: Boolean = true,
 ) {
 
     private fun boxes(types: Map<String, NodeType>) = layout(workflow, types, previews, beforePreviews, controlHints)
+
+    /**
+     * ⭐⭐ The viewport that shows EVERY node, centred in the visible part of the canvas (between the
+     * top bar and the Run bar), never above 1× — the user, 2026-10-11: the Advanced view opened
+     * zoomed in, the graph off in a corner. [fitted] fits width only against a 360dp reference
+     * with the offset pinned at 0, which assumes nodes near the origin; this measures the real
+     * boxes ([layout]) against the real screen.
+     *
+     * ⚠ [Viewport.offset] is in device PIXELS and [Viewport.scale] in dp-per-unit
+     * ([Viewport.forDevice]), so every size here is pixels and [density] converts the boxes.
+     * ⚠ A graph too tall even at 0.25× is pinned to the top, the edge people read from.
+     * ⚠ A locked view is the user's own and is left alone.
+     */
+    fun framedIn(
+        types: Map<String, NodeType>, widthPx: Float, heightPx: Float, density: Float,
+        topPx: Float = 0f, bottomPx: Float = 0f,
+    ): CanvasState {
+        val b = boxes(types)
+        if (b.isEmpty() || zoomLocked || panLocked || widthPx <= 0f || heightPx <= 0f) return copy(framePending = false)
+        val minX = b.minOf { it.topLeft.x }
+        val minY = b.minOf { it.topLeft.y }
+        val bw = b.maxOf { it.topLeft.x + it.width } - minX
+        val bh = b.maxOf { it.topLeft.y + it.height } - minY
+        val margin = FRAME_MARGIN_DP * density
+        val visH = heightPx - topPx - bottomPx
+        val fit = minOf((widthPx - 2 * margin) / (bw * density), (visH - 2 * margin) / (bh * density))
+        val scale = fit.coerceIn(0.25f, 1f)
+        val px = scale * density
+        val x = (widthPx - bw * px) / 2f - minX * px
+        val y = if (bh * px > visH - 2 * margin) topPx + margin - minY * px
+        else topPx + (visH - bh * px) / 2f - minY * px
+        return copy(viewport = Viewport(Pt(x, y), scale), framePending = false)
+    }
 
     /**
      * A finger goes down at [world].
@@ -996,6 +1034,8 @@ data class CanvasState(
         viewport = view?.let { Viewport(it.offset, it.scale) } ?: fitted(),
         zoomLocked = view?.zoomLocked ?: false,
         panLocked = view?.panLocked ?: false,
+        // ⭐ A flow arriving: Advanced frames it on first show ([framedIn]).
+        framePending = true,
     )
 
     /**
@@ -1066,6 +1106,9 @@ data class CanvasState(
          * world units that shrink with everything else.
          */
         const val REFERENCE_MARGIN = 32f
+
+        /** ⚠ The gap [framedIn] leaves round the graph, in dp. */
+        const val FRAME_MARGIN_DP = 16f
 
         /**
          * ⚠ How far a clone lands from its original, in world units. Enough

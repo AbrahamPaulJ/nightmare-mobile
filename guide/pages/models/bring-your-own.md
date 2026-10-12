@@ -6,7 +6,7 @@ the family.
 ## SD 1.5, SDXL and Anima: a converted zip
 
 These families run as models **compiled for the NPU**, so a normal `.safetensors` from CivitAI
-cannot be used directly — it has to be converted first. Two ways:
+cannot be used directly. It has to be converted first. Two ways:
 
 - **On the phone, with [npuforge](https://github.com/AbrahamPaulJ/npuforge)**: it turns an SD 1.5
   `.safetensors` checkpoint into an NPU model with no PC involved. Its 9-channel inpainting
@@ -29,7 +29,7 @@ behavior.
 ## FLUX.2, Z-Image and Krea 2: one .safetensors or .gguf
 
 These build their model at load time from ordinary weights, so **a fine-tune from CivitAI or
-Hugging Face imports as-is** — no conversion, no PC. Both `.safetensors` and `.gguf` work.
+Hugging Face imports as-is**. No conversion, no PC. Both `.safetensors` and `.gguf` work.
 
 1. In Models, open **Family ▾ → FLUX.2**, **Z-Image** or **Krea 2**.
 2. Tap **Import** and pick the file.
@@ -63,8 +63,8 @@ If your models are in `Download/Nightmare` ([Settings → Models folder](../refe
 you can copy a model's folder straight into `Download/Nightmare/models/` with a file manager.
 The app finds it the next time you open Models:
 
-- A folder with LocalDream's marker file — `SDXL`, `ANIMA`, `KLEIN`, `ZIMAGE`,
-  `QWEN_IMAGE_2_1`, `npucustom` or `finished` — is taken at its word.
+- A folder with LocalDream's marker file (`SDXL`, `ANIMA`, `KLEIN`, `ZIMAGE`,
+  `QWEN_IMAGE_2_1`, `npucustom` or `finished`) is taken at its word.
 - A FLUX.2 or Z-Image folder with no marker is recognised from its weights.
 
 A model's folder may also contain a `config.json` with its preferred prompt, steps, CFG and

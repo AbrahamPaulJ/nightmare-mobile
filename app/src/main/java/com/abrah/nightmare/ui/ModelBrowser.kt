@@ -530,7 +530,7 @@ private fun ModelMenu(row: ModelRow, busy: Boolean, onInstall: (ModelSpec) -> Un
                 DropdownMenuItem(
                     text = {
                         Text(
-                            if (row.selected) stringResource(R.string.delete) + " — " + stringResource(R.string.in_use).lowercase()
+                            if (row.selected) stringResource(R.string.delete) + ": " + stringResource(R.string.in_use).lowercase()
                             else stringResource(R.string.delete),
                         )
                     },

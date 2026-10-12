@@ -86,7 +86,7 @@ class BatchParamsTest {
 
         val thirdAxis = BatchParams.refusalFor("cfg", "1..3", alreadyArmed = 2)
         assertNotNull(thirdAxis)
-        assertTrue(thirdAxis!!.contains("release"))
+        assertTrue(thirdAxis!!.contains("release", ignoreCase = true))
 
         assertNull(BatchParams.refusalFor("cfg", "1..3", alreadyArmed = 0))
         // ⚠ Blank is "not armed", not "invalid" — clearing a knob is how you

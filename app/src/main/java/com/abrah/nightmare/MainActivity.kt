@@ -583,6 +583,8 @@ fun HarnessScreen(
             onClearImage = vm::clearImage,
             onSaveDrawing = vm::saveDrawing,
             onBlankPicture = { vm.blankPicture(it) },
+            swapFlows = androidx.compose.runtime.remember(vm.canvas.workflow.graph, vm.openedRecipeId) { vm.swapFlows() },
+            onSwapFlow = vm::swapFlow,
             onInspectNode = vm::inspectNode,
             onSaveImage = vm::saveImage,
             onShareImage = vm::shareNodeImage,
@@ -1490,7 +1492,7 @@ private fun PreviewUp() = NightmareTheme {
         state = BackendState.UP, busy = false,
         log = listOf(
             LogLine("12:04:11", "/health 200 in 71 ms"),
-            LogLine("12:04:09", "encode_text — not wired yet (step 2.1)", bad = true),
+            LogLine("12:04:09", "encode_text: not wired yet (step 2.1)", bad = true),
         ),
         image = null,
         onStart = {}, onStop = {},
@@ -1511,7 +1513,7 @@ private fun PreviewDown() = NightmareTheme {
             LogLine("12:04:11", "  no backend on :8085. Stage and launch one first.", bad = true),
             LogLine(
                 "12:04:11",
-                "/health unreachable after 6001 ms — ConnectException: failed to " +
+                "/health unreachable after 6001 ms. ConnectException: failed to " +
                     "connect to /127.0.0.1 (port 8085) after 6000ms",
                 bad = true,
             ),
@@ -1547,7 +1549,7 @@ private fun PreviewSampling() = NightmareTheme {
     HarnessContent(
         state = BackendState.UP, busy = true,
         log = listOf(
-            LogLine("12:04:12", "sample: 20 steps, seed 42 — streaming"),
+            LogLine("12:04:12", "sample: 20 steps, seed 42, streaming"),
         ),
         image = null,
         onStart = {}, onStop = {},

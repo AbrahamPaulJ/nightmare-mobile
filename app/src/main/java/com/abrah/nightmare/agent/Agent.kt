@@ -99,7 +99,7 @@ class Agent(private val model: ChatModel, private val tools: ToolBox, system: St
                 )
             }
         }
-        emit(ChatItem.Error("stopped after $MAX_STEPS steps — say \"go on\" to let it continue"))
+        emit(ChatItem.Error("stopped after $MAX_STEPS steps. Say \"go on\" to let it continue"))
     }
 
     companion object {

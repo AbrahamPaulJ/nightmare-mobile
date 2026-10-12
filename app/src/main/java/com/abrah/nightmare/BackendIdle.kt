@@ -121,7 +121,7 @@ object BackendIdle {
         }
         val running = synchronized(this) { users > 0 }
         Log.i(TAG, "releasing ${key?.model ?: "upscaler"} backend: $why" +
-            if (running) " — abandoning the run in flight" else "")
+            if (running) ". Abandoning the run in flight" else "")
         BackendProcess.stop()
     }
 

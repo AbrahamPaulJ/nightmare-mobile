@@ -94,7 +94,7 @@ object Residency {
      * reads as a failure; this reads as a decision.
      */
     fun why(label: String, modelBytes: Long, deviceRamBytes: Long): String =
-        "released $label — ${gib(modelBytes)} of weights on a ${gib(deviceRamBytes)} phone " +
+        "released $label. ${gib(modelBytes)} of weights on a ${gib(deviceRamBytes)} phone " +
             "does not survive a second render, so the next Run reloads it (~3 s)"
 
     private fun gib(bytes: Long): String =

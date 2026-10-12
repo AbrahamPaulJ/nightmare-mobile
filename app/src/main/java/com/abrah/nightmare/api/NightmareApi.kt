@@ -46,7 +46,7 @@ class NightmareApi(private val ctx: Context) {
     private fun route(req: MiniHttp.Request, res: MiniHttp.Response) {
         if (req.path == "/info" && req.method == "GET") return res.json(200, info().toString())
         if (!ApiSettings.matches(ApiSettings.token(ctx), req.headers["authorization"], req.query["token"])) {
-            throw ApiError(401, "a token is needed — Settings → API on the phone")
+            throw ApiError(401, "a token is needed. Settings → API on the phone")
         }
         val parts = req.path.trim('/').split('/').filter { it.isNotEmpty() }
         when {

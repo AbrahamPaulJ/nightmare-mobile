@@ -16,7 +16,7 @@ changes everything around it.
 
 ### Views
 
-**Open on Default** or **Open on Advanced** — the view the app starts on (asked the first time).
+**Open on Default** or **Open on Advanced**: the view the app starts on (asked the first time).
 **Default view top to bottom** shows every step one under another instead of swiping between them.
 It changes the Default view only; the Advanced view's node sheet always swipes side to side.
 
@@ -32,16 +32,16 @@ While you type in a prompt box, matching tags appear under it as a row of chips,
 first; tap one to replace the word you were typing (`long ha` → `long hair, `). Tags with
 brackets go in escaped, so `ganyu (genshin impact)` stays a name and not a weight.
 
-- **Tag dictionary** — tap **Download** for Danbooru's tag list (3.4 MB, 140,000 tags with their
+- **Tag dictionary**: tap **Download** for Danbooru's tag list (3.4 MB, 140,000 tags with their
   aliases, from a1111-sd-webui-tagcomplete), or **Import CSV** to use your own in the same
   `tag,category,count,aliases` form. Suggestions are off until one is installed.
-- **Translation dictionary** (optional) — **Import CSV** with `tag,translation` lines, and you can
+- **Translation dictionary** (optional). **Import CSV** with `tag,translation` lines, and you can
   type in your own language to find a tag: `长发` suggests `long hair`.
 - The switch turns suggestions off without deleting either dictionary.
 
 ### Translation
 
-Nightmare can translate a **Russian or Chinese** prompt to English on the phone, offline — SD
+Nightmare can translate a **Russian or Chinese** prompt to English on the phone, offline. SD
 1.5 and SDXL only read English. The **文A** button on a prompt box does it; the same button
 undoes it. Weights like `(long hair:1.2)` and English tags pass through untouched.
 
@@ -64,14 +64,14 @@ Import textual-inversion files and use them by name in a prompt. [Embeddings](..
 
 Where downloaded and imported models are kept:
 
-- **App storage (private)** — the default. Nothing else can see the files, and **uninstalling
+- **App storage (private)**: the default. Nothing else can see the files, and **uninstalling
   the app deletes them**.
-- **Download/Nightmare (visible)** — any file manager can reach them and they survive an
+- **Download/Nightmare (visible)**: any file manager can reach them and they survive an
   uninstall. Needs **All files access**, which is asked for only when you choose this.
 
 **Local Dream's models are used where they are.** If you also use Local Dream (3.0 alpha.5 or
 later) with its models in **Download/LocalDream**, Nightmare lists them, marked **Local Dream**, and
-runs them from there without a second download. It never changes or deletes them — delete them in
+runs them from there without a second download. It never changes or deletes them. Delete them in
 Local Dream. This needs All files access, like Download/Nightmare.
 
 Switching offers to **move** the models you already have, with the size, a progress bar and
@@ -81,17 +81,17 @@ same in either place.
 ### Download source
 
 Where model files are fetched from: **Hugging Face** (default), **hf-mirror.com**, or a
-**Custom** base address — tap **Custom**, type the address (it starts as `https://`), and it is
-saved when you press Done or leave the field. Change it if Hugging Face is slow or blocked where you are — it applies
+**Custom** base address. Tap **Custom**, type the address (it starts as `https://`), and it is
+saved when you press Done or leave the field. Change it if Hugging Face is slow or blocked where you are. It applies
 to every model, upscaler, segmenter, pose detector, depth estimator, ControlNets, translation model, the describe and tagger models, the tag dictionary and the video models.
 
 ### CivitAI
 
 Used by **Search online** in a node's LoRA list ([LoRAs](../models/loras.md)):
 
-- **CivitAI API key** — most CivitAI LoRAs download only with your own free key (civitai.com →
+- **CivitAI API key**: most CivitAI LoRAs download only with your own free key (civitai.com →
   Account settings → API Keys). It is kept on this phone and sent only to CivitAI.
-- **Show mature content** — off by default. When on, searches go to civitai.red, which
+- **Show mature content**: off by default. When on, searches go to civitai.red, which
   includes NSFW LoRAs and previews.
 
 ### LoRAs
@@ -128,8 +128,8 @@ switch apps.
 
 ### API
 
-**Listen on the local network** lets another device on your Wi-Fi or tailnet run your flows —
-off by default. When on, it shows the address and the token to use. [Local API](api.md)
+**Listen on the local network** lets another device on your Wi-Fi or tailnet run your flows.
+Off by default. When on, it shows the address and the token to use. [Local API](api.md)
 
 ### Clean temp files
 

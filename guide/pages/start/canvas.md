@@ -12,17 +12,19 @@ controls around it.
 
 | control | what it does |
 |---|---|
-| ☰ (menu) | Opens the sidebar — see below |
+| ☰ (menu) | Opens the sidebar. See below |
 | 💾 (save) | Save this flow under a name. It is pre-filled with the flow it came from. |
-| **Chat · Default · Advanced** | The three views of the same flow — see below |
+| 🖼 (results) | Opens [Results](../reference/results.md), every picture you kept, the same as Results in the sidebar |
+| **View button** (e.g. **Default ⇄**) | The view you are in. Tap **⇄** for the next view (Chat, Default, Advanced, round again), or tap the name to pick one from a list. See below |
+| **Current model** | The model the flow renders with |
 | **ⓘ** | What each of the three views is |
 
 ### Three views of one flow
 
-- **Default** — one step at a time: swipe between the prompt, the generate step and the output
+- **Default**: one step at a time: swipe between the prompt, the generate step and the output
   (or, with **Default view top to bottom** in Settings, scroll through them). The easy way in.
-- **Advanced** — the whole flow as connected boxes, for building your own.
-- **Chat** — ask for pictures in words; an AI model you bring your own key for builds and runs
+- **Advanced**: the whole flow as connected boxes, for building your own.
+- **Chat**: ask for pictures in words; an AI model you bring your own key for builds and runs
   the flow. [Chat](../reference/agent.md)
 
 All three edit the same flow, and Run is at the bottom of each. The view's page and the Run
@@ -37,7 +39,7 @@ Beside the seed, above Run, is how much memory the phone has free, e.g. `RAM 4.9
 
 ## The sidebar
 
-The ☰ at the top left opens it — on the main screen and at the top of Models, Flows, Results
+The ☰ at the top left opens it. On the main screen and at the top of Models, Flows, Results
 and Settings. Close it with ✕, a tap beside it, a swipe left or Back.
 
 **Models**, **Flows**, **Results** and **Settings** open as sheets over the flow, each with its
@@ -50,7 +52,7 @@ another one from the sidebar replaces the sheet.
 | **Flows** | Ready-made flows (**Recommended**) and your own (**Saved**). [Flows](../flows/index.md) |
 | **Results** | Every picture and clip you have made, with the flow that made it. [Results](../reference/results.md) |
 | **Current flow** | The flow's name, **Unsaved** when it has changes that are not saved, and **Save flow** |
-| **Model** | The model this flow uses and its state — **Idle**, **Loading** or **Loaded** — and the free memory |
+| **Model** | The model this flow uses and its state. **Idle**, **Loading** or **Loaded**: and the free memory |
 | **Settings** | [Settings](../reference/settings.md) |
 | **About** | This phone's chip and NPU. [Install](install.md#check-what-your-phone-can-run) |
 
@@ -65,14 +67,14 @@ short summary. Dots on the left edge are **inputs**, dots on the right are **out
 **wire** carries a result from an output to an input. The dot colour tells you what kind of
 thing travels on it (a prompt, a picture, a video).
 
-There are only five kinds of node — see [Nodes and their settings](../reference/nodes.md):
+There are only five kinds of node. See [Nodes and their settings](../reference/nodes.md):
 
-- **Prompt** — the text.
-- **Image** — a photo from your gallery.
-- **Image** / **Inpaint** generators — the model that makes the picture. Its title follows what
+- **Prompt**: the text.
+- **Image**: a photo from your gallery.
+- **Image** / **Inpaint** generators: the model that makes the picture. Its title follows what
   is wired into it: *Text to image*, *Image to image*, *Image edit* or *Inpaint*.
-- **Video** — the video generator.
-- **Output** — where the result lands, is kept and (optionally) enlarged.
+- **Video**: the video generator.
+- **Output**: where the result lands, is kept and (optionally) enlarged.
 
 ## Gestures
 
@@ -109,9 +111,9 @@ At the bottom of each sheet, **Reset node** puts every setting back to its defau
 
 **+ Node** opens the palette in three tabs:
 
-- **Common** — Image, Prompt, Output.
-- **Generate** — the **Image** generator (with a chip per model family) and **Video**.
-- **Inpaint** — the Inpaint generator, per family.
+- **Common**: Image, Prompt, Output.
+- **Generate**: the **Image** generator (with a chip per model family) and **Video**.
+- **Inpaint**: the Inpaint generator, per family.
 
 The new node appears in the middle of the screen. Wire it in, set it up, and Run.
 
@@ -127,10 +129,10 @@ The new node appears in the middle of the screen. Wire it in, set it up, and Run
 ## Running
 
 **Run** runs the whole flow. Nodes whose settings and inputs have not changed since the last
-Run are **not** run again — change the prompt, and only the generator and what follows it runs.
+Run are **not** run again. Change the prompt, and only the generator and what follows it runs.
 
-While it runs, the **Default view** turns to the output page, where the picture's frame — the
-shape of what it is making — carries the log along its bottom edge: the node running now and its
+While it runs, the **Default view** turns to the output page, where the picture's frame, shaped
+like what it is making, carries the log along its bottom edge: the node running now and its
 progress as a percentage, then the latest lines. The other steps are still a swipe away. When it
 is done the picture takes the frame's place, and the full log is in the panel above Run. In the
 Advanced view the **run log** above the button shows, as it runs:
@@ -139,7 +141,7 @@ Advanced view the **run log** above the button shows, as it runs:
 - each finished node and how long it took;
 - the total time once it is done.
 
-The ✕ hides the log (it does not stop the run). The copy button copies the whole log — paste it
+The ✕ hides the log (it does not stop the run). The copy button copies the whole log. Paste it
 into a bug report. To **stop** a render, tap **Cancel** on the Run button.
 
 If a node fails, it turns red and says why underneath itself, and everything after it is shown
@@ -153,11 +155,24 @@ as blocked.
 
 `seed: random` means every Run makes a new picture. Tap the **padlock** to lock the seed of
 the last picture: from then on every Run starts from that same noise, so you can change the
-prompt or a setting and see only the effect of that change. Tap again to unlock.
+prompt or a setting and see only the effect of that change. Locked, the chip shows the number
+in violet with a closed padlock. Tap again to unlock.
+
+A flow with two or more Image nodes (generate, then inpaint) shows one chip, e.g.
+`seeds: 1 locked · 1 random`. Tap it for a list with each node's seed and its own padlock.
+
+## Swap flow and Remove input (Default view)
+
+On a flow with one Image node, its page has **Swap flow**: open another flow for the same
+model (text to image, image to image, inpaint, ...). The prompt, seed, steps, CFG, sampler,
+size, LoRAs and the picture come with you; a mask does not.
+
+On the picture's page, **Remove input** takes the flow back to text to image, keeping the
+prompt and settings.
 
 ## Saving your work
 
-The canvas saves itself as you go — close the app and it reopens where you left it, zoom and
+The canvas saves itself as you go. Close the app and it reopens where you left it, zoom and
 position included. To keep a flow for later, tap 💾 and name it; it then appears under
 **Flows → Saved**. Flows can also be shared as a `.json` file and imported with
 **Import a flow** at the bottom of the Flows tab.

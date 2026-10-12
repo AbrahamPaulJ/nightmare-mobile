@@ -1,12 +1,12 @@
 # Download, switch and delete
 
-Open **Models**. Along the top are chips by what a model does — **All**, **Generate**, **Edit**,
-**Inpaint**, then **Video**, **Upscalers** and **Tools** — with a search box under them
+Open **Models**. Along the top are chips by what a model does: **All**, **Generate**, **Edit**,
+**Inpaint**, then **Video**, **Upscalers** and **Tools**, with a search box under them
 (try `anime`, `inpaint`, `flux`) and a **Family** menu that opens one family's own page, with
 its typical size and anything to know before downloading.
 
 The list has three parts: **Installed** (the model in use first), **Available**, and, folded
-away at the bottom, **Not for this phone** — models your chip or RAM cannot run.
+away at the bottom, **Not for this phone**: models your chip or RAM cannot run.
 
 ## Reading a card
 
@@ -25,15 +25,15 @@ word, and the size.
 
 ## Download
 
-Tap **Download**. The row shows the size, a progress bar and **Cancel**. Models are large —
-use Wi-Fi. If Hugging Face is slow or blocked where you are, change the download source in
+Tap **Download**. The row shows the size, a progress bar and **Cancel**. Models are large.
+Use Wi-Fi. If Hugging Face is slow or blocked where you are, change the download source in
 [Settings → Models](../reference/settings.md#download-source).
 
 ## Use
 
 **Use** asks what to do with the model: pick one of the flows it can run to open that flow with
 it, or **Keep the flow on the canvas** to leave your flow as it is and just switch its generator
-nodes to this model (keeping every wire and your settings). Each generator node can also have its own model — tap the
+nodes to this model (keeping every wire and your settings). Each generator node can also have its own model. Tap the
 node and pick under **Checkpoint**.
 
 ## Delete
@@ -43,7 +43,7 @@ download again. Deleting the model in use selects another one.
 
 ## Repair
 
-A model with a missing file says which one, and **Repair** downloads just that file — not the
+A model with a missing file says which one, and **Repair** downloads just that file, not the
 whole model.
 
 <figure markdown>
@@ -52,7 +52,7 @@ whole model.
 
 ## Where models are kept
 
-By default, in the app's private storage — nothing else can see them, and **uninstalling the app
+By default, in the app's private storage. Nothing else can see them, and **uninstalling the app
 deletes them**. Settings can move them to `Download/Nightmare`, where file managers can reach
 them and they survive an uninstall; loading speed is the same. See
 [Settings → Models folder](../reference/settings.md#models-folder).

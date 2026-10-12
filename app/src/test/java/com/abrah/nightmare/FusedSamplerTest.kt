@@ -538,6 +538,82 @@ class FusedSamplerTest {
             SelectedModel.set(ctx, V1_MODEL)
         }
     }
+
+    /**
+     * ⭐⭐ Hires fix after a render at a resolution PATCH switches to the model's square graph
+     * before UltraFix — the executor's own switch, so the next keyed node switches back. ⚠ A 512
+     * tile through the 512x768 graph was a SIGSEGV on the first UNet call (2026-10-11).
+     */
+    @Test
+    fun hiresFixAfterAPatchLoadsTheSquareGraphFirst() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        installUpscaler(ctx)
+        val host = RecordingHost()
+        val switched = mutableListOf<ContextKey>()
+        val r = Executor(host, android = ctx, switchKey = { k -> switched += k; true })
+            .run(hiresGraph(64, 96))
+        assertNull(r.error)
+        val square = ModelCatalog.byId(V1_MODEL)!!.native
+        assertEquals(ContextKey(ModelCatalog.backendTypeOf(V1_MODEL), V1_MODEL, square.width, square.height), switched.last())
+        assertEquals(1, host.ultrafixes)
+    }
+
+    /** ⭐ …and a render already AT the square graph pays no relaunch. */
+    @Test
+    fun hiresFixAtTheSquareGraphDoesNotSwitch() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        installUpscaler(ctx)
+        val square = ModelCatalog.byId(V1_MODEL)!!.native
+        val host = RecordingHost()
+        val switched = mutableListOf<ContextKey>()
+        val r = Executor(host, android = ctx, switchKey = { k -> switched += k; true })
+            .run(hiresGraph(square.width, square.height))
+        assertNull(r.error)
+        assertEquals("only the run's own launch", 1, switched.size)
+        assertEquals(1, host.ultrafixes)
+    }
+
+    /** ⚠ No way to switch: the render is kept and the person is told — never a crash. */
+    @Test
+    fun hiresFixThatCannotSwitchKeepsTheRender() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        installUpscaler(ctx)
+        val host = RecordingHost()
+        val warned = mutableListOf<String>()
+        val r = exec(host).run(hiresGraph(64, 96), onWarn = { _, t -> warned += t })
+        assertNull(r.error)
+        assertEquals(0, host.ultrafixes)
+        assertTrue(warned.joinToString(), warned.any { it.startsWith("Hires fix skipped: could not load") })
+    }
+
+    /** ⭐ Enlarge ×2 on a sampler with no Hires fix: its OWN output is the doubled picture, for the next node. */
+    @Test
+    fun enlargeDoublesTheSamplersOwnOutput() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        installUpscaler(ctx)
+        val r = exec(RecordingHost()).run(graph(type = SdSampler.SD15_SWAP.name, params = mapOf(SdSampler.ENLARGE to "true")))
+        assertNull(r.error)
+        assertEquals(128, r.outputs["sample"]?.previewImage()?.w)
+    }
+
+    private fun installUpscaler(ctx: android.content.Context) {
+        UpscalerCatalog.ALL.first().file(ctx).apply { parentFile?.mkdirs(); writeBytes(ByteArray(8) { 1 }) }
+        UpscalerCatalog.refresh(ctx)
+    }
+
+    private fun hiresGraph(w: Int, h: Int) = Graph(
+        listOf(
+            Node("prompt", "core.prompt", mapOf("prompt" to "a cat", "negative" to "blurry")),
+            Node(
+                "sample", SdSampler.SD15.name,
+                mapOf(
+                    "model" to V1_MODEL, "width" to "$w", "height" to "$h",
+                    "steps" to "4", "cfg" to "7.5", "seed" to "1", SdSampler.HIRES to "true",
+                ),
+                mapOf("prompt" to Source("prompt")),
+            ),
+        )
+    )
 }
 
 /**
@@ -636,9 +712,27 @@ private class RecordingHost : OpHost {
         )
     }
 
+    // ⚠ A real 4x JPEG: the sampler's Hires fix decodes it.
     override suspend fun upscale(
         rgb: ByteArray, width: Int, height: Int, upscalerPath: String,
-    ): Ops.Result<Ops.Upscaled> = Ops.Result.Ok(Ops.Upscaled(ByteArray(0), width, height, 1, 1))
+    ): Ops.Result<Ops.Upscaled> {
+        val bmp = android.graphics.Bitmap.createBitmap(width * 4, height * 4, android.graphics.Bitmap.Config.ARGB_8888)
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+        return Ops.Result.Ok(Ops.Upscaled(out.toByteArray(), width * 4, height * 4, 1, 1))
+    }
+
+    var ultrafixes = 0
+
+    override suspend fun ultrafix(
+        png: ByteArray, width: Int, height: Int,
+        prompt: String, negative: String, steps: Int, cfg: Double, seed: Int, denoise: Double,
+        tileSize: Int, scheduler: String,
+        onProgress: (Ops.Progress) -> Unit,
+    ): Ops.Result<Ops.Decoded> {
+        ultrafixes++
+        return Ops.Result.Ok(Ops.Decoded(solidPng(width, height, 0xFF00FF00.toInt()), "rgb_uf", 1L, 2L))
+    }
 }
 
 private fun solidPng(w: Int, h: Int, color: Int): ByteArray {

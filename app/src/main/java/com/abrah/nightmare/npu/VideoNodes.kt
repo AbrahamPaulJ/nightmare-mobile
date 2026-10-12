@@ -199,7 +199,7 @@ object VideoSampleNode : NodeType {
         val seed = node.params["seed"]?.toLongOrNull() ?: 0L
         val prompt = (inputs["prompt"] as? Value.Prompt)?.positive
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": nothing is wired into \"prompt\" — " +
+                "node \"${node.id}\": nothing is wired into \"prompt\". " +
                     "drag a Prompt node out of the palette and connect it"
             )
         val source = inputs["image"] as? Value.Image
@@ -208,8 +208,8 @@ object VideoSampleNode : NodeType {
         if (missing.isNotEmpty()) {
             throw IllegalStateException(
                 "node \"${node.id}\": ${missing.size} video model(s) not on this device " +
-                    "(${missing.take(3).joinToString()}${if (missing.size > 3) ", …" else ""}) " +
-                    "— they live in ${NpuFiles.ctxDir(android)}"
+                    "(${missing.take(3).joinToString()}${if (missing.size > 3) ", …" else ""})" +
+                    ". They live in ${NpuFiles.ctxDir(android)}"
             )
         }
         val missingAssets = NpuFiles.missingAssets(android)
@@ -310,7 +310,7 @@ object VideoSampleNode : NodeType {
                 Log.i(TAG, "  $stage $i/$n")
             }
             frames = r.frames
-            ctx.say("${frames.size} frames in ${"%.1f".format(r.seconds)} s — encoding")
+            ctx.say("${frames.size} frames in ${"%.1f".format(r.seconds)} s. Encoding")
             Log.i(TAG, "video: ${frames.size} frames in ${"%.1f".format(r.seconds)} s")
         } finally {
             // ⚠⚠ ALWAYS. Three MMDiT contexts are ~4.6 GB of mappings; leaving
@@ -464,7 +464,7 @@ object VideoOutputNode : NodeType {
             )
         val file = File(video.path)
         check(file.isFile) {
-            "node \"${node.id}\": the clip is gone from ${file.parent} — run the sampler again"
+            "node \"${node.id}\": the clip is gone from ${file.parent}. Run the sampler again"
         }
         val stem = node.params["name"].orEmpty().ifBlank { "nightmare" }
         VideoWriter.publish(android, file, "${stem}_${System.currentTimeMillis()}.mp4") {

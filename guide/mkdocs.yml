@@ -1,8 +1,8 @@
-# The Nightmare user guide — built by .github/workflows/guide.yml and served on GitHub Pages.
+# The Nightmare user guide: built by .github/workflows/guide.yml and served on GitHub Pages.
 # Local preview:  pip install mkdocs-material  &&  mkdocs serve -f guide/mkdocs.yml
 site_name: Nightmare user guide
 site_url: https://abrahampaulj.github.io/nightmare-mobile/
-site_description: How to use Nightmare Mobile — image and video generation on your phone's NPU, as a node graph.
+site_description: How to use Nightmare Mobile. Image and video generation on your phone's NPU, as a node graph.
 site_author: Abraham Paul Jaison
 repo_url: https://github.com/AbrahamPaulJ/nightmare-mobile
 repo_name: nightmare-mobile

@@ -22,7 +22,7 @@ class ErrorReportTest {
     private val negative = "blurry, low quality, distorted"
 
     private fun facts(tail: List<String>, exit: BackendProcess.Exit? = null) = ErrorReport.Facts(
-        message = "generate: generate failed http -1 — the backend stopped",
+        message = "generate: generate failed http -1. The backend stopped",
         nowMs = 10_000L,
         version = "1.6.068 (168)",
         device = "Xiaomi 25010PN30C",

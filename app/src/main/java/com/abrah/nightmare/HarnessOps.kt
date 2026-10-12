@@ -287,7 +287,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     private suspend fun npuI2v(arg: String?) {
         val uri = newestSavedImage()
         if (uri == null) {
-            say("i2v: nothing in Pictures/${ImageSaver.FOLDER} yet — run `save_image` first",
+            say("i2v: nothing in Pictures/${ImageSaver.FOLDER} yet. Run `save_image` first",
                 bad = true)
             return
         }
@@ -316,7 +316,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             },
         )
         if (r.error != null) {
-            say("i2v: refused — ${r.error}", bad = true)
+            say("i2v: refused. ${r.error}", bad = true)
             return
         }
         val clip = r.outputs["decode"] as? com.abrah.nightmare.Value.Video
@@ -347,7 +347,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // `content://` as a file name.
         val uri = if (pushed.canRead()) pushed.absolutePath else newestSavedImage()
         if (uri == null) {
-            say("inpaint: nothing in Pictures/${ImageSaver.FOLDER} yet — run `save_image` first", bad = true)
+            say("inpaint: nothing in Pictures/${ImageSaver.FOLDER} yet. Run `save_image` first", bad = true)
             return
         }
         val stitch = arg == "stitch"
@@ -416,7 +416,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             },
         )
         if (r.error != null) {
-            say("inpaint: refused — ${r.error}", bad = true)
+            say("inpaint: refused. ${r.error}", bad = true)
             return
         }
         val dir = java.io.File(ctx.getExternalFilesDir(null), "inpaint").apply { mkdirs() }
@@ -436,7 +436,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val images = r.outputs.filterValues { it is Value.Image }
         if (images.isEmpty()) say("  no image output at all", bad = true)
         for ((id, v) in images) dump(id, v)
-        say("inpaint: stitch=$stitch — pictures in ${dir.absolutePath}")
+        say("inpaint: stitch=$stitch. Pictures in ${dir.absolutePath}")
     }
 
     /**
@@ -503,7 +503,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }.orEmpty().sortedBy { it.name.lowercase() }
         say("loras in ${dir.absolutePath}")
         if (files.isEmpty()) {
-            say("  none — an adapter left in Download/ cannot be read by the backend", bad = true)
+            say("  none. An adapter left in Download/ cannot be read by the backend", bad = true)
             return
         }
         for (f in files) say("  ${f.name.padEnd(44)} ${f.length() shr 20} MB")
@@ -543,7 +543,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             )
             return when (r) {
                 is Ops.Result.Err -> {
-                    say("  $label FAILED http ${r.code} — ${r.body.take(200)}", bad = true); null
+                    say("  $label FAILED http ${r.code}. ${r.body.take(200)}", bad = true); null
                 }
                 is Ops.Result.Ok -> {
                     java.io.File(dir, "$label.png").writeBytes(r.value.png)
@@ -559,11 +559,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // ⚠⚠ The assertion that cannot be faked by a hopeful log line.
         val same = plain.contentEquals(withL)
         say(
-            if (same) "dit_lora: IDENTICAL output — the adapter did NOT reach the weights"
-            else "dit_lora: output CHANGED — the adapter reached the weights",
+            if (same) "dit_lora: IDENTICAL output. The adapter did NOT reach the weights"
+            else "dit_lora: output CHANGED. The adapter reached the weights",
             bad = same,
         )
-        say("pictures in ${dir.absolutePath} — pull and LOOK, a changed picture can still be noise")
+        say("pictures in ${dir.absolutePath}. Pull and LOOK, a changed picture can still be noise")
         drainBackendLog()
     }
 
@@ -601,7 +601,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         for (e in entries) {
             val f = java.io.File(dir, e.name)
             say("  ${e.name} x${com.abrah.nightmare.LoraSpec.number(e.strength)} " +
-                if (f.isFile) "(${f.length() shr 20} MB)" else "— NOT INSTALLED")
+                if (f.isFile) "(${f.length() shr 20} MB)" else ". NOT INSTALLED")
         }
         val res = SelectedModel.res
         // ⚠⚠ The backend, FIRST. [runWorkflow] relaunches for a key it does
@@ -671,7 +671,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             if (r.error != null) {
                 // ⭐⭐ A REFUSAL is a pass for the missing-file leg and a failure
                 // for the others, so it is printed rather than swallowed.
-                say("  $label refused — ${r.error}", bad = true)
+                say("  $label refused. ${r.error}", bad = true)
                 return null
             }
             val img = r.outputs["output"] as? Value.Image
@@ -694,8 +694,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val withL = leg("with_lora", name) ?: return
         val same = plain.contentEquals(withL)
         say(
-            if (same) "lora_node: IDENTICAL output — the param did NOT reach the engine"
-            else "lora_node: output CHANGED — the param reached the engine",
+            if (same) "lora_node: IDENTICAL output. The param did NOT reach the engine"
+            else "lora_node: output CHANGED. The param reached the engine",
             bad = same,
         )
         say("pictures in ${out.absolutePath}")
@@ -731,7 +731,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             width = size, height = size, imagePng = png, denoise = UltraFix.strength(p.denoiseSteps, p.steps),
             ultrafix = true, tileSize = tile, scheduler = spec.scheduler,
         )) {
-            is Ops.Result.Err -> say("ultrafix FAILED http ${r.code} — ${r.body.take(300)}", bad = true)
+            is Ops.Result.Err -> say("ultrafix FAILED http ${r.code}. ${r.body.take(300)}", bad = true)
             is Ops.Result.Ok -> {
                 java.io.File(out, "out.png").writeBytes(r.value.png)
                 say("ultrafix ok ${System.currentTimeMillis() - t0} ms, ${r.value.png.size} bytes -> ${out.absolutePath}/out.png")
@@ -796,7 +796,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     bad = n.outcome == Outcome.FAILED)
             })
             if (r.error != null) {
-                say("  $label refused — ${r.error}", bad = true); return null
+                say("  $label refused. ${r.error}", bad = true); return null
             }
             val img = r.outputs["output"] as? Value.Image ?: (r.outputs["generate"] as? Value.Image)
             val png = img?.let { images.png(it.id) }
@@ -932,7 +932,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     negative = negative, steps = 4, cfg = 1.0, seed = 12345,
                     width = res.width, height = res.height,
                 )) {
-                    is Ops.Result.Err -> return say("dit_bench: base FAILED http ${r.code} — ${r.body.take(200)}", bad = true)
+                    is Ops.Result.Err -> return say("dit_bench: base FAILED http ${r.code}. ${r.body.take(200)}", bad = true)
                     is Ops.Result.Ok -> f.writeBytes(r.value.png)
                 }
             }
@@ -948,7 +948,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         )
         val ms = System.currentTimeMillis() - t0
         when (r) {
-            is Ops.Result.Err -> say("dit_bench ${spec.id} $mode,$steps FAILED after $ms ms — http ${r.code} ${r.body.take(200)}", bad = true)
+            is Ops.Result.Err -> say("dit_bench ${spec.id} $mode,$steps FAILED after $ms ms. Http ${r.code} ${r.body.take(200)}", bad = true)
             is Ops.Result.Ok -> {
                 java.io.File(dir, "${spec.id}_${mode}_$steps.png").writeBytes(r.value.png)
                 say("dit_bench ${spec.id} $mode,$steps ${res.width}x${res.height}  $ms ms")
@@ -988,11 +988,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val baseFile = java.io.File(dir, "0_base.png")
         val reuse = arg == "ref1" && baseFile.isFile()
         val base = if (reuse) {
-            say("dit_edit: reusing ${baseFile.name} — the reference leg runs FIRST in this process")
+            say("dit_edit: reusing ${baseFile.name}. The reference leg runs FIRST in this process")
             Ops.Decoded(baseFile.readBytes(), "", 0L, 0L)
         } else {
             // The base everything else edits, at a fixed seed so a rerun compares.
-            say("dit_edit: base — ${res.width}x${res.height}")
+            say("dit_edit: base. ${res.width}x${res.height}")
             val b = when (
                 val r = Ops.generate(
                     prompt = "a red brick house beside a lake, clear sky, photorealistic",
@@ -1000,7 +1000,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     width = res.width, height = res.height,
                 )
             ) {
-                is Ops.Result.Err -> return say("dit_edit: base FAILED http ${r.code} — ${r.body.take(200)}", bad = true)
+                is Ops.Result.Err -> return say("dit_edit: base FAILED http ${r.code}. ${r.body.take(200)}", bad = true)
                 is Ops.Result.Ok -> r.value
             }
             baseFile.writeBytes(b.png)
@@ -1026,7 +1026,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             )
             when (r) {
                 is Ops.Result.Err ->
-                    say("  $label FAILED http ${r.code} — ${r.body.take(200)}", bad = true)
+                    say("  $label FAILED http ${r.code}. ${r.body.take(200)}", bad = true)
                 is Ops.Result.Ok -> {
                     java.io.File(dir, "$label.png").writeBytes(r.value.png)
                     say("  $label ok  ${System.currentTimeMillis() - t0} ms")
@@ -1053,7 +1053,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             val photo = newestSavedImage() ?: java.io.File(dir, "0_base.png")
                 .takeIf { it.isFile() }?.absolutePath
             if (photo == null) {
-                say("  node leg SKIPPED — no gallery picture and no 0_base.png to use as a reference")
+                say("  node leg SKIPPED. No gallery picture and no 0_base.png to use as a reference")
             } else {
                 val types = nodeTypes()
                 val basePath = java.io.File(dir, "0_base.png").absolutePath
@@ -1086,7 +1086,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 val t0 = System.currentTimeMillis()
                 val r = runWorkflow(com.abrah.nightmare.canvas.Workflow(g, emptyMap()))
                 if (r.error != null) {
-                    say("  node_reference REFUSED — ${r.error}", bad = true)
+                    say("  node_reference REFUSED. ${r.error}", bad = true)
                 } else {
                     val img = r.outputs.values.filterIsInstance<Value.Image>().lastOrNull()
                     val png = img?.let { images.png(it.id) }
@@ -1099,7 +1099,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
         }
 
-        say("dit_edit: done — pictures in ${dir.absolutePath}")
+        say("dit_edit: done. Pictures in ${dir.absolutePath}")
     }
 
     private suspend fun modelsPlaceProbe(arg: String?) {
@@ -1178,7 +1178,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (!ensureBackend(key)) return say("hires: no backend", bad = true)
         val t0 = System.currentTimeMillis()
         val r = runWorkflow(com.abrah.nightmare.canvas.Workflow(g, emptyMap()))
-        if (r.error != null) return say("hires: refused — ${r.error}", bad = true)
+        if (r.error != null) return say("hires: refused. ${r.error}", bad = true)
         val img = r.outputs.values.filterIsInstance<Value.Image>().lastOrNull() ?: return say("hires: no picture", bad = true)
         val png = images.png(img.id) ?: return say("hires: evicted", bad = true)
         java.io.File(dir, "out.png").writeBytes(png)
@@ -1221,14 +1221,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             if (!ensureBackend(key)) return say("t2i: no backend", bad = true)
             val t0 = System.currentTimeMillis()
             val r = runWorkflow(com.abrah.nightmare.canvas.Workflow(g, emptyMap()))
-            if (r.error != null) return say("t2i: refused — ${r.error}", bad = true)
+            if (r.error != null) return say("t2i: refused. ${r.error}", bad = true)
             val img = r.outputs.values.filterIsInstance<Value.Image>().lastOrNull()
                 ?: return say("t2i: no picture", bad = true)
             val png = images.png(img.id) ?: return say("t2i: evicted", bad = true)
             java.io.File(dir, "${model}_$i.png").writeBytes(png)
             say("  t2i $model #$i  ${System.currentTimeMillis() - t0} ms")
         }
-        say("t2i: $model done — pictures in ${dir.absolutePath}")
+        say("t2i: $model done. Pictures in ${dir.absolutePath}")
     }
 
     private fun videoModels() {
@@ -1257,7 +1257,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val missing = vi.missing(ctx)
         val assets = vi.missingAssets(ctx)
         if (missing.isEmpty() && assets.isEmpty()) {
-            say("video: already complete — nothing to download")
+            say("video: already complete. Nothing to download")
             return
         }
         say("video: fetching ${missing.size} graph(s) and ${assets.size} weight file(s)")
@@ -1271,7 +1271,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     if (pct != lastPct) {
                         lastPct = pct
                         sink.progress(pct to 100)
-                        if (pct % 5 == 0) say("  ${p.phase} — $pct%")
+                        if (pct % 5 == 0) say("  ${p.phase}. $pct%")
                     }
                 })
             }.fold(
@@ -1290,13 +1290,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val ms = System.currentTimeMillis() - t0
         when (r) {
             is com.abrah.nightmare.npu.NpuCanary.Result.Ok ->
-                say("npu canary OK — ${"%.2f".format(r.snrDb)} dB in $ms ms")
+                say("npu canary OK. ${"%.2f".format(r.snrDb)} dB in $ms ms")
             is com.abrah.nightmare.npu.NpuCanary.Result.Unsupported ->
-                say("npu canary REFUSED in $ms ms — ${r.detail}", bad = true)
+                say("npu canary REFUSED in $ms ms. ${r.detail}", bad = true)
             is com.abrah.nightmare.npu.NpuCanary.Result.Fp16Suspect ->
                 say("npu canary ran but fp16 is suspect: ${"%.2f".format(r.snrDb)} dB", bad = true)
             is com.abrah.nightmare.npu.NpuCanary.Result.Inconclusive ->
-                say("npu canary inconclusive in $ms ms — ${r.detail}", bad = true)
+                say("npu canary inconclusive in $ms ms. ${r.detail}", bad = true)
         }
         say("  downloads allowed: ${r.canDownload}")
         // ⚠ Released, not left resident: this op can be run repeatedly while
@@ -1368,7 +1368,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
         })
         if (r.error != null) {
-            say("video: refused — ${r.error}", bad = true)
+            say("video: refused. ${r.error}", bad = true)
             return
         }
         val clip = r.outputs["decode"] as? Value.Video
@@ -1457,7 +1457,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     if (missing.isEmpty()) {
                         "ok  ${spec.bytesOnDisk(ctx) shr 20} MB"
                     } else {
-                        "INCOMPLETE — missing ${missing.joinToString()}"
+                        "INCOMPLETE. Missing ${missing.joinToString()}"
                     },
             )
             if (spec.label != spec.id) say("       label \"${spec.label}\" (from config.json)")
@@ -1488,7 +1488,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⚠⚠ A DiT `.safetensors` carries its family in the name, because
             // the file cannot say ([CustomModels.importInbox]).
             say(
-                "nothing to import — put a .zip, or <name>.flux2/.zimage.safetensors, in $inbox",
+                "nothing to import. Put a .zip, or <name>.flux2/.zimage.safetensors, in $inbox",
                 bad = true,
             )
             return
@@ -1510,7 +1510,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 // holding some of the files reads as "installed" to anything
                 // that only checks the directory exists, and then fails at
                 // launch with a path.
-                else -> "PARTIAL — missing ${missing.joinToString()}"
+                else -> "PARTIAL. Missing ${missing.joinToString()}"
             }
             // ⚠ Wide enough for the longest id in the catalogue --
             // `sdxl_cyberrealistic` is 19 characters, and a column that only
@@ -1548,14 +1548,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // The UI reaches the same fetch through `MissingModel.Engine`.
             if (spec.isDit && !DitEngine.isInstalled(ctx)) {
                 say("${spec.id} has its weights but not ${DitEngine.LABEL} " +
-                    "(${DitEngine.BYTES shr 20} MB) — fetching that")
+                    "(${DitEngine.BYTES shr 20} MB). Fetching that")
                 try {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         DitEngine.install(ctx, onProgress = {})
                     }
                     say("  ok   engine installed, ${DitEngine.bytesOnDisk(ctx) shr 20} MB on disk")
                 } catch (e: Exception) {
-                    say("  engine install FAILED — ${e.message}", bad = true)
+                    say("  engine install FAILED. ${e.message}", bad = true)
                 }
                 return
             }
@@ -1588,7 +1588,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             val secs = (System.nanoTime() - t0) / 1_000_000_000
             say("  ok   ${spec.id} installed in ${secs}s, ${spec.bytesOnDisk(ctx) shr 20} MB on disk")
         } catch (e: Exception) {
-            say("  install FAILED — ${e.message}", bad = true)
+            say("  install FAILED. ${e.message}", bad = true)
         }
     }
 
@@ -1599,7 +1599,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             ModelInstaller.delete(ctx, spec)
             say("deleted ${spec.id}")
         } catch (e: Exception) {
-            say("delete refused — ${e.message}", bad = true)
+            say("delete refused. ${e.message}", bad = true)
         }
     }
 
@@ -1607,7 +1607,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val spec = ModelCatalog.byId(id ?: "")
         if (spec == null) { say("model_use needs --es arg <id>", bad = true); return }
         if (!spec.installed(ctx)) {
-            say("${spec.id} is not installed — missing ${spec.missing(ctx).joinToString()}", bad = true)
+            say("${spec.id} is not installed. Missing ${spec.missing(ctx).joinToString()}", bad = true)
             return
         }
         val was = SelectedModel.id
@@ -1622,7 +1622,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // front ends share this file precisely so they cannot drift, and this
         // op having omitted it was that drift.
         if (was != spec.id && Backend.probe("/health").code == 200) {
-            say("  stopping the backend — it was launched for $was")
+            say("  stopping the backend. It was launched for $was")
             stopBackend()
         }
         // ⚠ It does NOT retarget the canvas, where `HarnessViewModel.selectModel`
@@ -1677,7 +1677,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (want == null) { say("res_use needs --es arg <WxH>, e.g. 768x512", bad = true); return }
         val spec = SelectedModel.spec
         if (!spec.serves(ctx, want)) {
-            say("${spec.label} cannot render $want — it serves ${spec.sizesServedText(ctx)}", bad = true)
+            say("${spec.label} cannot render $want. It serves ${spec.sizesServedText(ctx)}", bad = true)
             return
         }
         val was = SelectedModel.res
@@ -1686,7 +1686,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // ⚠ Same reasoning as [useModel]: `--patch` binds at launch, so a
         // process started at the old size will not reload into the new one.
         if (was != want && Backend.probe("/health").code == 200) {
-            say("  stopping the backend — it was launched at $was")
+            say("  stopping the backend. It was launched at $was")
             stopBackend()
         }
     }
@@ -1700,14 +1700,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
             r.code == -1 -> {
                 sink.backend(BackendState.DOWN)
-                say("/health unreachable after ${r.millis} ms — ${r.body}", bad = true)
+                say("/health unreachable after ${r.millis} ms. ${r.body}", bad = true)
                 say("  no backend on :${Backend.PORT}. Stage and launch one first.", bad = true)
             }
             else -> {
                 // ⚠ A reachable server answering non-200 is a DIFFERENT finding
                 // from an absent one, and collapsing them hides which it was.
                 sink.backend(BackendState.UP)
-                say("/health ${r.code} in ${r.millis} ms — reachable but unhappy", bad = true)
+                say("/health ${r.code} in ${r.millis} ms. Reachable but unhappy", bad = true)
             }
         }
     }
@@ -1748,7 +1748,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                         "refused to decode", bad = true)
                 } else {
                     sink.image(bmp)
-                    say("vae_decode seed $s — ${d.serverMs} ms (wire ${d.wireMs} ms)")
+                    say("vae_decode seed $s. ${d.serverMs} ms (wire ${d.wireMs} ms)")
                     say("  ${bmp.width}x${bmp.height}  ${d.png.size} B  sha ${d.rgbSha}")
                 }
             }
@@ -1771,7 +1771,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      */
     suspend fun sample() {
         val steps = 20
-        say("sample: $steps steps, seed $sampleSeed — streaming")
+        say("sample: $steps steps, seed $sampleSeed. Streaming")
         val s = when (val r = Ops.sample(
             prompt = "a cat on grass",
             negative = "blurry, lowres",
@@ -1794,7 +1794,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         sink.progress(null)
         sink.backend(BackendState.UP)
-        say("sample ${s.serverMs} ms (wire ${s.wireMs} ms) — ${s.handle}")
+        say("sample ${s.serverMs} ms (wire ${s.wireMs} ms). ${s.handle}")
         say("  latent_sha ${s.latentSha}  ${s.progressEvents} progress frames")
         say("  first frame +${s.firstProgressMs} ms, last +${s.lastProgressMs} ms")
         if (s.firstProgressMs in 0 until s.serverMs / 2) {
@@ -1804,7 +1804,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // stream is a transport finding, and calling it a sample failure
             // would send the next session to look in the wrong place.
             say("  BUFFERED? first frame at +${s.firstProgressMs} ms of a " +
-                "${s.serverMs} ms render — the client is not streaming", bad = true)
+                "${s.serverMs} ms render. The client is not streaming", bad = true)
         }
 
         // The other half of the graph. A handle that cannot be decoded is a
@@ -1817,13 +1817,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                         "refused", bad = true)
                 } else {
                     sink.image(bmp)
-                    say("vae_decode ${d.value.serverMs} ms — ${bmp.width}x${bmp.height} " +
+                    say("vae_decode ${d.value.serverMs} ms. ${bmp.width}x${bmp.height} " +
                         "sha ${d.value.rgbSha}")
                     // ⭐ And LOOK at it. graph_smoke.sh exists because a random
                     // latent decodes just as deterministically as a sampled one
                     // (backend-patches/README.md); only the picture tells them
                     // apart, and this puts it on the screen.
-                    say("  ^ that image is the check — a cat, not beige blobs")
+                    say("  ^ that image is the check. A cat, not beige blobs")
                 }
             }
             is Ops.Result.Err -> {
@@ -1846,7 +1846,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // ⚠ No plugin engine (libnmjs.so did not load — a JVM test, or a broken
         // install): the built-in nodes still work, and the canvas must not die
         // for want of plugins. `ResultsFullscreenTest` composes the real screen.
-        android.util.Log.w("HarnessOps", "plugin runtime unavailable — built-in nodes only", e)
+        android.util.Log.w("HarnessOps", "plugin runtime unavailable. Built-in nodes only", e)
         NODE_TYPES
     }
 
@@ -2138,14 +2138,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // replaced rather than trusted.
             if (have == target) return true
             say(
-                if (have == null) "the running backend was not started by this app — relaunching"
-                else "the backend is serving $have but this graph needs $target — relaunching"
+                if (have == null) "the running backend was not started by this app. Relaunching"
+                else "the backend is serving $have but this graph needs $target. Relaunching"
             )
             stopBackend()
         }
         val spec = ModelCatalog.byId(target.model)
         if (spec == null || !spec.installed(ctx)) {
-            say("no model installed — open Models and download one", bad = true)
+            say("no model installed. Open Models and download one", bad = true)
             return false
         }
         say("starting the backend for ${target.model} at ${target.width}x${target.height}…")
@@ -2205,7 +2205,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
         })
         if (r.error != null) {
-            say("canvas: refused — ${r.error}", bad = true)
+            say("canvas: refused. ${r.error}", bad = true)
             return
         }
         say("canvas: ran ${r.ran}, cached ${r.cached}, failed ${r.failed} in ${r.totalMs} ms")
@@ -2253,7 +2253,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     suspend fun loadImageGraph() {
         val uri = newestSavedImage()
         if (uri == null) {
-            say("load_image: nothing in Pictures/${ImageSaver.FOLDER} yet — run " +
+            say("load_image: nothing in Pictures/${ImageSaver.FOLDER} yet. Run " +
                 "`save_image` first", bad = true)
             return
         }
@@ -2306,7 +2306,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (srcRun?.outcome == Outcome.RAN) {
             say("  ok   the loader re-read the file while everything downstream stayed cached")
         } else {
-            say("  FAIL load_image was ${srcRun?.outcome} — a file can change behind its " +
+            say("  FAIL load_image was ${srcRun?.outcome}. A file can change behind its " +
                 "URI, so it must not be cached", bad = true)
         }
 
@@ -2363,7 +2363,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         say("cond_wire: dog ${dog.latentSha}, cat ${cat.latentSha}")
         if (dog.latentSha == cat.latentSha) {
-            say("  FAIL the two prompts produced the same latent — the fixture is " +
+            say("  FAIL the two prompts produced the same latent. The fixture is " +
                 "not distinguishing anything", bad = true)
             return
         }
@@ -2376,7 +2376,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
 
         val mixed = when (val r = render("a cat on grass", cond = condDog.handle)) {
             is Ops.Result.Err -> {
-                say("cond_wire: mixed FAILED http ${r.code} — ${r.body.take(160)}", bad = true)
+                say("cond_wire: mixed FAILED http ${r.code}. ${r.body.take(160)}", bad = true)
                 return
             }
             is Ops.Result.Ok -> r.value
@@ -2388,16 +2388,16 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 say("  ok   identical to the dog render: the conditioning is what reached " +
                     "the UNet, not the prompt")
             mixed.latentSha == cat.latentSha ->
-                say("  FAIL identical to the CAT render — the conditioning handle was " +
+                say("  FAIL identical to the CAT render. The conditioning handle was " +
                     "ignored", bad = true)
             else ->
-                say("  FAIL matched neither render — something else differs too", bad = true)
+                say("  FAIL matched neither render. Something else differs too", bad = true)
         }
 
         // ⚠ And the handle must still differ from the dog's, because the prompt
         // string is part of the key. Same picture, different request.
         if (mixed.handle != dog.handle) {
-            say("  ok   different handle, same latent — the key covers the prompt as well")
+            say("  ok   different handle, same latent. The key covers the prompt as well")
         } else {
             say("  FAIL the two requests collided on one handle", bad = true)
         }
@@ -2484,7 +2484,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (encMs > 0 && midMs > 0) {
             say("  ok   the latent route skips a real cost, not a nominal one")
         } else {
-            say("  FAIL the VAE nodes reported no time — were they cached?", bad = true)
+            say("  FAIL the VAE nodes reported no time. Were they cached?", bad = true)
         }
 
         (rb.outputs["out"] as? Value.Image)?.let { img ->
@@ -2526,7 +2526,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 steps = 8, seed = 7, latentHandle = base.handle, denoise = denoise,
             )) {
                 is Ops.Result.Err -> {
-                    say("  denoise $denoise FAILED http ${r.code} — ${r.body.take(160)}",
+                    say("  denoise $denoise FAILED http ${r.code}. ${r.body.take(160)}",
                         bad = true)
                     return
                 }
@@ -2545,7 +2545,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             previous?.let {
                 if (diff <= it) {
                     say("  FAIL denoise $denoise moved LESS far than the previous " +
-                        "strength — the strength is not being applied", bad = true)
+                        "strength. The strength is not being applied", bad = true)
                     return
                 }
             }
@@ -2556,7 +2556,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // ⚠ And fewer steps are actually run: denoise 0.3 of 8 steps starts at
         // step 5, so it must be quicker than a full render. A backend that
         // silently ran all 8 would still pass the diff check above.
-        say("  (a low denoise should also be quicker — compare the ms above)")
+        say("  (a low denoise should also be quicker. Compare the ms above)")
     }
 
     /**
@@ -2586,7 +2586,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
 
         val encoded = when (val e = Ops.vaeEncode(first.png, seed = 42)) {
             is Ops.Result.Err -> {
-                say("vae_roundtrip: encode FAILED http ${e.code} — ${e.body.take(160)}", bad = true)
+                say("vae_roundtrip: encode FAILED http ${e.code}. ${e.body.take(160)}", bad = true)
                 return
             }
             is Ops.Result.Ok -> e.value
@@ -2601,7 +2601,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (again is Ops.Result.Ok && again.value.latentSha == encoded.latentSha) {
             say("  ok   encoding the same image twice gives the same latent")
         } else {
-            say("  FAIL a second encode differed — the op is not deterministic", bad = true)
+            say("  FAIL a second encode differed. The op is not deterministic", bad = true)
         }
 
         val second = when (val d = Ops.vaeDecode(latentHandle = encoded.handle)) {
@@ -2624,7 +2624,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // encode+decode is one full trip. Well past that means the normalisation
         // or the latent space is wrong, not that the VAE is lossy.
         if (diff < 12.0) say("  ok   within what a VAE round trip costs")
-        else say("  FAIL ${"%.1f".format(diff)} is far more than a round trip should cost — " +
+        else say("  FAIL ${"%.1f".format(diff)} is far more than a round trip should cost. " +
             "suspect the pixel range or the latent space", bad = true)
     }
 
@@ -2659,7 +2659,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             null
         }
         if (png == null) {
-            say("  $what: no PNG bytes — this is what the button reports as " +
+            say("  $what: no PNG bytes. This is what the button reports as " +
                 "\"no longer in memory\"", bad = true)
             return
         }
@@ -2710,7 +2710,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 }
             }
         } catch (e: Throwable) {
-            say("save_big: could not even allocate it — ${e.javaClass.simpleName}", bad = true)
+            say("save_big: could not even allocate it. ${e.javaClass.simpleName}", bad = true)
             return
         }
         val rt = java.lang.Runtime.getRuntime()
@@ -2777,7 +2777,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             },
         )
         if (r.error != null) {
-            say("save_upscaled: refused — ${r.error}", bad = true)
+            say("save_upscaled: refused. ${r.error}", bad = true)
             return
         }
         val img = r.outputs["upscale"]?.previewImage()
@@ -2803,7 +2803,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 bad = n.outcome == Outcome.FAILED)
         })
         if (first.error != null || first.failed > 0) {
-            say("save_image: first run failed — ${first.error}", bad = true)
+            say("save_image: first run failed. ${first.error}", bad = true)
             return
         }
 
@@ -2862,7 +2862,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     suspend fun installUpscaler(id: String?) {
         val spec = UpscalerCatalog.byId(id.orEmpty())
         if (spec == null) {
-            say("upscaler_install: unknown id \"$id\" — " +
+            say("upscaler_install: unknown id \"$id\"-" +
                 UpscalerCatalog.ALL.joinToString { it.id }, bad = true)
             return
         }
@@ -2972,7 +2972,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             else newestSavedImage()?.let { AddObjects.load(ctx, it) }
         }
         if (photo == null) return say("describe: no photo (${path ?: "nothing saved"})", bad = true)
-        if (!mode.model.isInstalled(ctx)) return say("describe: ${mode.model.label} not installed — run describe_install", bad = true)
+        if (!mode.model.isInstalled(ctx)) return say("describe: ${mode.model.label} not installed. Run describe_install", bad = true)
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             for (k in 0 until 2) {
                 val t = System.nanoTime()
@@ -3044,7 +3044,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val y = parts.getOrNull(1)?.toFloatOrNull() ?: 0.5f
         val path = parts.getOrNull(2)
         if (!seg.isInstalled(ctx)) {
-            say("segment: not installed — run segmenter_install", bad = true)
+            say("segment: not installed. Run segmenter_install", bad = true)
             return
         }
         val photo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -3065,7 +3065,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             val a = seg.segment(ctx, photo, x, y)
             val ms = (System.nanoTime() - t0) / 1_000_000
             if (a == null) {
-                say("  miss — nothing contains the tap ($ms ms, open + trunk + decode)", bad = true)
+                say("  miss. Nothing contains the tap ($ms ms, open + trunk + decode)", bad = true)
                 return@withContext
             }
             val out = java.io.File(ctx.getExternalFilesDir(null), "segment").apply { mkdirs() }
@@ -3258,7 +3258,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                         }
                     }
                     if (hit == 0) {
-                        say("    $tag — empty", bad = true)
+                        say("    $tag. Empty", bad = true)
                         return
                     }
                     val bmp = com.abrah.nightmare.segment.SegmentModel.alphaBitmap(alpha, ow, oh)
@@ -3312,7 +3312,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         try {
             store.save("smoke", wf, nodeTypes())
         } catch (e: Exception) {
-            say("workflow_io: save FAILED — ${e.javaClass.simpleName}: ${e.message}", bad = true)
+            say("workflow_io: save FAILED. ${e.javaClass.simpleName}: ${e.message}", bad = true)
             return
         }
         val file = store.file("smoke")
@@ -3321,7 +3321,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val back = try {
             store.load("smoke")
         } catch (e: Exception) {
-            say("workflow_io: load FAILED — ${e.message}", bad = true)
+            say("workflow_io: load FAILED. ${e.message}", bad = true)
             return
         }
         if (back == null) {
@@ -3367,7 +3367,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         when (val w = Ops.sample(prompt = PREVIEW_PROMPT, negative = PREVIEW_NEG,
             steps = 8, seed = 4242)) {
             is Ops.Result.Err -> {
-                say("preview: warm-up FAILED http ${w.code} — ${w.body.take(160)}", bad = true)
+                say("preview: warm-up FAILED http ${w.code}. ${w.body.take(160)}", bad = true)
                 return
             }
             is Ops.Result.Ok -> say("  warm-up ${w.value.serverMs} ms")
@@ -3399,7 +3399,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         sink.progress(null)
         val withPreviews = when (on) {
             is Ops.Result.Err -> {
-                say("preview: preview run FAILED http ${on.code} — ${on.body.take(160)}",
+                say("preview: preview run FAILED http ${on.code}. ${on.body.take(160)}",
                     bad = true)
                 return
             }
@@ -3414,7 +3414,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⚠ A real outcome, not a measurement. `previewSupported()` is a
             // pipeline capability, so a backend that cannot preview must say so
             // rather than be reported as "previews are free".
-            say("  FAIL asked for previews and got none — the pipeline may not " +
+            say("  FAIL asked for previews and got none. The pipeline may not " +
                 "support them, or the request fields are wrong", bad = true)
             return
         }
@@ -3468,7 +3468,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         suspend fun blend(label: String, mask: ByteArray, expect: String?): Ops.Blended? =
             when (val r = Ops.latentBlend(a.handle, b.handle, mask)) {
                 is Ops.Result.Err -> {
-                    say("  $label FAILED http ${r.code} — ${r.body.take(160)}", bad = true)
+                    say("  $label FAILED http ${r.code}. ${r.body.take(160)}", bad = true)
                     null
                 }
                 is Ops.Result.Ok -> {
@@ -3489,7 +3489,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (half.latentSha == a.latentSha || half.latentSha == b.latentSha) {
             // ⚠ Without this, an op that ignored the mask and returned one input
             // would pass both identity checks above.
-            say("  FAIL a half mask reproduced one of the inputs — the mask is " +
+            say("  FAIL a half mask reproduced one of the inputs. The mask is " +
                 "not being applied", bad = true)
             return
         }
@@ -3522,7 +3522,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // The mask was WHITE on the left, and white takes B.
         val geometryHolds = leftVsB < leftVsA / 2 && rightVsA < rightVsB / 2
         if (geometryHolds) {
-            say("  ok   the white half took B and the black half took A — the mask's " +
+            say("  ok   the white half took B and the black half took A. The mask's " +
                 "geometry is applied, not just its hash")
         } else {
             say("  FAIL the halves do not match the mask: white was supposed to take B", bad = true)
@@ -3591,14 +3591,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val plugin = try {
             Plugin.fromDir(dir)
         } catch (e: Exception) {
-            say("plugin_latent: no pack at ${dir.absolutePath} — push examples/latent-mix " +
+            say("plugin_latent: no pack at ${dir.absolutePath}. Push examples/latent-mix " +
                 "there first (${e.message})", bad = true)
             return
         }
         val added = try {
             plugins.load(plugin)
         } catch (e: Throwable) {
-            say("plugin_latent: load failed — ${e.javaClass.simpleName}: ${e.message}",
+            say("plugin_latent: load failed. ${e.javaClass.simpleName}: ${e.message}",
                 bad = true)
             return
         }
@@ -3665,7 +3665,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (mixRun?.outcome == Outcome.FAILED && mixRun.detail.contains("wants IMAGE")) {
             say("  ok   a latent wired into an image port is refused: ${mixRun.detail.take(120)}")
         } else {
-            say("  FAIL a latent into an IMAGE port was not refused — outcome " +
+            say("  FAIL a latent into an IMAGE port was not refused. Outcome " +
                 "${mixRun?.outcome}, ${mixRun?.detail?.take(120)}", bad = true)
         }
     }
@@ -3732,7 +3732,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⚠ Throwable, not Exception: a missing libnmjs.so arrives as
             // UnsatisfiedLinkError, which an Exception catch would let through
             // as an app crash rather than a legible finding.
-            say("js: could not create a runtime — ${e.javaClass.simpleName}: ${e.message}",
+            say("js: could not create a runtime. ${e.javaClass.simpleName}: ${e.message}",
                 bad = true)
             return
         }
@@ -3779,7 +3779,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             if (stopped && loopMs < 5_000) {
                 say("  ok   runaway loop interrupted after $loopMs ms")
             } else {
-                say("  FAIL runaway loop: stopped=$stopped after $loopMs ms — the " +
+                say("  FAIL runaway loop: stopped=$stopped after $loopMs ms. The " +
                     "interrupt budget is not a real stop", bad = true)
             }
 
@@ -3846,7 +3846,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val plugin = try {
             Plugin.fromAssets(ctx, "plugins/resize-pack")
         } catch (e: Exception) {
-            say("plugin: could not read the manifest — ${e.javaClass.simpleName}: ${e.message}",
+            say("plugin: could not read the manifest. ${e.javaClass.simpleName}: ${e.message}",
                 bad = true)
             return
         }
@@ -3856,7 +3856,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val added = try {
             plugins.load(plugin)
         } catch (e: Throwable) {
-            say("plugin: load failed — ${e.javaClass.simpleName}: ${e.message}", bad = true)
+            say("plugin: load failed. ${e.javaClass.simpleName}: ${e.message}", bad = true)
             return
         }
         say("  registered: ${added.joinToString(", ")}")
@@ -3891,7 +3891,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val a = pass("A plugin cold", graph("0.5"), expectRan = 4, expectCached = 0)
         val small = a.outputs["small"] as? Value.Image
         if (small == null) {
-            say("plugin: the node produced no image — nothing after this means anything",
+            say("plugin: the node produced no image. Nothing after this means anything",
                 bad = true)
             return
         }
@@ -3922,7 +3922,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val nosy = try {
             Plugin.fromAssets(ctx, "plugins/nosy-pack").also { plugins.load(it) }
         } catch (e: Throwable) {
-            say("  FAIL could not load the nosy pack — ${e.message}", bad = true)
+            say("  FAIL could not load the nosy pack. ${e.message}", bad = true)
             null
         }
         if (nosy != null) {
@@ -3940,7 +3940,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 // ⚠⚠ The loudest line in this file. A permission check that
                 // does not deny is worse than none: it makes the manifest read
                 // like a guarantee it is not providing.
-                say("  FAIL the nosy node was NOT denied — outcome ${run?.outcome}, " +
+                say("  FAIL the nosy node was NOT denied. Outcome ${run?.outcome}, " +
                     "detail ${run?.detail?.take(120)}", bad = true)
             }
         }
@@ -3988,7 +3988,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 val dir = PluginInstaller.install(z, pluginsDir(), ctx.cacheDir)
                 say("  installed ${z.name} (${z.length()} B) -> ${dir.name}")
             } catch (e: Exception) {
-                say("  ${z.name}: REFUSED — ${e.message}", bad = true)
+                say("  ${z.name}: REFUSED. ${e.message}", bad = true)
             }
         }
         pluginsFromDisk()
@@ -4019,7 +4019,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⚠ A finding, not an error. An empty directory means the push has
             // not happened, and saying so with the path is the difference
             // between a five-second fix and a debugging session.
-            say("no plugins on disk — push one to ${dir.absolutePath} first", bad = true)
+            say("no plugins on disk. Push one to ${dir.absolutePath} first", bad = true)
             return
         }
 
@@ -4028,13 +4028,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             val plugin = try {
                 Plugin.fromDir(p)
             } catch (e: Exception) {
-                say("  ${p.name}: REFUSED — ${e.message}", bad = true)
+                say("  ${p.name}: REFUSED. ${e.message}", bad = true)
                 continue
             }
             val added = try {
                 plugins.load(plugin)
             } catch (e: Throwable) {
-                say("  ${plugin.id}: load failed — ${e.javaClass.simpleName}: ${e.message}",
+                say("  ${plugin.id}: load failed. ${e.javaClass.simpleName}: ${e.message}",
                     bad = true)
                 continue
             }
@@ -4047,7 +4047,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
         }
         if (chain.isEmpty()) {
-            say("no image->image nodes among the loaded packs — nothing to chain", bad = true)
+            say("no image->image nodes among the loaded packs. Nothing to chain", bad = true)
             return
         }
 
@@ -4234,7 +4234,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             },
         )
         sink.progress(null)
-        if (r.error != null) { say("aspect: refused — ${r.error}", bad = true); return }
+        if (r.error != null) { say("aspect: refused. ${r.error}", bad = true); return }
         val out = r.outputs["sample"] as? Value.Image
         if (out == null) { say("aspect: no image came out", bad = true); return }
         images.get(out.id)?.let { bmp ->
@@ -4246,7 +4246,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (out.w == expect.width && out.h == expect.height) {
             say("aspect $ratio -> ${out.w}x${out.h} ✓ matches ${expect}")
         } else {
-            say("aspect $ratio -> ${out.w}x${out.h} but expected $expect — " +
+            say("aspect $ratio -> ${out.w}x${out.h} but expected $expect. " +
                 "the app's aspectTarget and the backend disagree", bad = true)
         }
 
@@ -4279,7 +4279,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val ri = executor.run(gi, onProgress = { _, s, t -> sink.progress(s to t) })
         sink.progress(null)
         val o = (ri.outputs["i2i"] as? Value.Image)?.let { images.get(it.id) }
-        if (ri.error != null || o == null) { say("aspect i2i: failed — ${ri.error}", bad = true); return }
+        if (ri.error != null || o == null) { say("aspect i2i: failed. ${ri.error}", bad = true); return }
         java.io.File(ctx.getExternalFilesDir(null), "aspect_i2i.png").outputStream()
             .use { o.compress(Bitmap.CompressFormat.PNG, 100, it) }
         if (o.width != src.width || o.height != src.height) {
@@ -4308,7 +4308,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         executor.cache.clear()
         val a = pass("A cold", demoGraph(42, 7), expectRan = 5, expectCached = 0)
         if (a.error != null || a.failed > 0) {
-            say("graph: pass A did not complete — the later passes would be " +
+            say("graph: pass A did not complete. The later passes would be " +
                 "measuring nothing. Stopping.", bad = true)
             return
         }
@@ -4317,7 +4317,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
 
         say("pass D: restarting the backend under the cache…")
         if (!restartBackend()) {
-            say("graph: no backend after the restart — D not run", bad = true)
+            say("graph: no backend after the restart. D not run", bad = true)
             return
         }
         val d = pass("D after restart", demoGraph(42, 8), expectRan = 3, expectCached = 2)
@@ -4326,9 +4326,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // a pass.
         if (d.prunedHandles > 0) {
             say("  dropped ${d.prunedHandles} handle(s) the restarted backend no " +
-                "longer held — residency WAS consulted")
+                "longer held. Residency WAS consulted")
         } else {
-            say("  pruned 0 handles after a restart — residency was NOT consulted, " +
+            say("  pruned 0 handles after a restart. Residency was NOT consulted, " +
                 "so D proves nothing", bad = true)
         }
 
@@ -4337,7 +4337,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         (d.outputs["decode_b"] as? Value.Image)?.let { img ->
             images.get(img.id)?.let { bmp ->
                 sink.image(bmp)
-                say("  ^ decode_b, from the cache — a cat, not beige blobs")
+                say("  ^ decode_b, from the cache. A cat, not beige blobs")
             }
         }
     }
@@ -4401,7 +4401,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
         }
         if (!down) {
-            say("  backend still answering /health after stop() — not restarted", bad = true)
+            say("  backend still answering /health after stop(). Not restarted", bad = true)
             return false
         }
         sink.backend(BackendState.DOWN)
@@ -4431,7 +4431,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
             return true
         }
-        say("starting an upscale-only backend — this graph needs no checkpoint…")
+        say("starting an upscale-only backend. This graph needs no checkpoint…")
         return launchBackend(upscalerOnly = true)
     }
 
@@ -4467,7 +4467,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // nothing is new, which is what makes this a retry and not a loop.
         val modelId = want?.model ?: SelectedModel.id
         if (upscalerOnly || !SpillFill.learn(ctx, modelId)) return false
-        say("this checkpoint needs ${SpillFill.describe(ctx, modelId)} — starting again with it")
+        say("this checkpoint needs ${SpillFill.describe(ctx, modelId)}. Starting again with it")
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
         return launchOnce(want, upscalerOnly)
     }
@@ -4485,7 +4485,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             upscalerOnly = upscalerOnly,
         )) {
             is BackendProcess.Start.Failed -> {
-                say("start failed — ${r.why}", bad = true)
+                say("start failed. ${r.why}", bad = true)
                 drainBackendLog()
                 return false
             }
@@ -4514,8 +4514,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     }
                     sink.backend(BackendState.DOWN)
                     say(
-                        if (died) "the backend exited before serving — its output follows"
-                        else "no /health after 45s — backend output follows",
+                        if (died) "the backend exited before serving. Its output follows"
+                        else "no /health after 45s. Backend output follows",
                         bad = true,
                     )
                     drainBackendLog()

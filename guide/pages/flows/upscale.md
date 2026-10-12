@@ -1,6 +1,6 @@
 # Upscale a photo
 
-*A picture from the gallery, enlarged. No checkpoint involved — the upscaler is its own small
+*A picture from the gallery, enlarged. No checkpoint involved. The upscaler is its own small
 model.*
 
 **Nodes:** Image → Output, with **Auto upscale** ticked on the output.

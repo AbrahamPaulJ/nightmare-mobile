@@ -311,6 +311,14 @@ class NodeCtx(
      * which is a fact about the graph, not about the pixels.
      */
     val ancestorTypes: Set<String> = emptySet(),
+    /**
+     * ⭐ Load a different backend context from INSIDE a node — the executor's own switch, so its
+     * idea of what is loaded moves with it and the next keyed node relaunches back. One user:
+     * the sampler's Hires fix, whose UltraFix tiles need the model's square graph while the
+     * render may have used a resolution patch (a 512 tile into a 512x768 graph is a SIGSEGV,
+     * 2026-10-11). Null in tests and any runner that cannot switch.
+     */
+    val switchKey: (suspend (ContextKey) -> Boolean)? = null,
 )
 
 /** App resources on-device; the exact English fallback keeps headless JVM graph tests context-free. */
@@ -1148,7 +1156,7 @@ object SampleNode : NodeType {
         // at a knob that no longer exists.
         val cond = inputs["cond"]
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": nothing is wired into \"cond\" — " +
+                "node \"${node.id}\": nothing is wired into \"cond\". " +
                     "the prompt lives in a Text Encode node now; connect one"
             )
         if (!(cond is Value.Handle && cond.kind == "cond")) {
@@ -1320,19 +1328,19 @@ internal fun npuSpaceRefused(body: String, log: Iterable<String>): String? {
     // ⭐ The DiT engine's form of the same wall: the DSP would not map more weights (the first 8 Gen 3
     // report, OnePlus SM8650, 2026-10-10 — `ggml-hex: HTP0 buffer mapping failed`).
     if ("DiT generation failed" in body && log.any { "buffer mapping failed" in it || "fastrpc_mmap failed" in it }) {
-        return "this phone's NPU could not map the model's weights — try a smaller canvas, and please " +
+        return "this phone's NPU could not map the model's weights. Try a smaller canvas, and please " +
             "share this report (8 Gen 3 support is new) [${body.take(80)}]"
     }
     val m = Regex("""Failed init QNN model: (\w+)""").find(body) ?: return null
     if (log.none { "Failed to find available PD" in it }) return null
     val what = if (m.groupValues[1] == "controlnet") "the ControlNet" else m.groupValues[1]
     return "this phone's NPU had no room for $what beside the model, and would not open a second " +
-        "space for it — run without it (LoRA and IP-Adapter still work) [${body.take(80)}]"
+        "space for it. Run without it (LoRA and IP-Adapter still work) [${body.take(80)}]"
 }
 
 /** ⚠ Carries the backend's own words. Its error bodies name the real problem. */
 class OpFailure(op: String, val code: Int, val body: String) :
-    RuntimeException("$op failed http $code — ${explainOpFailure(code, body).take(200)}")
+    RuntimeException("$op failed http $code. ${explainOpFailure(code, body).take(200)}")
 
 /**
  * ⭐⭐⭐ **A backend that DIED, said as such** — rather than the exception the
@@ -1366,7 +1374,7 @@ internal fun explainOpFailure(code: Int, body: String): String {
     // only evidence there is, and it is named rather than dropped.
     val why = BackendProcess.failureReason() ?: BackendProcess.exitMeaning()
     return "the backend stopped" + (why?.let { ": $it" } ?: "") +
-        " — if it keeps happening, close other apps or try a smaller canvas [$body]"
+        ". If it keeps happening, close other apps or try a smaller canvas [$body]"
 }
 
 /**
@@ -1454,7 +1462,7 @@ object LoadImageNode : NodeType {
             // ⚠ Named, because this is what a URI outliving its permission grant
             // looks like -- a saved workflow reopened after a reboot.
             throw IllegalStateException(
-                "node \"${node.id}\": no longer permitted to read $uri — pick the image again"
+                "node \"${node.id}\": no longer permitted to read $uri. Pick the image again"
             )
         }
 
@@ -1999,7 +2007,7 @@ object MaskNode : NodeType {
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
         val src = inputs["image"] as? Value.Image
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": \"image\" is not connected — wire the picture " +
+                "node \"${node.id}\": \"image\" is not connected. Wire the picture " +
                     "you want to paint on"
             )
         // ⚠ The size comes from the demand when there is one and from the
@@ -2018,7 +2026,7 @@ object MaskNode : NodeType {
         val state = stateOf(node)
         if (state.isEmpty) {
             throw IllegalArgumentException(
-                "node \"${node.id}\": nothing is painted — tap the node and paint the " +
+                "node \"${node.id}\": nothing is painted. Tap the node and paint the " +
                     "area to repaint"
             )
         }
@@ -2085,11 +2093,11 @@ object MaskCropNode : NodeType {
     ): Map<String, Value> {
         val image = inputs["image"] as? Value.Image
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": \"image\" is not connected — wire the picture to repaint"
+                "node \"${node.id}\": \"image\" is not connected. Wire the picture to repaint"
             )
         val mask = inputs["mask"] as? Value.Image
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": \"mask\" is not connected — wire the Mask node"
+                "node \"${node.id}\": \"mask\" is not connected. Wire the Mask node"
             )
         val src = ctx.images.get(image.id)
             ?: throw IllegalStateException("node \"${node.id}\": image ${image.id} is no longer in the store")
@@ -2203,17 +2211,17 @@ object PasteNode : NodeType {
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
         fun need(port: String, why: String): Value.Image =
             inputs[port] as? Value.Image
-                ?: throw IllegalArgumentException("node \"${node.id}\": \"$port\" is not connected — $why")
+                ?: throw IllegalArgumentException("node \"${node.id}\": \"$port\" is not connected. $why")
         val patch = need("patch", "wire the decoded picture")
         val cut = need("cut", "wire the Mask Crop's image")
         val mask = need("mask", "wire the Mask Crop's mask")
         val frame = need("frame", "wire the picture the crop was cut from")
         val inner = cut.region
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": \"cut\" does not say where it was cut from — wire a Mask Crop into it"
+                "node \"${node.id}\": \"cut\" does not say where it was cut from. Wire a Mask Crop into it"
             )
         fun bmp(v: Value.Image) = ctx.images.get(v.id)
-            ?: throw IllegalStateException("node \"${node.id}\": image ${v.id} is no longer in the store — Run again")
+            ?: throw IllegalStateException("node \"${node.id}\": image ${v.id} is no longer in the store. Run again")
 
         val stitch = effectiveParams(node)[STITCH].equals("true", ignoreCase = true)
         val original = inputs["original"] as? Value.Image
@@ -2315,17 +2323,17 @@ object LatentBlendNode : NodeType {
         // better sentence than "an input is missing".
         val a = inputs["base"] as? Value.Handle
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": \"base\" is not connected — it takes the latent " +
+                "node \"${node.id}\": \"base\" is not connected. It takes the latent " +
                     "to keep, from a Sampler or a VAE Encode"
             )
         val b = inputs["repaint"] as? Value.Handle
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": \"repaint\" is not connected — it takes the latent " +
+                "node \"${node.id}\": \"repaint\" is not connected. It takes the latent " +
                     "that shows through the mask's white area"
             )
         val mask = inputs["mask"] as? Value.Image
             ?: throw IllegalArgumentException(
-                "node \"${node.id}\": \"mask\" is not connected — it takes an " +
+                "node \"${node.id}\": \"mask\" is not connected. It takes an " +
                     "IMAGE, and its WHITE area is where \"repaint\" shows through"
             )
         val png = ctx.images.png(mask.id)
@@ -2462,7 +2470,7 @@ object UpscaleNode : NodeType {
         val wanted = scaleOf(node.params[SCALE])
         val scale = fittingScale(image.w, image.h, wanted)
             ?: throw NeedsInput(
-                "too big to upscale: ${image.w}x${image.h} — pictures up to " +
+                "too big to upscale: ${image.w}x${image.h}. Pictures up to " +
                     "${MAX_OUT_EDGE / 2} px on the long edge only ($MAX_OUT_EDGE px after 2x)"
             )
         return upscaleTo(ctx, node.id, image, node.params[UPSCALER].orEmpty(), scale)
@@ -2498,7 +2506,7 @@ object UpscaleNode : NodeType {
             ?: throw IllegalArgumentException(
                 "node \"$nodeId\": upscaler \"" +
                     (UpscalerCatalog.byId(id)?.label ?: id) +
-                    "\" is not installed — open Models and download it"
+                    "\" is not installed. Open Models and download it"
             )
         // ⚠ RAW RGB, not a PNG: /upscale takes 3*w*h uncompressed bytes.
         val rgb = rgbBytes(src)
@@ -2810,7 +2818,7 @@ class Executor(
         // a reason that has nothing to do with it.
         val resident = if (keys.isEmpty()) emptySet() else host.residentHandles()
             ?: return GraphRun(emptyList(), emptyMap(), sinceMs(),
-                "GET /handles unreachable — backend down, nothing can run")
+                "GET /handles unreachable. Backend down, nothing can run")
         val pruned = cache.prune { v ->
             when (v) {
                 is Value.Handle -> v.id in resident
@@ -2958,6 +2966,10 @@ class Executor(
                     warn = { line -> back { onLog(node.id, line); onWarn(node.id, line) } },
                     wanted = wanted,
                     ancestorTypes = ancestorTypes(node.id, order),
+                    switchKey = switchKey?.let { sw ->
+                        val tracked: suspend (ContextKey) -> Boolean = { k -> sw(k).also { ok -> if (ok) loaded = k } }
+                        tracked
+                    },
                 )
                 // ⚠⚠ The node is run with the SAME params the key was computed
                 // from. Keying on the effective values but running on the

@@ -49,7 +49,7 @@ class BackendKeepAliveService : Service() {
         // comment names: a service started with startForegroundService() that
         // does not call startForeground() within ~5 s is killed outright.
         val n: Notification = notification(
-            intent?.getStringExtra(EXTRA_TEXT) ?: getString(R.string.notification_keeping_model)
+            this, intent?.getStringExtra(EXTRA_TEXT) ?: getString(R.string.notification_keeping_model)
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -74,44 +74,75 @@ class BackendKeepAliveService : Service() {
         super.onTaskRemoved(rootIntent)
     }
 
-    private fun notification(text: String): Notification {
-        val nm = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, getString(R.string.notification_model_loaded_channel), NotificationManager.IMPORTANCE_LOW)
-            )
-        }
-        return Notification.Builder(this, CHANNEL)
-            .setContentTitle("Nightmare")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setOngoing(true)
-            .build()
-    }
-
     companion object {
         private const val CHANNEL = "backend-keepalive"
         private const val NOTIFICATION_ID = 2
 
         private const val EXTRA_TEXT = "text"
 
+        /** ⭐ The reasons the process is held up — see [hold]. */
+        const val BACKEND = "backend"
+        const val MOVE = "move"
+        const val DOWNLOAD = "download"
+
+        /** Reason → the line the notification shows for it; the newest hold is shown. */
+        private val holders = LinkedHashMap<String, String>()
+
         /**
-         * ⚠ Idempotent: starting an already-started foreground service is a no-op.
-         * ⭐ [text] says WHY — a models-folder move ([ModelStorage]) holds the
-         * process up the same way a resident checkpoint does.
+         * ⭐⭐ Hold the process up for [reason] — a resident backend, a models-folder move
+         * ([ModelStorage]), a download. ⚠⚠ Counted BY REASON, because each ends on its own
+         * clock: a download used to survive leaving the app only while a backend happened to
+         * be resident, and once the backend was let go on leaving (1.6.046/053) nothing held a
+         * minimised app's network — Android cut the socket mid-download, "Software caused
+         * connection abort" (2026-10-11). The backend's stop must not end a download's hold.
+         *
+         * ⚠ Idempotent per reason. ⚠ Never throws: Android 12+ refuses a foreground start
+         * from the background, and a hold is a priority, never the reason a job fails.
          */
-        fun start(context: Context, text: String? = null) {
+        fun hold(context: Context, reason: String, text: String? = null) {
             val shown = text ?: context.getString(R.string.notification_keeping_model)
+            synchronized(holders) { holders.remove(reason); holders[reason] = shown }
             val intent = Intent(context, BackendKeepAliveService::class.java).putExtra(EXTRA_TEXT, shown)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }.onFailure { android.util.Log.w("KeepAlive", "hold($reason) refused", it) }
+        }
+
+        /** ⭐ End [reason]'s hold; the service stops when it was the last one. */
+        fun release(context: Context, reason: String) {
+            val rest = synchronized(holders) {
+                if (holders.remove(reason) == null) return
+                holders.values.lastOrNull()
+            }
+            if (rest == null) {
+                context.stopService(Intent(context, BackendKeepAliveService::class.java))
             } else {
-                context.startService(intent)
+                // ⚠ notify(), not another start: a foreground START from the background is
+                // refused, while updating a running service's notification is not.
+                runCatching {
+                    context.getSystemService(NotificationManager::class.java)
+                        .notify(NOTIFICATION_ID, notification(context, rest))
+                }
             }
         }
 
-        fun stop(context: Context) {
-            context.stopService(Intent(context, BackendKeepAliveService::class.java))
+        private fun notification(context: Context, text: String): Notification {
+            val nm = context.getSystemService(NotificationManager::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                nm.createNotificationChannel(
+                    NotificationChannel(CHANNEL, context.getString(R.string.notification_model_loaded_channel), NotificationManager.IMPORTANCE_LOW)
+                )
+            }
+            return Notification.Builder(context, CHANNEL)
+                .setContentTitle("Nightmare")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setOngoing(true)
+                .build()
         }
     }
 }

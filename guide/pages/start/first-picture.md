@@ -1,7 +1,7 @@
 # Your first picture
 
 This walkthrough uses **AbsoluteReality**, a realistic SD 1.5 model that runs on every
-supported phone. It is about 1.2 GB — use Wi-Fi.
+supported phone. It is about 1.2 GB. Use Wi-Fi.
 
 ## 1. Download a model
 
@@ -28,16 +28,16 @@ Every panel in the app closes this way, and so does **Back**.
 
 Tap the **prompt** node. A sheet slides up with two boxes:
 
-- **Prompt** — what to draw. For SD 1.5 models, short comma-separated phrases work best:
+- **Prompt**: what to draw. For SD 1.5 models, short comma-separated phrases work best:
   `a red fox in snow, morning light, detailed fur`.
-- **Negative** — what to keep out: `blurry, low quality, watermark`.
+- **Negative**: what to keep out: `blurry, low quality, watermark`.
 
 The boxes already hold a starting prompt suited to the model. Replace it with your own and pull
 the sheet down.
 
 ## 4. Run
 
-Tap **Run**. A log above the button shows what is happening — the node running, a percentage,
+Tap **Run**. A log above the button shows what is happening: the node running, a percentage,
 and each finished node's time. On a recent phone an SD 1.5 picture takes a few seconds; the
 very first Run also loads the model, which adds a few more.
 
@@ -47,8 +47,8 @@ to zoom, and use the buttons to save it to the gallery, share it, or keep it in 
 ## 5. Make another
 
 Every Run makes a **new** picture, because the seed is random (the chip above Run says
-`seed: random`). If you like one and want to keep working on *that* picture — changing the
-prompt a little, for example — tap the **padlock** on that chip. The seed of the last picture is
+`seed: random`). If you like one and want to keep working on *that* picture, changing the
+prompt a little, for example, tap the **padlock** on that chip. The seed of the last picture is
 locked and every Run starts from it until you unlock it.
 
 !!! success "Every picture is kept"
@@ -57,6 +57,6 @@ locked and every Run starts from it until you unlock it.
 
 ## Where next
 
-- Try a different model — each family has its own style. [Models](../models/index.md).
+- Try a different model. Each family has its own style. [Models](../models/index.md).
 - Start from a photo instead: [Image to image](../flows/image-to-image.md).
 - Learn the canvas properly: [The canvas](canvas.md).

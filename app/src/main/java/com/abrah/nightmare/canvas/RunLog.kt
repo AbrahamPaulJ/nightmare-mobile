@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -256,11 +257,14 @@ fun RunLogPanel(
         // first sampler only, so in generate -> inpaint the inpaint's own seed had
         // no lock anywhere above Run. ⚠ Wrapping chips, not a column: two fit one
         // line, and a third moves down instead of pushing Run off the screen.
-        if (seeds.isNotEmpty()) Row(verticalAlignment = Alignment.Top) { androidx.compose.foundation.layout.FlowRow(
-            Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        // ⚠⚠ The seed chip and the RAM pill are items of ONE wrapping row: side by side when they
+        // fit, RAM on its own line when not. Beside a fixed RAM pill the chip was squeezed: at 320dp
+        // its text wrapped letter by letter and the padlock got no width (2026-10-12).
+        if (seeds.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) { seeds.forEach { st ->
+        ) { val chip: @Composable (SeedState) -> Unit = { st ->
         val seedSweep = seedSweeps.firstOrNull { it.nodeId == st.nodeId }?.count
         Row(
             Modifier
@@ -295,6 +299,10 @@ fun RunLogPanel(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
+                    // ⚠⚠ Weighted, not fill: measured first and unweighted, a locked seed's longer
+                    // text wrapped and took the whole chip, and the padlock beside it got ZERO
+                    // width, so a locked seed showed no lock at all (phone screenshot, 2026-10-12).
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 // ⚠ A real glyph, not an emoji: an emoji renders in the system
                 // font at whatever weight and colour that font decides, so it
@@ -341,7 +349,10 @@ fun RunLogPanel(
                 }
                 }
             }
-        } }
+        }
+        // ⭐ One sampler: its chip. Two or more: ONE summary chip and a list of the same chips
+        // (the user's pick, 2026-10-12), so the bar above Run never grows with the flow.
+        if (seeds.size == 1) chip(seeds.single()) else SeedsSummary(seeds, chip)
         ram?.let { RamPill(it) } }
         // ⚠⚠ **Only when there is a run to describe.** Closing the panel clears
         // the state, but the seed row above is a property of the CANVAS rather
@@ -724,8 +735,8 @@ fun runLineOf(id: String, outcome: Outcome, ms: Long, detail: String): RunLine =
         // wrongly-reused value is exactly the failure that looks like a bad
         // model rather than a stale cache.
         Outcome.CACHED -> "cached" + brief(detail)
-        Outcome.FAILED -> "failed — $detail"
-        Outcome.BLOCKED -> "blocked — $detail"
+        Outcome.FAILED -> "failed: $detail"
+        Outcome.BLOCKED -> "blocked: $detail"
     },
     bad = outcome == Outcome.FAILED || outcome == Outcome.BLOCKED,
 )
@@ -758,4 +769,41 @@ private fun RamPill(text: String) {
         Spacer(Modifier.width(6.dp))
         Text(text, style = MeasureTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
+}
+
+/**
+ * ⭐ Two or more samplers' seeds as ONE chip ("seeds: 1 locked · 1 random"); a tap lists every
+ * sampler's own chip, lock and sweep release included ([SeedState.label] names each).
+ */
+@Composable
+private fun SeedsSummary(seeds: List<SeedState>, chip: @Composable (SeedState) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val locked = seeds.count { it.value != null }
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .then(Modifier.clickable { open = true })
+            .heightIn(min = 28.dp)
+            .padding(start = 10.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.log_seeds_summary, locked, seeds.size - locked),
+            style = MeasureTextStyle,
+            color = if (locked > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Icon(
+            com.abrah.nightmare.ui.ChevronDownIcon, contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp),
+        )
+    }
+    if (open) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { open = false },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { open = false }) { Text(stringResource(R.string.ok)) }
+        },
+        title = { Text(stringResource(R.string.log_seeds_title)) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { seeds.forEach { chip(it) } } },
+    )
 }

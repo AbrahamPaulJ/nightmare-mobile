@@ -75,7 +75,7 @@ class AgentTools(
                     "loras" to str("Installed LoRA files: name.safetensors@0.8, other.safetensors"),
                     "params" to JSONObject().put("type", "object").put("description", "{nodeId: {widget: value}}"),
                     "input_images" to JSONObject().put("type", "object")
-                        .put("description", "{imageNodeId: resultUrl or attachment:N} — put an earlier result, or a picture the person attached, into an image node"),
+                        .put("description", "{imageNodeId: resultUrl or attachment:N}. Put an earlier result, or a picture the person attached, into an image node"),
                 ),
             ),
         )
@@ -94,9 +94,9 @@ class AgentTools(
         )
         .put(fn("disconnect", "Remove the wire into input 'port' of node 'to'.", props("to" to str("Node id"), "port" to str("Input port")), listOf("to", "port")))
         .put(fn("remove_node", "Delete a node and its wires.", props("id" to str("Node id")), listOf("id")))
-        .put(fn("save_flow", "Save the canvas flow — under its own name if it has one, else the name given, else a suggested one.", props("name" to str("Letters, digits, spaces, - and _"))))
+        .put(fn("save_flow", "Save the canvas flow. Under its own name if it has one, else the name given, else a suggested one.", props("name" to str("Letters, digits, spaces, - and _"))))
         .put(fn("run", "Press Run on the canvas and wait; the person watches the nodes and the log. Returns any error, the log's last lines and the result urls. Takes seconds (SD 1.5) to minutes (SDXL, FLUX.2, video).", JSONObject()))
-        .put(fn("list_loras", "The LoRA files installed on the phone with each one's note (its first line is the trigger words to put in the prompt) — use them in set_params 'loras'.", JSONObject()))
+        .put(fn("list_loras", "The LoRA files installed on the phone with each one's note (its first line is the trigger words to put in the prompt). Use them in set_params 'loras'.", JSONObject()))
         .put(
             fn(
                 "search_loras", "Search LoRAs online (CivitAI, else Hugging Face) for the canvas model's family. Returns ids and versions for download_lora.",
@@ -190,7 +190,7 @@ class AgentTools(
             when (ask("$what has unsaved changes. Save it before opening $id?", listOf(SAVE, DISCARD, CANCEL))) {
                 SAVE -> host.save(null)
                 DISCARD -> Unit
-                else -> return ToolResult(JSONObject().put("error", "the person cancelled — the canvas was left as it was"))
+                else -> return ToolResult(JSONObject().put("error", "the person cancelled. The canvas was left as it was"))
             }
         }
         host.replace(wf, id.takeUnless { it.startsWith("saved:") || it == "current" })
@@ -208,7 +208,7 @@ class AgentTools(
         val req = RunRequest.parse(body.toString())
         val spec = req.model?.let { m ->
             ModelCatalog.byId(m)?.takeIf { it.installed(ctx) }
-                ?: throw ApiError(409, "model \"$m\" is not installed — list_models lists what is")
+                ?: throw ApiError(409, "model \"$m\" is not installed. List_models lists what is")
         }
         var g = applyOverrides(host.graph(), host.types, req, spec) { _, _ -> throw ApiError(400, "send pictures with input_images") }
         inputs?.keys()?.forEach { node ->
@@ -257,7 +257,7 @@ class AgentTools(
         if (g.byId[from] == null) throw ApiError(400, "no node \"$from\"")
         val target = g.byId[to] ?: throw ApiError(400, "no node \"$to\"")
         val ports = host.types[target.type]?.inputs?.map { it.name }.orEmpty()
-        if (port !in ports) throw ApiError(400, "\"$to\" has no input \"$port\" — it has ${ports.joinToString()}")
+        if (port !in ports) throw ApiError(400, "\"$to\" has no input \"$port\". It has ${ports.joinToString()}")
         host.edit { s -> s.copy(workflow = s.workflow.copy(graph = s.workflow.graph.connected(to, port, from).switchingOnFor(to, port))) }
         return ToolResult(brief())
     }
@@ -315,10 +315,10 @@ class AgentTools(
     /** The LoRA family of the canvas's sampler model, or a refusal saying why there is none. */
     private fun loraTarget(): LoraSources.Target {
         val (node, type) = host.graph().nodes.firstNotNullOfOrNull { n -> (host.types[n.type] as? SdSampler)?.let { n to it } }
-            ?: throw ApiError(400, "the canvas has no sampler — open a flow first")
+            ?: throw ApiError(400, "the canvas has no sampler. Open a flow first")
         val family = ModelCatalog.byId(applyDefaults(type.widgets, node)["model"].orEmpty())?.family ?: type.family
         return LoraSources.Target.of(family)
-            ?: throw ApiError(400, "${family.name} does not take LoRAs from the online search — only SD 1.5 Swap and SDXL Swap models do")
+            ?: throw ApiError(400, "${family.name} does not take LoRAs from the online search. Only SD 1.5 Swap and SDXL Swap models do")
     }
 
     private fun searchLoras(args: JSONObject): ToolResult {
@@ -332,7 +332,7 @@ class AgentTools(
             try {
                 LoraSources.search(LoraSources.Source.CIVITAI, target, q, LoraSources.Sort.DOWNLOADS, mature = Prefs.matureContent, key = key)
             } catch (e: java.io.IOException) {
-                note = "CivitAI: ${e.message} — these are from Hugging Face"
+                note = "CivitAI: ${e.message}. These are from Hugging Face"
                 LoraSources.search(LoraSources.Source.HUGGINGFACE, target, q, LoraSources.Sort.DOWNLOADS)
             }
         }
@@ -485,9 +485,9 @@ class AgentTools(
 
         /** ⭐ What a chat's starting choice tells the agent (`ui/AgentScreen.kt`'s three chips). */
         fun modeNote(mode: AgentMode?): String = when (mode) {
-            AgentMode.CREATE -> "[Mode: Create — build the flow on the canvas (new_flow, set_params, add_node, connect) and stop. Do not run it. Say what you set.]"
-            AgentMode.CREATE_RUN -> "[Mode: Create & Run — build the flow on the canvas, then run it and show the result.]"
-            AgentMode.EDIT -> "[Mode: Edit current — change the flow already on the canvas (get_canvas first). Do not replace it with new_flow unless asked.]"
+            AgentMode.CREATE -> "[Mode: Create. Build the flow on the canvas (new_flow, set_params, add_node, connect) and stop. Do not run it. Say what you set.]"
+            AgentMode.CREATE_RUN -> "[Mode: Create & Run. Build the flow on the canvas, then run it and show the result.]"
+            AgentMode.EDIT -> "[Mode: Edit current. Change the flow already on the canvas (get_canvas first). Do not replace it with new_flow unless asked.]"
             null -> ""
         }
 

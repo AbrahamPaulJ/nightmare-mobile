@@ -159,8 +159,8 @@ object BackendProcess {
     /** ⚠ Pure, so the JVM tests reach it: Android's 128 + signal convention. */
     fun describeExit(code: Int): String? = when (code) {
         0 -> null
-        137 -> "killed by the system (SIGKILL) — on a phone that is almost always Android freeing memory"
-        134 -> "the engine aborted (SIGABRT) — usually an assert on something in the model it could not handle"
+        137 -> "killed by the system (SIGKILL). On a phone that is almost always Android freeing memory"
+        134 -> "the engine aborted (SIGABRT). Usually an assert on something in the model it could not handle"
         139 -> "the engine crashed (SIGSEGV)"
         135 -> "the engine crashed (SIGBUS)"
         143 -> "terminated (SIGTERM)"
@@ -266,7 +266,7 @@ object BackendProcess {
         val dir = runtimeDir(context).apply { mkdirs() }
         val all = context.assets.list("qnnlibs").orEmpty().toList()
         check(all.isNotEmpty()) {
-            "no qnnlibs in assets — run tools/stage_backend.ps1 before building"
+            "no qnnlibs in assets. Run tools/stage_backend.ps1 before building"
         }
         // ⚠⚠ ONLY this device's arch trio, plus the two shared libraries. The
         // APK carries all six arches (~150 MB) because `libQnnHtp.so` dispatches
@@ -482,7 +482,7 @@ object BackendProcess {
                 val exe = File(nativeDir, EXECUTABLE)
                 if (!exe.exists()) {
                     return@withContext Start.Failed(
-                        "backend binary missing from $nativeDir — " +
+                        "backend binary missing from $nativeDir. " +
                             "run tools/stage_backend.ps1 and rebuild"
                     )
                 }
@@ -494,7 +494,7 @@ object BackendProcess {
                 // upscale-only server has none by definition.
                 if (!upscalerOnly && !model.isDirectory) {
                     return@withContext Start.Failed(
-                        "no model at ${model.absolutePath} — push one there first"
+                        "no model at ${model.absolutePath}. Push one there first"
                     )
                 }
 
@@ -517,7 +517,7 @@ object BackendProcess {
                 // the backstop for a path that did not, and it names the fix.
                 if (dit && !DitEngine.isInstalled(context)) {
                     return@withContext Start.Failed(
-                        "the DiT engine ($DIT_ENGINE) is not installed — " +
+                        "the DiT engine ($DIT_ENGINE) is not installed. " +
                             "download it from the model this flow names"
                     )
                 }
@@ -538,7 +538,7 @@ object BackendProcess {
                 // catalogue assumed.
                 if (!upscalerOnly) spec?.missingPatch(context, res)?.let { name ->
                     return@withContext Start.Failed(
-                        "$modelId cannot render $res — ${File(model, name).absolutePath} is missing. " +
+                        "$modelId cannot render $res. ${File(model, name).absolutePath} is missing. " +
                             "Re-download the model, or pick a size it ships a patch for"
                     )
                 }
@@ -702,7 +702,7 @@ object BackendProcess {
                 // ⭐⭐ Hold the process priority up for as long as this backend
                 // is resident — not just while a render is in flight. See
                 // [BackendKeepAliveService].
-                BackendKeepAliveService.start(context.applicationContext)
+                BackendKeepAliveService.hold(context.applicationContext, BackendKeepAliveService.BACKEND)
                 monitor(p)
                 Start.Ok
             } catch (e: Exception) {
@@ -760,7 +760,7 @@ object BackendProcess {
                     // it and already re-started the keep-alive service for
                     // the new one -- stopping it here would drop the priority
                     // out from under a process that is still running.
-                    appContext?.let { BackendKeepAliveService.stop(it) }
+                    appContext?.let { BackendKeepAliveService.release(it, BackendKeepAliveService.BACKEND) }
                 }
             }
             val byApp = stopping === p
@@ -777,7 +777,7 @@ object BackendProcess {
             upscalerServer = false
             was
         }
-        appContext?.let { BackendKeepAliveService.stop(it) }
+        appContext?.let { BackendKeepAliveService.release(it, BackendKeepAliveService.BACKEND) }
         p?.let {
             say("[stopping]")
             stopping = it

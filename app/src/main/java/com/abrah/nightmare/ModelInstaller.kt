@@ -300,9 +300,9 @@ object ModelInstaller {
             throw IOException(
                 if (dest.length() > bytes) {
                     "the download came out larger than expected (${dest.name}) and is " +
-                        "damaged. Download again — that file starts over."
+                        "damaged. Download again. That file starts over."
                 } else {
-                    "the download stopped short — ${dest.length() shr 20} of ${bytes shr 20} MB " +
+                    "the download stopped short. ${dest.length() shr 20} of ${bytes shr 20} MB " +
                         "arrived (${dest.name}). Download again to resume."
                 }
             )

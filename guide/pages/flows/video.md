@@ -1,6 +1,6 @@
 # Video
 
-*A prompt in, a two-second clip out — 49 frames at 1024 × 640, on the NPU.*
+*A prompt in, a two-second clip out. 49 frames at 1024 × 640, on the NPU.*
 
 **Needs a Snapdragon 8 Elite or 8 Elite Gen 5** and the video models (about 8.6 GB). It does
 not use your picture model; the video has its own.
@@ -22,7 +22,7 @@ rather than trusting its name. If that check fails, the row says your device can
 **Nodes:** Prompt → Video → Output.
 
 1. **Flows → Text to video.**
-2. Write the prompt: describe the scene *and the motion* — `waves rolling onto a beach at
+2. Write the prompt: describe the scene *and the motion*. `waves rolling onto a beach at
    sunset, camera slowly panning right`.
 3. **Run.** About 25 seconds on an 8 Elite.
 
@@ -31,7 +31,7 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 
 ## Image to video
 
-**Nodes:** Prompt and Image → Video → Output — the same flow with a photo wired in.
+**Nodes:** Prompt and Image → Video → Output, the same flow with a photo wired in.
 
 1. **Flows → Image to video.**
 2. Choose the photo on the **image** node. It is framed to the video's shape; drag and pinch

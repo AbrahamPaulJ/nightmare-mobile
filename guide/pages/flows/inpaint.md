@@ -9,13 +9,13 @@ Remove something, replace it, change clothes, fix a face, or extend the photo pa
 
 ## Steps
 
-1. **Flows → Inpaint — paint an area to redo.**
+1. **Flows → Inpaint: paint an area to redo.**
 2. Tap the **image** node and choose the photo.
 3. Tap the **Inpaint** node. Its sheet shows two small pictures, **Crop** and **Mask**.
 4. Tap **Mask** and paint over what you want redone (details below). Pull the window down to
    close it.
 5. Write the prompt: describe **what should be in the painted area**, in the context of the
-   whole picture — `a red leather jacket` rather than `change the jacket`.
+   whole picture. `a red leather jacket` rather than `change the jacket`.
 6. **Run.**
 
 <div class="screens" markdown>
@@ -48,7 +48,7 @@ the hole the way an inpainting model does, so they are best for changing what is
 | 🖌 **Paint** | Paint the area to redo. Pinch to zoom in for precise edges |
 | **Erase** | Remove paint |
 | ↶ ↷ | Undo / redo a stroke |
-| ◑ **Invert** | Swap painted and unpainted — "redo everything except this" |
+| ◑ **Invert** | Swap painted and unpainted: "redo everything except this" |
 | **Clear** | Remove all paint |
 | **Size** | Brush size in pixels |
 
@@ -65,7 +65,7 @@ phone's CPU.
 
 Tick **Enable auto mask** (a 29 MB download) and chips appear in the mask editor:
 **Clothes**, **Face**, **Hair**, **Shoes**, **Bag**. Tap one and that part of the person is
-masked. The flow **remembers** the choice and masks every new photo by itself — for example a
+masked. The flow **remembers** the choice and masks every new photo by itself. For example a
 clothes-swap flow where you only change the photo and press Run.
 
 After a tap or a pick, **Grow** widens or narrows the selected area, and **Feather** softens its
@@ -86,7 +86,7 @@ part is generated. What fills it before generation is the **Pad** choice:
 | pad | use it for |
 |---|---|
 | **Black** | Plain extension; the model invents everything |
-| **Blur** | The photo's own edges, blurred — a smoother start for scenery |
+| **Blur** | The photo's own edges, blurred: a smoother start for scenery |
 | **Green** (`#00FF00`) | Outpaint LoRAs trained on a green screen |
 
 <figure markdown>

@@ -423,6 +423,13 @@ data class Recipe(
  * [SdSampler.typeFor] keeps a type's inpaint-ness whatever family is
  * selected while it builds.
  */
+/**
+ * ⭐ One choice in the Default view's Swap flow ([com.abrah.nightmare.HarnessViewModel.swapFlows]):
+ * a recipe this flow's model runs, whether it takes a picture (a text-to-image one is what
+ * Remove input swaps to), and whether it is the flow open now.
+ */
+data class SwapFlow(val recipe: Recipe, val takesPicture: Boolean, val current: Boolean)
+
 fun Recipe.runsOn(spec: com.abrah.nightmare.ModelSpec): Boolean {
     if (!usesCheckpoint) return false
     if (!servesFamily(spec.family)) return false
@@ -454,7 +461,7 @@ val RECIPES: List<Recipe> = listOf(
         aboutRes = R.string.flow_img2img_about,
     ),
     Recipe(
-        "inpaint", "Inpaint — paint an area to redo",
+        "inpaint", "Inpaint: paint an area to redo",
         "Paint over part of a photo and only that part is re-imagined. Open the " +
             "sampler and tap Mask to paint.",
         ::inpaintWorkflow,
@@ -468,7 +475,7 @@ val RECIPES: List<Recipe> = listOf(
     // one ordering no user can predict.
     Recipe(
         "upscale", "Upscale a photo",
-        "A picture from the gallery, enlarged 4x. No checkpoint involved — " +
+        "A picture from the gallery, enlarged 4x. No checkpoint involved: " +
             "the upscaler is its own small model, installed under Models.",
         ::upscaleWorkflow,
         usesCheckpoint = false,
@@ -487,7 +494,7 @@ val RECIPES: List<Recipe> = listOf(
     // (`SwapWiring.kt`). ⚠ Here, not later: an SD 1.5-class model, so cheaper
     // than every flow below.
     Recipe(
-        "swap_t2i", "Text to image — LoRA, ControlNet, IP-Adapter",
+        "swap_t2i", "Text to image: LoRA, ControlNet, IP-Adapter",
         "A Swap model (SD 1.5 or SDXL) with LoRAs, a ControlNet and an IP-Adapter reference, " +
             "all chosen per render on the sampler. Switch each on in its tile.",
         { swapWorkflow(i2i = false) },
@@ -497,7 +504,7 @@ val RECIPES: List<Recipe> = listOf(
         aboutRes = R.string.flow_swap_t2i_about,
     ),
     Recipe(
-        "swap_i2i", "Image to image — LoRA, ControlNet, IP-Adapter",
+        "swap_i2i", "Image to image: LoRA, ControlNet, IP-Adapter",
         "A photo re-imagined by a Swap model, with the same three. ControlNet " +
             "reads the photo itself unless you give it another picture.",
         { swapWorkflow(i2i = true) },
@@ -511,7 +518,7 @@ val RECIPES: List<Recipe> = listOf(
         // ⚠ The requirement is IN the copy, the way the video flows state
         // theirs. This list is not filtered by device or by checkpoint, so a
         // card that cannot run here has to say so itself.
-        "FLUX.2 Klein or Qwen Image 2.1, on an 8 Elite or newer. A photo and a prompt: the " +
+        "FLUX.2 Klein or Qwen Image 2.1, on an 8 Gen 3 or newer (alpha on 8 Gen 3). A photo and a prompt: the " +
             "whole picture is re-rendered to follow it, rather than nudged. " +
             "Wire a second picture into the reference port and name them as " +
             "image 1 and image 2 in the prompt.",
@@ -527,7 +534,7 @@ val RECIPES: List<Recipe> = listOf(
         // say "320x512 -> 640x1024" in (height, width) order, and repeating that
         // here would have told the user a portrait clip and handed them a
         // landscape one. Measured on device 2026-09-12: 49 frames, 1024x640.
-        "A prompt in, a 2 second clip out — 49 frames at 1024x640, on the NPU. " +
+        "A prompt in, a 2 second clip out: 49 frames at 1024x640, on the NPU. " +
             "Needs the video models installed; it does not use your checkpoint.",
         ::textToVideoWorkflow,
         usesCheckpoint = false,
@@ -546,7 +553,7 @@ val RECIPES: List<Recipe> = listOf(
         // 20.6 s against t2v's 24.6 s on device 2026-09-13, because SSD1B never
         // runs. ⚠⚠ It also needs 1.68 GB fewer models, which matters to
         // someone deciding what to download.
-        "A photo from the gallery, brought to life — 49 frames at 1024x640. " +
+        "A photo from the gallery, brought to life: 49 frames at 1024x640. " +
             "Faster than text to video, and it needs three fewer models.",
         ::imageToVideoWorkflow,
         usesCheckpoint = false,

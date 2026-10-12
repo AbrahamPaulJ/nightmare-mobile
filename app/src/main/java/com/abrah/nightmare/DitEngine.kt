@@ -152,7 +152,7 @@ object DitEngine {
         val got = sha256(zip)
         if (got != SHA256) {
             zip.delete()
-            throw IOException("$LABEL: archive sha256 is $got, expected $SHA256 — the download is corrupt")
+            throw IOException("$LABEL: archive sha256 is $got, expected $SHA256. The download is corrupt")
         }
         onProgress(ModelInstaller.Progress("extracting", 0, 0))
         // ⚠⚠⚠ `.part` then RENAME, never a write in place — and here that is

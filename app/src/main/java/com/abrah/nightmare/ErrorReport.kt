@@ -158,7 +158,7 @@ object ErrorReport {
                         val ago = (f.nowMs - e.atMs) / 1000
                         "exited ${e.code} ${ago}s ago" +
                             (if (e.byApp) " (stopped by the app)" else "") +
-                            (BackendProcess.exitMeaning(e)?.let { " — $it" } ?: "")
+                            (BackendProcess.exitMeaning(e)?.let { ". $it" } ?: "")
                     }
                 },
             )
@@ -224,7 +224,7 @@ object ErrorReport {
                 when {
                     caps.measured -> " (measured)"
                     caps.known -> " (from the chip table)"
-                    else -> " (unknown chip — the floor)"
+                    else -> " (unknown chip, the floor)"
                 } + " · VTCM ${caps.vtcmMb} MB",
             ramTotal = DeviceProbe.totalRamBytes(),
             ramAvailable = availableRamBytes(),

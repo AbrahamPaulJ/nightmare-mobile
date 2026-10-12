@@ -192,14 +192,14 @@ object BatchParams {
         return when {
             spec.isBlank() -> null
             values.isEmpty() && isRange(param) ->
-                "not a list or a range — try 1, 2, 3 or 1..20 by 2"
-            values.size == 1 -> "one value is not a sweep — pick at least $MIN_PER_AXIS"
+                "not a list or a range. Try 1, 2, 3 or 1..20 by 2"
+            values.size == 1 -> "one value is not a sweep. Pick at least $MIN_PER_AXIS"
             values.isEmpty() -> "pick at least $MIN_PER_AXIS"
             values.size > MAX_PER_AXIS ->
-                "${values.size} values — at most $MAX_PER_AXIS per knob" +
+                "${values.size} values. At most $MAX_PER_AXIS per knob" +
                     (if (isRange(param)) ", so widen the step" else "")
             alreadyArmed >= MAX_AXES ->
-                "$MAX_AXES knobs can be swept at once — release one first"
+                "$MAX_AXES knobs can be swept at once. Release one first"
             else -> null
         }
     }

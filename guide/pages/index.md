@@ -6,7 +6,7 @@ Everything runs on the Snapdragon's NPU (its AI chip). You describe what you wan
 depending on the model.
 
 It works a little differently from most apps: every job is a small **flow** of boxes
-(**nodes**) joined by lines (**wires**) — a prompt box, a generator, an output. You never have
+(**nodes**) joined by lines (**wires**): a prompt box, a generator, an output. You never have
 to build one from scratch: the app ships ready-made flows for every job, and you can just open
 one and press Run. When you want more control, the same boxes let you see and change every
 step.

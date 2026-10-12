@@ -1,7 +1,7 @@
 # Models
 
 A **model** (or **checkpoint**) is the trained network that actually draws. Nightmare ships
-without any — you download the ones you want from **Models**, and each is downloaded once and
+without any. You download the ones you want from **Models**, and each is downloaded once and
 kept.
 
 Models come in **families**. A family decides how prompts are written, what sizes it draws and
@@ -22,8 +22,8 @@ which phones can run it; inside a family, models differ in style.
 
 Besides picture models, **Models** also holds:
 
-- **Upscalers** — small models that enlarge a picture. [Upscale](../flows/upscale.md)
-- **Video** — the text- and image-to-video models, one 8.6 GB download. [Video](../flows/video.md)
+- **Upscalers**: small models that enlarge a picture. [Upscale](../flows/upscale.md)
+- **Video**: the text- and image-to-video models, one 8.6 GB download. [Video](../flows/video.md)
 
 <figure markdown>
   ![The Models tab, SD 1.5 family](../img/models-installed.png){ .screen }
@@ -34,10 +34,10 @@ Besides picture models, **Models** also holds:
 - **Any phone:** *AbsoluteReality* (realistic) or *AnythingV5* (anime), SD 1.5. Small and quick.
 - **To inpaint:** add *AbsoluteReality Inpaint*, a dedicated inpainting model.
 - **8 Gen 3 and up:** an SDXL model for sharper, larger pictures.
-- **8 Elite:** *FLUX.2 Klein* — prompts in plain sentences, and photo editing.
+- **8 Gen 3 and up:** *FLUX.2 Klein* (alpha on 8 Gen 3). Prompts in plain sentences, and photo editing.
 
 ## In this section
 
-- **[Download, switch and delete](manage.md)** — the Models tab row by row.
-- **[Bring your own](bring-your-own.md)** — import a model from CivitAI, LocalDream or npuforge.
-- **[LoRAs and embeddings](loras.md)** — small add-ons that change a model's style.
+- **[Download, switch and delete](manage.md)**: the Models tab row by row.
+- **[Bring your own](bring-your-own.md)**: import a model from CivitAI, LocalDream or npuforge.
+- **[LoRAs and embeddings](loras.md)**: small add-ons that change a model's style.

@@ -17,8 +17,8 @@ phone ran out of memory: close other apps, or pick a smaller canvas or a smaller
 ## A flow is dimmed and will not open
 
 It needs a newer chip than your phone has; the card says which (for example *"this flow needs
-v79 (Snapdragon 8 Elite or newer)"*). Image edit and both video flows need an 8 Elite.
-Nothing can change this — the models are built for that generation of NPU.
+v79 (Snapdragon 8 Elite+)"*). Both video flows need an 8 Elite; image edit needs an 8 Gen 3.
+Nothing can change this. The models are built for that generation of NPU.
 
 ## A model says "this device cannot run it"
 
@@ -81,12 +81,12 @@ ones:
 
 - no photo chosen on an Image node that a generator needs;
 - an Inpaint node with nothing painted in its mask;
-- the backend stopping mid-render — usually memory, see above.
+- the backend stopping mid-render. Usually memory, see above.
 
 ## Image to image or an edit changes too much, or too little
 
 Change **Denoise**: lower keeps more of the photo, higher changes more. Image to image opens at
-0.65; an edit at 1.0. For inpainting, also check the mask covers what you want changed — and a
+0.65; an edit at 1.0. For inpainting, also check the mask covers what you want changed and a
 little beyond it.
 
 ## The picture ignores part of my prompt
