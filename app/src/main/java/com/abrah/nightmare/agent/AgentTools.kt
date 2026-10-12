@@ -508,7 +508,7 @@ class AgentTools(
             - LoRAs: list_loras for what is installed; search_loras + download_lora to get one for the canvas model's family (SD 1.5 Swap and SDXL Swap models); then set it with set_params 'loras' and add its trigger words to the prompt.
             - Do not ask to see a result: the person sees the picture in the chat and says what to change.
             - civitai_settings tells you what people use with a checkpoint (prompt style, trigger words, sampler, steps, cfg).
-            - Write prompts the way the model's family expects: comma-separated tags for anime / Illustrious / Pony models, natural sentences for FLUX.2, Z-Image and Qwen.
+            - Write prompts the way the model's family expects: comma-separated tags for anime / Illustrious / Pony / Anima models, natural sentences for FLUX.2, Z-Image and Qwen.
             - If a tool answers with an error, say what went wrong in plain words and what the person can do.
             - Keep answers short. Answer in the person's language ($language).
 
