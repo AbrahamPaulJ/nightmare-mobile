@@ -236,7 +236,8 @@ class AgentSession(
             val r = withContext(Dispatchers.IO) {
                 runCatching {
                     val key = typedKey?.takeIf { it.isNotBlank() } ?: AgentConfig.key(ctx)
-                    LlmClient(if (provider == Provider.CUSTOM) baseUrl else provider.baseUrl, key, "").models()
+                    LlmClient(if (provider == Provider.CUSTOM) baseUrl else provider.baseUrl, key, "")
+                        .models(chatOnly = provider == Provider.OPENROUTER)
                 }
             }
             modelsLoading = false
@@ -244,7 +245,8 @@ class AgentSession(
         }
     }
 
-    private fun client() = LlmClient(config.baseUrl, AgentConfig.key(ctx), config.model)
+    private fun client() =
+        LlmClient(config.baseUrl, AgentConfig.key(ctx), config.model, capReply = config.provider == Provider.OPENROUTER)
 
     private fun language() = ctx.resources.configuration.locales[0].displayLanguage
 }

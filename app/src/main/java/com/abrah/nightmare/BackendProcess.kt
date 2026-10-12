@@ -626,18 +626,26 @@ object BackendProcess {
                         // and Klein 4B's 4.1 GB DiT planned as ONE graph segment failed to map on
                         // every 8 Gen 3 (1.6.128's report: TE 1.46 GB mapped and released, then the
                         // DiT's blocks ran out ~1 s in; Qwen's 5.1 GB encoder the same way). A budget
-                        // makes the graph cut split it. 2 GiB leaves room for the compute buffers.
+                        // makes the graph cut split it.
+                        // ⭐ 2.75, not 2 (1.6.138): the budget covers COMPUTE buffers too, and at 1024²
+                        // anything with an input picture outgrew 2 GiB: FLUX's VAE in one tile needs
+                        // 2657 MB, a double block with a reference's tokens 2241 MB, so img2img, edit
+                        // and reference all failed `generate_image failed` (GitHub #13, #16). Reproduced
+                        // on the S25 forced to v75 and fixed at 2.75; still under the ~3.1 GiB map.
                         // ⚠ `nightmare-dit-max-vram.txt` overrides it on ANY chip — how the split is
                         // proven on a v79 phone, which never needs it (`docs/DIT.md` §9e).
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
-                        (readDitMaxVramOverride(context) ?: "2".takeIf { belowV79 })
+                        (readDitMaxVramOverride(context) ?: "2.75".takeIf { belowV79 })
                             ?.let { put("DIT_MAX_VRAM", it) }
                         // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
                         // up blocks) computes garbage: 1.6.131's 8 Gen 3 renders came back solid red /
                         // black. Reproduced on the S25 with the v75 skel forced (`GGML_HEXAGON_ARCH=75`):
                         // stripes; the VAE on CPU, or ONLY this op on CPU, gives the v79 picture within
                         // 1/255, at 65 s against 59 s (`docs/DIT.md` §9e). ggml-hexagon's own op filter.
-                        if (belowV79) put("GGML_HEXAGON_OPFILTER", "CONV_2D_UPSCALE")
+                        // ⭐ And `CONCAT`: Qwen 2.1's Wan VAE crashed the v75 skel inside `op_concat`
+                        // (`dspqueue_read failed 0x2e`, the vivo report); on the S25 forced to v75 it
+                        // reproduced, and with CONCAT on the CPU it renders the v79 picture (mean 0.64/255).
+                        if (belowV79) put("GGML_HEXAGON_OPFILTER", "CONV_2D_UPSCALE|CONCAT")
                         putAll(readDitEnvOverride(context))
                         val dsp = listOf(
                             runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",
