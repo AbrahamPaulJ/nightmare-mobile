@@ -47,6 +47,7 @@ step.
 | Make a photo bigger and sharper | Upscale a photo | [Upscale](flows/upscale.md) |
 | Change a photo by instruction ("make it winter") | Image edit | [Image edit](flows/image-edit.md) |
 | A two-second clip from text or a photo | Text / Image to video | [Video](flows/video.md) |
+| A better clip of up to 5 seconds | Text / Image to video, Wan 2.2 | [Video](flows/video.md#wan-22-better-clips-slower) |
 | Try many seeds or settings at once | any flow + Batch | [Batching](flows/batch.md) |
 
 ## What your phone needs

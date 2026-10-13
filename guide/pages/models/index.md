@@ -24,7 +24,7 @@ which phones can run it; inside a family, models differ in style.
 Besides picture models, **Models** also holds:
 
 - **Upscalers**: small models that enlarge a picture. [Upscale](../flows/upscale.md)
-- **Video**: the text- and image-to-video models, one 8.6 GB download. [Video](../flows/video.md)
+- **Video**: the text- and image-to-video models, one 8.6 GB download, and Wan 2.2 (6.25 GB), slower and better. [Video](../flows/video.md)
 
 <figure markdown>
   ![The Models tab, SD 1.5 family](../img/models-installed.png){ .screen }

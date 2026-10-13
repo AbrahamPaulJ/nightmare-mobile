@@ -49,3 +49,31 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 <figure markdown>
   ![The video node's settings](../img/inspector-video-sample.png){ .screen }
 </figure>
+
+## Wan 2.2: better clips, slower
+
+*A prompt, or a prompt and a photo, into a clip of up to 5 seconds. 832 × 480 by default.*
+
+**Needs a Snapdragon 8 Elite or newer** (alpha on 8 Gen 3: tell us if it runs) and Wan 2.2 (6.25 GB). It is separate from the
+Neodragon models above: install either, or both.
+
+- **Models → Video → Wan 2.2 Turbo → Download.** Three files: the Wan 2.2 Turbo model, its
+  umT5 text encoder and a small decoder.
+- **Flows → Text to video, Wan 2.2** or **Image to video, Wan 2.2.** Same nodes as the
+  flows above: Prompt (and Image) → Wan video → Output.
+- **Run.** 5 seconds at 832 × 480 takes about **3 minutes** on an 8 Elite; the bar moves once
+  per step, four steps, then the clip is decoded and encoded.
+
+In image to video the photo is the clip's **first frame**, so the prompt describes what moves:
+`the camera slowly pushes in, the woman turns her head and smiles`.
+
+| setting | does |
+|---|---|
+| **Shape** | `landscape` or `portrait`. With a photo, the crop frame above these settings takes this shape: drag it to pick the first frame |
+| **Size** | `480p` (832 × 480) or `704p` (1280 × 704): sharper, about three times as long |
+| **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
+| **Seconds** | 1 to 5, at 24 frames a second |
+
+<figure markdown>
+  ![Models → Video with Wan 2.2](../img/models-video-wan.png){ .screen }
+</figure>

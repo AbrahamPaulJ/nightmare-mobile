@@ -176,6 +176,26 @@ Wan 2.1 VAE (Krea 2 Turbo's VAE)
     https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged
     Apache 2.0. Downloaded by the app at the user's request; not included here.
 
+Wan 2.2 TI2V 5B Turbo (video)
+    Wan team (Alibaba); Turbo distillation by quanhaol; Q4_0 GGUF by hum-ma
+    https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B
+    https://github.com/quanhaol/Wan2.2-TI2V-5B-Turbo
+    https://huggingface.co/hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF
+    Wan 2.2 is Apache 2.0. The Turbo code is CC BY-NC-SA 4.0; its weights page
+    states no licence; the GGUF is published as Apache 2.0. Downloaded by the app
+    at the user's request, unmodified; not included here.
+
+umT5-XXL encoder (Wan 2.2's text encoder)
+    Google; GGUF by city96
+    https://huggingface.co/google/umt5-xxl
+    https://huggingface.co/city96/umt5-xxl-encoder-gguf
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
+
+TAEHV (Wan 2.2's video decoder)
+    madebyollin
+    https://github.com/madebyollin/taehv
+    MIT licensed. Downloaded by the app at the user's request; not included here.
+
 SAM 2.1 (hiera-tiny)
     Meta
     https://github.com/facebookresearch/sam2
