@@ -1,0 +1,52 @@
+diff --git a/src/model/diffusion/wan.hpp b/src/model/diffusion/wan.hpp
+index 37b4226..a74dbd1 100644
+--- a/src/model/diffusion/wan.hpp
++++ b/src/model/diffusion/wan.hpp
+@@ -4,6 +4,7 @@
+ #include <cinttypes>
+ #include <map>
+ #include <memory>
++#include <tuple>
+ #include <utility>
+ #include "core/ggml_extend_backend.h"
+ #include "core/ggml_tensor_utils.h"
+@@ -712,15 +713,30 @@ namespace WAN {
+             x = ggml_reshape_3d(ctx->ggml_ctx, x, x->ne[0] * x->ne[1] * x->ne[2], x->ne[3] / N, N);  // [N, dim, t_len*h_len*w_len]
+             x = ggml_ext_cont(ctx->ggml_ctx, ggml_ext_torch_permute(ctx->ggml_ctx, x, 1, 0, 2, 3));  // [N, t_len*h_len*w_len, dim]
+ 
+-            // time_embedding
+-            auto e = ggml_ext_timestep_embedding(ctx->ggml_ctx, timestep, config.freq_dim);
+-            e      = time_embedding_0->forward(ctx, e);
+-            e      = ggml_silu_inplace(ctx->ggml_ctx, e);
+-            e      = time_embedding_2->forward(ctx, e);  // [N, dim] or [N, T, dim]
+-
+-            // time_projection
+-            auto e0 = ggml_silu(ctx->ggml_ctx, e);
+-            e0      = time_projection_1->forward(ctx, e0);
++            // time_embedding + time_projection. Per-frame timesteps (Wan 2.2 TI2V with a start
++            // image: frame 0 at t = 0) run one row at a time on a backend: the Hexagon backend
++            // rendered noise whenever these matmuls took T > 1 rows, and a single row is the
++            // path text to video takes correctly.
++            auto embed_time = [&](ggml_tensor* t) -> std::pair<ggml_tensor*, ggml_tensor*> {
++                auto te = ggml_ext_timestep_embedding(ctx->ggml_ctx, t, config.freq_dim);
++                te      = time_embedding_0->forward(ctx, te);
++                te      = ggml_silu_inplace(ctx->ggml_ctx, te);
++                te      = time_embedding_2->forward(ctx, te);  // [N, dim] or [N, T, dim]
++                auto p  = ggml_silu(ctx->ggml_ctx, te);
++                p       = time_projection_1->forward(ctx, p);
++                return {te, p};
++            };
++            ggml_tensor* e  = nullptr;
++            ggml_tensor* e0 = nullptr;
++            if (ctx->backend != nullptr && timestep->ne[0] > 1) {
++                for (int64_t i = 0; i < timestep->ne[0]; i++) {
++                    auto [ei, e0i] = embed_time(ggml_view_1d(ctx->ggml_ctx, timestep, 1, i * timestep->nb[0]));
++                    e              = e == nullptr ? ei : ggml_concat(ctx->ggml_ctx, e, ei, 1);
++                    e0             = e0 == nullptr ? e0i : ggml_concat(ctx->ggml_ctx, e0, e0i, 1);
++                }
++            } else {
++                std::tie(e, e0) = embed_time(timestep);
++            }
+             e0      = ggml_reshape_4d(ctx->ggml_ctx, e0, e0->ne[0] / 6, 6, e0->ne[1], e0->ne[2]);  //  [N, 6, dim] or [N, T, 6, dim]
+ 
+             context = text_embedding_0->forward(ctx, context);
