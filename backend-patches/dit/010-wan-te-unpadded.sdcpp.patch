@@ -1,0 +1,69 @@
+diff --git a/src/conditioning/conditioner.hpp b/src/conditioning/conditioner.hpp
+index 7f8d048..93f4630 100644
+--- a/src/conditioning/conditioner.hpp
++++ b/src/conditioning/conditioner.hpp
+@@ -1292,7 +1292,7 @@ struct T5CLIPEmbedder : public Conditioner {
+                    bool is_umt5                                        = false,
+                    std::shared_ptr<RunnerWeightManager> weight_manager = nullptr,
+                    const char* model_args                              = nullptr)
+-        : use_mask(use_mask), mask_pad(mask_pad), t5_tokenizer(is_umt5) {
++        : use_mask(use_mask), mask_pad(mask_pad), is_umt5(is_umt5), t5_tokenizer(is_umt5) {
+         for (const auto& [key, value] : parse_key_value_args(model_args, "model arg")) {
+             if (key == "chroma_use_t5_mask") {
+                 bool parsed = false;
+@@ -1505,11 +1505,55 @@ struct T5CLIPEmbedder : public Conditioner {
+     SDCondition get_learned_condition(int n_threads,
+                                       const ConditionerParams& conditioner_params) override {
+         auto tokens_and_weights = tokenize(conditioner_params.text, chunk_len, chunk_len);
++        if (is_umt5 && t5) {
++            SDCondition result = encode_unpadded(n_threads, tokens_and_weights);
++            if (!result.c_crossattn.empty()) {
++                return result;
++            }
++        }
+         return get_learned_condition_common(n_threads,
+                                             tokens_and_weights,
+                                             conditioner_params.clip_skip,
+                                             conditioner_params.zero_out_masked);
+     }
++
++    // Wan's T5EncoderModel encodes the prompt's own tokens and zero-pads the context to
++    // text_len (512). Encoding all 512 with the pads attending was 24 of a 31 s TE on the
++    // phone's NPU for a 20-token prompt, and left the pad rows non-zero. Empty result when
++    // the prompt fills the chunk (the padded path then runs as before).
++    SDCondition encode_unpadded(int n_threads,
++                                const std::tuple<std::vector<int>, std::vector<float>, std::vector<float>>& token_and_weights) {
++        const auto& tokens  = std::get<0>(token_and_weights);
++        const auto& weights = std::get<1>(token_and_weights);
++        const auto& mask    = std::get<2>(token_and_weights);
++        if (tokens.size() != chunk_len || mask.size() != chunk_len) {
++            return {};
++        }
++        size_t n = 0;
++        while (n < mask.size() && mask[n] == 0.0f) {
++            n++;
++        }
++        if (n == 0 || n >= chunk_len) {
++            return {};
++        }
++        int64_t t0 = ggml_time_ms();
++        std::vector<int> ids(tokens.begin(), tokens.begin() + n);
++        std::vector<float> w(weights.begin(), weights.begin() + n);
++        sd::Tensor<int32_t> input_ids({static_cast<int64_t>(n)}, ids);
++        auto hidden = t5->compute(n_threads, input_ids, sd::Tensor<float>(), false);
++        GGML_ASSERT(!hidden.empty());
++        hidden         = apply_token_weights(std::move(hidden), w);
++        auto pad_shape = hidden.shape();
++        pad_shape[1]   = static_cast<int64_t>(chunk_len - n);
++        hidden         = sd::ops::concat(hidden, sd::Tensor<float>::zeros(pad_shape), 1);
++        LOG_VERBOSE("computing condition graph completed (%zu of %zu tokens), taking %" PRId64 " ms",
++                    n, chunk_len, ggml_time_ms() - t0);
++
++        SDCondition result;
++        result.c_crossattn = std::move(hidden);
++        result.c_vector    = sd::Tensor<float>::from_vector(mask);
++        return result;
++    }
+ };
+ 
+ struct MiniT2IConditioner : public Conditioner {
