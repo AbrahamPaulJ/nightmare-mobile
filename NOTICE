@@ -88,12 +88,18 @@ CLIP, DistilT5
     Text encoders used by the video path, converted for the NPU.
     Downloaded by the app at the user's request; not included here.
 
+T5 tokenizer (google-t5/t5-base tokenizer.json)
+    Google
+    https://huggingface.co/google-t5/t5-base
+    Apache 2.0. Its vocabulary counts Anima prompt tokens against 512.
+    Downloaded by the app once an Anima DiT model is installed; not included here.
+
 DiT engine (libdit_engine.so and its Hexagon skels)
     xororz/local-dream's engine wrapper (v3.0.0-alpha.3) around stable-diffusion.cpp
     with ggml's Hexagon backend, plus this project's LoRA patch
     (backend-patches/dit/), built by this repository's CI and downloaded by the
     app; the skels ship in the APK. Runs FLUX.2 Klein 4B and 9B, Z-Image Turbo,
-    Qwen Image 2.1 and Krea 2 Turbo on the NPU. Not included in this repository.
+    Qwen Image 2.1, Krea 2 Turbo and Anima on the NPU. Not included in this repository.
 
 stable-diffusion.cpp
     leejet, with Hexagon optimisation by happyyzy

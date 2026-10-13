@@ -55,7 +55,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon).
 
 ### LoRA, ControlNet and IP-Adapter
-- **LoRAs per render**: on FLUX.2, Z-Image and Swap models: tick, set strength, no reload. A note per LoRA keeps its trigger words.
+- **LoRAs per render**: on FLUX.2, Z-Image, Anima Turbo and Swap models: tick, set strength, no reload. A note per LoRA keeps its trigger words.
 - **Get LoRAs in the app**: search CivitAI and Hugging Face filtered to the model's family, or paste a link; hash-checked downloads.
 - **SD 1.5 Swap and SDXL Swap**: npuforge conversions whose LoRA, **ControlNet** (canny, depth, openpose) and **IP-Adapter** (Plus, Face) are chosen per render; pose and depth are found from a photo on the phone.
 - **Embeddings**: import a textual inversion and name it in a prompt.
@@ -70,9 +70,10 @@ and it downloads on first use; the app shows which ones your phone can run.
 ### Your phone, your files
 - **English, Chinese and Russian**: the app follows your phone's language.
 - **Models where you can see them**: optionally in `Download/Nightmare`, surviving an uninstall.
-- **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches.
+- **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches; large files come over four connections at once.
 - **Your RAM back**: the model is released when you leave; low-RAM switches for SDXL and Anima.
-- **Three views of one flow**: **Default** (one step at a time, the easy way in), **Advanced** (the whole flow as connected boxes) and **Chat**, switched from one button beside the current model; in **Default**, **Swap flow** moves to another flow for the same model keeping your prompt and settings. Models, Flows, Results and the current flow live in a sidebar; Models, Flows, Results and Settings open as sheets over the flow.
+- **A report when the phone restarts mid-run**: the next launch says what was running and how much memory was free at each step, ready to copy into a bug report.
+- **Three views of one flow**: **Default** (one step at a time, the easy way in), **Advanced** (the whole flow as connected boxes) and **Chat** (hide it in Settings if you don't use it), switched from one button beside the current model (tap the model to change it); in **Default**, **Swap flow** moves to another flow for the same model keeping your prompt and settings. Models, Flows, Results and the current flow live in a sidebar; Models, Flows, Results and Settings open as sheets over the flow.
 - **An agent**: ask for pictures in words: an AI model you bring your own key for (OpenRouter, OpenAI, DeepSeek, xAI, Groq or a local server) builds the flow on your canvas, finds and downloads LoRAs, uses a picture you attach, runs it and shows you the picture; no picture is ever sent to the AI model ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/agent/)).
 - **A local API**: a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; token-protected, off by default ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
 - **Offline and private**: nothing is uploaded, no account (the optional agent talks to the provider you choose); a failure report never includes your prompt.
@@ -151,6 +152,7 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 | [Florence-2 PromptGen v2.0](https://huggingface.co/MiaoshouAI/Florence-2-base-PromptGen-v2.0) | MiaoshouAI, on Microsoft's [Florence-2](https://huggingface.co/microsoft/Florence-2-base-ft) | MIT | describe: sentences, [as ONNX](https://huggingface.co/AbrahamPJ/florence2-promptgen-onnx) on onnx-community's graphs |
 | [WD ViT tagger v3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3) | SmilingWolf | Apache 2.0 | describe: tags |
 | [Firefox Translations](https://github.com/mozilla/firefox-translations-models) (ru, zh → en) | Mozilla | MPL-2.0 | prompt translation |
+| [T5 tokenizer](https://huggingface.co/google-t5/t5-base) (`tokenizer.json`) | Google | Apache 2.0 | counting Anima prompt tokens (n/512) |
 | [Danbooru tag list](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete) (`danbooru.csv`) | Dominik Reh (a1111-sd-webui-tagcomplete) | MIT | tag autocomplete, [hosted here](https://huggingface.co/AbrahamPJ/nightmare-tags) |
 
 ## Licence
