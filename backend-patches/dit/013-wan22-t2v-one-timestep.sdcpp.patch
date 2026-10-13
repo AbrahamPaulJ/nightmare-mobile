@@ -1,0 +1,18 @@
+diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
+index e944c9a..419dd82 100644
+--- a/src/pipeline/diffusion_engine.cpp
++++ b/src/pipeline/diffusion_engine.cpp
+@@ -1795,6 +1795,13 @@ std::vector<float> StableDiffusionGGML::process_timesteps(const std::vector<floa
+                 }
+             }
+         }
++        // Text to video gives every frame the same timestep: one row is the same model and
++        // takes Wan 2.1's per-batch path (fused modulation on HTP). The per-frame path
++        // rendered noise on the Hexagon backend at any size or quant.
++        if (std::all_of(new_timesteps.begin(), new_timesteps.end(),
++                        [&](float t) { return t == new_timesteps[0]; })) {
++            return {new_timesteps[0]};
++        }
+         return new_timesteps;
+     } else {
+         return timesteps;
