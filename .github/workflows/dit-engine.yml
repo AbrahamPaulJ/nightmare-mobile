@@ -186,6 +186,8 @@ jobs:
           for rel in ${{ inputs.patch }}; do
             echo "--- $rel"
             case "$rel" in
+              # ggml is a submodule of THAT submodule: same trap, one level down.
+              *.ggml.patch)  repo="$SDCPP/ggml"; args="" ;;
               *.sdcpp.patch) repo="$SDCPP"; args="" ;;
               *)             repo=local-dream; args="--directory=app/src/main/cpp" ;;
             esac
