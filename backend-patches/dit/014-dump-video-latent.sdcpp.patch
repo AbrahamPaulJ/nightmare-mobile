@@ -1,0 +1,34 @@
+diff --git a/src/pipeline/video.cpp b/src/pipeline/video.cpp
+index cc979c0..c502e22 100644
+--- a/src/pipeline/video.cpp
++++ b/src/pipeline/video.cpp
+@@ -3,6 +3,7 @@
+ #include <algorithm>
+ #include <cmath>
+ #include <cstdlib>
++#include <cstdio>
+ #include <optional>
+ 
+ #include "core/rng.hpp"
+@@ -1126,6 +1127,21 @@ namespace sd::pipeline {
+                     (int)video_latent.shape()[1],
+                     (int)video_latent.shape()[2],
+                     (int)video_latent.shape()[3]);
++        // DIAGNOSTIC: SD_DUMP_LATENT=<path> writes the latent the VAE is about to decode
++        // (int64 rank, int64 dims in ggml order, then f32 data) for an off-device decode.
++        if (const char* dump_path = std::getenv("SD_DUMP_LATENT")) {
++            if (FILE* f = std::fopen(dump_path, "wb")) {
++                const int64_t rank = static_cast<int64_t>(video_latent.dim());
++                std::fwrite(&rank, sizeof(rank), 1, f);
++                for (int64_t i = 0; i < rank; i++) {
++                    const int64_t d = video_latent.shape()[i];
++                    std::fwrite(&d, sizeof(d), 1, f);
++                }
++                std::fwrite(video_latent.data(), sizeof(float), static_cast<size_t>(video_latent.numel()), f);
++                std::fclose(f);
++                LOG_INFO("latent dumped to %s", dump_path);
++            }
++        }
+         // auto z = sd::load_tensor_from_file_as_tensor<float>("ltx_vae_z.bin");
+         int64_t t4            = ggml_time_ms();
+         sd::Tensor<float> vid = sd->decode_first_stage(video_latent, true);
