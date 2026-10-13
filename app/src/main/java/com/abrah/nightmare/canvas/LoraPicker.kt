@@ -101,12 +101,14 @@ fun LoraPicker(
     library: List<com.abrah.nightmare.LoraLibrary.Item>? = null,
     /** ⭐ The base this node takes — its filter chip comes first. */
     nodeBase: com.abrah.nightmare.LoraLibrary.Base? = null,
+    /** ⭐ LoRAs are hit and miss on this family ([com.abrah.nightmare.LoraSources.Target.experimental]). */
+    experimental: Boolean = false,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.loras_title)) },
         text = {
-            LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt, onReplacePrompt, onDelete, library, nodeBase)
+            LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt, onReplacePrompt, onDelete, library, nodeBase, experimental)
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
         // ⚠ The dismiss SLOT, so Files sits left of Done — the same
@@ -131,6 +133,25 @@ fun LoraPicker(
 }
 
 /**
+ * ⭐ "LoRAs are experimental on this model" — FLUX.2, Z-Image, Qwen 2.1 and Krea 2 (the user's
+ * call, 2026-10-13: some work, some take minutes to hours, some come out corrupt). ONE line for
+ * the node's picker and the Get LoRAs browser. ⚠ Not [com.abrah.nightmare.ui.ErrorNotice]:
+ * nothing failed; a caution is information.
+ */
+@Composable
+internal fun ExperimentalLoraNote(modifier: Modifier = Modifier) {
+    Text(
+        stringResource(R.string.lora_experimental),
+        style = com.abrah.nightmare.ui.NoteTextStyle,
+        color = MaterialTheme.colorScheme.onTertiaryContainer,
+        modifier = modifier
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    )
+}
+
+/**
  * ⭐ The dialog's content, separate so a golden can draw it — an [AlertDialog]
  * is a window of its own and a screenshot test cannot reach inside one. Same
  * split, for the same reason, as [NodePaletteContent].
@@ -148,6 +169,7 @@ fun LoraPickerContent(
     onDelete: ((String) -> Unit)? = null,
     library: List<com.abrah.nightmare.LoraLibrary.Item>? = null,
     nodeBase: com.abrah.nightmare.LoraLibrary.Base? = null,
+    experimental: Boolean = false,
 ) {
     // ⚠ Seeded from the param and re-seeded when it changes, so the sheet shows
     // what the node actually carries rather than a copy that drifted.
@@ -224,6 +246,7 @@ fun LoraPickerContent(
         Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (experimental) ExperimentalLoraNote(Modifier.fillMaxWidth())
         // ⭐ The controls, once there is something to sort.
         if (items.size >= 2) {
             // ⚠ The sort menu OUTSIDE the scrolling chips: its label is weighted, and inside a

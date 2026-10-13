@@ -106,11 +106,12 @@ class LoraSourcesTest {
     }
 
     @Test
-    fun targetsAreTheSwapFamiliesOnly() {
+    fun aBakedQnnModelHasNoTarget() {
+        // ⚠ A plain QNN SD graph has its weights baked: only the Swap ones (and the DiT families) take LoRAs.
         assertEquals(LoraSources.Target.SD15, LoraSources.Target.of(Family.SD15_SWAP))
         assertEquals(LoraSources.Target.SDXL, LoraSources.Target.of(Family.SDXL_SWAP))
         assertNull(LoraSources.Target.of(Family.SDXL))
-        assertNull(LoraSources.Target.of(Family.FLUX2))
+        assertNull(LoraSources.Target.of(Family.ANIMA))
     }
 
     @Test
@@ -128,5 +129,17 @@ class LoraSourcesTest {
     fun sha256OfAKnownString() {
         val f = tmp.newFile().apply { writeText("abc") }
         assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", LoraInstall.sha256(f) { false })
+    }
+    /** ⭐ Every family that takes a LoRA has a browse target; the four DiT ones are experimental. */
+    @Test
+    fun everyLoraFamilyHasATarget() {
+        assertEquals(LoraSources.Target.ANIMA, LoraSources.Target.of(Family.ANIMA_DIT))
+        assertEquals(LoraSources.Target.KREA, LoraSources.Target.of(Family.KREA2))
+        assertTrue(!LoraSources.Target.experimental(Family.ANIMA_DIT))
+        for (f in listOf(Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2)) {
+            assertTrue("$f should be experimental", LoraSources.Target.experimental(f))
+        }
+        assertNull(LoraSources.Target.of(Family.SD15))
+        assertEquals(listOf("Qwen 2.1"), LoraSources.Target.QWEN.civitai)
     }
 }

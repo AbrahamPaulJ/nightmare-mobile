@@ -27,6 +27,9 @@ import java.io.File
 object BackendProcess {
 
     private const val TAG = "BackendProcess"
+
+    /** ⭐ Anima's ggml-hexagon fusions: all but `MUL_MAT_ADD` (bit 8) — see the launch env. */
+    internal const val ANIMA_OPFUSION = "246"
     /** ⚠ Internal, not private: [DeviceProbe] runs the same binary with `--device_info`. */
     const val EXECUTABLE = "libstable_diffusion_core.so"
 
@@ -645,15 +648,18 @@ object BackendProcess {
                         // ⭐ And `CONCAT`: Qwen 2.1's Wan VAE crashed the v75 skel inside `op_concat`
                         // (`dspqueue_read failed 0x2e`, the vivo report); on the S25 forced to v75 it
                         // reproduced, and with CONCAT on the CPU it renders the v79 picture (mean 0.64/255).
-                        // ⭐ And `ADD` for Anima on ANY chip: the HTP's generic add computes some of
-                        // its 7 remaining adds a step wrong (its LLM adapter's, the `temb` one) and the
-                        // picture comes back black; on the CPU it is right and costs nothing measurable
-                        // (14.0 vs 14.4 s at 512², `docs/ANIMA-GGML.md` §3).
                         val ops = listOfNotNull(
                             "CONV_2D_UPSCALE|CONCAT".takeIf { belowV79 },
-                            "ADD".takeIf { spec?.family == Family.ANIMA_DIT },
                         )
                         if (ops.isNotEmpty()) put("GGML_HEXAGON_OPFILTER", ops.joinToString("|"))
+                        // ⭐⭐ Anima, on ANY chip: every fusion but `MUL_MAT_ADD` (ggml-hexagon's bit 8;
+                        // 246 = the other six). That fusion computes Anima's adds wrong and the picture
+                        // comes back black. ⚠ It replaced `OPFILTER=ADD` (1.6.141–145), which was right
+                        // but sent EVERY add to the CPU, a LoRA's included: one NPU/CPU round trip per
+                        // adapted layer, and a LoRA render ×2.7 (148 s at 1024²). This: 74 s, pictures
+                        // byte-identical with and without a LoRA, at v79 and the S25 forced to v75
+                        // (`docs/ANIMA-GGML.md` §3).
+                        if (spec?.family == Family.ANIMA_DIT) put("GGML_HEXAGON_OPFUSION", ANIMA_OPFUSION)
                         putAll(readDitEnvOverride(context))
                         val dsp = listOf(
                             runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",

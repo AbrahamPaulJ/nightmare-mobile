@@ -2295,7 +2295,7 @@ internal fun NodeInspectorBody(
                 onSet = { onSetParam(nodeId, com.abrah.nightmare.SdSampler.LORAS, it) },
                 onDismiss = { pickingLoras = false },
                 onImport = onImportLora,
-                // ⭐ Only where this family's LoRAs can be searched (SD 1.5 / SDXL Swap).
+                // ⭐ Only where this family's LoRAs can be searched ([com.abrah.nightmare.LoraSources.Target.of]).
                 onBrowse = (type as? com.abrah.nightmare.SdSampler)?.family
                     ?.let { com.abrah.nightmare.LoraSources.Target.of(it) }
                     ?.let { t -> onBrowseLoras?.let { cb -> { cb(t) } } },
@@ -2308,6 +2308,7 @@ internal fun NodeInspectorBody(
                 onDelete = onDeleteLora,
                 library = library,
                 nodeBase = com.abrah.nightmare.LoraLibrary.Base.of((type as? com.abrah.nightmare.SdSampler)?.family),
+                experimental = com.abrah.nightmare.LoraSources.Target.experimental((type as? com.abrah.nightmare.SdSampler)?.family),
             )
         }
 

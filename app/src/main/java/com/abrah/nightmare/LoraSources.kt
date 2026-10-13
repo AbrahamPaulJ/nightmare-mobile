@@ -8,7 +8,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 /**
- * ⭐⭐⭐ **Find SD 1.5 / SDXL LoRAs on CivitAI and Hugging Face, and turn one into
+ * ⭐⭐⭐ **Find LoRAs on CivitAI and Hugging Face (SD 1.5, SDXL, Anima, the DiT families), and turn one into
  * a URL and a size the app's one downloader can fetch** (`docs/LORA-BROWSER.md`).
  *
  * ⚠⚠ Everything here was MEASURED before it was written (2026-10-06/07, §1 of
@@ -29,13 +29,22 @@ object LoraSources {
     enum class Source { CIVITAI, HUGGINGFACE }
 
     /**
-     * ⭐ What the browser serves — SD 1.5 and SDXL only (the user's call,
-     * 2026-10-07). The Swap models are the only SD ones that can APPLY a LoRA;
-     * a plain QNN graph has its weights baked.
+     * ⭐ What the browser serves. SD 1.5 and SDXL (the user's call, 2026-10-07): the Swap models
+     * are the only SD ones that can APPLY a LoRA; a plain QNN graph has its weights baked.
+     * ⭐ Anima since 1.6.146 (verified: both file formats bind, `docs/ANIMA-GGML.md` §6), and the
+     * four DiT families as [experimental] (the user's call, 2026-10-13: "only some work, some take
+     * a long time … sometimes with corrupt outputs"): the browser and the picker say so.
      *
+     * ⚠ Names MEASURED on CivitAI's API 2026-10-13 (each filter returned 20 LoRAs of that base):
+     * `Qwen` is the older Qwen-Image, not 2.1; Klein's 4B and 9B LoRAs do not cross over.
      * ⚠ `Pony V7` is not here on purpose: it is AuraFlow, not SDXL.
      */
-    enum class Target(val label: String, val civitai: List<String>, val hfBases: List<String>) {
+    enum class Target(
+        val label: String,
+        val civitai: List<String>,
+        val hfBases: List<String>,
+        val experimental: Boolean = false,
+    ) {
         SD15(
             "SD 1.5",
             listOf("SD 1.5", "SD 1.5 LCM", "SD 1.5 Hyper"),
@@ -49,15 +58,41 @@ object LoraSources {
                 "OnomaAIResearch/Illustrious-xl-early-release-v0",
                 "OnomaAIResearch/Illustrious-XL-v1.0",
             ),
-        );
+        ),
+        ANIMA("Anima", listOf("Anima"), listOf("circlestone-labs/Anima")),
+        FLUX2(
+            "FLUX.2 Klein",
+            listOf("Flux.2 Klein 4B", "Flux.2 Klein 4B-base", "Flux.2 Klein 9B", "Flux.2 Klein 9B-base"),
+            listOf(
+                "black-forest-labs/FLUX.2-klein-4B", "black-forest-labs/FLUX.2-klein-base-4B",
+                "black-forest-labs/FLUX.2-klein-9B", "black-forest-labs/FLUX.2-klein-base-9B",
+            ),
+            experimental = true,
+        ),
+        ZIMAGE(
+            "Z-Image",
+            listOf("ZImageTurbo", "ZImageBase"),
+            listOf("Tongyi-MAI/Z-Image-Turbo", "Tongyi-MAI/Z-Image"),
+            experimental = true,
+        ),
+        QWEN("Qwen 2.1", listOf("Qwen 2.1"), listOf("Qwen/Qwen-Image-2.1"), experimental = true),
+        KREA("Krea 2", listOf("Krea 2"), listOf("krea/Krea-2-Turbo"), experimental = true);
 
         companion object {
             /** The target a model's LoRAs come from, or null when it cannot take one. */
             fun of(family: Family): Target? = when (family) {
                 Family.SD15_SWAP -> SD15
                 Family.SDXL_SWAP -> SDXL
+                Family.ANIMA_DIT -> ANIMA
+                Family.FLUX2 -> FLUX2
+                Family.ZIMAGE -> ZIMAGE
+                Family.QWEN21 -> QWEN
+                Family.KREA2 -> KREA
                 else -> null
             }
+
+            /** ⭐ Families whose LoRAs are hit and miss: the picker and the browser say so. */
+            fun experimental(family: Family?): Boolean = family?.let { of(it)?.experimental } == true
         }
     }
 

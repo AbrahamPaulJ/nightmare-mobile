@@ -138,6 +138,7 @@
     <string name="import_upscaler_title">Импорт апскейлера</string>
     <string name="loras_body">Стиль или персонаж в виде небольшого файла-адаптера поверх чекпойнта. Только FLUX.2 и Z‑Image: выберите его в параметре LoRAs узла сэмплера.</string>
     <string name="loras_title">LoRA</string>
+    <string name="lora_experimental">Экспериментально для этой модели: одни LoRA работают, другие идут несколько минут или намного дольше, а некоторые портят картинку.</string>
     <string name="mask_pick_hint">Выберите, что перерисовать. Коснитесь метки ещё раз, чтобы снять её. Поток запомнит выбор и применит его к каждому новому снимку.</string>
     <string name="mask_pick_show">Включить автомаску</string>
     <string name="mask_pick_working">Читаем картинку…</string>

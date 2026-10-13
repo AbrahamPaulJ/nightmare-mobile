@@ -55,8 +55,8 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon).
 
 ### LoRA, ControlNet and IP-Adapter
-- **LoRAs per render**: on FLUX.2, Z-Image, Anima Turbo and Swap models: tick, set strength, no reload. A note per LoRA keeps its trigger words.
-- **Get LoRAs in the app**: search CivitAI and Hugging Face filtered to the model's family, or paste a link; hash-checked downloads.
+- **LoRAs per render**: on Anima and the Swap models, and experimentally on FLUX.2, Z-Image, Qwen Image and Krea 2: tick, set strength, no reload. A note per LoRA keeps its trigger words.
+- **Get LoRAs in the app**: search CivitAI and Hugging Face filtered to the model's family (SD 1.5, SDXL, Anima, FLUX.2 Klein, Z-Image, Qwen 2.1, Krea 2), or paste a link; hash-checked downloads.
 - **SD 1.5 Swap and SDXL Swap**: npuforge conversions whose LoRA, **ControlNet** (canny, depth, openpose) and **IP-Adapter** (Plus, Face) are chosen per render; pose and depth are found from a photo on the phone.
 - **Embeddings**: import a textual inversion and name it in a prompt.
 

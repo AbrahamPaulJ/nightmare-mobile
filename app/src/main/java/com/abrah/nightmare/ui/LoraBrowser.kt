@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -178,12 +179,18 @@ fun LoraBrowserContent(
         return@Column
     }
 
-    // ⭐ The family is part of the title — "Get LoRAs for SD 1.5 / SDXL" — so
-    // the controls below are one row, not three rows of pills.
-    ScreenHeader(stringResource(R.string.lb_title), onClose = null) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (t in Target.entries) Pill(t.label, t == target) { immediate = true; target = t }
-        }
+    // ⭐ The family pills, then search, then source and sort.
+    ScreenHeader(stringResource(R.string.lb_title), onClose = null)
+    // ⚠ Its own scrolling row under the title since 1.6.146: seven families do not fit beside it,
+    // and a scrolling row in the header's slot took the whole width and hid the title.
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        for (t in Target.entries) Pill(t.label, t == target) { immediate = true; target = t }
+    }
+    if (target.experimental) {
+        com.abrah.nightmare.canvas.ExperimentalLoraNote(Modifier.fillMaxWidth().padding(top = 8.dp))
     }
     SearchBox(
         query, { query = it },
@@ -308,6 +315,11 @@ private fun Status(text: String, spinner: Boolean = false) {
 private fun Target.family(): Family = when (this) {
     Target.SD15 -> Family.SD15_SWAP
     Target.SDXL -> Family.SDXL_SWAP
+    Target.ANIMA -> Family.ANIMA_DIT
+    Target.FLUX2 -> Family.FLUX2
+    Target.ZIMAGE -> Family.ZIMAGE
+    Target.QWEN -> Family.QWEN21
+    Target.KREA -> Family.KREA2
 }
 
 /** "12.3k", "1.2M" — a download count at a glance. */

@@ -135,6 +135,7 @@
     <string name="import_upscaler_title">导入放大模型</string>
     <string name="loras_body">以小型适配器文件保存的风格或角色，叠加在检查点之上。仅限 FLUX.2 和 Z‑Image，在采样器节点的 LoRAs 参数中选择。</string>
     <string name="loras_title">LoRA</string>
+    <string name="lora_experimental">此模型的 LoRA 仍属实验性：有些可用，有些需要几分钟甚至更久，有些会生成损坏的图片。</string>
     <string name="mask_pick_hint">选择要重绘的内容。再点一次标签即可取消。此工作流会记住你的选择，并应用到每张新照片。</string>
     <string name="mask_pick_show">启用自动遮罩</string>
     <string name="mask_pick_working">正在读取图片…</string>

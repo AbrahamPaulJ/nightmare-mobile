@@ -318,7 +318,7 @@ class AgentTools(
             ?: throw ApiError(400, "the canvas has no sampler. Open a flow first")
         val family = ModelCatalog.byId(applyDefaults(type.widgets, node)["model"].orEmpty())?.family ?: type.family
         return LoraSources.Target.of(family)
-            ?: throw ApiError(400, "${family.name} does not take LoRAs from the online search. Only SD 1.5 Swap and SDXL Swap models do")
+            ?: throw ApiError(400, "${family.name} does not take LoRAs from the online search")
     }
 
     private fun searchLoras(args: JSONObject): ToolResult {
@@ -505,7 +505,7 @@ class AgentTools(
             - Use get_canvas to see the flow before changing it; use list_models and list_flows when you do not know what is installed. Use only installed models.
             - Pick the flow that fits: txt2img for a new picture, img2img to rework a picture (input_images), inpaint needs a mask painted in the app, swap_t2i / swap_i2i for LoRA, ControlNet and IP-Adapter on Swap models, flux_edit to edit a picture with FLUX.2.
             - Set node params only with widgets and options get_canvas lists. Use the model's recommended steps, cfg and scheduler unless asked otherwise; renders are slow on a phone.
-            - LoRAs: list_loras for what is installed; search_loras + download_lora to get one for the canvas model's family (SD 1.5 Swap and SDXL Swap models); then set it with set_params 'loras' and add its trigger words to the prompt.
+            - LoRAs: list_loras for what is installed; search_loras + download_lora to get one for the canvas model's family (SD 1.5 Swap, SDXL Swap, Anima; on FLUX.2, Z-Image, Qwen and Krea 2 they are experimental, so say so); then set it with set_params 'loras' and add its trigger words to the prompt.
             - Do not ask to see a result: the person sees the picture in the chat and says what to change.
             - civitai_settings tells you what people use with a checkpoint (prompt style, trigger words, sampler, steps, cfg).
             - Write prompts the way the model's family expects: comma-separated tags for anime / Illustrious / Pony / Anima models, natural sentences for FLUX.2, Z-Image and Qwen.
