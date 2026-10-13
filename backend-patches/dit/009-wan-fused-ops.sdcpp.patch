@@ -1,0 +1,99 @@
+diff --git a/src/model/diffusion/wan.hpp b/src/model/diffusion/wan.hpp
+index 687f283..37b4226 100644
+--- a/src/model/diffusion/wan.hpp
++++ b/src/model/diffusion/wan.hpp
+@@ -142,11 +142,36 @@ namespace WAN {
+             k = ggml_reshape_4d(ctx->ggml_ctx, k, head_dim, num_heads, n_token, N);  // [N, n_token, n_head, d_head]
+             v = ggml_reshape_4d(ctx->ggml_ctx, v, head_dim, num_heads, n_token, N);  // [N, n_token, n_head, d_head]
+ 
+-            x = Rope::attention(ctx, q, k, v, pe, mask);  // [N, n_token, dim]
++            // Fused rope on backends that have it (both or neither); the composed
++            // Rope::attention everywhere else. Its REPEAT/MUL/ADD/CONT were 66 of 74 s of
++            // HTP time in a 4-step 512x320x17 run.
++            ggml_tensor* q_rope = mask == nullptr ? try_rope_only(ctx, q, pe) : nullptr;
++            ggml_tensor* k_rope = q_rope != nullptr ? try_rope_only(ctx, k, pe) : nullptr;
++            if (q_rope != nullptr && k_rope != nullptr) {
++                x = ggml_ext_attention_ext(ctx->ggml_ctx, ctx->backend, q_rope, k_rope, v, num_heads, mask, true, ctx->flash_attn_enabled);
++            } else {
++                x = Rope::attention(ctx, q, k, v, pe, mask);  // [N, n_token, dim]
++            }
+ 
+             x = o_proj->forward(ctx, x);  // [N, n_token, dim]
+             return x;
+         }
++
++        // Rope alone through the fused qknorm+rope op. That op RMS-normalises each HEAD,
++        // while Wan's norm_q/norm_k already ran over the whole dim. With eps far above any
++        // row's mean square, f32 rounds mean(x^2) + eps to eps exactly, so its norm is a
++        // uniform x / sqrt(eps), undone by a weight of sqrt(eps). Same interleaved pairs
++        // and the same pe table as Rope::apply_rope(rope_interleaved = true).
++        static ggml_tensor* try_rope_only(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* pe) {
++            // x: [N, n_token, n_head, d_head]
++            if (ctx->backend == nullptr || x->type != GGML_TYPE_F32) {
++                return nullptr;
++            }
++            const float eps  = 1e12f;
++            ggml_tensor* w   = ggml_fill(ctx->ggml_ctx, ggml_view_1d(ctx->ggml_ctx, x, x->ne[0], 0), 1e6f);
++            ggml_tensor* out = ggml_qknorm_rope(ctx->ggml_ctx, x, w, pe, eps);
++            return ggml_backend_supports_op(ctx->backend, w) && ggml_backend_supports_op(ctx->backend, out) ? out : nullptr;
++        }
+     };
+ 
+     class WanCrossAttention : public WanSelfAttention {
+@@ -279,6 +304,25 @@ namespace WAN {
+         return x;
+     }
+ 
++    // x + x*scale + shift and x + y*gate through FLUX's fused ops when e is one row per
++    // batch ([N, 1, dim], Wan 2.1 / A14B); Wan 2.2 TI2V's per-frame e ([N, T, 1, dim]) and
++    // backends without the ops keep the composed form. The broadcast MUL/ADD were HTP-slow.
++    static ggml_tensor* modulate_mul(ggml_context* ctx, ggml_tensor* x, ggml_tensor* e);
++    static ggml_tensor* modulate_fused(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* shift, ggml_tensor* scale) {
++        if (ggml_n_dims(scale) < 3 && ggml_n_dims(shift) < 3) {
++            return Flux::modulate(ctx->ggml_ctx, x, shift, scale, true, ctx->backend);
++        }
++        x = ggml_add(ctx->ggml_ctx, x, modulate_mul(ctx->ggml_ctx, x, scale));
++        return modulate_add(ctx->ggml_ctx, x, shift);
++    }
++
++    static ggml_tensor* gated_residual_fused(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* y, ggml_tensor* gate) {
++        if (ggml_n_dims(gate) < 3) {
++            return Flux::gated_residual(ctx, x, y, gate);
++        }
++        return ggml_add(ctx->ggml_ctx, x, modulate_mul(ctx->ggml_ctx, y, gate));
++    }
++
+     static ggml_tensor* modulate_mul(ggml_context* ctx, ggml_tensor* x, ggml_tensor* e) {
+         // x: [N, n_token, dim]
+         // e: [N, 1, dim] or [N, T, 1, dim]
+@@ -356,11 +400,10 @@ namespace WAN {
+ 
+             // self-attention
+             auto y = norm1->forward(ctx, x);
+-            y      = ggml_add(ctx->ggml_ctx, y, modulate_mul(ctx->ggml_ctx, y, es[1]));
+-            y      = modulate_add(ctx->ggml_ctx, y, es[0]);
++            y      = modulate_fused(ctx, y, es[0], es[1]);
+             y      = self_attn->forward(ctx, y, pe);
+ 
+-            x = ggml_add(ctx->ggml_ctx, x, modulate_mul(ctx->ggml_ctx, y, es[2]));
++            x = gated_residual_fused(ctx, x, y, es[2]);
+ 
+             // cross-attention
+             x = ggml_add(ctx->ggml_ctx,
+@@ -369,14 +412,13 @@ namespace WAN {
+ 
+             // ffn
+             y = norm2->forward(ctx, x);
+-            y = ggml_add(ctx->ggml_ctx, y, modulate_mul(ctx->ggml_ctx, y, es[4]));
+-            y = modulate_add(ctx->ggml_ctx, y, es[3]);
++            y = modulate_fused(ctx, y, es[3], es[4]);
+ 
+             y = ffn_0->forward(ctx, y);
+             y = ggml_ext_gelu(ctx->ggml_ctx, y, true);
+             y = ffn_2->forward(ctx, y);
+ 
+-            x = ggml_add(ctx->ggml_ctx, x, modulate_mul(ctx->ggml_ctx, y, es[5]));
++            x = gated_residual_fused(ctx, x, y, es[5]);
+ 
+             return x;
+         }
