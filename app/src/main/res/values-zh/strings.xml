@@ -143,6 +143,7 @@
     <string name="parser_loading">正在读取图片，第一次选择需要稍等…</string>
     <string name="video">视频</string>
     <string name="video_about">在 NPU 上由文字和图片生成视频。无需后端，无需检查点。</string>
+    <string name="wan_about">使用 Wan 2.2 由文字和图片生成视频：5 秒视频，832x480 或 1280x704。比 Neodragon 慢，但效果好得多。共 6.25 GB：Wan 2.2 Turbo DiT、umT5 文本编码器和一个小型解码器。</string>
     <string name="video_delete_body">将释放 %1$d MB。要找回它们需要下载 %2$d MB。在重新安装之前，所有视频工作流都无法运行。</string>
     <string name="video_delete_title">删除视频模型？</string>
     <string name="video_models">Neodragon（视频）</string>
@@ -664,6 +665,12 @@
     <string name="flow_t2v_about">输入提示词，在 NPU 上输出 2 秒、49 帧、1024x640 的视频。需要安装视频模型，不使用检查点。</string>
     <string name="flow_i2v_name">图生视频</string>
     <string name="flow_i2v_about">让图库中的照片动起来，49 帧，1024x640。比文生视频更快，并且少需要三个模型。</string>
+    <string name="flow_wan_t2v_name">文生视频（Wan 2.2）</string>
+    <string name="flow_wan_t2v_about">输入提示词，输出 5 秒视频：Wan 2.2 生成 121 帧 832x480，约 3 分钟。比其他视频流程慢，但效果好得多。需要在“模型”的“视频”中安装 Wan 2.2，以及 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。</string>
+    <string name="flow_wan_i2v_name">图生视频（Wan 2.2）</string>
+    <string name="flow_wan_i2v_about">图库中的照片作为 5 秒视频的第一帧，按提示词描述的方式运动。Wan 2.2，约 3 分钟，适用于 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。</string>
+    <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
+    <string name="hint_wan_size">480p 为 832x480。704p（1280x704）效果最好，耗时约为三倍。</string>
     <string name="knob_cfg">CFG</string>
     <string name="knob_loras">LoRA</string>
     <string name="knob_output_width">输出宽度</string>

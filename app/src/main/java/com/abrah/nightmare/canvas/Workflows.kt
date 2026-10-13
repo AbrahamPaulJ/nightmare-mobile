@@ -561,7 +561,32 @@ val RECIPES: List<Recipe> = listOf(
         labelRes = R.string.flow_i2v_name,
         aboutRes = R.string.flow_i2v_about,
     ),
+    // ⭐⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): LAST, because it is the most demanding thing in
+    // the list — minutes per clip and 6.7 GB of weights, against Neodragon's 30 s.
+    Recipe(
+        WAN_T2V, "Text to video, Wan 2.2",
+        "A prompt in, a 5 second clip out: 121 frames at 832x480 (or 1280x704) with Wan 2.2. " +
+            "Slower than the other video flows and much better. Needs Wan 2.2 installed.",
+        { wanVideoWorkflow(i2v = false) },
+        usesCheckpoint = false,
+        minArch = com.abrah.nightmare.ModelCatalog.WAN22.builds.minOf { it.minArch },
+        labelRes = R.string.flow_wan_t2v_name,
+        aboutRes = R.string.flow_wan_t2v_about,
+    ),
+    Recipe(
+        WAN_I2V, "Image to video, Wan 2.2",
+        "A photo from the gallery as the first frame of a 5 second clip, moving the way the prompt says.",
+        { wanVideoWorkflow(i2v = true) },
+        usesCheckpoint = false,
+        minArch = com.abrah.nightmare.ModelCatalog.WAN22.builds.minOf { it.minArch },
+        labelRes = R.string.flow_wan_i2v_name,
+        aboutRes = R.string.flow_wan_i2v_about,
+    ),
 )
+
+/** ⭐ The Wan recipes' ids ([com.abrah.nightmare.HarnessViewModel.askUseWan]). */
+const val WAN_T2V = "wan_t2v"
+const val WAN_I2V = "wan_i2v"
 
 /**
  * ⭐⭐⭐ Inpainting — the SAME four nodes as image to image, with a mask painted
@@ -797,6 +822,34 @@ fun imageToVideoWorkflow(): Workflow = Workflow(
         )
     ),
     flowLayout("prompt", "image", "video", "output"),
+)
+
+/**
+ * ⭐⭐ **Wan 2.2 video** — the Neodragon pair's shape ([textToVideoWorkflow],
+ * [imageToVideoWorkflow]) on [com.abrah.nightmare.npu.WanVideoNode]: the photo, when there is one,
+ * is the clip's first frame, so the prompt says what MOVES.
+ */
+fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
+    Graph(
+        listOfNotNull(
+            Node(
+                "prompt", "core.prompt",
+                params = mapOf(
+                    "prompt" to if (i2v) "the camera slowly pushes in, gentle natural motion"
+                    else "a red fox trotting through a snowy pine forest, soft morning light, cinematic",
+                    "negative" to "",
+                ),
+            ),
+            if (i2v) Node("image", "core.image", params = mapOf("uri" to "")) else null,
+            Node(
+                "video", com.abrah.nightmare.npu.WanVideoNode.name,
+                params = mapOf("seed" to "0"),
+                inputs = if (i2v) sources("prompt" to "prompt", "image" to "image") else sources("prompt" to "prompt"),
+            ),
+            Node("output", "core.output", inputs = sources("media" to "video")),
+        )
+    ),
+    if (i2v) flowLayout("prompt", "image", "video", "output") else flowLayout("prompt", "video", "output"),
 )
 
 /**

@@ -1,0 +1,275 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -11,6 +11,43 @@
+ #include "DitEngine.h"
+ #include "Pipeline.hpp"
+ 
++// nightmare (backend 028): one text/image to video request for Wan 2.2 TI2V,
++// parsed by /video in main.cpp. Frames leave through a FrameSink as they are
++// decoded instead of being held twice.
++struct VideoRequest {
++  std::string prompt;
++  std::string negative_prompt;
++  int width = 0;
++  int height = 0;
++  int frames = 0;
++  int fps = 24;
++  int steps = 4;
++  float cfg = 1.0f;
++  float flow_shift = 0.0f;
++  uint64_t seed = 0;
++  std::string sample_method = "lcm";
++  std::vector<float> sigmas;
++  // Image to video: the start frame, already width x height RGB8.
++  std::vector<uint8_t> start_rgb;
++  bool temporal_tiling = true;
++  std::string tiling_args;
++  std::vector<LoraRef> loras;
++  int preview_stride = 0;
++  std::string preview_format = "jpeg";
++};
++
++struct VideoResult {
++  int frames = 0;
++  int width = 0;
++  int height = 0;
++  int generation_time_ms = 0;
++  int first_step_time_ms = 0;
++};
++
++// (index, count, rgb, width, height); throwing stops the generation.
++using FrameSink =
++    std::function<void(int, int, const uint8_t *, int, int)>;
++
+ // Z-Image Turbo, FLUX.2/Klein and Qwen Image 2.1, run by libdit_engine.so.
+ //
+ // Unlike every other pipeline here, this one owns no graphs and no scheduler:
+@@ -28,7 +65,8 @@
+               std::string llm_path, std::string llm_vision_path,
+               std::string vae_path, dit_model_kind kind,
+               std::string backend, std::string params_backend, int n_threads,
+-              int vae_tile_size, bool img2img_enabled, int lora_apply_mode)
++              int vae_tile_size, bool img2img_enabled, int lora_apply_mode,
++              std::string t5xxl_path = "", std::string taesd_path = "")
+       : Pipeline(text_encoder, model_dir, /*sdxl=*/false, /*use_v_pred=*/false),
+         engine_path_(std::move(engine_path)),
+         diffusion_model_path_(std::move(diffusion_model_path)),
+@@ -41,7 +79,9 @@
+         lora_apply_mode_(lora_apply_mode),
+         n_threads_(n_threads),
+         vae_tile_size_(vae_tile_size),
+-        img2img_enabled_(img2img_enabled) {}
++        img2img_enabled_(img2img_enabled),
++        t5xxl_path_(std::move(t5xxl_path)),
++        taesd_path_(std::move(taesd_path)) {}
+ 
+   ~PipelineDit() override {
+     if (ctx_ && api_) api_->destroy(ctx_);
+@@ -70,12 +110,12 @@
+     dit_ctx_params params{};
+     params.kind = kind_;
+     params.diffusion_model_path = diffusion_model_path_.c_str();
+-    params.llm_path = llm_path_.c_str();
++    params.llm_path = llm_path_.empty() ? nullptr : llm_path_.c_str();
+     // Only Qwen Image 2.1 has one: its text encoder is a VLM, and the vision
+     // tower is what lets a reference picture reach the prompt.
+     params.llm_vision_path =
+         llm_vision_path_.empty() ? nullptr : llm_vision_path_.c_str();
+-    params.vae_path = vae_path_.c_str();
++    params.vae_path = vae_path_.empty() ? nullptr : vae_path_.c_str();
+     params.backend = backend_.c_str();
+     params.params_backend = params_backend_.c_str();
+     params.n_threads = n_threads_;
+@@ -89,6 +129,17 @@
+     // picked at_runtime on this single-device HTP0 context and the adapter
+     // never reached the NPU's weights (../docs/ROADMAP.md 2f).
+     params.lora_apply_mode = lora_apply_mode_;
++    // Wan 2.2 (ABI 106): umT5 on the CPU from a memory map, so its 3.5 GB stay
++    // reclaimable page cache rather than pinned DMA-BUF, and flash attention
++    // in the DiT only -- the configuration measured with sd-cli
++    // (docs/VIDEO-GGML.md in nightmare-mobile).
++    if (kind_ == DIT_MODEL_WAN) {
++      params.t5xxl_path = t5xxl_path_.c_str();
++      params.taesd_path = taesd_path_.empty() ? nullptr : taesd_path_.c_str();
++      params.enable_mmap = true;
++      params.flash_attn = false;
++      params.diffusion_flash_attn = true;
++    }
+ 
+     ctx_ = api_->create(&params);
+     if (!ctx_) {
+@@ -104,10 +155,94 @@
+     return img2img_enabled_ && isNativeEditModel();
+   }
+   bool supportsUltrafix() const override { return false; }
++  bool supportsVideo() const { return kind_ == DIT_MODEL_WAN; }
++
++  VideoResult generateVideo(const VideoRequest &req,
++                            const ProgressCallback &progress_callback,
++                            const FrameSink &sink) {
++    if (!ctx_ || !api_) throw std::runtime_error("DiT engine not initialized");
++    if (!supportsVideo())
++      throw std::invalid_argument("this model does not make videos");
++    if (req.prompt.empty()) throw std::invalid_argument("Prompt empty");
++    if (!req.start_rgb.empty() &&
++        req.start_rgb.size() !=
++            static_cast<size_t>(req.width) * req.height * 3)
++      throw std::invalid_argument("start image is not width x height");
++
++    api_->set_preview_interval(ctx_, req.preview_stride);
++
++    dit_video_params params{};
++    params.prompt = req.prompt.c_str();
++    params.negative_prompt = req.negative_prompt.c_str();
++    params.width = req.width;
++    params.height = req.height;
++    params.frames = req.frames;
++    params.fps = req.fps;
++    params.steps = req.steps;
++    params.cfg_scale = req.cfg;
++    params.flow_shift = req.flow_shift;
++    params.seed = static_cast<int64_t>(req.seed);
++    params.sample_method = req.sample_method.c_str();
++    if (req.sigmas.size() > 1) {
++      params.sigmas = req.sigmas.data();
++      params.sigma_count = static_cast<int>(req.sigmas.size());
++    }
++    if (!req.start_rgb.empty()) {
++      params.start_image_rgb = req.start_rgb.data();
++      params.start_width = req.width;
++      params.start_height = req.height;
++    }
++    params.temporal_tiling = req.temporal_tiling;
++    params.tiling_args = req.tiling_args.c_str();
++    std::vector<const char *> lora_paths;
++    std::vector<float> lora_multipliers;
++    for (const auto &lora : req.loras) {
++      lora_paths.push_back(lora.path.c_str());
++      lora_multipliers.push_back(lora.multiplier);
++    }
++    if (!lora_paths.empty()) {
++      params.lora_paths = lora_paths.data();
++      params.lora_multipliers = lora_multipliers.data();
++      params.lora_count = static_cast<int>(lora_paths.size());
++    }
++
++    VideoCallbacks callbacks;
++    callbacks.progress = &progress_callback;
++    callbacks.sink = &sink;
++    callbacks.preview_format = req.preview_format;
++    callbacks.sample_steps = req.sigmas.size() > 1
++                                 ? static_cast<int>(req.sigmas.size()) - 1
++                                 : std::max(1, req.steps);
++    QNN_INFO("[dit] video %dx%dx%d fps=%d steps=%d %s", req.width, req.height,
++             req.frames, req.fps, callbacks.sample_steps,
++             req.start_rgb.empty() ? "t2v" : "i2v");
++    const auto start = std::chrono::high_resolution_clock::now();
++    const bool ok = api_->generate_video(
++        ctx_, &params, &PipelineDit::forwardVideoProgress,
++        &PipelineDit::forwardVideoPreview, &PipelineDit::forwardVideoFrame,
++        &callbacks);
++    if (!ok) {
++      if (callbacks.pending) std::rethrow_exception(callbacks.pending);
++      throw std::runtime_error(std::string("video generation failed: ") +
++                               api_->last_error(ctx_));
++    }
++    VideoResult result;
++    result.frames = callbacks.frames;
++    result.width = callbacks.width;
++    result.height = callbacks.height;
++    result.generation_time_ms = static_cast<int>(
++        std::chrono::duration_cast<std::chrono::milliseconds>(
++            std::chrono::high_resolution_clock::now() - start)
++            .count());
++    result.first_step_time_ms = callbacks.first_step_ms;
++    return result;
++  }
+ 
+   GenerationResult generate(GenerationRequest &req,
+                             const ProgressCallback &progress_callback) override {
+     if (!ctx_ || !api_) throw std::runtime_error("DiT engine not initialized");
++    if (supportsVideo())
++      throw std::invalid_argument("this model makes videos: use /video");
+     if (req.prompt.empty()) throw std::invalid_argument("Prompt empty");
+     if (safety_interpreter_ && !safety_session_)
+       throw std::runtime_error("SafetyChecker missing");
+@@ -373,6 +508,70 @@
+     int pre_sample_steps = 0;
+   };
+ 
++  struct VideoCallbacks {
++    const ProgressCallback *progress = nullptr;
++    const FrameSink *sink = nullptr;
++    std::exception_ptr pending;
++    std::string preview_format;
++    std::string preview_b64;
++    int first_step_ms = 0;
++    int sample_steps = 1;
++    int sampled_steps = 0;
++    int frames = 0;
++    int width = 0;
++    int height = 0;
++  };
++
++  // Sampling steps, then one slot for the decode, which finishes when the
++  // first frame arrives.
++  static bool forwardVideoProgress(int step, int total_steps,
++                                   float step_seconds, void *user_data) {
++    auto *cb = static_cast<VideoCallbacks *>(user_data);
++    if (total_steps > 0) {
++      cb->sampled_steps =
++          std::max(cb->sampled_steps, std::clamp(step, 0, total_steps));
++      if (step == 1)
++        cb->first_step_ms = static_cast<int>(step_seconds * 1000.0f);
++    }
++    try {
++      (*cb->progress)(cb->sampled_steps, cb->sample_steps + 1,
++                      cb->preview_b64);
++      cb->preview_b64.clear();
++      return true;
++    } catch (...) {
++      cb->pending = std::current_exception();
++      return false;
++    }
++  }
++
++  static void forwardVideoPreview(int, const uint8_t *rgb, int width,
++                                  int height, void *user_data) {
++    auto *cb = static_cast<VideoCallbacks *>(user_data);
++    if (!rgb || width <= 0 || height <= 0) return;
++    std::vector<uint8_t> data(
++        rgb, rgb + static_cast<size_t>(width) * height * 3);
++    data = cb->preview_format == "png" ? encodePNG(data, width, height)
++                                       : encodeJPEG(data, width, height, 75);
++    cb->preview_b64 = base64_encode(std::string(data.begin(), data.end()));
++  }
++
++  static bool forwardVideoFrame(int index, int count, const uint8_t *rgb,
++                                int width, int height, void *user_data) {
++    auto *cb = static_cast<VideoCallbacks *>(user_data);
++    try {
++      (*cb->sink)(index, count, rgb, width, height);
++      cb->frames = index + 1;
++      cb->width = width;
++      cb->height = height;
++      if (index == 0)
++        (*cb->progress)(cb->sample_steps + 1, cb->sample_steps + 1, "");
++      return true;
++    } catch (...) {
++      cb->pending = std::current_exception();
++      return false;
++    }
++  }
++
+   static std::vector<uint8_t> planarFloatToRgb(const std::vector<float> &planar,
+                                                int width, int height) {
+     const size_t plane = static_cast<size_t>(width) * height;
+@@ -530,6 +729,8 @@
+   const int n_threads_;
+   const int vae_tile_size_;
+   const bool img2img_enabled_;
++  const std::string t5xxl_path_;
++  const std::string taesd_path_;
+ 
+   void *handle_ = nullptr;
+   const dit_engine_api *api_ = nullptr;

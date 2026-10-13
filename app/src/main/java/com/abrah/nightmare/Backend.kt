@@ -900,6 +900,99 @@ object Ops {
         return Result.Ok(Decoded(png, "", j.optLong("generation_time_ms"), r.millis))
     }
 
+    /** ⭐ What `/video` made: [frames] RGB frames of [width]x[height] in the NMV1 file at [path]. */
+    data class Clip(
+        val path: String,
+        val frames: Int,
+        val width: Int,
+        val height: Int,
+        val fps: Int,
+        val serverMs: Long,
+    )
+
+    /**
+     * ⭐⭐ Wan 2.2 text or image to video through `/video` (backend 028) — the whole clip in one
+     * call, like [generate]. The frames are NOT in the stream: the backend writes them to [out]
+     * as they are decoded (`NMV1`, int32 LE width, height, count, fps, then RGB8 frames), because
+     * 121 frames at 832x480 are 145 MB. [out] must be a path the backend process can write — the
+     * app's own storage, which it shares.
+     *
+     * @param startPng image to video: the start frame, already at exactly [width]x[height].
+     */
+    suspend fun video(
+        prompt: String,
+        negative: String,
+        width: Int,
+        height: Int,
+        frames: Int,
+        fps: Int,
+        seed: Long,
+        steps: Int,
+        sampleMethod: String,
+        sigmas: List<Double>,
+        tilingArgs: String,
+        out: String,
+        startPng: ByteArray? = null,
+        loras: List<Pair<String, Double>> = emptyList(),
+        onProgress: (Progress) -> Unit = {},
+    ): Result<Clip> {
+        val body = JSONObject()
+            .put("prompt", prompt)
+            .put("negative_prompt", negative)
+            .put("width", width)
+            .put("height", height)
+            .put("frames", frames)
+            .put("fps", fps)
+            .put("seed", seed)
+            .put("steps", steps)
+            .put("cfg", 1.0)
+            .put("sample_method", sampleMethod)
+            .put("sigmas", org.json.JSONArray(sigmas))
+            .put("temporal_tiling", true)
+            .put("tiling_args", tilingArgs)
+            .put("out", out)
+            .apply {
+                if (startPng != null) {
+                    put("image", android.util.Base64.encodeToString(startPng, android.util.Base64.NO_WRAP))
+                }
+                if (loras.isNotEmpty()) {
+                    put(
+                        "loras",
+                        org.json.JSONArray().apply {
+                            for ((path, mult) in loras) {
+                                put(JSONObject().put("path", path).put("multiplier", mult))
+                            }
+                        },
+                    )
+                }
+            }
+            .toString()
+
+        var complete: JSONObject? = null
+        var streamError: String? = null
+        val r = Backend.postSse("/video", body, readTimeoutMs = Backend.DIT_SSE_READ_TIMEOUT_MS) { ev ->
+            val j = try { JSONObject(ev.data) } catch (e: Exception) { null }
+            when (j?.optString("type")) {
+                "progress" -> onProgress(
+                    Progress(j.optInt("step"), j.optInt("total_steps"), ev.atMs, null, null)
+                )
+                "complete" -> complete = j
+                "error" -> streamError = j.optString("message")
+                else -> streamError = streamError
+                    ?: "unrecognised frame \"${ev.name}\": ${ev.data.take(120)}"
+            }
+        }
+        if (r.code != 200) return Result.Err(r.code, r.body)
+        streamError?.let { return Result.Err(200, it) }
+        val j = complete ?: return Result.Err(200, "stream ended with no complete event")
+        return Result.Ok(
+            Clip(
+                j.optString("path", out), j.optInt("frames"), j.optInt("width"), j.optInt("height"),
+                j.optInt("fps", fps), j.optLong("generation_time_ms"),
+            )
+        )
+    }
+
     /**
      * What the backend still holds -- conditionings AND latents, as ids.
      *

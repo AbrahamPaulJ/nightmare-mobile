@@ -235,6 +235,13 @@ fun ModelsScreen(
      * who never opens this tab never pays for it.
      */
     onProbeVideo: () -> Unit = {},
+    /**
+     * ⭐ Wan 2.2 video ([com.abrah.nightmare.ModelCatalog.WAN22]): a catalogue model drawn on the
+     * Video tab, never among the checkpoints. Null draws no card. Install and Delete are the
+     * checkpoints' own ([onInstall], [onDelete]).
+     */
+    wan: ModelRow? = null,
+    onUseWan: () -> Unit = {},
     /** ⭐ The Tools tab. Null renders no tab, as for [video]. */
     segmenter: ToolRow? = null,
     onInstallSegmenter: () -> Unit = {},
@@ -397,7 +404,7 @@ fun ModelsScreen(
         // family tabs did when the video tab was page 0 (a real state: a phone
         // that downloaded only the video models).
         var kind by androidx.compose.runtime.saveable.rememberSaveable {
-            mutableStateOf(if (rows.isEmpty() && video != null) ModelKind.VIDEO else ModelKind.ALL)
+            mutableStateOf(if (rows.isEmpty() && (video != null || wan != null)) ModelKind.VIDEO else ModelKind.ALL)
         }
         var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
         var familyPage by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Family?>(null) }
@@ -408,7 +415,7 @@ fun ModelsScreen(
             add(ModelKind.GENERATE)
             if (rows.any { it.spec.family.edit }) add(ModelKind.EDIT)
             if (rows.any { it.spec.isInpaintModel() }) add(ModelKind.INPAINT)
-            if (video != null) add(ModelKind.VIDEO)
+            if (video != null || wan != null) add(ModelKind.VIDEO)
             if (upscalers.isNotEmpty()) add(ModelKind.UPSCALE)
             if (segmenter != null || parser != null || describe.isNotEmpty()) add(ModelKind.TOOLS)
         }
@@ -418,12 +425,16 @@ fun ModelsScreen(
         if (fp == null) {
             androidx.compose.foundation.layout.Box(Modifier.padding(top = 8.dp)) { PillRow(kinds, kind, { kindLabel(it) }) { kind = it } }
         }
-        if (fp == null && kind == ModelKind.VIDEO && video != null) {
+        if (fp == null && kind == ModelKind.VIDEO && (video != null || wan != null)) {
             VideoModelsTab(
                 video, busy, onInstallVideo, onCancel,
                 onConfirmDelete = { deletingVideo = true },
                 onProbe = onProbeVideo,
                 onUse = onUseVideo,
+                wan = wan,
+                onInstallWan = { wan?.spec?.let(onInstall) },
+                onDeleteWan = { deleting = wan?.spec },
+                onUseWan = onUseWan,
             )
         } else LazyColumn(
             Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -690,7 +701,7 @@ fun ModelsScreen(
     // deleting the SELECTED model also moves the selection, so a mis-tap changed
     // what every node in every graph would render with.
     deleting?.let { spec ->
-        val row = rows.firstOrNull { it.spec.id == spec.id }
+        val row = rows.firstOrNull { it.spec.id == spec.id } ?: wan?.takeIf { it.spec.id == spec.id }
         ConfirmDelete(
             title = stringResource(R.string.models_delete_title, spec.label),
             body = run {
@@ -967,7 +978,8 @@ private fun fields(vararg parts: String?): String = parts.filterNotNull().filter
  */
 @Composable
 private fun VideoModelsTab(
-    row: VideoRow,
+    /** ⚠ Null when the canary hid Neodragon ([com.abrah.nightmare.npu.VideoGate]); Wan may still show. */
+    row: VideoRow?,
     busy: Boolean,
     onInstall: () -> Unit,
     onCancel: () -> Unit,
@@ -982,6 +994,10 @@ private fun VideoModelsTab(
      * this dialog is for.
      */
     onUse: () -> Unit = {},
+    wan: ModelRow? = null,
+    onInstallWan: () -> Unit = {},
+    onDeleteWan: () -> Unit = {},
+    onUseWan: () -> Unit = {},
 ) {
     // ⚠ Once, when the tab is first composed. [HarnessViewModel.probeVideoSupport]
     // is itself idempotent, so a pager pre-composing this page costs one call.
@@ -990,14 +1006,14 @@ private fun VideoModelsTab(
         Modifier.fillMaxWidth().padding(top = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item {
+        if (row != null) item {
             Text(
                 stringResource(R.string.video_models_note, gb(row.totalBytes)),
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        item {
+        if (row != null) item {
             // ⚠⚠ The canary's verdict, in the one place a user is about to spend 8 GB. It runs a
             // real context binary rather than consulting a chip list — `docs/DEVICES.md` §2.
             AddonCard(
@@ -1013,6 +1029,23 @@ private fun VideoModelsTab(
                 onUse = onUse,
                 partial = !row.complete && row.installedBytes > 0,
                 unsupportedNote = if (row.supported == false) stringResource(R.string.cannot_run_it) else null,
+            )
+        }
+        // ⭐ Wan 2.2: the checkpoint card's facts ([ModelRow]) on the video tab's [AddonCard].
+        if (wan != null) item {
+            AddonCard(
+                title = wan.spec.label,
+                detail = stringResource(R.string.wan_about),
+                installed = wan.installed,
+                sizeBytes = if (wan.installed) wan.onDisk else wan.fetchBytes.takeIf { it > 0 } ?: wan.build?.bytes,
+                busy = busy,
+                progress = wan.progress,
+                onCancel = onCancel,
+                onInstall = onInstallWan.takeIf { wan.build != null },
+                onDelete = onDeleteWan,
+                onUse = onUseWan.takeIf { wan.installed },
+                partial = wan.partial,
+                unsupportedNote = if (!wan.installed && wan.build == null) stringResource(R.string.cannot_run_it) else null,
             )
         }
     }

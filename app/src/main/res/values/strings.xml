@@ -118,6 +118,7 @@
     <string name="video_models">Neodragon (video)</string>
     <string name="video_models_note">One download of %1$s GB, in 21 parts. It resumes, so a dropped connection costs only the file it was on.</string>
     <string name="video_about">Text and image to video on the NPU. No backend, no checkpoint.</string>
+    <string name="wan_about">Text and image to video with Wan 2.2: 5 second clips at 832x480 or 1280x704. Slower than Neodragon and much better. 6.25 GB: the Wan 2.2 Turbo DiT, its umT5 text encoder and a small decoder.</string>
     <string name="mb_of_total">%1$d of %2$d MB</string>
     <string name="video_delete_title">Delete the video models?</string>
     <string name="video_delete_body">Frees %1$d MB. Getting them back is a %2$d MB download. Every video flow will refuse to run until you install them again.</string>
@@ -691,6 +692,12 @@
     <string name="flow_t2v_about">A prompt in, a 2 second clip out. 49 frames at 1024x640, on the NPU. Needs the video models installed; it does not use your checkpoint.</string>
     <string name="flow_i2v_name">Image to video</string>
     <string name="flow_i2v_about">A photo from the gallery, brought to life. 49 frames at 1024x640. Faster than text to video, and it needs three fewer models.</string>
+    <string name="flow_wan_t2v_name">Text to video, Wan 2.2</string>
+    <string name="flow_wan_t2v_about">A prompt in, a 5 second clip out: 121 frames at 832x480 with Wan 2.2, about 3 minutes. Slower than the other video flows and much better. Needs Wan 2.2 under Models, Video, and an 8 Gen 3 or newer (alpha on 8 Gen 3).</string>
+    <string name="flow_wan_i2v_name">Image to video, Wan 2.2</string>
+    <string name="flow_wan_i2v_about">A photo from the gallery as the first frame of a 5 second clip, moving the way the prompt says. Wan 2.2, about 3 minutes, on an 8 Gen 3 or newer (alpha on 8 Gen 3).</string>
+    <string name="hint_wan_seconds">Clip length in seconds, 24 frames each. 5 s at 480p takes about 3 minutes on an 8 Elite.</string>
+    <string name="hint_wan_size">480p is 832x480. 704p (1280x704) looks best and takes about three times as long.</string>
     <string name="knob_cfg">CFG</string>
     <string name="knob_loras">LoRAs</string>
     <string name="knob_output_width">Output width</string>

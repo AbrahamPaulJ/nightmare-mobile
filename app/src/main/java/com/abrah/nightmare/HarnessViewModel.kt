@@ -1021,16 +1021,36 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /** What the canvas shows for the model in use, installed or not. */
     val modelLabel: String
         get() {
-            val spec = ModelCatalog.byId(SelectedModel.id) ?: return SelectedModel.id
-            // ⚠⚠ From the last refresh, not the DISK: this getter is read during
-            // composition, and `installed()` stats every file of the spec —
-            // 3.9% of the main thread in the 2026-10-05 capture.
-            // ⚠ …except before the first refresh has landed (an empty list), so
-            // a cold start does not flash "(not installed)".
-            val ids = ModelCatalog.installedIds
-            val here = if (ids.isEmpty()) spec.installed(getApplication()) else spec.id in ids
-            return if (here) spec.label else "${spec.label} (not installed)"
+            // ⭐⭐ A Wan flow shows Wan (reported on 1.6.152: the label stayed on the last image model).
+            // ⚠ From the OPEN GRAPH, not [SelectedModel]: [adoptGraphModel] never selects a video
+            // model, since new image flows take their checkpoint from the selection. A graph that
+            // also renders a picture names both, in the order they run.
+            val nodes = canvas.workflow.graph.nodes
+            val wan = nodes.any { it.type == com.abrah.nightmare.npu.WanVideoNode.name }
+            val image = nodes.any { it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES }
+            val spec = ModelCatalog.byId(SelectedModel.id)
+            return when {
+                !wan -> spec?.let(::labelOf) ?: SelectedModel.id
+                image && spec != null -> "${labelOf(spec)} + ${labelOf(ModelCatalog.WAN22)}"
+                else -> labelOf(ModelCatalog.WAN22)
+            }
         }
+
+    private fun labelOf(spec: com.abrah.nightmare.ModelSpec): String {
+        // ⚠⚠ From the last refresh, not the DISK: this getter is read during
+        // composition, and `installed()` stats every file of the spec —
+        // 3.9% of the main thread in the 2026-10-05 capture.
+        // ⚠ …except before the first refresh has landed (an empty list), so
+        // a cold start does not flash "(not installed)".
+        // ⚠ Wan is never in [ModelCatalog.installedIds] (checkpoints only): its row says.
+        val ids = ModelCatalog.installedIds
+        val here = when {
+            spec == ModelCatalog.WAN22 -> wanRow?.installed ?: spec.installed(getApplication())
+            ids.isEmpty() -> spec.installed(getApplication())
+            else -> spec.id in ids
+        }
+        return if (here) spec.label else "${spec.label} (not installed)"
+    }
 
     // ---- models ----------------------------------------------------------
 
@@ -1121,6 +1141,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The rows the picker draws. Recomputed from disk rather than remembered. */
     var modelRows by mutableStateOf<List<com.abrah.nightmare.ui.ModelRow>>(emptyList())
+        private set
+
+    /**
+     * ⭐ Wan 2.2 video ([ModelCatalog.WAN22]) — a catalogue model, but drawn on the Video tab, never
+     * among the checkpoints ([modelRows]). Built by the same [refreshModels] read.
+     */
+    var wanRow by mutableStateOf<com.abrah.nightmare.ui.ModelRow?>(null)
         private set
 
     var modelError by mutableStateOf<String?>(null)
@@ -1231,6 +1258,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 translateRows = translateRows.mapValues { (src, row) -> if (src.installId == id) row.copy(progress = p) else row }
             modelRows.any { it.spec.id == id } ->
                 modelRows = modelRows.map { if (it.spec.id == id) it.copy(progress = p) else it }
+            wanRow?.spec?.id == id -> wanRow = wanRow?.copy(progress = p)
             upscalerRows.any { it.spec.id == id } ->
                 upscalerRows = upscalerRows.map { if (it.spec.id == id) it.copy(progress = p) else it }
         }
@@ -1421,7 +1449,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⭐⭐ The disk-heavy half: every installed model's size walked, every
         // spec's files checked, the video package's too. ⚠ Snapshot what it
         // reads from the view model FIRST, so the worker touches only files.
-        val specs = ModelCatalog.all
+        // ⭐ The video models ride along, split out again in `publish` ([wanRow]).
+        val specs = ModelCatalog.all + ModelCatalog.video
         val selected = SelectedModel.id
         val caps = DeviceProbe.caps()
         val gen = ++rowsGen
@@ -1451,14 +1480,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     fromLocalDream = here && spec.fromLocalDream(ctx),
                 )
             }
-            Triple(rows, rows.filter { it.installed }.map { it.spec.id }, readVideoDisk())
+            Triple(rows, rows.filter { it.installed && it.spec !in ModelCatalog.video }.map { it.spec.id }, readVideoDisk())
         }
         val publish: (Triple<List<com.abrah.nightmare.ui.ModelRow>, List<String>, VideoDisk>) -> Unit = { (rows, ids, video) ->
             // ⚠ A later refresh wins; an older one landing late must not undo it.
             if (gen == rowsGen) {
                 // ⚠ Progress read NOW, not at the snapshot: a download ticking
                 // while the worker ran must not be shown as stopped.
-                modelRows = rows.map { if (it.spec.id == installing) it.copy(progress = installProgress) else it }
+                val withProgress = rows.map { if (it.spec.id == installing) it.copy(progress = installProgress) else it }
+                modelRows = withProgress.filter { it.spec !in ModelCatalog.video }
+                wanRow = withProgress.firstOrNull { it.spec == ModelCatalog.WAN22 }
                 ModelCatalog.installedIds = ids
                 // ⚠ …and the video models, for the same reason. ⚠⚠
                 // `probeVideoSupport` is NOT called here: it starts the QNN
@@ -1469,6 +1500,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (offMain) {
             // ⭐ The tapped chip shows its tick NOW; sizes and files follow.
             modelRows = modelRows.map { it.copy(selected = it.spec.id == selected) }
+            wanRow = wanRow?.copy(progress = if (installing == ModelCatalog.WAN22.id) installProgress else null)
             viewModelScope.launch {
                 val t1 = System.nanoTime()
                 val got = withContext(Dispatchers.IO) { read() }
@@ -1667,7 +1699,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     // ⭐ First model in becomes the one in use. Otherwise a user
                     // downloads a model, presses Run, and renders against a
                     // model they do not have.
-                    if (ModelCatalog.byId(SelectedModel.id)?.installed(ctx) != true) {
+                    // ⚠ Never a video model ([ModelCatalog.video]): it is not a checkpoint.
+                    if (spec !in ModelCatalog.video && ModelCatalog.byId(SelectedModel.id)?.installed(ctx) != true) {
                         SelectedModel.set(ctx, spec.id)
                     }
                 }
@@ -2360,6 +2393,23 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 ?: continue
             missingModel = MissingModel.Checkpoint(id, offer, substitute = offer.id != id)
             return false
+        }
+        // ⭐ Wan video names no `model` param: its one model is [ModelCatalog.WAN22], and the
+        // same popup offers it — then the engine, which ABI 106 brings for every DiT model.
+        if (graph.nodes.any { it.type == com.abrah.nightmare.npu.WanVideoNode.name }) {
+            val wan = ModelCatalog.WAN22
+            if (!wan.installed(ctx)) {
+                if (wan.buildFor(caps) == null) {
+                    runError = text(R.string.models_needs_arch, wan.label, wan.builds.minOf { it.minArch }, caps.arch)
+                    return false
+                }
+                missingModel = MissingModel.Checkpoint(wan.id, wan, substitute = false)
+                return false
+            }
+            if (!com.abrah.nightmare.DitEngine.isInstalled(ctx)) {
+                missingModel = MissingModel.Engine
+                return false
+            }
         }
         // ⭐⭐⭐ **The segmenter is demanded ONLY by a mask that was actually
         // TAPPED**, never by the feature being switched on.
@@ -3910,6 +3960,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    /** ⭐ Use on Wan 2.2 — its two flows ([ModelCatalog.WAN22] binds no global selection). */
+    fun askUseWan() {
+        pendingUse = PendingUse(
+            spec = null,
+            title = text(R.string.models_use_named, ModelCatalog.WAN22.label),
+            offer = com.abrah.nightmare.canvas.recipesWithId(
+                com.abrah.nightmare.canvas.WAN_T2V, com.abrah.nightmare.canvas.WAN_I2V,
+            ),
+            unsavedFlow = unsavedFlow(),
+        )
+    }
+
     /** ⭐ Use on the VIDEO models — two flows, both theirs. */
     fun askUseVideo() {
         pendingUse = PendingUse(
@@ -4097,7 +4159,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val id = named.singleOrNull()
         val res = contextKeyResolutions(w.graph, types).singleOrNull()
         val ctx = getApplication<Application>()
-        val spec = id?.let { ModelCatalog.byId(it) }
+        // ⚠ Never a video model ([ModelCatalog.video]): a Wan flow names one, and it is not a checkpoint.
+        val spec = id?.let { ModelCatalog.byId(it) }?.takeIf { it !in ModelCatalog.video }
         val modelMoved = spec != null && id != SelectedModel.id
         // ⚠ Read against the graph's model, not the selected one -- on a model
         // switch the sizes that are legal change with it.

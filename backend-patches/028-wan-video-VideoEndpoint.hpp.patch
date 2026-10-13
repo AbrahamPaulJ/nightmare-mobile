@@ -1,0 +1,176 @@
+--- a/src/VideoEndpoint.hpp
++++ b/src/VideoEndpoint.hpp
+@@ -0,0 +1,173 @@
++#ifndef VIDEOENDPOINT_HPP
++#define VIDEOENDPOINT_HPP
++
++#include <cstdio>
++#include <fstream>
++#include <memory>
++#include <mutex>
++#include <random>
++#include <string>
++#include <vector>
++
++#include "PipelineDit.hpp"
++#include "SDUtils.hpp"
++#include "httplib.h"
++#include "json.hpp"
++
++// nightmare (backend 028): text/image to video for Wan 2.2 TI2V. Progress
++// arrives as /generate's SSE events; the frames go to the file named by "out"
++// (raw RGB, written as they are decoded) rather than through the socket:
++// 121 frames at 832x480 are 145 MB. Layout: "NMV1", then int32 little-endian
++// width, height, frame count, fps, then each frame's RGB8 bytes in order.
++static void registerVideoEndpoint(httplib::Server &svr, PipelineDit *pipeline,
++                                  std::mutex &generation_mutex) {
++  svr.Post("/video", [pipeline, &generation_mutex](const httplib::Request &request,
++                                httplib::Response &res) {
++    try {
++      auto json = nlohmann::json::parse(request.body);
++      auto req = std::make_shared<VideoRequest>();
++      req->prompt = json.value("prompt", std::string());
++      req->negative_prompt = json.value("negative_prompt", std::string());
++      req->width = json.value("width", 832);
++      req->height = json.value("height", 480);
++      req->frames = json.value("frames", 121);
++      req->fps = json.value("fps", 24);
++      req->steps = json.value("steps", 4);
++      req->cfg = json.value("cfg", 1.0f);
++      req->flow_shift = json.value("flow_shift", 0.0f);
++      if (json.contains("seed") && json["seed"].is_number_integer() &&
++          json["seed"].get<int64_t>() >= 0) {
++        req->seed = json["seed"].get<uint64_t>();
++      } else {
++        req->seed = std::random_device{}();
++      }
++      req->sample_method = json.value("sample_method", std::string("lcm"));
++      if (json.contains("sigmas"))
++        req->sigmas = json["sigmas"].get<std::vector<float>>();
++      req->temporal_tiling = json.value("temporal_tiling", true);
++      req->tiling_args = json.value(
++          "tiling_args",
++          std::string("temporal_tile_frames=6,temporal_tile_overlap=2"));
++      req->preview_stride = json.value("show_diffusion_process", false)
++                                ? json.value("show_diffusion_stride", 1)
++                                : 0;
++      req->preview_format = json.value("preview_format", std::string("jpeg"));
++      const std::string out = json.value("out", std::string());
++      if (req->prompt.empty()) throw std::invalid_argument("Prompt empty");
++      if (out.empty()) throw std::invalid_argument("'out' is required");
++      // Wan 2.2's VAE downsamples 16x and its DiT patches 2x2.
++      if (req->width < 256 || req->height < 256 || req->width % 32 != 0 ||
++          req->height % 32 != 0)
++        throw std::invalid_argument("width and height must be multiples of 32, at least 256");
++      if (req->frames < 1 || (req->frames - 1) % 4 != 0)
++        throw std::invalid_argument("frames must be 4n+1");
++      if (json.contains("image")) {
++        const std::string dec_str =
++            base64_decode(json["image"].get<std::string>());
++        const std::vector<uint8_t> dec_buf(dec_str.begin(), dec_str.end());
++        int w = 0, h = 0;
++        decode_reference_image(dec_buf, req->start_rgb, w, h);
++        if (req->start_rgb.empty() || w != req->width || h != req->height)
++          throw std::invalid_argument("start image must be width x height");
++      }
++      if (json.contains("loras")) {
++        for (const auto &entry : json["loras"]) {
++          LoraRef lora;
++          if (entry.is_string()) {
++            lora.path = entry.get<std::string>();
++          } else {
++            lora.path = entry.value("path", std::string());
++            lora.multiplier = entry.value("multiplier", 1.0f);
++          }
++          if (lora.path.empty())
++            throw std::invalid_argument("lora path must not be empty");
++          req->loras.push_back(std::move(lora));
++        }
++      }
++      std::cout << "Video Rcvd: P:" << req->prompt << " Size:" << req->width
++                << "x" << req->height << "x" << req->frames
++                << " Seed:" << req->seed
++                << " I2V:" << !req->start_rgb.empty() << std::endl;
++      res.set_header("Content-Type", "text/event-stream");
++      res.set_header("Cache-Control", "no-cache");
++      res.set_header("Connection", "keep-alive");
++      res.set_chunked_content_provider(
++          "text/event-stream",
++          [pipeline, req, out, &generation_mutex](intptr_t, httplib::DataSink &sink) -> bool {
++            try {
++              std::lock_guard<std::mutex> generation_lock(generation_mutex);
++              std::ofstream file;
++              auto result = pipeline->generateVideo(
++                  *req,
++                  [&sink, &req](int s, int t, const std::string &img) {
++                    nlohmann::json p = {
++                        {"type", "progress"}, {"step", s}, {"total_steps", t}};
++                    if (!img.empty()) {
++                      p["image"] = img;
++                      p["format"] = req->preview_format;
++                    }
++                    std::string ev =
++                        "event: progress\ndata: " + p.dump() + "\n\n";
++                    if (!sink.is_writable() ||
++                        !sink.write(ev.c_str(), ev.size()))
++                      throw std::runtime_error(
++                          "Client disconnected, generation aborted");
++                  },
++                  [&file, &out, &req](int index, int count, const uint8_t *rgb,
++                                      int w, int h) {
++                    if (index == 0) {
++                      file.open(out, std::ios::binary | std::ios::trunc);
++                      if (!file) throw std::runtime_error("cannot write " + out);
++                      const int32_t header[4] = {w, h, count, req->fps};
++                      file.write("NMV1", 4);
++                      file.write(reinterpret_cast<const char *>(header),
++                                 sizeof(header));
++                    }
++                    file.write(reinterpret_cast<const char *>(rgb),
++                               static_cast<std::streamsize>(w) * h * 3);
++                    if (!file) throw std::runtime_error("short write to " + out);
++                  });
++              file.close();
++              if (!file) throw std::runtime_error("cannot finish " + out);
++              nlohmann::json c = {
++                  {"type", "complete"},
++                  {"path", out},
++                  {"frames", result.frames},
++                  {"width", result.width},
++                  {"height", result.height},
++                  {"fps", req->fps},
++                  {"seed", req->seed},
++                  {"generation_time_ms", result.generation_time_ms},
++                  {"first_step_time_ms", result.first_step_time_ms}};
++              std::string ev = "event: complete\ndata: " + c.dump() + "\n\n";
++              sink.write(ev.c_str(), ev.size());
++              sink.done();
++              return true;
++            } catch (const std::exception &e) {
++              std::remove(out.c_str());
++              nlohmann::json err = {{"type", "error"}, {"message", e.what()}};
++              std::string ev = "event: error\ndata: " + err.dump() + "\n\n";
++              sink.write(ev.c_str(), ev.size());
++              sink.done();
++              return false;
++            }
++          });
++    } catch (const std::invalid_argument &e) {
++      nlohmann::json err = {
++          {"error",
++           {{"message", "Invalid Arg: " + std::string(e.what())},
++            {"type", "request_error"}}}};
++      res.status = 400;
++      res.set_content(err.dump(), "application/json");
++    } catch (const std::exception &e) {
++      nlohmann::json err = {
++          {"error",
++           {{"message", "Server Err: " + std::string(e.what())},
++            {"type", "server_error"}}}};
++      res.status = 400;
++      res.set_content(err.dump(), "application/json");
++    }
++  });
++}
++
++#endif  // VIDEOENDPOINT_HPP

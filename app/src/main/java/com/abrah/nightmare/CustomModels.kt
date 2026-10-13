@@ -397,6 +397,8 @@ object CustomModels {
         Family.QWEN21 -> Defaults("euler", 20, 1.0)
         // Krea 2 Turbo: the fork's README runs 8 steps at cfg 1.
         Family.KREA2 -> Defaults("euler", 8, 1.0)
+        // Wan 2.2 Turbo: 4 Self-Forcing steps through `lcm` (`docs/VIDEO-GGML.md` §3).
+        Family.WAN -> Defaults("lcm", 4, 1.0)
         // Anima's official turbo: CFG 1, 8–12 steps; the QNN packages' 10.
         Family.ANIMA_DIT -> Defaults("euler", 10, 1.0)
     }
@@ -456,6 +458,8 @@ object CustomModels {
             Family.KREA2 -> ModelCatalog.KREA2
             // ⚠ Krea 2's launch on purpose: "own files, no edit" (ModelCatalog's entry).
             Family.ANIMA_DIT -> ModelCatalog.KREA2
+            // ⚠ Unreachable: nothing imports a video model ([ModelCatalog.WAN22]).
+            Family.WAN -> ModelCatalog.WAN
         },
         resolutions = listOf(
             when (family) {
@@ -463,7 +467,7 @@ object CustomModels {
                 Family.SD15, Family.SD15_SWAP -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL, Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
-                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT -> ModelCatalog.DIT_RES
+                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN -> ModelCatalog.DIT_RES
             },
         ),
         requiredFiles = when (family) {
@@ -477,6 +481,7 @@ object CustomModels {
             Family.FLUX2, Family.ZIMAGE, Family.KREA2, Family.ANIMA_DIT -> listOf(weights) + DIT_PARTS
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
             Family.QWEN21 -> listOf(weights) + ModelCatalog.QWEN21_PARTS
+            Family.WAN -> ModelCatalog.WAN22.requiredFiles
         },
         // ⚠ Not a preference: SDXL's UNet and Anima's two DiT halves do not fit
         // beside their encoders at 1024², and the backend needs telling
@@ -500,6 +505,7 @@ object CustomModels {
             Family.KREA2 -> false
             // ⚠ The same launch as Krea 2 (all=disk); 3.1 GB of parts fit anyway.
             Family.ANIMA_DIT -> false
+            Family.WAN -> false
         },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which
         // HTP it was compiled for — `QnnSystemContext` gives the IO contract

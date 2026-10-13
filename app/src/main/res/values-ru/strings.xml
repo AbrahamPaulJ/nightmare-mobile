@@ -146,6 +146,7 @@
     <string name="parser_loading">Читаем картинку: первый выбор займёт мгновение…</string>
     <string name="video">Видео</string>
     <string name="video_about">Видео из текста и изображения на NPU. Без бэкенда, без чекпойнта.</string>
+    <string name="wan_about">Видео из текста и изображения с Wan 2.2: клипы по 5 секунд 832x480 или 1280x704. Медленнее Neodragon и намного лучше. 6,25 ГБ: DiT Wan 2.2 Turbo, текстовый кодировщик umT5 и небольшой декодер.</string>
     <string name="video_delete_body">Освободит %1$d МБ. Чтобы вернуть их, придётся скачать %2$d МБ. Пока вы не установите их снова, ни один видеопоток не запустится.</string>
     <string name="video_delete_title">Удалить видеомодели?</string>
     <string name="video_models">Neodragon (видео)</string>
@@ -679,6 +680,12 @@
     <string name="flow_t2v_about">Промпт на входе, двухсекундный клип на выходе: 49 кадров 1024x640 на NPU. Нужны модели видео; чекпойнт не используется.</string>
     <string name="flow_i2v_name">Изображение в видео</string>
     <string name="flow_i2v_about">Фотография из галереи оживает: 49 кадров 1024x640. Быстрее, чем текст в видео, и требует на три модели меньше.</string>
+    <string name="flow_wan_t2v_name">Текст в видео, Wan 2.2</string>
+    <string name="flow_wan_t2v_about">Промпт на входе, клип на 5 секунд на выходе: 121 кадр 832x480 с Wan 2.2, около 3 мин. Медленнее других видеопроцессов и намного лучше. Нужна Wan 2.2 в разделе Модели, Видео, и 8 Gen 3 или новее (альфа на 8 Gen 3).</string>
+    <string name="flow_wan_i2v_name">Изображение в видео, Wan 2.2</string>
+    <string name="flow_wan_i2v_about">Фото из галереи становится первым кадром 5-секундного клипа и движется так, как сказано в промпте. Wan 2.2, около 3 мин, на 8 Gen 3 или новее (альфа на 8 Gen 3).</string>
+    <string name="hint_wan_seconds">Длина клипа в секундах, 24 кадра в секунду. 5 с при 480p занимают около 3 мин на 8 Elite.</string>
+    <string name="hint_wan_size">480p это 832x480. 704p (1280x704) выглядит лучше всего и занимает примерно втрое больше времени.</string>
     <string name="knob_cfg">CFG</string>
     <string name="knob_loras">LoRA</string>
     <string name="knob_output_width">Ширина результата</string>

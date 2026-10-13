@@ -187,6 +187,8 @@ object PromptTokens {
      */
     fun budgetFor(graph: Graph, nodeId: String): Budget? {
         val consumers = graph.nodes.filter { n -> n.inputs.values.any { it.node == nodeId } }
+        // ⚠ Wan reads umT5, whose tokenizer this counter does not have: no number beats a wrong one.
+        if (consumers.any { it.type == com.abrah.nightmare.npu.WanVideoNode.name }) return null
         val budgets = consumers.mapNotNull { budgetOf(it) }
         if (budgets.isNotEmpty()) return budgets.minBy { it.max }
         return specBudget(SelectedModel.spec)
@@ -221,7 +223,8 @@ object PromptTokens {
         // ⚠ Anima DiT: the engine reads past 512 (sd.cpp pads, never cuts), but 512 is
         // what Anima was trained on, so the counter warns there (the user's call, 2026-10-13).
         Family.ANIMA, Family.ANIMA_DIT -> Budget.ANIMA
-        Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2 -> null
+        // ⚠ Wan: umT5, whose tokenizer this counter does not have.
+        Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.WAN -> null
     }
 }
 

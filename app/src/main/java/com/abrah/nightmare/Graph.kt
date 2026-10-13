@@ -600,7 +600,7 @@ fun nodeNameOf(node: Node, types: Map<String, NodeType> = NODE_TYPES): NodeName 
 /** ⚠ The ones that carry a mask, its editor and the paste back. */
 val INPAINT_TYPES: Set<String> = SdSampler.ALL.filter { it.inpaint }.map { it.name }.toSet()
 
-val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample")
+val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample", com.abrah.nightmare.npu.WanVideoNode.name)
 
 /**
  * ⭐ Every node that FRAMES a picture it was given — every image sampler and
@@ -610,7 +610,7 @@ val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample")
  * framed input; `image.crop` is framing too but is its own node, so it is added
  * where that matters rather than here.
  */
-val FRAMING_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample")
+val FRAMING_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample", com.abrah.nightmare.npu.WanVideoNode.name)
 
 /**
  * ⭐ Every node holding a FRAMING of a picture it was handed — the `x/y/w/h`

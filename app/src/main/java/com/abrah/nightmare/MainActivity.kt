@@ -802,6 +802,8 @@ fun HarnessScreen(
                         onInstallControlNet = { askToNotify(); vm.installControlNet(it) },
                         onDeleteControlNet = vm::deleteControlNet,
                         video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
+                        wan = vm.wanRow,
+                        onUseWan = vm::askUseWan,
                         onInstallVideo = { askToNotify(); vm.installVideoModels() },
                         onDeleteVideo = vm::deleteVideoModels,
                         onProbeVideo = vm::probeVideoSupport,

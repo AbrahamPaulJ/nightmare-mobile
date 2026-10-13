@@ -3,6 +3,7 @@ package com.abrah.nightmare
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.abrah.nightmare.canvas.asParams
 
 /**
  * Every harness op, with no UI attached.
@@ -213,6 +214,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "video_install" -> videoInstall()
             // ⭐ Image to video: animate the newest saved picture.
             "npu_i2v" -> npuI2v(arg)
+            // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480p|portrait"`,
+            // every field optional. `wan_i2v` animates the newest saved picture.
+            "wan_video" -> wanVideo(arg, i2v = false)
+            "wan_i2v" -> wanVideo(arg, i2v = true)
             "inpaint" -> inpaint(arg)
             "t2i" -> t2i()
             // ⭐ Prompt translation, timed (`docs/TRANSLATE.md`). `--es arg "ru|красная шляпа, 8k"`;
@@ -299,7 +304,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             nodes = w0.graph.nodes.map {
                 when {
                     it.type == "core.image" -> it.copy(params = it.params + ("uri" to uri))
-                    it.type == "nd.clip_encode" && !arg.isNullOrBlank() ->
+                    it.type == "core.prompt" && !arg.isNullOrBlank() ->
                         it.copy(params = it.params + ("prompt" to arg))
                     else -> it
                 }
@@ -319,7 +324,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("i2v: refused. ${r.error}", bad = true)
             return
         }
-        val clip = r.outputs["decode"] as? com.abrah.nightmare.Value.Video
+        val clip = r.outputs["video"] as? com.abrah.nightmare.Value.Video
         if (clip == null) {
             say("i2v: the graph produced no clip", bad = true)
             return
@@ -1352,7 +1357,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                         // what makes two builds COMPARABLE: without it every run
                         // rolls and no numerical change can be told from a new
                         // seed. Used to prove the phase extraction was identical.
-                        it.type == "nd.clip_encode" && !arg.isNullOrBlank() ->
+                        it.type == "core.prompt" && !arg.isNullOrBlank() ->
                             it.copy(params = it.params + ("prompt" to arg.substringBefore('|')))
                         // ⚠⚠ BOTH seeded nodes, or pinning one still leaves the
                         // other rolling and the clip is not reproducible.
@@ -1384,7 +1389,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("video: refused. ${r.error}", bad = true)
             return
         }
-        val clip = r.outputs["decode"] as? Value.Video
+        val clip = r.outputs["video"] as? Value.Video
         if (clip == null) {
             say("video: the graph produced no clip", bad = true)
             return
@@ -1393,6 +1398,92 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "${(System.currentTimeMillis() - t0) / 1000} s")
         say("  ${clip.path} (${java.io.File(clip.path).length() / 1024} KB)")
         images.get(clip.posterId)?.let { sink.image(it) }
+    }
+
+    /**
+     * ⭐ The Wan recipes ([com.abrah.nightmare.canvas.wanVideoWorkflow]) headless, through
+     * [runWorkflow] like [npuVideo]. `arg` = `prompt|seed|seconds|size|shape`, each optional; an
+     * empty seed rolls. The clip is saved to the gallery when it works, so it can be watched.
+     */
+    private suspend fun wanVideo(arg: String?, i2v: Boolean) {
+        val f = arg.orEmpty().split('|')
+        fun at(i: Int) = f.getOrNull(i)?.trim().orEmpty()
+        val uri = if (i2v) newestSavedImage() ?: run {
+            say("wan: nothing in Pictures/${ImageSaver.FOLDER} yet. Run `save_image` first", bad = true)
+            return
+        } else null
+        val w0 = com.abrah.nightmare.canvas.wanVideoWorkflow(i2v)
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        val wf = com.abrah.nightmare.canvas.Workflow(
+            w0.graph.copy(
+                nodes = w0.graph.nodes.map { n ->
+                    when {
+                        n.type == "core.prompt" && at(0).isNotEmpty() -> n.copy(params = n.params + ("prompt" to at(0)))
+                        n.type == "core.image" && uri != null -> n.copy(params = n.params + ("uri" to uri))
+                        n.type == wan.name -> n.copy(
+                            params = n.params + listOfNotNull(
+                                at(1).takeIf { it.isNotEmpty() }?.let { "seed" to it },
+                                at(2).takeIf { it.isNotEmpty() }?.let { "seconds" to it },
+                                at(3).takeIf { it.isNotEmpty() }?.let { "size" to it },
+                                at(4).takeIf { it.isNotEmpty() }?.let { "shape" to it },
+                            ),
+                        )
+                        else -> n
+                    }
+                }
+            ),
+            w0.positions,
+        ).let { fitWanFrame(it, uri) }
+        if (!ensureBackendFor(wf.graph)) {
+            say("wan: the backend did not start", bad = true)
+            return
+        }
+        val spec = ModelCatalog.WAN22
+        say("wan: ${spec.label} ${if (spec.installed(ctx)) "installed" else "MISSING: ${spec.missing(ctx).joinToString()}"}, " +
+            "engine ${if (DitEngine.isInstalled(ctx)) "installed" else "MISSING"}")
+        val t0 = System.currentTimeMillis()
+        val r = runWorkflow(wf, onNode = { n ->
+            say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} " +
+                "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+        })
+        if (r.error != null) {
+            say("wan: refused. ${r.error}", bad = true)
+            return
+        }
+        val clip = r.outputs["video"] as? Value.Video
+        if (clip == null) {
+            say("wan: the graph produced no clip", bad = true)
+            return
+        }
+        say("wan: ${clip.frames} frames ${clip.w}x${clip.h} in ${(System.currentTimeMillis() - t0) / 1000} s")
+        say("  ${clip.path} (${java.io.File(clip.path).length() / 1024} KB)")
+        com.abrah.nightmare.npu.VideoWriter.publish(ctx, java.io.File(clip.path), "wan_${System.currentTimeMillis()}.mp4") {
+            say("  $it")
+        }
+        images.get(clip.posterId)?.let { sink.image(it) }
+    }
+
+    /**
+     * ⚠ The whole photo centred at the clip's shape, as the canvas fits a new picture
+     * ([com.abrah.nightmare.canvas.refitToAspect]). Without it the default whole-picture rect
+     * is STRETCHED to the clip: a portrait photo came out squeezed into 832x480.
+     */
+    private fun fitWanFrame(wf: com.abrah.nightmare.canvas.Workflow, uri: String?): com.abrah.nightmare.canvas.Workflow {
+        uri ?: return wf
+        val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        ctx.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, o)
+        }
+        if (o.outWidth <= 0 || o.outHeight <= 0) return wf
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        return wf.copy(graph = wf.graph.copy(nodes = wf.graph.nodes.map { n ->
+            if (n.type != wan.name) return@map n
+            val (w, h) = wan.sizeOf(com.abrah.nightmare.applyDefaults(wan.widgets, n))
+            val r = com.abrah.nightmare.canvas.refitToAspect(
+                com.abrah.nightmare.canvas.cropRectOf(n), o.outWidth, o.outHeight, w.toFloat() / h,
+            )
+            n.copy(params = n.params + r.asParams().toMap())
+        }))
     }
 
     // ---- models ----------------------------------------------------------

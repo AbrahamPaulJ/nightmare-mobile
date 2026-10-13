@@ -61,9 +61,23 @@ object ClipStore {
         if (frames.isEmpty()) return
         val w = WIDTH
         val h = (frames[0].height.toLong() * w / frames[0].width).toInt().coerceAtLeast(1)
-        val thumbs = frames.filterIndexed { i, _ -> i % EVERY == 0 }.map {
+        keep(id, frames.filterIndexed { i, _ -> i % EVERY == 0 }.map {
             Bitmap.createScaledBitmap(it, w, h, true).asImageBitmap()
-        }
+        })
+    }
+
+    /** ⭐ The loop at [WIDTH] for one frame of every [EVERY]: what a long clip keeps as it streams by ([thumb]). */
+    fun putThinned(id: String, thumbs: List<Bitmap>) {
+        if (thumbs.isNotEmpty()) keep(id, thumbs.map { it.asImageBitmap() })
+    }
+
+    /** ⭐ One loop frame from a full-size [frame], for [putThinned]. */
+    fun thumb(frame: Bitmap): Bitmap =
+        Bitmap.createScaledBitmap(
+            frame, WIDTH, (frame.height.toLong() * WIDTH / frame.width).toInt().coerceAtLeast(1), true,
+        )
+
+    private fun keep(id: String, thumbs: List<ImageBitmap>) {
         synchronized(entries) {
             entries[id] = thumbs
             while (entries.size > LIMIT) {

@@ -1,0 +1,105 @@
+--- a/src/DitEngine.h
++++ b/src/DitEngine.h
+@@ -26,7 +26,11 @@
+ // ABI -- our old LoRA engine ALSO called itself 5 while upstream's 5 is a
+ // different struct, and a matching number over mismatched structs is exactly
+ // the failure this constant exists to refuse.
+-#define DIT_ENGINE_ABI_VERSION 105
++//
++// 106: Wan 2.2 TI2V video -- DIT_MODEL_WAN, the umT5 / tiny-decoder / mmap
++// context fields and generate_video(), all appended so 105's layout is a
++// prefix of 106's.
++#define DIT_ENGINE_ABI_VERSION 106
+ 
+ // Name of the single symbol the core resolves after dlopen.
+ #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
+@@ -37,6 +41,8 @@
+   DIT_MODEL_Z_IMAGE = 0,
+   DIT_MODEL_FLUX2_KLEIN = 1,
+   DIT_MODEL_QWEN_IMAGE_2_1 = 2,
++  // Wan 2.2 TI2V 5B: text or a start image to video, through generate_video.
++  DIT_MODEL_WAN = 3,
+ } dit_model_kind;
+ 
+ typedef struct {
+@@ -60,6 +66,17 @@
+   // stable-diffusion.cpp's lora_apply_mode_t; 0 leaves its own default. A
+   // CONTEXT param because sd_ctx_params_t takes it there.
+   int lora_apply_mode;
++  // --- ABI 106 ---
++  // Wan's text encoder is umT5, not an LLM: llm_path may then be NULL.
++  const char *t5xxl_path;
++  // A tiny decoder (TAEHV for Wan) used INSTEAD of the full VAE: vae_path may
++  // then be NULL.
++  const char *taesd_path;
++  // Memory-map weight files, so a CPU-resident text encoder stays reclaimable
++  // page cache instead of a pinned copy.
++  bool enable_mmap;
++  // Flash attention in the DiT only (flash_attn above sets every module).
++  bool diffusion_flash_attn;
+ } dit_ctx_params;
+ 
+ typedef struct {
+@@ -116,6 +133,48 @@
+ 
+ typedef void (*dit_log_cb)(int level, const char *text, void *user_data);
+ 
++// --- ABI 106: video ---
++typedef struct {
++  const char *prompt;
++  const char *negative_prompt;
++  int width;
++  int height;
++  // Frame count (Wan: 4n+1) and the playback rate the model was trained at.
++  int frames;
++  int fps;
++  int steps;
++  float cfg_scale;
++  // 0 leaves the model default.
++  float flow_shift;
++  int64_t seed;
++  const char *sample_method;
++  // An explicit sigma schedule, sigma_count values ending in 0; NULL for the
++  // scheduler's own. Its length sets the step count.
++  const float *sigmas;
++  int sigma_count;
++  // Image to video: RGB8 start frame, start_width * start_height * 3 bytes,
++  // NULL for text to video.
++  const uint8_t *start_image_rgb;
++  int start_width;
++  int start_height;
++  // Decoder tiling: temporal tiling plus stable-diffusion.cpp's
++  // extra_tiling_args (e.g. "temporal_tile_frames=6,temporal_tile_overlap=2");
++  // vae_tile_size > 0 also tiles spatially.
++  bool temporal_tiling;
++  const char *tiling_args;
++  int vae_tile_size;
++  float vae_tile_overlap;
++  const char *const *lora_paths;
++  const float *lora_multipliers;
++  int lora_count;
++} dit_video_params;
++
++// One decoded frame, RGB8, valid only during the call. Frames arrive in order
++// after sampling and decode; returning false stops delivery and fails the
++// generation.
++typedef bool (*dit_frame_cb)(int index, int count, const uint8_t *rgb,
++                             int width, int height, void *user_data);
++
+ typedef struct {
+   int abi_version;
+ 
+@@ -140,6 +199,13 @@
+ 
+   // Preview cadence: 0 disables previews entirely.
+   void (*set_preview_interval)(dit_ctx *ctx, int interval);
++
++  // --- ABI 106 ---
++  // Text or image to video. Frames go to on_frame; previews (first frame of
++  // the projected latent) to preview. Returns false on failure/cancellation.
++  bool (*generate_video)(dit_ctx *ctx, const dit_video_params *params,
++                         dit_progress_cb progress, dit_preview_cb preview,
++                         dit_frame_cb on_frame, void *user_data);
+ } dit_engine_api;
+ 
+ // The engine's only exported symbol. Returns NULL when the engine cannot serve

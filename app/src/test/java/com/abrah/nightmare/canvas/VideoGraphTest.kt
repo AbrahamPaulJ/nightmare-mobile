@@ -113,7 +113,9 @@ class VideoGraphTest {
         assertTrue(isSampler("sdxlswap.inpaint"))
         // 2026-10-05: `zimage.inpaint`, `qwen21.inpaint`, `krea2.inpaint` (DiT masked img2img); 2026-10-13: `animadit.*`.
         assertTrue(isSampler("zimage.inpaint"))
-        assertEquals(20, SAMPLER_TYPES.size)
+        // 2026-10-14: `wan.sample`, the second video sampler (Wan 2.2, `docs/VIDEO-GGML.md`).
+        assertTrue(isSampler("wan.sample"))
+        assertEquals(21, SAMPLER_TYPES.size)
         assertEquals(19, IMAGE_SAMPLER_TYPES.size)
         assertEquals(9, INPAINT_TYPES.size)
     }
@@ -170,6 +172,93 @@ class VideoGraphTest {
         // ⚠⚠ The control: without the type it still answers the photo's shape.
         // Kept so this test cannot pass for the wrong reason.
         assertEquals(1080f / 1920f, cropAspect(node, 1080, 1920, null), 1e-4f)
+    }
+
+    // --- Wan 2.2 video: the same shapes on the second video sampler --------------
+
+    private val wanT2v = wanVideoWorkflow(i2v = false)
+    private val wanI2v = wanVideoWorkflow(i2v = true)
+
+    /** ⭐ The Neodragon pair's shapes, node for node, on `wan.sample`. */
+    @Test
+    fun wanFlowsAreTheVideoShapes() {
+        assertEquals(listOf("output", "prompt", "video"), wanT2v.graph.nodes.map { it.id }.sorted())
+        assertEquals(listOf("image", "output", "prompt", "video"), wanI2v.graph.nodes.map { it.id }.sorted())
+        for (w in listOf(wanT2v, wanI2v)) {
+            val v = w.graph.byId.getValue("video")
+            assertEquals(com.abrah.nightmare.npu.WanVideoNode.name, v.type)
+            assertEquals(Source("prompt"), v.inputs["prompt"])
+            assertEquals(Source("video"), w.graph.nodes.single { it.type == "core.output" }.inputs["media"])
+        }
+        assertNull(wanT2v.graph.byId.getValue("video").inputs["image"])
+        assertEquals(Source("image"), wanI2v.graph.byId.getValue("video").inputs["image"])
+    }
+
+    /**
+     * ⭐⭐ Its framing view is the CLIP's size, read off its params — 832x480 by default, 480x832
+     * portrait, 1280x704 at 704p — and a photo wires straight in, as for `nd.sample`.
+     */
+    @Test
+    fun wanFramesToTheClipSize() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        val node = wanI2v.graph.byId.getValue("video")
+        assertEquals(832 to 480, framingOutSize(node, wan))
+        assertEquals(832f / 480f, cropAspect(node, 1080, 1920, wan), 1e-4f)
+        assertEquals(480 to 832, wan.sizeOf(mapOf("shape" to wan.PORTRAIT)))
+        assertEquals(1280 to 704, wan.sizeOf(mapOf("size" to wan.SIZE_704)))
+        assertEquals(704 to 1280, wan.sizeOf(mapOf("size" to wan.SIZE_704, "shape" to wan.PORTRAIT)))
+        val g = Graph(listOf(Node("image", "core.image"), Node("video", wan.name, inputs = sources("image" to "image"))))
+        assertNull(com.abrah.nightmare.sizeRefusal(g, NODE_TYPES, "image", "video", "image"))
+    }
+
+    /** ⚠ Wan wants 4n+1 frames: 24 a second plus one, 1 to 5 seconds. */
+    @Test
+    fun wanFrameCountsAreFourNPlusOne() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        assertEquals(121, wan.framesFor(5))
+        assertEquals(25, wan.framesFor(1))
+        assertEquals(25, wan.framesFor(0))
+        assertEquals(121, wan.framesFor(9))
+        for (s in 1..5) assertEquals(1, wan.framesFor(s) % 4)
+    }
+
+    /**
+     * ⚠⚠ The memory guard's arithmetic: the default fits a 12 GB phone with apps open (it ran
+     * from 6.2 GB free), 704p for 5 s asks for more than this phone usually has free.
+     */
+    @Test
+    fun wanMemoryGuardArithmetic() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        assertEquals(12_090L, wan.tokens(832, 480, 121))
+        assertEquals(27_280L, wan.tokens(1280, 704, 121))
+        val gib = 1L shl 30
+        assertTrue(wan.fits(wan.pinnedBytes(832, 480, 121), 11_379_708L * 1024)) // the S25
+        assertTrue(wan.fits(wan.pinnedBytes(1280, 704, 121), 11_379_708L * 1024))
+        assertTrue(!wan.fits(wan.pinnedBytes(1280, 704, 121), 8L * gib))
+    }
+
+    /**
+     * ⚠⚠ A Wan graph NAMES a model although its node has no `model` knob — or Run launches an
+     * upscaler-only backend for it (`ensureBackendFor`). Neodragon's names none: the control.
+     */
+    @Test
+    fun wanGraphsNameTheirModel() {
+        assertEquals(
+            listOf(com.abrah.nightmare.ModelCatalog.WAN22.id),
+            com.abrah.nightmare.contextKeyModels(wanT2v.graph, NODE_TYPES),
+        )
+        assertEquals(emptyList<String>(), com.abrah.nightmare.contextKeyModels(t2v.graph, NODE_TYPES))
+    }
+
+    /** ⭐ One backend process for every size: the key is the model's own, like every DiT model. */
+    @Test
+    fun wanKeysOnItsModelNotItsSize() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        val a = wan.contextKey(wanT2v.graph.byId.getValue("video"))
+        val b = wan.contextKey(Node("video", wan.name, params = mapOf("size" to wan.SIZE_704, "shape" to wan.PORTRAIT)))
+        assertEquals(a, b)
+        assertEquals(com.abrah.nightmare.ModelCatalog.WAN, a.type)
+        assertEquals(com.abrah.nightmare.ModelCatalog.WAN22.id, a.model)
     }
 
     // --- what loops a clip ---------------------------------------------------

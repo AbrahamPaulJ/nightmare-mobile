@@ -54,7 +54,8 @@ class PaletteTest {
     /** ⚠ It was registered all along, but its card read like the SD one. */
     @Test fun videoIsInGenerate() {
         val generate = sections.getValue("generate")
-        assertEquals(listOf("Image", "Video"), generate.map { it.first().paletteName })
+        // 2026-10-14: Wan 2.2 joined Neodragon as the second video sampler.
+        assertEquals(listOf("Image", "Video", "Wan video"), generate.map { it.first().paletteName })
         assertTrue(generate.any { card -> card.any { it.name == "nd.sample" } })
     }
 

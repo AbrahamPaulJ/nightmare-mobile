@@ -235,6 +235,30 @@ open class ModelsScreenshotTest {
         )
     }
 
+    /**
+     * ⭐ Wan 2.2 on the Video tab, below Neodragon's card: a catalogue model drawn with the video
+     * row's card, never among the checkpoints. Not installed, so Download and its 6.3 GB.
+     */
+    @Test
+    fun videoTabWithWan() = shoot("models-video-wan") {
+        val wan = ModelCatalog.WAN22
+        ModelsScreen(
+            rows = emptyList(), busy = false, error = null,
+            onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
+            video = com.abrah.nightmare.ui.VideoRow(
+                installedBytes = 8_596_825_402L,
+                totalBytes = 8_596_825_402L,
+                missing = emptyList(),
+                weightsMissing = emptyList(),
+                supported = true,
+            ),
+            wan = com.abrah.nightmare.ui.ModelRow(
+                spec = wan, build = wan.best, installed = false, selected = false,
+                fetchBytes = wan.best!!.bytes,
+            ),
+        )
+    }
+
     /** A failed install has to say why — "size mismatch" is the common one. */
     @Test
     fun withAnError() = shoot("models-error") {

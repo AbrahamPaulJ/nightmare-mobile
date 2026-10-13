@@ -65,8 +65,24 @@ object VideoWriter {
         log: (String) -> Unit = {},
     ): File {
         require(frames.isNotEmpty()) { "no frames to write" }
-        val w = frames[0].width
-        val h = frames[0].height
+        return encode(frames.size, frames[0].width, frames[0].height, fps, out, log) { frames[it] }
+    }
+
+    /**
+     * ⭐ The same encode with the frames asked for ONE AT A TIME, so a long clip never holds every
+     * frame as a Bitmap at once: Wan's 121 frames at 1280x704 would be 436 MB
+     * ([WanVideoNode], which reads them from the backend's frame file as it goes).
+     */
+    fun encode(
+        count: Int,
+        w: Int,
+        h: Int,
+        fps: Int,
+        out: File,
+        log: (String) -> Unit = {},
+        frameAt: (Int) -> Bitmap,
+    ): File {
+        require(count > 0) { "no frames to write" }
         // H.264 wants even dimensions; 320x512 and 640x1024 both qualify, but a future
         // resolution might not and the failure would be an opaque codec error.
         require(w % 2 == 0 && h % 2 == 0) { "odd frame size ${w}x$h" }
@@ -142,14 +158,15 @@ object VideoWriter {
 
         val dst = Rect(0, 0, w, h)
         try {
-            frames.forEachIndexed { i, bmp ->
+            for (i in 0 until count) {
+                val bmp = frameAt(i)
                 // Even with the muxer override, feeding the encoder a sane cadence keeps
                 // its rate control sensible rather than treating the clip as 62 fps.
                 val canvas = surface.lockCanvas(dst)
                 canvas.drawBitmap(bmp, null, dst, null)
                 surface.unlockCanvasAndPost(canvas)
                 drain(false)
-                if ((i + 1) % 16 == 0) log("      encoded ${i + 1}/${frames.size}")
+                if ((i + 1) % 16 == 0) log("      encoded ${i + 1}/$count")
             }
             codec.signalEndOfInputStream()
             drain(true)
@@ -161,7 +178,7 @@ object VideoWriter {
             runCatching { muxer.release() }
         }
 
-        log("      encoded ${tmp.length() / 1024} KB, ${frames.size} frames at $fps fps")
+        log("      encoded ${tmp.length() / 1024} KB, $count frames at $fps fps")
         return tmp
     }
 

@@ -120,6 +120,14 @@ enum class Family(
      * prompts, not the DiT sentences: the text encoder is the same Qwen3-0.6B.
      */
     ANIMA_DIT("Anima DiT", GP_ANIMA, GP_ANIMA_NEG, "animadit", dit = true),
+    /**
+     * ⭐⭐ **Wan 2.2 TI2V 5B video** on the DiT engine (`docs/VIDEO-GGML.md`): a prompt, or a
+     * prompt and a start picture, into a clip through `/video` (backend 028, engine ABI 106).
+     * ⚠⚠ NOT a checkpoint: its one model ([ModelCatalog.WAN22]) is kept out of
+     * [ModelCatalog.all], so no picture flow, picker or Models list offers it. The family
+     * exists for the launch path ([dit] picks the engine, its DSP env and its checks).
+     */
+    WAN("Wan video", GP_DIT, GP_DIT_NEG, "wan", dit = true),
 }
 
 // ---- the general-purpose prompts --------------------------------------------
@@ -2176,7 +2184,38 @@ object ModelCatalog {
         },
     )
 
-    fun byId(id: String): ModelSpec? = all.firstOrNull { it.id == id }
+    /**
+     * ⭐ Every catalogue model, the video ones ([video]) included. ⚠ Only the launch path and
+     * the video row need [video]; a checkpoint list must keep reading [all].
+     */
+    fun byId(id: String): ModelSpec? = all.firstOrNull { it.id == id } ?: video.firstOrNull { it.id == id }
+
+    /** ⭐ The backend `--type` of [WAN22] (backend 028). */
+    const val WAN = "wan"
+
+    /**
+     * ⭐⭐ **Wan 2.2 TI2V 5B Turbo** — quanhaol's Self-Forcing DMD distillation, 4 steps at
+     * cfg 1, as hum-ma's Q4_0 GGUF; umT5-XXL as city96's Q4_K_M (Q8_0's picture quality,
+     * 2.3 GB less RAM); TAEHV as the decoder (madebyollin, GitHub only, pinned to a commit). Sizes HEAD-checked 2026-10-14.
+     * Measured on the S25 Ultra: `docs/VIDEO-GGML.md` §1.
+     * ⭐ Alpha on the 8 Gen 3 (v75, the user's call 2026-10-14): the S25 forced to v75 renders the v79
+     * clip (50.5 dB, T2V). ⚠ Unproven on a real 8 Gen 3, whose ~3.1 GB map cap the forced S25 lacks
+     * (`docs/VIDEO-GGML.md` §6).
+     */
+    val WAN22: ModelSpec = dit(
+        "wan22_ti2v_turbo", "Wan 2.2 Turbo", Family.WAN, WAN, steps = 4,
+        prompt = "",
+        ownDitParts = true,
+        minArch = DIT_GGML_MIN_ARCH,
+        files = listOf(
+            RemoteFile(HF + "hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF/resolve/main/Wan2_2-TI2V-5B-Turbo-Q4_0.gguf", "dit.gguf", 3_033_897_696L),
+            RemoteFile(HF + "city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q4_K_M.gguf", "umt5.gguf", 3_655_145_312L),
+            RemoteFile("https://raw.githubusercontent.com/madebyollin/taehv/fa579a9a726b0a55951998d73e309bfdf0abd342/safetensors/taew2_2.safetensors", "tae.safetensors", 22_848_048L),
+        ),
+    )
+
+    /** ⚠ The video models: found by [byId], never listed as checkpoints. */
+    val video: List<ModelSpec> = listOf(WAN22)
 
     fun installed(context: Context): List<ModelSpec> = all.filter { it.installed(context) }
 

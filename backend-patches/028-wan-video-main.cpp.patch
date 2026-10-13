@@ -1,0 +1,104 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -32,6 +32,7 @@
+ #include "Sha256.hpp"
+ #include "TextEncoder.hpp"
+ #include "Upscaler.hpp"
++#include "VideoEndpoint.hpp"
+ 
+ // QNN Headers
+ #include "BuildId.hpp"
+@@ -82,7 +83,8 @@
+     kZImage,
+     kFlux2Klein,
+     kQwenImage21,
+-    kKrea2
++    kKrea2,
++    kWan
+   };
+ 
+   int port = 8081;
+@@ -121,8 +123,11 @@
+   // DiT formats served by libdit_engine.so: no fixed canvas, no QNN contexts.
+   bool isDit() const {
+     return type == ModelType::kZImage || type == ModelType::kFlux2Klein ||
+-           type == ModelType::kQwenImage21 || type == ModelType::kKrea2;
++           type == ModelType::kQwenImage21 || type == ModelType::kKrea2 ||
++           type == ModelType::kWan;
+   }
++  // Wan 2.2 TI2V: text/image to video through /video (backend 028).
++  bool isWan() const { return type == ModelType::kWan; }
+ };
+ 
+ static void showHelp() {
+@@ -335,6 +340,8 @@
+     opts.type = ServerOptions::ModelType::kQwenImage21;
+   else if (typeStr == "krea2")
+     opts.type = ServerOptions::ModelType::kKrea2;
++  else if (typeStr == "wan")
++    opts.type = ServerOptions::ModelType::kWan;
+   else
+     showHelpAndExit(typeStr.empty() ? "Missing --type"
+                                     : "Invalid --type: " + typeStr);
+@@ -420,6 +427,36 @@
+   // engine .so ships in the APK's native library directory, which the app
+   // passes as --lib_dir for these types; its FastRPC skels are copied from
+   // assets into the runtime directory on the DSP search path.
++  // Wan 2.2 TI2V 5B (backend 028, engine ABI 106): a GGUF DiT, a umT5 text
++  // encoder and the TAEHV tiny decoder, all in the model's own directory. The
++  // text encoder runs on the CPU from a memory map, as measured with sd-cli
++  // (docs/VIDEO-GGML.md): ~5 s for a short prompt, and its pages stay
++  // reclaimable instead of pinned beside the DiT.
++  if (opts.isWan()) {
++    const std::string dit_path = (dir / "dit.gguf").string();
++    const std::string t5_path = (dir / "umt5.gguf").string();
++    const std::string tae_path = (dir / "tae.safetensors").string();
++    for (const auto &p : {dit_path, t5_path, tae_path}) {
++      if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
++    }
++    if (opts.lib_dir.empty()) showHelpAndExit("Missing --lib_dir for DiT");
++    const std::string engine_path =
++        (std::filesystem::path(opts.lib_dir) / "libdit_engine.so").string();
++    if (!std::filesystem::exists(engine_path))
++      showHelpAndExit("DiT engine not installed: " + engine_path);
++    std::string backend = "diffusion=HTP0,te=CPU,vae=HTP0";
++    if (const char *env_backend = std::getenv("NM_DIT_BACKEND");
++        env_backend != nullptr && *env_backend != '\0') {
++      backend = env_backend;
++      std::cout << "NM_DIT_BACKEND override: " << backend << std::endl;
++    }
++    return std::make_unique<PipelineDit>(
++        text_encoder, opts.model_dir, engine_path, dit_path, "", "", "",
++        DIT_MODEL_WAN, backend, opts.dit_params_backend, opts.dit_threads,
++        /*vae_tile_size=*/0, /*img2img_enabled=*/false, /*lora_apply_mode=*/0,
++        t5_path, tae_path);
++  }
++
+   if (opts.isDit()) {
+     // The weights are the model's own; the rest may be shared ([ditFile]).
+     // Qwen Image 2.1 (upstream local-dream 440899f) ships its DiT as GGUF and
+@@ -1788,6 +1825,8 @@
+       // tokenizer went missing must fail, not silently load a DiT one.
+       // Qwen Image 2.1's and Krea 2's tokenizers are Qwen3-VL's, not the
+       // shared Qwen3-4B one.
++      // Wan's umT5 tokenizer lives inside the engine; the core has none.
++      if (!opts.isWan())
+       text_encoder->loadTokenizer(
+           opts.isDit() && opts.type != ServerOptions::ModelType::kQwenImage21 &&
+                   opts.type != ServerOptions::ModelType::kKrea2
+@@ -1890,8 +1929,14 @@
+   if (pipeline) registerGenerateEndpoint(svr, pipeline.get());
+   // Nightmare op endpoints, beside /generate rather than instead of it.
+   if (pipeline) registerOpEndpoints(svr, pipeline.get());
++  // createPipeline builds a PipelineDit for --type wan (no RTTI here).
++  if (pipeline && opts.isWan())
++    registerVideoEndpoint(svr, static_cast<PipelineDit *>(pipeline.get()),
++                          g_generation_mutex);
+   registerUpscaleEndpoint(svr);
+-  if (text_encoder) registerTokenizeEndpoint(svr, text_encoder.get());
++  // Wan has no tokenizer in the core (its umT5 one is inside the engine).
++  if (text_encoder && !opts.isWan())
++    registerTokenizeEndpoint(svr, text_encoder.get());
+ 
+   std::cout << "Server listening on " << opts.listen_address << ":" << opts.port
+             << std::endl;

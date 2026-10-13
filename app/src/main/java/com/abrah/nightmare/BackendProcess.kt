@@ -637,8 +637,12 @@ object BackendProcess {
                         // on the S25 forced to v75 and fixed at 2.75; still under the ~3.1 GiB map.
                         // ⚠ `nightmare-dit-max-vram.txt` overrides it on ANY chip — how the split is
                         // proven on a v79 phone, which never needs it (`docs/DIT.md` §9e).
+                        // ⚠⚠ Never for Wan: a budget splits the 5B into segments that stay resident
+                        // (no eviction), so it fills and fails at block 25 of 30 ("cannot make enough
+                        // memory available", the S25 forced to v75 at 2.75); without it the same clip
+                        // renders (`docs/VIDEO-GGML.md` §6).
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
-                        (readDitMaxVramOverride(context) ?: "2.75".takeIf { belowV79 })
+                        (readDitMaxVramOverride(context) ?: "2.75".takeIf { belowV79 && spec?.family != Family.WAN })
                             ?.let { put("DIT_MAX_VRAM", it) }
                         // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
                         // up blocks) computes garbage: 1.6.131's 8 Gen 3 renders came back solid red /

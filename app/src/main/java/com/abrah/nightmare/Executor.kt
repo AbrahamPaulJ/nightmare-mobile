@@ -155,6 +155,14 @@ interface OpHost {
         onProgress: (Ops.Progress) -> Unit,
     ): Ops.Result<Ops.Decoded> = Ops.Result.Err(501, "this host cannot run UltraFix")
 
+    /** ⭐ Wan 2.2 video — see `Ops.video`. Refused by default, as [generate] is. */
+    suspend fun video(
+        prompt: String, negative: String, width: Int, height: Int, frames: Int, fps: Int,
+        seed: Long, steps: Int, sampleMethod: String, sigmas: List<Double>, tilingArgs: String,
+        out: String, startPng: ByteArray?, loras: List<Pair<String, Double>>,
+        onProgress: (Ops.Progress) -> Unit,
+    ): Ops.Result<Ops.Clip> = Ops.Result.Err(501, "this host cannot run a video model")
+
     /**
      * ⚠ **mask = 1 takes [b]**, matching `/generate`'s own per-step blend where
      * the mask means "repaint". Blending the other way round produces a
@@ -186,6 +194,18 @@ interface OpHost {
 /** The real one. */
 object BackendHost : OpHost {
     override suspend fun residentHandles() = Ops.handles()
+
+    override suspend fun video(
+        prompt: String, negative: String, width: Int, height: Int, frames: Int, fps: Int,
+        seed: Long, steps: Int, sampleMethod: String, sigmas: List<Double>, tilingArgs: String,
+        out: String, startPng: ByteArray?, loras: List<Pair<String, Double>>,
+        onProgress: (Ops.Progress) -> Unit,
+    ) = Ops.video(
+        prompt = prompt, negative = negative, width = width, height = height, frames = frames,
+        fps = fps, seed = seed, steps = steps, sampleMethod = sampleMethod, sigmas = sigmas,
+        tilingArgs = tilingArgs, out = out, startPng = startPng, loras = loras,
+        onProgress = onProgress,
+    )
 
     override suspend fun upscale(rgb: ByteArray, width: Int, height: Int, upscalerPath: String) =
         Ops.upscale(rgb, width, height, upscalerPath)
@@ -753,7 +773,10 @@ fun backendContextKey(node: Node): ContextKey {
 fun contextKeyModels(graph: Graph, types: Map<String, NodeType>): List<String> =
     graph.nodes.mapNotNull { n ->
         val t = types[n.type] ?: return@mapNotNull null
-        if (t.widgets.none { it.name == "model" && it.contextKey }) null
+        // ⚠⚠ A node bound to ONE model has no `model` knob and still names a key: Wan video
+        // ([com.abrah.nightmare.npu.WanVideoNode]). Without this its graph read as "no model"
+        // and Run launched an upscaler-only backend. Guarded: this path must not throw.
+        if (t.widgets.none { it.name == "model" && it.contextKey }) runCatching { t.contextKey(n)?.model }.getOrNull()
         else n.params["model"]
     }.distinct()
 
@@ -2592,6 +2615,8 @@ val NODE_TYPES: Map<String, NodeType> = (
         // no longer a node you can see before the clip; that is the cost, and it
         // was accepted to make t2v and i2v the same three nodes as t2i and i2i.
         com.abrah.nightmare.npu.VideoSampleNode,
+        // ⭐ Wan 2.2 video on the DiT engine (`docs/VIDEO-GGML.md`), beside Neodragon's.
+        com.abrah.nightmare.npu.WanVideoNode,
         // ⭐ Tap to select — wired into an inpaint node (docs/SEGMENTER.md).
         SelectObjectNode,
     )).associateBy { it.name }

@@ -63,7 +63,14 @@ object DitEngine {
      * LoRA engine and upstream's alpha.3 both called themselves 5 over
      * different structs.
      *
-     * ⭐ The SIXTH engine, current (1.6.133): the fifth + `dit/007`, graph-cut points in Qwen Image
+     * ⭐⭐ The EIGHTH engine, current: ABI **106** — the Anima engine + Wan 2.2 video (`dit/009`,
+     * `010`, `012`, `013`, `016`, `017`: `generate_video`, `docs/VIDEO-GGML.md`). The backend moved
+     * with it (backend 028), so every DiT install re-fetches it once. CI run 38404727564; skels
+     * unchanged (012 is ggml's host side).
+     *
+     * The SEVENTH (1.6.141): the sixth + `dit/008`, Anima's fused ops (CI run 38253705642).
+     *
+     * The SIXTH engine (1.6.133): the fifth + `dit/007`, graph-cut points in Qwen Image
      * 2.1's DiT so the budget can split it too (CI run 38105032541; skels unchanged).
      *
      * The FIFTH engine (1.6.129): the fourth + `dit/006`, which reads a VRAM budget
@@ -87,14 +94,14 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi105-a4-anima/dit-engine-abi105-a4-anima.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi106-wan/dit-engine-abi106-wan.zip"
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_064_910L
+    const val BYTES = 23_125_527L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 55_648_208L
+    const val FILE_BYTES = 55_779_848L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -104,7 +111,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "cff73459c101a9a00b3d46d8786a9860063dab2871c260920d5016e33b419cf8"
+    private const val SHA256 = "437454359f75b26d853042490dbd33a0b00997a1569a835e841e641e19c38b37"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 
