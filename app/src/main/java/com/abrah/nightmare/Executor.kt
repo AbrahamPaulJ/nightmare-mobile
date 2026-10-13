@@ -1100,7 +1100,7 @@ object SampleNode : NodeType {
         // app's 20/7.5 renders it burnt and oversaturated rather than failing
         // -- measured on device 2026-09-10. A checkpoint that says nothing gets
         // ModelCatalog.DEFAULT_STEPS/DEFAULT_CFG, which are these same numbers.
-        Widget("steps", "int", SelectedModel.spec.steps.toString(), 1.0, 50.0),
+        Widget("steps", "int", SelectedModel.spec.steps.toString(), 1.0, STEPS_MAX.toDouble()),
         // ⚠ `fine`: the slider weights its travel toward 1.0 and keeps two
         // decimals there, because a distilled checkpoint lives between 1.0 and
         // 2.0 and a linear 1..20 track gives that band 5% of its length.

@@ -181,8 +181,11 @@ private const val GP_SDXL =
  * ⚠ The quality prefix every published Anima checkpoint's own `config.json`
  * opens with — `masterpiece, best quality, score_7` — without the demo that
  * follows it (a girl holding a sign), for the no-subject reason above.
+ * ⚠⚠ Led by the rating tag `safe`: without one Anima picks its own rating, and
+ * the bare prefix rendered NSFW (2026-10-13). At cfg 1 the negative is never
+ * read, so the rating has to be in the POSITIVE (`docs/ANIMA-GGML.md` §6).
  */
-private const val GP_ANIMA = "masterpiece, best quality, score_7,"
+private const val GP_ANIMA = "safe, masterpiece, best quality, score_7,"
 
 /**
  * ⚠⚠ Unread at the published cfg of 1 — every Anima `config.json` says so in

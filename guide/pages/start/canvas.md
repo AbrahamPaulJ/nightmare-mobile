@@ -16,16 +16,16 @@ controls around it.
 | 💾 (save) | Save this flow under a name. It is pre-filled with the flow it came from. |
 | 🖼 (results) | Opens [Results](../reference/results.md), every picture you kept, the same as Results in the sidebar |
 | **View button** (e.g. **Default ⇄**) | The view you are in. Tap **⇄** for the next view (Chat, Default, Advanced, round again), or tap the name to pick one from a list. See below |
-| **Current model** | The model the flow renders with |
+| **Current model** | The model the flow renders with. Tap it to open Models |
 | **ⓘ** | What each of the three views is |
 
 ### Three views of one flow
 
-- **Default**: one step at a time: swipe between the prompt, the generate step and the output
-  (or, with **Default view top to bottom** in Settings, scroll through them). The easy way in.
+- **Default**: every step one under another: the prompt, the generate step and the output. The
+  easy way in. Turn off **Default view top to bottom** in Settings to swipe between them instead.
 - **Advanced**: the whole flow as connected boxes, for building your own.
 - **Chat**: ask for pictures in words; an AI model you bring your own key for builds and runs
-  the flow. [Chat](../reference/agent.md)
+  the flow. [Chat](../reference/agent.md) Not using it? **Hide chat view** in Settings.
 
 All three edit the same flow, and Run is at the bottom of each. The view's page and the Run
 bar (seed, memory, Run, the run log and errors) each sit on their own card. The first time you open the app
@@ -54,7 +54,7 @@ another one from the sidebar replaces the sheet.
 | **Current flow** | The flow's name, **Unsaved** when it has changes that are not saved, and **Save flow** |
 | **Model** | The model this flow uses and its state. **Idle**, **Loading** or **Loaded**: and the free memory |
 | **Settings** | [Settings](../reference/settings.md) |
-| **About** | This phone's chip and NPU. [Install](install.md#check-what-your-phone-can-run) |
+| **Device** | This phone's chip and NPU. [Install](install.md#check-what-your-phone-can-run) |
 
 <figure markdown>
   ![The sidebar](../img/sidebar.png){ .screen }

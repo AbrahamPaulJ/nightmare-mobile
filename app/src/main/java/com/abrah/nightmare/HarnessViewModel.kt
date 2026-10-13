@@ -3542,6 +3542,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var nodesVertical by mutableStateOf(Prefs.nodesVertical)
         private set
+    /** ⭐ Settings' "Hide chat view" ([Prefs.hideChat]). */
+    var hideChat by mutableStateOf(Prefs.hideChat)
+        private set
 
     /**
      * ⭐ Run [block] once the frame AFTER the next has started — i.e. after a view change has been
@@ -3558,7 +3561,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /** ⭐ The flow view the canvas shows — [mainView], or the last one while a library sheet is up. */
     val canvasView: MainView get() = if (mainView.isCanvas) mainView else lastFlowView
 
-    fun showView(v: MainView) {
+    fun showView(view: MainView) {
+        // ⚠ Chat hidden: nothing lands on it, whoever asks.
+        val v = if (view == MainView.AGENT && hideChat) MainView.NODES else view
         // ⚠ The Nodes view pages by `editing`; carried into Graph it would open the sheet at once.
         if (v == MainView.GRAPH && mainView != MainView.GRAPH) editCanvas { it.copy(editing = null) }
         if (v.isCanvas) lastFlowView = v
@@ -3586,6 +3591,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun chooseNodesVertical(on: Boolean) {
         Prefs.setNodesVertical(getApplication(), on)
         nodesVertical = on
+    }
+
+    fun chooseHideChat(on: Boolean) {
+        Prefs.setHideChat(getApplication(), on)
+        hideChat = on
+        if (on && lastFlowView == MainView.AGENT) lastFlowView = MainView.NODES
+        if (on && mainView == MainView.AGENT) showView(MainView.NODES)
     }
 
     // ⭐ The agent's handle on the canvas (`agent/CanvasHost.kt`) — thin, so the rules stay here.
@@ -7462,7 +7474,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             say("  run ${i + 1}/${combos.size}  $label")
             val r = ops.runWorkflow(
                 canvas.workflow.copy(graph = graph),
-                onStart = { id, _ -> runLog = runLog.copy(now = id, step = null) },
+                onStart = { id, _ ->
+                    runLog = runLog.copy(now = id, step = null)
+                    CrashReport.stage(getApplication(), id)
+                },
                 onNode = ::noteNodeRun,
                 onProgress = { id, step, total ->
                     canvasStatus[id] = NodeStatus(progress = step to total)
@@ -7701,6 +7716,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // rather than a frozen screen.
             onStart = { id, _ ->
                 runLog = runLog.copy(now = id, step = null)
+                // ⭐ Which node, and the RAM free as it starts: survives a phone restart ([CrashReport.stage]).
+                CrashReport.stage(getApplication(), id)
             },
             onNode = ::noteNodeRun,
             onProgress = { id, step, total ->

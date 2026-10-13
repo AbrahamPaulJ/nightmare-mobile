@@ -341,6 +341,7 @@
     <string name="crash_title">В прошлый раз произошла ошибка</string>
     <string name="crash_during">Это произошло во время: %1$s.</string>
     <string name="crash_details">Подробности</string>
+    <string name="crash_reboot">Телефон перезагрузился во время генерации. Android не сохраняет причину, поэтому ниже показано, что выполнялось и сколько памяти было свободно. Скопируйте это в сообщение об ошибке.</string>
     <string name="device_title">Это устройство</string>
     <string name="device_chip">чип</string>
     <string name="device_unknown">неизвестно</string>
@@ -876,6 +877,8 @@
     <string name="views_open_graph">Открывать «Расширенный»</string>
     <string name="views_nodes_vertical">«Обычный» сверху вниз</string>
     <string name="views_nodes_vertical_hint">Все шаги один под другим, без пролистывания</string>
+    <string name="views_hide_chat">Скрыть чат</string>
+    <string name="views_hide_chat_hint">Кнопка вида предлагает только «Обычный» и «Расширенный»</string>
     <string name="agent_clear_chat">Очистить чат</string>
     <string name="agent_attach">Прикрепить картинку</string>
     <string name="agent_detach">Убрать картинку</string>
@@ -921,7 +924,7 @@
     <string name="drawer_current_flow">Текущая схема</string>
     <string name="drawer_model">Модель</string>
     <string name="drawer_save_flow">Сохранить схему</string>
-    <string name="drawer_about">О приложении</string>
+    <string name="drawer_about">Устройство</string>
     <string name="load_idle">Ожидает</string>
     <string name="load_loading">Загрузка</string>
     <string name="load_loaded">Загружена</string>

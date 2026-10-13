@@ -5,7 +5,8 @@ Two kinds of small add-on file change what a model draws without replacing it.
 ## LoRAs
 
 A **LoRA** is a small adapter (usually tens to hundreds of MB) that teaches a model a style, a
-character or a concept. In Nightmare, LoRAs work on **FLUX.2**, **Z-Image**,
+character or a concept. In Nightmare, LoRAs work on **FLUX.2**, **Z-Image**, **Anima** (the
+Anima DiT models; a LoRA makes each render about three times slower there),
 **SD 1.5 Swap** (an SD 1.5 checkpoint converted in npuforge as *SD1.5 Swap*) and
 **SDXL Swap** (an SDXL checkpoint converted in npuforge 1.0.10 or newer as *SDXL Swap*, with
 LoRA ticked; 1.0.11 offers LoRA as SDXL Swap's only feature).
@@ -40,8 +41,8 @@ searches civitai.red, which includes NSFW LoRAs.
     a CivitAI model link still works, and downloads still work with your key. You can also use
     Hugging Face or a VPN.
 
-Only LoRAs for SD 1.5 Swap and SDXL Swap are offered here. LoRAs for FLUX.2 and Z-Image are
-imported as files (below).
+Only LoRAs for SD 1.5 Swap and SDXL Swap are offered here. LoRAs for FLUX.2, Z-Image and Anima
+are imported as files (below).
 
 ### Import
 

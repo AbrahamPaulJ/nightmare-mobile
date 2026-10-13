@@ -42,7 +42,7 @@ internal fun rememberFramedPhoto(node: Node, type: NodeType?, photo: ImageBitmap
     val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
     val frame = SdSampler.swapFrame(node.type, live)
     val aspect = SdSampler.swapAspect(node, live)
-    return rememberOffMain(node.id, "framed photo", photo, frame, aspect) {
+    return rememberOffMain(node.id, "framed photo", photo, frame, aspect, keep = true) {
         photo?.let { SwapInputs.framedPhoto(it.asAndroidBitmap(), frame, aspect).asImageBitmap() }
     }
 }
@@ -98,7 +98,10 @@ internal class ControlHint(val bitmap: ImageBitmap?, val missing: String?)
  * [SwapInputs.hint] the sampler sends, off the main thread: the `control` wire's
  * picture, else the one picked on the node, else the node's own [photo] — cut by
  * the node's crop window whenever a photo is wired ([SdSampler.swapFrame]).
- * ⚠ Keyed on the frame, so moving the crop redraws it. Null with ControlNet at
+ * ⚠ Keyed on the frame, so moving the crop redraws it — once the crop has been
+ * still for 500 ms, one estimate at a time, and kept across opens
+ * ([rememberOffMain]): depth costs ~2 s alone, and per-pixel runs stacked eight
+ * deep (a tester's log, 2026-10-13). Null with ControlNet at
  * `none` or no picture.
  */
 @Composable
@@ -120,7 +123,7 @@ internal fun rememberControlHint(
     val frame = if (photo != null && fromPhoto) SdSampler.swapFrame(node.type, live) else null
     val region = listOf(SdSampler.CTL_X, SdSampler.CTL_Y, SdSampler.CTL_W, SdSampler.CTL_H).map { live[it] }
     val aspect = SdSampler.swapAspect(node, live)
-    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, region, aspect, poseInstalled, depthInstalled) {
+    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, region, aspect, poseInstalled, depthInstalled, keep = true, settleMs = 500) {
         if (cn == SwapInputs.NONE) return@rememberOffMain null
         val picked = if (wired == null) uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) } else null
         val made = SdSampler.controlHintFor(ctx, node, live, wired?.asAndroidBitmap(), photo?.asAndroidBitmap(), picked)

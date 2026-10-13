@@ -531,13 +531,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         val dir = java.io.File(ctx.getExternalFilesDir(null), "dit_lora").apply { mkdirs() }
         // ⚠ Neutral on purpose — see the note above.
-        val prompt = "a red brick house beside a lake, clear sky, photorealistic"
+        val prompt = loraProbePrompt(spec)
         val negative = "worst quality, low quality, blurry, lowres, watermark, text"
 
         suspend fun leg(label: String, withLora: Boolean): ByteArray? {
             val t0 = System.currentTimeMillis()
             val r = Ops.generate(
-                prompt = prompt, negative = negative, steps = 4, cfg = 1.0, seed = 12345,
+                prompt = prompt, negative = negative, steps = loraProbeSteps(spec), cfg = loraProbeCfg(spec), seed = 12345,
                 width = res.width, height = res.height, imagePng = null, denoise = 1.0,
                 loras = if (withLora) listOf(lora.absolutePath to mult) else emptyList(),
             )
@@ -566,6 +566,19 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         say("pictures in ${dir.absolutePath}. Pull and LOOK, a changed picture can still be noise")
         drainBackendLog()
     }
+
+    /**
+     * ⚠ The LoRA ops' prompt: a house, no person. ⚠⚠ Anima leads with its rating tag
+     * `safe`: without one it picks its own rating, and its bare default rendered NSFW
+     * (2026-10-13). Its turbo also needs its own steps and cfg, not Klein's 4 at 1.0.
+     */
+    private fun loraProbePrompt(spec: ModelSpec): String =
+        (if (spec.family == Family.ANIMA_DIT) "safe, " else "") +
+            "a red brick house beside a lake, clear sky, photorealistic"
+
+    private fun loraProbeSteps(spec: ModelSpec): Int = if (spec.family == Family.ANIMA_DIT) spec.steps else 4
+
+    private fun loraProbeCfg(spec: ModelSpec): Double = if (spec.family == Family.ANIMA_DIT) spec.cfg else 1.0
 
     /**
      * ⭐⭐⭐ **The `loras` NODE PARAM, end to end through the executor.**
@@ -640,8 +653,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     "model" to spec.id,
                     "width" to res.width.toString(),
                     "height" to res.height.toString(),
-                    "steps" to "4",
-                    "cfg" to "1.0",
+                    "steps" to loraProbeSteps(spec).toString(),
+                    "cfg" to loraProbeCfg(spec).toString(),
                     "seed" to "12345",
                     com.abrah.nightmare.SdSampler.LORAS to loras,
                 ),
@@ -653,7 +666,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                         Node(
                             "prompt", "core.prompt",
                             params = mapOf(
-                                "prompt" to "a red brick house beside a lake, clear sky, photorealistic",
+                                "prompt" to loraProbePrompt(spec),
                                 "negative" to "worst quality, low quality, blurry, lowres, watermark, text",
                             ),
                         ),

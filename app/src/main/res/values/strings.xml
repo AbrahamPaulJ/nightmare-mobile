@@ -361,6 +361,7 @@
     <string name="crash_title">Last time, something went wrong</string>
     <string name="crash_during">It happened while %1$s.</string>
     <string name="crash_details">Details</string>
+    <string name="crash_reboot">The phone restarted during a run. Android keeps no record of why, so the details below show what was running and how much memory was free. Copy them into a bug report.</string>
     <string name="device_title">This device</string>
     <string name="device_chip">chip</string>
     <string name="device_unknown">unknown</string>
@@ -884,6 +885,8 @@
     <string name="views_open_graph">Open on Advanced</string>
     <string name="views_nodes_vertical">Default view top to bottom</string>
     <string name="views_nodes_vertical_hint">Every step one under another, instead of swiping between them</string>
+    <string name="views_hide_chat">Hide chat view</string>
+    <string name="views_hide_chat_hint">The view button offers Default and Advanced only</string>
     <string name="agent_clear_chat">Clear chat</string>
     <string name="agent_attach">Attach a picture</string>
     <string name="agent_detach">Remove the picture</string>
@@ -925,7 +928,7 @@
     <string name="drawer_current_flow">Current flow</string>
     <string name="drawer_model">Model</string>
     <string name="drawer_save_flow">Save flow</string>
-    <string name="drawer_about">About</string>
+    <string name="drawer_about">Device</string>
     <string name="load_idle">Idle</string>
     <string name="load_loading">Loading</string>
     <string name="load_loaded">Loaded</string>

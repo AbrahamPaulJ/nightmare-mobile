@@ -267,8 +267,12 @@ class SdSampler(
          */
         const val ENCODE_SEED = 42
 
-        /** ⚠ The stitched picture's longest edge — a 4096 px photo plus outpaint stays bounded. */
-        const val STITCH_MAX_EDGE = 4096f
+        /**
+         * ⚠ The stitched picture's longest edge. 4096 until 2026-10-13: a big photo
+         * outpainted (and then auto-upscaled) came out 5000 px and up and lagged the
+         * phone; the user set 2048.
+         */
+        const val STITCH_MAX_EDGE = 2048f
 
         /**
          * ⭐ The reference region's params. Named apart from `x`/`y`/`w`/`h`
@@ -806,7 +810,7 @@ class SdSampler(
         // ⚠⚠ …from THIS FAMILY's model, not the global selection. A new Anima
         // node dragged out while SD 1.5 is selected took SD's 20 steps / cfg 7.5
         // and `dpm`, and a turbo checkpoint does not fail on those, it burns.
-        Widget("steps", "int", defaultSpec().steps.toString(), 1.0, 50.0),
+        Widget("steps", "int", defaultSpec().steps.toString(), 1.0, STEPS_MAX.toDouble()),
         Widget("cfg", "float", defaultSpec().cfg.toString(), 1.0, 20.0, fine = true),
         // ⭐ 0 rolls a new seed on every Run, so Run means "give me another one"
         // rather than returning the cached picture unchanged.

@@ -69,7 +69,10 @@ class T5Tokenizer private constructor() {
          */
         fun fromTokenizerJson(file: java.io.File): T5Tokenizer? {
             val model = org.json.JSONObject(file.readText()).optJSONObject("model") ?: return null
-            if (model.optString("type") != "Unigram") return null
+            // ⚠ `google-t5/t5-base`'s file predates the `type` field; a vocab of
+            // (piece, score) rows is the Unigram shape either way.
+            val type = model.optString("type")
+            if (type.isNotEmpty() && type != "Unigram") return null
             val vocab = model.getJSONArray("vocab")
             return T5Tokenizer().apply {
                 unkId = model.optInt("unk_id", 2)

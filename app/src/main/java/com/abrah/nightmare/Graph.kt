@@ -490,6 +490,13 @@ const val PROMPT_BRIEF = 28
 val IMAGE_SAMPLER_TYPES: Set<String> = SdSampler.ALL.map { it.name }.toSet()
 
 /**
+ * ⭐ The most steps a sampler (and a batch sweep) offers. 50 until 2026-10-13, raised to 60
+ * on GitHub #18's evidence: Crispy Cover v1 and Lustify v8 state up to 60 steps for
+ * tag-heavy prompts. The backend has no cap of its own.
+ */
+const val STEPS_MAX = 60
+
+/**
  * ⭐⭐⭐ **What a node is CALLED on screen — the one answer, for every
  * surface that draws a node's name.**
  *

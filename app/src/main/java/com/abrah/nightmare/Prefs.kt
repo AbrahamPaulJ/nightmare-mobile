@@ -47,13 +47,21 @@ object Prefs {
             .getBoolean(KEY_MATURE, false)
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         defaultView = MainView.entries.firstOrNull { it.name == p.getString(KEY_VIEW, null) }
+        // ⭐ Top to bottom for NEW users (the user, 2026-10-13); someone who has already been asked
+        // which view to open on keeps the side-to-side pages they had. Written once either way, so
+        // the answer never changes under them.
+        if (!p.contains(KEY_NODES_VERTICAL)) {
+            p.edit().putBoolean(KEY_NODES_VERTICAL, !p.contains(KEY_VIEW)).apply()
+        }
         nodesVertical = p.getBoolean(KEY_NODES_VERTICAL, false)
+        hideChat = p.getBoolean(KEY_HIDE_CHAT, false)
     }
 
     // ---- the three views (the user's design, 2026-10-08) ----------------------
 
     private const val KEY_VIEW = "default_view"
     private const val KEY_NODES_VERTICAL = "nodes_vertical"
+    private const val KEY_HIDE_CHAT = "hide_chat"
 
     /**
      * ⭐ What the app opens on. NULL until the person has been asked (first launch: Nodes for
@@ -74,6 +82,15 @@ object Prefs {
     fun setNodesVertical(context: Context, value: Boolean) {
         nodesVertical = value
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_NODES_VERTICAL, value).apply()
+    }
+
+    /** ⭐ Chat taken off the view button (the user, 2026-10-13): Default and Advanced only. */
+    var hideChat: Boolean = false
+        private set
+
+    fun setHideChat(context: Context, value: Boolean) {
+        hideChat = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_HIDE_CHAT, value).apply()
     }
 
     // ---- the LoRA browser (`docs/LORA-BROWSER.md`) ---------------------------

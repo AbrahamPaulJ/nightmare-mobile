@@ -79,7 +79,7 @@ object BatchParams {
             // 7.5, so halves are not fine enough to land on a model's own value.
             "cfg" -> Sweep(1.0, 20.0, 0.1, false)
             // ⚠ Whole steps only. "12.5 steps" is not a thing the sampler can do.
-            "steps" -> Sweep(1.0, 50.0, 1.0, true)
+            "steps" -> Sweep(1.0, STEPS_MAX.toDouble(), 1.0, true)
             // ⚠ 0.05 across 0..1: twentieths. Finer than that is below what a
             // denoise visibly changes, and 0..1 by 0.01 is 101 renders.
             "denoise" -> Sweep(0.0, 1.0, 0.05, false)

@@ -100,10 +100,17 @@ object ModelInstaller {
         // the ViewModel, because the headless `model_install` op is a second
         // caller (`HarnessOps`) and a checkpoint that downloads without the
         // code to run it is the same class of failure in both.
-        // ⚠ 22 MB in front of 6.7 GB: its own bar, then the model's, which is
-        // honest about the two phases without pretending one total covers them.
-        if (spec.isDit && !DitEngine.isInstalled(context)) {
-            DitEngine.install(context, onProgress, isCancelled)
+        // ⚠⚠ ONE bar with the model's, the engine first (a tester, 2026-10-13, Krea 2 Turbo on
+        // a China mirror: the engine's own 22 MB bar crawled in single-digit MB and then
+        // "9000 MB" appeared, which read as a broken progress display). Its bytes are the
+        // head of the package total; its verify/unpack phases hold the bar where it is.
+        val engineBytes = if (spec.isDit && !DitEngine.isInstalled(context)) DitEngine.BYTES else 0L
+        val packageTotal = engineBytes + spec.active.sumOf { maxOf(it.bytes, it.sourceBytes) }
+        if (engineBytes > 0) {
+            DitEngine.install(context, { p ->
+                val done = if (p.total > 0) p.done.coerceAtMost(engineBytes) else engineBytes
+                onProgress(Progress(p.phase, done, packageTotal.coerceAtLeast(engineBytes)))
+            }, isCancelled)
         }
 
         // ⭐⭐ A plain-file package (the DiT families): each file fetched into
@@ -129,8 +136,8 @@ object ModelInstaller {
             // — which reads as "it started over" (reported 2026-09-19).
             // Upstream reports packageOffset + done against the package total
             // for the same reason.
-            val total = spec.active.sumOf { maxOf(it.bytes, it.sourceBytes) }
-            var before = 0L
+            val total = packageTotal
+            var before = engineBytes
             for (f in spec.active) {
                 val out = File(modelDir, f.name)
                 val convert = f.convert
@@ -221,9 +228,16 @@ object ModelInstaller {
         // half-finished download of a different tier is still gigabytes, and it
         // is invisible in the model directory.
         for (b in spec.builds) {
-            File(ModelCatalog.downloads(context), b.archive).delete()
-            for ((name, _) in b.extras) File(ModelCatalog.downloads(context), name).delete()
+            discard(File(ModelCatalog.downloads(context), b.archive))
+            for ((name, _) in b.extras) discard(File(ModelCatalog.downloads(context), name))
         }
+    }
+
+    /** ⚠ A download and its parallel partial ([fetchParallel]'s `.mt` + `.mt.ranges`). */
+    private fun discard(f: File) {
+        f.delete()
+        File(f.path + ".mt").delete()
+        File(f.path + ".mt.ranges").delete()
     }
 
     // ---- internals -------------------------------------------------------
@@ -269,6 +283,11 @@ object ModelInstaller {
         if (dest.exists() && dest.length() == bytes) {
             Log.i(TAG, "already downloaded: ${dest.name}")
             return
+        }
+        // ⭐⭐ Big files over [PARALLEL] connections — unless a single-stream partial is
+        // already here, which keeps resuming the way it started.
+        if (bytes >= parallelMinBytes && !(dest.exists() && dest.length() > 0)) {
+            if (fetchParallel(url, dest, bytes, label, onProgress, isCancelled)) return
         }
         var from = if (dest.exists()) dest.length() else 0L
         // A partial LONGER than the target is not a partial; it is junk.
@@ -339,6 +358,168 @@ object ModelInstaller {
                 }
             )
         }
+    }
+
+    /**
+     * ⭐ How many connections a big download uses (a tester, 2026-10-13: *"increase the
+     * number of download threads? Download speeds are too slow when using mirrors in
+     * China"* — a mirror throttles per connection, so four ranges are ~four times one).
+     */
+    private const val PARALLEL = 4
+
+    /** ⚠ Below this, one connection: four requests for a small file cost more than they save. */
+    @androidx.annotation.VisibleForTesting
+    internal var parallelMinBytes = 64L shl 20
+
+    /** ⚠ How often the ranges file is rewritten (after an fsync of what it claims). */
+    private const val PERSIST_MS = 1_000L
+
+    /** ⚠ Retries per range before the download fails (and stays resumable). */
+    private const val RANGE_TRIES = 3
+
+    private class RangesRefused : IOException("the server ignored a Range request")
+
+    /**
+     * ⭐⭐ [fetch] over [PARALLEL] byte ranges. True when [dest] is complete; false when the
+     * server will not serve ranges (or fails before a single byte), and the caller falls back
+     * to one connection.
+     *
+     * ⚠⚠ Written into `<dest>.mt`, never into [dest]: the file is sized up front, and a
+     * full-length [dest] is what "installed" means everywhere ([ModelSpec.missing], the top of
+     * [fetch]). Renamed into place only when every range is complete.
+     * ⚠⚠ Resumable through `<dest>.mt.ranges` — the bytes done per range, written only after
+     * an fsync of those bytes, so after a crash it can be behind the data but never ahead.
+     */
+    private fun fetchParallel(
+        url: String,
+        dest: File,
+        bytes: Long,
+        label: String,
+        onProgress: (Progress) -> Unit,
+        isCancelled: () -> Boolean,
+    ): Boolean {
+        val mt = File(dest.path + ".mt")
+        val side = File(dest.path + ".mt.ranges")
+        val starts = LongArray(PARALLEL) { bytes * it / PARALLEL }
+        val ends = LongArray(PARALLEL) { bytes * (it + 1) / PARALLEL }
+        val resumed = runCatching {
+            side.readText().trim().split(' ').map { it.toLong() }
+        }.getOrNull()?.takeIf { d ->
+            mt.isFile && mt.length() == bytes && d.size == PARALLEL &&
+                d.indices.all { d[it] in 0..(ends[it] - starts[it]) }
+        }
+        if (resumed == null) {
+            mt.delete()
+            side.delete()
+            java.io.RandomAccessFile(mt, "rw").use { it.setLength(bytes) }
+        }
+        val done = java.util.concurrent.atomic.AtomicLongArray(PARALLEL)
+        val synced = java.util.concurrent.atomic.AtomicLongArray(PARALLEL)
+        resumed?.forEachIndexed { i, d -> done.set(i, d); synced.set(i, d) }
+        val startedWith = (0 until PARALLEL).sumOf { done.get(it) }
+        val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+        val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+        val source = Prefs.apply(url)
+
+        fun range(i: Int) {
+            var tries = 0
+            while (!stop.get() && starts[i] + done.get(i) < ends[i]) {
+                val pos = starts[i] + done.get(i)
+                val conn = (URL(source).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 30_000
+                    readTimeout = 60_000
+                    instanceFollowRedirects = true
+                    setRequestProperty("Range", "bytes=$pos-${ends[i] - 1}")
+                }
+                try {
+                    val code = conn.responseCode
+                    if (code == HttpURLConnection.HTTP_OK) throw RangesRefused()
+                    if (code != HttpURLConnection.HTTP_PARTIAL) throw IOException("HTTP $code for $url")
+                    java.io.RandomAccessFile(mt, "rw").use { raf ->
+                        raf.seek(pos)
+                        conn.inputStream.use { input ->
+                            val buf = ByteArray(BUFFER)
+                            var lastSync = android.os.SystemClock.uptimeMillis()
+                            while (!stop.get()) {
+                                val left = ends[i] - starts[i] - done.get(i)
+                                if (left <= 0) break
+                                val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                                if (n < 0) break
+                                raf.write(buf, 0, n)
+                                done.addAndGet(i, n.toLong())
+                                tries = 0
+                                val now = android.os.SystemClock.uptimeMillis()
+                                if (now - lastSync >= PERSIST_MS) {
+                                    lastSync = now
+                                    raf.fd.sync()
+                                    synced.set(i, done.get(i))
+                                }
+                            }
+                        }
+                        raf.fd.sync()
+                        synced.set(i, done.get(i))
+                    }
+                } catch (e: RangesRefused) {
+                    throw e
+                } catch (e: IOException) {
+                    if (stop.get() || ++tries >= RANGE_TRIES) throw e
+                    Log.w(TAG, "range $i of ${dest.name}: ${e.message}; retry $tries")
+                    Thread.sleep(1_000L * tries)
+                } finally {
+                    conn.disconnect()
+                }
+            }
+        }
+
+        val workers = (0 until PARALLEL).map { i ->
+            Thread({
+                try {
+                    range(i)
+                } catch (t: Throwable) {
+                    failure.compareAndSet(null, t)
+                    stop.set(true)
+                }
+            }, "fetch-${dest.name}-$i").apply { start() }
+        }
+        fun persist() = runCatching {
+            side.writeText((0 until PARALLEL).joinToString(" ") { synced.get(it).toString() })
+        }
+        var lastPersist = 0L
+        while (workers.any { it.isAlive }) {
+            if (isCancelled()) stop.set(true)
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastPersist >= PERSIST_MS) {
+                lastPersist = now
+                persist()
+            }
+            onProgress(Progress(label, (0 until PARALLEL).sumOf { done.get(it) }, bytes))
+            workers.firstOrNull { it.isAlive }?.join(TICK_MS)
+        }
+        persist()
+        val got = (0 until PARALLEL).sumOf { done.get(it) }
+        onProgress(Progress(label, got, bytes))
+        if (isCancelled()) throw Cancelled()
+        failure.get()?.let { t ->
+            // ⚠ Nothing gained: let one connection try instead (a host that refuses ranges,
+            // or limits connections). Something gained: fail now, resume next time.
+            if (t is RangesRefused || got == startedWith && startedWith == 0L) {
+                Log.i(TAG, "${dest.name}: parallel download not possible (${t.message}); one connection")
+                mt.delete()
+                side.delete()
+                return false
+            }
+            throw t as? IOException ?: IOException(t)
+        }
+        if (got != bytes || mt.length() != bytes) {
+            throw IOException(
+                "the download stopped short. ${got shr 20} of ${bytes shr 20} MB " +
+                    "arrived (${dest.name}). Download again to resume."
+            )
+        }
+        side.delete()
+        if (!mt.renameTo(dest)) throw IOException("could not move ${mt.name} into place")
+        Log.i(TAG, "downloaded ${dest.name} over $PARALLEL connections")
+        return true
     }
 
     /**

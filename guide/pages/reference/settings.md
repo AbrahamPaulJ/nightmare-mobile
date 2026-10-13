@@ -17,8 +17,10 @@ changes everything around it.
 ### Views
 
 **Open on Default** or **Open on Advanced**: the view the app starts on (asked the first time).
-**Default view top to bottom** shows every step one under another instead of swiping between them.
-It changes the Default view only; the Advanced view's node sheet always swipes side to side.
+**Default view top to bottom** shows every step one under another instead of swiping between them
+(on for new installs). It changes the Default view only; the Advanced view's node sheet always
+swipes side to side.
+**Hide chat view** takes Chat off the view button, leaving Default and Advanced.
 
 ## Prompts
 

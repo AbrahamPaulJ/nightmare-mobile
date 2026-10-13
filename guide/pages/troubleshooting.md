@@ -93,6 +93,9 @@ little beyond it.
 
 - SD 1.5 and SDXL read a limited number of tokens (about 75 for most models); the counter
   under the prompt box shows how much you have used. Put the important words first.
+- Anima counts up to 512 tokens. Past that the counter turns red: the words are still read, but
+  Anima was trained on prompts no longer than that. Start an Anima prompt with a rating tag
+  (`safe`, `sensitive`, `nsfw` or `explicit`); without one the model picks its own.
 - FLUX.2, Z-Image and Qwen Image read full sentences, and **ignore the negative prompt** at
   CFG 1. Say what you want instead of what you do not.
 - A Russian or Chinese prompt should be translated first (the **文A** button) for SD 1.5 and

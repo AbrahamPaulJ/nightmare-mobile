@@ -186,6 +186,8 @@ fun CanvasScreen(
     onView: (com.abrah.nightmare.MainView) -> Unit = {},
     /** ⭐ The Nodes view top to bottom (Settings). */
     nodesVertical: Boolean = false,
+    /** ⭐ Settings' "Hide chat view": the view button offers Default and Advanced only. */
+    hideChat: Boolean = false,
     /** ⭐ The Agent view's body, below the top bar (`ui/AgentScreen.kt`). */
     agentContent: @Composable (Modifier) -> Unit = {},
     /** ⭐ The shell's height, for a destination drawn below it from outside (the library). */
@@ -512,6 +514,8 @@ fun CanvasScreen(
             onMenu = onMenu,
             onSave = { saving = true },
             onResults = onResults,
+            onModels = onModels,
+            hideChat = hideChat,
             modelLabel = modelLabel,
             mainView = toggleView ?: mainView,
             version = version,
@@ -1010,6 +1014,9 @@ private fun TopBar(
     mainView: com.abrah.nightmare.MainView,
     onView: (com.abrah.nightmare.MainView) -> Unit,
     modifier: Modifier = Modifier,
+    /** ⭐ A tap on CURRENT MODEL opens Models: the sidebar's row (the user, 2026-10-13). */
+    onModels: () -> Unit = {},
+    hideChat: Boolean = false,
     /** ⭐ The build, beside the name (the user, 2026-10-09: "show version number in main page"). */
     version: String = "",
 ) {
@@ -1079,11 +1086,15 @@ private fun TopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ViewSwitch(picked, go)
+            ViewSwitch(picked, go, hideChat)
             // ⭐ The model, back on the main screen (the user, 2026-10-11; it left with the status
             // row in 1.6.117). ⚠ WRAPPED, never cut: most names are long, and the old row's rule
             // was "do not ... the held model" (2026-09-10).
-            Column(Modifier.weight(1f).padding(start = 4.dp)) {
+            Column(
+                Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                    .clickable(onClickLabel = stringResource(R.string.nav_models), onClick = onModels)
+                    .padding(start = 4.dp),
+            ) {
                 if (modelLabel.isNotBlank()) Text(
                     stringResource(R.string.current_model).uppercase(),
                     style = MaterialTheme.typography.labelSmall,
@@ -1156,8 +1167,14 @@ internal fun belowChrome(runBar: androidx.compose.ui.unit.Dp): WindowInsets =
  * of all three. It replaced the segmented toggle (`docs/LEGACY.md` §9).
  */
 @Composable
-private fun ViewSwitch(selected: com.abrah.nightmare.MainView, onPick: (com.abrah.nightmare.MainView) -> Unit) {
-    val views = com.abrah.nightmare.MainView.entries.filter { it.isCanvas }
+private fun ViewSwitch(
+    selected: com.abrah.nightmare.MainView,
+    onPick: (com.abrah.nightmare.MainView) -> Unit,
+    hideChat: Boolean = false,
+) {
+    val views = com.abrah.nightmare.MainView.entries.filter {
+        it.isCanvas && !(hideChat && it == com.abrah.nightmare.MainView.AGENT)
+    }
     fun glyph(v: com.abrah.nightmare.MainView) = when (v) {
         com.abrah.nightmare.MainView.AGENT -> com.abrah.nightmare.ui.AgentIcon to R.string.agent_title
         com.abrah.nightmare.MainView.NODES -> com.abrah.nightmare.ui.NodesIcon to R.string.view_nodes

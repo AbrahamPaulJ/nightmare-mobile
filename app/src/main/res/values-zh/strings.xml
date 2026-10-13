@@ -338,6 +338,7 @@
     <string name="crash_title">上次运行时发生了错误</string>
     <string name="crash_during">错误发生在%1$s时。</string>
     <string name="crash_details">详细信息</string>
+    <string name="crash_reboot">生成过程中手机重启了。Android 不会记录原因，下面列出了当时正在运行的内容和剩余内存。请复制到错误报告中。</string>
     <string name="device_title">本机设备</string>
     <string name="device_chip">芯片</string>
     <string name="device_unknown">未知</string>
@@ -855,6 +856,8 @@
     <string name="views_open_graph">打开时显示高级视图</string>
     <string name="views_nodes_vertical">默认视图从上到下</string>
     <string name="views_nodes_vertical_hint">所有步骤依次排列，无需左右滑动</string>
+    <string name="views_hide_chat">隐藏聊天视图</string>
+    <string name="views_hide_chat_hint">视图按钮只提供默认和高级</string>
     <string name="agent_clear_chat">清空对话</string>
     <string name="agent_attach">附加图片</string>
     <string name="agent_detach">移除图片</string>
@@ -894,7 +897,7 @@
     <string name="drawer_current_flow">当前工作流</string>
     <string name="drawer_model">模型</string>
     <string name="drawer_save_flow">保存工作流</string>
-    <string name="drawer_about">关于</string>
+    <string name="drawer_about">设备</string>
     <string name="load_idle">空闲</string>
     <string name="load_loading">加载中</string>
     <string name="load_loaded">已加载</string>

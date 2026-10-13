@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
 object LoraLibrary {
 
     enum class Base(val label: String) {
-        SD15("SD 1.5"), SDXL("SDXL"), FLUX("FLUX"), ZIMAGE("Z-Image"), QWEN("Qwen"), OTHER("Other");
+        SD15("SD 1.5"), SDXL("SDXL"), FLUX("FLUX"), ZIMAGE("Z-Image"), QWEN("Qwen"), ANIMA("Anima"), OTHER("Other");
 
         companion object {
             /** ⭐ The base a node's family takes LoRAs for — the filter a picker can offer first. */
@@ -29,6 +29,7 @@ object LoraLibrary {
                 Family.FLUX2 -> FLUX
                 Family.ZIMAGE -> ZIMAGE
                 Family.QWEN21 -> QWEN
+                Family.ANIMA_DIT -> ANIMA
                 else -> null
             }
         }
@@ -74,6 +75,9 @@ object LoraLibrary {
             "single_blocks" in h || "single_transformer_blocks" in h -> Base.FLUX
             "noise_refiner" in h || "context_refiner" in h -> Base.ZIMAGE
             "img_mlp" in h || "txt_mlp" in h -> Base.QWEN
+            // ⚠ Anima (Cosmos blocks): the official LoRAs name `adaln_modulation_*`, kohya's
+            // `lora_unet_blocks_N_cross_attn_k_proj` — checked on three real headers, 2026-10-13.
+            "adaln_modulation" in h || "cross_attn_k_proj" in h || "cross_attn.k_proj" in h -> Base.ANIMA
             "lora_te2_" in h || "text_encoder_2" in h || "lora_unet_input_blocks" in h || "lora_unet_output_blocks" in h -> Base.SDXL
             "lora_te_" in h || "lora_unet_down_blocks" in h || "lora_unet_up_blocks" in h || "unet.down_blocks" in h -> Base.SD15
             else -> Base.OTHER

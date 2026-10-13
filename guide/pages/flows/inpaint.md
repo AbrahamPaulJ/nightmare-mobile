@@ -76,7 +76,9 @@ edge.
 - **Only masked** (on by default): the model works on a crop around your mask rather than the
   whole photo, so the painted area gets far more detail. Leave it on for small areas.
 - **Stitch to original image** (off by default): off, the result is the frame you chose; on, the
-  repainted area is pasted back into the full-size original photo.
+  repainted area is pasted back into the original photo. A stitched picture is at most 2048
+  pixels on its longer side, so a big photo, or one extended by outpainting, comes back scaled
+  down to that.
 
 ## Outpainting: extending the photo
 

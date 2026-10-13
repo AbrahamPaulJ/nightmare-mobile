@@ -1,5 +1,6 @@
 package com.abrah.nightmare.canvas
 
+import kotlinx.coroutines.sync.withLock
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.border
@@ -3483,7 +3484,7 @@ private fun InpaintEditors(
     // thumbnail keeps the shape the model is handed and cannot imply a crop to
     // the canvas ([SdSampler.runDit]).
     val refRect = refCropRectOf(node)
-    val refFramed = rememberOffMain(node.id, "tile reference", refPhoto, refRect) {
+    val refFramed = rememberOffMain(node.id, "tile reference", refPhoto, refRect, keep = true) {
         val src = refPhoto ?: return@rememberOffMain null
         CropNode.render(
             src.asAndroidBitmap(),
@@ -4797,24 +4798,81 @@ internal val pictureDispatcher: kotlinx.coroutines.CoroutineDispatcher =
  * stroke does not blink the picture out), and a new [owner] — another node —
  * starts from nothing, so no node ever shows another's picture.
  *
+ * ⚠⚠ **One run at a time per tile, the latest keys only** (a tester's log,
+ * 2026-10-13: dragging a depth ControlNet's crop ran EIGHT depth estimates at
+ * once, 5–15 s each, and starved every other tile — "framed" went 11 ms → 8 s).
+ * Cancelling a [compute] does not stop it: it is plain blocking code. So a run
+ * waits for the tile's previous one ([offMainLocks]), a waiting run is dropped
+ * when the keys move again, and a recompute waits [OFF_MAIN_SETTLE_MS] first,
+ * so a drag computes when it pauses, not at every pixel.
+ * ⚠ **Reopening costs nothing** where [keep] is set (the hint and thumbnail
+ * tiles): the last results are kept by owner, label and keys ([offMainCache]),
+ * so opening a node whose inputs did not change shows its hint at once instead
+ * of estimating depth again. ⚠ A picture key is held by IDENTITY HASH, never by
+ * reference, so the cache cannot pin a 4096 px photo after its node is gone.
+ *
  * ⚠ Timed to `NmPerf` ([com.abrah.nightmare.Perf.TAG]), so a
  * lag report is read off the phone.
  */
 @Composable
-internal fun <T : Any> rememberOffMain(owner: Any?, label: String, vararg keys: Any?, compute: () -> T?): T? {
-    val held = remember(owner) { mutableStateOf<T?>(null) }
+internal fun <T : Any> rememberOffMain(
+    owner: Any?,
+    label: String,
+    vararg keys: Any?,
+    keep: Boolean = false,
+    settleMs: Long = OFF_MAIN_SETTLE_MS,
+    compute: () -> T?,
+): T? {
+    val caching = keep && pictureDispatcher !== kotlinx.coroutines.Dispatchers.Unconfined
+    val cacheKey = if (caching) listOf(owner, label) + keys.map(::offMainKey) else null
+    val held = remember(owner) {
+        @Suppress("UNCHECKED_CAST")
+        mutableStateOf(cacheKey?.let { k -> synchronized(offMainCache) { offMainCache[k] } } as T?)
+    }
     LaunchedEffect(owner, *keys) {
-        val t0 = System.nanoTime()
-        val v = kotlinx.coroutines.withContext(pictureDispatcher) {
-            runCatching(compute).getOrNull()
+        cacheKey?.let { k -> synchronized(offMainCache) { offMainCache[k] } }?.let {
+            @Suppress("UNCHECKED_CAST")
+            held.value = it as T
+            return@LaunchedEffect
         }
-        android.util.Log.i(
-            com.abrah.nightmare.Perf.TAG,
-            "$label: ${(System.nanoTime() - t0) / 1_000_000} ms (off main)",
-        )
-        held.value = v
+        if (held.value != null && pictureDispatcher !== kotlinx.coroutines.Dispatchers.Unconfined) {
+            kotlinx.coroutines.delay(settleMs)
+        }
+        val lock = synchronized(offMainLocks) {
+            offMainLocks.getOrPut(owner to label) { kotlinx.coroutines.sync.Mutex() }
+        }
+        lock.withLock {
+            val t0 = System.nanoTime()
+            val v = kotlinx.coroutines.withContext(pictureDispatcher) {
+                runCatching(compute).getOrNull()
+            }
+            android.util.Log.i(
+                com.abrah.nightmare.Perf.TAG,
+                "$label: ${(System.nanoTime() - t0) / 1_000_000} ms (off main)",
+            )
+            if (v != null && cacheKey != null) synchronized(offMainCache) { offMainCache[cacheKey] = v }
+            held.value = v
+        }
     }
     return held.value
+}
+
+/** A cache key part: pictures by identity hash and size, everything else as it is. */
+private fun offMainKey(k: Any?): Any? = when (k) {
+    is ImageBitmap -> Triple(System.identityHashCode(k), k.width, k.height)
+    is android.graphics.Bitmap -> Triple(System.identityHashCode(k), k.width, k.height)
+    else -> k
+}
+
+/** ⚠ How long a tile's keys must stay still before it recomputes ([rememberOffMain]). */
+private const val OFF_MAIN_SETTLE_MS = 150L
+
+/** ⚠ One lock per owner + label: a tile's runs queue rather than pile up. */
+private val offMainLocks = HashMap<Pair<Any?, String>, kotlinx.coroutines.sync.Mutex>()
+
+/** ⚠ The last results across opens, by owner + label + keys. Small: thumbnails, not photos. */
+private val offMainCache = object : LinkedHashMap<List<Any?>, Any>(32, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<List<Any?>, Any>?) = size > 24
 }
 @Composable
 private fun Widget.localizedHint(): String? =

@@ -133,6 +133,8 @@ fun SettingsScreen(
     onDefaultView: (com.abrah.nightmare.MainView) -> Unit = {},
     nodesVertical: Boolean = false,
     onNodesVertical: (Boolean) -> Unit = {},
+    hideChat: Boolean = false,
+    onHideChat: (Boolean) -> Unit = {},
     /** ⭐ The header's ☰ — the sidebar, from inside the sheet, as on Models / Flows / Results. */
     onMenu: (() -> Unit)? = null,
     onDownloadBase: (String) -> Unit = {},
@@ -286,6 +288,11 @@ fun SettingsScreen(
                     com.abrah.nightmare.canvas.BoolKnobRow(
                         stringResource(R.string.views_nodes_vertical), stringResource(R.string.views_nodes_vertical_hint),
                         nodesVertical, onNodesVertical,
+                    )
+                    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                    com.abrah.nightmare.canvas.BoolKnobRow(
+                        stringResource(R.string.views_hide_chat), stringResource(R.string.views_hide_chat_hint),
+                        hideChat, onHideChat,
                     )
                 }
         }

@@ -93,6 +93,9 @@ object PromptTokens {
         try {
             if (clip == null) clip = runCatching { findSource(context) }.getOrNull()
             if (t5 == null) t5 = runCatching { findT5(context) }.getOrNull()
+            if (t5 == null && ModelCatalog.all.any { it.family == Family.ANIMA_DIT && it.installed(context) }) {
+                t5 = runCatching { fetchT5(context) }.getOrNull()
+            }
         } finally {
             loading = false
         }
@@ -103,12 +106,32 @@ object PromptTokens {
      * `t5_unigram.tsv` — the same 32100 pieces (checked 2026-09-16).
      */
     private fun findT5(context: Context): T5Tokenizer? {
+        t5File(context).takeIf { it.isFile && it.length() == T5_BYTES }
+            ?.let { T5Tokenizer.fromTokenizerJson(it) }?.let { return it }
         ModelCatalog.root(context).listFiles()
             ?.map { File(it, "tokenizer_t5.json") }
             ?.filter { it.isFile }
             ?.forEach { f -> T5Tokenizer.fromTokenizerJson(f)?.let { return it } }
         if (NpuFiles.hasAsset(context, "t5_unigram.tsv")) return T5Tokenizer(context)
         return null
+    }
+
+    /**
+     * ⭐ Anima DiT's counter vocabulary. Its package carries Qwen's tokenizer only (the
+     * engine has T5's built in), so a phone with no NPU Anima and no video models has no
+     * T5 pieces at all. Fetched ONCE, 1.4 MB, by the shared downloader (mirror, size
+     * check). ⚠ Not a catalogue file: adding one would turn every installed Anima DiT
+     * into "Repair".
+     */
+    private const val T5_URL = "https://huggingface.co/google-t5/t5-base/resolve/main/tokenizer.json"
+    private const val T5_BYTES = 1_389_353L
+
+    private fun t5File(context: Context) = File(context.filesDir, "tokenizer_t5.json")
+
+    private fun fetchT5(context: Context): T5Tokenizer? {
+        val f = t5File(context)
+        ModelInstaller.fetch(T5_URL, f, T5_BYTES, "downloading", {})
+        return T5Tokenizer.fromTokenizerJson(f)
     }
 
     private fun findSource(context: Context): ClipTokenizer? {
@@ -174,7 +197,7 @@ object PromptTokens {
         consumer.type in IMAGE_SAMPLER_TYPES ->
             ModelCatalog.byId(consumer.params["model"].orEmpty())?.let(::specBudget)
                 ?: when {
-                    consumer.type.startsWith("anima.") -> Budget.ANIMA
+                    consumer.type.startsWith("anima.") || consumer.type.startsWith("animadit.") -> Budget.ANIMA
                     consumer.type.startsWith("sdxl.") || consumer.type.startsWith("sd15.") -> Budget.CLIP
                     else -> null
                 }
@@ -195,8 +218,10 @@ object PromptTokens {
      */
     private fun familyBudget(f: Family): Budget? = when (f) {
         Family.SD15, Family.SD15_SWAP, Family.SDXL, Family.SDXL_SWAP -> Budget.CLIP
-        Family.ANIMA -> Budget.ANIMA
-        Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT -> null
+        // ⚠ Anima DiT: the engine reads past 512 (sd.cpp pads, never cuts), but 512 is
+        // what Anima was trained on, so the counter warns there (the user's call, 2026-10-13).
+        Family.ANIMA, Family.ANIMA_DIT -> Budget.ANIMA
+        Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2 -> null
     }
 }
 

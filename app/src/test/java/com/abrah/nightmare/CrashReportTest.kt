@@ -46,7 +46,7 @@ class CrashReportTest {
     fun markRecordsWhatTheAppIsDoing() {
         CrashReport.mark(ctx, "rendering")
         assertTrue(crumb.isFile)
-        assertEquals("rendering", crumb.readText())
+        assertEquals("rendering", crumb.readLines().first())
     }
 
     /** ⭐ A clean finish erases it, which is what makes its presence mean something. */
@@ -67,7 +67,7 @@ class CrashReportTest {
         val first = crumb.lastModified()
         repeat(50) { CrashReport.mark(ctx, "downloading FLUX.2 Klein 4B") }
         assertEquals("the file should be written once per job", first, crumb.lastModified())
-        assertEquals("downloading FLUX.2 Klein 4B", crumb.readText())
+        assertEquals("downloading FLUX.2 Klein 4B", crumb.readLines().first())
     }
 
     /** ⚠ A different job replaces it, so the report names the RIGHT thing. */
@@ -75,7 +75,7 @@ class CrashReportTest {
     fun aDifferentJobReplacesIt() {
         CrashReport.mark(ctx, "downloading FLUX.2 Klein 4B")
         CrashReport.mark(ctx, "rendering")
-        assertEquals("rendering", crumb.readText())
+        assertEquals("rendering", crumb.readLines().first())
     }
 
     /**
@@ -88,6 +88,22 @@ class CrashReportTest {
     fun aBreadcrumbAloneIsNotACrash() {
         CrashReport.mark(ctx, "rendering")
         assertNull("a breadcrumb with no exit must report nothing", CrashReport.pending(ctx))
+    }
+
+    /**
+     * ⭐ A breadcrumb older than this BOOT is a phone restart mid-job (a tester's S24 Ultra,
+     * 2026-10-13): no exit record exists, and the report carries the per-node RAM lines.
+     */
+    @Test
+    fun aRestartMidJobIsReportedWithItsStages() {
+        CrashReport.mark(ctx, "rendering SDXL")
+        CrashReport.stage(ctx, "generate")
+        crumb.setLastModified(System.currentTimeMillis() - 10 * 60_000L)
+        val r = CrashReport.pending(ctx)
+        assertEquals("rendering SDXL", r?.doing)
+        assertTrue("the stage line should be in the details", r?.trace.orEmpty().contains("generate"))
+        assertTrue("and the free RAM", r?.trace.orEmpty().contains("MB free"))
+        assertNull("shown once", CrashReport.pending(ctx))
     }
 
     @Test

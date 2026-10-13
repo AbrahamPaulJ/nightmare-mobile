@@ -101,14 +101,77 @@ object CrashReport {
     fun mark(context: Context, what: String) {
         if (marked == what) return
         marked = what
-        runCatching { breadcrumb(context).writeText(what) }
+        synchronized(stages) {
+            stages.clear()
+            header = runCatching { header(context) }.getOrNull()
+        }
+        write(context)
+    }
+
+    /**
+     * ⭐⭐ "…and is now at [step]", with the RAM free at that moment — one line per node.
+     *
+     * ⚠⚠ Why (a tester, 2026-10-13, S24 Ultra, plain SDXL): the first run rendered, the
+     * second RESTARTED THE PHONE, and nothing survived to say why: a reboot leaves no exit
+     * record, and logcat is gone. This file does survive, so the next launch can say which
+     * node was running and how much memory was free when it started ([pending]).
+     * ⚠ A no-op with no job marked; a handful of small writes per run.
+     */
+    fun stage(context: Context, step: String) {
+        if (marked == null) return
+        synchronized(stages) {
+            stages += "${clock()} $step, ${freeRam(context)}"
+            while (stages.size > MAX_STAGES) stages.removeAt(0)
+        }
+        write(context)
     }
 
     /** ⭐ "…and it finished." ⚠ Must be reached on EVERY exit path, including failure. */
     fun clear(context: Context) {
         if (marked == null && !breadcrumb(context).exists()) return
         marked = null
+        synchronized(stages) { stages.clear() }
         runCatching { breadcrumb(context).delete() }
+    }
+
+    private const val MAX_STAGES = 12
+
+    /** ⚠ A breadcrumb counts as "before this boot" only this much before it: a reboot takes far longer. */
+    private const val REBOOT_MARGIN_MS = 5_000L
+    private val stages = mutableListOf<String>()
+    @Volatile private var header: String? = null
+
+    /** ⚠ Line 1 is what [pending] calls "doing"; the rest is evidence for the Details box. */
+    private fun write(context: Context) {
+        val what = marked ?: return
+        val text = buildString {
+            appendLine(what)
+            header?.let { appendLine(it) }
+            synchronized(stages) { stages.forEach { appendLine(it) } }
+        }
+        runCatching { breadcrumb(context).writeText(text) }
+    }
+
+    private fun clock() = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+
+    private fun freeRam(context: Context): String {
+        val am = context.getSystemService(ActivityManager::class.java) ?: return "RAM unknown"
+        val mi = ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+        return "${mi.availMem shr 20} MB free" + if (mi.lowMemory) " (low)" else ""
+    }
+
+    /** The phone, the app, the RAM and the low-RAM switches, once per job. */
+    private fun header(context: Context): String {
+        val am = context.getSystemService(ActivityManager::class.java)
+        val mi = ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
+        val lr = Prefs.lowRam(context)
+        val version = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull()
+        return "Nightmare $version, ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} " +
+            "(${android.os.Build.SOC_MODEL}), Android ${android.os.Build.VERSION.RELEASE}; " +
+            "RAM ${mi.availMem shr 20} of ${mi.totalMem shr 20} MB free at the start; " +
+            "low RAM: SDXL ${if (lr.sdxl) "on" else "off"}, Anima ${if (lr.anima) "on" else "off"}"
     }
 
     /** ⭐ One report, ready to show. [pending] returns null far more often. */
@@ -133,9 +196,13 @@ object CrashReport {
      */
     fun pending(context: Context): Report? {
         val am = context.getSystemService(ActivityManager::class.java) ?: return null
-        val doing = runCatching {
-            breadcrumb(context).takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
-        }.getOrNull()
+        val crumb = breadcrumb(context)
+        val crumbAt = crumb.lastModified()
+        val lines = runCatching {
+            crumb.takeIf { it.isFile }?.readLines()?.map { it.trim() }?.filter { it.isNotEmpty() }
+        }.getOrNull().orEmpty()
+        val doing = lines.firstOrNull()
+        val details = lines.drop(1).joinToString("\n").takeIf { it.isNotEmpty() }
         clear(context)
 
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -146,7 +213,15 @@ object CrashReport {
         }.getOrNull().orEmpty()
         // ⚠ Newest first, which is the order Android documents.
         val exit = exits.firstOrNull { it.timestamp > lastShown && worthReporting(it, doing) }
-            ?: return null
+        // ⭐⭐ The PHONE restarted mid-job: no exit record, but the breadcrumb is older
+        // than this boot. ⚠ Only with a breadcrumb, so an ordinary reboot says nothing.
+        if (exit == null) {
+            val bootAt = System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime()
+            if (doing == null || crumbAt <= 0L || crumbAt > bootAt - REBOOT_MARGIN_MS || crumbAt <= lastShown) return null
+            prefs.edit().putLong(LAST_SHOWN, crumbAt).apply()
+            Log.i(TAG, "reporting a phone restart during: $doing")
+            return Report(crumbAt, context.getString(R.string.crash_reboot), doing, details)
+        }
 
         // ⚠⚠ Recorded BEFORE the caller shows anything. A report that fails to
         // render must still not come back on every launch forever.
@@ -156,7 +231,8 @@ object CrashReport {
             exit.traceInputStream?.bufferedReader()?.use { it.readText() }
         }.getOrNull()?.takeIf { it.isNotBlank() }
         Log.i(TAG, "reporting exit ${exit.reason} at ${exit.timestamp} (doing=$doing)")
-        return Report(exit.timestamp, headlineFor(exit), doing, trace)
+        val evidence = listOfNotNull(details, trace).joinToString("\n\n").takeIf { it.isNotEmpty() }
+        return Report(exit.timestamp, headlineFor(exit), doing, evidence)
     }
 
     private fun worthReporting(exit: ApplicationExitInfo, doing: String?): Boolean = when (exit.reason) {

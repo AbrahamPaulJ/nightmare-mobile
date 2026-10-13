@@ -23,6 +23,8 @@ class LoraLibraryTest {
         assertEquals(Base.FLUX, LoraLibrary.classify("""{"transformer.single_transformer_blocks.0.attn":1}"""))
         assertEquals(Base.ZIMAGE, LoraLibrary.classify("""{"diffusion_model.noise_refiner.0":1}"""))
         assertEquals(Base.QWEN, LoraLibrary.classify("""{"transformer_blocks.0.img_mlp.net":1}"""))
+        assertEquals(Base.ANIMA, LoraLibrary.classify("""{"diffusion_model.blocks.0.adaln_modulation_cross_attn.1.lora_A.weight":1}"""))
+        assertEquals(Base.ANIMA, LoraLibrary.classify("""{"lora_unet_blocks_0_cross_attn_k_proj.lora_down.weight":1}"""))
         assertEquals(Base.OTHER, LoraLibrary.classify("""{"something":1}"""))
     }
 

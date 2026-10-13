@@ -12,7 +12,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.CrashReport
 import com.abrah.nightmare.R
@@ -71,5 +73,16 @@ fun CrashNotice(report: CrashReport.Report, onDismiss: () -> Unit) {
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        // ⭐ The report as text, for a bug report: what happened, while doing what, and the
+        // evidence (the breadcrumb's RAM per node, then any tombstone).
+        dismissButton = {
+            val clipboard = LocalClipboardManager.current
+            val during = report.doing?.let { stringResource(R.string.crash_during, it) }
+            TextButton(onClick = {
+                clipboard.setText(
+                    AnnotatedString(listOfNotNull(report.headline, during, report.trace).joinToString("\n\n")),
+                )
+            }) { Text(stringResource(R.string.copy)) }
+        },
     )
 }

@@ -47,7 +47,7 @@ internal fun rememberIpSquare(node: Node, type: NodeType?, wired: ImageBitmap?):
     // ⚠ Off reads nothing, so it shows nothing ([IpAdapter.NONE]).
     val off = live[SdSampler.IP_ADAPTER] == IpAdapter.NONE
     val aspect = SdSampler.swapAspect(node, live)
-    return rememberOffMain(node.id, "ip square", uri, wired, region, off, aspect) {
+    return rememberOffMain(node.id, "ip square", uri, wired, region, off, aspect, keep = true) {
         if (off) return@rememberOffMain null
         val src = wired?.asAndroidBitmap()?.let { b -> SdSampler.ipReference(b, node, live) } ?: uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) }
             ?: return@rememberOffMain null

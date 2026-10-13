@@ -537,6 +537,7 @@ fun HarnessScreen(
             mainView = vm.canvasView,
             onView = vm::openDestination,
             nodesVertical = vm.nodesVertical,
+            hideChat = vm.hideChat,
             // ⭐⭐ The Agent view — a full page below the top bar (the user's call, 2026-10-08: the
             // panel fought the keyboard and covered Run).
             agentContent = { m ->
@@ -1032,7 +1033,9 @@ fun HarnessScreen(
             defaultView = vm.defaultViewChoice,
             onDefaultView = vm::chooseDefaultView,
             nodesVertical = vm.nodesVertical,
+            hideChat = vm.hideChat,
             onNodesVertical = vm::chooseNodesVertical,
+            onHideChat = vm::chooseHideChat,
             onMenu = { drawerOpen = true },
             lowRam = vm.lowRam,
             onLowRam = vm::chooseLowRam,

@@ -509,6 +509,7 @@ class AgentTools(
             - Do not ask to see a result: the person sees the picture in the chat and says what to change.
             - civitai_settings tells you what people use with a checkpoint (prompt style, trigger words, sampler, steps, cfg).
             - Write prompts the way the model's family expects: comma-separated tags for anime / Illustrious / Pony / Anima models, natural sentences for FLUX.2, Z-Image and Qwen.
+            - An Anima prompt opens with one rating tag (safe, sensitive, nsfw or explicit) that matches what the person asked for; without one the model picks its own rating.
             - If a tool answers with an error, say what went wrong in plain words and what the person can do.
             - Keep answers short. Answer in the person's language ($language).
 
