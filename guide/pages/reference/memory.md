@@ -20,7 +20,7 @@ Some models take so much of the phone's memory that a second render in a row wou
 For those, the model is **let go after each Run**, and the next Run loads it again (a few
 seconds, since the phone keeps the files cached). The run log says so when it happens.
 
-On a 12 GB phone this applies to **Z-Image Turbo** and **Qwen Image 2.1**. On 16 GB phones they
+On a 12 GB phone this applies to **Z-Image Turbo** and **Qwen Image 2.1** (and its Turbo). On 16 GB phones they
 stay loaded like the others.
 
 **Qwen Image 2.1** also loads its parts **one at a time**: the text encoder, then the image

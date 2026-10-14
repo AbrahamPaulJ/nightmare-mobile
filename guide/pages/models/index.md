@@ -17,9 +17,12 @@ which phones can run it; inside a family, models differ in style.
 | **Anima** | 9 | ~4.3 GB | 1024 | Anime; slow (about 80 s a picture) | 8 Gen 3+ |
 | **FLUX.2** | Klein 4B, Klein 9B | 6.7 GB, 10.7 GB | 512–2048 | Understands sentences; edits photos. 9B: more detail, slower, starts at 768 | 8 Gen 3+ (alpha on 8 Gen 3, where the 4B is a Q8_0 GGUF: 6.9 GB in all) |
 | **Z-Image** | Turbo | 8.8 GB | 512–2048 | Photorealistic, fast for its size | 8 Elite+ |
-| **Qwen Image** | 2.1 | 10.8 GB (16 GB phone: 13.8 GB FP8) | 512–2048 | Follows long instructions, legible text; edits photos; slow | 8 Gen 3+ (alpha on 8 Gen 3, which always takes the 10.8 GB build) |
+| **Qwen Image** | 2.1, 2.1 Turbo | 10.8 GB (16 GB phone: 13.8 GB FP8); Turbo 10.8 GB | 512–2048 | Follows long instructions, legible text; edits photos; slow. Turbo: 8 steps, about 2.5 times faster | 8 Gen 3+ (alpha on 8 Gen 3, which always takes the 10.8 GB build) |
 | **Anima DiT** | Turbo 1.1 | 3.2 GB (4.2 GB download, converted on the phone) | 512–2048 | Anime; about a minute at 1024 | 8 Gen 3+ (alpha on 8 Gen 3) |
 | **Krea 2** | Turbo | 9.5 GB | 512–2048 | Text to image only | 16 GB RAM, and 8 Elite+ (alpha on 8 Gen 3) |
+
+Qwen Image 2.1 and its Turbo each keep their own copy of the text encoder and decoder (6.6 GB),
+so installing both takes about 21.6 GB.
 
 Anima and Anima DiT share one page in **Family ▾ → Anima**: the DiT ones first, then the ones
 converted for the NPU.

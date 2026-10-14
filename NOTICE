@@ -138,6 +138,15 @@ Qwen Image 2.1
     Qwen Research License. Downloaded by the app at the user's request; not
     included here.
 
+Qwen Image 2.1 Turbo
+    Qwen team (Hangzhou Tongyi Laboratory); GGUF by molbal; its text encoder, vision
+    tower and VAE are Qwen Image 2.1's (above)
+    https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo
+    https://huggingface.co/molbal/Qwen-Image-2.1-Turbo-GGUF
+    Qwen Research License. Copyright (c) 2026 Hangzhou Tongyi Laboratory Technology
+    Co., Ltd. All Rights Reserved. Built with Qwen. Downloaded by the app at the
+    user's request; not included here.
+
 Qwen3-VL-8B-Instruct (Qwen Image 2.1's text encoder and vision tower)
     Qwen team; GGUF by bartowski
     https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct

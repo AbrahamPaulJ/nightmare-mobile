@@ -78,6 +78,7 @@ Roughly, on a Snapdragon 8 Elite:
 | FLUX.2 Klein 4B (4 steps) | under a minute |
 | FLUX.2 Klein 9B (4 steps, 768²) | about a minute |
 | Qwen Image 2.1 (20 steps, 1024²) | about 4 minutes |
+| Qwen Image 2.1 Turbo (8 steps, 1024²) | under 2 minutes |
 
 The first Run after choosing a model also loads it, which adds a few seconds (more for the
 large ones).

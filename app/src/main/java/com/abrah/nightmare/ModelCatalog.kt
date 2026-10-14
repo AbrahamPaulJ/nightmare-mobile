@@ -1065,6 +1065,19 @@ object ModelCatalog {
     /** ⭐ Qwen Image 2.1's two DiTs — the 16 GB class's FP8 (alpha.4) and everyone else's Q4_0. */
     val QWEN21_FP8 = RemoteFile(HF + "unsloth/Qwen-Image-2.1-FP8/resolve/main/Qwen-Image-2.1-FP8.safetensors", "dit.safetensors", 7_122_877_560L)
     val QWEN21_Q4 = RemoteFile(HF + "leejet/Qwen-Image-2.1-GGUF/resolve/main/qwen_image_2.1-Q4_0.gguf", "dit.gguf", 4_197_494_816L)
+    /**
+     * ⭐ Qwen Image 2.1 TURBO's DiT: the 8-step distillation (Qwen, 2026-10-09) as molbal's Q4_0: the
+     * same 265 tensors, shapes and Q4_0 layers as [QWEN21_Q4] (header read 2026-10-14), so a drop-in.
+     * ⚠ Not Abiray's Q4_0: it splits the MLP (`gate_layer`/`proj`), a different layout. `docs/DIT.md` §9b.
+     */
+    val QWEN21_TURBO_Q4 = RemoteFile(HF + "molbal/Qwen-Image-2.1-Turbo-GGUF/resolve/main/qwen_image_2.1_turbo_Q4_0.gguf", "dit.gguf", 4_197_519_520L)
+    /** ⭐ Qwen Image 2.1's files beside the DiT, the same for every build and for Turbo. */
+    val QWEN21_SHARED = listOf(
+        RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-8B-Instruct-Q4_0.gguf", "llm.gguf", 4_787_333_600L),
+        RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-8B-Instruct-f16.gguf", "llm_vision.gguf", 1_159_029_920L),
+        RemoteFile(HF + "Qwen/Qwen3-VL-8B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+        RemoteFile(HF + "Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors", "vae.safetensors", 675_509_688L),
+    )
     /** ⭐ Qwen Image 2.1's package — a DiT of either build and the VLM's vision tower (`main.cpp`, 013). */
     val QWEN21_REQUIRED = listOf("dit.gguf", "llm.gguf", "llm_vision.gguf", "vae.safetensors", "tokenizer.json")
     /** ⭐ Qwen's parts beside its DiT, for an import whose DiT may be either format. */
@@ -2195,14 +2208,8 @@ object ModelCatalog {
         // ⚠ [reclaimObsolete] deletes the OTHER build's DiT: backend 014 loads a
         // `dit.gguf` in preference to `dit.safetensors`.
         run {
-            val parts = listOf(
-                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-8B-Instruct-Q4_0.gguf", "llm.gguf", 4_787_333_600L),
-                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-8B-Instruct-f16.gguf", "llm_vision.gguf", 1_159_029_920L),
-                RemoteFile(HF + "Qwen/Qwen3-VL-8B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
-                RemoteFile(HF + "Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors", "vae.safetensors", 675_509_688L),
-            )
-            val fp8 = listOf(QWEN21_FP8) + parts
-            val q4 = listOf(QWEN21_Q4) + parts
+            val fp8 = listOf(QWEN21_FP8) + QWEN21_SHARED
+            val q4 = listOf(QWEN21_Q4) + QWEN21_SHARED
             dit(
                 "qwen_image_2_1", "Qwen Image 2.1", Family.QWEN21, QWEN21, steps = 20,
                 prompt = "a lovely cat holding a sign that says 'Qwen Image 2.1',",
@@ -2215,6 +2222,19 @@ object ModelCatalog {
                 ),
             )
         },
+        // ⭐ Qwen Image 2.1 TURBO (the user's call, 2026-10-14: a second entry, the base stays): the same
+        // 7B, distilled to 8 steps at cfg 1. S25, 1024²: 104 s against the base's 259 s; edit 469 s against
+        // 14.5 min (`docs/DIT.md` §9b). One Q4_0 build for every phone (no Turbo FP8 is published).
+        // ⚠ Its own directory, like the base: the backend reads Qwen's parts from the model's dir only, so a
+        // phone with both holds the 6.6 GB of parts twice (FUSE has no links; [CustomModels.ditPartsPlan]).
+        // ⚠ Turbo was distilled on its own 8 sigmas; the engine sends sd.cpp's shift 3, which looked the same
+        // on the S25 (one prompt). The exact schedule needs an ABI 107 engine.
+        dit(
+            "qwen_image_2_1_turbo", "Qwen Image 2.1 Turbo", Family.QWEN21, QWEN21, steps = 8,
+            prompt = "a lovely cat holding a sign that says 'Qwen Image 2.1',",
+            ownDitParts = true,
+            files = listOf(QWEN21_TURBO_Q4) + QWEN21_SHARED,
+        ),
     )
 
     /**

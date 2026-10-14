@@ -363,6 +363,27 @@ class ModelCatalogTest {
     }
 
     /**
+     * ⭐ Qwen Image 2.1 Turbo: a second entry beside the base (2026-10-14), 8 steps, one Q4_0 build for
+     * every phone from v75, the base's parts in its OWN directory (the backend reads no other).
+     */
+    @Test
+    fun qwenTurboIsASecondEntryWithTheBasesParts() {
+        val turbo = ModelCatalog.byId("qwen_image_2_1_turbo")!!
+        assertEquals(Family.QWEN21, turbo.family)
+        assertEquals(8, turbo.steps)
+        assertTrue(turbo.ownDitParts)
+        for (ram in listOf(11_379_968L * 1024, 15L shl 30, 0L)) for (arch in listOf(75, 79)) {
+            val files = turbo.buildFor(caps(arch, 8, ram))!!.files.ifEmpty { turbo.files }
+            assertEquals(ModelCatalog.QWEN21_TURBO_Q4, files.first { it.name.startsWith("dit.") })
+        }
+        assertEquals(ModelCatalog.QWEN21_SHARED, turbo.files.drop(1))
+        assertEquals(ModelCatalog.QWEN21_REQUIRED.sorted(), turbo.requiredFiles.sorted())
+        assertEquals(turbo.files.sumOf { it.bytes }, turbo.builds.single().bytes)
+        // ⚠ The base keeps its id and its two builds: flows and installs made before point at it.
+        assertEquals(2, ModelCatalog.byId("qwen_image_2_1")!!.builds.size)
+    }
+
+    /**
      * ⭐ Klein 9B STARTS at 768² (5 of 5 there, 3 of 4 at 1024² on 12 GB) —
      * and ⚠ its context key does not move with it: [ModelSpec.native] is
      * still the DiT constant every DiT process is keyed on.

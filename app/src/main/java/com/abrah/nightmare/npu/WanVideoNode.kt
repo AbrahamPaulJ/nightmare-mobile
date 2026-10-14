@@ -156,8 +156,13 @@ object WanVideoNode : NodeType {
 
     private fun gb(b: Long) = String.format(java.util.Locale.ROOT, "%.1f", b / (1024.0 * 1024 * 1024))
 
-    /** ⚠ Overlap 2: overlap 1 flickers at every tile seam (`docs/VIDEO-GGML.md` §3). */
-    const val TILING = "temporal_tile_frames=6,temporal_tile_overlap=2"
+    /**
+     * ⭐ TAEHV decodes in temporal tiles, and each tile starts cold: blended in, that cold start was a
+     * brightness bump every 16 frames (a tester's 704p clip, 2026-10-14). `temporal_tile_cut` (engine
+     * `dit/018`) gives a later tile's overlap no weight; overlap 3 lets it warm up for 9 frames first.
+     * Same tile size, so the same decode memory. `docs/VIDEO-GGML.md` §3.
+     */
+    const val TILING = "temporal_tile_frames=6,temporal_tile_overlap=3,temporal_tile_cut=1"
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
