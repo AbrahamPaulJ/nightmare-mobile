@@ -52,7 +52,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.
 - **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with an optional second reference picture.
-- **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon), or **Wan 2.2**: 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; chain clips from the last frame for longer ones; Wan 2.2 5B LoRAs with a `<lora:name>` tag in the prompt), much better looking.
+- **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon), or **Wan 2.2**: 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; chain clips from the last frame for longer ones; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag), much better looking.
 
 ### LoRA, ControlNet and IP-Adapter
 - **LoRAs per render**: on Anima and the Swap models, and experimentally on FLUX.2, Z-Image, Qwen Image and Krea 2: tick, set strength, no reload. A note per LoRA keeps its trigger words.

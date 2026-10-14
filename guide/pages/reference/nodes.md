@@ -139,6 +139,7 @@ Wan 2.2: text or a photo to a clip of up to 5 seconds. Needs Wan 2.2 (Models →
 |---|---|
 | **Seed** | `0` = a new clip every Run |
 | **Seconds** | 1 to 5, 24 frames a second |
+| **LoRAs** | Wan 2.2 5B LoRAs (not 14B), chosen like on the image nodes; `<lora:name>` tags in the prompt work too |
 | **Width**, **Height** | Any shape in 32 px steps, up to 1280 × 704 worth of pixels (832 × 480 by default; 1280 × 704 takes about three times as long) |
 | **Crop** frame | With a photo wired in: which part becomes the first frame |
 
