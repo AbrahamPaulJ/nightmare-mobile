@@ -37,6 +37,9 @@ class UltraFixTest {
     }
 
     @get:org.junit.Rule
+    val fastIdle = FastIdle()
+
+    @get:org.junit.Rule
     val rule = androidx.compose.ui.test.junit4.createComposeRule()
 
     /**

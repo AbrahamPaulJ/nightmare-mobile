@@ -180,8 +180,12 @@ fun RunFrame(
     }
 }
 
-/** ⚠ False under Robolectric (JVM goldens), where an endless animation never lets a capture settle. */
-private val ANIMATED: Boolean = android.os.Build.FINGERPRINT != "robolectric"
+/**
+ * ⚠ False under Robolectric (JVM goldens), where an endless animation never lets a capture settle.
+ * ⭐ EVERY endless frame loop reads this ([CanvasScreen]'s clip tick too), so no golden waits on one.
+ * (The 2026-10-14 `AppNotIdle` wave was NOT a loop: state built up in one JVM; `build.gradle.kts`.)
+ */
+internal val ANIMATED: Boolean = android.os.Build.FINGERPRINT != "robolectric"
 
 /**
  * ⭐ The aspect of what a run makes: the first node that has a size (a sampler's `width` /

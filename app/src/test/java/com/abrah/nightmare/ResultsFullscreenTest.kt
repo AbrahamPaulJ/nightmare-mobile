@@ -44,6 +44,9 @@ import java.io.File
 class ResultsFullscreenTest {
 
     @get:Rule
+    val fastIdle = com.abrah.nightmare.FastIdle()
+
+    @get:Rule
     val rule = createComposeRule()
 
     private val app = ApplicationProvider.getApplicationContext<Application>()

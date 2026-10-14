@@ -34,6 +34,9 @@ import org.robolectric.annotation.Config
 class PictureActionsTest {
 
     @get:Rule
+    val fastIdle = com.abrah.nightmare.FastIdle()
+
+    @get:Rule
     val rule = createComposeRule()
 
     private var deletes = 0

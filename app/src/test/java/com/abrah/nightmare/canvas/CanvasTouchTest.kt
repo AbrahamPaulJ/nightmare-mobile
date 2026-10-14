@@ -41,6 +41,9 @@ import org.robolectric.annotation.Config
 class CanvasTouchTest {
 
     @get:Rule
+    val fastIdle = com.abrah.nightmare.FastIdle()
+
+    @get:Rule
     val rule = createComposeRule()
 
     private val types = NODE_TYPES

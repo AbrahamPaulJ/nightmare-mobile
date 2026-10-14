@@ -239,6 +239,18 @@ tasks.configureEach {
     if (name.startsWith("lintVital") && name.contains("Dev")) enabled = false
 }
 
+// ⭐⭐ The unit suite in PARALLEL JVMs that are RECYCLED (2026-10-14). One JVM running every class let
+// something build up (no single class does it: a bisect over the 54 suspects found none alone) until
+// Compose never went idle, and 22 later Compose tests each sat out Espresso's 60 s timeout: 28 minutes
+// for a 6-minute suite. A fresh JVM every [forkEvery] classes leaves nothing to build up; three at once
+// use the cores (16 GB PC: ~1 GB each beside the 4 GB daemon). `FastIdle` caps any hang at 5 s.
+// `-PtestOrder` logs each class as it starts: the way to bisect the next leak.
+tasks.withType<Test>().configureEach {
+    maxParallelForks = 3
+    forkEvery = 30
+    if (project.hasProperty("testOrder")) testLogging { events("started") }
+}
+
 // ⭐⭐ `ResultsFullscreenTest` runs in its OWN JVM, after the main unit tests. It
 // composes the real `HarnessScreen` (sheet window, view model, viewer Dialog), and
 // in the shared JVM something it starts outlived it: later Compose classes failed

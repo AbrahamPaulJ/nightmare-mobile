@@ -29,6 +29,9 @@ import org.robolectric.annotation.Config
 class DescribeDialogTest {
 
     @get:Rule
+    val fastIdle = com.abrah.nightmare.FastIdle()
+
+    @get:Rule
     val rule = createComposeRule()
 
     /** What the prompt holds after the test's taps. */

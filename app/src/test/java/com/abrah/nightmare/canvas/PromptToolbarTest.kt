@@ -31,6 +31,9 @@ import org.robolectric.annotation.Config
 class PromptToolbarTest {
 
     @get:Rule
+    val fastIdle = com.abrah.nightmare.FastIdle()
+
+    @get:Rule
     val rule = createComposeRule()
 
     private var written: String? = null

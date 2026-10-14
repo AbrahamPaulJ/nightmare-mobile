@@ -32,6 +32,9 @@ import org.robolectric.annotation.Config
 class VideoDeleteConfirmTest {
 
     @get:Rule
+    val fastIdle = com.abrah.nightmare.FastIdle()
+
+    @get:Rule
     val rule = createComposeRule()
 
     /** ⚠ Installed and complete, which is the only state that offers Delete. */

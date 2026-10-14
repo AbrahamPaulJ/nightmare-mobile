@@ -32,6 +32,9 @@ import org.robolectric.annotation.Config
 class ResultsDeleteTest {
 
     @get:Rule
+    val fastIdle = com.abrah.nightmare.FastIdle()
+
+    @get:Rule
     val rule = createComposeRule()
 
     private val app = ApplicationProvider.getApplicationContext<Application>()

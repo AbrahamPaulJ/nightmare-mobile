@@ -424,7 +424,8 @@ fun CanvasScreen(
         val playing = remember(state.workflow.graph, state.videos) {
             clipNodes(state.workflow.graph, state.videos)
         }
-        val animate = playing.isNotEmpty()
+        // ⚠ [ANIMATED]: an endless frame loop under Robolectric stalls every later test.
+        val animate = playing.isNotEmpty() && ANIMATED
         var clipTick by remember { mutableIntStateOf(0) }
         LaunchedEffect(animate) {
             if (!animate) return@LaunchedEffect

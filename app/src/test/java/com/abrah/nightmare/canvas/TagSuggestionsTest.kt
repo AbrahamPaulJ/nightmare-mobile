@@ -26,6 +26,9 @@ import java.io.File
 class TagSuggestionsTest {
 
     @get:Rule
+    val fastIdle = com.abrah.nightmare.FastIdle()
+
+    @get:Rule
     val rule = createComposeRule()
 
     @Test
