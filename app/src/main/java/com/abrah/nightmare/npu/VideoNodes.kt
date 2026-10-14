@@ -321,7 +321,9 @@ object VideoSampleNode : NodeType {
         }
 
         check(frames.isNotEmpty()) { "node \"${node.id}\": the pipeline produced no frames" }
-        VideoWriter.encode(android, frames, FPS, out) { line -> Log.i(TAG, line) }
+        VideoWriter.encode(
+            android, frames, FPS, out, VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]),
+        ) { line -> Log.i(TAG, line) }
 
         // ⭐⭐ The LOOP, built here because this is the only moment the full-size
         // frames exist — they are dropped as soon as this function returns.

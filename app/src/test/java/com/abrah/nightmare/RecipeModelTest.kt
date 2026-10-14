@@ -354,4 +354,21 @@ class RecipeModelTest {
         // ⚠ …and the canvas calls it an edit.
         assertEquals("FLUX.2 Image edit", (NODE_TYPES[node.type] as SdSampler).titleFor(node))
     }
+
+    /**
+     * ⚠⚠ Every recipe wire out of a node with SEVERAL outputs names its port: the executor
+     * refuses a bare one rather than guess. Missed on 2026-10-14 when the Wan node gained
+     * `last_frame` and every Wan flow stopped running; found on the phone, not here.
+     */
+    @Test
+    fun everyWireFromAMultiOutputNodeNamesItsPort() {
+        for (r in com.abrah.nightmare.canvas.RECIPES) {
+            val g = r.build().graph
+            for (n in g.nodes) for ((port, src) in n.inputs) {
+                val from = g.byId[src.node] ?: continue
+                val outs = NODE_TYPES[from.type]?.outputs?.size ?: continue
+                if (outs > 1) assertNotNull("${r.id}: ${n.id}.$port <- ${src.node}", src.port)
+            }
+        }
+    }
 }

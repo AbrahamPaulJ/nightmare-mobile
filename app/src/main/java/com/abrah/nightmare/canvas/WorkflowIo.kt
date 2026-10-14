@@ -194,7 +194,7 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     // or silently skip the repair.
     val collapsed = collapseSamplers(
         reviveOutputNodes(
-        collapseVideoChain(migrateSamplerPrompts(nodes.map(::migrateType), positions))
+        collapseVideoChain(migrateSamplerPrompts(nameWanPorts(nodes.map(::migrateType)), positions))
     ))
     // ⚠ LAST: every node it looks for has its current name and shape by now.
     val notes = mutableListOf<String>()
@@ -355,11 +355,33 @@ private fun migrateType(node: Node): Node {
     val renamed = if (renamed1.type !in com.abrah.nightmare.INPAINT_TYPES) renamed1
     else com.abrah.nightmare.AddObjects.migrated(renamed1.params, com.abrah.nightmare.MaskNode.OPS)
         ?.let { renamed1.copy(params = it) } ?: renamed1
+    // ⚠⚠ …and the Wan video node's `shape`/`size` choosers became `width`/`height`
+    // sliders (2026-10-14, GitHub #23): the size the flow was saved at is kept.
+    val wan = com.abrah.nightmare.npu.WanVideoNode
+    val sized = if (renamed.type != wan.name || "width" in renamed.params) renamed
+    else wan.fromLegacy(renamed.params)?.let { (w, h) ->
+        renamed.copy(params = renamed.params - "size" - "shape" + ("width" to "$w") + ("height" to "$h"))
+    } ?: renamed
     // ⚠⚠ …and a crop's mirrored padding became a BLURRED mirror, under a new
     // value — kept, because [migrateCropNodes] hands the crop's padding on.
-    return if (renamed.type == "image.crop" && renamed.params[CropNode.PAD] == "mirror") {
-        renamed.copy(params = renamed.params + (CropNode.PAD to CropNode.PAD_BLUR))
-    } else renamed
+    return if (sized.type == "image.crop" && sized.params[CropNode.PAD] == "mirror") {
+        sized.copy(params = sized.params + (CropNode.PAD to CropNode.PAD_BLUR))
+    } else sized
+}
+
+/**
+ * ⚠⚠ The Wan video node gained a second output, `last_frame` (2026-10-14, GitHub #23), and the
+ * executor refuses a bare wire from a node with more than one (it will not guess). Every flow
+ * saved before then wires `output ← video` bare, so it would stop running: a bare wire from a Wan
+ * node is the clip it always was, and says so.
+ */
+private fun nameWanPorts(nodes: List<Node>): List<Node> {
+    val wan = nodes.filter { it.type == com.abrah.nightmare.npu.WanVideoNode.name }.map { it.id }.toSet()
+    if (wan.isEmpty()) return nodes
+    return nodes.map { n ->
+        if (n.inputs.values.none { it.node in wan && it.port == null }) n
+        else n.copy(inputs = n.inputs.mapValues { (_, s) -> if (s.node in wan && s.port == null) Source(s.node, "video") else s })
+    }
 }
 
 private val RENAMED = mapOf(

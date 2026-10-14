@@ -13,6 +13,7 @@ import com.abrah.nightmare.PromptLoras
 import com.abrah.nightmare.R
 import com.abrah.nightmare.Value
 import com.abrah.nightmare.Widget
+import com.abrah.nightmare.text
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
@@ -42,7 +43,14 @@ object WanVideoNode : NodeType {
     override val name = "wan.sample"
     override val version = "1"
     override val inputs = listOf(Port("prompt", "PROMPT"), Port("image", "IMAGE"))
-    override val outputs = listOf(Port("video", "VIDEO"))
+
+    /**
+     * ⭐ `last_frame` is the clip's final frame as a picture (GitHub #23, the user's call 2026-10-14):
+     * wired into another video node's `image`, with its own prompt, it continues the clip, as many
+     * times as the canvas holds. Joining the clips into one file is not done here.
+     */
+    override val outputs = listOf(Port("video", "VIDEO"), Port(LAST_FRAME, "IMAGE"))
+    const val LAST_FRAME = "last_frame"
     override val category = "generate"
     override val paletteName = "Wan video"
 
@@ -55,24 +63,33 @@ object WanVideoNode : NodeType {
     /** ⚠ The clip belongs to `core.output`, like every other result. */
     override val showsResult = false
 
-    /** ⭐ The two sizes Wan 2.2 TI2V was trained around: 480p (the default) and its native 704p. */
-    const val SIZE_480 = "480p"
-    const val SIZE_704 = "704p"
-    const val LANDSCAPE = "landscape"
-    const val PORTRAIT = "portrait"
+    /**
+     * ⭐⭐ The clip's size is two sliders, as on the FLUX nodes (GitHub #23 asked for 1:1, 4:3, 21:9 and
+     * phone-screen clips; the user's call 2026-10-14). Wan's grid is 32 px. ⚠ The AREA is capped at
+     * 1280x704, the largest size run here (and Wan 2.2 TI2V's native one): [fitArea] keeps a pair
+     * under it, so any shape costs at most what 704p costs, and [pinnedBytes] / [fitsNpuMap] still
+     * gate it by its real token count. They replaced a `shape` (landscape/portrait) and a `size`
+     * (480p/704p) chooser; [fromLegacy] reads a flow saved with those.
+     */
+    const val MIN_SIDE = 320
+    const val MAX_SIDE = 1280
+    const val GRID = 32
+    const val MAX_AREA = 1280 * 704
+    const val DEFAULT_W = 832
+    const val DEFAULT_H = 480
 
     /** ⚠ 24, the rate Wan 2.2 was trained at; a clip is `24·s + 1` frames (Wan wants 4n+1). */
     const val FPS = 24
     const val MAX_SECONDS = 5
 
     /**
-     * ⭐ The sheet draws these in this order UNDER the crop (`NodeInspector`'s widget loop),
-     * and the order is the user's (2026-10-14): shape first, since it reshapes the crop above
-     * it, then size, then seed.
+     * ⭐ `width` and `height` are drawn as one pair at the top of the sheet (`NodeInspector`'s size
+     * panel, committed when the finger lifts); the rest in this order UNDER the crop.
      */
     override val widgets get() = listOf(
-        Widget("shape", "string", LANDSCAPE, options = listOf(LANDSCAPE, PORTRAIT)),
-        Widget("size", "string", SIZE_480, options = listOf(SIZE_480, SIZE_704), hintRes = R.string.hint_wan_size),
+        Widget("width", "int", DEFAULT_W.toString(), MIN_SIDE.toDouble(), MAX_SIDE.toDouble(), step = GRID,
+            hintRes = R.string.hint_wan_size),
+        Widget("height", "int", DEFAULT_H.toString(), MIN_SIDE.toDouble(), MAX_SIDE.toDouble(), step = GRID),
         Widget("seed", "int", "0", hintRes = R.string.hint_seed_clip),
         Widget("seconds", "int", "5", 1.0, MAX_SECONDS.toDouble(), hintRes = R.string.hint_wan_seconds),
         // ⭐ The framing, exactly as [VideoSampleNode] carries it.
@@ -94,10 +111,31 @@ object WanVideoNode : NodeType {
     /** ⭐ The clip's size, which a picture wired into `image` is framed to. */
     override fun framesTo(node: Node): Pair<Int, Int> = sizeOf(effectiveParams(node))
 
-    /** ⚠ Pure: the frame size the params ask for. Wan 2.2's grid is 32 px. */
-    fun sizeOf(p: Map<String, String>): Pair<Int, Int> {
-        val (w, h) = if (p["size"] == SIZE_704) 1280 to 704 else 832 to 480
-        return if (p["shape"] == PORTRAIT) h to w else w to h
+    /** ⚠ Pure: the frame size the params ask for, on Wan's 32 px grid. */
+    fun sizeOf(p: Map<String, String>): Pair<Int, Int> =
+        snap(p["width"]?.toIntOrNull() ?: DEFAULT_W) to snap(p["height"]?.toIntOrNull() ?: DEFAULT_H)
+
+    private fun snap(v: Int): Int = (Math.round(v / GRID.toDouble()) * GRID).toInt().coerceIn(MIN_SIDE, MAX_SIDE)
+
+    /**
+     * ⚠ Pure: [w] x [h] with the side that did NOT move ([widthMoved] says which did) shrunk until
+     * the pair is within [MAX_AREA]. Dragging width to 1280 at a height of 1280 gives 1280x704.
+     */
+    fun fitArea(w: Int, h: Int, widthMoved: Boolean): Pair<Int, Int> {
+        val sw = snap(w)
+        val sh = snap(h)
+        if (sw.toLong() * sh <= MAX_AREA) return sw to sh
+        return if (widthMoved) sw to fitSide(sw) else fitSide(sh) to sh
+    }
+
+    /** The largest grid side that keeps `other x it` within [MAX_AREA]. */
+    private fun fitSide(other: Int): Int = (MAX_AREA / other / GRID * GRID).coerceIn(MIN_SIDE, MAX_SIDE)
+
+    /** ⚠ Pure: the `width`/`height` a flow saved with the old `size`/`shape` choosers meant, or null. */
+    fun fromLegacy(p: Map<String, String>): Pair<Int, Int>? {
+        if ("size" !in p && "shape" !in p) return null
+        val (w, h) = if (p["size"] == "704p") 1280 to 704 else 832 to 480
+        return if (p["shape"] == "portrait") h to w else w to h
     }
 
     /** ⚠ Pure: `24·s + 1` frames for [seconds], clamped to 1..[MAX_SECONDS]. */
@@ -165,6 +203,9 @@ object WanVideoNode : NodeType {
     const val TILING = "temporal_tile_frames=6,temporal_tile_overlap=3,temporal_tile_cut=1"
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
+        runPorts(ctx, node, inputs).getValue("video")
+
+    override suspend fun runPorts(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Map<String, Value> =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val android = ctx.android
             ?: throw IllegalStateException(
@@ -175,14 +216,31 @@ object WanVideoNode : NodeType {
                 "node \"${node.id}\": nothing is wired into \"prompt\". " +
                     "drag a Prompt node out of the palette and connect it"
             )
-        // ⚠ LoRA tags are taken out, not sent: no Wan LoRA has run on the NPU here yet.
+        // ⭐ `<lora:name:0.8>` tags become Wan LoRAs (a tester's ask, 2026-10-14): the image nodes'
+        // lookup ([PromptLoras.resolve] in the LoRA folder), sent with the request. ⚠ Wan 2.2 TI2V-5B
+        // LoRAs only; a 14B one does not fit this model's layers (the engine logs what it bound).
         val pos = PromptLoras.extract(wired.positive)
         val neg = PromptLoras.extract(wired.negative)
-        if (pos.tags.isNotEmpty() || neg.tags.isNotEmpty()) {
-            ctx.say("LoRA tags skipped: Wan video takes no LoRAs yet")
+        val loraDir = com.abrah.nightmare.BackendProcess.lorasDir(android)
+        val installed = loraDir.list()?.toList().orEmpty()
+        val loras = (pos.tags + neg.tags).mapNotNull { t ->
+            PromptLoras.resolve(t.name, installed)?.let { File(loraDir, it).absolutePath to t.strength }
+                ?: run {
+                    ctx.warn(ctx.text(R.string.run_lora_tag_missing, "LoRA \"%1\$s\" from the prompt is not installed. Skipped", t.name))
+                    null
+                }
+        }
+        if (loras.isNotEmpty()) {
+            ctx.say("  LoRAs from the prompt: " + loras.joinToString { (f, s) -> "${File(f).nameWithoutExtension} $s" })
         }
         val p = effectiveParams(node)
         val (w, h) = sizeOf(p)
+        // ⚠ The sliders cannot get here ([fitArea]); a hand-edited or plugin-written graph can.
+        if (w.toLong() * h > MAX_AREA) {
+            throw IllegalArgumentException(
+                "node \"${node.id}\": ${w}x$h is larger than Wan's limit of 1280x704 worth of pixels. Make it smaller"
+            )
+        }
         val frames = framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS)
         val seed = p["seed"]?.toLongOrNull() ?: 0L
         // ⚠ A fallback, not the roll: `HarnessOps.runRolled` rolls a 0 before the graph runs
@@ -204,8 +262,9 @@ object WanVideoNode : NodeType {
         }
         if (!fitsNpuMap(need, if (caps.known) caps.arch else 0)) {
             throw IllegalStateException(
-                "node \"${node.id}\": on Snapdragon 8 Gen 3 the NPU can hold Wan clips up to 2 seconds at 480p " +
-                    "for now (${w}x$h for ${frames / FPS} s needs about ${gb(need)} GB). Choose 480p and 2 seconds or less"
+                "node \"${node.id}\": on Snapdragon 8 Gen 3 the NPU can hold Wan clips up to 2 seconds at 832x480 " +
+                    "(or as many pixels in another shape) for now (${w}x$h for ${frames / FPS} s needs about " +
+                    "${gb(need)} GB). Choose a smaller size or 2 seconds or less"
             )
         }
 
@@ -223,7 +282,10 @@ object WanVideoNode : NodeType {
 
         // ⚠ A content address of everything the clip is made from, as [VideoSampleNode] does.
         val key = sha1(
-            listOf(pos.text, neg.text, used.toString(), "${w}x$h", frames.toString(), source?.address().orEmpty())
+            listOf(
+                pos.text, neg.text, used.toString(), "${w}x$h", frames.toString(), source?.address().orEmpty(),
+                loras.joinToString(";") { (f, s) -> "$f@$s" },
+            )
                 .joinToString("\u0000")
         )
         val dir = File(android.cacheDir, "video").apply { mkdirs() }
@@ -235,7 +297,7 @@ object WanVideoNode : NodeType {
         val r = ctx.host.video(
             prompt = pos.text, negative = neg.text, width = w, height = h, frames = frames, fps = FPS,
             seed = used, steps = SIGMAS.size - 1, sampleMethod = "lcm", sigmas = SIGMAS, tilingArgs = TILING,
-            out = raw.absolutePath, startPng = startPng, loras = emptyList(),
+            out = raw.absolutePath, startPng = startPng, loras = loras,
         ) { pr -> ctx.onProgress(pr) }
         val clip = when (r) {
             is Ops.Result.Ok -> r.value
@@ -255,9 +317,17 @@ object WanVideoNode : NodeType {
         }
         ctx.say("${clip.frames} frames in ${"%.1f".format(clip.serverMs / 1000.0)} s. Encoding")
         try {
-            val poster = encodeClip(raw, out)
+            // ⭐ The encoder's lines go to the run log too: GitHub #26 sat at "Encoding" with nothing
+            // saying how far it got.
+            val (poster, last) = encodeClip(raw, out, VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job])) {
+                Log.i(TAG, it)
+                ctx.say(it.trim())
+            }
             val posterId = ctx.images.put(poster)
-            Value.Video(out.absolutePath, clip.frames, clip.width, clip.height, posterId)
+            mapOf(
+                "video" to Value.Video(out.absolutePath, clip.frames, clip.width, clip.height, posterId),
+                LAST_FRAME to Value.Image(ctx.images.put(last), last.width, last.height),
+            )
         } finally {
             raw.delete()
         }
@@ -265,9 +335,14 @@ object WanVideoNode : NodeType {
 
     /**
      * ⭐ The backend's frame file ([Ops.video]) into [out] as MP4, a frame at a time, with the
-     * node's loop ([com.abrah.nightmare.ClipStore]) built on the way. Returns the first frame.
+     * node's loop ([com.abrah.nightmare.ClipStore]) built on the way. Returns the first and last frames.
      */
-    internal fun encodeClip(raw: File, out: File): Bitmap {
+    internal fun encodeClip(
+        raw: File,
+        out: File,
+        isCancelled: () -> Boolean = { false },
+        log: (String) -> Unit = { Log.i(TAG, it) },
+    ): Pair<Bitmap, Bitmap> {
         RandomAccessFile(raw, "r").use { f ->
             val head = ByteArray(HEADER_BYTES).also { f.readFully(it) }
             check(String(head, 0, 4, Charsets.US_ASCII) == MAGIC) { "not a $MAGIC frame file: ${raw.name}" }
@@ -280,8 +355,11 @@ object WanVideoNode : NodeType {
             val rgba = ByteBuffer.allocateDirect(w * h * 4)
             val frame = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             var poster: Bitmap? = null
+            var last: Bitmap? = null
             val thumbs = ArrayList<Bitmap>()
-            VideoWriter.encode(count, w, h, fps, out, { Log.i(TAG, it) }) { i ->
+            VideoWriter.encode(count, w, h, fps, out, log, isCancelled) { i ->
+                // ⚠ Frame 0 again = [VideoWriter.encode] retrying on the software encoder: start over.
+                if (i == 0) thumbs.clear()
                 f.seek(HEADER_BYTES + i.toLong() * rgb.size)
                 f.readFully(rgb)
                 rgba.clear()
@@ -293,11 +371,12 @@ object WanVideoNode : NodeType {
                 rgba.flip()
                 frame.copyPixelsFromBuffer(rgba)
                 if (i == 0) poster = frame.copy(Bitmap.Config.ARGB_8888, false)
+                if (i == count - 1) last = frame.copy(Bitmap.Config.ARGB_8888, false)
                 if (i % com.abrah.nightmare.ClipStore.EVERY == 0) thumbs.add(com.abrah.nightmare.ClipStore.thumb(frame))
                 frame
             }
             com.abrah.nightmare.ClipStore.putThinned(out.absolutePath, thumbs)
-            return poster ?: error("no frames in ${raw.name}")
+            return (poster ?: error("no frames in ${raw.name}")) to (last ?: error("no last frame in ${raw.name}"))
         }
     }
 

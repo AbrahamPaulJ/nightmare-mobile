@@ -188,15 +188,16 @@ class VideoGraphTest {
             val v = w.graph.byId.getValue("video")
             assertEquals(com.abrah.nightmare.npu.WanVideoNode.name, v.type)
             assertEquals(Source("prompt"), v.inputs["prompt"])
-            assertEquals(Source("video"), w.graph.nodes.single { it.type == "core.output" }.inputs["media"])
+            // ⚠ Named: the node has two outputs (`last_frame`), and a bare wire from it is refused.
+            assertEquals(Source("video", "video"), w.graph.nodes.single { it.type == "core.output" }.inputs["media"])
         }
         assertNull(wanT2v.graph.byId.getValue("video").inputs["image"])
         assertEquals(Source("image"), wanI2v.graph.byId.getValue("video").inputs["image"])
     }
 
     /**
-     * ⭐⭐ Its framing view is the CLIP's size, read off its params — 832x480 by default, 480x832
-     * portrait, 1280x704 at 704p — and a photo wires straight in, as for `nd.sample`.
+     * ⭐⭐ Its framing view is the CLIP's size, read off its `width`/`height` — 832x480 by default,
+     * snapped to Wan's 32 px grid — and a photo wires straight in, as for `nd.sample`.
      */
     @Test
     fun wanFramesToTheClipSize() {
@@ -204,11 +205,57 @@ class VideoGraphTest {
         val node = wanI2v.graph.byId.getValue("video")
         assertEquals(832 to 480, framingOutSize(node, wan))
         assertEquals(832f / 480f, cropAspect(node, 1080, 1920, wan), 1e-4f)
-        assertEquals(480 to 832, wan.sizeOf(mapOf("shape" to wan.PORTRAIT)))
-        assertEquals(1280 to 704, wan.sizeOf(mapOf("size" to wan.SIZE_704)))
-        assertEquals(704 to 1280, wan.sizeOf(mapOf("size" to wan.SIZE_704, "shape" to wan.PORTRAIT)))
+        assertEquals(480 to 832, wan.sizeOf(mapOf("width" to "480", "height" to "832")))
+        assertEquals(640 to 640, wan.sizeOf(mapOf("width" to "650", "height" to "630")))
+        assertEquals(320 to 1280, wan.sizeOf(mapOf("width" to "100", "height" to "4000")))
         val g = Graph(listOf(Node("image", "core.image"), Node("video", wan.name, inputs = sources("image" to "image"))))
         assertNull(com.abrah.nightmare.sizeRefusal(g, NODE_TYPES, "image", "video", "image"))
+    }
+
+    /**
+     * ⭐⭐ GitHub #23's shapes, by two sliders: the side NOT dragged gives way, so no pair goes past
+     * 1280x704's pixels, the largest size run on a phone here.
+     */
+    @Test
+    fun wanSizeStaysWithinTheArea() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        assertEquals(832 to 480, wan.fitArea(832, 480, widthMoved = true))
+        assertEquals(1280 to 704, wan.fitArea(1280, 1280, widthMoved = true))
+        assertEquals(704 to 1280, wan.fitArea(1280, 1280, widthMoved = false))
+        assertEquals(960 to 928, wan.fitArea(960, 960, widthMoved = true))
+        for (w in 320..1280 step 32) for (h in 320..1280 step 32) {
+            val (fw, fh) = wan.fitArea(w, h, widthMoved = w % 64 == 0)
+            assertTrue("${w}x$h -> ${fw}x$fh", fw.toLong() * fh <= wan.MAX_AREA)
+            assertEquals(0, fw % 32)
+            assertEquals(0, fh % 32)
+        }
+    }
+
+    /** ⚠⚠ The old `shape`/`size` choosers' sizes (the file migration: `WorkflowIoTest`). */
+    @Test
+    fun wanReadsTheOldShapeAndSize() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        assertEquals(704 to 1280, wan.fromLegacy(mapOf("size" to "704p", "shape" to "portrait")))
+        assertEquals(832 to 480, wan.fromLegacy(mapOf("shape" to "landscape")))
+        assertNull(wan.fromLegacy(mapOf("width" to "640")))
+    }
+
+    /**
+     * ⭐ GitHub #23's chaining: `last_frame` is a picture, so it wires into another Wan node's
+     * `image` like a photo does, and that node continues the clip with its own prompt.
+     */
+    @Test
+    fun wanLastFrameChainsIntoTheNextClip() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        assertEquals(listOf("video", wan.LAST_FRAME), wan.outputs.map { it.name })
+        assertEquals("IMAGE", wan.outputs.single { it.name == wan.LAST_FRAME }.type)
+        val g = Graph(
+            listOf(
+                Node("a", wan.name),
+                Node("b", wan.name, inputs = mapOf("image" to com.abrah.nightmare.Source("a", wan.LAST_FRAME))),
+            )
+        )
+        assertNull(com.abrah.nightmare.sizeRefusal(g, NODE_TYPES, "a", "b", "image"))
     }
 
     /** ⚠ Wan wants 4n+1 frames: 24 a second plus one, 1 to 5 seconds. */
@@ -268,7 +315,7 @@ class VideoGraphTest {
     fun wanKeysOnItsModelNotItsSize() {
         val wan = com.abrah.nightmare.npu.WanVideoNode
         val a = wan.contextKey(wanT2v.graph.byId.getValue("video"))
-        val b = wan.contextKey(Node("video", wan.name, params = mapOf("size" to wan.SIZE_704, "shape" to wan.PORTRAIT)))
+        val b = wan.contextKey(Node("video", wan.name, params = mapOf("width" to "704", "height" to "1280")))
         assertEquals(a, b)
         assertEquals(com.abrah.nightmare.ModelCatalog.WAN, a.type)
         assertEquals(com.abrah.nightmare.ModelCatalog.WAN22.id, a.model)

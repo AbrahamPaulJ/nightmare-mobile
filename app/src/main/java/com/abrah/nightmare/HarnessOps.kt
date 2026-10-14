@@ -214,10 +214,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "video_install" -> videoInstall()
             // ⭐ Image to video: animate the newest saved picture.
             "npu_i2v" -> npuI2v(arg)
-            // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480p|portrait"`,
+            // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480x832"`,
             // every field optional. `wan_i2v` animates the newest saved picture.
             "wan_video" -> wanVideo(arg, i2v = false)
             "wan_i2v" -> wanVideo(arg, i2v = true)
+            // ⭐ GitHub #23's chaining: clip A's `last_frame` is clip B's first frame. `--es arg "WxH|seconds"`.
+            "wan_chain" -> wanChain(arg)
             "inpaint" -> inpaint(arg)
             "t2i" -> t2i()
             // ⭐ Prompt translation, timed (`docs/TRANSLATE.md`). `--es arg "ru|красная шляпа, 8k"`;
@@ -1424,8 +1426,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                             params = n.params + listOfNotNull(
                                 at(1).takeIf { it.isNotEmpty() }?.let { "seed" to it },
                                 at(2).takeIf { it.isNotEmpty() }?.let { "seconds" to it },
-                                at(3).takeIf { it.isNotEmpty() }?.let { "size" to it },
-                                at(4).takeIf { it.isNotEmpty() }?.let { "shape" to it },
+                                // ⚠ `WxH` (`480x832`); the node's own grid and area cap apply.
+                                *at(3).split('x').takeIf { it.size == 2 }?.let { (w, h) ->
+                                    arrayOf("width" to w.trim(), "height" to h.trim())
+                                }.orEmpty(),
                             ),
                         )
                         else -> n
@@ -1461,6 +1465,47 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("  $it")
         }
         images.get(clip.posterId)?.let { sink.image(it) }
+    }
+
+    /**
+     * ⭐ Two Wan clips, the second started from the first's `last_frame` with its own prompt: the
+     * chaining a user wires in advanced view (GitHub #23). Both clips land in Movies/Nightmare, so
+     * clip A's last frame can be compared with clip B's first.
+     */
+    private suspend fun wanChain(arg: String?) {
+        val f = arg.orEmpty().split('|')
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        val params = buildMap {
+            put("seed", "42")
+            put("seconds", f.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() } ?: "1")
+            f.getOrNull(0)?.split('x')?.takeIf { it.size == 2 }?.let { (w, h) -> put("width", w.trim()); put("height", h.trim()) }
+        }
+        val g = Graph(
+            listOf(
+                Node("p1", "core.prompt", mapOf("prompt" to "a red fox trotting through a snowy pine forest", "negative" to "")),
+                Node("a", wan.name, params, mapOf("prompt" to Source("p1"))),
+                Node("p2", "core.prompt", mapOf("prompt" to "the fox stops and looks straight at the camera", "negative" to "")),
+                Node("b", wan.name, params, mapOf("prompt" to Source("p2"), "image" to Source("a", wan.LAST_FRAME))),
+            )
+        )
+        if (!ensureBackendFor(g)) {
+            say("wan_chain: the backend did not start", bad = true)
+            return
+        }
+        val t0 = System.currentTimeMillis()
+        val r = runWorkflow(com.abrah.nightmare.canvas.Workflow(g, emptyMap()), onNode = { n ->
+            say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} ${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+        })
+        if (r.error != null) {
+            say("wan_chain: refused. ${r.error}", bad = true)
+            return
+        }
+        for (id in listOf("a", "b")) {
+            val clip = r.outputs[id] as? Value.Video ?: run { say("wan_chain: $id made no clip", bad = true); return }
+            say("wan_chain: $id ${clip.frames} frames ${clip.w}x${clip.h}")
+            com.abrah.nightmare.npu.VideoWriter.publish(ctx, java.io.File(clip.path), "wanchain_${id}_$t0.mp4") { say("  $it") }
+        }
+        say("wan_chain: done in ${(System.currentTimeMillis() - t0) / 1000} s")
     }
 
     /**

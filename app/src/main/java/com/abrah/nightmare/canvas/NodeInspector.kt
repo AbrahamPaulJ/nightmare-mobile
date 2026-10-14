@@ -901,6 +901,8 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     if ((name == "width" || name == "height") &&
         com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())?.isDit == true
     ) return true
+    // ⭐ …and the Wan video node's, drawn by the same pair of sliders (`wanPanel`).
+    if ((name == "width" || name == "height") && node.type == com.abrah.nightmare.npu.WanVideoNode.name) return true
     val hasImage = node.inputs["image"] != null
     val painted = !com.abrah.nightmare.MaskNode.opsOf(node.type, node.params).isNullOrBlank()
     // ⚠ A `sample` type declares none of the mask widgets, so this branch never
@@ -1500,8 +1502,37 @@ internal fun NodeInspectorBody(
                 onCommit = commit,
             )
         }
+        // ⭐⭐ The Wan video node's size: [ditPanel]'s two sliders (GitHub #23, the user's call
+        // 2026-10-14), one commit per lift through [onSetParams] so the pair lands as ONE revision.
+        // ⚠ Kept within Wan's area by [WanVideoNode.fitArea]: the side NOT under the finger gives way,
+        // so a drag never lands on a size the node would refuse.
+        val wanPanel: @Composable () -> Unit = wanPanel@{
+            val wan = com.abrah.nightmare.npu.WanVideoNode
+            if (node.type != wan.name) return@wanPanel
+            val widthW = type?.widgets?.firstOrNull { it.name == "width" } ?: return@wanPanel
+            val heightW = type?.widgets?.firstOrNull { it.name == "height" } ?: return@wanPanel
+            val cur = wan.framesTo(node)
+            var draft by remember(nodeId, cur) { mutableStateOf<Pair<Int, Int>?>(null) }
+            val shown = draft ?: cur
+            val commit = {
+                draft?.let { (w, h) -> onSetParams(nodeId, mapOf("width" to "$w", "height" to "$h")) }
+                draft = null
+            }
+            SliderRow(
+                widthW, shown.first.toString(),
+                onSet = { v -> v.toIntOrNull()?.let { draft = wan.fitArea(it, shown.second, widthMoved = true) } },
+                onCommit = commit,
+            )
+            SliderRow(
+                heightW, shown.second.toString(),
+                onSet = { v -> v.toIntOrNull()?.let { draft = wan.fitArea(shown.first, it, widthMoved = false) } },
+                onCommit = commit,
+            )
+            widthW.localizedHint()?.let { Text(it, style = NoteTextStyle) }
+        }
         val sizePanel: @Composable () -> Unit = {
             ditPanel()
+            wanPanel()
             if (sizeKnob && resolutions.size > 1) {
                 val current = com.abrah.nightmare.Res(
                     node.params["width"]?.toIntOrNull() ?: 0,

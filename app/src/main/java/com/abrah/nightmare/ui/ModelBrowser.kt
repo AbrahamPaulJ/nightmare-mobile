@@ -480,7 +480,8 @@ private fun StatusLine(row: ModelRow, modifier: Modifier) {
         val note = when {
             row.ramTight -> stringResource(R.string.ram_tight).trim().removePrefix("·").trim()
             spec.isCustom && row.missing.isNotEmpty() -> stringResource(R.string.incomplete_missing, row.missing.joinToString())
-            row.unsupported() && row.needsRam > 0 -> stringResource(R.string.needs_16gb_ram)
+            row.unsupported() && row.needsRam > 0 ->
+                stringResource(R.string.needs_ram_gb, com.abrah.nightmare.Prefs.ramClassGb(row.needsRam))
             row.unsupported() -> stringResource(R.string.cannot_run_it)
             else -> null
         }

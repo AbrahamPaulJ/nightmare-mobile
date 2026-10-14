@@ -1,0 +1,49 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -394,7 +394,21 @@
+     }
+     const long budget =
+         vae_passes > 1 ? kTileAbovePixelsMultiPass : kTileAbovePixels;
+-    const bool tiled = vae_tile_size_ > 0 && widest > budget;
++    // ⚠⚠ …and a SIDE limit, for Qwen Image 2.1's Wan VAE: a full-frame pass
++    // with a 1280 px side aborts the NPU (`dspqueue_read failed 0x2e`, 0.2 s
++    // into the decode) at 768x1280 and 1280x768 alike, while 1024x1152 --
++    // more pixels -- and 1152x1024 decode clean (S25 / v79, 2026-10-14; first
++    // seen on a Xiaomi 8 Elite). Neither CONCAT nor CONV_2D_UPSCALE on the CPU
++    // changed it. Tiles keep every side the VAE sees under the limit.
++    int longest_side = std::max(req.width, req.height);
++    for (size_t i = 0; i < reference_ptrs.size(); ++i) {
++      longest_side = std::max(
++          longest_side, std::max(reference_widths[i], reference_heights[i]));
++    }
++    const bool side_limited = kind_ == DIT_MODEL_QWEN_IMAGE_2_1 &&
++                              longest_side > kMaxFullFrameSideQwen;
++    const bool tiled =
++        vae_tile_size_ > 0 && (widest > budget || side_limited);
+     if (tiled) {
+       params.vae_tile_size = vae_tile_size_;
+       params.vae_tile_overlap = 0.25f;
+@@ -404,9 +418,10 @@
+     // WHY — whether the test was not met, the knob was zero, or the engine
+     // ignored it. One line here settles which, and this file has already cost
+     // a day to theories that a log line would have ended.
+-    QNN_INFO("[dit] vae: passes=%zu widest=%ldpx budget=%ldpx tile_size=%d -> %s",
+-             vae_passes, widest, budget, vae_tile_size_,
+-             tiled ? "TILED" : "full-frame");
++    QNN_INFO("[dit] vae: passes=%zu widest=%ldpx budget=%ldpx side=%d tile_size=%d -> %s",
++             vae_passes, widest, budget, longest_side, vae_tile_size_,
++             tiled ? (side_limited && widest <= budget ? "TILED (side)" : "TILED")
++                   : "full-frame");
+ 
+     // One slot per VAE encode before sampling: every reference, plus the
+     // init latent for img2img/inpaint.
+@@ -500,6 +515,9 @@
+   // day at 288 MB a pass, and 1024x1024 at 1536 MB a pass was not. A request
+   // that runs the VAE more than once uses this instead.
+   static constexpr long kTileAbovePixelsMultiPass = 640L * 640L;
++  // ⚠ Qwen Image 2.1's Wan VAE, full frame: 1152 measured clean, 1280 aborts
++  // the NPU (see the tiling decision in generate()). 1216 untried.
++  static constexpr int kMaxFullFrameSideQwen = 1152;
+ 
+   bool isNativeEditModel() const {
+     return kind_ == DIT_MODEL_FLUX2_KLEIN ||

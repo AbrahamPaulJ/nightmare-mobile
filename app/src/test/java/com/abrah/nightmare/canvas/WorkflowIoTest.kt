@@ -101,6 +101,33 @@ class WorkflowIoTest {
         assertEquals(Source("s", "image"), back.byId["named"]!!.inputs["media"])
     }
 
+    /**
+     * ⚠⚠ The Wan video node's `shape`/`size` choosers became `width`/`height` sliders (GitHub #23):
+     * a flow saved with them opens at the size it was saved at, and its bare wire is NAMED as the clip:
+     * the node has two outputs now, and the executor refuses a bare wire from such a node (found on
+     * the phone 2026-10-14, when every existing Wan flow stopped running).
+     */
+    @Test
+    fun aWanFlowSavedWithShapeAndSizeKeepsItsSize() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        val w = Workflow(
+            Graph(
+                listOf(
+                    Node("video", wan.name, mapOf("seed" to "0", "size" to "704p", "shape" to "portrait")),
+                    Node("out", "core.output", mapOf("save" to "false"), sources("media" to "video")),
+                )
+            ),
+            mapOf("video" to Pt(0f, 0f), "out" to Pt(0f, 0f)),
+        )
+        val back = workflowFromJson(w.toJson(types)).workflow.graph
+        val node = back.byId.getValue("video")
+        assertEquals("704", node.params["width"])
+        assertEquals("1280", node.params["height"])
+        assertTrue("size" !in node.params && "shape" !in node.params)
+        assertEquals(704 to 1280, wan.framesTo(node))
+        assertEquals(Source("video", "video"), back.byId.getValue("out").inputs["media"])
+    }
+
     @Test
     fun positionsSurviveIncludingFractionsAndNegatives() {
         val back = reload().workflow.positions

@@ -54,6 +54,29 @@ class NodeNameTest {
         assertEquals("FLUX.2", n.secondary)
     }
 
+    /**
+     * ⚠⚠ GitHub #25: the RUN LOG named a node by its id, so one made from the Anima DiT flow and
+     * switched to Klein 9B logged "animadit_generate". A stale auto id gives way to [nodeNameOf];
+     * the node's own default, a recipe's word and a typed name stay exactly as they were.
+     */
+    @Test
+    fun theRunLogDoesNotNameANodeAfterAModelItNoLongerRuns() {
+        val other = SdSampler.ALL.first { it != SdSampler.FLUX2 && !it.inpaint }.defaultId!!
+        val g = Graph(
+            listOf(
+                Node(other, SdSampler.FLUX2.name, emptyMap()),
+                Node(SdSampler.FLUX2.defaultId!!, SdSampler.FLUX2.name, emptyMap()),
+                Node("generate", SdSampler.FLUX2.name, emptyMap()),
+                Node("hero shot", SdSampler.FLUX2.name, emptyMap()),
+            )
+        )
+        assertEquals("Text to image", logNameOf(other, g))
+        assertEquals(SdSampler.FLUX2.defaultId, logNameOf(SdSampler.FLUX2.defaultId!!, g))
+        assertEquals("generate", logNameOf("generate", g))
+        assertEquals("hero shot", logNameOf("hero shot", g))
+        assertEquals("gone", logNameOf("gone", g))
+    }
+
     @Test
     fun aRenamedNodeKeepsTheNameYouGaveIt() {
         val n = nodeNameOf(flux("hero shot"))

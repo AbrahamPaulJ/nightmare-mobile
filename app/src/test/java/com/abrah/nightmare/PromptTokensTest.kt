@@ -73,6 +73,17 @@ class PromptTokensTest {
     @Test fun animaWithNoVocabularyGivesNoCount() =
         assertNull(PromptTokens.count("a cat", PromptTokens.Budget.ANIMA))
 
+    /**
+     * ⚠⚠ GitHub #25: a prompt into a FLUX.2 node has NO count (Qwen3 reads it whole), and must not
+     * borrow the selected model's (the reporter's top bar held an SDXL model: `67/77`).
+     */
+    @Test fun aDitSamplerHasNoCountWhateverIsSelected() = assertNull(
+        PromptTokens.budgetFor(
+            graph(Node("s", "flux2.sample", params = mapOf("model" to "flux2_klein_9b"), inputs = sources("prompt" to "p"))),
+            "p",
+        ),
+    )
+
     @Test fun anAnimaSamplerIsT5() = assertEquals(
         PromptTokens.Budget.ANIMA,
         PromptTokens.budgetFor(graph(Node("s", "anima.sample", inputs = sources("prompt" to "p"))), "p"),

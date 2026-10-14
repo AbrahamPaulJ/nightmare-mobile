@@ -597,6 +597,22 @@ fun nodeNameOf(node: Node, types: Map<String, NodeType> = NODE_TYPES): NodeName 
     }
 }
 
+/**
+ * ⭐ How the RUN LOG names node [id]: the id, as it always has (`prompt`, `generate`, a name the
+ * user typed), unless it is a STALE auto id, another type's [NodeType.defaultId], when it is
+ * [nodeNameOf]'s name instead. GitHub #25: a node made from the Anima DiT flow and switched to
+ * FLUX.2 Klein 9B logged itself as `animadit_generate` while the canvas box said "Text to image";
+ * the run log was the one surface [nodeNameOf] had not reached.
+ */
+fun logNameOf(id: String, graph: Graph, types: Map<String, NodeType> = NODE_TYPES): String {
+    val node = graph.byId[id] ?: return id
+    fun auto(base: String) = id == base || Regex(Regex.escape(base) + """_\d+""").matches(id)
+    val own = types[node.type]
+    if (own?.defaultId?.let(::auto) == true) return id
+    val stale = types.values.any { t -> t !== own && t.defaultId?.let(::auto) == true }
+    return if (stale) nodeNameOf(node, types).primary else id
+}
+
 /** ⚠ The ones that carry a mask, its editor and the paste back. */
 val INPAINT_TYPES: Set<String> = SdSampler.ALL.filter { it.inpaint }.map { it.name }.toSet()
 

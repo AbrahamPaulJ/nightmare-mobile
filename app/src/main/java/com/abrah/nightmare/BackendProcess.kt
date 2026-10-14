@@ -352,6 +352,15 @@ object BackendProcess {
     private fun readDitParamsOverride(context: Context): String? =
         readDiagnosticFile(context, "nightmare-dit-params.txt")?.takeIf { it.isNotEmpty() }
 
+    /**
+     * ⭐⭐ Krea 2 below the 16 GB class: a 4 GiB budget, so its 6.5 GB DiT runs in segments instead of
+     * loading whole (which got the app reaped on the 12 GB S25). Measured 2026-10-14 at 3, 4 and 5 GiB:
+     * 4 is the balance (211–235 s at 1024², 2.8 GB left free; 5 is ~10% faster with only 1.9 GB free).
+     * Null on a 16 GB phone, or when the RAM is unknown, where it runs unbudgeted as before.
+     */
+    internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long): String? =
+        "4".takeIf { spec?.family == Family.KREA2 && ramBytes in 1 until Prefs.LOWRAM_BELOW_BYTES }
+
     /** ⚠ Diagnostic: the engine's VRAM budget (`DIT_MAX_VRAM`, GiB) on any chip. */
     private fun readDitMaxVramOverride(context: Context): String? =
         readDiagnosticFile(context, "nightmare-dit-max-vram.txt")?.takeIf { it.isNotEmpty() }
@@ -642,7 +651,8 @@ object BackendProcess {
                         // memory available", the S25 forced to v75 at 2.75); without it the same clip
                         // renders (`docs/VIDEO-GGML.md` §6).
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
-                        (readDitMaxVramOverride(context) ?: "2.75".takeIf { belowV79 && spec?.family != Family.WAN })
+                        (readDitMaxVramOverride(context) ?: "2.75".takeIf { belowV79 && spec?.family != Family.WAN }
+                            ?: kreaBudget(spec, DeviceProbe.caps().ramBytes))
                             ?.let { put("DIT_MAX_VRAM", it) }
                         // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
                         // up blocks) computes garbage: 1.6.131's 8 Gen 3 renders came back solid red /

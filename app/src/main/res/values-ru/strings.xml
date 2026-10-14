@@ -87,7 +87,7 @@
     <string name="repair_body">В %1$s не хватает: %2$s. Восстановить (загрузка %3$s)?</string>
     <string name="not_installed_mb">не установлено · загрузка %1$d МБ</string>
     <string name="cannot_run_it">это устройство не сможет её запустить</string>
-    <string name="needs_16gb_ram">нужен телефон с 16 ГБ оперативной памяти</string>
+    <string name="needs_ram_gb">нужен телефон с %1$d ГБ оперативной памяти</string>
     <string name="upscalers">Апскейлеры</string>
     <string name="upscalers_note">По 8-24 МБ. Включите «Авто-увеличение» на узле вывода или увеличьте картинку из «Результатов».</string>
 
@@ -549,7 +549,7 @@
     <string name="models_family_flux2">Klein 4B: около 6,7 ГБ, Klein 9B: около 10,7 ГБ и работает медленнее. 8 Gen 3 или новее (альфа на 8 Gen 3, где Klein 4B представляет собой GGUF на 6,9 ГБ). Любой размер от 512 до 2048. Используйте Wi-Fi.</string>
     <string name="models_family_zimage">Около 8,8 ГБ. Только 8 Elite или новее. Ещё развивается: на некоторых телефонах с 8 Elite происходит сбой. Используйте Wi-Fi.</string>
     <string name="models_family_qwen">Около 10,8 ГБ. 8 Gen 3 или новее (альфа на 8 Gen 3). Редактирует и генерирует; медленнее FLUX.2. Используйте Wi-Fi.</string>
-    <string name="models_family_krea">Около 9,5 ГБ. Только телефоны с 16 ГБ, 8 Gen 3 или новее (альфа на 8 Gen 3). Только текст в изображение, без редактирования. Используйте Wi-Fi.</string>
+    <string name="models_family_krea">Около 9,5 ГБ. Телефоны с 12 ГБ и больше, 8 Gen 3 или новее (альфа на 8 Gen 3). На телефоне с 12 ГБ модель работает по частям: около 3,5–4 минут на 1024x1024. Только текст в изображение; редактировать не умеет. Используйте Wi-Fi.</string>
     <string name="models_family_animadit">Около 3,2 ГБ. Загружает официальный файл Anima (4,2 ГБ) и конвертирует его на телефоне, поэтому при установке нужно ~7,5 ГБ свободного места. Около 1 минуты на изображение 1024², любой размер от 512. 8 Gen 3 или новее. Не модель редактирования. Используйте Wi-Fi.</string>
     <string name="models_family_other">Около 3,5 ГБ каждая и ~7,5 ГБ свободного места при распаковке. Используйте Wi-Fi.</string>
     <string name="models_import_checkpoint">Импортировать чекпойнт</string>
@@ -587,7 +587,7 @@
     <string name="model_download_failed">%1$s: ошибка: %2$s</string>
     <string name="models_import_incomplete">%1$s импортирована не полностью: отсутствует %2$s</string>
     <string name="models_import_failed">ошибка импорта: %1$s</string>
-    <string name="models_needs_ram">Для %1$s нужен телефон с 16 ГБ ОЗУ; на этом %2$d ГБ</string>
+    <string name="models_needs_ram">Для %1$s нужен телефон с %3$d ГБ ОЗУ; на этом %2$d ГБ</string>
     <string name="models_needs_arch">Для %1$s нужна архитектура HTP v%2$d или новее; это устройство сообщает v%3$d</string>
     <string name="upscale_no_upscaler">не удалось увеличить: нет апскейлера %1$s</string>
     <string name="upscale_picture_gone">не удалось увеличить: файл изображения исчез</string>
@@ -683,7 +683,7 @@
     <string name="flow_wan_i2v_name">Изображение в видео, Wan 2.2</string>
     <string name="flow_wan_i2v_about">Фото из галереи становится первым кадром 5-секундного клипа и движется так, как сказано в промпте. Wan 2.2, около 3 мин, на 8 Gen 3 или новее (альфа на 8 Gen 3).</string>
     <string name="hint_wan_seconds">Длина клипа в секундах, 24 кадра в секунду. 5 с при 480p занимают около 3 мин на 8 Elite.</string>
-    <string name="hint_wan_size">480p это 832x480. 704p (1280x704) выглядит лучше всего и занимает примерно втрое больше времени.</string>
+    <string name="hint_wan_size">Wan 2.2 рассчитан на 1280x704: меньшие размеры, включая 832x480, могут выглядеть размыто или с искажениями. Любая форма до 1280x704 пикселей; другая сторона уменьшается, если превысить предел. 1280x704 занимает примерно втрое больше времени, чем 832x480.</string>
     <string name="knob_cfg">CFG</string>
     <string name="knob_loras">LoRA</string>
     <string name="knob_output_width">Ширина результата</string>

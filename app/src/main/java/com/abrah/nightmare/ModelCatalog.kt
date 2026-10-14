@@ -2122,14 +2122,16 @@ object ModelCatalog {
         // `all=disk` like Qwen, and reads its own directory only
         // (backend-patches/014) — none of it is FLUX.2's.
         //
-        // ⚠⚠ **16 GB phones only** (the user's call, 2026-09-28). Measured on
-        // the 12 GB S25 Ultra: its DiT is 6,520 MB of params, and lmkd reaped
-        // the app while that loaded — the text encoder already released, not
-        // one step taken. Never run on a 16 GB phone; there is none here.
+        // ⚠⚠ **12 GB phones and up, under a budget** (the user's call, 2026-10-14). Unbudgeted,
+        // the 12 GB S25 Ultra's lmkd reaped the app while its 6,520 MB DiT loaded (2026-09-28),
+        // so it was 16 GB only. With `DIT_MAX_VRAM` 4 (set below the 16 GB class by
+        // [BackendProcess]) it runs in 29 segments: 1024² in 211–235 s from a cool phone, 2.8 GB
+        // left free, all pictures clean (budgets 3/4/5 measured, `notes/PROGRESS.md`).
+        // ⚠ 8 GB phones stay out: never run there.
         dit(
             "krea2_turbo", "Krea 2 Turbo", Family.KREA2, KREA2, steps = 8,
             ownDitParts = true,
-            minRamBytes = Prefs.LOWRAM_BELOW_BYTES,
+            minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
             files = listOf(
                 RemoteFile(HF + "gguf-org/krea-2-gguf/resolve/main/krea2_turbo-mxfp4_moe.gguf", "dit.gguf", 6_837_146_720L),
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),

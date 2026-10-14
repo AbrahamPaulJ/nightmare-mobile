@@ -226,6 +226,15 @@ object Prefs {
      */
     const val LOWRAM_BELOW_BYTES = 13L shl 30
 
+    /**
+     * ⚠ 10 GiB: the 12 GB class's floor, between it (~10.9–11.4 GiB of `totalMem`) and the 8 GB
+     * class (~7.3 GiB). What a model needing "a 12 GB phone" is gated on (Krea 2, 2026-10-14).
+     */
+    const val RAM_12GB_CLASS_BYTES = 10L shl 30
+
+    /** ⚠ The phone class a [minRamBytes] gate names to a person: 16 at [LOWRAM_BELOW_BYTES], else 12. */
+    fun ramClassGb(minRamBytes: Long): Int = if (minRamBytes >= LOWRAM_BELOW_BYTES) 16 else 12
+
     data class LowRam(val sdxl: Boolean, val anima: Boolean, val animaSeqDit: Boolean)
 
     /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */

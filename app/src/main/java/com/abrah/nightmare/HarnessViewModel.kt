@@ -1727,7 +1727,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val build = spec.buildFor(DeviceProbe.caps())
         if (build == null) {
             modelError = if (spec.ramNeeded(DeviceProbe.caps()) > 0)
-                text(R.string.models_needs_ram, spec.label, DeviceProbe.caps().ramBytes shr 30)
+                text(R.string.models_needs_ram, spec.label, DeviceProbe.caps().ramBytes shr 30, Prefs.ramClassGb(spec.ramNeeded(DeviceProbe.caps())))
             else text(
                 R.string.models_needs_arch,
                 spec.label, spec.builds.minOf { it.minArch }, DeviceProbe.caps().arch,
@@ -7457,12 +7457,19 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * and "0 ms" beside a sampler reads as a broken clock rather than a cache
      * hit.
      */
+    /**
+     * ⭐ A node's name in the run log: its id, unless that id is a STALE auto id
+     * ([com.abrah.nightmare.logNameOf]), which reads as the wrong model (GitHub #25).
+     */
+    private fun logName(id: String): String =
+        com.abrah.nightmare.logNameOf(id, canvas.workflow.graph, typesFor(canvas.workflow.graph))
+
     private fun noteNodeRun(n: NodeRun) {
         canvasStatus[n.id] = NodeStatus(outcome = n.outcome, detail = n.detail)
         if (n.outcome == Outcome.RAN) nodeMs[n.id] = n.ms
         runLog = runLog.copy(
             lines = runLog.lines +
-                com.abrah.nightmare.canvas.runLineOf(n.id, n.outcome, n.ms, n.detail),
+                com.abrah.nightmare.canvas.runLineOf(logName(n.id), n.outcome, n.ms, n.detail),
             now = null,
             step = null,
         )
@@ -7594,13 +7601,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val r = ops.runWorkflow(
                 canvas.workflow.copy(graph = graph),
                 onStart = { id, _ ->
-                    runLog = runLog.copy(now = id, step = null)
+                    runLog = runLog.copy(now = logName(id), step = null)
                     CrashReport.stage(getApplication(), id)
                 },
                 onNode = ::noteNodeRun,
                 onProgress = { id, step, total ->
                     canvasStatus[id] = NodeStatus(progress = step to total)
-                    runLog = runLog.copy(now = id, step = step to total)
+                    runLog = runLog.copy(now = logName(id), step = step to total)
                 },
                 // ⚠ Once per SWEEP per sentence: eight runs refusing the same
                 // upscale is one thing to know, not eight toasts in a queue.
@@ -7837,14 +7844,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // ⭐ Named before it runs, so a 24 s sampler is a node with a name
             // rather than a frozen screen.
             onStart = { id, _ ->
-                runLog = runLog.copy(now = id, step = null)
+                runLog = runLog.copy(now = logName(id), step = null)
                 // ⭐ Which node, and the RAM free as it starts: survives a phone restart ([CrashReport.stage]).
                 CrashReport.stage(getApplication(), id)
             },
             onNode = ::noteNodeRun,
             onProgress = { id, step, total ->
                 canvasStatus[id] = NodeStatus(progress = step to total)
-                runLog = runLog.copy(now = id, step = step to total)
+                runLog = runLog.copy(now = logName(id), step = step to total)
             },
             // ⭐⭐ A long node's own narration, live in the panel.
             //
@@ -7859,8 +7866,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // throw away history the panel is capable of showing.
             onLog = { id, text ->
                 runLog = runLog.copy(
-                    lines = runLog.lines + com.abrah.nightmare.canvas.RunLine(id, text),
-                    now = id,
+                    lines = runLog.lines + com.abrah.nightmare.canvas.RunLine(logName(id), text),
+                    now = logName(id),
                 )
             },
             // ⭐ [com.abrah.nightmare.NodeCtx.warn] — already in the panel via

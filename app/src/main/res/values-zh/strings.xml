@@ -87,7 +87,7 @@
     <string name="repair_body">%1$s 缺少 %2$s。要修复吗（需下载 %3$s）？</string>
     <string name="not_installed_mb">未安装 · 需下载 %1$d MB</string>
     <string name="cannot_run_it">本机无法运行</string>
-    <string name="needs_16gb_ram">需要 16 GB 内存的手机</string>
+    <string name="needs_ram_gb">需要 %1$d GB 内存的手机</string>
     <string name="upscalers">放大模型</string>
     <string name="upscalers_note">每个 8-24 MB。在输出节点勾选“自动放大”，或在“结果”中放大图片。</string>
 
@@ -534,7 +534,7 @@
     <string name="models_family_flux2">Klein 4B 约 6.7 GB，Klein 9B 约 10.7 GB 且更慢。支持 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha，Klein 4B 为 6.9 GB 的 GGUF）。尺寸可在 512 到 2048 之间选择。请使用 Wi-Fi。</string>
     <string name="models_family_zimage">约 8.8 GB。仅支持 8 Elite 或更新芯片。仍在完善中：某些 8 Elite 手机上会崩溃。请使用 Wi-Fi。</string>
     <string name="models_family_qwen">约 10.8 GB。支持 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。可编辑和生成，速度比 FLUX.2 慢。请使用 Wi-Fi。</string>
-    <string name="models_family_krea">约 9.5 GB。仅限 16 GB 内存的手机，8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。只能文生图，不能编辑。请使用 Wi-Fi。</string>
+    <string name="models_family_krea">约 9.5 GB。12 GB 及以上内存的手机，8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。在 12 GB 手机上分段运行：1024x1024 约需 3.5 到 4 分钟。只能文生图，不能编辑。请使用 Wi-Fi。</string>
     <string name="models_family_animadit">约 3.2 GB。下载 Anima 官方 4.2 GB 文件并在手机上转换，安装时需要约 7.5 GB 可用空间。1024² 每张图片约 1 分钟，支持 512 起的任意尺寸。需要 8 Gen 3 或更新芯片。不是编辑模型。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>
@@ -572,7 +572,7 @@
     <string name="model_download_failed">%1$s 失败：%2$s</string>
     <string name="models_import_incomplete">%1$s 已导入但不完整：缺少 %2$s</string>
     <string name="models_import_failed">导入失败：%1$s</string>
-    <string name="models_needs_ram">%1$s 需要配备 16 GB 内存的手机；此手机有 %2$d GB</string>
+    <string name="models_needs_ram">%1$s 需要配备 %3$d GB 内存的手机；此手机有 %2$d GB</string>
     <string name="models_needs_arch">%1$s 需要 HTP v%2$d 或更新架构；此设备报告为 v%3$d</string>
     <string name="upscale_no_upscaler">放大失败：没有名为 %1$s 的放大器</string>
     <string name="upscale_picture_gone">放大失败：该图片文件已不存在</string>
@@ -668,7 +668,7 @@
     <string name="flow_wan_i2v_name">图生视频（Wan 2.2）</string>
     <string name="flow_wan_i2v_about">图库中的照片作为 5 秒视频的第一帧，按提示词描述的方式运动。Wan 2.2，约 3 分钟，适用于 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。</string>
     <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
-    <string name="hint_wan_size">480p 为 832x480。704p（1280x704）效果最好，耗时约为三倍。</string>
+    <string name="hint_wan_size">Wan 2.2 为 1280x704 设计：更小的尺寸（包括 832x480）可能模糊或变形。任意比例，像素总数不超过 1280x704；超出时另一边会自动缩小。1280x704 耗时约为 832x480 的三倍。</string>
     <string name="knob_cfg">CFG</string>
     <string name="knob_loras">LoRA</string>
     <string name="knob_output_width">输出宽度</string>

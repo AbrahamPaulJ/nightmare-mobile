@@ -107,7 +107,7 @@
     <string name="repair_body">%1$s is missing %2$s. Repair it (%3$s download)?</string>
     <string name="not_installed_mb">not installed · %1$d MB download</string>
     <string name="cannot_run_it">this device cannot run it</string>
-    <string name="needs_16gb_ram">needs a phone with 16 GB of RAM</string>
+    <string name="needs_ram_gb">needs a phone with %1$d GB of RAM</string>
     <string name="upscalers">Upscalers</string>
     <string name="upscalers_note">8-24 MB each. Tick Auto upscale on an output node, or upscale a picture from Results.</string>
     <string name="import_upscaler_title">Import an upscaler</string>
@@ -561,7 +561,7 @@
     <string name="models_family_flux2">Klein 4B about 6.7 GB, Klein 9B about 10.7 GB and slower. 8 Gen 3 or newer (alpha on 8 Gen 3, where Klein 4B is a 6.9 GB GGUF). Any size from 512 to 2048. Use Wi-Fi.</string>
     <string name="models_family_zimage">About 8.8 GB. 8 Elite or newer only. Still maturing: it crashes on some 8 Elite phones. Use Wi-Fi.</string>
     <string name="models_family_qwen">About 10.8 GB. 8 Gen 3 or newer (alpha on 8 Gen 3). Edits and generates; slower than FLUX.2. Use Wi-Fi.</string>
-    <string name="models_family_krea">About 9.5 GB. 16 GB phones only, 8 Gen 3 or newer (alpha on 8 Gen 3). Text to image only; it does not edit. Use Wi-Fi.</string>
+    <string name="models_family_krea">About 9.5 GB. 12 GB phones and up, 8 Gen 3 or newer (alpha on 8 Gen 3). On a 12 GB phone it renders in parts: about 3.5 to 4 minutes at 1024x1024. Text to image only; it does not edit. Use Wi-Fi.</string>
     <string name="models_family_animadit">About 3.2 GB. Downloads Anima\'s official 4.2 GB file and converts it on the phone, so it needs ~7.5 GB free while it installs. About 1 minute a picture at 1024², any size from 512. 8 Gen 3 or newer. Not an edit model. Use Wi-Fi.</string>
     <string name="models_family_other">About 3.5 GB each, and ~7.5 GB free while it unpacks. Use Wi-Fi.</string>
     <string name="models_import_checkpoint">Import a checkpoint</string>
@@ -599,7 +599,7 @@
     <string name="model_download_failed">%1$s failed. %2$s</string>
     <string name="models_import_incomplete">%1$s imported but is incomplete: missing %2$s</string>
     <string name="models_import_failed">import failed: %1$s</string>
-    <string name="models_needs_ram">%1$s needs a phone with 16 GB of RAM; this one has %2$d GB</string>
+    <string name="models_needs_ram">%1$s needs a phone with %3$d GB of RAM; this one has %2$d GB</string>
     <string name="models_needs_arch">%1$s needs an HTP arch of %2$d or newer; this device reports %3$d</string>
     <string name="upscale_no_upscaler">upscale failed. No upscaler named %1$s</string>
     <string name="upscale_picture_gone">upscale failed. That picture\'s file is gone</string>
@@ -695,7 +695,7 @@
     <string name="flow_wan_i2v_name">Image to video, Wan 2.2</string>
     <string name="flow_wan_i2v_about">A photo from the gallery as the first frame of a 5 second clip, moving the way the prompt says. Wan 2.2, about 3 minutes, on an 8 Gen 3 or newer (alpha on 8 Gen 3).</string>
     <string name="hint_wan_seconds">Clip length in seconds, 24 frames each. 5 s at 480p takes about 3 minutes on an 8 Elite.</string>
-    <string name="hint_wan_size">480p is 832x480. 704p (1280x704) looks best and takes about three times as long.</string>
+    <string name="hint_wan_size">Wan 2.2 is made for 1280x704: smaller sizes, 832x480 included, can look soft or distorted. Any shape up to 1280x704 worth of pixels; the other side shrinks when you pass it. 1280x704 takes about three times as long as 832x480.</string>
     <string name="knob_cfg">CFG</string>
     <string name="knob_loras">LoRAs</string>
     <string name="knob_output_width">Output width</string>

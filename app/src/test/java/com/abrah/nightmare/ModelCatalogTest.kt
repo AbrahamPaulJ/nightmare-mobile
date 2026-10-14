@@ -300,25 +300,34 @@ class ModelCatalogTest {
         DeviceProbe.Caps(arch = arch, vtcmMb = vtcm, measured = true, soc = "TEST", ramBytes = ram)
 
     /**
-     * ⭐ Krea 2 Turbo on the 16 GB class only; Klein 9B on any 8 Elite. The
-     * `totalMem` figures are the two classes' real ones ([Prefs.LOWRAM_BELOW_BYTES]).
+     * ⭐ Krea 2 Turbo on the 12 GB class and up (2026-10-14; it was 16 GB only), with a 4 GiB budget
+     * below the 16 GB class; Klein 9B on any 8 Elite. The `totalMem` figures are the classes' real
+     * ones ([Prefs.RAM_12GB_CLASS_BYTES], [Prefs.LOWRAM_BELOW_BYTES]).
      * ⚠ Unknown RAM (0) is OFFERED, never hidden — the [DeviceProbe.Caps.known] rule.
      */
     @Test
-    fun krea2NeedsASixteenGigabytePhone() {
+    fun krea2NeedsATwelveGigabytePhoneAndABudgetOnIt() {
         val krea = ModelCatalog.byId("krea2_turbo")!!
         val klein9 = ModelCatalog.byId("flux2_klein_9b")!!
+        val eight = 7_650_000L * 1024     // an 8 GB phone's MemTotal
         val twelve = 11_379_968L * 1024   // this S25 Ultra's MemTotal
         val sixteen = 15L shl 30
-        assertEquals(null, krea.buildFor(caps(79, 8, twelve)))
-        assertEquals(Prefs.LOWRAM_BELOW_BYTES, krea.ramNeeded(caps(79, 8, twelve)))
+        assertTrue(krea.buildFor(caps(79, 8, twelve)) != null)
         assertTrue(krea.buildFor(caps(79, 8, sixteen)) != null)
         assertTrue(krea.buildFor(caps(79, 8, 0L)) != null)
-        // ⚠ An 8 Gen 3 runs Krea's MXFP4 since 1.6.125 (alpha), so on 12 GB it is the RAM that
-        // refuses — and the row must say so. An 8 Gen 2 is refused by the chip (no RAM figure).
-        assertEquals(Prefs.LOWRAM_BELOW_BYTES, krea.ramNeeded(caps(75, 8, twelve)))
-        assertEquals(0L, krea.ramNeeded(caps(73, 8, twelve)))
+        assertEquals(null, krea.buildFor(caps(79, 8, eight)))
+        // ⚠ The row names the class it needs: 12 GB, not the old 16.
+        assertEquals(Prefs.RAM_12GB_CLASS_BYTES, krea.ramNeeded(caps(79, 8, eight)))
+        assertEquals(12, Prefs.ramClassGb(krea.ramNeeded(caps(79, 8, eight))))
+        assertEquals(16, Prefs.ramClassGb(Prefs.LOWRAM_BELOW_BYTES))
+        // ⚠ An 8 Gen 2 is refused by the chip (no RAM figure).
+        assertEquals(0L, krea.ramNeeded(caps(73, 8, eight)))
         assertTrue(klein9.buildFor(caps(79, 8, twelve)) != null)
+        // ⭐ The budget: 4 GiB on the 12 GB class, none on 16 GB or unknown RAM, never another model.
+        assertEquals("4", BackendProcess.kreaBudget(krea, twelve))
+        assertEquals(null, BackendProcess.kreaBudget(krea, sixteen))
+        assertEquals(null, BackendProcess.kreaBudget(krea, 0L))
+        assertEquals(null, BackendProcess.kreaBudget(klein9, twelve))
     }
 
     /**

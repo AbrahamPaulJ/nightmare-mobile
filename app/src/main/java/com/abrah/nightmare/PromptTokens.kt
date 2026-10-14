@@ -191,6 +191,11 @@ object PromptTokens {
         if (consumers.any { it.type == com.abrah.nightmare.npu.WanVideoNode.name }) return null
         val budgets = consumers.mapNotNull { budgetOf(it) }
         if (budgets.isNotEmpty()) return budgets.minBy { it.max }
+        // ⚠⚠ The selected model is the fallback for a prompt that feeds NO sampler yet, never for
+        // one feeding a sampler that has no count. GitHub #25: a prompt into FLUX.2 Klein 9B showed
+        // `67/77` because the Klein node's null budget was dropped above and the top bar's SDXL
+        // model answered instead.
+        if (consumers.any { it.type in SAMPLER_TYPES }) return null
         return specBudget(SelectedModel.spec)
     }
 

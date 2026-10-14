@@ -847,7 +847,9 @@ fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
                 params = mapOf("seed" to "0", "seconds" to com.abrah.nightmare.npu.WanVideoNode.openingSeconds().toString()),
                 inputs = if (i2v) sources("prompt" to "prompt", "image" to "image") else sources("prompt" to "prompt"),
             ),
-            Node("output", "core.output", inputs = sources("media" to "video")),
+            // ⚠ The PORT is named: the Wan node has two outputs (`last_frame`), and the executor
+            // refuses a bare wire from a node with more than one.
+            Node("output", "core.output", inputs = sources("media" to "video:video")),
         )
     ),
     if (i2v) flowLayout("prompt", "image", "video", "output") else flowLayout("prompt", "video", "output"),

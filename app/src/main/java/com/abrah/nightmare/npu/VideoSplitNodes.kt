@@ -424,7 +424,9 @@ object VideoVaeDecodeNode : VideoNode() {
             val out = File(
                 File(a.cacheDir, "video").apply { mkdirs() }, "clip_${lh.id.takeLast(16)}.mp4"
             )
-            VideoWriter.encode(a, frames, VideoSampleNode.FPS, out) { Log.i("ndVaeDecode", it) }
+            VideoWriter.encode(
+                a, frames, VideoSampleNode.FPS, out, VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]),
+            ) { Log.i("ndVaeDecode", it) }
             com.abrah.nightmare.ClipStore.put(out.absolutePath, frames)
             val posterId = ctx.images.put(frames.first())
             Value.Video(out.absolutePath, frames.size, frames[0].width, frames[0].height, posterId)
