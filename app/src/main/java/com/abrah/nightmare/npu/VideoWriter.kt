@@ -48,6 +48,18 @@ object VideoWriter {
     /** The encoder stopped making progress ([STALL_MS]); [encode] retries once on the software one. */
     class EncoderStalled(message: String, val codecName: String) : IllegalStateException(message)
 
+    /**
+     * ⭐⭐ The image-store id of a clip's POSTER: named after the clip, not hashed from the poster's pixels.
+     *
+     * ⚠⚠ GitHub #27: Results tells results apart by this id ([com.abrah.nightmare.canvas.Result.imageId]),
+     * and a poster is frame 0. In image to video frame 0 IS the start picture, so every clip from one
+     * picture hashed to the same id: autosave skipped each new clip as "already kept", and the save
+     * button un-kept the old one instead of keeping the new. A clip's file is already named by
+     * everything that made it (prompt, seed, size, frames, source, LoRAs), so the same clip served
+     * from the cache still reads as kept, and a new one is a new result.
+     */
+    fun posterIdFor(clip: File): String = "img_clip_" + clip.nameWithoutExtension
+
     /** A node's cancel, for [encode]: the coroutine's job stops being active when Cancel is pressed. */
     fun cancelledWith(job: kotlinx.coroutines.Job?): () -> Boolean = { job?.isActive == false }
 

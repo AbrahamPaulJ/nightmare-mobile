@@ -337,7 +337,7 @@ object VideoSampleNode : NodeType {
         // needed: the poster is what Save, Share and Keep act on, what Results
         // files, and what a node draws before the loop is built or after the
         // process has been restarted.
-        val posterId = ctx.images.put(frames.first())
+        val posterId = ctx.images.put(frames.first(), id = VideoWriter.posterIdFor(out))
         Value.Video(out.absolutePath, frames.size, frames[0].width, frames[0].height, posterId)
     }
 

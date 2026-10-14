@@ -231,6 +231,22 @@ class VideoGraphTest {
         }
     }
 
+    /**
+     * ⚠⚠ GitHub #27: Results tells results apart by the poster's image id, and an image-to-video
+     * poster is the start picture, so it hashed the same for every clip from that picture and only
+     * one could be kept. The id is the CLIP's now: two clips differ, the same clip (from the
+     * cache) matches.
+     */
+    @Test
+    fun aClipsPosterIsNamedAfterTheClipNotItsPixels() {
+        val w = com.abrah.nightmare.npu.VideoWriter
+        val a = java.io.File("/c/video/clip_wan_aaaa.mp4")
+        val b = java.io.File("/c/video/clip_wan_bbbb.mp4")
+        assertTrue(w.posterIdFor(a) != w.posterIdFor(b))
+        assertEquals(w.posterIdFor(a), w.posterIdFor(java.io.File("/other/clip_wan_aaaa.mp4")))
+        assertTrue(w.posterIdFor(a).startsWith("img_"))
+    }
+
     /** ⚠⚠ The old `shape`/`size` choosers' sizes (the file migration: `WorkflowIoTest`). */
     @Test
     fun wanReadsTheOldShapeAndSize() {

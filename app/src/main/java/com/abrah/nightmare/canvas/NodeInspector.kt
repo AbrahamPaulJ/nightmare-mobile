@@ -891,6 +891,10 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         com.abrah.nightmare.padRuleOf(node).hidesPadChoice
     ) return true
 
+    // ⭐ The Wan video node's size is drawn by `wanPanel`'s pair of sliders. ⚠⚠ ABOVE the
+    // image-sampler return just below: Wan is not an image sampler, so a rule placed after it
+    // never ran and Width and Height drew twice (the phone, 2026-10-15; `WanSheetTest`).
+    if ((name == "width" || name == "height") && node.type == com.abrah.nightmare.npu.WanVideoNode.name) return true
     if (node.type !in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) return false
     // ⭐ A DiT sampler's size belongs to the shape + size pair at the top of the
     // sheet, the same way every other family's does. Its `width`/`height` are
@@ -901,8 +905,6 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     if ((name == "width" || name == "height") &&
         com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())?.isDit == true
     ) return true
-    // ⭐ …and the Wan video node's, drawn by the same pair of sliders (`wanPanel`).
-    if ((name == "width" || name == "height") && node.type == com.abrah.nightmare.npu.WanVideoNode.name) return true
     val hasImage = node.inputs["image"] != null
     val painted = !com.abrah.nightmare.MaskNode.opsOf(node.type, node.params).isNullOrBlank()
     // ⚠ A `sample` type declares none of the mask widgets, so this branch never
@@ -1404,6 +1406,13 @@ internal fun NodeInspectorBody(
                 )
             }
         }
+        // ⭐ The Wan video node's LoRA row: the image nodes' control and picker, at the top of its sheet
+        // (the user's call, 2026-10-15). Wan 2.2 5B LoRAs only; the node says so when one does not fit.
+        if (node.type == com.abrah.nightmare.npu.WanVideoNode.name) {
+            type?.widgets?.firstOrNull { it.name == com.abrah.nightmare.SdSampler.LORAS }?.let { w ->
+                LoraRow(widget = w, value = node.params[w.name].orEmpty(), why = w.locked, onOpen = { pickingLoras = true })
+            }
+        }
 
         val canSweepHere = canSweep
         // ⭐ An SD sampler edits its crop (and, on inpaint, its mask) in a popup,
@@ -1528,7 +1537,6 @@ internal fun NodeInspectorBody(
                 onSet = { v -> v.toIntOrNull()?.let { draft = wan.fitArea(shown.first, it, widthMoved = false) } },
                 onCommit = commit,
             )
-            widthW.localizedHint()?.let { Text(it, style = NoteTextStyle) }
         }
         val sizePanel: @Composable () -> Unit = {
             ditPanel()

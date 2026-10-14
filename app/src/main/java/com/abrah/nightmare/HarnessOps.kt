@@ -214,7 +214,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "video_install" -> videoInstall()
             // ⭐ Image to video: animate the newest saved picture.
             "npu_i2v" -> npuI2v(arg)
-            // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480x832"`,
+            // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480x832|loras"`,
             // every field optional. `wan_i2v` animates the newest saved picture.
             "wan_video" -> wanVideo(arg, i2v = false)
             "wan_i2v" -> wanVideo(arg, i2v = true)
@@ -1430,6 +1430,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                                 *at(3).split('x').takeIf { it.size == 2 }?.let { (w, h) ->
                                     arrayOf("width" to w.trim(), "height" to h.trim())
                                 }.orEmpty(),
+                                // ⭐ The LoRA picker's value (`name.safetensors:0.8`), as the node stores it.
+                                at(4).takeIf { it.isNotEmpty() }?.let { com.abrah.nightmare.SdSampler.LORAS to it },
                             ),
                         )
                         else -> n

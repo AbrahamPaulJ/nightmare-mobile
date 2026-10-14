@@ -90,6 +90,9 @@ object WanVideoNode : NodeType {
         Widget("width", "int", DEFAULT_W.toString(), MIN_SIDE.toDouble(), MAX_SIDE.toDouble(), step = GRID,
             hintRes = R.string.hint_wan_size),
         Widget("height", "int", DEFAULT_H.toString(), MIN_SIDE.toDouble(), MAX_SIDE.toDouble(), step = GRID),
+        // ⭐ The image nodes' LoRA picker (`NodeInspector`'s LoRA row, drawn at the top, never in the
+        // knob loop); merged with the prompt's `<lora:…>` tags in [runPorts].
+        Widget(com.abrah.nightmare.SdSampler.LORAS, "string", ""),
         Widget("seed", "int", "0", hintRes = R.string.hint_seed_clip),
         Widget("seconds", "int", "5", 1.0, MAX_SECONDS.toDouble(), hintRes = R.string.hint_wan_seconds),
         // ⭐ The framing, exactly as [VideoSampleNode] carries it.
@@ -223,15 +226,24 @@ object WanVideoNode : NodeType {
         val neg = PromptLoras.extract(wired.negative)
         val loraDir = com.abrah.nightmare.BackendProcess.lorasDir(android)
         val installed = loraDir.list()?.toList().orEmpty()
-        val loras = (pos.tags + neg.tags).mapNotNull { t ->
+        // ⭐ The picker's LoRAs first. ⚠⚠ A picked file that is missing is REFUSED by name, the image
+        // nodes' rule (`SdSampler.parseLoras`): the engine would log it and render without it.
+        val picked = com.abrah.nightmare.LoraSpec.parse(effectiveParams(node)[com.abrah.nightmare.SdSampler.LORAS]).map { e ->
+            val f = File(loraDir, e.name)
+            if (!f.isFile) throw IllegalStateException("LoRA \"${e.name}\" is not in ${loraDir.name}. Import it first")
+            f.absolutePath to e.strength
+        }
+        val tagged = (pos.tags + neg.tags).mapNotNull { t ->
             PromptLoras.resolve(t.name, installed)?.let { File(loraDir, it).absolutePath to t.strength }
                 ?: run {
                     ctx.warn(ctx.text(R.string.run_lora_tag_missing, "LoRA \"%1\$s\" from the prompt is not installed. Skipped", t.name))
                     null
                 }
         }
+        // ⚠ A tag naming a file the picker already has replaces the picker's strength, as on the image nodes.
+        val loras = picked.filter { (f, _) -> tagged.none { it.first == f } } + tagged
         if (loras.isNotEmpty()) {
-            ctx.say("  LoRAs from the prompt: " + loras.joinToString { (f, s) -> "${File(f).nameWithoutExtension} $s" })
+            ctx.say("  LoRAs: " + loras.joinToString { (f, s) -> "${File(f).nameWithoutExtension} $s" })
         }
         val p = effectiveParams(node)
         val (w, h) = sizeOf(p)
@@ -323,7 +335,7 @@ object WanVideoNode : NodeType {
                 Log.i(TAG, it)
                 ctx.say(it.trim())
             }
-            val posterId = ctx.images.put(poster)
+            val posterId = ctx.images.put(poster, id = VideoWriter.posterIdFor(out))
             mapOf(
                 "video" to Value.Video(out.absolutePath, clip.frames, clip.width, clip.height, posterId),
                 LAST_FRAME to Value.Image(ctx.images.put(last), last.width, last.height),

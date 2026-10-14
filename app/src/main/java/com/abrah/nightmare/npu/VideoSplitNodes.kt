@@ -428,7 +428,7 @@ object VideoVaeDecodeNode : VideoNode() {
                 a, frames, VideoSampleNode.FPS, out, VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]),
             ) { Log.i("ndVaeDecode", it) }
             com.abrah.nightmare.ClipStore.put(out.absolutePath, frames)
-            val posterId = ctx.images.put(frames.first())
+            val posterId = ctx.images.put(frames.first(), id = VideoWriter.posterIdFor(out))
             Value.Video(out.absolutePath, frames.size, frames[0].width, frames[0].height, posterId)
         }
 }
