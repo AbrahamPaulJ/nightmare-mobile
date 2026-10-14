@@ -69,10 +69,14 @@ In image to video the photo is the clip's **first frame**, so the prompt describ
 
 | setting | does |
 |---|---|
-| **Shape** | `landscape` or `portrait`. With a photo, the crop frame above these settings takes this shape: drag it to pick the first frame |
-| **Size** | `480p` (832 × 480) or `704p` (1280 × 704): sharper, about three times as long |
+| **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. With a photo, the crop frame takes this shape: drag it to pick the first frame |
 | **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
 | **Seconds** | 1 to 5, at 24 frames a second |
+
+**Longer clips.** The Wan video node has a second output, **last frame**: the clip's final frame as a
+picture. In advanced view, wire it into another Wan video node's **image**, give that one its own
+prompt, and it carries on from where the first clip ended. Chain as many as you like; each clip is
+kept separately.
 
 <figure markdown>
   ![Models → Video with Wan 2.2](../img/models-video-wan.png){ .screen }

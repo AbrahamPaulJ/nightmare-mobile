@@ -9,7 +9,7 @@ There are five kinds of node. Every flow, ready-made or yours, is built from the
 | [Image generator](#image-generator) | Generate | prompt, image (+ reference, + control) | image |
 | [Inpaint generator](#inpaint-generator) | Inpaint | prompt, image | image |
 | [Video generator](#video-generator) | Generate | prompt, image | video |
-| [Wan video](#wan-video) | Generate | prompt, image | video |
+| [Wan video](#wan-video) | Generate | prompt, image | video, last frame |
 | [Output](#output) | Common | media | - |
 
 Every node's sheet ends with **Reset node** (all settings back to default) and **Delete node**.
@@ -139,9 +139,11 @@ Wan 2.2: text or a photo to a clip of up to 5 seconds. Needs Wan 2.2 (Models →
 |---|---|
 | **Seed** | `0` = a new clip every Run |
 | **Seconds** | 1 to 5, 24 frames a second |
-| **Size** | `480p` (832 × 480, default) or `704p` (1280 × 704, about three times as long) |
-| **Shape** | `landscape` or `portrait` |
+| **Width**, **Height** | Any shape in 32 px steps, up to 1280 × 704 worth of pixels (832 × 480 by default; 1280 × 704 takes about three times as long) |
 | **Crop** frame | With a photo wired in: which part becomes the first frame |
+
+Its **last frame** output is the clip's final frame as a picture: wire it into another Wan video
+node's **image** to continue the clip with a new prompt.
 
 ## Output
 

@@ -22,7 +22,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 | Snapdragon 888 and newer | SD 1.5 |
 | 8 Gen 3 and newer | SDXL, Anima; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1 and 2.1 Turbo, Anima Turbo 1.1 on the DiT engine, your own quantised (GGUF) DiT, Wan 2.2 video |
 | 8 Elite and newer | Z-Image Turbo, SDXL Swap, Neodragon text and image to video, and all of the above |
-| 16 GB RAM | Krea 2 Turbo (8 Elite; alpha on 8 Gen 3) |
+| 12 GB RAM | Krea 2 Turbo (8 Elite; alpha on 8 Gen 3); on 12 GB it renders in parts, about 3.5 to 4 min at 1024² |
 
 ## Features
 
@@ -52,7 +52,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.
 - **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with an optional second reference picture.
-- **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon), or **Wan 2.2**: 5 second clips at 832×480 in about 3 minutes (1280×704 too, portrait or landscape, 1 to 5 s), much better looking.
+- **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon), or **Wan 2.2**: 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; chain clips from the last frame for longer ones; Wan 2.2 5B LoRAs with a `<lora:name>` tag in the prompt), much better looking.
 
 ### LoRA, ControlNet and IP-Adapter
 - **LoRAs per render**: on Anima and the Swap models, and experimentally on FLUX.2, Z-Image, Qwen Image and Krea 2: tick, set strength, no reload. A note per LoRA keeps its trigger words.

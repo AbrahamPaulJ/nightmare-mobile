@@ -59,13 +59,14 @@ step.
 | chip | can run |
 |---|---|
 | Snapdragon 888 and newer | SD 1.5 models, upscaling |
-| Snapdragon 8 Gen 3 and newer | + SDXL and Anima; **alpha:** FLUX.2, Qwen Image, Anima DiT, Krea 2 (16 GB) |
-| Snapdragon 8 Elite and newer | + Z-Image, video; Krea 2 with 16 GB of RAM |
+| Snapdragon 8 Gen 3 and newer | + SDXL and Anima; **alpha:** FLUX.2, Qwen Image, Anima DiT, Krea 2 (12 GB) |
+| Snapdragon 8 Elite and newer | + Z-Image, video; Krea 2 with 12 GB of RAM or more |
 
 - **Storage**: models are downloaded separately, from about 1 GB (an SD 1.5 model) to
   13.8 GB (Qwen Image on a 16 GB phone). The app tells you each size before you download.
-- **Memory**: 8 GB of RAM runs the SD 1.5 models; 12 GB runs everything but Krea 2, some of
-  it slowly (FLUX.2 Klein 9B starts at 768 to stay inside it); Krea 2 needs 16 GB.
+- **Memory**: 8 GB of RAM runs the SD 1.5 models; 12 GB runs everything, some of it slowly
+  (FLUX.2 Klein 9B starts at 768 to stay inside it; Krea 2 renders in parts, about 3.5 to 4
+  minutes at 1024 × 1024).
 
 The app checks your chip itself and says plainly when a model or flow cannot run on it.
 
