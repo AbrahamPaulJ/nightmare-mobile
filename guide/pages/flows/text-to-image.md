@@ -47,8 +47,8 @@ Tap the **Text to image** node:
 | **Steps** | How many refinement passes | More is slower; each model opens on the number its author recommends |
 | **CFG** | How strictly the prompt is followed | Too high burns colours; turbo/distilled models want ~1–2 |
 | **Seed** | The starting noise | `0` = a new picture every Run. Type a seed shown on a node to get that picture back |
-| **Scheduler** | The sampling method | A distilled model usually needs the one its author published |
-| **Karras sigmas** | A different noise schedule | Try it for smoother detail on SD models |
+| **Scheduler** | The sampling method. SD 1.5 and SDXL: DPM++ 2M, DPM++ 2M SDE, DPM++ 3M, DPM++ 3M SDE, Euler, Euler A, LCM. FLUX.2, Z-Image, Qwen Image, Krea 2 and Anima DiT: Euler, Euler A, Heun, DPM++ 2M, DPM++ 2M SDE, ER-SDE, Res Multistep, iPNDM, LCM | Use what the model's author recommends; turbo models usually want Euler (DiT) or LCM |
+| **Schedule** | How the noise steps are spaced: **Normal**, **Karras** or **Exponential** (SD 1.5 and SDXL; not with LCM) | Many turbo and hyper SDXL models recommend Exponential |
 | **Resolution** / **Shape** / **Width, Height** | The picture's size | Depends on the family. Below |
 
 ### Size, per family

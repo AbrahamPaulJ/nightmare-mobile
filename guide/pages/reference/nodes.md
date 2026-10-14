@@ -84,10 +84,10 @@ The palette card is **Image** with a chip per family: **SD 1.5**, **SD 1.5 Swap*
 | **Steps** | all | Refinement passes. Opens on the model's own recommended value |
 | **CFG** | all | How strictly the prompt is followed. FLUX.2, Z-Image and Qwen are made for **1**: above 1 the negative prompt is read, but the picture burns quickly |
 | **Seed** | all | `0` = a new picture every Run. Type a seed shown on a node to get that one back |
-| **Scheduler** | all | The sampling method; a distilled model usually wants its author's choice. DiT models always use Euler |
+| **Scheduler** | all | The sampling method; a distilled model usually wants its author's choice. SD 1.5 / SDXL: DPM++ 2M, 2M SDE, 3M, 3M SDE, Euler, Euler A, LCM. DiT models: Euler (default), Euler A, Heun, DPM++ 2M, DPM++ 2M SDE, ER-SDE, Res Multistep, iPNDM, LCM. Anima: Euler, Euler A |
 | **Hires fix** | SD 1.5, SDXL (not inpaint) | After the render, enlarge it ×2 with your first upscaler and redraw the detail with [UltraFix](results.md#ultrafix): one Run, a picture twice the size. Uses UltraFix's last Steps / Denoise steps. On the Snapdragon 8 Elite: SD 1.5 512 → 1024 about 16 s in all, SDXL 1024 → 2048 about 2½ min. Needs an upscaler installed; without one the render is kept and a warning says why |
 | **Enlarge ×2** | every Image node without Hires fix: FLUX.2, Z-Image, Qwen, Krea, Anima, the Swap models and every inpaint | After the render, enlarge it ×2 with your first upscaler, nothing redrawn. The node's own picture is the enlarged one, so wire it into an inpaint (with **Only masked**) to fix faces at the larger size. E.g. Z-Image text to image → enlarge → an inpaint over the face. Needs an upscaler installed; without one the render is kept and a warning says why |
-| **Karras sigmas** | SD 1.5, SDXL, Anima | An alternative noise schedule (not with LCM) |
+| **Schedule** | SD 1.5, SDXL | How the noise steps are spaced: Normal, Karras or Exponential (not with LCM) |
 | **Denoise** | with an image | How much of the photo is replaced. 0 keeps it, 1 replaces it. Image to image opens at 0.65, Image edit at 1.0 |
 | **Resolution** | SD 1.5 | The sizes this model supports. A new size reloads the model on the next Run |
 | **Shape** | SDXL, Anima | Crops the fixed 1024 square to an aspect. No reload |

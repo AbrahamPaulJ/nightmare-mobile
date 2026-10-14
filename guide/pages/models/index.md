@@ -21,6 +21,9 @@ which phones can run it; inside a family, models differ in style.
 | **Anima DiT** | Turbo 1.1 | 3.2 GB (4.2 GB download, converted on the phone) | 512–2048 | Anime; about a minute at 1024 | 8 Gen 3+ (alpha on 8 Gen 3) |
 | **Krea 2** | Turbo | 9.5 GB | 512–2048 | Text to image only | 16 GB RAM, and 8 Elite+ (alpha on 8 Gen 3) |
 
+Anima and Anima DiT share one page in **Family ▾ → Anima**: the DiT ones first, then the ones
+converted for the NPU.
+
 Besides picture models, **Models** also holds:
 
 - **Upscalers**: small models that enlarge a picture. [Upscale](../flows/upscale.md)

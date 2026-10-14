@@ -55,6 +55,7 @@ another one from the sidebar replaces the sheet.
 | **Model** | The model this flow uses and its state. **Idle**, **Loading** or **Loaded**: and the free memory |
 | **Settings** | [Settings](../reference/settings.md) |
 | **Device** | This phone's chip and NPU. [Install](install.md#check-what-your-phone-can-run) |
+| **Support** | **Buy me a coffee**: why donations help, the Buy Me a Coffee link, and the author's other two apps (npuforge and FaceFusion Mobile) |
 
 <figure markdown>
   ![The sidebar](../img/sidebar.png){ .screen }

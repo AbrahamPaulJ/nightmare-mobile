@@ -1,7 +1,12 @@
 # Bring your own model
 
-Beyond the catalogue, you can use models you converted or downloaded yourself. How depends on
-the family.
+Beyond the catalogue, you can use models you converted or downloaded yourself.
+
+**To import anything:** tap **+** next to the **Models** title, optionally type a name, tap
+**Choose a file** and pick it. The app reads the file and works out what it is: a converted
+`.zip`, a checkpoint `.safetensors` or `.gguf` (and which model it is for), or an upscaler `.bin`.
+It asks only when a checkpoint does not say which model it was made for. A LoRA or an embedding
+picked by mistake is named, with where to add it instead.
 
 ## SD 1.5, SDXL and Anima: a converted zip
 
@@ -19,8 +24,7 @@ cannot be used directly. It has to be converted first. Two ways:
   v-prediction packages, which Nightmare enables automatically.
 - **A zip made for LocalDream**: converted models shared for LocalDream import unchanged.
 
-To import: open the family's page in **Models** (**Family ▾**), tap **Import**, choose the `.zip` and give it a
-name. The app reads which family it is from the files inside.
+Import the `.zip` with **+** (above). The app reads which family it is from the files inside.
 
 If a package contains LocalDream's empty `V_PRED` marker, Nightmare launches the
 native backend in v-prediction mode. Packages without it keep the existing epsilon
@@ -31,12 +35,12 @@ behavior.
 These build their model at load time from ordinary weights, so **a fine-tune from CivitAI or
 Hugging Face imports as-is**. No conversion, no PC. Both `.safetensors` and `.gguf` work.
 
-1. In Models, open **Family ▾ → FLUX.2**, **Z-Image**, **Krea 2** or **Anima DiT**.
-2. Tap **Import** and pick the file.
-3. Name it.
+Import the file with **+** (above). The app reads the file's tensor names to tell Anima, FLUX.2
+Klein (4B or 9B), Z-Image and Krea 2 apart, so an Anima file from CivitAI lands on the **Anima**
+page without you choosing anything.
 
-The app reads the file's tensor names: a Klein 9B fine-tune is recognised as 9B, and a file
-picked on the wrong family's page is refused with the family it belongs to.
+On **Family ▾ → Anima**, both kinds of Anima are listed: first the ones on the DiT engine (any
+Anima file from CivitAI), then the ones converted for the NPU (zip).
 
 - **Klein 4B and Z-Image** share the text encoder, VAE and tokenizer with the family's model, so
   an import costs only its own weights (plus up to 2.6 GB once, if you have neither family).

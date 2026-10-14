@@ -42,7 +42,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 ### Models
 - **36 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
 - **FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1, Krea 2 Turbo, Anima Turbo 1.1**: any size from 512 to 2048 in 64 px steps, no reload to change it.
-- **Bring your own**: import a converted checkpoint, convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge), or drop in a FLUX.2 / Z-Image / Krea 2 / Anima `.safetensors` or `.gguf` fine-tune as it is.
+- **Bring your own**: one **+** on the Models page takes any of them and works out what the file is: a converted checkpoint zip, a FLUX.2 / Z-Image / Krea 2 / Anima `.safetensors` or `.gguf` fine-tune used as it is, or an upscaler. Or convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge).
 - **Upscalers**: RealESRGAN anime and 4x UltraSharp V2 Lite, or your own; a checkbox on the output node.
 - **A real inpainting model**: AbsoluteReality Inpaint sees the hole it fills.
 
@@ -64,7 +64,8 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **A prompt from a picture**: describe any picture on the canvas or in your gallery: **Short** or **Detailed** sentences (Florence-2 PromptGen), or **Tags** in Danbooru style for anime models (WD tagger).
 - **A tag toolbar**: while you type: make the tag under the cursor heavier or lighter, delete it, add one after it, undo, redo.
 - **Tag autocomplete**: matching Danbooru tags under the prompt box as you type, most used first; one tap downloads the list, or import your own CSV, plus an optional translation CSV to search in your own language.
-- **`<lora:name:0.8>` in a prompt**: a prompt pasted from CivitAI applies the LoRAs it names (when you have them) and the tags never reach the text encoder.
+- **`<lora:name:0.8>` in a prompt**: a prompt pasted from CivitAI applies the LoRAs it names (when you have them) and the tags never reach the text encoder. Type `<lora:` and your LoRAs are offered as chips, the strength left selected to type over.
+- **Samplers**: DPM++ 2M, 2M SDE, 3M and 3M SDE, Euler, Euler A and LCM with a Normal, Karras or Exponential schedule on SD 1.5 and SDXL; Euler, Heun, DPM++ 2M, ER-SDE, Res Multistep and more on the DiT models, so a checkpoint runs the way its author intended.
 - **Translate**: a Russian or Chinese prompt to English, offline (Firefox Translations), keeping weights like `(long hair:1.2)`.
 
 ### Your phone, your files

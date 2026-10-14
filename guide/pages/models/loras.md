@@ -80,6 +80,11 @@ top of the node's LoRA list. The tag wins if both name the same one. A tag for a
 have, or any tag on a model that takes no LoRAs, is skipped and the run log says so. Tags do not
 count toward the prompt's token limit.
 
+Type `<lora:` in a prompt and your installed LoRAs appear as chips under the box, filtered as you
+type: the ones already ticked on the node it feeds come first, then the ones made for its model.
+Tap one and it is written as `<lora:name:1.0>` with `1.0` selected, so you can type the strength
+straight over it.
+
 ### Sort, filter and favourites
 
 With two or more LoRAs, the list has a **sort** menu. **Name**, **Newest**, **Most used** (how

@@ -14,7 +14,8 @@ model.*
 | **RealESRGAN x4plus anime** | Drawings, anime, flat colour |
 | **4x UltraSharp V2 Lite** | Photos |
 
-You can also import your own converted upscaler (a `.bin` file) there.
+You can also import your own converted upscaler (a `.bin` file) with **+** next to the
+**Models** title.
 
 ## Steps
 
