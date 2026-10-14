@@ -71,7 +71,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 ### Your phone, your files
 - **English, Chinese and Russian**: the app follows your phone's language.
 - **Models where you can see them**: optionally in `Download/Nightmare`, surviving an uninstall.
-- **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches; large files come over four connections at once.
+- **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches and the DiT engine (which falls back from GitHub to Hugging Face by itself); large files come over four connections at once.
 - **Your RAM back**: the model is released when you leave; low-RAM switches for SDXL and Anima.
 - **A report when the phone restarts mid-run**: the next launch says what was running and how much memory was free at each step, ready to copy into a bug report.
 - **Three views of one flow**: **Default** (one step at a time, the easy way in), **Advanced** (the whole flow as connected boxes) and **Chat** (hide it in Settings if you don't use it), switched from one button beside the current model (tap the model to change it); in **Default**, **Swap flow** moves to another flow for the same model keeping your prompt and settings. Models, Flows, Results and the current flow live in a sidebar; Models, Flows, Results and Settings open as sheets over the flow.

@@ -30,7 +30,8 @@ Same reason: the model family needs a newer chip. See the table on the
 - Check you are on Wi-Fi and have enough free storage (the row shows the size).
 - If Hugging Face is slow or blocked where you are, switch
   [Settings → Downloads → Download source](reference/settings.md#download-source) to
-  **hf-mirror.com**.
+  **hf-mirror.com**. That covers the DiT engine too: if its download says it cannot reach
+  github.com, choose the mirror and tap Download again.
 - An interrupted download resumes. A model left **incomplete** shows **Repair**, which
   fetches only the missing file.
 

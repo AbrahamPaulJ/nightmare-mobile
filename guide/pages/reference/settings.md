@@ -85,7 +85,9 @@ same in either place.
 Where model files are fetched from: **Hugging Face** (default), **hf-mirror.com**, or a
 **Custom** base address. Tap **Custom**, type the address (it starts as `https://`), and it is
 saved when you press Done or leave the field. Change it if Hugging Face is slow or blocked where you are. It applies
-to every model, upscaler, segmenter, pose detector, depth estimator, ControlNets, translation model, the describe and tagger models, the tag dictionary and the video models.
+to every model, upscaler, segmenter, pose detector, depth estimator, ControlNets, translation model, the describe and tagger models, the tag dictionary and the video models. The DiT engine (the 23 MB download the FLUX.2, Z-Image, Qwen,
+Krea 2, Anima DiT and Wan models need) comes from GitHub, or from Hugging Face when GitHub cannot be
+reached; with **hf-mirror.com** chosen it comes from the mirror first.
 
 ### CivitAI
 

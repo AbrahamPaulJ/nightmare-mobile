@@ -101,6 +101,24 @@ object DitEngine {
     const val URL =
         "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi106-tilecut/dit-engine-abi106-tilecut.zip"
 
+    /**
+     * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
+     * A user report (2026-10-14): `Unable to resolve host "github.com"`, and the engine was the one
+     * download the app could not make. [install] tries [sources] in order; [SHA256] checks whichever
+     * answered, so a second source costs no integrity. ⚠ [URL] stays the version stamp either way.
+     * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
+     */
+    const val HF_URL =
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi106-tilecut.zip"
+
+    /**
+     * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
+     * Settings (China: GitHub crawls there, a tester's report 2026-10-13), then Hugging Face first.
+     * [Prefs.apply] rewrites [HF_URL] to that mirror on the way out.
+     */
+    internal fun sources(downloadBase: String): List<String> =
+        if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
+
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
     const val BYTES = 23_125_625L
 
@@ -154,18 +172,33 @@ object DitEngine {
     ) {
         val dir = dir(context).apply { mkdirs() }
         val zip = File(dir, "dit-engine.zip.part")
-        UpscalerCatalog.download(URL, zip, BYTES, onProgress, isCancelled)
-        if (zip.length() != BYTES) {
-            val got = zip.length()
-            zip.delete()
-            throw IOException("$LABEL: downloaded $got bytes, expected $BYTES from $URL")
+        // ⭐ One archive, two hosts: a partial from one resumes from the other (the bytes are the same),
+        // and a failure on the first is only logged unless the second fails too.
+        val failures = mutableListOf<String>()
+        for (src in sources(Prefs.downloadBase)) {
+            try {
+                UpscalerCatalog.download(src, zip, BYTES, onProgress, isCancelled)
+                if (zip.length() != BYTES) {
+                    val got = zip.length()
+                    zip.delete()
+                    throw IOException("downloaded $got bytes, expected $BYTES")
+                }
+                onProgress(ModelInstaller.Progress("verifying", 0, 0))
+                val got = sha256(zip)
+                if (got != SHA256) {
+                    zip.delete()
+                    throw IOException("archive sha256 is $got, expected $SHA256. The download is corrupt")
+                }
+                failures.clear()
+                break
+            } catch (e: ModelInstaller.Cancelled) {
+                throw e
+            } catch (e: IOException) {
+                Log.w(TAG, "$LABEL from ${java.net.URL(src).host} failed: ${e.message}")
+                failures += "${java.net.URL(src).host}: ${e.message}"
+            }
         }
-        onProgress(ModelInstaller.Progress("verifying", 0, 0))
-        val got = sha256(zip)
-        if (got != SHA256) {
-            zip.delete()
-            throw IOException("$LABEL: archive sha256 is $got, expected $SHA256. The download is corrupt")
-        }
+        if (failures.isNotEmpty()) throw IOException("$LABEL: no source answered. ${failures.joinToString("; ")}")
         onProgress(ModelInstaller.Progress("extracting", 0, 0))
         // ⚠⚠⚠ `.part` then RENAME, never a write in place — and here that is
         // not only about an interrupted unpack leaving a truncated file.
@@ -206,7 +239,7 @@ object DitEngine {
         zip.delete()
         stamp(context).writeText(URL)
         refresh(context)
-        Log.i(TAG, "installed $LABEL from $URL (${bytesOnDisk(context)} bytes)")
+        Log.i(TAG, "installed $LABEL (${bytesOnDisk(context)} bytes)")
     }
 
     fun delete(context: Context) {

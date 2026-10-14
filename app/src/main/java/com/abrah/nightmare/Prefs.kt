@@ -150,10 +150,10 @@ object Prefs {
      * [ModelInstaller.fetch] and in [LoraSources]'s Hugging Face calls), which
      * cannot go out of step with a catalogue entry because it never reads one.
      *
-     * ⚠ Only `huggingface.co` is rewritten. The DiT engine comes from a
-     * GitHub release tag and is deliberately left alone ([DitEngine]): a mirror
-     * of Hugging Face says nothing about GitHub, and silently pointing a
-     * release download at it would 404.
+     * ⚠ Only `huggingface.co` is rewritten: a mirror of Hugging Face says nothing
+     * about GitHub. The DiT engine has a copy on Hugging Face as well
+     * ([DitEngine.HF_URL], since 1.6.159), tried first when a mirror is set and
+     * second otherwise ([DitEngine.sources]); its GitHub URL is never rewritten.
      */
     const val HF_ORIGIN = "https://huggingface.co/"
 
