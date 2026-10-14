@@ -93,8 +93,6 @@
     <string name="cancel_run">Cancel</string>
     <string name="importing_model">Importing %1$s…</string>
     <string name="importing_working">reading the archive</string>
-    <string name="karras_sigmas">Karras sigmas</string>
-    <string name="karras_unavailable">Karras sigmas (not available for LCM)</string>
     <!-- The output shape controls on the model in use. -->
     <string name="resolution">Resolution</string>
     <string name="shape">Shape</string>
@@ -1030,4 +1028,32 @@
     <string name="cd_open_log">Show the log</string>
     <string name="cd_fold_log">Fold the log</string>
     <string name="cn_about_sdxl_v75">A ControlNet for SDXL Swap models. Only a conversion made with ControlNet ticked can use it. ⚠ On an 8 Gen 3 it may not fit beside the SDXL model: the NPU needs a second space for it, and one 8 Gen 3 phone refused it. LoRA and IP-Adapter are not affected.</string>
+    <string name="import_title">Import a model</string>
+    <string name="import_add_cd">Import a model</string>
+    <string name="import_body">Pick a file and the app works out what it is.</string>
+    <string name="import_kind_file">A checkpoint file (.safetensors or .gguf) from CivitAI or Hugging Face: Anima, FLUX.2 Klein, Z-Image or Krea 2. Used as it is, no conversion.</string>
+    <string name="import_kind_zip">A converted zip: SD 1.5, SDXL or Anima, converted for the NPU on a PC or with npuforge.</string>
+    <string name="import_kind_upscaler">An upscaler (.bin), converted for the NPU.</string>
+    <string name="import_choose_file">Choose a file</string>
+    <string name="import_family_title">Which model is this?</string>
+    <string name="import_family_body">The file does not say which model it was made for. Pick the one it came from on CivitAI or Hugging Face.</string>
+    <string name="import_is_lora">That file is a LoRA, not a model. Add it from a sampler\'s LoRAs, or in Settings, LoRAs.</string>
+    <string name="import_is_embedding">That file is an embedding, not a model. Add it in Settings, Embeddings.</string>
+    <string name="import_needs_converting">That looks like %1$s. Those need converting for the NPU first (npuforge), then import the zip it makes.</string>
+    <string name="import_unknown">Could not tell what that file is. The app imports a converted zip, a .safetensors or .gguf checkpoint, or an upscaler .bin.</string>
+    <string name="models_section_anima_dit">On the DiT engine: any Anima file from CivitAI</string>
+    <string name="models_section_anima_qnn">Converted for the NPU (zip)</string>
+    <string name="sampler_schedule">Schedule</string>
+    <string name="hint_schedule">how the noise steps are spaced. Karras and Exponential are what many SDXL and turbo checkpoints recommend</string>
+    <string name="schedule_normal">Normal</string>
+    <string name="schedule_karras">Karras</string>
+    <string name="schedule_exponential">Exponential</string>
+    <string name="schedule_unavailable">LCM uses its own schedule</string>
+    <string name="drawer_support">Support</string>
+    <string name="support_coffee">Buy me a coffee</string>
+    <string name="support_title">Support Nightmare</string>
+    <string name="support_body">Nightmare is free, and I build it on my own. I pay for development out of my own pocket: Claude Code and the cloud VMs that convert and test models are expensive. A donation really helps me keep development moving at a fast pace. Thank you!</string>
+    <string name="support_more">My other projects</string>
+    <string name="support_npuforge">Convert an SD 1.5 or SDXL checkpoint for the NPU on the phone itself, no PC.</string>
+    <string name="support_facefusion">Offline face swap on the phone\'s NPU, GPU or CPU.</string>
 </resources>

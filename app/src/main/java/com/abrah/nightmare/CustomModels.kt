@@ -668,7 +668,8 @@ object CustomModels {
     fun importDit(
         context: Context,
         name: String,
-        family: Family,
+        /** ⚠ Null: the file's own tensor names decide ([ditFamilyOf]) — the Models "+" import. */
+        family: Family?,
         open: () -> InputStream,
         onProgress: (ModelInstaller.Progress) -> Unit = {},
         isCancelled: () -> Boolean = { false },
@@ -1103,6 +1104,61 @@ object CustomModels {
         return family
     }
 
+    /** ⭐ What a picked file is, for the Models "+" import ([sniffImport]). */
+    sealed interface ImportKind {
+        /** A zip of QNN files ([import]): SD 1.5, SDXL or Anima converted for the NPU. */
+        object Zip : ImportKind
+        /** One DiT checkpoint ([importDit]); [family] null when its names do not say. */
+        data class Checkpoint(val family: Family?) : ImportKind
+        object Lora : ImportKind
+        object Embedding : ImportKind
+        /** A converted upscaler (`.bin`). */
+        object Upscaler : ImportKind
+        /** A checkpoint of a family that needs converting first; [what] names it. */
+        data class NeedsConverting(val what: String) : ImportKind
+        object Unknown : ImportKind
+    }
+
+    /**
+     * ⭐⭐ **One import for every kind of model** (the user, 2026-10-14: a "+" by the Models title
+     * and a popup that works out what the file is, after testers picked a CivitAI Anima file on the
+     * Anima page, which asks for a zip). Read off the first bytes, never the extension alone:
+     * a zip's magic, a GGUF's, or a safetensors' JSON table — whose tensor names then say whether
+     * it is a checkpoint (and of which family), a LoRA or an embedding. ⚠ Only a `.bin` goes by its
+     * name: an upscaler has no header to read.
+     */
+    fun sniffImport(displayName: String?, open: () -> InputStream): ImportKind {
+        val magic = ByteArray(9)
+        val n = open().use { it.readNBytes(magic, 0, 9) }
+        if (n >= 4 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte() &&
+            magic[2] == 0x03.toByte() && magic[3] == 0x04.toByte()
+        ) return ImportKind.Zip
+        val gguf = n >= 4 && magic.copyOf(4).contentEquals(GgufHeader.MAGIC)
+        val safetensors = n == 9 && magic[8] == '{'.code.toByte()
+        if (gguf || safetensors) {
+            val json = runCatching { ditHeader(open).json }.getOrNull() ?: return ImportKind.Unknown
+            return kindOfHeader(json)
+        }
+        if (displayName.orEmpty().endsWith(".bin", ignoreCase = true)) return ImportKind.Upscaler
+        return ImportKind.Unknown
+    }
+
+    /** ⚠ Pure — [sniffImport]'s reading of a tensor table. */
+    internal fun kindOfHeader(json: String): ImportKind {
+        val wrong = listOf(
+            "conditioner.embedders" to "an SDXL checkpoint",
+            "model.diffusion_model.input_blocks" to "an SD 1.5 or SDXL checkpoint",
+            "cond_stage_model.transformer" to "an SD 1.5 checkpoint",
+        )
+        LORA_KEYS.firstOrNull { it in json }?.let { return ImportKind.Lora }
+        wrong.firstOrNull { it.first in json }?.let { return ImportKind.NeedsConverting(it.second) }
+        if (EMBEDDING_KEYS.any { "\"$it\"" in json } && json.length < 4096) return ImportKind.Embedding
+        return ImportKind.Checkpoint(ditFamilyOf(json))
+    }
+
+    private val LORA_KEYS = listOf("lora_down", "lora_up", ".lora_A.", ".lora_B.", "lora_unet_", "lora_te", ".hada_w", ".lokr_w")
+    private val EMBEDDING_KEYS = listOf("emb_params", "string_to_param", "clip_l", "clip_g")
+
     /**
      * ⭐ A DiT file's header, either format: a `.gguf`'s tensor table rendered
      * as safetensors-shaped JSON ([GgufHeader]), so one set of signatures reads
@@ -1164,8 +1220,8 @@ object CustomModels {
         for ((key, what) in wrong) {
             if (json.contains(key)) {
                 throw java.io.IOException(
-                    "that looks like $what. Those need converting for the NPU and " +
-                        "import as a .zip on their own tab, not here"
+                    "that looks like $what. Those need converting for the NPU first " +
+                        "(npuforge), then import the .zip it makes"
                 )
             }
         }
@@ -1181,7 +1237,7 @@ object CustomModels {
             )
         }
         val family = actual ?: expect ?: throw IOException(
-            "nothing in this file says which model family it is. Import it on its family's tab"
+            "nothing in this file says which model family it is"
         )
         return if (family == Family.FLUX2 && isKlein9b(json)) DitVariant.KLEIN_9B
         else DitVariant.defaultFor(family)

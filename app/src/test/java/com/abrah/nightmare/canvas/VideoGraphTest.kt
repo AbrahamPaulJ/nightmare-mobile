@@ -237,6 +237,19 @@ class VideoGraphTest {
         assertTrue(!wan.fits(wan.pinnedBytes(1280, 704, 121), 8L * gib))
     }
 
+    /** ⭐ Real SM8650s (2026-10-14): 480p 2 s rendered, 480p 5 s failed to map. v79 and unknown uncapped. */
+    @Test
+    fun anEightGenThreeMapsWhatItRan() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        assertTrue(wan.fitsNpuMap(wan.pinnedBytes(832, 480, 49), 75))
+        assertTrue(wan.fitsNpuMap(wan.pinnedBytes(480, 832, 49), 75))
+        assertTrue(!wan.fitsNpuMap(wan.pinnedBytes(832, 480, 121), 75))
+        assertTrue(!wan.fitsNpuMap(wan.pinnedBytes(832, 480, 73), 75))
+        assertTrue(!wan.fitsNpuMap(wan.pinnedBytes(1280, 704, 25), 75))
+        assertTrue(wan.fitsNpuMap(wan.pinnedBytes(1280, 704, 121), 79))
+        assertTrue(wan.fitsNpuMap(wan.pinnedBytes(1280, 704, 121), 0))
+    }
+
     /**
      * ⚠⚠ A Wan graph NAMES a model although its node has no `model` knob — or Run launches an
      * upscaler-only backend for it (`ensureBackendFor`). Neodragon's names none: the control.

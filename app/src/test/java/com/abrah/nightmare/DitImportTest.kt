@@ -407,4 +407,24 @@ class DitImportTest {
         )
         assertTrue("nothing should be left behind", !File(ModelCatalog.root(ctx), "mixed").exists())
     }
+    // ---- the Models "+" import: what a picked file is (2026-10-14) ---------
+
+    @Test
+    fun theImportTellsTheKindsApart() {
+        fun kind(bytes: ByteArray, name: String = "x.safetensors") =
+            CustomModels.sniffImport(name) { ByteArrayInputStream(bytes) }
+        val zip = byteArrayOf(0x50, 0x4B, 0x03, 0x04) + ByteArray(64)
+        assertEquals(CustomModels.ImportKind.Zip, kind(zip, "model.zip"))
+        // ⭐ The report: a CivitAI Anima file, which the Anima page refused for not being a zip.
+        val anima = safetensors("""{"net.llm_adapter.x":{},"net.t_embedder.1":{},"net.x_embedder.proj":{}}""")
+        assertEquals(CustomModels.ImportKind.Checkpoint(Family.ANIMA_DIT), kind(anima))
+        val lora = safetensors("""{"lora_unet_double_blocks_0.lora_down.weight":{}}""")
+        assertEquals(CustomModels.ImportKind.Lora, kind(lora))
+        val sdxl = safetensors("""{"conditioner.embedders.0.transformer.x":{"dtype":"F16"}}""")
+        assertTrue(kind(sdxl) is CustomModels.ImportKind.NeedsConverting)
+        // ⚠ Names that say nothing: a checkpoint of no known family — the popup asks.
+        assertEquals(CustomModels.ImportKind.Checkpoint(null), kind(safetensors("""{"blocks.0.w":{}}""")))
+        assertEquals(CustomModels.ImportKind.Upscaler, kind(ByteArray(64) { 7 }, "4x.bin"))
+        assertEquals(CustomModels.ImportKind.Unknown, kind(ByteArray(64) { 7 }, "notes.txt"))
+    }
 }

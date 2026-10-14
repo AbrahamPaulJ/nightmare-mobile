@@ -694,43 +694,23 @@ fun HarnessScreen(
                 onTab = vm::switchLibraryTab,
                 showTabs = false,
                 onMenu = { drawerOpen = true },
+                modelsAction = {
+                    com.abrah.nightmare.ui.ImportButton(enabled = !vm.working) { vm.importOpen = true }
+                },
                 models = {
-                    // ⭐ The zip picker for an imported checkpoint.
-                    //
-                    // ⚠⚠ The NAME is captured before the picker opens and held
-                    // here, because `rememberLauncherForActivityResult` hands back
-                    // only a `Uri` — there is no way to pass a payload through the
-                    // round trip, and the activity can be recreated during it.
-                    // ⚠ `remember` and not a local `var`: this composable
-                    // recomposes while the picker is up.
+                    // ⭐⭐ The ONE import picker (the Models "+", 2026-10-14): the file says what it is
+                    // ([HarnessViewModel.importAny]). ⚠⚠ The NAME is captured before the picker
+                    // opens and held here, because `rememberLauncherForActivityResult` hands back
+                    // only a `Uri`. ⚠ `OpenDocument` rather than `GetContent`: a durable,
+                    // re-readable Uri for a copy that takes minutes. ⚠ `*/*`: `.safetensors`,
+                    // `.gguf` and `.bin` have no registered MIME type, and a zip often arrives as
+                    // `application/octet-stream`.
                     var importName by remember { mutableStateOf("") }
-                    // ⚠ `OpenDocument` rather than `GetContent`: it returns a
-                    // durable, re-readable Uri. `GetContent` can hand back one that
-                    // is already gone by the time a gigabyte has finished copying.
-                    val picker = rememberLauncherForActivityResult(
+                    val importPicker = rememberLauncherForActivityResult(
                         androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
                     ) { uri ->
                         // ⚠ Null is a CANCEL, not a failure. Saying nothing is right.
-                        if (uri != null) {
-                            vm.importModel(uri, importName.ifEmpty { vm.importNameFor(uri) })
-                        }
-                    }
-                    // ⭐⭐ The DiT import: one `.safetensors`, family from the tab.
-                    // ⚠ Its own name and family are captured before the picker opens,
-                    // for the reason the zip picker captures `importName`: the
-                    // callback cannot see which tab was pressed by the time it runs.
-                    var ditName by remember { mutableStateOf("") }
-                    var ditFamily by remember { mutableStateOf(Family.ZIMAGE) }
-                    val ditPicker = rememberLauncherForActivityResult(
-                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-                    ) { uri ->
-                        if (uri != null) {
-                            vm.importDitModel(
-                                uri,
-                                ditName.ifEmpty { vm.importNameFor(uri) },
-                                ditFamily,
-                            )
-                        }
+                        if (uri != null) vm.importAny(uri, importName)
                     }
                     // ⚠ `.safetensors` has no registered MIME type, so providers
                     // hand it back as `application/octet-stream` at best — same
@@ -739,9 +719,6 @@ fun HarnessScreen(
                         androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
                     ) { uri -> if (uri != null) vm.importEmbedding(uri) }
                     // ⚠ Same reasoning: `.bin` has no registered MIME type either.
-                    val upscalerPicker = rememberLauncherForActivityResult(
-                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
-                    ) { uri -> if (uri != null) vm.importUpscaler(uri) }
                     ModelsScreen(
                         rows = vm.modelRows,
                         // ⚠ The OR: this screen's buttons mean "the app is doing
@@ -763,26 +740,18 @@ fun HarnessScreen(
                         onUseVideo = vm::askUseVideo,
                         importing = vm.importing,
                         importProgress = vm.importProgress,
-                        onImportDit = { name, family ->
-                            ditName = name
-                            ditFamily = family
-                            ditPicker.launch(arrayOf("application/octet-stream", "*/*"))
-                        },
-                        onImport = { name ->
+                        importOpen = vm.importOpen,
+                        onCloseImport = { vm.importOpen = false },
+                        onImportFile = { name ->
                             importName = name
-                            // ⚠ Two MIME types. A zip arrives as
-                            // `application/octet-stream` from plenty of providers
-                            // (Downloads especially), and filtering on
-                            // `application/zip` alone greys out the file the user
-                            // came to pick, with nothing on screen explaining why.
-                            picker.launch(arrayOf("application/zip", "application/octet-stream"))
+                            vm.importOpen = false
+                            importPicker.launch(arrayOf("*/*"))
                         },
+                        familyAsk = vm.familyAsk != null,
+                        onAnswerFamily = vm::importAsFamily,
                         upscalers = vm.upscalerRows,
                         onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
                         onDeleteUpscaler = vm::deleteUpscaler,
-                        onImportUpscaler = {
-                            upscalerPicker.launch(arrayOf("application/octet-stream", "*/*"))
-                        },
                         segmenter = vm.segmenterRow,
                         onInstallSegmenter = { askToNotify(); vm.installSegmenter() },
                         onDeleteSegmenter = vm::deleteSegmenter,

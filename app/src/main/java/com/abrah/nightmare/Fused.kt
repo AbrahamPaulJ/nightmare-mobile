@@ -964,6 +964,13 @@ class SdSampler(
      */
     private fun ditWidgets(): List<Widget> = baseWidgets()
         .filterNot { it.name in setOf("scheduler", "aspect", "width", "height", "cfg") } + listOf(
+        // ⭐⭐ The engine's samplers by name (GitHub #19, 2026-10-14: "not all of them are tuned
+        // for Euler"). Euler stays the default: every turbo DiT here was distilled for it.
+        Widget(
+            "scheduler", "string", ModelCatalog.DIT_DEFAULT_SAMPLER,
+            options = ModelCatalog.schedulersFor(family),
+            hintRes = R.string.hint_sampler,
+        ),
         // ⭐ The one knob whose meaning DIFFERS here, so the one that gets a
         // hint the SD nodes have no need of. A guidance-distilled checkpoint
         // opens at 1.0, and at exactly 1.0 the engine skips the unconditional
@@ -1596,6 +1603,10 @@ class SdSampler(
         h: Int,
     ): android.graphics.Bitmap {
         ctx.say(ctx.text(R.string.run_repainting_marked_area, "repainting the area you marked"))
+        // ⚠⚠ The mask is made: let the CPU picture models go before the DiT renders, as a Swap
+        // render does ([PictureModels]). A Z-Image inpaint with pick-select held the parser through
+        // an 8.8 GB render on an 11.7 GB phone, and crashed (a tester, 2026-10-13).
+        PictureModels.releaseAll()
         val r = ctx.host.generate(
             prompt = prompt.positive,
             negative = prompt.negative,
@@ -1611,6 +1622,8 @@ class SdSampler(
             // masked render that dropped them would ignore what it displays.
             loras = lorasFor(ctx, p[LORAS]),
             onProgress = ctx.onProgress,
+            // ⭐ The node's sampler (GitHub #19); an SD id from an old flow is Euler at the backend.
+            scheduler = p["scheduler"]?.takeIf { it in ModelCatalog.DIT_SAMPLER_IDS },
         )
         val out = when (r) {
             is Ops.Result.Ok -> r.value
@@ -1639,7 +1652,12 @@ class SdSampler(
         // rather than rendering silently without one.
         val android = ctx.android
             ?: throw IllegalStateException("LoRAs need an Android context on this host")
-        return parseLoras(BackendProcess.lorasDir(android), text)
+        return parseLoras(BackendProcess.lorasDir(android), text).onEach { (path, _) ->
+            // ⭐ Integer tensors abort the DiT engine ([LoraClean]); made float once, here.
+            if (runCatching { LoraClean.ensure(java.io.File(path)) }.getOrDefault(false)) {
+                ctx.say("  ${java.io.File(path).name}: integer tensors made float for the engine")
+            }
+        }
     }
 
     /**
@@ -1865,6 +1883,8 @@ class SdSampler(
                 else -> ctx.text(R.string.run_reimagining_picture, "re-imagining the picture")
             }
         )
+        // ⚠ The same release as [runDitMasked]: a DiT checkpoint needs the RAM more than a warm model.
+        PictureModels.releaseAll()
         val r = ctx.host.generate(
             prompt = prompt.positive,
             negative = prompt.negative,
@@ -1878,6 +1898,8 @@ class SdSampler(
             referencePngs = listOfNotNull(referencePng),
             loras = lorasFor(ctx, p[LORAS]),
             onProgress = ctx.onProgress,
+            // ⭐ The node's sampler (GitHub #19); an SD id from an old flow is Euler at the backend.
+            scheduler = p["scheduler"]?.takeIf { it in ModelCatalog.DIT_SAMPLER_IDS },
         )
         val out = when (r) {
             is Ops.Result.Ok -> r.value

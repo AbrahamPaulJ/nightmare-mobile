@@ -664,6 +664,8 @@ object BackendProcess {
                         // byte-identical with and without a LoRA, at v79 and the S25 forced to v75
                         // (`docs/ANIMA-GGML.md` §3).
                         if (spec?.family == Family.ANIMA_DIT) put("GGML_HEXAGON_OPFUSION", ANIMA_OPFUSION)
+                        // ⭐ A chip that ran short of VTCM runs unfused ([HexFallback]).
+                        if (HexFallback.noFusion(context)) put("GGML_HEXAGON_OPFUSION", "0")
                         putAll(readDitEnvOverride(context))
                         val dsp = listOf(
                             runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",

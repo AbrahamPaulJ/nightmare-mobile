@@ -35,4 +35,13 @@ class ModelLabelTest {
         opened("txt2img")
         assertFalse(vm.modelLabel, vm.modelLabel.contains(wan))
     }
+
+    /** ⭐ Neodragon too (reported 2026-10-14: Text to video kept the last checkpoint). */
+    @Test
+    fun aNeodragonFlowShowsNeodragon() {
+        opened("txt2img")
+        assertFalse(vm.modelLabel, vm.modelLabel.contains("Neodragon"))
+        opened("t2v")
+        assertTrue(vm.modelLabel, vm.modelLabel == com.abrah.nightmare.npu.NpuFiles.LABEL)
+    }
 }

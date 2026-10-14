@@ -303,7 +303,8 @@ open class ModelsScreenshotTest {
             rows = rows(installed = setOf(V1_MODEL), selected = V1_MODEL) + custom,
             busy = false, error = null,
             onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
-            onImport = {},
+            // ⭐ The Models "+" popup, open (2026-10-14: it replaced the per-page import cards).
+            importOpen = true, onImportFile = {},
         )
     }
 

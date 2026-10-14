@@ -1,6 +1,7 @@
 package com.abrah.nightmare.canvas
 
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.async
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.border
@@ -512,6 +513,8 @@ fun NodeInspector(
             // ⚠ Read HERE for the same reason: what a prompt is measured
             // against depends on what it is WIRED into.
             promptBudget = com.abrah.nightmare.PromptTokens.budgetFor(state.workflow.graph, nodeId),
+            // ⭐ …and so are the LoRAs its chips offer first ([com.abrah.nightmare.PromptLoras.hintFor]).
+            loraHint = com.abrah.nightmare.PromptLoras.hintFor(state.workflow.graph, nodeId),
             describePictures = if (onDescribe != null && node.type == com.abrah.nightmare.PromptNode.name) {
                 describePictures(state, types, imageFor)
             } else emptyList(),
@@ -1019,6 +1022,8 @@ internal fun NodeInspectorBody(
     canSweep: Boolean = true,
     /** ⭐ What this node's prose is counted against — [com.abrah.nightmare.PromptTokens.budgetFor]. */
     promptBudget: com.abrah.nightmare.PromptTokens.Budget? = null,
+    /** ⭐ What `<lora:` autocomplete offers first ([LoraSuggestions]). */
+    loraHint: com.abrah.nightmare.PromptLoras.Hint? = null,
     /** ⭐ The canvas's pictures the describe button offers — [describePictures]. */
     describePictures: List<DescribePicture> = emptyList(),
     /** ⭐ The chip the describe dialog opens on — [com.abrah.nightmare.DescribeMode.defaultFor]. */
@@ -2445,16 +2450,23 @@ internal fun NodeInspectorBody(
                 // backend actually receives.
                 if (w.name == "scheduler") {
                     val cur = node.params[w.name] ?: w.default.orEmpty()
-                    val (base, karras) = ModelCatalog.splitScheduler(cur)
+                    val (base, schedule) = ModelCatalog.splitScheduler(cur)
                     // ⚠⚠ Only the samplers THIS node's family distinguishes —
-                    // [ModelCatalog.schedulersFor]. Anima offers two, and no
-                    // Karras: the widget's options say so, and the picker reads
-                    // them rather than the catalogue-wide list.
+                    // [ModelCatalog.schedulersFor]. Anima offers two, a DiT family
+                    // the engine's own ([ModelCatalog.DIT_SAMPLERS]); the widget's
+                    // options say so, and the picker reads them.
                     val allowed = w.options ?: ModelCatalog.SCHEDULERS
-                    val samplers = ModelCatalog.SAMPLERS.filter { (id, _) ->
+                    val ditIds = allowed.all { it in ModelCatalog.DIT_SAMPLER_IDS } &&
+                        allowed.any { ModelCatalog.SAMPLERS.none { s -> s.first == it } }
+                    val samplers = if (ditIds) ModelCatalog.DIT_SAMPLERS.filter { it.first in allowed }
+                    else ModelCatalog.SAMPLERS.filter { (id, _) ->
                         allowed.any { ModelCatalog.splitScheduler(it).first == id }
                     }
-                    val karrasOffered = allowed.any { it.endsWith("_karras") }
+                    // ⭐ The schedules this family offers at all (GitHub #19: Karras became one of
+                    // three, beside Exponential). ⚠ Its own dropdown, not a checkbox per schedule.
+                    val schedules = ModelCatalog.SCHEDULES.filter { (sfx, _) ->
+                        sfx.isEmpty() || allowed.any { it.endsWith(sfx) }
+                    }
                     ChoiceDropdown(
                         label = w.name.localizedKnobLabel(),
                         hint = w.localizedHint(),
@@ -2463,33 +2475,32 @@ internal fun NodeInspectorBody(
                             ?: ModelCatalog.schedulerLabel(cur),
                         onPick = { label ->
                             val id = samplers.first { it.second == label }.first
-                            pick(ModelCatalog.joinScheduler(id, karras && karrasOffered))
+                            pick(ModelCatalog.joinScheduler(id, schedule))
                         },
                     )
-                    // ⚠ Disabled rather than hidden for LCM: a checkbox that
-                    // vanishes reads as a bug, where a greyed one with the
-                    // sampler's name beside it says the variant does not exist.
-                    // ⚠⚠ And it must not merely be greyed — the VALUE has to drop
-                    // too, or switching to LCM with Karras armed would send
-                    // `lcm_karras`, which the backend's comparison chain does
-                    // not know and silently renders as `dpm`.
-                    val canKarras = ModelCatalog.karrasSupported(base)
+                    // ⚠ Disabled rather than hidden for LCM: a control that vanishes reads as a
+                    // bug, where a greyed one saying why tells the person the variant does not
+                    // exist. ⚠⚠ And the VALUE drops too ([ModelCatalog.joinScheduler]), or LCM
+                    // with Karras armed would send `lcm_karras`, which the backend renders as `dpm`.
+                    val canSchedule = ModelCatalog.schedulesSupported(base)
+                    val scheduleNames = schedules.map { it.first to scheduleLabel(it.first) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (karrasOffered) Checkbox(
-                            checked = karras && canKarras,
-                            enabled = canKarras,
-                            onCheckedChange = { on ->
-                                pick(ModelCatalog.joinScheduler(base, on))
-                            },
-                        )
-                        if (karrasOffered) Text(
-                            if (canKarras) stringResource(R.string.karras_sigmas)
-                            else stringResource(R.string.karras_unavailable),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (canKarras) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.weight(1f))
+                        if (schedules.size > 1) Box(Modifier.weight(1f)) {
+                            if (canSchedule) ChoiceDropdown(
+                                label = stringResource(R.string.sampler_schedule),
+                                hint = stringResource(R.string.hint_schedule),
+                                options = scheduleNames.map { it.second },
+                                current = scheduleNames.firstOrNull { it.first == schedule }?.second.orEmpty(),
+                                onPick = { label ->
+                                    val sfx = scheduleNames.first { it.second == label }.first
+                                    pick(ModelCatalog.joinScheduler(base, sfx))
+                                },
+                            ) else Text(
+                                stringResource(R.string.schedule_unavailable),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else Spacer(Modifier.weight(1f))
                         // ⚠ The REAL armed state, not a hardcoded null. It is
                         // always null on this path today -- an armed knob is
                         // drawn by the branch above and never reaches here --
@@ -2733,7 +2744,19 @@ internal fun NodeInspectorBody(
                             // ⭐ Tag autocomplete ([com.abrah.nightmare.TagDictionary]), above the toolbar.
                             // ⚠ One Column: the slot is a Box, and two children would overlap.
                             Column {
-                            TagSuggestions(seeded.value) { range, tag ->
+                            // ⭐ Inside a `<lora:` tag the row offers LoRAs instead of tags (GitHub #19).
+                            val openLora = com.abrah.nightmare.PromptLoras.openTagAt(seeded.value.text, seeded.value.selection.start)
+                            if (openLora != null) {
+                                LoraSuggestions(openLora, loraHint) { file ->
+                                    val v = seeded.value
+                                    val (text, from, to) = com.abrah.nightmare.PromptLoras.complete(v.text, openLora, v.selection.start, file)
+                                    history.record(v.text, System.currentTimeMillis(), coalesce = false)
+                                    historyTick++
+                                    // ⚠ The strength SELECTED: the next keystroke types over it.
+                                    seeded.value = TextFieldValue(text, TextRange(from, to))
+                                    onSetParam(nodeId, w.name, text)
+                                }
+                            } else TagSuggestions(seeded.value) { range, tag ->
                                 apply { t, _ -> com.abrah.nightmare.TagDictionary.complete(t, range, tag) }
                             }
                             PromptToolbar(
@@ -2766,11 +2789,17 @@ internal fun NodeInspectorBody(
                         .onFocusChanged { proseFocused = it.isFocused },
                 )
             } else {
+            // ⭐ A seed of 0 ("a new one each run") EMPTIES when the box is pressed, with 0 greyed in
+            // it, so a fixed seed is typed straight in (GitHub #19: "the zero I have to delete every
+            // time"). ⚠ Only while focused: an empty unfocused box draws its label inside, no 0.
+            var seedFocused by remember(nodeId, w.name) { mutableStateOf(false) }
+            val seedZero = w.name == "seed" && current == "0" && why == null && seedFocused
             OutlinedTextField(
                 // ⚠ The manifest default when the graph carries nothing, so
                 // the field shows what the node will actually RUN with
                 // rather than an empty box that means "0.5".
-                value = current,
+                value = if (seedZero) "" else current,
+                placeholder = if (seedZero) ({ Text("0") }) else null,
                 onValueChange = {
                     // ⚠⚠ An emptied NUMERIC field writes its default rather
                     // than "", because "" is not a number: `seed` blank made
@@ -2815,7 +2844,7 @@ internal fun NodeInspectorBody(
                 keyboardOptions = KeyboardOptions(
                     keyboardType = if (w.numeric) KeyboardType.Number else KeyboardType.Text,
                 ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().onFocusChanged { seedFocused = it.isFocused },
             )
             }
             // ⭐⭐ **Translate, then Undo, in ONE slot** — on the field's top
@@ -4822,6 +4851,13 @@ internal fun <T : Any> rememberOffMain(
     vararg keys: Any?,
     keep: Boolean = false,
     settleMs: Long = OFF_MAIN_SETTLE_MS,
+    /** ⭐ Wait [settleMs] before the FIRST compute too (a picture just added; the crop is next). */
+    settleFirst: Boolean = false,
+    /**
+     * ⭐ Stops a [compute] made stale mid-run, given the thread it runs on. Set, the compute is
+     * awaited cancellably, so new keys stop the old run instead of queueing behind it.
+     */
+    onCancel: ((Thread) -> Unit)? = null,
     compute: () -> T?,
 ): T? {
     val caching = keep && pictureDispatcher !== kotlinx.coroutines.Dispatchers.Unconfined
@@ -4836,7 +4872,7 @@ internal fun <T : Any> rememberOffMain(
             held.value = it as T
             return@LaunchedEffect
         }
-        if (held.value != null && pictureDispatcher !== kotlinx.coroutines.Dispatchers.Unconfined) {
+        if ((held.value != null || settleFirst) && pictureDispatcher !== kotlinx.coroutines.Dispatchers.Unconfined) {
             kotlinx.coroutines.delay(settleMs)
         }
         val lock = synchronized(offMainLocks) {
@@ -4844,7 +4880,19 @@ internal fun <T : Any> rememberOffMain(
         }
         lock.withLock {
             val t0 = System.nanoTime()
-            val v = kotlinx.coroutines.withContext(pictureDispatcher) {
+            val v = if (onCancel != null && pictureDispatcher !== kotlinx.coroutines.Dispatchers.Unconfined) {
+                var worker: Thread? = null
+                val job = kotlinx.coroutines.CoroutineScope(pictureDispatcher).async {
+                    worker = Thread.currentThread()
+                    runCatching(compute).getOrNull()
+                }
+                try {
+                    job.await()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    worker?.let(onCancel)
+                    throw e
+                }
+            } else kotlinx.coroutines.withContext(pictureDispatcher) {
                 runCatching(compute).getOrNull()
             }
             android.util.Log.i(
@@ -4973,6 +5021,54 @@ private fun missingText(spec: com.abrah.nightmare.ModelSpec?, feature: String): 
     com.abrah.nightmare.ModelFeatures.missing(spec, feature)?.let { (res, name) ->
         androidx.compose.ui.res.stringResource(res, name)
     }
+
+/** ⭐ A schedule suffix's name in the phone's language ([ModelCatalog.SCHEDULES]). */
+@Composable
+private fun scheduleLabel(sfx: String): String = stringResource(
+    when (sfx) {
+        "_karras" -> R.string.schedule_karras
+        "_exponential" -> R.string.schedule_exponential
+        else -> R.string.schedule_normal
+    },
+)
+
+/**
+ * ⭐⭐ `<lora:` autocomplete (GitHub #19, the user's pick 2026-10-14: chips in the tag row): the
+ * installed LoRAs matching what is typed after `<lora:`, the ones the flow's samplers already use
+ * first, then the ones made for their model ([com.abrah.nightmare.PromptLoras.rank]). A tap writes
+ * `<lora:name:1.0>` with `1.0` selected. ⚠ The folder is listed off the main thread, once per open tag.
+ */
+@Composable
+internal fun LoraSuggestions(
+    open: com.abrah.nightmare.PromptLoras.Open,
+    hint: com.abrah.nightmare.PromptLoras.Hint?,
+    onPick: (String) -> Unit,
+) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val files by androidx.compose.runtime.produceState(emptyList<Pair<String, com.abrah.nightmare.LoraLibrary.Base>>(), open.start) {
+        this.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                com.abrah.nightmare.LoraLibrary.list(com.abrah.nightmare.BackendProcess.lorasDir(ctx)).map { it.name to it.base }
+            }.getOrDefault(emptyList())
+        }
+    }
+    val found = com.abrah.nightmare.PromptLoras.rank(files, open.partial, hint)
+    if (found.isEmpty()) return
+    // ⚠ A scrolling Row, not a LazyRow: the supporting slot asks for intrinsic height ([TagSuggestions]).
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth()
+            .horizontalScroll(androidx.compose.foundation.rememberScrollState())
+            .padding(vertical = 2.dp),
+    ) {
+        for (f in found) {
+            androidx.compose.material3.SuggestionChip(
+                onClick = { onPick(f) },
+                label = { Text(f.substringBeforeLast('.'), style = MaterialTheme.typography.labelMedium, maxLines = 1) },
+            )
+        }
+    }
+}
 
 /**
  * ⭐ Tag autocomplete under a prompt box (Local Dream's, the user's ask 2026-10-10): the

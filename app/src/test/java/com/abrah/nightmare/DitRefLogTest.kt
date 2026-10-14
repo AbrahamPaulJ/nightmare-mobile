@@ -114,6 +114,7 @@ private class WholeRenderHost : OpHost {
         maskPng: ByteArray?, referencePngs: List<ByteArray>,
         loras: List<Pair<String, Double>>,
         onProgress: (Ops.Progress) -> Unit,
+        scheduler: String?,
     ): Ops.Result<Ops.Decoded> =
         Ops.Result.Ok(Ops.Decoded(ditSolidPng(width, height, 0xFF112233.toInt()), "sha", 1L, 2L))
 

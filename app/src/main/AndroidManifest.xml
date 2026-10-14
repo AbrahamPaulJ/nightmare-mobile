@@ -15,6 +15,8 @@
          start outright. SPECIAL_USE is the honest type; this is a developer
          harness, not a media player or a data sync. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Keeps the CPU awake while a render runs with the screen off (RunWakeLock). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- ⚠ For BackendKeepAliveService's Settings-page suggestion. Sideload

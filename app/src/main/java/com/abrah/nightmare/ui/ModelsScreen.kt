@@ -194,18 +194,16 @@ fun ModelsScreen(
     onUseVideo: () -> Unit = {},
     modifier: Modifier = Modifier,
     /**
-     * ⭐ Import a checkpoint the user already has, as a zip.
-     *
-     * ⚠ Nullable so this screen still renders in a preview and a golden, where
-     * there is no `ActivityResultLauncher` to hand it. Null hides the button
-     * rather than showing a dead one.
+     * ⭐⭐ The Models title's "+" popup ([ImportDialog]) is open. ⚠ The one import since
+     * 2026-10-14: the per-page cards went, and the file says what it is.
      */
-    onImport: ((name: String) -> Unit)? = null,
-    /**
-     * ⭐ Import a plain `.safetensors` for a DiT family — the family comes
-     * from the TAB, because the file cannot say ([CustomModels.importDit]).
-     */
-    onImportDit: ((name: String, family: Family) -> Unit)? = null,
+    importOpen: Boolean = false,
+    onCloseImport: () -> Unit = {},
+    /** ⭐ "Choose a file" with the name typed (empty = the file's own). Null draws no popup. */
+    onImportFile: ((name: String) -> Unit)? = null,
+    /** ⭐ A checkpoint whose weights named no family is waiting for one ([FamilyAskDialog]). */
+    familyAsk: Boolean = false,
+    onAnswerFamily: (Family?) -> Unit = {},
     /**
      * ⭐ The name of an import in flight, or null. Drawn as a banner ABOVE the
      * family tabs — an imported model has no row to hang progress on until the
@@ -220,8 +218,6 @@ fun ModelsScreen(
     upscalers: List<UpscalerRow> = emptyList(),
     onInstallUpscaler: (UpscalerSpec) -> Unit = {},
     onDeleteUpscaler: (UpscalerSpec) -> Unit = {},
-    /** ⭐ Bring your own upscaler `.bin`. Null hides the button. */
-    onImportUpscaler: (() -> Unit)? = null,
     /**
      * ⭐⭐ The video models. Null renders no tab at all — which is what a
      * preview, a golden, and a phone whose chip cannot run them all want.
@@ -399,7 +395,8 @@ fun ModelsScreen(
         // Family menu under them; Installed, then Available, then the models
         // this phone cannot run in a collapsed section of their own (the user:
         // *"so user only sees whats supported"*). A family opens its own page.
-        val families = Family.entries.filter { f -> rows.any { it.spec.family == f } }
+        // ⭐ PAGES, not families: Anima's two runtimes share one ([page]).
+        val families = Family.entries.filter { f -> rows.any { it.spec.family.page() == f } }
         // ⚠ With no checkpoints but the video models, opens on Video — what the
         // family tabs did when the video tab was page 0 (a real state: a phone
         // that downloaded only the video models).
@@ -510,16 +507,6 @@ fun ModelsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    if (onImportUpscaler != null) {
-                        item {
-                            ImportCallout(
-                                title = stringResource(R.string.import_upscaler_title),
-                                body = stringResource(R.string.import_upscaler_body),
-                                enabled = !busy,
-                                onImport = onImportUpscaler,
-                            )
-                        }
-                    }
                     items(upscalers, key = { it.spec.id }) { row ->
                         UpscalerCard(
                             row, busy, onInstallUpscaler, onCancel,
@@ -532,37 +519,47 @@ fun ModelsScreen(
                     if (fp == null) {
                         item { SearchBox(query, { query = it }) }
                         item {
-                            FamilyMenu(families.map { f -> f to rows.count { it.spec.family == f } }) {
+                            FamilyMenu(families.map { f -> f to rows.count { it.spec.family.page() == f } }) {
                                 familyPage = it
                                 sub = SubKind.ALL
                             }
                         }
                     } else {
                         item {
-                            FamilyHeader(fp, rows.count { it.spec.family == fp }, familyNote(fp)) { familyPage = null }
+                            FamilyHeader(fp, rows.count { it.spec.family.page() == fp }, familyNote(fp)) { familyPage = null }
                         }
                         // ⚠ Sub-chips only when there is a choice to make.
                         val subs = SubKind.entries.filter { s ->
-                            s == SubKind.ALL || rows.any { it.spec.family == fp && matchesSub(it.spec, s) }
+                            s == SubKind.ALL || rows.any { it.spec.family.page() == fp && matchesSub(it.spec, s) }
                         }
                         if (subs.size > 2) item { PillRow(subs, sub, { subLabel(it) }) { sub = it } }
-                        // ⭐ Bring your own, on the family's page — a DiT family takes
-                        // a `.safetensors` and needs the family said ([CustomModels.importDit]).
-                        if (fp.dit) {
-                            if (onImportDit != null && fp != Family.QWEN21) {
-                                item { ImportCard(busy, onImport = { onImportDit(it, fp) }, dit = true) }
-                            }
-                        } else if (onImport != null) {
-                            item { ImportCard(busy, onImport) }
-                        }
                     }
+                    // ⭐ The Anima page in two parts, DiT first (the user, 2026-10-14).
+                    val groups: List<Pair<Int?, List<ModelRow>>> = if (fp == Family.ANIMA_DIT) {
+                        listOf(
+                            R.string.models_section_anima_dit to rows.filter { it.spec.family == Family.ANIMA_DIT },
+                            R.string.models_section_anima_qnn to rows.filter { it.spec.family == Family.ANIMA },
+                        ).filter { it.second.isNotEmpty() }
+                    } else listOf(null to rows)
+                    for ((gi, group) in groups.withIndex()) {
+                    val (heading, groupRows) = group
                     val sec = sectionsOf(
-                        rows,
+                        groupRows,
                         if (fp == null) kind else ModelKind.ALL,
                         if (fp == null) query else "",
                         fp,
                         if (fp == null) SubKind.ALL else sub,
                     )
+                    if (heading != null) {
+                        item(key = "g_$gi") {
+                            Text(
+                                stringResource(heading),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = if (gi == 0) 0.dp else 12.dp),
+                            )
+                        }
+                    }
                     val card: @Composable (ModelRow) -> Unit = { row ->
                         ModelCardV2(row, busy, onInstall, onCancel, { deleting = it }, onSelect)
                     }
@@ -583,7 +580,7 @@ fun ModelsScreen(
                         }
                         if (showUnsupported) items(sec.unsupported, key = { "u_" + it.spec.id }) { card(it) }
                     }
-                    if (sec.isEmpty) {
+                    if (sec.isEmpty && groups.size == 1) {
                         item {
                             Text(
                                 stringResource(R.string.mb_no_match),
@@ -593,14 +590,15 @@ fun ModelsScreen(
                             )
                         }
                     }
-                    // ⭐ The generic zip import closes the main list: the family is
-                    // read from the archive, so no page has to be chosen first.
-                    if (fp == null && onImport != null) item { ImportCard(busy, onImport) }
+                    }
                     item { androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 16.dp)) }
                 }
             }
         }
     }
+
+    if (importOpen && onImportFile != null) ImportDialog(onDismiss = onCloseImport, onChoose = onImportFile)
+    if (familyAsk) FamilyAskDialog(onAnswerFamily)
 
     // ⚠ All three kinds of model ask through [ConfirmDelete] — one dialog, one
     // verb, one pair of buttons (`docs/UI.md` §8.2). They shipped as three
@@ -760,108 +758,6 @@ private fun familyNote(family: Family): String = stringResource(when (family) {
         // at once, so a 3.5 GB download needs ~7.5 GB free.
         else -> R.string.models_family_other
 })
-
-/**
- * The "import a zip" row, plus the name dialog.
- *
- * ⚠⚠ A name is asked for BEFORE the picker opens, and it is not optional. The
- * name is the directory, the id, and the value written into every node's
- * `model` param in every workflow saved against it — so it cannot be derived
- * from a content-provider display name that may be `document.zip` or absent
- * entirely, and it cannot be renamed later without rewriting saved graphs.
- */
-@Composable
-private fun ImportCard(
-    busy: Boolean,
-    onImport: (String) -> Unit,
-    /** ⚠ A DiT family takes one `.safetensors`; everything else takes a zip. */
-    dit: Boolean = false,
-) {
-    var naming by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
-
-    // ⚠ [ImportCallout] owns the look; this file owns the naming dialog that
-    // follows. The three importers in the app share one card shape.
-    ImportCallout(
-        title = stringResource(R.string.models_import_checkpoint),
-        body = if (dit) {
-            // ⭐⭐⭐ The exception to the sentence below, and it is worth being
-            // plain about: a DiT family has no context binary. The engine reads
-            // plain weights at run time, so a community fine-tune needs nothing
-            // done to it (`docs/ROADMAP.md` §2b, measured on device).
-            // ⭐⭐ **No prerequisite any more, and the body must not claim one.**
-            // It read "download the built-in model first" until 2026-09-21,
-            // which was the refusal `ensureDitParts` used to throw — 6.7 GB
-            // demanded to obtain 2.6 GB of it. The parts are now fetched on
-            // demand, so what is left to say is the SIZE, once, before a person
-            // picks a file and waits.
-            // ⚠ Three figures rather than one, because the parts do not all
-            // travel together: the text encoder and tokenizer (2.27 GB) are
-            // byte-identical across both DiT families and the VAE (336 MB) is
-            // not, so owning the OTHER family covers most of it but not all.
-            // `CustomModels.DIT_FAMILY_AGNOSTIC` has the md5s.
-            // ⭐ 1.6.069: `.gguf` too, and Klein 9B / Krea 2 fine-tunes, which
-            // bring their OWN encoder copy (`CustomModels.DitVariant`).
-            stringResource(R.string.models_import_dit_body)
-        } else {
-            // ⚠ Says what the app CANNOT do, because the alternative is a user
-            // picking a `.safetensors` and reading "not a checkpoint" without
-            // knowing why. Conversion is a PC step and there is no runtime
-            // compiler on the NPU — for these families.
-            stringResource(R.string.models_import_qnn_body)
-        },
-        enabled = !busy,
-        onImport = { name = ""; naming = true },
-    )
-
-    if (naming) {
-        val trimmed = name.trim()
-        val reserved = trimmed.isNotEmpty() && com.abrah.nightmare.CustomModels.isReserved(trimmed)
-        // ⭐ EMPTY is allowed: the zip's own file name is used
-        // ([com.abrah.nightmare.CustomModels.nameFromFile]). Asked for 2026-09-16.
-        val ok = trimmed.isEmpty() ||
-            (com.abrah.nightmare.CustomModels.isValidName(trimmed) && !reserved)
-        AlertDialog(
-            onDismissRequest = { naming = false },
-            title = { Text(stringResource(R.string.models_name_it)) },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        singleLine = true,
-                        label = { Text(stringResource(R.string.models_model_name)) },
-                    )
-                    Text(
-                        when {
-                            reserved -> stringResource(R.string.models_name_reserved)
-                            trimmed.isNotEmpty() && !ok -> stringResource(R.string.models_name_invalid)
-                            // ⚠ Warns BEFORE the picker, not after the copy: an
-                            // import is gigabytes, and finding out afterwards
-                            // that the name is permanent is finding out too late.
-                            trimmed.isEmpty() -> stringResource(R.string.models_name_empty_hint)
-                            else -> stringResource(R.string.models_name_hint)
-                        },
-                        style = NoteTextStyle,
-                        color = if (reserved) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { naming = false; onImport(trimmed) },
-                    enabled = ok,
-                ) { Text(stringResource(if (dit) R.string.models_pick_file else R.string.models_pick_zip)) }
-            },
-            dismissButton = { TextButton(onClick = { naming = false }) { Text(stringResource(R.string.cancel)) } },
-        )
-    }
-}
 
 /**
  * ⭐⭐⭐ ONE row for every downloadable thing — checkpoint, upscaler, video.

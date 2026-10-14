@@ -59,4 +59,65 @@ object PromptLoras {
         val kept = LoraSpec.parse(spec).filter { e -> add.none { it.name.equals(e.name, ignoreCase = true) } }
         return LoraSpec.format(kept + add)
     }
+    // ---- autocomplete (GitHub #19: "type <lora: and pick from your LoRAs") ----------------
+
+    /** ⭐ What a prompt's LoRA chips prefer: the LoRAs its samplers already use, and their bases. */
+    data class Hint(val active: Set<String>, val bases: Set<LoraLibrary.Base>)
+
+    /** ⚠ Pure. The [Hint] for the prompt node [nodeId]: every sampler it is wired into. */
+    fun hintFor(graph: Graph, nodeId: String): Hint {
+        val consumers = graph.nodes.filter { n -> n.inputs.values.any { it.node == nodeId } }
+        val active = consumers.flatMap { LoraSpec.parse(it.params[SdSampler.LORAS]).map { e -> e.name } }.toSet()
+        val bases = consumers.mapNotNull { c ->
+            LoraLibrary.Base.of(ModelCatalog.byId(c.params["model"].orEmpty())?.family)
+        }.toSet()
+        return Hint(active, bases)
+    }
+
+    /** An open tag at the caret: where its `<` is, and the name typed so far. */
+    data class Open(val start: Int, val partial: String)
+
+    private val OPEN = Regex("""<\s*(?:lora|lyco)\s*:([^:<>
+]*)$""", RegexOption.IGNORE_CASE)
+
+    /** ⚠ Pure. The `<lora:…` the caret is in the middle of typing, or null. */
+    fun openTagAt(text: String, caret: Int): Open? {
+        if (caret < 0 || caret > text.length) return null
+        val lt = text.lastIndexOf('<', (caret - 1).coerceAtLeast(0))
+        if (lt < 0) return null
+        val m = OPEN.find(text.substring(lt, caret)) ?: return null
+        return Open(lt, m.groupValues[1].trim())
+    }
+
+    /**
+     * ⚠ Pure. [files] that match [partial] (anywhere in the name, any case), the ones in
+     * [hint]`.active` first, then the ones of a base the samplers take, then by name; at most [limit].
+     */
+    fun rank(files: List<Pair<String, LoraLibrary.Base>>, partial: String, hint: Hint?, limit: Int = 12): List<String> =
+        files.filter { (name, _) -> partial.isEmpty() || name.contains(partial, ignoreCase = true) }
+            .sortedWith(
+                compareBy<Pair<String, LoraLibrary.Base>>(
+                    { (name, _) -> if (hint?.active?.any { it.equals(name, ignoreCase = true) } == true) 0 else 1 },
+                    { (_, base) -> if (hint != null && base in hint.bases) 0 else 1 },
+                    { (name, _) -> name.lowercase() },
+                )
+            )
+            .take(limit).map { it.first }
+
+    /**
+     * ⚠ Pure. [text] with the open tag at [open] replaced by `<lora:NAME:1.0>` (NAME without its
+     * extension), and the strength's range so the caller can SELECT it — the next keystroke types
+     * over `1.0`. A tag already closed after the caret (`<lora:fo|o:0.5>`) is replaced whole.
+     */
+    fun complete(text: String, open: Open, caret: Int, file: String): Triple<String, Int, Int> {
+        val rest = text.substring(caret)
+        val close = Regex("""^[^<>
+]*>""").find(rest)?.value?.length ?: 0
+        val name = file.substringBeforeLast('.')
+        val strength = "1.0"
+        val tag = "<lora:$name:$strength>"
+        val out = text.substring(0, open.start) + tag + text.substring(caret + close)
+        val from = open.start + tag.length - 1 - strength.length
+        return Triple(out, from, from + strength.length)
+    }
 }

@@ -141,6 +141,8 @@ interface OpHost {
         /** ⭐ See `Backend.generate` — DiT only. */
         loras: List<Pair<String, Double>> = emptyList(),
         onProgress: (Ops.Progress) -> Unit,
+        /** ⭐ The engine's sampler by name ([ModelCatalog.DIT_SAMPLERS]); null = the backend's Euler. */
+        scheduler: String? = null,
     ): Ops.Result<Ops.Decoded> = Ops.Result.Err(501, "this host cannot run a whole-render model")
 
     /**
@@ -247,11 +249,12 @@ object BackendHost : OpHost {
         referencePngs: List<ByteArray>,
         loras: List<Pair<String, Double>>,
         onProgress: (Ops.Progress) -> Unit,
+        scheduler: String?,
     ) = Ops.generate(
         prompt = prompt, negative = negative, steps = steps, cfg = cfg, seed = seed,
         width = width, height = height, imagePng = imagePng, denoise = denoise,
         maskPng = maskPng, referencePngs = referencePngs, loras = loras,
-        onProgress = onProgress,
+        onProgress = onProgress, scheduler = scheduler,
     )
 
     override suspend fun ultrafix(
@@ -2746,8 +2749,8 @@ class Executor(
         /** ⭐ A node telling the person something — see [NodeCtx.warn]. Already logged through [onLog]. */
         onWarn: (nodeId: String, text: String) -> Unit = { _, _ -> },
     ): GraphRun {
-        val t0 = System.nanoTime()
-        fun sinceMs() = (System.nanoTime() - t0) / 1_000_000
+        val t0 = wallNanos()
+        fun sinceMs() = (wallNanos() - t0) / 1_000_000
 
         val order = when (val o = topoSort(graph)) {
             is Order.Broken -> return GraphRun(emptyList(), emptyMap(), sinceMs(), o.why)
@@ -2969,7 +2972,7 @@ class Executor(
                 continue
             }
 
-            val n0 = System.nanoTime()
+            val n0 = wallNanos()
             val r = try {
                 // ⭐⭐⭐ **A node's work never runs on the main thread** (1.6.083).
                 // simpleperf on the phone, 2026-10-06, an inpaint run: 49% of the
@@ -3016,7 +3019,7 @@ class Executor(
                 // arbitrary map entry.
                 val v = produced[outName(node.id)] ?: produced.values.first()
                 NodeRun(node.id, node.type, Outcome.RAN,
-                    (System.nanoTime() - n0) / 1_000_000, v.describe())
+                    (wallNanos() - n0) / 1_000_000, v.describe())
             } catch (e: NeedsInput) {
                 // ⭐ Waiting on a person — BLOCKED, and no graph error.
                 waiting = waiting ?: (node.id to (e.message ?: "needs you"))
@@ -3027,7 +3030,7 @@ class Executor(
                 if (stopped == null) ErrorReport.record(e)
                 stopped = stopped ?: "${node.id}: ${e.message}"
                 NodeRun(node.id, node.type, Outcome.FAILED,
-                    (System.nanoTime() - n0) / 1_000_000,
+                    (wallNanos() - n0) / 1_000_000,
                     e.message ?: e.javaClass.simpleName)
             }
             runs += r; onNode(r)
@@ -3074,3 +3077,12 @@ class Executor(
         return out
     }
 }
+
+/**
+ * ⭐ A run's clock: wall time that KEEPS COUNTING while the phone sleeps (`elapsedRealtimeNanos`).
+ * ⚠ `System.nanoTime` stops in deep sleep, so a render that paused with the screen off showed
+ * 4m27s for a run that took over 10 minutes (a tester, 2026-10-13). Off the device (plain JVM
+ * tests, where the SDK is a stub) it falls back to `nanoTime`.
+ */
+internal fun wallNanos(): Long =
+    try { android.os.SystemClock.elapsedRealtimeNanos() } catch (e: RuntimeException) { System.nanoTime() }

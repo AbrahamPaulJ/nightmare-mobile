@@ -127,6 +127,29 @@ object WanVideoNode : NodeType {
      */
     fun fits(pinned: Long, ramBytes: Long): Boolean = pinned <= (ramBytes * RAM_SHARE).toLong()
 
+    /**
+     * ⚠ Pure: whether [pinned] fits what an 8 Gen 3's (v75) NPU will MAP for one process. Measured
+     * on real SM8650s (GitHub #20 and a tester's log, 2026-10-14, 1.6.153): 832x480 for 2 s
+     * (3.5 GB by [pinnedBytes]) rendered in 85 s, every time; 5 s (4.3 GB) failed at once, its
+     * 1.46 GB compute buffer refused by fastrpc after the 2.9 GB of weights. The cap sits just above
+     * the size that worked, so 3 s (3.7 GB) and 704p are refused until a tester runs them.
+     * ⚠ [arch] 0 (unknown) and v79+ are not capped: the 8 Elite mapped 6.2 GB.
+     */
+    fun fitsNpuMap(pinned: Long, arch: Int): Boolean = arch !in 1..78 || pinned <= V75_NPU_BYTES
+
+    private const val V75_NPU_BYTES = 3_600L shl 20
+
+    /** ⭐ The seconds a new Wan flow opens on: [MAX_SECONDS], or 2 on an 8 Gen 3 ([fitsNpuMap]). */
+    fun openingSeconds(): Int {
+        val caps = com.abrah.nightmare.DeviceProbe.caps()
+        return if (caps.known && caps.arch in 1..78) V75_SECONDS else MAX_SECONDS
+    }
+
+    private const val V75_SECONDS = 2
+
+    /** The engine's words when fastrpc refused a buffer — it SIGSEGVs right after. */
+    private val NPU_MAP_FAILED = Regex("""fastrpc_mmap failed|failed to allocate HTP0 buffer""")
+
     private const val DIT_BYTES = 2_900L shl 20
     private const val BYTES_PER_TOKEN = 128L shl 10
     private const val RAM_SHARE = 0.58
@@ -165,12 +188,19 @@ object WanVideoNode : NodeType {
         // rather than close the app (`docs/VIDEO-GGML.md` §4). ⚠ Against the phone's RAM, NOT
         // `MemAvailable`: that read 3.8 GB on the S25 right after a clip that ran from 6.3, and
         // lmkd closes background apps to make room — it refused a clip that fits. 0 = unknown.
-        val ram = com.abrah.nightmare.DeviceProbe.caps().ramBytes
+        val caps = com.abrah.nightmare.DeviceProbe.caps()
+        val ram = caps.ramBytes
         val need = pinnedBytes(w, h, frames)
         if (ram > 0 && !fits(need, ram)) {
             throw IllegalStateException(
                 "node \"${node.id}\": ${w}x$h for ${frames / FPS} s needs about ${gb(need)} GB on the NPU, " +
                     "more than this phone's ${gb(ram)} GB of RAM allows. Choose 480p or fewer seconds"
+            )
+        }
+        if (!fitsNpuMap(need, if (caps.known) caps.arch else 0)) {
+            throw IllegalStateException(
+                "node \"${node.id}\": on Snapdragon 8 Gen 3 the NPU can hold Wan clips up to 2 seconds at 480p " +
+                    "for now (${w}x$h for ${frames / FPS} s needs about ${gb(need)} GB). Choose 480p and 2 seconds or less"
             )
         }
 
@@ -206,7 +236,16 @@ object WanVideoNode : NodeType {
             is Ops.Result.Ok -> r.value
             is Ops.Result.Err -> {
                 raw.delete()
-                throw IllegalStateException("node \"${node.id}\": ${r.body}")
+                // ⭐ An NPU that could not map the clip's working buffer, said as such: the engine
+                // crashes right after (SIGSEGV), and testers saw only "EOFException" (GitHub #20).
+                val log = com.abrah.nightmare.BackendProcess.newestLaunch()
+                if (r.code == -1 && log.any { NPU_MAP_FAILED.containsMatchIn(it) }) {
+                    throw IllegalStateException(
+                        "node \"${node.id}\": the NPU could not hold this clip's working memory " +
+                            "(${w}x$h, ${frames / FPS} s). Choose fewer seconds or 480p [${r.body}]"
+                    )
+                }
+                throw IllegalStateException("node \"${node.id}\": ${com.abrah.nightmare.explainOpFailure(r.code, r.body)}")
             }
         }
         ctx.say("${clip.frames} frames in ${"%.1f".format(clip.serverMs / 1000.0)} s. Encoding")

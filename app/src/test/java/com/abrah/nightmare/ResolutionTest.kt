@@ -222,7 +222,12 @@ class ResolutionTest {
                 assertEquals(ModelCatalog.DIT_MIN.toDouble(), k.min)
                 assertEquals(ModelCatalog.DIT_MAX.toDouble(), k.max)
             }
-            assertTrue("${t.name} has no scheduler: its engine hardcodes euler", "scheduler" !in w)
+            // ⭐ Since backend 029 (GitHub #19) the engine takes the node's sampler by name: offered,
+            // and like the size it is a request field, never a relaunch.
+            val sch = w.getValue("scheduler")
+            assertTrue("${t.name}.scheduler must not relaunch", !sch.contextKey)
+            assertEquals(ModelCatalog.DIT_SAMPLER_IDS, sch.options)
+            assertEquals(ModelCatalog.DIT_DEFAULT_SAMPLER, sch.default)
         }
         val a = Node("f", SdSampler.FLUX2.name, mapOf("model" to "flux2_klein_4b", "width" to "512", "height" to "2048"))
         val b = Node("f", SdSampler.FLUX2.name, mapOf("model" to "flux2_klein_4b", "width" to "1536", "height" to "768"))

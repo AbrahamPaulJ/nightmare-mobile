@@ -70,6 +70,25 @@ class SpillFillTest {
         assertTrue(SpillFill.groupFailed(log))
     }
 
+    /**
+     * ⭐ 2026-10-13, an SM8850 on 1.6.142, SDXL Swap, low-RAM off: the UNet HEAD failed outright
+     * with sharing on, so no member ever asked for the group — and no retry ran.
+     */
+    @Test
+    fun aHeadThatFailedOutrightWithSharingOnIsTheSameFailure() {
+        val log = listOf(
+            "[spill-fill] SDXL context group sharing enabled: 964689920 bytes",
+            "QnnDsp <E> DspTransport call failed, error 0x00000010",
+            "QnnDsp <E>  contextFromBin (submit) Failed code: 1003",
+            "QnnDsp <E> SSR detected on device config {-1,-1,-1}. Thread will handle cleanup for all impacted sessions",
+            "Could not create context from binary.",
+            "UNET Create From Binary failure",
+        )
+        assertTrue(SpillFill.groupFailed(log))
+        // ⚠ The control: the same failure WITHOUT sharing has no group to blame.
+        assertFalse(SpillFill.groupFailed(log.drop(1)))
+    }
+
     @Test
     fun onlyTheGroupedFamiliesHaveAVariable() {
         assertEquals("LOCALDREAM_SDXL_SPILL_FILL_BYTES", SpillFill.envFor(Family.SDXL))

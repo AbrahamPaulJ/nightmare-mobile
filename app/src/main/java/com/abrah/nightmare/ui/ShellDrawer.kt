@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
@@ -93,6 +94,11 @@ fun ShellDrawer(
     onAbout: () -> Unit,
 ) {
     BackHandler(enabled = open, onBack = onClose)
+    // ⚠⚠ The canvas lets go of its text focus as the sidebar opens: a focused prompt's caret HANDLE
+    // is drawn in its own popup window, above everything, and sat on top of the sidebar (the user's
+    // screenshot, 2026-10-14). Clearing focus also drops the keyboard, which the sidebar never wants.
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    androidx.compose.runtime.LaunchedEffect(open) { if (open) focus.clearFocus(force = true) }
     // ⭐⭐ A row closes the sidebar at ONCE — no slide-out (the user, 2026-10-09: "it should be
     // snappy and close sidebar instantly"). ✕, the scrim, a swipe and Back still slide it away.
     var snap by remember { mutableStateOf(false) }
@@ -204,10 +210,66 @@ fun ShellDrawer(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                     DrawerRow(Icons.Filled.Settings, stringResource(R.string.cd_settings), go(onSettings))
                     DrawerRow(Icons.Filled.Info, stringResource(R.string.drawer_about), go(onAbout))
+                    // ⭐ Support (the user, 2026-10-14): Buy Me a Coffee, with why, and the other two apps.
+                    DrawerLabel(stringResource(R.string.drawer_support))
+                    var supporting by remember { mutableStateOf(false) }
+                    DrawerRow(Icons.Filled.Favorite, stringResource(R.string.support_coffee)) { supporting = true }
+                    if (supporting) SupportDialog { supporting = false }
                 }
             }
         }
     }
+}
+
+/** The links the Support popup opens. ⚠ The same Buy Me a Coffee page as README and `.github/FUNDING.yml`. */
+internal const val COFFEE_URL = "https://buymeacoffee.com/abrahampaulj"
+internal const val NPUFORGE_URL = "https://github.com/AbrahamPaulJ/npuforge"
+internal const val FACEFUSION_URL = "https://github.com/AbrahamPaulJ/facefusion-mobile"
+
+/**
+ * ⭐ Why support helps, the coffee link, and the author's other two apps (the user's words,
+ * 2026-10-14). Links open in the browser; nothing is sent from the app.
+ */
+@Composable
+internal fun SupportDialog(onDismiss: () -> Unit) {
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    fun open(url: String) = runCatching { uri.openUri(url) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.support_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(R.string.support_body), style = MaterialTheme.typography.bodyMedium)
+                androidx.compose.material3.Button(onClick = { open(COFFEE_URL) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Favorite, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.support_coffee))
+                }
+                DrawerLabel(stringResource(R.string.support_more))
+                for ((name, body, url) in listOf(
+                    Triple("npuforge", R.string.support_npuforge, NPUFORGE_URL),
+                    Triple("FaceFusion Mobile", R.string.support_facefusion, FACEFUSION_URL),
+                )) {
+                    Surface(
+                        onClick = { open(url) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(name, style = MaterialTheme.typography.titleSmall)
+                                Text(stringResource(body), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+    )
 }
 
 /** ⭐ A destination in the sidebar: icon, name, ›. */

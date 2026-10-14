@@ -1,0 +1,264 @@
+--- a/src/Scheduler.hpp
++++ b/src/Scheduler.hpp
+@@ -38,6 +38,10 @@
+   // Set prediction type (epsilon, v_prediction, sample)
+   virtual void set_prediction_type(const std::string &prediction_type) = 0;
+ 
++  // nightmare (029): use an EXPONENTIAL sigma schedule instead of the default
++  // or Karras one. A no-op on schedulers that have no sigma choice (LCM).
++  virtual void set_exponential_sigmas(bool) {}
++
+   // Get the timesteps array
+   virtual const xt::xarray<float> &get_timesteps() const = 0;
+ 
+@@ -50,4 +54,22 @@
+   // Get initial noise sigma (for scaling initial latents)
+   virtual float get_init_noise_sigma() const = 0;
+ };
++// nightmare (029): diffusers' _convert_to_exponential — exp(linspace(log
++// sigma_max, log sigma_min, n)) over a DESCENDING sigma list, the same input
++// the Karras converters take. 'Exponential' is what turbo / hyper SDXL
++// checkpoints recommend.
++#include <cmath>
++#include <vector>
++inline std::vector<float> exponential_sigmas_vec(const std::vector<float> &in_desc,
++                                                int n) {
++  std::vector<float> out(n);
++  const double hi = std::log(double(in_desc.front()));
++  const double lo = std::log(double(in_desc.back()));
++  for (int i = 0; i < n; ++i) {
++    double t = n == 1 ? 0.0 : double(i) / double(n - 1);
++    out[i] = float(std::exp(hi + (lo - hi) * t));
++  }
++  return out;
++}
++
+ #endif  // SCHEDULER_HPP
+\ No newline at end of file
+--- a/src/DPMSolverMultistepScheduler.hpp
++++ b/src/DPMSolverMultistepScheduler.hpp
+@@ -74,11 +74,15 @@
+       base_sigmas_vec[i] = std::sqrt((1.0f - alpha_cumprod) / alpha_cumprod);
+     }
+ 
+-    if (use_karras_sigmas_) {
++    if (use_karras_sigmas_ || use_exponential_sigmas_) {
+       std::vector<float> reversed(base_sigmas_vec.rbegin(),
+                                   base_sigmas_vec.rend());
++      // nightmare (029): the exponential schedule takes the Karras branch's
++      // path (sigmas first, timesteps read back from them), as in diffusers.
+       auto karras_sigmas =
+-          _convert_to_karras_vec(reversed, num_inference_steps);
++          use_exponential_sigmas_
++              ? exponential_sigmas_vec(reversed, num_inference_steps)
++              : _convert_to_karras_vec(reversed, num_inference_steps);
+ 
+       std::vector<float> log_sigmas(num_train_timesteps_);
+       for (int i = 0; i < num_train_timesteps_; ++i) {
+@@ -337,6 +341,21 @@
+     xt::xarray<float> D1 = D1_0 + (r0 / (r0 + r1)) * (D1_0 - D1_1);
+     xt::xarray<float> D2 = (1.0f / (r0 + r1)) * (D1_0 - D1_1);
+ 
++    // nightmare (029): DPM++ 3M SDE — diffusers' third-order sde-dpmsolver++
++    // branch. Without it a third-order SDE run silently took the ODE update.
++    if (algorithm_type_ == "sde-dpmsolver++") {
++      float e2h = std::exp(-2.0f * h);
++      xt::xarray<float> noise = xt::random::randn<float>(
++          sample.shape(), 0.0f, 1.0f, xt::random::get_default_random_engine());
++      return (sigma_t_val / sigma_s0_val * std::exp(-h)) * sample +
++             (alpha_t * (1.0f - e2h)) * D0 +
++             (alpha_t * ((1.0f - e2h) / (-2.0f * h) + 1.0f)) * D1 +
++             (alpha_t * ((1.0f - e2h - 2.0f * h) / ((2.0f * h) * (2.0f * h)) -
++                         0.5f)) *
++                 D2 +
++             (sigma_t_val * std::sqrt(std::max(1.0f - e2h, 0.0f))) * noise;
++    }
++
+     return (sigma_t_val / sigma_s0_val) * sample -
+            (alpha_t * (std::exp(-h) - 1.0f)) * D0 +
+            (alpha_t * ((std::exp(-h) - 1.0f) / h + 1.0f)) * D1 -
+@@ -475,6 +494,12 @@
+   std::string prediction_type_;
+   std::string timestep_spacing_;
+   bool use_karras_sigmas_;
++  bool use_exponential_sigmas_ = false;  // nightmare (029)
++
++ public:
++  void set_exponential_sigmas(bool on) override { use_exponential_sigmas_ = on; }
++
++ private:
+   std::string algorithm_type_;
+   bool lower_order_final_;
+ 
+--- a/src/EulerDiscreteScheduler.hpp
++++ b/src/EulerDiscreteScheduler.hpp
+@@ -88,11 +88,15 @@
+       base_sigmas_vec[i] = std::sqrt((1.0f - alpha_cumprod) / alpha_cumprod);
+     }
+ 
+-    if (use_karras_sigmas_) {
++    if (use_karras_sigmas_ || use_exponential_sigmas_) {
+       std::vector<float> reversed(base_sigmas_vec.rbegin(),
+                                   base_sigmas_vec.rend());
++      // nightmare (029): the exponential schedule takes the Karras branch's
++      // path (sigmas first, timesteps read back from them), as in diffusers.
+       auto karras_sigmas =
+-          _convert_to_karras_vec(reversed, num_inference_steps);
++          use_exponential_sigmas_
++              ? exponential_sigmas_vec(reversed, num_inference_steps)
++              : _convert_to_karras_vec(reversed, num_inference_steps);
+ 
+       std::vector<float> log_sigmas(num_train_timesteps_);
+       for (int i = 0; i < num_train_timesteps_; ++i) {
+@@ -284,6 +288,12 @@
+   int steps_offset_;
+   bool rescale_betas_zero_snr_;
+   bool use_karras_sigmas_;
++  bool use_exponential_sigmas_ = false;  // nightmare (029)
++
++ public:
++  void set_exponential_sigmas(bool on) override { use_exponential_sigmas_ = on; }
++
++ private:
+   bool is_scale_input_called_;
+ 
+   xt::xarray<float> betas_;
+--- a/src/EulerAncestralDiscreteScheduler.hpp
++++ b/src/EulerAncestralDiscreteScheduler.hpp
+@@ -91,12 +91,15 @@
+       base_sigmas_vec[i] = std::sqrt((1.0f - alpha_cumprod) / alpha_cumprod);
+     }
+ 
+-    if (use_karras_sigmas_) {
++    if (use_karras_sigmas_ || use_exponential_sigmas_) {
+       // Reverse to descending and apply Karras schedule
++      // nightmare (029): or the exponential one, by the same path.
+       std::vector<float> reversed(base_sigmas_vec.rbegin(),
+                                   base_sigmas_vec.rend());
+       auto karras_sigmas =
+-          _convert_to_karras_vec(reversed, num_inference_steps);
++          use_exponential_sigmas_
++              ? exponential_sigmas_vec(reversed, num_inference_steps)
++              : _convert_to_karras_vec(reversed, num_inference_steps);
+ 
+       // log_sigmas in ascending order (same as base_sigmas_vec)
+       std::vector<float> log_sigmas(num_train_timesteps_);
+@@ -362,6 +365,12 @@
+   int steps_offset_;
+   bool rescale_betas_zero_snr_;
+   bool use_karras_sigmas_;
++  bool use_exponential_sigmas_ = false;  // nightmare (029)
++
++ public:
++  void set_exponential_sigmas(bool on) override { use_exponential_sigmas_ = on; }
++
++ private:
+   bool is_scale_input_called_;
+ 
+   xt::xarray<float> betas_;
+--- a/src/Pipeline.hpp
++++ b/src/Pipeline.hpp
+@@ -201,37 +201,53 @@
+   }
+ };
+ 
+-inline std::unique_ptr<Scheduler> createScheduler(
+-    const std::string &scheduler_type, const char *timestep_spacing) {
+-  if (scheduler_type == "euler_a" || scheduler_type == "eulera" ||
+-      scheduler_type == "euler_a_karras") {
+-    bool use_karras = (scheduler_type == "euler_a_karras");
++// nightmare (029): "<sampler>[_karras|_exponential]". Samplers: dpm (DPM++ 2M),
++// dpm_sde, dpm3 (DPM++ 3M), dpm3_sde, euler, euler_a, lcm. The old values
++// (dpm_karras, euler_a_karras, ...) parse exactly as before; an unknown base
++// is still DPM++ 2M.
++inline std::unique_ptr<Scheduler> createSchedulerBase(
++    const std::string &base, bool use_karras, const char *timestep_spacing) {
++  if (base == "euler_a" || base == "eulera") {
+     return std::make_unique<EulerAncestralDiscreteScheduler>(
+         1000, 0.00085f, 0.012f, "scaled_linear", "epsilon", timestep_spacing, 0,
+         false, use_karras);
+   }
+-  if (scheduler_type == "euler" || scheduler_type == "euler_karras") {
+-    bool use_karras = (scheduler_type == "euler_karras");
++  if (base == "euler") {
+     return std::make_unique<EulerDiscreteScheduler>(
+         1000, 0.00085f, 0.012f, "scaled_linear", "epsilon", timestep_spacing, 0,
+         false, use_karras);
+   }
+-  if (scheduler_type == "lcm") {
++  if (base == "lcm") {
+     return std::make_unique<LCMScheduler>(1000, 0.00085f, 0.012f,
+                                           "scaled_linear", "epsilon", 50, 10.0f,
+                                           true, false);
+   }
+-  if (scheduler_type == "dpm_sde" || scheduler_type == "dpm_sde_karras") {
+-    bool use_karras = (scheduler_type == "dpm_sde_karras");
+-    return std::make_unique<DPMSolverMultistepScheduler>(
+-        1000, 0.00085f, 0.012f, "scaled_linear", 2, "epsilon", timestep_spacing,
+-        use_karras, "sde-dpmsolver++");
+-  }
+-  // Default to DPM solver; "dpm_karras" enables Karras sigma schedule.
+-  bool use_karras = (scheduler_type == "dpm_karras");
++  const int order = (base == "dpm3" || base == "dpm3_sde") ? 3 : 2;
++  const bool sde = (base == "dpm_sde" || base == "dpm3_sde");
+   return std::make_unique<DPMSolverMultistepScheduler>(
+-      1000, 0.00085f, 0.012f, "scaled_linear", 2, "epsilon", timestep_spacing,
+-      use_karras);
++      1000, 0.00085f, 0.012f, "scaled_linear", order, "epsilon",
++      timestep_spacing, use_karras, sde ? "sde-dpmsolver++" : "dpmsolver++");
++}
++
++inline std::unique_ptr<Scheduler> createScheduler(
++    const std::string &scheduler_type, const char *timestep_spacing) {
++  auto ends = [&](const std::string &suffix) {
++    return scheduler_type.size() > suffix.size() &&
++           scheduler_type.compare(scheduler_type.size() - suffix.size(),
++                                  suffix.size(), suffix) == 0;
++  };
++  std::string base = scheduler_type;
++  bool karras = false, exponential = false;
++  if (ends("_karras")) {
++    karras = true;
++    base = scheduler_type.substr(0, scheduler_type.size() - 7);
++  } else if (ends("_exponential")) {
++    exponential = true;
++    base = scheduler_type.substr(0, scheduler_type.size() - 12);
++  }
++  auto s = createSchedulerBase(base, karras, timestep_spacing);
++  if (exponential) s->set_exponential_sigmas(true);
++  return s;
+ }
+ 
+ // Base class for the three model formats (sd15cpu / sd15npu / sdxl). The
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -48,6 +48,18 @@
+ using FrameSink =
+     std::function<void(int, int, const uint8_t *, int, int)>;
+ 
++// nightmare (029): the stable-diffusion.cpp samplers the app offers on a DiT
++// node. Anything else (an SD scheduler id, an old flow) renders with Euler, as
++// before: str_to_sample_method maps an unknown name to SAMPLE_METHOD_COUNT.
++inline const char *ditSampleMethod(const std::string &s) {
++  static const char *const kAllowed[] = {
++      "euler", "euler_a", "heun", "dpm++2m", "dpm++2m_sde",
++      "er_sde", "res_multistep", "lcm", "ipndm"};
++  for (const char *a : kAllowed)
++    if (s == a) return a;
++  return "euler";
++}
++
+ // Z-Image Turbo, FLUX.2/Klein and Qwen Image 2.1, run by libdit_engine.so.
+ //
+ // Unlike every other pipeline here, this one owns no graphs and no scheduler:
+@@ -318,7 +330,9 @@
+     params.cfg_scale = req.cfg;
+     params.guidance = kDistilledGuidance;
+     params.seed = static_cast<int64_t>(req.seed);
+-    params.sample_method = "euler";
++    // nightmare (029): the node's sampler when it is one the engine knows by
++    // name and we offer; Euler otherwise (every turbo DiT here is tuned for it).
++    params.sample_method = ditSampleMethod(req.scheduler_type);
+     params.denoise_strength = req.denoise_strength;
+     if ((!native_edit || edit_from_base) && !init_rgb.empty()) {
+       params.init_image_rgb = init_rgb.data();

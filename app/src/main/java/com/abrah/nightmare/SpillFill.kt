@@ -52,8 +52,39 @@ object SpillFill {
     fun required(lines: Iterable<String>): Long? =
         lines.mapNotNull { NEED.find(it)?.groupValues?.get(1)?.toLongOrNull() }.maxOrNull()
 
-    /** ⚠ Pure — true when the log shows the group itself could not be made. */
-    fun groupFailed(lines: Iterable<String>): Boolean = lines.any { GROUP_FAILED.containsMatchIn(it) }
+    /** The backend registered a shared group for this launch ([envFor]'s value was not `0`). */
+    private val SHARED = Regex("""context group sharing enabled""")
+
+    /** A context failed to come up at all — the group's HEAD, when nothing after it ran. */
+    private val HEAD_FAILED = Regex("""Create From Binary failure|Could not create context from binary""")
+
+    /**
+     * ⚠ Pure — true when the log shows the group itself could not be made.
+     *
+     * ⚠⚠ Two shapes. The VAE finding no group (GitHub #8), and — reported 2026-10-13 on 1.6.142,
+     * an SM8850 with an SDXL Swap, low-RAM off — the UNet head failing OUTRIGHT
+     * (`contextFromBin (submit) … 1003`, "DspTransport call failed 0x10", an SSR) with sharing
+     * on: the pipeline stops there, no member ever asks for the group, and the first regex alone
+     * never matched, so no retry ran. A launch with sharing on whose context failed is retried
+     * unshared once; a second failure ends it ([learn] has nothing new).
+     */
+    fun groupFailed(lines: Iterable<String>): Boolean {
+        val l = lines.toList()
+        return l.any { GROUP_FAILED.containsMatchIn(it) } ||
+            (l.any { SHARED.containsMatchIn(it) } && l.any { HEAD_FAILED.containsMatchIn(it) })
+    }
+
+    /**
+     * ⭐ True when a grouped SDXL launch failed and the model was ALREADY retried unshared —
+     * then Low RAM for SDXL is the one setting left to try (it loads the UNet on its own and
+     * never groups; it is what worked on GitHub #8's phone).
+     */
+    fun suggestLowRam(context: Context, modelId: String, lines: Iterable<String>): Boolean {
+        val f = ModelCatalog.byId(modelId)?.family
+        if (f != Family.SDXL && f != Family.SDXL_SWAP) return false
+        if (Prefs.lowRam(context).sdxl) return false
+        return unshared(context, modelId) && lines.any { HEAD_FAILED.containsMatchIn(it) }
+    }
 
     private fun unsharedKey(modelId: String) = "$modelId#unshared"
 

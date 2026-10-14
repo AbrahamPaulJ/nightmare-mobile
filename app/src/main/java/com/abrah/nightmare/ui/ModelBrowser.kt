@@ -147,7 +147,7 @@ fun sectionsOf(
     sub: SubKind = SubKind.ALL,
 ): ModelSections {
     val shown = rows.filter {
-        (family == null || it.spec.family == family) &&
+        (family == null || it.spec.family.page() == family) &&
             matchesKind(it.spec, kind) && matchesSub(it.spec, sub) && matchesQuery(it.spec, query)
     }
     return ModelSections(
@@ -170,6 +170,16 @@ fun archLabel(arch: Int): String = when {
 
 /** ⭐ Which group a family sits in on the Family menu. */
 fun Family.isModern(): Boolean = dit
+
+/**
+ * ⭐⭐ The Family-menu PAGE a family is listed on. Anima's two runtimes share one page (the user,
+ * 2026-10-14), DiT first: testers looking for "Anima" found the QNN page, which takes a zip, while
+ * the CivitAI file they had belongs to Anima DiT. Every other family is its own page.
+ */
+fun Family.page(): Family = if (this == Family.ANIMA) Family.ANIMA_DIT else this
+
+/** ⭐ A page's name: the merged Anima page is just "Anima". */
+fun pageLabel(f: Family): String = if (f == Family.ANIMA_DIT) Family.ANIMA.label else f.label
 
 private fun gb2(bytes: Long): String =
     String.format(java.util.Locale.ROOT, "%.2f GB", bytes / (1024.0 * 1024 * 1024))
@@ -307,7 +317,7 @@ internal fun FamilyMenu(counts: List<Pair<Family, Int>>, onPick: (Family) -> Uni
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(10.dp).clip(CircleShape).background(familyColor(f)))
                                 Spacer(Modifier.width(10.dp))
-                                Text(f.label, modifier = Modifier.weight(1f))
+                                Text(pageLabel(f), modifier = Modifier.weight(1f))
                                 Text(
                                     n.toString(),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -668,7 +678,7 @@ private fun addonSize(bytes: Long): String =
 internal fun FamilyHeader(family: Family, count: Int, note: String, onBack: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         BackRow(
-            family.label,
+            pageLabel(family),
             stringResource(if (family.isModern()) R.string.mb_group_dit else R.string.mb_group_classic) +
                 " · " + stringResource(R.string.mb_models_count, count),
             onBack,

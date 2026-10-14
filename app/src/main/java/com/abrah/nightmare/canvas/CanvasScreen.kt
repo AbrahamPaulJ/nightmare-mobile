@@ -66,6 +66,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -1192,17 +1194,30 @@ private fun ViewSwitch(
                 .background(MaterialTheme.colorScheme.primary),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val (icon, label) = glyph(selected)
             val choose = stringResource(R.string.views_choose_cd)
-            Row(
+            // ⭐ ONE width for every view (the user, 2026-10-14: "remain the same size"): every
+            // view's icon and name are laid out in the same Box, the others invisible, so the
+            // widest name in this locale sets it and the current one is centred in it.
+            Box(
                 Modifier.fillMaxHeight()
                     .clickable(onClickLabel = choose) { menu = true }
                     .padding(start = 12.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                contentAlignment = Alignment.Center,
             ) {
-                Icon(icon, contentDescription = null, tint = on, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(label), style = MaterialTheme.typography.labelLarge, color = on, maxLines = 1)
+                for (v in views) {
+                    val (icon, label) = glyph(v)
+                    Row(
+                        Modifier.alpha(if (v == selected) 1f else 0f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(icon, contentDescription = null, tint = on, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            stringResource(label), style = MaterialTheme.typography.labelLarge, color = on, maxLines = 1,
+                            modifier = if (v == selected) Modifier else Modifier.clearAndSetSemantics { },
+                        )
+                    }
+                }
             }
             Box(
                 Modifier.fillMaxHeight()

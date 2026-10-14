@@ -843,7 +843,8 @@ fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
             if (i2v) Node("image", "core.image", params = mapOf("uri" to "")) else null,
             Node(
                 "video", com.abrah.nightmare.npu.WanVideoNode.name,
-                params = mapOf("seed" to "0"),
+                // ⚠ An 8 Gen 3 opens on the longest clip its NPU holds ([WanVideoNode.fitsNpuMap]).
+                params = mapOf("seed" to "0", "seconds" to com.abrah.nightmare.npu.WanVideoNode.openingSeconds().toString()),
                 inputs = if (i2v) sources("prompt" to "prompt", "image" to "image") else sources("prompt" to "prompt"),
             ),
             Node("output", "core.output", inputs = sources("media" to "video")),

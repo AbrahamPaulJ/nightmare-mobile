@@ -149,7 +149,15 @@ object CrashReport {
             header?.let { appendLine(it) }
             synchronized(stages) { stages.forEach { appendLine(it) } }
         }
-        runCatching { breadcrumb(context).writeText(text) }
+        // ⚠⚠ fsync'd: a plain write sits in the page cache for seconds, and a phone that
+        // RESTARTS mid-run loses it — the 1.6.153 tester whose S24 Ultra rebooted on the
+        // second SDXL run found no report (2026-10-14). A few small writes per run.
+        runCatching {
+            java.io.FileOutputStream(breadcrumb(context)).use { out ->
+                out.write(text.toByteArray())
+                out.fd.sync()
+            }
+        }
     }
 
     private fun clock() = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())

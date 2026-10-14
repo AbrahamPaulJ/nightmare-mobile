@@ -135,6 +135,11 @@ fun PullDownSheet(
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    // ⚠⚠ The canvas's text focus goes as the sheet opens, as for the sidebar (`ShellDrawer`): a
+    // focused prompt's caret handle is its own popup window and would sit over the sheet. Read HERE,
+    // before the sheet's window, so it is the canvas's focus manager.
+    val canvasFocus = androidx.compose.ui.platform.LocalFocusManager.current
+    androidx.compose.runtime.LaunchedEffect(Unit) { canvasFocus.clearFocus(force = true) }
     // ⭐ Slides up from below on open, down on close; the drag writes it too.
     val offset = remember { Animatable(with(density) { 2000.dp.toPx() }) }
     var sheetH by remember { mutableStateOf(0f) }

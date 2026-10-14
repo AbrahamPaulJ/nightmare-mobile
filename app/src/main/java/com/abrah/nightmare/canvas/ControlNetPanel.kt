@@ -123,7 +123,11 @@ internal fun rememberControlHint(
     val frame = if (photo != null && fromPhoto) SdSampler.swapFrame(node.type, live) else null
     val region = listOf(SdSampler.CTL_X, SdSampler.CTL_Y, SdSampler.CTL_W, SdSampler.CTL_H).map { live[it] }
     val aspect = SdSampler.swapAspect(node, live)
-    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, region, aspect, poseInstalled, depthInstalled, keep = true, settleMs = 500) {
+    return rememberOffMain(node.id, "control hint", cn, uri, wired, photo, frame, region, aspect, poseInstalled, depthInstalled, keep = true, settleMs = 500,
+        // ⭐ A tester, 2026-10-13: the estimate started the moment a photo was added, and a drag
+        // released then regrabbed waited behind it. Now it waits for the crop too, and a moved
+        // crop stops the running estimate ([com.abrah.nightmare.pose.DepthEstimator.cancel]).
+        settleFirst = true, onCancel = com.abrah.nightmare.pose.DepthEstimator::cancel) {
         if (cn == SwapInputs.NONE) return@rememberOffMain null
         val picked = if (wired == null) uri.takeIf { it.isNotBlank() }?.let { AddObjects.load(ctx, it) } else null
         val made = SdSampler.controlHintFor(ctx, node, live, wired?.asAndroidBitmap(), photo?.asAndroidBitmap(), picked)

@@ -1976,10 +1976,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // ⭐ In use for the whole run, so an out-of-sight release waits for it
         // ([BackendIdle]) — and `finally`, so a failed run still ends the use.
         BackendIdle.begin()
+        RunWakeLock.begin(ctx)
         try {
             return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn)
         } finally {
-            try { releaseBackendIfTooBig() } finally { BackendIdle.end() }
+            try { releaseBackendIfTooBig() } finally { BackendIdle.end(); RunWakeLock.end() }
         }
     }
 

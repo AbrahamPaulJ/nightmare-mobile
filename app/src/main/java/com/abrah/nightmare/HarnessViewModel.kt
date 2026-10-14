@@ -1025,14 +1025,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // ⚠ From the OPEN GRAPH, not [SelectedModel]: [adoptGraphModel] never selects a video
             // model, since new image flows take their checkpoint from the selection. A graph that
             // also renders a picture names both, in the order they run.
-            val nodes = canvas.workflow.graph.nodes
-            val wan = nodes.any { it.type == com.abrah.nightmare.npu.WanVideoNode.name }
-            val image = nodes.any { it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES }
-            val spec = ModelCatalog.byId(SelectedModel.id)
-            return when {
-                !wan -> spec?.let(::labelOf) ?: SelectedModel.id
-                image && spec != null -> "${labelOf(spec)} + ${labelOf(ModelCatalog.WAN22)}"
-                else -> labelOf(ModelCatalog.WAN22)
+            // ⭐ Generalised 2026-10-14: EVERY model the open graph names, in run order — a
+            // Neodragon flow kept the last checkpoint too, and so did a sampler whose model was
+            // changed on the node (GitHub #19). The selection only when the graph names none.
+            val graph = canvas.workflow.graph
+            val ordered = (topoSort(graph) as? Order.Ok)?.nodes ?: graph.nodes
+            val ids = runCatching { contextKeyModels(Graph(ordered), typesFor(graph)) }.getOrNull().orEmpty()
+            val labels = ids.mapNotNull { id -> ModelCatalog.byId(id)?.let(::labelOf) }.toMutableList()
+            if (graph.nodes.any { it.type == "nd.sample" }) labels += com.abrah.nightmare.npu.NpuFiles.LABEL
+            return labels.distinct().joinToString(" + ").ifEmpty {
+                ModelCatalog.byId(SelectedModel.id)?.let(::labelOf) ?: SelectedModel.id
             }
         }
 
@@ -1599,6 +1601,60 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** ⭐ The Models "+" popup is open ([importAny]). */
+    var importOpen by mutableStateOf(false)
+
+    /** ⭐ A checkpoint whose tensor names named no family: the popup asks which ([importAsFamily]). */
+    var familyAsk by mutableStateOf<Pair<android.net.Uri, String>?>(null)
+        private set
+
+    /**
+     * ⭐⭐ **The one import** (the user, 2026-10-14): the file says what it is
+     * ([CustomModels.sniffImport]) — a zip goes to [importModel], a DiT checkpoint to
+     * [importDitModel] with its family read off its weights, a `.bin` to [importUpscaler]. A LoRA,
+     * an embedding or an SD checkpoint is named and refused with where it belongs instead.
+     */
+    fun importAny(uri: android.net.Uri, name: String) {
+        val ctx = getApplication<Application>()
+        importOpen = false
+        modelError = null
+        viewModelScope.launch {
+            val display = importNameFor(uri)
+            val kind = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    CustomModels.sniffImport(displayNameOf(uri)) {
+                        ctx.contentResolver.openInputStream(uri) ?: throw java.io.IOException("cannot read the picked file")
+                    }
+                }.getOrElse { CustomModels.ImportKind.Unknown }
+            }
+            val n = name.ifEmpty { display }
+            say("import: ${displayNameOf(uri)} is ${kind::class.simpleName}")
+            when (kind) {
+                CustomModels.ImportKind.Zip -> importModel(uri, n)
+                is CustomModels.ImportKind.Checkpoint ->
+                    if (kind.family != null) importDitModel(uri, n, kind.family) else familyAsk = uri to n
+                CustomModels.ImportKind.Upscaler -> importUpscaler(uri)
+                CustomModels.ImportKind.Lora -> modelError = text(R.string.import_is_lora)
+                CustomModels.ImportKind.Embedding -> modelError = text(R.string.import_is_embedding)
+                is CustomModels.ImportKind.NeedsConverting -> modelError = text(R.string.import_needs_converting, kind.what)
+                CustomModels.ImportKind.Unknown -> modelError = text(R.string.import_unknown)
+            }
+        }
+    }
+
+    /** ⭐ The answer to [familyAsk]; null cancels. */
+    fun importAsFamily(family: Family?) {
+        val ask = familyAsk ?: return
+        familyAsk = null
+        if (family != null) importDitModel(ask.first, ask.second, family)
+    }
+
+    private fun displayNameOf(uri: android.net.Uri): String? = runCatching {
+        getApplication<Application>().contentResolver.query(
+            uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null,
+        )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    }.getOrNull()
+
     /**
      * ⭐⭐ Import a plain `.safetensors` as a model of [family].
      *
@@ -1607,7 +1663,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * toasted away. The only difference is which [CustomModels] entry point
      * it calls and that the family is told rather than inferred.
      */
-    fun importDitModel(uri: android.net.Uri, name: String, family: Family) {
+    fun importDitModel(uri: android.net.Uri, name: String, family: Family?) {
         if (installing != null) return
         val ctx = getApplication<Application>()
         installing = name
@@ -7690,8 +7746,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // metadata tensor failed"), which is the difference between "try another
         // file" and "this app is broken".
         val why = BackendProcess.failureReason()
-        return if (why != null) "the backend would not start. $why"
-        else "the backend would not start"
+        val base = if (why != null) "the backend would not start. $why" else "the backend would not start"
+        // ⭐ The one setting left after the unshared retry ([SpillFill.suggestLowRam]).
+        return if (SpillFill.suggestLowRam(getApplication(), SelectedModel.id, BackendProcess.newestLaunch())) {
+            "$base. Turn on SDXL low RAM mode in Settings and run again"
+        } else base
     }
 
     /**
@@ -7970,6 +8029,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * so. Any other failure is returned unchanged.
      */
     private suspend fun learnFromFailure(error: String): String {
+        // ⭐ A DiT kernel short of VTCM: this phone runs unfused from now on ([HexFallback]).
+        if (HexFallback.learn(getApplication(), BackendProcess.newestLaunch())) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
+            backend = BackendState.DOWN
+            say("hexagon: VTCM too small, op fusions off for this phone", bad = true)
+            return "$error. The NPU ran short of its fast memory; the app now uses a safer setting on " +
+                "this phone (a little slower). Press Run again"
+        }
         val id = BackendProcess.lastModelId ?: return error
         if (!SpillFill.learn(getApplication(), id)) return error
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }

@@ -81,6 +81,8 @@ fun LibraryScreen(
     showTabs: Boolean = true,
     /** ⭐ The header's ☰ — the sidebar, from inside the sheet. Null draws none. */
     onMenu: (() -> Unit)? = null,
+    /** ⭐ Drawn at the Models title's end: the import "+" ([ImportButton]). */
+    modelsAction: (@Composable () -> Unit)? = null,
 ) {
     if (!showTabs) {
         // ⭐⭐ A [PullDownSheet] again, like Settings (the user, 2026-10-10: "make models, flows,
@@ -99,6 +101,7 @@ fun LibraryScreen(
                 // ⭐ No ☰ of its own: the main bar's, in the gap above the sheet, is the one
                 // ([PullDownSheet]'s `onMenu`, the user's mock 2026-10-10).
                 onMenu = null,
+                trailing = { if (tab == LibraryTab.MODELS) modelsAction?.invoke() },
             )
             // ⚠ The list scrolls only the list — the sheet is pulled by its bar ([keepScrollInside]).
             Column(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp).keepScrollInside()) {

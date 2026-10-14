@@ -1158,79 +1158,112 @@ object ModelCatalog {
      * ⚠ Order is deliberate: [DEFAULT_SCHEDULER] first, then the ancestral and
      * Karras variants, then `lcm`. It is the order the chips are drawn in.
      */
-    val SCHEDULERS = listOf(
-        "dpm", "dpm_karras", "dpm_sde", "dpm_sde_karras",
-        "euler", "euler_karras", "euler_a", "euler_a_karras",
-        "lcm",
-    )
+    val SCHEDULERS: List<String> by lazy {
+        SAMPLERS.flatMap { (id, _) -> SCHEDULES.map { (sfx, _) -> joinScheduler(id, sfx) } }.distinct()
+    }
 
     /**
      * ⭐⭐ The samplers a FAMILY's backend actually distinguishes.
      *
      * ⚠⚠ Anima's `makeScheduler` reads exactly one bit: `euler` is the
      * deterministic flow-match sampler and EVERY other string is the ancestral
-     * one. Offering the nine SD ids there would be eight names for one sampler,
+     * one. Offering the SD ids there would be many names for one sampler,
      * and Karras means nothing on flow-match. ⇒ Two, named for what they do.
+     * ⭐ The DiT families take the engine's own samplers by name (backend 029,
+     * GitHub #19): [DIT_SAMPLERS], no schedules.
      */
     fun schedulersFor(family: Family): List<String> = when {
         family == Family.ANIMA -> listOf("euler", "euler_a")
-        // ⚠ The DiT engine hardcodes euler (`PipelineDit`); the sampler node
-        // draws no scheduler knob for these families at all.
-        family.dit -> listOf("euler")
+        family.dit -> DIT_SAMPLER_IDS
         else -> SCHEDULERS
     }
 
     /**
-     * ⭐⭐ The FIVE samplers, named the way every other SD tool names them.
+     * ⭐⭐ The SD samplers, named the way every other SD tool names them (`local-dream`'s
+     * picker: names plus a schedule). ⭐ DPM++ 3M and 3M SDE since backend 029 (GitHub #19:
+     * "Pony Realism's creator recommends DPM++ 3M"): the solver's third order was there and
+     * never selected; the SDE branch at that order is diffusers'.
      *
-     * ⚠⚠ Nine wire values, five samplers: the other four are the same sampler
-     * with Karras sigmas. `local-dream`'s own picker presents them exactly this
-     * way (`AdvancedSettingsDialog.kt`: five entries plus a Karras toggle), and
-     * it is the upstream to follow (`CLAUDE.md`). A flat list of nine raw ids
-     * made the user scan `dpm_sde_karras` out of a dropdown to find a thing
-     * they know as "DPM++ 2M SDE".
-     *
-     * ⚠ The stored param is UNCHANGED — still one of [SCHEDULERS]. This is
-     * presentation only, so a saved workflow, a plugin manifest and a bug report
-     * all still carry the wire value.
-     *
-     * ⚠ Order is `local-dream`'s, not alphabetical: the default first.
+     * ⚠ The stored param is still ONE wire value ([joinScheduler]), so a saved workflow, a
+     * plugin manifest and a bug report all carry what the backend receives.
      */
     val SAMPLERS: List<Pair<String, String>> = listOf(
         "dpm" to "DPM++ 2M",
         "dpm_sde" to "DPM++ 2M SDE",
+        "dpm3" to "DPM++ 3M",
+        "dpm3_sde" to "DPM++ 3M SDE",
         "euler_a" to "Euler A",
         "euler" to "Euler",
         "lcm" to "LCM",
     )
 
     /**
-     * ⚠ LCM has no Karras variant — the backend's comparison chain has no
-     * `lcm_karras`, and an unknown string falls through to `dpm` in SILENCE.
-     * Upstream guards the same case (`karrasSupported = baseId != "lcm"`).
+     * ⭐⭐ The sigma SCHEDULES, as a suffix on the wire (`dpm3_sde_exponential`). "Exponential"
+     * is what turbo / hyper SDXL checkpoints recommend (GitHub #19, 2026-10-14) — a schedule,
+     * like Karras, not a sampler; backend 029 runs it on DPM, Euler and Euler A.
      */
-    fun karrasSupported(base: String) = base != "lcm"
+    val SCHEDULES: List<Pair<String, String>> = listOf(
+        "" to "Normal",
+        "_karras" to "Karras",
+        "_exponential" to "Exponential",
+    )
 
-    /** `"dpm_sde_karras"` -> `("dpm_sde", true)`. */
-    fun splitScheduler(value: String): Pair<String, Boolean> {
-        val karras = value.endsWith("_karras")
-        val base = if (karras) value.removeSuffix("_karras") else value
+    /**
+     * ⭐ The DiT engine's samplers by its own names (stable-diffusion.cpp), the ones backend 029
+     * passes through; anything else renders with Euler. Heun runs the model twice a step.
+     */
+    val DIT_SAMPLERS: List<Pair<String, String>> = listOf(
+        "euler" to "Euler",
+        "euler_a" to "Euler A",
+        "heun" to "Heun (2x slower)",
+        "dpm++2m" to "DPM++ 2M",
+        "dpm++2m_sde" to "DPM++ 2M SDE",
+        "er_sde" to "ER-SDE",
+        "res_multistep" to "Res Multistep",
+        "ipndm" to "iPNDM",
+        "lcm" to "LCM",
+    )
+    val DIT_SAMPLER_IDS: List<String> = DIT_SAMPLERS.map { it.first }
+    const val DIT_DEFAULT_SAMPLER = "euler"
+
+    /**
+     * ⚠ LCM has no schedule of its own to change — the backend's LCM scheduler ignores both
+     * (upstream guards the same: `karrasSupported = baseId != "lcm"`), and DiT samplers take none.
+     */
+    fun schedulesSupported(base: String) = base != "lcm" && SAMPLERS.any { it.first == base }
+
+    /** ⚠ Kept for its callers: Karras is one of the schedules. */
+    fun karrasSupported(base: String) = schedulesSupported(base)
+
+    /** `"dpm_sde_karras"` -> `("dpm_sde", "_karras")`; a DiT id comes back whole with `""`. */
+    fun splitScheduler(value: String): Pair<String, String> {
+        if (value in DIT_SAMPLER_IDS && SAMPLERS.none { it.first == value }) return value to ""
+        val sfx = SCHEDULES.map { it.first }.filter { it.isNotEmpty() }.firstOrNull { value.endsWith(it) } ?: ""
+        val base = value.removeSuffix(sfx)
         // ⚠ An unrecognised base falls back to the default rather than being
         // passed through: the backend would silently treat it as `dpm`, and a
         // picker showing nothing selected is how that stays invisible.
-        return if (SAMPLERS.any { it.first == base }) base to karras
-        else DEFAULT_SCHEDULER to false
+        return if (SAMPLERS.any { it.first == base } || base in DIT_SAMPLER_IDS) base to sfx
+        else DEFAULT_SCHEDULER to ""
     }
 
-    /** The inverse. ⚠ Drops Karras where the sampler has no such variant. */
-    fun joinScheduler(base: String, karras: Boolean): String =
-        if (karras && karrasSupported(base)) base + "_karras" else base
+    /** The inverse. ⚠ Drops the schedule where the sampler has none. */
+    fun joinScheduler(base: String, schedule: String): String =
+        if (schedule.isNotEmpty() && schedulesSupported(base)) base + schedule else base
+
+    /** ⚠ The old Karras-flag form, for its callers. */
+    fun joinScheduler(base: String, karras: Boolean): String = joinScheduler(base, if (karras) "_karras" else "")
 
     /** How a wire value should read on screen, e.g. `"DPM++ 2M SDE Karras"`. */
     fun schedulerLabel(value: String): String {
-        val (base, karras) = splitScheduler(value)
-        val name = SAMPLERS.firstOrNull { it.first == base }?.second ?: base
-        return if (karras) "$name Karras" else name
+        if (value in DIT_SAMPLER_IDS) DIT_SAMPLERS.firstOrNull { it.first == value }?.let {
+            if (SAMPLERS.none { s -> s.first == value }) return it.second
+        }
+        val (base, sfx) = splitScheduler(value)
+        val name = SAMPLERS.firstOrNull { it.first == base }?.second
+            ?: DIT_SAMPLERS.firstOrNull { it.first == base }?.second ?: base
+        val sched = SCHEDULES.firstOrNull { it.first == sfx && sfx.isNotEmpty() }?.second
+        return if (sched != null) "$name $sched" else name
     }
 
     /**

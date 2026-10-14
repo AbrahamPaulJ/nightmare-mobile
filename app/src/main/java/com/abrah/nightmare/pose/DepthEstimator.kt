@@ -111,7 +111,12 @@ object DepthEstimator {
             val e = OrtEnvironment.getEnvironment(OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR, "nightmare-depth")
             e.createSession(
                 file(context).absolutePath,
-                OrtSession.SessionOptions().apply { setIntraOpNumThreads(THREADS) },
+                OrtSession.SessionOptions().apply {
+                    setIntraOpNumThreads(THREADS)
+                    // ⚠ No spin-waiting: ORT's pool otherwise burns every core it has between
+                    // ops, and a crop dragged during an estimate stuttered (a tester, 2026-10-13).
+                    addConfigEntry("session.intra_op.allow_spinning", "0")
+                },
             ).also { env = e; session = it }
         } catch (t: Throwable) {
             Log.e(TAG, "failed to open the depth estimator", t)
@@ -159,11 +164,23 @@ object DepthEstimator {
                 chw[2 * n + i] = ((c and 0xFF) / 255f - MEAN[2]) / STD[2]
             }
             val e = env ?: return null
-            val d = OnnxTensor.createTensor(e, FloatBuffer.wrap(chw), longArrayOf(1, 3, EDGE.toLong(), EDGE.toLong())).use { input ->
-                s.run(mapOf(s.inputNames.first() to input)).use { r ->
-                    val out = r.get(0) as OnnxTensor
-                    FloatArray(n).also { out.floatBuffer.get(it) }
+            val opts = OrtSession.RunOptions()
+            val me = Thread.currentThread()
+            runs[me] = opts
+            val d = try {
+                OnnxTensor.createTensor(e, FloatBuffer.wrap(chw), longArrayOf(1, 3, EDGE.toLong(), EDGE.toLong())).use { input ->
+                    s.run(mapOf(s.inputNames.first() to input), opts).use { r ->
+                        val out = r.get(0) as OnnxTensor
+                        FloatArray(n).also { out.floatBuffer.get(it) }
+                    }
                 }
+            } catch (t: ai.onnxruntime.OrtException) {
+                // ⚠ [cancel] lands here: no map, and nothing to log beyond that.
+                Log.i(TAG, "depth stopped: ${t.message?.take(80)}")
+                return null
+            } finally {
+                runs.remove(me)
+                runCatching { opts.close() }
             }
             var lo = Float.MAX_VALUE
             var hi = -Float.MAX_VALUE
@@ -179,6 +196,18 @@ object DepthEstimator {
         } finally {
             idle.end()
         }
+    }
+
+    /** The estimate each thread is running, so [cancel] can stop the right one. */
+    private val runs = java.util.concurrent.ConcurrentHashMap<Thread, OrtSession.RunOptions>()
+
+    /**
+     * ⭐ Stops the estimate running on [thread], if any — a crop that moved again made it stale
+     * (`rememberOffMain`'s `onCancel`). ⚠ Without it a 2–13 s estimate ran to the end while the
+     * person dragged, and the drag stuttered (a tester's log, 2026-10-13).
+     */
+    fun cancel(thread: Thread) {
+        runs[thread]?.let { runCatching { it.setTerminate(true) } }
     }
 
     /**
