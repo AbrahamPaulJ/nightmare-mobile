@@ -1,0 +1,61 @@
+diff --git a/src/model/vae/vae_tiling.hpp b/src/model/vae/vae_tiling.hpp
+index 50cf083..d07863f 100644
+--- a/src/model/vae/vae_tiling.hpp
++++ b/src/model/vae/vae_tiling.hpp
+@@ -17,6 +17,9 @@ enum class VAETemporalDirection {
+ struct VAETemporalTilingConfig {
+     int tile_frames = 1;
+     int overlap     = 0;
++    // nightmare: a later tile gives NO weight to its overlap frames, which are a causal
++    // decoder's cold start (TAEHV); the earlier tile keeps them. 0 = the smootherstep blend.
++    bool cut        = false;
+ };
+ 
+ struct VAETemporalTile {
+@@ -32,6 +35,7 @@ struct VAETemporalTilePlan {
+     int tile_frames = 1;
+     int overlap     = 0;
+     int stride      = 1;
++    bool cut        = false;
+     std::vector<VAETemporalTile> tiles;
+ };
+ 
+@@ -43,7 +47,8 @@ inline VAETemporalTilingConfig resolve_vae_temporal_tiling_config(const sd_tilin
+     config.overlap     = std::max(0, default_overlap);
+ 
+     for (const auto& [key, value] : parse_key_value_args(params.extra_tiling_args, "VAE extra tiling arg")) {
+-        if (key != "temporal_tile_frames" && key != "temporal_tile_size" && key != "temporal_tile_overlap") {
++        if (key != "temporal_tile_frames" && key != "temporal_tile_size" && key != "temporal_tile_overlap" &&
++            key != "temporal_tile_cut") {
+             continue;
+         }
+ 
+@@ -52,6 +57,8 @@ inline VAETemporalTilingConfig resolve_vae_temporal_tiling_config(const sd_tilin
+             LOG_WARN("ignoring invalid VAE extra tiling arg '%s=%s'", key.c_str(), value.c_str());
+         } else if (key == "temporal_tile_overlap") {
+             config.overlap = std::max(0, parsed);
++        } else if (key == "temporal_tile_cut") {
++            config.cut = parsed != 0;
+         } else {
+             config.tile_frames = std::max(1, parsed);
+         }
+@@ -64,6 +71,7 @@ inline VAETemporalTilePlan make_vae_temporal_tile_plan(int64_t total_frames,
+     VAETemporalTilePlan plan;
+     plan.tile_frames = std::max(1, config.tile_frames);
+     plan.overlap     = std::max(0, config.overlap);
++    plan.cut         = config.cut;
+     if (total_frames <= 1) {
+         plan.overlap = 0;
+     }
+@@ -168,8 +176,9 @@ inline sd::Tensor<float> process_vae_temporal_tiles_blended(const sd::Tensor<flo
+         for (int64_t frame = 0; frame < tile_frames; ++frame) {
+             float weight = 1.f;
+             if (!tile.first && overlap_frames > 0 && frame < overlap_frames) {
+-                weight *= smootherstep(static_cast<float>(frame + 1) /
+-                                       static_cast<float>(overlap_frames + 1));
++                weight *= plan.cut ? 0.f
++                                   : smootherstep(static_cast<float>(frame + 1) /
++                                                  static_cast<float>(overlap_frames + 1));
+             }
+             if (!tile.last && overlap_frames > 0 && frame >= tile_frames - overlap_frames) {
+                 weight *= smootherstep(static_cast<float>(tile_frames - frame) /
