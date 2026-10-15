@@ -48,6 +48,11 @@ this picture*.
     a minute. The Reference tab warns you when the size is too big. For Qwen, reference editing
     is new. Please report how it goes.
 
+    On a Snapdragon 8 Gen 3, a reference is read at about half a megapixel (around 724 × 724)
+    whatever the output size, so a 1024 × 1024 output fits; the output keeps its size. Where a
+    size was measured not to fit (Klein 9B, Qwen 2.1), the run log says so before rendering and
+    names a size that does.
+
 ## Denoise and padding
 
 - An edit starts at **denoise 1.0**: the full schedule runs and the photo guides it as a clean

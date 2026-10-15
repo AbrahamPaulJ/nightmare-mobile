@@ -286,6 +286,8 @@ fun CanvasScreen(
     /** ⭐ The Draw window on an image node — `HarnessViewModel.saveDrawing` / `blankPicture`. */
     onSaveDrawing: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
     onBlankPicture: (String) -> Unit = {},
+    /** ⭐ A video node's model: Wan 2.2 or Neodragon (`HarnessViewModel.setVideoModel`). */
+    onSetVideoModel: (String, Boolean) -> Unit = { _, _ -> },
     /** ⭐ The Default view's Swap flow / Remove input ([com.abrah.nightmare.HarnessViewModel.swapFlows]). */
     swapFlows: List<com.abrah.nightmare.canvas.SwapFlow>? = null,
     onSwapFlow: (com.abrah.nightmare.canvas.Recipe) -> Unit = {},
@@ -702,6 +704,7 @@ fun CanvasScreen(
         onClearImage = onClearImage,
         onSaveDrawing = onSaveDrawing,
         onBlankPicture = onBlankPicture,
+        onSetVideoModel = onSetVideoModel,
         swapFlows = swapFlows,
         onSwapFlow = onSwapFlow,
         onSaveImage = onSaveImage,

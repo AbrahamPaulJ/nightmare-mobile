@@ -29,10 +29,26 @@ always get back to exactly how it was made.
 | **Share** | Shares the picture with another app |
 | **Send to a flow** | Offers the flows that take a photo: Image to image, Inpaint, Image edit, Upscale, Image to video, and opens the one you pick with this picture in it |
 | **Upscale** | Enlarges it with an upscaler; the bigger copy is kept as a new item. The same window offers **UltraFix**: see below |
-| ⓘ **What made this** | The prompt, model, seed and settings |
+| ⓘ **What made this** | The prompt, model, seed and settings, and a way to use them on the open flow: see below |
 | **Open flow** / share the flow | Reopens the flow that made it on the canvas, or shares that flow as a file |
 
-A clip plays on its card; tap it to play it full screen.
+A clip plays on its card; tap it to play it full screen. A [chain of clips](../flows/video.md#longer-clips-one-film)
+is kept as the whole film plus every part, each with the picture it started from, in one group.
+
+## Use a picture's prompt, seed or the picture itself
+
+In **ⓘ What made this**, the rows you can reuse are tinted: the **picture**, its **prompt**, its
+**negative** and its **seed**.
+
+1. **Long-press** one to select it, then tap any others you want.
+2. Tap **Use** (it shows how many you picked).
+3. For each one, pick the node of the flow that is open now that should get it. Only nodes that
+   can take it are offered, each with a line of what it holds now; when only one can, it is
+   already picked. **Skip** leaves one out. The picture can also go to a **New image node**.
+4. With a prompt or negative among them, tick **Add to the end of the prompt** to keep what the
+   node already says; otherwise it is replaced.
+5. **Use.** The canvas opens with the changed nodes selected. A copied seed is **locked**, so the
+   next Run reproduces it; unlock it on the run bar to go back to random.
 
 ## Selecting several
 

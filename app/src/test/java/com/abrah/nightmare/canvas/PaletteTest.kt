@@ -30,7 +30,8 @@ class PaletteTest {
      * registered and this list is what guards the retirement.
      */
     @Test fun commonHoldsTheAgnosticNodes() = assertEquals(
-        listOf("core.image", "core.prompt", "core.output"),
+        // ⭐ 2026-10-15: the Video node (Motion transfer's driving clip) joined them.
+        listOf("core.image", "core.prompt", "core.video", "core.output"),
         sections.getValue("common").map { it.single().name },
     )
 
@@ -54,8 +55,8 @@ class PaletteTest {
     /** ⚠ It was registered all along, but its card read like the SD one. */
     @Test fun videoIsInGenerate() {
         val generate = sections.getValue("generate")
-        // 2026-10-14: Wan 2.2 joined Neodragon as the second video sampler.
-        assertEquals(listOf("Image", "Video", "Wan video"), generate.map { it.first().paletteName })
+        // 2026-10-14: Wan 2.2 joined Neodragon as the second video sampler; 2026-10-15 Fun Control.
+        assertEquals(listOf("Image", "Video", "Wan Fun Control", "Wan video"), generate.map { it.first().paletteName })
         assertTrue(generate.any { card -> card.any { it.name == "nd.sample" } })
     }
 

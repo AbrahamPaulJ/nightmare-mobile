@@ -1,7 +1,7 @@
 # Nightmare Mobile
 
 **A node graph for image and video generation on Android, running on the Qualcomm Hexagon NPU.**
-Text to image, image to image, inpainting, upscaling, image editing and text to video. All on
+Text to image, image to image, inpainting, upscaling, image editing, text to video and motion transfer. All on
 the phone. No server, no account, no cloud.
 
 <p align="center">
@@ -32,12 +32,12 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **UltraFix**: Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
 - **Hires fix**: one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
   Every other model has **Enlarge ×2** instead, so its picture can be enlarged and passed on to an inpaint that fixes faces.
-- **LoRA library**: sort LoRAs by name, newest, most used or size, filter by base model, star favourites.
+- **LoRA library**: sort LoRAs by name, newest, most used or size, filter by base model, star favourites, set a LoRA's model by hand when its file is not recognised, and sort them into your own folders.
 - **Draw on a picture**: doodle shapes and colours over the image node's photo (or a blank page) and let image to image make them real; pinch to zoom, pick a colour from the picture or any colour from a picker.
-- **Recipes**: text to image, image to image, inpaint, upscale, image edit, text / image to video and two Advanced flows, listed from least to most demanding; one your phone can't run says so.
+- **Recipes**: text to image, image to image, inpaint, upscale, image edit, text / image to video, motion transfer and two Advanced flows, listed from least to most demanding; one your phone can't run says so.
 - **Several checkpoints in one graph**: each generate node has its own model; the run loads each once and tells you the cost first.
 - **Batching**: sweep seed, steps, CFG, denoise or scheduler; two at once makes a grid. Every result keeps the graph that made it.
-- **Results**: star, save, share, reopen any picture as the flow that made it; each keeps how long it took. Fold the big preview away and the grid fills the screen.
+- **Results**: star, save, share, reopen any picture as the flow that made it; each keeps how long it took. Fold the big preview away and the grid fills the screen. In a picture's info, long-press its prompt, negative, seed or the picture itself and **Use** them on the open flow, each matched to the node you pick.
 
 ### Models
 - **37 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
@@ -52,7 +52,8 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.
 - **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with an optional second reference picture.
-- **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon), or **Wan 2.2**: 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; chain clips from the last frame for longer ones; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag; **Match picture** sets the clip to the photo's shape), much better looking. Big clips are decoded in tiles, so 704×1280 for 5 s renders on a 12 GB phone.
+- **Text and image to video**: **Wan 2.2**, 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag; **Match picture** sets the clip to the photo's shape), or **Neodragon** from the same flow's Model choice: 49 frames at 1024×640 in about 25 s on an 8 Elite. Big clips are decoded in tiles, so 704×1280 for 5 s renders on a 12 GB phone. **Chain** clips from the last frame and the last node hands the output **one joined film**; every part is kept in Results too, with the picture it started from.
+- **Motion transfer** (Wan 2.2 Fun Control): your picture moving like a video you choose, by its pose, its depth or a control video you already have. Pick the part of the video (its length is the clip's, up to 5 s) and crop it on its first frame. 480×832 for 2 s in about 90 s on an 8 Elite.
 
 ### LoRA, ControlNet and IP-Adapter
 - **LoRAs per render**: on Anima and the Swap models, and experimentally on FLUX.2, Z-Image, Qwen Image and Krea 2: tick, set strength, no reload. A note per LoRA keeps its trigger words.
@@ -119,6 +120,7 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 | [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) | Tongyi-MAI | Apache 2.0 | fp8 weights by [Kijai](https://huggingface.co/Kijai/Z-Image_comfy_fp8_scaled) |
 | [Qwen Image 2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) and [2.1 Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo) | Qwen team | Qwen Research License | [leejet's GGUF](https://huggingface.co/leejet/Qwen-Image-2.1-GGUF) / [unsloth's FP8](https://huggingface.co/unsloth/Qwen-Image-2.1-FP8); Turbo: [molbal's GGUF](https://huggingface.co/molbal/Qwen-Image-2.1-Turbo-GGUF); VAE by [Comfy-Org](https://huggingface.co/Comfy-Org/Qwen-Image-2.1); [Qwen3-VL-8B](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) encoder (Apache 2.0, [bartowski](https://huggingface.co/bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF)) |
 | [Krea 2 Turbo](https://huggingface.co/krea/Krea-2-Turbo) | Krea | [Krea 2 Community License](https://krea.ai/krea-2-licensing) | [gguf-org MXFP4 GGUF](https://huggingface.co/gguf-org/krea-2-gguf); [Qwen3-VL-4B](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) encoder (Apache 2.0, [bartowski](https://huggingface.co/bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF)); [Wan 2.1 VAE](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (Apache 2.0) |
+| [Wan 2.2 Fun 5B Control](https://huggingface.co/alibaba-pai/Wan2.2-Fun-5B-Control) | alibaba-pai | Apache 2.0 | motion transfer; [QuantStack's Q4_0 GGUF](https://huggingface.co/QuantStack/Wan2.2-Fun-5B-Control-GGUF) (Apache 2.0); 3 steps with [FastVideo](https://huggingface.co/FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers)'s FastWan (Apache 2.0) as [Kijai's LoRA](https://huggingface.co/Kijai/WanVideo_comfy); Wan 2.2 Turbo's encoder and decoder |
 | [Neodragon](https://huggingface.co/Qualcomm-AI-Research/Neodragon) | Qualcomm AI Research | BSD-3-Clause-Clear + model card terms | text and image to video, converted for the NPU |
 | [SSD-1B](https://huggingface.co/segmind/SSD-1B) | Segmind | Apache 2.0 | the video's first frame |
 | [Wan 2.2 TI2V 5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) Turbo | Wan team (Alibaba); [Turbo](https://github.com/quanhaol/Wan2.2-TI2V-5B-Turbo) by quanhaol | Apache 2.0 (Wan 2.2); the Turbo code is CC BY-NC-SA 4.0 and its weights state none | [hum-ma's Q4_0 GGUF](https://huggingface.co/hum-ma/Wan2.2-TI2V-5B-Turbo-GGUF) (Apache 2.0); [umT5-XXL](https://huggingface.co/google/umt5-xxl) encoder (Apache 2.0, [city96's GGUF](https://huggingface.co/city96/umt5-xxl-encoder-gguf)); [TAEHV](https://github.com/madebyollin/taehv) decoder by madebyollin (MIT) |

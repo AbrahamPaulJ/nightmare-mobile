@@ -528,65 +528,45 @@ val RECIPES: List<Recipe> = listOf(
         labelRes = R.string.flow_flux_edit_name,
         aboutRes = R.string.flow_flux_edit_about,
     ),
+    // ⭐⭐ Text to video and Image to video: ONE flow each for Wan 2.2 and Neodragon (the user's call,
+    // 2026-10-15: "merge them, default to Wan 2.2 5B"), the model a choice on the video node.
     Recipe(
-        "t2v", "Text to video",
-        // ⚠ 1024x640, the way round it actually COMES OUT. `../Neodragon`'s docs
-        // say "320x512 -> 640x1024" in (height, width) order, and repeating that
-        // here would have told the user a portrait clip and handed them a
-        // landscape one. Measured on device 2026-09-12: 49 frames, 1024x640.
-        "A prompt in, a 2 second clip out: 49 frames at 1024x640, on the NPU. " +
-            "Needs the video models installed; it does not use your checkpoint.",
-        ::textToVideoWorkflow,
+        T2V, "Text to video",
+        "A prompt into a clip. Wan 2.2 by default (minutes, much better); switch the video node to " +
+            "Neodragon for 2 s in about 30 s.",
+        { wanVideoWorkflow(i2v = false) },
         usesCheckpoint = false,
-        // ⚠ The video contexts are v79 binaries too (`docs/NEODRAGON.md` §4).
-        // ⚠⚠ The canary on the Models tab stays the authority for the
-        // DOWNLOAD — it runs a real context binary rather than consulting a
-        // table. This is the cheap gate for a LIST, which cannot bring the QNN
-        // backend up to draw a card.
-        minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
+        minArch = com.abrah.nightmare.ModelCatalog.WAN22.builds.minOf { it.minArch },
         labelRes = R.string.flow_t2v_name,
         aboutRes = R.string.flow_t2v_about,
     ),
     Recipe(
-        "i2v", "Image to video",
-        // ⚠ The speed is the SELLING point and it is measured, not guessed:
-        // 20.6 s against t2v's 24.6 s on device 2026-09-13, because SSD1B never
-        // runs. ⚠⚠ It also needs 1.68 GB fewer models, which matters to
-        // someone deciding what to download.
-        "A photo from the gallery, brought to life: 49 frames at 1024x640. " +
-            "Faster than text to video, and it needs three fewer models.",
-        ::imageToVideoWorkflow,
-        usesCheckpoint = false,
-        minArch = com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH,
-        labelRes = R.string.flow_i2v_name,
-        aboutRes = R.string.flow_i2v_about,
-    ),
-    // ⭐⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): LAST, because it is the most demanding thing in
-    // the list — minutes per clip and 6.7 GB of weights, against Neodragon's 30 s.
-    Recipe(
-        WAN_T2V, "Text to video, Wan 2.2",
-        "A prompt in, a 5 second clip out: 121 frames at 832x480 (or 1280x704) with Wan 2.2. " +
-            "Slower than the other video flows and much better. Needs Wan 2.2 installed.",
-        { wanVideoWorkflow(i2v = false) },
-        usesCheckpoint = false,
-        minArch = com.abrah.nightmare.ModelCatalog.WAN22.builds.minOf { it.minArch },
-        labelRes = R.string.flow_wan_t2v_name,
-        aboutRes = R.string.flow_wan_t2v_about,
-    ),
-    Recipe(
-        WAN_I2V, "Image to video, Wan 2.2",
-        "A photo from the gallery as the first frame of a 5 second clip, moving the way the prompt says.",
+        I2V, "Image to video",
+        "A picture as the first frame of a clip, moving the way the prompt says. Wan 2.2 by default; " +
+            "Neodragon on the video node for speed.",
         { wanVideoWorkflow(i2v = true) },
         usesCheckpoint = false,
         minArch = com.abrah.nightmare.ModelCatalog.WAN22.builds.minOf { it.minArch },
-        labelRes = R.string.flow_wan_i2v_name,
-        aboutRes = R.string.flow_wan_i2v_about,
+        labelRes = R.string.flow_i2v_name,
+        aboutRes = R.string.flow_i2v_about,
+    ),
+    // ⭐⭐ Motion transfer, LAST: the most demanding flow in the list.
+    Recipe(
+        MOTION, "Motion transfer",
+        "Your picture moving like a video you choose: its pose (or depth) frame by frame, with Wan 2.2 Fun Control.",
+        ::motionTransferWorkflow,
+        usesCheckpoint = false,
+        minArch = com.abrah.nightmare.ModelCatalog.WAN22_FUN.builds.minOf { it.minArch },
+        labelRes = R.string.flow_motion_name,
+        aboutRes = R.string.flow_motion_about,
     ),
 )
 
-/** ⭐ The Wan recipes' ids ([com.abrah.nightmare.HarnessViewModel.askUseWan]). */
-const val WAN_T2V = "wan_t2v"
-const val WAN_I2V = "wan_i2v"
+/** ⭐ The video recipes' ids ([com.abrah.nightmare.HarnessViewModel.askUseWan]). ⚠ `t2v`/`i2v` are the
+ *  ids the Neodragon flows had: saved references and the Flows icons keep working. */
+const val T2V = "t2v"
+const val I2V = "i2v"
+const val MOTION = "motion"
 
 /**
  * ⭐⭐⭐ Inpainting — the SAME four nodes as image to image, with a mask painted
@@ -829,6 +809,34 @@ fun imageToVideoWorkflow(): Workflow = Workflow(
  * [imageToVideoWorkflow]) on [com.abrah.nightmare.npu.WanVideoNode]: the photo, when there is one,
  * is the clip's first frame, so the prompt says what MOVES.
  */
+/**
+ * ⭐⭐ **Motion transfer** (Wan 2.2 Fun Control, `npu.WanFunNode`): the picture is who appears, the Video
+ * node's clip is how they move (its pose by default). Opens at 704x1280 portrait, where faces hold
+ * (`docs/VIDEO-GGML.md` §7), for 2 s.
+ */
+fun motionTransferWorkflow(): Workflow = Workflow(
+    Graph(
+        listOf(
+            Node(
+                "prompt", "core.prompt",
+                params = mapOf("prompt" to "a person dancing, natural light, detailed face", "negative" to ""),
+            ),
+            Node("image", "core.image", params = mapOf("uri" to "")),
+            Node("clip", com.abrah.nightmare.npu.LoadVideoNode.name, params = mapOf("uri" to "")),
+            Node(
+                "motion", com.abrah.nightmare.npu.WanFunNode.name,
+                params = mapOf(
+                    "seed" to "0", "width" to "704", "height" to "1280",
+                    com.abrah.nightmare.npu.WanFun.START to "0.0", com.abrah.nightmare.npu.WanFun.END to "2.0",
+                ),
+                inputs = sources("prompt" to "prompt", "image" to "image", com.abrah.nightmare.npu.WanFunNode.CONTROL to "clip"),
+            ),
+            Node("output", "core.output", inputs = sources("media" to "motion:video")),
+        )
+    ),
+    flowLayout("prompt", "image", "clip", "motion", "output"),
+)
+
 fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
     Graph(
         listOfNotNull(

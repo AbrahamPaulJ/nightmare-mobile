@@ -68,6 +68,15 @@ object DitEngine {
      * decode's seam flicker, `docs/VIDEO-GGML.md` §3). Still ABI 106: an engine without 018 ignores
      * the key, so the backend did not move. CI run 38509077877; skels unchanged.
      *
+     * ⭐⭐ The TENTH engine, current (1.6.165): `dit-engine-abi107-refcap`, CI 38743114916: the ABI 107
+     * one + `dit/021`, a wired reference encoded at no more than `DIT_REF_MAX_PIXELS`, which backend 034
+     * sets per request below v79 (GitHub #35). Still ABI 107; v79/v81 skels byte-identical.
+     *
+     * The NINTH engine: ABI **107** (`dit-engine-abi107-fun`, CI 38704238843): the eighth + `dit/019`
+     * (Wan 2.2 Fun 5B Control) + `dit/020` (control frames and a reference picture on the video params),
+     * which backend 033 sends. ⚠ ABI 107 against a 106 backend is refused both ways: APK and URL move
+     * together. v79/v81 skels unchanged (byte-identical).
+     *
      * The EIGHTH engine: ABI **106** — the Anima engine + Wan 2.2 video (`dit/009`,
      * `010`, `012`, `013`, `016`, `017`: `generate_video`, `docs/VIDEO-GGML.md`). The backend moved
      * with it (backend 028), so every DiT install re-fetches it once. CI run 38404727564; skels
@@ -99,7 +108,7 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi106-tilecut/dit-engine-abi106-tilecut.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi107-refcap/dit-engine-abi107-refcap.zip"
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -109,7 +118,7 @@ object DitEngine {
      * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
      */
     const val HF_URL =
-        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi106-tilecut.zip"
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi107-refcap.zip"
 
     /**
      * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
@@ -120,11 +129,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_125_625L
+    const val BYTES = 23_130_347L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 55_780_136L
+    const val FILE_BYTES = 55_789_240L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -134,7 +143,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "43d6c7c91ab28ff222e6ecb1eba8bbebc57e0bf5ce88de3f5943ffa8a7177a02"
+    private const val SHA256 = "896370adbae4ecae523fccd293da02e687b84046605a450fa95c143e5f96aa09"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

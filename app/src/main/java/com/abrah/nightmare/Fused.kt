@@ -538,6 +538,38 @@ class SdSampler(
         const val REF_ENCODED_AT_CANVAS = true
 
         /**
+         * ⭐⭐ The largest canvas a reference run fitted below v79, MEASURED (GitHub #35, a tester's
+         * SM8650, 2026-10-15): Klein 9B ran under 960x1024 and failed at it (2344 of 2304 MB for
+         * one block); Qwen 2.1 ran at 1024x1088 and failed at 1024x1152 (2629 of 2627 MB). Only
+         * measured models are listed: an unlisted one is never warned about on a guess.
+         */
+        val REF_FIT_BELOW_V79: Map<String, Long> = mapOf(
+            "flux2_klein_9b" to 896L * 1024,
+            "qwen_image_2_1_turbo" to 1024L * 1088,
+        )
+
+        /**
+         * ⚠ Pure: the canvas to suggest when a reference run of [modelId] at [w]x[h] is over what an
+         * [arch] chip fitted ([REF_FIT_BELOW_V79]), or null when it fits or nothing is measured. The
+         * same shape, both edges stepped DOWN on the DiT grid until the area fits.
+         */
+        fun refFitSuggestion(modelId: String, arch: Int, w: Int, h: Int): Res? {
+            if (arch !in 1..78) return null
+            val fit = REF_FIT_BELOW_V79[modelId] ?: return null
+            if (w.toLong() * h <= fit) return null
+            fun down(v: Double) = (ModelCatalog.DIT_MIN + ((v.toInt() - ModelCatalog.DIT_MIN) / ModelCatalog.DIT_STEP) * ModelCatalog.DIT_STEP)
+                .coerceAtLeast(ModelCatalog.DIT_MIN)
+            val scale = Math.sqrt(fit.toDouble() / (w.toLong() * h))
+            var sw = down(w * scale)
+            var sh = down(h * scale)
+            // ⚠ Floor to the grid can still leave one edge a step too big on an odd shape.
+            while (sw.toLong() * sh > fit && (sw > ModelCatalog.DIT_MIN || sh > ModelCatalog.DIT_MIN)) {
+                if (sw >= sh) sw -= ModelCatalog.DIT_STEP else sh -= ModelCatalog.DIT_STEP
+            }
+            return Res(sw, sh)
+        }
+
+        /**
          * ⭐⭐ **The size a reference is SENT at — independent of the canvas.**
          *
          * ⚠⚠ Its own param, and that is the point: asked for 2026-09-20 after
@@ -1874,6 +1906,17 @@ class SdSampler(
                 "[ref] canvas=${w}x$h image=${dims(png)} reference=${dims(referencePng)} " +
                     "(a reference is encoded at the CANVAS, not at its own size)"
             )
+        }
+        // ⭐⭐ WARNED, not refused (the user's rule for Wan, 2026-10-15): a reference run over what
+        // this chip measured to fit fails after its text encode ([REF_FIT_BELOW_V79], GitHub #35).
+        if (referencePng != null) {
+            val caps = DeviceProbe.caps()
+            val modelId = p["model"].orEmpty()
+            refFitSuggestion(modelId, if (caps.known) caps.arch else 0, w, h)?.let { fits ->
+                ctx.warn(ctx.text(R.string.run_ref_fit_warning,
+                    "%1\$s with a reference: %2\$s is probably too big for this phone and may fail. %3\$s fits. Trying anyway",
+                    ModelCatalog.byId(modelId)?.label ?: modelId, "${w}x$h", "${fits.width}x${fits.height}"))
+            }
         }
         ctx.say(
             when {

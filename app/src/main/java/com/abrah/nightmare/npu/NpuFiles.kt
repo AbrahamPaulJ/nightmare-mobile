@@ -40,7 +40,7 @@ object NpuFiles {
      * context binaries with neither. The load readout still has to name it, and
      * naming it "the selected SD checkpoint, idle" is what it did before.
      */
-    const val LABEL = "Neodragon (video)"
+    const val LABEL = "Neodragon"
 
     fun root(ctx: Context): File = File(com.abrah.nightmare.ModelStorage.root(ctx), "npu")
 

@@ -534,6 +534,11 @@ object Ops {
         val atMs: Long,
         val preview: ByteArray? = null,
         val previewFormat: String? = null,
+        /**
+         * ⭐ A phase of the node with its own bar ("pose 12/49" while Motion transfer builds its
+         * control video), or null for the node's main work. The run log names it beside the node.
+         */
+        val phase: String? = null,
     )
 
     /**
@@ -936,6 +941,9 @@ object Ops {
         loras: List<Pair<String, Double>> = emptyList(),
         onProgress: (Progress) -> Unit = {},
         vaeTileSize: Int = 0,
+        /** ⭐ Backend 033: an NMV1 control video's PATH (too big for base64) and the reference picture. */
+        controlVideo: String? = null,
+        refPng: ByteArray? = null,
     ): Result<Clip> {
         val body = JSONObject()
             .put("prompt", prompt)
@@ -957,6 +965,10 @@ object Ops {
             .apply {
                 if (startPng != null) {
                     put("image", android.util.Base64.encodeToString(startPng, android.util.Base64.NO_WRAP))
+                }
+                if (controlVideo != null) put("control_video", controlVideo)
+                if (refPng != null) {
+                    put("ref_image", android.util.Base64.encodeToString(refPng, android.util.Base64.NO_WRAP))
                 }
                 if (loras.isNotEmpty()) {
                     put(

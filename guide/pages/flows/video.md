@@ -1,21 +1,16 @@
 # Video
 
-*A prompt in, a two-second clip out. 49 frames at 1024 × 640, on the NPU.*
+*A prompt, or a prompt and a photo, into a clip. Or your photo moving like a video you choose.*
 
-**Needs a Snapdragon 8 Elite or 8 Elite Gen 5** and the video models (about 8.6 GB). It does
-not use your picture model; the video has its own.
+There are two video models. Install either, or both:
 
-## Install the video models
+| model | makes | needs |
+|---|---|---|
+| **Wan 2.2 Turbo** (6.25 GB) | up to 5 seconds, any shape up to 1280 × 704. The better clips; minutes per clip | Snapdragon 8 Elite or newer (alpha on 8 Gen 3: tell us if it runs) |
+| **Neodragon** (about 8.6 GB) | 2 seconds at 1024 × 640 in about 25 seconds | Snapdragon 8 Elite or 8 Elite Gen 5 |
 
-**Models → Video → Download.** The download is 21 files; it resumes, so a dropped connection
-only costs the file it was on. Use Wi-Fi.
-
-Before offering the download, the app checks your chip by **running a tiny real model on it**,
-rather than trusting its name. If that check fails, the row says your device cannot run it.
-
-<figure markdown>
-  ![Models → Video](../img/models-video.png){ .screen }
-</figure>
+Neither uses your picture model; video has its own. **Models → Video** lists both, and **Wan**
+in the family menu has Wan's models on their own page.
 
 ## Text to video
 
@@ -24,7 +19,11 @@ rather than trusting its name. If that check fails, the row says your device can
 1. **Flows → Text to video.**
 2. Write the prompt: describe the scene *and the motion*. `waves rolling onto a beach at
    sunset, camera slowly panning right`.
-3. **Run.** About 25 seconds on an 8 Elite.
+3. **Run.** With Wan 2.2, 5 seconds at 832 × 480 takes about **3 minutes** on an 8 Elite; the
+   bar moves once per step, four steps, then the clip is decoded and encoded.
+
+The video node's **Model** switches between **Wan 2.2** (the default) and **Neodragon (fast)**.
+**Use** on Neodragon in Models opens the flow on Neodragon.
 
 The clip **loops on the node** that made it; tap it to play it full screen. With **Save** on
 (the default), an MP4 is also written to `Movies/Nightmare`.
@@ -34,50 +33,65 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 **Nodes:** Prompt and Image → Video → Output, the same flow with a photo wired in.
 
 1. **Flows → Image to video.**
-2. Choose the photo on the **image** node. It is framed to the video's shape; drag and pinch
-   in the framing view to choose the part that is animated.
-3. Describe the motion you want, and **Run**. About 20 seconds.
+2. Choose the photo on the **image** node. Tap the video node's **Crop** preview: the frame
+   takes the clip's shape; drag and pinch to choose the part that is animated. The photo is the
+   clip's **first frame**.
+3. Describe what moves: `the camera slowly pushes in, the woman turns her head and smiles`.
+   **Run.**
 
-## Video settings
-
-| setting | does |
-|---|---|
-| **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
-| **Upscale** | On: 2× to 1024 × 640. Off: 512 × 320, a little faster |
-| **Save** (output) | Writes an MP4 to `Movies/Nightmare`, which outlives the app's cache |
-
-<figure markdown>
-  ![The video node's settings](../img/inspector-video-sample.png){ .screen }
-</figure>
-
-## Wan 2.2: better clips, slower
-
-*A prompt, or a prompt and a photo, into a clip of up to 5 seconds. 832 × 480 by default.*
-
-**Needs a Snapdragon 8 Elite or newer** (alpha on 8 Gen 3: tell us if it runs) and Wan 2.2 (6.25 GB). It is separate from the
-Neodragon models above: install either, or both.
-
-- **Models → Video → Wan 2.2 Turbo → Download.** Three files: the Wan 2.2 Turbo model, its
-  umT5 text encoder and a small decoder.
-- **Flows → Text to video, Wan 2.2** or **Image to video, Wan 2.2.** Same nodes as the
-  flows above: Prompt (and Image) → Wan video → Output.
-- **Run.** 5 seconds at 832 × 480 takes about **3 minutes** on an 8 Elite; the bar moves once
-  per step, four steps, then the clip is decoded and encoded.
-
-In image to video the photo is the clip's **first frame**, so the prompt describes what moves:
-`the camera slowly pushes in, the woman turns her head and smiles`.
+## Wan 2.2 settings
 
 | setting | does |
 |---|---|
-| **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. With a photo, the crop frame takes this shape: drag it to pick the first frame |
+| **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. **Match picture** sets the photo's shape |
 | **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
 | **Seconds** | 1 to 5, at 24 frames a second. On a 12 GB phone, 1280 × 704 for 3 seconds or more renders in parts so it fits: slower, about 12 minutes for 5 seconds. On an 8 Gen 3 a new flow opens on 2 seconds, the longest that has worked there so far; longer clips and 1280 × 704 still run, with a warning in the run log |
+| **LoRAs** | Wan 2.2 TI2V-5B LoRAs only (a 14B one does not fit). See [LoRAs](../models/loras.md) |
 
-**Longer clips.** The Wan video node has a second output, **last frame**: the clip's final frame as a
-picture. In advanced view, wire it into another Wan video node's **image**, give that one its own
-prompt, and it carries on from where the first clip ended. Chain as many as you like; each clip is
-kept separately.
+Neodragon has **Seed** and **Upscale** (on: 2× to 1024 × 640; off: 512 × 320, a little faster).
 
 <figure markdown>
   ![Models → Video with Wan 2.2](../img/models-video-wan.png){ .screen }
 </figure>
+
+## Longer clips: one film
+
+The Wan video node has a second output, **last frame**: the clip's final frame as a picture. In
+advanced view, wire it into another Wan video node's **image** and give that one its own prompt:
+it carries on from where the first clip ended.
+
+The second node's **video** is then the **whole film so far**, the first clip and its own joined
+into one (the frame they share appears once). Chain as many as you like: the last node hands the
+Output the complete film. **Results** keeps every part on its own as well, each with the picture
+it started from, grouped together beside the film.
+
+On the canvas, a film longer than about 5 seconds loops faster than real time; full screen plays
+it at its own speed.
+
+## Motion transfer
+
+*Your picture moving like a video you choose: its pose or depth, frame by frame.*
+
+**Needs** Wan 2.2 Fun Control: about 3.7 GB with Wan 2.2 Turbo installed (it borrows Turbo's text
+encoder and decoder), 7.3 GB without. **Models → Video → Wan 2.2 Fun Control → Download.**
+
+**Nodes:** Prompt, Image (who moves) and **Video** (the moving clip) → Motion transfer → Output.
+
+1. **Flows → Motion transfer.**
+2. Choose your picture on the **image** node: it is who the clip shows (face, clothes, setting).
+3. Choose a video on the **Video** node: a person dancing, walking, waving.
+4. On the Motion transfer node, tap the **Video** preview:
+    - **Part of the video**: drag either end. The part you choose is the clip's length, up to
+      5 seconds, shown as seconds and frames.
+    - **The box**: drawn on that part's first frame, at the clip's shape. Every frame is cut the
+      same way, so keep the person inside it.
+5. Pick a **Mode** (the ⓘ beside it says which to use) and **Run**.
+
+| Mode | for |
+|---|---|
+| **Pose** | a real video of a person. The pose is read from every frame and your picture copies it. Body only: hands and face are not followed. Needs the Pose Detector (Models, Tools) |
+| **Depth** | camera moves, objects and whole scenes, when shapes matter more than a pose. Slower: about a second a frame to make the depth maps. Needs the Depth Estimator (Models, Tools) |
+| **As is** | a video that already is a control video: a pose skeleton or a depth map made elsewhere. An ordinary video here will not work well |
+
+Motion transfer takes no LoRAs: `<lora:…>` tags in its prompt are skipped, and the run log says
+so. 480p is quickest; at 704 × 1280 faces hold better and a clip takes about three times as long.

@@ -252,10 +252,13 @@ open class ModelsScreenshotTest {
                 weightsMissing = emptyList(),
                 supported = true,
             ),
-            wan = com.abrah.nightmare.ui.ModelRow(
-                spec = wan, build = wan.best, installed = false, selected = false,
-                fetchBytes = wan.best!!.bytes,
-            ),
+            // ⭐ Both Wan models since 2026-10-15: Turbo and Fun Control (Motion transfer).
+            wans = listOf(wan, ModelCatalog.WAN22_FUN).map { spec ->
+                com.abrah.nightmare.ui.ModelRow(
+                    spec = spec, build = spec.best, installed = false, selected = false,
+                    fetchBytes = spec.best!!.bytes,
+                )
+            },
         )
     }
 

@@ -220,6 +220,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "wan_i2v" -> wanVideo(arg, i2v = true)
             // ⭐ GitHub #23's chaining: clip A's `last_frame` is clip B's first frame. `--es arg "WxH|seconds"`.
             "wan_chain" -> wanChain(arg)
+            // ⭐ Motion transfer (Wan 2.2 Fun Control): the newest saved picture as the reference, a video
+            // path as the driving clip. `--es arg "video path|pose|depth|as_is|WxH|seconds|seed"`.
+            "wan_motion" -> wanMotion(arg)
             "inpaint" -> inpaint(arg)
             "t2i" -> t2i()
             // ⭐ Prompt translation, timed (`docs/TRANSLATE.md`). `--es arg "ru|красная шляпа, 8k"`;
@@ -1515,6 +1518,58 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * ([com.abrah.nightmare.canvas.refitToAspect]). Without it the default whole-picture rect
      * is STRETCHED to the clip: a portrait photo came out squeezed into 832x480.
      */
+    /** ⭐ The Motion transfer flow, headless: what a person builds with the picker and the Video node. */
+    private suspend fun wanMotion(arg: String?) {
+        val f = arg.orEmpty().split('|')
+        fun at(i: Int) = f.getOrNull(i)?.trim().orEmpty()
+        val picture = newestSavedImage() ?: run {
+            say("wan_motion: nothing in Pictures/${ImageSaver.FOLDER} yet", bad = true)
+            return
+        }
+        if (at(0).isEmpty()) { say("wan_motion: needs a video path", bad = true); return }
+        val w0 = com.abrah.nightmare.canvas.motionTransferWorkflow()
+        val fun0 = com.abrah.nightmare.npu.WanFunNode
+        val wf = w0.copy(
+            graph = w0.graph.copy(
+                nodes = w0.graph.nodes.map { n ->
+                    when (n.type) {
+                        "core.image" -> n.copy(params = n.params + ("uri" to picture))
+                        com.abrah.nightmare.npu.LoadVideoNode.name -> n.copy(params = n.params + ("uri" to at(0)))
+                        fun0.name -> n.copy(
+                            params = n.params + listOfNotNull(
+                                at(1).takeIf { it.isNotEmpty() }?.let { com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE to it },
+                                *at(2).split('x').takeIf { it.size == 2 }?.let { (w, h) ->
+                                    arrayOf("width" to w.trim(), "height" to h.trim())
+                                }.orEmpty(),
+                                // ⭐ The window: "1.5-3.5" (seconds into the video), or "2" = 0 to 2.
+                                *at(3).takeIf { it.isNotEmpty() }?.let { t ->
+                                    val (s, e) = if ('-' in t) t.split('-', limit = 2) else listOf("0", t)
+                                    arrayOf(com.abrah.nightmare.npu.WanFun.START to s.trim(), com.abrah.nightmare.npu.WanFun.END to e.trim())
+                                }.orEmpty(),
+                                at(4).takeIf { it.isNotEmpty() }?.let { "seed" to it },
+                            ),
+                        )
+                        else -> n
+                    }
+                }
+            ),
+        )
+        if (!ensureBackendFor(wf.graph)) {
+            say("wan_motion: the backend did not start", bad = true)
+            return
+        }
+        val spec = ModelCatalog.WAN22_FUN
+        say("wan_motion: ${spec.label} ${if (spec.installed(ctx)) "installed" else "MISSING: ${spec.missing(ctx).joinToString()}"}")
+        val t0 = System.currentTimeMillis()
+        val r = runWorkflow(wf, onNode = { n ->
+            say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} ${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+        })
+        if (r.error != null) { say("wan_motion: refused. ${r.error}", bad = true); return }
+        val clip = r.outputs["motion"] as? Value.Video ?: run { say("wan_motion: no clip", bad = true); return }
+        say("wan_motion: ${clip.frames} frames ${clip.w}x${clip.h} in ${(System.currentTimeMillis() - t0) / 1000} s")
+        com.abrah.nightmare.npu.VideoWriter.publish(ctx, java.io.File(clip.path), "wan_motion_${System.currentTimeMillis()}.mp4") { say("  $it") }
+    }
+
     private fun fitWanFrame(wf: com.abrah.nightmare.canvas.Workflow, uri: String?): com.abrah.nightmare.canvas.Workflow {
         uri ?: return wf
         val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -2019,13 +2074,15 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onLog: (String, String) -> Unit = { _, _ -> },
         /** ⭐ A node telling the person something. [com.abrah.nightmare.NodeCtx.warn]. */
         onWarn: (String, String) -> Unit = { _, _ -> },
+        /** ⭐ Which phase a node's progress is ([Ops.Progress.phase]). */
+        onPhase: (String, String?) -> Unit = { _, _ -> },
     ): GraphRun {
         // ⭐ In use for the whole run, so an out-of-sight release waits for it
         // ([BackendIdle]) — and `finally`, so a failed run still ends the use.
         BackendIdle.begin()
         RunWakeLock.begin(ctx)
         try {
-            return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn)
+            return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn, onPhase)
         } finally {
             try { releaseBackendIfTooBig() } finally { BackendIdle.end(); RunWakeLock.end() }
         }
@@ -2103,6 +2160,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onStart: (String, String) -> Unit = { _, _ -> },
         onLog: (String, String) -> Unit = { _, _ -> },
         onWarn: (String, String) -> Unit = { _, _ -> },
+        onPhase: (String, String?) -> Unit = { _, _ -> },
     ): GraphRun {
         // ⚠⚠⚠ **Consumer-derived sizes are settled HERE, before anything
         // runs.** A consumer-sized node (`image.crop` until its deletion on 2026-09-17; the legacy mask nodes) carries no `out_w`/`out_h` of its own — they are
@@ -2164,6 +2222,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         return executor.run(
             Graph(nodes),
             onStart = onStart,
+            onPhase = onPhase,
             onProgress = { id, step, total ->
                 sink.progress(step to total)
                 onProgress(id, step, total)

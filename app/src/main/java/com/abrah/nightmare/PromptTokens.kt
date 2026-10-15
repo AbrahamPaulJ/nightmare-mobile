@@ -188,7 +188,7 @@ object PromptTokens {
     fun budgetFor(graph: Graph, nodeId: String): Budget? {
         val consumers = graph.nodes.filter { n -> n.inputs.values.any { it.node == nodeId } }
         // ⚠ Wan reads umT5, whose tokenizer this counter does not have: no number beats a wrong one.
-        if (consumers.any { it.type == com.abrah.nightmare.npu.WanVideoNode.name }) return null
+        if (consumers.any { it.type in com.abrah.nightmare.WAN_TYPES }) return null
         val budgets = consumers.mapNotNull { budgetOf(it) }
         if (budgets.isNotEmpty()) return budgets.minBy { it.max }
         // ⚠⚠ The selected model is the fallback for a prompt that feeds NO sampler yet, never for

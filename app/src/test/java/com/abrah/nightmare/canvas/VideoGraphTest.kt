@@ -115,7 +115,9 @@ class VideoGraphTest {
         assertTrue(isSampler("zimage.inpaint"))
         // 2026-10-14: `wan.sample`, the second video sampler (Wan 2.2, `docs/VIDEO-GGML.md`).
         assertTrue(isSampler("wan.sample"))
-        assertEquals(21, SAMPLER_TYPES.size)
+        // 2026-10-15: `wanfun.sample`, Motion transfer (Wan 2.2 Fun Control).
+        assertTrue(isSampler("wanfun.sample"))
+        assertEquals(22, SAMPLER_TYPES.size)
         assertEquals(19, IMAGE_SAMPLER_TYPES.size)
         assertEquals(9, INPAINT_TYPES.size)
     }

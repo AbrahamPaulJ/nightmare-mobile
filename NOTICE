@@ -194,6 +194,16 @@ Wan 2.2 TI2V 5B Turbo (video)
     states no licence; the GGUF is published as Apache 2.0. Downloaded by the app
     at the user's request, unmodified; not included here.
 
+Wan 2.2 Fun 5B Control (motion transfer)
+    alibaba-pai; Q4_0 GGUF by QuantStack; FastWan by FastVideo, as a LoRA by Kijai
+    https://huggingface.co/alibaba-pai/Wan2.2-Fun-5B-Control
+    https://huggingface.co/QuantStack/Wan2.2-Fun-5B-Control-GGUF
+    https://huggingface.co/FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers
+    https://huggingface.co/Kijai/WanVideo_comfy
+    Wan 2.2 Fun, its GGUF and FastWan are Apache 2.0; Kijai's repackaged LoRA
+    states no licence. Downloaded by the app at the user's request, unmodified;
+    not included here.
+
 umT5-XXL encoder (Wan 2.2's text encoder)
     Google; GGUF by city96
     https://huggingface.co/google/umt5-xxl

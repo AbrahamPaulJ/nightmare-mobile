@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -180,13 +183,37 @@ fun LoraPickerContent(
         onSet(LoraSpec.format(next))
     }
 
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // ⭐ The bases set by hand in this sheet apply at once, over what the caller read.
+    var overrides by remember { mutableStateOf(com.abrah.nightmare.LoraLibrary.baseOverrides(ctx)) }
+    // ⭐ GitHub #36: the folders LoRAs were put in (the ⋮), and which are open. Closed by default:
+    // folders are for a long list, and a long list is what they tidy away.
+    var folders by remember { mutableStateOf(com.abrah.nightmare.LoraLibrary.folders(ctx)) }
+    var openFolders by remember { mutableStateOf(emptySet<String>()) }
+    val items = (library ?: installed.map { com.abrah.nightmare.LoraLibrary.Item(it.first, it.second, 0L, com.abrah.nightmare.LoraLibrary.Base.OTHER) })
+        .map { it.copy(base = overrides[it.name] ?: it.detected) }
+
     // ⭐ Which LoRA's note is open, if any; which one is being deleted.
     var noting by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<String?>(null) }
     noting?.let { name ->
+        val item = items.firstOrNull { it.name == name }
         LoraNoteDialog(
             name = name,
             note = notes[name].orEmpty(),
+            base = item?.base,
+            detected = item?.detected,
+            onSetBase = { b ->
+                com.abrah.nightmare.LoraLibrary.setBase(ctx, name, b)
+                overrides = com.abrah.nightmare.LoraLibrary.baseOverrides(ctx)
+            },
+            folder = folders[name],
+            folderChoices = com.abrah.nightmare.LoraLibrary.foldersFor(items, folders, item?.base),
+            onSetFolder = { fo ->
+                com.abrah.nightmare.LoraLibrary.setFolder(ctx, name, fo)
+                folders = com.abrah.nightmare.LoraLibrary.folders(ctx)
+                fo?.let { openFolders = openFolders + it.trim() }
+            },
             onSave = { onSaveNote?.invoke(name, it) },
             onAddToPrompt = onAddToPrompt,
             onReplacePrompt = onReplacePrompt,
@@ -216,8 +243,6 @@ fun LoraPickerContent(
     // name / newest / most used / size, filter by base model and by name, favourites first.
     // ⚠⚠ The CHOSEN ones stay first and in their own order, whatever the sort and filter: the order
     // in the param is the order the engine applies them in, and a LoRA that is on must stay visible.
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val items = library ?: installed.map { com.abrah.nightmare.LoraLibrary.Item(it.first, it.second, 0L, com.abrah.nightmare.LoraLibrary.Base.OTHER) }
     var sort by remember { mutableStateOf(com.abrah.nightmare.LoraLibrary.Sort.NAME) }
     var base by remember { mutableStateOf<com.abrah.nightmare.LoraLibrary.Base?>(null) }
     var query by remember { mutableStateOf("") }
@@ -272,7 +297,13 @@ fun LoraPickerContent(
                 )
             }
         }
-        for (name in rows) {
+        // ⭐⭐ GitHub #36: the chosen LoRAs first (their order is the engine's), then the folders,
+        // then the LoRAs in no folder. ⚠ Flat while searching: a match inside a closed folder must show.
+        val chosenRows = rows.filter { name -> chosen.any { it.name == name } }
+        val rest = rows.filter { name -> chosen.none { it.name == name } }
+        val (groups, loose) = if (query.isBlank()) com.abrah.nightmare.LoraLibrary.grouped(rest, folders)
+        else emptyList<Pair<String, List<String>>>() to rest
+        val loraRow: @Composable (String) -> Unit = { name ->
             val entry = chosen.firstOrNull { it.name == name }
             val missing = name !in installedNames
             // ⭐ Violet Studio: each LoRA a card; a chosen one tinted with a violet edge, its
@@ -382,6 +413,30 @@ fun LoraPickerContent(
             }
             }
         }
+        for (name in chosenRows) loraRow(name)
+        for ((folder, names) in groups) {
+            val isOpen = folder in openFolders
+            Row(
+                Modifier.fillMaxWidth()
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                    .clickable { openFolders = if (isOpen) openFolders - folder else openFolders + folder }
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (isOpen) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.lora_cd_folder, folder),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.lora_folder_count, folder, names.size),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(start = 6.dp),
+                )
+            }
+            if (isOpen) for (name in names) loraRow(name)
+        }
+        for (name in loose) loraRow(name)
     }
 }
 
@@ -406,8 +461,19 @@ fun LoraNoteDialog(
     onReplacePrompt: ((String) -> Unit)? = null,
     /** ⭐ Opens [ConfirmDeleteLora]; null hides Delete. */
     onDelete: (() -> Unit)? = null,
+    /** ⭐ The model family it is filed under, and what its header says; null hides the row. */
+    base: com.abrah.nightmare.LoraLibrary.Base? = null,
+    detected: com.abrah.nightmare.LoraLibrary.Base? = null,
+    /** ⭐ Set it by hand; null = back to the header's (Telegram #6322: Krea 2 / Z-Image LoRAs unsorted). */
+    onSetBase: ((com.abrah.nightmare.LoraLibrary.Base?) -> Unit)? = null,
+    /** ⭐ GitHub #36: the folder it is in, the folders its family already has, and the setter (null hides the row). */
+    folder: String? = null,
+    folderChoices: List<String> = emptyList(),
+    onSetFolder: ((String?) -> Unit)? = null,
 ) {
     var text by remember(name) { mutableStateOf(note) }
+    // ⭐ A new folder's name, while it is being typed; null when the field is closed.
+    var newFolder by remember(name) { mutableStateOf<String?>(null) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     fun close() {
@@ -434,6 +500,50 @@ fun LoraNoteDialog(
                         )
                     },
                 )
+                // ⭐ Which model it is for: Auto (what the header says) or a family by hand.
+                if (onSetBase != null && detected != null) {
+                    Text(stringResource(R.string.lora_model_family), style = MaterialTheme.typography.labelMedium)
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        val manual = base != null && base != detected
+                        com.abrah.nightmare.ui.Pill(stringResource(R.string.lora_base_auto, detected.label), !manual) { onSetBase(null) }
+                        for (b in com.abrah.nightmare.LoraLibrary.Base.entries) {
+                            if (b == com.abrah.nightmare.LoraLibrary.Base.OTHER) continue
+                            com.abrah.nightmare.ui.Pill(b.label, manual && base == b) { onSetBase(b) }
+                        }
+                    }
+                }
+                // ⭐ GitHub #36: which folder it sits in. The files stay where they are.
+                if (onSetFolder != null) {
+                    Text(stringResource(R.string.lora_folder), style = MaterialTheme.typography.labelMedium)
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        com.abrah.nightmare.ui.Pill(stringResource(R.string.lora_folder_none), folder == null) { onSetFolder(null) }
+                        for (fo in (folderChoices + listOfNotNull(folder)).distinct()) {
+                            com.abrah.nightmare.ui.Pill(fo, folder == fo) { onSetFolder(fo) }
+                        }
+                        com.abrah.nightmare.ui.Pill(stringResource(R.string.lora_folder_new), newFolder != null) { newFolder = newFolder?.let { null } ?: "" }
+                    }
+                    newFolder?.let { typed ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = typed,
+                                onValueChange = { newFolder = it },
+                                singleLine = true,
+                                placeholder = { Text(stringResource(R.string.lora_folder_name_hint), style = NoteTextStyle) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                enabled = typed.isNotBlank(),
+                                onClick = { onSetFolder(typed.trim()); newFolder = null },
+                            ) { Text(stringResource(R.string.lora_folder_add)) }
+                        }
+                    }
+                }
                 val trigger = com.abrah.nightmare.LoraNotes.trigger(text)
                 // ⭐ A FlowRow: three buttons do not fit one dialog-wide row.
                 androidx.compose.foundation.layout.FlowRow(

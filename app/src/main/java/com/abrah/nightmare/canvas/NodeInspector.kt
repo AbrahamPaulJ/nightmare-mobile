@@ -91,6 +91,7 @@ import kotlin.math.sqrt
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Star
@@ -270,6 +271,8 @@ fun NodeInspector(
     onSaveDrawing: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
     /** ⭐ A white page on an empty image node, to draw on. */
     onBlankPicture: (String) -> Unit = {},
+    /** ⭐ A video node's model: Wan 2.2 or Neodragon. */
+    onSetVideoModel: (String, Boolean) -> Unit = { _, _ -> },
     swapFlows: List<com.abrah.nightmare.canvas.SwapFlow>? = null,
     onSwapFlow: (com.abrah.nightmare.canvas.Recipe) -> Unit = {},
     /** ⭐ The same three the fullscreen viewer offers — see the body's note. */
@@ -600,6 +603,11 @@ fun NodeInspector(
             controlSource = state.pictureInto(
                 nodeId, types, port = com.abrah.nightmare.SdSampler.CONTROL,
             )?.let(imageFor),
+            // ⭐ The Video node wired into Motion transfer's `control`: its chosen video.
+            drivingVideo = node.inputs[com.abrah.nightmare.npu.WanFunNode.CONTROL]
+                ?.let { state.workflow.graph.byId[it.node] }
+                ?.takeIf { it.type == com.abrah.nightmare.npu.LoadVideoNode.name }
+                ?.params?.get("uri")?.takeIf { it.isNotBlank() },
             // ⚠ Same upstream picture, different job: the cropper FRAMES it,
             // the mask editor is PAINTED on it. ⚠⚠ Both arrive as the PHOTO —
             // the mask is STORED in the photo's coordinates, so re-framing a
@@ -665,6 +673,7 @@ fun NodeInspector(
             onClearImage = { onClearImage(nodeId) },
             onSaveDrawing = { onSaveDrawing(nodeId, it) },
             onBlankPicture = { onBlankPicture(nodeId) },
+            onSetVideoModel = { neo -> onSetVideoModel(nodeId, neo) },
             swapFlows = swapFlows,
             onSwapFlow = onSwapFlow,
             onImportLora = onImportLora,
@@ -864,6 +873,8 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         )
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
+    // ⭐ Motion transfer's window and video crop belong to its Video tab ([DrivingVideoPanel]).
+    if (node.type == com.abrah.nightmare.npu.WanFunNode.name && name in com.abrah.nightmare.npu.WanFun.VIDEO_PARAMS) return true
     // ⭐ SD 1.5 Swap's ControlNet knobs live in its ControlNet TILE ([ControlNetPanel]),
     // its IP-Adapter knobs in the IP-Adapter tile ([IpAdapterPanel]).
     if (name in setOf(
@@ -900,7 +911,7 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // ⭐ The Wan video node's size is drawn by `wanPanel`'s pair of sliders. ⚠⚠ ABOVE the
     // image-sampler return just below: Wan is not an image sampler, so a rule placed after it
     // never ran and Width and Height drew twice (the phone, 2026-10-15; `WanSheetTest`).
-    if ((name == "width" || name == "height") && node.type == com.abrah.nightmare.npu.WanVideoNode.name) return true
+    if ((name == "width" || name == "height") && node.type in com.abrah.nightmare.WAN_TYPES) return true
     if (node.type !in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) return false
     // ⭐ A DiT sampler's size belongs to the shape + size pair at the top of the
     // sheet, the same way every other family's does. Its `width`/`height` are
@@ -1066,6 +1077,11 @@ internal fun NodeInspectorBody(
     refSource: ImageBitmap? = null,
     /** ⭐ The picture wired into `control`, if any. SD 1.5 Swap samplers only. */
     controlSource: ImageBitmap? = null,
+    /**
+     * ⭐ Motion transfer's driving video: the `uri` of the Video node wired into its `control`
+     * ([com.abrah.nightmare.npu.WanFunNode]), for the popup's Video tab ([DrivingVideoPanel]).
+     */
+    drivingVideo: String? = null,
     /** The picture an `image.mask` node is painted on — its upstream image. */
     maskSource: ImageBitmap? = null,
     /** ⭐ The same three actions the fullscreen viewer offers. Null hides them. */
@@ -1127,6 +1143,8 @@ internal fun NodeInspectorBody(
     onClearImage: () -> Unit = {},
     onSaveDrawing: (android.graphics.Bitmap?) -> Unit = {},
     onBlankPicture: () -> Unit = {},
+    /** ⭐ This video node's model: Wan 2.2 (false) or Neodragon (true). */
+    onSetVideoModel: (Boolean) -> Unit = {},
     /** ⭐ Swap flow on the sampler's page, Remove input on the picture's: Default view only. */
     swapFlows: List<com.abrah.nightmare.canvas.SwapFlow>? = null,
     onSwapFlow: (com.abrah.nightmare.canvas.Recipe) -> Unit = {},
@@ -1416,7 +1434,20 @@ internal fun NodeInspectorBody(
         }
         // ⭐ The Wan video node's LoRA row: the image nodes' control and picker, at the top of its sheet
         // (the user's call, 2026-10-15). Wan 2.2 5B LoRAs only; the node says so when one does not fit.
-        if (node.type == com.abrah.nightmare.npu.WanVideoNode.name) {
+        // ⭐⭐ The video flows' model choice (2026-10-15): Wan 2.2 by default, Neodragon for speed.
+        // ⚠ Neodragon is not offered where its canary hid it ([com.abrah.nightmare.npu.VideoGate]).
+        if (node.type in com.abrah.nightmare.VIDEO_MODEL_TYPES && !com.abrah.nightmare.npu.VideoGate.hidden) {
+            val wanLabel = stringResource(R.string.video_model_wan)
+            val neoLabel = stringResource(R.string.video_model_neodragon)
+            Chooser(
+                label = stringResource(R.string.video_model),
+                hint = stringResource(R.string.hint_video_model),
+                options = listOf(wanLabel, neoLabel),
+                current = if (node.type == "nd.sample") neoLabel else wanLabel,
+                onPick = { onSetVideoModel(it == neoLabel) },
+            )
+        }
+        if (node.type in com.abrah.nightmare.WAN_TYPES) {
             type?.widgets?.firstOrNull { it.name == com.abrah.nightmare.SdSampler.LORAS }?.let { w ->
                 LoraRow(widget = w, value = node.params[w.name].orEmpty(), why = w.locked, onOpen = { pickingLoras = true })
             }
@@ -1426,7 +1457,9 @@ internal fun NodeInspectorBody(
         // ⭐ An SD sampler edits its crop (and, on inpaint, its mask) in a popup,
         // and has no crop lock. ⚠ Image-to-image too since 2026-09-17, the user's
         // call: "i2i should have crop window similar to inpaint, without the lock".
-        val popup = node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES
+        // ⭐ …and both Wan nodes since 2026-10-15 (the user's call): Motion transfer has two
+        // pictures (the reference and the driving video), and the two Wan nodes stay alike.
+        val popup = node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES || node.type in com.abrah.nightmare.WAN_TYPES
         val padRule = com.abrah.nightmare.padRuleOf(node)
         // ⚠⚠ No crop lock anywhere now: the video node was the last to draw
         // one, and it went at the user's call, 2026-09-27 — like the popup
@@ -1525,7 +1558,7 @@ internal fun NodeInspectorBody(
         // so a drag never lands on a size the node would refuse.
         val wanPanel: @Composable () -> Unit = wanPanel@{
             val wan = com.abrah.nightmare.npu.WanVideoNode
-            if (node.type != wan.name) return@wanPanel
+            if (node.type !in com.abrah.nightmare.WAN_TYPES) return@wanPanel
             val widthW = type?.widgets?.firstOrNull { it.name == "width" } ?: return@wanPanel
             val heightW = type?.widgets?.firstOrNull { it.name == "height" } ?: return@wanPanel
             val cur = wan.framesTo(node)
@@ -1986,7 +2019,15 @@ internal fun NodeInspectorBody(
                 onSetParams = { onSetParams(nodeId, it) },
             ) { k, v -> onSetParam(nodeId, k, v) }
         }
-        if (popup && (cropSource != null || refSource != null || controlTile != null)) {
+        // ⭐⭐ Motion transfer's Video tab: the part of the driving video and its crop ([DrivingVideoPanel]).
+        val videoTile = if (node.type != com.abrah.nightmare.npu.WanFunNode.name) null else {
+            val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
+            val (clipW, clipH) = framingOutSize(node, type)
+            drivingTile(node, live, drivingVideo, clipW, clipH) {
+                DrivingVideoPanel(node, live, drivingVideo, clipW, clipH) { onSetParams(nodeId, it) }
+            }
+        }
+        if (popup && (cropSource != null || refSource != null || controlTile != null || videoTile != null)) {
             InpaintEditors(
                 node = node,
                 type = type,
@@ -1999,7 +2040,7 @@ internal fun NodeInspectorBody(
                 paints = node.type in com.abrah.nightmare.INPAINT_TYPES,
                 openCrop = cropRequest?.takeIf { it.first == nodeId }?.second,
                 openTab = cropRequestTab,
-                control = controlTile,
+                control = controlTile ?: videoTile,
                 ip = ipTile,
             )
         } else {
@@ -2043,6 +2084,9 @@ internal fun NodeInspectorBody(
         // ⚠ Which knob's batch popup is open, or null. Local: an unanswered
         // popup is not something to persist.
         var batching by remember(nodeId) { mutableStateOf<Widget?>(null) }
+        // ⭐ Motion transfer's Mode ⓘ: which mode to use when ([MotionModeInfo]).
+        var motionInfo by remember(nodeId) { mutableStateOf(false) }
+        if (motionInfo) MotionModeInfo(onDismiss = { motionInfo = false })
         // ⚠ Null when not renaming. Keyed on the node so opening another
         // node's sheet cannot leave a half-typed name from the last one.
 
@@ -2181,6 +2225,14 @@ internal fun NodeInspectorBody(
                 onSaveDrawing = onSaveDrawing,
                 afterBlank = afterBlank,
                 onBlankHandled = { afterBlank = false },
+            )
+        }
+        // ⭐ The Video node's own controls, where the image node's are ([VideoPicker]).
+        if (node.type == com.abrah.nightmare.npu.LoadVideoNode.name) {
+            VideoPicker(
+                current = node.params["uri"].orEmpty(),
+                onPicked = { uri -> onSetParam(nodeId, "uri", uri) },
+                onClear = { onSetParam(nodeId, "uri", "") },
             )
         }
         // ⚠⚠ …and NOT on a `mask` node either, for the same reason plus a
@@ -2348,7 +2400,9 @@ internal fun NodeInspectorBody(
             // ⭐ Each file's date and base (headers only, cached), read off the main thread.
             val library by androidx.compose.runtime.produceState<List<com.abrah.nightmare.LoraLibrary.Item>?>(null, pickingLoras, loraEpoch) {
                 value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    com.abrah.nightmare.LoraLibrary.list(com.abrah.nightmare.BackendProcess.lorasDir(ctx))
+                    com.abrah.nightmare.LoraLibrary.list(
+                        com.abrah.nightmare.BackendProcess.lorasDir(ctx), com.abrah.nightmare.LoraLibrary.baseOverrides(ctx),
+                    )
                 }
             }
             // ⭐ Notes beside the files ([com.abrah.nightmare.LoraNotes]); re-read
@@ -2375,7 +2429,8 @@ internal fun NodeInspectorBody(
                 onReplacePrompt = onReplacePrompt,
                 onDelete = onDeleteLora,
                 library = library,
-                nodeBase = com.abrah.nightmare.LoraLibrary.Base.of((type as? com.abrah.nightmare.SdSampler)?.family),
+                nodeBase = if (node.type in com.abrah.nightmare.WAN_TYPES) com.abrah.nightmare.LoraLibrary.Base.WAN
+                else com.abrah.nightmare.LoraLibrary.Base.of((type as? com.abrah.nightmare.SdSampler)?.family),
                 experimental = com.abrah.nightmare.LoraSources.Target.experimental((type as? com.abrah.nightmare.SdSampler)?.family),
             )
         }
@@ -2584,12 +2639,26 @@ internal fun NodeInspectorBody(
                 // horizontally-scrolling strip where the current value can be
                 // off-screen — a control that hides its own state. [Chooser] is
                 // where that is decided, for every choice in this sheet.
+                // ⭐ Motion transfer's mode: stored as an id, shown in words.
+                val ctxRes = LocalContext.current
+                val shown: (String) -> String = if (w.name == com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE) {
+                    { id ->
+                        when (com.abrah.nightmare.npu.WanFun.Mode.of(id)) {
+                            com.abrah.nightmare.npu.WanFun.Mode.POSE -> ctxRes.getString(R.string.wan_motion_pose)
+                            com.abrah.nightmare.npu.WanFun.Mode.DEPTH -> ctxRes.getString(R.string.wan_motion_depth)
+                            com.abrah.nightmare.npu.WanFun.Mode.AS_IS -> ctxRes.getString(R.string.wan_motion_as_is)
+                        }
+                    }
+                } else { id -> id }
                 Chooser(
                     label = w.name.localizedKnobLabel(),
                     hint = w.localizedHint(),
-                    options = options,
-                    current = node.params[w.name] ?: w.default.orEmpty(),
-                    onPick = { pick(it) },
+                    options = options.map(shown),
+                    current = shown(node.params[w.name] ?: w.default.orEmpty()),
+                    onPick = { label -> pick(options.firstOrNull { shown(it) == label } ?: label) },
+                    onInfo = if (w.name == com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE) {
+                        { motionInfo = true }
+                    } else null,
                 )
                 // ⚠ `scheduler` is batchable and is NOT a range — its popup is
                 // a multi-select over these same options.
@@ -3256,11 +3325,28 @@ internal fun Chooser(
      * Inpaint). The checkpoint picker's rule, `docs/UI.md` §8.6.
      */
     variesInLength: Boolean = false,
+    /**
+     * ⭐ An ⓘ after the choices that opens [onInfo]'s explanation: which option to use when
+     * (Motion transfer's Mode, the user's call 2026-10-15). Null draws none.
+     */
+    onInfo: (() -> Unit)? = null,
 ) {
     if (variesInLength || options.size > CHIP_LIMIT) {
-        ChoiceDropdown(label, hint, options, current, onPick)
+        ChoiceDropdown(label, hint, options, current, onPick, onInfo)
     } else {
-        ChoiceRow(label, hint, options, current, onPick)
+        ChoiceRow(label, hint, options, current, onPick, onInfo)
+    }
+}
+
+/** ⭐ [Chooser]'s ⓘ: the same small icon button wherever a choice explains itself. */
+@Composable
+private fun ChoiceInfoButton(label: String, onInfo: () -> Unit) {
+    IconButton(onClick = onInfo, modifier = Modifier.size(36.dp)) {
+        Icon(
+            Icons.Outlined.Info,
+            contentDescription = stringResource(R.string.inspector_cd_choice_info, label),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -3280,9 +3366,11 @@ private fun ChoiceDropdown(
     options: List<String>,
     current: String,
     onPick: (String) -> Unit,
+    onInfo: (() -> Unit)? = null,
 ) {
     var open by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }, modifier = Modifier.weight(1f)) {
         OutlinedTextField(
             value = current,
             onValueChange = {},
@@ -3310,6 +3398,8 @@ private fun ChoiceDropdown(
                 )
             }
         }
+    }
+    onInfo?.let { ChoiceInfoButton(label, it) }
     }
 }
 
@@ -4310,6 +4400,7 @@ private fun ChoiceRow(
     options: List<String>,
     current: String,
     onPick: (String) -> Unit,
+    onInfo: (() -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // ⚠ The same label style as a slider's (`bodyMedium`), not the hint's:
@@ -4318,6 +4409,7 @@ private fun ChoiceRow(
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             for (o in options) {
                 FilterChip(
@@ -4330,6 +4422,8 @@ private fun ChoiceRow(
                     colors = FilterChipDefaults.filterChipColors(),
                 )
             }
+            // ⭐ Right after the last choice ("As is" on Motion transfer).
+            onInfo?.let { ChoiceInfoButton(label, it) }
         }
         hint?.let {
             Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -4439,6 +4533,67 @@ internal fun rememberImagePick(onPicked: (String) -> Unit): ImagePick {
                 }
             },
             files = { docs.launch(arrayOf("image/*")) },
+        )
+    }
+}
+
+/**
+ * ⭐ The Video node's picker: Choose a video (the system picker on videos) and Files, then the
+ * clip's first and last frames ([VideoEnds]) and ✕ to clear it. Its first frame shows on the node once it has run, like any clip.
+ */
+@Composable
+private fun VideoPicker(current: String, onPicked: (String) -> Unit, onClear: () -> Unit) {
+    val pick = rememberVideoPick(onPicked)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.OutlinedButton(onClick = pick.photos) { Text(stringResource(R.string.video_in_choose)) }
+            TextButton(onClick = pick.files) { Text(stringResource(R.string.pick_files)) }
+        }
+        // ⭐ Under the buttons: the clip's first and last frames, not its file name (the user's
+        // call, 2026-10-16), with ✕ to clear it.
+        if (current.isBlank()) {
+            Text(stringResource(R.string.video_in_none), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Row(verticalAlignment = Alignment.Top) {
+                VideoEnds(current, Modifier.weight(1f))
+                IconButton(onClick = onClear, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.video_in_clear))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * ⭐ [rememberImagePick] for a VIDEO: the system picker on videos, or the document picker, the grant
+ * persisted for the same reason (a saved flow names the URI). ⚠ Registered unconditionally, as there.
+ */
+@Composable
+internal fun rememberVideoPick(onPicked: (String) -> Unit): ImagePick {
+    val ctx = LocalContext.current
+    val current = rememberUpdatedState(onPicked)
+    val onResult: (android.net.Uri?) -> Unit = { uri ->
+        if (uri != null) {
+            try {
+                ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: SecurityException) {
+                // ⚠ Not fatal: the URI works for this session ([rememberImagePick]'s note).
+            }
+            current.value(uri.toString())
+        }
+    }
+    val media = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia(), onResult)
+    val docs = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), onResult)
+    return remember(media, docs) {
+        ImagePick(
+            photos = {
+                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(ctx)) {
+                    media.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                } else {
+                    docs.launch(arrayOf("video/*"))
+                }
+            },
+            files = { docs.launch(arrayOf("video/*")) },
         )
     }
 }
@@ -5112,7 +5267,9 @@ internal fun LoraSuggestions(
     val files by androidx.compose.runtime.produceState(emptyList<Pair<String, com.abrah.nightmare.LoraLibrary.Base>>(), open.start) {
         this.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
-                com.abrah.nightmare.LoraLibrary.list(com.abrah.nightmare.BackendProcess.lorasDir(ctx)).map { it.name to it.base }
+                com.abrah.nightmare.LoraLibrary.list(
+                    com.abrah.nightmare.BackendProcess.lorasDir(ctx), com.abrah.nightmare.LoraLibrary.baseOverrides(ctx),
+                ).map { it.name to it.base }
             }.getOrDefault(emptyList())
         }
     }

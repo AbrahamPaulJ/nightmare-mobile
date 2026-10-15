@@ -1062,7 +1062,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠ Wan is never in [ModelCatalog.installedIds] (checkpoints only): its row says.
         val ids = ModelCatalog.installedIds
         val here = when {
-            spec == ModelCatalog.WAN22 -> wanRow?.installed ?: spec.installed(getApplication())
+            spec in ModelCatalog.video -> wanRows.firstOrNull { it.spec == spec }?.installed ?: spec.installed(getApplication())
             ids.isEmpty() -> spec.installed(getApplication())
             else -> spec.id in ids
         }
@@ -1164,7 +1164,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * ⭐ Wan 2.2 video ([ModelCatalog.WAN22]) — a catalogue model, but drawn on the Video tab, never
      * among the checkpoints ([modelRows]). Built by the same [refreshModels] read.
      */
-    var wanRow by mutableStateOf<com.abrah.nightmare.ui.ModelRow?>(null)
+    var wanRows by mutableStateOf<List<com.abrah.nightmare.ui.ModelRow>>(emptyList())
         private set
 
     var modelError by mutableStateOf<String?>(null)
@@ -1275,7 +1275,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 translateRows = translateRows.mapValues { (src, row) -> if (src.installId == id) row.copy(progress = p) else row }
             modelRows.any { it.spec.id == id } ->
                 modelRows = modelRows.map { if (it.spec.id == id) it.copy(progress = p) else it }
-            wanRow?.spec?.id == id -> wanRow = wanRow?.copy(progress = p)
+            wanRows.any { it.spec.id == id } -> wanRows = wanRows.map { if (it.spec.id == id) it.copy(progress = p) else it }
             upscalerRows.any { it.spec.id == id } ->
                 upscalerRows = upscalerRows.map { if (it.spec.id == id) it.copy(progress = p) else it }
         }
@@ -1506,7 +1506,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 // while the worker ran must not be shown as stopped.
                 val withProgress = rows.map { if (it.spec.id == installing) it.copy(progress = installProgress) else it }
                 modelRows = withProgress.filter { it.spec !in ModelCatalog.video }
-                wanRow = withProgress.firstOrNull { it.spec == ModelCatalog.WAN22 }
+                wanRows = withProgress.filter { it.spec in ModelCatalog.video }
                 ModelCatalog.installedIds = ids
                 // ⚠ …and the video models, for the same reason. ⚠⚠
                 // `probeVideoSupport` is NOT called here: it starts the QNN
@@ -1517,7 +1517,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (offMain) {
             // ⭐ The tapped chip shows its tick NOW; sizes and files follow.
             modelRows = modelRows.map { it.copy(selected = it.spec.id == selected) }
-            wanRow = wanRow?.copy(progress = if (installing == ModelCatalog.WAN22.id) installProgress else null)
+            wanRows = wanRows.map { it.copy(progress = if (installing == it.spec.id) installProgress else null) }
             viewModelScope.launch {
                 val t1 = System.nanoTime()
                 val got = withContext(Dispatchers.IO) { read() }
@@ -2467,8 +2467,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         // ⭐ Wan video names no `model` param: its one model is [ModelCatalog.WAN22], and the
         // same popup offers it — then the engine, which ABI 106 brings for every DiT model.
-        if (graph.nodes.any { it.type == com.abrah.nightmare.npu.WanVideoNode.name }) {
-            val wan = ModelCatalog.WAN22
+        for (wan in graph.nodes.mapNotNull { n ->
+            when (n.type) {
+                com.abrah.nightmare.npu.WanVideoNode.name -> ModelCatalog.WAN22
+                com.abrah.nightmare.npu.WanFunNode.name -> ModelCatalog.WAN22_FUN
+                else -> null
+            }
+        }.distinct()) {
             if (!wan.installed(ctx)) {
                 if (wan.buildFor(caps) == null) {
                     runError = text(R.string.models_needs_arch, wan.label, wan.builds.minOf { it.minArch }, caps.arch)
@@ -3737,6 +3742,33 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * turns to the output node; Run pressed in the Agent view puts the picture in the chat; a run
      * the AGENT started reports through its own tool; Graph stays put — a builder keeps their place.
      */
+    /**
+     * ⭐⭐ A chain's PARTS, kept beside the film (GitHub #29, the user's call 2026-10-15: "keep all
+     * automatically", with the picture each started from). One group in Results, in graph order:
+     * each node's start picture, then its own clip. Only when the Run made a chain, i.e. some video
+     * node's film is longer than its own part ([com.abrah.nightmare.npu.FilmJoin]).
+     * ⚠ A poster the bounded store dropped during a long chain is read back off its clip.
+     */
+    private fun keepChainParts(r: GraphRun) {
+        val order = (topoSort(canvas.workflow.graph) as? Order.Ok)?.nodes ?: canvas.workflow.graph.nodes
+        val parts = order.mapNotNull { n -> (r.outputs[n.id] as? Value.Video)?.takeIf { it.part != null }?.let { n.id to it } }
+        if (parts.none { (_, v) -> v.path != v.part }) return
+        val batchId = "c" + System.currentTimeMillis()
+        for ((id, v) in parts) {
+            val part = java.io.File(v.part!!).takeIf { it.isFile } ?: continue
+            v.startId?.takeIf { s -> ops.images.get(s) != null && kept.none { it.imageId == s } }?.let { s ->
+                keepResult(s, canvas.workflow, batchId = batchId, batchLabel = "$id start", auto = true, from = id)
+            }
+            val posterId = com.abrah.nightmare.npu.VideoWriter.posterIdFor(part)
+            if (ops.images.get(posterId) == null) {
+                com.abrah.nightmare.npu.FilmJoin.firstFrame(part)?.let { ops.images.put(it, id = posterId) }
+            }
+            if (kept.none { it.imageId == posterId }) {
+                keepResult(posterId, canvas.workflow, batchId = batchId, batchLabel = "$id clip", auto = true, from = id, video = part)
+            }
+        }
+    }
+
     private fun afterCanvasRun(r: GraphRun) {
         if (r.error != null || agentRunning) return
         val outs = canvas.workflow.graph.nodes.filter { it.type == MediaOutputNode.name && r.outputs[it.id] != null }
@@ -4014,6 +4046,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val title: String,
         val offer: List<com.abrah.nightmare.canvas.Recipe>,
         val unsavedFlow: Boolean,
+        /** ⭐ Use on Neodragon: the Video flow opens with its video node on Neodragon ([setVideoModel]). */
+        val neodragon: Boolean = false,
     )
 
     var pendingUse by mutableStateOf<PendingUse?>(null)
@@ -4047,26 +4081,55 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    /** ⭐ Use on Wan 2.2 — its two flows ([ModelCatalog.WAN22] binds no global selection). */
-    fun askUseWan() {
+    /**
+     * ⭐ Use on a Wan model: Wan 2.2 Turbo offers Text and Image to video, Fun Control Motion transfer
+     * (neither binds a global selection).
+     */
+    fun askUseWan(spec: ModelSpec = ModelCatalog.WAN22) {
         pendingUse = PendingUse(
             spec = null,
-            title = text(R.string.models_use_named, ModelCatalog.WAN22.label),
-            offer = com.abrah.nightmare.canvas.recipesWithId(
-                com.abrah.nightmare.canvas.WAN_T2V, com.abrah.nightmare.canvas.WAN_I2V,
-            ),
+            title = text(R.string.models_use_named, spec.label),
+            offer = if (spec == ModelCatalog.WAN22_FUN) com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.MOTION)
+            else com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V),
             unsavedFlow = unsavedFlow(),
         )
     }
 
-    /** ⭐ Use on the VIDEO models — two flows, both theirs. */
+    /** ⭐ Use on Neodragon: Text or Image to video, the video node switched to Neodragon. */
     fun askUseVideo() {
         pendingUse = PendingUse(
             spec = null,
             title = text(R.string.models_use_video),
-            offer = com.abrah.nightmare.canvas.recipesWithId("t2v", "i2v"),
+            offer = com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V),
             unsavedFlow = unsavedFlow(),
+            neodragon = true,
         )
+    }
+
+    /**
+     * ⭐⭐ The video flows' model choice: the video node becomes Wan 2.2 (`wan.sample`) or Neodragon
+     * (`nd.sample`), keeping its id, wires, seed and framing; the rest goes back to the new type's own
+     * defaults (their sizes and lengths differ). The user's call, 2026-10-15: Wan by default.
+     */
+    fun setVideoModel(nodeId: String, neodragon: Boolean) {
+        val g = canvas.workflow.graph
+        val node = g.byId[nodeId] ?: return
+        val newType = if (neodragon) "nd.sample" else com.abrah.nightmare.npu.WanVideoNode.name
+        if (node.type == newType) return
+        val ports = nodeTypes[newType]?.inputs?.map { it.name }?.toSet().orEmpty()
+        val outs = nodeTypes[newType]?.outputs?.map { it.name }?.toSet().orEmpty()
+        val keep = node.params.filterKeys { it in setOf("seed", "x", "y", "w", "h") }
+        val next = Graph(
+            g.nodes.map { n ->
+                when {
+                    n.id == nodeId -> n.copy(type = newType, params = keep, inputs = n.inputs.filterKeys { it in ports })
+                    // ⚠ A wire from a port the new type lacks (Wan's `last_frame`) is dropped.
+                    else -> n.copy(inputs = n.inputs.filterValues { s -> s.node != nodeId || s.port == null || s.port in outs })
+                }
+            }
+        )
+        canvas = canvas.copy(workflow = canvas.workflow.copy(graph = next))
+        say("video model: ${if (neodragon) "Neodragon" else "Wan 2.2"}")
     }
 
     private fun unsavedFlow(): Boolean =
@@ -4077,6 +4140,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      *   and only retarget it — which is what Use did before it asked.
      */
     fun confirmUse(spec: ModelSpec?, recipe: com.abrah.nightmare.canvas.Recipe?) {
+        val neodragon = pendingUse?.neodragon == true
         pendingUse = null
         if (recipe == null) {
             // ⚠ Null for an upscaler or the video models: there is no global selection to make.
@@ -4092,6 +4156,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // would lay out a flow pointed at the old checkpoint and then retarget it.
             spec?.let { selectModel(it) }
             openRecipeNow(recipe)
+            if (neodragon) canvas.workflow.graph.nodes.firstOrNull { it.type in com.abrah.nightmare.VIDEO_MODEL_TYPES }
+                ?.let { setVideoModel(it.id, neodragon = true) }
             // ⭐ …and get out of the way: choosing a flow is asking to work on it (2026-09-15).
             closeLibrary()
         }
@@ -5746,8 +5812,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // decode it as 512 — a plausible picture, silently wrong.
         val params = node.params.toMutableMap()
         params["model"] = spec.id
-        params["width"] = spec.native.width.toString()
-        params["height"] = spec.native.height.toString()
+        // ⭐⭐ "Keep my settings" keeps the SIZE too, pulled inside what the new model renders
+        // (GitHub #33, the user's call 2026-10-15: clamped, not reset). Taking the model's
+        // settings takes its native size, as before.
+        val size = if (takeRecipe) spec.native else {
+            val w0 = node.params["width"]?.toIntOrNull()
+            val h0 = node.params["height"]?.toIntOrNull()
+            if (w0 != null && h0 != null) ModelCatalog.keptSize(spec, w0, h0) else spec.native
+        }
+        params["width"] = size.width.toString()
+        params["height"] = size.height.toString()
         if (takeRecipe) {
             params["steps"] = spec.steps.toString()
             params["cfg"] = spec.cfg.toString()
@@ -5978,6 +6052,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
          * Null means "whichever node on the canvas shows [imageId]".
          */
         from: String? = null,
+        /** ⭐ The clip to keep with [imageId], when it is not the one its node shows (a chain's part). */
+        video: java.io.File? = null,
     ) {
         val bmp = ops.images.get(imageId)
         if (bmp == null) {
@@ -6039,7 +6115,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // [clipForImage] was written to fix on 2026-09-13, reintroduced by
         // copying the lookup instead of calling it. ⚠⚠ Two surfaces that must
         // agree call the SAME function.
-        val clip = clipForImage(imageId)
+        val clip = video?.takeIf { it.isFile } ?: clipForImage(imageId)
         // ⭐ The run's times go with it (Telegram #6293: the Results info showed none), but only while
         // this picture is still its node's latest output, or the times would be another run's.
         val current = origin != null && (auto || canvas.previews[origin]?.first == imageId || canvas.rendered[origin] == imageId)
@@ -6466,6 +6542,103 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     private val resultTagCache = mutableMapOf<String, ResultTags>()
+
+    // ---- a kept picture's parts onto the open flow (GitHub #33) -------------
+
+    /** ⭐ The items "Use N" picked in a picture's Info, while [com.abrah.nightmare.ui.TransferDialog] is up. */
+    var pendingTransfer by mutableStateOf<List<com.abrah.nightmare.ui.TransferItem>?>(null)
+        private set
+
+    /** ⭐ What [r]'s Info can send: its picture (not a clip's poster) and where Use goes. */
+    fun infoTransferFor(r: com.abrah.nightmare.canvas.Result): com.abrah.nightmare.ui.InfoTransfer =
+        com.abrah.nightmare.ui.InfoTransfer(
+            picture = thumbnailFor(r.id),
+            picturePath = results.imageFile(r.id).takeIf { r.videoPath == null && it.isFile }?.absolutePath,
+        ) { items -> pendingTransfer = items }
+
+    fun cancelTransfer() { pendingTransfer = null }
+
+    /** ⭐ The open flow's nodes that can take [item], each with a line of what it holds now. */
+    fun transferTargets(item: com.abrah.nightmare.ui.TransferItem): List<com.abrah.nightmare.ui.TransferTarget> {
+        val g = canvas.workflow.graph
+        val types = typesFor(g)
+        fun name(id: String) = com.abrah.nightmare.logNameOf(id, g, types)
+        return when (item) {
+            is com.abrah.nightmare.ui.TransferItem.Prompt, is com.abrah.nightmare.ui.TransferItem.Negative -> {
+                val key = if (item is com.abrah.nightmare.ui.TransferItem.Prompt) "prompt" else "negative"
+                g.nodes.filter { it.type == "core.prompt" }.map { n ->
+                    com.abrah.nightmare.ui.TransferTarget(n.id, name(n.id), n.params[key].orEmpty().ifBlank { "(empty)" })
+                }
+            }
+            is com.abrah.nightmare.ui.TransferItem.Seed ->
+                g.nodes.filter { n -> com.abrah.nightmare.isSampler(n.type) && types[n.type]?.widgets?.any { it.name == "seed" } == true }
+                    .map { n ->
+                        val seed = n.params["seed"]?.trim()?.takeIf { it.isNotEmpty() && it != "0" }
+                        com.abrah.nightmare.ui.TransferTarget(n.id, name(n.id), seed ?: "random")
+                    }
+            is com.abrah.nightmare.ui.TransferItem.Picture ->
+                g.nodes.filter { it.type == "core.image" }.map { n ->
+                    com.abrah.nightmare.ui.TransferTarget(
+                        n.id, name(n.id), n.params["uri"].orEmpty().substringAfterLast('/').ifBlank { "(empty)" },
+                    )
+                } + com.abrah.nightmare.ui.TransferTarget(
+                    com.abrah.nightmare.ui.NEW_IMAGE_NODE, getApplication<Application>().getString(R.string.transfer_new_image_node), "",
+                )
+        }
+    }
+
+    /**
+     * ⭐⭐ Writes each picked item into its node: a prompt or negative replaced (or [append]ed after
+     * a comma), a seed written, which LOCKS it (a non-zero seed is a locked one), a picture into an
+     * image node or a new one. Then the canvas, with the changed nodes selected (the user's call).
+     */
+    fun applyTransfer(picks: Map<com.abrah.nightmare.ui.TransferItem, String>, append: Boolean) {
+        pendingTransfer = null
+        if (picks.isEmpty()) return
+        val changed = mutableSetOf<String>()
+        editCanvas { s0 ->
+            var s = s0
+            for ((item, target) in picks) {
+                fun joined(key: String, text: String): String {
+                    val old = s.workflow.graph.byId[target]?.params?.get(key).orEmpty().trim()
+                    return if (append && old.isNotEmpty()) "$old, ${text.trim()}" else text.trim()
+                }
+                when (item) {
+                    is com.abrah.nightmare.ui.TransferItem.Prompt -> s = s.setParam(target, "prompt", joined("prompt", item.text))
+                    is com.abrah.nightmare.ui.TransferItem.Negative -> s = s.setParam(target, "negative", joined("negative", item.text))
+                    is com.abrah.nightmare.ui.TransferItem.Seed -> s = s.setParam(target, "seed", item.value)
+                    is com.abrah.nightmare.ui.TransferItem.Picture -> {
+                        val id = if (target == com.abrah.nightmare.ui.NEW_IMAGE_NODE) {
+                            val type = nodeTypes["core.image"] ?: continue
+                            val ps = s.workflow.positions.values
+                            val at = com.abrah.nightmare.canvas.Pt(
+                                ps.minOfOrNull { it.x } ?: 0f, (ps.maxOfOrNull { it.y } ?: 0f) + 260f,
+                            )
+                            s = s.addNode(type, at)
+                            s.workflow.graph.nodes.last().id
+                        } else target
+                        s = s.setParam(id, "uri", item.path)
+                        changed += id
+                        continue
+                    }
+                }
+                changed += target
+            }
+            s.copy(selection = changed.toSet())
+        }
+        say("from the picture: " + picks.entries.joinToString { (item, t) ->
+            val what = when (item) {
+                is com.abrah.nightmare.ui.TransferItem.Prompt -> "prompt"
+                is com.abrah.nightmare.ui.TransferItem.Negative -> "negative"
+                is com.abrah.nightmare.ui.TransferItem.Seed -> "seed ${item.value} (locked)"
+                is com.abrah.nightmare.ui.TransferItem.Picture -> "picture"
+            }
+            "$what to ${if (t == com.abrah.nightmare.ui.NEW_IMAGE_NODE) "a new image node" else t}"
+        })
+        closeResult()
+        closeLibrary()
+        saveWorkflow()
+    }
 
     fun detailsOf(r: com.abrah.nightmare.canvas.Result): List<Pair<String, String>> {
         val g = results.flow(r.id)?.workflow?.graph ?: return emptyList()
@@ -7641,7 +7814,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val r = ops.runWorkflow(
                 canvas.workflow.copy(graph = graph),
                 onStart = { id, _ ->
-                    runLog = runLog.copy(now = logName(id), step = null)
+                    runLog = runLog.copy(now = logName(id), step = null, phase = null)
                     CrashReport.stage(getApplication(), id)
                 },
                 onNode = ::noteNodeRun,
@@ -7649,6 +7822,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     canvasStatus[id] = NodeStatus(progress = step to total)
                     runLog = runLog.copy(now = logName(id), step = step to total)
                 },
+                onPhase = { _, ph -> if (runLog.phase != ph) runLog = runLog.copy(phase = ph) },
                 // ⚠ Once per SWEEP per sentence: eight runs refusing the same
                 // upscale is one thing to know, not eight toasts in a queue.
                 onWarn = { _, text -> if (warned.add(text)) toast(text) },
@@ -7884,7 +8058,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // ⭐ Named before it runs, so a 24 s sampler is a node with a name
             // rather than a frozen screen.
             onStart = { id, _ ->
-                runLog = runLog.copy(now = logName(id), step = null)
+                runLog = runLog.copy(now = logName(id), step = null, phase = null)
                 // ⭐ Which node, and the RAM free as it starts: survives a phone restart ([CrashReport.stage]).
                 CrashReport.stage(getApplication(), id)
             },
@@ -7893,6 +8067,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 canvasStatus[id] = NodeStatus(progress = step to total)
                 runLog = runLog.copy(now = logName(id), step = step to total)
             },
+            onPhase = { _, ph -> if (runLog.phase != ph) runLog = runLog.copy(phase = ph) },
             // ⭐⭐ A long node's own narration, live in the panel.
             //
             // ⚠⚠ Reported from the phone 2026-09-12: the video node ran for 25 s
@@ -7997,6 +8172,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     from = node,
                 )
             }
+            keepChainParts(r)
         }
 
         afterCanvasRun(r)

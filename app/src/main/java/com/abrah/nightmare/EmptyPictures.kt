@@ -36,6 +36,9 @@ fun skipEmptyPictures(graph: Graph): Pair<Graph, List<SkippedPicture>> {
     return g to skipped
 }
 
+/** ⭐ The video nodes the Text and Image to video flows switch between ([HarnessViewModel.setVideoModel]). */
+val VIDEO_MODEL_TYPES = setOf("nd.sample", com.abrah.nightmare.npu.WanVideoNode.name)
+
 private fun optionalPicture(type: String, port: String): Boolean = when (port) {
     SdSampler.CONTROL, "reference" -> type in IMAGE_SAMPLER_TYPES
     "image" -> type in IMAGE_SAMPLER_TYPES && type !in INPAINT_TYPES

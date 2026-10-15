@@ -125,6 +125,81 @@ object GgufHeader {
         }
     }
 
+    /** ggml's block layout per type: (elements per block, bytes per block). */
+    private val BLOCKS = mapOf(
+        "F32" to (1 to 4), "F16" to (1 to 2), "BF16" to (1 to 2), "F64" to (1 to 8),
+        "I8" to (1 to 1), "I16" to (1 to 2), "I32" to (1 to 4), "I64" to (1 to 8),
+        "Q4_0" to (32 to 18), "Q4_1" to (32 to 20), "Q5_0" to (32 to 22), "Q5_1" to (32 to 24),
+        "Q8_0" to (32 to 34), "Q8_1" to (32 to 36), "IQ4_NL" to (32 to 18), "MXFP4" to (32 to 17),
+        "Q2_K" to (256 to 84), "Q3_K" to (256 to 110), "Q4_K" to (256 to 144), "Q5_K" to (256 to 176),
+        "Q6_K" to (256 to 210), "Q8_K" to (256 to 292), "IQ4_XS" to (256 to 136), "IQ2_XXS" to (256 to 66),
+        "IQ2_XS" to (256 to 74), "IQ2_S" to (256 to 82), "IQ3_XXS" to (256 to 98), "IQ3_S" to (256 to 110),
+        "IQ1_S" to (256 to 50), "IQ1_M" to (256 to 56), "TQ1_0" to (256 to 54), "TQ2_0" to (256 to 66),
+    )
+
+    /**
+     * ⭐ Where this GGUF's data ends, by its own header: the data section starts at the header's end
+     * rounded up to `general.alignment` (32 by default), and the last tensor ends at its offset plus its
+     * size. Returns (end, alignment), or null when the table is unreadable or a type's size is unknown.
+     * ⚠ Pure: [bytes] is the start of the file.
+     */
+    fun dataEnd(bytes: ByteArray): Pair<Long, Int>? = runCatching {
+        val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until 4) if (b.get() != MAGIC[i]) return null
+        if (b.int < 2) return null
+        val tensors = b.long
+        val kvs = b.long
+        if (tensors !in 1..100_000 || kvs !in 0..100_000) return null
+        var alignment = 32
+        repeat(kvs.toInt()) {
+            val key = readString(b)
+            val type = b.int
+            if (key == "general.alignment" && type == 4) alignment = b.int else skipValue(b, type)
+        }
+        var end = 0L
+        repeat(tensors.toInt()) {
+            readString(b)
+            val nDims = b.int
+            if (nDims !in 0..8) return null
+            var elements = 1L
+            repeat(nDims) { elements *= b.long }
+            val (per, size) = BLOCKS[typeName(b.int)] ?: return null
+            val offset = b.long
+            end = maxOf(end, offset + (elements + per - 1) / per * size)
+        }
+        val start = (b.position().toLong() + alignment - 1) / alignment * alignment
+        (start + end) to alignment
+    }.getOrNull()
+
+    private val completeCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Boolean>>()
+
+    /**
+     * ⭐⭐ A GGUF holds every byte its header promises: its length is the data's end, or that end padded
+     * to the alignment (writers pad after each tensor, the last one too).
+     *
+     * ⚠⚠ The proof the exact-size check could not give: a file of ANOTHER size that is nonetheless whole,
+     * a re-quantised or modified text encoder (Telegram #6290, #6310: "llm.gguf missing, repair 0 MB"),
+     * while a half-downloaded one (written in place, right name) still ends short of its own table.
+     * ⚠ Cached by path, length and time: the catalogue asks often, and a header can be 16 MB.
+     */
+    fun isComplete(file: java.io.File): Boolean {
+        val len = file.length()
+        if (len <= 0L) return false
+        val stamp = len * 31 + file.lastModified()
+        completeCache[file.path]?.let { (s, ok) -> if (s == stamp) return ok }
+        val ok = runCatching {
+            val head = file.inputStream().use { s ->
+                val buf = ByteArray(minOf(len, 16L shl 20).toInt())
+                var n = 0
+                while (n < buf.size) { val r = s.read(buf, n, buf.size - n); if (r < 0) break; n += r }
+                buf.copyOf(n)
+            }
+            dataEnd(head)?.let { (end, align) -> len == end || len == (end + align - 1) / align * align } ?: false
+        }.getOrDefault(false)
+        completeCache[file.path] = stamp to ok
+        return ok
+    }
+
     private fun readString(b: ByteBuffer): String {
         val n = b.long
         if (n !in 0..(1L shl 20)) throw IOException("this GGUF's header is not readable")

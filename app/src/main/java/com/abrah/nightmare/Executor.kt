@@ -163,6 +163,8 @@ interface OpHost {
         seed: Long, steps: Int, sampleMethod: String, sigmas: List<Double>, tilingArgs: String,
         out: String, startPng: ByteArray?, loras: List<Pair<String, Double>>,
         onProgress: (Ops.Progress) -> Unit, vaeTileSize: Int = 0,
+        /** ⭐ Wan Fun Control: an NMV1 control video's path, and the reference picture (backend 033). */
+        controlVideo: String? = null, refPng: ByteArray? = null,
     ): Ops.Result<Ops.Clip> = Ops.Result.Err(501, "this host cannot run a video model")
 
     /**
@@ -202,11 +204,12 @@ object BackendHost : OpHost {
         seed: Long, steps: Int, sampleMethod: String, sigmas: List<Double>, tilingArgs: String,
         out: String, startPng: ByteArray?, loras: List<Pair<String, Double>>,
         onProgress: (Ops.Progress) -> Unit, vaeTileSize: Int,
+        controlVideo: String?, refPng: ByteArray?,
     ) = Ops.video(
         prompt = prompt, negative = negative, width = width, height = height, frames = frames,
         fps = fps, seed = seed, steps = steps, sampleMethod = sampleMethod, sigmas = sigmas,
         tilingArgs = tilingArgs, out = out, startPng = startPng, loras = loras,
-        onProgress = onProgress, vaeTileSize = vaeTileSize,
+        onProgress = onProgress, vaeTileSize = vaeTileSize, controlVideo = controlVideo, refPng = refPng,
     )
 
     override suspend fun upscale(rgb: ByteArray, width: Int, height: Int, upscalerPath: String) =
@@ -2620,6 +2623,9 @@ val NODE_TYPES: Map<String, NodeType> = (
         com.abrah.nightmare.npu.VideoSampleNode,
         // ⭐ Wan 2.2 video on the DiT engine (`docs/VIDEO-GGML.md`), beside Neodragon's.
         com.abrah.nightmare.npu.WanVideoNode,
+        // ⭐ Motion transfer, Wan 2.2 Fun Control (`npu.WanFunNode`), and its driving clip's node.
+        com.abrah.nightmare.npu.WanFunNode,
+        com.abrah.nightmare.npu.LoadVideoNode,
         // ⭐ Tap to select — wired into an inpaint node (docs/SEGMENTER.md).
         SelectObjectNode,
     )).associateBy { it.name }
@@ -2748,6 +2754,8 @@ class Executor(
         onLog: (nodeId: String, text: String) -> Unit = { _, _ -> },
         /** ⭐ A node telling the person something — see [NodeCtx.warn]. Already logged through [onLog]. */
         onWarn: (nodeId: String, text: String) -> Unit = { _, _ -> },
+        /** ⭐ The phase a node's progress belongs to ([Ops.Progress.phase]), null for its main work. */
+        onPhase: (nodeId: String, phase: String?) -> Unit = { _, _ -> },
     ): GraphRun {
         val t0 = wallNanos()
         fun sinceMs() = (wallNanos() - t0) / 1_000_000
@@ -2989,7 +2997,7 @@ class Executor(
                 fun back(f: () -> Unit) { if (fromMain) relay.launch { f() } else f() }
                 val ctx = NodeCtx(
                     host, images, android,
-                    onProgress = { p -> back { onProgress(node.id, p.step, p.total) } },
+                    onProgress = { p -> back { onPhase(node.id, p.phase); onProgress(node.id, p.step, p.total) } },
                     say = { line -> back { onLog(node.id, line) } },
                     warn = { line -> back { onLog(node.id, line); onWarn(node.id, line) } },
                     wanted = wanted,

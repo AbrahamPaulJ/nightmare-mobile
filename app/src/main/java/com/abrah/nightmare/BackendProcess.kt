@@ -30,6 +30,9 @@ object BackendProcess {
 
     /** ⭐ Anima's ggml-hexagon fusions: all but `MUL_MAT_ADD` (bit 8) — see the launch env. */
     internal const val ANIMA_OPFUSION = "246"
+
+    /** ⭐ The pixels a wired reference is encoded at below v79 (~0.5 MP, 724²) — see the launch env. */
+    internal const val REF_CAP_PIXELS = 524_288
     /** ⚠ Internal, not private: [DeviceProbe] runs the same binary with `--device_info`. */
     const val EXECUTABLE = "libstable_diffusion_core.so"
 
@@ -651,6 +654,9 @@ object BackendProcess {
                     // wanted and absent never reaches here -- it was refused
                     // above.
                     if (!upscalerOnly && patch != null) { add("--patch"); add(patch.absolutePath) }
+                    // ⭐ A Wan model that borrows another's umT5 and TAEHV ([ModelSpec.partsFrom]): the
+                    // donor's folder, beside this one (backend 033 reads its own copy first).
+                    if (!upscalerOnly) spec?.donorDir(model)?.let { add("--wan_parts"); add(it.absolutePath) }
                 }
                 val env = buildMap {
                     put(
@@ -704,6 +710,11 @@ object BackendProcess {
                             "CONV_2D_UPSCALE|CONCAT".takeIf { belowV79 },
                         )
                         if (ops.isNotEmpty()) put("GGML_HEXAGON_OPFILTER", ops.joinToString("|"))
+                        // ⭐ Below v79 a wired REFERENCE is encoded at ~0.5 MP, not the canvas
+                        // area: its tokens put one Klein 9B / Qwen 2.1 block just over the budget
+                        // at 1 MP (GitHub #35). Backend 034 applies it only to requests with a
+                        // reference; engine `dit/021` does the encode. An older engine ignores it.
+                        if (belowV79) put("NM_REF_CAP_PIXELS", REF_CAP_PIXELS.toString())
                         // ⭐⭐ Anima, on ANY chip: every fusion but `MUL_MAT_ADD` (ggml-hexagon's bit 8;
                         // 246 = the other six). That fusion computes Anima's adds wrong and the picture
                         // comes back black. ⚠ It replaced `OPFILTER=ADD` (1.6.141–145), which was right

@@ -6,13 +6,16 @@ There are five kinds of node. Every flow, ready-made or yours, is built from the
 |---|---|---|---|
 | [Prompt](#prompt) | Common | - | prompt |
 | [Image](#image) | Common | - | image |
+| [Video](#video) | Common | - | video |
 | [Image generator](#image-generator) | Generate | prompt, image (+ reference, + control) | image |
 | [Inpaint generator](#inpaint-generator) | Inpaint | prompt, image | image |
 | [Video generator](#video-generator) | Generate | prompt, image | video |
 | [Wan video](#wan-video) | Generate | prompt, image | video, last frame |
+| [Motion transfer](#motion-transfer) (Wan Fun Control) | Generate | prompt, image, control | video |
 | [Output](#output) | Common | media | - |
 
-Every node's sheet ends with **Reset node** (all settings back to default) and **Delete node**.
+Every node's sheet ends with **Reset node** (all settings back to default, and any batch sweep on
+it released) and **Delete node**.
 Double-tap a node's name in its sheet to rename it.
 
 ---
@@ -65,6 +68,12 @@ picture's own buttons swap it or clear it.
   ![The Image node before a photo is chosen](../img/inspector-load-image.png){ .screen }
 </figure>
 
+## Video
+
+A video from the gallery (or **Files**), for [Motion transfer](#motion-transfer)'s **control**:
+the motion your picture copies. It shows the video's first frame; which part of the video is used,
+and how it is cropped, is chosen on the Motion transfer node.
+
 ## Image generator
 
 The node that makes the picture. Its **title follows what is wired into it**:
@@ -80,7 +89,7 @@ The palette card is **Image** with a chip per family: **SD 1.5**, **SD 1.5 Swap*
 
 | setting | families | what it does |
 |---|---|---|
-| **Checkpoint** | all | The model. Switching family rewrites the node and keeps its wires |
+| **Checkpoint** | all | The model. Switching family rewrites the node and keeps its wires. Keeping your steps, CFG and scheduler when asked also keeps the size, pulled inside what the new model can render (SD 1.5 and SDXL take their own sizes) |
 | **Steps** | all | Refinement passes. Opens on the model's own recommended value |
 | **CFG** | all | How strictly the prompt is followed. FLUX.2, Z-Image and Qwen are made for **1**: above 1 the negative prompt is read, but the picture burns quickly |
 | **Seed** | all | `0` = a new picture every Run. Type a seed shown on a node to get that one back |
@@ -141,10 +150,27 @@ Wan 2.2: text or a photo to a clip of up to 5 seconds. Needs Wan 2.2 (Models →
 | **Seconds** | 1 to 5, 24 frames a second |
 | **LoRAs** | Wan 2.2 5B LoRAs (not 14B), chosen like on the image nodes; `<lora:name>` tags in the prompt work too |
 | **Width**, **Height** | Any shape in 32 px steps, up to 1280 × 704 worth of pixels (832 × 480 by default; 1280 × 704 takes about three times as long) |
-| **Crop** frame | With a photo wired in: which part becomes the first frame |
+| **Crop** | With a photo wired in: tap the preview, then drag the frame to choose which part becomes the first frame |
+| **Model** | Wan 2.2, or Neodragon (fast): the node becomes a Video generator and back |
 
 Its **last frame** output is the clip's final frame as a picture: wire it into another Wan video
-node's **image** to continue the clip with a new prompt.
+node's **image** to continue the clip with a new prompt. That node's **video** is then the whole
+film so far, both clips joined ([longer clips](../flows/video.md#longer-clips-one-film)).
+
+## Motion transfer
+
+Wan 2.2 Fun Control: the picture wired into **image** moving like the video wired into
+**control** (a [Video](#video) node). Needs Wan 2.2 Fun Control (Models → Video).
+
+| setting | what it does |
+|---|---|
+| **Seed** | `0` = a new clip every Run |
+| **Width**, **Height** | As on Wan video |
+| **Mode** | Pose, Depth or As is: how the video becomes the motion. The ⓘ says which to use when ([Motion transfer](../flows/video.md#motion-transfer)) |
+| **Crop** | Which part of your picture is used, as on Wan video |
+| **Video** | Tap the preview. Two handles choose the part of the video that drives the clip; its length is the clip's (up to 5 s). A box on that part's first frame, at the clip's shape, cuts every frame the same way |
+
+It has no **Seconds** (the part of the video sets the length) and takes no LoRAs.
 
 ## Output
 

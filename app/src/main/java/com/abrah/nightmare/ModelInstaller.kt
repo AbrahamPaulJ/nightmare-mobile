@@ -105,7 +105,9 @@ object ModelInstaller {
         // "9000 MB" appeared, which read as a broken progress display). Its bytes are the
         // head of the package total; its verify/unpack phases hold the bar where it is.
         val engineBytes = if (spec.isDit && !DitEngine.isInstalled(context)) DitEngine.BYTES else 0L
-        val packageTotal = engineBytes + spec.active.sumOf { maxOf(it.bytes, it.sourceBytes) }
+        // ⭐ Less what a donor model holds whole ([ModelSpec.partsFrom]: Fun Control's umT5 and TAEHV).
+        val fetchList = spec.toFetch(context)
+        val packageTotal = engineBytes + fetchList.sumOf { maxOf(it.bytes, it.sourceBytes) }
         if (engineBytes > 0) {
             DitEngine.install(context, { p ->
                 val done = if (p.total > 0) p.done.coerceAtMost(engineBytes) else engineBytes
@@ -120,7 +122,7 @@ object ModelInstaller {
         // A file already present at its full size is skipped by [fetch], which
         // is what lets an interrupted 7 GB install pick up where it stopped.
         if (spec.active.isNotEmpty()) {
-            val need = spec.active.sumOf { f ->
+            val need = fetchList.sumOf { f ->
                 val out = File(modelDir, f.name)
                 val have = out.takeIf { it.isFile }?.length() ?: 0L
                 when {
@@ -138,7 +140,7 @@ object ModelInstaller {
             // for the same reason.
             val total = packageTotal
             var before = engineBytes
-            for (f in spec.active) {
+            for (f in fetchList) {
                 val out = File(modelDir, f.name)
                 val convert = f.convert
                 if (convert == null) {

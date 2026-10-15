@@ -77,6 +77,23 @@ object ClipStore {
             frame, WIDTH, (frame.height.toLong() * WIDTH / frame.width).toInt().coerceAtLeast(1), true,
         )
 
+    /**
+     * ⭐ A FILM's loop ([com.abrah.nightmare.npu.FilmJoin], GitHub #29): the film so far's loop, then
+     * the part's without its first frame (the join frame, already the film's last). ⚠ At most
+     * [MAX_FILM] frames, taken EVENLY: past ~5 s the canvas loop plays faster than real time, so a
+     * long film costs no more than one 5 s clip; the player plays the MP4 at its own speed.
+     * Nothing is kept when either loop is gone (a restored canvas): the placeholder shows until Run.
+     */
+    fun join(id: String, filmId: String, partId: String) {
+        val a = get(filmId) ?: return
+        val b = get(partId)?.drop(1) ?: return
+        val all = a + b
+        keep(id, if (all.size <= MAX_FILM) all else List(MAX_FILM) { i -> all[i * all.size / MAX_FILM] })
+    }
+
+    /** ⚠ A 5 s clip's loop at [EVERY]: the most frames one film keeps. */
+    const val MAX_FILM = 61
+
     private fun keep(id: String, thumbs: List<ImageBitmap>) {
         synchronized(entries) {
             entries[id] = thumbs

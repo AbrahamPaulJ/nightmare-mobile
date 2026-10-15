@@ -827,7 +827,13 @@ data class CanvasState(
                     nodes = workflow.graph.nodes.map {
                         // ⚠ …and the placed OBJECTS go with the knobs — the
                         // user's call, 2026-09-23: Reset must clear them.
-                        if (it.id == nodeId) it.copy(params = it.params + defaults - com.abrah.nightmare.AddObjects.PARAM - com.abrah.nightmare.AddObjects.ORIGINAL - com.abrah.nightmare.AddObjects.LAYER - com.abrah.nightmare.AddObjects.RING) else it
+                        // ⚠⚠ …and every armed SWEEP (`batch:` params): GitHub #34, a Wan seed sweep
+                        // still ran after its node was reset (the user's call, 2026-10-15). A sweep
+                        // is a knob setting, and Reset is "put the knobs back".
+                        if (it.id == nodeId) it.copy(
+                            params = (it.params + defaults - com.abrah.nightmare.AddObjects.PARAM - com.abrah.nightmare.AddObjects.ORIGINAL - com.abrah.nightmare.AddObjects.LAYER - com.abrah.nightmare.AddObjects.RING)
+                                .filterKeys { k -> !k.startsWith(com.abrah.nightmare.BatchParams.PREFIX) },
+                        ) else it
                     },
                 ),
             ),

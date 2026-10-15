@@ -1,0 +1,55 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -5,6 +5,7 @@
+ 
+ #include <algorithm>
+ #include <chrono>
++#include <cstdlib>
+ #include <string>
+ #include <vector>
+ 
+@@ -436,8 +437,15 @@
+                               longest_side > kMaxFullFrameSideQwen;
+     const bool tiled =
+         vae_tile_size_ > 0 && (widest > budget || side_limited);
++    // ⚠⚠ The tile is in LATENT pixels, and Qwen Image 2.1's VAE compresses 16x where
++    // FLUX's does 8x: the same 64 was a 512 px tile for FLUX and a 1024 px one for
++    // Qwen, which covered a whole 896x1024 edit as ONE tile and needed 3507 MB on the
++    // NPU against an 8 Gen 3's 2816 MB budget (a vivo SM8650, 2026-10-15: 351 s of
++    // sampling, then the decode failed). Halved for Qwen: 512 px for every family.
++    const int tile_latent =
++        kind_ == DIT_MODEL_QWEN_IMAGE_2_1 ? std::max(1, vae_tile_size_ / 2) : vae_tile_size_;
+     if (tiled) {
+-      params.vae_tile_size = vae_tile_size_;
++      params.vae_tile_size = tile_latent;
+       params.vae_tile_overlap = 0.25f;
+     }
+     // ⚠⚠ Says the decision out loud. The buffer sizes in the log are the
+@@ -446,7 +454,7 @@
+     // ignored it. One line here settles which, and this file has already cost
+     // a day to theories that a log line would have ended.
+     QNN_INFO("[dit] vae: passes=%zu widest=%ldpx budget=%ldpx side=%d tile_size=%d -> %s",
+-             vae_passes, widest, budget, longest_side, vae_tile_size_,
++             vae_passes, widest, budget, longest_side, tile_latent,
+              tiled ? (side_limited && widest <= budget ? "TILED (side)" : "TILED")
+                    : "full-frame");
+ 
+@@ -466,6 +474,18 @@
+     int out_width = 0;
+     int out_height = 0;
+     int out_channels = 0;
++    // ⭐ A cap on a REFERENCE's encode, per request (engine dit/021 reads
++    // DIT_REF_MAX_PIXELS on every generate). The app passes NM_REF_CAP_PIXELS at
++    // launch below HTP v79, where a 1 MP reference's tokens put one DiT block just
++    // over the budget (GitHub #35). ⚠ Only when the user wired a reference: an
++    // edit's base is reference #1 too, and alone it fits, so it keeps its pixels.
++    {
++      static const char *cap = std::getenv("NM_REF_CAP_PIXELS");
++      if (cap && cap[0] && native_edit && !req.reference_images.empty())
++        setenv("DIT_REF_MAX_PIXELS", cap, 1);
++      else
++        unsetenv("DIT_REF_MAX_PIXELS");
++    }
+     const bool ok = api_->generate(ctx_, &params, &PipelineDit::forwardProgress,
+                                    &PipelineDit::forwardPreview, &callbacks,
+                                    &out_image, &out_width, &out_height,

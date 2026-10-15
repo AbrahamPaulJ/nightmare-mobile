@@ -30,7 +30,9 @@ object VideoGate {
 
     /** ⚠ The ONE type and the recipe ids that hidden-video removes. */
     const val VIDEO_TYPE = "nd.sample"
-    val VIDEO_RECIPES = setOf("t2v", "i2v")
+    // ⚠ None since 2026-10-15: the one Video flow opens on Wan, and Neodragon is a choice on its node
+    // (hidden there when this gate hides it).
+    val VIDEO_RECIPES = emptySet<String>()
 
     /** Null until known; the UI shows video while null (permissive). */
     var supported by mutableStateOf<Boolean?>(null)

@@ -102,17 +102,22 @@ object WanVideoNode : NodeType {
         Widget("h", "float", "1.0", 0.0, 1.0),
     )
 
+    /** ⭐ [WanFunNode]'s: how its driving video's frames become the control video. */
+    const val MOTION_MODE = "motion_mode"
+
     /**
      * ⭐ One backend process serves every size and length: like every DiT model, the size is a
      * REQUEST field, so the key is the model's own ([com.abrah.nightmare.backendContextKey]'s rule).
      */
-    override fun contextKey(node: Node): ContextKey {
-        val spec = ModelCatalog.WAN22
+    override fun contextKey(node: Node): ContextKey = keyFor(node, ModelCatalog.WAN22)
+
+    /** ⭐ The launch key for [spec] (Wan 2.2 Turbo here, Fun Control for [WanFunNode]). */
+    internal fun keyFor(node: Node, spec: com.abrah.nightmare.ModelSpec): ContextKey {
         val p = effectiveParams(node)
         val (w, h) = sizeOf(p)
         val caps = com.abrah.nightmare.DeviceProbe.caps()
         val budget = memoryBudget(
-            pinnedBytes(w, h, framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS)),
+            pinnedBytes(w, h, framesOf(node, p)),
             caps.ramBytes, if (caps.known) caps.arch else 0,
         )
         return ContextKey(spec.backendType, spec.id, spec.native.width, spec.native.height, budget)
@@ -151,6 +156,14 @@ object WanVideoNode : NodeType {
 
     /** ⭐ The clip's size, which a picture wired into `image` is framed to. */
     override fun framesTo(node: Node): Pair<Int, Int> = sizeOf(effectiveParams(node))
+
+    /**
+     * ⭐ A clip's frame count: its Seconds, or on Motion transfer the Video tab's window, which IS
+     * the length ([WanFun.framesForGap]). The launch key and the run both read this.
+     */
+    internal fun framesOf(node: Node, p: Map<String, String>): Int =
+        if (node.type == WanFunNode.name) WanFun.windowOf(p).let { (s, e) -> WanFun.framesForGap(e - s) }
+        else framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS)
 
     /** ⚠ Pure: the frame size the params ask for, on Wan's 32 px grid. */
     fun sizeOf(p: Map<String, String>): Pair<Int, Int> =
@@ -278,6 +291,16 @@ object WanVideoNode : NodeType {
         runPorts(ctx, node, inputs).getValue("video")
 
     override suspend fun runPorts(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Map<String, Value> =
+        runClip(ctx, node, inputs, ModelCatalog.WAN22, null)
+
+    /**
+     * ⭐⭐ One clip on [spec]: Wan 2.2 Turbo, or Fun Control with a [driving] video ([WanFunNode]), whose
+     * wired picture is then the REFERENCE (the model's `ref_conv`) rather than the start frame.
+     */
+    internal suspend fun runClip(
+        ctx: NodeCtx, node: Node, inputs: Map<String, Value>,
+        spec: com.abrah.nightmare.ModelSpec, driving: WanFun.Driving?,
+    ): Map<String, Value> =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val android = ctx.android
             ?: throw IllegalStateException(
@@ -295,14 +318,23 @@ object WanVideoNode : NodeType {
         val neg = PromptLoras.extract(wired.negative)
         val loraDir = com.abrah.nightmare.BackendProcess.lorasDir(android)
         val installed = loraDir.list()?.toList().orEmpty()
+        // ⭐⭐ Motion transfer takes NO LoRAs (the user's call, 2026-10-15): it has no picker, and its
+        // prompt's tags are skipped out loud rather than reaching Fun by the back door. Its FastWan
+        // speed LoRA is part of the model ([ModelCatalog.FUN_LORA]), not this list.
+        val takesLoras = driving == null
+        if (!takesLoras) {
+            (pos.tags + neg.tags).forEach { t ->
+                ctx.warn(ctx.text(R.string.run_lora_motion_skipped, "Motion transfer takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
+            }
+        }
         // ⭐ The picker's LoRAs first. ⚠⚠ A picked file that is missing is REFUSED by name, the image
         // nodes' rule (`SdSampler.parseLoras`): the engine would log it and render without it.
-        val picked = com.abrah.nightmare.LoraSpec.parse(effectiveParams(node)[com.abrah.nightmare.SdSampler.LORAS]).map { e ->
+        val picked = if (!takesLoras) emptyList() else com.abrah.nightmare.LoraSpec.parse(effectiveParams(node)[com.abrah.nightmare.SdSampler.LORAS]).map { e ->
             val f = File(loraDir, e.name)
             if (!f.isFile) throw IllegalStateException("LoRA \"${e.name}\" is not in ${loraDir.name}. Import it first")
             f.absolutePath to e.strength
         }
-        val tagged = (pos.tags + neg.tags).mapNotNull { t ->
+        val tagged = (if (takesLoras) pos.tags + neg.tags else emptyList()).mapNotNull { t ->
             PromptLoras.resolve(t.name, installed)?.let { File(loraDir, it).absolutePath to t.strength }
                 ?: run {
                     ctx.warn(ctx.text(R.string.run_lora_tag_missing, "LoRA \"%1\$s\" from the prompt is not installed. Skipped", t.name))
@@ -322,7 +354,7 @@ object WanVideoNode : NodeType {
                 "node \"${node.id}\": ${w}x$h is larger than Wan's limit of 1280x704 worth of pixels. Make it smaller"
             )
         }
-        val frames = framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS)
+        val frames = framesOf(node, p)
         val seed = p["seed"]?.toLongOrNull() ?: 0L
         // ⚠ A fallback, not the roll: `HarnessOps.runRolled` rolls a 0 before the graph runs
         // ([com.abrah.nightmare.SAMPLER_TYPES]), for the reason [VideoSampleNode] gives.
@@ -348,7 +380,10 @@ object WanVideoNode : NodeType {
         }
 
         val source = inputs["image"] as? Value.Image
-        val startPng: ByteArray? = source?.let { img ->
+        // ⭐⭐ Motion transfer: the wired picture is the REFERENCE, not the start frame (the model's
+        // `ref_conv`, VideoX-Fun's 5B example), and the driving video gives the motion.
+        val motion = driving
+        val framedPng: ByteArray? = source?.let { img ->
             val src = ctx.images.get(img.id)
                 ?: throw IllegalStateException("node \"${node.id}\": image ${img.id} is no longer in the store")
             fun f(k: String, d: Float) = p[k]?.toFloatOrNull() ?: d
@@ -358,6 +393,8 @@ object WanVideoNode : NodeType {
             ).first
             ByteArrayOutputStream().also { framed.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
         }
+        val startPng = framedPng.takeIf { motion == null }
+        val refPng = framedPng.takeIf { motion != null }
 
         // ⚠ The decode's spatial tile changes the frames (a little), so it is part of the clip's key.
         val vaeTile = com.abrah.nightmare.BackendProcess.readWanVaeTileOverride(android) ?: vaeTileFor(w, h)
@@ -366,14 +403,45 @@ object WanVideoNode : NodeType {
             (listOf(
                 pos.text, neg.text, used.toString(), "${w}x$h", frames.toString(), source?.address().orEmpty(),
                 loras.joinToString(";") { (f, s) -> "$f@$s" },
-            ) + listOfNotNull(vaeTile.takeIf { it > 0 }?.let { "vae_tile=$it" }))
+            ) + listOfNotNull(
+                vaeTile.takeIf { it > 0 }?.let { "vae_tile=$it" },
+                motion?.let { m -> "motion=${m.uri}/${m.mode.id}/${m.startMs}/${m.rect?.joinToString(",").orEmpty()}" },
+            ))
                 .joinToString("\u0000")
         )
         val dir = File(android.cacheDir, "video").apply { mkdirs() }
         val raw = File(dir, "wan_$key.nmv")
         val out = File(dir, "clip_wan_$key.mp4")
-        ctx.say("seed $used, ${w}x$h, $frames frames" + if (startPng != null) ", animating your picture" else "")
-        Log.i(TAG, "wan: seed $used ${w}x$h x$frames i2v=${startPng != null}")
+        // ⭐ The control video, made on the phone from the driving one (pose: MoveNet, depth: Depth Anything).
+        val controlFile = File(dir, "control_$key.nmv")
+        var clipFrames = frames
+        if (motion != null) {
+            ctx.say("  motion: ${motion.mode.id} from the driving video")
+            clipFrames = try {
+                WanFun.buildControl(
+                    android, motion.uri, motion.mode, w, h, frames, controlFile,
+                    startMs = motion.startMs, rect = motion.rect,
+                    // ⭐ Its own bar in the run log (the user's ask, 2026-10-16: pose is a good
+                    // share of the run): "pose 12/49", until the sampler's own steps take over.
+                    onFrame = { i, n ->
+                        ctx.onProgress(Ops.Progress(i, n, 0L, phase = motion.mode.id.replace('_', ' ')))
+                        if (i == n) ctx.say("  control: $n frames")
+                    },
+                    isCancelled = { coroutineContext[kotlinx.coroutines.Job]?.isActive == false },
+                )
+            } catch (e: Exception) {
+                controlFile.delete()
+                throw IllegalStateException("node \"${node.id}\": ${e.message ?: e.javaClass.simpleName}")
+            }
+            // ⚠ The control bar ends here: no count until the sampler reports its first step.
+            ctx.onProgress(Ops.Progress(0, 0, 0L))
+        }
+        ctx.say("seed $used, ${w}x$h, $clipFrames frames" + when {
+            motion != null -> ", your picture moving like the driving video"
+            startPng != null -> ", animating your picture"
+            else -> ""
+        })
+        Log.i(TAG, "wan: seed $used ${w}x$h x$clipFrames i2v=${startPng != null} motion=${motion != null}")
 
         // ⭐⭐ 8 Gen 3: every clip from a FRESH backend (the user's call, 2026-10-15). Real SM8650s turn
         // most clips to noise with no error, and the first clip after a restart is the clean one (#23;
@@ -383,18 +451,31 @@ object WanVideoNode : NodeType {
         if (arch in 1..78 && com.abrah.nightmare.BackendProcess.processId.let { it != null && it == servedBy }) {
             ctx.say("  a fresh backend for this clip (8 Gen 3)")
             com.abrah.nightmare.BackendProcess.stop()
-            if (ctx.switchKey?.invoke(contextKey(node)) != true) {
+            if (ctx.switchKey?.invoke(keyFor(node, spec)) != true) {
                 throw IllegalStateException("node \"${node.id}\": the backend did not restart for this clip")
             }
         }
         servedBy = com.abrah.nightmare.BackendProcess.processId
-        val r = ctx.host.video(
-            prompt = pos.text, negative = neg.text, width = w, height = h, frames = frames, fps = FPS,
-            seed = used, steps = SIGMAS.size - 1, sampleMethod = "lcm", sigmas = SIGMAS, tilingArgs = TILING,
-            out = raw.absolutePath, startPng = startPng, loras = loras,
-            onProgress = { pr -> ctx.onProgress(pr) },
-            vaeTileSize = vaeTile,
-        )
+        // ⭐ Fun Control: FastWan's LoRA (it stands in for the base model's 50 steps + CFG) and its 3-step
+        // schedule, measured (`docs/VIDEO-GGML.md` §7). Turbo keeps its own 4.
+        val control = motion != null
+        val r = try {
+            ctx.host.video(
+                prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = FPS,
+                seed = used,
+                steps = (if (control) WanFun.SIGMAS else SIGMAS).size - 1,
+                sampleMethod = if (control) "euler" else "lcm",
+                sigmas = if (control) WanFun.SIGMAS else SIGMAS, tilingArgs = TILING,
+                out = raw.absolutePath, startPng = startPng,
+                loras = if (control) loras + (File(spec.dir(android), ModelCatalog.FUN_LORA).absolutePath to 1.0) else loras,
+                onProgress = { pr -> ctx.onProgress(pr) },
+                vaeTileSize = vaeTile,
+                controlVideo = controlFile.absolutePath.takeIf { control },
+                refPng = refPng,
+            )
+        } finally {
+            controlFile.delete()
+        }
         val clip = when (r) {
             is Ops.Result.Ok -> r.value
             is Ops.Result.Err -> {
@@ -420,9 +501,33 @@ object WanVideoNode : NodeType {
                 ctx.say(it.trim())
             }
             val posterId = ctx.images.put(poster, id = VideoWriter.posterIdFor(out))
+            // ⭐⭐ A CHAIN (GitHub #29, the user's call 2026-10-15): started from a video node's last
+            // frame, this clip CONTINUES that node's film, so `video` is the film so far and the last
+            // node of a chain hands the output all of it. ⚠ Not Motion transfer: its picture is a
+            // reference, not a start frame.
+            val prevFilm = source?.film?.let { File(it) }?.takeIf { it.isFile && motion == null }
+            var filmFile = out
+            var filmFrames = clip.frames
+            var filmPoster = posterId
+            if (prevFilm != null) {
+                val film = File(dir, "film_" + sha1(prevFilm.name + "\u0000" + out.name) + ".mp4")
+                filmFrames = if (film.isFile) FilmJoin.frames(film) else {
+                    val j = FilmJoin.join(prevFilm, out, film, FPS) { Log.i(TAG, it); ctx.say(it.trim()) }
+                    ctx.say("  joined onto the film so far: ${j.frames} frames (${"%.1f".format(j.frames.toDouble() / FPS)} s)" +
+                        if (j.copied) "" else ", re-encoded")
+                    j.frames
+                }
+                filmFile = film
+                // ⭐ The film's loop: the film so far's, then this part's ([com.abrah.nightmare.ClipStore.join]).
+                com.abrah.nightmare.ClipStore.join(film.absolutePath, prevFilm.absolutePath, out.absolutePath)
+                filmPoster = FilmJoin.firstFrame(film)?.let { ctx.images.put(it, id = VideoWriter.posterIdFor(film)) } ?: posterId
+            }
             mapOf(
-                "video" to Value.Video(out.absolutePath, clip.frames, clip.width, clip.height, posterId),
-                LAST_FRAME to Value.Image(ctx.images.put(last), last.width, last.height),
+                "video" to Value.Video(
+                    filmFile.absolutePath, filmFrames, clip.width, clip.height, filmPoster,
+                    part = out.absolutePath, startId = source?.id.takeIf { motion == null },
+                ),
+                LAST_FRAME to Value.Image(ctx.images.put(last), last.width, last.height, film = filmFile.absolutePath),
             )
         } finally {
             raw.delete()

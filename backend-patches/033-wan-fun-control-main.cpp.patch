@@ -1,0 +1,68 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -114,6 +114,11 @@
+   // reaches HTP-resident weights or only the CPU path -- and the app sets it
+   // from Download/nightmare-dit-backend.txt (BackendProcess).
+   std::string dit_params_backend;
++  // nightmare (033): where a Wan package's umT5 and TAEHV are read when its own
++  // directory lacks them. Wan 2.2 Fun Control is its own model (its own DiT) and
++  // uses Wan 2.2 Turbo's encoder and decoder when Turbo is installed, so 3.6 GB
++  // is not downloaded twice; the app passes Turbo's directory here.
++  std::string wan_parts;
+   int dit_threads = 4;
+   int dit_vae_tile_size = 64;
+ 
+@@ -173,6 +178,8 @@
+          "resident; for 12GB devices\n"
+          "  --dit_params_backend <spec>  (zimage/klein) engine parameter "
+          "residency, e.g. all=disk; overrides --lowram\n"
++         "  --wan_parts <dir>      (wan) read umt5.gguf / tae.safetensors from here "
++         "when --model_dir lacks them\n"
+          "  --clip_skip_2          (convert) export CLIP with skip 2\n"
+          "  --log_level <n>        QNN log level\n"
+          "  --version              Print QNN SDK build id\n"
+@@ -205,6 +212,7 @@
+     OPT_LOWRAM,
+     OPT_ANIMA_SEQ_DIT,
+     OPT_DIT_PARAMS_BACKEND,
++    OPT_WAN_PARTS,
+     OPT_LOG_LEVEL,
+     OPT_DEVICE_INFO,
+     OPT_FP16_PROBE
+@@ -228,6 +236,7 @@
+       {"anima_seq_dit", pal::no_argument, NULL, OPT_ANIMA_SEQ_DIT},
+       {"dit_params_backend", pal::required_argument, NULL,
+        OPT_DIT_PARAMS_BACKEND},
++      {"wan_parts", pal::required_argument, NULL, OPT_WAN_PARTS},
+       {"log_level", pal::required_argument, NULL, OPT_LOG_LEVEL},
+       {"device_info", pal::no_argument, NULL, OPT_DEVICE_INFO},
+       {"fp16_probe", pal::required_argument, NULL, OPT_FP16_PROBE},
+@@ -293,6 +302,9 @@
+         break;
+       case OPT_DIT_PARAMS_BACKEND:
+         opts.dit_params_backend = pal::g_optArg;
++        break;
++      case OPT_WAN_PARTS:
++        opts.wan_parts = pal::g_optArg;
+         break;
+       case OPT_DEVICE_INFO:
+         opts.device_info_mode = true;
+@@ -433,9 +445,16 @@
+   // (docs/VIDEO-GGML.md): ~5 s for a short prompt, and its pages stay
+   // reclaimable instead of pinned beside the DiT.
+   if (opts.isWan()) {
++    // The DiT is always the model's own; the encoder and decoder may be another
++    // Wan package's (--wan_parts), and the model's own copy wins when it has one.
++    auto wanPart = [&](const char *name) {
++      const auto own = dir / name;
++      if (std::filesystem::exists(own) || opts.wan_parts.empty()) return own.string();
++      return (std::filesystem::path(opts.wan_parts) / name).string();
++    };
+     const std::string dit_path = (dir / "dit.gguf").string();
+-    const std::string t5_path = (dir / "umt5.gguf").string();
+-    const std::string tae_path = (dir / "tae.safetensors").string();
++    const std::string t5_path = wanPart("umt5.gguf");
++    const std::string tae_path = wanPart("tae.safetensors");
+     for (const auto &p : {dit_path, t5_path, tae_path}) {
+       if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
+     }

@@ -530,6 +530,14 @@ data class ModelSpec(
      */
     val ownDitParts: Boolean = false,
     /**
+     * ⭐ Another model whose copy of some of [files] this one may use instead of its own: Wan 2.2 Fun
+     * Control takes Wan 2.2 Turbo's umT5 and TAEHV (3.6 GB not downloaded twice). The donor is the
+     * SIBLING folder of this model's ([donorDir]), the path the backend gets as `--wan_parts`
+     * (backend 033), so the two cannot disagree. A file counts as present when the donor holds it at its
+     * exact size; the installer skips it ([toFetch]); this model's own copy wins when it has one.
+     */
+    val partsFrom: String? = null,
+    /**
      * ⭐ The size a node STARTS at when it takes this model — a new flow, or
      * "Use" on the Models tab — when that is not [native]. Null = [native].
      *
@@ -606,6 +614,17 @@ data class ModelSpec(
     val active: List<RemoteFile>
         get() = buildFor(DeviceProbe.caps())?.files?.takeIf { it.isNotEmpty() } ?: files
 
+    /** ⭐ [partsFrom]'s folder beside [modelDir], or null. */
+    fun donorDir(modelDir: File): File? = partsFrom?.let { File(modelDir.parentFile, it) }
+
+    /** ⭐ Whether [f] is served by the donor ([partsFrom]) rather than [modelDir]. */
+    fun borrows(modelDir: File, f: RemoteFile): Boolean =
+        File(modelDir, f.name).length() != f.bytes &&
+            donorDir(modelDir)?.let { File(it, f.name).length() == f.bytes } == true
+
+    /** ⭐ What an install must fetch: [active] less what the donor holds whole. */
+    fun toFetch(context: Context): List<RemoteFile> = ownDir(context).let { d -> active.filterNot { borrows(d, it) } }
+
     /**
      * ⭐ The RAM this model needs when RAM is the ONLY reason [buildFor] is null
      * — so the row can say "needs a 16 GB phone" instead of blaming the chip.
@@ -671,13 +690,25 @@ data class ModelSpec(
             // check exists for. A marker is written on purpose, by an import or
             // by hand, and says *this one file is mine now*.
             //
-            // ⚠ The other three files keep their exact sizes: the text encoder,
-            // VAE and tokenizer are OURS, shared by every model of the family,
-            // and nobody has a reason to replace one.
+            // ⚠ The other files keep their exact sizes unless they are a GGUF its
+            // header proves whole (below): the VAE and tokenizer are OURS, shared by
+            // every model of the family; a text encoder does get swapped by users.
+            // ⭐⭐ …and a GGUF of another size that its own header proves whole
+            // ([GgufHeader.isComplete]): users do replace the text encoder after all
+            // (Telegram #6290, #6310: a modified `llm.gguf` read "missing, repair 0 MB").
+            // ⚠ The proof is the header, not the size: a half-download still ends short.
             val byo = File(d, BRING_YOUR_OWN).exists()
             return active.filter {
-                val len = File(d, it.name).length()
-                if (byo && it.name == DIT_WEIGHTS) len <= 0L else len != it.bytes
+                val f = File(d, it.name)
+                val len = f.length()
+                when {
+                    byo && it.name == DIT_WEIGHTS -> len <= 0L
+                    len == it.bytes -> false
+                    // ⭐ A part the donor model holds whole ([partsFrom]).
+                    borrows(d, it) -> false
+                    it.name.endsWith(".gguf", ignoreCase = true) && len > 0L -> !GgufHeader.isComplete(f)
+                    else -> true
+                }
             }.map { it.name }
         }
         // ⭐⭐⭐ A DiT package may keep its shared parts BESIDE the models.
@@ -995,6 +1026,21 @@ object ModelCatalog {
     fun ditSnap(v: Int): Int =
         (((v - DIT_MIN) + DIT_STEP / 2) / DIT_STEP * DIT_STEP + DIT_MIN)
             .coerceIn(DIT_MIN, DIT_MAX)
+
+    /**
+     * ⭐⭐ The size a node KEEPS when its model changes with "keep my settings" (GitHub #33, the
+     * user's call 2026-10-15): [w]x[h] held, pulled inside what [spec] renders. A DiT model takes any
+     * size on its grid; a fixed-size model (SD 1.5, SDXL on the NPU) takes the listed size nearest
+     * that shape, then nearest that area, because it renders its own size whatever is asked.
+     */
+    fun keptSize(spec: ModelSpec, w: Int, h: Int): Res {
+        if (spec.isDit) return Res(ditSnap(w), ditSnap(h))
+        val aspect = w.toDouble() / h.coerceAtLeast(1)
+        val area = w.toDouble() * h
+        return spec.resolutions.minWithOrNull(
+            compareBy<Res>({ Math.abs(Math.log(it.width.toDouble() / it.height / aspect)) }, { Math.abs(Math.log(it.width.toDouble() * it.height / area)) })
+        ) ?: spec.native
+    }
 
     /**
      * ⭐ Is [v] already on the grid? — upstream's `DitResolution.isSupported`.
@@ -1975,10 +2021,13 @@ object ModelCatalog {
         builds: List<Build>? = null,
         /** ⭐ The chip floor: [DIT_GGML_MIN_ARCH], or [DIT_MIN_ARCH] for FP8 weights. */
         minArch: Int = DIT_GGML_MIN_ARCH,
+        /** ⚠ See [ModelSpec.partsFrom]. */
+        partsFrom: String? = null,
     ) = ModelSpec(
         startRes = startRes,
         lowram = lowram,
         ownDitParts = ownDitParts,
+        partsFrom = partsFrom,
         id = id,
         label = label,
         builds = builds ?: listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, minArch, 8, minRamBytes = minRamBytes)),
@@ -2269,8 +2318,32 @@ object ModelCatalog {
         ),
     )
 
+    /**
+     * ⭐⭐ **Wan 2.2 Fun 5B Control** (alibaba-pai, QuantStack's Q4_0 GGUF): a picture moving like a driving
+     * video (its pose or depth), the "Motion transfer" flow (`npu.WanFunNode`, `docs/VIDEO-GGML.md` §7).
+     * A fine-tune of the BASE TI2V 5B: Kijai's FastWan 5B LoRA ([FUN_LORA]) gives it 3 steps at cfg 1.
+     * ⭐ Its umT5 and TAEHV are Wan 2.2 Turbo's when Turbo is installed ([ModelSpec.partsFrom]): 3.7 GB
+     * then, 7.3 GB alone. Measured on the S25: 480x832 x49 in 84 s, 704x1280 x49 in 259 s (2026-10-15).
+     */
+    val WAN22_FUN: ModelSpec = dit(
+        "wan22_fun5b_control", "Wan 2.2 Fun Control", Family.WAN, WAN, steps = 3,
+        prompt = "",
+        ownDitParts = true,
+        partsFrom = "wan22_ti2v_turbo",
+        minArch = DIT_GGML_MIN_ARCH,
+        files = listOf(
+            RemoteFile(HF + "QuantStack/Wan2.2-Fun-5B-Control-GGUF/resolve/main/Wan2.2-Fun-5B-Control-Q4_0.gguf", "dit.gguf", 3_040_004_960L),
+            RemoteFile(HF + "Kijai/WanVideo_comfy/resolve/main/FastWan/Wan2_2_5B_FastWanFullAttn_lora_rank_128_bf16.safetensors", FUN_LORA, 660_874_456L),
+            RemoteFile(HF + "city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q4_K_M.gguf", "umt5.gguf", 3_655_145_312L),
+            RemoteFile("https://raw.githubusercontent.com/madebyollin/taehv/fa579a9a726b0a55951998d73e309bfdf0abd342/safetensors/taew2_2.safetensors", "tae.safetensors", 22_848_048L),
+        ),
+    )
+
+    /** ⭐ Fun Control's speed LoRA, in its own folder (applied by `npu.WanFunNode`). */
+    const val FUN_LORA = "fastwan_lora.safetensors"
+
     /** ⚠ The video models: found by [byId], never listed as checkpoints. */
-    val video: List<ModelSpec> = listOf(WAN22)
+    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN)
 
     fun installed(context: Context): List<ModelSpec> = all.filter { it.installed(context) }
 

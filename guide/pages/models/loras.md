@@ -89,10 +89,23 @@ straight over it.
 
 With two or more LoRAs, the list has a **sort** menu. **Name**, **Newest**, **Most used** (how
 often you tick it) or **Size**: and chips for each **base model** found among your files (SD 1.5,
-SDXL, FLUX, Z-Image, Qwen), the node's own first. The base is read from the file itself and shown
-under each name. Tap the **star** to make a LoRA a favourite: favourites come first. With eight or
+SDXL, FLUX, Z-Image, Qwen, Anima, Krea 2, Wan), the node's own first. The base is read from the
+file itself and shown under each name. If a LoRA is not recognised (or is filed under the wrong
+model), open its **⋮** and pick the right one under **Model**; **Auto** goes back to what the file
+says. Tap the **star** to make a LoRA a favourite: favourites come first. With eight or
 more, a search box filters by name. The LoRAs ticked on the node always stay at the top, in the
 order they are applied.
+
+### Folders
+
+With dozens of LoRAs, put them in folders: open a LoRA's **⋮** and under **Folder** pick one of
+that model's folders, or **New folder** and type a name (`Style`, `Anatomy`, `Effects`). Folders
+show first in the list, closed, each with how many LoRAs it holds; tap one to open it. **None**
+takes a LoRA out again, and a folder with nothing in it disappears. The files stay where they are
+on the phone. While you search, every match shows, folders or not.
+
+Wan's **Motion transfer** takes no LoRAs: it has no LoRA list, and `<lora:…>` tags in its prompt
+are skipped.
 
 ### Notes
 

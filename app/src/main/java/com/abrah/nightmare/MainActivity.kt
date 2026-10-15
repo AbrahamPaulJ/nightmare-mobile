@@ -398,6 +398,15 @@ fun HarnessScreen(
             com.abrah.nightmare.ui.CrashNotice(r, onDismiss = vm::dismissCrashReport)
         }
         vm.missingModel?.let { m -> MissingModelDialog(m, vm) }
+        // ⭐ GitHub #33: a kept picture's parts matched to the open flow's nodes.
+        vm.pendingTransfer?.let { items ->
+            com.abrah.nightmare.ui.TransferDialog(
+                items = items,
+                targetsFor = vm::transferTargets,
+                onApply = vm::applyTransfer,
+                onDismiss = vm::cancelTransfer,
+            )
+        }
         // ⭐⭐ Which upscaler, asked on the canvas — the SAME chooser Results
         // opens ([com.abrah.nightmare.ui.UpscalePicker]), so a person meets one
         // dialog wherever they start an upscale from.
@@ -583,6 +592,7 @@ fun HarnessScreen(
             onClearImage = vm::clearImage,
             onSaveDrawing = vm::saveDrawing,
             onBlankPicture = { vm.blankPicture(it) },
+            onSetVideoModel = vm::setVideoModel,
             swapFlows = androidx.compose.runtime.remember(vm.canvas.workflow.graph, vm.openedRecipeId) { vm.swapFlows() },
             onSwapFlow = vm::swapFlow,
             onInspectNode = vm::inspectNode,
@@ -771,7 +781,7 @@ fun HarnessScreen(
                         onInstallControlNet = { askToNotify(); vm.installControlNet(it) },
                         onDeleteControlNet = vm::deleteControlNet,
                         video = vm.videoRow.takeIf { !com.abrah.nightmare.npu.VideoGate.hidden },
-                        wan = vm.wanRow,
+                        wans = vm.wanRows,
                         onUseWan = vm::askUseWan,
                         onInstallVideo = { askToNotify(); vm.installVideoModels() },
                         onDeleteVideo = vm::deleteVideoModels,
@@ -789,6 +799,7 @@ fun HarnessScreen(
                         onToggleFavourite = vm::toggleResultFavourite,
                         thumbnailFor = vm::thumbnailFor,
                         onOpenFlow = { vm.openResultFlow(it.id) },
+                        transferFor = vm::infoTransferFor,
                         onView = { vm.viewResult(it) },
                         onDelete = { vm.deleteResult(it.id) },
                         onDiskBytes = vm.keptBytes,
@@ -881,6 +892,7 @@ fun HarnessScreen(
                         thumbnailFor = { id -> vm.thumbnailFor(id) },
                         unreadable = vm::resultUnreadable,
                         detailsFor = vm::detailsOf,
+                        transferFor = vm::infoTransferFor,
                         onDismiss = { vm.closeResult() },
                         onOpenFlow = { r -> vm.closeResult(); vm.openResultFlow(r.id) },
                         onDelete = { r -> vm.deleteResult(r.id) },

@@ -67,6 +67,12 @@ sealed interface Value {
          * Null for everything else. [Region] says why it is rects, not ids.
          */
         val region: Region? = null,
+        /**
+         * ⭐ The FILM this picture is the last frame of, when a video node made it (its `last_frame`):
+         * a video node started from it continues that film ([com.abrah.nightmare.npu.FilmJoin],
+         * GitHub #29). Null for every other picture.
+         */
+        val film: String? = null,
     ) : Value {
         override fun address() = id
         override fun describe() = "image ${w}x$h $id"
@@ -92,6 +98,13 @@ sealed interface Value {
         val w: Int,
         val h: Int,
         val posterId: String,
+        /**
+         * ⭐ In a chain ([com.abrah.nightmare.npu.FilmJoin]): THIS node's own clip, when [path] is the
+         * film so far, and the picture it started from. Results keeps every part beside the film
+         * (GitHub #29). Null outside a chain.
+         */
+        val part: String? = null,
+        val startId: String? = null,
     ) : Value {
         // ⚠ The FILE NAME, which the producer makes a content address (a hash of
         // everything the clip was generated from). The path is not usable: it
@@ -644,7 +657,10 @@ fun humanizeNodeIds(text: String, graph: Graph, types: Map<String, NodeType> = N
 /** ⚠ The ones that carry a mask, its editor and the paste back. */
 val INPAINT_TYPES: Set<String> = SdSampler.ALL.filter { it.inpaint }.map { it.name }.toSet()
 
-val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample", com.abrah.nightmare.npu.WanVideoNode.name)
+/** ⭐ The Wan nodes: plain Wan 2.2 and Motion transfer (Fun Control). Check this set, never one name. */
+val WAN_TYPES = setOf(com.abrah.nightmare.npu.WanVideoNode.name, com.abrah.nightmare.npu.WanFunNode.name)
+
+val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample") + WAN_TYPES
 
 /**
  * ⭐ Every node that FRAMES a picture it was given — every image sampler and
@@ -654,7 +670,7 @@ val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample", com.abrah.nightmare
  * framed input; `image.crop` is framing too but is its own node, so it is added
  * where that matters rather than here.
  */
-val FRAMING_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample", com.abrah.nightmare.npu.WanVideoNode.name)
+val FRAMING_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample") + WAN_TYPES
 
 /**
  * ⭐ Every node holding a FRAMING of a picture it was handed — the `x/y/w/h`

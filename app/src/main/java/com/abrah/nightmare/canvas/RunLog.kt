@@ -125,6 +125,11 @@ data class RunLogState(
      * silently rots the next time the backend adds a stage.
      */
     val step: Pair<Int, Int>? = null,
+    /**
+     * ⭐ The phase [step] counts, when it is not the node's main work: "pose" while Motion transfer
+     * reads the driving video (a large share of its run). Shown with its own count, never a %.
+     */
+    val phase: String? = null,
     val startedAtMs: Long = 0L,
     val totalMs: Long? = null,
     /**
@@ -146,7 +151,10 @@ data class RunLogState(
      * the user, 2026-10-10).
      */
     val stepLabel: String?
-        get() = step?.takeIf { it.second > 0 }?.let { (s, t) -> "${s * 100 / t}%" }
+        get() = step?.takeIf { it.second > 0 }?.let { (s, t) ->
+            // ⭐ A phase counts real things (frames), so it says how many: "pose 12/49".
+            phase?.let { "$it $s/$t" } ?: "${s * 100 / t}%"
+        }
 }
 
 /** `1.2s` / `24.3s` / `1m04s` — short enough to sit in a status line. */
@@ -373,6 +381,10 @@ fun RunLogPanel(
         // ⭐⭐ One chip per armed sweep, with a ✕ that releases it. ⚠ Its own
         // container, like the seed: it is a property of the CANVAS and it
         // survives closing the run log.
+        // ⚠⚠ …and a SEED sweep whose node has no seed row here: it ran with nothing on screen to
+        // release it (GitHub #34's screenshot: "batch 1 of 2" on a flow whose seed row showed no
+        // sweep). Every sweep Run will make is listed somewhere with its ✕.
+        val armed = armed + seedSweeps.filter { s -> seeds.none { it.nodeId == s.nodeId } }
         if (armed.isNotEmpty()) {
             // ⚠⚠⚠ **ONE ROW PER SWEEP, and the text is WEIGHTED.**
             //

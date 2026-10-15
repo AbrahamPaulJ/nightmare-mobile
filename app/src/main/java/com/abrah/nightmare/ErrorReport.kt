@@ -203,7 +203,9 @@ object ErrorReport {
         prompts: Collection<String>,
     ): String {
         val caps = DeviceProbe.caps()
-        val modelId = runCatching { SelectedModel.id }.getOrNull()
+        // ⚠⚠ The model the backend last ran, not the app-wide selection: each node runs its own, and
+        // two reports of a Klein and a Qwen failure both named Krea 2, the selection (GitHub #35).
+        val modelId = BackendProcess.lastModelId ?: runCatching { SelectedModel.id }.getOrNull()
         val spec = modelId?.let { ModelCatalog.byId(it) }
         val files = spec?.let { s ->
             runCatching {

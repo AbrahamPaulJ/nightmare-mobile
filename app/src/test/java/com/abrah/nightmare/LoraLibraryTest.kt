@@ -28,6 +28,38 @@ class LoraLibraryTest {
         assertEquals(Base.OTHER, LoraLibrary.classify("""{"something":1}"""))
     }
 
+    /**
+     * ⭐ The families added 2026-10-15 (Telegram #6322: Krea 2 and Z-Image LoRAs sat unsorted). Wan's
+     * keys are Kijai's FastWan 5B LoRA's, read off the real file; Anima's `k_proj` must not read as Wan.
+     */
+    @Test
+    fun krea2ZImageAndWanFromTheirNames() {
+        assertEquals(Base.WAN, LoraLibrary.classify("""{"diffusion_model.blocks.0.self_attn.q.lora_down.weight":1,"diffusion_model.blocks.0.ffn.0.lora_up.weight":2}"""))
+        assertEquals(Base.WAN, LoraLibrary.classify("""{"lora_unet_blocks_0_self_attn_q.lora_down.weight":1,"lora_unet_blocks_0_ffn_0.lora_up.weight":2}"""))
+        assertEquals(Base.ANIMA, LoraLibrary.classify("""{"diffusion_model.blocks.0.cross_attn.k_proj.lora_A.weight":1,"diffusion_model.blocks.0.self_attn.q_proj.lora_A.weight":2}"""))
+        assertEquals(Base.ZIMAGE, LoraLibrary.classify("""{"diffusion_model.layers.0.attention.to_q.lora_A.weight":1}"""))
+        assertEquals(Base.ZIMAGE, LoraLibrary.classify("""{"diffusion_model.layers.3.feed_forward.w1.lora_A.weight":1}"""))
+        assertEquals(Base.KREA2, LoraLibrary.classify("""{"diffusion_model.blocks.0.attn.wq.lora_A.weight":1}"""))
+        assertEquals(Base.KREA2, LoraLibrary.Base.of(Family.KREA2))
+        assertEquals(Base.WAN, LoraLibrary.Base.of(Family.WAN))
+    }
+
+    /** ⭐ A base set by hand wins over the header's, and the header's stays readable as `detected`. */
+    @Test
+    fun aBaseSetByHandWins() {
+        val dir = kotlin.io.path.createTempDirectory().toFile()
+        val head = """{"something":1}""".toByteArray()
+        java.io.File(dir, "krea_thing.safetensors").writeBytes(
+            java.nio.ByteBuffer.allocate(8).order(java.nio.ByteOrder.LITTLE_ENDIAN).putLong(head.size.toLong()).array() + head,
+        )
+        val auto = LoraLibrary.list(dir).single()
+        assertEquals(Base.OTHER, auto.base)
+        val manual = LoraLibrary.list(dir, mapOf("krea_thing.safetensors" to Base.KREA2)).single()
+        assertEquals(Base.KREA2, manual.base)
+        assertEquals(Base.OTHER, manual.detected)
+        dir.deleteRecursively()
+    }
+
     private val items = listOf(
         Item("b.safetensors", 300, added = 1, base = Base.SDXL),
         Item("a.safetensors", 100, added = 3, base = Base.SD15),
@@ -46,5 +78,18 @@ class LoraLibraryTest {
         assertEquals(listOf("b", "c"), names(Sort.NAME, base = Base.SDXL))
         assertEquals(listOf("c"), names(Sort.NAME, q = "C.SAFE"))
         assertEquals(listOf("c", "a", "b"), names(Sort.NAME, fav = setOf("c.safetensors")))
+    }
+
+    /** ⭐ GitHub #36: folders first, alphabetical, each in the picker's order; then the loose ones. */
+    @Test
+    fun foldersGroupInThePickersOrder() {
+        val names = listOf("zeta", "alpha", "mid", "beta", "loose")
+        val folders = mapOf("zeta" to "Style", "alpha" to "Style", "mid" to "anatomy", "beta" to "Style")
+        val (groups, loose) = LoraLibrary.grouped(names, folders)
+        assertEquals(listOf("anatomy" to listOf("mid"), "Style" to listOf("zeta", "alpha", "beta")), groups)
+        assertEquals(listOf("loose"), loose)
+        val items = names.map { LoraLibrary.Item(it, 1L, 0L, if (it == "mid") LoraLibrary.Base.SDXL else LoraLibrary.Base.ANIMA) }
+        assertEquals(listOf("Style"), LoraLibrary.foldersFor(items, folders, LoraLibrary.Base.ANIMA))
+        assertEquals(listOf("anatomy", "Style"), LoraLibrary.foldersFor(items, folders, null))
     }
 }

@@ -28,6 +28,9 @@ Arm **two** settings and the batch runs every combination, a grid such as 3 CFG 
 While it runs, the bar shows `batch 3 of 12`. **Stop after this one** finishes the current
 picture and stops.
 
+Every armed sweep is listed on the run bar with a **✕** that releases it, and **Reset node**
+releases the sweeps on that node.
+
 ## Where the pictures go
 
 Every run is kept in **Results**, grouped as one card, each picture with the exact flow that

@@ -509,4 +509,31 @@ class ResolutionTest {
         val g = Graph(graph().nodes.map { it.copy(params = it.params + ("aspect" to "16:9")) })
         assertTrue(aspectRetarget(g, NODE_TYPES, "16:9").isEmpty())
     }
+
+    /**
+     * ⭐ GitHub #33: "keep my settings" keeps the size, pulled inside the new model's sizes. A DiT
+     * model snaps to its grid; a fixed-size NPU model takes its own listed size.
+     */
+    @Test
+    fun aKeptSizeIsClampedToTheNewModel() {
+        val dit = ModelCatalog.all.first { it.isDit }
+        assertEquals(Res(832, 1216), ModelCatalog.keptSize(dit, 832, 1216))
+        assertEquals(Res(ModelCatalog.DIT_MAX, ModelCatalog.DIT_MIN), ModelCatalog.keptSize(dit, 4000, 100))
+        val sdxl = ModelCatalog.byId("sdxl_dreamshaper")!!
+        assertEquals(ModelCatalog.SDXL_NPU_RES, ModelCatalog.keptSize(sdxl, 832, 1216))
+    }
+
+    /**
+     * ⭐ GitHub #35: a reference run over what an 8 Gen 3 measured to fit is warned about, with the
+     * largest same-shape canvas that fits; v79 and unmeasured models are never warned.
+     */
+    @Test
+    fun aReferenceRunOverTheMeasuredFitSuggestsASmallerCanvas() {
+        assertEquals(Res(896, 896), SdSampler.refFitSuggestion("flux2_klein_9b", 75, 1024, 1024))
+        assertEquals(Res(768, 1152), SdSampler.refFitSuggestion("flux2_klein_9b", 75, 832, 1216))
+        assertEquals(Res(960, 1088), SdSampler.refFitSuggestion("qwen_image_2_1_turbo", 75, 1024, 1152))
+        assertNull(SdSampler.refFitSuggestion("flux2_klein_9b", 75, 896, 1024))
+        assertNull(SdSampler.refFitSuggestion("flux2_klein_9b", 79, 1024, 1024))
+        assertNull(SdSampler.refFitSuggestion("flux2_klein_4b", 75, 2048, 2048))
+    }
 }

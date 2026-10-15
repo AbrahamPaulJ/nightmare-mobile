@@ -157,6 +157,8 @@ fun ResultsScreen(
     unreadable: (String) -> Boolean = { false },
     /** ⭐ Info — what made it, from the stored flow. */
     detailsFor: (Result) -> List<Pair<String, String>> = { emptyList() },
+    /** ⭐ GitHub #33: what its Info can send to the open flow ([InfoTransfer]); null offers nothing. */
+    transferFor: (Result) -> InfoTransfer? = { null },
     /** ⭐ Upscale with an installed upscaler; the enlarged picture becomes a new item. */
     onUpscale: (Result, String, Int) -> Unit = { _, _, _ -> },
     /** ⭐ UltraFix ([com.abrah.nightmare.UltraFix]) from the same chooser; null hides it. */
@@ -613,7 +615,7 @@ fun ResultsScreen(
         }
     }
 
-    info?.let { r -> ResultInfoDialog(detailsFor(r)) { info = null } }
+    info?.let { r -> ResultInfoDialog(detailsFor(r), onClose = { info = null }, transfer = transferFor(r)) }
 
     var ultrafixing by remember { mutableStateOf<Result?>(null) }
     ultrafixing?.let { r -> UltraFixFor(r, onUltraFix) { ultrafixing = null } }
@@ -739,6 +741,8 @@ fun ResultViewer(
     detailsFor: (Result) -> List<Pair<String, String>>,
     onDismiss: () -> Unit,
     onOpenFlow: (Result) -> Unit,
+    /** ⭐ GitHub #33: what its Info can send to the open flow ([InfoTransfer]). */
+    transferFor: (Result) -> InfoTransfer? = { null },
     onDelete: (Result) -> Unit,
     /** ⭐ Write this picture into the phone's gallery. */
     onSave: (Result) -> Unit = {},
@@ -1092,7 +1096,7 @@ fun ResultViewer(
 
         // ⭐ The SAME info dialog the Results row opens — one function, so the two
         // cannot drift (`docs/ARCHITECTURE.md` §5.6).
-        if (showInfo) ResultInfoDialog(detailsFor(current)) { showInfo = false }
+        if (showInfo) ResultInfoDialog(detailsFor(current), onClose = { showInfo = false }, transfer = transferFor(current))
 
         if (confirmingDelete) {
             // ⚠ The SAME body as the card's confirm — one constant, not two copies.
@@ -1648,10 +1652,43 @@ private fun UnreadablePicture(
  * ONE copy button for the whole text (the user's call, 2026-09-17: a copy per
  * row was clutter; what people paste is the lot).
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun ResultInfoDialog(details: List<Pair<String, String>>, onClose: () -> Unit) {
+fun ResultInfoDialog(
+    details: List<Pair<String, String>>,
+    /**
+     * ⭐⭐ GitHub #33: the rows that can go to the open flow ([InfoTransfer]). Null on the canvas's
+     * own Info, whose pictures are already on the canvas.
+     */
+    transfer: InfoTransfer? = null,
+    onClose: () -> Unit,
+) {
     val clip = androidx.compose.ui.platform.LocalClipboardManager.current
     val all = details.joinToString("\n") { (k, v) -> "$k: $v" }
+    // ⭐ Selected rows by index; -1 is the picture row. Empty = not selecting.
+    var selected by remember(details) { mutableStateOf(emptySet<Int>()) }
+    val items: Map<Int, TransferItem> = if (transfer == null) emptyMap() else buildMap {
+        transfer.picturePath?.let { put(-1, TransferItem.Picture(it)) }
+        details.forEachIndexed { i, (k, v) ->
+            // ⚠ The FIRST of each kind: a chain repeats Prompt/Seed per sampler, and two of one
+            // kind could only go to the same place.
+            transferItemOf(k, v)?.takeIf { it -> values.none { o -> o::class == it::class } }?.let { put(i, it) }
+        }
+    }
+    fun toggle(i: Int) { selected = if (i in selected) selected - i else selected + i }
+    @Composable
+    fun Modifier.transferable(i: Int): Modifier {
+        if (i !in items) return this
+        val on = i in selected
+        return this
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = if (on) 0.28f else 0.08f))
+            .combinedClickable(
+                onClick = { if (selected.isNotEmpty()) toggle(i) },
+                onLongClick = { toggle(i) },
+            )
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+    }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text(stringResource(R.string.results_info)) },
@@ -1660,8 +1697,35 @@ fun ResultInfoDialog(details: List<Pair<String, String>>, onClose: () -> Unit) {
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                for ((k, v) in details) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (items.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.transfer_hint), style = NoteTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (-1 in items) {
+                    Row(
+                        Modifier.fillMaxWidth().transferable(-1),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(R.string.transfer_picture),
+                            fontSize = 11.sp, lineHeight = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(78.dp),
+                        )
+                        transfer?.picture?.let {
+                            androidx.compose.foundation.Image(
+                                bitmap = it, contentDescription = null,
+                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(6.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            )
+                        }
+                    }
+                }
+                details.forEachIndexed { i, (k, v) ->
+                    Row(Modifier.fillMaxWidth().transferable(i), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             k,
                             fontSize = 11.sp,
@@ -1681,7 +1745,18 @@ fun ResultInfoDialog(details: List<Pair<String, String>>, onClose: () -> Unit) {
                 Text(stringResource(R.string.results_copy_all))
             }
         },
-        confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.close)) } },
+        confirmButton = {
+            Row {
+                if (selected.isNotEmpty() && transfer != null) {
+                    TextButton(onClick = {
+                        val chosen = selected.sorted().mapNotNull { items[it] }
+                        onClose()
+                        transfer.onUse(chosen)
+                    }) { Text(stringResource(R.string.transfer_use_n, selected.size)) }
+                }
+                TextButton(onClick = onClose) { Text(stringResource(R.string.close)) }
+            }
+        },
     )
 }
 

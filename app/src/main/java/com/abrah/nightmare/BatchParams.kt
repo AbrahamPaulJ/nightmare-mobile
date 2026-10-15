@@ -53,7 +53,7 @@ object BatchParams {
         IMAGE_SAMPLER_TYPES.associateWith { listOf("seed", "steps", "cfg", "denoise", "scheduler") } +
             // ⭐ The video nodes' seed (GitHub #29: "loop a workflow while I go do something else" had no
             // answer for video, the user's pick 2026-10-15). Seed only: a clip's other knobs are its shape.
-            listOf(com.abrah.nightmare.npu.WanVideoNode.name, "nd.sample").associateWith { listOf("seed") }
+            (com.abrah.nightmare.WAN_TYPES + "nd.sample").associateWith { listOf("seed") }
 
     /**
      * ⭐⭐ **How a knob is swept, per knob.** This is what makes the popup
@@ -144,11 +144,16 @@ object BatchParams {
     fun armed(node: Node, param: String): String? =
         node.params[keyFor(param)]?.takeIf { it.isNotBlank() }
 
-    /** Every armed axis on a graph, in graph order. ⚠ Node id, param, values. */
+    /**
+     * Every armed axis on a graph, in graph order. ⚠ Node id, param, values.
+     * ⚠⚠ Only knobs [isBatchable] on that node's TYPE: a `batch:` param the inspector draws no toggle
+     * for (a node retyped under it, a hand-edited flow) would sweep with nothing on screen to turn it
+     * off (GitHub #34).
+     */
     fun axesOf(graph: Graph): List<BatchAxis> =
         graph.nodes.flatMap { n ->
             n.params.entries
-                .filter { it.key.startsWith(PREFIX) && it.value.isNotBlank() }
+                .filter { it.key.startsWith(PREFIX) && it.value.isNotBlank() && isBatchable(n.type, it.key.removePrefix(PREFIX)) }
                 .mapNotNull { (k, v) ->
                     val param = k.removePrefix(PREFIX)
                     val values = valuesOf(param, v)

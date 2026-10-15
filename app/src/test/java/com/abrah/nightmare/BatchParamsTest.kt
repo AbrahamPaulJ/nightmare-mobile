@@ -56,6 +56,29 @@ class BatchParamsTest {
         assertEquals(5, BatchParams.runCount(armed("cfg" to "1..9 by 2")))
     }
 
+    /**
+     * ⚠⚠ GitHub #34: a sweep the inspector draws no toggle for (a `batch:` param on a knob that
+     * type cannot sweep) must not run, or nothing on screen can turn it off.
+     */
+    @Test
+    fun aSweepOnAKnobThatCannotSweepIsIgnored() {
+        assertEquals(0, BatchParams.axesOf(armed("width" to "512..1024 by 256")).size)
+        val wan = Graph(listOf(Node("video", com.abrah.nightmare.npu.WanVideoNode.name,
+            params = mapOf(BatchParams.keyFor("seed") to "1..4 by 1", BatchParams.keyFor("seconds") to "1..5 by 1"))))
+        assertEquals(listOf("seed"), BatchParams.axesOf(wan).map { it.param })
+    }
+
+    /** ⚠⚠ GitHub #34: Reset puts the knobs back, and an armed sweep is a knob setting. */
+    @Test
+    fun resetClearsTheNodesSweeps() {
+        val s0 = com.abrah.nightmare.canvas.CanvasState(
+            workflow = com.abrah.nightmare.canvas.Workflow(armed("cfg" to "1..9 by 2", "seed" to "4"), emptyMap()),
+        )
+        val after = s0.resetNode("inpaint", NODE_TYPES).workflow.graph
+        assertEquals(0, BatchParams.axesOf(after).size)
+        assertTrue(after.byId.getValue("inpaint").params.keys.none { it.startsWith(BatchParams.PREFIX) })
+    }
+
     /** ⚠ Two axes multiply — that is the 10x10 = 100 the estimate must warn about. */
     @Test
     fun twoAxesMultiply() {

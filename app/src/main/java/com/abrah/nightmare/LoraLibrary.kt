@@ -19,7 +19,8 @@ import java.util.concurrent.ConcurrentHashMap
 object LoraLibrary {
 
     enum class Base(val label: String) {
-        SD15("SD 1.5"), SDXL("SDXL"), FLUX("FLUX"), ZIMAGE("Z-Image"), QWEN("Qwen"), ANIMA("Anima"), OTHER("Other");
+        SD15("SD 1.5"), SDXL("SDXL"), FLUX("FLUX"), ZIMAGE("Z-Image"), QWEN("Qwen"), ANIMA("Anima"),
+        KREA2("Krea 2"), WAN("Wan"), OTHER("Other");
 
         companion object {
             /** ⭐ The base a node's family takes LoRAs for — the filter a picker can offer first. */
@@ -30,21 +31,27 @@ object LoraLibrary {
                 Family.ZIMAGE -> ZIMAGE
                 Family.QWEN21 -> QWEN
                 Family.ANIMA_DIT -> ANIMA
+                Family.KREA2 -> KREA2
+                Family.WAN -> WAN
                 else -> null
             }
         }
     }
 
-    data class Item(val name: String, val bytes: Long, val added: Long, val base: Base)
+    /** ⭐ [base] is what the library files it under: the user's choice ([setBase]) or [detected]. */
+    data class Item(val name: String, val bytes: Long, val added: Long, val base: Base, val detected: Base = base)
 
     enum class Sort { NAME, NEWEST, MOST_USED, SIZE }
 
     private val cache = ConcurrentHashMap<String, Pair<String, Base>>()
 
-    /** ⭐ Every `.safetensors` in [dir], with its base. ⚠ Reads headers: call off the main thread. */
-    fun list(dir: File): List<Item> =
+    /**
+     * ⭐ Every `.safetensors` in [dir], with its base: the one the user set ([overrides],
+     * [baseOverrides]) or else the one its header says. ⚠ Reads headers: call off the main thread.
+     */
+    fun list(dir: File, overrides: Map<String, Base> = emptyMap()): List<Item> =
         dir.listFiles { f -> f.isFile && f.extension.equals("safetensors", ignoreCase = true) }.orEmpty()
-            .map { f -> Item(f.name, f.length(), f.lastModified(), baseOf(f)) }
+            .map { f -> baseOf(f).let { d -> Item(f.name, f.length(), f.lastModified(), overrides[f.name] ?: d, d) } }
 
     fun baseOf(f: File): Base {
         val key = "${f.length()}:${f.lastModified()}"
@@ -78,6 +85,12 @@ object LoraLibrary {
             // ⚠ Anima (Cosmos blocks): the official LoRAs name `adaln_modulation_*`, kohya's
             // `lora_unet_blocks_N_cross_attn_k_proj` — checked on three real headers, 2026-10-13.
             "adaln_modulation" in h || "cross_attn_k_proj" in h || "cross_attn.k_proj" in h -> Base.ANIMA
+            // ⭐ Z-Image (Lumina-style `layers.N.attention` + `feed_forward`), Krea 2 (`attn.wq`,
+            // `txtfusion`), Wan (`self_attn.q` + `ffn.0`, after Anima's `_proj` names). A miss is
+            // fixable by hand ([setBase]: a user asked, Telegram #6322, 2026-10-15).
+            ZIMAGE_LAYERS.containsMatchIn(h) || "feed_forward.w" in h || "feed_forward_w" in h -> Base.ZIMAGE
+            "attn.wq" in h || "attn_wq" in h || "txtfusion" in h -> Base.KREA2
+            ("self_attn.q." in h || "self_attn_q." in h) && ("ffn.0" in h || "ffn_0" in h) -> Base.WAN
             "lora_te2_" in h || "text_encoder_2" in h || "lora_unet_input_blocks" in h || "lora_unet_output_blocks" in h -> Base.SDXL
             "lora_te_" in h || "lora_unet_down_blocks" in h || "lora_unet_up_blocks" in h || "unet.down_blocks" in h -> Base.SD15
             else -> Base.OTHER
@@ -103,6 +116,51 @@ object LoraLibrary {
     }
 
     private const val USE = "used:"
+    private const val BASE = "base:"
+    private val ZIMAGE_LAYERS = Regex("layers[._][0-9]+[._]attention[._]")
+
+    /** ⭐ The bases the user set by hand, by file name (the LoRA's ⋮). */
+    fun baseOverrides(context: Context): Map<String, Base> =
+        prefs(context).all.filterKeys { it.startsWith(BASE) }.mapNotNull { (k, v) ->
+            (v as? String)?.let { s -> Base.entries.firstOrNull { it.name == s }?.let { k.removePrefix(BASE) to it } }
+        }.toMap()
+
+    /** ⭐ File [name] under [base]; null goes back to what its header says. */
+    fun setBase(context: Context, name: String, base: Base?) {
+        prefs(context).edit().apply { if (base == null) remove(BASE + name) else putString(BASE + name, base.name) }.apply()
+    }
+
+    private const val FOLDER = "folder:"
+
+    /**
+     * ⭐⭐ The folders LoRAs were put in, by file name (GitHub #36, the user's call 2026-10-15: user
+     * folders inside a family's list, the files staying where they are). A folder exists while a
+     * LoRA is in it, so there is no empty folder to keep or to delete.
+     */
+    fun folders(context: Context): Map<String, String> =
+        prefs(context).all.filterKeys { it.startsWith(FOLDER) }
+            .mapNotNull { (k, v) -> (v as? String)?.takeIf { it.isNotBlank() }?.let { k.removePrefix(FOLDER) to it } }.toMap()
+
+    /** ⭐ Put [name] in [folder]; null or blank takes it out of every folder. */
+    fun setFolder(context: Context, name: String, folder: String?) {
+        prefs(context).edit().apply {
+            if (folder.isNullOrBlank()) remove(FOLDER + name) else putString(FOLDER + name, folder.trim())
+        }.apply()
+    }
+
+    /**
+     * ⭐ Pure: [names] (already in the picker's order) as folders, alphabetical, each keeping that
+     * order inside, then the ones in no folder. [folders] maps a LoRA to its folder.
+     */
+    fun grouped(names: List<String>, folders: Map<String, String>): Pair<List<Pair<String, List<String>>>, List<String>> {
+        val inFolder = names.filter { folders[it] != null }
+        val groups = inFolder.groupBy { folders.getValue(it) }.toList().sortedBy { it.first.lowercase() }
+        return groups to names.filter { folders[it] == null }
+    }
+
+    /** ⭐ Pure: the folders already used by LoRAs of [base] (null = any), for the ⋮ dialog to offer. */
+    fun foldersFor(items: List<Item>, folders: Map<String, String>, base: Base?): List<String> =
+        items.filter { base == null || it.base == base }.mapNotNull { folders[it.name] }.distinct().sortedBy { it.lowercase() }
 
     /**
      * ⭐ Pure: [items] filtered to [base] (null = all) and [query], favourites first, then by [sort].

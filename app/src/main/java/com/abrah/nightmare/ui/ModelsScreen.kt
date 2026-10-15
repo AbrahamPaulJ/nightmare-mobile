@@ -234,12 +234,12 @@ fun ModelsScreen(
      */
     onProbeVideo: () -> Unit = {},
     /**
-     * ⭐ Wan 2.2 video ([com.abrah.nightmare.ModelCatalog.WAN22]): a catalogue model drawn on the
-     * Video tab, never among the checkpoints. Null draws no card. Install and Delete are the
-     * checkpoints' own ([onInstall], [onDelete]).
+     * ⭐ The Wan models ([com.abrah.nightmare.ModelCatalog.video]: Wan 2.2 Turbo and Fun Control), drawn on
+     * the Video tab and on their own Wan page in the family menu (the user, 2026-10-15: "show WAN in the
+     * family filter"), never among the checkpoints. Install and Delete are the checkpoints' own.
      */
-    wan: ModelRow? = null,
-    onUseWan: () -> Unit = {},
+    wans: List<ModelRow> = emptyList(),
+    onUseWan: (ModelSpec) -> Unit = {},
     /** ⭐ The Tools tab. Null renders no tab, as for [video]. */
     segmenter: ToolRow? = null,
     onInstallSegmenter: () -> Unit = {},
@@ -399,12 +399,12 @@ fun ModelsScreen(
         // this phone cannot run in a collapsed section of their own (the user:
         // *"so user only sees whats supported"*). A family opens its own page.
         // ⭐ PAGES, not families: Anima's two runtimes share one ([page]).
-        val families = Family.entries.filter { f -> rows.any { it.spec.family.page() == f } }
+        val families = Family.entries.filter { f -> rows.any { it.spec.family.page() == f } || (f == Family.WAN && wans.isNotEmpty()) }
         // ⚠ With no checkpoints but the video models, opens on Video — what the
         // family tabs did when the video tab was page 0 (a real state: a phone
         // that downloaded only the video models).
         var kind by androidx.compose.runtime.saveable.rememberSaveable {
-            mutableStateOf(if (rows.isEmpty() && (video != null || wan != null)) ModelKind.VIDEO else ModelKind.ALL)
+            mutableStateOf(if (rows.isEmpty() && (video != null || wans.isNotEmpty())) ModelKind.VIDEO else ModelKind.ALL)
         }
         var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
         var familyPage by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Family?>(null) }
@@ -415,7 +415,7 @@ fun ModelsScreen(
             add(ModelKind.GENERATE)
             if (rows.any { it.spec.family.edit }) add(ModelKind.EDIT)
             if (rows.any { it.spec.isInpaintModel() }) add(ModelKind.INPAINT)
-            if (video != null || wan != null) add(ModelKind.VIDEO)
+            if (video != null || wans.isNotEmpty()) add(ModelKind.VIDEO)
             if (upscalers.isNotEmpty()) add(ModelKind.UPSCALE)
             if (segmenter != null || parser != null || describe.isNotEmpty()) add(ModelKind.TOOLS)
         }
@@ -425,15 +425,15 @@ fun ModelsScreen(
         if (fp == null) {
             androidx.compose.foundation.layout.Box(Modifier.padding(top = 8.dp)) { PillRow(kinds, kind, { kindLabel(it) }) { kind = it } }
         }
-        if (fp == null && kind == ModelKind.VIDEO && (video != null || wan != null)) {
+        if (fp == null && kind == ModelKind.VIDEO && (video != null || wans.isNotEmpty())) {
             VideoModelsTab(
                 video, busy, onInstallVideo, onCancel,
                 onConfirmDelete = { deletingVideo = true },
                 onProbe = onProbeVideo,
                 onUse = onUseVideo,
-                wan = wan,
-                onInstallWan = { wan?.spec?.let(onInstall) },
-                onDeleteWan = { deleting = wan?.spec },
+                wans = wans,
+                onInstallWan = onInstall,
+                onDeleteWan = { deleting = it },
                 onUseWan = onUseWan,
             )
         } else {
@@ -533,20 +533,28 @@ fun ModelsScreen(
                     if (fp == null) {
                         item { SearchBox(query, { query = it }) }
                         item {
-                            FamilyMenu(families.map { f -> f to rows.count { it.spec.family.page() == f } }) {
+                            FamilyMenu(families.map { f -> f to (if (f == Family.WAN) wans.size else rows.count { it.spec.family.page() == f }) }) {
                                 familyPage = it
                                 sub = SubKind.ALL
                             }
                         }
                     } else {
                         item {
-                            FamilyHeader(fp, rows.count { it.spec.family.page() == fp }, familyNote(fp)) { familyPage = null }
+                            FamilyHeader(fp, if (fp == Family.WAN) wans.size else rows.count { it.spec.family.page() == fp }, familyNote(fp)) { familyPage = null }
                         }
                         // ⚠ Sub-chips only when there is a choice to make.
                         val subs = SubKind.entries.filter { s ->
                             s == SubKind.ALL || rows.any { it.spec.family.page() == fp && matchesSub(it.spec, s) }
                         }
                         if (subs.size > 2) item { PillRow(subs, sub, { subLabel(it) }) { sub = it } }
+                    }
+                    // ⭐ The Wan page: the video tab's cards for the Wan models, each with its own Use.
+                    if (fp == Family.WAN) {
+                        videoModelItems(
+                            null, busy, {}, onCancel, {}, {},
+                            wans, onInstall, { deleting = it }, onUseWan, showNote = false,
+                        )
+                        return@LazyColumn
                     }
                     // ⭐ The Anima page in two parts, DiT first (the user, 2026-10-14).
                     val groups: List<Pair<Int?, List<ModelRow>>> = if (fp == Family.ANIMA_DIT) {
@@ -609,15 +617,15 @@ fun ModelsScreen(
                     // as their own tabs draw them.
                     if (fp == null && kind == ModelKind.ALL && query.isNotBlank()) {
                         val neoHit = video != null && matchesWords("neodragon video text image", query)
-                        val wanHit = wan != null && (matchesQuery(wan.spec, query) || matchesWords("video", query))
-                        if (neoHit || wanHit) {
+                        val wanHits = wans.filter { matchesQuery(it.spec, query) || matchesWords("video wan motion", query) }
+                        if (neoHit || wanHits.isNotEmpty()) {
                             item { SectionHeader(kindLabel(ModelKind.VIDEO)) }
                             videoModelItems(
                                 if (neoHit) video else null, busy, onInstallVideo, onCancel,
                                 onConfirmDelete = { deletingVideo = true }, onUse = onUseVideo,
-                                wan = if (wanHit) wan else null,
-                                onInstallWan = { wan?.spec?.let(onInstall) },
-                                onDeleteWan = { deleting = wan?.spec },
+                                wans = wanHits,
+                                onInstallWan = onInstall,
+                                onDeleteWan = { deleting = it },
                                 onUseWan = onUseWan,
                                 showNote = false,
                             )
@@ -753,7 +761,7 @@ fun ModelsScreen(
         )
     }
     deleting?.let { spec ->
-        val row = rows.firstOrNull { it.spec.id == spec.id } ?: wan?.takeIf { it.spec.id == spec.id }
+        val row = rows.firstOrNull { it.spec.id == spec.id } ?: wans.firstOrNull { it.spec.id == spec.id }
         ConfirmDelete(
             title = stringResource(R.string.models_delete_title, spec.label),
             body = run {
@@ -944,10 +952,10 @@ private fun VideoModelsTab(
      * this dialog is for.
      */
     onUse: () -> Unit = {},
-    wan: ModelRow? = null,
-    onInstallWan: () -> Unit = {},
-    onDeleteWan: () -> Unit = {},
-    onUseWan: () -> Unit = {},
+    wans: List<ModelRow> = emptyList(),
+    onInstallWan: (ModelSpec) -> Unit = {},
+    onDeleteWan: (ModelSpec) -> Unit = {},
+    onUseWan: (ModelSpec) -> Unit = {},
 ) {
     // ⚠ Once, when the tab is first composed. [HarnessViewModel.probeVideoSupport]
     // is itself idempotent, so a pager pre-composing this page costs one call.
@@ -956,7 +964,7 @@ private fun VideoModelsTab(
         Modifier.fillMaxWidth().padding(top = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        videoModelItems(row, busy, onInstall, onCancel, onConfirmDelete, onUse, wan, onInstallWan, onDeleteWan, onUseWan)
+        videoModelItems(row, busy, onInstall, onCancel, onConfirmDelete, onUse, wans, onInstallWan, onDeleteWan, onUseWan)
     }
 }
 
@@ -968,10 +976,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.videoModelItems(
     onCancel: () -> Unit,
     onConfirmDelete: () -> Unit,
     onUse: () -> Unit,
-    wan: ModelRow?,
-    onInstallWan: () -> Unit,
-    onDeleteWan: () -> Unit,
-    onUseWan: () -> Unit,
+    wans: List<ModelRow>,
+    onInstallWan: (ModelSpec) -> Unit,
+    onDeleteWan: (ModelSpec) -> Unit,
+    onUseWan: (ModelSpec) -> Unit,
     showNote: Boolean = true,
 ) {
         if (row != null && showNote) item {
@@ -1000,18 +1008,20 @@ private fun androidx.compose.foundation.lazy.LazyListScope.videoModelItems(
             )
         }
         // ⭐ Wan 2.2: the checkpoint card's facts ([ModelRow]) on the video tab's [AddonCard].
-        if (wan != null) item {
+        for (wan in wans) item(key = "wan_" + wan.spec.id) {
             AddonCard(
                 title = wan.spec.label,
-                detail = stringResource(R.string.wan_about),
+                detail = stringResource(
+                    if (wan.spec == com.abrah.nightmare.ModelCatalog.WAN22_FUN) R.string.wan_fun_about else R.string.wan_about,
+                ),
                 installed = wan.installed,
                 sizeBytes = if (wan.installed) wan.onDisk else wan.fetchBytes.takeIf { it > 0 } ?: wan.build?.bytes,
                 busy = busy,
                 progress = wan.progress,
                 onCancel = onCancel,
-                onInstall = onInstallWan.takeIf { wan.build != null },
-                onDelete = onDeleteWan,
-                onUse = onUseWan.takeIf { wan.installed },
+                onInstall = { onInstallWan(wan.spec) }.takeIf { wan.build != null },
+                onDelete = { onDeleteWan(wan.spec) },
+                onUse = { onUseWan(wan.spec) }.takeIf { wan.installed },
                 partial = wan.partial,
                 unsupportedNote = if (!wan.installed && wan.build == null) stringResource(R.string.cannot_run_it) else null,
             )
