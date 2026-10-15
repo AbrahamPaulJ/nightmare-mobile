@@ -1,0 +1,49 @@
+--- a/src/VideoEndpoint.hpp
++++ b/src/VideoEndpoint.hpp
+@@ -72,6 +72,35 @@
+         if (req->start_rgb.empty() || w != req->width || h != req->height)
+           throw std::invalid_argument("start image must be width x height");
+       }
++      // nightmare (033): Wan 2.2 Fun Control. "control_video" is a FILE in the
++      // NMV1 layout this endpoint writes ("NMV1", int32 w, h, count, fps, then
++      // RGB8 frames): a 49-frame 704x1280 control video is 132 MB, too big for
++      // base64 in a request body. "ref_image" is base64 like "image", any size.
++      if (json.contains("control_video")) {
++        const std::string path = json["control_video"].get<std::string>();
++        std::ifstream cv(path, std::ios::binary);
++        char magic[4] = {};
++        int32_t head[4] = {};
++        cv.read(magic, 4);
++        cv.read(reinterpret_cast<char *>(head), sizeof(head));
++        if (!cv || std::string(magic, 4) != "NMV1" || head[0] <= 0 || head[1] <= 0 ||
++            head[2] <= 0 || head[2] > 1000)
++          throw std::invalid_argument("control_video is not an NMV1 file: " + path);
++        const size_t bytes = static_cast<size_t>(head[0]) * head[1] * 3 * head[2];
++        req->control_rgb.resize(bytes);
++        cv.read(reinterpret_cast<char *>(req->control_rgb.data()),
++                static_cast<std::streamsize>(bytes));
++        if (!cv) throw std::invalid_argument("control_video is short: " + path);
++        req->control_width = head[0];
++        req->control_height = head[1];
++        req->control_count = head[2];
++      }
++      if (json.contains("ref_image")) {
++        const std::string dec_str = base64_decode(json["ref_image"].get<std::string>());
++        const std::vector<uint8_t> dec_buf(dec_str.begin(), dec_str.end());
++        decode_reference_image(dec_buf, req->ref_rgb, req->ref_width, req->ref_height);
++        if (req->ref_rgb.empty()) throw std::invalid_argument("ref_image is not a picture");
++      }
+       if (json.contains("loras")) {
+         for (const auto &entry : json["loras"]) {
+           LoraRef lora;
+@@ -89,7 +118,9 @@
+       std::cout << "Video Rcvd: P:" << req->prompt << " Size:" << req->width
+                 << "x" << req->height << "x" << req->frames
+                 << " Seed:" << req->seed
+-                << " I2V:" << !req->start_rgb.empty() << std::endl;
++                << " I2V:" << !req->start_rgb.empty()
++                << " Control:" << req->control_count
++                << " Ref:" << !req->ref_rgb.empty() << std::endl;
+       res.set_header("Content-Type", "text/event-stream");
+       res.set_header("Cache-Control", "no-cache");
+       res.set_header("Connection", "keep-alive");

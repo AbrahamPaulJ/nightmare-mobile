@@ -1,0 +1,49 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -38,6 +38,15 @@
+   std::vector<LoraRef> loras;
+   int preview_stride = 0;
+   std::string preview_format = "jpeg";
++  // nightmare (033): Wan 2.2 Fun Control (ABI 107). The control video's frames,
++  // RGB8 back to back, and an optional reference picture; empty for none.
++  std::vector<uint8_t> control_rgb;
++  int control_count = 0;
++  int control_width = 0;
++  int control_height = 0;
++  std::vector<uint8_t> ref_rgb;
++  int ref_width = 0;
++  int ref_height = 0;
+ };
+ 
+ struct VideoResult {
+@@ -212,6 +221,17 @@
+     params.tiling_args = req.tiling_args.c_str();
+     params.vae_tile_size = req.vae_tile_size;
+     params.vae_tile_overlap = req.vae_tile_overlap;
++    if (req.control_count > 0 && !req.control_rgb.empty()) {
++      params.control_rgb = req.control_rgb.data();
++      params.control_count = req.control_count;
++      params.control_width = req.control_width;
++      params.control_height = req.control_height;
++    }
++    if (!req.ref_rgb.empty()) {
++      params.ref_image_rgb = req.ref_rgb.data();
++      params.ref_width = req.ref_width;
++      params.ref_height = req.ref_height;
++    }
+     std::vector<const char *> lora_paths;
+     std::vector<float> lora_multipliers;
+     for (const auto &lora : req.loras) {
+@@ -231,10 +251,10 @@
+     callbacks.sample_steps = req.sigmas.size() > 1
+                                  ? static_cast<int>(req.sigmas.size()) - 1
+                                  : std::max(1, req.steps);
+-    QNN_INFO("[dit] video %dx%dx%d fps=%d steps=%d %s vae_tile=%d/%.2f",
++    QNN_INFO("[dit] video %dx%dx%d fps=%d steps=%d %s vae_tile=%d/%.2f control=%d ref=%d",
+              req.width, req.height, req.frames, req.fps, callbacks.sample_steps,
+              req.start_rgb.empty() ? "t2v" : "i2v", req.vae_tile_size,
+-             req.vae_tile_overlap);
++             req.vae_tile_overlap, req.control_count, req.ref_rgb.empty() ? 0 : 1);
+     const auto start = std::chrono::high_resolution_clock::now();
+     const bool ok = api_->generate_video(
+         ctx_, &params, &PipelineDit::forwardVideoProgress,

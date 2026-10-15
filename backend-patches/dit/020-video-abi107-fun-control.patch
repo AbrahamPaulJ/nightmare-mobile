@@ -1,0 +1,70 @@
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -422,6 +422,35 @@
+     gen.lora_count = static_cast<uint32_t>(loras.size());
+   }
+ 
++  // nightmare (ABI 107): Wan 2.2 Fun Control. The frames point into the
++  // caller's buffer, valid for this call, as the start image does.
++  std::vector<sd_image_t> control;
++  if (params->control_rgb && params->control_count > 0 &&
++      params->control_width > 0 && params->control_height > 0) {
++    const size_t frame_bytes = static_cast<size_t>(params->control_width) *
++                               static_cast<size_t>(params->control_height) * 3;
++    control.reserve(static_cast<size_t>(params->control_count));
++    for (int i = 0; i < params->control_count; ++i) {
++      sd_image_t f{};
++      f.width = static_cast<uint32_t>(params->control_width);
++      f.height = static_cast<uint32_t>(params->control_height);
++      f.channel = 3;
++      f.data = const_cast<uint8_t *>(params->control_rgb) + frame_bytes * static_cast<size_t>(i);
++      control.push_back(f);
++    }
++    gen.control_frames = control.data();
++    gen.control_frames_size = static_cast<int>(control.size());
++  }
++  sd_image_t ref{};
++  if (params->ref_image_rgb && params->ref_width > 0 && params->ref_height > 0) {
++    ref.width = static_cast<uint32_t>(params->ref_width);
++    ref.height = static_cast<uint32_t>(params->ref_height);
++    ref.channel = 3;
++    ref.data = const_cast<uint8_t *>(params->ref_image_rgb);
++    gen.ref_images = &ref;
++    gen.ref_images_count = 1;
++  }
++
+   gen.vae_tiling_params.temporal_tiling = params->temporal_tiling;
+   if (params->tiling_args && params->tiling_args[0])
+     gen.vae_tiling_params.extra_tiling_args = params->tiling_args;
+--- a/include/DitEngine.h
++++ b/include/DitEngine.h
+@@ -30,7 +30,10 @@
+ // 106: Wan 2.2 TI2V video -- DIT_MODEL_WAN, the umT5 / tiny-decoder / mmap
+ // context fields and generate_video(), all appended so 105's layout is a
+ // prefix of 106's.
+-#define DIT_ENGINE_ABI_VERSION 106
++//
++// 107: Wan 2.2 Fun Control -- control video frames and a reference image
++// appended to dit_video_params (106's layout is a prefix of 107's).
++#define DIT_ENGINE_ABI_VERSION 107
+ 
+ // Name of the single symbol the core resolves after dlopen.
+ #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
+@@ -167,6 +170,17 @@
+   const char *const *lora_paths;
+   const float *lora_multipliers;
+   int lora_count;
++  // --- ABI 107: Wan 2.2 Fun Control ---
++  // Control video: control_count RGB8 frames of control_width x control_height,
++  // back to back; NULL / 0 for none. The engine resizes them to width x height.
++  const uint8_t *control_rgb;
++  int control_count;
++  int control_width;
++  int control_height;
++  // Reference picture (Fun Control's ref_conv): RGB8, NULL for none.
++  const uint8_t *ref_image_rgb;
++  int ref_width;
++  int ref_height;
+ } dit_video_params;
+ 
+ // One decoded frame, RGB8, valid only during the call. Frames arrive in order
