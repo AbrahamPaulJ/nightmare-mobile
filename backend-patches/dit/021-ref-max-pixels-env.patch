@@ -1,0 +1,34 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index 49f5601..b513d12 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -250,6 +250,8 @@ bool engine_generate(dit_ctx *ctx, const dit_gen_params *params, dit_progress_cb
+   }
+ 
+   std::vector<sd_image_t> reference_images;
++  // Outlives the generate call: gen.ref_image_args points into it.
++  std::string ref_image_args;
+   if (params->reference_image_count > 0) {
+     if (!params->reference_images_rgb ||
+         !params->reference_widths || !params->reference_heights) {
+@@ -270,8 +272,19 @@ bool engine_generate(dit_ctx *ctx, const dit_gen_params *params, dit_progress_cb
+     }
+     gen.ref_images = reference_images.data();
+     gen.ref_images_count = static_cast<int>(reference_images.size());
+-    gen.ref_image_args =
++    ref_image_args =
+         ctx->kind == DIT_MODEL_QWEN_IMAGE_2_1 ? "preset=qwen" : "preset=flux2";
++    // nightmare: a cap on the pixels a reference is VAE-encoded at, from the
++    // environment so the ABI does not move. The engine encodes a reference at
++    // the CANVAS area (Qwen) or up to 1 MP (FLUX.2), and every one of its tokens
++    // goes through every DiT block: below HTP v79 one block of Klein 9B or
++    // Qwen 2.1 with a 1 MP reference went just over the per-segment budget
++    // (2344 of 2304 MB, 2629 of 2627 MB). Capping the reference shrinks only
++    // its tokens; the output keeps its size.
++    const char *ref_max = std::getenv("DIT_REF_MAX_PIXELS");
++    if (ref_max && ref_max[0] && std::atoi(ref_max) > 0)
++      ref_image_args += std::string(",vae_input_max_pixels=") + ref_max;
++    gen.ref_image_args = ref_image_args.c_str();
+   }
+ 
+   // Same shape as reference_images above: the vector outlives the generate
