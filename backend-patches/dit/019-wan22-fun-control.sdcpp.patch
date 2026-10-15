@@ -1,0 +1,227 @@
+--- a/src/model_loader.cpp
++++ b/src/model_loader.cpp
+@@ -579,7 +579,9 @@
+         if (patch_embedding_channels == 184320 && !has_img_emb) {
+             return VERSION_WAN2_2_I2V;
+         }
+-        if (patch_embedding_channels == 147456 && !has_img_emb) {
++        // Wan 2.2 TI2V 5B: 48 latent channels x dim 3072. Wan 2.2 Fun 5B Control concatenates
++        // 100 more (control 48 + mask 4 + masked video 48): 148 x 3072.
++        if ((patch_embedding_channels == 147456 || patch_embedding_channels == 454656) && !has_img_emb) {
+             return VERSION_WAN2_2_TI2V;
+         }
+         return VERSION_WAN2;
+--- a/src/model/diffusion/model.hpp
++++ b/src/model/diffusion/model.hpp
+@@ -182,6 +182,9 @@
+ 
+     virtual void get_param_tensors(std::map<std::string, ggml_tensor*>& tensors,
+                                    const std::string& prefix) = 0;
++
++    // Wan 2.2 Fun 5B Control: takes 100 conditioning channels (c_concat) and a reference latent.
++    virtual bool wan_fun_control() const { return false; }
+ };
+ 
+ #endif  // __SD_MODEL_DIFFUSION_MODEL_HPP__
+--- a/src/model/diffusion/wan.hpp
++++ b/src/model/diffusion/wan.hpp
+@@ -1,6 +1,7 @@
+ #ifndef __SD_MODEL_DIFFUSION_WAN_HPP__
+ #define __SD_MODEL_DIFFUSION_WAN_HPP__
+ 
++#include <algorithm>
+ #include <cinttypes>
+ #include <map>
+ #include <memory>
+@@ -38,6 +39,9 @@
+         bool cross_attn_norm                   = true;
+         float eps                              = 1e-6f;
+         int64_t flf_pos_embed_token_number     = 0;
++        int64_t patch_embedding_ne3            = 0;      // in_dim * dim, as the loader folds it
++        bool add_ref_conv                      = false;  // Wan 2.2 Fun Control's reference image conv
++        int64_t in_dim_ref_conv                = 48;
+         int theta                              = 10000;
+         // wan2.1 1.3B: 1536/12, wan2.1/2.2 14B: 5120/40, wan2.2 5B: 3074/24
+         std::vector<int> axes_dim = {44, 42, 42};
+@@ -46,8 +50,16 @@
+         static WanConfig detect_from_weights(const String2TensorStorage& tensor_storage_map, const std::string& prefix) {
+             WanConfig config;
+             config.num_layers = 0;
+-            for (const auto& [name, _] : tensor_storage_map) {
++            for (const auto& [name, storage] : tensor_storage_map) {
+                 if (!starts_with(name, prefix)) {
++                    continue;
++                }
++                if (ends_with(name, "patch_embedding.weight")) {
++                    config.patch_embedding_ne3 = storage.ne[3];
++                }
++                if (ends_with(name, "ref_conv.weight")) {
++                    config.add_ref_conv    = true;
++                    config.in_dim_ref_conv = storage.ne[2];
+                     continue;
+                 }
+                 size_t pos = name.find("vace_blocks.");
+@@ -669,6 +681,13 @@
+             // img_emb
+             if (config.model_type == "i2v") {
+                 blocks["img_emb"] = std::shared_ptr<GGMLBlock>(new MLPProj(1280, config.dim, config.flf_pos_embed_token_number));
++            }
++
++            if (config.add_ref_conv) {
++                blocks["ref_conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(config.in_dim_ref_conv,
++                                                                           config.dim,
++                                                                           {std::get<1>(config.patch_size), std::get<2>(config.patch_size)},
++                                                                           {std::get<1>(config.patch_size), std::get<2>(config.patch_size)}));
+             }
+ 
+             // vace
+@@ -821,6 +840,22 @@
+                 c = ggml_reshape_3d(ctx->ggml_ctx, c, c->ne[0] * c->ne[1] * c->ne[2], c->ne[3] / N, N);  // [N, dim, t_len*h_len*w_len]
+                 c = ggml_ext_cont(ctx->ggml_ctx, ggml_ext_torch_permute(ctx->ggml_ctx, c, 1, 0, 2, 3));  // [N, t_len*h_len*w_len, dim]
+             }
++            // Wan 2.2 Fun Control: the reference latent ([W, H, C_ref, N], carried in vace_context
++            // since this model has no VACE blocks) through ref_conv, as one extra frame of tokens.
++            // VideoX-Fun PREPENDS it at temporal position 0; here it is APPENDED and given
++            // position 0's RoPE rows (WanRunner::build_graph), so attention is the same and the
++            // frame-0 / rest split of the modulation (TI2V image to video) is untouched: the
++            // reference sits with "the rest", at t, as VideoX-Fun pads its timestep.
++            int64_t ref_tokens = 0;
++            if (config.add_ref_conv && config.vace_layers == 0 && vace_context != nullptr) {
++                auto ref_conv = std::dynamic_pointer_cast<Conv2d>(blocks["ref_conv"]);
++                auto r        = ref_conv->forward(ctx, vace_context);                                // [N*dim, h_len, w_len]
++                r             = ggml_reshape_3d(ctx->ggml_ctx, r, r->ne[0] * r->ne[1], r->ne[2], N);  // [N, dim, h_len*w_len]
++                r             = ggml_ext_cont(ctx->ggml_ctx, ggml_ext_torch_permute(ctx->ggml_ctx, r, 1, 0, 2, 3));  // [N, h_len*w_len, dim]
++                ref_tokens    = r->ne[1];
++                x             = ggml_concat(ctx->ggml_ctx, x, r, 1);  // [N, t_len*h_len*w_len + ref, dim]
++            }
++
+             sd::ggml_graph_cut::mark_graph_cut(x, "wan.prelude", "x");
+             // sd::ggml_graph_cut::mark_graph_cut(e, "wan.prelude", "e");
+             // sd::ggml_graph_cut::mark_graph_cut(e0, "wan.prelude", "e0");
+@@ -855,6 +890,10 @@
+             }
+ 
+             x = head->forward(ctx, x, e, e_rest, frame_tokens);  // [N, t_len*h_len*w_len, pt*ph*pw*out_dim]
++
++            if (ref_tokens > 0) {
++                x = ggml_ext_slice(ctx->ggml_ctx, x, 1, 0, x->ne[1] - ref_tokens);  // drop the reference
++            }
+ 
+             return x;
+         }
+@@ -933,6 +972,16 @@
+                     config.ffn_dim   = 14336;
+                     config.freq_dim  = 256;
+                     config.in_dim    = 48;
++                    // Wan 2.2 Fun 5B Control: in_dim 148 (48 + control 48 + mask 4 + masked 48)
++                    // and a reference conv. It keeps the TI2V desc: every TI2V path (start image,
++                    // per-frame timesteps) applies to it unchanged.
++                    if (config.patch_embedding_ne3 > 0 && config.patch_embedding_ne3 % config.dim == 0) {
++                        config.in_dim = config.patch_embedding_ne3 / config.dim;
++                    }
++                    if (config.in_dim != 48 || config.add_ref_conv) {
++                        LOG_INFO("Wan2.2 Fun Control: in_dim %" PRId64 ", ref_conv %d (%" PRId64 " channels)",
++                                 config.in_dim, config.add_ref_conv ? 1 : 0, config.in_dim_ref_conv);
++                    }
+                     config.num_heads = 24;
+                     config.out_dim   = 48;
+                     config.text_len  = 512;
+@@ -997,6 +1046,10 @@
+             return desc;
+         }
+ 
++        bool wan_fun_control() const override {
++            return config.in_dim == 148;
++        }
++
+         void get_param_tensors(std::map<std::string, ggml_tensor*>& tensors, const std::string& prefix) override {
+             wan.get_param_tensors(tensors, prefix);
+         }
+@@ -1019,7 +1072,8 @@
+             ggml_tensor* time_dim_concat = make_optional_input(time_dim_concat_tensor);
+             ggml_tensor* vace_context    = make_optional_input(vace_context_tensor);
+ 
+-            pe_vec      = Rope::gen_wan_pe(static_cast<int>(x->ne[2]),
++            const bool fun_ref = config.add_ref_conv && config.vace_layers == 0 && vace_context != nullptr;
++            pe_vec      = Rope::gen_wan_pe(static_cast<int>(x->ne[2]) + (fun_ref ? 1 : 0),
+                                            static_cast<int>(x->ne[1]),
+                                            static_cast<int>(x->ne[0]),
+                                            std::get<0>(config.patch_size),
+@@ -1030,6 +1084,11 @@
+                                            config.axes_dim);
+             int pos_len = static_cast<int>(pe_vec.size() / config.axes_dim_sum / 2);
+             // LOG_VERBOSE("pos_len %d", pos_len);
++            if (fun_ref) {
++                // Positions are frame-major: frame 0 (the reference's) goes last, after the video.
++                size_t frame_floats = pe_vec.size() / static_cast<size_t>(x->ne[2] + 1);
++                std::rotate(pe_vec.begin(), pe_vec.begin() + frame_floats, pe_vec.end());
++            }
+             auto pe = ggml_new_tensor_4d(compute_ctx, GGML_TYPE_F32, 2, 2, config.axes_dim_sum / 2, pos_len);
+             // pe->data = pe_vec.data();
+             // print_ggml_tensor(pe);
+--- a/src/pipeline/video.cpp
++++ b/src/pipeline/video.cpp
+@@ -1034,6 +1034,63 @@
+             latents.vace_context = sd::ops::concat(vace_context, mask_context, 3);  // [b, 2*c + vae_scale_factor*vae_scale_factor, t + 1 or t, h/vae_scale_factor, w/vae_scale_factor]
+             int64_t t2           = ggml_time_ms();
+             LOG_INFO("encode_first_stage completed, taking %" PRId64 " ms", t2 - t1);
++        }
++
++        // Wan 2.2 Fun 5B Control (VideoX-Fun pipeline_wan2_2_fun_control): 100 channels concatenated
++        // to the latent, [control 48, mask 4, masked video 48], and a reference latent for ref_conv.
++        // The start image (if any) already went through the TI2V branch above (frame 0 held at t = 0);
++        // here it also fills the masked video and the mask, as VideoX-Fun's inpaint inputs do.
++        if (sd->diffusion_model->wan_fun_control()) {
++            LOG_INFO("Wan2.2 Fun Control: %d control frames, %d reference image(s)",
++                     sd_vid_gen_params->control_frames_size, sd_vid_gen_params->ref_images_count);
++            int64_t t1 = ggml_time_ms();
++            sd::Tensor<float> control_video = sd::full<float>({request->width, request->height, request->frames, 3, 1}, 0.5f);
++            int64_t control_frame_count     = std::min<int64_t>(request->frames, sd_vid_gen_params->control_frames_size);
++            for (int64_t i = 0; i < control_frame_count; ++i) {
++                auto control_frame = sd_image_to_tensor(sd_vid_gen_params->control_frames[i], request->width, request->height);
++                sd::ops::slice_assign(&control_video, 2, i, i + 1, control_frame.unsqueeze(2));
++            }
++            auto control_latent = control_frame_count > 0 ? sd->encode_first_stage(control_video)
++                                                          : sd::Tensor<float>();
++            if (control_frame_count > 0 && control_latent.empty()) {
++                LOG_ERROR("failed to encode the Fun control video");
++                return std::nullopt;
++            }
++            auto shape_ref = sd->generate_init_latent(request->width, request->height, request->frames, true);  // [w, h, t, c, b]
++            if (control_latent.empty()) {
++                control_latent = sd::zeros<float>(shape_ref.shape());
++            }
++            sd::Tensor<float> mask_latent   = sd::zeros<float>({shape_ref.shape()[0], shape_ref.shape()[1], shape_ref.shape()[2], 4, 1});
++            sd::Tensor<float> masked_latent = sd::zeros<float>(shape_ref.shape());
++            if (!start_image.empty()) {
++                sd::Tensor<float> masked_video = sd::full<float>({request->width, request->height, request->frames, 3, 1}, 0.5f);
++                sd::ops::slice_assign(&masked_video, 2, 0, 1,
++                                      start_image.reshape({start_image.shape()[0], start_image.shape()[1], 1, start_image.shape()[2], 1}));
++                masked_latent = sd->encode_first_stage(masked_video);
++                if (masked_latent.empty()) {
++                    LOG_ERROR("failed to encode the Fun masked video");
++                    return std::nullopt;
++                }
++                sd::ops::fill_slice(&mask_latent, 2, 0, 1, 1.0f);  // latent frame 0 is kept
++            }
++            latents.concat_latent = sd::ops::concat(sd::ops::concat(control_latent, mask_latent, 3), masked_latent, 3);  // [w, h, t, 100, b]
++
++            // The reference: VideoX-Fun passes zeros when there is none, and ref_conv always runs.
++            sd::Tensor<float> ref_latent;
++            if (sd_vid_gen_params->ref_images_count > 0) {
++                auto ref_img = sd_image_to_tensor(sd_vid_gen_params->ref_images[0], request->width, request->height).unsqueeze(2);  // [w, h, 1, 3, 1]
++                ref_latent   = sd->encode_first_stage(ref_img);  // [w, h, 1, c, 1]
++                if (ref_latent.empty()) {
++                    LOG_ERROR("failed to encode the Fun reference image");
++                    return std::nullopt;
++                }
++            } else {
++                ref_latent = sd::zeros<float>({shape_ref.shape()[0], shape_ref.shape()[1], 1, shape_ref.shape()[3], 1});
++            }
++            // [w, h, c, 1]: the 4-D image layout ref_conv takes. Carried in vace_context, which this
++            // model (no VACE blocks) reads as its reference.
++            latents.vace_context = ref_latent.reshape({ref_latent.shape()[0], ref_latent.shape()[1], ref_latent.shape()[3], 1});
++            LOG_INFO("Wan2.2 Fun Control: conditioning encoded, taking %" PRId64 " ms", ggml_time_ms() - t1);
+         }
+ 
+         if (latents.init_latent.empty()) {
