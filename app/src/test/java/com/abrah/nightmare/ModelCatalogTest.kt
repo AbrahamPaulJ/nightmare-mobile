@@ -265,7 +265,8 @@ class ModelCatalogTest {
                 // ⚠ `klein`/`zimage` since 2026-09-19 (backend-patches/007).
                 // ⚠ `qwen21` since 2026-09-27 (backend-patches/013).
                 // ⚠ `krea2` since 2026-09-28 (backend-patches/014).
-                spec.backendType in listOf("sd15npu", "sd15npu_inpaint", "sdxl", "anima", "klein", "zimage", "qwen21", "krea2"),
+                // ⚠ `iris` since 2026-10-16 (backend-patches/035).
+                spec.backendType in listOf("sd15npu", "sd15npu_inpaint", "sdxl", "anima", "klein", "zimage", "qwen21", "krea2", "iris"),
             )
             assertTrue("${spec.id} has no required files", spec.requiredFiles.isNotEmpty())
             assertTrue("${spec.id} has no resolution", spec.resolutions.isNotEmpty())

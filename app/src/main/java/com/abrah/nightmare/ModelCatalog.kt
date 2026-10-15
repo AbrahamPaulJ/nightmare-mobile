@@ -121,6 +121,13 @@ enum class Family(
      */
     ANIMA_DIT("Anima DiT", GP_ANIMA, GP_ANIMA_NEG, "animadit", dit = true),
     /**
+     * ⭐⭐ **Iris 3B Turbo** on the DiT engine (`docs/IRIS.md`, engine `dit/022`): a pixel-space
+     * model, so NO VAE, the Qwen3-VL-4B text encoder Krea 2 uses, and 4 steps on Turbo's own
+     * schedule (the engine's Iris default). ⚠ Text to image only, and only at its trained sizes
+     * ([ModelSpec.fixedSizes]).
+     */
+    IRIS("Iris", GP_DIT, GP_DIT_NEG, "iris", dit = true),
+    /**
      * ⭐⭐ **Wan 2.2 TI2V 5B video** on the DiT engine (`docs/VIDEO-GGML.md`): a prompt, or a
      * prompt and a start picture, into a clip through `/video` (backend 028, engine ABI 106).
      * ⚠⚠ NOT a checkpoint: its one model ([ModelCatalog.WAN22]) is kept out of
@@ -549,6 +556,13 @@ data class ModelSpec(
      */
     val startRes: Res? = null,
     /**
+     * ⭐⭐ A DiT that renders ONLY its [resolutions], not the 64-px grid. Iris 3B Turbo was distilled
+     * at ~1 MP in seven shapes, and below that its 16-px patches decode apart into visible blocks
+     * (512² blocky on the CPU and the NPU alike, 1024² clean; `docs/IRIS.md`). So the size panel
+     * offers the list, and [ModelCatalog.keptSize] / `runDit` pick from it instead of snapping.
+     */
+    val fixedSizes: Boolean = false,
+    /**
      * ⭐⭐ What this conversion takes per render — [ModelFeatures.LORA], `CONTROLNET`,
      * `IP_ADAPTER`, `INPAINT` — read from its `swap_features.json` at import
      * ([ModelFeatures.of]). Null = a built-in entry: its family's default.
@@ -868,7 +882,8 @@ data class ModelSpec(
         // ([backendContextKey]). ⚠ [native] is untouched — it stays
         // [ModelCatalog.DIT_RES], because that is what the context key is
         // pinned to and what a new node is born at.
-        if (isDit) return listOf(native)
+        // ⭐ ...except a [fixedSizes] DiT (Iris), which serves exactly its list.
+        if (isDit) return if (fixedSizes) resolutions else listOf(native)
         if (!servesPatches) return resolutions
         val found = dir(context).listFiles().orEmpty()
             .filter { it.isFile }
@@ -891,7 +906,7 @@ data class ModelSpec(
      * legal DiT size but one. ⇒ Ask this, never the list.
      */
     fun serves(context: Context, res: Res): Boolean =
-        if (isDit) ModelCatalog.ditSupported(res.width) && ModelCatalog.ditSupported(res.height)
+        if (isDit && !fixedSizes) ModelCatalog.ditSupported(res.width) && ModelCatalog.ditSupported(res.height)
         else res in availableResolutions(context)
 
     /**
@@ -900,7 +915,7 @@ data class ModelSpec(
      * picked from when the real rule is a range.
      */
     fun sizesServedText(context: Context): String =
-        if (isDit) "any size ${ModelCatalog.DIT_MIN}–${ModelCatalog.DIT_MAX} in ${ModelCatalog.DIT_STEP}-pixel steps"
+        if (isDit && !fixedSizes) "any size ${ModelCatalog.DIT_MIN}–${ModelCatalog.DIT_MAX} in ${ModelCatalog.DIT_STEP}-pixel steps"
         else availableResolutions(context).joinToString(", ")
 
     /** What this model occupies on disk, or 0 when it is not installed. */
@@ -990,6 +1005,16 @@ object ModelCatalog {
     const val QWEN21 = "qwen21"
     /** ⭐ Krea 2 Turbo (the fork's e70d89b, backend-patches/014). */
     const val KREA2 = "krea2"
+    /** ⭐ Iris 3B Turbo (backend-patches/035): Krea 2's own-files launch with no VAE file. */
+    const val IRIS = "iris"
+    /**
+     * ⭐⭐ Iris 3B Turbo's training buckets, square first (the model card): its ONLY sizes
+     * ([ModelSpec.fixedSizes]). Multiples of 16, which is all the engine needs; most are off [DIT_STEP]'s grid.
+     */
+    val IRIS_SIZES = listOf(
+        Res(1024, 1024), Res(896, 1200), Res(1200, 896), Res(896, 1344), Res(1344, 896),
+        Res(752, 1344), Res(1344, 752),
+    )
     /** ⚠ The size a NEW node starts at, and the context key's constant size. */
     val DIT_RES = Res(1024, 1024)
     /**
@@ -1034,7 +1059,7 @@ object ModelCatalog {
      * that shape, then nearest that area, because it renders its own size whatever is asked.
      */
     fun keptSize(spec: ModelSpec, w: Int, h: Int): Res {
-        if (spec.isDit) return Res(ditSnap(w), ditSnap(h))
+        if (spec.isDit && !spec.fixedSizes) return Res(ditSnap(w), ditSnap(h))
         val aspect = w.toDouble() / h.coerceAtLeast(1)
         val area = w.toDouble() * h
         return spec.resolutions.minWithOrNull(
@@ -2023,8 +2048,11 @@ object ModelCatalog {
         minArch: Int = DIT_GGML_MIN_ARCH,
         /** ⚠ See [ModelSpec.partsFrom]. */
         partsFrom: String? = null,
+        /** ⭐ Its ONLY sizes, first = native ([ModelSpec.fixedSizes]); null = the free 64-px grid. */
+        sizes: List<Res>? = null,
     ) = ModelSpec(
         startRes = startRes,
+        fixedSizes = sizes != null,
         lowram = lowram,
         ownDitParts = ownDitParts,
         partsFrom = partsFrom,
@@ -2035,7 +2063,7 @@ object ModelCatalog {
         negative = "",
         family = family,
         backendType = type,
-        resolutions = listOf(DIT_RES),
+        resolutions = sizes ?: listOf(DIT_RES),
         requiredFiles = files.map { it.name },
         scheduler = "euler",
         steps = steps,
@@ -2214,6 +2242,28 @@ object ModelCatalog {
                 RemoteFile(HF + "mradermacher/Qwen3-0.6B-Base-GGUF/resolve/main/Qwen3-0.6B-Base.Q8_0.gguf", "llm.gguf", 639_447_232L),
                 RemoteFile(HF + "circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors", "vae.safetensors", 253_806_246L),
                 RemoteFile(HF + "Qwen/Qwen3-0.6B-Base/resolve/main/tokenizer.json", "tokenizer.json", 7_031_645L),
+            ),
+        ),
+        // ⭐⭐ Iris 3B Turbo (speridlabs, Apache 2.0; `docs/IRIS.md`): a pixel-space DiT, so no
+        // VAE, and Krea 2's Qwen3-VL-4B text encoder. 4 steps on Turbo's own schedule, which the
+        // engine's Iris default reproduces exactly (`dit/022`). The official BF16 is converted on the
+        // phone ([IrisGguf]), nothing re-hosted; sizes HEAD-checked 2026-10-16.
+        //
+        // ⚠ Only its trained sizes ([IRIS_SIZES]): at 512² its patches decode apart into blocks.
+        // ⚠ Needs `GGML_HEXAGON_OPFUSION` without MUL_MAT_ADD, as Anima does ([BackendProcess]).
+        // ⚠ Offered on 8 Gen 3 (v75) like every DiT here, with the same below-v79 env; never run on one yet.
+        dit(
+            "iris_3b_turbo", "Iris 3B Turbo", Family.IRIS, IRIS, steps = 4,
+            ownDitParts = true,
+            sizes = IRIS_SIZES,
+            files = listOf(
+                RemoteFile(
+                    HF + "speridlabs/iris-3b/resolve/main/turbo/model.safetensors",
+                    "dit.gguf", IrisGguf.TURBO_BYTES,
+                    sourceBytes = 5_975_089_200L, convert = IrisGguf.converter,
+                ),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
+                RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
             ),
         ),
         // ⭐ FLUX.2 Klein 9B — the same architecture as 4B, so the same family,

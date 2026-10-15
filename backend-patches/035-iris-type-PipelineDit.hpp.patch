@@ -1,0 +1,14 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -141,7 +141,10 @@
+     // tower is what lets a reference picture reach the prompt.
+     params.llm_vision_path =
+         llm_vision_path_.empty() ? nullptr : llm_vision_path_.c_str();
+-    params.vae_path = vae_path_.empty() ? nullptr : vae_path_.c_str();
++    // Iris has no VAE: an EMPTY path, not null, which the wrapper's image
++    // context refuses. Wan keeps null (its decoder is `taesd_path`).
++    params.vae_path =
++        vae_path_.empty() && kind_ == DIT_MODEL_WAN ? nullptr : vae_path_.c_str();
+     params.backend = backend_.c_str();
+     params.params_backend = params_backend_.c_str();
+     params.n_threads = n_threads_;

@@ -68,7 +68,11 @@ object DitEngine {
      * decode's seam flicker, `docs/VIDEO-GGML.md` §3). Still ABI 106: an engine without 018 ignores
      * the key, so the backend did not move. CI run 38509077877; skels unchanged.
      *
-     * ⭐⭐ The TENTH engine, current (1.6.165): `dit-engine-abi107-refcap`, CI 38743114916: the ABI 107
+     * ⭐⭐ The ELEVENTH engine, current: `dit-engine-abi107-iris`, CI 38776845309: the tenth + `dit/022`,
+     * Iris-3B (a pixel-space DiT, no VAE; its default schedule is Turbo's). Still ABI 107, so backend 035
+     * (`--type iris`) is the only other half; v79/v81 skels byte-identical.
+     *
+     * The TENTH engine (1.6.165): `dit-engine-abi107-refcap`, CI 38743114916: the ABI 107
      * one + `dit/021`, a wired reference encoded at no more than `DIT_REF_MAX_PIXELS`, which backend 034
      * sets per request below v79 (GitHub #35). Still ABI 107; v79/v81 skels byte-identical.
      *
@@ -108,7 +112,7 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi107-refcap/dit-engine-abi107-refcap.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi107-iris/dit-engine-abi107-iris.zip"
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -118,7 +122,7 @@ object DitEngine {
      * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
      */
     const val HF_URL =
-        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi107-refcap.zip"
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi107-iris.zip"
 
     /**
      * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
@@ -129,11 +133,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_130_347L
+    const val BYTES = 23_162_594L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 55_789_240L
+    const val FILE_BYTES = 55_864_904L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -143,7 +147,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "896370adbae4ecae523fccd293da02e687b84046605a450fa95c143e5f96aa09"
+    private const val SHA256 = "08bec4e095f035c16ad695123c422d0057a786f5ce996a1bf2572bd9900a31b0"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

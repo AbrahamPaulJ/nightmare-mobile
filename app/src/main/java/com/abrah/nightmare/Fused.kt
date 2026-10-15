@@ -642,6 +642,12 @@ class SdSampler(
         /** ⭐ Anima on the DiT engine (`docs/ANIMA-GGML.md`) — text to image, like Krea 2. */
         val ANIMA_DIT = SdSampler("animadit.sample", Family.ANIMA_DIT, inpaint = false)
         /**
+         * ⭐ Iris 3B Turbo (`docs/IRIS.md`) — text to image, like Krea 2. ⚠ No `iris.inpaint`: an
+         * inpaint renders a cut of any size, and Iris is only right at its trained sizes
+         * ([ModelSpec.fixedSizes]); it stays out until a masked render is measured.
+         */
+        val IRIS = SdSampler("iris.sample", Family.IRIS, inpaint = false)
+        /**
          * ⭐⭐ **DiT inpaint = masked img2img of the cut + the feathered paste
          * back** — Z-Image, Qwen Image 2.1 and Krea 2 (the user's call,
          * 2026-10-05; asked for on Z-Image). ONE `/generate` with the cut and
@@ -683,7 +689,7 @@ class SdSampler(
          * until the engine's behaviour is understood. `notes/PROGRESS.md`.
          */
         val ALL = listOf(
-            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT,
+            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT, IRIS,
             SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, SDXL_SWAP_INPAINT, ANIMA_INPAINT,
             ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT, ANIMA_DIT_INPAINT,
         )
@@ -1838,8 +1844,12 @@ class SdSampler(
     ): Value {
         // ⚠ [ModelCatalog.ditSnap], not a local copy: the size control offers
         // only grid values and this must agree with it ([ModelCatalog.DIT_STEP]).
-        val w = ModelCatalog.ditSnap(w0)
-        val h = ModelCatalog.ditSnap(h0)
+        // ⭐ A [ModelSpec.fixedSizes] model (Iris) takes its listed size nearest the request instead:
+        // the grid would turn 752 into 768, a size it was never trained at.
+        val fixed = ModelCatalog.byId(p["model"].orEmpty())?.takeIf { it.fixedSizes }
+        val kept = fixed?.let { ModelCatalog.keptSize(it, w0, h0) }
+        val w = kept?.width ?: ModelCatalog.ditSnap(w0)
+        val h = kept?.height ?: ModelCatalog.ditSnap(h0)
         val png = photo?.let {
             val src = ctx.images.get(it.id)
                 ?: throw IllegalStateException("node \"${node.id}\": image ${it.id} is no longer in the store")

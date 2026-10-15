@@ -1525,6 +1525,23 @@ internal fun NodeInspectorBody(
             ?.takeIf { it.isDit && node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES }
         val ditPanel: @Composable () -> Unit = ditPanel@{
             val spec = ditSpec ?: return@ditPanel
+            // ⭐ A [com.abrah.nightmare.ModelSpec.fixedSizes] model (Iris) renders only its list, so it
+            // gets the resolution dropdown every listed-size model has, not the free sliders.
+            if (spec.fixedSizes) {
+                val cur = com.abrah.nightmare.Res(
+                    node.params["width"]?.toIntOrNull() ?: spec.native.width,
+                    node.params["height"]?.toIntOrNull() ?: spec.native.height,
+                )
+                Chooser(
+                    label = stringResource(R.string.resolution),
+                    hint = stringResource(R.string.hint_fixed_sizes),
+                    options = spec.resolutions.map { it.toString() },
+                    current = com.abrah.nightmare.ModelCatalog.keptSize(spec, cur.width, cur.height).toString(),
+                    onPick = { l -> com.abrah.nightmare.Res.fromLabel(l)?.let(onSetResolution) },
+                    variesInLength = true,
+                )
+                return@ditPanel
+            }
             val widthW = type?.widgets?.firstOrNull { it.name == "width" } ?: return@ditPanel
             val heightW = type?.widgets?.firstOrNull { it.name == "height" } ?: return@ditPanel
             val cur = com.abrah.nightmare.Res(

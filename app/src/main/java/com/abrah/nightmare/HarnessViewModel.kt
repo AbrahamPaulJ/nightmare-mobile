@@ -4641,7 +4641,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 { r -> if (r == node.params["aspect"]) 0 else 1 },
             ))
             out["aspect"] = best
-        } else if (spec != null && spec.isDit) {
+        } else if (spec != null && spec.isDit && !spec.fixedSizes) {
             // ⭐⭐⭐ **Computed, not picked from a list** — a DiT model renders
             // any pair on its 64-px grid, so the photo's own ratio is reachable
             // to within a grid step and there is no "closest match" to settle

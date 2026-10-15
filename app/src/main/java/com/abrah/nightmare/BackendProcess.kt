@@ -28,8 +28,11 @@ object BackendProcess {
 
     private const val TAG = "BackendProcess"
 
-    /** ⭐ Anima's ggml-hexagon fusions: all but `MUL_MAT_ADD` (bit 8) — see the launch env. */
+    /** ⭐ Anima's and Iris's ggml-hexagon fusions: all but `MUL_MAT_ADD` (bit 8) — see the launch env. */
     internal const val ANIMA_OPFUSION = "246"
+
+    /** ⭐ The families whose adds `MUL_MAT_ADD` computes wrong — see the launch env. */
+    internal val NO_MM_ADD_FUSION = setOf(Family.ANIMA_DIT, Family.IRIS)
 
     /** ⭐ The pixels a wired reference is encoded at below v79 (~0.5 MP, 724²) — see the launch env. */
     internal const val REF_CAP_PIXELS = 524_288
@@ -722,7 +725,10 @@ object BackendProcess {
                         // adapted layer, and a LoRA render ×2.7 (148 s at 1024²). This: 74 s, pictures
                         // byte-identical with and without a LoRA, at v79 and the S25 forced to v75
                         // (`docs/ANIMA-GGML.md` §3).
-                        if (spec?.family == Family.ANIMA_DIT) put("GGML_HEXAGON_OPFUSION", ANIMA_OPFUSION)
+                        // ⭐ Iris too: a Linear's bias then a second add (a block bias, a position table)
+                        // rendered noise on the NPU and right on the CPU; with this mask, the same
+                        // picture in the same 52 s at 512² (`docs/IRIS.md`).
+                        if (spec?.family in NO_MM_ADD_FUSION) put("GGML_HEXAGON_OPFUSION", ANIMA_OPFUSION)
                         // ⭐ A chip that ran short of VTCM runs unfused ([HexFallback]).
                         if (HexFallback.noFusion(context)) put("GGML_HEXAGON_OPFUSION", "0")
                         putAll(readDitEnvOverride(context))

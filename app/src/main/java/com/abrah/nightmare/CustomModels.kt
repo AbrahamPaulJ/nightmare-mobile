@@ -401,6 +401,8 @@ object CustomModels {
         Family.WAN -> Defaults("lcm", 4, 1.0)
         // Anima's official turbo: CFG 1, 8–12 steps; the QNN packages' 10.
         Family.ANIMA_DIT -> Defaults("euler", 10, 1.0)
+        // Iris 3B Turbo: 4 steps at cfg 1, its model card's (`docs/IRIS.md`).
+        Family.IRIS -> Defaults("euler", 4, 1.0)
     }
 
     private fun customSpec(dir: File, cfg: Config, family: Family): ModelSpec {
@@ -458,6 +460,8 @@ object CustomModels {
             Family.KREA2 -> ModelCatalog.KREA2
             // ⚠ Krea 2's launch on purpose: "own files, no edit" (ModelCatalog's entry).
             Family.ANIMA_DIT -> ModelCatalog.KREA2
+            // ⚠ Unreachable: nothing imports an Iris checkpoint (only the catalogue builds it).
+            Family.IRIS -> ModelCatalog.IRIS
             // ⚠ Unreachable: nothing imports a video model ([ModelCatalog.WAN22]).
             Family.WAN -> ModelCatalog.WAN
         },
@@ -468,6 +472,8 @@ object CustomModels {
                 Family.SDXL, Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
                 Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN -> ModelCatalog.DIT_RES
+                // ⚠ Unreachable, as for `backendType`; the catalogue entry carries [ModelCatalog.IRIS_SIZES].
+                Family.IRIS -> ModelCatalog.IRIS_SIZES.first()
             },
         ),
         requiredFiles = when (family) {
@@ -479,6 +485,8 @@ object CustomModels {
             // ⚠ The weights by the name actually on disk — a `.gguf` import
             // has no `dit.safetensors`, and would read as incomplete forever.
             Family.FLUX2, Family.ZIMAGE, Family.KREA2, Family.ANIMA_DIT -> listOf(weights) + DIT_PARTS
+            // ⚠ No VAE: Iris renders pixels (backend 035).
+            Family.IRIS -> listOf(weights, "llm.gguf", "tokenizer.json")
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
             Family.QWEN21 -> listOf(weights) + ModelCatalog.QWEN21_PARTS
             Family.WAN -> ModelCatalog.WAN22.requiredFiles
@@ -505,6 +513,8 @@ object CustomModels {
             Family.KREA2 -> false
             // ⚠ The same launch as Krea 2 (all=disk); 3.1 GB of parts fit anyway.
             Family.ANIMA_DIT -> false
+            // ⚠ The same launch as Krea 2 (all=disk).
+            Family.IRIS -> false
             Family.WAN -> false
         },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which

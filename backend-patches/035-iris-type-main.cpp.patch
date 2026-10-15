@@ -1,0 +1,84 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -84,7 +84,8 @@
+     kFlux2Klein,
+     kQwenImage21,
+     kKrea2,
+-    kWan
++    kWan,
++    kIris
+   };
+ 
+   int port = 8081;
+@@ -129,7 +130,7 @@
+   bool isDit() const {
+     return type == ModelType::kZImage || type == ModelType::kFlux2Klein ||
+            type == ModelType::kQwenImage21 || type == ModelType::kKrea2 ||
+-           type == ModelType::kWan;
++           type == ModelType::kWan || type == ModelType::kIris;
+   }
+   // Wan 2.2 TI2V: text/image to video through /video (backend 028).
+   bool isWan() const { return type == ModelType::kWan; }
+@@ -147,7 +148,7 @@
+          "Modes:\n"
+          "  --type <type>          Model format: sd15cpu (MNN), sd15npu "
+          "(QNN), sd15npu_inpaint (QNN), sd15npu_control_inpaint (QNN), sdxl "
+-         "(QNN), anima (QNN), controlnet (QNN), zimage/klein/qwen21/krea2 (DiT "
++         "(QNN), anima (QNN), controlnet (QNN), zimage/klein/qwen21/krea2/iris (DiT "
+          "engine)\n"
+          "  --upscaler_mode        Upscale-only server, no diffusion model\n"
+          "  --device_info          Print HTP vtcm/arch as JSON and exit "
+@@ -354,6 +355,8 @@
+     opts.type = ServerOptions::ModelType::kKrea2;
+   else if (typeStr == "wan")
+     opts.type = ServerOptions::ModelType::kWan;
++  else if (typeStr == "iris")
++    opts.type = ServerOptions::ModelType::kIris;
+   else
+     showHelpAndExit(typeStr.empty() ? "Missing --type"
+                                     : "Invalid --type: " + typeStr);
+@@ -484,7 +487,10 @@
+     // Krea 2 Turbo (the fork's e70d89b): a Qwen3-VL-4B text encoder and the
+     // Wan 2.1 VAE -- like Qwen, none of it is the shared FLUX.2 parts.
+     const bool krea2 = opts.type == ServerOptions::ModelType::kKrea2;
+-    const bool own_only = qwen || krea2;
++    // Iris-3B (dit/022): Qwen3-VL-4B like Krea 2, and NO VAE -- it denoises
++    // pixels, so the engine decodes with its pass-through VAE.
++    const bool iris = opts.type == ServerOptions::ModelType::kIris;
++    const bool own_only = qwen || krea2 || iris;
+     // The DiT may be GGUF in ANY family (FLUX.2 Klein 9B ships as Q4_0): the
+     // engine picks the loader by extension. A `dit.gguf` wins when both exist.
+     std::string dit_path = (dir / "dit.gguf").string();
+@@ -498,9 +504,11 @@
+     std::string llm_path =
+         own_only ? own("llm.gguf") : ditFile(dir, "llm.gguf");
+     std::string llm_vision_path = qwen ? own("llm_vision.gguf") : "";
+-    std::string vae_path =
+-        own_only ? own("vae.safetensors") : ditFile(dir, "vae.safetensors");
++    std::string vae_path = iris       ? ""
++                           : own_only ? own("vae.safetensors")
++                                      : ditFile(dir, "vae.safetensors");
+     for (const auto &p : {dit_path, llm_path, vae_path}) {
++      if (p.empty()) continue;
+       if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
+     }
+     if (qwen && !std::filesystem::exists(llm_vision_path))
+@@ -554,7 +562,7 @@
+     // is the kind that is not an edit model, so PipelineDit refuses a
+     // reference for it rather than sending Krea 2 a FLUX.2 preset.
+     const dit_model_kind kind =
+-        opts.type == ServerOptions::ModelType::kZImage || krea2
++        opts.type == ServerOptions::ModelType::kZImage || krea2 || iris
+             ? DIT_MODEL_Z_IMAGE
+         : qwen ? DIT_MODEL_QWEN_IMAGE_2_1
+                : DIT_MODEL_FLUX2_KLEIN;
+@@ -1848,7 +1856,8 @@
+       if (!opts.isWan())
+       text_encoder->loadTokenizer(
+           opts.isDit() && opts.type != ServerOptions::ModelType::kQwenImage21 &&
+-                  opts.type != ServerOptions::ModelType::kKrea2
++                  opts.type != ServerOptions::ModelType::kKrea2 &&
++                  opts.type != ServerOptions::ModelType::kIris
+               ? ditFile(mdir, "tokenizer.json")
+               : (mdir / "tokenizer.json").string());
+       // Anima's LLM adapter is fed by a second (T5) tokenizer.

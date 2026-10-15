@@ -117,8 +117,10 @@ class VideoGraphTest {
         assertTrue(isSampler("wan.sample"))
         // 2026-10-15: `wanfun.sample`, Motion transfer (Wan 2.2 Fun Control).
         assertTrue(isSampler("wanfun.sample"))
-        assertEquals(22, SAMPLER_TYPES.size)
-        assertEquals(19, IMAGE_SAMPLER_TYPES.size)
+        // 2026-10-16: `iris.sample`, Iris 3B Turbo (`docs/IRIS.md`).
+        assertTrue(isSampler("iris.sample"))
+        assertEquals(23, SAMPLER_TYPES.size)
+        assertEquals(20, IMAGE_SAMPLER_TYPES.size)
         assertEquals(9, INPAINT_TYPES.size)
     }
 
