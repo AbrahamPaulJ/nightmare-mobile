@@ -27,7 +27,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 ## Features
 
 ### The canvas
-- **Built for a phone**: big ports, snap to connect, pinch to zoom; the picture appears on the node that made it.
+- **Built for a phone**: big ports, snap to connect, pinch to zoom (out to 0.15x to see a big flow whole); the picture appears on the node that made it. The run bar folds to one row (+ Node, Run, the time, the locks) for more canvas.
 - **Local Dream's models, no second download**: models Local Dream keeps in `Download/LocalDream` are listed and run in place, never changed or deleted.
 - **UltraFix**: Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
 - **Hires fix**: one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
@@ -37,12 +37,12 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Recipes**: text to image, image to image, inpaint, upscale, image edit, text / image to video and two Advanced flows, listed from least to most demanding; one your phone can't run says so.
 - **Several checkpoints in one graph**: each generate node has its own model; the run loads each once and tells you the cost first.
 - **Batching**: sweep seed, steps, CFG, denoise or scheduler; two at once makes a grid. Every result keeps the graph that made it.
-- **Results**: star, save, share, reopen any picture as the flow that made it.
+- **Results**: star, save, share, reopen any picture as the flow that made it; each keeps how long it took. Fold the big preview away and the grid fills the screen.
 
 ### Models
 - **37 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
 - **FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1 (and its 8-step Turbo), Krea 2 Turbo, Anima Turbo 1.1**: any size from 512 to 2048 in 64 px steps, no reload to change it.
-- **Bring your own**: one **+** on the Models page takes any of them and works out what the file is: a converted checkpoint zip, a FLUX.2 / Z-Image / Krea 2 / Anima `.safetensors` or `.gguf` fine-tune used as it is, or an upscaler. Or convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge).
+- **Bring your own**: one **+** on the Models page takes any of them and works out what the file is: a converted checkpoint zip, a FLUX.2 / Z-Image / Krea 2 / Anima `.safetensors` or `.gguf` fine-tune used as it is, or an upscaler. Rename any import from its card. Or convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge).
 - **Upscalers**: RealESRGAN anime and 4x UltraSharp V2 Lite, or your own; a checkbox on the output node.
 - **A real inpainting model**: AbsoluteReality Inpaint sees the hole it fills.
 
@@ -52,7 +52,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.
 - **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with an optional second reference picture.
-- **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon), or **Wan 2.2**: 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; chain clips from the last frame for longer ones; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag), much better looking.
+- **Text and image to video**: 49 frames at 1024×640 in about 25 s on an 8 Elite (Neodragon), or **Wan 2.2**: 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; chain clips from the last frame for longer ones; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag; **Match picture** sets the clip to the photo's shape), much better looking. Big clips are decoded in tiles, so 704×1280 for 5 s renders on a 12 GB phone.
 
 ### LoRA, ControlNet and IP-Adapter
 - **LoRAs per render**: on Anima and the Swap models, and experimentally on FLUX.2, Z-Image, Qwen Image and Krea 2: tick, set strength, no reload. A note per LoRA keeps its trigger words.
