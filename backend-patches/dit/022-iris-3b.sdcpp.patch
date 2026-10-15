@@ -632,7 +632,7 @@ index c65327f..2d9f642 100644
              is_wan = true;
          }
 diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
-index 8d9d7fb..1a6f6ee 100644
+index 8d9d7fb..8c361e5 100644
 --- a/src/pipeline/diffusion_engine.cpp
 +++ b/src/pipeline/diffusion_engine.cpp
 @@ -98,6 +98,7 @@ const char* model_version_to_str[] = {
@@ -643,7 +643,17 @@ index 8d9d7fb..1a6f6ee 100644
  };
  
  static_assert(VERSION_COUNT == sizeof(model_version_to_str) / sizeof(model_version_to_str[0]),
-@@ -1269,7 +1270,7 @@ bool StableDiffusionGGML::build_denoiser() {
+@@ -1261,7 +1262,8 @@ bool StableDiffusionGGML::build_denoiser() {
+                    sd_version_is_z_image(version) ||
+                    sd_version_is_boogu_image(version) ||
+                    sd_version_is_pid(version) ||
+-                   sd_version_is_ideogram4(version)) {
++                   sd_version_is_ideogram4(version) ||
++                   version == VERSION_IRIS) {
+             pred_type = FLOW_PRED;
+             if (sd_version_is_wan(version)) {
+                 default_flow_shift = 5.f;
+@@ -1269,7 +1271,7 @@ bool StableDiffusionGGML::build_denoiser() {
                  default_flow_shift = 7.f;
              } else if (sd_version_is_minimax_h3(version)) {
                  default_flow_shift = 12.f;
@@ -652,7 +662,7 @@ index 8d9d7fb..1a6f6ee 100644
                  default_flow_shift = 4.f;
              } else if (sd_version_is_pid(version)) {
                  default_flow_shift = 1.5f;
-@@ -2509,7 +2510,9 @@ int StableDiffusionGGML::get_vae_scale_factor() {
+@@ -2509,7 +2511,9 @@ int StableDiffusionGGML::get_vae_scale_factor() {
  int StableDiffusionGGML::get_diffusion_model_down_factor() {
      int down_factor = 8;  // unet
      if (sd_version_is_dit(version)) {
@@ -663,7 +673,7 @@ index 8d9d7fb..1a6f6ee 100644
              down_factor = 2;
          } else {
              down_factor = 1;
-@@ -2537,7 +2540,7 @@ int StableDiffusionGGML::get_latent_channel() {
+@@ -2537,7 +2541,7 @@ int StableDiffusionGGML::get_latent_channel() {
              latent_channel = 3;
          } else if (sd_version_is_minit2i(version)) {
              latent_channel = 3;
@@ -672,7 +682,7 @@ index 8d9d7fb..1a6f6ee 100644
              latent_channel = 3;
          } else if (sd_version_is_sefi_image(version)) {
              latent_channel = 144;
-@@ -2636,7 +2639,7 @@ sd::Tensor<float> StableDiffusionGGML::encode_first_stage(const sd::Tensor<float
+@@ -2636,7 +2640,7 @@ sd::Tensor<float> StableDiffusionGGML::encode_first_stage(const sd::Tensor<float
  }
  
  sd::Tensor<float> StableDiffusionGGML::decode_first_stage(const sd::Tensor<float>& x, bool decode_video) {
