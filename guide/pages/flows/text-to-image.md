@@ -20,11 +20,11 @@ The model families read prompts differently:
 |---|---|---|
 | SD 1.5, SDXL | short tags, most important first | `portrait of an old sailor, weathered face, rim light, 35mm` |
 | Anima, Anima DiT | anime-style tags | `1girl, silver hair, school uniform, cherry blossoms` |
-| FLUX.2, Z-Image, Qwen Image, Krea 2 | plain sentences | `An old sailor smiling at the camera, late afternoon light behind him.` |
+| FLUX.2, Z-Image, Qwen Image, Krea 2, Iris | plain sentences | `An old sailor smiling at the camera, late afternoon light behind him.` |
 
 - For SD 1.5 and SDXL you can weight a phrase: `(red scarf:1.3)` for more, `(hat:0.7)` for
   less.
-- FLUX.2, Z-Image, Qwen Image, Krea 2 and Anima DiT are run at **CFG 1**, where the **negative prompt is not read
+- FLUX.2, Z-Image, Qwen Image, Krea 2, Iris and Anima DiT are run at **CFG 1**, where the **negative prompt is not read
   at all**. Put what you want in the prompt instead.
 - A prompt in **Russian or Chinese** can be translated to English on the phone with the
   **文A** button on the prompt box (SD 1.5 and SDXL only read English). See
@@ -47,7 +47,7 @@ Tap the **Text to image** node:
 | **Steps** | How many refinement passes | More is slower; each model opens on the number its author recommends |
 | **CFG** | How strictly the prompt is followed | Too high burns colours; turbo/distilled models want ~1–2 |
 | **Seed** | The starting noise | `0` = a new picture every Run. Type a seed shown on a node to get that picture back |
-| **Scheduler** | The sampling method. SD 1.5 and SDXL: DPM++ 2M, DPM++ 2M SDE, DPM++ 3M, DPM++ 3M SDE, Euler, Euler A, LCM. FLUX.2, Z-Image, Qwen Image, Krea 2 and Anima DiT: Euler, Euler A, Heun, DPM++ 2M, DPM++ 2M SDE, ER-SDE, Res Multistep, iPNDM, LCM | Use what the model's author recommends; turbo models usually want Euler (DiT) or LCM |
+| **Scheduler** | The sampling method. SD 1.5 and SDXL: DPM++ 2M, DPM++ 2M SDE, DPM++ 3M, DPM++ 3M SDE, Euler, Euler A, LCM. FLUX.2, Z-Image, Qwen Image, Krea 2, Iris and Anima DiT: Euler, Euler A, Heun, DPM++ 2M, DPM++ 2M SDE, ER-SDE, Res Multistep, iPNDM, LCM | Use what the model's author recommends; turbo models usually want Euler (DiT) or LCM |
 | **Schedule** | How the noise steps are spaced: **Normal**, **Karras** or **Exponential** (SD 1.5 and SDXL; not with LCM) | Many turbo and hyper SDXL models recommend Exponential |
 | **Resolution** / **Shape** / **Width, Height** | The picture's size | Depends on the family. Below |
 

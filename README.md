@@ -20,7 +20,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 | chip | runs |
 |---|---|
 | Snapdragon 888 and newer | SD 1.5 |
-| 8 Gen 3 and newer | SDXL, Anima; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1 and 2.1 Turbo, Anima Turbo 1.1 on the DiT engine, your own quantised (GGUF) DiT, Wan 2.2 video |
+| 8 Gen 3 and newer | SDXL, Anima; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1 and 2.1 Turbo, Anima Turbo 1.1 on the DiT engine, Iris 3B Turbo (not yet run on an 8 Gen 3), your own quantised (GGUF) DiT, Wan 2.2 video |
 | 8 Elite and newer | Z-Image Turbo, SDXL Swap, Neodragon text and image to video, and all of the above |
 | 12 GB RAM | Krea 2 Turbo (8 Elite; alpha on 8 Gen 3); on 12 GB it renders in parts, about 3.5 to 4 min at 1024² |
 
@@ -40,8 +40,9 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Results**: star, save, share, reopen any picture as the flow that made it; each keeps how long it took. Fold the big preview away and the grid fills the screen. In a picture's info, long-press its prompt, negative, seed or the picture itself and **Use** them on the open flow, each matched to the node you pick.
 
 ### Models
-- **37 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
+- **38 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
 - **FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1 (and its 8-step Turbo), Krea 2 Turbo, Anima Turbo 1.1**: any size from 512 to 2048 in 64 px steps, no reload to change it.
+- **Iris 3B Turbo**: draws pixels directly, so there is no VAE and no decode step to run out of memory in. Only the sizes it was trained at, about 1 MP each (1024x1024, 896x1200, 896x1344, 752x1344 and the turned versions); smaller ones come out in blocks. About 2.5 min at 1024x1024 on an 8 Elite. Text to image.
 - **Bring your own**: one **+** on the Models page takes any of them and works out what the file is: a converted checkpoint zip, a FLUX.2 / Z-Image / Krea 2 / Anima `.safetensors` or `.gguf` fine-tune used as it is, or an upscaler. Rename any import from its card. Or convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge).
 - **Upscalers**: RealESRGAN anime and 4x UltraSharp V2 Lite, or your own; a checkbox on the output node.
 - **A real inpainting model**: AbsoluteReality Inpaint sees the hole it fills.
@@ -102,7 +103,7 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 | project | by | licence | used for |
 |---|---|---|---|
 | [local-dream](https://github.com/xororz/local-dream) | xororz | CC BY-NC 4.0 | the inference server this app forks |
-| [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) + [Hexagon work](https://github.com/happyyzy/stable-diffusion.cpp) | leejet, happyyzy | MIT | the DiT engine (FLUX.2, Z-Image, Qwen Image, Krea 2, Anima) |
+| [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) + [Hexagon work](https://github.com/happyyzy/stable-diffusion.cpp) | leejet, happyyzy | MIT | the DiT engine (FLUX.2, Z-Image, Qwen Image, Krea 2, Anima, Iris) |
 | [ggml](https://github.com/ggml-org/ggml) | ggml authors | MIT | under stable-diffusion.cpp |
 | Qualcomm AI Runtime (QNN) | Qualcomm | Qualcomm's terms | the NPU; not in this repository |
 | [MNN](https://github.com/alibaba/MNN) | Alibaba | Apache 2.0 | CPU and GPU model paths |
@@ -120,6 +121,7 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 | [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) | Tongyi-MAI | Apache 2.0 | fp8 weights by [Kijai](https://huggingface.co/Kijai/Z-Image_comfy_fp8_scaled) |
 | [Qwen Image 2.1](https://huggingface.co/Qwen/Qwen-Image-2.1) and [2.1 Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo) | Qwen team | Qwen Research License | [leejet's GGUF](https://huggingface.co/leejet/Qwen-Image-2.1-GGUF) / [unsloth's FP8](https://huggingface.co/unsloth/Qwen-Image-2.1-FP8); Turbo: [molbal's GGUF](https://huggingface.co/molbal/Qwen-Image-2.1-Turbo-GGUF); VAE by [Comfy-Org](https://huggingface.co/Comfy-Org/Qwen-Image-2.1); [Qwen3-VL-8B](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) encoder (Apache 2.0, [bartowski](https://huggingface.co/bartowski/Qwen_Qwen3-VL-8B-Instruct-GGUF)) |
 | [Krea 2 Turbo](https://huggingface.co/krea/Krea-2-Turbo) | Krea | [Krea 2 Community License](https://krea.ai/krea-2-licensing) | [gguf-org MXFP4 GGUF](https://huggingface.co/gguf-org/krea-2-gguf); [Qwen3-VL-4B](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) encoder (Apache 2.0, [bartowski](https://huggingface.co/bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF)); [Wan 2.1 VAE](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged) (Apache 2.0) |
+| [Iris 3B Turbo](https://huggingface.co/speridlabs/iris-3b) | speridlabs | Apache 2.0 | the official BF16, converted to GGUF on the phone; [Qwen3-VL-4B](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) encoder (Apache 2.0, [bartowski](https://huggingface.co/bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF)) |
 | [Wan 2.2 Fun 5B Control](https://huggingface.co/alibaba-pai/Wan2.2-Fun-5B-Control) | alibaba-pai | Apache 2.0 | motion transfer; [QuantStack's Q4_0 GGUF](https://huggingface.co/QuantStack/Wan2.2-Fun-5B-Control-GGUF) (Apache 2.0); 3 steps with [FastVideo](https://huggingface.co/FastVideo/FastWan2.2-TI2V-5B-FullAttn-Diffusers)'s FastWan (Apache 2.0) as [Kijai's LoRA](https://huggingface.co/Kijai/WanVideo_comfy); Wan 2.2 Turbo's encoder and decoder |
 | [Neodragon](https://huggingface.co/Qualcomm-AI-Research/Neodragon) | Qualcomm AI Research | BSD-3-Clause-Clear + model card terms | text and image to video, converted for the NPU |
 | [SSD-1B](https://huggingface.co/segmind/SSD-1B) | Segmind | Apache 2.0 | the video's first frame |
@@ -167,6 +169,6 @@ nothing: the app stays free, offline and CC BY-NC, and nothing is gated behind t
 
 <sub>**Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile Stable
 Diffusion, local image generation, on device video generation, node editor, Qualcomm Hexagon NPU,
-Snapdragon, QNN, FLUX.2, Z-Image, Qwen Image, Krea 2, SDXL, Anima, Illustrious, ControlNet,
+Snapdragon, QNN, FLUX.2, Z-Image, Qwen Image, Krea 2, Iris, SDXL, Anima, Illustrious, ControlNet,
 IP-Adapter, LoRA, img2img, inpainting, outpainting, Segment Anything, npuforge, image to prompt,
 Danbooru tags, no cloud, private.</sub>
