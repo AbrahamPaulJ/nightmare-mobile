@@ -314,6 +314,51 @@ class VideoGraphTest {
     }
 
     /**
+     * ⭐ The per-clip memory budget (S25, 2026-10-15): only what died unbudgeted gets it. On the 12 GB S25,
+     * 704p 5 s (killed ~15 s in) and 3 s stream; 704p 2 s and 480p 5 s, which render resident, keep full
+     * speed. 16 GB never. v75: 480p 2 s, the one size a real 8 Gen 3 ran, launches unchanged.
+     */
+    @Test
+    fun onlyTheClipsThatDiedGetAMemoryBudget() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        val s25 = 11_652_820_992L
+        val gb16 = 15L shl 30
+        assertEquals("4", wan.memoryBudget(wan.pinnedBytes(704, 1280, 121), s25, 79))
+        assertEquals("4", wan.memoryBudget(wan.pinnedBytes(704, 1280, 73), s25, 79))
+        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(704, 1280, 49), s25, 79))
+        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(832, 480, 121), s25, 79))
+        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(704, 1280, 121), gb16, 79))
+        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(704, 1280, 121), 0, 0))
+        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(480, 832, 49), s25, 75))
+        assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(480, 832, 121), s25, 75))
+        assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(704, 1280, 49), gb16, 75))
+    }
+
+    /** ⭐ GitHub #25: "Match picture" gives the picture's shape within Wan's area; a near-match is left alone. */
+    @Test
+    fun matchPictureKeepsTheShapeWithinWansArea() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        assertEquals(928 to 928, wan.matchShape(1024, 1024))
+        assertEquals(704 to 1248, wan.matchShape(1080, 1920))
+        assertEquals(1248 to 704, wan.matchShape(1920, 1080))
+        for ((w, h) in listOf(1024 to 1024, 1080 to 1920, 3000 to 1000)) {
+            val (mw, mh) = wan.matchShape(w, h)
+            assertTrue(mw.toLong() * mh <= wan.MAX_AREA && mw % 32 == 0 && mh % 32 == 0)
+        }
+        assertTrue(!wan.shapeDiffers(832, 480, 832, 480))
+        assertTrue(wan.shapeDiffers(1024, 1024, 832, 480))
+    }
+
+    /** ⭐ A budgeted clip is warned about by one block's peak: 480p 5 s fits an 8 Gen 3 that way, 704p 5 s does not. */
+    @Test
+    fun aBudgetedClipIsJudgedByItsPeak() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        assertTrue(wan.fitsNpuMap(wan.peakBytes(480, 832, 121, "2.75"), 75))
+        assertTrue(!wan.fitsNpuMap(wan.peakBytes(704, 1280, 121, "2.75"), 75))
+        assertEquals(wan.pinnedBytes(480, 832, 49), wan.peakBytes(480, 832, 49, null))
+    }
+
+    /**
      * ⚠⚠ A Wan graph NAMES a model although its node has no `model` knob — or Run launches an
      * upscaler-only backend for it (`ensureBackendFor`). Neodragon's names none: the control.
      */
@@ -383,5 +428,28 @@ class VideoGraphTest {
     fun aPosterFromAPictureGraphOwnsNoClip() {
         val previews = mapOf("output" to ("img_still" to 1f))
         assertNull(clipOwner(t2v.graph, previews, emptyMap(), "img_still"))
+    }
+
+    /**
+     * ⭐ An output wired a clip has no auto upscale and a dimmed Upscale (the user, 2026-10-15),
+     * read off the PORT: Wan's `last_frame` is a picture and stays upscalable.
+     */
+    @Test
+    fun anOutputKnowsWhenItIsWiredAClip() {
+        val types = NODE_TYPES
+        val out = com.abrah.nightmare.MediaOutputNode
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        fun outputFrom(src: Source) = Graph(
+            listOf(
+                Node("video", wan.name),
+                Node("output", out.name, inputs = mapOf("media" to src)),
+            )
+        )
+        val clip = outputFrom(Source("video"))
+        assertTrue(out.takesVideo(clip, clip.byId.getValue("output"), types))
+        val last = outputFrom(Source("video", wan.LAST_FRAME))
+        assertTrue(!out.takesVideo(last, last.byId.getValue("output"), types))
+        val t2v = t2v.graph
+        assertTrue(out.takesVideo(t2v, t2v.byId.getValue("output"), types))
     }
 }

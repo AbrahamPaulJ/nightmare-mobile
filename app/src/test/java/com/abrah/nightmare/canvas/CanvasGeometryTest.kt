@@ -65,7 +65,7 @@ class CanvasGeometryTest {
     fun zoomIsClamped() {
         val v = Viewport(scale = 1f)
         assertEquals(3f, v.zoomedAround(Pt(0f, 0f), 100f).scale, 0.001f)
-        assertEquals(0.25f, v.zoomedAround(Pt(0f, 0f), 0.001f).scale, 0.001f)
+        assertEquals(CANVAS_MIN_ZOOM, v.zoomedAround(Pt(0f, 0f), 0.001f).scale, 0.001f)
     }
 
     // --- ports --------------------------------------------------------------
@@ -291,4 +291,14 @@ class CanvasGeometryTest {
         assertEquals("no such handle", failureNote("no such handle", limit = 20))
     }
 
+    /** ⚠ One decimal read the 0.15 floor as "0.1x" or "0.2x". */
+    @Test
+    fun zoomReadoutShowsTheFloor() {
+        assertEquals("0.15x", zoomLabel(CANVAS_MIN_ZOOM))
+        assertEquals("0.2x", zoomLabel(0.2f))
+        assertEquals("0.3x", zoomLabel(0.28f))
+        assertEquals("0.5x", zoomLabel(0.5f))
+        assertEquals("1.0x", zoomLabel(1f))
+        assertEquals("2.3x", zoomLabel(2.3f))
+    }
 }

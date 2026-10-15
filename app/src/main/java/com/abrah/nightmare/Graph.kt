@@ -240,8 +240,19 @@ const val CONTEXT_KEY_LOCK =
  * for the first, and `/vae_decode` at the wrong size decodes plausible garbage
  * rather than failing.
  */
-data class ContextKey(val type: String, val model: String, val width: Int, val height: Int) {
-    override fun toString() = "$type/$model/${width}x$height"
+data class ContextKey(
+    val type: String,
+    val model: String,
+    val width: Int,
+    val height: Int,
+    /**
+     * ⭐ The DiT engine's launch-bound memory budget (`DIT_MAX_VRAM`, GiB, with `all=disk`), or null for
+     * none. A Wan clip too big to hold resident names one (`WanVideoNode.memoryBudget`), so the executor
+     * relaunches for it exactly as for a checkpoint change, and every other clip keeps full speed.
+     */
+    val memoryBudget: String? = null,
+) {
+    override fun toString() = "$type/$model/${width}x$height" + (memoryBudget?.let { " (budget $it GiB)" } ?: "")
 }
 
 /**
@@ -611,6 +622,23 @@ fun logNameOf(id: String, graph: Graph, types: Map<String, NodeType> = NODE_TYPE
     if (own?.defaultId?.let(::auto) == true) return id
     val stale = types.values.any { t -> t !== own && t.defaultId?.let(::auto) == true }
     return if (stale) nodeNameOf(node, types).primary else id
+}
+
+/**
+ * ⭐ [logNameOf] for TEXT: a failure names its node by id, `node "animadit_generate": …` in 51 places
+ * and `animadit_generate: …` as the executor's prefix. A stale auto id becomes the node's name there
+ * too, so a Klein node made from the Anima DiT flow fails as "Text to image", as it logs (GitHub #25).
+ * Ids that are still right, and any text naming none, come back unchanged.
+ */
+fun humanizeNodeIds(text: String, graph: Graph, types: Map<String, NodeType> = NODE_TYPES): String {
+    var out = text
+    for (n in graph.nodes) {
+        val name = logNameOf(n.id, graph, types)
+        if (name == n.id) continue
+        out = out.replace("node \"${n.id}\"", "node \"$name\"")
+        if (out.startsWith("${n.id}: ")) out = "$name: " + out.removePrefix("${n.id}: ")
+    }
+    return out
 }
 
 /** ⚠ The ones that carry a mask, its editor and the paste back. */

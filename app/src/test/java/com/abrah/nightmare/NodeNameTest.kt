@@ -77,6 +77,18 @@ class NodeNameTest {
         assertEquals("gone", logNameOf("gone", g))
     }
 
+    /** ⚠ The same stale id in a FAILURE: the executor's `id: ` prefix and a node's `node "id"` both. */
+    @Test
+    fun aFailureDoesNotNameANodeAfterAModelItNoLongerRuns() {
+        val other = SdSampler.ALL.first { it != SdSampler.FLUX2 && !it.inpaint }.defaultId!!
+        val g = Graph(listOf(Node(other, SdSampler.FLUX2.name, emptyMap()), Node("generate", SdSampler.FLUX2.name, emptyMap())))
+        assertEquals(
+            "Text to image: node \"Text to image\": the backend stopped",
+            humanizeNodeIds("$other: node \"$other\": the backend stopped", g),
+        )
+        assertEquals("generate: node \"generate\": x", humanizeNodeIds("generate: node \"generate\": x", g))
+    }
+
     @Test
     fun aRenamedNodeKeepsTheNameYouGaveIt() {
         val n = nodeNameOf(flux("hero shot"))

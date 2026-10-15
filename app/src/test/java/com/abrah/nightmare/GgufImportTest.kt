@@ -164,4 +164,18 @@ class GgufImportTest {
         assertTrue(CustomModels.ramTight(spec, ctx, 16_000_000L))
         assertFalse(CustomModels.ramTight(spec, ctx, 24_000_000L))
     }
+
+    /**
+     * Telegram #6290: a Q4_K_M text encoder is refused by its BLOCK types, while the shipped bartowski
+     * "Q4_0" encoders (a Q6_K output.weight and Q4_1 ffn_downs, read off the real files) pass.
+     */
+    @Test
+    fun aTextEncoderIsJudgedByItsBlocks() {
+        fun t(vararg e: Pair<String, String>) = GgufHeader.Table("{}", e.map { it.second }.toSet(), e.size, e.toMap())
+        val shipped = t("token_embd.weight" to "Q4_0", "output.weight" to "Q6_K",
+            "blk.0.ffn_down.weight" to "Q4_1", "blk.0.attn_q.weight" to "Q4_0", "blk.0.attn_norm.weight" to "F32")
+        assertTrue(GgufHeader.blockTypesOutside(shipped, GgufHeader.NPU_MATMUL).isEmpty())
+        val kQuant = t("token_embd.weight" to "Q4_K", "blk.0.attn_q.weight" to "Q4_K", "blk.0.ffn_down.weight" to "Q6_K")
+        assertEquals(setOf("Q4_K", "Q6_K"), GgufHeader.blockTypesOutside(kQuant, GgufHeader.NPU_MATMUL))
+    }
 }

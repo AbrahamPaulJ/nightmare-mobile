@@ -2306,6 +2306,19 @@ object MediaOutputNode : NodeType {
     fun autoUpscales(node: Node): Boolean =
         node.type == name && effectiveParams(node)[UPSCALE].equals("true", ignoreCase = true)
 
+    /**
+     * ⭐ Whether this output is wired a CLIP: the port feeding `media` is a `VIDEO` one. ⚠ Read
+     * off the wire, not a list of video node names: Wan's `last_frame` is an IMAGE port, and an
+     * output fed from it can be enlarged like any picture. Its auto upscale and its Upscale
+     * button are dimmed with [R.string.output_clip_no_upscale] (the user, 2026-10-15).
+     */
+    fun takesVideo(graph: Graph, node: Node, types: Map<String, NodeType>): Boolean {
+        val src = node.inputs["media"] ?: return false
+        val outs = graph.byId[src.node]?.let { types[it.type] }?.outputs ?: return false
+        val port = src.port?.let { p -> outs.firstOrNull { it.name == p } } ?: outs.firstOrNull()
+        return port?.type == "VIDEO"
+    }
+
     fun autosaves(graph: Graph): Boolean = graph.nodes
         .filter { it.type == name }
         .any { effectiveParams(it)[AUTOSAVE].equals("true", ignoreCase = true) }

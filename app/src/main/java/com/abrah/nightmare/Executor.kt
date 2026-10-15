@@ -162,7 +162,7 @@ interface OpHost {
         prompt: String, negative: String, width: Int, height: Int, frames: Int, fps: Int,
         seed: Long, steps: Int, sampleMethod: String, sigmas: List<Double>, tilingArgs: String,
         out: String, startPng: ByteArray?, loras: List<Pair<String, Double>>,
-        onProgress: (Ops.Progress) -> Unit,
+        onProgress: (Ops.Progress) -> Unit, vaeTileSize: Int = 0,
     ): Ops.Result<Ops.Clip> = Ops.Result.Err(501, "this host cannot run a video model")
 
     /**
@@ -201,12 +201,12 @@ object BackendHost : OpHost {
         prompt: String, negative: String, width: Int, height: Int, frames: Int, fps: Int,
         seed: Long, steps: Int, sampleMethod: String, sigmas: List<Double>, tilingArgs: String,
         out: String, startPng: ByteArray?, loras: List<Pair<String, Double>>,
-        onProgress: (Ops.Progress) -> Unit,
+        onProgress: (Ops.Progress) -> Unit, vaeTileSize: Int,
     ) = Ops.video(
         prompt = prompt, negative = negative, width = width, height = height, frames = frames,
         fps = fps, seed = seed, steps = steps, sampleMethod = sampleMethod, sigmas = sigmas,
         tilingArgs = tilingArgs, out = out, startPng = startPng, loras = loras,
-        onProgress = onProgress,
+        onProgress = onProgress, vaeTileSize = vaeTileSize,
     )
 
     override suspend fun upscale(rgb: ByteArray, width: Int, height: Int, upscalerPath: String) =

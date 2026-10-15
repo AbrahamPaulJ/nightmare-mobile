@@ -1460,6 +1460,20 @@ object CustomModels {
         companion object {
             private const val FILE = "config.json"
 
+            /**
+             * ⭐ Renames an imported model: its `label` in `config.json`, every other key kept (GitHub #29,
+             * the user's pick 2026-10-15: the shown name only). ⚠ The folder, and so the model's id and every
+             * flow that names it, stay as they were.
+             */
+            fun writeLabel(dir: File, label: String) {
+                val file = File(dir, FILE)
+                val json = runCatching { JSONObject(file.readText()) }.getOrNull() ?: JSONObject()
+                json.put("label", label.trim())
+                val tmp = File(dir, "$FILE.tmp")
+                tmp.writeText(json.toString(2))
+                if (!tmp.renameTo(file)) { tmp.copyTo(file, overwrite = true); tmp.delete() }
+            }
+
             fun read(dir: File): Config {
                 val file = File(dir, FILE)
                 if (!file.isFile) return Config()

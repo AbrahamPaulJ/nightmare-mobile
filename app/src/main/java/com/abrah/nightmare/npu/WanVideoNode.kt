@@ -108,8 +108,46 @@ object WanVideoNode : NodeType {
      */
     override fun contextKey(node: Node): ContextKey {
         val spec = ModelCatalog.WAN22
-        return ContextKey(spec.backendType, spec.id, spec.native.width, spec.native.height)
+        val p = effectiveParams(node)
+        val (w, h) = sizeOf(p)
+        val caps = com.abrah.nightmare.DeviceProbe.caps()
+        val budget = memoryBudget(
+            pinnedBytes(w, h, framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS)),
+            caps.ramBytes, if (caps.known) caps.arch else 0,
+        )
+        return ContextKey(spec.backendType, spec.id, spec.native.width, spec.native.height, budget)
     }
+
+    /**
+     * ⭐⭐ Pure: the engine's memory budget (GiB) for a clip that [pinned] too much to hold resident, or null.
+     * With it (and `all=disk`) the DiT streams one block at a time instead of holding its 2.9 GB of weights
+     * plus the whole compute: 704x1280 for 5 s rendered on the 12 GB S25 with apps open in 750 s, min 2.2 GB
+     * free, where unbudgeted it was killed ~15 s in (2026-10-15). It costs ~30% (480p 5 s: DiT 196 s vs
+     * 152 s), so only clips over [BUDGET_FROM] get it, below the 16 GB class. ⚠ One block at 704p 5 s needs
+     * 3.7 GB by itself (attention), so 4 GiB is the floor there.
+     * ⚠ v75: 2.75 GiB (under the ~3.1 GB map) only past [V75_NPU_BYTES], so 480p 2 s, the run proven on a
+     * real 8 Gen 3, launches exactly as before. Unmeasured on a real one.
+     */
+    fun memoryBudget(pinned: Long, ramBytes: Long, arch: Int): String? = when {
+        arch in 1..78 -> "2.75".takeIf { pinned > V75_NPU_BYTES }
+        ramBytes in 1 until com.abrah.nightmare.Prefs.LOWRAM_BELOW_BYTES -> "4".takeIf { pinned > BUDGET_FROM }
+        else -> null
+    }
+
+    private const val BUDGET_FROM = 4_608L shl 20
+
+    /**
+     * ⚠ Pure: what a clip holds on the NPU at its worst: [pinnedBytes] resident, or under a [memoryBudget]
+     * one block at a time, its compute plus [BLOCK_BYTES] (704x1280 5 s: 3,410 MB of compute, and the engine
+     * asked for 3,705 MB). What the run-log warnings judge, so a budgeted clip is not warned about as if whole.
+     */
+    fun peakBytes(w: Int, h: Int, frames: Int, budget: String?): Long =
+        if (budget == null) pinnedBytes(w, h, frames) else tokens(w, h, frames) * BYTES_PER_TOKEN + BLOCK_BYTES
+
+    private const val BLOCK_BYTES = 300L shl 20
+
+    /** ⚠ The backend launch that served the last Wan clip ([com.abrah.nightmare.BackendProcess.processId]). */
+    @Volatile private var servedBy: Int? = null
 
     /** ⭐ The clip's size, which a picture wired into `image` is framed to. */
     override fun framesTo(node: Node): Pair<Int, Int> = sizeOf(effectiveParams(node))
@@ -130,6 +168,25 @@ object WanVideoNode : NodeType {
         if (sw.toLong() * sh <= MAX_AREA) return sw to sh
         return if (widthMoved) sw to fitSide(sw) else fitSide(sh) to sh
     }
+
+    /**
+     * ⭐ Pure: the largest clip in the SHAPE of a [srcW] x [srcH] picture, on the grid and within
+     * [MAX_AREA] (GitHub #25: a picture of another shape is cropped to the clip's, and the error that came
+     * with it). Rounded DOWN, so the pair never asks for more than Wan's limit.
+     */
+    fun matchShape(srcW: Int, srcH: Int): Pair<Int, Int> {
+        val a = srcW.toDouble() / srcH.coerceAtLeast(1)
+        var h = kotlin.math.sqrt(MAX_AREA / a)
+        var w = h * a
+        if (w > MAX_SIDE) { w = MAX_SIDE.toDouble(); h = w / a }
+        if (h > MAX_SIDE) { h = MAX_SIDE.toDouble(); w = h * a }
+        fun down(v: Double) = ((v / GRID).toInt() * GRID).coerceIn(MIN_SIDE, MAX_SIDE)
+        return down(w) to down(h)
+    }
+
+    /** ⚠ Pure: whether a picture's shape is more than ~4% off the clip's (a 32 px grid step is ~4% at 832). */
+    fun shapeDiffers(srcW: Int, srcH: Int, w: Int, h: Int): Boolean =
+        kotlin.math.abs(kotlin.math.ln((srcW.toDouble() / srcH) / (w.toDouble() / h))) > 0.04
 
     /** The largest grid side that keeps `other x it` within [MAX_AREA]. */
     private fun fitSide(other: Int): Int = (MAX_AREA / other / GRID * GRID).coerceIn(MIN_SIDE, MAX_SIDE)
@@ -173,7 +230,7 @@ object WanVideoNode : NodeType {
      * on real SM8650s (GitHub #20 and a tester's log, 2026-10-14, 1.6.153): 832x480 for 2 s
      * (3.5 GB by [pinnedBytes]) rendered in 85 s, every time; 5 s (4.3 GB) failed at once, its
      * 1.46 GB compute buffer refused by fastrpc after the 2.9 GB of weights. The cap sits just above
-     * the size that worked, so 3 s (3.7 GB) and 704p are refused until a tester runs them.
+     * the size that worked; 3 s (3.7 GB) and 704p are unmeasured, so a run past it is WARNED (not refused).
      * ⚠ [arch] 0 (unknown) and v79+ are not capped: the 8 Elite mapped 6.2 GB.
      */
     fun fitsNpuMap(pinned: Long, arch: Int): Boolean = arch !in 1..78 || pinned <= V75_NPU_BYTES
@@ -189,7 +246,8 @@ object WanVideoNode : NodeType {
     private const val V75_SECONDS = 2
 
     /** The engine's words when fastrpc refused a buffer — it SIGSEGVs right after. */
-    private val NPU_MAP_FAILED = Regex("""fastrpc_mmap failed|failed to allocate HTP0 buffer""")
+    private val NPU_MAP_FAILED =
+        Regex("""fastrpc_mmap failed|failed to allocate HTP0 buffer|cannot make enough memory available""")
 
     private const val DIT_BYTES = 2_900L shl 20
     private const val BYTES_PER_TOKEN = 128L shl 10
@@ -204,6 +262,17 @@ object WanVideoNode : NodeType {
      * Same tile size, so the same decode memory. `docs/VIDEO-GGML.md` §3.
      */
     const val TILING = "temporal_tile_frames=6,temporal_tile_overlap=3,temporal_tile_cut=1"
+
+    /**
+     * ⚠ Pure: the decode's SPATIAL tile, in latent px (16 image px each), or 0 for the whole frame.
+     * ⚠⚠ 704p died at the decode (~80%) on 12 GB phones with apps open: TAEHV's temporal tiles do
+     * not shrink with the frame, ~1.1 to 1.5 GB each at 1280x704 (`docs/VIDEO-GGML.md` §4). Spatial
+     * tiles (backend 031) cut that; frames up to [SPATIAL_FROM] decode whole, as before.
+     */
+    fun vaeTileFor(w: Int, h: Int): Int = if (w.toLong() * h > SPATIAL_FROM) VAE_TILE else 0
+
+    private const val SPATIAL_FROM = 832L * 480
+    private const val VAE_TILE = 32
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
         runPorts(ctx, node, inputs).getValue("video")
@@ -259,25 +328,23 @@ object WanVideoNode : NodeType {
         // ([com.abrah.nightmare.SAMPLER_TYPES]), for the reason [VideoSampleNode] gives.
         val used = if (seed == 0L) System.currentTimeMillis() and 0x7fffffffL else seed
 
-        // ⚠⚠ Refused BEFORE the backend allocates: a DMA-BUF overshoot can reboot the phone
-        // rather than close the app (`docs/VIDEO-GGML.md` §4). ⚠ Against the phone's RAM, NOT
-        // `MemAvailable`: that read 3.8 GB on the S25 right after a clip that ran from 6.3, and
-        // lmkd closes background apps to make room — it refused a clip that fits. 0 = unknown.
+        // ⚠⚠ WARNED, not refused (the user's call, 2026-10-15: "users dont like if we gate things from
+        // them"; a tester on an 8 Gen 3 asked for a warning). A DMA-BUF overshoot can close the app or
+        // reboot the phone (`docs/VIDEO-GGML.md` §4), so the run log says so first. ⚠ Against the phone's
+        // RAM, NOT `MemAvailable`: that read 3.8 GB on the S25 right after a clip that ran from 6.3.
         val caps = com.abrah.nightmare.DeviceProbe.caps()
         val ram = caps.ramBytes
-        val need = pinnedBytes(w, h, frames)
+        val arch = if (caps.known) caps.arch else 0
+        val need = peakBytes(w, h, frames, memoryBudget(pinnedBytes(w, h, frames), ram, arch))
         if (ram > 0 && !fits(need, ram)) {
-            throw IllegalStateException(
-                "node \"${node.id}\": ${w}x$h for ${frames / FPS} s needs about ${gb(need)} GB on the NPU, " +
-                    "more than this phone's ${gb(ram)} GB of RAM allows. Choose 480p or fewer seconds"
-            )
+            ctx.warn(ctx.text(R.string.run_wan_ram_warning,
+                "%1\$s for %2\$s s needs about %3\$s GB on the NPU, more than this phone's %4\$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer",
+                "${w}x$h", (frames / FPS).toString(), gb(need), gb(ram)))
         }
-        if (!fitsNpuMap(need, if (caps.known) caps.arch else 0)) {
-            throw IllegalStateException(
-                "node \"${node.id}\": on Snapdragon 8 Gen 3 the NPU can hold Wan clips up to 2 seconds at 832x480 " +
-                    "(or as many pixels in another shape) for now (${w}x$h for ${frames / FPS} s needs about " +
-                    "${gb(need)} GB). Choose a smaller size or 2 seconds or less"
-            )
+        if (!fitsNpuMap(need, arch)) {
+            ctx.warn(ctx.text(R.string.run_wan_npu_warning,
+                "%1\$s for %2\$s s needs about %3\$s GB on the NPU at once. A Snapdragon 8 Gen 3 holds about 3.5 GB, so it will probably fail. Trying anyway",
+                "${w}x$h", (frames / FPS).toString(), gb(need)))
         }
 
         val source = inputs["image"] as? Value.Image
@@ -292,12 +359,14 @@ object WanVideoNode : NodeType {
             ByteArrayOutputStream().also { framed.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
         }
 
+        // ⚠ The decode's spatial tile changes the frames (a little), so it is part of the clip's key.
+        val vaeTile = com.abrah.nightmare.BackendProcess.readWanVaeTileOverride(android) ?: vaeTileFor(w, h)
         // ⚠ A content address of everything the clip is made from, as [VideoSampleNode] does.
         val key = sha1(
-            listOf(
+            (listOf(
                 pos.text, neg.text, used.toString(), "${w}x$h", frames.toString(), source?.address().orEmpty(),
                 loras.joinToString(";") { (f, s) -> "$f@$s" },
-            )
+            ) + listOfNotNull(vaeTile.takeIf { it > 0 }?.let { "vae_tile=$it" }))
                 .joinToString("\u0000")
         )
         val dir = File(android.cacheDir, "video").apply { mkdirs() }
@@ -306,11 +375,26 @@ object WanVideoNode : NodeType {
         ctx.say("seed $used, ${w}x$h, $frames frames" + if (startPng != null) ", animating your picture" else "")
         Log.i(TAG, "wan: seed $used ${w}x$h x$frames i2v=${startPng != null}")
 
+        // ⭐⭐ 8 Gen 3: every clip from a FRESH backend (the user's call, 2026-10-15). Real SM8650s turn
+        // most clips to noise with no error, and the first clip after a restart is the clean one (#23;
+        // #29's five-clip chain: clips 1-2 clean, 3+ noise); never reproduced on the S25 (VIDEO-GGML §6).
+        // With `all=disk` the weights reload for every clip anyway, so a relaunch costs ~3 s. ⚠ Only when
+        // THIS process already served a clip: the first after a launch goes straight through.
+        if (arch in 1..78 && com.abrah.nightmare.BackendProcess.processId.let { it != null && it == servedBy }) {
+            ctx.say("  a fresh backend for this clip (8 Gen 3)")
+            com.abrah.nightmare.BackendProcess.stop()
+            if (ctx.switchKey?.invoke(contextKey(node)) != true) {
+                throw IllegalStateException("node \"${node.id}\": the backend did not restart for this clip")
+            }
+        }
+        servedBy = com.abrah.nightmare.BackendProcess.processId
         val r = ctx.host.video(
             prompt = pos.text, negative = neg.text, width = w, height = h, frames = frames, fps = FPS,
             seed = used, steps = SIGMAS.size - 1, sampleMethod = "lcm", sigmas = SIGMAS, tilingArgs = TILING,
             out = raw.absolutePath, startPng = startPng, loras = loras,
-        ) { pr -> ctx.onProgress(pr) }
+            onProgress = { pr -> ctx.onProgress(pr) },
+            vaeTileSize = vaeTile,
+        )
         val clip = when (r) {
             is Ops.Result.Ok -> r.value
             is Ops.Result.Err -> {

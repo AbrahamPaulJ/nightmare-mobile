@@ -153,7 +153,7 @@ Where the result lands. It shows the picture or clip; tap it to see it full scre
 | setting | what it does |
 |---|---|
 | **Autosave** | *On (default):* every Run is kept in Results with the flow that made it |
-| **Auto upscale** | Enlarge the result before keeping it. The node then shows what it received above what it made |
+| **Auto upscale** | Enlarge the result before keeping it. The node then shows what it received above what it made. Greyed out on an output wired a video: a clip cannot be upscaled (the **Upscale** button is greyed out too) |
 | **Upscaler** | Which upscaler to use. Install them under Models → Upscalers |
 | **Scale** | 2×, 3× or 4×. A result that would pass 4096 px gets the largest scale that fits |
 | **Save** (video) | Also write the MP4 to `Movies/Nightmare` |

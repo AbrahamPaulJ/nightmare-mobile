@@ -64,6 +64,21 @@ class ResultsStoreTest {
      * and then silently be a still, with nothing saying why. The PNG beside it
      * has always been copied for the same reason.
      */
+    /** ⭐ Telegram #6293: the run's times are kept with the result, so its info sheet can show them. */
+    @Test
+    fun aKeptResultKeepsTheRunsTimes() {
+        val s = store()
+        val r = s.keep(
+            bitmap(), "img_t", defaultWorkflow(), NODE_TYPES, "1", "m", "a cat",
+            times = mapOf("generate" to 26_500L, "@@total" to 31_000L),
+        )
+        val back = s.all().single { it.id == r.id }
+        assertEquals(26_500L, back.times["generate"])
+        assertEquals(31_000L, back.times["@@total"])
+        val none = s.keep(bitmap(), "img_n", defaultWorkflow(), NODE_TYPES, "2", "m", "a dog")
+        assertTrue(s.all().single { it.id == none.id }.times.isEmpty())
+    }
+
     @Test
     fun aKeptClipCopiesItsMp4AndForgetsItOnDelete() {
         val dir = tmp.newFolder()

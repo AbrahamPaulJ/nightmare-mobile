@@ -414,7 +414,7 @@ class WorkflowIoTest {
     @Test
     fun aSillyScaleIsClamped() {
         val json = workflow.toJson(types, SavedView(Pt(0f, 0f), 0f))
-        assertEquals(0.25f, workflowFromJson(json).view!!.scale, 0.001f)
+        assertEquals(CANVAS_MIN_ZOOM, workflowFromJson(json).view!!.scale, 0.001f)
     }
 
     /** ⚠ …and the locks come back with it, which is half of what was asked for. */

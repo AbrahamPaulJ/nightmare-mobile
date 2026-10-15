@@ -16,6 +16,8 @@ always get back to exactly how it was made.
   card.
 - Tap a picture to show it large; tap the large one to see it full screen (pinch or double-tap
   to zoom).
+- The arrow above the grid **folds** the large picture away so the grid fills the screen (or
+  drag it up; drag down to bring it back). Folded, a tap on a picture opens it full screen.
 
 ## The picture's buttons
 

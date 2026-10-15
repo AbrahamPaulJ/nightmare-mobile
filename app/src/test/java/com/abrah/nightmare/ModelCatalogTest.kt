@@ -328,6 +328,10 @@ class ModelCatalogTest {
         assertEquals(null, BackendProcess.kreaBudget(krea, sixteen))
         assertEquals(null, BackendProcess.kreaBudget(krea, 0L))
         assertEquals(null, BackendProcess.kreaBudget(klein9, twelve))
+        // ⭐ GitHub #30: Klein 9B gets the smaller 8 Gen 3 budget; every other DiT keeps 2.75.
+        assertEquals("2.25", BackendProcess.v75DitBudget(klein9))
+        assertEquals("2.75", BackendProcess.v75DitBudget(krea))
+        assertEquals("2.75", BackendProcess.v75DitBudget(ModelCatalog.byId("flux2_klein_4b")))
     }
 
     /**

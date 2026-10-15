@@ -26,6 +26,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
@@ -83,6 +86,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import com.abrah.nightmare.canvas.rememberViewerBands
+import com.abrah.nightmare.canvas.room
+import com.abrah.nightmare.canvas.viewerBand
 import com.abrah.nightmare.canvas.viewerPicture
 import com.abrah.nightmare.canvas.viewerZoom
 import androidx.compose.ui.unit.IntSize
@@ -328,6 +334,15 @@ fun ResultsScreen(
             return@Column
         }
 
+        // ⭐⭐ The big preview FOLDS like a sheet: a handle above the grid hides it, and the grid
+        // takes the screen (GitHub #25, 2026-10-15). ⚠ Open, the grid still keeps two full rows
+        // and a peek of the third ([RESULT_GRID_ROWS]), smaller thumbnails ([RESULT_THUMB_MIN]):
+        // the reporter saw three pictures under a frame that took the rest.
+        var previewOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+        val gridRows = resultGridHeight(maxWidth)
+        val roomHigh = maxHeight
+        Column(Modifier.fillMaxSize()) {
         // ⭐⭐ The big frame SWIPES between results, and the grid follows it
         // (the user's call, 2026-09-17). ⚠ Two effects, one per direction, each
         // a no-op when the other side already agrees — so they cannot chase.
@@ -354,10 +369,10 @@ fun ResultsScreen(
         }
         val shown = items.getOrNull(pager.currentPage) ?: items.first()
 
-        androidx.compose.foundation.pager.HorizontalPager(
+        if (previewOpen) androidx.compose.foundation.pager.HorizontalPager(
             state = pager,
             key = { items[it].id },
-            modifier = Modifier.fillMaxWidth().weight(1.1f).padding(top = 10.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 10.dp),
         ) { i ->
             val r = items[i]
             Box(
@@ -563,13 +578,18 @@ fun ResultsScreen(
                 seen.offset.y + seen.size.height <= info.viewportEndOffset
             if (!inside) grid.animateScrollToItem(shownIndex)
         }
+        // ⭐ The sheet's handle: a tap folds or opens, a drag up folds and down opens.
+        ResultsSheetHandle(open = previewOpen, onOpen = { previewOpen = it })
         androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
             state = grid,
-            // ⭐ Three across with 8dp gutters (Violet Studio) — four or more on a wide screen.
-            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(104.dp),
+            // ⭐ Four across on most phones with 8dp gutters (Violet Studio), more on a wide screen.
+            columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(RESULT_THUMB_MIN),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 6.dp),
+            // ⚠ Open: at least [gridRows] tall, at most half the room beyond it is the frame's.
+            modifier = Modifier.fillMaxWidth().then(
+                if (previewOpen) Modifier.height(maxOf(gridRows, roomHigh * 0.45f)) else Modifier.weight(1f),
+            ),
         ) {
             items(items.size, key = { items[it].id }) { i ->
                 val r = items[i]
@@ -580,10 +600,16 @@ fun ResultsScreen(
                     picked = r.id in selected,
                     favourite = r.favourite,
                     isClip = r.videoPath != null,
-                    onClick = { if (selecting) onToggleSelect(r) else shownId = r.id },
+                    // ⚠ Folded, there is no frame to show it in: a tap opens it full screen.
+                    onClick = {
+                        if (selecting) onToggleSelect(r)
+                        else { shownId = r.id; if (!previewOpen) onView(r) }
+                    },
                     onLongClick = { onToggleSelect(r) },
                 )
             }
+        }
+        }
         }
     }
 
@@ -763,6 +789,9 @@ fun ResultViewer(
     var scale by scaleState
     var offset by offsetState
     var box by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    // ⭐ The chrome's real height, measured as the canvas viewer does ([com.abrah.nightmare.canvas.ViewerBands]).
+    val bands = rememberViewerBands()
+    val (roomTop, roomBottom) = bands.room()
     // ⚠ Swiping to a new picture starts it unzoomed. Carrying a 3x zoom onto
     // the next one shows a corner of something the user has not seen whole.
     LaunchedEffect(pager.currentPage) {
@@ -814,7 +843,7 @@ fun ResultViewer(
                     path = clip,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(8.dp),
+                        .padding(start = 8.dp, end = 8.dp, top = roomTop, bottom = roomBottom),
                 )
                 // ⚠ Tap to close still works over the player: the pointer input
                 // sits on a transparent box above it rather than on the surface.
@@ -837,7 +866,7 @@ fun ResultViewer(
                         // ⚠⚠ Clear of the actions above and the seed below,
                         // and CLIPPED to that band so a zoom cannot draw over
                         // either — the same function the canvas viewer calls.
-                        .viewerPicture(scale, offset)
+                        .viewerPicture(scale, offset, top = roomTop, bottom = roomBottom)
                         // ⚠⚠⚠ **[viewerZoom], the same gesture the canvas
                         // viewer answers to.** It consumes ONLY when the
                         // gesture is really ours — two fingers down, or already
@@ -878,6 +907,7 @@ fun ResultViewer(
         androidx.compose.foundation.layout.Column(
             Modifier
                 .align(Alignment.BottomCenter)
+                .viewerBand(bands, top = false)
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -927,6 +957,7 @@ fun ResultViewer(
         Row(
             Modifier
                 .align(Alignment.TopCenter)
+                .viewerBand(bands, top = true)
                 .statusBarsPadding()
                 // ⚠⚠ **`statusBarsPadding()` is not enough on its own.** It
                 // clears the status bar and leaves the row flush against it,
@@ -1455,6 +1486,52 @@ private fun ResultCardHeader(
 
 /** ⭐ A grid thumbnail's corners — its clip AND its ring, so the two cannot disagree. */
 private val ThumbShape = RoundedCornerShape(8.dp)
+
+/** ⭐ The grid's narrowest thumbnail: four across a 360dp phone (it was 104, three). */
+internal val RESULT_THUMB_MIN = 80.dp
+private val RESULT_GRID_GAP = 8.dp
+/** ⭐ Rows the grid always shows under the open frame: two whole and a peek of a third. */
+internal const val RESULT_GRID_ROWS = 2.35f
+
+/** ⭐ The grid's height for [RESULT_GRID_ROWS] rows at this width, as `Adaptive` lays them out. */
+internal fun resultGridHeight(width: androidx.compose.ui.unit.Dp): androidx.compose.ui.unit.Dp {
+    val cols = ((width + RESULT_GRID_GAP) / (RESULT_THUMB_MIN + RESULT_GRID_GAP)).toInt().coerceAtLeast(1)
+    val cell = (width - RESULT_GRID_GAP * (cols - 1)) / cols
+    return (cell + RESULT_GRID_GAP) * RESULT_GRID_ROWS
+}
+
+/**
+ * ⭐ The handle over the grid, a sheet's: the chevron says which way it goes. ⚠ Full width and
+ * 24dp tall so it is easy to hit, and a drag works too (up folds the frame away, down brings it).
+ */
+@Composable
+private fun ResultsSheetHandle(open: Boolean, onOpen: (Boolean) -> Unit) {
+    var dragged by remember { mutableStateOf(0f) }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .clickable { onOpen(!open) }
+            .pointerInput(open) {
+                detectVerticalDragGestures(
+                    onDragStart = { dragged = 0f },
+                    onDragEnd = {
+                        val far = 24.dp.toPx()
+                        if (dragged < -far && open) onOpen(false)
+                        else if (dragged > far && !open) onOpen(true)
+                    },
+                ) { _, dy -> dragged += dy }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = stringResource(if (open) R.string.results_cd_fold_preview else R.string.results_cd_open_preview),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
 
 internal const val RESULT_THUMB_TAG = "result_thumb"
 

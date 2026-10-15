@@ -24,7 +24,13 @@ object GgufHeader {
     val MAGIC = byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte())
 
     /** The parsed table: the safetensors-shaped JSON, and each weight type's name. */
-    data class Table(val json: String, val types: Set<String>, val tensors: Int)
+    data class Table(
+        val json: String,
+        val types: Set<String>,
+        val tensors: Int,
+        /** ⭐ Each tensor's weight type, by name. */
+        val typeOf: Map<String, String> = emptyMap(),
+    )
 
     /** ggml's type ids, as the names a person would search for. */
     private val TYPE_NAMES = mapOf(
@@ -48,6 +54,34 @@ object GgufHeader {
     val KNOWN_GOOD = setOf("F32", "F16", "BF16", "Q4_0", "Q8_0", "MXFP4", "type40")
 
     /**
+     * ⭐ The matmul types ggml-hexagon runs (its type switch, read 2026-10-14), plus the float ones.
+     */
+    val NPU_MATMUL = setOf("F32", "F16", "BF16", "Q4_0", "Q4_1", "Q8_0", "IQ4_NL", "MXFP4", "type40")
+
+    /**
+     * ⭐ A text encoder's BLOCK weight types the NPU cannot run, or empty (also when the header is not
+     * readable: that is the engine's to report).
+     *
+     * ⚠⚠ Only `blk.*`: every shipped bartowski "Q4_0" encoder (Klein 9B, Krea 2, Qwen 2.1) has a Q6_K
+     * `output.weight` (the LM head, unused for text encoding) and Q4_1 `ffn_down`s, and runs; an
+     * "uncensored" Q4_K_M copied over Klein 4B's all-Q4_0 one (Telegram #6290) is Q4_K/Q6_K in its blocks.
+     * ⚠ 16 MB: a llama-style GGUF carries its whole vocabulary in the header (4 MB was not enough).
+     */
+    fun unrunnableBlockTypes(file: java.io.File): Set<String> = runCatching {
+        val head = file.inputStream().use { s ->
+            val buf = ByteArray(minOf(file.length(), 16L shl 20).toInt())
+            var n = 0
+            while (n < buf.size) { val r = s.read(buf, n, buf.size - n); if (r < 0) break; n += r }
+            buf.copyOf(n)
+        }
+        blockTypesOutside(parse(head), NPU_MATMUL)
+    }.getOrDefault(emptySet())
+
+    /** ⚠ Pure: the `blk.*` weight types in [t] not in [allowed]. */
+    fun blockTypesOutside(t: Table, allowed: Set<String>): Set<String> =
+        t.typeOf.filterKeys { it.startsWith("blk.") }.values.toSet() - allowed
+
+    /**
      * Parses [bytes], the first part of a file that starts with [MAGIC].
      * ⚠ Throws when the table runs past what was read — a DiT's is ~15–50 KB,
      * so 8 MB not being enough means this is not one.
@@ -68,6 +102,7 @@ object GgufHeader {
                 skipValue(b, b.int)
             }
             val types = mutableSetOf<String>()
+            val typeOf = LinkedHashMap<String, String>()
             val json = StringBuilder("{")
             repeat(tensors.toInt()) { i ->
                 val name = readString(b)
@@ -77,11 +112,12 @@ object GgufHeader {
                 val type = typeName(b.int)
                 b.long // offset
                 types += type
+                typeOf[name] = type
                 if (i > 0) json.append(',')
                 json.append('"').append(name.replace("\"", "")).append("\":{\"dtype\":\"").append(type)
                     .append("\",\"shape\":[").append(dims.reversed().joinToString(",")).append("]}")
             }
-            return Table(json.append('}').toString(), types, tensors.toInt())
+            return Table(json.append('}').toString(), types, tensors.toInt(), typeOf)
         } catch (e: RuntimeException) {
             // ⚠ BufferUnderflow from a read, IllegalArgument from a skip past
             // the end — both mean the table is longer than what was read.

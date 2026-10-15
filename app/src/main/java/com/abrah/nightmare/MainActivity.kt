@@ -525,8 +525,7 @@ fun HarnessScreen(
             flowName = vm.activeFlow.name ?: vm.openedResultName ?: "unsaved flow",
             flowDirty = vm.activeFlow.dirty,
             ram = vm.load?.let { l ->
-                val sl = shellLoadOf(l, vm.modelLabel)
-                stringResource(R.string.shell_ram, sl.ramFree, sl.ramTotal)
+                com.abrah.nightmare.ui.ramLine(shellLoadOf(l, vm.modelLabel))
             },
             onMenu = { drawerOpen = true },
             saveRequest = saveRequest,
@@ -720,6 +719,7 @@ fun HarnessScreen(
                     ) { uri -> if (uri != null) vm.importEmbedding(uri) }
                     // ⚠ Same reasoning: `.bin` has no registered MIME type either.
                     ModelsScreen(
+                        onRename = vm::renameModel,
                         rows = vm.modelRows,
                         // ⚠ The OR: this screen's buttons mean "the app is doing
                         // something long", which is what [working] is for.
@@ -1564,5 +1564,5 @@ internal fun shellLoadOf(l: HarnessViewModel.CanvasLoad, fallback: String): com.
             (names.firstOrNull() ?: fallback) + more to idleOr
         }
     }
-    return com.abrah.nightmare.ui.ShellLoad(model, state, free, total)
+    return com.abrah.nightmare.ui.ShellLoad(model, state, free, total, l.batteryTempC?.let { "%.0f".format(it) })
 }

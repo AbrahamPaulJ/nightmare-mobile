@@ -556,6 +556,14 @@ private const val WIRE_SAMPLES = 24
  * a test asserts by round-tripping, because a transform that is subtly not
  * invertible makes every tap land slightly wrong only when zoomed.
  */
+/**
+ * The zoom range a pinch can reach, and every other place that sets a scale
+ * (fit-to-view, the reference fit, a loaded file) clamps to the same band.
+ * 0.15 since 1.6.163: big graphs did not fit at 0.25 (GitHub #24).
+ */
+internal const val CANVAS_MIN_ZOOM = 0.15f
+internal const val CANVAS_MAX_ZOOM = 3f
+
 data class Viewport(val offset: Pt = Pt(0f, 0f), val scale: Float = 1f) {
 
     fun toScreen(world: Pt) = Pt(world.x * scale + offset.x, world.y * scale + offset.y)
@@ -569,7 +577,7 @@ data class Viewport(val offset: Pt = Pt(0f, 0f), val scale: Float = 1f) {
      * of solving for it makes the graph slide away under a pinch, which reads
      * as the canvas fighting you.
      */
-    fun zoomedAround(focus: Pt, factor: Float, min: Float = 0.25f, max: Float = 3f): Viewport {
+    fun zoomedAround(focus: Pt, factor: Float, min: Float = CANVAS_MIN_ZOOM, max: Float = CANVAS_MAX_ZOOM): Viewport {
         val next = (scale * factor).coerceIn(min, max)
         val world = toWorld(focus)
         return Viewport(Pt(focus.x - world.x * next, focus.y - world.y * next), next)

@@ -66,7 +66,20 @@ enum class LoadState { IDLE, LOADING, LOADED, NONE }
  * ⭐ What the sidebar's Model card and the Run bar's RAM pill show — built in `MainActivity` from
  * the view model's `CanvasLoad` ([model] is the name, never with "(idle)" glued on any more).
  */
-data class ShellLoad(val model: String, val state: LoadState, val ramFree: String, val ramTotal: String)
+data class ShellLoad(
+    val model: String,
+    val state: LoadState,
+    val ramFree: String,
+    val ramTotal: String,
+    /** ⭐ The battery temperature, whole °C, or null ([com.abrah.nightmare.HarnessViewModel.CanvasLoad.batteryTempC]). */
+    val tempC: String? = null,
+)
+
+/** ⭐ THE RAM line, drawer and run bar alike: free / total, and the temperature when the phone gives one. */
+@Composable
+internal fun ramLine(load: ShellLoad): String =
+    load.tempC?.let { stringResource(R.string.shell_ram_temp, load.ramFree, load.ramTotal, it) }
+        ?: stringResource(R.string.shell_ram, load.ramFree, load.ramTotal)
 
 /**
  * ⭐⭐⭐ **The sidebar** (the user's mock, 2026-10-09): the brand and build, Models · Flows · Results,
@@ -201,7 +214,7 @@ fun ShellDrawer(
                                 Icon(ChipIcon, contentDescription = null, modifier = Modifier.size(22.dp))
                                 Spacer(Modifier.width(12.dp))
                                 Text(
-                                    stringResource(R.string.shell_ram, load.ramFree, load.ramTotal),
+                                    ramLine(load),
                                     style = metaValueStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }

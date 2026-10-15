@@ -463,6 +463,10 @@ fun NodeInspector(
             } else {
                 SizeDemand.None
             }
+        // ⭐ An output wired a clip: no auto upscale, and Upscale dimmed with the same words.
+        val clipNoUpscale = if (node.type == com.abrah.nightmare.MediaOutputNode.name &&
+            com.abrah.nightmare.MediaOutputNode.takesVideo(state.workflow.graph, node, types)
+        ) stringResource(R.string.output_clip_no_upscale) else null
         NodeInspectorBody(
             nodeId, node, type, onSetParam, onSetParams, onEditMask, onDelete,
             runFrame = runFrame,
@@ -649,6 +653,7 @@ fun NodeInspector(
             onClearOutput = previewId?.takeIf { node.type != "core.image" }
                 ?.let { { onClearOutput(nodeId) } },
             demand = demand,
+            autoUpscaleLocked = clipNoUpscale,
             seed = seedFor(state.workflow.graph, nodeId) { status[it]?.detail },
             // ⭐⭐ The lock beside it — the SAME toggle the fullscreen viewer
             // draws ([seedLock]); asked for on the output inspector 2026-09-23.
@@ -711,18 +716,19 @@ fun NodeInspector(
             // ⚠⚠ **Offered even when the node ALREADY auto-upscales** — dimmed,
             // with the reason, rather than gone. See
             // [PictureActions.upscaleDisabledReason].
+            // ⚠⚠ A clip's output keeps the button too, DIMMED with the reason (the user,
+            // 2026-10-15), the way Results shows Upscale on a clip and refuses it by name.
             onUpscale = onUpscale
-                ?.takeIf {
-                    previewId != null && actsOnItsPicture &&
-                        nodeId !in clipNodes(state.workflow.graph, state.videos)
-                }
+                ?.takeIf { previewId != null && actsOnItsPicture }
                 ?.let { up -> { up(nodeId) } },
             onDropEnlargement = onDropEnlargement?.let { d -> { d(nodeId) } },
             // ⚠⚠ Dimmed only while an enlargement is ON the node — the user's
             // call, 2026-09-23: after the Made picture is binned, the Received
             // one must be upscalable again, even with the box still ticked.
             upscaleDisabledReason =
-                if (com.abrah.nightmare.MediaOutputNode.autoUpscales(node) && beforeId != null) {
+                if (clipNoUpscale != null || nodeId in clipNodes(state.workflow.graph, state.videos)) {
+                    clipNoUpscale ?: stringResource(R.string.output_clip_no_upscale)
+                } else if (com.abrah.nightmare.MediaOutputNode.autoUpscales(node) && beforeId != null) {
                     "this output already enlarges every render. Untick auto upscale to choose"
                 } else null,
             onInfo = detailsOf?.takeIf { previewId != null }?.let { d -> { d(nodeId) } },
@@ -1108,6 +1114,8 @@ internal fun NodeInspectorBody(
      * remove.
      */
     demand: SizeDemand = SizeDemand.None,
+    /** ⭐ Why `auto_upscale` is locked here, or null: an output wired a clip. */
+    autoUpscaleLocked: String? = null,
     /**
      * The seed that made this node's picture, or null when there is none yet.
      * ⚠ It comes from the SAMPLER upstream, not from this node. [seedFor].
@@ -1537,6 +1545,22 @@ internal fun NodeInspectorBody(
                 onSet = { v -> v.toIntOrNull()?.let { draft = wan.fitArea(shown.first, it, widthMoved = false) } },
                 onCommit = commit,
             )
+            // ⭐ A picture of another shape is cropped to the clip's: say so, and offer its shape in one tap
+            // (GitHub #25, the user's pick 2026-10-15). Gone once they match.
+            cropSource?.takeIf { wan.shapeDiffers(it.width, it.height, shown.first, shown.second) }?.let { src ->
+                val (mw, mh) = wan.matchShape(src.width, src.height)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.wan_shape_differs, "${src.width}x${src.height}", "${shown.first}x${shown.second}"),
+                        style = NoteTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { onSetParams(nodeId, mapOf("width" to "$mw", "height" to "$mh")) }) {
+                        Text(stringResource(R.string.wan_match_picture, "${mw}x$mh"))
+                    }
+                }
+            }
         }
         val sizePanel: @Composable () -> Unit = {
             ditPanel()
@@ -2589,6 +2613,7 @@ internal fun NodeInspectorBody(
                 (w.name == "out_w" || w.name == "out_h") && sized != null -> sized.reason()
                 (w.name == "out_w" || w.name == "out_h") && conflict != null ->
                     stringResource(R.string.inspector_consumers_disagree, conflict.reason())
+                w.name == com.abrah.nightmare.MediaOutputNode.UPSCALE && autoUpscaleLocked != null -> autoUpscaleLocked
                 else -> w.locked
             }
             // ⚠⚠ Drawn ABOVE, directly under the checkpoint picker, because a

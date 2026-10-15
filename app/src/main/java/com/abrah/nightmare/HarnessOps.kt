@@ -1430,7 +1430,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                                 *at(3).split('x').takeIf { it.size == 2 }?.let { (w, h) ->
                                     arrayOf("width" to w.trim(), "height" to h.trim())
                                 }.orEmpty(),
-                                // ⭐ The LoRA picker's value (`name.safetensors:0.8`), as the node stores it.
+                                // ⭐ The LoRA picker's value (`name.safetensors@0.8`, `LoraSpec`), as the node stores it.
                                 at(4).takeIf { it.isNotEmpty() }?.let { com.abrah.nightmare.SdSampler.LORAS to it },
                             ),
                         )
@@ -4634,7 +4634,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val res = want?.let { Res(it.width, it.height) } ?: SelectedModel.res
         when (val r = BackendProcess.start(
             ctx, modelId = modelId, port = Backend.PORT, res = res,
-            upscalerOnly = upscalerOnly,
+            upscalerOnly = upscalerOnly, memoryBudget = want?.memoryBudget,
         )) {
             is BackendProcess.Start.Failed -> {
                 say("start failed. ${r.why}", bad = true)

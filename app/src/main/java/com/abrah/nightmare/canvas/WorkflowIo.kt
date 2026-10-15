@@ -212,7 +212,7 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     val view = root.optJSONObject("view")?.let { v ->
         SavedView(
             offset = Pt(v.optDouble("x", 0.0).toFloat(), v.optDouble("y", 0.0).toFloat()),
-            scale = v.optDouble("scale", 1.0).toFloat().coerceIn(0.25f, 3f),
+            scale = v.optDouble("scale", 1.0).toFloat().coerceIn(CANVAS_MIN_ZOOM, CANVAS_MAX_ZOOM),
             zoomLocked = v.optBoolean("zoomLock", false),
             panLocked = v.optBoolean("panLock", false),
         )

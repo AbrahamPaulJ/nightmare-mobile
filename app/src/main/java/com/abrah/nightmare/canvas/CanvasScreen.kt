@@ -33,6 +33,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.AlertDialog
@@ -392,6 +395,13 @@ fun CanvasScreen(
     // ⭐ The chrome's heights, so the Nodes and Agent views sit between the top bar and the Run bar.
     var topBarPx by remember { mutableIntStateOf(0) }
     var runBarPx by remember { mutableIntStateOf(0) }
+    val clipNoUpscaleText = stringResource(R.string.output_clip_no_upscale)
+    // ⭐ The Run bar folded to its one row (+ Node, Run, the time, the locks): more canvas on a
+    // big graph (the user, 2026-10-15). ⚠ Hoisted here, not in [RunBar]: the bar leaves the
+    // composition in the library destinations and would come back unfolded.
+    var runBarFolded by rememberSaveable { mutableStateOf(false) }
+    // ⚠ A failure unfolds it: the log lines say which node failed and why.
+    LaunchedEffect(runError) { if (runError != null) runBarFolded = false }
     val chrome = androidx.compose.ui.platform.LocalDensity.current
     val topPad = with(chrome) { topBarPx.toDp() }
     val bottomPad = with(chrome) { runBarPx.toDp() }
@@ -532,6 +542,8 @@ fun CanvasScreen(
         // the library destinations.
         if (mainView.isCanvas) RunBar(
             graphControls = mainView == com.abrah.nightmare.MainView.GRAPH,
+            folded = runBarFolded,
+            onToggleFold = { runBarFolded = !runBarFolded },
             ram = ram,
             plannedLoads = plannedLoads,
             onResults = onResults,
@@ -930,8 +942,15 @@ fun CanvasScreen(
                     ?.let { n -> { onUpscaleNode?.invoke(n) } },
                 upscaleDisabledReason = viewedNode
                     ?.let { state.workflow.graph.byId[it] }
-                    ?.takeIf { com.abrah.nightmare.MediaOutputNode.autoUpscales(it) }
-                    ?.let { "this output already enlarges every render. Untick auto upscale to choose" },
+                    ?.let { n ->
+                        when {
+                            com.abrah.nightmare.MediaOutputNode.takesVideo(state.workflow.graph, n, types) ->
+                                clipNoUpscaleText
+                            com.abrah.nightmare.MediaOutputNode.autoUpscales(n) ->
+                                "this output already enlarges every render. Untick auto upscale to choose"
+                            else -> null
+                        }
+                    },
                 onInfo = viewedNode
                     ?.takeIf { !viewedIsInput && detailsOfNode != null }
                     ?.let { n -> { showingNodeInfo = n } },
@@ -1384,6 +1403,10 @@ private fun RunBar(
     graphControls: Boolean = true,
     /** ⭐ The RAM pill beside the seed — [RunLogPanel]. */
     ram: String? = null,
+    /** ⭐ Folded to the one row: no log panel, the run's time in place of the zoom readout. */
+    folded: Boolean = false,
+    /** ⭐ The chevron at the top of the card. Null draws none. */
+    onToggleFold: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // ⭐⭐ Its own card (`PanelCard`), the page's card's edges: [SCREEN_GUTTER] out, [PANEL_PAD] in
@@ -1394,9 +1417,30 @@ private fun RunBar(
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(com.abrah.nightmare.ui.PANEL_PAD),
+            // ⚠ The chevron strip IS the top padding, so it costs the bar ~6dp, not a row.
+            .padding(
+                start = com.abrah.nightmare.ui.PANEL_PAD, end = com.abrah.nightmare.ui.PANEL_PAD,
+                bottom = com.abrah.nightmare.ui.PANEL_PAD,
+                top = if (onToggleFold != null) 0.dp else com.abrah.nightmare.ui.PANEL_PAD,
+            ),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // ⭐⭐ A sheet's handle: the whole strip toggles, the chevron says which way. ⚠ Full width,
+        // so an 18dp-tall target is still easy to hit; nothing else in the bar moves.
+        if (onToggleFold != null) Box(
+            Modifier
+                .fillMaxWidth()
+                .height(18.dp)
+                .clickable(onClick = onToggleFold),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (folded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = stringResource(if (folded) R.string.cd_open_bar else R.string.cd_fold_bar),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
         // ⚠ The refusal from the last gesture, shown here rather than as a
         // transient toast. "That would make a loop" is a rule the user is
         // learning; a message that vanishes teaches nothing.
@@ -1414,7 +1458,7 @@ private fun RunBar(
         // one copy of the fact and no way for the badge and the render to
         // disagree.
         // ⚠ One per sampler, named when there are several — see the caller.
-        RunLogPanel(
+        if (!folded) RunLogPanel(
             runLog,
             onClose = onCloseRunLog,
             linesInFrame = logInFrame,
@@ -1449,7 +1493,7 @@ private fun RunBar(
         //
         // ⚠ Hidden at zero, which is every single-checkpoint graph: a row that
         // always says "0 model loads" is a row people stop reading.
-        if (plannedLoads > 0 && !busy) {
+        if (plannedLoads > 0 && !busy && !folded) {
             Text(
                 // ⚠ ~3.5 s, the middle of the measured 2.3–5 s. Said as "about"
                 // because it is a range and a precise-looking number would be a
@@ -1550,8 +1594,12 @@ private fun RunBar(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+            // ⭐ Folded, the run's time takes the zoom readout's place: the log panel that showed
+            // it is hidden, and the time is the one thing a person watches for (the user, 2026-10-15).
+            val runElapsed = rememberRunElapsed(runLog)
             Text(
-                "${"%.1f".format(state.viewport.scale)}x",
+                if (folded && !runLog.idle) formatMs(runElapsed)
+                else zoomLabel(state.viewport.scale),
                 style = MeasureTextStyle,
                 fontSize = 11.sp,
                 maxLines = 1,
@@ -1590,6 +1638,15 @@ private fun RunBar(
  * still grows the button rather than being clipped by it.
  */
 private val RUN_WIDTH = 124.dp
+
+/**
+ * The zoom readout: one place (`0.3x`, `1.0x`), two only below the old 0.25 floor (`0.15x`),
+ * where one place read 0.15 as "0.1x" or "0.2x". ⚠ Not two places everywhere: at 320dp the
+ * wider `0.28x` squeezed Run (`screen-running-w320`, 2026-10-15).
+ */
+internal fun zoomLabel(scale: Float): String =
+    if (scale >= 0.245f) "%.1fx".format(java.util.Locale.ROOT, scale)
+    else "%.2f".format(java.util.Locale.ROOT, scale).trimEnd('0') + "x"
 
 /** Which lock a padlock glyph stands for. */
 private enum class LockMark { ZOOM, PAN }
@@ -1890,6 +1947,8 @@ private fun FullscreenImage(
     val scale by scaleState
     val offset by offsetState
     var box by remember { mutableStateOf(IntSize.Zero) }
+    val bands = rememberViewerBands()
+    val (roomTop, roomBottom) = bands.room()
 
     Box(
         Modifier
@@ -1927,7 +1986,11 @@ private fun FullscreenImage(
         if (videoPath != null) {
             com.abrah.nightmare.ui.ClipPlayer(
                 path = videoPath,
-                modifier = Modifier.fillMaxSize().padding(12.dp),
+                modifier = Modifier.fillMaxSize().padding(
+                    start = 12.dp, end = 12.dp,
+                    top = if (chromeless) 12.dp else roomTop,
+                    bottom = if (chromeless) 12.dp else roomBottom,
+                ),
             )
         } else if (pages.size > 1) {
             // ⭐⭐⭐ **Swipe between this node's pictures** — Received ⇄ Made,
@@ -1969,6 +2032,8 @@ private fun FullscreenImage(
                             if (page == pager.currentPage) scale else 1f,
                             if (page == pager.currentPage) offset else Offset.Zero,
                             chromeless = chromeless,
+                            top = roomTop,
+                            bottom = roomBottom,
                         ),
                 )
             }
@@ -1984,7 +2049,7 @@ private fun FullscreenImage(
                 // ⚠ Room above for the actions and below for the seed, so
                 // neither sits ON the picture (2026-09-17, "seed below image"),
                 // and a clip so a ZOOM cannot spend it — [viewerPicture].
-                .viewerPicture(scale, offset, chromeless = chromeless),
+                .viewerPicture(scale, offset, chromeless = chromeless, top = roomTop, bottom = roomBottom),
         )
         }
         // ⚠⚠ The actions at the TOP, like the Results viewer's — which moved
@@ -2009,6 +2074,7 @@ private fun FullscreenImage(
         if (!chromeless) Row(
             Modifier
                 .align(Alignment.TopCenter)
+                .viewerBand(bands, top = true)
                 .statusBarsPadding()
                 // ⚠ `docs/UI.md` §7.2 — an inset is not padding.
                 .padding(top = 32.dp, end = 8.dp, bottom = 8.dp, start = 8.dp),
@@ -2049,6 +2115,7 @@ private fun FullscreenImage(
         if (!chromeless) Column(
             Modifier
                 .align(Alignment.BottomCenter)
+                .viewerBand(bands, top = false)
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp, start = 8.dp, end = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -2096,6 +2163,35 @@ private fun FullscreenImage(
  * its picture. ⚠ Shared with `ResultViewer`, so both viewers frame alike.
  */
 internal val VIEWER_CHROME = 96.dp
+
+/**
+ * ⭐⭐ The viewer chrome's REAL height, top row and bottom pills, measured rather than assumed.
+ *
+ * ⚠⚠ [VIEWER_CHROME] was a guess: the top row is the status-bar inset + 32 dp + an icon row + 8 dp,
+ * the bottom the navigation inset + 20 dp + the pills (+ the page count), both past 96 dp on most
+ * phones, so a tall narrow picture ran under the buttons and the seed (Telegram #6291, 2026-10-15).
+ * Both viewers measure their bands here and keep the picture clear of them; [VIEWER_CHROME] is the
+ * floor until the first measure.
+ */
+@androidx.compose.runtime.Stable
+internal class ViewerBands {
+    var top by androidx.compose.runtime.mutableIntStateOf(0)
+    var bottom by androidx.compose.runtime.mutableIntStateOf(0)
+}
+
+@Composable
+internal fun rememberViewerBands(): ViewerBands = remember { ViewerBands() }
+
+/** ⚠ FIRST in a band's chain, before its insets and padding, so it measures all of it. */
+internal fun Modifier.viewerBand(bands: ViewerBands, top: Boolean): Modifier =
+    onSizeChanged { if (top) bands.top = it.height else bands.bottom = it.height }
+
+/** ⭐ The room the picture keeps above and below: the band plus a gap, never less than [VIEWER_CHROME]. */
+@Composable
+internal fun ViewerBands.room(): Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp> =
+    with(androidx.compose.ui.platform.LocalDensity.current) {
+        maxOf(VIEWER_CHROME, top.toDp() + 8.dp) to maxOf(VIEWER_CHROME, bottom.toDp() + 8.dp)
+    }
 
 /**
  * ⭐⭐⭐ **The picture inside a fullscreen viewer** — the chrome band, the
@@ -2218,10 +2314,15 @@ internal fun Modifier.viewerPicture(
     offset: Offset,
     /** ⚠ A viewer over an INPUT draws no chrome, so it keeps no band for one. */
     chromeless: Boolean = false,
+    /** ⭐ The room above and below, from [ViewerBands.room]: what the chrome really takes. */
+    top: androidx.compose.ui.unit.Dp = VIEWER_CHROME,
+    bottom: androidx.compose.ui.unit.Dp = VIEWER_CHROME,
 ): Modifier = this
     .padding(
-        horizontal = 12.dp,
-        vertical = if (chromeless) 12.dp else VIEWER_CHROME,
+        start = 12.dp,
+        end = 12.dp,
+        top = if (chromeless) 12.dp else top,
+        bottom = if (chromeless) 12.dp else bottom,
     )
     .clipToBounds()
     .graphicsLayer {

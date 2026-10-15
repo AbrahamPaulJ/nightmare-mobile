@@ -281,7 +281,7 @@ data class CanvasState(
      *
      * ⚠ [Viewport.offset] is in device PIXELS and [Viewport.scale] in dp-per-unit
      * ([Viewport.forDevice]), so every size here is pixels and [density] converts the boxes.
-     * ⚠ A graph too tall even at 0.25× is pinned to the top, the edge people read from.
+     * ⚠ A graph too tall even at [CANVAS_MIN_ZOOM] is pinned to the top, the edge people read from.
      * ⚠ A locked view is the user's own and is left alone.
      */
     fun framedIn(
@@ -297,7 +297,7 @@ data class CanvasState(
         val margin = FRAME_MARGIN_DP * density
         val visH = heightPx - topPx - bottomPx
         val fit = minOf((widthPx - 2 * margin) / (bw * density), (visH - 2 * margin) / (bh * density))
-        val scale = fit.coerceIn(0.25f, 1f)
+        val scale = fit.coerceIn(CANVAS_MIN_ZOOM, 1f)
         val px = scale * density
         val x = (widthPx - bw * px) / 2f - minX * px
         val y = if (bh * px > visH - 2 * margin) topPx + margin - minY * px
@@ -1052,7 +1052,7 @@ data class CanvasState(
      * is the gesture people already make — but a node off the RIGHT edge is one
      * nobody knows is there. ⇒ Fit the width, leave the top where it is.
      *
-     * ⚠ Clamped to the same 0.25..1 band a pinch can reach, and never zoomed
+     * ⚠ Clamped to the same [CANVAS_MIN_ZOOM]..1 band a pinch can reach, and never zoomed
      * IN: a two-node graph magnified to fill the screen looks broken.
      */
     private fun fitted(): Viewport {
@@ -1063,7 +1063,7 @@ data class CanvasState(
         // 2026-09-15 — measuring it at 190 left the last node half off-screen,
         // which is the exact failure this function exists to prevent.
         val widest = pts.maxOf { it.x } + Sizes.PROSE_NODE_WIDTH
-        val scale = ((REFERENCE_WIDTH - REFERENCE_MARGIN) / widest).coerceIn(0.25f, 1f)
+        val scale = ((REFERENCE_WIDTH - REFERENCE_MARGIN) / widest).coerceIn(CANVAS_MIN_ZOOM, 1f)
         // ⚠⚠ **Offset stays ZERO, and clearing the top bar is the LAYOUT's job**
         // (`Workflows.TOP`). It is tempting to push the graph down by an offset
         // here; it cannot be done correctly, because `Viewport.offset` is in

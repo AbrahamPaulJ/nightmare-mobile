@@ -51,6 +51,12 @@ data class Result(
     /** ⭐ What made this item different, e.g. `cfg 7.5`. Empty when it is alone. */
     val batchLabel: String = "",
     /**
+     * ⭐ How long the run that made it took, by node id plus the whole flow's (the info sheet's
+     * "Time" rows). ⚠ Empty for results kept before 1.6.163, and for a picture kept after another run
+     * replaced it on the canvas: a time is never borrowed from a different run (Telegram #6293).
+     */
+    val times: Map<String, Long> = emptyMap(),
+    /**
      * ⭐⭐ The kept CLIP, when this result came from a video graph — and null
      * for every picture.
      *
@@ -199,6 +205,8 @@ class ResultsStore(private val dir: File) {
         favourite: Boolean = false,
         /** ⭐ True when AUTOSAVE kept it. See [Result.auto]. */
         auto: Boolean = false,
+        /** ⭐ The run's times by node id (and the whole flow's). See [Result.times]. */
+        times: Map<String, Long> = emptyMap(),
     ): Result {
         synchronized(KEEP_LOCK) {
             dir.mkdirs()
@@ -250,6 +258,7 @@ class ResultsStore(private val dir: File) {
                 videoPath = mp4(id).takeIf { it.isFile }?.path,
                 favourite = favourite,
                 auto = auto,
+                times = times,
             )
             val json = JSONObject()
                 .put("savedAt", r.savedAt)
@@ -265,6 +274,7 @@ class ResultsStore(private val dir: File) {
                 .put("batchLabel", r.batchLabel)
                 .put("favourite", r.favourite)
                 .put("auto", r.auto)
+                .put("times", JSONObject(r.times as Map<*, *>))
                 // ⭐ The graph, as the same JSON a saved workflow uses — so
                 // reopening a result is exactly reopening a workflow, with no
                 // second format to keep in step.
@@ -326,6 +336,9 @@ class ResultsStore(private val dir: File) {
                         batchLabel = j.optString("batchLabel"),
                         favourite = j.optBoolean("favourite", false),
                         auto = j.optBoolean("auto", false),
+                        times = j.optJSONObject("times")?.let { t ->
+                            t.keys().asSequence().associateWith { k -> t.optLong(k) }
+                        }.orEmpty(),
                         // ⚠ Read off the DISK rather than out of the metadata:
                         // the file is the fact, and a `hasVideo` flag in the
                         // JSON could outlive the clip it names.

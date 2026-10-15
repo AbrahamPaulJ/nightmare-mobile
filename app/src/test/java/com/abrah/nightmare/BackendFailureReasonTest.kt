@@ -141,4 +141,26 @@ class BackendFailureReasonTest {
         feed(realFailure)
         assertEquals("no such handle", explainOpFailure(500, "no such handle"))
     }
+
+    /**
+     * ⚠⚠ EVERY Wan launch logs this gguf complaint first, and lmkd's kill at 704p logs nothing: the user
+     * was told the backend stopped because of a tensor's dimensions (2026-10-15). Lines from the S25.
+     */
+    private val wanGguf =
+        "    22.4ms [ ERROR ] [dit] util.cpp:634  - gguf_init_from_reader: tensor 'patch_embedding.weight' has invalid number of dimensions: 5 > 4"
+
+    @Test
+    fun wansHarmlessGgufLineIsNeverTheReason() {
+        feed(listOf(wanGguf, "151461.2ms [  INFO ] [dit] ggml_runner.cpp:949  - taehv compute buffer size: 3478.75 MB(VRAM) on HTP0"))
+        assertNull(BackendProcess.failureReason())
+    }
+
+    @Test
+    fun aRealErrorAfterWansGgufLineStillLeads() {
+        feed(listOf(
+            wanGguf,
+            " 18398.8ms [ ERROR ] [dit] model_manager.cpp:1748 - model manager cannot make enough memory available on HTP0: need 3385.40 MB device / 3705.09 MB budget",
+        ))
+        assertTrue(BackendProcess.failureReason()!!.startsWith("model manager cannot make enough memory available"))
+    }
 }

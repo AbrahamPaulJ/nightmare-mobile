@@ -93,7 +93,7 @@ There are only five kinds of node. See [Nodes and their settings](../reference/n
 
 The two padlocks at the bottom right lock the **zoom** (magnifier) and the **panning**
 (four-way arrow) separately, so a pinch or a stray drag cannot move the view while you work.
-The number beside them is the zoom level.
+The number beside them is the zoom level; you can zoom out to 0.15x to see a big flow whole.
 
 !!! tip "A wire that would make a loop is refused"
     While you drag a wire, it turns red if connecting it would be refused (for example a wire
@@ -144,6 +144,10 @@ Advanced view the **run log** above the button shows, as it runs:
 
 The ✕ hides the log (it does not stop the run). The copy button copies the whole log. Paste it
 into a bug report. To **stop** a render, tap **Cancel** on the Run button.
+
+The small arrow at the top of the run bar **folds** it to one row: **+ Node**, Run, the run's
+time and the padlocks, for more canvas. Tap it again to unfold. A failed run unfolds it by
+itself, so the reason is never hidden.
 
 If a node fails, it turns red and says why underneath itself, and everything after it is shown
 as blocked.

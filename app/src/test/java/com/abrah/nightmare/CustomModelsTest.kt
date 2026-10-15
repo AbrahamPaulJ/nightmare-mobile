@@ -416,6 +416,22 @@ class CustomModelsTest {
         assertEquals("blurry", spec.negative)
     }
 
+    /** ⭐ GitHub #29: a rename changes the shown name only, keeps the other keys, and keeps the id. */
+    @Test
+    fun aRenameWritesTheLabelAndKeepsTheRest() {
+        val dir = onDisk("mine", ModelCatalog.SD15_REQUIRED)
+        File(dir, "config.json").writeText("""{"label":"Old","default_prompt":"a cat"}""")
+        CustomModels.Config.writeLabel(dir, "  New name ")
+        val spec = CustomModels.scan(ctx).single()
+        assertEquals("mine", spec.id)
+        assertEquals("New name", spec.label)
+        assertEquals("a cat", spec.prompt)
+        // ⚠ And one with no config.json yet gets one.
+        val bare = onDisk("bare", ModelCatalog.SD15_REQUIRED)
+        CustomModels.Config.writeLabel(bare, "Bare")
+        assertEquals("Bare", CustomModels.scan(ctx).single { it.id == "bare" }.label)
+    }
+
     /**
      * ⭐⭐ The field that makes `config.json` load-bearing: a distilled
      * checkpoint declares the sampler it was tuned for, and a new sampler node

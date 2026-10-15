@@ -95,7 +95,7 @@ object BackendProcess {
         // buffer holds 400 lines across launches, and "the oldest error" taken
         // over all of them named an earlier launch's failure as this one's.
         val raw = output.takeWhile { !it.startsWith(EXEC_PREFIX) }.lastOrNull {
-            it.contains("[ ERROR ]") || it.trimStart().startsWith("ERROR")
+            (it.contains("[ ERROR ]") || it.trimStart().startsWith("ERROR")) && HARMLESS_ERRORS.none { h -> h in it }
         } ?: return null
         // The engine prefixes `   522.3ms [ ERROR ] [dit] model_loader.cpp:270  - `.
         // Everything before the ` - ` is timing and provenance, and none of it
@@ -107,7 +107,17 @@ object BackendProcess {
 
     val isRunning: Boolean get() = process?.isAlive == true
 
+    /** ⭐ Which launch is running (a new one per process), or null: what [com.abrah.nightmare.npu.WanVideoNode] compares. */
+    val processId: Int? get() = process?.let { System.identityHashCode(it) }
+
     private const val EXEC_PREFIX = "exec: "
+
+    /**
+     * ⚠ `[ ERROR ]` lines every healthy launch prints, never a reason: Wan 2.2's 5-D patch tensor makes
+     * ggml's gguf reader complain on every load (sd.cpp's loader copes, `docs/VIDEO-GGML.md` §3). An
+     * lmkd kill at 704p was explained to the user as this line (2026-10-15).
+     */
+    private val HARMLESS_ERRORS = listOf("'patch_embedding.weight' has invalid number of dimensions")
 
     /**
      * ⭐⭐ How the last backend process ENDED — its exit code, and whether this
@@ -358,12 +368,27 @@ object BackendProcess {
      * 4 is the balance (211–235 s at 1024², 2.8 GB left free; 5 is ~10% faster with only 1.9 GB free).
      * Null on a 16 GB phone, or when the RAM is unknown, where it runs unbudgeted as before.
      */
+    /**
+     * ⭐ The 8 Gen 3 DiT budget: 2.75 GiB, and 2.25 for FLUX.2 Klein 9B (its own parts: catalogue or import).
+     * ⚠⚠ GitHub #30: a real SM8650 aborted Klein 9B at 1024² mid-DiT (`dspqueue_read 0x2e`), on a fresh
+     * backend too. Not reproduced on the S25 forced to v75, which lacks the real ~3.1 GB per-process map: at
+     * 2.75 the 8B encoder's segments held 2,704 MB on HTP0 before release and the DiT then filled the budget
+     * with 1,157 MB of compute. At 2.25: 2,186 MB, still renders, 135 s vs 119 s (2026-10-15). Reasoned, not
+     * proven on the real chip. ⚠ A 9B edit with a reference at 1024² may need more (4B's needed 2.75).
+     */
+    internal fun v75DitBudget(spec: ModelSpec?): String =
+        if (spec?.family == Family.FLUX2 && spec.ownDitParts) "2.25" else "2.75"
+
     internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long): String? =
         "4".takeIf { spec?.family == Family.KREA2 && ramBytes in 1 until Prefs.LOWRAM_BELOW_BYTES }
 
     /** ⚠ Diagnostic: the engine's VRAM budget (`DIT_MAX_VRAM`, GiB) on any chip. */
     private fun readDitMaxVramOverride(context: Context): String? =
         readDiagnosticFile(context, "nightmare-dit-max-vram.txt")?.takeIf { it.isNotEmpty() }
+
+    /** ⚠ Diagnostic: `nightmare-wan-vae-tile.txt`, the Wan decode's spatial tile (latent px; 0 = whole frame). */
+    internal fun readWanVaeTileOverride(context: Context): Int? =
+        readDiagnosticFile(context, "nightmare-wan-vae-tile.txt")?.toIntOrNull()
 
     /**
      * ⚠ Diagnostic: `nightmare-dit-env.txt`, one `KEY=VALUE` per line, added to a DiT launch's
@@ -486,6 +511,8 @@ object BackendProcess {
          * honestly reports nothing held.
          */
         upscalerOnly: Boolean = false,
+        /** ⭐ [ContextKey.memoryBudget]: `DIT_MAX_VRAM` and `all=disk` for this launch. */
+        memoryBudget: String? = null,
     ): Start =
         withContext(Dispatchers.IO) {
             if (isRunning) return@withContext Start.Failed("already running")
@@ -554,6 +581,17 @@ object BackendProcess {
                             "Re-download the model, or pick a size it ships a patch for"
                     )
                 }
+                // ⭐ A DiT text encoder the NPU cannot run, named before the launch (Telegram #6290: an
+                // "uncensored" Q4_K_M encoder copied over Klein 4B's Q4_0 `llm.gguf` did not work). ⚠ Not Wan:
+                // its umT5 runs on the CPU, and is Q4_K_M on purpose (`docs/VIDEO-GGML.md` §3).
+                if (!upscalerOnly && spec?.family?.dit == true && spec.family != Family.WAN) {
+                    val te = File(model, "llm.gguf")
+                    val bad = if (te.isFile) GgufHeader.unrunnableBlockTypes(te) else emptySet()
+                    if (bad.isNotEmpty()) return@withContext Start.Failed(
+                        "${te.name} in ${spec.label} uses ${bad.sorted().joinToString()}, which the NPU cannot run. " +
+                            "Use a Q4_0 or Q8_0 text encoder (the one this model downloads is Q4_0)"
+                    )
+                }
                 val patch = spec?.patchFor(context, res)
 
                 val cmd = buildList {
@@ -599,7 +637,8 @@ object BackendProcess {
                     // weights on disk are mapped per step, as Qwen always runs (`docs/DIT.md` §9e).
                     if (!upscalerOnly && spec?.family?.dit == true) {
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
-                        (readDitParamsOverride(context) ?: "all=disk".takeIf { belowV79 })
+                        // ⭐ A memory budget only evicts with `all=disk`: without it the segments stay resident.
+                        (readDitParamsOverride(context) ?: "all=disk".takeIf { belowV79 || memoryBudget != null })
                             ?.let { add("--dit_params_backend"); add(it) }
                     }
                     // ⭐ Only meaningful WITH --lowram, as upstream passes it.
@@ -646,12 +685,11 @@ object BackendProcess {
                         // on the S25 forced to v75 and fixed at 2.75; still under the ~3.1 GiB map.
                         // ⚠ `nightmare-dit-max-vram.txt` overrides it on ANY chip — how the split is
                         // proven on a v79 phone, which never needs it (`docs/DIT.md` §9e).
-                        // ⚠⚠ Never for Wan: a budget splits the 5B into segments that stay resident
-                        // (no eviction), so it fills and fails at block 25 of 30 ("cannot make enough
-                        // memory available", the S25 forced to v75 at 2.75); without it the same clip
-                        // renders (`docs/VIDEO-GGML.md` §6).
+                        // ⚠⚠ Not by chip for Wan: a budget WITHOUT `all=disk` keeps the 5B's segments
+                        // resident and fails at block 25 of 30 (the S25 forced to v75 at 2.75). Wan gets
+                        // one per clip instead, with `all=disk`: [memoryBudget] (`docs/VIDEO-GGML.md` §4).
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
-                        (readDitMaxVramOverride(context) ?: "2.75".takeIf { belowV79 && spec?.family != Family.WAN }
+                        (readDitMaxVramOverride(context) ?: memoryBudget ?: v75DitBudget(spec).takeIf { belowV79 && spec?.family != Family.WAN }
                             ?: kreaBudget(spec, DeviceProbe.caps().ramBytes))
                             ?.let { put("DIT_MAX_VRAM", it) }
                         // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
@@ -733,7 +771,7 @@ object BackendProcess {
                 // ⚠ Null for an upscale-only process: it holds no checkpoint, so
                 // there is no context key and nothing for the readout to name.
                 launchedKey = if (upscalerOnly) null else ContextKey(
-                    ModelCatalog.backendTypeOf(modelId), modelId, res.width, res.height,
+                    ModelCatalog.backendTypeOf(modelId), modelId, res.width, res.height, memoryBudget,
                 )
                 upscalerServer = upscalerOnly
                 appContext = context.applicationContext
@@ -837,5 +875,7 @@ object BackendProcess {
             output.addFirst(line)
             while (output.size > 400) output.removeLast()
         }
+        // ⭐ A model loaded or released goes into the restart report ([CrashReport.backendEvent]).
+        appContext?.let { CrashReport.backendEvent(it, line) }
     }
 }

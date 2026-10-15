@@ -104,9 +104,55 @@ object CrashReport {
         synchronized(stages) {
             stages.clear()
             header = runCatching { header(context) }.getOrNull()
+            lowest = null
+            lowestMb = Long.MAX_VALUE
         }
         write(context)
+        watchRam(context.applicationContext)
     }
+
+    /**
+     * ⭐⭐ A model the backend loaded or released ([BackendProcess]'s `[lowram]` lines), as a stage.
+     *
+     * ⚠⚠ The S24 Ultra that reboots on its second SDXL render back to back (Telegram #6266/#6269,
+     * 2026-10-15; Local Dream on the same phone does not) left only "generate, 3602 MB free": which
+     * model was loading, and how low the RAM went, died with the phone. Not reproduced on the S25
+     * (low RAM on, five renders back to back, min 3.4 GB free, nothing held between renders), so the
+     * reporter's phone has to say it. A handful of lines per render.
+     */
+    fun backendEvent(context: Context, line: String) {
+        if (marked == null || "[lowram]" !in line) return
+        stage(context, "backend " + line.substringAfter("[lowram]").trim())
+    }
+
+    /**
+     * ⭐ The RUN's lowest free RAM and when, sampled every [RAM_TICK_MS] while a job is marked and
+     * written only on a new low, so the report says how close the phone came, not just where it began.
+     */
+    private fun watchRam(context: Context) {
+        // ⚠ The job's context, read each tick: a sampler still asleep from the last job keeps going for this one.
+        watchContext = context
+        if (ramWatch?.isAlive == true) return
+        ramWatch = Thread({
+            while (marked != null) {
+                val context = watchContext ?: break
+                val am = context.getSystemService(ActivityManager::class.java)
+                val mi = ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
+                val mb = mi.availMem shr 20
+                val newLow = synchronized(stages) {
+                    (mb < lowestMb).also { if (it) { lowestMb = mb; lowest = "lowest $mb MB free at ${clock()}" } }
+                }
+                if (newLow) write(context)
+                try { Thread.sleep(RAM_TICK_MS) } catch (_: InterruptedException) { break }
+            }
+        }, "crash-ram").apply { isDaemon = true; start() }
+    }
+
+    @Volatile private var ramWatch: Thread? = null
+    @Volatile private var watchContext: Context? = null
+    @Volatile private var lowest: String? = null
+    private var lowestMb = Long.MAX_VALUE
+    private const val RAM_TICK_MS = 2_000L
 
     /**
      * ⭐⭐ "…and is now at [step]", with the RAM free at that moment — one line per node.
@@ -134,7 +180,7 @@ object CrashReport {
         runCatching { breadcrumb(context).delete() }
     }
 
-    private const val MAX_STAGES = 12
+    private const val MAX_STAGES = 24
 
     /** ⚠ A breadcrumb counts as "before this boot" only this much before it: a reboot takes far longer. */
     private const val REBOOT_MARGIN_MS = 5_000L
@@ -147,7 +193,10 @@ object CrashReport {
         val text = buildString {
             appendLine(what)
             header?.let { appendLine(it) }
-            synchronized(stages) { stages.forEach { appendLine(it) } }
+            synchronized(stages) {
+                stages.forEach { appendLine(it) }
+                lowest?.let { appendLine(it) }
+            }
         }
         // ⚠⚠ fsync'd: a plain write sits in the page cache for seconds, and a phone that
         // RESTARTS mid-run loses it — the 1.6.153 tester whose S24 Ultra rebooted on the

@@ -230,6 +230,8 @@
     <string name="ip_about_sdxl">SDXL Swap 模型的 IP-Adapter：参考图片引导生成。只有勾选了 IP-Adapter 的转换才能使用：1.6.122 起下载的 Illustrious XL Swap，或你用 npuforge 1.0.12 及以上版本自己转换的模型。</string>
     <string name="run_lora_tags_unused">提示词中的 LoRA 标签已忽略，此模型不支持 LoRA</string>
     <string name="run_lora_tag_missing">提示词中的 LoRA “%1$s” 未安装，已跳过</string>
+    <string name="run_wan_ram_warning">%1$s、%2$s 秒需要约 %3$s GB 的 NPU 内存，超出这台手机 %4$s GB 内存能稳妥容纳的量。应用可能会停止或重启。480p 或更短的时长更稳妥</string>
+    <string name="run_wan_npu_warning">%1$s、%2$s 秒一次需要约 %3$s GB 的 NPU 内存。骁龙 8 Gen 3 大约只能容纳 3.5 GB，很可能会失败。仍然尝试</string>
     <string name="feature_missing_convert">此转换没有 %1$s。请在 npuforge 中勾选 %1$s 后重新转换。</string>
     <string name="feature_missing_builtin">此模型的这份下载没有 %1$s。删除后重新下载即可获得包含它的版本。</string>
     <string name="ip_not_installed">此手机尚未安装 %1$s。</string>
@@ -271,6 +273,7 @@
     <string name="mb_group_dit">新一代 DiT</string>
     <string name="mb_back">返回</string>
     <string name="mb_more">更多</string>
+    <string name="models_rename_title">重命名此模型</string>
     <string name="flows_open">打开</string>
     <!-- LoRA browser (docs/LORA-BROWSER.md) -->
     <string name="lb_title">获取 LoRA</string>
@@ -669,6 +672,8 @@
     <string name="flow_wan_i2v_about">图库中的照片作为 5 秒视频的第一帧，按提示词描述的方式运动。Wan 2.2，约 3 分钟，适用于 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。</string>
     <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
     <string name="hint_wan_size">Wan 2.2 为 1280x704 设计：更小的尺寸（包括 832x480）可能模糊或变形。任意比例，像素总数不超过 1280x704；超出时另一边会自动缩小。1280x704 耗时约为 832x480 的三倍。</string>
+    <string name="wan_shape_differs">图片为 %1$s，与视频的 %2$s 比例不同：将被裁剪以适应。</string>
+    <string name="wan_match_picture">匹配图片（%1$s）</string>
     <string name="knob_cfg">CFG</string>
     <string name="knob_loras">LoRA</string>
     <string name="knob_output_width">输出宽度</string>
@@ -908,6 +913,7 @@
     <string name="load_loading">加载中</string>
     <string name="load_loaded">已加载</string>
     <string name="shell_ram">内存 %1$s / %2$s GB 可用</string>
+    <string name="shell_ram_temp">内存 %1$s / %2$s GB 可用 · %3$s°C</string>
     <string name="drawer_unsaved_flow">未保存的工作流</string>
     <string name="device_npu_too_new">⚠ %1$s 的 NPU 比本应用的 NPU 运行时所支持的更新（最高到 %2$s），因此目前无法运行任何 NPU 模型，包括旧模型。需要 Qualcomm 发布新的运行时。请报告芯片型号。</string>
     <string name="draw_title">绘制</string>
@@ -996,6 +1002,11 @@
     <string name="tag_delete_body">在重新安装词典之前，将不再提供它的建议。</string>
     <string name="cd_open_log">展开日志</string>
     <string name="cd_fold_log">收起日志</string>
+    <string name="cd_open_bar">展开面板</string>
+    <string name="cd_fold_bar">收起面板</string>
+    <string name="output_clip_no_upscale">视频无法放大：此输出接入的是视频</string>
+    <string name="results_cd_open_preview">显示大预览</string>
+    <string name="results_cd_fold_preview">收起大预览</string>
     <string name="cn_about_sdxl_v75">SDXL Swap 模型的 ControlNet。只有勾选了 ControlNet 的转换才能使用。⚠ 在 8 Gen 3 上它可能放不下：NPU 需要为它另开一个空间，已有一台 8 Gen 3 手机拒绝了。LoRA 和 IP-Adapter 不受影响。</string>
     <string name="import_title">导入模型</string>
     <string name="import_add_cd">导入模型</string>

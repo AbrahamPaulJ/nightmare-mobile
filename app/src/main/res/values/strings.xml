@@ -253,6 +253,8 @@
     <string name="ip_about_sdxl">IP-Adapter for SDXL Swap models: a reference picture steers the render. Only a conversion made with IP-Adapter ticked can use it: Illustrious XL Swap downloaded since 1.6.122, or your own from npuforge 1.0.12 or newer.</string>
     <string name="run_lora_tags_unused">LoRA tags in the prompt were left out. This model takes no LoRAs</string>
     <string name="run_lora_tag_missing">LoRA "%1$s" from the prompt is not installed. Skipped</string>
+    <string name="run_wan_ram_warning">%1$s for %2$s s needs about %3$s GB on the NPU, more than this phone\'s %4$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer</string>
+    <string name="run_wan_npu_warning">%1$s for %2$s s needs about %3$s GB on the NPU at once. A Snapdragon 8 Gen 3 holds about 3.5 GB, so it will probably fail. Trying anyway</string>
     <string name="feature_missing_convert">This conversion has no %1$s. Convert it again in npuforge with %1$s ticked.</string>
     <string name="feature_missing_builtin">This download of the model has no %1$s. Delete it and download it again to get the version that has it.</string>
     <string name="ip_not_installed">%1$s is not installed on this phone yet.</string>
@@ -294,6 +296,7 @@
     <string name="mb_group_dit">Modern DiT</string>
     <string name="mb_back">Back</string>
     <string name="mb_more">More</string>
+    <string name="models_rename_title">Rename this model</string>
     <string name="flows_open">Open</string>
     <!-- LoRA browser (docs/LORA-BROWSER.md) -->
     <string name="lb_title">Get LoRAs</string>
@@ -696,6 +699,8 @@
     <string name="flow_wan_i2v_about">A photo from the gallery as the first frame of a 5 second clip, moving the way the prompt says. Wan 2.2, about 3 minutes, on an 8 Gen 3 or newer (alpha on 8 Gen 3).</string>
     <string name="hint_wan_seconds">Clip length in seconds, 24 frames each. 5 s at 480p takes about 3 minutes on an 8 Elite.</string>
     <string name="hint_wan_size">Wan 2.2 is made for 1280x704: smaller sizes, 832x480 included, can look soft or distorted. Any shape up to 1280x704 worth of pixels; the other side shrinks when you pass it. 1280x704 takes about three times as long as 832x480.</string>
+    <string name="wan_shape_differs">The picture is %1$s, a different shape from the clip\'s %2$s: it will be cropped to fit.</string>
+    <string name="wan_match_picture">Match picture (%1$s)</string>
     <string name="knob_cfg">CFG</string>
     <string name="knob_loras">LoRAs</string>
     <string name="knob_output_width">Output width</string>
@@ -939,6 +944,7 @@
     <string name="load_loading">Loading</string>
     <string name="load_loaded">Loaded</string>
     <string name="shell_ram">RAM %1$s / %2$s GB free</string>
+    <string name="shell_ram_temp">RAM %1$s / %2$s GB free · %3$s°C</string>
     <string name="drawer_unsaved_flow">unsaved flow</string>
     <string name="device_npu_too_new">⚠ %1$s has a newer NPU than this app\'s NPU runtime knows (it stops at %2$s), so no NPU model can run on it yet. Not even older ones. It needs a new runtime from Qualcomm. Please report the chip name.</string>
     <string name="draw_title">Draw</string>
@@ -1027,6 +1033,11 @@
     <string name="tag_delete_body">Suggestions from it stop until you install one again.</string>
     <string name="cd_open_log">Show the log</string>
     <string name="cd_fold_log">Fold the log</string>
+    <string name="cd_open_bar">Show the whole bar</string>
+    <string name="cd_fold_bar">Fold the bar</string>
+    <string name="output_clip_no_upscale">A clip cannot be upscaled: this output is wired a video</string>
+    <string name="results_cd_open_preview">Show the big preview</string>
+    <string name="results_cd_fold_preview">Fold the big preview</string>
     <string name="cn_about_sdxl_v75">A ControlNet for SDXL Swap models. Only a conversion made with ControlNet ticked can use it. ⚠ On an 8 Gen 3 it may not fit beside the SDXL model: the NPU needs a second space for it, and one 8 Gen 3 phone refused it. LoRA and IP-Adapter are not affected.</string>
     <string name="import_title">Import a model</string>
     <string name="import_add_cd">Import a model</string>

@@ -81,19 +81,6 @@ and it downloads on first use; the app shows which ones your phone can run.
 
 The [user guide](https://abrahampaulj.github.io/nightmare-mobile/) explains each of these, with measurements.
 
-## Under the hood
-
-A generate node is one node to you and several ops underneath: `encode_text`, `vae_encode`,
-`sample`, `latent_blend` and `vae_decode` are separate endpoints on the inference server, and
-conditionings and latents move between them as handles that never cross the wire. The node set is
-deliberately small. An NPU has no runtime compiler, so the inside of a compiled pipeline cannot be
-recombined on the phone anyway.
-
-**Writing a node (experimental):** a JSON manifest plus a small JavaScript file, zipped into the
-app's plugin directory. No toolchain, no app release. Four worked examples are in
-[`examples/`](examples/). The format can still change, and an imported script is code you did not
-write.
-
 ## Building it
 
 JDK 17 and Android SDK 35: `gradlew assembleDebug`. The NPU backend is a native binary and the QNN

@@ -1,0 +1,27 @@
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -175,7 +175,23 @@
+ 
+   void encodeText(const ProcessedPromptPair &prompts, bool need_negative,
+                   bool need_positive, Conditioning &cond) override {
+-    if (lowram_) loadClipsIfNeeded();
++    // ⚠⚠ nightmare (032): a new prompt starts a new render, so in lowram the previous
++    // render's stage models go FIRST. /generate releases them on exit
++    // (releaseTransientModels); the app's op surface (/encode_text, /sample,
++    // /vae_decode) never calls it, so the UNet and the VAE decoder stayed mapped
++    // and the next render loaded its text encoder beside them. On a 12 GB 8 Gen 3
++    // (S24 Ultra, 2026-10-15) every SECOND render back to back rebooted the phone
++    // or got the app closed, from 3.6 GB free; Local Dream (/generate) never did.
++    if (lowram_) {
++      if (controlnet_) releaseControlNet();
++      if (unet_) {
++        unet_.reset();
++        QNN_INFO("[lowram] SDXL UNET released");
++      }
++      releaseVaeDecoder();
++      releaseVaeEncoder();
++      loadClipsIfNeeded();
++    }
+     if (!clip_interpreter_ || !clip2_interpreter_)
+       throw std::runtime_error("SDXL CLIP interpreters not initialized!");
+ 

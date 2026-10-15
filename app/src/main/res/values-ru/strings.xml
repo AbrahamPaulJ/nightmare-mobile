@@ -233,6 +233,8 @@
     <string name="ip_about_sdxl">IP-Adapter для моделей SDXL Swap: эталонное изображение направляет рендер. Работает только с конвертацией, где отмечен IP-Adapter: Illustrious XL Swap, скачанный начиная с 1.6.122, или ваша собственная из npuforge 1.0.12 и новее.</string>
     <string name="run_lora_tags_unused">Теги LoRA в промпте пропущены: эта модель не принимает LoRA</string>
     <string name="run_lora_tag_missing">LoRA «%1$s» из промпта не установлена: пропущена</string>
+    <string name="run_wan_ram_warning">%1$s на %2$s с требует около %3$s ГБ на NPU, больше, чем спокойно вмещают %4$s ГБ памяти этого телефона. Приложение может остановиться или перезапуститься. 480p или меньше секунд надёжнее</string>
+    <string name="run_wan_npu_warning">%1$s на %2$s с требует около %3$s ГБ на NPU за раз. Snapdragon 8 Gen 3 вмещает около 3,5 ГБ, так что скорее всего не получится. Пробуем всё равно</string>
     <string name="feature_missing_convert">В этой конвертации нет %1$s. Сконвертируйте снова в npuforge, отметив %1$s.</string>
     <string name="feature_missing_builtin">В этой загрузке модели нет %1$s. Удалите её и скачайте снова, чтобы получить версию с ним.</string>
     <string name="ip_not_installed">%1$s ещё не установлен на этом телефоне.</string>
@@ -274,6 +276,7 @@
     <string name="mb_group_dit">Современные DiT</string>
     <string name="mb_back">Назад</string>
     <string name="mb_more">Ещё</string>
+    <string name="models_rename_title">Переименовать модель</string>
     <string name="flows_open">Открыть</string>
     <!-- LoRA browser (docs/LORA-BROWSER.md) -->
     <string name="lb_title">Найти LoRA</string>
@@ -684,6 +687,8 @@
     <string name="flow_wan_i2v_about">Фото из галереи становится первым кадром 5-секундного клипа и движется так, как сказано в промпте. Wan 2.2, около 3 мин, на 8 Gen 3 или новее (альфа на 8 Gen 3).</string>
     <string name="hint_wan_seconds">Длина клипа в секундах, 24 кадра в секунду. 5 с при 480p занимают около 3 мин на 8 Elite.</string>
     <string name="hint_wan_size">Wan 2.2 рассчитан на 1280x704: меньшие размеры, включая 832x480, могут выглядеть размыто или с искажениями. Любая форма до 1280x704 пикселей; другая сторона уменьшается, если превысить предел. 1280x704 занимает примерно втрое больше времени, чем 832x480.</string>
+    <string name="wan_shape_differs">Картинка %1$s, другой формы, чем ролик %2$s: она будет обрезана.</string>
+    <string name="wan_match_picture">Как у картинки (%1$s)</string>
     <string name="knob_cfg">CFG</string>
     <string name="knob_loras">LoRA</string>
     <string name="knob_output_width">Ширина результата</string>
@@ -935,6 +940,7 @@
     <string name="load_loading">Загрузка</string>
     <string name="load_loaded">Загружена</string>
     <string name="shell_ram">ОЗУ %1$s / %2$s ГБ свободно</string>
+    <string name="shell_ram_temp">ОЗУ %1$s / %2$s ГБ свободно · %3$s°C</string>
     <string name="drawer_unsaved_flow">несохранённая схема</string>
     <string name="device_npu_too_new">⚠ У %1$s NPU новее, чем знает среда NPU этого приложения (она заканчивается на %2$s), поэтому ни одна NPU-модель пока не запустится: даже старые. Нужна новая среда от Qualcomm. Пожалуйста, сообщите название чипа.</string>
     <string name="draw_title">Рисование</string>
@@ -1023,6 +1029,11 @@
     <string name="tag_delete_body">Подсказки из него прекратятся, пока вы не установите словарь снова.</string>
     <string name="cd_open_log">Показать журнал</string>
     <string name="cd_fold_log">Свернуть журнал</string>
+    <string name="cd_open_bar">Развернуть панель</string>
+    <string name="cd_fold_bar">Свернуть панель</string>
+    <string name="output_clip_no_upscale">Видео нельзя увеличить: на этот выход подаётся видео</string>
+    <string name="results_cd_open_preview">Показать большой просмотр</string>
+    <string name="results_cd_fold_preview">Свернуть большой просмотр</string>
     <string name="cn_about_sdxl_v75">ControlNet для моделей SDXL Swap. Работает только с конвертацией, где отмечен ControlNet. ⚠ На 8 Gen 3 он может не поместиться рядом с моделью SDXL: NPU нужно второе пространство, и один телефон на 8 Gen 3 его не выделил. LoRA и IP-Adapter это не затрагивает.</string>
     <string name="import_title">Импорт модели</string>
     <string name="import_add_cd">Импорт модели</string>

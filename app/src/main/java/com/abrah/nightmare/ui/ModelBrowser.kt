@@ -112,10 +112,8 @@ fun matchesSub(spec: ModelSpec, sub: SubKind): Boolean = when (sub) {
  * capability words — or its starter prompt, which is what makes "anime" find
  * the anime checkpoints without a tag list nobody maintains.
  */
-fun matchesQuery(spec: ModelSpec, query: String): Boolean {
-    val words = query.lowercase().split(' ', ',').filter { it.isNotBlank() }
-    if (words.isEmpty()) return true
-    val hay = buildString {
+fun matchesQuery(spec: ModelSpec, query: String): Boolean = matchesWords(
+    buildString {
         append(spec.label).append(' ').append(spec.id).append(' ').append(spec.family.label)
         if (spec.isInpaintModel()) append(" inpaint")
         if (spec.family.edit) append(" edit")
@@ -123,8 +121,19 @@ fun matchesQuery(spec: ModelSpec, query: String): Boolean {
         if (spec.isCustom) append(" imported")
         append(' ').append(ModelCatalog.styleWords(spec))
         append(' ').append(spec.prompt)
-    }.lowercase()
-    return words.all { it in hay }
+    },
+    query,
+)
+
+/**
+ * ⭐ The search's one word rule: every word of [query] appears in [hay]. ⚠ Shared by the checkpoints
+ * ([matchesQuery]) and the video, upscaler and tool cards the search also finds (#6288: a search on the
+ * Models screen did not find the video models).
+ */
+fun matchesWords(hay: String, query: String): Boolean {
+    val words = query.lowercase().split(' ', ',').filter { it.isNotBlank() }
+    val h = hay.lowercase()
+    return words.all { it in h }
 }
 
 /** ⭐ What the list shows, in its three sections. */
@@ -380,6 +389,8 @@ internal fun ModelCardV2(
     onCancel: () -> Unit,
     onDelete: (ModelSpec) -> Unit,
     onUse: (ModelSpec) -> Unit,
+    /** ⭐ Rename an imported model (its shown name only), from ⋮. */
+    onRename: (ModelSpec) -> Unit = {},
 ) {
     val spec = row.spec
     val dim = row.unsupported()
@@ -418,7 +429,7 @@ internal fun ModelCardV2(
                         if (row.fromLocalDream) Badge(stringResource(R.string.mb_local_dream), MaterialTheme.colorScheme.tertiary)
                     }
                 }
-                ModelMenu(row, busy, onInstall, onDelete)
+                ModelMenu(row, busy, onInstall, onDelete, onRename)
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -516,11 +527,19 @@ private fun ModelAction(
 
 /** ⭐ ⋮ — Delete (refused on the model in use) and Repair. */
 @Composable
-private fun ModelMenu(row: ModelRow, busy: Boolean, onInstall: (ModelSpec) -> Unit, onDelete: (ModelSpec) -> Unit) {
+private fun ModelMenu(
+    row: ModelRow,
+    busy: Boolean,
+    onInstall: (ModelSpec) -> Unit,
+    onDelete: (ModelSpec) -> Unit,
+    onRename: (ModelSpec) -> Unit,
+) {
     // ⚠ Never Local Dream's files — it keeps them, and deletes them itself.
     val canDelete = (row.installed || row.spec.isCustom || row.partial) && row.progress == null && !row.fromLocalDream
     val canRepair = row.partial && row.build != null && row.progress == null
-    if (!canDelete && !canRepair) {
+    // ⭐ Our own imports only: a name lives in the model's `config.json`, and Local Dream's are its files.
+    val canRename = row.spec.isCustom && row.installed && row.spec.home != null && row.progress == null && !row.fromLocalDream
+    if (!canDelete && !canRepair && !canRename) {
         Spacer(Modifier.size(40.dp))
         return
     }
@@ -530,6 +549,13 @@ private fun ModelMenu(row: ModelRow, busy: Boolean, onInstall: (ModelSpec) -> Un
             Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.mb_more))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (canRename) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.flows_rename)) },
+                    enabled = !busy,
+                    onClick = { open = false; onRename(row.spec) },
+                )
+            }
             if (canRepair) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.repair)) },

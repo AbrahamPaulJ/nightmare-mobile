@@ -935,6 +935,7 @@ object Ops {
         startPng: ByteArray? = null,
         loras: List<Pair<String, Double>> = emptyList(),
         onProgress: (Progress) -> Unit = {},
+        vaeTileSize: Int = 0,
     ): Result<Clip> {
         val body = JSONObject()
             .put("prompt", prompt)
@@ -950,6 +951,8 @@ object Ops {
             .put("sigmas", org.json.JSONArray(sigmas))
             .put("temporal_tiling", true)
             .put("tiling_args", tilingArgs)
+            // ⚠ Backend 031: an older backend ignores the key and decodes the whole frame.
+            .apply { if (vaeTileSize > 0) put("vae_tile_size", vaeTileSize) }
             .put("out", out)
             .apply {
                 if (startPng != null) {

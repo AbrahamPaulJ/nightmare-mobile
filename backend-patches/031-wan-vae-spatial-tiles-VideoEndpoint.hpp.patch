@@ -1,0 +1,11 @@
+--- a/src/VideoEndpoint.hpp
++++ b/src/VideoEndpoint.hpp
+@@ -48,6 +48,8 @@
+       req->tiling_args = json.value(
+           "tiling_args",
+           std::string("temporal_tile_frames=6,temporal_tile_overlap=2"));
++      req->vae_tile_size = json.value("vae_tile_size", 0);
++      req->vae_tile_overlap = json.value("vae_tile_overlap", 0.25f);
+       req->preview_stride = json.value("show_diffusion_process", false)
+                                 ? json.value("show_diffusion_stride", 1)
+                                 : 0;

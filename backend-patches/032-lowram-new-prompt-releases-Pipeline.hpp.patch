@@ -1,0 +1,16 @@
+--- a/src/Pipeline.hpp
++++ b/src/Pipeline.hpp
+@@ -369,6 +369,13 @@
+     // handled -- it is not, because the graph IO is sized from somewhere else
+     // entirely.
+     ScopedSizeOverride io(req.width, req.height, req.width / 8, req.height / 8);
++    // ⚠⚠ nightmare (032): the decode is a render's LAST stage, so release what
++    // generate() releases on exit (its transient_guard). Under lowram the decoder
++    // (~1 GB with its spill-fill) otherwise stayed mapped between renders: Local
++    // Dream, which calls /generate, idles with nothing loaded; we idled with the
++    // decoder and the next render's text encoder loaded beside it (a 12 GB 8 Gen 3
++    // rebooted on every second render back to back, 2026-10-15). No-op without lowram.
++    ScopeExit transient_guard{[this]() { releaseTransientModels(); }};
+ 
+     // ⚠⚠⚠ **decodeToPixels(), NEVER vaeDecode() directly** -- the exact mirror
+     // of the rule opVaeEncodeFromRgb already follows, and this op broke it.

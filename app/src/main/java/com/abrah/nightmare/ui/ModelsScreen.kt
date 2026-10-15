@@ -179,6 +179,8 @@ fun ModelsScreen(
     onCancel: () -> Unit,
     onDelete: (ModelSpec) -> Unit,
     onSelect: (ModelSpec) -> Unit,
+    /** ⭐ An imported model's new shown name ([com.abrah.nightmare.HarnessViewModel.renameModel]). */
+    onRename: (ModelSpec, String) -> Unit = { _, _ -> },
     /**
      * ⭐⭐ A Use waiting on a flow choice — see
      * [com.abrah.nightmare.HarnessViewModel.PendingUse]. Null when nothing is
@@ -329,6 +331,7 @@ fun ModelsScreen(
 
 
     var deleting by remember { mutableStateOf<ModelSpec?>(null) }
+    var renaming by remember { mutableStateOf<ModelSpec?>(null) }
     // ⚠ The same pattern for the other catalogue: ONE owner of the confirm, so
     // there is exactly one place that can delete an upscaler. It shipped
     // without a confirm at all while the checkpoint beside it had one — the
@@ -433,26 +436,17 @@ fun ModelsScreen(
                 onDeleteWan = { deleting = wan?.spec },
                 onUseWan = onUseWan,
             )
-        } else LazyColumn(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            when {
-                fp == null && kind == ModelKind.TOOLS -> {
-                    item {
-                        Text(
-                            stringResource(R.string.tools_note),
-                            style = NoteTextStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (segmenter != null) {
+        } else {
+        // ⭐ The Tools, Upscale and Video cards as item blocks, so their tabs and the search (#6288)
+        // show the SAME cards. [match] takes a card's searchable words.
+        val toolItems: androidx.compose.foundation.lazy.LazyListScope.((String) -> Boolean) -> Unit = { match ->
+                    if (segmenter != null && match(segmenter.label)) {
                         item { ToolCard(segmenter, busy, onInstallSegmenter, onCancel) { deletingSegmenter = true } }
                     }
-                    if (parser != null) {
+                    if (parser != null && match(parser.label)) {
                         item { ToolCard(parser, busy, onInstallParser, onCancel) { deletingParser = true } }
                     }
-                    if (pose != null) {
+                    if (pose != null && match(pose.label)) {
                         item {
                             ToolCard(
                                 pose, busy, onInstallPose, onCancel,
@@ -461,6 +455,7 @@ fun ModelsScreen(
                         }
                     }
                     for ((type, row) in controlnets) {
+                        if (!match(row.label)) continue
                         item {
                             ToolCard(
                                 row, busy, { onInstallControlNet(type) }, onCancel,
@@ -480,7 +475,7 @@ fun ModelsScreen(
                             ) { deletingControlNet = type }
                         }
                     }
-                    if (depth != null) {
+                    if (depth != null && match(depth.label)) {
                         item {
                             ToolCard(
                                 depth, busy, onInstallDepth, onCancel,
@@ -489,6 +484,7 @@ fun ModelsScreen(
                         }
                     }
                     for ((m, row) in describe) {
+                        if (!match(row.label)) continue
                         item {
                             ToolCard(
                                 row, busy, { onInstallDescribe(m) }, onCancel,
@@ -498,6 +494,30 @@ fun ModelsScreen(
                             ) { deletingDescribe = m }
                         }
                     }
+        }
+        val upscalerItems: androidx.compose.foundation.lazy.LazyListScope.(List<UpscalerRow>) -> Unit = { shown ->
+                    items(shown, key = { "up_" + it.spec.id }) { row ->
+                        UpscalerCard(
+                            row, busy, onInstallUpscaler, onCancel,
+                            onDelete = { deletingUpscaler = it },
+                            onUse = onUseUpscaler,
+                        )
+                    }
+        }
+        LazyColumn(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            when {
+                fp == null && kind == ModelKind.TOOLS -> {
+                    item {
+                        Text(
+                            stringResource(R.string.tools_note),
+                            style = NoteTextStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    toolItems { true }
                 }
                 fp == null && kind == ModelKind.UPSCALE -> {
                     item {
@@ -507,13 +527,7 @@ fun ModelsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    items(upscalers, key = { it.spec.id }) { row ->
-                        UpscalerCard(
-                            row, busy, onInstallUpscaler, onCancel,
-                            onDelete = { deletingUpscaler = it },
-                            onUse = onUseUpscaler,
-                        )
-                    }
+                    upscalerItems(upscalers)
                 }
                 else -> {
                     if (fp == null) {
@@ -561,7 +575,7 @@ fun ModelsScreen(
                         }
                     }
                     val card: @Composable (ModelRow) -> Unit = { row ->
-                        ModelCardV2(row, busy, onInstall, onCancel, { deleting = it }, onSelect)
+                        ModelCardV2(row, busy, onInstall, onCancel, { deleting = it }, onSelect, onRename = { renaming = it })
                     }
                     if (sec.installed.isNotEmpty()) {
                         item { SectionHeader(stringResource(R.string.mb_section_installed, sec.installed.size)) }
@@ -591,9 +605,39 @@ fun ModelsScreen(
                         }
                     }
                     }
+                    // ⭐ The search reaches every tab (#6288): video, upscalers and tools that match,
+                    // as their own tabs draw them.
+                    if (fp == null && kind == ModelKind.ALL && query.isNotBlank()) {
+                        val neoHit = video != null && matchesWords("neodragon video text image", query)
+                        val wanHit = wan != null && (matchesQuery(wan.spec, query) || matchesWords("video", query))
+                        if (neoHit || wanHit) {
+                            item { SectionHeader(kindLabel(ModelKind.VIDEO)) }
+                            videoModelItems(
+                                if (neoHit) video else null, busy, onInstallVideo, onCancel,
+                                onConfirmDelete = { deletingVideo = true }, onUse = onUseVideo,
+                                wan = if (wanHit) wan else null,
+                                onInstallWan = { wan?.spec?.let(onInstall) },
+                                onDeleteWan = { deleting = wan?.spec },
+                                onUseWan = onUseWan,
+                                showNote = false,
+                            )
+                        }
+                        val ups = upscalers.filter { matchesWords(it.spec.label + " upscale upscaler", query) }
+                        if (ups.isNotEmpty()) {
+                            item { SectionHeader(kindLabel(ModelKind.UPSCALE)) }
+                            upscalerItems(ups)
+                        }
+                        val tools = (listOfNotNull(segmenter, parser, pose, depth) + controlnets.values + describe.values)
+                            .any { matchesWords(it.label, query) }
+                        if (tools) {
+                            item { SectionHeader(kindLabel(ModelKind.TOOLS)) }
+                            toolItems { matchesWords(it, query) }
+                        }
+                    }
                     item { androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 16.dp)) }
                 }
             }
+        }
         }
     }
 
@@ -698,6 +742,16 @@ fun ModelsScreen(
     // plan. ⚠ The button sat next to "use", enabled, one tap from gone -- and
     // deleting the SELECTED model also moves the selection, so a mis-tap changed
     // what every node in every graph would render with.
+    renaming?.let { spec ->
+        // ⭐ The flows' own name dialog: one "type a name" in the app.
+        NameDialog(
+            title = stringResource(R.string.models_rename_title),
+            initial = spec.label,
+            confirm = stringResource(R.string.flows_rename),
+            onDismiss = { renaming = null },
+            onConfirm = { name -> onRename(spec, name); renaming = null },
+        )
+    }
     deleting?.let { spec ->
         val row = rows.firstOrNull { it.spec.id == spec.id } ?: wan?.takeIf { it.spec.id == spec.id }
         ConfirmDelete(
@@ -902,7 +956,25 @@ private fun VideoModelsTab(
         Modifier.fillMaxWidth().padding(top = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (row != null) item {
+        videoModelItems(row, busy, onInstall, onCancel, onConfirmDelete, onUse, wan, onInstallWan, onDeleteWan, onUseWan)
+    }
+}
+
+/** ⭐ The video tab's cards, also what the search shows for a video match (#6288). */
+private fun androidx.compose.foundation.lazy.LazyListScope.videoModelItems(
+    row: VideoRow?,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onCancel: () -> Unit,
+    onConfirmDelete: () -> Unit,
+    onUse: () -> Unit,
+    wan: ModelRow?,
+    onInstallWan: () -> Unit,
+    onDeleteWan: () -> Unit,
+    onUseWan: () -> Unit,
+    showNote: Boolean = true,
+) {
+        if (row != null && showNote) item {
             Text(
                 stringResource(R.string.video_models_note, gb(row.totalBytes)),
                 style = NoteTextStyle,
@@ -944,7 +1016,6 @@ private fun VideoModelsTab(
                 unsupportedNote = if (!wan.installed && wan.build == null) stringResource(R.string.cannot_run_it) else null,
             )
         }
-    }
 }
 
 /**

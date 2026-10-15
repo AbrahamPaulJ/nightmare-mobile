@@ -714,6 +714,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * kind of authoritative-looking wrong number this project has already lost
      * days to. ⇒ Free RAM, measured; and what the backend is holding, named.
      */
+    /** ⭐ [CanvasLoad.batteryTempC]: the sticky battery broadcast, tenths of a degree. ⚠ No receiver is kept. */
+    private fun batteryTempC(): Float? = runCatching {
+        getApplication<Application>().registerReceiver(
+            null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED),
+        )?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+            ?.takeIf { it != Int.MIN_VALUE && it > 0 }?.let { it / 10f }
+    }.getOrNull()
+
     data class CanvasLoad(
         val ramFreeBytes: Long,
         val ramTotalBytes: Long,
@@ -771,6 +779,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
          * machine, and this is the one fact that contradicts it.
          */
         val running: Boolean = false,
+        /**
+         * ⭐ The battery's temperature, °C (Telegram #6287: a tester ran a separate app for it, which
+         * used RAM). The battery's because every app can read it, from a sticky broadcast with no
+         * permission; a CPU sensor is not readable on every phone. Null when the phone does not say.
+         */
+        val batteryTempC: Float? = null,
     )
 
     /**
@@ -876,6 +890,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             graphIsVideo = needs.second,
             graphModels = named.ifEmpty { listOf(SelectedModel.spec.label) },
             running = busy,
+            batteryTempC = batteryTempC(),
         )
     }
 
@@ -3903,6 +3918,22 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** ⭐ An imported model's shown name ([CustomModels.Config.writeLabel]). */
+    fun renameModel(spec: ModelSpec, name: String) {
+        val dir = spec.home?.let { java.io.File(it) } ?: return
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val r = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { CustomModels.Config.writeLabel(dir, name) }
+            }
+            r.fold(
+                onSuccess = { say("renamed ${spec.label} to ${name.trim()}") },
+                onFailure = { e -> modelError = e.message; say("could not rename. ${e.message}", bad = true) },
+            )
+            refreshModels()
+        }
+    }
+
     fun deleteModel(spec: ModelSpec) {
         val ctx = getApplication<Application>()
         // ⚠⚠ The FILES go on IO: a 3 GB SDXL folder on the shared-storage FUSE
@@ -6009,11 +6040,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // copying the lookup instead of calling it. ⚠⚠ Two surfaces that must
         // agree call the SAME function.
         val clip = clipForImage(imageId)
+        // ⭐ The run's times go with it (Telegram #6293: the Results info showed none), but only while
+        // this picture is still its node's latest output, or the times would be another run's.
+        val current = origin != null && (auto || canvas.previews[origin]?.first == imageId || canvas.rendered[origin] == imageId)
+        val times = if (!current) emptyMap() else nodeMs.toMap() + listOfNotNull(lastRunMs?.let { TOTAL_MS_KEY to it })
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val r = runCatching {
                 results.keep(
                     bmp, imageId, workflow, types, seed, modelLabel, prompt,
-                    batchId, batchLabel, video = clip, favourite = favourite, auto = auto,
+                    batchId, batchLabel, video = clip, favourite = favourite, auto = auto, times = times,
                 )
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -6434,7 +6469,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun detailsOf(r: com.abrah.nightmare.canvas.Result): List<Pair<String, String>> {
         val g = results.flow(r.id)?.workflow?.graph ?: return emptyList()
-        return detailsOfGraph(g, null, r.width, r.height) { r.seed }
+        // ⭐ The same Time rows as the canvas's info ([detailsOfNode]), from the run that made it.
+        return detailsOfGraph(g, null, r.width, r.height, times = { id: String -> r.times[id] }.takeIf { r.times.isNotEmpty() }) { r.seed }
     }
 
     /**
@@ -6457,8 +6493,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         height: Int = 0,
         /**
          * ⚠ Milliseconds for a node id, or for [TOTAL_MS_KEY] — null when this
-         * graph has no timings at all (a stored result: the run that made it is
-         * over and its clock was never kept with it).
+         * graph has no timings at all (a result kept before 1.6.163, or kept after
+         * another run replaced its picture: [com.abrah.nightmare.canvas.Result.times]).
          */
         times: ((String) -> Long?)? = null,
         rolled: (String) -> String?,
@@ -6502,14 +6538,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // and is named as cached, which is the useful fact.
             for (sampler in samplers) {
                 val ms = times(sampler.id)
-                out += ("Time · " + sampler.id) to
+                out += ("Time · " + com.abrah.nightmare.logNameOf(sampler.id, g, nodeTypes)) to
                     (ms?.let { com.abrah.nightmare.canvas.formatMs(it) } ?: "cached")
             }
             // ⚠ The node being asked about, when it is not one of those — an
             // auto-upscaling output, or any node that ran work of its own.
             if (upTo != null && samplers.none { it.id == upTo }) {
                 times(upTo)?.let {
-                    out += ("Time · " + upTo) to com.abrah.nightmare.canvas.formatMs(it)
+                    out += ("Time · " + com.abrah.nightmare.logNameOf(upTo, g, nodeTypes)) to com.abrah.nightmare.canvas.formatMs(it)
                 }
             }
             times(TOTAL_MS_KEY)?.let {
@@ -7464,12 +7500,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     private fun logName(id: String): String =
         com.abrah.nightmare.logNameOf(id, canvas.workflow.graph, typesFor(canvas.workflow.graph))
 
+    /** ⭐ A failure's text with stale auto ids as the nodes' names ([com.abrah.nightmare.humanizeNodeIds]). */
+    private fun humanized(text: String): String =
+        com.abrah.nightmare.humanizeNodeIds(text, canvas.workflow.graph, typesFor(canvas.workflow.graph))
+
     private fun noteNodeRun(n: NodeRun) {
         canvasStatus[n.id] = NodeStatus(outcome = n.outcome, detail = n.detail)
         if (n.outcome == Outcome.RAN) nodeMs[n.id] = n.ms
         runLog = runLog.copy(
             lines = runLog.lines +
-                com.abrah.nightmare.canvas.runLineOf(logName(n.id), n.outcome, n.ms, n.detail),
+                com.abrah.nightmare.canvas.runLineOf(logName(n.id), n.outcome, n.ms, humanized(n.detail)),
             now = null,
             step = null,
         )
@@ -8035,7 +8075,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * the backend stopped, so the next Run launches with it; the message says
      * so. Any other failure is returned unchanged.
      */
-    private suspend fun learnFromFailure(error: String): String {
+    private suspend fun learnFromFailure(raw: String): String {
+        val error = humanized(raw)
         // ⭐ A DiT kernel short of VTCM: this phone runs unfused from now on ([HexFallback]).
         if (HexFallback.learn(getApplication(), BackendProcess.newestLaunch())) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }

@@ -283,7 +283,7 @@ fun WorkflowsScreen(
  * copies of it would drift on the day one of them learns something.
  */
 @Composable
-private fun NameDialog(
+internal fun NameDialog(
     title: String,
     initial: String,
     confirm: String,

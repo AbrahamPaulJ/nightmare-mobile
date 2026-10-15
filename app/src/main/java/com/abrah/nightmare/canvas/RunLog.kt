@@ -157,6 +157,25 @@ fun formatMs(ms: Long): String = when {
 }
 
 /**
+ * ⭐ The run's time: live while it runs, the total once it is over. The ONE clock: the log panel
+ * and the folded Run bar both call it, so the two can never show different times.
+ */
+@Composable
+internal fun rememberRunElapsed(state: RunLogState): Long {
+    var nowMs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(state.startedAtMs) {
+        while (state.running) {
+            nowMs = android.os.SystemClock.elapsedRealtime()
+            kotlinx.coroutines.delay(100)
+        }
+    }
+    return when {
+        state.running -> (nowMs - state.startedAtMs).coerceAtLeast(0)
+        else -> state.totalMs ?: 0L
+    }
+}
+
+/**
  * The log panel, sitting directly above the Run button.
  *
  * ⚠ Above the button rather than over the canvas: the canvas is the user's
@@ -231,17 +250,7 @@ fun RunLogPanel(
     // one progress event per ~1.2 s, so a timer driven by those events would
     // sit frozen for over a second at a stretch and read as a hang, which is
     // the exact impression this panel exists to prevent.
-    var nowMs by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(state.startedAtMs) {
-        while (state.running) {
-            nowMs = android.os.SystemClock.elapsedRealtime()
-            kotlinx.coroutines.delay(100)
-        }
-    }
-    val elapsed = when {
-        state.running -> (nowMs - state.startedAtMs).coerceAtLeast(0)
-        else -> state.totalMs ?: 0L
-    }
+    val elapsed = rememberRunElapsed(state)
 
     // ⚠⚠ **TWO containers, not one.** The seed row is a property of the CANVAS
     // — it is true between runs and survives closing the log — and the panel

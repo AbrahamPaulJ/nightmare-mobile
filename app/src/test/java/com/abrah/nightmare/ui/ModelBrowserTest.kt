@@ -46,6 +46,15 @@ class ModelBrowserTest {
         assertTrue(matchesQuery(anime, "anime"))
     }
 
+    /** ⭐ #6288: the search's word rule also finds the video, upscaler and tool cards. */
+    @Test
+    fun theWordRuleIsSharedWithTheOtherCards() {
+        assertTrue(matchesWords("Wan 2.2 Turbo video", "wan"))
+        assertTrue(matchesWords("neodragon video text image", "Video"))
+        assertFalse(matchesWords("4x UltraSharp upscale", "wan"))
+        assertTrue(matchesWords("anything", "  "))
+    }
+
     @Test
     fun unsupportedGoToTheirOwnSectionAndInUseLeads() {
         val rows = listOf(

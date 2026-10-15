@@ -163,4 +163,13 @@ class BatchParamsTest {
         assertEquals(0.05, BatchParams.sweepFor("denoise", 0.0, 1.0, false).step, 1e-9)
         assertTrue(!BatchParams.sweepFor("cfg", 1.0, 20.0, false).int)
     }
+
+    /** ⭐ GitHub #29: a video node's seed sweeps too, and nothing else on it does. */
+    @Test
+    fun aVideoSeedSweeps() {
+        for (t in listOf(com.abrah.nightmare.npu.WanVideoNode.name, "nd.sample")) {
+            org.junit.Assert.assertTrue(t, BatchParams.isBatchable(t, "seed"))
+            org.junit.Assert.assertFalse(t, BatchParams.isBatchable(t, "seconds"))
+        }
+    }
 }

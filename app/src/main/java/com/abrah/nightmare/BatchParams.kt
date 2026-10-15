@@ -50,7 +50,10 @@ object BatchParams {
     val ALLOWED: Map<String, List<String>> =
         // ⚠ Every SD sampler, not one of them: a sweep offered on SD 1.5 and
         // missing on SDXL would look like a broken screen rather than a rule.
-        IMAGE_SAMPLER_TYPES.associateWith { listOf("seed", "steps", "cfg", "denoise", "scheduler") }
+        IMAGE_SAMPLER_TYPES.associateWith { listOf("seed", "steps", "cfg", "denoise", "scheduler") } +
+            // ⭐ The video nodes' seed (GitHub #29: "loop a workflow while I go do something else" had no
+            // answer for video, the user's pick 2026-10-15). Seed only: a clip's other knobs are its shape.
+            listOf(com.abrah.nightmare.npu.WanVideoNode.name, "nd.sample").associateWith { listOf("seed") }
 
     /**
      * ⭐⭐ **How a knob is swept, per knob.** This is what makes the popup

@@ -49,6 +49,24 @@ class CrashReportTest {
         assertEquals("rendering", crumb.readLines().first())
     }
 
+    /**
+     * ⭐ The S24 Ultra reboot (Telegram #6269): the report must say which model the backend was loading
+     * or releasing, and how low the RAM went. Only `[lowram]` lines count; the rest of the log does not.
+     */
+    @Test
+    fun theBackendsModelEventsAndTheLowestRamGoIn() {
+        CrashReport.mark(ctx, "rendering")
+        CrashReport.backendEvent(ctx, "  6306.4ms [  INFO ] [lowram] SDXL UNET loaded")
+        CrashReport.backendEvent(ctx, "  6400.0ms [  INFO ] [dit] flux executing segment 3/34")
+        val deadline = System.currentTimeMillis() + 3_000
+        while (crumb.readLines().none { it.startsWith("lowest ") } && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        val lines = crumb.readLines()
+        assertTrue(lines.toString(), lines.any { "backend SDXL UNET loaded" in it })
+        assertTrue(lines.toString(), lines.none { "executing segment" in it })
+        assertTrue(lines.toString(), lines.any { it.startsWith("lowest ") && "MB free at" in it })
+        CrashReport.clear(ctx)
+    }
+
     /** ⭐ A clean finish erases it, which is what makes its presence mean something. */
     @Test
     fun aCleanFinishErasesIt() {

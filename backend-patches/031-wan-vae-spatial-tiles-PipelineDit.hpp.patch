@@ -1,0 +1,36 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -31,6 +31,10 @@
+   std::vector<uint8_t> start_rgb;
+   bool temporal_tiling = true;
+   std::string tiling_args;
++  // nightmare (031): > 0 also tiles the decode spatially (latent px a side),
++  // so a 704p clip's TAEHV decode fits a phone with apps open.
++  int vae_tile_size = 0;
++  float vae_tile_overlap = 0.25f;
+   std::vector<LoraRef> loras;
+   int preview_stride = 0;
+   std::string preview_format = "jpeg";
+@@ -206,6 +210,8 @@
+     }
+     params.temporal_tiling = req.temporal_tiling;
+     params.tiling_args = req.tiling_args.c_str();
++    params.vae_tile_size = req.vae_tile_size;
++    params.vae_tile_overlap = req.vae_tile_overlap;
+     std::vector<const char *> lora_paths;
+     std::vector<float> lora_multipliers;
+     for (const auto &lora : req.loras) {
+@@ -225,9 +231,10 @@
+     callbacks.sample_steps = req.sigmas.size() > 1
+                                  ? static_cast<int>(req.sigmas.size()) - 1
+                                  : std::max(1, req.steps);
+-    QNN_INFO("[dit] video %dx%dx%d fps=%d steps=%d %s", req.width, req.height,
+-             req.frames, req.fps, callbacks.sample_steps,
+-             req.start_rgb.empty() ? "t2v" : "i2v");
++    QNN_INFO("[dit] video %dx%dx%d fps=%d steps=%d %s vae_tile=%d/%.2f",
++             req.width, req.height, req.frames, req.fps, callbacks.sample_steps,
++             req.start_rgb.empty() ? "t2v" : "i2v", req.vae_tile_size,
++             req.vae_tile_overlap);
+     const auto start = std::chrono::high_resolution_clock::now();
+     const bool ok = api_->generate_video(
+         ctx_, &params, &PipelineDit::forwardVideoProgress,
