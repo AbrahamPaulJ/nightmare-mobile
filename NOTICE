@@ -99,7 +99,7 @@ DiT engine (libdit_engine.so and its Hexagon skels)
     with ggml's Hexagon backend, plus this project's LoRA patch
     (backend-patches/dit/), built by this repository's CI and downloaded by the
     app; the skels ship in the APK. Runs FLUX.2 Klein 4B and 9B, Z-Image Turbo,
-    Qwen Image 2.1, Krea 2 Turbo and Anima on the NPU. Not included in this repository.
+    Qwen Image 2.1, Krea 2 Turbo, Iris 3B Turbo and Anima on the NPU. Not included in this repository.
 
 stable-diffusion.cpp
     leejet, with Hexagon optimisation by happyyzy
@@ -173,6 +173,14 @@ Krea 2 Turbo
     Krea 2 is licensed under the Krea 2 Community License Agreement. For more
     information, visit https://krea.ai/krea-2-licensing.
     Downloaded by the app at the user's request, unmodified; not included here.
+
+Iris 3B Turbo
+    speridlabs
+    https://huggingface.co/speridlabs/iris-3b
+    Apache License 2.0. Downloaded by the app at the user's request and
+    converted to GGUF on the phone (Q8_0, the MLP hidden size zero-padded);
+    not included here. Its text encoder is Qwen3-VL-4B-Instruct (Apache 2.0),
+    as for Krea 2 Turbo.
 
 Qwen3-VL-4B-Instruct (Krea 2 Turbo's text encoder)
     Qwen team; GGUF by bartowski
