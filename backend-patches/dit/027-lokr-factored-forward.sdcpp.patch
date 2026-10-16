@@ -1,0 +1,46 @@
+diff --git a/src/model/adapter/lora_ops.cpp b/src/model/adapter/lora_ops.cpp
+index 7dacfd1..6687fe7 100644
+--- a/src/model/adapter/lora_ops.cpp
++++ b/src/model/adapter/lora_ops.cpp
+@@ -52,8 +52,12 @@ ggml_tensor* ggml_ext_lokr_forward(
+     GGML_ASSERT((w1 != nullptr || (w1a != nullptr && w1b != nullptr)));
+     GGML_ASSERT((w2 != nullptr || (w2a != nullptr && w2b != nullptr)));
+ 
+-    int uq = (w1 != nullptr) ? (int)w1->ne[0] : (int)w1a->ne[0];
+-    int up = (w1 != nullptr) ? (int)w1->ne[1] : (int)w1b->ne[1];
++    // LyCORIS factors as w = w_a @ w_b: w_a is [out, rank], w_b is [rank, in]. So the IN factor is
++    // w1_b's ne[0] and the OUT factor w1_a's ne[1], and an input meets w_b first (the conv branch below
++    // already did). A Krea 2 LoKr with a factored tproj (w2_a [4608,1024], w2_b [1024,768]) aborted on
++    // ggml_can_mul_mat at the first step (Nightmare dit/027).
++    int uq = (w1 != nullptr) ? (int)w1->ne[0] : (int)w1b->ne[0];
++    int up = (w1 != nullptr) ? (int)w1->ne[1] : (int)w1a->ne[1];
+ 
+     int q_actual = is_conv ? (int)h->ne[2] : (int)h->ne[0];
+     int vq       = q_actual / uq;
+@@ -97,7 +101,7 @@ ggml_tensor* ggml_ext_lokr_forward(
+         if (w2 != nullptr) {
+             hb = ggml_mul_mat(ctx, w2, h_split);
+         } else {
+-            hb = ggml_mul_mat(ctx, w2b, ggml_mul_mat(ctx, w2a, h_split));
++            hb = ggml_mul_mat(ctx, w2a, ggml_mul_mat(ctx, w2b, h_split));
+         }
+ 
+         if (batch > 1) {
+@@ -110,7 +114,7 @@ ggml_tensor* ggml_ext_lokr_forward(
+         if (w1 != nullptr) {
+             hc_t = ggml_mul_mat(ctx, w1, hb_t);
+         } else {
+-            hc_t = ggml_mul_mat(ctx, w1b, ggml_mul_mat(ctx, w1a, hb_t));
++            hc_t = ggml_mul_mat(ctx, w1a, ggml_mul_mat(ctx, w1b, hb_t));
+         }
+ 
+         if (batch > 1) {
+@@ -197,7 +201,7 @@ ggml_tensor* ggml_ext_lokr_forward(
+             // Would be great to be able to transpose w1 instead to avoid transposing both hb and hc
+             hc_t = ggml_mul_mat(ctx, w1, hb_merged_t);
+         } else {
+-            hc_t = ggml_mul_mat(ctx, w1b, ggml_mul_mat(ctx, w1a, hb_merged_t));
++            hc_t = ggml_mul_mat(ctx, w1a, ggml_mul_mat(ctx, w1b, hb_merged_t));
+         }
+         ggml_tensor* hc = ggml_transpose(ctx, hc_t);
+         // ungroup
