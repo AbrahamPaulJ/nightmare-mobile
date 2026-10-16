@@ -1373,7 +1373,7 @@ internal fun npuSpaceRefused(body: String, log: Iterable<String>): String? {
     // report, OnePlus SM8650, 2026-10-10 — `ggml-hex: HTP0 buffer mapping failed`).
     if ("DiT generation failed" in body && log.any { "buffer mapping failed" in it || "fastrpc_mmap failed" in it }) {
         return "this phone's NPU could not map the model's weights. Try a smaller canvas, and please " +
-            "share this report (8 Gen 3 support is new) [${body.take(80)}]"
+            "share this report (support below the 8 Elite is new) [${body.take(80)}]"
     }
     val m = Regex("""Failed init QNN model: (\w+)""").find(body) ?: return null
     if (log.none { "Failed to find available PD" in it }) return null

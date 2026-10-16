@@ -376,7 +376,7 @@ object BackendProcess {
      */
     /**
      * ⭐ The DiT budget below v79: on the 8 Gen 3 (v75) 2.75 GiB, and 2.25 for FLUX.2 Klein 9B (its own parts:
-     * catalogue or import); on v73 each 0.25 less ([V73_MAP_SHORTFALL_GIB]).
+     * catalogue or import); on v73 each 0.75 less ([V73_MAP_SHORTFALL_GIB]).
      * ⚠⚠ GitHub #30: a real SM8650 aborted Klein 9B at 1024² mid-DiT (`dspqueue_read 0x2e`), on a fresh
      * backend too. Not reproduced on the S25 forced to v75, which lacks the real ~3.1 GB per-process map: at
      * 2.75 the 8B encoder's segments held 2,704 MB on HTP0 before release and the DiT then filled the budget
@@ -389,11 +389,14 @@ object BackendProcess {
     }
 
     /**
-     * ⭐ v73 (8 Gen 2, 8s Gen 3, 8s Gen 4) maps 3,000 MiB per FastRPC session against v75's 3,200
-     * (ggml-hexagon's `opt_vmem`), so its budget keeps v75's headroom by being 0.25 GiB smaller.
-     * Measured on the S25 forced to v73: Klein 9B 1024² at 2.0 renders (`docs/DEVICES.md` §3b).
+     * ⭐ A real 8 Gen 2 maps only ~2.5 GB per FastRPC session (v75: ~3.1). A Xiaomi SM8550 on 1.6.173
+     * (2026-10-17, Z-Image 768x1024 at the then 2.5 GiB budget) failed `HTP0 buffer mapping failed` at DiT
+     * segment 18/36 with 1,759 MB of weights + 682 MB of graph-cut cache held and no eviction yet, i.e.
+     * still inside the budget. 0.75 less keeps v75's headroom. On the S25 forced to v73: Z-Image 768x1024
+     * at 2.0 renders (73 s against 62 s at 2.5), Klein 9B 1024² at 1.5 the same picture byte for byte as at
+     * 2.0 (167 s). `docs/DEVICES.md` §3b. ⚠ The 0.25 it replaced came from ggml's own 3,000 MiB default.
      */
-    private const val V73_MAP_SHORTFALL_GIB = 0.25
+    private const val V73_MAP_SHORTFALL_GIB = 0.75
 
     /**
      * ⭐ The ops a chip below v79 keeps on the CPU (ggml-hexagon's `GGML_HEXAGON_OPFILTER`).

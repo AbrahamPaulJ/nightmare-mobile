@@ -333,9 +333,9 @@ class ModelCatalogTest {
         assertEquals("2.25", BackendProcess.lowArchDitBudget(klein9, 75))
         assertEquals("2.75", BackendProcess.lowArchDitBudget(krea, 75))
         assertEquals("2.75", BackendProcess.lowArchDitBudget(ModelCatalog.byId("flux2_klein_4b"), 75))
-        // ⭐ v73 maps 200 MiB less per session: each budget 0.25 GiB smaller (Klein 9B 1024² measured at 2.0).
-        assertEquals("2.0", BackendProcess.lowArchDitBudget(klein9, 73))
-        assertEquals("2.5", BackendProcess.lowArchDitBudget(ModelCatalog.byId("flux2_klein_4b"), 73))
+        // ⭐ A real 8 Gen 2 maps ~2.5 GB per session: each budget 0.75 GiB smaller (an SM8550 failed at 2.5).
+        assertEquals("1.5", BackendProcess.lowArchDitBudget(klein9, 73))
+        assertEquals("2.0", BackendProcess.lowArchDitBudget(ModelCatalog.byId("z_image_turbo"), 73))
         // ⭐ SWIGLU stays on the CPU at v73 only: its 16-bit DMA strides fault on Klein's fused rows.
         assertEquals("CONV_2D_UPSCALE|CONCAT", BackendProcess.lowArchOpFilter(75))
         assertEquals("CONV_2D_UPSCALE|CONCAT|SWIGLU", BackendProcess.lowArchOpFilter(73))
