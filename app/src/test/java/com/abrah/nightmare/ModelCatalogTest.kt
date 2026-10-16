@@ -32,7 +32,7 @@ class ModelCatalogTest {
         for (m in ModelCatalog.all.filter { it.files.isNotEmpty() }) {
             assertEquals("${m.id}: duplicate file name", m.files.size, m.files.map { it.name }.toSet().size)
             assertEquals("${m.id}: files must be exactly what the backend loads", m.requiredFiles.toSet(), m.files.map { it.name }.toSet())
-            assertTrue("${m.id}: DiT is v75+ only", m.builds.all { it.minArch >= ModelCatalog.DIT_GGML_MIN_ARCH })
+            assertTrue("${m.id}: DiT is v73+ only", m.builds.all { it.minArch >= ModelCatalog.DIT_V73_MIN_ARCH })
         }
     }
 
@@ -321,7 +321,7 @@ class ModelCatalogTest {
         assertEquals(Prefs.RAM_12GB_CLASS_BYTES, krea.ramNeeded(caps(79, 8, eight)))
         assertEquals(12, Prefs.ramClassGb(krea.ramNeeded(caps(79, 8, eight))))
         assertEquals(16, Prefs.ramClassGb(Prefs.LOWRAM_BELOW_BYTES))
-        // ⚠ An 8 Gen 2 is refused by the chip (no RAM figure).
+        // ⚠ An 8 Gen 2 is refused by the chip (no RAM figure): Krea 2 faults the v73 skel.
         assertEquals(0L, krea.ramNeeded(caps(73, 8, eight)))
         assertTrue(klein9.buildFor(caps(79, 8, twelve)) != null)
         // ⭐ The budget: 4 GiB on the 12 GB class, none on 16 GB or unknown RAM, never another model.
@@ -330,9 +330,15 @@ class ModelCatalogTest {
         assertEquals(null, BackendProcess.kreaBudget(krea, 0L))
         assertEquals(null, BackendProcess.kreaBudget(klein9, twelve))
         // ⭐ GitHub #30: Klein 9B gets the smaller 8 Gen 3 budget; every other DiT keeps 2.75.
-        assertEquals("2.25", BackendProcess.v75DitBudget(klein9))
-        assertEquals("2.75", BackendProcess.v75DitBudget(krea))
-        assertEquals("2.75", BackendProcess.v75DitBudget(ModelCatalog.byId("flux2_klein_4b")))
+        assertEquals("2.25", BackendProcess.lowArchDitBudget(klein9, 75))
+        assertEquals("2.75", BackendProcess.lowArchDitBudget(krea, 75))
+        assertEquals("2.75", BackendProcess.lowArchDitBudget(ModelCatalog.byId("flux2_klein_4b"), 75))
+        // ⭐ v73 maps 200 MiB less per session: each budget 0.25 GiB smaller (Klein 9B 1024² measured at 2.0).
+        assertEquals("2.0", BackendProcess.lowArchDitBudget(klein9, 73))
+        assertEquals("2.5", BackendProcess.lowArchDitBudget(ModelCatalog.byId("flux2_klein_4b"), 73))
+        // ⭐ SWIGLU stays on the CPU at v73 only: its 16-bit DMA strides fault on Klein's fused rows.
+        assertEquals("CONV_2D_UPSCALE|CONCAT", BackendProcess.lowArchOpFilter(75))
+        assertEquals("CONV_2D_UPSCALE|CONCAT|SWIGLU", BackendProcess.lowArchOpFilter(73))
     }
 
     /**
@@ -357,7 +363,21 @@ class ModelCatalogTest {
         val qwen = ModelCatalog.byId("qwen_image_2_1")!!
         assertTrue(qwen.buildFor(v75)!!.files.any { it.name == "dit.gguf" })
         assertTrue(qwen.buildFor(caps(79, 8, sixteen))!!.files.any { it.name == "dit.safetensors" })
-        assertEquals(null, ModelCatalog.byId("flux2_klein_9b")!!.buildFor(caps(73, 8, sixteen)))
+        // ⭐ v73 (8 Gen 2, 8s Gen 4), alpha: ONLY what rendered right on the S25 forced to the v73 skel
+        // ([ModelCatalog.DIT_V73_MIN_ARCH], `docs/DEVICES.md` §3b). The quantised build, never FP8.
+        val v73 = caps(73, 8, sixteen)
+        assertTrue(zimage.buildFor(v73)!!.files.any { it.name == "dit.gguf" })
+        for (id in listOf("flux2_klein_9b", "anima_turbo_1_1", "iris_3b_turbo")) {
+            assertTrue("$id on v73", ModelCatalog.byId(id)!!.buildFor(v73) != null)
+        }
+        // ⚠ Not run right at v73 (or, Klein 4B, the user's call): they keep the v75 floor.
+        for (id in listOf("flux2_klein_4b", "qwen_image_2_1", "qwen_image_2_1_turbo", "krea2_turbo", "wan22_ti2v_turbo")) {
+            assertEquals("$id must not open on v73", null, ModelCatalog.byId(id)!!.buildFor(v73))
+        }
+        assertEquals(75, ModelCatalog.DIT_GGML_MIN_ARCH)
+        // ⚠ The 8s Gen 3 is v73 with less VTCM: refused, like every DiT build's 8 MB floor says.
+        assertEquals(null, ModelCatalog.byId("flux2_klein_9b")!!.buildFor(caps(73, 2, sixteen)))
+        assertEquals(null, ModelCatalog.byId("flux2_klein_9b")!!.buildFor(caps(69, 8, sixteen)))
     }
 
     /**

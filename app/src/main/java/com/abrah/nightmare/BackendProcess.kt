@@ -375,15 +375,35 @@ object BackendProcess {
      * Null on a 16 GB phone, or when the RAM is unknown, where it runs unbudgeted as before.
      */
     /**
-     * ⭐ The 8 Gen 3 DiT budget: 2.75 GiB, and 2.25 for FLUX.2 Klein 9B (its own parts: catalogue or import).
+     * ⭐ The DiT budget below v79: on the 8 Gen 3 (v75) 2.75 GiB, and 2.25 for FLUX.2 Klein 9B (its own parts:
+     * catalogue or import); on v73 each 0.25 less ([V73_MAP_SHORTFALL_GIB]).
      * ⚠⚠ GitHub #30: a real SM8650 aborted Klein 9B at 1024² mid-DiT (`dspqueue_read 0x2e`), on a fresh
      * backend too. Not reproduced on the S25 forced to v75, which lacks the real ~3.1 GB per-process map: at
      * 2.75 the 8B encoder's segments held 2,704 MB on HTP0 before release and the DiT then filled the budget
      * with 1,157 MB of compute. At 2.25: 2,186 MB, still renders, 135 s vs 119 s (2026-10-15). Reasoned, not
      * proven on the real chip. ⚠ A 9B edit with a reference at 1024² may need more (4B's needed 2.75).
      */
-    internal fun v75DitBudget(spec: ModelSpec?): String =
-        if (spec?.family == Family.FLUX2 && spec.ownDitParts) "2.25" else "2.75"
+    internal fun lowArchDitBudget(spec: ModelSpec?, arch: Int): String {
+        val v75 = if (spec?.family == Family.FLUX2 && spec.ownDitParts) 2.25 else 2.75
+        return (if (arch < 75) v75 - V73_MAP_SHORTFALL_GIB else v75).toString()
+    }
+
+    /**
+     * ⭐ v73 (8 Gen 2, 8s Gen 3, 8s Gen 4) maps 3,000 MiB per FastRPC session against v75's 3,200
+     * (ggml-hexagon's `opt_vmem`), so its budget keeps v75's headroom by being 0.25 GiB smaller.
+     * Measured on the S25 forced to v73: Klein 9B 1024² at 2.0 renders (`docs/DEVICES.md` §3b).
+     */
+    private const val V73_MAP_SHORTFALL_GIB = 0.25
+
+    /**
+     * ⭐ The ops a chip below v79 keeps on the CPU (ggml-hexagon's `GGML_HEXAGON_OPFILTER`).
+     * `CONV_2D_UPSCALE|CONCAT` from v75 (comments at the call). ⭐ `SWIGLU` on v73: its DMA queue's
+     * 2D descriptors are 16-bit, and a row stride past 64 KB (FLUX.2 Klein's fused single-stream rows)
+     * takes a fallback that faults the DSP inside `glu_swiglu_f32_per_thread` (`dspqueue_read failed
+     * 0x2e`). On the CPU: Klein 9B 1024² renders the v75 picture (54.9 dB), 166 s against 149 s.
+     */
+    internal fun lowArchOpFilter(arch: Int): String =
+        if (arch < 75) "CONV_2D_UPSCALE|CONCAT|SWIGLU" else "CONV_2D_UPSCALE|CONCAT"
 
     internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long): String? =
         "4".takeIf { spec?.family == Family.KREA2 && ramBytes in 1 until Prefs.LOWRAM_BELOW_BYTES }
@@ -698,7 +718,7 @@ object BackendProcess {
                         // resident and fails at block 25 of 30 (the S25 forced to v75 at 2.75). Wan gets
                         // one per clip instead, with `all=disk`: [memoryBudget] (`docs/VIDEO-GGML.md` §4).
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
-                        (readDitMaxVramOverride(context) ?: memoryBudget ?: v75DitBudget(spec).takeIf { belowV79 && spec?.family != Family.WAN }
+                        (readDitMaxVramOverride(context) ?: memoryBudget ?: lowArchDitBudget(spec, DeviceProbe.caps().arch).takeIf { belowV79 && spec?.family != Family.WAN }
                             ?: kreaBudget(spec, DeviceProbe.caps().ramBytes))
                             ?.let { put("DIT_MAX_VRAM", it) }
                         // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
@@ -709,8 +729,9 @@ object BackendProcess {
                         // ⭐ And `CONCAT`: Qwen 2.1's Wan VAE crashed the v75 skel inside `op_concat`
                         // (`dspqueue_read failed 0x2e`, the vivo report); on the S25 forced to v75 it
                         // reproduced, and with CONCAT on the CPU it renders the v79 picture (mean 0.64/255).
+                        // ⭐ And `SWIGLU` on v73: [lowArchOpFilter].
                         val ops = listOfNotNull(
-                            "CONV_2D_UPSCALE|CONCAT".takeIf { belowV79 },
+                            lowArchOpFilter(DeviceProbe.caps().arch).takeIf { belowV79 },
                         )
                         if (ops.isNotEmpty()) put("GGML_HEXAGON_OPFILTER", ops.joinToString("|"))
                         // ⭐ Below v79 a wired REFERENCE is encoded at ~0.5 MP, not the canvas

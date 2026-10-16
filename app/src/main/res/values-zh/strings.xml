@@ -549,12 +549,12 @@
     <string name="models_family_sd15_swap">每个约 1.3 GB。LoRA 和 ControlNet 可按每次渲染选择，仅支持 512×512。请在 npuforge 中将自己的 SD 1.5 检查点转换为 SD1.5 Swap，然后在此导入 zip。</string>
     <string name="models_family_sdxl_swap">每个约 3.9 GB。LoRA 可按每次渲染选择，分辨率为 1024×1024，需要 8 Elite 或更新芯片。请用 npuforge 1.0.11 或更新版本将自己的 SDXL 检查点转换为启用 LoRA 的 SDXL Swap，然后在此导入 zip。</string>
     <string name="models_family_anima">每个约 4.3 GB，解包时约需 9 GB 可用空间。速度较慢，每张图片约 80 秒。渲染时请关闭其他应用并使用 Wi-Fi。</string>
-    <string name="models_family_flux2">Klein 4B 约 6.7 GB，Klein 9B 约 10.7 GB 且更慢。支持 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha，Klein 4B 为 6.9 GB 的 GGUF）。尺寸可在 512 到 2048 之间选择。请使用 Wi-Fi。</string>
-    <string name="models_family_zimage">约 8.8 GB。仅支持 8 Elite 或更新芯片。仍在完善中：某些 8 Elite 手机上会崩溃。请使用 Wi-Fi。</string>
+    <string name="models_family_flux2">Klein 4B 约 6.7 GB，Klein 9B 约 10.7 GB 且更慢。支持 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha，Klein 4B 为 6.9 GB 的 GGUF）；Klein 9B 也可在 8 Gen 2 上运行（alpha）。尺寸可在 512 到 2048 之间选择。请使用 Wi-Fi。</string>
+    <string name="models_family_zimage">8 Elite 或更新芯片上约 8.8 GB；8 Gen 3 和 8 Gen 2 上为更小的 Q4_0 版本（alpha）。仍在完善中：某些 8 Elite 手机上会崩溃。请使用 Wi-Fi。</string>
     <string name="models_family_qwen">约 10.8 GB。支持 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。可编辑和生成，速度比 FLUX.2 慢。请使用 Wi-Fi。</string>
     <string name="models_family_krea">约 9.5 GB。12 GB 及以上内存的手机，8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。在 12 GB 手机上分段运行：1024x1024 约需 3.5 到 4 分钟。只能文生图，不能编辑。请使用 Wi-Fi。</string>
-    <string name="models_family_animadit">约 3.2 GB。下载 Anima 官方 4.2 GB 文件并在手机上转换，安装时需要约 7.5 GB 可用空间。1024² 每张图片约 1 分钟，支持 512 起的任意尺寸。需要 8 Gen 3 或更新芯片。不是编辑模型。请使用 Wi-Fi。</string>
-    <string name="models_family_iris">约 5.8 GB。下载 speridlabs 官方的 6 GB 文件并在手机上转换，因此安装时需要约 10 GB 可用空间。在 8 Elite 上 1024x1024 每张约 2.5 分钟。无 VAE。仅支持训练时的尺寸（每张约 100 万像素）。8 Gen 3 或更新（未在 8 Gen 3 上测试）。仅文生图。请使用 Wi-Fi。</string>
+    <string name="models_family_animadit">约 3.2 GB。下载 Anima 官方 4.2 GB 文件并在手机上转换，安装时需要约 7.5 GB 可用空间。1024² 每张图片约 1 分钟，支持 512 起的任意尺寸。需要 8 Gen 2 或更新芯片（8 Gen 2 和 8 Gen 3 上为 alpha）。不是编辑模型。请使用 Wi-Fi。</string>
+    <string name="models_family_iris">约 5.8 GB。下载 speridlabs 官方的 6 GB 文件并在手机上转换，因此安装时需要约 10 GB 可用空间。在 8 Elite 上 1024x1024 每张约 2.5 分钟。无 VAE。仅支持训练时的尺寸（每张约 100 万像素）。8 Gen 2 或更新（8 Elite 以下为 alpha，尚未在真实的 8 Gen 2 或 8 Gen 3 上运行）。仅文生图。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>
     <string name="models_import_dit_body">一个 .safetensors 或 .gguf 检查点，可来自 CivitAI 或 Hugging Face，直接使用，无需转换。Klein 4B 和 Z-Image 会借用文本编码器和 VAE（最多需下载 2.6 GB；已有该模型则无需下载）。Klein 9B 和 Krea 2 会获取自己的副本（分别为 4.8 GB 和 2.6 GB）。大于手机约一半内存的文件在渲染时很可能被 Android 关闭。</string>

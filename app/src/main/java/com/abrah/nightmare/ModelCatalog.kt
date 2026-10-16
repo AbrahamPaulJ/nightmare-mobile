@@ -2048,7 +2048,7 @@ object ModelCatalog {
         startRes: Res? = null,
         /** ⭐ Per-RAM builds, best first, each with its own [Build.files] (Qwen). Null = one build of [files]. */
         builds: List<Build>? = null,
-        /** ⭐ The chip floor: [DIT_GGML_MIN_ARCH], or [DIT_MIN_ARCH] for FP8 weights. */
+        /** ⭐ The chip floor: [DIT_GGML_MIN_ARCH], [DIT_V73_MIN_ARCH] where measured, or [DIT_MIN_ARCH] for FP8. */
         minArch: Int = DIT_GGML_MIN_ARCH,
         /** ⚠ See [ModelSpec.partsFrom]. */
         partsFrom: String? = null,
@@ -2095,17 +2095,28 @@ object ModelCatalog {
 
     /**
      * ⭐⭐ **The floor for the ggml DiT engine's QUANTISED builds — v75, the 8 Gen 3 (alpha).**
+     * Four models go lower, to [DIT_V73_MIN_ARCH].
      *
      * The engine's own source (happyyzy/ggml `f875862`, what `dit-engine-abi105-a4` and Local Dream
-     * alpha.5 both build) has v73/v75 code paths and builds a v75 skel; upstream ships only v79/v81
-     * to save APK size. Ours is built from that exact tree (`assets/ditlibs/libggml-htp-v75.so`,
-     * `docs/DIT.md` §9e). ⚠⚠ FP8 weights stay at [DIT_MIN_ARCH]: below v79 the engine refuses
+     * alpha.5 both build) has v73/v75 code paths and builds v73 and v75 skels; upstream ships only
+     * v79/v81 to save APK size. Ours are built from that exact tree (`assets/ditlibs/libggml-htp-v73.so`,
+     * `-v75.so`, `docs/DIT.md` §9e, `docs/DEVICES.md` §3b). ⚠⚠ FP8 weights stay at [DIT_MIN_ARCH]: below v79 the engine refuses
      * `F8_E4M3` matmuls on the NPU (`opt_arch < 79`) and runs them on the CPU — so Klein 4B and Qwen
-     * each have an FP8 build at v79 and a GGUF build for v75 (Q8_0 / Q4_0), and so does Z-Image Turbo (leejet's
+     * each have an FP8 build at v79 and a GGUF build below it (Q8_0 / Q4_0), and so does Z-Image Turbo (leejet's
      * Q4_0) since engine `dit/025` stopped its `attention.out` overflowing fp16 on HTP (`docs/DIT.md` §2e).
      * ✅ FLUX.2 Klein and Qwen 2.1 render on an 8 Gen 3 since 1.6.133 (user, 2026-10-11; `docs/DIT.md` §9e).
      */
     const val DIT_GGML_MIN_ARCH = 75
+
+    /**
+     * ⭐ v73 (8 Gen 2, 8s Gen 4; the 8s Gen 3 is v73 too but fails the 8 MB VTCM floor), ALPHA, for the
+     * models that rendered right on the S25 forced to the v73 skel (`GGML_HEXAGON_ARCH=73`, the app's
+     * below-v79 env plus `SWIGLU` on the CPU, `docs/DEVICES.md` §3b): Z-Image Turbo's Q4_0 build,
+     * FLUX.2 Klein 9B, Anima Turbo 1.1, Iris 3B Turbo. ⚠ NOT Krea 2 (the v73 skel faults in a matmul whose
+     * activation rows pass 64 KB), Qwen Image 2.1 (its 1024² decode came back in bands), Klein 4B (the
+     * user's call: not run at v73), Wan, imports or the edit flow (not run). A real v73 phone is owed.
+     */
+    const val DIT_V73_MIN_ARCH = 73
 
     /** ⚠ Klein 4B's shared parts — the text encoder, VAE and tokenizer both its builds load. */
     private val KLEIN4B_PARTS = listOf(
@@ -2206,7 +2217,7 @@ object ModelCatalog {
             // runs on the CPU). The GGUF went NaN on HTP until engine `dit/025` (`docs/DIT.md` §2e).
             builds = listOf(
                 Build(TIER_DIT, "", ZIMAGE_FP8.sumOf { it.bytes }, DIT_MIN_ARCH, 8, files = ZIMAGE_FP8),
-                Build(TIER_DIT, "", ZIMAGE_Q4.sumOf { it.bytes }, DIT_GGML_MIN_ARCH, 8, files = ZIMAGE_Q4),
+                Build(TIER_DIT, "", ZIMAGE_Q4.sumOf { it.bytes }, DIT_V73_MIN_ARCH, 8, files = ZIMAGE_Q4),
             ),
         ),
         // ⭐ Krea 2 Turbo — `happyyzy/stable-diffusion.cpp`'s README, file for
@@ -2250,6 +2261,7 @@ object ModelCatalog {
         dit(
             "anima_turbo_1_1", "Anima Turbo 1.1", Family.ANIMA_DIT, KREA2, steps = 10,
             prompt = "",
+            minArch = DIT_V73_MIN_ARCH,
             ownDitParts = true,
             files = listOf(
                 RemoteFile(
@@ -2273,6 +2285,7 @@ object ModelCatalog {
         dit(
             "iris_3b_turbo", "Iris 3B Turbo", Family.IRIS, IRIS, steps = 4,
             ownDitParts = true,
+            minArch = DIT_V73_MIN_ARCH,
             sizes = IRIS_SIZES,
             files = listOf(
                 RemoteFile(
@@ -2296,6 +2309,7 @@ object ModelCatalog {
         dit(
             "flux2_klein_9b", "FLUX.2 Klein 9B", Family.FLUX2, KLEIN, steps = 4,
             lowram = true,
+            minArch = DIT_V73_MIN_ARCH,
             // ⚠ Measured 2026-09-28 on the 12 GB S25 Ultra, five renders in a
             // row: 768² 5 of 5 (64–94 s); 1024² 3 of 4 (84–97 s), the fourth
             // reaped by lmkd mid-sampling. ⇒ Nodes start at 768.
