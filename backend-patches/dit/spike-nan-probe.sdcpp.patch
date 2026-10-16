@@ -1,0 +1,66 @@
+diff --git a/src/core/ggml_runner.cpp b/src/core/ggml_runner.cpp
+index 3737dc7..166b241 100644
+--- a/src/core/ggml_runner.cpp
++++ b/src/core/ggml_runner.cpp
+@@ -733,10 +733,8 @@ bool GGMLRunner::execute_segment(ggml_cgraph* graph, int n_threads) {
+     auto scheduler = workspace_.scheduler();
+     ggml_status status;
+     if (scheduler != nullptr) {
+-        if (sd_get_backend_eval_callback() != nullptr && !multi_device_eval_callback_warned) {
+-            LOG_WARN("%s: eval callback is not supported with the backend scheduler; ignoring", get_desc().c_str());
+-            multi_device_eval_callback_warned = true;
+-        }
++        ggml_backend_sched_set_eval_callback(scheduler, (ggml_backend_sched_eval_callback)sd_get_backend_eval_callback(),
++                                             sd_get_backend_eval_callback_data());
+         status = ggml_backend_sched_graph_compute(scheduler, graph);
+     } else {
+         status = sd_backend_graph_compute_with_eval_callback(runtime_backend, graph,
+diff --git a/src/core/util.cpp b/src/core/util.cpp
+index d735187..2381827 100644
+--- a/src/core/util.cpp
++++ b/src/core/util.cpp
+@@ -680,7 +680,44 @@ bool sd_should_preview_noisy() {
+     return sd_preview_noisy;
+ }
+ 
++// SD_NAN_PROBE=1 (diagnostic spike, never shipped): observe every node; print the first NaN/inf outputs with their
++// sources, and outputs past fp16's 65504.
++static float nm_nan_scan(ggml_tensor* t, int64_t* bad) {
++    *bad = 0;
++    if (t == nullptr || t->type != GGML_TYPE_F32 || !ggml_is_contiguous(t) || t->buffer == nullptr) return -1.f;
++    std::vector<float> v(ggml_nelements(t));
++    ggml_backend_tensor_get(t, v.data(), 0, ggml_nbytes(t));
++    float m = 0.f;
++    for (float x : v) {
++        if (!std::isfinite(x)) { (*bad)++; continue; }
++        m = std::max(m, std::fabs(x));
++    }
++    return m;
++}
++static bool nm_nan_probe(ggml_tensor* t, bool ask, void*) {
++    static int n_nan = 0, n_big = 0;
++    static long n_seen = 0;
++    if (ask) return true;
++    n_seen++;
++    int64_t bad = 0;
++    float m = nm_nan_scan(t, &bad);
++    if (bad > 0 && n_nan < 12) {
++        n_nan++;
++        LOG_INFO("NANPROBE node#%ld %s '%s' bad=%lld/%lld max=%g", n_seen, ggml_op_desc(t), t->name, (long long)bad, (long long)ggml_nelements(t), m);
++        for (int i = 0; i < GGML_MAX_SRC && t->src[i]; i++) {
++            int64_t sb = 0; float sm = nm_nan_scan(t->src[i], &sb);
++            LOG_INFO("NANPROBE   src%d %s '%s' type=%s bad=%lld max=%g", i, ggml_op_desc(t->src[i]), t->src[i]->name, ggml_type_name(t->src[i]->type), (long long)sb, sm);
++        }
++    } else if (bad == 0 && m > 65504.f && n_big < 40) {
++        n_big++;
++        LOG_INFO("NANPROBE big node#%ld %s '%s' src0 '%s' max=%g", n_seen, ggml_op_desc(t), t->name, t->src[0] ? t->src[0]->name : "", m);
++    }
++    return true;
++}
++
+ sd_graph_eval_callback_t sd_get_backend_eval_callback() {
++    static bool probe = getenv("SD_NAN_PROBE") != nullptr;
++    if (sd_backend_eval_cb == nullptr && probe) return nm_nan_probe;
+     return sd_backend_eval_cb;
+ }
+ 
