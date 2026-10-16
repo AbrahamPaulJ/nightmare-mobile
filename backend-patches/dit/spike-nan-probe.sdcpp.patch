@@ -16,7 +16,7 @@ index 3737dc7..166b241 100644
      } else {
          status = sd_backend_graph_compute_with_eval_callback(runtime_backend, graph,
 diff --git a/src/core/util.cpp b/src/core/util.cpp
-index d735187..2381827 100644
+index d735187..739f3b2 100644
 --- a/src/core/util.cpp
 +++ b/src/core/util.cpp
 @@ -680,7 +680,44 @@ bool sd_should_preview_noisy() {
@@ -51,7 +51,7 @@ index d735187..2381827 100644
 +            int64_t sb = 0; float sm = nm_nan_scan(t->src[i], &sb);
 +            LOG_INFO("NANPROBE   src%d %s '%s' type=%s bad=%lld max=%g", i, ggml_op_desc(t->src[i]), t->src[i]->name, ggml_type_name(t->src[i]->type), (long long)sb, sm);
 +        }
-+    } else if (bad == 0 && m > 65504.f && n_big < 40) {
++    } else if (bad == 0 && m > 65504.f && t->op == GGML_OP_MUL_MAT && n_big < 300) {
 +        n_big++;
 +        LOG_INFO("NANPROBE big node#%ld %s '%s' src0 '%s' max=%g", n_seen, ggml_op_desc(t), t->name, t->src[0] ? t->src[0]->name : "", m);
 +    }
