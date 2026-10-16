@@ -1,0 +1,69 @@
+diff --git a/src/ggml-hexagon/htp/dma-queue.h b/src/ggml-hexagon/htp/dma-queue.h
+index 190ca3a..af820e1 100644
+--- a/src/ggml-hexagon/htp/dma-queue.h
++++ b/src/ggml-hexagon/htp/dma-queue.h
+@@ -319,20 +319,55 @@ static inline bool dma_queue_push(dma_queue *q, dma_ptr dptr, size_t dst_stride,
+     }
+ 
+     // Stride overflow - fall back to row-by-row.
++    // Every caller pops exactly ONE entry per push and may still hold earlier pushes in flight
++    // (act-ops double-buffers: push next block, then pop the current one). So this must leave exactly
++    // one new ring entry and must never pop: the old fallback called dma_queue_flush(), which drained
++    // the caller's in-flight entries, so its next pop got dst=NULL and the DSP faulted (Bad VA 0x0,
++    // FLUX.2 Klein's activations on v73). Rows 0..n-2 are copied synchronously through the FREE ring
++    // slots (linked after everything already queued, so ordering holds), then the last row is pushed
++    // as the caller's single entry.
+     {
++        dma_ring *     r   = q->ring;
+         const uint8_t *src = (const uint8_t *) dptr.src;
+         uint8_t       *dst = (uint8_t *)       dptr.dst;
+-        size_t r = 0;
+-        while (r + 1 < nrows) {
+-            dma_ptr p = dma_make_ptr(dst + r * dst_stride, src + r * src_stride);
+-            if (!dma_queue_push_single_1d(q, p, row_size)) {
+-                dma_queue_flush(q);
+-            } else {
+-                r++;
++
++        const uint32_t nfree = (r->pop_idx - r->push_idx - 1) & r->idx_mask;
++        if (nfree == 0) {
++            return false;
++        }
++
++        dma_descriptor_2d * const prev_tail = r->tail;
++        dma_descriptor_2d *       link      = prev_tail;
++        size_t row = 0;
++        while (row + 1 < nrows) {
++            dma_descriptor_1d * last = NULL;
++            if (link == &r->desc[r->push_idx]) {
++                link = prev_tail; // one free slot: never link a descriptor to itself; the engine is idle here
++            }
++            for (uint32_t k = 0; k < nfree && row + 1 < nrows; k++, row++) {
++                dma_descriptor_1d * d = (dma_descriptor_1d *) &r->desc[(r->push_idx + k) & r->idx_mask];
++                d->next       = NULL;
++                d->src        = (void *) (src + row * src_stride);
++                d->dst        = (void *) (dst + row * dst_stride);
++                d->size       = row_size;
++                d->desc_size  = 0; // 1D mode
++                d->src_bypass = dma_is_vtcm(q, d->src) ? 1 : q->nocache;
++                d->dst_bypass = dma_is_vtcm(q, d->dst) ? 1 : q->nocache;
++                d->order      = 0;
++                d->done       = 0;
++                dmlink(link, d);
++                link = (dma_descriptor_2d *) d;
++                last = d;
++            }
++            // The chain runs in order, so the last row done means every row (and all earlier entries) done.
++            while (!((volatile dma_descriptor_1d *) last)->done) {
++                dmpoll();
+             }
+         }
+-        dma_queue_flush(q);
+-        dma_ptr p = dma_make_ptr(dst + r * dst_stride, src + r * src_stride);
++        // The scratch slots are free again; the caller's entry reuses the first one, so the tail must not
++        // point into them (dmlink(tail, tail) would be a self-link). prev_tail is complete: it ran before the rows.
++        r->tail = prev_tail;
++        dma_ptr p = dma_make_ptr(dst + row * dst_stride, src + row * src_stride);
+         return dma_queue_push_single_1d(q, p, row_size);
+     }
+ }
