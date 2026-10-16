@@ -1,5 +1,5 @@
 diff --git a/src/model/adapter/lora_ops.cpp b/src/model/adapter/lora_ops.cpp
-index 7dacfd1..6687fe7 100644
+index 7dacfd1..4571f65 100644
 --- a/src/model/adapter/lora_ops.cpp
 +++ b/src/model/adapter/lora_ops.cpp
 @@ -52,8 +52,12 @@ ggml_tensor* ggml_ext_lokr_forward(
@@ -17,7 +17,22 @@ index 7dacfd1..6687fe7 100644
  
      int q_actual = is_conv ? (int)h->ne[2] : (int)h->ne[0];
      int vq       = q_actual / uq;
-@@ -97,7 +101,7 @@ ggml_tensor* ggml_ext_lokr_forward(
+@@ -65,7 +69,13 @@ ggml_tensor* ggml_ext_lokr_forward(
+     ggml_tensor* hb;
+ 
+     if (!is_conv) {
+-        int batch          = (int)h->ne[1];
++        // Every dim past the features is batch: a layer may see [q, tokens] or more (Krea 2's text
++        // fusion projector mixes 12 encoder layers, [12, hidden, tokens]); the old ne[1] dropped ne[2..]
++        // and the reshape below asserted (Nightmare dit/027).
++        if (!ggml_is_contiguous(h)) {
++            h = ggml_cont(ctx, h);
++        }
++        int batch          = (int)(ggml_nelements(h) / h->ne[0]);
+         int merge_batch_uq = batch;
+         int merge_batch_vp = batch;
+ 
+@@ -97,7 +107,7 @@ ggml_tensor* ggml_ext_lokr_forward(
          if (w2 != nullptr) {
              hb = ggml_mul_mat(ctx, w2, h_split);
          } else {
@@ -26,7 +41,7 @@ index 7dacfd1..6687fe7 100644
          }
  
          if (batch > 1) {
-@@ -110,7 +114,7 @@ ggml_tensor* ggml_ext_lokr_forward(
+@@ -110,7 +120,7 @@ ggml_tensor* ggml_ext_lokr_forward(
          if (w1 != nullptr) {
              hc_t = ggml_mul_mat(ctx, w1, hb_t);
          } else {
@@ -35,7 +50,16 @@ index 7dacfd1..6687fe7 100644
          }
  
          if (batch > 1) {
-@@ -197,7 +201,7 @@ ggml_tensor* ggml_ext_lokr_forward(
+@@ -119,6 +129,8 @@ ggml_tensor* ggml_ext_lokr_forward(
+ 
+         ggml_tensor* hc  = ggml_transpose(ctx, hc_t);
+         ggml_tensor* out = ggml_reshape_2d(ctx, ggml_cont(ctx, hc), up * vp, batch);
++        // back in the layer's own shape, so the caller adds it to an output of the same dims
++        out = ggml_reshape_4d(ctx, out, up * vp, h->ne[1], h->ne[2], h->ne[3]);
+         return ggml_ext_scale(ctx, out, scale);
+     } else {
+         int batch = (int)h->ne[3];
+@@ -197,7 +209,7 @@ ggml_tensor* ggml_ext_lokr_forward(
              // Would be great to be able to transpose w1 instead to avoid transposing both hb and hc
              hc_t = ggml_mul_mat(ctx, w1, hb_merged_t);
          } else {
