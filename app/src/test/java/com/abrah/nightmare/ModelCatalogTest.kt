@@ -350,7 +350,10 @@ class ModelCatalogTest {
         val klein4 = ModelCatalog.byId("flux2_klein_4b")!!
         assertTrue(klein4.buildFor(v75)!!.files.any { it.name == "dit.gguf" })
         assertTrue(klein4.buildFor(caps(79, 8, sixteen))!!.files.any { it.name == "dit.safetensors" })
-        assertEquals(null, ModelCatalog.byId("z_image_turbo")!!.buildFor(v75))
+        // ⭐ Z-Image: leejet's Q4_0 GGUF on v75 since engine dit/025 (docs/DIT.md §2e), Kijai's FP8 on v79.
+        val zimage = ModelCatalog.byId("z_image_turbo")!!
+        assertTrue(zimage.buildFor(v75)!!.files.any { it.name == "dit.gguf" })
+        assertTrue(zimage.buildFor(caps(79, 8, sixteen))!!.files.any { it.name == "dit.safetensors" })
         val qwen = ModelCatalog.byId("qwen_image_2_1")!!
         assertTrue(qwen.buildFor(v75)!!.files.any { it.name == "dit.gguf" })
         assertTrue(qwen.buildFor(caps(79, 8, sixteen))!!.files.any { it.name == "dit.safetensors" })

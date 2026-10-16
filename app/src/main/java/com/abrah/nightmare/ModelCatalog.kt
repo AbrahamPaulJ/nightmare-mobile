@@ -2101,8 +2101,8 @@ object ModelCatalog {
      * to save APK size. Ours is built from that exact tree (`assets/ditlibs/libggml-htp-v75.so`,
      * `docs/DIT.md` §9e). ⚠⚠ FP8 weights stay at [DIT_MIN_ARCH]: below v79 the engine refuses
      * `F8_E4M3` matmuls on the NPU (`opt_arch < 79`) and runs them on the CPU — so Klein 4B and Qwen
-     * each have an FP8 build at v79 and a GGUF build for v75 (Q8_0 / Q4_0), and Z-Image Turbo (FP8 only;
-     * its Q4_0 GGUF renders noise, PROGRESS) keeps v79.
+     * each have an FP8 build at v79 and a GGUF build for v75 (Q8_0 / Q4_0), and so does Z-Image Turbo (leejet's
+     * Q4_0) since engine `dit/025` stopped its `attention.out` overflowing fp16 on HTP (`docs/DIT.md` §2e).
      * ✅ FLUX.2 Klein and Qwen 2.1 render on an 8 Gen 3 since 1.6.133 (user, 2026-10-11; `docs/DIT.md` §9e).
      */
     const val DIT_GGML_MIN_ARCH = 75
@@ -2120,6 +2120,20 @@ object ModelCatalog {
     private val KLEIN4B_Q8 = listOf(
         RemoteFile(HF + "leejet/FLUX.2-klein-4B-GGUF/resolve/main/flux-2-klein-4b-Q8_0.gguf", "dit.gguf", 4_300_629_440L),
     ) + KLEIN4B_PARTS
+
+    /** ⚠ Z-Image's shared parts — the text encoder, VAE and tokenizer both its builds load. */
+    private val ZIMAGE_PARTS = listOf(
+        RemoteFile(HF + "zhiyuanasad/z_image_turbo_adreno/resolve/main/llm.gguf", "llm.gguf", 2_262_670_048L),
+        RemoteFile(HF + "zhiyuanasad/z_image_turbo_adreno/resolve/main/vae.safetensors", "vae.safetensors", 335_304_388L),
+        RemoteFile(HF + "Tongyi-MAI/Z-Image-Turbo/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
+    )
+    private val ZIMAGE_FP8 = listOf(
+        RemoteFile(HF + "Kijai/Z-Image_comfy_fp8_scaled/resolve/main/z-image-turbo_fp8_scaled_e4m3fn_KJ.safetensors", "dit.safetensors", 6_158_115_074L),
+    ) + ZIMAGE_PARTS
+    /** ⭐ The 8 Gen 3 build: leejet's Q4_0, `dit.gguf`. Renders right only on an engine with `dit/025` (`docs/DIT.md` §2e). */
+    private val ZIMAGE_Q4 = listOf(
+        RemoteFile(HF + "leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q4_0.gguf", "dit.gguf", 3_683_370_944L),
+    ) + ZIMAGE_PARTS
 
     val ditModels: List<ModelSpec> = listOf(
         dit(
@@ -2186,13 +2200,13 @@ object ModelCatalog {
         // that one renders on this phone.
         dit(
             "z_image_turbo", "Z-Image Turbo", Family.ZIMAGE, ZIMAGE, steps = 8,
-            minArch = DIT_MIN_ARCH, // ⚠ FP8 weights ([DIT_GGML_MIN_ARCH])
             lowram = true,
-            files = listOf(
-                RemoteFile(HF + "Kijai/Z-Image_comfy_fp8_scaled/resolve/main/z-image-turbo_fp8_scaled_e4m3fn_KJ.safetensors", "dit.safetensors", 6_158_115_074L),
-                RemoteFile(HF + "zhiyuanasad/z_image_turbo_adreno/resolve/main/llm.gguf", "llm.gguf", 2_262_670_048L),
-                RemoteFile(HF + "zhiyuanasad/z_image_turbo_adreno/resolve/main/vae.safetensors", "vae.safetensors", 335_304_388L),
-                RemoteFile(HF + "Tongyi-MAI/Z-Image-Turbo/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", DIT_TOKENIZER_BYTES),
+            files = ZIMAGE_FP8,
+            // ⭐ Two builds, Klein's way: Kijai's FP8 on v79+, leejet's Q4_0 GGUF on an 8 Gen 3 (below v79 FP8
+            // runs on the CPU). The GGUF went NaN on HTP until engine `dit/025` (`docs/DIT.md` §2e).
+            builds = listOf(
+                Build(TIER_DIT, "", ZIMAGE_FP8.sumOf { it.bytes }, DIT_MIN_ARCH, 8, files = ZIMAGE_FP8),
+                Build(TIER_DIT, "", ZIMAGE_Q4.sumOf { it.bytes }, DIT_GGML_MIN_ARCH, 8, files = ZIMAGE_Q4),
             ),
         ),
         // ⭐ Krea 2 Turbo — `happyyzy/stable-diffusion.cpp`'s README, file for
