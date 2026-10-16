@@ -1,0 +1,166 @@
+diff --git a/src/model/vae/tae.hpp b/src/model/vae/tae.hpp
+index 95bc0b2..00accda 100644
+--- a/src/model/vae/tae.hpp
++++ b/src/model/vae/tae.hpp
+@@ -394,17 +394,30 @@ public:
+     }
+ 
+     ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* z) override {
+-        auto first_conv = std::dynamic_pointer_cast<Conv2d>(blocks["0"]);
+-
+-        if (patch_size > 1) {
+-            z = patchify(ctx->ggml_ctx, z, patch_size, 1);
++        return forward_part(ctx, z, 0);
++    }
++
++    // nightmare: part 0 = the whole encoder; 1 = the stem and the FIRST layer (the full-resolution part,
++    // nearly all of the memory); 2 = the rest, fed part 1's output. Part 1 looks back at most 6 input
++    // frames (three MemBlocks at half rate), so it can run in time chunks overlapped by that much and
++    // match the whole-clip result exactly (TinyVideoAutoEncoder::encode_chunked).
++    ggml_tensor* forward_part(GGMLRunnerContext* ctx, ggml_tensor* z, int part) {
++        ggml_tensor* h = z;
++        if (part != 2) {
++            auto first_conv = std::dynamic_pointer_cast<Conv2d>(blocks["0"]);
++            if (patch_size > 1) {
++                h = patchify(ctx->ggml_ctx, h, patch_size, 1);
++            }
++            h = first_conv->forward(ctx, h);
++            h = ggml_relu_inplace(ctx->ggml_ctx, h);
+         }
+ 
+-        auto h = first_conv->forward(ctx, z);
+-        h      = ggml_relu_inplace(ctx->ggml_ctx, h);
+-
+         int index = 2;
+         for (int i = 0; i < num_layers; i++) {
++            if ((part == 1 && i > 0) || (part == 2 && i == 0)) {
++                index += 2 + num_blocks;
++                continue;
++            }
+             auto pool = std::dynamic_pointer_cast<UnaryBlock>(blocks[std::to_string(index++)]);
+             auto conv = std::dynamic_pointer_cast<UnaryBlock>(blocks[std::to_string(index++)]);
+ 
+@@ -417,6 +430,9 @@ public:
+                 h          = block->forward(ctx, h, mem);
+             }
+         }
++        if (part == 1) {
++            return h;
++        }
+         auto last_conv = std::dynamic_pointer_cast<Conv2d>(blocks[std::to_string(index)]);
+         h              = last_conv->forward(ctx, h);
+         return h;
+@@ -659,6 +675,15 @@ public:
+         return ggml_cont(ctx->ggml_ctx, ggml_permute(ctx->ggml_ctx, out, 0, 1, 3, 2));
+     }
+ 
++    // nightmare: one part of the encoder (TinyVideoEncoder::forward_part), in and out as (W, H, T, C),
++    // the host's frame-sliceable layout. The caller pads the clip to a multiple of t_downscale first.
++    ggml_tensor* encode_part(GGMLRunnerContext* ctx, ggml_tensor* x, int part) {
++        auto encoder = std::dynamic_pointer_cast<TinyVideoEncoder>(blocks["encoder"]);
++        x            = ggml_cont(ctx->ggml_ctx, ggml_permute(ctx->ggml_ctx, x, 0, 1, 3, 2));
++        x            = encoder->forward_part(ctx, x, part);
++        return ggml_cont(ctx->ggml_ctx, ggml_permute(ctx->ggml_ctx, x, 0, 1, 3, 2));
++    }
++
+     ggml_tensor* encode(GGMLRunnerContext* ctx, ggml_tensor* x) {
+         if (sd_version_is_wan(version) || sd_version_is_hunyuan_video(version) || sd_version_is_ltxav(version) || (sd_version_is_minimax_h3(version) && x->ne[3] > 1)) {
+             // (W, H, T, C) -> (W, H, C, T)
+@@ -859,25 +884,92 @@ struct TinyVideoAutoEncoder : public VAE {
+         return taehv.z_channels;
+     }
+ 
++    // nightmare: 0 = the whole encoder, 1 / 2 = a part of it (TAEHV::encode_part).
++    int encode_part = 0;
++
+     ggml_cgraph* build_graph(const sd::Tensor<float>& z_tensor, bool decode_graph) {
+         ggml_cgraph* gf  = decode_graph && is_wide ? ggml_new_graph_custom(compute_ctx, 4096, false)
+                                                    : ggml_new_graph(compute_ctx);
+         ggml_tensor* z   = make_input(z_tensor);
+         auto runner_ctx  = get_context();
+-        ggml_tensor* out = decode_graph ? taehv.decode(&runner_ctx, z) : taehv.encode(&runner_ctx, z);
++        ggml_tensor* out = decode_graph       ? taehv.decode(&runner_ctx, z)
++                           : encode_part != 0 ? taehv.encode_part(&runner_ctx, z, encode_part)
++                                              : taehv.encode(&runner_ctx, z);
+         ggml_build_forward_expand(gf, out);
+         return gf;
+     }
+ 
+-    sd::Tensor<float> _compute(const int n_threads,
+-                               const sd::Tensor<float>& z_tensor,
+-                               bool decode_graph) override {
++    sd::Tensor<float> run_graph(const int n_threads, const sd::Tensor<float>& z_tensor, bool decode_graph) {
+         auto get_graph = [&]() -> ggml_cgraph* {
+             return build_graph(z_tensor, decode_graph);
+         };
+-
+         return restore_trailing_singleton_dims(GGMLRunner::compute(get_graph, n_threads, false), z_tensor.dim());
+     }
++
++    // nightmare: input frames per first-part chunk, overlap included; 0 = never chunk. A 121-frame
++    // control video at 1088x800 asked for 6,705 MB in one graph against a 4,096 MB budget and Wan Fun
++    // Control failed (GitHub #40); ~46 MB a frame at a 656 px tile, so 56 frames is ~2.6 GB.
++    static int encode_chunk_frames() {
++        const char* env = std::getenv("SD_TAEHV_ENCODE_CHUNK");
++        if (env != nullptr && *env != 0) {
++            return std::max(0, std::atoi(env));
++        }
++        return 56;
++    }
++
++    // nightmare: the encoder in two parts, the first in overlapped time chunks. Exact: part 1's frame j
++    // reads input frames [2j - 6, 2j + 1], so a chunk starting OVERLAP frames early leaves every kept
++    // output untouched by the chunk's zero "past". Part 2 then runs on the whole (1/4 the area, half
++    // the frames).
++    sd::Tensor<float> encode_chunked(const int n_threads, const sd::Tensor<float>& input, int chunk) {
++        const int OVERLAP   = 8;
++        const int t_down    = 4;  // TAEHV's {true, true, false}
++        const int stride0   = 2;  // the first layer's TPool
++        sd::Tensor<float> x = input;
++        int64_t frames      = x.shape()[2];
++        if (frames % t_down) {
++            // TAEHV::encode's own rule: pad with the last frame to a multiple of t_downscale.
++            auto last = sd::ops::slice(x, 2, frames - 1, frames);
++            for (int64_t i = frames % t_down; i < t_down; i++) {
++                x = sd::ops::concat(x, last, 2);
++            }
++            frames = x.shape()[2];
++        }
++        const int content = std::max(t_down, (chunk - OVERLAP) / t_down * t_down);
++        LOG_INFO("taehv encode: %lld frames in chunks of %d (+%d overlap)", (long long)frames, content, OVERLAP);
++        sd::Tensor<float> mid;
++        encode_part = 1;
++        for (int64_t start = 0; start < frames; start += content) {
++            const int64_t from = start == 0 ? 0 : start - OVERLAP;
++            const int64_t end  = std::min<int64_t>(frames, start + content);
++            auto part          = run_graph(n_threads, sd::ops::slice(x, 2, from, end), false);
++            if (part.empty()) {
++                encode_part = 0;
++                return {};
++            }
++            if (from < start) {
++                part = sd::ops::slice(part, 2, (start - from) / stride0, part.shape()[2]);
++            }
++            mid = mid.empty() ? std::move(part) : sd::ops::concat(mid, part, 2);
++        }
++        encode_part = 2;
++        auto out    = run_graph(n_threads, mid, false);
++        encode_part = 0;
++        return out;
++    }
++
++    sd::Tensor<float> _compute(const int n_threads,
++                               const sd::Tensor<float>& z_tensor,
++                               bool decode_graph) override {
++        if (!decode_graph && !decode_only && z_tensor.dim() == 5 &&
++            (sd_version_is_wan(version) || sd_version_is_hunyuan_video(version))) {
++            const int chunk = encode_chunk_frames();
++            if (chunk > 0 && z_tensor.shape()[2] > chunk) {
++                return encode_chunked(n_threads, z_tensor, chunk);
++            }
++        }
++        return run_graph(n_threads, z_tensor, decode_graph);
++    }
+ };
+ 
+ #endif  // __SD_MODEL_VAE_TAE_HPP__
