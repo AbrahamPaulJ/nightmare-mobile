@@ -168,6 +168,7 @@ class MainActivity : ComponentActivity() {
         // never resolved a pick in the background and nothing auto-picked.
         com.abrah.nightmare.segment.Parser.refresh(this)
         com.abrah.nightmare.pose.PoseDetector.refresh(this)
+        com.abrah.nightmare.detail.PartDetector.refresh(this)
         com.abrah.nightmare.pose.DepthEstimator.refresh(this)
         MaskDefaults.load(this)
         // ⭐ The DiT engine is a download too, since 1.5.502 — and an app
@@ -771,6 +772,9 @@ fun HarnessScreen(
                         pose = vm.poseRow,
                         onInstallPose = { askToNotify(); vm.installPose() },
                         onDeletePose = vm::deletePose,
+                        detailer = vm.detailerRow,
+                        onInstallDetailer = { askToNotify(); vm.installDetailer() },
+                        onDeleteDetailer = vm::deleteDetailer,
                         depth = vm.depthRow,
                         onInstallDepth = { askToNotify(); vm.installDepth() },
                         onDeleteDepth = vm::deleteDepth,

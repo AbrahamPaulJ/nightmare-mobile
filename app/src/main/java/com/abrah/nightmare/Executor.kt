@@ -52,6 +52,8 @@ class NeedsDownload(val tool: String, message: String) : Exception(message) {
     companion object {
         const val POSE = "pose"
         const val DEPTH = "depth"
+        /** ⭐ Fix faces / Fix hands' detector ([com.abrah.nightmare.detail.PartDetector]). */
+        const val DETAILER = "adetailer"
     }
 }
 
@@ -1414,6 +1416,8 @@ internal fun explainOpFailure(code: Int, body: String): String {
     // socket closed ([BackendProcess.awaitExit]); deciding at that instant is
     // what showed users the bare EOFException. A live, slow one costs 1.5 s.
     if (BackendProcess.isRunning && !BackendProcess.awaitExit(1_500)) return body
+    // ⭐ An assert is not memory: no "close other apps" after it.
+    BackendProcess.assertReason()?.let { return "the backend stopped: $it [$body]" }
     // ⚠ No `[ ERROR ]` line is the lmkd signature — then the exit signal is the
     // only evidence there is, and it is named rather than dropped.
     val why = BackendProcess.failureReason() ?: BackendProcess.exitMeaning()

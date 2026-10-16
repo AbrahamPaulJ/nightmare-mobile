@@ -163,4 +163,40 @@ class BackendFailureReasonTest {
         ))
         assertTrue(BackendProcess.failureReason()!!.startsWith("model manager cannot make enough memory available"))
     }
+
+    /** ⭐ A tester's Krea 2 + LoRA abort (1.6.173, 2026-10-16), trimmed to the lines that matter. */
+    private val kreaLoraAbort = listOf(
+        "  1425.1ms [ ERROR ] [dit] llm.hpp:1937 - no vision weights detected, vision disabled",
+        "  1918.4ms [  INFO ] [dit] diffusion_engine.cpp:1669 - lora /storage/emulated/0/Android/data/com.abrah.nightmare/files/models/_loras/vrchat-krea2_v1_epoch14.safetensors:1.00",
+        "  2060.6ms [  INFO ] [dit] model_loader.cpp:1033 - loading 264/793 tensors from /storage/emulated/0/Android/data/com.abrah.nightmare/files/models/_loras/vrchat-krea2_v1_epoch14.safetensors",
+        " 10144.2ms [  INFO ] [dit] image.cpp:842  - generating image: 1/1 - seed 634209964",
+        "/home/runner/work/nightmare-mobile/nightmare-mobile/local-dream/app/src/main/cpp/3rdparty/stable-diffusion.cpp/ggml/src/ggml.c:3525: GGML_ASSERT(ggml_can_mul_mat(a, b)) failed",
+        "[exited 134]",
+    )
+
+    @Test
+    fun kreasVisionLineIsNeverTheReason() {
+        feed(kreaLoraAbort.take(1))
+        assertNull(BackendProcess.failureReason())
+    }
+
+    @Test
+    fun aMulMatAssertWithALoraNamesTheLora() {
+        feed(kreaLoraAbort)
+        val why = BackendProcess.assertReason()!!
+        assertTrue(why, why.startsWith("the LoRA vrchat-krea2_v1_epoch14.safetensors does not fit this model"))
+    }
+
+    @Test
+    fun anAssertIsNotExplainedAsMemory() {
+        feed(kreaLoraAbort)
+        val msg = explainOpFailure(-1, "EOFException: no message")
+        assertTrue(msg, "vrchat-krea2_v1_epoch14" in msg && "close other apps" !in msg && "vision" !in msg)
+    }
+
+    @Test
+    fun aMulMatAssertWithoutALoraBlamesTheFile() {
+        feed(kreaLoraAbort.filterNot { "lora" in it })
+        assertTrue(BackendProcess.assertReason()!!.contains("this model file's layout is not supported"))
+    }
 }

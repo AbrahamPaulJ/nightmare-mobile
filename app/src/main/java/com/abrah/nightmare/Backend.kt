@@ -902,7 +902,39 @@ object Ops {
         } catch (e: Exception) {
             return Result.Err(200, "complete event carried no readable image: ${e.message}")
         }
+        blankPicture(png)?.let { return Result.Err(200, it) }
         return Result.Ok(Decoded(png, "", j.optLong("generation_time_ms"), r.millis))
+    }
+
+    /**
+     * ⭐⭐ A picture of ONE colour is a failed render the engine did not notice.
+     *
+     * ⚠⚠ Reported 2026-10-17: two Snapdragon 8s Gen 4 (SM8735, v73) testers got solid grey from
+     * Z-Image and Klein 9B on 1.6.174, with "done" in the run log and so no error report to send;
+     * the 8 Gen 2 (also v73) renders clean. Turning it into an error puts the backend's log in the
+     * tester's hands. A real render is never flat to 2 levels, even downscaled 8x.
+     */
+    private fun blankPicture(png: ByteArray): String? {
+        val o = android.graphics.BitmapFactory.Options().apply { inSampleSize = 8 }
+        val bmp = android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size, o) ?: return null
+        val px = IntArray(bmp.width * bmp.height)
+        bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+        bmp.recycle()
+        val c = uniformColour(px) ?: return null
+        return "the engine returned a blank picture (every pixel #%06X). The render failed without an error; please share this report".format(c and 0xFFFFFF)
+    }
+
+    /** [pixels]' colour when every pixel is within [tolerance] of the first in each channel, else null. */
+    internal fun uniformColour(pixels: IntArray, tolerance: Int = 2): Int? {
+        if (pixels.isEmpty()) return null
+        val first = pixels[0]
+        for (p in pixels) {
+            for (shift in intArrayOf(0, 8, 16)) {
+                val d = ((p ushr shift) and 0xFF) - ((first ushr shift) and 0xFF)
+                if (d > tolerance || d < -tolerance) return null
+            }
+        }
+        return first
     }
 
     /** ⭐ What `/video` made: [frames] RGB frames of [width]x[height] in the NMV1 file at [path]. */

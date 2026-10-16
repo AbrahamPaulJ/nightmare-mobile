@@ -237,6 +237,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
             "segmenter_install" -> segmenterInstall()
             "pose_install" -> poseInstall()
+            "detailer_install" -> detailerInstall()
+            "detail_run" -> detailRun(arg)
             "depth_install" -> depthInstall()
             "ip_install" -> ipInstall(arg)
             "depth_probe" -> depthProbe(arg)
@@ -3211,6 +3213,71 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         } catch (e: Throwable) {
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
         }
+    }
+
+    private suspend fun detailerInstall() {
+        val d = com.abrah.nightmare.detail.PartDetector
+        say("detailer_install: ${d.LABEL}, ${d.BYTES} B")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                d.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+            }
+            say("  ok   ${d.bytesOnDisk(ctx)} B at ${d.dir(ctx).absolutePath}")
+        } catch (e: Throwable) {
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    /**
+     * ⭐ `detail_run` + `--es arg "faces|hands|both[,<model id>]"`: prompt, sampler, output through the executor
+     * twice at seed 12345, the Fix switches off then on, into `files/detail_run/` (off.png, on.png). Proves
+     * the detail pass the way [loraNode] proves LoRAs: through the node, not around it.
+     */
+    private suspend fun detailRun(arg: String?) {
+        val parts = arg.orEmpty().split(",")
+        val which = parts.getOrNull(0)?.trim().orEmpty().ifEmpty { "faces" }
+        val spec = ModelCatalog.byId(parts.getOrNull(1)?.trim()?.ifEmpty { null } ?: SelectedModel.id)
+            ?: return say("detail_run: no such model", bad = true)
+        val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, spec.native.width, spec.native.height)
+        val out = java.io.File(ctx.getExternalFilesDir(null), "detail_run").apply { mkdirs() }
+        suspend fun leg(label: String, on: Boolean) {
+            if (!ensureBackend(key)) return say("  $label: no backend", bad = true)
+            val d = com.abrah.nightmare.detail.Detailer
+            val sampler = Node(
+                "generate", SdSampler.typeFor(spec.family, inpaint = false),
+                params = mapOf(
+                    "model" to spec.id, "width" to spec.native.width.toString(), "height" to spec.native.height.toString(),
+                    "seed" to "12345",
+                    d.FIX_FACES to (on && which != "hands").toString(),
+                    d.FIX_HANDS to (on && which != "faces").toString(),
+                ),
+                inputs = mapOf("prompt" to com.abrah.nightmare.Source("prompt", "prompt")),
+            )
+            val wf = com.abrah.nightmare.canvas.Workflow(
+                Graph(listOf(
+                    Node("prompt", "core.prompt", params = mapOf(
+                        "prompt" to "full body photo of two friends waving at the camera in a park, faces and hands visible",
+                        "negative" to "worst quality, low quality, blurry, lowres, watermark, text",
+                    )),
+                    sampler,
+                    Node("output", "core.output", inputs = mapOf("media" to com.abrah.nightmare.Source("generate", "image"))),
+                )),
+                positions = emptyMap(),
+            )
+            val t0 = System.currentTimeMillis()
+            val r = runWorkflow(wf, onNode = { n ->
+                say("    ${n.id.padEnd(9)} ${n.outcome.name.lowercase().padEnd(7)} ${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+            })
+            if (r.error != null) return say("  $label refused. ${r.error}", bad = true)
+            val img = r.outputs["output"] as? Value.Image ?: return say("  $label produced no image", bad = true)
+            val png = images.png(img.id) ?: return say("  $label: not in the store", bad = true)
+            java.io.File(out, "$label.png").writeBytes(png)
+            say("  $label ok ${System.currentTimeMillis() - t0} ms, ${img.w}x${img.h}")
+        }
+        say("detail_run: $which on ${spec.id}")
+        leg("off", false)
+        leg("on", true)
+        say("detail_run: done")
     }
 
     private suspend fun poseInstall() {

@@ -25,6 +25,7 @@ object PictureModels {
         com.abrah.nightmare.segment.Segmenter.trim()
         com.abrah.nightmare.segment.Parser.trim()
         com.abrah.nightmare.pose.PoseDetector.trim()
+        com.abrah.nightmare.detail.PartDetector.trim()
         com.abrah.nightmare.pose.DepthEstimator.trim()
         IpAdapter.trim()
         DescribeMode.models.forEach { it.trim() }

@@ -285,3 +285,57 @@ internal fun VideoEnds(uri: String, modifier: androidx.compose.ui.Modifier = and
         }
     }
 }
+
+/**
+ * ⭐⭐ Motion transfer's driving window, LOOPING on its graph box (the user's call, 2026-10-17: "it
+ * should show the cropped preview on the graph, currently only img, no clip"): what the node reads,
+ * in the slot a Swap node's ControlNet hint uses ([CanvasState.controlHints]), with these frames
+ * playing over that still. Keyed by node id; Compose state, so a loop that lands redraws the canvas.
+ */
+internal object DrivingLoops {
+    val frames = androidx.compose.runtime.mutableStateMapOf<String, List<ImageBitmap>>()
+}
+
+/** ⚠ The loop's frame rate as sampled; each frame is shown twice at the canvas's 12 Hz tick. */
+private const val LOOP_FPS = 6
+
+/** ⚠ The loop's longest edge: a node box is ~200 dp wide. */
+private const val LOOP_EDGE = 192
+
+/**
+ * ⭐ The cropped window as frames, first one first: [LOOP_FPS] a second across the node's window, each
+ * cut by its box at the clip's [clipW] x [clipH] shape (the Video tab's tile, [drivingTile], frame by
+ * frame). ⚠ Blocking, seconds for a 5 s window: off the main thread. Null when the video cannot be read.
+ */
+internal fun drivingLoop(
+    context: android.content.Context,
+    uri: String,
+    params: Map<String, String>,
+    clipW: Int,
+    clipH: Int,
+): List<android.graphics.Bitmap>? {
+    val (startS, endS) = WanFun.windowOf(params)
+    val r = android.media.MediaMetadataRetriever()
+    return try {
+        if (uri.startsWith("content://")) r.setDataSource(context, android.net.Uri.parse(uri)) else r.setDataSource(uri)
+        val durS = (r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) / 1000.0
+        val end = if (durS > 0) minOf(endS, durS) else endS
+        val count = ((end - startS) * LOOP_FPS).toInt().coerceIn(1, WanVideoNode.MAX_SECONDS * LOOP_FPS)
+        val scale = LOOP_EDGE.toFloat() / maxOf(clipW, clipH, 1)
+        val outW = (clipW * scale).toInt().coerceAtLeast(1)
+        val outH = (clipH * scale).toInt().coerceAtLeast(1)
+        (0 until count).mapNotNull { i ->
+            val us = ((startS + i.toDouble() / LOOP_FPS) * 1_000_000).toLong()
+            val src = r.getScaledFrameAtTime(us, android.media.MediaMetadataRetriever.OPTION_CLOSEST, 512, 512)
+                ?: return@mapNotNull null
+            val box = drivingRectOf(params, src.width, src.height, clipW, clipH)
+            val fit = WanFun.fitRect(floatArrayOf(box.x, box.y, box.w, box.h), src.width, src.height, clipW, clipH)
+            com.abrah.nightmare.CropNode.render(src, fit[0], fit[1], fit[2], fit[3], outW, outH, com.abrah.nightmare.CropNode.PAD_BLACK)
+                .first.also { if (it !== src) src.recycle() }
+        }.takeIf { it.isNotEmpty() }
+    } catch (e: Exception) {
+        null
+    } finally {
+        runCatching { r.release() }
+    }
+}

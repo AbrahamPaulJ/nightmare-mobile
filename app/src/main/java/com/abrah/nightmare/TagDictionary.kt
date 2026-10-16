@@ -140,10 +140,18 @@ object TagDictionary {
         val main = mainFile(ctx).takeIf { it.length() > 0 } ?: return
         val list = main.bufferedReader().useLines { parseMain(it) }
         translationFile(ctx).takeIf { it.length() > 0 }?.bufferedReader()?.useLines { lines ->
-            val tr = parseTranslation(lines)
-            for (e in list) e.translation = tr[e.tag]
+            attachTranslations(list, parseTranslation(lines))
         }
         entries = list
+    }
+
+    /**
+     * ⚠ By the NORMALISED tag too: a translation file may spell `long hair` where the tag
+     * dictionary has `long_hair` (a tester: Chinese found nothing, 2026-10-16).
+     */
+    internal fun attachTranslations(list: List<Entry>, tr: Map<String, String>) {
+        val byNorm = tr.mapKeys { (k, _) -> normalise(k) }
+        for (e in list) e.translation = tr[e.tag] ?: byNorm[e.norm]
     }
 
     /** ⭐ Up to [limit] suggestions for the word being typed; empty until [ensureLoaded] ran. */
@@ -228,10 +236,14 @@ object TagDictionary {
     fun wordAt(text: String, caret: Int): IntRange? {
         if (caret <= 0 || caret > text.length) return null
         var start = caret
-        while (start > 0 && text[start - 1] !in ",\n()[]{}<>|") start--
+        // ⚠ Full-width separators too: a Chinese prompt is `长发，蓝眼睛`, and without `，` the
+        // whole line was one "word" that matched nothing (a tester, 2026-10-16).
+        while (start > 0 && text[start - 1] !in SEPARATORS) start--
         while (start < caret && text[start].isWhitespace()) start++
         return if (start < caret) start until caret else null
     }
+
+    private const val SEPARATORS = ",\n()[]{}<>|，、；（）【】"
 
     /** [text] with the word at [range] replaced by [tag] and a separator; the new text and caret. */
     fun complete(text: String, range: IntRange, tag: String): Pair<String, Int> {

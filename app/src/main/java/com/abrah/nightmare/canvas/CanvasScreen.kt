@@ -437,7 +437,7 @@ fun CanvasScreen(
             clipNodes(state.workflow.graph, state.videos)
         }
         // ⚠ [ANIMATED]: an endless frame loop under Robolectric stalls every later test.
-        val animate = playing.isNotEmpty() && ANIMATED
+        val animate = (playing.isNotEmpty() || DrivingLoops.frames.isNotEmpty()) && ANIMATED
         var clipTick by remember { mutableIntStateOf(0) }
         LaunchedEffect(animate) {
             if (!animate) return@LaunchedEffect
@@ -492,6 +492,8 @@ fun CanvasScreen(
             controlHints = state.controlHints,
             imageFor = imageFor,
             clipFrameFor = clipFrameFor,
+            // ⚠ Reads `clipTick` inside, like [clipFrameFor], so the loop animates.
+            controlClipFor = { id -> DrivingLoops.frames[id]?.let { f -> f[(clipTick / 2) % f.size] } },
             modifier = Modifier
                 .fillMaxSize()
                 .canvasGestures(
@@ -799,7 +801,8 @@ fun CanvasScreen(
     // earlier stage — savable, sharable, keepable, and deletable. Every
     // callback below already binds to `id`, the picture being VIEWED, so they
     // act on the right one.
-    val viewedIsInput = viewedIsPhoto || viewedType in com.abrah.nightmare.IMAGE_SAMPLER_TYPES
+    // ⚠ FRAMING_TYPES, not the image samplers: a Wan node previews its framed picture too (the user, 2026-10-16).
+    val viewedIsInput = viewedType in com.abrah.nightmare.PICKED_TYPES || viewedType in com.abrah.nightmare.FRAMING_TYPES
 
     // ⭐⭐ **The pictures this node holds, in the order they were made** — what
     // a swipe moves between. Received first, Made second; one entry for every
@@ -867,7 +870,7 @@ fun CanvasScreen(
                 // its pick and bin — choosing the picture IS what that viewer is
                 // for. The sampler's preview is a derived crop with nothing to
                 // act on.
-                chromeless = viewedType in com.abrah.nightmare.IMAGE_SAMPLER_TYPES,
+                chromeless = viewedType in com.abrah.nightmare.FRAMING_TYPES,
                 onPick = if (viewedIsPhoto) pickForViewed else null,
                 onClear = if (viewedIsPhoto && viewedNode != null) {
                     {

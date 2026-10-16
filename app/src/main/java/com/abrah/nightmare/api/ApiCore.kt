@@ -255,6 +255,12 @@ class ApiCore(private val ctx: Context, val ops: HarnessOps, private val holder:
                 return "node \"${n.id}\" reads poses with the Pose Detector, which is not installed. Download it in the app (Models, Tools) or set motion_mode to as_is"
             }
         }
+        // ⭐ Fix faces / Fix hands: the app asks for the detector with a popup; a caller is told ([PartDetector]).
+        graph.nodes.firstOrNull { n -> (types[n.type] as? com.abrah.nightmare.SdSampler)?.detailWanted(n) == true }?.let { n ->
+            if (!com.abrah.nightmare.detail.PartDetector.isInstalled(ctx)) {
+                return "node \"${n.id}\" has fix_faces or fix_hands on, and the face and hand detector is not installed. Download it in the app (Models, Tools) or turn them off"
+            }
+        }
         graph.nodes.firstOrNull { it.type == com.abrah.nightmare.npu.LoadVideoNode.name && it.params["uri"].isNullOrBlank() }?.let {
             return "video node \"${it.id}\" has no video. Send one in \"videos\""
         }

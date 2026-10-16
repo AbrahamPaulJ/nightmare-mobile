@@ -673,6 +673,13 @@ val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample") + WAN_TYPES
 val FRAMING_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample") + WAN_TYPES
 
 /**
+ * ⭐ A node whose picture the user PICKED: a photo or a video going in. Never a result, so never the
+ * keep / save / share / bin row (the user, 2026-10-16: the Video node wired into Motion transfer showed
+ * it). A [FRAMING_TYPES] node's picture is an input too, but only as its preview.
+ */
+val PICKED_TYPES = setOf("core.image", com.abrah.nightmare.npu.LoadVideoNode.name)
+
+/**
  * ⭐ Every node holding a FRAMING of a picture it was handed — the `x/y/w/h`
  * rect and its lock. ⚠ One home: the inspector draws a framing view for exactly
  * these, and [Graph.withNewPicture] resets exactly these.

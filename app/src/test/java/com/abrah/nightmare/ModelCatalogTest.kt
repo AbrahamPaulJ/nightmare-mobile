@@ -324,11 +324,15 @@ class ModelCatalogTest {
         // ⚠ An 8 Gen 2 is refused by the chip (no RAM figure): Krea 2 faults the v73 skel.
         assertEquals(0L, krea.ramNeeded(caps(73, 8, eight)))
         assertTrue(klein9.buildFor(caps(79, 8, twelve)) != null)
-        // ⭐ The budget: 4 GiB on the 12 GB class, none on 16 GB or unknown RAM, never another model.
-        assertEquals("4", BackendProcess.kreaBudget(krea, twelve))
-        assertEquals(null, BackendProcess.kreaBudget(krea, sixteen))
-        assertEquals(null, BackendProcess.kreaBudget(krea, 0L))
-        assertEquals(null, BackendProcess.kreaBudget(klein9, twelve))
+        // ⭐ The budget from what is FREE at launch on the 12 GB class (the S25, 2026-10-17: 5.36 GB free
+        // at 4 GiB fell to 1.82): whole when it fits, 5 or 4 when not; none on 16 GB or unknown RAM.
+        assertEquals("4", BackendProcess.kreaBudget(krea, twelve, 5_360_000_000L))
+        assertEquals("5", BackendProcess.kreaBudget(krea, twelve, 6_500_000_000L))
+        assertEquals(null, BackendProcess.kreaBudget(krea, twelve, 7_500_000_000L))
+        assertEquals("4", BackendProcess.kreaBudget(krea, twelve, 0L))
+        assertEquals(null, BackendProcess.kreaBudget(krea, sixteen, 1_000_000_000L))
+        assertEquals(null, BackendProcess.kreaBudget(krea, 0L, 0L))
+        assertEquals(null, BackendProcess.kreaBudget(klein9, twelve, 0L))
         // ⭐ GitHub #30: Klein 9B gets the smaller 8 Gen 3 budget; every other DiT keeps 2.75.
         assertEquals("2.25", BackendProcess.lowArchDitBudget(klein9, 75))
         assertEquals("2.75", BackendProcess.lowArchDitBudget(krea, 75))

@@ -1467,6 +1467,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         lap("parser")
         refreshPose()
         lap("pose")
+        refreshDetailer()
+        lap("detailer")
         refreshDepth()
         lap("depth")
         refreshDescribe()
@@ -2433,6 +2435,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             override val installId get() = when (key) {
                 com.abrah.nightmare.NeedsDownload.POSE -> "pose-tool"
                 com.abrah.nightmare.NeedsDownload.DEPTH -> "depth-tool"
+                com.abrah.nightmare.NeedsDownload.DETAILER -> "detailer-tool"
                 else -> "cn-tool-$key"
             }
         }
@@ -2444,6 +2447,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         when (key) {
             com.abrah.nightmare.NeedsDownload.POSE -> com.abrah.nightmare.pose.PoseDetector.LABEL
             com.abrah.nightmare.NeedsDownload.DEPTH -> com.abrah.nightmare.pose.DepthEstimator.LABEL
+            com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.LABEL
             else -> cnRows[key]?.label ?: key
         },
     )
@@ -2471,6 +2475,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         is MissingModel.Tool -> when (m.key) {
             com.abrah.nightmare.NeedsDownload.POSE -> com.abrah.nightmare.pose.PoseDetector.BYTES
             com.abrah.nightmare.NeedsDownload.DEPTH -> com.abrah.nightmare.pose.DepthEstimator.BYTES
+            com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.BYTES
             else -> cnRows[m.key]?.bytes ?: 0L
         }
     }
@@ -2504,6 +2509,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             is MissingModel.Tool -> when (m.key) {
                 com.abrah.nightmare.NeedsDownload.POSE -> poseRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.DEPTH -> depthRow?.installed == true
+                com.abrah.nightmare.NeedsDownload.DETAILER -> detailerRow?.installed == true
                 else -> cnRows[m.key]?.installed == true
             }
         }
@@ -2580,6 +2586,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.POSE)
             return false
         }
+        // ⭐ Fix faces / Fix hands read the render with the detector: asked here, as Pose is, so a Run
+        // never spends a render and then skips the fix.
+        val detailing = graph.nodes.any { n -> (nodeTypes[n.type] as? com.abrah.nightmare.SdSampler)?.detailWanted(n) == true }
+        if (detailing && !com.abrah.nightmare.detail.PartDetector.isInstalled(ctx)) {
+            missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.DETAILER)
+            return false
+        }
         // ⭐⭐⭐ **The segmenter is demanded ONLY by a mask that was actually
         // TAPPED**, never by the feature being switched on.
         //
@@ -2645,6 +2658,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             is MissingModel.Tool -> when (m.key) {
                 com.abrah.nightmare.NeedsDownload.POSE -> installPose()
                 com.abrah.nightmare.NeedsDownload.DEPTH -> installDepth()
+                com.abrah.nightmare.NeedsDownload.DETAILER -> installDetailer()
                 else -> installControlNet(m.key)
             }
         }
@@ -2860,6 +2874,75 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         com.abrah.nightmare.pose.PoseDetector.delete(getApplication())
         say("deleted ${com.abrah.nightmare.pose.PoseDetector.LABEL}")
         refreshPose()
+    }
+
+    // ---- the face and hand detector (Fix faces / Fix hands) -----------------
+
+    /** ⭐ The Tools row for [com.abrah.nightmare.detail.PartDetector]: the pose row's shape exactly. */
+    var detailerRow by mutableStateOf<com.abrah.nightmare.ui.ToolRow?>(null)
+        private set
+
+    private val DETAILER_INSTALL_ID = "detailer-tool"
+
+    fun refreshDetailer() {
+        val ctx = getApplication<Application>()
+        val d = com.abrah.nightmare.detail.PartDetector
+        d.refresh(ctx)
+        detailerRow = com.abrah.nightmare.ui.ToolRow(
+            label = d.LABEL,
+            bytes = d.BYTES,
+            installed = d.installed,
+            onDisk = if (d.installed) d.bytesOnDisk(ctx) else 0L,
+            progress = if (installing == DETAILER_INSTALL_ID) installProgress else null,
+        )
+    }
+
+    fun installDetailer() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        val d = com.abrah.nightmare.detail.PartDetector
+        installing = DETAILER_INSTALL_ID
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, d.BYTES)
+        refreshDetailer()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                d.install(
+                    ctx,
+                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    isCancelled = { cancelInstall },
+                )
+                viewModelScope.launch {
+                    say("installed ${d.LABEL}")
+                    downloadSucceeded(d.LABEL)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    ErrorReport.record(e)
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(d.LABEL, modelError!!)
+                    say("install failed. $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshDetailer()
+                }
+            }
+        }
+    }
+
+    fun deleteDetailer() {
+        com.abrah.nightmare.detail.PartDetector.delete(getApplication())
+        say("deleted ${com.abrah.nightmare.detail.PartDetector.LABEL}")
+        refreshDetailer()
     }
 
     // ---- the depth estimator (SD 1.5 Swap's depth) -------------------------
@@ -6393,19 +6476,32 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * user is looking at, and re-encoding it would hand out something subtly
      * different from what they chose to send.
      */
-    fun shareResultImage(id: String) {
+    fun shareResultImage(id: String) = shareOffMain {
         // ⭐⭐ A kept CLIP shares as the MP4. ⚠ Unlike the graph's copy this
         // one lives in `files/results/` and does not evaporate — keeping it
         // there is the whole reason `ResultsStore` copies it ([Result.videoPath]).
         keptClip(id)?.let { clip ->
-            runCatching { Share.video(getApplication(), clip, "nightmare-" + id) }
-                .onFailure { toast(text(R.string.share_failed, it.message.toString())) }
-            return
+            Share.video(getApplication(), clip, "nightmare-" + id)
+            return@shareOffMain null
         }
-        val png = results.fullBytes(id)
-        if (png == null) { toast(text(R.string.share_picture_missing)); return }
-        runCatching { Share.image(getApplication(), png, "nightmare-" + id) }
-            .onFailure { toast(text(R.string.share_failed, it.message.toString())) }
+        val png = results.fullBytes(id) ?: return@shareOffMain text(R.string.share_picture_missing)
+        Share.image(getApplication(), png, "nightmare-" + id)
+        null
+    }
+
+    /**
+     * ⭐⭐ A share's file work OFF the main thread, then its chooser. [work] returns a message to toast, or null.
+     *
+     * ⚠⚠ Reported 2026-10-16 (a tester, 1.6.172): Share froze the app, "Input dispatching timed out …
+     * Waited 5000ms". Every share wrote its file on the main thread: a PNG encode at the picture's full
+     * size (4096² after an upscale) or a clip copy, before the chooser could open.
+     */
+    private fun shareOffMain(work: () -> String?) {
+        viewModelScope.launch {
+            runCatching { withContext(kotlinx.coroutines.Dispatchers.IO) { work() } }
+                .onSuccess { msg -> msg?.let(::toast) }
+                .onFailure { toast(text(R.string.share_failed, it.message.toString())) }
+        }
     }
 
     /** ⚠ See [clipForImage] for why the FILE decides, not a stored flag. */
@@ -6454,19 +6550,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun shareNodeImage(imageId: String) {
         val name = "nightmare-" + imageId.take(12)
         // ⭐⭐ The clip, when this node made one — see [clipForImage].
-        clipForImage(imageId)?.let { clip ->
-            runCatching { Share.video(getApplication(), clip, name) }
-                .onFailure { toast(text(R.string.share_failed, it.message.toString())) }
-            return
-        }
+        val clip = clipForImage(imageId)
         // ⚠⚠ The bitmap, for the reason [saveImage] gives.
-        val bmp = ops.images.get(imageId)
-        if (bmp == null) {
-            toast(text(R.string.run_picture_not_in_memory))
-            return
+        val bmp = if (clip == null) ops.images.get(imageId) else null
+        shareOffMain {
+            when {
+                clip != null -> Share.video(getApplication(), clip, name)
+                bmp == null -> return@shareOffMain text(R.string.run_picture_not_in_memory)
+                else -> Share.image(getApplication(), bmp, name)
+            }
+            null
         }
-        runCatching { Share.image(getApplication(), bmp, name) }
-            .onFailure { toast(text(R.string.share_failed, it.message.toString())) }
     }
 
     fun saveResultsToGallery(ids: Collection<String>) {
@@ -6878,7 +6972,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun shareResults(ids: Collection<String>, asFlow: Boolean) {
         val ctx = getApplication<Application>()
         val list = expandSelection(ids.toSet()).toList()
-        runCatching {
+        shareOffMain {
             if (asFlow) {
                 com.abrah.nightmare.Share.many(ctx, list.mapNotNull { id ->
                     val loaded = results.flow(id) ?: return@mapNotNull null
@@ -6900,7 +6994,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 com.abrah.nightmare.Share.many(ctx, entries, mime, "Share")
             }
-        }.onFailure { toast(text(R.string.share_failed, it.message.toString())) }
+            null
+        }
     }
 
     fun viewResult(r: com.abrah.nightmare.canvas.Result) {
@@ -7148,6 +7243,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyControlHints(graph: com.abrah.nightmare.Graph) {
         val live = mutableSetOf<String>()
         for (n in graph.nodes) {
+            if (n.type == com.abrah.nightmare.npu.WanFunNode.name) {
+                if (applyDrivingLoop(graph, n)) live += n.id
+                continue
+            }
             if (!com.abrah.nightmare.SdSampler.isSwapType(n.type)) continue
             val p = com.abrah.nightmare.applyDefaults(nodeTypes[n.type]?.widgets.orEmpty(), n)
             val cn = p[com.abrah.nightmare.SdSampler.CONTROLNET].orEmpty()
@@ -7190,6 +7289,48 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             canvas = canvas.copy(controlHints = canvas.controlHints - stale)
             stale.forEach { hintSigs.remove(it); hintPending.remove(it); hintJobs.remove(it)?.cancel() }
         }
+        (com.abrah.nightmare.canvas.DrivingLoops.frames.keys - live).forEach {
+            com.abrah.nightmare.canvas.DrivingLoops.frames.remove(it)
+        }
+    }
+
+    /**
+     * ⭐ Motion transfer's control hint: its driving window, cropped, as a loop on the graph
+     * ([com.abrah.nightmare.canvas.DrivingLoops]) over its first frame. True while it has one.
+     */
+    private fun applyDrivingLoop(graph: com.abrah.nightmare.Graph, n: com.abrah.nightmare.Node): Boolean {
+        val uri = n.inputs[com.abrah.nightmare.npu.WanFunNode.CONTROL]?.node?.let { graph.byId[it] }
+            ?.takeIf { it.type == com.abrah.nightmare.npu.LoadVideoNode.name }
+            ?.params?.get("uri")?.takeIf { it.isNotBlank() } ?: return false
+        val p = com.abrah.nightmare.applyDefaults(nodeTypes[n.type]?.widgets.orEmpty(), n)
+        val (w, h) = com.abrah.nightmare.npu.WanVideoNode.sizeOf(p)
+        val window = com.abrah.nightmare.npu.WanFun.windowOf(p)
+        val sig = listOf(uri, window, com.abrah.nightmare.npu.WanFun.rectOf(p)?.toList(), w, h).joinToString("|")
+        if (hintSigs[n.id] == sig && n.id in canvas.controlHints) return true
+        if (hintPending[n.id] == sig) return true
+        hintPending[n.id] = sig
+        hintJobs.remove(n.id)?.cancel()
+        hintJobs[n.id] = viewModelScope.launch {
+            val frames = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.abrah.nightmare.canvas.drivingLoop(getApplication(), uri, p, w, h)
+            }
+            if (hintPending[n.id] != sig) return@launch
+            hintPending.remove(n.id)
+            hintJobs.remove(n.id)
+            hintSigs[n.id] = sig
+            if (frames == null) {
+                canvas = canvas.copy(controlHints = canvas.controlHints - n.id)
+                com.abrah.nightmare.canvas.DrivingLoops.frames.remove(n.id)
+                return@launch
+            }
+            val first = frames.first()
+            canvas = canvas.copy(
+                controlHints = canvas.controlHints +
+                    (n.id to (ops.images.put(first) to first.width.toFloat() / first.height.coerceAtLeast(1))),
+            )
+            com.abrah.nightmare.canvas.DrivingLoops.frames[n.id] = frames.map { it.asImageBitmap() }
+        }
+        return true
     }
 
     private val hintSigs = mutableMapOf<String, String>()

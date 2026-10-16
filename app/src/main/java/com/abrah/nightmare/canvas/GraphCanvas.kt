@@ -207,6 +207,8 @@ fun GraphCanvas(
      * exactly as before.
      */
     clipFrameFor: (String) -> ImageBitmap? = { null },
+    /** ⭐ The frame of what a node READS, looping in its hint slot: Motion transfer's driving window ([DrivingLoops]). */
+    controlClipFor: (String) -> ImageBitmap? = { null },
 
 ) {
     val measurer = rememberTextMeasurer()
@@ -261,7 +263,7 @@ fun GraphCanvas(
             // exactly how a "pop out" stops reading as one.
             for (box in boxes.sortedBy { if (it.id in selected) 1 else 0 }) {
                 drawNode(box, vp, viewport.scale, measurer, box.id in selected,
-                    status[box.id], imageFor, clipFrameFor, types, context)
+                    status[box.id], imageFor, clipFrameFor, types, context, controlClipFor)
             }
 
             // ⭐⭐ The picked wire's controls, LAST, so they sit over every node
@@ -369,6 +371,7 @@ private fun DrawScope.drawNode(
     /** ⚠ For [com.abrah.nightmare.nodeNameOf] — a plugin's type is in here and not in `NODE_TYPES`. */
     types: Map<String, NodeType>,
     context: android.content.Context,
+    controlClipFor: (String) -> ImageBitmap? = { null },
 ) {
     val tl = viewport.toScreen(box.topLeft)
     val w = box.width * viewport.scale
@@ -436,7 +439,7 @@ private fun DrawScope.drawNode(
     // and what it made. Same function as the other two, so the three cannot
     // drift apart in how they clip or scale.
     box.refPreview?.let { p ->
-        drawPreviewImage(box, p, box.refPreviewTop, tl, w, viewport, imageFor, clipFrameFor)
+        drawPreviewImage(box, p, box.refPreviewTop, tl, w, viewport, imageFor, controlClipFor)
     }
     box.beforePreview?.let { p ->
         drawPreviewImage(box, p, box.beforePreviewTop, tl, w, viewport, imageFor, clipFrameFor)

@@ -1196,10 +1196,29 @@ object ModelCatalog {
      * ⚠ `1:1` is the identity and is deliberately first: the backend ignores an
      * `aspect_ratio` whose terms are equal, so sending it is the same as
      * sending nothing.
+     *
+     * ⭐ Squarest first. 9:7 and 5:3 were a tester's ask (2026-10-16, the user: both).
      */
-    val ASPECTS = listOf("1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16")
+    val ASPECTS = listOf("1:1", "9:7", "7:9", "4:3", "3:4", "3:2", "2:3", "5:3", "3:5", "16:9", "9:16")
 
     const val DEFAULT_ASPECT = "1:1"
+
+    /** ⚠ Pure: `w:h` as a number, or null when it is not one. */
+    fun ratioValue(ratio: String): Float? {
+        val (a, b) = ratio.split(':').takeIf { it.size == 2 } ?: return null
+        val w = a.trim().toFloatOrNull() ?: return null
+        val h = b.trim().toFloatOrNull() ?: return null
+        return if (w > 0f && h > 0f) w / h else null
+    }
+
+    /** ⚠ Pure: the [ASPECTS] entry [size] is (within 1%), or null: the DiT Shape row's current choice. */
+    fun ratioOf(size: Res): String? {
+        if (size.width <= 0 || size.height <= 0) return null
+        val have = kotlin.math.ln(size.width.toDouble() / size.height)
+        return ASPECTS.firstOrNull { r ->
+            ratioValue(r)?.let { kotlin.math.abs(kotlin.math.ln(it.toDouble()) - have) < 0.01 } == true
+        }
+    }
 
     /**
      * ⚠⚠ **A SECOND COPY of arithmetic that lives in C++, and it has to be

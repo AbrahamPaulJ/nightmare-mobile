@@ -186,7 +186,7 @@ object ErrorReport {
     }
 
     /** `MemAvailable` from `/proc/meminfo`; 0 when unreadable. */
-    private fun availableRamBytes(): Long = runCatching {
+    internal fun availableRamBytes(): Long = runCatching {
         File("/proc/meminfo").useLines { lines ->
             lines.first { it.startsWith("MemAvailable:") }.filter { it.isDigit() }.toLong() * 1024L
         }

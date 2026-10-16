@@ -338,6 +338,25 @@ class VideoGraphTest {
         assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(704, 1280, 49), gb16, 75))
     }
 
+    /**
+     * ⭐ What the slider warning judges, against real runs: a tester's S24 Ultra (SM8650, 1.6.171, two LoRAs)
+     * rendered 928x928 for 2 s and failed 5 s (`need 4847 MB device / 2816 MB budget`); the S25 forced to
+     * v75 rendered 480p 5 s at 2.75 and could not fit one 704p 5 s block under 3 GiB; the S25 at v79 ran
+     * 704p 5 s budgeted at 4.
+     */
+    @Test
+    fun theFitWarningMatchesWhatPhonesRan() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        val s24u = 11_620_000_000L
+        val s25 = 11_652_820_992L
+        assertTrue(wan.fitsPhone(928, 928, 49, 2, s24u, 75))
+        assertTrue(!wan.fitsPhone(928, 928, 121, 2, s24u, 75))
+        assertEquals(2, wan.secondsThatFit(928, 928, 2, s24u, 75))
+        assertTrue(wan.fitsPhone(480, 832, 121, 0, s25, 75))
+        assertTrue(!wan.fitsPhone(704, 1280, 121, 0, s25, 75))
+        assertTrue(wan.fitsPhone(704, 1280, 121, 0, s25, 79))
+    }
+
     /** ⭐ GitHub #25: "Match picture" gives the picture's shape within Wan's area; a near-match is left alone. */
     @Test
     fun matchPictureKeepsTheShapeWithinWansArea() {

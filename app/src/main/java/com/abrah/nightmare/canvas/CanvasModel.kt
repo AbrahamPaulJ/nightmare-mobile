@@ -687,8 +687,9 @@ fun layout(
         // ⚠⚠ The HINT — edges, depth, skeleton — never its source picture
         // ([controlHints]); the source was shown at first and is what the
         // user had to point out.
-        val swapNode = com.abrah.nightmare.SdSampler.isSwapType(n.type)
-        val refPreview = (if (swapNode) controlHints[n.id] else n.inputs["reference"]?.node?.let { previews[it] })
+        // ⭐ Motion transfer too: its hint is the driving window ([DrivingLoops]), the user's call 2026-10-17.
+        val hinted = com.abrah.nightmare.SdSampler.isSwapType(n.type) || n.type == com.abrah.nightmare.npu.WanFunNode.name
+        val refPreview = (if (hinted) controlHints[n.id] else n.inputs["reference"]?.node?.let { previews[it] })
             ?.let { (id, aspect) ->
                 NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))
             }
@@ -1164,6 +1165,16 @@ private val KNOB_RESOURCES = mapOf(
     "allow_pad" to com.abrah.nightmare.R.string.knob_allow_padding,
     "auto_upscale" to com.abrah.nightmare.R.string.knob_auto_upscale,
     "enlarge" to com.abrah.nightmare.R.string.knob_enlarge,
+    "match_colours" to com.abrah.nightmare.R.string.knob_match_colours,
+    "auto_colour" to com.abrah.nightmare.R.string.knob_auto_colour,
+    "adjust_colours" to com.abrah.nightmare.R.string.knob_adjust_colours,
+    "brightness" to com.abrah.nightmare.R.string.knob_brightness,
+    "contrast" to com.abrah.nightmare.R.string.knob_contrast,
+    "saturation" to com.abrah.nightmare.R.string.knob_saturation,
+    "warmth" to com.abrah.nightmare.R.string.knob_warmth,
+    "fix_faces" to com.abrah.nightmare.R.string.knob_fix_faces,
+    "fix_hands" to com.abrah.nightmare.R.string.knob_fix_hands,
+    "detail_denoise" to com.abrah.nightmare.R.string.knob_detail_denoise,
     "autosave" to com.abrah.nightmare.R.string.knob_autosave,
     "only_masked" to com.abrah.nightmare.R.string.knob_only_masked,
     "tap_select" to com.abrah.nightmare.R.string.knob_tap_select,

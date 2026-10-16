@@ -43,8 +43,16 @@ interface CanvasHost {
 /** ⭐ [CanvasHost] over the view model — every call hops to the main thread, as a tap would. */
 class VmCanvasHost(
     private val vm: HarnessViewModel,
-    /** ⚠ Runs [block] on the main thread and returns its value. Identity in a Robolectric test. */
-    private val onMain: (() -> Any?) -> Any? = { block -> runBlocking(Dispatchers.Main) { block() } },
+    /**
+     * ⚠ Runs [block] on the main thread and returns its value. Identity in a Robolectric test.
+     * ⚠⚠ Directly when ALREADY on it: the chat's Stop calls [cancelRun] from a tap, and
+     * `runBlocking(Main)` on the main thread waits for itself. The Cancel did nothing and the app froze
+     * (a tester, 2026-10-16).
+     */
+    private val onMain: (() -> Any?) -> Any? = { block ->
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) block()
+        else runBlocking(Dispatchers.Main) { block() }
+    },
 ) : CanvasHost {
 
     @Suppress("UNCHECKED_CAST")

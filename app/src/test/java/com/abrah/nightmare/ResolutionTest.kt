@@ -536,4 +536,18 @@ class ResolutionTest {
         assertNull(SdSampler.refFitSuggestion("flux2_klein_9b", 79, 1024, 1024))
         assertNull(SdSampler.refFitSuggestion("flux2_klein_4b", 75, 2048, 2048))
     }
+
+    /** ⭐ The DiT Shape shortcut (a tester's 5:3 and 9:7, 2026-10-16): exact pairs near the size held. */
+    @Test
+    fun ditShapeLandsOnExactPairsAndNamesThem() {
+        val square = Res(1024, 1024)
+        assertEquals(Res(1280, 768), ModelCatalog.ditFit(ModelCatalog.ratioValue("5:3")!!, square))
+        assertEquals(Res(1152, 896), ModelCatalog.ditFit(ModelCatalog.ratioValue("9:7")!!, square))
+        assertEquals(Res(896, 1152), ModelCatalog.ditFit(ModelCatalog.ratioValue("7:9")!!, square))
+        assertEquals("5:3", ModelCatalog.ratioOf(Res(1280, 768)))
+        assertEquals("16:9", ModelCatalog.ratioOf(Res(1024, 576)))
+        assertEquals("1:1", ModelCatalog.ratioOf(square))
+        assertNull(ModelCatalog.ratioOf(Res(1088, 1024)))
+        assertNull(ModelCatalog.ratioValue("wide"))
+    }
 }

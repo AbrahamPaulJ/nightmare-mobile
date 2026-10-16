@@ -619,7 +619,7 @@ fun NodeInspector(
             maskSource = if (node.type in PAINTS) sourceId?.let(imageFor) else null,
             // ⚠ Only for a node that HAS a picture and did not make it from a
             // photo the user chose: a `load_image` already has swap/remove.
-            onSaveImage = previewId?.takeIf { node.type != "core.image" }
+            onSaveImage = previewId?.takeIf { node.type !in com.abrah.nightmare.PICKED_TYPES }
                 ?.let { id -> { onSaveImage(id) } },
             onShareImage = { previewId?.let(onShareImage) },
             onSendImage = { previewId?.let(onSendImage) },
@@ -650,16 +650,16 @@ fun NodeInspector(
             // its own branch. The user's call: allow it, and let the branch the
             // sweep was armed on decide what Results collects.
             onKeepImage = previewId
-                ?.takeIf { node.type != "core.image" && actsOnItsPicture }
+                ?.takeIf { node.type !in com.abrah.nightmare.PICKED_TYPES && actsOnItsPicture }
                 ?.let { id -> { onKeepImage(id) } },
             onStarImage = previewId
-                ?.takeIf { node.type != "core.image" && actsOnItsPicture }
+                ?.takeIf { node.type !in com.abrah.nightmare.PICKED_TYPES && actsOnItsPicture }
                 ?.let { id -> { onStarImage(id) } },
             kept = previewId?.let(isKept) == true,
             favourite = previewId?.let(isFavourite) == true,
             keepDisabledReason = keepDisabledReason,
             onDisabledAction = onDisabledAction,
-            onClearOutput = previewId?.takeIf { node.type != "core.image" }
+            onClearOutput = previewId?.takeIf { node.type !in com.abrah.nightmare.PICKED_TYPES }
                 ?.let { { onClearOutput(nodeId) } },
             demand = demand,
             autoUpscaleLocked = clipNoUpscale,
@@ -897,6 +897,18 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // part of it.
     if ((name == com.abrah.nightmare.MediaOutputNode.UPSCALER || name == com.abrah.nightmare.MediaOutputNode.SCALE) &&
         !com.abrah.nightmare.MediaOutputNode.autoUpscales(node)
+    ) return true
+    // ⭐ The colour sliders only while Adjust colours is on: the same rule.
+    if (name in setOf(
+            com.abrah.nightmare.MediaOutputNode.BRIGHTNESS, com.abrah.nightmare.MediaOutputNode.CONTRAST,
+            com.abrah.nightmare.MediaOutputNode.SATURATION, com.abrah.nightmare.MediaOutputNode.WARMTH,
+        ) && node.type == com.abrah.nightmare.MediaOutputNode.name &&
+        node.params[com.abrah.nightmare.MediaOutputNode.ADJUST] != "true"
+    ) return true
+    // ⭐ Fix strength only while Fix faces or Fix hands is on: the Upscaler chooser's rule, above.
+    if (name == com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE &&
+        node.params[com.abrah.nightmare.detail.Detailer.FIX_FACES] != "true" &&
+        node.params[com.abrah.nightmare.detail.Detailer.FIX_HANDS] != "true"
     ) return true
     // ⭐ An inpaint node's grow and feather are drawn IN the Mask tab of its
     // popup, under the picture they change — never loose in the knob list
@@ -1558,6 +1570,22 @@ internal fun NodeInspectorBody(
             // anything else moves it, such as dropping a photo in).
             var draft by remember(nodeId, cur) { mutableStateOf<com.abrah.nightmare.Res?>(null) }
             val shown = draft ?: cur
+            // ⭐ Shape, a SHORTCUT above the sliders (the user's call, 2026-10-17, for a tester's 5:3 and
+            // 9:7): a ratio moves both to the nearest grid size at about this area ([ModelCatalog.ditFit],
+            // Match picture's arithmetic, not a table of pairs). The sliders stay the size control, so a
+            // size no ratio names shows none chosen.
+            val ratios = com.abrah.nightmare.ModelCatalog.ASPECTS
+            Chooser(
+                label = "aspect".localizedKnobLabel(),
+                hint = stringResource(R.string.hint_dit_shape),
+                options = ratios,
+                current = com.abrah.nightmare.ModelCatalog.ratioOf(shown).orEmpty(),
+                onPick = { r ->
+                    com.abrah.nightmare.ModelCatalog.ratioValue(r)?.let { a ->
+                        onSetResolution(com.abrah.nightmare.ModelCatalog.ditFit(a, shown))
+                    }
+                },
+            )
             // ⚠ One commit for the pair, not one per slider: [onSetResolution]
             // takes a [com.abrah.nightmare.Res] and a half-applied size is not a
             // thing the graph should ever hold.
@@ -1599,6 +1627,26 @@ internal fun NodeInspectorBody(
                 onSet = { v -> v.toIntOrNull()?.let { draft = wan.fitArea(shown.first, it, widthMoved = false) } },
                 onCommit = commit,
             )
+            // ⭐ A size x length the phone probably cannot hold, said BEFORE the run, with the length that fits
+            // (a tester's 928x928 for 5 s on an 8 Gen 3, 2026-10-16). WARNED, never refused: the user's call.
+            // ⚠ The picker's LoRAs only: the prompt's tags are on another node, and the run log counts them.
+            val caps = remember { com.abrah.nightmare.DeviceProbe.caps() }
+            if (caps.known && type != null) {
+                val p = type.effectiveParams(node)
+                val frames = wan.framesOf(node, p)
+                val loras = if (node.type == com.abrah.nightmare.npu.WanFunNode.name) 0
+                    else com.abrah.nightmare.LoraSpec.parse(p[com.abrah.nightmare.SdSampler.LORAS]).size
+                val size = "${shown.first}x${shown.second}"
+                if (!wan.fitsPhone(shown.first, shown.second, frames, loras, caps.ramBytes, caps.arch)) {
+                    val fit = wan.secondsThatFit(shown.first, shown.second, loras, caps.ramBytes, caps.arch)
+                    Text(
+                        if (fit > 0) stringResource(R.string.wan_too_big_seconds, size, (frames / wan.FPS).toString(), fit.toString())
+                        else stringResource(R.string.wan_too_big_any, size),
+                        style = NoteTextStyle,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
             // ⭐ A picture of another shape is cropped to the clip's: say so, and offer its shape in one tap
             // (GitHub #25, the user's pick 2026-10-15). Gone once they match.
             cropSource?.takeIf { wan.shapeDiffers(it.width, it.height, shown.first, shown.second) }?.let { src ->

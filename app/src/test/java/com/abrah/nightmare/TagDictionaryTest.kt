@@ -69,4 +69,20 @@ class TagDictionaryTest {
         assertNull(TagDictionary.wordAt("masterpiece, ", 13))
         assertNull(TagDictionary.wordAt("", 0))
     }
+
+    /** ⭐ A Chinese prompt separates with `，`: the word is the part after it (a tester, 2026-10-16). */
+    @Test
+    fun aFullWidthCommaEndsAWord() {
+        val text = "长发，蓝"
+        assertEquals("蓝", text.substring(TagDictionary.wordAt(text, text.length)!!))
+    }
+
+    /** ⭐ A translation spelled with spaces still reaches the underscored tag. */
+    @Test
+    fun aTranslationWithSpacesFindsItsTag() {
+        val list = TagDictionary.parseMain(sequenceOf("long_hair,0,900", "blue_eyes,0,800"))
+        TagDictionary.attachTranslations(list, mapOf("long hair" to "长发", "blue_eyes" to "蓝眼睛"))
+        assertEquals("long_hair", TagDictionary.suggestFrom(list, "长发", 12).single().tag)
+        assertEquals("blue_eyes", TagDictionary.suggestFrom(list, "蓝", 12).single().tag)
+    }
 }

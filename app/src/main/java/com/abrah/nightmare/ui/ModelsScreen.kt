@@ -256,6 +256,10 @@ fun ModelsScreen(
     pose: ToolRow? = null,
     onInstallPose: () -> Unit = {},
     onDeletePose: () -> Unit = {},
+    /** ⭐ Fix faces / Fix hands' detector ([com.abrah.nightmare.detail.PartDetector]). */
+    detailer: ToolRow? = null,
+    onInstallDetailer: () -> Unit = {},
+    onDeleteDetailer: () -> Unit = {},
     /** ⭐ The fourth Tools row — SD 1.5 Swap's depth estimator. */
     depth: ToolRow? = null,
     onInstallDepth: () -> Unit = {},
@@ -349,6 +353,9 @@ fun ModelsScreen(
     var deletingSegmenter by remember { mutableStateOf(false) }
     var deletingParser by remember { mutableStateOf(false) }
     var deletingPose by remember { mutableStateOf(false) }
+    var deletingDetailer by remember { mutableStateOf(false) }
+    // ⚠ What a search finds the detector by, here AND in the tools-matched test below: one list of words.
+    val detailerWords = detailer?.let { it.label + " adetailer face hand fix" }
     var deletingDepth by remember { mutableStateOf(false) }
     var deletingDescribe by remember { mutableStateOf<com.abrah.nightmare.DescribeModel?>(null) }
     var deletingControlNet by remember { mutableStateOf<String?>(null) }
@@ -456,6 +463,14 @@ fun ModelsScreen(
                                 pose, busy, onInstallPose, onCancel,
                                 detail = stringResource(R.string.pose_about),
                             ) { deletingPose = true }
+                        }
+                    }
+                    if (detailer != null && match(detailerWords.orEmpty())) {
+                        item {
+                            ToolCard(
+                                detailer, busy, onInstallDetailer, onCancel,
+                                detail = stringResource(R.string.detailer_about),
+                            ) { deletingDetailer = true }
                         }
                     }
                     for ((type, row) in controlnets) {
@@ -567,6 +582,18 @@ fun ModelsScreen(
                             R.string.models_section_anima_qnn to rows.filter { it.spec.family == Family.ANIMA },
                         ).filter { it.second.isNotEmpty() }
                     } else listOf(null to rows)
+                    // ⭐ The search reaches every tab (#6288): video, upscalers and tools that match,
+                    // as their own tabs draw them. ⚠ Found FIRST, so "No models match" is not said over
+                    // them (the user, 2026-10-16: "WAN" said it above the Wan cards).
+                    val searchAll = fp == null && kind == ModelKind.ALL && query.isNotBlank()
+                    val neoHit = searchAll && video != null && matchesWords("neodragon video text image", query)
+                    val wanHits = if (!searchAll) emptyList()
+                        else wans.filter { matchesQuery(it.spec, query) || matchesWords("video wan motion", query) }
+                    val ups = if (!searchAll) emptyList()
+                        else upscalers.filter { matchesWords(it.spec.label + " upscale upscaler", query) }
+                    val tools = searchAll && (listOfNotNull(segmenter, parser, pose, depth) + controlnets.values + describe.values)
+                        .any { matchesWords(it.label, query) } || (searchAll && detailerWords != null && matchesWords(detailerWords, query))
+                    val otherHits = neoHit || wanHits.isNotEmpty() || ups.isNotEmpty() || tools
                     for ((gi, group) in groups.withIndex()) {
                     val (heading, groupRows) = group
                     val sec = sectionsOf(
@@ -606,7 +633,7 @@ fun ModelsScreen(
                         }
                         if (showUnsupported) items(sec.unsupported, key = { "u_" + it.spec.id }) { card(it) }
                     }
-                    if (sec.isEmpty && groups.size == 1) {
+                    if (sec.isEmpty && groups.size == 1 && !otherHits) {
                         item {
                             Text(
                                 stringResource(R.string.mb_no_match),
@@ -617,11 +644,7 @@ fun ModelsScreen(
                         }
                     }
                     }
-                    // ⭐ The search reaches every tab (#6288): video, upscalers and tools that match,
-                    // as their own tabs draw them.
-                    if (fp == null && kind == ModelKind.ALL && query.isNotBlank()) {
-                        val neoHit = video != null && matchesWords("neodragon video text image", query)
-                        val wanHits = wans.filter { matchesQuery(it.spec, query) || matchesWords("video wan motion", query) }
+                    if (searchAll) {
                         if (neoHit || wanHits.isNotEmpty()) {
                             item { SectionHeader(kindLabel(ModelKind.VIDEO)) }
                             videoModelItems(
@@ -634,13 +657,10 @@ fun ModelsScreen(
                                 showNote = false,
                             )
                         }
-                        val ups = upscalers.filter { matchesWords(it.spec.label + " upscale upscaler", query) }
                         if (ups.isNotEmpty()) {
                             item { SectionHeader(kindLabel(ModelKind.UPSCALE)) }
                             upscalerItems(ups)
                         }
-                        val tools = (listOfNotNull(segmenter, parser, pose, depth) + controlnets.values + describe.values)
-                            .any { matchesWords(it.label, query) }
                         if (tools) {
                             item { SectionHeader(kindLabel(ModelKind.TOOLS)) }
                             toolItems { matchesWords(it, query) }
@@ -714,6 +734,15 @@ fun ModelsScreen(
             body = stringResource(R.string.models_delete_depth_body, mb(depth.onDisk), mb(depth.bytes)),
             onConfirm = onDeleteDepth,
             onDismiss = { deletingDepth = false },
+        )
+    }
+
+    if (deletingDetailer && detailer != null) {
+        ConfirmDelete(
+            title = stringResource(R.string.models_delete_title, detailer.label),
+            body = stringResource(R.string.models_delete_detailer_body, mb(detailer.onDisk), mb(detailer.bytes)),
+            onConfirm = onDeleteDetailer,
+            onDismiss = { deletingDetailer = false },
         )
     }
 

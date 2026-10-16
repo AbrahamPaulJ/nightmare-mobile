@@ -148,10 +148,39 @@ object WanVideoNode : NodeType {
      * one block at a time, its compute plus [BLOCK_BYTES] (704x1280 5 s: 3,410 MB of compute, and the engine
      * asked for 3,705 MB). What the run-log warnings judge, so a budgeted clip is not warned about as if whole.
      */
-    fun peakBytes(w: Int, h: Int, frames: Int, budget: String?): Long =
-        if (budget == null) pinnedBytes(w, h, frames) else tokens(w, h, frames) * BYTES_PER_TOKEN + BLOCK_BYTES
+    fun peakBytes(w: Int, h: Int, frames: Int, budget: String?, loras: Int = 0): Long =
+        if (budget == null) pinnedBytes(w, h, frames)
+        else tokens(w, h, frames) * (BYTES_PER_TOKEN + loras * LORA_BYTES_PER_TOKEN) + BLOCK_BYTES
 
     private const val BLOCK_BYTES = 300L shl 20
+
+    /**
+     * ⚠ A runtime LoRA's share of a budgeted block, per token: a tester's 8 Gen 3 with two LoRAs
+     * (2026-10-16) needed 4,848 MB for one block at 928x928 121 frames (26,071 tokens, 186 KB a token;
+     * 124 without, 704p's 3,385 MB at 27,280), and rendered 49 frames (10,933 tokens) under 2.75 GiB.
+     */
+    private const val LORA_BYTES_PER_TOKEN = 32L shl 10
+
+    /**
+     * ⭐ Pure: whether [need] fits the chip. Under a [budget] the DiT streams, so ONE block must fit
+     * the budget (the tester above: `need 4847.66 MB device / 2816 MB budget`); resident, the v75 map.
+     */
+    fun fitsChip(need: Long, arch: Int, budget: String?): Boolean =
+        budget?.toDoubleOrNull()?.let { need <= (it * (1L shl 30)).toLong() } ?: fitsNpuMap(need, arch)
+
+    /**
+     * ⭐ Pure: the longest clip, in seconds, that fits at [w] x [h] with [loras] LoRAs on a phone with
+     * [ramBytes] and [arch]; 0 when not even 1 s does. What the slider warning offers instead.
+     */
+    fun secondsThatFit(w: Int, h: Int, loras: Int, ramBytes: Long, arch: Int): Int =
+        (MAX_SECONDS downTo 1).firstOrNull { s -> fitsPhone(w, h, framesFor(s), loras, ramBytes, arch) } ?: 0
+
+    /** ⚠ Pure: both tests the run log warns on, as one answer. */
+    fun fitsPhone(w: Int, h: Int, frames: Int, loras: Int, ramBytes: Long, arch: Int): Boolean {
+        val budget = memoryBudget(pinnedBytes(w, h, frames), ramBytes, arch)
+        val need = peakBytes(w, h, frames, budget, loras)
+        return fitsChip(need, arch, budget) && (ramBytes <= 0 || fits(need, ramBytes))
+    }
 
     /** ⚠ The backend launch that served the last Wan clip ([com.abrah.nightmare.BackendProcess.processId]). */
     @Volatile private var servedBy: Int? = null
@@ -383,15 +412,16 @@ object WanVideoNode : NodeType {
         val caps = com.abrah.nightmare.DeviceProbe.caps()
         val ram = caps.ramBytes
         val arch = if (caps.known) caps.arch else 0
-        val need = peakBytes(w, h, frames, memoryBudget(pinnedBytes(w, h, frames), ram, arch))
+        val budget = memoryBudget(pinnedBytes(w, h, frames), ram, arch)
+        val need = peakBytes(w, h, frames, budget, loras.size)
         if (ram > 0 && !fits(need, ram)) {
             ctx.warn(ctx.text(R.string.run_wan_ram_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB on the NPU, more than this phone's %4\$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer",
                 "${w}x$h", (frames / FPS).toString(), gb(need), gb(ram)))
         }
-        if (!fitsNpuMap(need, arch)) {
+        if (!fitsChip(need, arch, budget)) {
             ctx.warn(ctx.text(R.string.run_wan_npu_warning,
-                "%1\$s for %2\$s s needs about %3\$s GB on the NPU at once. A Snapdragon 8 Gen 3 holds about 3.5 GB, so it will probably fail. Trying anyway",
+                "%1\$s for %2\$s s needs about %3\$s GB of NPU memory at once, more than this phone's NPU takes, so it will probably fail. Trying anyway",
                 "${w}x$h", (frames / FPS).toString(), gb(need)))
         }
 
@@ -502,7 +532,10 @@ object WanVideoNode : NodeType {
                 // ⭐ An NPU that could not map the clip's working buffer, said as such: the engine
                 // crashes right after (SIGSEGV), and testers saw only "EOFException" (GitHub #20).
                 val log = com.abrah.nightmare.BackendProcess.newestLaunch()
-                if (r.code == -1 && log.any { NPU_MAP_FAILED.containsMatchIn(it) }) {
+                // ⚠ The engine can also refuse and LIVE: `cannot make enough memory available … need 4847 MB
+                // device / 2816 MB budget`, then a 200 stream error "generate_video failed" (a tester's
+                // 928x928, 121 frames on an 8 Gen 3, 2026-10-16), which the -1 test missed.
+                if ((r.code == -1 || "generate_video failed" in r.body) && log.any { NPU_MAP_FAILED.containsMatchIn(it) }) {
                     throw IllegalStateException(
                         "node \"${node.id}\": the NPU could not hold this clip's working memory " +
                             "(${w}x$h, ${frames / FPS} s). " + mapAdvice(w, h, loras.isNotEmpty()) + " [${r.body}]"

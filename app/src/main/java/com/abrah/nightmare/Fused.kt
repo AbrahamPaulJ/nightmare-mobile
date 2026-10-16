@@ -267,6 +267,12 @@ class SdSampler(
          */
         const val ENCODE_SEED = 42
 
+        /** ⭐ A1111's img2img colour correction ([ColorTools.matchColors]); the id is the row's words. */
+        const val MATCH_COLORS = "match_colours"
+
+        /** ⚠ A DiT detail patch's edge at most: a face needs no megapixel, and each costs a full DiT run. */
+        const val DETAIL_DIT_EDGE = 768
+
         /**
          * ⚠ The stitched picture's longest edge. 4096 until 2026-10-13: a big photo
          * outpainted (and then auto-upscaled) came out 5000 px and up and lagged the
@@ -797,7 +803,7 @@ class SdSampler(
         // ⭐ LoRA + ControlNet + IP-Adapter (backends 023, 024).
         family == Family.SDXL_SWAP -> baseWidgets() + lorasWidget() + controlWidgets() + ipWidgets()
         else -> baseWidgets()
-    }.let { ws ->
+    }.let { it + detailWidgets() }.let { ws ->
         if (!inpaint) ws else {
             val front = listOf("denoise", MaskCropNode.ONLY_MASKED, PasteNode.STITCH)
             front.mapNotNull { n -> ws.firstOrNull { it.name == n } } + ws.filterNot { it.name in front }
@@ -1149,9 +1155,118 @@ class SdSampler(
     /** ⭐ Where [HIRES] is offered: SD 1.5 / SDXL text- and image-to-image. Everywhere else, [ENLARGE]. */
     private val hasHires: Boolean get() = !inpaint && UltraFix.tileFor(family) != null
 
-    // ⭐ ONE exit for every family's render, so [ENLARGE] cannot be missed by the next return added.
+    // ⭐ ONE exit for every family's render, so [ENLARGE] and the detail pass cannot be missed by the
+    // next return added. ⚠ Detail LAST: it redraws faces on the final, biggest picture.
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
-        render(ctx, node, inputs).let { v -> if (v is Value.Image) enlarge(ctx, node, v) else v }
+        render(ctx, node, inputs).let { v -> if (v is Value.Image) detail(ctx, node, inputs, enlarge(ctx, node, v)) else v }
+
+    /**
+     * ⭐ Where Fix faces / Fix hands are offered ([com.abrah.nightmare.detail.Detailer]): every family with
+     * a masked render. ⚠ Not inpaint (it IS the hand-made version), not Swap (its redraw needs the run's
+     * ControlNet pack), not Iris (no VAE to mask through) or Wan (a video).
+     */
+    private val offersDetail: Boolean
+        get() = !inpaint && family !in setOf(Family.SD15_SWAP, Family.SDXL_SWAP, Family.IRIS, Family.WAN)
+
+    /** ⭐ True when [node] will run the detail pass: what the Run's up-front tool check asks. */
+    internal fun detailWanted(node: Node): Boolean = offersDetail && effectiveParams(node).let { p ->
+        p[com.abrah.nightmare.detail.Detailer.FIX_FACES].equals("true", ignoreCase = true) ||
+            p[com.abrah.nightmare.detail.Detailer.FIX_HANDS].equals("true", ignoreCase = true)
+    }
+
+    /** ⭐ Match colours ([MATCH_COLORS]) is on: what a picture going in hands its colours to ([ColorTools.matchColors]). */
+    private fun matching(p: Map<String, String>) = p[MATCH_COLORS].equals("true", ignoreCase = true)
+
+    /** ⭐ [made] in [like]'s colours when Match colours is on; [made] otherwise or with nothing to match. */
+    private fun matched(ctx: NodeCtx, p: Map<String, String>, made: Value.Image, like: android.graphics.Bitmap?): Value.Image {
+        if (!matching(p) || like == null) return made
+        val b = ctx.images.get(made.id) ?: return made
+        val out = ColorTools.matchBitmap(b, like)
+        return Value.Image(ctx.images.put(out), out.width, out.height)
+    }
+
+    private fun detailWidgets(): List<Widget> = listOfNotNull(
+        // ⭐ On every sampler but Wan and Iris: it acts on image to image, inpaint and Fix faces / hands.
+        Widget(MATCH_COLORS, "bool", "false", hintRes = R.string.hint_match_colours)
+            .takeIf { family != Family.WAN && family != Family.IRIS },
+    ) + if (!offersDetail) emptyList() else listOf(
+        Widget(com.abrah.nightmare.detail.Detailer.FIX_FACES, "bool", "false", hintRes = R.string.hint_fix_faces),
+        Widget(com.abrah.nightmare.detail.Detailer.FIX_HANDS, "bool", "false", hintRes = R.string.hint_fix_hands),
+        Widget(
+            com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE, "float",
+            com.abrah.nightmare.detail.Detailer.DEFAULT_DENOISE, 0.0, 1.0, hintRes = R.string.hint_detail_denoise,
+        ),
+    )
+
+    /**
+     * ⭐⭐ Fix faces / Fix hands ([com.abrah.nightmare.detail.Detailer]): each found part redrawn by THIS node's
+     * masked render (the inpaint path's: SD's encode, sample, blend and decode; a DiT's [runDitMasked]).
+     * ⚠ Every way it does not happen keeps the picture and WARNS, as [hiresFix] does.
+     */
+    private suspend fun detail(ctx: NodeCtx, node: Node, inputs: Map<String, Value>, img: Value.Image): Value.Image {
+        if (!offersDetail) return img
+        val d = com.abrah.nightmare.detail.Detailer
+        val base = effectiveParams(node)
+        val parts = listOfNotNull(
+            com.abrah.nightmare.detail.PartDetector.Part.FACE.takeIf { base[d.FIX_FACES].equals("true", ignoreCase = true) },
+            com.abrah.nightmare.detail.PartDetector.Part.HAND.takeIf { base[d.FIX_HANDS].equals("true", ignoreCase = true) },
+        )
+        if (parts.isEmpty()) return img
+        val appCtx = ctx.android ?: return img
+        if (!com.abrah.nightmare.detail.PartDetector.isInstalled(appCtx)) {
+            ctx.warn(ctx.text(R.string.run_detail_no_detector, "Fix faces and hands skipped: the face and hand detector is not installed. Download it in Models, Tools"))
+            return img
+        }
+        val wired = inputs["prompt"] as? Value.Prompt ?: return img
+        val pos = PromptLoras.extract(wired.positive)
+        val neg = PromptLoras.extract(wired.negative)
+        val prompt = Value.Prompt(pos.text, neg.text)
+        val p = withPromptLoras(ctx, node, base, pos.tags) + ("denoise" to (base[d.DETAIL_DENOISE] ?: d.DEFAULT_DENOISE))
+        var bmp = ctx.images.get(img.id) ?: return img
+        val spec = ModelCatalog.byId(p["model"].orEmpty()) ?: defaultSpec()
+        // ⭐ The patch: a DiT renders any size, so a square at about a megapixel's edge; an SD graph only
+        // its own, so its native square, loaded first as [hiresFix] does.
+        val (pw, ph) = if (family.dit) {
+            val e = ModelCatalog.ditSnap(minOf(spec.native.width, spec.native.height, DETAIL_DIT_EDGE))
+            e to e
+        } else {
+            val square = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, spec.native.width, spec.native.height)
+            if (backendContextKey(node) != square && ctx.switchKey?.invoke(square) != true) {
+                ctx.warn(ctx.text(R.string.run_detail_no_square, "Fix faces and hands skipped: could not load the model at %1\$dx%2\$d for it", spec.native.width, spec.native.height))
+                return img
+            }
+            spec.native.width to spec.native.height
+        }
+        var cond: String? = null
+        val render: suspend (ByteArray, ByteArray) -> android.graphics.Bitmap = { imagePng, maskPng ->
+            if (family.dit) runDitMasked(ctx, node, p, prompt, imagePng, maskPng, pw, ph)
+            else {
+                val c = cond ?: when (val r = ctx.host.encodeText(prompt.positive, prompt.negative)) {
+                    is Ops.Result.Ok -> r.value.handle
+                    is Ops.Result.Err -> throw OpFailure("encode_text", r.code, r.body)
+                }.also { cond = it }
+                val start = encode(ctx, imagePng, ENCODE_SEED, pw, ph)
+                val drawn = sample(ctx, p, c, start, pw, ph, null, imagePng, maskPng)
+                val blended = when (val r = ctx.host.latentBlend(start, drawn, maskPng)) {
+                    is Ops.Result.Ok -> r.value.handle
+                    is Ops.Result.Err -> throw OpFailure("latent_blend", r.code, r.body)
+                }
+                val patch = VaeDecodeNode.decode(ctx, blended, pw, ph, null)
+                ctx.images.get(patch.id)
+                    ?: throw IllegalStateException("node \"${node.id}\": the detail patch vanished from the store")
+            }
+        }
+        for (part in parts) {
+            val found = com.abrah.nightmare.detail.PartDetector.detect(appCtx, bmp, part).orEmpty()
+            val boxes = d.chosen(found, bmp.width, bmp.height)
+            ctx.say(
+                if (part == com.abrah.nightmare.detail.PartDetector.Part.FACE) ctx.text(R.string.run_detail_faces, "fixing faces: %1\$d found", boxes.size)
+                else ctx.text(R.string.run_detail_hands, "fixing hands: %1\$d found", boxes.size)
+            )
+            if (boxes.isNotEmpty()) bmp = d.fix(bmp, boxes, pw, ph, matching(p), render)
+        }
+        return Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
+    }
 
     private suspend fun render(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
         val wired = inputs["prompt"] as? Value.Prompt
@@ -1395,7 +1510,7 @@ class SdSampler(
             ctx.say(ctx.text(R.string.run_reimagining_picture, "re-imagining the picture"))
             val base = encode(ctx, ImageStore.encodePng(padToCanvas(frame, w, h)), ENCODE_SEED, w, h)
             val latent = sample(ctx, p, cond(), base, w, h, aspect, template = template)
-            return hiresFix(ctx, node, p, prompt, keepPhotoOnly(ctx, node, p, VaeDecodeNode.decode(ctx, latent, w, h, aspect)))
+            return hiresFix(ctx, node, p, prompt, keepPhotoOnly(ctx, node, p, matched(ctx, p, VaeDecodeNode.decode(ctx, latent, w, h, aspect), frame)))
         }
 
         // ⭐⭐⭐ **The mask is painted in the PHOTO's coordinates, not the
@@ -1549,6 +1664,8 @@ class SdSampler(
             cut.rect[0].toFloat(), cut.rect[1].toFloat(),
             (cut.rect[0] + cut.rect[2]).toFloat(), (cut.rect[1] + cut.rect[3]).toFloat(),
         )
+        // ⭐ Match colours: the patch in the cut's colours before it is blended in, so no tinted seam.
+        val patchBmp = if (matching(p)) ColorTools.matchBitmap(patchBmp, cut.image) else patchBmp
         val out = if (!p[PasteNode.STITCH].equals("true", ignoreCase = true)) {
             InpaintPixels.composite(frame, patchBmp, dst, cut.mask)
         } else {
@@ -1960,7 +2077,7 @@ class SdSampler(
         }
         val bmp = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
-        val made = Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
+        val made = matched(ctx, p, Value.Image(ctx.images.put(bmp), bmp.width, bmp.height), photo?.let { ctx.images.get(it.id) })
         return if (png == null) made else keepPhotoOnly(ctx, node, p, made)
     }
 
@@ -2222,6 +2339,14 @@ object MediaOutputNode : NodeType {
     /** ⭐ `2x`/`3x`/`4x` — [UpscaleNode.SCALE]'s param, on the node that enlarges. */
     const val SCALE = UpscaleNode.SCALE
 
+    /** ⭐ Colour: the ids are the rows' words ([knobLabel]). [BRIGHTNESS]..[WARMTH] show while [ADJUST] is on. */
+    const val AUTO_COLOR = "auto_colour"
+    const val ADJUST = "adjust_colours"
+    const val BRIGHTNESS = "brightness"
+    const val CONTRAST = "contrast"
+    const val SATURATION = "saturation"
+    const val WARMTH = "warmth"
+
     /**
      * ⭐⭐⭐ **The graph that enlarges one picture on disk**: photo → output,
      * upscale ticked. Its output is node `upscale`.
@@ -2275,6 +2400,13 @@ object MediaOutputNode : NodeType {
             options = UpscaleNode.SCALES,
             hintRes = R.string.hint_upscale_scale,
         ),
+        // ⭐ Colour ([colour]): auto levels + white balance, and the four sliders behind [ADJUST].
+        Widget(AUTO_COLOR, "bool", "false", hintRes = R.string.hint_auto_colour),
+        Widget(ADJUST, "bool", "false", hintRes = R.string.hint_adjust_colours),
+        Widget(BRIGHTNESS, "float", "0", -1.0, 1.0),
+        Widget(CONTRAST, "float", "0", -1.0, 1.0),
+        Widget(SATURATION, "float", "0", -1.0, 1.0),
+        Widget(WARMTH, "float", "0", -1.0, 1.0, hintRes = R.string.hint_warmth),
         // ⚠⚠ **No `name` box.** It was the filename prefix for the gallery
         // write this node used to do, and that write is gone — autosave keeps
         // into Results, which names things by seed and prompt. A text box whose
@@ -2312,6 +2444,31 @@ object MediaOutputNode : NodeType {
         // own because a flow already ends here.
         // ⚠ A clip passes through: the upscaler takes RGB frames.
         val params = effectiveParams(node)
+        val out = enlarged(ctx, node, media, params)
+        return if (out is Value.Image) colour(ctx, params, out) else out
+    }
+
+    /**
+     * ⭐⭐ Colour, after the upscale ([AUTO_COLOR], [ADJUST], the user's ask 2026-10-17): auto levels and
+     * white balance, then brightness, contrast, saturation and warmth ([ColorTools]). The sampler's render
+     * is cached, so moving a slider re-runs this node alone.
+     */
+    private fun colour(ctx: NodeCtx, params: Map<String, String>, img: Value.Image): Value.Image {
+        val auto = params[AUTO_COLOR].equals("true", ignoreCase = true)
+        val manual = params[ADJUST].equals("true", ignoreCase = true)
+        if (!auto && !manual) return img
+        val bmp = ctx.images.get(img.id) ?: return img
+        var px = ColorTools.pixels(bmp)
+        if (auto) px = ColorTools.autoColor(px)
+        if (manual) {
+            fun v(k: String) = params[k]?.toFloatOrNull() ?: 0f
+            px = ColorTools.adjust(px, v(BRIGHTNESS), v(CONTRAST), v(SATURATION), v(WARMTH))
+        }
+        val done = ColorTools.bitmap(px, bmp.width, bmp.height)
+        return Value.Image(ctx.images.put(done), done.width, done.height)
+    }
+
+    private suspend fun enlarged(ctx: NodeCtx, node: Node, media: Value, params: Map<String, String>): Value {
         if (media is Value.Image &&
             params[UPSCALE].equals("true", ignoreCase = true)
         ) {

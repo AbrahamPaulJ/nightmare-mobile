@@ -123,7 +123,36 @@ object BackendProcess {
      * ggml's gguf reader complain on every load (sd.cpp's loader copes, `docs/VIDEO-GGML.md` §3). An
      * lmkd kill at 704p was explained to the user as this line (2026-10-15).
      */
-    private val HARMLESS_ERRORS = listOf("'patch_embedding.weight' has invalid number of dimensions")
+    private val HARMLESS_ERRORS = listOf(
+        "'patch_embedding.weight' has invalid number of dimensions",
+        // ⚠ Krea 2's text encoder is a Qwen3-VL without its vision tower, said as an ERROR on every
+        // launch; a LoRA abort was reported to a tester as this line plus memory advice (2026-10-16).
+        "no vision weights detected",
+    )
+
+    /**
+     * ⭐⭐ An engine ASSERT in the newest launch, said for a person; null when there is none.
+     *
+     * ⚠⚠ `GGML_ASSERT` is printed bare (no `[ ERROR ]`), so [failureReason] never sees it, and the
+     * backend dies on SIGABRT. `ggml_can_mul_mat` is a shape mismatch, and with a LoRA in the request
+     * it is that LoRA's layout (GitHub #31's DoRA, a tester's Krea 2 LoRA loading 264/793 tensors,
+     * 2026-10-16): the way round is to run without it, not to free memory.
+     */
+    fun assertReason(log: List<String> = newestLaunch()): String? {
+        val line = log.lastOrNull { "GGML_ASSERT(" in it } ?: return null
+        val what = line.substringAfter("GGML_ASSERT(").substringBeforeLast(") failed").trim()
+        val lora = log.asReversed().firstNotNullOfOrNull { LORA_LINE.find(it)?.groupValues?.get(1) }?.substringAfterLast('/')
+        return when {
+            "ggml_can_mul_mat" in what && lora != null ->
+                "the LoRA $lora does not fit this model (the engine stopped on a tensor shape mismatch). Run without it"
+            "ggml_can_mul_mat" in what ->
+                "the engine stopped on a tensor shape mismatch: this model file's layout is not supported"
+            else -> "the engine stopped on an internal check: $what"
+        }
+    }
+
+    /** The engine's `lora <path>:<strength>` line, one per LoRA in the request. */
+    private val LORA_LINE = Regex(""" - lora (/\S+\.(?:safetensors|gguf)):[\d.]+\s*$""")
 
     /**
      * ⭐⭐ How the last backend process ENDED — its exit code, and whether this
@@ -369,12 +398,6 @@ object BackendProcess {
         readDiagnosticFile(context, "nightmare-dit-params.txt")?.takeIf { it.isNotEmpty() }
 
     /**
-     * ⭐⭐ Krea 2 below the 16 GB class: a 4 GiB budget, so its 6.5 GB DiT runs in segments instead of
-     * loading whole (which got the app reaped on the 12 GB S25). Measured 2026-10-14 at 3, 4 and 5 GiB:
-     * 4 is the balance (211–235 s at 1024², 2.8 GB left free; 5 is ~10% faster with only 1.9 GB free).
-     * Null on a 16 GB phone, or when the RAM is unknown, where it runs unbudgeted as before.
-     */
-    /**
      * ⭐ The DiT budget below v79: on the 8 Gen 3 (v75) 2.75 GiB, and 2.25 for FLUX.2 Klein 9B (its own parts:
      * catalogue or import); on v73 each 0.75 less ([V73_MAP_SHORTFALL_GIB]).
      * ⚠⚠ GitHub #30: a real SM8650 aborted Klein 9B at 1024² mid-DiT (`dspqueue_read 0x2e`), on a fresh
@@ -408,8 +431,27 @@ object BackendProcess {
     internal fun lowArchOpFilter(arch: Int): String =
         if (arch < 75) "CONV_2D_UPSCALE|CONCAT|SWIGLU" else "CONV_2D_UPSCALE|CONCAT"
 
-    internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long): String? =
-        "4".takeIf { spec?.family == Family.KREA2 && ramBytes in 1 until Prefs.LOWRAM_BELOW_BYTES }
+    /**
+     * ⭐⭐ Krea 2 below the 16 GB class: its budget from what is FREE at launch ([availBytes]), not from
+     * the phone's size. Whole when it fits; else 5 or 4 GiB, so its 6.5 GB DiT streams in segments.
+     * ⚠⚠ 1.6.160 gave every phone under 16 GB 4 GiB, fitted to the 12 GB S25 (reaped loading it whole),
+     * and a phone that ran it whole went from 3-4 min to 8 (a tester, 2026-10-16; the user: "we didnt
+     * want that slow down on phones it already worked").
+     * Measured on the S25 2026-10-17: at 4 GiB, 5.36 GB free at launch fell to 1.82 at the worst (3.54
+     * used), each GiB more costs ~1.07 GB; whole needs ~2.2 GB more than 4. With a 1.5 GB floor: whole
+     * from [KREA_WHOLE_FREE], 5 from [KREA_5_FREE]. Null on a 16 GB phone or unknown RAM, as before.
+     */
+    internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long, availBytes: Long): String? {
+        if (spec?.family != Family.KREA2 || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
+        return when {
+            availBytes >= KREA_WHOLE_FREE -> null
+            availBytes >= KREA_5_FREE -> "5"
+            else -> "4"
+        }
+    }
+
+    private const val KREA_WHOLE_FREE = 7_300_000_000L
+    private const val KREA_5_FREE = 6_100_000_000L
 
     /** ⚠ Diagnostic: the engine's VRAM budget (`DIT_MAX_VRAM`, GiB) on any chip. */
     private fun readDitMaxVramOverride(context: Context): String? =
@@ -722,7 +764,7 @@ object BackendProcess {
                         // one per clip instead, with `all=disk`: [memoryBudget] (`docs/VIDEO-GGML.md` §4).
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
                         (readDitMaxVramOverride(context) ?: memoryBudget ?: lowArchDitBudget(spec, DeviceProbe.caps().arch).takeIf { belowV79 && spec?.family != Family.WAN }
-                            ?: kreaBudget(spec, DeviceProbe.caps().ramBytes))
+                            ?: kreaBudget(spec, DeviceProbe.caps().ramBytes, ErrorReport.availableRamBytes()))
                             ?.let { put("DIT_MAX_VRAM", it) }
                         // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
                         // up blocks) computes garbage: 1.6.131's 8 Gen 3 renders came back solid red /

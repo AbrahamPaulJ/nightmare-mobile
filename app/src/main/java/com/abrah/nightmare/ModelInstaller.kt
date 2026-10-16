@@ -287,6 +287,26 @@ object ModelInstaller {
         onProgress: (Progress) -> Unit,
         isCancelled: () -> Boolean = { false },
     ) {
+        // ⭐ A stalled single stream resumes on a new connection, [STALL_RETRIES] times ([StallWatch]).
+        var stalls = 0
+        while (true) {
+            try {
+                return fetchOnce(url, dest, bytes, label, onProgress, isCancelled)
+            } catch (e: Stalled) {
+                if (++stalls > STALL_RETRIES) throw e
+                Log.w(TAG, "${dest.name} stalled; reconnecting ($stalls of $STALL_RETRIES)")
+            }
+        }
+    }
+
+    private fun fetchOnce(
+        url: String,
+        dest: File,
+        bytes: Long,
+        label: String,
+        onProgress: (Progress) -> Unit,
+        isCancelled: () -> Boolean,
+    ) {
         if (dest.exists() && dest.length() == bytes) {
             Log.i(TAG, "already downloaded: ${dest.name}")
             return
@@ -323,12 +343,14 @@ object ModelInstaller {
                     val buf = ByteArray(BUFFER)
                     var written = from
                     var last = 0L
+                    val watch = StallWatch()
                     while (true) {
                         if (isCancelled()) throw Cancelled()
                         val n = input.read(buf)
                         if (n < 0) break
                         output.write(buf, 0, n)
                         written += n
+                        watch.add(n)
                         // ⚠⚠ Throttled on TIME, not bytes. Every chunk would be
                         // thousands of updates a second — but so was the 1 MB
                         // rule this replaced, because it scales with the
@@ -385,6 +407,32 @@ object ModelInstaller {
     private const val RANGE_TRIES = 3
 
     private class RangesRefused : IOException("the server ignored a Range request")
+
+    /** ⚠ A connection still alive but barely moving ([StallWatch]); a fresh one resumes the file. */
+    private class Stalled : IOException("the download slowed to a crawl")
+
+    /**
+     * ⭐ Throws [Stalled] when a connection delivers under [STALL_BYTES] in [STALL_MS]. ⚠⚠ The 60 s read
+     * timeout only catches a connection that sends NOTHING; one trickling a few KB a second never trips
+     * it and the bar sits still (a tester's Qwen 2.1 Turbo at 88%, 2026-10-16; a CDN edge "downloading
+     * single digits of MB" before, #4691). A reconnect usually lands on another edge.
+     */
+    private class StallWatch {
+        private var since = android.os.SystemClock.uptimeMillis()
+        private var got = 0L
+        fun add(n: Int) {
+            got += n
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - since < STALL_MS) return
+            if (got < STALL_BYTES) throw Stalled()
+            since = now
+            got = 0L
+        }
+    }
+
+    private const val STALL_MS = 30_000L
+    private const val STALL_BYTES = 256L shl 10
+    private const val STALL_RETRIES = 5
 
     /**
      * ⭐⭐ [fetch] over [PARALLEL] byte ranges. True when [dest] is complete; false when the
@@ -447,6 +495,7 @@ object ModelInstaller {
                         conn.inputStream.use { input ->
                             val buf = ByteArray(BUFFER)
                             var lastSync = android.os.SystemClock.uptimeMillis()
+                            val watch = StallWatch()
                             while (!stop.get()) {
                                 val left = ends[i] - starts[i] - done.get(i)
                                 if (left <= 0) break
@@ -455,6 +504,7 @@ object ModelInstaller {
                                 raf.write(buf, 0, n)
                                 done.addAndGet(i, n.toLong())
                                 tries = 0
+                                watch.add(n)
                                 val now = android.os.SystemClock.uptimeMillis()
                                 if (now - lastSync >= PERSIST_MS) {
                                     lastSync = now
