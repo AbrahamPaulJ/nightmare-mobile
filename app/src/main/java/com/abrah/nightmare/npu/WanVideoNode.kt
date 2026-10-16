@@ -130,11 +130,13 @@ object WanVideoNode : NodeType {
      * free, where unbudgeted it was killed ~15 s in (2026-10-15). It costs ~30% (480p 5 s: DiT 196 s vs
      * 152 s), so only clips over [BUDGET_FROM] get it, below the 16 GB class. ⚠ One block at 704p 5 s needs
      * 3.7 GB by itself (attention), so 4 GiB is the floor there.
-     * ⚠ v75: 2.75 GiB (under the ~3.1 GB map) only past [V75_NPU_BYTES], so 480p 2 s, the run proven on a
-     * real 8 Gen 3, launches exactly as before. Unmeasured on a real one.
+     * ⚠⚠ v75: 2.75 GiB (under the ~3.1 GB map) for EVERY clip. A real 8 Gen 3 (a tester, 1.6.166, 2026-10-16)
+     * rendered NOISE at 832x480 2 s, which fit [V75_NPU_BYTES] and so ran resident, and a clean clip at 1280x704,
+     * which ran budgeted; a fresh backend per clip did not help. The same tester's LoRA put the resident DiT at
+     * 3.0 GB and fastrpc refused the compute. Budgeted, the weights stream and a LoRA's add little.
      */
     fun memoryBudget(pinned: Long, ramBytes: Long, arch: Int): String? = when {
-        arch in 1..78 -> "2.75".takeIf { pinned > V75_NPU_BYTES }
+        arch in 1..78 -> "2.75"
         ramBytes in 1 until com.abrah.nightmare.Prefs.LOWRAM_BELOW_BYTES -> "4".takeIf { pinned > BUDGET_FROM }
         else -> null
     }
@@ -257,6 +259,20 @@ object WanVideoNode : NodeType {
     }
 
     private const val V75_SECONDS = 2
+
+    /**
+     * ⚠ Pure: what to try after the NPU refused a clip's memory: never "480p" to a clip already that small
+     * (a tester at 832x480 was told to choose 480p, 2026-10-16), and LoRAs first, since they ride on the DiT.
+     */
+    fun mapAdvice(w: Int, h: Int, hasLoras: Boolean): String {
+        val small = w.toLong() * h <= 832L * 480
+        return when {
+            hasLoras && small -> "Remove a LoRA or choose fewer seconds"
+            hasLoras -> "Remove a LoRA, choose fewer seconds or 480p"
+            small -> "Choose fewer seconds"
+            else -> "Choose fewer seconds or 480p"
+        }
+    }
 
     /** The engine's words when fastrpc refused a buffer — it SIGSEGVs right after. */
     private val NPU_MAP_FAILED =
@@ -412,7 +428,7 @@ object WanVideoNode : NodeType {
         val dir = File(android.cacheDir, "video").apply { mkdirs() }
         val raw = File(dir, "wan_$key.nmv")
         val out = File(dir, "clip_wan_$key.mp4")
-        // ⭐ The control video, made on the phone from the driving one (pose: MoveNet, depth: Depth Anything).
+        // ⭐ The control video, made on the phone from the driving one (pose: MoveNet).
         val controlFile = File(dir, "control_$key.nmv")
         var clipFrames = frames
         if (motion != null) {
@@ -429,6 +445,9 @@ object WanVideoNode : NodeType {
                     },
                     isCancelled = { coroutineContext[kotlinx.coroutines.Job]?.isActive == false },
                 )
+            } catch (e: com.abrah.nightmare.NeedsDownload) {
+                controlFile.delete()
+                throw com.abrah.nightmare.NeedsDownload(e.tool, "node \"${node.id}\": ${e.message}")
             } catch (e: Exception) {
                 controlFile.delete()
                 throw IllegalStateException("node \"${node.id}\": ${e.message ?: e.javaClass.simpleName}")
@@ -486,7 +505,7 @@ object WanVideoNode : NodeType {
                 if (r.code == -1 && log.any { NPU_MAP_FAILED.containsMatchIn(it) }) {
                     throw IllegalStateException(
                         "node \"${node.id}\": the NPU could not hold this clip's working memory " +
-                            "(${w}x$h, ${frames / FPS} s). Choose fewer seconds or 480p [${r.body}]"
+                            "(${w}x$h, ${frames / FPS} s). " + mapAdvice(w, h, loras.isNotEmpty()) + " [${r.body}]"
                     )
                 }
                 throw IllegalStateException("node \"${node.id}\": ${com.abrah.nightmare.explainOpFailure(r.code, r.body)}")

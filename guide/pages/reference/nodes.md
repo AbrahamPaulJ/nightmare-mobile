@@ -166,7 +166,7 @@ Wan 2.2 Fun Control: the picture wired into **image** moving like the video wire
 |---|---|
 | **Seed** | `0` = a new clip every Run |
 | **Width**, **Height** | As on Wan video |
-| **Mode** | Pose, Depth or As is: how the video becomes the motion. The ⓘ says which to use when ([Motion transfer](../flows/video.md#motion-transfer)) |
+| **Mode** | Pose or As is: how the video becomes the motion. The ⓘ says which to use when ([Motion transfer](../flows/video.md#motion-transfer)) |
 | **Crop** | Which part of your picture is used, as on Wan video |
 | **Video** | Tap the preview. Two handles choose the part of the video that drives the clip; its length is the clip's (up to 5 s). A box on that part's first frame, at the clip's shape, cuts every frame the same way |
 

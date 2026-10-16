@@ -142,6 +142,15 @@ class ApiTest {
         assertEquals("/up/image-AAAA", g.byId["image"]!!.params["uri"])
     }
 
+    /** ⭐ Motion transfer over the API: the driving clip reaches the Video node, and only a Video node. */
+    @Test
+    fun aClipBecomesTheVideoNodesFile() {
+        val motion = com.abrah.nightmare.canvas.motionTransferWorkflow().graph
+        val g = applyOverrides(motion, NODE_TYPES, RunRequest.parse("""{"flow":"motion","videos":{"clip":"AAAA"}}"""), null) { node, b64 -> "/up/$node-$b64" }
+        assertEquals("/up/clip-AAAA", g.byId["clip"]!!.params["uri"])
+        assertTrue(refused("""{"flow":"x","videos":{"image":"AAAA"}}""").contains("not a video node"))
+    }
+
     @Test
     fun everyMistakeIsNamedBeforeAnythingRuns() {
         assertTrue(refused("""{"flow":"x","params":{"nope":{"seed":"1"}}}""").contains("nope"))

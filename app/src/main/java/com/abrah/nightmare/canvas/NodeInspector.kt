@@ -123,6 +123,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.lazy.items
 import com.abrah.nightmare.ui.MeasureTextStyle
+import com.abrah.nightmare.ui.fadingEdges
 import com.abrah.nightmare.ui.NoteTextStyle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
@@ -757,7 +758,7 @@ fun NodeInspector(
                 val i = ordered.indexOfFirst { it.id == nodeId }
                 if (i > 0) list.animateScrollToItem(i)
             }
-            androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f), state = list) {
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fadingEdges(list), state = list) {
                 ordered.forEachIndexed { i, n ->
                     item(key = n.id) {
                         if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(horizontal = gutter, vertical = 4.dp))
@@ -1270,7 +1271,10 @@ internal fun NodeInspectorBody(
             .fillMaxWidth()
             .padding(horizontal = gutter)
             .padding(bottom = 20.dp)
-            .then(if (scrolls) Modifier.navigationBarsPadding().verticalScroll(rememberScrollState()) else Modifier),
+            // ⭐ Fades at an edge with more beyond it ([com.abrah.nightmare.ui.fadingEdges]), not a hard cut.
+            .then(if (scrolls) rememberScrollState().let {
+                Modifier.navigationBarsPadding().fadingEdges(it).verticalScroll(it)
+            } else Modifier),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
@@ -2662,7 +2666,6 @@ internal fun NodeInspectorBody(
                     { id ->
                         when (com.abrah.nightmare.npu.WanFun.Mode.of(id)) {
                             com.abrah.nightmare.npu.WanFun.Mode.POSE -> ctxRes.getString(R.string.wan_motion_pose)
-                            com.abrah.nightmare.npu.WanFun.Mode.DEPTH -> ctxRes.getString(R.string.wan_motion_depth)
                             com.abrah.nightmare.npu.WanFun.Mode.AS_IS -> ctxRes.getString(R.string.wan_motion_as_is)
                         }
                     }

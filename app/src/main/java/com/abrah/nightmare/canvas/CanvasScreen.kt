@@ -1156,9 +1156,10 @@ private fun ViewsInfoDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 for ((icon, name, body) in listOf(
-                    Triple(com.abrah.nightmare.ui.AgentIcon, R.string.agent_title, R.string.views_info_chat),
                     Triple(com.abrah.nightmare.ui.NodesIcon, R.string.view_nodes, R.string.views_info_default),
                     Triple(com.abrah.nightmare.ui.GraphIcon, R.string.view_graph, R.string.views_info_advanced),
+                    // ⚠ Chat last: it is optional (Settings), the other two are the app (the user's call, 2026-10-16).
+                    Triple(com.abrah.nightmare.ui.AgentIcon, R.string.agent_title, R.string.views_info_chat),
                 )) {
                     Row(verticalAlignment = Alignment.Top) {
                         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 2.dp).size(20.dp))

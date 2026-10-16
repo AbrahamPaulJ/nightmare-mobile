@@ -50,7 +50,6 @@ internal fun MotionModeInfo(onDismiss: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 for ((name, body) in listOf(
                     R.string.wan_motion_pose to R.string.motion_info_pose,
-                    R.string.wan_motion_depth to R.string.motion_info_depth,
                     R.string.wan_motion_as_is to R.string.motion_info_as_is,
                 )) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

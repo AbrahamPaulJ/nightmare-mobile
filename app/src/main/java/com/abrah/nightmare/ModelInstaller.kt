@@ -156,12 +156,17 @@ object ModelInstaller {
                         onProgress(Progress(p.phase, before + p.done, total))
                     }, isCancelled)
                     val part = File(modelDir, f.name + ".part")
-                    convert.run(src, part, { done, all ->
+                    val written = convert.run(src, part, { done, all ->
                         onProgress(Progress("converting", before + done * f.sourceBytes / all.coerceAtLeast(1L), total))
                     }, isCancelled)
-                    if (part.length() != f.bytes) {
+                    // ⚠⚠ The WRITER's count, not `part.length()`: on Android 17 that read 0 for a finished
+                    // 2.28 GB Anima conversion (a tester's S25 and ours, 2026-10-16), so every Anima Turbo
+                    // 1.1 download failed at the very end. All four logged until it is understood.
+                    val opened = runCatching { java.io.RandomAccessFile(part, "r").use { it.length() } }.getOrDefault(-1L)
+                    Log.i(TAG, "converted ${f.name}: wrote $written, exists ${part.exists()}, length ${part.length()}, opened $opened")
+                    if (written != f.bytes) {
                         part.delete()
-                        throw IOException("${f.name}: converted to ${part.length()} bytes, expected ${f.bytes}")
+                        throw IOException("${f.name}: converted to $written bytes, expected ${f.bytes}")
                     }
                     if (!part.renameTo(out)) throw IOException("could not move ${part.name} into place")
                     src.delete()

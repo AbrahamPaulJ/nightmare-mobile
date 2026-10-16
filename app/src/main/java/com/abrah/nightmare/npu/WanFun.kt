@@ -100,9 +100,12 @@ object WanFun {
         return if (v[2] <= 0f || v[3] <= 0f) null else v.toFloatArray()
     }
 
-    /** How a driving video becomes the control video. */
+    /**
+     * How a driving video becomes the control video. ⚠ No Depth (the user's call, 2026-10-16): Depth Anything
+     * on the CPU took 108 s for a 5 s clip against Pose's 12 s (GitHub #40's log); a saved `depth` opens as Pose.
+     */
     enum class Mode(val id: String) {
-        POSE("pose"), DEPTH("depth"), AS_IS("as_is");
+        POSE("pose"), AS_IS("as_is");
 
         companion object {
             fun of(id: String?): Mode = entries.firstOrNull { it.id == id } ?: POSE
@@ -149,9 +152,9 @@ object WanFun {
 
     /**
      * ⭐⭐ The control video for a clip: [uri]'s frames at 24 fps, centre-cropped to [w]x[h], each made a
-     * pose skeleton, a depth map or kept as it is ([mode]), written to [out] in the NMV1 layout the
+     * pose skeleton or kept as it is ([mode]), written to [out] in the NMV1 layout the
      * backend reads (`"NMV1"`, int32 LE w, h, count, fps, then RGB8 frames). Returns the frame count.
-     * ⚠ Blocking: ~50-100 ms a frame for pose, ~1 s for depth; [onFrame] reports it.
+     * ⚠ Blocking: ~100 ms a frame for pose (121 frames in 12 s on an SM8750, GitHub #40); [onFrame] reports it.
      */
     fun buildControl(
         context: Context,
@@ -193,9 +196,9 @@ object WanFun {
                     }
                     val control = when (mode) {
                         Mode.POSE -> com.abrah.nightmare.pose.PoseDetector.skeleton(context, framed)
-                            ?: throw IOException("the Pose Detector is not installed (Models, Tools)")
-                        Mode.DEPTH -> com.abrah.nightmare.pose.DepthEstimator.depth(context, framed)
-                            ?: throw IOException("the Depth Estimator is not installed (Models, Tools)")
+                            ?: throw com.abrah.nightmare.NeedsDownload(
+                                com.abrah.nightmare.NeedsDownload.POSE, "the Pose Detector is not installed (Models, Tools)",
+                            )
                         Mode.AS_IS -> framed
                     }.let { if (it.width != w || it.height != h) Bitmap.createScaledBitmap(it, w, h, true) else it }
                     control.getPixels(px, 0, w, 0, 0, w, h)

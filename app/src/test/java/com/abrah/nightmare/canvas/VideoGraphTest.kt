@@ -333,7 +333,7 @@ class VideoGraphTest {
         assertEquals(null, wan.memoryBudget(wan.pinnedBytes(832, 480, 121), s25, 79))
         assertEquals(null, wan.memoryBudget(wan.pinnedBytes(704, 1280, 121), gb16, 79))
         assertEquals(null, wan.memoryBudget(wan.pinnedBytes(704, 1280, 121), 0, 0))
-        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(480, 832, 49), s25, 75))
+        assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(480, 832, 49), s25, 75)) // every clip on v75: resident rendered noise
         assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(480, 832, 121), s25, 75))
         assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(704, 1280, 49), gb16, 75))
     }

@@ -1206,8 +1206,43 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 BackendKeepAliveService.hold(ctx, BackendKeepAliveService.DOWNLOAD, text(R.string.notification_downloading))
             } else if (was != null && v == null) {
                 BackendKeepAliveService.release(ctx, BackendKeepAliveService.DOWNLOAD)
+                // ⭐ The next queued model, however this one ended (done, failed, cancelled).
+                if (downloadQueue.isNotEmpty()) viewModelScope.launch { startNextQueued() }
             }
+            if (was != v) markQueue()
         }
+
+    /**
+     * ⭐⭐ Model downloads waiting for the one in flight, in tap order (a tester's ask, 2026-10-16: "after
+     * queuing one model, the second downloads automatically"). A Download tap while another runs queues it;
+     * a tap on a queued row takes it out. ⚠ Models only ([installModel]); the tools and LoRAs still take one
+     * tap each, as they are small.
+     */
+    var downloadQueue by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /** ⭐ Each row's Queued / can-queue state, from [downloadQueue] and [installing]. */
+    private fun markQueue() {
+        val now = installingState
+        fun mark(r: com.abrah.nightmare.ui.ModelRow) =
+            r.copy(queued = r.spec.id in downloadQueue, queueable = now != null && now != r.spec.id)
+        modelRows = modelRows.map(::mark)
+        wanRows = wanRows.map(::mark)
+    }
+
+    private fun startNextQueued() {
+        if (installing != null) return
+        val next = downloadQueue.firstOrNull() ?: return
+        downloadQueue = downloadQueue.drop(1)
+        val spec = (ModelCatalog.all + ModelCatalog.video).firstOrNull { it.id == next }
+        if (spec == null) {
+            markQueue()
+            startNextQueued()
+            return
+        }
+        say("starting the queued download: ${spec.label}")
+        installModel(spec)
+    }
 
     /**
      * ⭐⭐ The import in flight, for the banner that says one is happening.
@@ -1504,7 +1539,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             if (gen == rowsGen) {
                 // ⚠ Progress read NOW, not at the snapshot: a download ticking
                 // while the worker ran must not be shown as stopped.
-                val withProgress = rows.map { if (it.spec.id == installing) it.copy(progress = installProgress) else it }
+                val withProgress = rows.map {
+                    (if (it.spec.id == installing) it.copy(progress = installProgress) else it)
+                        .copy(queued = it.spec.id in downloadQueue, queueable = installing != null && installing != it.spec.id)
+                }
                 modelRows = withProgress.filter { it.spec !in ModelCatalog.video }
                 wanRows = withProgress.filter { it.spec in ModelCatalog.video }
                 ModelCatalog.installedIds = ids
@@ -1732,7 +1770,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun installModel(spec: ModelSpec) {
-        if (installing != null) return
+        if (installing != null) {
+            // ⭐ Queued behind the download in flight ([downloadQueue]); a second tap takes it out.
+            if (installing == spec.id) return
+            downloadQueue = if (spec.id in downloadQueue) downloadQueue - spec.id else downloadQueue + spec.id
+            markQueue()
+            return
+        }
         val ctx = getApplication<Application>()
         installing = spec.id
         cancelInstall = false
@@ -2380,6 +2424,33 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             override val label get() = model.label
             override val installId get() = model.installId
         }
+
+        /**
+         * ⭐ A Models, Tools download a node asked for ([com.abrah.nightmare.NeedsDownload]): the Pose
+         * Detector, the Depth Estimator, a ControlNet or an IP-Adapter, by [key] (the user's call, 2026-10-16).
+         */
+        data class Tool(val key: String, override val label: String) : MissingModel {
+            override val installId get() = when (key) {
+                com.abrah.nightmare.NeedsDownload.POSE -> "pose-tool"
+                com.abrah.nightmare.NeedsDownload.DEPTH -> "depth-tool"
+                else -> "cn-tool-$key"
+            }
+        }
+    }
+
+    /** ⭐ [MissingModel.Tool] for a [com.abrah.nightmare.NeedsDownload.tool], named as Models, Tools names it. */
+    private fun toolMissing(key: String): MissingModel.Tool = MissingModel.Tool(
+        key,
+        when (key) {
+            com.abrah.nightmare.NeedsDownload.POSE -> com.abrah.nightmare.pose.PoseDetector.LABEL
+            com.abrah.nightmare.NeedsDownload.DEPTH -> com.abrah.nightmare.pose.DepthEstimator.LABEL
+            else -> cnRows[key]?.label ?: key
+        },
+    )
+
+    /** ⭐ A run that failed for want of a download: the popup, not only the error line. */
+    private fun offerDownloadFor(r: GraphRun) {
+        r.missing?.let { missingModel = toolMissing(it) }
     }
 
     var missingModel by mutableStateOf<MissingModel?>(null)
@@ -2397,6 +2468,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         MissingModel.Engine -> com.abrah.nightmare.DitEngine.BYTES
         is MissingModel.Translate -> m.source.bytes
         is MissingModel.Describe -> m.model.bytes
+        is MissingModel.Tool -> when (m.key) {
+            com.abrah.nightmare.NeedsDownload.POSE -> com.abrah.nightmare.pose.PoseDetector.BYTES
+            com.abrah.nightmare.NeedsDownload.DEPTH -> com.abrah.nightmare.pose.DepthEstimator.BYTES
+            else -> cnRows[m.key]?.bytes ?: 0L
+        }
     }
 
     /**
@@ -2425,6 +2501,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             MissingModel.Engine -> com.abrah.nightmare.DitEngine.installed
             is MissingModel.Translate -> translateRows[m.source]?.installed == true
             is MissingModel.Describe -> describeRows[m.model]?.installed == true
+            is MissingModel.Tool -> when (m.key) {
+                com.abrah.nightmare.NeedsDownload.POSE -> poseRow?.installed == true
+                com.abrah.nightmare.NeedsDownload.DEPTH -> depthRow?.installed == true
+                else -> cnRows[m.key]?.installed == true
+            }
         }
 
     /**
@@ -2486,6 +2567,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 missingModel = MissingModel.Engine
                 return false
             }
+        }
+        // ⭐ Motion transfer's Pose mode reads every frame with the Pose Detector: asked here, before a
+        // backend launch, rather than failing after it (the user's ask, 2026-10-16).
+        val posing = graph.nodes.any { n ->
+            n.type == com.abrah.nightmare.npu.WanFunNode.name &&
+                com.abrah.nightmare.npu.WanFun.Mode.of(
+                    com.abrah.nightmare.npu.WanFunNode.effectiveParams(n)[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE]
+                ) == com.abrah.nightmare.npu.WanFun.Mode.POSE
+        }
+        if (posing && !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx)) {
+            missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.POSE)
+            return false
         }
         // ⭐⭐⭐ **The segmenter is demanded ONLY by a mask that was actually
         // TAPPED**, never by the feature being switched on.
@@ -2549,6 +2642,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             MissingModel.Engine -> installDitEngine()
             is MissingModel.Translate -> installTranslation(m.source)
             is MissingModel.Describe -> installDescribe(m.model)
+            is MissingModel.Tool -> when (m.key) {
+                com.abrah.nightmare.NeedsDownload.POSE -> installPose()
+                com.abrah.nightmare.NeedsDownload.DEPTH -> installDepth()
+                else -> installControlNet(m.key)
+            }
         }
     }
 
@@ -7877,6 +7975,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 // ⚠ Stops the sweep. Eight runs that all fail the same way is
                 // eight times the wait for one message.
                 runError = learnFromFailure(r.error)
+                offerDownloadFor(r)
                 say("batch: stopped. ${r.error}", bad = true)
                 break
             }
@@ -8176,6 +8275,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         afterCanvasRun(r)
+        offerDownloadFor(r)
         r.error?.let {
             runError = learnFromFailure(it)
             say("canvas: $it", bad = true)

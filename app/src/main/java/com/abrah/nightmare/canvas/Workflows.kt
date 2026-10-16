@@ -553,7 +553,7 @@ val RECIPES: List<Recipe> = listOf(
     // ⭐⭐ Motion transfer, LAST: the most demanding flow in the list.
     Recipe(
         MOTION, "Motion transfer",
-        "Your picture moving like a video you choose: its pose (or depth) frame by frame, with Wan 2.2 Fun Control.",
+        "Your picture moving like a video you choose: its pose frame by frame, with Wan 2.2 Fun Control.",
         ::motionTransferWorkflow,
         usesCheckpoint = false,
         minArch = com.abrah.nightmare.ModelCatalog.WAN22_FUN.builds.minOf { it.minArch },

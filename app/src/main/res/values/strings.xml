@@ -84,6 +84,7 @@
 
     <!-- Models and upscalers. -->
     <string name="download">Download</string>
+    <string name="download_queued">Queued</string>
     <string name="download_mb">Download %1$d MB</string>
     <string name="delete">Delete</string>
     <string name="use">Use</string>
@@ -427,7 +428,7 @@
     <string name="objects_opening_photo">opening the photo…</string>
     <string name="objects_reading_photo">reading the photo…</string>
     <string name="lora_none_add">No LoRAs on this phone yet. Add one and it will appear here.</string>
-    <string name="lora_none_settings">No LoRAs on this phone yet. Import a .safetensors on the Settings tab and it will appear here.</string>
+    <string name="lora_none_settings">No LoRAs on this phone yet.</string>
     <string name="lora_missing">not on this phone. Import it or untick it</string>
     <string name="lora_cd_note">note for %1$s</string>
     <string name="lora_note_hint">Trigger words on the first line, then strength, settings, how to use it…</string>
@@ -678,7 +679,7 @@
     <string name="hint_cfg_distilled">1 is what these models are distilled for. Above 1 the negative prompt starts being read, and each step costs about twice as long</string>
     <string name="hint_dit_size">any size in %1$d-pixel steps, either edge. No reload, and a bigger picture takes proportionally longer</string>
     <string name="hint_fixed_sizes">only the sizes this model was trained at. Other sizes come out in blocks. No reload</string>
-    <string name="hint_loras">adapters applied on top of this checkpoint. Import them on the Settings tab</string>
+    <string name="hint_loras">adapters applied on top of this checkpoint</string>
     <string name="hint_controlnet">canny finds the edges of a photo; depth and openpose take a ready-made depth map or pose skeleton</string>
     <string name="hint_ip_adapter">plus copies the reference\'s subject and style; face follows a face</string>
     <string name="hint_autosave">keep every Run in Results</string>
@@ -944,7 +945,7 @@
     <string name="views_next_cd">Next view</string>
     <string name="views_choose_cd">Choose a view</string>
     <string name="views_info_title">Three views of one flow</string>
-    <string name="views_info_chat">Ask for pictures in words. An AI model you bring your own key for builds the flow, runs it and shows the result here.</string>
+    <string name="views_info_chat">Ask for pictures in words. An AI model you bring your own key for builds the flow, runs it and shows the result here. Turn it on or off in Settings.</string>
     <string name="views_info_default">One step at a time: the prompt, then the picture settings, then the result. The easy way in.</string>
     <string name="views_info_advanced">The whole flow as connected boxes. Add nodes, wire them and build flows of your own.</string>
     <string name="views_info_note">All three show the same flow. Switch at any time; Run works in each.</string>
@@ -1047,29 +1048,27 @@
     <string name="cd_fold_log">Fold the log</string>
     <string name="cd_open_bar">Show the whole bar</string>
     <string name="cd_fold_bar">Fold the bar</string>
-    <string name="wan_fun_about">Motion transfer: your picture moving like a video you choose (its pose or depth). Uses Wan 2.2 Turbo\'s text encoder and decoder when Turbo is installed (about 3.7 GB, otherwise 7.3 GB).</string>
+    <string name="wan_fun_about">Motion transfer: your picture moving like a video you choose (its pose). Uses Wan 2.2 Turbo\'s text encoder and decoder when Turbo is installed (about 3.7 GB, otherwise 7.3 GB).</string>
     <string name="video_model">Model</string>
     <string name="video_model_wan">Wan 2.2</string>
     <string name="video_model_neodragon">Neodragon (fast)</string>
     <string name="hint_video_model">Wan 2.2 looks much better and takes minutes; Neodragon makes 2 s in about 30 s</string>
     <string name="flow_motion_name">Motion transfer</string>
-    <string name="flow_motion_about">Your picture moving like a video you choose: its pose or depth, frame by frame, with Wan 2.2 Fun Control.</string>
+    <string name="flow_motion_about">Your picture moving like a video you choose: its pose, frame by frame, with Wan 2.2 Fun Control.</string>
     <string name="video_in_none">No video chosen</string>
     <string name="video_in_first">First frame</string>
     <string name="video_in_last">Last frame</string>
     <string name="video_in_length">%1$.1f s</string>
     <string name="video_in_choose">Choose a video</string>
     <string name="video_in_clear">Remove the video</string>
-    <string name="hint_motion_mode">How the video becomes the motion: Pose follows the body (MoveNet), Depth follows shapes and the camera, As is uses a pose or depth video you already have</string>
+    <string name="hint_motion_mode">How the video becomes the motion: Pose follows the body (MoveNet), As is uses a pose or depth video you already have</string>
     <string name="wan_motion_pose">Pose</string>
-    <string name="wan_motion_depth">Depth</string>
     <string name="wan_motion_as_is">As is</string>
     <string name="inspector_cd_choice_info">What each %1$s does</string>
     <string name="motion_info_title">Which mode to use</string>
     <string name="motion_info_pose">For a real video of a person: dancing, walking, waving. The pose is read from every frame and your picture copies it. Body only: hands and face are not followed.</string>
-    <string name="motion_info_depth">For camera moves, objects and whole scenes, when shapes matter more than a pose. A depth map is made from every frame, so it is slower (about a second a frame).</string>
     <string name="motion_info_as_is">For a video that already is a control video: a pose skeleton or a depth map made in another app. Its frames go in untouched. An ordinary video here will not work well.</string>
-    <string name="motion_info_note">Pose and Depth need the Pose Detector or the Depth Estimator (Models, Tools).</string>
+    <string name="motion_info_note">Pose needs the Pose Detector (Models, Tools).</string>
     <string name="driving_tab">Video</string>
     <string name="driving_none">Wire a Video node into \"control\" and choose a video: its motion is what your picture does.</string>
     <string name="driving_reading">Reading the video…</string>

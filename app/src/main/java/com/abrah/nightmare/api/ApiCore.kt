@@ -52,7 +52,8 @@ class ApiCore(private val ctx: Context, val ops: HarnessOps, private val holder:
 
     fun models(): JSONObject {
         val arr = JSONArray()
-        for (s in ModelCatalog.installed(ctx)) {
+        // ⭐ Wan too (Turbo, Fun Control): they are not checkpoints, but a flow names them all the same.
+        for (s in ModelCatalog.installed(ctx) + ModelCatalog.video.filter { it.installed(ctx) }) {
             arr.put(
                 JSONObject()
                     .put("id", s.id)
@@ -237,6 +238,25 @@ class ApiCore(private val ctx: Context, val ops: HarnessOps, private val holder:
             val spec = ModelCatalog.byId(id)
             if (spec == null || !spec.installed(ctx)) return "node \"${n.id}\" needs model \"$id\", which is not installed"
             if (spec.isDit && !DitEngine.isInstalled(ctx)) return "${spec.label} needs the DiT engine. Download it in the app first"
+        }
+        // ⭐ Wan names no `model` param: its node is its model, as in `modelsPresentOrAsk`.
+        for (n in graph.nodes) {
+            val spec = when (n.type) {
+                com.abrah.nightmare.npu.WanVideoNode.name -> ModelCatalog.WAN22
+                com.abrah.nightmare.npu.WanFunNode.name -> ModelCatalog.WAN22_FUN
+                else -> continue
+            }
+            if (!spec.installed(ctx)) return "node \"${n.id}\" needs ${spec.label} (\"${spec.id}\"), which is not installed"
+            if (!DitEngine.isInstalled(ctx)) return "${spec.label} needs the DiT engine. Download it in the app first"
+            val pose = com.abrah.nightmare.npu.WanFun.Mode.of(
+                com.abrah.nightmare.npu.WanFunNode.effectiveParams(n)[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE]
+            ) == com.abrah.nightmare.npu.WanFun.Mode.POSE
+            if (n.type == com.abrah.nightmare.npu.WanFunNode.name && pose && !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx)) {
+                return "node \"${n.id}\" reads poses with the Pose Detector, which is not installed. Download it in the app (Models, Tools) or set motion_mode to as_is"
+            }
+        }
+        graph.nodes.firstOrNull { it.type == com.abrah.nightmare.npu.LoadVideoNode.name && it.params["uri"].isNullOrBlank() }?.let {
+            return "video node \"${it.id}\" has no video. Send one in \"videos\""
         }
         // ⚠ An empty picture node the run cannot skip ([skipEmptyPictures]) would fail; say it now.
         val (left, _) = skipEmptyPictures(graph)

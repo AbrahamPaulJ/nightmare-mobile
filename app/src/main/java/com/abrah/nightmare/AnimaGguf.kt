@@ -23,6 +23,8 @@ object AnimaGguf {
     internal val rule = object : SafetensorsGguf.Rule {
         override val prefixes = listOf("model.diffusion_model.", "net.")
         override val kv = listOf("general.architecture" to "cosmos")
+        // ⚠ Bedovyy's file has these too, and TURBO_11_BYTES counts them.
+        override val kvU32 = listOf("general.quantization_version" to 2, "general.file_type" to 7)
         override fun check(names: List<String>) {
             if (names.none { it.startsWith("llm_adapter.") }) throw IOException("not an Anima DiT (no llm_adapter)")
         }

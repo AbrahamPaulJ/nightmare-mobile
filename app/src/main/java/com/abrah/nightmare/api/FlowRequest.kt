@@ -26,7 +26,8 @@ class ApiError(val code: Int, message: String) : Exception(message)
  * 3. [knobs] — `seed`, `steps`, `cfg`, `denoise`, `scheduler`, `width`, `height`, `aspect`,
  *    `loras`: every SAMPLER that has the widget;
  * 4. [params] — per node id, any widget of that node's type;
- * 5. [images] — per `core.image` node id, a base64 picture.
+ * 5. [images] — per `core.image` node id, a base64 picture;
+ * 6. [videos] — per `core.video` node id, a base64 clip (Motion transfer's driving video).
  *
  * ⚠⚠ Every name is checked against the node schema before anything runs: an unknown node,
  * a widget the node does not have, a value off a chip list or out of range is a 400 that
@@ -41,6 +42,7 @@ data class RunRequest(
     val knobs: Map<String, String> = emptyMap(),
     val params: Map<String, Map<String, String>> = emptyMap(),
     val images: Map<String, String> = emptyMap(),
+    val videos: Map<String, String> = emptyMap(),
     /** Server-sent events while it runs; otherwise one JSON answer at the end. */
     val stream: Boolean = false,
 ) {
@@ -59,7 +61,7 @@ data class RunRequest(
             val graph = o.optJSONObject("graph")?.toString()
             if ((flow == null) == (graph == null)) throw ApiError(400, "give exactly one of \"flow\" and \"graph\"")
             val unknown = o.keys().asSequence().toSet() -
-                (KNOBS + listOf("flow", "graph", "model", "prompt", "negative", "params", "images", "stream"))
+                (KNOBS + listOf("flow", "graph", "model", "prompt", "negative", "params", "images", "videos", "stream"))
             if (unknown.isNotEmpty()) throw ApiError(400, "unknown field(s): ${unknown.sorted().joinToString()}")
             fun obj(k: String): Map<String, String> {
                 val v = o.optJSONObject(k) ?: return emptyMap()
@@ -80,6 +82,7 @@ data class RunRequest(
                 knobs = KNOBS.mapNotNull { k -> str(k)?.let { k to it } }.toMap(),
                 params = params,
                 images = obj("images"),
+                videos = obj("videos"),
                 stream = o.optBoolean("stream", false),
             )
         }
@@ -88,8 +91,8 @@ data class RunRequest(
 
 /**
  * ⭐⭐ [graph] with [req]'s overrides applied — see [RunRequest]. [spec] is [RunRequest.model]
- * resolved (null = unchanged). [picture] stores one decoded base64 picture for a `core.image`
- * node and returns the path its `uri` becomes. Pure apart from [picture]; throws [ApiError].
+ * resolved (null = unchanged). [picture] stores one decoded base64 picture (or clip) for a
+ * `core.image` (`core.video`) node and returns the path its `uri` becomes. Pure apart from [picture]; throws [ApiError].
  */
 fun applyOverrides(
     graph: Graph,
@@ -126,6 +129,13 @@ fun applyOverrides(
     for ((id, b64) in req.images) {
         val n = g.byId[id] ?: throw ApiError(400, "images: no node \"$id\" in this flow")
         if (n.type != LoadImageNode.name) throw ApiError(400, "images: \"$id\" is a ${n.type}, not an image node")
+        g = g.withParam(id, "uri", picture(id, b64))
+    }
+    for ((id, b64) in req.videos) {
+        val n = g.byId[id] ?: throw ApiError(400, "videos: no node \"$id\" in this flow")
+        if (n.type != com.abrah.nightmare.npu.LoadVideoNode.name) {
+            throw ApiError(400, "videos: \"$id\" is a ${n.type}, not a video node")
+        }
         g = g.withParam(id, "uri", picture(id, b64))
     }
     return g

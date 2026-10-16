@@ -31,6 +31,12 @@ object SafetensorsGguf {
         val prefixes: List<String> get() = emptyList()
         /** GGUF key/values written after the header, as (key, string value). */
         val kv: List<Pair<String, String>> get() = emptyList()
+        /**
+         * ⚠ …then these, as (key, uint32 value). They are part of the file's SIZE, which the catalogue
+         * checks: Anima's two went missing in the 1.6.167 refactor, its file came out 64 bytes short, and
+         * every Anima Turbo 1.1 download failed at the end of the conversion (a tester, 2026-10-16).
+         */
+        val kvU32: List<Pair<String, Int>> get() = emptyList()
         /** ⚠ Throws when [names] are not this model's: a wrong file must fail here, not render noise. */
         fun check(names: List<String>)
         /** The output shape (torch order) — [shape] unless the model pads it. */
@@ -73,14 +79,17 @@ object SafetensorsGguf {
         return tensors to (8 + headerLen)
     }
 
-    fun convert(src: File, dst: File, rule: Rule, onProgress: (Long, Long) -> Unit, isCancelled: () -> Boolean) {
+    /** ⭐ Returns the bytes written, from the open file's position after a sync ([Converter.run]). */
+    fun convert(src: File, dst: File, rule: Rule, onProgress: (Long, Long) -> Unit, isCancelled: () -> Boolean): Long {
         RandomAccessFile(src, "r").use { raf ->
             val (tensors, base) = read(raf, rule)
             val total = tensors.sumOf { it.outBytes }
-            BufferedOutputStream(FileOutputStream(dst), 1 shl 20).use { out ->
+            val fos = FileOutputStream(dst)
+            BufferedOutputStream(fos, 1 shl 20).use { out ->
                 val head = Le()
-                head.bytes("GGUF".toByteArray()); head.u32(3); head.u64(tensors.size.toLong()); head.u64(rule.kv.size.toLong())
+                head.bytes("GGUF".toByteArray()); head.u32(3); head.u64(tensors.size.toLong()); head.u64((rule.kv.size + rule.kvU32.size).toLong())
                 for ((k, v) in rule.kv) { head.str(k); head.u32(8); head.str(v) }
+                for ((k, v) in rule.kvU32) { head.str(k); head.u32(4); head.u32(v) }
                 var offset = 0L
                 for (t in tensors) {
                     head.str(t.name); head.u32(t.outShape.size)
@@ -119,6 +128,9 @@ object SafetensorsGguf {
                     done += t.outBytes
                     onProgress(done, total)
                 }
+                out.flush()
+                fos.fd.sync()
+                return fos.channel.position()
             }
         }
     }

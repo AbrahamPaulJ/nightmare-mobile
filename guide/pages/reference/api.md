@@ -21,7 +21,7 @@ Authorization: Bearer <token>
 | call | what it does |
 |---|---|
 | `GET /info` | the app, its version, whether it is rendering |
-| `GET /models` | installed checkpoints: id, family, native size, steps / CFG / scheduler |
+| `GET /models` | installed checkpoints and video models: id, family, native size, steps / CFG / scheduler |
 | `GET /flows` | the recipes (`txt2img`, `img2img`, `inpaint`, `swap_t2i`, …), your saved flows (`saved:<name>`) and `current`, which is what is on the canvas |
 | `GET /flows/<id>` | a flow's nodes with every setting each one takes |
 | `POST /run` | runs a flow as described below |
@@ -53,6 +53,7 @@ What you can set:
   **`aspect`**, **`loras`**: every generate node that has the setting.
 - **`params`**: any setting of any node: `{"generate": {"controlnet": "canny"}}`.
 - **`images`**: a picture for an image node, base64: `{"image": "<base64>"}`.
+- **`videos`**: a clip for a video node, base64 MP4: `{"clip": "<base64>"}` (Motion transfer's driving video, `flow: "motion"`).
 
 A name the flow does not have, or a value it does not accept, is refused with a sentence saying
 which. Nothing runs. An empty picture is skipped the way the Run button skips it (a warning in

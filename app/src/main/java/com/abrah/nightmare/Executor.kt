@@ -42,6 +42,19 @@ enum class Outcome { RAN, CACHED, FAILED, BLOCKED }
  */
 class NeedsInput(message: String) : Exception(message)
 
+/**
+ * ⭐ A node that needs a DOWNLOAD it only discovered while running (a ControlNet's estimator reading a photo,
+ * the Pose Detector for Motion transfer): the run fails as usual and the canvas offers the download in its
+ * missing-model popup (the user's call, 2026-10-16: "always ask to download with a popup").
+ * [tool] is `pose`, `depth`, or a Models, Tools row key (a ControlNet id, `ip_<adapter>`).
+ */
+class NeedsDownload(val tool: String, message: String) : Exception(message) {
+    companion object {
+        const val POSE = "pose"
+        const val DEPTH = "depth"
+    }
+}
+
 data class NodeRun(
     val id: String,
     val type: String,
@@ -65,6 +78,8 @@ data class GraphRun(
     val prunedHandles: Int = 0,
     /** ⭐ The first node that stopped for a person ([NeedsInput]) — its id and why. */
     val waiting: Pair<String, String>? = null,
+    /** ⭐ The download the first failing node asked for ([NeedsDownload.tool]), for the canvas's popup. */
+    val missing: String? = null,
 ) {
     val ran get() = runs.count { it.outcome == Outcome.RAN }
     val cached get() = runs.count { it.outcome == Outcome.CACHED }
@@ -2892,6 +2907,7 @@ class Executor(
         fun resolve(src: Source): Value? = values[src.node]?.get(src.port ?: outName(src.node))
         var stopped: String? = null
         var waiting: Pair<String, String>? = null
+        var missingTool: String? = null
 
         // ⚠ Tracks what the BACKEND holds, so a group boundary is a change of
         // key rather than "this node names one".
@@ -3032,6 +3048,11 @@ class Executor(
                 // ⭐ Waiting on a person — BLOCKED, and no graph error.
                 waiting = waiting ?: (node.id to (e.message ?: "needs you"))
                 NodeRun(node.id, node.type, Outcome.BLOCKED, 0, e.message ?: "needs you")
+            } catch (e: NeedsDownload) {
+                // ⭐ A failure like any other, plus what to offer ([GraphRun.missing]).
+                if (stopped == null) missingTool = e.tool
+                stopped = stopped ?: "${node.id}: ${e.message}"
+                NodeRun(node.id, node.type, Outcome.FAILED, (wallNanos() - n0) / 1_000_000, e.message ?: "needs a download")
             } catch (e: Exception) {
                 // ⭐ The stack for the error report's share icon — the message
                 // below is all that reaches the screen.
@@ -3064,6 +3085,7 @@ class Executor(
             error = stopped,
             prunedHandles = pruned,
             waiting = waiting,
+            missing = missingTool,
         )
     }
 

@@ -160,6 +160,10 @@ data class ModelRow(
     val ramTight: Boolean = false,
     /** ⭐ Its files are Local Dream's ([com.abrah.nightmare.LocalDreamModels]): a badge, no Delete. */
     val fromLocalDream: Boolean = false,
+    /** ⭐ Waiting behind the download in flight (`HarnessViewModel.downloadQueue`); a tap takes it out. */
+    val queued: Boolean = false,
+    /** ⭐ Another model is downloading: Download stays live and queues this one. */
+    val queueable: Boolean = false,
 )
 
 /**
@@ -1026,6 +1030,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.videoModelItems(
                 onUse = { onUseWan(wan.spec) }.takeIf { wan.installed },
                 partial = wan.partial,
                 unsupportedNote = if (!wan.installed && wan.build == null) stringResource(R.string.cannot_run_it) else null,
+                queued = wan.queued,
+                queueable = wan.queueable,
             )
         }
 }

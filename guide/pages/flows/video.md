@@ -70,7 +70,7 @@ it at its own speed.
 
 ## Motion transfer
 
-*Your picture moving like a video you choose: its pose or depth, frame by frame.*
+*Your picture moving like a video you choose: its pose, frame by frame.*
 
 **Needs** Wan 2.2 Fun Control: about 3.7 GB with Wan 2.2 Turbo installed (it borrows Turbo's text
 encoder and decoder), 7.3 GB without. **Models → Video → Wan 2.2 Fun Control → Download.**
@@ -90,7 +90,6 @@ encoder and decoder), 7.3 GB without. **Models → Video → Wan 2.2 Fun Control
 | Mode | for |
 |---|---|
 | **Pose** | a real video of a person. The pose is read from every frame and your picture copies it. Body only: hands and face are not followed. Needs the Pose Detector (Models, Tools) |
-| **Depth** | camera moves, objects and whole scenes, when shapes matter more than a pose. Slower: about a second a frame to make the depth maps. Needs the Depth Estimator (Models, Tools) |
 | **As is** | a video that already is a control video: a pose skeleton or a depth map made elsewhere. An ordinary video here will not work well |
 
 Motion transfer takes no LoRAs: `<lora:…>` tags in its prompt are skipped, and the run log says

@@ -23,9 +23,13 @@ data class RemoteFile(
     val convert: Converter? = null,
 )
 
-/** ⭐ Turns a downloaded source file into the file the backend loads ([RemoteFile.convert]). */
+/**
+ * ⭐ Turns a downloaded source file into the file the backend loads ([RemoteFile.convert]).
+ * Returns the bytes written to [dst], counted on the open file after a sync: ⚠ `File.length()` read
+ * right after the write said 0 for a 2.28 GB file on Android 17 (two S25s, 2026-10-16).
+ */
 fun interface Converter {
-    fun run(src: java.io.File, dst: java.io.File, onProgress: (done: Long, total: Long) -> Unit, isCancelled: () -> Boolean)
+    fun run(src: java.io.File, dst: java.io.File, onProgress: (done: Long, total: Long) -> Unit, isCancelled: () -> Boolean): Long
 }
 
 /**

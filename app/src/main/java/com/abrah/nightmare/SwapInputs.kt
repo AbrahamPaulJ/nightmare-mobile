@@ -292,7 +292,7 @@ object SwapInputs {
                 )
             }
             if (!IpAdapter.isInstalled(context, ipAdapter)) {
-                throw NeedsInput("download IP-Adapter first. On the node's IP-Adapter tab or in Models, Tools")
+                throw NeedsDownload(IpAdapter.rowKey(ipAdapter), "download IP-Adapter first. On the node's IP-Adapter tab or in Models, Tools")
             }
             IpAdapter.ipDir(context, modelDir, ref, ipAdapter, ipScale, say).absolutePath
         }
@@ -304,10 +304,10 @@ object SwapInputs {
         val id = ControlNetCatalog.idFor(spec.family, type)
         val cn = controlnetFile(context, id)
         if (!cn.isFile) {
-            throw NeedsInput(
-                if (ControlNetCatalog.buildFor(id) == null) "the $type ControlNet is not available for this model or phone yet"
-                else "download the $type ControlNet first. On the node's ControlNet tab or in Models, Tools",
-            )
+            if (ControlNetCatalog.buildFor(id) == null) {
+                throw NeedsInput("the $type ControlNet is not available for this model or phone yet")
+            }
+            throw NeedsDownload(id, "download the $type ControlNet first. On the node's ControlNet tab or in Models, Tools")
         }
         control ?: throw NeedsInput(
             "ControlNet $type needs a picture. Pick one on the node or wire one into control, " +
@@ -322,7 +322,8 @@ object SwapInputs {
             },
         )
         val made = hint(context, control, type, frame, sizeFor(spec.family), aspect)
-        val bitmap = made.bitmap ?: throw NeedsInput(
+        val bitmap = made.bitmap ?: throw NeedsDownload(
+            if (made.missing == DEPTH) NeedsDownload.DEPTH else NeedsDownload.POSE,
             if (made.missing == DEPTH) {
                 "depth needs the ${com.abrah.nightmare.pose.DepthEstimator.LABEL} to read a photo. " +
                     "download it on the ControlNet tab or in Models, Tools (a ready-made depth map needs nothing)"

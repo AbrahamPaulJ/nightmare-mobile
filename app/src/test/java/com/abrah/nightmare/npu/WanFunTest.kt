@@ -87,7 +87,7 @@ class WanFunTest {
         assertEquals(com.abrah.nightmare.ModelCatalog.WAN22.id, WanVideoNode.contextKey(wan).model)
         assertEquals(com.abrah.nightmare.ModelCatalog.WAN22_FUN.id, WanFunNode.contextKey(motion).model)
         assertEquals(WanFun.Mode.POSE, WanFun.Mode.of(null))
-        assertEquals(WanFun.Mode.DEPTH, WanFun.Mode.of("depth"))
+        assertEquals(WanFun.Mode.POSE, WanFun.Mode.of("depth")) // Depth was removed: an old graph opens as Pose
         assertEquals(listOf("prompt", "image", WanFunNode.CONTROL), WanFunNode.inputs.map { it.name })
         assertEquals("VIDEO", WanFunNode.inputs.last().type)
     }

@@ -116,6 +116,20 @@ class PreviewSigTest {
         assertEquals(listOf("photo", "frame"), previewTargets(graph, types))
     }
 
+    /** ⭐ A Video node previews its poster without a Run; the Wan node it drives reaches the NPU, so never. */
+    @Test
+    fun aVideoNodeIsATargetAndWanIsNotFree() {
+        val g = Graph(
+            listOf(
+                Node("clip", com.abrah.nightmare.npu.LoadVideoNode.name, mapOf("uri" to "/x.mp4")),
+                Node("motion", com.abrah.nightmare.npu.WanFunNode.name, inputs = mapOf("control" to Source("clip", "video"))),
+            )
+        )
+        assertEquals(listOf("clip", "motion"), previewTargets(g, types))
+        assertNotNull(freeAncestry(g, "clip", types))
+        assertNull(freeAncestry(g, "motion", types))
+    }
+
     /**
      * ⚠⚠ `encode_text` has NO context key — encoding a prompt does not care
      * about the resolution — and it calls the backend anyway. Without the

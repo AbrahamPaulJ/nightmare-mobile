@@ -114,6 +114,32 @@ class SafetensorsGgufTest {
         }
     }
 
+    /**
+     * ⭐ Anima's header carries its three keys, as Bedovyy's file (and so [AnimaGguf.TURBO_11_BYTES]) does.
+     * The 1.6.167 writer dropped two, every Anima Turbo 1.1 conversion came out 64 bytes short and failed.
+     * The bytes are the 1.6.141 writer's: arch, then quantization_version 2, then file_type 7, then the 32 pad.
+     */
+    @Test
+    fun animaHeaderHasItsThreeKeys() {
+        val src = safetensors(listOf(t("model.diffusion_model.llm_adapter.w", 32, 32), t("model.diffusion_model.x_embedder.b", 32)))
+        val dst = File(tmp.root, "anima.gguf")
+        val written = AnimaGguf.convert(src, dst, { _, _ -> }, { false })
+        val b = java.nio.ByteBuffer.wrap(dst.readBytes()).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        assertEquals(dst.length(), written)
+        assertEquals(3L, b.getLong(16))
+        val head = String(dst.readBytes(), Charsets.ISO_8859_1)
+        for (k in listOf("general.architecture", "general.quantization_version", "general.file_type")) {
+            assertTrue("missing $k", head.contains(k))
+        }
+        // The kv block, byte for byte: 3 entries after the 24-byte preamble.
+        fun str(s: String) = java.nio.ByteBuffer.allocate(8).order(java.nio.ByteOrder.LITTLE_ENDIAN).putLong(s.length.toLong()).array() + s.toByteArray()
+        fun u32(v: Int) = java.nio.ByteBuffer.allocate(4).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(v).array()
+        val kv = str("general.architecture") + u32(8) + str("cosmos") +
+            str("general.quantization_version") + u32(4) + u32(2) +
+            str("general.file_type") + u32(4) + u32(7)
+        assertTrue(dst.readBytes().copyOfRange(24, 24 + kv.size).contentEquals(kv))
+    }
+
     @Test
     fun aWrongFileIsRefusedBeforeAnyWrite() {
         val src = safetensors(listOf(t("blocks.0.mlp_x.w1.weight", 300, 64)))

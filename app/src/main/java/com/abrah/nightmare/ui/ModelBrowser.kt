@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
@@ -519,9 +520,20 @@ private fun ModelAction(
         }
         row.spec.isCustom -> {}
         row.build == null -> {}
-        else -> OutlinedButton(onClick = { onInstall(row.spec) }, enabled = !busy) {
+        row.queued -> QueuedButton { onInstall(row.spec) }
+        else -> OutlinedButton(onClick = { onInstall(row.spec) }, enabled = !busy || row.queueable) {
             Text(stringResource(if (row.partial) R.string.repair else R.string.download))
         }
+    }
+}
+
+/** ⭐ A model waiting behind the download in flight: says so, and a tap takes it out of the queue. */
+@Composable
+private fun QueuedButton(onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick) {
+        Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(stringResource(R.string.download_queued))
     }
 }
 
@@ -605,6 +617,9 @@ internal fun AddonCard(
     /** Some files present, some not: an "Incomplete" dot and Repair. */
     partial: Boolean = false,
     unsupportedNote: String? = null,
+    /** ⭐ [ModelRow.queued] / [ModelRow.queueable], for a model row drawn on this card (Wan). */
+    queued: Boolean = false,
+    queueable: Boolean = false,
 ) {
     Card(
         Modifier.fillMaxWidth(),
@@ -676,7 +691,8 @@ internal fun AddonCard(
                         Text(stringResource(R.string.use))
                     }
                     installed || onInstall == null -> {}
-                    else -> OutlinedButton(onClick = onInstall, enabled = !busy) {
+                    queued -> QueuedButton(onInstall)
+                    else -> OutlinedButton(onClick = onInstall, enabled = !busy || queueable) {
                         Text(stringResource(if (partial) R.string.repair else R.string.download))
                     }
                 }
