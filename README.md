@@ -33,6 +33,10 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **UltraFix**: Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
 - **Hires fix**: one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
   Every other model has **Enlarge ×2** instead, so its picture can be enlarged and passed on to an inpaint that fixes faces.
+- **Fix faces / Fix hands** (ADetailer): switches on the Image node. After the render the phone finds each face and
+  hand (Bingsu's YOLOv8 detectors, a 25 MB Tools download) and redraws it close up with the same prompt and model.
+- **Colour**: **Match colours** on the Image node keeps an image to image, inpaint or Fix faces result in the colours of
+  the picture going in; **Auto colour** and **Adjust colours** (brightness, contrast, saturation, warmth) on the Output node.
 - **LoRA library**: sort LoRAs by name, newest, most used or size, filter by base model, star favourites, set a LoRA's model by hand when its file is not recognised, and sort them into your own folders.
 - **Draw on a picture**: doodle shapes and colours over the image node's photo (or a blank page) and let image to image make them real; pinch to zoom, pick a colour from the picture or any colour from a picker.
 - **Recipes**: text to image, image to image, inpaint, upscale, image edit, text / image to video, motion transfer and two Advanced flows, listed from least to most demanding; one your phone can't run says so.

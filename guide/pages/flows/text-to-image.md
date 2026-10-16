@@ -49,16 +49,17 @@ Tap the **Text to image** node:
 | **Seed** | The starting noise | `0` = a new picture every Run. Type a seed shown on a node to get that picture back |
 | **Scheduler** | The sampling method. SD 1.5 and SDXL: DPM++ 2M, DPM++ 2M SDE, DPM++ 3M, DPM++ 3M SDE, Euler, Euler A, LCM. FLUX.2, Z-Image, Qwen Image, Krea 2, Iris and Anima DiT: Euler, Euler A, Heun, DPM++ 2M, DPM++ 2M SDE, ER-SDE, Res Multistep, iPNDM, LCM | Use what the model's author recommends; turbo models usually want Euler (DiT) or LCM |
 | **Schedule** | How the noise steps are spaced: **Normal**, **Karras** or **Exponential** (SD 1.5 and SDXL; not with LCM) | Many turbo and hyper SDXL models recommend Exponential |
-| **Resolution** / **Shape** / **Width, Height** | The picture's size | Depends on the family. Below |
+| **Resolution** / **Aspect** / **Width, Height** | The picture's size | Depends on the family. Below |
 
 ### Size, per family
 
 - **SD 1.5**: pick a **Resolution** from the sizes the model supports (512 square up to 1024,
   portrait and landscape). A different size reloads the model on the next Run.
-- **SDXL and Anima**: these draw a fixed 1024 square; **Shape** crops it to the aspect you
-  choose. No reload.
+- **SDXL and Anima**: these draw a fixed 1024 square; **Aspect** crops it to the ratio you
+  choose (1:1, 9:7, 4:3, 3:2, 5:3, 16:9 and their portrait versions). No reload.
 - **FLUX.2, Z-Image, Qwen Image, Krea 2, Anima DiT**: **Width** and **Height** sliders, any size from 512
-  to 2048 in 64-pixel steps. No reload. Bigger takes longer, roughly in proportion to the area.
+  to 2048 in 64-pixel steps. **Aspect** above them sets both to a ratio at about the same size, and the
+  sliders fine-tune it. No reload. Bigger takes longer, roughly in proportion to the area.
   FLUX.2 Klein 9B starts at 768: on a 12 GB phone, 1024 may be closed by Android when other
   apps hold memory.
 

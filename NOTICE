@@ -319,6 +319,13 @@ IP-Adapter Plus / Plus Face SDXL heads
     https://huggingface.co/AbrahamPJ/nightmare-ip-adapter. Downloaded at the
     user's request.
 
+ADetailer face and hand detectors (Fix faces, Fix hands)
+    Bingsu (face_yolov8n, hand_yolov8n), built on Ultralytics YOLOv8
+    https://huggingface.co/Bingsu/adetailer
+    Apache 2.0 as its model card states. Exported to ONNX unchanged and
+    mirrored at https://huggingface.co/AbrahamPJ/nightmare-adetailer;
+    downloaded at the user's request.
+
 MoveNet MultiPose Lightning (the openpose detector)
     Google; ONNX export by Xenova
     https://huggingface.co/Xenova/movenet-multipose-lightning
