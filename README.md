@@ -54,7 +54,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.
 - **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with an optional second reference picture.
 - **Text and image to video**: **Wan 2.2**, 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag; **Match picture** sets the clip to the photo's shape), or **Neodragon** from the same flow's Model choice: 49 frames at 1024×640 in about 25 s on an 8 Elite. Big clips are decoded in tiles, so 704×1280 for 5 s renders on a 12 GB phone. **Chain** clips from the last frame and the last node hands the output **one joined film**; every part is kept in Results too, with the picture it started from.
-- **Motion transfer** (Wan 2.2 Fun Control): your picture moving like a video you choose, by its pose or a control video you already have (a pose or depth video). Pick the part of the video (its length is the clip's, up to 5 s) and crop it on its first frame. 480×832 for 2 s in about 90 s on an 8 Elite.
+- **Motion transfer** (Wan 2.2 Fun Control): your picture moving like a video you choose, by its pose or a control video you already have (a pose or depth video). Pick the part of the video (its length is the clip's, up to 5 s, at any size up to 1280×704) and crop it on its first frame. 480×832 for 2 s in about 90 s on an 8 Elite.
 
 ### LoRA, ControlNet and IP-Adapter
 - **LoRAs per render**: on Anima and the Swap models, and experimentally on FLUX.2, Z-Image, Qwen Image and Krea 2: tick, set strength, no reload. A note per LoRA keeps its trigger words.
@@ -73,12 +73,12 @@ and it downloads on first use; the app shows which ones your phone can run.
 ### Your phone, your files
 - **English, Chinese and Russian**: the app follows your phone's language.
 - **Models where you can see them**: optionally in `Download/Nightmare`, surviving an uninstall.
-- **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches and the DiT engine (which falls back from GitHub to Hugging Face by itself); large files come over four connections at once.
+- **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches and the DiT engine (which falls back from GitHub to Hugging Face by itself); large files come over four connections at once. Tap Download on a second model while one downloads and it waits its turn.
 - **Your RAM back**: the model is released when you leave; low-RAM switches for SDXL and Anima.
 - **A report when the phone restarts mid-run**: the next launch says what was running and how much memory was free at each step, ready to copy into a bug report.
 - **Three views of one flow**: **Default** (one step at a time, the easy way in), **Advanced** (the whole flow as connected boxes) and **Chat** (hide it in Settings if you don't use it), switched from one button beside the current model (tap the model to change it); in **Default**, **Swap flow** moves to another flow for the same model keeping your prompt and settings. Models, Flows, Results and the current flow live in a sidebar; Models, Flows, Results and Settings open as sheets over the flow.
 - **An agent**: ask for pictures in words: an AI model you bring your own key for (OpenRouter, OpenAI, DeepSeek, xAI, Groq or a local server) builds the flow on your canvas, finds and downloads LoRAs, uses a picture you attach, runs it and shows you the picture; no picture is ever sent to the AI model ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/agent/)).
-- **A local API**: a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; token-protected, off by default ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
+- **A local API**: a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; pictures and Motion transfer's video go in the request; token-protected, off by default ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
 - **Offline and private**: nothing is uploaded, no account (the optional agent talks to the provider you choose); a failure report never includes your prompt.
 
 The [user guide](https://abrahampaulj.github.io/nightmare-mobile/) explains each of these, with measurements.

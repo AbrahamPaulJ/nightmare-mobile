@@ -26,6 +26,8 @@ word, and the size.
 ## Download
 
 Tap **Download**. The row shows the size, a progress bar and **Cancel**. Models are large.
+Tap **Download** on another model while one is downloading and it says **Queued**: it starts by
+itself when the first one ends. Tap **Queued** to take it out of the queue.
 Use Wi-Fi. If Hugging Face is slow or blocked where you are, change the download source in
 [Settings → Models](../reference/settings.md#download-source).
 
