@@ -118,8 +118,9 @@ FLUX.2 [klein] 4B
     Apache 2.0. Downloaded by the app at the user's request; not included here.
 
 Z-Image Turbo
-    Tongyi-MAI; fp8 weights by Kijai
+    Tongyi-MAI; fp8 weights by Kijai; GGUF by leejet (Snapdragon 8 Gen 3)
     https://huggingface.co/Kijai/Z-Image_comfy_fp8_scaled
+    https://huggingface.co/leejet/Z-Image-Turbo-GGUF
     Apache 2.0. Downloaded by the app at the user's request; not included here.
 
 Qwen3-4B text encoder, DiT VAEs
