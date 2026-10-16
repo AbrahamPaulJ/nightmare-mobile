@@ -43,6 +43,9 @@ on:
       extra_target:
         description: "Also build this target and upload it beside the engine, e.g. sd-cli for an on-device spike (blank = none)"
         default: ""
+      skels:
+        description: "Extra Hexagon skels to build beside v79/v81, space-separated, e.g. 'v73 v75' (blank = none). The skel depends only on ggml, never on a *.sdcpp.patch"
+        default: ""
 
 permissions:
   contents: read
@@ -227,6 +230,11 @@ jobs:
             cp "$BIN" "$GITHUB_WORKSPACE/out/"
             echo "extra target: $BIN"
           fi
+          # ggml's CMake declares an htp-<arch> target for v73/v75/v79/v81, but the engine
+          # is EXCLUDE_FROM_ALL and pulls in only v79/v81: build the others by name.
+          for V in ${{ inputs.skels }}; do
+            cmake --build dit/build/android --target "htp-$V" -j "$(nproc)"
+          done
           df -h /
 
       # The app downloads a zip and takes the single entry named
@@ -248,8 +256,11 @@ jobs:
           # ⚠ Only when this build made one: upstream's arch list is v79 v81, so it usually does
           # NOT, and the v75 skel in the APK is the PC build from the same ggml
           # (`dit-engine-abi105-a4/assets/ditlibs/README-v75.txt`). Run 38089788580 died here.
-          V75=cpp/dit/build/android/sdcpp/ggml/src/ggml-hexagon/libggml-htp-v75.so
-          if [ -f "$V75" ]; then cp "$V75" "$GITHUB_WORKSPACE/out/"; else echo "no v75 skel in this build"; fi
+          # The `skels` input builds them on purpose (v73: 8 Gen 2 / 8s Gen 3 / 8s Gen 4).
+          for V in v73 v75; do
+            S=cpp/dit/build/android/sdcpp/ggml/src/ggml-hexagon/libggml-htp-$V.so
+            if [ -f "$S" ]; then cp "$S" "$GITHUB_WORKSPACE/out/"; else echo "no $V skel in this build"; fi
+          done
           cd "$GITHUB_WORKSPACE/out"
           zip -j -X "dit-engine-abi${ABI_VERSION}.zip" libdit_engine.so
 
@@ -279,9 +290,9 @@ jobs:
             echo '```'
             echo
             echo "skels for \`app/src/main/assets/ditlibs/\`:"
-            echo "- libggml-htp-v75.so $(stat -c%s libggml-htp-v75.so) bytes"
-            echo "- libggml-htp-v79.so $(stat -c%s libggml-htp-v79.so) bytes"
-            echo "- libggml-htp-v81.so $(stat -c%s libggml-htp-v81.so) bytes"
+            for S in libggml-htp-v*.so; do
+              echo "- $S $(stat -c%s "$S") bytes, sha256 \`$(sha256sum "$S" | cut -c1-16)…\`"
+            done
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload
