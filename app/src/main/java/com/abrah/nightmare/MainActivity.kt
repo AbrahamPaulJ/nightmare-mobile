@@ -212,6 +212,7 @@ class MainActivity : ComponentActivity() {
                     // ⭐ What a reportable ErrorNotice's share icon opens.
                     androidx.compose.runtime.CompositionLocalProvider(
                         com.abrah.nightmare.ui.LocalErrorReport provides vm::errorReport,
+                        com.abrah.nightmare.ui.LocalBlankDiagnose provides vm::diagnoseBlank,
                     ) {
                         HarnessScreen(op = pending, nonce = pendingNonce, vm = vm)
                     }
@@ -399,6 +400,9 @@ fun HarnessScreen(
             com.abrah.nightmare.ui.CrashNotice(r, onDismiss = vm::dismissCrashReport)
         }
         vm.missingModel?.let { m -> MissingModelDialog(m, vm) }
+        vm.diagnosis?.let { d ->
+            com.abrah.nightmare.ui.DiagnoseDialog(d.step, d.total, d.what, d.report, onCancel = vm::cancelDiagnose, onClose = vm::closeDiagnosis)
+        }
         // ⭐ GitHub #33: a kept picture's parts matched to the open flow's nodes.
         vm.pendingTransfer?.let { items ->
             com.abrah.nightmare.ui.TransferDialog(
@@ -1088,12 +1092,15 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
     val done = vm.missingInstalled
     // ⭐ Files deleted from a built-in: say which, and call it a repair.
     val repair = remember(m, done) { vm.repairOf(m) }
+    // ⭐ Asked by switching a knob on ([HarnessViewModel.offerSwitchedOn]): named, and nothing to Run after.
+    val knob = vm.missingForKnob
     androidx.compose.material3.AlertDialog(
         onDismissRequest = { vm.dismissMissingModel() },
         title = {
             Text(
                 when {
                     done -> stringResource(R.string.model_ready, displayLabel)
+                    knob != null -> stringResource(R.string.knob_needs_title, knob)
                     // ⚠ Not "this flow": a translate tap is not a Run.
                     m is HarnessViewModel.MissingModel.Translate ->
                         androidx.compose.ui.res.stringResource(R.string.translate_needs_title)
@@ -1107,7 +1114,7 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     when {
-                        done && (m is HarnessViewModel.MissingModel.Translate || m is HarnessViewModel.MissingModel.Describe) -> stringResource(R.string.model_downloaded)
+                        done && (knob != null || m is HarnessViewModel.MissingModel.Translate || m is HarnessViewModel.MissingModel.Describe) -> stringResource(R.string.model_downloaded)
                         done -> stringResource(R.string.model_downloaded_run)
                         m is HarnessViewModel.MissingModel.Checkpoint && m.substitute && m.wanted.isNotBlank() ->
                             stringResource(R.string.model_substitute_body, m.wanted, displayLabel, size)
@@ -1123,6 +1130,7 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
                         repair.isNotEmpty() -> androidx.compose.ui.res.stringResource(
                             R.string.repair_body, displayLabel, repair.joinToString(), size,
                         )
+                        knob != null -> stringResource(R.string.knob_needs_body, knob, displayLabel, size)
                         m is HarnessViewModel.MissingModel.Segment ->
                             stringResource(R.string.model_segment_needed, displayLabel, size)
                         else -> stringResource(R.string.model_not_installed, displayLabel, size)
@@ -1150,7 +1158,7 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
             when {
                 // ⚠ A translation or describe model has nothing to Run — the
                 // prompt it was fetched for is written the moment it lands.
-                done && (m is HarnessViewModel.MissingModel.Translate || m is HarnessViewModel.MissingModel.Describe) ->
+                done && (knob != null || m is HarnessViewModel.MissingModel.Translate || m is HarnessViewModel.MissingModel.Describe) ->
                     androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) { Text(stringResource(R.string.ok)) }
                 done -> androidx.compose.material3.Button(onClick = {
                     vm.dismissMissingModel()

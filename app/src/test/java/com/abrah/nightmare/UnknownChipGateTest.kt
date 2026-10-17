@@ -50,12 +50,28 @@ class UnknownChipGateTest {
      */
     @Test
     fun anUnknownOlderChipKeepsTheFloor() {
-        for (soc in listOf("SM6375", "SM7325", "SM8635", "SM4350")) {
+        // ⚠ SM8635 left this list when the table learned it (v73, 2026-10-17); SM8625 is a made-up "s" part.
+        for (soc in listOf("SM6375", "SM7325", "SM8625", "SM4350")) {
             assertNull(
                 "$soc was guessed upward, which risks an unusable download",
                 DeviceProbe.archFromPartNumber(soc),
             )
         }
+    }
+
+    /**
+     * ⭐ The 8s Gen 3 (SM8635): v73 with under 8 MB of VTCM. The four v73 DiT builds as alpha (ggml sizes its work
+     * to the session's VTCM), SD 1.5's `_min`, no SDXL, no v75 DiT (2026-10-17).
+     */
+    @Test
+    fun the8sGen3GetsTheV73DitBuildsAndNothingThatNeeds8Mb() {
+        val caps = DeviceProbe.Caps(arch = 73, vtcmMb = DeviceProbe.FLOOR_VTCM_MB, measured = false, soc = "SM8635")
+        for (id in listOf("z_image_turbo", "flux2_klein_9b", "anima_turbo_1_1")) {
+            assertEquals("$id on the 8s Gen 3", 73, ModelCatalog.byId(id)!!.buildFor(caps)?.minArch)
+        }
+        assertNull("Krea 2 is v75", ModelCatalog.byId("krea2_turbo")!!.buildFor(caps))
+        assertEquals(DeviceProbe.FLOOR_VTCM_MB, DeviceProbe.FLOOR_VTCM_MB.coerceAtMost(ModelCatalog.ditVtcmFloor(73)))
+        assertEquals(8, ModelCatalog.ditVtcmFloor(75))
     }
 
     /** ⚠ Anything that is not a Snapdragon part gets no guess at all. */

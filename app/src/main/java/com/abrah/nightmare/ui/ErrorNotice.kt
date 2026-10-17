@@ -41,6 +41,12 @@ import com.abrah.nightmare.R
  */
 val LocalErrorReport = staticCompositionLocalOf<((String) -> String)?> { null }
 
+/** ⭐ Starts Diagnose ([com.abrah.nightmare.BlankDiagnosis]); null (a golden, a preview) hides its button. */
+val LocalBlankDiagnose = staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/** ⭐ What `Ops.blankPicture` says: the one failure Diagnose is offered for. */
+const val BLANK_PICTURE_MARK = "the engine returned a blank picture"
+
 /**
  * ⭐⭐ THE way this app says "that did not happen" — a Run that failed, a wire
  * refused at the drop, a download or an import that broke, a flow that would not
@@ -107,7 +113,13 @@ fun ErrorNotice(
             }
         }
     }
-    shown?.let { ErrorDetails(it, onDismiss = { shown = null }) }
+    val diagnose = LocalBlankDiagnose.current
+    shown?.let {
+        ErrorDetails(
+            it, onDismiss = { shown = null },
+            onDiagnose = diagnose?.takeIf { BLANK_PICTURE_MARK in text }?.let { d -> { shown = null; d() } },
+        )
+    }
 }
 
 /**
@@ -117,7 +129,12 @@ fun ErrorNotice(
  * prose to read.
  */
 @Composable
-fun ErrorDetails(text: String, onDismiss: () -> Unit) {
+fun ErrorDetails(
+    text: String,
+    onDismiss: () -> Unit,
+    /** ⭐ A blank picture's report offers Diagnose first ([com.abrah.nightmare.BlankDiagnosis]). */
+    onDiagnose: (() -> Unit)? = null,
+) {
     val ctx = LocalContext.current
     val clipboard = LocalClipboardManager.current
     AlertDialog(
@@ -130,6 +147,16 @@ fun ErrorDetails(text: String, onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
+                if (onDiagnose != null) {
+                    Text(
+                        stringResource(R.string.diagnose_note),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    androidx.compose.material3.Button(onClick = onDiagnose, modifier = Modifier.padding(bottom = 12.dp)) {
+                        Text(stringResource(R.string.diagnose))
+                    }
+                }
                 Text(
                     text,
                     style = NoteTextStyle,

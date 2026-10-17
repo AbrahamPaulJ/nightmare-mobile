@@ -689,6 +689,31 @@ open class CanvasScreenshotTest {
     }
 
     /**
+     * ⭐ "More options" closed with two of its knobs on: the header names them, so nothing that changes the
+     * picture is out of sight (the user's call, 2026-10-17).
+     */
+    @Test
+    fun moreOptionsClosedSaysWhatIsOn() = shoot("inspector-more-options") {
+        Surface(Modifier.fillMaxSize()) {
+            NodeInspectorBody(
+                nodeId = "sample",
+                node = Node(
+                    "sample", "sd15.sample",
+                    params = mapOf(
+                        "model" to "absolutereality",
+                        com.abrah.nightmare.detail.Detailer.FIX_FACES to "true",
+                        com.abrah.nightmare.SdSampler.HIRES to "true",
+                    ),
+                ),
+                type = NODE_TYPES["sd15.sample"],
+                onSetParam = { _, _, _ -> },
+                onDelete = {},
+                onReset = {},
+            )
+        }
+    }
+
+    /**
      * ⭐⭐⭐ **A `bool` knob is a CHECKBOX**, and this golden is the only
      * thing that sees it.
      *

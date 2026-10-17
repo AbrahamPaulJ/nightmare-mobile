@@ -579,6 +579,9 @@ data class ModelSpec(
     /** ⭐ Rendered by the DiT engine through `/generate` — see [Family.dit]. */
     val isDit: Boolean get() = family.dit
 
+    /** ⭐ A chip where the DiT engine renders grey ([DeviceProbe.DIT_GREY_SOCS]): a note on the row, never a refusal. */
+    fun greyOn(caps: DeviceProbe.Caps): Boolean = isDit && family != Family.IRIS && caps.ditGrey
+
     /**
      * ⭐ A TRUE inpainting checkpoint — a 9-channel UNet whose `conv_in`
      * takes the mask, not a plain one masked by latent blending.
@@ -2081,7 +2084,7 @@ object ModelCatalog {
         partsFrom = partsFrom,
         id = id,
         label = label,
-        builds = builds ?: listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, minArch, 8, minRamBytes = minRamBytes)),
+        builds = builds ?: listOf(Build(TIER_DIT, "", files.sumOf { it.bytes }, minArch, ditVtcmFloor(minArch), minRamBytes = minRamBytes)),
         prompt = prompt,
         negative = "",
         family = family,
@@ -2128,7 +2131,7 @@ object ModelCatalog {
     const val DIT_GGML_MIN_ARCH = 75
 
     /**
-     * ⭐ v73 (8 Gen 2, 8s Gen 4; the 8s Gen 3 is v73 too but fails the 8 MB VTCM floor), ALPHA, for the
+     * ⭐ v73 (8 Gen 2, 8s Gen 4, and the 8s Gen 3 under [DIT_V73_MIN_VTCM_MB]), ALPHA, for the
      * models that rendered right on the S25 forced to the v73 skel (`GGML_HEXAGON_ARCH=73`, the app's
      * below-v79 env plus `SWIGLU` on the CPU, `docs/DEVICES.md` §3b): Z-Image Turbo's Q4_0 build,
      * FLUX.2 Klein 9B, Anima Turbo 1.1, Iris 3B Turbo. ⚠ NOT Krea 2 (the v73 skel faults in a matmul whose
@@ -2136,6 +2139,18 @@ object ModelCatalog {
      * user's call: not run at v73), Wan, imports or the edit flow (not run). A real v73 phone is owed.
      */
     const val DIT_V73_MIN_ARCH = 73
+
+    /**
+     * ⭐ The v73 builds' VTCM floor: the chip table's own floor, so the 8s Gen 3 (SM8635, under 8 MB) gets them
+     * as alpha (the user's call, 2026-10-17). ⚠ The 8 MB every other build asks is the QNN context binaries'
+     * rule, fixed at build time. ggml-hexagon sizes its work to the session's VTCM at run time: a fusion that
+     * does not fit is skipped, a kernel that cannot run reports `VTCM-TOO-SMALL` ([HexFallback] then runs
+     * unfused). Unmeasured on a real 8s Gen 3.
+     */
+    const val DIT_V73_MIN_VTCM_MB = DeviceProbe.FLOOR_VTCM_MB
+
+    /** ⭐ A DiT build's VTCM floor: [DIT_V73_MIN_VTCM_MB] for the v73 builds, 8 MB for every other. */
+    fun ditVtcmFloor(minArch: Int): Int = if (minArch <= DIT_V73_MIN_ARCH) DIT_V73_MIN_VTCM_MB else 8
 
     /** ⚠ Klein 4B's shared parts — the text encoder, VAE and tokenizer both its builds load. */
     private val KLEIN4B_PARTS = listOf(
@@ -2236,7 +2251,7 @@ object ModelCatalog {
             // runs on the CPU). The GGUF went NaN on HTP until engine `dit/025` (`docs/DIT.md` §2e).
             builds = listOf(
                 Build(TIER_DIT, "", ZIMAGE_FP8.sumOf { it.bytes }, DIT_MIN_ARCH, 8, files = ZIMAGE_FP8),
-                Build(TIER_DIT, "", ZIMAGE_Q4.sumOf { it.bytes }, DIT_V73_MIN_ARCH, 8, files = ZIMAGE_Q4),
+                Build(TIER_DIT, "", ZIMAGE_Q4.sumOf { it.bytes }, DIT_V73_MIN_ARCH, ditVtcmFloor(DIT_V73_MIN_ARCH), files = ZIMAGE_Q4),
             ),
         ),
         // ⭐ Krea 2 Turbo — `happyyzy/stable-diffusion.cpp`'s README, file for

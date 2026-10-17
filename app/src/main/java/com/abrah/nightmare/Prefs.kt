@@ -55,6 +55,16 @@ object Prefs {
         }
         nodesVertical = p.getBoolean(KEY_NODES_VERTICAL, false)
         hideChat = p.getBoolean(KEY_HIDE_CHAT, false)
+        moreOptionsOpen = p.getBoolean(KEY_MORE_OPTIONS, false)
+    }
+
+    /** ⭐ A sampler's "More options" fold open (the user, 2026-10-17: closed by default, remembered). */
+    var moreOptionsOpen: Boolean = false
+        private set
+
+    fun setMoreOptionsOpen(context: Context, value: Boolean) {
+        moreOptionsOpen = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_MORE_OPTIONS, value).apply()
     }
 
     // ---- the three views (the user's design, 2026-10-08) ----------------------
@@ -62,6 +72,7 @@ object Prefs {
     private const val KEY_VIEW = "default_view"
     private const val KEY_NODES_VERTICAL = "nodes_vertical"
     private const val KEY_HIDE_CHAT = "hide_chat"
+    private const val KEY_MORE_OPTIONS = "more_options_open"
 
     /**
      * ⭐ What the app opens on. NULL until the person has been asked (first launch: Nodes for

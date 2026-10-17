@@ -1174,6 +1174,11 @@ class SdSampler(
             p[com.abrah.nightmare.detail.Detailer.FIX_HANDS].equals("true", ignoreCase = true)
     }
 
+    /** ⭐ True when [node] will enlarge with an upscaler (Hires fix, or Enlarge): the Run's up-front tool check. */
+    internal fun upscalerWanted(node: Node): Boolean = effectiveParams(node).let { p ->
+        if (hasHires) p[HIRES].equals("true", ignoreCase = true) else p[ENLARGE].equals("true", ignoreCase = true)
+    }
+
     /** ⭐ Match colours ([MATCH_COLORS]) is on: what a picture going in hands its colours to ([ColorTools.matchColors]). */
     private fun matching(p: Map<String, String>) = p[MATCH_COLORS].equals("true", ignoreCase = true)
 

@@ -59,7 +59,7 @@ step.
 | chip | can run |
 |---|---|
 | Snapdragon 888 and newer | SD 1.5 models, upscaling |
-| Snapdragon 8 Gen 2 and newer | + **alpha:** Z-Image, FLUX.2 Klein 9B, Anima DiT, Iris |
+| Snapdragon 8 Gen 2, 8s Gen 3 and newer | + **alpha:** Z-Image, FLUX.2 Klein 9B, Anima DiT, Iris |
 | Snapdragon 8 Gen 3 and newer | + SDXL and Anima; **alpha:** FLUX.2, Qwen Image, Anima DiT, Iris, Z-Image, Krea 2 (12 GB) |
 | Snapdragon 8 Elite and newer | + video; Krea 2 with 12 GB of RAM or more |
 

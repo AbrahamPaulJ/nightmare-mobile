@@ -156,6 +156,8 @@ data class ModelRow(
     val fetchBytes: Long = 0,
     /** ⭐ [ModelSpec.ramNeeded] — non-zero: the chip could, the RAM cannot. */
     val needsRam: Long = 0,
+    /** ⭐ [com.abrah.nightmare.ModelSpec.greyOn]: the chip renders this model grey: the row says so and points at Diagnose. */
+    val greyChip: Boolean = false,
     /** ⭐ [com.abrah.nightmare.CustomModels.ramTight] — an import that Android will likely close. */
     val ramTight: Boolean = false,
     /** ⭐ Its files are Local Dream's ([com.abrah.nightmare.LocalDreamModels]): a badge, no Delete. */

@@ -133,6 +133,9 @@ fun LoraBrowserContent(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<Throwable?>(null) }
     var selected by remember { mutableStateOf<Hit?>(null) }
+    // ⚠ Out here, not in the list: opening a LoRA takes the list out of composition, and a state
+    // remembered inside it came back at the top every time (a tester, 2026-10-17).
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val cache = remember { HashMap<String, Page>() }
     val scope = rememberCoroutineScope()
 
@@ -140,6 +143,8 @@ fun LoraBrowserContent(
         val q = query.trim()
         if (!immediate && q.isNotEmpty()) delay(DEBOUNCE_MS)
         immediate = false
+        // ⭐ A new search starts at the top; coming back from a LoRA does not run this.
+        listState.scrollToItem(0)
         loading = true
         error = null
         val key = "$source|$target|$sort|$q|$mature"
@@ -228,6 +233,7 @@ fun LoraBrowserContent(
 
     LazyColumn(
         Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp),
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (loading && hits.isEmpty()) {

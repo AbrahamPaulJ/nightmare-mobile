@@ -596,6 +596,8 @@
     <string name="model_substitute_body">«%1$s» отсутствует на этом телефоне и недоступна для загрузки: она была импортирована на другом устройстве. Загрузить %2$s (%3$s) и использовать её вместо исходной?</string>
     <string name="model_segment_needed">%1$s не установлена: она нужна узлу модели Segment в этом процессе. Загрузить (%2$s)?</string>
     <string name="model_not_installed">%1$s не установлена. Загрузить (%2$s)?</string>
+    <string name="knob_needs_title">Для «%1$s» нужна загрузка</string>
+    <string name="knob_needs_body">«%1$s» использует %2$s, её ещё нет на телефоне. Загрузить сейчас (%3$s)?</string>
     <string name="model_download_progress">%1$d из %2$d МБ · %3$s</string>
     <string name="model_use_wifi">Используйте Wi-Fi.</string>
     <string name="model_hide">Скрыть</string>
@@ -610,6 +612,13 @@
     <string name="models_import_failed">ошибка импорта: %1$s</string>
     <string name="models_needs_ram">Для %1$s нужен телефон с %3$d ГБ ОЗУ; на этом %2$d ГБ</string>
     <string name="models_needs_arch">Для %1$s нужна архитектура HTP v%2$d или новее; это устройство сообщает v%3$d</string>
+    <string name="dit_grey_chip">Пока может выдавать серое на %1$s. Если так, нажмите «Диагностика» в ошибке и отправьте отчёт</string>
+    <string name="diagnose">Диагностика</string>
+    <string name="diagnose_note">Картинка вышла одного цвета. Диагностика рисует маленькую картинку до 13 раз, каждый раз убирая одну часть с NPU, и добавляет в отчёт, какие варианты получились нормальными. Около 10 минут.</string>
+    <string name="diagnose_report_title">Диагностика пустой картинки</string>
+    <string name="diagnose_starting">Запуск…</string>
+    <string name="diagnose_progress">%1$d из %2$d: %3$s</string>
+    <string name="diagnose_keep_open">Не закрывайте приложение. Отчёт откроется по окончании; отправьте его как обычно.</string>
     <string name="upscale_no_upscaler">не удалось увеличить: нет апскейлера %1$s</string>
     <string name="upscale_picture_gone">не удалось увеличить: файл изображения исчез</string>
     <string name="upscale_with">Увеличиваю с помощью %1$s…</string>
@@ -756,6 +765,8 @@
     <string name="knob_detail_denoise">Сила исправления</string>
     <string name="hint_fix_faces">После рендера: найти каждое лицо и перерисовать его крупно с этим промптом и моделью, затем вписать обратно (ADetailer). Нужен детектор лиц и рук из Модели, Инструменты. Плюс один рендер на лицо.</string>
     <string name="hint_fix_hands">После рендера: найти каждую руку и перерисовать её крупно, как «Исправить лица». Плюс один рендер на руку.</string>
+    <string name="more_options">Дополнительно</string>
+    <string name="more_options_on">Включено: %1$s</string>
     <string name="hint_detail_denoise">Насколько перерисовывать каждое лицо или руку. 0,4 сохраняет позу и исправляет детали; больше меняет сильнее.</string>
     <string name="run_detail_no_detector">Исправление лиц и рук пропущено: детектор лиц и рук не установлен. Скачайте его в Модели, Инструменты</string>
     <string name="run_detail_no_square">Исправление лиц и рук пропущено: не удалось загрузить модель в %1$dx%2$d</string>

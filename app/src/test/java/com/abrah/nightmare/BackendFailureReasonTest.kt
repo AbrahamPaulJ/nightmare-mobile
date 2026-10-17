@@ -194,6 +194,33 @@ class BackendFailureReasonTest {
         assertTrue(msg, "vrchat-krea2_v1_epoch14" in msg && "close other apps" !in msg && "vision" !in msg)
     }
 
+    /** ⭐ A real 8 Gen 3's Z-Image abort (1.6.174, 2026-10-17): the DiT done, the NPU gone in the decode. */
+    private val v75DecodeAbort = listOf(
+        "115739.2ms [  INFO ] [dit] ggml_runner.cpp:922  - z_image executing segment 36/36: ggml_runner.final",
+        "116130.9ms [  INFO ] [dit] ggml_runner.cpp:922  - vae executing segment 1/1: graph",
+        "/home/runner/work/nightmare-mobile/nightmare-mobile/local-dream/app/src/main/cpp/3rdparty/stable-diffusion.cpp/ggml/src/ggml-hexagon/ggml-hexagon.cpp:3281: ggml-hex: dspqueue_read failed: 0x0000002e",
+        "[exited 134]",
+    )
+
+    @Test
+    fun aDspCrashSaysTheNpuAndTheStage() {
+        feed(v75DecodeAbort)
+        val msg = explainOpFailure(-1, "EOFException: no message")
+        assertTrue(msg, "the NPU stopped responding while decoding the picture" in msg && "assert" !in msg)
+        feed(listOf(v75DecodeAbort[0], v75DecodeAbort[2]))
+        assertTrue(BackendProcess.assertReason()!!.contains("while sampling"))
+    }
+
+    /** ⭐ A real 8 Gen 2's launch notes (1.6.174): ERROR lines on every healthy v73 launch, never a reason. */
+    @Test
+    fun v73HexagonNotesAreNeverTheReason() {
+        feed(listOf(
+            "   602.2ms [ ERROR ] [dit] util.cpp:631  - ggml-hex: forcing ndev to 1 for SoCs archs lower than v75.",
+            "   604.8ms [ ERROR ] [dit] util.cpp:631  - ggml-hex: HTP0 failed to get URI (physical 0, virtual 0) : error 0x14. Falling back to single session URI: file:///libggml-htp-v73.so?htp_iface_skel_handle_invoke&_modver=1.0&_dom=cdsp&_session=0",
+        ))
+        assertNull(BackendProcess.failureReason())
+    }
+
     @Test
     fun aMulMatAssertWithoutALoraBlamesTheFile() {
         feed(kreaLoraAbort.filterNot { "lora" in it })

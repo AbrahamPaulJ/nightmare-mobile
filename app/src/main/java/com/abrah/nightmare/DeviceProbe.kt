@@ -51,6 +51,9 @@ object DeviceProbe {
         // off a spec sheet: v73 and 8 MB. It is the newest chip in the table and
         // the one that most looks like it should be higher.
         "SM8735" to 73,                     // 8s Gen 4
+        // ⭐ v73 with UNDER 8 MB of VTCM (`docs/DEVICES.md` §1), so not in [SOC_HAS_8MB_VTCM]: SD 1.5 keeps
+        // `_min`; the v73 DiT builds take it as alpha ([ModelCatalog.DIT_V73_MIN_VTCM_MB], 2026-10-17).
+        "SM8635" to 73,                     // 8s Gen 3
     )
 
     /**
@@ -78,6 +81,15 @@ object DeviceProbe {
     val STAGED_ARCHES = listOf(68, 69, 73, 75, 79, 81)
 
     /**
+     * ⭐⭐ Chips where every DiT model renders SOLID GREY, to the name a person knows them by (`docs/DEVICES.md`
+     * §3b). The 8s Gen 4: Z-Image, Klein 9B and Anima, 12 logs from two testers on 1.6.174 to 1.6.178, at 768²
+     * with no tiled decode too, so the latent itself is flat; the 8 Gen 2 is clean on the same v73 skel. Its
+     * DiT rows carry a note pointing at Diagnose ([com.abrah.nightmare.BlankDiagnosis]). ⚠ NOT refused (the
+     * user, 2026-10-17: a refusal stops the very renders whose logs would find the fault).
+     */
+    val DIT_GREY_SOCS = mapOf("SM8735" to "8s Gen 4")
+
+    /**
      * The HTP as far as we know it.
      *
      * ⚠ [measured] is the whole point of the type. An unmeasured guess is good
@@ -100,6 +112,9 @@ object DeviceProbe {
     ) {
         /** ⚠ The APK has to carry this arch's Skel, or NPU init fails whatever the model. */
         val staged: Boolean get() = arch in STAGED_ARCHES
+
+        /** ⭐ The DiT engine renders one flat colour on this chip ([DIT_GREY_SOCS]). */
+        val ditGrey: Boolean get() = soc in DIT_GREY_SOCS
 
         /**
          * ⭐⭐⭐ **Do we actually KNOW this chip, or is [arch] the floor

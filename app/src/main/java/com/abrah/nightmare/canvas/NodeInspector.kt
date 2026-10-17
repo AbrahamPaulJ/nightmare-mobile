@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.ui.focus.onFocusChanged
@@ -855,6 +856,48 @@ fun NodeInspector(
  * surface honoured the rule, the others did not, and the ones that did not are
  * where the finger went.
  */
+/** ⭐ A sampler's after-render knobs, drawn under [MoreOptionsHeader]. */
+internal val MORE_OPTIONS = setOf(
+    com.abrah.nightmare.detail.Detailer.FIX_FACES, com.abrah.nightmare.detail.Detailer.FIX_HANDS,
+    com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE,
+    com.abrah.nightmare.SdSampler.HIRES, com.abrah.nightmare.SdSampler.ENLARGE,
+    com.abrah.nightmare.SdSampler.MATCH_COLORS,
+)
+
+/**
+ * ⭐ The fold's header: the LoRA picker's folder row (chevron right or down, `titleSmall`), and under it,
+ * while closed, which of the knobs inside are on.
+ */
+@Composable
+internal fun MoreOptionsHeader(open: Boolean, on: List<String>, onToggle: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (open) Icons.Filled.KeyboardArrowDown
+                else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                stringResource(R.string.more_options),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(start = 6.dp),
+            )
+        }
+        if (!open && on.isNotEmpty()) Text(
+            stringResource(R.string.more_options_on, on.joinToString(", ")),
+            style = NoteTextStyle,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 30.dp),
+        )
+    }
+}
+
 private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // ⚠ The framing rectangle and the mask ops belong to their EDITOR, on every
     // node that draws one — asked first, because the checks below are about the
@@ -2551,7 +2594,32 @@ internal fun NodeInspectorBody(
         fun sweepable(param: String): Boolean =
             com.abrah.nightmare.BatchParams.isBatchable(node.type, param) && canSweepHere
 
-        for (w in widgets) {
+        // ⭐⭐ **More options** (the user's call, 2026-10-17): a sampler's after-render knobs ([MORE_OPTIONS])
+        // fold under one header at the end of its knobs, closed by default, open or closed remembered
+        // ([com.abrah.nightmare.Prefs.moreOptionsOpen]). ⚠ Closed, the header names every one switched on,
+        // so nothing that changes the picture is out of sight. One loop draws both halves: a second copy
+        // of the knob loop would stop agreeing with the first.
+        val (moreWidgets, mainWidgets) = widgets.partition {
+            node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && it.name in MORE_OPTIONS
+        }
+        val prefsContext = LocalContext.current
+        var moreOpen by remember { mutableStateOf(com.abrah.nightmare.Prefs.moreOptionsOpen) }
+        for (pass in 0..1) {
+        if (pass == 1) {
+            val shownMore = moreWidgets.filterNot { hiddenKnob(node, it.name) }
+            if (shownMore.isEmpty()) break
+            MoreOptionsHeader(
+                open = moreOpen,
+                on = shownMore.filter { it.type == "bool" && (node.params[it.name] ?: it.default) == "true" }
+                    .map { it.name.localizedKnobLabel() },
+                onToggle = {
+                    moreOpen = !moreOpen
+                    com.abrah.nightmare.Prefs.setMoreOptionsOpen(prefsContext, moreOpen)
+                },
+            )
+            if (!moreOpen) break
+        }
+        for (w in if (pass == 0) mainWidgets else moreWidgets) {
             if (w.name == picked) continue
             // ⚠ The doodle layer is drawn, never typed (`DrawWindow.kt`).
             if (node.type == "core.image" && w.name == com.abrah.nightmare.LoadImageNode.DRAWING) continue
@@ -3107,6 +3175,7 @@ internal fun NodeInspectorBody(
                 )
             }
             }        }
+        }
 
         // ⚠ The wiring is shown but not editable here. A wire is a gesture
         // on the canvas; offering a second way to change it in a sheet would

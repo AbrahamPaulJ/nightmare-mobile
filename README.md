@@ -20,8 +20,8 @@ and it downloads on first use; the app shows which ones your phone can run.
 | chip | runs |
 |---|---|
 | Snapdragon 888 and newer | SD 1.5 |
-| 8 Gen 2, 8s Gen 4 and newer | **alpha:** Z-Image Turbo as a Q4_0 GGUF, FLUX.2 Klein 9B, Anima Turbo 1.1 and Iris 3B Turbo on the DiT engine (not yet run on a real 8 Gen 2) |
-| 8 Gen 3 and newer | SDXL, Anima; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1 and 2.1 Turbo, Anima Turbo 1.1 on the DiT engine, Iris 3B Turbo (not yet run on an 8 Gen 3), Z-Image Turbo as a Q4_0 GGUF (not yet run on an 8 Gen 3), your own quantised (GGUF) DiT, Wan 2.2 video |
+| 8 Gen 2, 8s Gen 3 and newer | **alpha:** Z-Image Turbo as a Q4_0 GGUF, FLUX.2 Klein 9B, Anima Turbo 1.1 and Iris 3B Turbo on the DiT engine. Not yet run on an 8s Gen 3. On the 8s Gen 4 they render a grey picture for now: the error offers **Diagnose**, which finds the part that fails |
+| 8 Gen 3 and newer | SDXL, Anima; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1 and 2.1 Turbo, Anima Turbo 1.1 on the DiT engine, Iris 3B Turbo (not yet run on an 8 Gen 3), Z-Image Turbo as a Q4_0 GGUF, your own quantised (GGUF) DiT, Wan 2.2 video |
 | 8 Elite and newer | Z-Image Turbo in FP8, SDXL Swap, Neodragon text and image to video, and all of the above |
 | 12 GB RAM | Krea 2 Turbo (8 Elite; alpha on 8 Gen 3); on 12 GB it renders in parts, about 3.5 to 4 min at 1024² |
 
@@ -31,10 +31,12 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Built for a phone**: big ports, snap to connect, pinch to zoom (out to 0.15x to see a big flow whole); the picture appears on the node that made it. The run bar folds to one row (+ Node, Run, the time, the locks) for more canvas.
 - **Local Dream's models, no second download**: models Local Dream keeps in `Download/LocalDream` are listed and run in place, never changed or deleted.
 - **UltraFix**: Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
+- **More options** on the Image node holds the after-render switches below, folded away; closed, it names the ones that are on.
+  Switching one on that needs a download (the upscaler, the face and hand detector) offers it there and then.
 - **Hires fix**: one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
   Every other model has **Enlarge ×2** instead, so its picture can be enlarged and passed on to an inpaint that fixes faces.
 - **Fix faces / Fix hands** (ADetailer): switches on the Image node. After the render the phone finds each face and
-  hand (Bingsu's YOLOv8 detectors, a 25 MB Tools download) and redraws it close up with the same prompt and model.
+  hand (Bingsu's YOLOv8 detectors, a 25 MB Tools download) and redraws it close up with the same prompt and model, its tone matched to the picture along the edge.
 - **Colour**: **Match colours** on the Image node keeps an image to image, inpaint or Fix faces result in the colours of
   the picture going in; **Auto colour** and **Adjust colours** (brightness, contrast, saturation, warmth) on the Output node.
 - **LoRA library**: sort LoRAs by name, newest, most used or size, filter by base model, star favourites, set a LoRA's model by hand when its file is not recognised, and sort them into your own folders.

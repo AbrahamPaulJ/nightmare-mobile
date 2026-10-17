@@ -73,6 +73,13 @@ object BackendProcess {
     val output = ArrayDeque<String>()
 
     /**
+     * ⭐ One Diagnose leg's environment for the NEXT DiT launch ([BlankDiagnosis.Leg.env]); empty otherwise.
+     * ⚠ In memory only and cleared by [HarnessOps.diagnoseBlank]'s `finally`: a leg must never outlive it.
+     */
+    @Volatile
+    var diagnosticEnv: Map<String, String> = emptyMap()
+
+    /**
      * ⭐⭐⭐ **Why the backend gave up, in one line a person can act on.**
      *
      * ⚠⚠⚠ Reported 2026-09-21: importing a community FLUX checkpoint failed
@@ -128,6 +135,10 @@ object BackendProcess {
         // ⚠ Krea 2's text encoder is a Qwen3-VL without its vision tower, said as an ERROR on every
         // launch; a LoRA abort was reported to a tester as this line plus memory advice (2026-10-16).
         "no vision weights detected",
+        // ⚠ ggml-hexagon's notes on a v73 chip (one session, the static URI), said as ERRORs on every
+        // launch there; a tester's text-encoder assert was reported as "forcing ndev to 1" (2026-10-17).
+        "forcing ndev to 1",
+        "failed to get URI",
     )
 
     /**
@@ -139,6 +150,7 @@ object BackendProcess {
      * 2026-10-16): the way round is to run without it, not to free memory.
      */
     fun assertReason(log: List<String> = newestLaunch()): String? {
+        npuCrash(log)?.let { return it }
         val line = log.lastOrNull { "GGML_ASSERT(" in it } ?: return null
         val what = line.substringAfter("GGML_ASSERT(").substringBeforeLast(") failed").trim()
         val lora = log.asReversed().firstNotNullOfOrNull { LORA_LINE.find(it)?.groupValues?.get(1) }?.substringAfterLast('/')
@@ -149,6 +161,22 @@ object BackendProcess {
                 "the engine stopped on a tensor shape mismatch: this model file's layout is not supported"
             else -> "the engine stopped on an internal check: $what"
         }
+    }
+
+    /**
+     * ⭐ The NPU itself stopped answering (`ggml-hex: dspqueue_read failed`, a bare `ggml_abort`, SIGABRT): said
+     * as the stage it died in, not as "an assert on something in the model". A real 8 Gen 3 died so in Z-Image's
+     * decode after all 36 DiT segments (2026-10-17), and Klein's 1024² in #25.
+     */
+    private fun npuCrash(log: List<String>): String? {
+        if (log.none { "dspqueue_read failed" in it || "dspqueue_write failed" in it }) return null
+        val stage = log.lastOrNull { "executing segment" in it }?.substringAfter("] [dit] ")?.substringAfter(" - ")?.trim()
+        val doing = when {
+            stage == null -> null
+            stage.startsWith("vae ") -> "while decoding the picture"
+            else -> "while sampling"
+        }
+        return "the NPU stopped responding" + (doing?.let { " $it" } ?: "") + ". Try a smaller size"
     }
 
     /** The engine's `lora <path>:<strength>` line, one per LoRA in the request. */
@@ -777,6 +805,8 @@ object BackendProcess {
                         // ⭐ And `SWIGLU` on v73: [lowArchOpFilter].
                         val ops = listOfNotNull(
                             lowArchOpFilter(DeviceProbe.caps().arch).takeIf { belowV79 },
+                            // ⭐ A Diagnose leg's op group goes to the CPU on top of the chip's own filter.
+                            diagnosticEnv[BlankDiagnosis.OPFILTER_ADD],
                         )
                         if (ops.isNotEmpty()) put("GGML_HEXAGON_OPFILTER", ops.joinToString("|"))
                         // ⭐ Below v79 a wired REFERENCE is encoded at ~0.5 MP, not the canvas
@@ -798,6 +828,8 @@ object BackendProcess {
                         // ⭐ A chip that ran short of VTCM runs unfused ([HexFallback]).
                         if (HexFallback.noFusion(context)) put("GGML_HEXAGON_OPFUSION", "0")
                         putAll(readDitEnvOverride(context))
+                        // ⭐ Last, so a Diagnose leg wins over everything above ([BlankDiagnosis]).
+                        putAll(diagnosticEnv - BlankDiagnosis.OPFILTER_ADD)
                         val dsp = listOf(
                             runtime.absolutePath, "/vendor/lib/rfsa/adsp", "/vendor/dsp/cdsp", "/dsp",
                         ).joinToString(";")

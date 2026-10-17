@@ -581,6 +581,8 @@
     <string name="model_substitute_body">此手机上没有“%1$s”，也没有可用下载，它是在其他地方导入的。是否下载 %2$s（%3$s）并在此流程中替代使用？</string>
     <string name="model_segment_needed">尚未安装 %1$s，此流程的 Segment 模型节点需要它。是否下载（%2$s）？</string>
     <string name="model_not_installed">尚未安装 %1$s。是否下载（%2$s）？</string>
+    <string name="knob_needs_title">%1$s 需要下载</string>
+    <string name="knob_needs_body">%1$s 需要 %2$s，本机尚未安装。现在下载（%3$s）？</string>
     <string name="model_download_progress">%1$d / %2$d MB · %3$s</string>
     <string name="model_use_wifi">请使用 Wi-Fi。</string>
     <string name="model_hide">隐藏</string>
@@ -595,6 +597,13 @@
     <string name="models_import_failed">导入失败：%1$s</string>
     <string name="models_needs_ram">%1$s 需要配备 %3$d GB 内存的手机；此手机有 %2$d GB</string>
     <string name="models_needs_arch">%1$s 需要 HTP v%2$d 或更新架构；此设备报告为 v%3$d</string>
+    <string name="dit_grey_chip">目前在 %1$s 上可能出灰图。如果出现，请在错误提示中点“诊断”并分享报告</string>
+    <string name="diagnose">诊断</string>
+    <string name="diagnose_note">这张图只有一种颜色。诊断会把一张小图最多生成13次，每次把一个部分从NPU移开，并把哪些能正常出图写进这份报告。大约10分钟。</string>
+    <string name="diagnose_report_title">纯色图片诊断</string>
+    <string name="diagnose_starting">正在开始…</string>
+    <string name="diagnose_progress">第 %1$d / %2$d 项：%3$s</string>
+    <string name="diagnose_keep_open">请保持应用打开。完成后会打开报告，照常分享即可。</string>
     <string name="upscale_no_upscaler">放大失败：没有名为 %1$s 的放大器</string>
     <string name="upscale_picture_gone">放大失败：该图片文件已不存在</string>
     <string name="upscale_with">正在用 %1$s 放大…</string>
@@ -741,6 +750,8 @@
     <string name="knob_detail_denoise">修复强度</string>
     <string name="hint_fix_faces">生成后：找到每张脸，用同样的提示词和模型近距离重绘，再融合回去（ADetailer）。需要从 模型、工具 下载面部和手部检测器。每张脸多一次生成。</string>
     <string name="hint_fix_hands">生成后：找到每只手并近距离重绘，与修复面部相同。每只手多一次生成。</string>
+    <string name="more_options">更多选项</string>
+    <string name="more_options_on">已开启：%1$s</string>
     <string name="hint_detail_denoise">每张脸或每只手重绘的程度。0.4 保留姿势、修复细节；越高改动越大。</string>
     <string name="run_detail_no_detector">已跳过修复面部和手部：未安装面部和手部检测器。请在 模型、工具 中下载</string>
     <string name="run_detail_no_square">已跳过修复面部和手部：无法以 %1$dx%2$d 加载模型</string>

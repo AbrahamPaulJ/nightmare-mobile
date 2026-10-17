@@ -379,8 +379,10 @@ class ModelCatalogTest {
             assertEquals("$id must not open on v73", null, ModelCatalog.byId(id)!!.buildFor(v73))
         }
         assertEquals(75, ModelCatalog.DIT_GGML_MIN_ARCH)
-        // ⚠ The 8s Gen 3 is v73 with less VTCM: refused, like every DiT build's 8 MB floor says.
-        assertEquals(null, ModelCatalog.byId("flux2_klein_9b")!!.buildFor(caps(73, 2, sixteen)))
+        // ⭐ The 8s Gen 3 is v73 with less VTCM: the v73 builds take it as alpha (2026-10-17, ggml sizes its work
+        // to the session's VTCM); a v75 build still needs 8 MB.
+        assertEquals(73, ModelCatalog.byId("flux2_klein_9b")!!.buildFor(caps(73, 2, sixteen))?.minArch)
+        assertEquals(null, ModelCatalog.byId("krea2_turbo")!!.buildFor(caps(75, 2, sixteen)))
         assertEquals(null, ModelCatalog.byId("flux2_klein_9b")!!.buildFor(caps(69, 8, sixteen)))
     }
 

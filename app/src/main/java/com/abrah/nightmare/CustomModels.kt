@@ -1249,9 +1249,37 @@ object CustomModels {
         val family = actual ?: expect ?: throw IOException(
             "nothing in this file says which model family it is"
         )
+        // ⭐ Anima comes in sizes the engine does not run (a tester's "Anima 3.8B" rendered a blur, 2026-10-17).
+        if (family == Family.ANIMA_DIT) animaSizeProblem(json)?.let { throw IOException(it) }
         return if (family == Family.FLUX2 && isKlein9b(json)) DitVariant.KLEIN_9B
         else DitVariant.defaultFor(family)
     }
+
+    /** ⭐ Anima 2B, the one size the engine runs: 28 blocks at width 2048 (read off `anima-turbo-v1.1`, 2026-10-17). */
+    const val ANIMA_2B_BLOCKS = 28
+    const val ANIMA_2B_WIDTH = 2048
+
+    /**
+     * ⭐ Why an Anima checkpoint is not the 2B, said for a person; null when it is, or when the header says
+     * nothing either way (never refuse on silence, as [isKlein9b]). ⚠ The DiT's blocks only: the LLM adapter
+     * has `llm_adapter.blocks.N` of its own. 2.9B is 40 blocks at the same width, so the count is the tell
+     * there; the width catches a wider one.
+     */
+    internal fun animaSizeProblem(header: String): String? {
+        val width = ANIMA_X_EMBED.find(header)?.groupValues?.get(1)?.toIntOrNull()
+        val blocks = KEY.findAll(header).map { it.groupValues[1] }
+            .filterNot { "llm_adapter" in it }
+            .mapNotNull { DIT_BLOCK.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+            .maxOrNull()?.plus(1)
+        val bigger = (width != null && width != ANIMA_2B_WIDTH) || (blocks != null && blocks > ANIMA_2B_BLOCKS)
+        if (!bigger) return null
+        return "that is a larger Anima than the app runs (${blocks ?: "?"} blocks, width ${width ?: "?"}; " +
+            "Anima 2B is $ANIMA_2B_BLOCKS and $ANIMA_2B_WIDTH), so it would render a blur. Anima 2B checkpoints import"
+    }
+
+    private val ANIMA_X_EMBED = Regex("\"[^\"]*x_embedder\\.proj\\.1\\.weight\"\\s*:\\s*\\{[^}]*\"shape\"\\s*:\\s*\\[\\s*(\\d+)")
+    private val KEY = Regex("\"([^\"]+)\"\\s*:\\s*\\{")
+    private val DIT_BLOCK = Regex("(?:^|\\.)blocks\\.(\\d+)\\.")
 
     fun import(
         context: Context,

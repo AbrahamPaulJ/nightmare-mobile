@@ -490,6 +490,10 @@ private fun StatusLine(row: ModelRow, modifier: Modifier) {
         }
         // ⚠ The facts the old card said in words, kept where they matter.
         val note = when {
+            row.greyChip -> stringResource(
+                R.string.dit_grey_chip,
+                com.abrah.nightmare.DeviceProbe.caps().soc.let { com.abrah.nightmare.DeviceProbe.DIT_GREY_SOCS[it] ?: it },
+            )
             row.ramTight -> stringResource(R.string.ram_tight).trim().removePrefix("·").trim()
             spec.isCustom && row.missing.isNotEmpty() -> stringResource(R.string.incomplete_missing, row.missing.joinToString())
             row.unsupported() && row.needsRam > 0 ->

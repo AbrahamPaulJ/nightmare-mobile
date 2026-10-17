@@ -608,6 +608,8 @@
     <string name="model_substitute_body">"%1$s" is not on this phone and has no download. It was imported somewhere else. Download %2$s (%3$s) and use it for this flow instead?</string>
     <string name="model_segment_needed">%1$s is not installed. This flow\'s Segment model node needs it. Download it (%2$s)?</string>
     <string name="model_not_installed">%1$s is not installed. Download it (%2$s)?</string>
+    <string name="knob_needs_title">%1$s needs a download</string>
+    <string name="knob_needs_body">%1$s uses %2$s, which is not on this phone yet. Download it now (%3$s)?</string>
     <string name="model_download_progress">%1$d of %2$d MB · %3$s</string>
     <string name="model_use_wifi">Use Wi-Fi.</string>
     <string name="model_hide">Hide</string>
@@ -622,6 +624,13 @@
     <string name="models_import_failed">import failed: %1$s</string>
     <string name="models_needs_ram">%1$s needs a phone with %3$d GB of RAM; this one has %2$d GB</string>
     <string name="models_needs_arch">%1$s needs an HTP arch of %2$d or newer; this device reports %3$d</string>
+    <string name="dit_grey_chip">May render grey on the %1$s for now. If it does, tap Diagnose on the error and share the report</string>
+    <string name="diagnose">Diagnose</string>
+    <string name="diagnose_note">This picture came back one flat colour. Diagnose renders a small picture up to 13 times, each with one part moved off the NPU, and adds which ones come back clean to this report. About 10 minutes.</string>
+    <string name="diagnose_report_title">Diagnosis of a blank picture</string>
+    <string name="diagnose_starting">Starting…</string>
+    <string name="diagnose_progress">%1$d of %2$d: %3$s</string>
+    <string name="diagnose_keep_open">Keep the app open. The report opens when it is done; share it as usual.</string>
     <string name="upscale_no_upscaler">upscale failed. No upscaler named %1$s</string>
     <string name="upscale_picture_gone">upscale failed. That picture\'s file is gone</string>
     <string name="upscale_with">Upscaling with %1$s…</string>
@@ -768,6 +777,8 @@
     <string name="knob_detail_denoise">Fix strength</string>
     <string name="hint_fix_faces">After the render: find each face and redraw it close up with this prompt and model, then blend it back (ADetailer). Needs the face and hand detector from Models, Tools. Adds a render per face.</string>
     <string name="hint_fix_hands">After the render: find each hand and redraw it close up, as Fix faces does. Adds a render per hand.</string>
+    <string name="more_options">More options</string>
+    <string name="more_options_on">On: %1$s</string>
     <string name="hint_detail_denoise">How much of each face or hand is redrawn. 0.4 keeps the pose and fixes the detail; higher changes more.</string>
     <string name="run_detail_no_detector">Fix faces and hands skipped: the face and hand detector is not installed. Download it in Models, Tools</string>
     <string name="run_detail_no_square">Fix faces and hands skipped: could not load the model at %1$dx%2$d for it</string>

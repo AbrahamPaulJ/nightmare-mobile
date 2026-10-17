@@ -197,6 +197,19 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "model_scan" -> scanModels()
             "model_import" -> importModels()
             "dit_lora" -> ditLora(arg)
+            // ⭐ Diagnose headless (`--es arg "<model id>[|KEY=VALUE;KEY=VALUE]"`, else the selected model): what a
+            // tester's button runs. ⚠ The `KEY=VALUE` part is a FAULT for a control on a phone that renders clean
+            // (Anima with every fusion on is black), added to every leg; a leg's own setting wins.
+            "dit_diagnose" -> {
+                val model = arg?.substringBefore('|')?.takeIf { it.isNotBlank() } ?: SelectedModel.id
+                val fault = arg?.substringAfter('|', "").orEmpty().split(';')
+                    .mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 } }.associate { (k, v) -> k.trim() to v.trim() }
+                // ⚠ `full=1` runs every leg past a clean control: proves no leg aborts, on a phone that renders clean.
+                val full = fault["full"] == "1"
+                val env = fault - "full"
+                if (env.isNotEmpty()) say("diagnose: injected on every leg: $env")
+                say(BlankDiagnosis.report(model, diagnoseBlank(model, inject = env, stopWhenClean = !full)))
+            }
             "lora_node" -> loraNode(arg)
             "swap" -> swapOp(arg)
             "ultrafix" -> ultrafixOp(arg)
@@ -587,6 +600,84 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     private fun loraProbePrompt(spec: ModelSpec): String =
         (if (spec.family == Family.ANIMA_DIT) "safe, " else "") +
             "a red brick house beside a lake, clear sky, photorealistic"
+
+    /**
+     * ⭐⭐ Runs [BlankDiagnosis.LEGS] on [modelId]: a fresh backend per leg with that leg's environment
+     * ([BackendProcess.diagnosticEnv]), one small render, a verdict. Stops after the control when the control
+     * renders clean (nothing to find). [onLeg] gets (index, total, leg) before each leg, for a progress line.
+     * ⚠ The `finally` clears the environment and stops the backend, so the next Run launches as shipped.
+     */
+    suspend fun diagnoseBlank(
+        modelId: String,
+        onLeg: (Int, Int, BlankDiagnosis.Leg) -> Unit = { _, _, _ -> },
+        cancelled: () -> Boolean = { false },
+        /** ⚠ Test only (the `dit_diagnose` op): a fault on every leg, under the leg's own setting. */
+        inject: Map<String, String> = emptyMap(),
+        /** ⚠ Test only: false runs every leg after a clean control. */
+        stopWhenClean: Boolean = true,
+    ): List<BlankDiagnosis.Outcome> {
+        val spec = ModelCatalog.byId(modelId)
+        if (spec?.isDit != true) {
+            say("diagnose needs a DiT model; $modelId is not one", bad = true)
+            return emptyList()
+        }
+        // ⚠ Iris renders fixed sizes only ([Family.IRIS]); every other DiT takes any multiple of 64.
+        val side = if (spec.family == Family.IRIS) spec.native.width else BlankDiagnosis.SIZE
+        val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, ModelCatalog.DIT_RES.width, ModelCatalog.DIT_RES.height)
+        val out = ArrayList<BlankDiagnosis.Outcome>()
+        try {
+            for ((i, leg) in BlankDiagnosis.LEGS.withIndex()) {
+                if (cancelled()) break
+                onLeg(i, BlankDiagnosis.LEGS.size, leg)
+                say("diagnose ${i + 1}/${BlankDiagnosis.LEGS.size}: ${leg.what}")
+                BackendProcess.diagnosticEnv = inject + leg.env
+                suspend fun once(): BlankDiagnosis.Outcome {
+                    stopBackend()
+                    val t0 = System.currentTimeMillis()
+                    return if (!ensureBackend(key)) {
+                        BlankDiagnosis.Outcome(
+                            leg, BlankDiagnosis.Verdict.FAILED, System.currentTimeMillis() - t0,
+                            BackendProcess.failureReason() ?: "the backend would not start",
+                        )
+                    } else when (val r = Ops.generate(
+                        prompt = BlankDiagnosis.PROMPT, negative = "", steps = BlankDiagnosis.STEPS, cfg = spec.cfg,
+                        seed = BlankDiagnosis.SEED, width = side, height = side, imagePng = null, denoise = 1.0,
+                    )) {
+                        is Ops.Result.Ok -> {
+                            val bmp = android.graphics.BitmapFactory.decodeByteArray(r.value.png, 0, r.value.png.size)
+                            val px = IntArray(bmp.width * bmp.height).also { bmp.getPixels(it, 0, bmp.width, 0, 0, bmp.width, bmp.height) }
+                            BlankDiagnosis.Outcome(
+                                leg, BlankDiagnosis.Verdict.CLEAN, System.currentTimeMillis() - t0,
+                                BlankDiagnosis.describe(px, bmp.width, bmp.height),
+                            ).also { bmp.recycle() }
+                        }
+                        is Ops.Result.Err -> {
+                            val colour = BlankDiagnosis.flatColour(r.body)
+                            if (colour != null) BlankDiagnosis.Outcome(leg, BlankDiagnosis.Verdict.FLAT, System.currentTimeMillis() - t0, colour)
+                            else BlankDiagnosis.Outcome(
+                                leg, BlankDiagnosis.Verdict.FAILED, System.currentTimeMillis() - t0,
+                                explainOpFailure(r.code, r.body).take(200),
+                            )
+                        }
+                    }
+                }
+                // ⭐ A FAILED leg runs once more: on the S25 one leg of thirteen lost its backend at launch and the
+                // same leg alone was clean three times (2026-10-17). A real fault fails twice and is reported.
+                val outcome = once().let { first ->
+                    if (first.verdict != BlankDiagnosis.Verdict.FAILED) first
+                    else once().let { second -> second.copy(detail = second.detail + " (after a retry)") }
+                }
+                out += outcome
+                say("  ${outcome.verdict.name.lowercase()} in ${outcome.ms / 1000} s: ${outcome.detail.take(80)}")
+                if (stopWhenClean && i == 0 && outcome.verdict == BlankDiagnosis.Verdict.CLEAN) break
+            }
+        } finally {
+            BackendProcess.diagnosticEnv = emptyMap()
+            // ⚠ NonCancellable: a Cancel lands here as a cancellation, which would skip a plain suspend call.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { stopBackend() }
+        }
+        return out
+    }
 
     private fun loraProbeSteps(spec: ModelSpec): Int = if (spec.family == Family.ANIMA_DIT) spec.steps else 4
 
@@ -2361,7 +2452,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("no model installed. Open Models and download one", bad = true)
             return false
         }
-        say("starting the backend for ${target.model} at ${target.width}x${target.height}…")
+        // ⚠ A DiT engine takes the size per request, so a launch size there is a fixed placeholder; a
+        // tester's AI read "at 1024x1024" as the app ignoring the 768x768 they had chosen (2026-10-17).
+        say(
+            if (spec.family.dit) "starting the backend for ${target.model}…"
+            else "starting the backend for ${target.model} at ${target.width}x${target.height}…"
+        )
         return launchBackend(target)
     }
 

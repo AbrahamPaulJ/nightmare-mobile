@@ -1519,6 +1519,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     // changes the first time [DeviceProbe.measure] returns, which is
                     // after the first backend start.
                     build = spec.buildFor(caps),
+                    greyChip = spec.greyOn(caps),
                     installed = here,
                     selected = spec.id == selected,
                     progress = null,
@@ -2457,8 +2458,74 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         r.missing?.let { missingModel = toolMissing(it) }
     }
 
-    var missingModel by mutableStateOf<MissingModel?>(null)
+    private var missingModelState by mutableStateOf<MissingModel?>(null)
+
+    /** ⭐ The download popup's model. ⚠ Every assignment forgets [missingForKnob]: only [offerSwitchedOn] sets it. */
+    var missingModel: MissingModel?
+        get() = missingModelState
+        private set(value) {
+            missingModelState = value
+            missingForKnob = null
+        }
+
+    /**
+     * ⭐ The knob whose switching on asked for [missingModel], by its label; null for a Run's or a button's
+     * ask. The popup then names the knob and ends on OK, not Run: nothing was run.
+     */
+    var missingForKnob by mutableStateOf<String?>(null)
         private set
+
+    /**
+     * ⭐⭐ The download offered the moment a knob that needs a model is switched ON (the user's call,
+     * 2026-10-17: "consistent across app"), from every surface at once because every edit lands in
+     * [editCanvas] or [updateCanvas]. Only a change from off to on asks: a flow opening with the knob
+     * already on asks nothing, and the Run check ([modelsPresentOrAsk]) is still the backstop.
+     * ⚠ Tap to select and Pick ask here and never block a Run that holds no taps or picks: the
+     * 2026-09-22 rule (`docs/LEGACY.md` §9) was about a Run demanding it.
+     */
+    private fun offerSwitchedOn(before: Graph, after: Graph) {
+        if (before === after || missingModel != null) return
+        val ctx = getApplication<Application>()
+        val old = before.byId
+        // ⚠ A knob is ONE node's params changing. Opening a flow or swapping a recipe reuses node ids
+        // ("3" was a prompt, is now a sampler with Hires fix on) and must not read as a switch.
+        val edited = after.nodes.filter { n -> old[n.id]?.let { it.type == n.type && it.params != n.params } == true }
+        if (edited.size != 1) return
+        for (n in edited) {
+            val o = old.getValue(n.id)
+            fun on(name: String) = n.params[name] == "true" && o.params[name] != "true"
+            fun label(name: String) = name.knobLabel(ctx)
+            val d = com.abrah.nightmare.detail.Detailer
+            val ask: Pair<String, MissingModel>? = when {
+                (on(d.FIX_FACES) || on(d.FIX_HANDS)) && !com.abrah.nightmare.detail.PartDetector.isInstalled(ctx) ->
+                    label(if (on(d.FIX_FACES)) d.FIX_FACES else d.FIX_HANDS) to toolMissing(com.abrah.nightmare.NeedsDownload.DETAILER)
+                (on(SdSampler.HIRES) || on(SdSampler.ENLARGE)) && UpscalerCatalog.installedIds.isEmpty() ->
+                    defaultUpscaler()?.let { label(if (on(SdSampler.HIRES)) SdSampler.HIRES else SdSampler.ENLARGE) to MissingModel.Upscale(it) }
+                on(MediaOutputNode.UPSCALE) -> UpscalerCatalog.byId(MediaOutputNode.effectiveParams(n)[MediaOutputNode.UPSCALER].orEmpty())
+                    ?.takeIf { !it.installed(ctx) && it.buildFor(DeviceProbe.caps()) != null }
+                    ?.let { label(MediaOutputNode.UPSCALE) to MissingModel.Upscale(it) }
+                (on(SdSampler.TAP_SELECT) || on(com.abrah.nightmare.AddObjects.ENABLE)) &&
+                    !com.abrah.nightmare.segment.Segmenter.isInstalled(ctx) ->
+                    label(if (on(SdSampler.TAP_SELECT)) SdSampler.TAP_SELECT else com.abrah.nightmare.AddObjects.ENABLE) to MissingModel.Segment
+                on(SdSampler.PICK_SELECT) && !com.abrah.nightmare.segment.Parser.isInstalled(ctx) ->
+                    label(SdSampler.PICK_SELECT) to MissingModel.Parse
+                n.type == com.abrah.nightmare.npu.WanFunNode.name &&
+                    n.params[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE] != o.params[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE] &&
+                    com.abrah.nightmare.npu.WanFun.Mode.of(n.params[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE]) == com.abrah.nightmare.npu.WanFun.Mode.POSE &&
+                    !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx) ->
+                    label(com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE) to toolMissing(com.abrah.nightmare.NeedsDownload.POSE)
+                else -> null
+            }
+            if (ask != null) {
+                missingModel = ask.second
+                missingForKnob = ask.first
+                return
+            }
+        }
+    }
+
+    /** ⭐ The upscaler Hires fix and Enlarge offer: the first this phone has a build of, as the Output's Upscale offers. */
+    private fun defaultUpscaler(): UpscalerSpec? = UpscalerCatalog.ALL.firstOrNull { it.buildFor(DeviceProbe.caps()) != null }
 
     /** ⭐ Bytes the download will cost, for the popup's sentence. */
     fun missingBytes(m: MissingModel): Long = when (m) {
@@ -2591,6 +2658,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val detailing = graph.nodes.any { n -> (nodeTypes[n.type] as? com.abrah.nightmare.SdSampler)?.detailWanted(n) == true }
         if (detailing && !com.abrah.nightmare.detail.PartDetector.isInstalled(ctx)) {
             missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.DETAILER)
+            return false
+        }
+        // ⭐ Hires fix and Enlarge need an upscaler: asked here too, where they used to skip with a run-log
+        // line nobody saw (2026-10-17).
+        val enlarging = graph.nodes.any { n -> (nodeTypes[n.type] as? com.abrah.nightmare.SdSampler)?.upscalerWanted(n) == true }
+        if (enlarging && UpscalerCatalog.installedIds.isEmpty()) defaultUpscaler()?.let {
+            missingModel = MissingModel.Upscale(it)
             return false
         }
         // ⭐⭐⭐ **The segmenter is demanded ONLY by a mask that was actually
@@ -4681,6 +4755,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun editCanvas(change: (CanvasState) -> CanvasState) {
         val before = canvas
         val after = paintedOnGenerated(before, refitFramings(before, change(before)))
+        offerSwitchedOn(before.workflow.graph, after.workflow.graph)
         markNewPictures(before, after)
         // ⚠⚠⚠ **A deleted node's id is free to be reused — [Graph.freeId] hands
         // the lowest unused one straight back — so every VIEW-MODEL map keyed
@@ -5580,6 +5655,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             if (incoming.workflow !== canvas.workflow) deriveSizes(incoming) else incoming
         val changed = next.workflow !== canvas.workflow
         val opened = next.editing != canvas.editing
+        if (changed) offerSwitchedOn(canvas.workflow.graph, next.workflow.graph)
         // ⚠⚠ **Previews are OURS, and [next]'s copy of them is thrown away.**
         //
         // The canvas hands back a whole `CanvasState` derived from the one it
@@ -8522,7 +8598,47 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         val runLines = runLog.lines.map { "run  ${it.id}  ${it.text}" }
         val appLines = synchronized(this) { log.take(80).asReversed().map { "${it.stamp}  ${it.text}" } }
-        return ErrorReport.build(getApplication(), message, runLines + appLines, prompts)
+        return ErrorReport.build(getApplication(), message, runLines + appLines, prompts) +
+            (lastDiagnosis?.let { "\n\n$it" } ?: "")
+    }
+
+    /** ⭐ Diagnose's dialog ([BlankDiagnosis]): the leg running, or [report] once it is done. */
+    data class Diagnosis(val step: Int, val total: Int, val what: String, val report: String? = null)
+
+    var diagnosis by mutableStateOf<Diagnosis?>(null)
+        private set
+
+    /** ⭐ The newest Diagnose section, carried by every report after it (a tester may share a later error). */
+    private var lastDiagnosis: String? = null
+
+    /**
+     * ⭐⭐ Diagnose, from a blank picture's report (the user's call, 2026-10-17): the model the failing render
+     * ran, re-rendered once per [BlankDiagnosis.LEGS] entry ([HarnessOps.diagnoseBlank]), then the report with
+     * the verdicts in it, ready to share.
+     */
+    fun diagnoseBlank() {
+        val model = BackendProcess.lastModelId
+            ?: canvas.workflow.graph.nodes.firstNotNullOfOrNull { n ->
+                (nodeTypes[n.type] as? SdSampler)?.takeIf { it.family.dit }?.let { n.params["model"] }
+            }
+            ?: return
+        val total = BlankDiagnosis.LEGS.size
+        diagnosis = Diagnosis(0, total, "")
+        val refused = run("diagnose") {
+            val outcomes = ops.diagnoseBlank(model, onLeg = { i, n, leg -> diagnosis = Diagnosis(i + 1, n, leg.what) })
+            lastDiagnosis = BlankDiagnosis.report(ModelCatalog.byId(model)?.label ?: model, outcomes)
+            diagnosis = Diagnosis(total, total, "", report = errorReport(text(R.string.diagnose_report_title)))
+        }
+        if (refused != null) diagnosis = null
+    }
+
+    fun cancelDiagnose() {
+        cancelRun()
+        diagnosis = null
+    }
+
+    fun closeDiagnosis() {
+        diagnosis = null
     }
 
     @Synchronized

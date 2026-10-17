@@ -60,4 +60,41 @@ class DetailerTest {
         assertArrayEquals(intArrayOf(88, 88, 212, 212), Detailer.grown(YoloDecode.Box(100f, 100f, 200f, 200f, 1f), 1024, 1024))
         assertArrayEquals(intArrayOf(0, 0, 512, 512), Detailer.grown(YoloDecode.Box(0f, 0f, 512f, 512f, 1f), 512, 512))
     }
+
+    /**
+     * ⭐ A tester's hand fix (2026-10-17) in miniature: a flat wall, an oval mask, a redraw 8 levels brighter
+     * with a "hand" (dark, changed on purpose) crossing the mask's edge. The shift takes the wall back; the
+     * hand's own change does not move the median.
+     */
+    private fun oval(w: Int, h: Int) = IntArray(w * h) { i ->
+        val x = i % w; val y = i / w
+        val dx = (x - w / 2f) / (w * 0.4f); val dy = (y - h / 2f) / (h * 0.4f)
+        if (dx * dx + dy * dy <= 1f) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+    }
+
+    private fun grey(v: Int) = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+
+    @Test
+    fun aBrighterRedrawIsTakenBackAlongTheEdge() {
+        val w = 128; val h = 128
+        val mask = oval(w, h)
+        val orig = IntArray(w * h) { grey(220) }
+        // The "hand": a dark bar from the centre out through the right edge of the oval.
+        val patch = IntArray(w * h) { i -> if (i / w in 60..68 && i % w > 64) grey(90) else grey(228) }
+        val shift = Detailer.edgeShift(orig, patch, mask, w, h)!!
+        assertArrayEquals(intArrayOf(-8, -8, -8), shift)
+        val fixed = Detailer.shifted(patch, shift)
+        assertEquals(grey(220), fixed[10 * w + 64]) // the wall, back to the original
+        assertEquals(grey(82), fixed[64 * w + 100]) // the hand keeps its own change, moved with the patch
+    }
+
+    @Test
+    fun aRedrawThatChangedTheEdgeItselfIsLeftAlone() {
+        val w = 128; val h = 128
+        // Stripes all round the edge: the redraw changed what is there, not its tone.
+        val patch = IntArray(w * h) { i -> if ((i % w) / 4 % 2 == 0) grey(60) else grey(240) }
+        assertEquals(null, Detailer.edgeShift(IntArray(w * h) { grey(150) }, patch, oval(w, h), w, h))
+        // And a redraw already in tone has nothing to take back.
+        assertEquals(null, Detailer.edgeShift(IntArray(w * h) { grey(150) }, IntArray(w * h) { grey(150) }, oval(w, h), w, h))
+    }
 }

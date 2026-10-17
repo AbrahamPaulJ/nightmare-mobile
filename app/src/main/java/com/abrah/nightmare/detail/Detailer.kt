@@ -38,6 +38,78 @@ object Detailer {
     /** ⚠ Smaller than this share of the picture's short side is a speck, or a face too far to help. */
     const val MIN_SIDE = 0.03f
 
+    /** ⭐ The band inside the mask's edge the tone is read on, as a share of the patch's short side. */
+    const val EDGE_BAND = 0.06f
+
+    /** ⚠ Levels a band pixel may sit from the median and still agree with it. */
+    const val EDGE_MAX_SPREAD = 12
+
+    /** ⚠ The share of the band that must agree, or it was redrawn, not re-toned. */
+    const val EDGE_AGREE = 0.6f
+
+    /** ⚠ The largest shift taken back, levels per channel. */
+    const val EDGE_MAX_SHIFT = 32
+
+    /**
+     * ⭐⭐ ⚠ Pure: the per-channel shift (R, G, B levels) that takes [patch] back to [orig]'s tone, read on the band
+     * just inside the mask's edge; null when there is nothing to take back or the band disagrees with itself.
+     *
+     * ⚠⚠ Why (a tester's hand fix, 2026-10-17): the redraw came back about 8 levels brighter over the flat wall
+     * inside the oval, ramping to nothing across the feather, so the fixed hand sat in a pale disc. Match colours
+     * did not take it out (229.5 to 228.4): it matches the WHOLE cut's colours, and the cut is mostly the hand that
+     * was meant to change. The edge band is mostly background the redraw should have left alone, and the MEDIAN of
+     * it ignores the fingers that cross it.
+     */
+    fun edgeShift(orig: IntArray, patch: IntArray, mask: IntArray, w: Int, h: Int): IntArray? {
+        // Distance of every masked pixel to the nearest unmasked one (thirds of a pixel).
+        val far = Int.MAX_VALUE / 4
+        val dist = IntArray(mask.size) { if ((mask[it] and 0xFF) >= 128) far else 0 }
+        com.abrah.nightmare.MaskRaster.chamfer(dist, w, h)
+        val band = maxOf(2, (minOf(w, h) * EDGE_BAND).toInt()) * com.abrah.nightmare.MaskRaster.CH_STRAIGHT
+        val diffs = Array(3) { ArrayList<Int>() }
+        for (i in mask.indices) {
+            if ((mask[i] and 0xFF) < 128 || dist[i] > band || dist[i] >= far) continue
+            for (c in 0 until 3) {
+                val sh = 16 - 8 * c
+                diffs[c].add(((orig[i] shr sh) and 0xFF) - ((patch[i] shr sh) and 0xFF))
+            }
+        }
+        if (diffs[0].size < 32) return null
+        val shift = IntArray(3)
+        for (c in 0 until 3) {
+            val d = diffs[c].sorted()
+            val med = d[d.size / 2]
+            // ⚠ Most of the band, not half: a median of absolute deviations passes a band that is half one
+            // thing and half another, which is a redraw that changed the edge, not its tone.
+            val agree = d.count { kotlin.math.abs(it - med) <= EDGE_MAX_SPREAD }
+            if (agree < d.size * EDGE_AGREE) return null
+            shift[c] = med.coerceIn(-EDGE_MAX_SHIFT, EDGE_MAX_SHIFT)
+        }
+        return shift.takeIf { s -> s.any { it != 0 } }
+    }
+
+    /** ⚠ Pure: [px] moved by [shift] (R, G, B levels), alpha kept. */
+    fun shifted(px: IntArray, shift: IntArray): IntArray = IntArray(px.size) { i ->
+        val p = px[i]
+        val r = (((p shr 16) and 0xFF) + shift[0]).coerceIn(0, 255)
+        val g = (((p shr 8) and 0xFF) + shift[1]).coerceIn(0, 255)
+        val b = ((p and 0xFF) + shift[2]).coerceIn(0, 255)
+        (p and 0xFF000000.toInt()) or (r shl 16) or (g shl 8) or b
+    }
+
+    /** ⭐ [drawn] in [cut]'s tone along the mask's edge ([edgeShift]); [drawn] itself when there is nothing to move. */
+    private fun toned(drawn: Bitmap, cut: Bitmap, mask: Bitmap): Bitmap {
+        val w = drawn.width
+        val h = drawn.height
+        fun px(b: Bitmap): IntArray {
+            val s = if (b.width == w && b.height == h) b else Bitmap.createScaledBitmap(b, w, h, true)
+            return IntArray(w * h).also { s.getPixels(it, 0, w, 0, 0, w, h) }
+        }
+        val patch = px(drawn)
+        val shift = edgeShift(px(cut), patch, px(mask), w, h) ?: return drawn
+        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { setPixels(shifted(patch, shift), 0, w, 0, 0, w, h) }
+    }
+
     /** ⚠ Pure: which [boxes] to fix in a [w] x [h] picture — big enough, the largest [MAX_PER_PART]. */
     fun chosen(boxes: List<YoloDecode.Box>, w: Int, h: Int): List<YoloDecode.Box> {
         val min = MIN_SIDE * minOf(w, h)
@@ -79,7 +151,8 @@ object Detailer {
             }
             val cut = MaskCropNode.cut(cur, mask, patchW, patchH, true)
             val drawn = render(ImageStore.encodePng(cut.image), ImageStore.encodePng(cut.mask))
-            val patch = if (match) com.abrah.nightmare.ColorTools.matchBitmap(drawn, cut.image) else drawn
+            // ⭐ The edge tone always (the user's call, 2026-10-17), after Match colours when that is on.
+            val patch = toned(if (match) com.abrah.nightmare.ColorTools.matchBitmap(drawn, cut.image) else drawn, cut.image, cut.mask)
             val dst = RectF(
                 cut.rect[0].toFloat(), cut.rect[1].toFloat(),
                 (cut.rect[0] + cut.rect[2]).toFloat(), (cut.rect[1] + cut.rect[3]).toFloat(),
