@@ -6,6 +6,7 @@ import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -55,8 +56,17 @@ class DitImportTest {
         assertTrue("the engine fixture does not read as installed", DitEngine.isInstalled(ctx))
     }
 
+    private val realCopy = CustomModels.copyPart
+
+    /** ⚠ A sparse copy: the real one writes each fixture's gigabytes out ([CustomModels.copyPart]). */
+    @Before
+    fun sparseCopies() {
+        CustomModels.copyPart = { from, to -> sparseFile(to, from.length()) }
+    }
+
     @After
     fun clean() {
+        CustomModels.copyPart = realCopy
         ModelCatalog.root(ctx).deleteRecursively()
         // ⚠⚠ `CustomModels.scanned` is object state and OUTLIVES the test,
         // so a leftover entry would let [itIsInTheCatalogueAfterImporting]

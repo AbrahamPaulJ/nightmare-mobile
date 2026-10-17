@@ -937,6 +937,14 @@ object CustomModels {
     }
 
     /**
+     * ⚠ How [ensureDitParts] copies a shared part. A test swaps in a sparse copy: the real one
+     * writes a fixture's gigabytes of zeros out in full, ~15 GB per suite run, and cost 18-21 s
+     * a test on a nearly full disk (2026-10-18).
+     */
+    @androidx.annotation.VisibleForTesting
+    internal var copyPart: (File, File) -> Unit = { from, to -> from.copyTo(to, overwrite = true) }
+
+    /**
      * ⭐⭐⭐ **Puts the text encoder, VAE and tokenizer where an imported
      * checkpoint's backend will find them — copying them from any model on the
      * device that has them, and DOWNLOADING them if none does.**
@@ -978,7 +986,7 @@ object CustomModels {
             step.dest.parentFile?.mkdirs()
             if (step.from != null) {
                 onProgress(ModelInstaller.Progress("preparing the shared parts", before, total))
-                step.from.copyTo(step.dest, overwrite = true)
+                copyPart(step.from, step.dest)
             } else {
                 ModelInstaller.fetch(f.url, step.dest, f.bytes, "downloading the shared parts", { p ->
                     onProgress(ModelInstaller.Progress(p.phase, before + p.done, total))
