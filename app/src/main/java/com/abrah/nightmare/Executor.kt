@@ -2195,8 +2195,11 @@ object MaskCropNode : NodeType {
         outH: Int,
         only: Boolean,
     ): Cut {
-        val rect = (if (only) InpaintCrop.compute(InpaintPixels.bounds01(maskBmp), src.width, src.height, outW, outH) else null)
-            ?: InpaintCrop.whole(src.width, src.height, outW, outH)
+        val rect = if (only) {
+            val bounds = InpaintPixels.bounds01(maskBmp)
+            InpaintCrop.compute(bounds, src.width, src.height, outW, outH)
+                ?: InpaintCrop.wholeAround(bounds, src.width, src.height, outW, outH)
+        } else InpaintCrop.whole(src.width, src.height, outW, outH)
 
         val mx = maskBmp.width.toFloat() / src.width
         val my = maskBmp.height.toFloat() / src.height

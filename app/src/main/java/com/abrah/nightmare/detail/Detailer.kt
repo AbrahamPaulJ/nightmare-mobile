@@ -45,6 +45,10 @@ object Detailer {
     /** ⭐ The paste's feather until 1.6.185, 1/24 of the patch's short side (`InpaintPixels.FEATHER_DIVISOR`). */
     const val DEFAULT_BLUR = 1f / 24
 
+    /** ⚠ Diagnostic: `detail_run` sets it to save each cut, mask and redraw (GitHub #46's displaced face). */
+    @Volatile
+    internal var debugSink: ((name: String, bmp: Bitmap) -> Unit)? = null
+
     val CONF_RANGE = 0.05f..0.95f
     val PAD_RANGE = 0f..0.5f
     val BLUR_RANGE = 0f..0.15f
@@ -182,6 +186,7 @@ object Detailer {
             }
             val cut = MaskCropNode.cut(cur, mask, patchW, patchH, true)
             val drawn = render(ImageStore.encodePng(cut.image), ImageStore.encodePng(cut.mask))
+            debugSink?.let { it("cut", cut.image); it("mask", cut.mask); it("drawn", drawn) }
             // ⭐ The edge tone always (the user's call, 2026-10-17), after Match colours when that is on.
             val patch = toned(if (match) com.abrah.nightmare.ColorTools.matchBitmap(drawn, cut.image) else drawn, cut.image, cut.mask)
             val dst = RectF(

@@ -1,6 +1,7 @@
 package com.abrah.nightmare
 
 import com.abrah.nightmare.canvas.inpaintWorkflow
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -88,4 +89,20 @@ class InpaintCropTest {
      * it does with the rect is covered by [com.abrah.nightmare.FusedSamplerTest]
      * and by the arithmetic below, which is unchanged.
      */
+
+    @Test
+    fun aDeclinedCropStillHoldsTheMaskOnATallPicture() {
+        // ⭐ GitHub #46's geometry: a 576x1024 portrait, a 768 px square patch, the face near the top.
+        val face = floatArrayOf(0.36f, 0.12f, 0.64f, 0.30f)
+        assertEquals(null, InpaintCrop.compute(face, 576, 1024, 768, 768))
+        // ⚠ The old fallback: centred on the picture, y 224-800, the face's top outside it.
+        val centred = InpaintCrop.whole(576, 1024, 768, 768)
+        assertTrue(centred[1] > face[1] * 1024)
+        val r = InpaintCrop.wholeAround(face, 576, 1024, 768, 768)
+        assertEquals(576, r[2]); assertEquals(576, r[3])
+        assertTrue("the cut holds the mask's top", r[1] <= face[1] * 1024)
+        assertTrue("and its bottom", r[1] + r[3] >= face[3] * 1024)
+        // A square picture has no room to slide: the same rect as before.
+        assertArrayEquals(InpaintCrop.whole(1024, 1024, 768, 768), InpaintCrop.wholeAround(face, 1024, 1024, 768, 768))
+    }
 }

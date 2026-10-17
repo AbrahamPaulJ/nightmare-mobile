@@ -100,7 +100,26 @@ object InpaintCrop {
     }
 
     /**
-     * ⭐ The rect to use when [compute] declines, or "Only masked" is off: the
+     * ⭐⭐ "Only masked" when [compute] declines: [whole]'s rect, SLID onto the mask ([bounds]) instead of centred.
+     *
+     * ⚠⚠ GitHub #46 (1.6.190): on a 576x1024 portrait, Fix faces' 768 px patch wanted the picture's whole width, so
+     * [compute] declined and the cut fell back to [whole], the square CENTRED on the picture (y 224-800). A face near
+     * the top was cut in half: its upper half outside the cut, never redrawn, the model drawing the eyes again lower,
+     * and a hard seam where the cut began. Any "Only masked" inpaint on a tall or wide picture had it. A square
+     * source has no room to slide, so it is [whole] exactly.
+     */
+    fun wholeAround(bounds: FloatArray?, srcW: Int, srcH: Int, outW: Int, outH: Int): IntArray {
+        val r = whole(srcW, srcH, outW, outH)
+        if (bounds == null) return r
+        val cx = (bounds[0] + bounds[2]) / 2f * srcW
+        val cy = (bounds[1] + bounds[3]) / 2f * srcH
+        r[0] = (cx - r[2] / 2f).roundToInt().coerceIn(0, srcW - r[2])
+        r[1] = (cy - r[3] / 2f).roundToInt().coerceIn(0, srcH - r[3])
+        return r
+    }
+
+    /**
+     * ⭐ The rect to use when "Only masked" is off: the
      * largest centred rect of the output's aspect. DreamUI's source is already
      * that shape, so there it is simply the whole square.
      */

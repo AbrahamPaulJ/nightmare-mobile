@@ -3329,7 +3329,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     }
 
     /**
-     * ⭐ `detail_run` + `--es arg "faces|hands|both[,<model id>]"`: prompt, sampler, output through the executor
+     * ⭐ `detail_run` + `--es arg "faces|hands|both[,<model id>[,<W>x<H>]]"`: prompt, sampler, output through the executor
      * twice at seed 12345, the Fix switches off then on, into `files/detail_run/` (off.png, on.png). Proves
      * the detail pass the way [loraNode] proves LoRAs: through the node, not around it.
      */
@@ -3338,7 +3338,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val which = parts.getOrNull(0)?.trim().orEmpty().ifEmpty { "faces" }
         val spec = ModelCatalog.byId(parts.getOrNull(1)?.trim()?.ifEmpty { null } ?: SelectedModel.id)
             ?: return say("detail_run: no such model", bad = true)
-        val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, spec.native.width, spec.native.height)
+        // ⭐ An optional size (GitHub #46: a 576x1024 portrait came back with its face pasted lower, a seam through it).
+        val size = parts.getOrNull(2)?.trim()?.split("x")?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 2 }
+        val rw = size?.get(0) ?: spec.native.width
+        val rh = size?.get(1) ?: spec.native.height
+        val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, if (spec.isDit) ModelCatalog.DIT_RES.width else rw, if (spec.isDit) ModelCatalog.DIT_RES.height else rh)
         val out = java.io.File(ctx.getExternalFilesDir(null), "detail_run").apply { mkdirs() }
         suspend fun leg(label: String, on: Boolean) {
             if (!ensureBackend(key)) return say("  $label: no backend", bad = true)
@@ -3346,7 +3350,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             val sampler = Node(
                 "generate", SdSampler.typeFor(spec.family, inpaint = false),
                 params = mapOf(
-                    "model" to spec.id, "width" to spec.native.width.toString(), "height" to spec.native.height.toString(),
+                    "model" to spec.id, "width" to rw.toString(), "height" to rh.toString(),
                     "seed" to "12345",
                     d.FIX_FACES to (on && which != "hands").toString(),
                     d.FIX_HANDS to (on && which != "faces").toString(),
@@ -3356,7 +3360,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             val wf = com.abrah.nightmare.canvas.Workflow(
                 Graph(listOf(
                     Node("prompt", "core.prompt", params = mapOf(
-                        "prompt" to "full body photo of two friends waving at the camera in a park, faces and hands visible",
+                        "prompt" to if (size != null) "photo of a young woman with long brown hair in a white dress standing in a park, looking at the camera"
+                            else "full body photo of two friends waving at the camera in a park, faces and hands visible",
                         "negative" to "worst quality, low quality, blurry, lowres, watermark, text",
                     )),
                     sampler,
@@ -3376,7 +3381,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         say("detail_run: $which on ${spec.id}")
         leg("off", false)
-        leg("on", true)
+        com.abrah.nightmare.detail.Detailer.debugSink = { name, bmp ->
+            java.io.File(out, "on-$name.png").writeBytes(ImageStore.encodePng(bmp))
+            say("    saved on-$name.png ${bmp.width}x${bmp.height}")
+        }
+        try { leg("on", true) } finally { com.abrah.nightmare.detail.Detailer.debugSink = null }
         say("detail_run: done")
     }
 
