@@ -341,16 +341,20 @@ class DitImportTest {
      * real headers (our 4B package; `wikeeyang/Flux2-Klein-9B-True-V3`), read
      * 2026-09-28, for the reason the note above gives.
      */
-        /** ⭐ Anima 2B passes; 2.9B (40 blocks) and a wider one are refused; the LLM adapter's own blocks never count. */
+        /** ⭐ Anima 2B and 2.9B (40 blocks) pass; another depth or a wider one is refused; the LLM adapter's own blocks never count. */
     @Test
-    fun onlyAnima2bImports() {
+    fun anima2bAnd29bImport() {
         fun anima(blocks: Int, width: Int) = buildString {
             append("{\"model.diffusion_model.x_embedder.proj.1.weight\":{\"dtype\":\"BF16\",\"shape\":[$width,68],\"data_offsets\":[0,1]}")
             for (i in 0 until blocks) append(",\"model.diffusion_model.blocks.$i.self_attn.q_proj.weight\":{\"dtype\":\"BF16\",\"shape\":[$width,$width],\"data_offsets\":[0,1]}")
             append(",\"model.diffusion_model.llm_adapter.blocks.45.mlp.weight\":{\"dtype\":\"BF16\",\"shape\":[1,1],\"data_offsets\":[0,1]}}")
         }
         assertEquals(null, CustomModels.animaSizeProblem(anima(28, 2048)))
-        assertTrue(CustomModels.animaSizeProblem(anima(40, 2048))!!.contains("40 blocks"))
+        assertEquals(null, CustomModels.animaSizeProblem(anima(40, 2048)))
+        assertTrue(CustomModels.animaSizeProblem(anima(52, 2048))!!.contains("52 blocks"))
+        // ⭐ The count that picks base-model defaults for a 2.9B ([CustomModels.ANIMA29_MARK]); the adapter's 46 ignored.
+        assertEquals(40, CustomModels.animaBlocks(anima(40, 2048)))
+        assertEquals(28, CustomModels.animaBlocks(anima(28, 2048)))
         assertTrue(CustomModels.animaSizeProblem(anima(28, 2560))!!.contains("width 2560"))
         // ⚠ No shape and no blocks says nothing: never refuse on silence.
         assertEquals(null, CustomModels.animaSizeProblem("{}"))

@@ -35,6 +35,35 @@ object Detailer {
     /** ⚠ The box grows this much of its size each side, so the redraw meets hair, ears and wrists. */
     const val GROW = 0.12f
 
+    /**
+     * ⭐⭐ Per part, the three settings of the Detection sheet (GitHub #46, 1.6.185): how sure the detector must be,
+     * how far the redraw reaches past the box, and how soft its pasted edge is. Plain node params with no knob of
+     * their own, so a flow saves them; absent = A1111 ADetailer's defaults, what every render used before.
+     */
+    data class Settings(val conf: Float = PartDetector.CONF, val pad: Float = GROW, val blur: Float = DEFAULT_BLUR)
+
+    /** ⭐ The paste's feather until 1.6.185, 1/24 of the patch's short side (`InpaintPixels.FEATHER_DIVISOR`). */
+    const val DEFAULT_BLUR = 1f / 24
+
+    val CONF_RANGE = 0.05f..0.95f
+    val PAD_RANGE = 0f..0.5f
+    val BLUR_RANGE = 0f..0.15f
+
+    /** The param names of [part]'s [Settings]: confidence, padding, blur. */
+    fun keys(part: PartDetector.Part): Triple<String, String, String> {
+        val p = if (part == PartDetector.Part.FACE) "face" else "hand"
+        return Triple("${p}_conf", "${p}_pad", "${p}_blur")
+    }
+
+    /** ⚠ Pure: [part]'s settings out of a node's [params], each kept in its range. */
+    fun settings(params: Map<String, String>, part: PartDetector.Part): Settings {
+        val (c, p, b) = keys(part)
+        val d = Settings()
+        fun f(k: String, def: Float, range: ClosedFloatingPointRange<Float>) =
+            (params[k]?.toFloatOrNull() ?: def).coerceIn(range.start, range.endInclusive)
+        return Settings(f(c, d.conf, CONF_RANGE), f(p, d.pad, PAD_RANGE), f(b, d.blur, BLUR_RANGE))
+    }
+
     /** ⚠ Smaller than this share of the picture's short side is a speck, or a face too far to help. */
     const val MIN_SIDE = 0.03f
 
@@ -116,10 +145,10 @@ object Detailer {
         return boxes.filter { minOf(it.w, it.h) >= min }.sortedByDescending { it.w * it.h }.take(MAX_PER_PART)
     }
 
-    /** ⚠ Pure: [b] grown by [GROW] each side and kept on the picture, in whole pixels (l, t, r, b). */
-    fun grown(b: YoloDecode.Box, w: Int, h: Int): IntArray {
-        val gx = b.w * GROW
-        val gy = b.h * GROW
+    /** ⚠ Pure: [b] grown by [pad] (of its size) each side and kept on the picture, in whole pixels (l, t, r, b). */
+    fun grown(b: YoloDecode.Box, w: Int, h: Int, pad: Float = GROW): IntArray {
+        val gx = b.w * pad
+        val gy = b.h * pad
         return intArrayOf(
             (b.x1 - gx).toInt().coerceIn(0, w - 1), (b.y1 - gy).toInt().coerceIn(0, h - 1),
             (b.x2 + gx).toInt().coerceIn(1, w), (b.y2 + gy).toInt().coerceIn(1, h),
@@ -138,10 +167,12 @@ object Detailer {
         /** ⭐ Match colours: each patch in its cut's colours before it is blended back. */
         match: Boolean,
         render: suspend (imagePng: ByteArray, maskPng: ByteArray) -> Bitmap,
+        /** ⭐ Padding and Mask blur ([Settings]); confidence was spent choosing [boxes]. */
+        settings: Settings = Settings(),
     ): Bitmap {
         var cur = img
         for (b in boxes) {
-            val r = grown(b, cur.width, cur.height)
+            val r = grown(b, cur.width, cur.height, settings.pad)
             val mask = Bitmap.createBitmap(cur.width, cur.height, Bitmap.Config.ARGB_8888)
             Canvas(mask).apply {
                 drawColor(Color.BLACK)
@@ -157,7 +188,7 @@ object Detailer {
                 cut.rect[0].toFloat(), cut.rect[1].toFloat(),
                 (cut.rect[0] + cut.rect[2]).toFloat(), (cut.rect[1] + cut.rect[3]).toFloat(),
             )
-            cur = InpaintPixels.composite(cur, patch, dst, cut.mask)
+            cur = InpaintPixels.composite(cur, patch, dst, cut.mask, featherFrac = settings.blur)
             mask.recycle()
         }
         return cur

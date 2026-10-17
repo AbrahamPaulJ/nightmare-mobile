@@ -19,12 +19,21 @@ object AnimaGguf {
     /** `anima-turbo-v1.1.safetensors` converted, and Bedovyy's Q8_0 — the same size. */
     const val TURBO_11_BYTES = 2_276_712_576L
 
+    /**
+     * ⭐ Gazingstars123's `Anima-2.9B-preview-v1.safetensors` converted (40 blocks, `net.` names, its 3 `pos_embedder.*`
+     * dropped): measured on the PC by [SafetensorsGgufTest] and equal to the file that rendered clean on the S25, 1.6.186.
+     */
+    const val ANIMA_29_PREVIEW_BYTES = 3_159_131_808L
+
     /** ⭐ The writer is [SafetensorsGguf]'s; this is only Anima's half of it. */
     internal val rule = object : SafetensorsGguf.Rule {
         override val prefixes = listOf("model.diffusion_model.", "net.")
         override val kv = listOf("general.architecture" to "cosmos")
         // ⚠ Bedovyy's file has these too, and TURBO_11_BYTES counts them.
         override val kvU32 = listOf("general.quantization_version" to 2, "general.file_type" to 7)
+        // ⚠ 2.9B's RoPE tables (`dim_spatial_range`, `dim_temporal_range`, `seq`): the 2B and Bedovyy's files have none,
+        // and the engine computes them.
+        override fun keep(name: String) = !name.startsWith("pos_embedder.")
         override fun check(names: List<String>) {
             if (names.none { it.startsWith("llm_adapter.") }) throw IOException("not an Anima DiT (no llm_adapter)")
         }

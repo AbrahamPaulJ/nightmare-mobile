@@ -81,13 +81,14 @@ object DeviceProbe {
     val STAGED_ARCHES = listOf(68, 69, 73, 75, 79, 81)
 
     /**
-     * ⭐⭐ Chips where every DiT model renders SOLID GREY, to the name a person knows them by (`docs/DEVICES.md`
-     * §3b). The 8s Gen 4: Z-Image, Klein 9B and Anima, 12 logs from two testers on 1.6.174 to 1.6.178, at 768²
-     * with no tiled decode too, so the latent itself is flat; the 8 Gen 2 is clean on the same v73 skel. Its
-     * DiT rows carry a note pointing at Diagnose ([com.abrah.nightmare.BlankDiagnosis]). ⚠ NOT refused (the
-     * user, 2026-10-17: a refusal stops the very renders whose logs would find the fault).
+     * ⭐⭐ Chips whose DiT decode (the VAE) runs on the CPU, to the name a person knows them by (`docs/DEVICES.md`
+     * §3b). On the NPU every picture came back one flat grey. ⭐ Diagnose on a tester's 8s Gen 4 (1.6.184, Z-Image,
+     * Klein 9B and Anima, 2026-10-17): the decode on the CPU was the ONLY clean leg of 13, so the text encoder and
+     * the DiT are right on its NPU. The 8s Gen 3: the same grey (#817E81, GitHub #45), its own Diagnose owed. The
+     * 8 Gen 2 is clean on the same v73 skel. Cost on the 8s Gen 4: +8 to +11 s at 256². ⚠ An interim: which VAE op
+     * is wrong is what the decode legs of [com.abrah.nightmare.BlankDiagnosis] find, from the row's test button.
      */
-    val DIT_GREY_SOCS = mapOf("SM8735" to "8s Gen 4")
+    val DIT_CPU_DECODE_SOCS = mapOf("SM8735" to "8s Gen 4", "SM8635" to "8s Gen 3")
 
     /**
      * The HTP as far as we know it.
@@ -113,8 +114,8 @@ object DeviceProbe {
         /** ⚠ The APK has to carry this arch's Skel, or NPU init fails whatever the model. */
         val staged: Boolean get() = arch in STAGED_ARCHES
 
-        /** ⭐ The DiT engine renders one flat colour on this chip ([DIT_GREY_SOCS]). */
-        val ditGrey: Boolean get() = soc in DIT_GREY_SOCS
+        /** ⭐ The DiT decode runs on the CPU on this chip ([DIT_CPU_DECODE_SOCS]). */
+        val ditCpuDecode: Boolean get() = soc in DIT_CPU_DECODE_SOCS
 
         /**
          * ⭐⭐⭐ **Do we actually KNOW this chip, or is [arch] the floor

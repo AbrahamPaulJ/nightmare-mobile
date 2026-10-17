@@ -97,4 +97,26 @@ class DetailerTest {
         // And a redraw already in tone has nothing to take back.
         assertEquals(null, Detailer.edgeShift(IntArray(w * h) { grey(150) }, IntArray(w * h) { grey(150) }, oval(w, h), w, h))
     }
+
+    @Test
+    fun detectionSettingsDefaultToWhatEveryRenderUsedAndStayInRange() {
+        val face = com.abrah.nightmare.detail.PartDetector.Part.FACE
+        val hand = com.abrah.nightmare.detail.PartDetector.Part.HAND
+        // ⚠ No params = the old fixed values: a flow saved before 1.6.185 renders the same.
+        assertEquals(Detailer.Settings(0.3f, Detailer.GROW, 1f / 24), Detailer.settings(emptyMap(), face))
+        val s = Detailer.settings(mapOf("face_conf" to "0.6", "face_pad" to "9", "face_blur" to "x", "hand_conf" to "0.1"), face)
+        assertEquals(0.6f, s.conf)
+        assertEquals(Detailer.PAD_RANGE.endInclusive, s.pad)
+        assertEquals(Detailer.DEFAULT_BLUR, s.blur)
+        // Faces and hands are set apart.
+        assertEquals(0.1f, Detailer.settings(mapOf("hand_conf" to "0.1"), hand).conf)
+        assertEquals(0.3f, Detailer.settings(mapOf("hand_conf" to "0.1"), face).conf)
+    }
+
+    @Test
+    fun paddingGrowsTheBoxByItsShare() {
+        val b = YoloDecode.Box(100f, 100f, 200f, 200f, 0.9f)
+        assertArrayEquals(intArrayOf(100, 100, 200, 200), Detailer.grown(b, 1000, 1000, 0f))
+        assertArrayEquals(intArrayOf(75, 75, 225, 225), Detailer.grown(b, 1000, 1000, 0.25f))
+    }
 }

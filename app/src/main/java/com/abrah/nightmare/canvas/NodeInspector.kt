@@ -2621,6 +2621,10 @@ internal fun NodeInspectorBody(
         }
         for (w in if (pass == 0) mainWidgets else moreWidgets) {
             if (w.name == picked) continue
+            // ⭐ Detection settings (GitHub #46): above Fix strength, under the same rule ([DetectSettingsRow]).
+            if (w.name == com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE && !hiddenKnob(node, w.name)) {
+                DetectSettingsRow(node.params, preview) { name, v -> onSetParam(nodeId, name, v) }
+            }
             // ⚠ The doodle layer is drawn, never typed (`DrawWindow.kt`).
             if (node.type == "core.image" && w.name == com.abrah.nightmare.LoadImageNode.DRAWING) continue
             // ⭐⭐⭐ **A knob that cannot matter is not drawn** — §5.7, and the
@@ -3926,7 +3930,7 @@ private fun UnavailableNotice(why: String) {
  * picture CENTRED in the width, the controls under it.
  */
 @Composable
-private fun InpaintPopupBody(
+internal fun InpaintPopupBody(
     tab: Int,
     labels: List<String>,
     onTab: (Int) -> Unit,
@@ -4025,7 +4029,7 @@ private fun InpaintPopupBody(
  *   together plus their labels and icon rows still fit a scroll's worth.
  */
 @Composable
-private fun pictureCap(pair: Boolean = false): androidx.compose.ui.unit.Dp {
+internal fun pictureCap(pair: Boolean = false): androidx.compose.ui.unit.Dp {
     val window = LocalConfiguration.current.screenHeightDp.dp
     return if (pair) minOf(280.dp, window * 0.32f) else minOf(420.dp, window * 0.52f)
 }

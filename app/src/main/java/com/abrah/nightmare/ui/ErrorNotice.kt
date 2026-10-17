@@ -149,7 +149,7 @@ fun ErrorDetails(
                 )
                 if (onDiagnose != null) {
                     Text(
-                        stringResource(R.string.diagnose_note),
+                        stringResource(R.string.diagnose_note, com.abrah.nightmare.BlankDiagnosis.LEGS.size),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )

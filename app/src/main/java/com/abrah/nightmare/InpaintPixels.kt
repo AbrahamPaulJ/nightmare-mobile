@@ -78,7 +78,14 @@ object InpaintPixels {
      *
      * @param cropMask the mask in the PATCH's frame, white = repainted.
      */
-    fun composite(target: Bitmap, patch: Bitmap, dst: RectF, cropMask: Bitmap): Bitmap {
+    fun composite(
+        target: Bitmap,
+        patch: Bitmap,
+        dst: RectF,
+        cropMask: Bitmap,
+        /** ⭐ The feather's width as a share of the patch's short side; null keeps 1/[FEATHER_DIVISOR] (Fix faces' Mask blur). */
+        featherFrac: Float? = null,
+    ): Bitmap {
         val out = target.copy(Bitmap.Config.ARGB_8888, true)
         val r = Rect(dst.left.roundToInt(), dst.top.roundToInt(), dst.right.roundToInt(), dst.bottom.roundToInt())
         if (r.width() <= 0 || r.height() <= 0) return out
@@ -94,6 +101,7 @@ object InpaintPixels {
             fadeBottom = r.bottom < target.height,
             dstW = r.width(),
             dstH = r.height(),
+            featherFrac = featherFrac,
         )
         val masked = scaled.copy(Bitmap.Config.ARGB_8888, true)
         // ⚠ copy() carries hasAlpha=false from an opaque decode, and DST_IN then
@@ -125,6 +133,7 @@ object InpaintPixels {
         fadeBottom: Boolean,
         dstW: Int,
         dstH: Int,
+        featherFrac: Float? = null,
     ): Bitmap {
         // ⚠ The alpha map carries the DESTINATION's aspect, or one axis is
         // stretched more than the other and the seam goes lopsided.
@@ -138,7 +147,8 @@ object InpaintPixels {
 
         // Band off the shorter edge so the feather is the same physical width on
         // both axes.
-        val bandPx = max(MIN_FEATHER, min(dw, dh) / FEATHER_DIVISOR).toFloat()
+        val bandPx = featherFrac?.let { max(1f, min(dw, dh) * it) }
+            ?: max(MIN_FEATHER, min(dw, dh) / FEATHER_DIVISOR).toFloat()
 
         // ⭐⭐⭐ **An edge the MASK reaches is not faded.**
         //

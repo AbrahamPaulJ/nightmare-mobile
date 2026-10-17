@@ -72,12 +72,22 @@ object BackendProcess {
     /** Newest-first, same convention as the harness log. */
     val output = ArrayDeque<String>()
 
+    /** ⭐ The engine's device spec with only the decode (the VAE) on the CPU ([DeviceProbe.DIT_CPU_DECODE_SOCS]). */
+    const val CPU_DECODE_SPEC = "diffusion=HTP0,te=HTP0,vae=CPU"
+
     /**
      * ⭐ One Diagnose leg's environment for the NEXT DiT launch ([BlankDiagnosis.Leg.env]); empty otherwise.
      * ⚠ In memory only and cleared by [HarnessOps.diagnoseBlank]'s `finally`: a leg must never outlive it.
      */
     @Volatile
     var diagnosticEnv: Map<String, String> = emptyMap()
+
+    /**
+     * ⭐ Diagnose is running: every launch, its control included, decodes on the NPU even on a
+     * [DeviceProbe.DIT_CPU_DECODE_SOCS] chip, because the NPU decode is what it tests. Cleared with [diagnosticEnv].
+     */
+    @Volatile
+    var diagnosing: Boolean = false
 
     /**
      * ⭐⭐⭐ **Why the backend gave up, in one line a person can act on.**
@@ -771,6 +781,12 @@ object BackendProcess {
                     // the defaults leaves the skel unable to resolve what it
                     // links against. Upstream's exact list.
                     if (dit) {
+                        // ⭐⭐ The decode on the CPU where the NPU's decode comes back flat grey
+                        // ([DeviceProbe.DIT_CPU_DECODE_SOCS]). ⚠ Not during Diagnose: its legs are about
+                        // the NPU decode, and one that wants the CPU says so itself.
+                        if (DeviceProbe.caps().ditCpuDecode && !diagnosing && spec?.family != Family.WAN) {
+                            put("NM_DIT_BACKEND", CPU_DECODE_SPEC)
+                        }
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }
                         readDitLoraModeOverride(context)?.let { put("NM_DIT_LORA_MODE", it) }
@@ -984,8 +1000,30 @@ object BackendProcess {
         }
     }
 
+    /**
+     * ⭐ What the DiT engine itself measured about the NPU (`ggml-hex: Hexagon Arch version v73`,
+     * `ggml-hex: HTP0 hwinfo: threads 4, hvx 4, hmx 1, vtcm 8 MB`), newest launch. [ErrorReport] prints it on the
+     * chip line: the 400-line [output] had scrolled it out of every 8s Gen 4 report (2026-10-17), and our chip
+     * table's v73 / 8 MB for that chip is a guess.
+     */
+    @Volatile
+    var engineNpu: Map<String, String> = emptyMap()
+        private set
+
+    internal fun engineNpuLine(line: String): Pair<String, String>? {
+        val at = line.indexOf("ggml-hex: ")
+        if (at < 0) return null
+        val t = line.substring(at + "ggml-hex: ".length).trim()
+        return when {
+            t.startsWith("Hexagon Arch version ") -> "arch" to t.removePrefix("Hexagon Arch version ")
+            " hwinfo: " in t -> "hwinfo" to t.substringAfter(" hwinfo: ")
+            else -> null
+        }
+    }
+
     private fun say(line: String) {
         Log.i(TAG, line)
+        engineNpuLine(line)?.let { engineNpu = engineNpu + it }
         synchronized(output) {
             output.addFirst(line)
             while (output.size > 400) output.removeLast()

@@ -126,6 +126,9 @@ object CustomModels {
     const val ANIMA_DIT_MARK = "ANIMADIT"
     const val KLEIN9B_MARK = "KLEIN9B"
 
+    /** ⭐ An Anima DiT folder holding the 2.9B (40 blocks, [ANIMA_BLOCKS]): a base model, so base defaults. */
+    const val ANIMA29_MARK = "ANIMA29"
+
     /** The DiT weights as GGUF — the backend prefers it to `dit.safetensors` (014). */
     const val DIT_GGUF = "dit.gguf"
 
@@ -405,6 +408,14 @@ object CustomModels {
         Family.IRIS -> Defaults("euler", 4, 1.0)
     }
 
+    /**
+     * ⭐ [familyDefaults], but Anima 2.9B ([ANIMA29_MARK]) is a base model, not the turbo: 28 steps at CFG 4, the
+     * floor of its card's 28-50 and 3.5-5 (Gazingstars123/Anima-2.9B). Turbo's 10 at CFG 1 would come out mushy.
+     */
+    private fun dirDefaults(dir: File, family: Family): Defaults =
+        if (family == Family.ANIMA_DIT && File(dir, ANIMA29_MARK).isFile) Defaults("euler", 28, 4.0)
+        else familyDefaults(family)
+
     private fun customSpec(dir: File, cfg: Config, family: Family): ModelSpec {
         // ⭐ A FLUX.2 folder holding Klein 9B weights ([KLEIN9B_MARK]): the 9B's
         // own parts, `te=disk` and a 768² start, exactly as the built-in 9B.
@@ -435,8 +446,8 @@ object CustomModels {
         // ([familyDefaults]) — `dpm`/20/7.5 is only right for SD 1.5 and SDXL.
         scheduler = cfg.scheduler?.takeIf { it in ModelCatalog.schedulersFor(family) }
             ?: familyDefaults(family).scheduler,
-        steps = cfg.steps ?: familyDefaults(family).steps,
-        cfg = cfg.cfg ?: familyDefaults(family).cfg,
+        steps = cfg.steps ?: dirDefaults(dir, family).steps,
+        cfg = cfg.cfg ?: dirDefaults(dir, family).cfg,
         family = family,
         backendType = when (family) {
             Family.SD15 -> if (File(dir, INPAINT_MARK).isFile) ModelCatalog.SD15_NPU_INPAINT
@@ -737,6 +748,7 @@ object CustomModels {
             if (dest.length() <= 0L) throw java.io.IOException("the picked file was empty")
             File(dir, mark).writeBytes(ByteArray(0))
             if (variant == DitVariant.KLEIN_9B) File(dir, KLEIN9B_MARK).writeBytes(ByteArray(0))
+            if (variant.family == Family.ANIMA_DIT && animaBlocks(head.json) == 40) File(dir, ANIMA29_MARK).writeBytes(ByteArray(0))
             // ⭐ The weights are the user's, so their SIZE is not ours to check
             // ([ModelSpec.BRING_YOUR_OWN]).
             File(dir, ModelSpec.BRING_YOUR_OWN).writeBytes(ByteArray(0))
@@ -1255,27 +1267,35 @@ object CustomModels {
         else DitVariant.defaultFor(family)
     }
 
-    /** ⭐ Anima 2B, the one size the engine runs: 28 blocks at width 2048 (read off `anima-turbo-v1.1`, 2026-10-17). */
+    /**
+     * ⭐ The Anima sizes the engine runs, by DiT block count, all at width [ANIMA_2B_WIDTH]: 2B (28, read off
+     * `anima-turbo-v1.1`) and 2.9B (40, Gazingstars123's depth expansion: rendered clean on the S25, 1.6.185,
+     * 2026-10-17, `docs/ANIMA-GGML.md` §4). The engine reads the count from the weights (`anima.hpp`).
+     */
+    val ANIMA_BLOCKS = mapOf(28 to "2B", 40 to "2.9B")
     const val ANIMA_2B_BLOCKS = 28
     const val ANIMA_2B_WIDTH = 2048
 
     /**
-     * ⭐ Why an Anima checkpoint is not the 2B, said for a person; null when it is, or when the header says
-     * nothing either way (never refuse on silence, as [isKlein9b]). ⚠ The DiT's blocks only: the LLM adapter
-     * has `llm_adapter.blocks.N` of its own. 2.9B is 40 blocks at the same width, so the count is the tell
-     * there; the width catches a wider one.
+     * ⭐ Why an Anima checkpoint is not a size the engine runs ([ANIMA_BLOCKS]), said for a person; null when it
+     * is, or when the header says nothing either way (never refuse on silence, as [isKlein9b]). ⚠ The DiT's blocks
+     * only: the LLM adapter has `llm_adapter.blocks.N` of its own. The count tells 2B from 2.9B; the width catches
+     * a wider one (a tester's "Anima 3.8B" imported on 1.6.175 and rendered a blur).
      */
     internal fun animaSizeProblem(header: String): String? {
         val width = ANIMA_X_EMBED.find(header)?.groupValues?.get(1)?.toIntOrNull()
-        val blocks = KEY.findAll(header).map { it.groupValues[1] }
-            .filterNot { "llm_adapter" in it }
-            .mapNotNull { DIT_BLOCK.find(it)?.groupValues?.get(1)?.toIntOrNull() }
-            .maxOrNull()?.plus(1)
-        val bigger = (width != null && width != ANIMA_2B_WIDTH) || (blocks != null && blocks > ANIMA_2B_BLOCKS)
-        if (!bigger) return null
-        return "that is a larger Anima than the app runs (${blocks ?: "?"} blocks, width ${width ?: "?"}; " +
-            "Anima 2B is $ANIMA_2B_BLOCKS and $ANIMA_2B_WIDTH), so it would render a blur. Anima 2B checkpoints import"
+        val blocks = animaBlocks(header)
+        val other = (width != null && width != ANIMA_2B_WIDTH) || (blocks != null && blocks !in ANIMA_BLOCKS)
+        if (!other) return null
+        return "that is an Anima size the app does not run (${blocks ?: "?"} blocks, width ${width ?: "?"}), so it " +
+            "would render a blur. Anima 2B ($ANIMA_2B_BLOCKS blocks) and 2.9B (40), both at width $ANIMA_2B_WIDTH, import"
     }
+
+    /** ⚠ Pure: an Anima header's DiT block count (the LLM adapter's own never count); null when it lists none. */
+    internal fun animaBlocks(header: String): Int? = KEY.findAll(header).map { it.groupValues[1] }
+        .filterNot { "llm_adapter" in it }
+        .mapNotNull { DIT_BLOCK.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+        .maxOrNull()?.plus(1)
 
     private val ANIMA_X_EMBED = Regex("\"[^\"]*x_embedder\\.proj\\.1\\.weight\"\\s*:\\s*\\{[^}]*\"shape\"\\s*:\\s*\\[\\s*(\\d+)")
     private val KEY = Regex("\"([^\"]+)\"\\s*:\\s*\\{")

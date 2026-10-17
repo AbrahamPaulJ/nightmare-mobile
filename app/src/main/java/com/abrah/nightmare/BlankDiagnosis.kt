@@ -35,10 +35,19 @@ object BlankDiagnosis {
      * WHOLE and case-blind by ggml-hexagon (`std::regex_match`, `RE_ICASE`).
      */
     val LEGS = listOf(
-        Leg("baseline", "as shipped", emptyMap()),
+        // ⚠ "everything on the NPU", not "as shipped": on a [DeviceProbe.DIT_CPU_DECODE_SOCS] chip the shipped decode
+        // is the CPU's, and Diagnose tests the NPU's ([BackendProcess.diagnosing]).
+        Leg("baseline", "everything on the NPU", emptyMap()),
         Leg("te_cpu", "text encoder on the CPU", mapOf("NM_DIT_BACKEND" to "diffusion=HTP0,te=CPU,vae=HTP0")),
         Leg("dit_cpu", "DiT on the CPU", mapOf("NM_DIT_BACKEND" to "diffusion=CPU,te=HTP0,vae=HTP0")),
         Leg("vae_cpu", "decode on the CPU", mapOf("NM_DIT_BACKEND" to "diffusion=HTP0,te=HTP0,vae=CPU")),
+        // ⭐ The decode's own ops (1.6.185). On the 8s Gen 4 only `vae_cpu` was clean, and every op leg below
+        // left these on the NPU: the VAE's convolutions run on HMX in fp16 (ggml-hexagon's conv2d), its group
+        // norms and pads nowhere else. HMX off sends the convolutions to the CPU too, the rest of the NPU kept.
+        Leg("no_hmx", "the NPU's matrix unit (HMX) off", mapOf("GGML_HEXAGON_NHMX" to "0")),
+        cpu("cpu_conv", "convolutions", "CONV_2D.*|IM2COL"),
+        cpu("cpu_group_norm", "group norms", "GROUP_NORM.*"),
+        cpu("cpu_pad", "pads", "PAD"),
         Leg("hvx_matmul", "matmuls on HVX only (no HMX)", mapOf("GGML_HEXAGON_MM_SELECT" to "2")),
         Leg("no_fusion", "op fusions off", mapOf("GGML_HEXAGON_OPFUSION" to "0")),
         cpu("cpu_matmul", "matmuls", "MUL_MAT|MUL_MAT_SEGMENTED|MUL_MAT_ID"),

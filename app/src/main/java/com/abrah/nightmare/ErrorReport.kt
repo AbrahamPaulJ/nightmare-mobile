@@ -227,7 +227,11 @@ object ErrorReport {
                     caps.measured -> " (measured)"
                     caps.known -> " (from the chip table)"
                     else -> " (unknown chip, the floor)"
-                } + " · VTCM ${caps.vtcmMb} MB",
+                } + " · VTCM ${caps.vtcmMb} MB" +
+                // ⭐ The engine's own reading of the NPU, when a DiT launch has printed it ([BackendProcess.engineNpu]).
+                BackendProcess.engineNpu.let { e ->
+                    if (e.isEmpty()) "" else " · engine says ${listOfNotNull(e["arch"], e["hwinfo"]).joinToString(", ")}"
+                },
             ramTotal = DeviceProbe.totalRamBytes(),
             ramAvailable = availableRamBytes(),
             storageFree = runCatching { ModelStorage.root(context).usableSpace }.getOrDefault(0L),

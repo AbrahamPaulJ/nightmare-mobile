@@ -46,7 +46,7 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
   an import costs only its own weights (plus up to 2.6 GB once, if you have neither family).
 - **Klein 9B and Krea 2** get their own copy of their text encoder (4.8 GB and 2.6 GB), copied
   from the built-in model if you have it, downloaded if not.
-- **Anima** takes its text encoder and VAE (0.9 GB) from Anima Turbo 1.1 the same way. An
+- **Anima** takes its text encoder and VAE (0.9 GB) from Anima Turbo 1.1 the same way. Anima 2B and 2.9B (40 blocks) both import; a 2.9B starts at 28 steps and CFG 4, as a base model wants; another size is refused. An
   imported `.safetensors` runs as it is: about 20% slower than the built-in, which the app
   converts to Q8_0. A Q8_0 `.gguf` runs at the built-in's speed.
 

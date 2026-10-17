@@ -151,4 +151,34 @@ class SafetensorsGgufTest {
             }
         }
     }
+
+    @Test
+    fun anima29KeepsItsFortyBlocksAndDropsTheRopeTables() {
+        // ⭐ Anima 2.9B's shape (1.6.186): `net.` names, a block past the 2B's 28, and the RoPE buffers the 2B lacks.
+        val src = safetensors(listOf(
+            t("net.llm_adapter.out_proj.weight", 64, 64),
+            t("net.blocks.39.mlp.layer1.weight", 64, 64),
+            t("net.pos_embedder.seq", 256),
+            t("net.pos_embedder.dim_spatial_range", 21),
+            t("net.final_layer.linear.weight", 64, 64),
+        ))
+        val (plan, _) = SafetensorsGguf.plan(src, AnimaGguf.rule)
+        assertEquals(listOf("blocks.39.mlp.layer1.weight", "final_layer.linear.weight", "llm_adapter.out_proj.weight"), plan.map { it.name })
+        assertEquals(SafetensorsGguf.Q8_0, plan.first().type)
+    }
+
+    /**
+     * ⚠ Opt-in, on the PC: the REAL 2.9B through the phone's converter, against [AnimaGguf.ANIMA_29_PREVIEW_BYTES].
+     * Runs only when `app/build/anima29.safetensors` exists (a hard link to the 5.84 GB download); skipped elsewhere.
+     */
+    @Test
+    fun theRealAnima29ConvertsToTheCataloguedSize() {
+        val src = File("build/anima29.safetensors")
+        org.junit.Assume.assumeTrue(src.isFile)
+        val dst = File(tmp.root, "dit.gguf")
+        val written = AnimaGguf.convert(src, dst, { _, _ -> }, { false })
+        assertEquals(AnimaGguf.ANIMA_29_PREVIEW_BYTES, dst.length())
+        assertEquals(dst.length(), written)
+        assertTrue(GgufHeader.isComplete(dst))
+    }
 }

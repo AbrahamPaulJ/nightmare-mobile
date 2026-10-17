@@ -1519,7 +1519,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     // changes the first time [DeviceProbe.measure] returns, which is
                     // after the first backend start.
                     build = spec.buildFor(caps),
-                    greyChip = spec.greyOn(caps),
+                    cpuDecode = spec.cpuDecodeOn(caps),
                     installed = here,
                     selected = spec.id == selected,
                     progress = null,
@@ -8614,10 +8614,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * ⭐⭐ Diagnose, from a blank picture's report (the user's call, 2026-10-17): the model the failing render
      * ran, re-rendered once per [BlankDiagnosis.LEGS] entry ([HarnessOps.diagnoseBlank]), then the report with
-     * the verdicts in it, ready to share.
+     * the verdicts in it, ready to share. ⭐ [modelId]: a model row's "Test the NPU decode" (1.6.185), on a chip
+     * that decodes on the CPU and so never shows the grey error ([DeviceProbe.DIT_CPU_DECODE_SOCS]).
      */
-    fun diagnoseBlank() {
-        val model = BackendProcess.lastModelId
+    fun diagnoseBlank(modelId: String? = null) {
+        val model = modelId ?: BackendProcess.lastModelId
             ?: canvas.workflow.graph.nodes.firstNotNullOfOrNull { n ->
                 (nodeTypes[n.type] as? SdSampler)?.takeIf { it.family.dit }?.let { n.params["model"] }
             }

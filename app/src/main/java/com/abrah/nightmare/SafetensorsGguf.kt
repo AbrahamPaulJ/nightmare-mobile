@@ -37,6 +37,8 @@ object SafetensorsGguf {
          * every Anima Turbo 1.1 download failed at the end of the conversion (a tester, 2026-10-16).
          */
         val kvU32: List<Pair<String, Int>> get() = emptyList()
+        /** ⭐ False drops a tensor (after the prefix is stripped): Anima 2.9B's RoPE buffers, which the engine builds itself. */
+        fun keep(name: String): Boolean = true
         /** ⚠ Throws when [names] are not this model's: a wrong file must fail here, not render noise. */
         fun check(names: List<String>)
         /** The output shape (torch order) — [shape] unless the model pads it. */
@@ -63,7 +65,9 @@ object SafetensorsGguf {
         val headerLen = ByteBuffer.wrap(lenBuf).order(ByteOrder.LITTLE_ENDIAN).long
         if (headerLen <= 0 || headerLen > 64L shl 20) throw IOException("not a safetensors file")
         val header = JSONObject(String(ByteArray(headerLen.toInt()).also { raf.readFully(it) }, Charsets.UTF_8))
-        val tensors = header.keys().asSequence().filter { it != "__metadata__" }.sorted().map { key ->
+        val tensors = header.keys().asSequence().filter { it != "__metadata__" }.sorted().filter { key ->
+            rule.keep(rule.prefixes.firstOrNull { key.startsWith(it) }?.let { key.removePrefix(it) } ?: key)
+        }.map { key ->
             val t = header.getJSONObject(key)
             val shape = t.getJSONArray("shape").let { a -> LongArray(a.length()) { a.getLong(it) } }
             val off = t.getJSONArray("data_offsets")

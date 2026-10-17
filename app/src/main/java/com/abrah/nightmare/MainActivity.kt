@@ -735,6 +735,7 @@ fun HarnessScreen(
                     // ⚠ Same reasoning: `.bin` has no registered MIME type either.
                     ModelsScreen(
                         onRename = vm::renameModel,
+                        onTestNpu = { vm.diagnoseBlank(it.id) },
                         rows = vm.modelRows,
                         // ⚠ The OR: this screen's buttons mean "the app is doing
                         // something long", which is what [working] is for.

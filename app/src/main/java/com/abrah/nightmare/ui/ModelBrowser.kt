@@ -392,6 +392,7 @@ internal fun ModelCardV2(
     onUse: (ModelSpec) -> Unit,
     /** ⭐ Rename an imported model (its shown name only), from ⋮. */
     onRename: (ModelSpec) -> Unit = {},
+    onTestNpu: (ModelSpec) -> Unit = {},
 ) {
     val spec = row.spec
     val dim = row.unsupported()
@@ -430,7 +431,7 @@ internal fun ModelCardV2(
                         if (row.fromLocalDream) Badge(stringResource(R.string.mb_local_dream), MaterialTheme.colorScheme.tertiary)
                     }
                 }
-                ModelMenu(row, busy, onInstall, onDelete, onRename)
+                ModelMenu(row, busy, onInstall, onDelete, onRename, onTestNpu)
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -490,9 +491,9 @@ private fun StatusLine(row: ModelRow, modifier: Modifier) {
         }
         // ⚠ The facts the old card said in words, kept where they matter.
         val note = when {
-            row.greyChip -> stringResource(
-                R.string.dit_grey_chip,
-                com.abrah.nightmare.DeviceProbe.caps().soc.let { com.abrah.nightmare.DeviceProbe.DIT_GREY_SOCS[it] ?: it },
+            row.cpuDecode -> stringResource(
+                R.string.dit_cpu_decode,
+                com.abrah.nightmare.DeviceProbe.caps().soc.let { com.abrah.nightmare.DeviceProbe.DIT_CPU_DECODE_SOCS[it] ?: it },
             )
             row.ramTight -> stringResource(R.string.ram_tight).trim().removePrefix("·").trim()
             spec.isCustom && row.missing.isNotEmpty() -> stringResource(R.string.incomplete_missing, row.missing.joinToString())
@@ -549,13 +550,16 @@ private fun ModelMenu(
     onInstall: (ModelSpec) -> Unit,
     onDelete: (ModelSpec) -> Unit,
     onRename: (ModelSpec) -> Unit,
+    onTestNpu: (ModelSpec) -> Unit,
 ) {
     // ⚠ Never Local Dream's files — it keeps them, and deletes them itself.
     val canDelete = (row.installed || row.spec.isCustom || row.partial) && row.progress == null && !row.fromLocalDream
     val canRepair = row.partial && row.build != null && row.progress == null
     // ⭐ Our own imports only: a name lives in the model's `config.json`, and Local Dream's are its files.
     val canRename = row.spec.isCustom && row.installed && row.spec.home != null && row.progress == null && !row.fromLocalDream
-    if (!canDelete && !canRepair && !canRename) {
+    // ⭐ Diagnose on demand where the decode was moved to the CPU, so the grey error never offers it.
+    val canTestNpu = row.cpuDecode && row.installed && row.progress == null
+    if (!canDelete && !canRepair && !canRename && !canTestNpu) {
         Spacer(Modifier.size(40.dp))
         return
     }
@@ -570,6 +574,13 @@ private fun ModelMenu(
                     text = { Text(stringResource(R.string.flows_rename)) },
                     enabled = !busy,
                     onClick = { open = false; onRename(row.spec) },
+                )
+            }
+            if (canTestNpu) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.test_npu_decode)) },
+                    enabled = !busy,
+                    onClick = { open = false; onTestNpu(row.spec) },
                 )
             }
             if (canRepair) {

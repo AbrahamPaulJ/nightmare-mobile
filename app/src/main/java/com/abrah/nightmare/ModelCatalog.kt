@@ -579,8 +579,11 @@ data class ModelSpec(
     /** ⭐ Rendered by the DiT engine through `/generate` — see [Family.dit]. */
     val isDit: Boolean get() = family.dit
 
-    /** ⭐ A chip where the DiT engine renders grey ([DeviceProbe.DIT_GREY_SOCS]): a note on the row, never a refusal. */
-    fun greyOn(caps: DeviceProbe.Caps): Boolean = isDit && family != Family.IRIS && caps.ditGrey
+    /**
+     * ⭐ A chip where this model's decode runs on the CPU ([DeviceProbe.DIT_CPU_DECODE_SOCS]): a note on the row and a
+     * "Test the NPU decode" in its menu. Iris has no VAE, Wan is not offered there.
+     */
+    fun cpuDecodeOn(caps: DeviceProbe.Caps): Boolean = isDit && family != Family.IRIS && family != Family.WAN && caps.ditCpuDecode
 
     /**
      * ⭐ A TRUE inpainting checkpoint — a 9-channel UNet whose `conv_in`
@@ -2076,6 +2079,8 @@ object ModelCatalog {
         partsFrom: String? = null,
         /** ⭐ Its ONLY sizes, first = native ([ModelSpec.fixedSizes]); null = the free 64-px grid. */
         sizes: List<Res>? = null,
+        /** ⭐ 1 for every turbo here; a base model (Anima 2.9B) wants its own. */
+        cfg: Double = 1.0,
     ) = ModelSpec(
         startRes = startRes,
         fixedSizes = sizes != null,
@@ -2093,7 +2098,7 @@ object ModelCatalog {
         requiredFiles = files.map { it.name },
         scheduler = "euler",
         steps = steps,
-        cfg = 1.0,
+        cfg = cfg,
         files = files,
     )
 
@@ -2302,6 +2307,28 @@ object ModelCatalog {
                     HF + "circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-turbo-v1.1.safetensors",
                     "dit.gguf", AnimaGguf.TURBO_11_BYTES,
                     sourceBytes = 4_182_230_656L, convert = AnimaGguf.converter,
+                ),
+                RemoteFile(HF + "mradermacher/Qwen3-0.6B-Base-GGUF/resolve/main/Qwen3-0.6B-Base.Q8_0.gguf", "llm.gguf", 639_447_232L),
+                RemoteFile(HF + "circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors", "vae.safetensors", 253_806_246L),
+                RemoteFile(HF + "Qwen/Qwen3-0.6B-Base/resolve/main/tokenizer.json", "tokenizer.json", 7_031_645L),
+            ),
+        ),
+        // ⭐ Anima 2.9B preview (Gazingstars123, CircleStone non-commercial; `docs/ANIMA-GGML.md` §4): Anima's 28 blocks
+        // deepened to 40, the same engine path unchanged (it reads the depth from the weights). A BASE model: 28 steps
+        // at CFG 4, its card's floor (28-50, 3.5-5). Converted on the phone like Turbo ([AnimaGguf], its RoPE tables
+        // dropped), to [AnimaGguf.ANIMA_29_PREVIEW_BYTES]. Measured on the S25 (1.6.186): 1024², 20 steps, CFG 4, 300 s.
+        // ⚠ Its own copy of Turbo's encoder, VAE and tokenizer (0.9 GB): [ModelSpec.partsFrom] reaches the backend
+        // for Wan only. ⚠ Below v79 never run (as Turbo was before its 8 Gen 2 report).
+        dit(
+            "anima_29b_preview", "Anima 2.9B (preview)", Family.ANIMA_DIT, KREA2, steps = 28, cfg = 4.0,
+            prompt = "",
+            minArch = DIT_V73_MIN_ARCH,
+            ownDitParts = true,
+            files = listOf(
+                RemoteFile(
+                    HF + "Gazingstars123/Anima-2.9B/resolve/main/Anima-2.9B-preview-v1.safetensors",
+                    "dit.gguf", AnimaGguf.ANIMA_29_PREVIEW_BYTES,
+                    sourceBytes = 5_843_204_206L, convert = AnimaGguf.converter,
                 ),
                 RemoteFile(HF + "mradermacher/Qwen3-0.6B-Base-GGUF/resolve/main/Qwen3-0.6B-Base.Q8_0.gguf", "llm.gguf", 639_447_232L),
                 RemoteFile(HF + "circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors", "vae.safetensors", 253_806_246L),

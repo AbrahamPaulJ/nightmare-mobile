@@ -1,0 +1,58 @@
+package com.abrah.nightmare
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * ⭐ The 8s Gen 4 / 8s Gen 3 grey picture (1.6.185): the decode on the CPU there, a way to test the NPU's decode
+ * on demand, and the engine's own reading of the NPU kept for the report.
+ */
+class CpuDecodeChipTest {
+
+    private fun caps(soc: String) = DeviceProbe.Caps(arch = 73, vtcmMb = 8, measured = false, soc = soc)
+
+    @Test
+    fun theTwoSChipsDecodeOnTheCpuAndThe8Gen2DoesNot() {
+        assertTrue(caps("SM8735").ditCpuDecode)
+        assertTrue(caps("SM8635").ditCpuDecode)
+        // ⚠ The control: the 8 Gen 2 runs the same v73 skel clean.
+        assertFalse(caps("SM8550").ditCpuDecode)
+        val zit = ModelCatalog.byId("z_image_turbo")!!
+        assertTrue(zit.cpuDecodeOn(caps("SM8735")))
+        assertFalse(zit.cpuDecodeOn(caps("SM8550")))
+    }
+
+    @Test
+    fun theDecodeSpecMovesOnlyTheVae() {
+        assertEquals("diffusion=HTP0,te=HTP0,vae=CPU", BackendProcess.CPU_DECODE_SPEC)
+    }
+
+    @Test
+    fun theDecodeLegsKeepTheDecodeOnTheNpu() {
+        // ⭐ Every leg after the parts tests the NPU decode, so none may set the device spec.
+        val decode = listOf("no_hmx", "cpu_conv", "cpu_group_norm", "cpu_pad")
+        val legs = BlankDiagnosis.LEGS.associateBy { it.id }
+        for (id in decode) {
+            val leg = legs[id] ?: error("missing leg $id")
+            assertNull(id, leg.env["NM_DIT_BACKEND"])
+        }
+        assertEquals("CONV_2D.*|IM2COL", legs.getValue("cpu_conv").env[BlankDiagnosis.OPFILTER_ADD])
+    }
+
+    @Test
+    fun theEnginesNpuLinesAreKept() {
+        // ⚠ The real lines, from a v75 report (1.6.175).
+        assertEquals(
+            "arch" to "v75",
+            BackendProcess.engineNpuLine("   784.7ms [  INFO ] [dit] util.cpp:628  - ggml-hex: Hexagon Arch version v75"),
+        )
+        assertEquals(
+            "hwinfo" to "threads 4, hvx 4, hmx 1, vtcm 8 MB",
+            BackendProcess.engineNpuLine("   821.3ms [  INFO ] [dit] util.cpp:628  - ggml-hex: HTP0 hwinfo: threads 4, hvx 4, hmx 1, vtcm 8 MB"),
+        )
+        assertNull(BackendProcess.engineNpuLine("   784.7ms [  INFO ] [dit] util.cpp:628  - ggml-hex: device 0: HTP0 (phys=0, virt=0, domain=cdsp:3)"))
+    }
+}

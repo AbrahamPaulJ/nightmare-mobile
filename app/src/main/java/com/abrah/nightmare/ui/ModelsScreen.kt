@@ -156,8 +156,8 @@ data class ModelRow(
     val fetchBytes: Long = 0,
     /** ⭐ [ModelSpec.ramNeeded] — non-zero: the chip could, the RAM cannot. */
     val needsRam: Long = 0,
-    /** ⭐ [com.abrah.nightmare.ModelSpec.greyOn]: the chip renders this model grey: the row says so and points at Diagnose. */
-    val greyChip: Boolean = false,
+    /** ⭐ [com.abrah.nightmare.ModelSpec.cpuDecodeOn]: this chip decodes it on the CPU; the row says so, ⋮ tests the NPU's. */
+    val cpuDecode: Boolean = false,
     /** ⭐ [com.abrah.nightmare.CustomModels.ramTight] — an import that Android will likely close. */
     val ramTight: Boolean = false,
     /** ⭐ Its files are Local Dream's ([com.abrah.nightmare.LocalDreamModels]): a badge, no Delete. */
@@ -187,6 +187,8 @@ fun ModelsScreen(
     onSelect: (ModelSpec) -> Unit,
     /** ⭐ An imported model's new shown name ([com.abrah.nightmare.HarnessViewModel.renameModel]). */
     onRename: (ModelSpec, String) -> Unit = { _, _ -> },
+    /** ⭐ ⋮ "Test the NPU decode" ([com.abrah.nightmare.HarnessViewModel.diagnoseBlank]), on a [ModelRow.cpuDecode] row. */
+    onTestNpu: (ModelSpec) -> Unit = {},
     /**
      * ⭐⭐ A Use waiting on a flow choice — see
      * [com.abrah.nightmare.HarnessViewModel.PendingUse]. Null when nothing is
@@ -616,7 +618,7 @@ fun ModelsScreen(
                         }
                     }
                     val card: @Composable (ModelRow) -> Unit = { row ->
-                        ModelCardV2(row, busy, onInstall, onCancel, { deleting = it }, onSelect, onRename = { renaming = it })
+                        ModelCardV2(row, busy, onInstall, onCancel, { deleting = it }, onSelect, onRename = { renaming = it }, onTestNpu = onTestNpu)
                     }
                     if (sec.installed.isNotEmpty()) {
                         item { SectionHeader(stringResource(R.string.mb_section_installed, sec.installed.size)) }

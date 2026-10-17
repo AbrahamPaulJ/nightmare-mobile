@@ -625,6 +625,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val side = if (spec.family == Family.IRIS) spec.native.width else BlankDiagnosis.SIZE
         val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, ModelCatalog.DIT_RES.width, ModelCatalog.DIT_RES.height)
         val out = ArrayList<BlankDiagnosis.Outcome>()
+        BackendProcess.diagnosing = true
         try {
             for ((i, leg) in BlankDiagnosis.LEGS.withIndex()) {
                 if (cancelled()) break
@@ -673,6 +674,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             }
         } finally {
             BackendProcess.diagnosticEnv = emptyMap()
+            BackendProcess.diagnosing = false
             // ⚠ NonCancellable: a Cancel lands here as a cancellation, which would skip a plain suspend call.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { stopBackend() }
         }
@@ -1031,7 +1033,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (spec?.isDit != true) return say("dit_bench needs a DiT model; $id is not one", bad = true)
         val mode = parts.getOrNull(0)?.trim().orEmpty()
         val steps = parts.getOrNull(1)?.trim()?.toIntOrNull()
-        if (mode !in setOf("t2i", "edit") || steps == null) return say("dit_bench: arg is t2i|edit,<steps>[,<model id>]", bad = true)
+        if (mode !in setOf("t2i", "edit") || steps == null) return say("dit_bench: arg is t2i|edit,<steps>[,<model id>[,<cfg>]]", bad = true)
+        // ⭐ An optional fourth part is the CFG (1 when absent): a base model, e.g. Anima 2.9B, wants 3.5 to 5.
+        val cfg = parts.getOrNull(3)?.trim()?.toDoubleOrNull() ?: 1.0
         val res = if (spec.id == SelectedModel.id) SelectedModel.res else spec.native
         val dir = java.io.File(ctx.getExternalFilesDir(null), "dit_bench").apply { mkdirs() }
         val negative = "worst quality, low quality, blurry, lowres, watermark, text"
@@ -1058,7 +1062,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val r = Ops.generate(
             prompt = if (mode == "edit") "make it winter, snow on the roof and ground"
                 else "a lovely cat holding a sign that says 'Nightmare',",
-            negative = negative, steps = steps, cfg = 1.0, seed = 12345,
+            negative = negative, steps = steps, cfg = cfg, seed = 12345,
             width = res.width, height = res.height,
             imagePng = base, denoise = 1.0,
         )

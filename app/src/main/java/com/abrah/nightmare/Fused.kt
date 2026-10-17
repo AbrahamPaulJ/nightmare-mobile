@@ -1262,13 +1262,14 @@ class SdSampler(
             }
         }
         for (part in parts) {
-            val found = com.abrah.nightmare.detail.PartDetector.detect(appCtx, bmp, part).orEmpty()
+            val set = d.settings(base, part)
+            val found = com.abrah.nightmare.detail.PartDetector.detect(appCtx, bmp, part, set.conf).orEmpty()
             val boxes = d.chosen(found, bmp.width, bmp.height)
             ctx.say(
                 if (part == com.abrah.nightmare.detail.PartDetector.Part.FACE) ctx.text(R.string.run_detail_faces, "fixing faces: %1\$d found", boxes.size)
                 else ctx.text(R.string.run_detail_hands, "fixing hands: %1\$d found", boxes.size)
             )
-            if (boxes.isNotEmpty()) bmp = d.fix(bmp, boxes, pw, ph, matching(p), render)
+            if (boxes.isNotEmpty()) bmp = d.fix(bmp, boxes, pw, ph, matching(p), render, set)
         }
         return Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
     }
