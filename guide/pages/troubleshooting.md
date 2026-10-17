@@ -11,6 +11,9 @@ end. Tap it to see the full report: the error, the app's stack trace, the backen
 how it stopped, and your phone, chip, RAM and model files. **Your prompt is left out.** Read it,
 then **Copy** it or **Share** it as a `.txt` file to attach to an issue.
 
+A Run that finished without an error but looks wrong (noise, a grid, one flat colour) has the same report
+behind the **share** icon in the run log above Run, next to its copy icon.
+
 A message like *"the backend stopped: killed by the system (SIGKILL)"* almost always means the
 phone ran out of memory: close other apps, or pick a smaller canvas or a smaller model.
 

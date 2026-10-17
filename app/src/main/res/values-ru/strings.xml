@@ -23,6 +23,8 @@
     <string name="log_seeds_summary">сиды: %1$d закреплено · %2$d случайно</string>
     <string name="log_seeds_title">Сиды</string>
     <string name="cd_copy_log">Скопировать журнал запуска</string>
+    <string name="run_report_title">Отчёт об этом запуске (без ошибки)</string>
+    <string name="cd_share_run_report">Поделиться отчётом об этом запуске</string>
     <string name="cd_hide_log">Скрыть журнал запуска</string>
     <string name="cd_lock_seed">Закрепить последний сид, чтобы каждый запуск давал ту же картинку</string>
     <string name="cd_unlock_seed">Освободить сид, чтобы каждый запуск давал новую картинку</string>

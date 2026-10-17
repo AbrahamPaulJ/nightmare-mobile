@@ -575,6 +575,23 @@ fun RunLogPanel(
                         )
                     }
                 }
+                // ⭐ Share a report of ANY finished run (GitHub #48, 1.6.188): a result that looks wrong but did not
+                // error (Wan's red grid on an 8 Elite) had no way to send its log. The error notice's own report and
+                // dialog ([com.abrah.nightmare.ui.ErrorDetails]), titled as a run that did not fail.
+                val report = com.abrah.nightmare.ui.LocalErrorReport.current
+                if (!state.running && state.lines.isNotEmpty() && report != null) {
+                    var shown by remember { mutableStateOf<String?>(null) }
+                    val title = stringResource(R.string.run_report_title)
+                    IconButton(onClick = { shown = report(title) }, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            com.abrah.nightmare.ui.ShareIcon,
+                            contentDescription = stringResource(R.string.cd_share_run_report),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                    shown?.let { com.abrah.nightmare.ui.ErrorDetails(it, onDismiss = { shown = null }) }
+                }
                 // ⚠⚠ NOT offered while running. Closing never cancelled — it
                 // was "stop showing me" — but a ✕ beside a live progress bar
                 // reads as "stop", and the one thing worse than a control that

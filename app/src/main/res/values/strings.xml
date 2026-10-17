@@ -34,6 +34,8 @@
     <string name="log_seeds_summary">seeds: %1$d locked · %2$d random</string>
     <string name="log_seeds_title">Seeds</string>
     <string name="cd_copy_log">Copy the run log</string>
+    <string name="run_report_title">A report of this run (it did not fail)</string>
+    <string name="cd_share_run_report">Share a report of this run</string>
     <string name="cd_hide_log">Hide the run log</string>
     <string name="cd_lock_seed">Lock the last seed, so every Run makes the same picture</string>
     <string name="cd_unlock_seed">Release the seed, so every Run makes a new picture</string>

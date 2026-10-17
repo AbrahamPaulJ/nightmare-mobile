@@ -23,6 +23,8 @@
     <string name="log_seeds_summary">种子：%1$d 个锁定 · %2$d 个随机</string>
     <string name="log_seeds_title">种子</string>
     <string name="cd_copy_log">复制运行日志</string>
+    <string name="run_report_title">本次运行的报告（没有出错）</string>
+    <string name="cd_share_run_report">分享本次运行的报告</string>
     <string name="cd_hide_log">隐藏运行日志</string>
     <string name="cd_lock_seed">锁定上次的种子，每次运行都生成相同的图</string>
     <string name="cd_unlock_seed">解除种子锁定，每次运行都生成新的图</string>
