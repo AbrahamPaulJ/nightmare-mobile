@@ -205,6 +205,8 @@
     <string name="anima_lowram_hint">仅 Anima 生效：按需加载每个模型，用完即释放。小于 16GB 内存的设备建议开启。开启后将禁用生成过程预览。</string>
     <string name="anima_seq_dit">Anima DiT 轮流加载</string>
     <string name="anima_seq_dit_hint">仅在 Anima 低内存模式下生效：不再让 DiT 的两块同时驻留内存。如果你有 12GB 内存但 Anima 低内存模式仍无法运行，请开启此选项。每步速度会变慢。</string>
+    <string name="wan_stream">视频：流式加载模型</string>
+    <string name="wan_stream_hint">Wan 从存储中流式读取模型，而不是常驻内存。大约慢30%。如果视频出现彩色网格或噪点，请开启</string>
     <string name="cn_label">ControlNet</string>
     <string name="cn_hint">canny 提取照片的边缘，openpose 找出姿势，depth 估计深度；也可直接使用现成的骨架或深度图</string>
     <string name="cn_not_installed">此手机尚未安装 %1$s ControlNet。</string>
@@ -274,6 +276,7 @@
     <string name="mb_models_count">%1$d 个模型</string>
     <string name="mb_sub_base">基础</string>
     <string name="mb_sub_imported">导入</string>
+    <string name="mb_sub_community">社区</string>
     <string name="mb_no_match">没有匹配的模型。</string>
     <string name="mb_group_classic">经典扩散</string>
     <string name="mb_group_dit">新一代 DiT</string>
@@ -504,7 +507,6 @@
     <string name="inspector_drop_upscaled_body">上方原图将成为此节点的输出。自动放大仍保持开启，因此下次运行会再次放大。</string>
     <string name="inspector_unknown_node_type">未知节点类型，对应插件是否已加载？</string>
     <string name="inspector_no_widgets">此节点没有控件</string>
-    <string name="inspector_inputs">输入：%1$s</string>
     <string name="inspector_reset_node">重置节点</string>
     <string name="inspector_delete_node">删除节点</string>
     <string name="inspector_reset_title">重置此节点？</string>
@@ -600,8 +602,8 @@
     <string name="models_import_failed">导入失败：%1$s</string>
     <string name="models_needs_ram">%1$s 需要配备 %3$d GB 内存的手机；此手机有 %2$d GB</string>
     <string name="models_needs_arch">%1$s 需要 HTP v%2$d 或更新架构；此设备报告为 v%3$d</string>
-    <string name="dit_cpu_decode">在 %1$s 上用CPU解码（较慢）：NPU解码会出灰图。点 ⋮ “测试NPU解码”可帮助修复</string>
-    <string name="test_npu_decode">测试NPU解码</string>
+    <string name="dit_no_hmx">在 %1$s 上关闭 NPU 的矩阵单元并在 CPU 上解码：图片正确，但慢很多（512 需数分钟，1024 更久）。⋮ 测试NPU 有助于找到更快的修复</string>
+    <string name="test_npu">测试NPU</string>
     <string name="diagnose">诊断</string>
     <string name="diagnose_note">这张图只有一种颜色。诊断会把一张小图最多生成%1$d次，每次把一个部分从NPU移开，并把哪些能正常出图写进这份报告。大约10到25分钟。</string>
     <string name="diagnose_report_title">纯色图片诊断</string>
@@ -904,6 +906,8 @@
     <string name="api_switch_hint">端口 %1$d。默认关闭；监听时会显示通知。</string>
     <string name="api_token_label">令牌（以 Authorization: Bearer … 发送）</string>
     <string name="api_copy">复制令牌</string>
+    <string name="api_cors">允许浏览器网页</string>
+    <string name="api_cors_hint">浏览器中的网页可以调用API，每次调用仍需要令牌</string>
     <string name="api_regenerate">新令牌</string>
     <string name="api_no_network">当前没有 Wi-Fi 或 tailnet 地址</string>
     <string name="api_channel">本地 API</string>

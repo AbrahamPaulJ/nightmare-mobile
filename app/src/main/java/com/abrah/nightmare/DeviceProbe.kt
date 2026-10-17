@@ -81,14 +81,14 @@ object DeviceProbe {
     val STAGED_ARCHES = listOf(68, 69, 73, 75, 79, 81)
 
     /**
-     * ⭐⭐ Chips whose DiT decode (the VAE) runs on the CPU, to the name a person knows them by (`docs/DEVICES.md`
-     * §3b). On the NPU every picture came back one flat grey. ⭐ Diagnose on a tester's 8s Gen 4 (1.6.184, Z-Image,
-     * Klein 9B and Anima, 2026-10-17): the decode on the CPU was the ONLY clean leg of 13, so the text encoder and
-     * the DiT are right on its NPU. The 8s Gen 3: the same grey (#817E81, GitHub #45), its own Diagnose owed. The
-     * 8 Gen 2 is clean on the same v73 skel. Cost on the 8s Gen 4: +8 to +11 s at 256². ⚠ An interim: which VAE op
-     * is wrong is what the decode legs of [com.abrah.nightmare.BlankDiagnosis] find, from the row's test button.
+     * ⭐⭐ Chips whose DiT models run with the NPU's matrix unit OFF (`GGML_HEXAGON_NHMX=0`), to the name a person
+     * knows them by (`docs/DEVICES.md` §3b). With HMX every picture came back flat grey, and with the decode on the
+     * CPU (1.6.185-1.6.192) as NOISE: Diagnose on a tester's 8s Gen 4 (Z-Image, Klein 9B, Anima 2.9B) and an 8s Gen 3
+     * (Anima Turbo 1.1) found `no_hmx` the only leg with a picture in it; `vae_cpu`'s "clean" was the seed's noise
+     * decoded (two Anima models, one thumbnail byte for byte). The 8 Gen 2 is clean on the same v73 skel with HMX.
+     * Cost at 256x256, 2 steps: Anima 55 s for 29, Z-Image 113 s for 25, Klein 9B 323 s for 34.
      */
-    val DIT_CPU_DECODE_SOCS = mapOf("SM8735" to "8s Gen 4", "SM8635" to "8s Gen 3")
+    val DIT_NO_HMX_SOCS = mapOf("SM8735" to "8s Gen 4", "SM8635" to "8s Gen 3")
 
     /**
      * The HTP as far as we know it.
@@ -114,8 +114,8 @@ object DeviceProbe {
         /** ⚠ The APK has to carry this arch's Skel, or NPU init fails whatever the model. */
         val staged: Boolean get() = arch in STAGED_ARCHES
 
-        /** ⭐ The DiT decode runs on the CPU on this chip ([DIT_CPU_DECODE_SOCS]). */
-        val ditCpuDecode: Boolean get() = soc in DIT_CPU_DECODE_SOCS
+        /** ⭐ DiT models run with HMX off on this chip ([DIT_NO_HMX_SOCS]). */
+        val ditNoHmx: Boolean get() = soc in DIT_NO_HMX_SOCS
 
         /**
          * ⭐⭐⭐ **Do we actually KNOW this chip, or is [arch] the floor

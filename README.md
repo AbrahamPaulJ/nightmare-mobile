@@ -20,8 +20,8 @@ and it downloads on first use; the app shows which ones your phone can run.
 | chip | runs |
 |---|---|
 | Snapdragon 888 and newer | SD 1.5 |
-| 8 Gen 2, 8s Gen 3 and newer | **alpha:** Z-Image Turbo as a Q4_0 GGUF, FLUX.2 Klein 9B, Anima Turbo 1.1 and Iris 3B Turbo on the DiT engine. On the 8s Gen 4 and 8s Gen 3 the picture is decoded on the CPU for now (slower), because the NPU decode comes back grey there: a model's ⋮ **Test the NPU decode** finds which part of it fails |
-| 8 Gen 3 and newer | SDXL, Anima; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1 and 2.1 Turbo, Anima Turbo 1.1 on the DiT engine, Iris 3B Turbo (not yet run on an 8 Gen 3), Z-Image Turbo as a Q4_0 GGUF, your own quantised (GGUF) DiT, Wan 2.2 video |
+| 8 Gen 2, 8s Gen 3 and newer | **alpha:** Z-Image Turbo as a Q4_0 GGUF, FLUX.2 Klein 9B, Anima Turbo 1.1 and Iris 3B Turbo on the DiT engine. On the 8s Gen 4 and 8s Gen 3 they run with the NPU's matrix unit off and decode on the CPU for now, because with it the picture comes back grey or as noise: right pictures, but much slower (minutes at 512, far longer at 1024). A model's ⋮ **Test the NPU** finds which part fails, so it can be made fast again. Iris keeps it on there and is still noisy |
+| 8 Gen 3 and newer | SDXL, Anima, community-converted SDXL and SDXL Swap models; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1 and 2.1 Turbo, Anima Turbo 1.1 on the DiT engine, Iris 3B Turbo (not yet run on an 8 Gen 3), Z-Image Turbo as a Q4_0 GGUF, your own quantised (GGUF) DiT, Wan 2.2 video |
 | 8 Elite and newer | Z-Image Turbo in FP8, SDXL Swap, MOSS-Image, Neodragon text and image to video, and all of the above |
 | 12 GB RAM | Krea 2 Turbo (8 Elite; alpha on 8 Gen 3); on 12 GB it renders in parts, about 3.5 to 4 min at 1024² |
 
@@ -47,7 +47,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Results**: star, save, share, reopen any picture as the flow that made it; each keeps how long it took. Fold the big preview away and the grid fills the screen. In a picture's info, long-press its prompt, negative, seed or the picture itself and **Use** them on the open flow, each matched to the node you pick.
 
 ### Models
-- **40 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand.
+- **44 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand. A **Community** tab under SDXL and SDXL Swap lists models converted by community members on an 8 Gen 3, so they run on the 8 Gen 3 and newer; they are hosted on their converters' own pages.
 - **FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1 (and its 8-step Turbo), Krea 2 Turbo, Anima Turbo 1.1, Anima 2.9B (preview)**: any size from 512 to 2048 in 64 px steps, no reload to change it.
 - **MOSS-Image** (8 steps): OpenMOSS's 5B model with a 9B text encoder (Qwen3.5) and lodestones' 8-step speed-up applied every time. Careful, detailed pictures, and slow on a phone: about 3 min at 512x512 and 11 to 12 min at 1024x1024 on an 8 Elite. About 10 GB. Text to image.
 - **Iris 3B Turbo**: draws pixels directly, so there is no VAE and no decode step to run out of memory in. Only the sizes it was trained at, about 1 MP each (1024x1024, 896x1200, 896x1344, 752x1344 and the turned versions); smaller ones come out in blocks. About 2.5 min at 1024x1024 on an 8 Elite. Text to image.
@@ -82,11 +82,11 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **English, Chinese and Russian**: the app follows your phone's language.
 - **Models where you can see them**: optionally in `Download/Nightmare`, surviving an uninstall.
 - **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches and the DiT engine (which falls back from GitHub to Hugging Face by itself); large files come over four connections at once. Tap Download on a second model while one downloads and it waits its turn.
-- **Your RAM back**: the model is released when you leave; low-RAM switches for SDXL and Anima.
+- **Your RAM back**: the model is released when you leave; low-RAM switches for SDXL and Anima, and one that streams the video model for phones whose clips come out as a coloured grid.
 - **A report when the phone restarts mid-run**: the next launch says what was running and how much memory was free at each step, ready to copy into a bug report.
 - **Three views of one flow**: **Default** (one step at a time, the easy way in), **Advanced** (the whole flow as connected boxes) and **Chat** (hide it in Settings if you don't use it), switched from one button beside the current model (tap the model to change it); in **Default**, **Swap flow** moves to another flow for the same model keeping your prompt and settings. Models, Flows, Results and the current flow live in a sidebar; Models, Flows, Results and Settings open as sheets over the flow.
 - **An agent**: ask for pictures in words: an AI model you bring your own key for (OpenRouter, OpenAI, DeepSeek, xAI, Groq or a local server) builds the flow on your canvas, finds and downloads LoRAs, uses a picture you attach, runs it and shows you the picture; no picture is ever sent to the AI model ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/agent/)).
-- **A local API**: a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; pictures and Motion transfer's video go in the request; token-protected, off by default ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
+- **A local API**: a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; pictures and Motion transfer's video go in the request; token-protected, off by default; **Allow browser pages** lets a web page call it too ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
 - **Offline and private**: nothing is uploaded, no account (the optional agent talks to the provider you choose); a failure report never includes your prompt.
 
 The [user guide](https://abrahampaulj.github.io/nightmare-mobile/) explains each of these, with measurements.
@@ -140,6 +140,7 @@ there. Every component, with its licence and terms, is listed in [NOTICE](NOTICE
 | SD 1.5, SDXL, Anima catalogue and upscalers | their authors, converted by xororz | each model's licence | via local-dream |
 | AbsoluteReality v1.8.1 / Inpaint, CuteYukiMix, Anything V5 | Lykon, kemiaomiao, Yuno779 | CreativeML OpenRAIL-M | SD 1.5 Swap defaults, [our conversions](https://huggingface.co/AbrahamPJ/nightmare-sd15-swap-models) |
 | Illustrious XL v1.0, Juggernaut XL Ragnarok | OnomaAI Research, RunDiffusion | OpenRAIL++-M; OpenRAIL-M + RunDiffusion's terms | SDXL Swap defaults, [our conversions](https://huggingface.co/AbrahamPJ/nightmare-sdxl-swap-models) |
+| Community SDXL and SDXL Swap conversions | their authors, converted with npuforge by community members | each model's licence | the Community tab, downloaded from their converters' pages |
 
 ### Control, reference and picture helpers
 

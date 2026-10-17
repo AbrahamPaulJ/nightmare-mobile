@@ -14,6 +14,7 @@ object ApiSettings {
     private const val FILE = "nightmare_api"
     private const val KEY_ON = "on"
     private const val KEY_TOKEN = "token"
+    private const val KEY_CORS = "cors"
 
     /** ⚠ Not 8188 (ComfyUI) or 7860 (A1111): a client written for those must not think it found one. */
     const val PORT = 8820
@@ -23,6 +24,29 @@ object ApiSettings {
     fun setEnabled(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_ON, on).apply()
     }
+
+    /**
+     * ⭐ "Allow browser pages" (GitHub #54, 1.6.193; off by default): a web page may call the API. [CORS_HEADERS] on
+     * every answer and an `OPTIONS` preflight answered before the token check ([NightmareApi.corsPreflight]).
+     * ⚠ The token stays the only gate: a page needs it exactly as a script does, and `*` sends no cookies.
+     */
+    fun cors(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_CORS, false)
+
+    fun setCors(ctx: Context, on: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_CORS, on).apply()
+    }
+
+    /**
+     * ⭐ What a browser needs to read the answer and to send `Authorization` and a JSON body. ⚠ The private-network
+     * line is Chrome's, for a page served from the internet calling a phone on the LAN.
+     */
+    val CORS_HEADERS = linkedMapOf(
+        "Access-Control-Allow-Origin" to "*",
+        "Access-Control-Allow-Methods" to "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers" to "Authorization, Content-Type",
+        "Access-Control-Allow-Private-Network" to "true",
+        "Access-Control-Max-Age" to "600",
+    )
 
     /** The token, made on first use. */
     fun token(ctx: Context): String =

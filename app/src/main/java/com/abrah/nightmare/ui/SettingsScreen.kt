@@ -128,6 +128,7 @@ fun SettingsScreen(
     api: ApiState? = null,
     onApi: (Boolean) -> Unit = {},
     onRegenerateApiToken: () -> Unit = {},
+    onApiCors: (Boolean) -> Unit = {},
     /** ⭐ The view the app opens on, and the Nodes view's direction (the user's three views). */
     defaultView: com.abrah.nightmare.MainView = com.abrah.nightmare.MainView.NODES,
     onDefaultView: (com.abrah.nightmare.MainView) -> Unit = {},
@@ -610,6 +611,10 @@ fun SettingsScreen(
                             lowRam.animaSeqDit, { onLowRam(Prefs.KEY_ANIMA_SEQ_DIT, it) },
                             enabled = lowRam.anima,
                         )
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.wan_stream), stringResource(R.string.wan_stream_hint),
+                            lowRam.wanStream, { onLowRam(Prefs.KEY_WAN_STREAM, it) },
+                        )
                     }
                 }
                 // ⭐ Shown only while the battery manager may stop the app — see BackendKeepAliveService.
@@ -623,7 +628,7 @@ fun SettingsScreen(
                 }
         }
         Page.ADVANCED -> Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (api != null) ApiSection(api, onApi, onRegenerateApiToken)
+            if (api != null) ApiSection(api, onApi, onRegenerateApiToken, onApiCors)
             // ⭐⭐ **Clean temp files** — ported from upstream at the user's ask,
             // 2026-09-20. ⚠⚠ It SCANS first and shows the total, because the
             // honest question is "delete 3.4 GB?" and not "delete some files?".
@@ -804,7 +809,7 @@ private fun sizeLabel(bytes: Long): String =
     else "${bytes shr 20} MB"
 
 /** ⭐ What Settings shows of the API: on/off, its token, the addresses it listens on. */
-data class ApiState(val on: Boolean, val token: String, val addresses: List<String>)
+data class ApiState(val on: Boolean, val token: String, val addresses: List<String>, val cors: Boolean = false)
 
 /**
  * ⭐ Settings → API: the switch, then — while on — where to reach it and the token every call
@@ -812,7 +817,7 @@ data class ApiState(val on: Boolean, val token: String, val addresses: List<Stri
  * cuts off every client holding the old one.
  */
 @Composable
-private fun ApiSection(api: ApiState, onApi: (Boolean) -> Unit, onRegenerate: () -> Unit) {
+private fun ApiSection(api: ApiState, onApi: (Boolean) -> Unit, onRegenerate: () -> Unit, onCors: (Boolean) -> Unit) {
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var revealed by remember { mutableStateOf(false) }
     var rotating by remember { mutableStateOf(false) }
@@ -861,6 +866,11 @@ private fun ApiSection(api: ApiState, onApi: (Boolean) -> Unit, onRegenerate: ()
                 modifier = Modifier.weight(1f),
             ) { Text(stringResource(R.string.api_copy)) }
         }
+        // ⭐ GitHub #54: off by default; the token stays the gate ([com.abrah.nightmare.api.ApiSettings.cors]).
+        com.abrah.nightmare.canvas.BoolKnobRow(
+            stringResource(R.string.api_cors), stringResource(R.string.api_cors_hint),
+            api.cors, onCors,
+        )
     }
     if (rotating) {
         androidx.compose.material3.AlertDialog(

@@ -70,4 +70,61 @@ class BlankDiagnosisTest {
         assertTrue(r, r.lines().any { it.trim().startsWith("te_cpu") && "clean" in it })
         assertTrue(r, r.lines().last().startsWith("conclusion: The text encoder"))
     }
+
+    @Test
+    fun staticIsNoiseAndAPictureIsNot() {
+        // ⚠ Measured on real renders (0.06-0.17) and a tester's Iris static (0.82-1.01): [BlankDiagnosis.NOISE_GRAIN].
+        val w = 64
+        val rnd = java.util.Random(1)
+        val static = IntArray(w * w) { (0xFF shl 24) or rnd.nextInt(0x1000000) }
+        assertEquals(Verdict.NOISE, BlankDiagnosis.verdictOf(static, w, w))
+        val smooth = IntArray(w * w) { i -> val g = (i % w) * 4; (0xFF shl 24) or (g shl 16) or (g shl 8) or g }
+        assertEquals(Verdict.CLEAN, BlankDiagnosis.verdictOf(smooth, w, w))
+        // ⚠ The control: a flat colour has no grain at all, and is no noise.
+        assertEquals(Verdict.CLEAN, BlankDiagnosis.verdictOf(IntArray(w * w) { 0xFF808080.toInt() }, w, w))
+        assertTrue(BlankDiagnosis.describe(static, w, w).contains("grain 1."))
+    }
+
+    @Test
+    fun noiseKeepsTheShippedLaunchAndSkipsTheDecodeLegs() {
+        val noise = BlankDiagnosis.legsAfter(Verdict.NOISE, shipped = true, hasVae = true)
+        assertTrue(noise.none { it.id in BlankDiagnosis.DECODE_ONLY || it.id == "baseline" })
+        assertTrue(noise.any { it.id == "te_cpu" } && noise.any { it.id == "dit_cpu" })
+        // ⭐ A clean shipped render (HMX off) goes on to the CULPRIT legs: HMX on, the decode on the CPU in every one.
+        val culprit = BlankDiagnosis.legsAfter(Verdict.CLEAN, shipped = true, hasVae = true)
+        assertEquals("vae_cpu", culprit.first().id)
+        assertTrue(culprit.all { it.env["NM_DIT_BACKEND"]?.endsWith("vae=CPU") == true })
+        assertTrue(culprit.none { it.id in setOf("baseline", "no_hmx", "cpu_conv", "cpu_group_norm", "cpu_pad") })
+        assertEquals("CPU_VAE plus its op group", "FLASH_ATTN_EXT|SOFT_MAX", culprit.first { it.id == "cpu_attention" }.env[BlankDiagnosis.OPFILTER_ADD])
+        // Iris (no VAE): never the decode legs; a clean control elsewhere: nothing to find.
+        val iris = BlankDiagnosis.legsAfter(Verdict.NOISE, shipped = false, hasVae = false)
+        assertTrue(iris.isNotEmpty() && iris.none { it.id in BlankDiagnosis.DECODE_ONLY })
+        assertEquals("diffusion=HTP0,te=CPU,vae=HTP0", iris.first { it.id == "te_cpu" }.env["NM_DIT_BACKEND"])
+        assertTrue(BlankDiagnosis.legsAfter(Verdict.CLEAN, shipped = false, hasVae = true).isEmpty())
+        assertEquals(BlankDiagnosis.LEGS.drop(1), BlankDiagnosis.legsAfter(Verdict.FLAT, shipped = false, hasVae = true))
+    }
+
+    @Test
+    fun aNoisyShippedControlNamesThePartThatMakesNoise() {
+        val shipped = Outcome(BlankDiagnosis.SHIPPED, Verdict.NOISE, 1000, "")
+        val c = BlankDiagnosis.conclusion(listOf(shipped) + run("te_cpu" to Verdict.NOISE, "dit_cpu" to Verdict.CLEAN, "no_fusion" to Verdict.CLEAN))
+        assertTrue(c, c.startsWith("The DiT on the NPU makes it noise.") && "Clean with: op fusions off." in c)
+        val r = BlankDiagnosis.Run(listOf(shipped), 11, 1024).report("Iris 3B Turbo")
+        assertTrue(r, r.lines().first() == "diagnosis (1 of 11 legs): Iris 3B Turbo, 1024x1024, 2 steps, seed 42")
+    }
+
+    @Test
+    fun theCulpritLegsNameTheOpGroupToKeepOffHmx() {
+        val legs = BlankDiagnosis.legsAfter(Verdict.CLEAN, shipped = true, hasVae = true).associateBy { it.id }
+        fun o(id: String, v: Verdict) = Outcome(legs.getValue(id), v, 1000, "")
+        val shipped = Outcome(BlankDiagnosis.SHIPPED, Verdict.CLEAN, 1000, "")
+        val c = BlankDiagnosis.conclusion(
+            listOf(shipped, o("vae_cpu", Verdict.NOISE), o("te_cpu", Verdict.NOISE), o("dit_cpu", Verdict.CLEAN),
+                o("cpu_attention", Verdict.CLEAN), o("cpu_norm", Verdict.NOISE)),
+        )
+        assertTrue(c, c.startsWith("With HMX the DiT makes it noise.") && "Clean with HMX on and: attention on the CPU." in c)
+        // ⚠ The control: HMX on and clean means only the decode needed it off.
+        val fine = BlankDiagnosis.conclusion(listOf(shipped, o("vae_cpu", Verdict.CLEAN)))
+        assertTrue(fine, fine.startsWith("With HMX the DiT is right here"))
+    }
 }

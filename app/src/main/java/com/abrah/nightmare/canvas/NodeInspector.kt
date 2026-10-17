@@ -3184,19 +3184,8 @@ internal fun NodeInspectorBody(
             }        }
         }
 
-        // ⚠ The wiring is shown but not editable here. A wire is a gesture
-        // on the canvas; offering a second way to change it in a sheet would
-        // mean two mental models for one thing.
-        if (node.inputs.isNotEmpty()) {
-            Text(
-                stringResource(
-                    R.string.inspector_inputs,
-                    node.inputs.entries.joinToString(", ") { "${it.key} ← ${it.value}" },
-                ),
-                style = NoteTextStyle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        // ⚠ No "inputs: prompt ← prompt" line (removed 1.6.193, the user): the wires are on the canvas, and a
+        // sheet that repeats them only takes height. A wire is a gesture there, never edited here.
 
         // ⚠ Delete lives here rather than on the canvas: a gesture that
         // removes a node is a gesture someone makes by accident, and this

@@ -16,6 +16,11 @@ Only addresses on your own network are answered: home and office ranges, and Tai
 Authorization: Bearer <token>
 ```
 
+**From a web page.** A browser refuses to read another site's answers unless the server allows it.
+Turn on **Allow browser pages** under the API switch: every answer then carries the CORS headers
+(`Access-Control-Allow-Origin: *`), and a browser's `OPTIONS` preflight is answered without the token.
+Every real call still needs it. `EventSource` cannot send headers, so give it `?token=<token>`.
+
 ## Calls
 
 | call | what it does |

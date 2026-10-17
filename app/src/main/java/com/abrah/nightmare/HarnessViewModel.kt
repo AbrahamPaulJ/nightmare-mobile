@@ -260,7 +260,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         Prefs.setLowRam(app, key, on)
         lowRam = Prefs.lowRam(app)
-        val family = if (key == Prefs.KEY_SDXL_LOWRAM) Family.SDXL else Family.ANIMA
+        val family = when (key) {
+            Prefs.KEY_SDXL_LOWRAM -> Family.SDXL
+            Prefs.KEY_WAN_STREAM -> Family.WAN
+            else -> Family.ANIMA
+        }
         val resident = BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }
         if (resident?.family == family) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
@@ -1519,7 +1523,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     // changes the first time [DeviceProbe.measure] returns, which is
                     // after the first backend start.
                     build = spec.buildFor(caps),
-                    cpuDecode = spec.cpuDecodeOn(caps),
+                    noHmx = spec.noHmxOn(caps),
+                    npuTest = spec.npuTestOn(caps),
                     installed = here,
                     selected = spec.id == selected,
                     progress = null,
@@ -4045,6 +4050,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var apiAddresses by mutableStateOf(emptyList<String>())
         private set
+    var apiCors by mutableStateOf(com.abrah.nightmare.api.ApiSettings.cors(app))
+        private set
+
+    /** ⭐ Settings → API → Allow browser pages (GitHub #54): read per call, so no restart. */
+    fun chooseApiCors(on: Boolean) {
+        com.abrah.nightmare.api.ApiSettings.setCors(getApplication(), on)
+        apiCors = on
+    }
 
     /** ⚠ Read again whenever Settings shows: the notification's Stop changes it behind this. */
     fun refreshApi() {
@@ -8614,8 +8627,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * ⭐⭐ Diagnose, from a blank picture's report (the user's call, 2026-10-17): the model the failing render
      * ran, re-rendered once per [BlankDiagnosis.LEGS] entry ([HarnessOps.diagnoseBlank]), then the report with
-     * the verdicts in it, ready to share. ⭐ [modelId]: a model row's "Test the NPU decode" (1.6.185), on a chip
-     * that decodes on the CPU and so never shows the grey error ([DeviceProbe.DIT_CPU_DECODE_SOCS]).
+     * the verdicts in it, ready to share. ⭐ [modelId]: a model row's "Test the NPU" (1.6.185), on a chip that runs
+     * with HMX off and so never shows the grey error ([DeviceProbe.DIT_NO_HMX_SOCS]).
      */
     fun diagnoseBlank(modelId: String? = null) {
         val model = modelId ?: BackendProcess.lastModelId
@@ -8626,9 +8639,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val total = BlankDiagnosis.LEGS.size
         diagnosis = Diagnosis(0, total, "")
         val refused = run("diagnose") {
-            val outcomes = ops.diagnoseBlank(model, onLeg = { i, n, leg -> diagnosis = Diagnosis(i + 1, n, leg.what) })
-            lastDiagnosis = BlankDiagnosis.report(ModelCatalog.byId(model)?.label ?: model, outcomes)
-            diagnosis = Diagnosis(total, total, "", report = errorReport(text(R.string.diagnose_report_title)))
+            val done = ops.diagnoseBlank(model, onLeg = { i, n, leg -> diagnosis = Diagnosis(i + 1, n, leg.what) })
+            lastDiagnosis = done.report(ModelCatalog.byId(model)?.label ?: model)
+            diagnosis = Diagnosis(done.total, done.total, "", report = errorReport(text(R.string.diagnose_report_title)))
         }
         if (refused != null) diagnosis = null
     }

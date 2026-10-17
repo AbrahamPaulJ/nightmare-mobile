@@ -78,7 +78,7 @@ import com.abrah.nightmare.R
 enum class ModelKind { ALL, GENERATE, EDIT, INPAINT, VIDEO, UPSCALE, TOOLS }
 
 /** ⭐ A family page's sub-chips; only the non-empty ones are drawn. */
-enum class SubKind { ALL, BASE, INPAINT, IMPORTED }
+enum class SubKind { ALL, BASE, INPAINT, COMMUNITY, IMPORTED }
 
 /**
  * ⭐ A DEDICATED inpainting checkpoint — the 9-channel ones and an npuforge
@@ -103,8 +103,9 @@ fun matchesKind(spec: ModelSpec, kind: ModelKind): Boolean = when (kind) {
 
 fun matchesSub(spec: ModelSpec, sub: SubKind): Boolean = when (sub) {
     SubKind.ALL -> true
-    SubKind.BASE -> !spec.isInpaintModel() && !spec.isCustom
+    SubKind.BASE -> !spec.isInpaintModel() && !spec.isCustom && !spec.community
     SubKind.INPAINT -> spec.isInpaintModel()
+    SubKind.COMMUNITY -> spec.community
     SubKind.IMPORTED -> spec.isCustom
 }
 
@@ -120,6 +121,7 @@ fun matchesQuery(spec: ModelSpec, query: String): Boolean = matchesWords(
         if (spec.family.edit) append(" edit")
         if (spec.family.dit) append(" dit")
         if (spec.isCustom) append(" imported")
+        if (spec.community) append(" community")
         append(' ').append(ModelCatalog.styleWords(spec))
         append(' ').append(spec.prompt)
     },
@@ -428,6 +430,8 @@ internal fun ModelCardV2(
                             if (ModelFeatures.IP_ADAPTER in spec.featureSet) Badge(stringResource(R.string.ip_label))
                         }
                         if (spec.isCustom && !row.fromLocalDream) Badge(stringResource(R.string.mb_sub_imported))
+                        // ⭐ Converted by a community member, hosted on their page ([ModelCatalog.communityModels]).
+                        if (spec.community) Badge(stringResource(R.string.mb_sub_community), MaterialTheme.colorScheme.tertiary)
                         if (row.fromLocalDream) Badge(stringResource(R.string.mb_local_dream), MaterialTheme.colorScheme.tertiary)
                     }
                 }
@@ -491,9 +495,9 @@ private fun StatusLine(row: ModelRow, modifier: Modifier) {
         }
         // ⚠ The facts the old card said in words, kept where they matter.
         val note = when {
-            row.cpuDecode -> stringResource(
-                R.string.dit_cpu_decode,
-                com.abrah.nightmare.DeviceProbe.caps().soc.let { com.abrah.nightmare.DeviceProbe.DIT_CPU_DECODE_SOCS[it] ?: it },
+            row.noHmx -> stringResource(
+                R.string.dit_no_hmx,
+                com.abrah.nightmare.DeviceProbe.caps().soc.let { com.abrah.nightmare.DeviceProbe.DIT_NO_HMX_SOCS[it] ?: it },
             )
             row.ramTight -> stringResource(R.string.ram_tight).trim().removePrefix("·").trim()
             spec.isCustom && row.missing.isNotEmpty() -> stringResource(R.string.incomplete_missing, row.missing.joinToString())
@@ -557,8 +561,8 @@ private fun ModelMenu(
     val canRepair = row.partial && row.build != null && row.progress == null
     // ⭐ Our own imports only: a name lives in the model's `config.json`, and Local Dream's are its files.
     val canRename = row.spec.isCustom && row.installed && row.spec.home != null && row.progress == null && !row.fromLocalDream
-    // ⭐ Diagnose on demand where the decode was moved to the CPU, so the grey error never offers it.
-    val canTestNpu = row.cpuDecode && row.installed && row.progress == null
+    // ⭐ Diagnose on demand on these chips: no grey error or static ever offers it.
+    val canTestNpu = row.npuTest && row.installed && row.progress == null
     if (!canDelete && !canRepair && !canRename && !canTestNpu) {
         Spacer(Modifier.size(40.dp))
         return
@@ -578,7 +582,7 @@ private fun ModelMenu(
             }
             if (canTestNpu) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.test_npu_decode)) },
+                    text = { Text(stringResource(R.string.test_npu)) },
                     enabled = !busy,
                     onClick = { open = false; onTestNpu(row.spec) },
                 )
@@ -861,6 +865,7 @@ internal fun subLabel(s: SubKind): String = stringResource(
         SubKind.ALL -> R.string.mb_kind_all
         SubKind.BASE -> R.string.mb_sub_base
         SubKind.INPAINT -> R.string.mb_kind_inpaint
+        SubKind.COMMUNITY -> R.string.mb_sub_community
         SubKind.IMPORTED -> R.string.mb_sub_imported
     },
 )

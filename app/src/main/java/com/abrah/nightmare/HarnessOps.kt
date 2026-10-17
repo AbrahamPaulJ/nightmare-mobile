@@ -208,7 +208,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 val full = fault["full"] == "1"
                 val env = fault - "full"
                 if (env.isNotEmpty()) say("diagnose: injected on every leg: $env")
-                say(BlankDiagnosis.report(model, diagnoseBlank(model, inject = env, stopWhenClean = !full)))
+                say(diagnoseBlank(model, inject = env, stopWhenClean = !full).report(ModelCatalog.byId(model)?.label ?: model))
             }
             "lora_node" -> loraNode(arg)
             "swap" -> swapOp(arg)
@@ -540,8 +540,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             return say("dit_lora needs a DiT model selected; ${SelectedModel.id} is not one", bad = true)
         }
         if (arg.isNullOrBlank()) {
-            return say("dit_lora needs --es arg <path to a .safetensors>[@strength]", bad = true)
+            return say("dit_lora needs --es arg <path to a .safetensors>[@strength][#steps,cfg]", bad = true)
         }
+        // ⭐ `#steps,cfg` renders both legs at those instead of the model's own (a turbo LoRA wants few steps, cfg 1).
+        val knobs = arg.substringAfterLast('#', "").split(',').takeIf { arg.contains('#') }
+        val stepsOver = knobs?.getOrNull(0)?.trim()?.toIntOrNull()
+        val cfgOver = knobs?.getOrNull(1)?.trim()?.toDoubleOrNull()
+        val arg = if (arg.contains('#')) arg.substringBeforeLast('#') else arg
         // ⚠ rsplit: a path may contain an `@`, a strength never does.
         val at = arg.lastIndexOf('@')
         val mult = if (at > 0) arg.substring(at + 1).toDoubleOrNull() ?: 1.0 else 1.0
@@ -562,7 +567,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         suspend fun leg(label: String, withLora: Boolean): ByteArray? {
             val t0 = System.currentTimeMillis()
             val r = Ops.generate(
-                prompt = prompt, negative = negative, steps = loraProbeSteps(spec), cfg = loraProbeCfg(spec), seed = 12345,
+                prompt = prompt, negative = negative, steps = stepsOver ?: loraProbeSteps(spec),
+                cfg = cfgOver ?: loraProbeCfg(spec), seed = 12345,
                 width = res.width, height = res.height, imagePng = null, denoise = 1.0,
                 loras = if (withLora) listOf(lora.absolutePath to mult) else emptyList(),
             )
@@ -602,10 +608,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "a red brick house beside a lake, clear sky, photorealistic"
 
     /**
-     * ⭐⭐ Runs [BlankDiagnosis.LEGS] on [modelId]: a fresh backend per leg with that leg's environment
-     * ([BackendProcess.diagnosticEnv]), one small render, a verdict. Stops after the control when the control
-     * renders clean (nothing to find). [onLeg] gets (index, total, leg) before each leg, for a progress line.
-     * ⚠ The `finally` clears the environment and stops the backend, so the next Run launches as shipped.
+     * ⭐⭐ Runs Diagnose on [modelId]: a fresh backend per leg with that leg's environment
+     * ([BackendProcess.diagnosticEnv]), one small render, a verdict. The control first: [BlankDiagnosis.SHIPPED] where
+     * this chip decodes the model on the CPU, else [BlankDiagnosis.LEGS]`[0]`; then [BlankDiagnosis.legsAfter] picks
+     * the rest by how it came out (none when it is clean: nothing to find). [onLeg] gets (index, total, leg) before
+     * each leg, for a progress line. ⚠ The `finally` clears the environment and stops the backend, so the next Run
+     * launches as shipped.
      */
     suspend fun diagnoseBlank(
         modelId: String,
@@ -615,62 +623,80 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         inject: Map<String, String> = emptyMap(),
         /** ⚠ Test only: false runs every leg after a clean control. */
         stopWhenClean: Boolean = true,
-    ): List<BlankDiagnosis.Outcome> {
+    ): BlankDiagnosis.Run {
         val spec = ModelCatalog.byId(modelId)
         if (spec?.isDit != true) {
             say("diagnose needs a DiT model; $modelId is not one", bad = true)
-            return emptyList()
+            return BlankDiagnosis.Run(emptyList(), 0, BlankDiagnosis.SIZE)
         }
         // ⚠ Iris renders fixed sizes only ([Family.IRIS]); every other DiT takes any multiple of 64.
         val side = if (spec.family == Family.IRIS) spec.native.width else BlankDiagnosis.SIZE
+        val hasVae = spec.family != Family.IRIS
+        val shipped = spec.noHmxOn(DeviceProbe.caps())
         val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, ModelCatalog.DIT_RES.width, ModelCatalog.DIT_RES.height)
         val out = ArrayList<BlankDiagnosis.Outcome>()
-        BackendProcess.diagnosing = true
-        try {
-            for ((i, leg) in BlankDiagnosis.LEGS.withIndex()) {
-                if (cancelled()) break
-                onLeg(i, BlankDiagnosis.LEGS.size, leg)
-                say("diagnose ${i + 1}/${BlankDiagnosis.LEGS.size}: ${leg.what}")
-                BackendProcess.diagnosticEnv = inject + leg.env
-                suspend fun once(): BlankDiagnosis.Outcome {
-                    stopBackend()
-                    val t0 = System.currentTimeMillis()
-                    return if (!ensureBackend(key)) {
+        val control = if (shipped) BlankDiagnosis.SHIPPED else BlankDiagnosis.LEGS.first()
+        // A guess until the control is in: what a grey picture would need.
+        var total = 1 + BlankDiagnosis.legsAfter(BlankDiagnosis.Verdict.FLAT, shipped, hasVae).size
+        suspend fun leg(i: Int, leg: BlankDiagnosis.Leg, npu: Boolean): BlankDiagnosis.Outcome {
+            onLeg(i, total, leg)
+            say("diagnose ${i + 1}/$total: ${leg.what}")
+            // ⚠ The shipped launch (HMX off where [DeviceProbe.DIT_NO_HMX_SOCS]) is kept unless the NPU is under test.
+            BackendProcess.diagnosing = npu
+            BackendProcess.diagnosticEnv = inject + leg.env
+            suspend fun once(): BlankDiagnosis.Outcome {
+                stopBackend()
+                val t0 = System.currentTimeMillis()
+                return if (!ensureBackend(key)) {
+                    BlankDiagnosis.Outcome(
+                        leg, BlankDiagnosis.Verdict.FAILED, System.currentTimeMillis() - t0,
+                        BackendProcess.failureReason() ?: "the backend would not start",
+                    )
+                } else when (val r = Ops.generate(
+                    prompt = BlankDiagnosis.PROMPT, negative = "", steps = BlankDiagnosis.STEPS, cfg = spec.cfg,
+                    seed = BlankDiagnosis.SEED, width = side, height = side, imagePng = null, denoise = 1.0,
+                )) {
+                    is Ops.Result.Ok -> {
+                        val bmp = android.graphics.BitmapFactory.decodeByteArray(r.value.png, 0, r.value.png.size)
+                        val px = IntArray(bmp.width * bmp.height).also { bmp.getPixels(it, 0, bmp.width, 0, 0, bmp.width, bmp.height) }
                         BlankDiagnosis.Outcome(
+                            leg, BlankDiagnosis.verdictOf(px, bmp.width, bmp.height), System.currentTimeMillis() - t0,
+                            BlankDiagnosis.describe(px, bmp.width, bmp.height),
+                        ).also { bmp.recycle() }
+                    }
+                    is Ops.Result.Err -> {
+                        val colour = BlankDiagnosis.flatColour(r.body)
+                        if (colour != null) BlankDiagnosis.Outcome(leg, BlankDiagnosis.Verdict.FLAT, System.currentTimeMillis() - t0, colour)
+                        else BlankDiagnosis.Outcome(
                             leg, BlankDiagnosis.Verdict.FAILED, System.currentTimeMillis() - t0,
-                            BackendProcess.failureReason() ?: "the backend would not start",
+                            explainOpFailure(r.code, r.body).take(200),
                         )
-                    } else when (val r = Ops.generate(
-                        prompt = BlankDiagnosis.PROMPT, negative = "", steps = BlankDiagnosis.STEPS, cfg = spec.cfg,
-                        seed = BlankDiagnosis.SEED, width = side, height = side, imagePng = null, denoise = 1.0,
-                    )) {
-                        is Ops.Result.Ok -> {
-                            val bmp = android.graphics.BitmapFactory.decodeByteArray(r.value.png, 0, r.value.png.size)
-                            val px = IntArray(bmp.width * bmp.height).also { bmp.getPixels(it, 0, bmp.width, 0, 0, bmp.width, bmp.height) }
-                            BlankDiagnosis.Outcome(
-                                leg, BlankDiagnosis.Verdict.CLEAN, System.currentTimeMillis() - t0,
-                                BlankDiagnosis.describe(px, bmp.width, bmp.height),
-                            ).also { bmp.recycle() }
-                        }
-                        is Ops.Result.Err -> {
-                            val colour = BlankDiagnosis.flatColour(r.body)
-                            if (colour != null) BlankDiagnosis.Outcome(leg, BlankDiagnosis.Verdict.FLAT, System.currentTimeMillis() - t0, colour)
-                            else BlankDiagnosis.Outcome(
-                                leg, BlankDiagnosis.Verdict.FAILED, System.currentTimeMillis() - t0,
-                                explainOpFailure(r.code, r.body).take(200),
-                            )
-                        }
                     }
                 }
-                // ⭐ A FAILED leg runs once more: on the S25 one leg of thirteen lost its backend at launch and the
-                // same leg alone was clean three times (2026-10-17). A real fault fails twice and is reported.
-                val outcome = once().let { first ->
-                    if (first.verdict != BlankDiagnosis.Verdict.FAILED) first
-                    else once().let { second -> second.copy(detail = second.detail + " (after a retry)") }
+            }
+            // ⭐ A FAILED leg runs once more: on the S25 one leg of thirteen lost its backend at launch and the
+            // same leg alone was clean three times (2026-10-17). A real fault fails twice and is reported.
+            val outcome = once().let { first ->
+                if (first.verdict != BlankDiagnosis.Verdict.FAILED) first
+                else once().let { second -> second.copy(detail = second.detail + " (after a retry)") }
+            }
+            say("  ${outcome.verdict.name.lowercase()} in ${outcome.ms / 1000} s: ${outcome.detail.take(80)}")
+            return outcome
+        }
+        try {
+            if (!cancelled()) {
+                val first = leg(0, control, npu = !shipped)
+                out += first
+                // ⭐ Noise keeps the shipped launch for every leg: each leg is one change on what was shipped.
+                val noise = first.verdict == BlankDiagnosis.Verdict.NOISE
+                val rest = BlankDiagnosis.legsAfter(first.verdict, shipped, hasVae).ifEmpty {
+                    if (stopWhenClean) emptyList() else BlankDiagnosis.legsAfter(BlankDiagnosis.Verdict.FLAT, shipped, hasVae)
                 }
-                out += outcome
-                say("  ${outcome.verdict.name.lowercase()} in ${outcome.ms / 1000} s: ${outcome.detail.take(80)}")
-                if (stopWhenClean && i == 0 && outcome.verdict == BlankDiagnosis.Verdict.CLEAN) break
+                total = 1 + rest.size
+                for ((i, l) in rest.withIndex()) {
+                    if (cancelled()) break
+                    out += leg(i + 1, l, npu = !noise)
+                }
             }
         } finally {
             BackendProcess.diagnosticEnv = emptyMap()
@@ -678,7 +704,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⚠ NonCancellable: a Cancel lands here as a cancellation, which would skip a plain suspend call.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { stopBackend() }
         }
-        return out
+        return BlankDiagnosis.Run(out, total, side)
     }
 
     private fun loraProbeSteps(spec: ModelSpec): Int = if (spec.family == Family.ANIMA_DIT) spec.steps else 4

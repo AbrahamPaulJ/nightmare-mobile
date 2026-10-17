@@ -107,13 +107,14 @@ Import `.safetensors` adapters; the list shows each one's size, and Delete remov
 
 ### Memory
 
-Three switches, the same as LocalDream's. Their defaults are set **from your phone's RAM**.
+Three switches the same as LocalDream's, whose defaults are set **from your phone's RAM**, and one for video.
 
 | switch | default | what it does |
 |---|---|---|
 | **SDXL low RAM mode** | on under 16 GB, off at 16 GB+ | Loads each part of an SDXL model on demand and frees it after use. Required under 16 GB. Disables the live preview while it renders |
 | **Anima low RAM mode** | on under 16 GB, off at 16 GB+ | The same, for Anima |
 | **Anima DiT sequential loading** | off | Only with Anima low RAM mode: never keeps both halves of Anima's model in memory at once. Turn it on if you have 12 GB and Anima still cannot run. Slower per step |
+| **Video: stream the model** | off | Wan reads its model from storage step by step instead of holding it in memory. About 30% slower. Turn it on if your videos come out as a coloured grid or noise |
 
 Changing a switch takes effect on the next Run (a loaded model of that family is let go). More
 in [Memory and speed](memory.md).
@@ -133,7 +134,8 @@ switch apps.
 ### API
 
 **Listen on the local network** lets another device on your Wi-Fi or tailnet run your flows.
-Off by default. When on, it shows the address and the token to use. [Local API](api.md)
+Off by default. When on, it shows the address and the token to use. **Allow browser pages** (off by
+default) lets a web page in a browser call it too; every call still needs the token. [Local API](api.md)
 
 ### Clean temp files
 

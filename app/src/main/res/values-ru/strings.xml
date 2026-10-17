@@ -208,6 +208,8 @@
     <string name="anima_lowram_hint">Только для Anima: каждая модель загружается по требованию и выгружается после использования. Необходимо на устройствах с памятью меньше 16 ГБ. Отключает превью во время генерации.</string>
     <string name="anima_seq_dit">Anima: поочерёдная загрузка DiT</string>
     <string name="anima_seq_dit_hint">Только в режиме малой памяти Anima: две половины DiT никогда не хранятся в памяти одновременно. Включите, если у вас 12 ГБ памяти, а режим малой памяти Anima всё равно не запускается. Каждый шаг медленнее.</string>
+    <string name="wan_stream">Видео: потоковая загрузка модели</string>
+    <string name="wan_stream_hint">Wan читает модель из памяти устройства, а не держит её в ОЗУ. Примерно на 30% медленнее. Включите, если видео выходит цветной сеткой или шумом</string>
     <string name="cn_label">ControlNet</string>
     <string name="cn_hint">canny находит контуры фото, openpose находит позу, depth определяет глубину; также можно взять готовый скелет или карту глубины</string>
     <string name="cn_not_installed">ControlNet %1$s ещё не установлен на этом телефоне.</string>
@@ -277,6 +279,7 @@
     <string name="mb_models_count">Моделей: %1$d</string>
     <string name="mb_sub_base">Базовые</string>
     <string name="mb_sub_imported">Импорт</string>
+    <string name="mb_sub_community">Сообщество</string>
     <string name="mb_no_match">Нет подходящих моделей.</string>
     <string name="mb_group_classic">Классическая диффузия</string>
     <string name="mb_group_dit">Современные DiT</string>
@@ -519,7 +522,6 @@
     <string name="inspector_drop_upscaled_body">Исходное изображение выше станет результатом этого узла. Автоувеличение останется включено, поэтому следующий запуск снова его увеличит.</string>
     <string name="inspector_unknown_node_type">неизвестный тип узла: загружен ли его плагин?</string>
     <string name="inspector_no_widgets">у этого узла нет элементов управления</string>
-    <string name="inspector_inputs">входы: %1$s</string>
     <string name="inspector_reset_node">Сбросить узел</string>
     <string name="inspector_delete_node">Удалить узел</string>
     <string name="inspector_reset_title">Сбросить этот узел?</string>
@@ -615,8 +617,8 @@
     <string name="models_import_failed">ошибка импорта: %1$s</string>
     <string name="models_needs_ram">Для %1$s нужен телефон с %3$d ГБ ОЗУ; на этом %2$d ГБ</string>
     <string name="models_needs_arch">Для %1$s нужна архитектура HTP v%2$d или новее; это устройство сообщает v%3$d</string>
-    <string name="dit_cpu_decode">На %1$s декодирует на CPU (медленнее): на NPU выходило серое. ⋮ «Проверить декодер NPU» поможет это исправить</string>
-    <string name="test_npu_decode">Проверить декодер NPU</string>
+    <string name="dit_no_hmx">На %1$s работает с выключенным матричным блоком NPU и декодирует на CPU: картинки правильные, но намного медленнее (минуты при 512, гораздо дольше при 1024). ⋮ Проверить NPU поможет найти более быстрое решение</string>
+    <string name="test_npu">Проверить NPU</string>
     <string name="diagnose">Диагностика</string>
     <string name="diagnose_note">Картинка вышла одного цвета. Диагностика рисует маленькую картинку до %1$d раз, каждый раз убирая одну часть с NPU, и добавляет в отчёт, какие варианты получились нормальными. От 10 до 25 минут.</string>
     <string name="diagnose_report_title">Диагностика пустой картинки</string>
@@ -925,6 +927,8 @@
     <string name="api_switch_hint">Порт %1$d. По умолчанию выключено; пока слушает, видно уведомление.</string>
     <string name="api_token_label">Токен (отправлять как Authorization: Bearer …)</string>
     <string name="api_copy">Скопировать токен</string>
+    <string name="api_cors">Разрешить веб-страницы</string>
+    <string name="api_cors_hint">Страница в браузере сможет обращаться к API. Каждый запрос по-прежнему требует токен</string>
     <string name="api_regenerate">Новый токен</string>
     <string name="api_no_network">Сейчас нет адреса Wi-Fi или tailnet</string>
     <string name="api_channel">Локальный API</string>

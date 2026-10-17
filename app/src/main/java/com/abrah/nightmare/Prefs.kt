@@ -231,6 +231,15 @@ object Prefs {
     const val KEY_ANIMA_SEQ_DIT = "anima_seq_dit"
 
     /**
+     * ⭐ Video: stream the model (1.6.193, GitHub #48; OFF by default, ours, not upstream's). Every Wan clip runs
+     * under [WAN_STREAM_GIB] with `all=disk`, as v75 always does: a OnePlus 8 Elite (16 GB, so never budgeted)
+     * rendered every clip as a colour grid with the DiT resident, and on v75 the resident run was the noisy one and
+     * the streamed run clean (`docs/VIDEO-GGML.md` §4). ~30% slower, so never the default: the S25 is clean resident.
+     */
+    const val KEY_WAN_STREAM = "wan_stream"
+    const val WAN_STREAM_GIB = "4"
+
+    /**
      * ⚠ 13 GiB, between the classes rather than at "16": a 12 GB phone reports
      * ~10.9–11.4 GiB of `totalMem` and a 16 GB one ~14.5–15 GiB, the rest being
      * reserved before Android sees it.
@@ -246,7 +255,7 @@ object Prefs {
     /** ⚠ The phone class a [minRamBytes] gate names to a person: 16 at [LOWRAM_BELOW_BYTES], else 12. */
     fun ramClassGb(minRamBytes: Long): Int = if (minRamBytes >= LOWRAM_BELOW_BYTES) 16 else 12
 
-    data class LowRam(val sdxl: Boolean, val anima: Boolean, val animaSeqDit: Boolean)
+    data class LowRam(val sdxl: Boolean, val anima: Boolean, val animaSeqDit: Boolean, val wanStream: Boolean = false)
 
     /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */
     fun lowRamDefault(totalRamBytes: Long): Boolean =
@@ -267,6 +276,7 @@ object Prefs {
             sdxl = read(KEY_SDXL_LOWRAM, def),
             anima = read(KEY_ANIMA_LOWRAM, def),
             animaSeqDit = read(KEY_ANIMA_SEQ_DIT, false),
+            wanStream = read(KEY_WAN_STREAM, false),
         )
     }
 
@@ -280,6 +290,10 @@ object Prefs {
      * ([ModelSpec.lowram] — Z-Image's `te=disk`; Qwen is `all=disk` in the backend
      * whatever this says).
      */
+    /** ⭐ [KEY_WAN_STREAM]'s budget for a launch of [spec], or null (not Wan, or the switch off). */
+    fun wanStreamBudget(context: Context, spec: ModelSpec?): String? =
+        WAN_STREAM_GIB.takeIf { spec?.family == Family.WAN && lowRam(context).wanStream }
+
     fun lowRamFor(context: Context, spec: ModelSpec): Boolean = when (spec.family) {
         Family.SDXL, Family.SDXL_SWAP -> lowRam(context).sdxl
         Family.ANIMA -> lowRam(context).anima

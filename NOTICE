@@ -382,6 +382,12 @@ Illustrious XL v1.0, Juggernaut XL Ragnarok (the SDXL Swap defaults)
     Open RAIL-M with RunDiffusion's terms (no paid API deployment without
     their licence). Each licence's use restrictions apply.
 
+Community SDXL and SDXL Swap conversions (the Community tab)
+    Converted with npuforge on an 8 Gen 3 by members of the community and
+    hosted on their own Hugging Face pages. Each checkpoint stays under its
+    own author's licence, whose use restrictions apply. Downloaded by the app
+    at the user's request, unmodified; not included here.
+
 Inter (the app's typeface, bundled in app/src/main/res/font)
     Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)
     SIL Open Font License 1.1 (https://openfontlicense.org).

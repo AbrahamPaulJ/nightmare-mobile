@@ -44,6 +44,11 @@ class MiniHttp(
         @Volatile var started = false
             private set
 
+        /** ⭐ Headers every answer on this connection carries (the CORS set, [ApiSettings.CORS_HEADERS]). */
+        val extra = LinkedHashMap<String, String>()
+
+        private fun extraLines() = extra.entries.joinToString("") { "${it.key}: ${it.value}\r\n" }
+
         fun send(code: Int, type: String, body: ByteArray) {
             check(!started) { "response already started" }
             started = true
@@ -51,6 +56,7 @@ class MiniHttp(
                 "Content-Type: $type\r\n" +
                 "Content-Length: ${body.size}\r\n" +
                 "Cache-Control: no-store\r\n" +
+                extraLines() +
                 "Connection: close\r\n\r\n"
             out.write(head.toByteArray(Charsets.UTF_8))
             out.write(body)
@@ -69,7 +75,7 @@ class MiniHttp(
             started = true
             out.write(
                 ("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\n" +
-                    "Cache-Control: no-store\r\nConnection: close\r\n\r\n").toByteArray(Charsets.UTF_8),
+                    "Cache-Control: no-store\r\n" + extraLines() + "Connection: close\r\n\r\n").toByteArray(Charsets.UTF_8),
             )
             out.flush()
             return Sse(out)
@@ -203,7 +209,7 @@ class MiniHttp(
         fun err(message: String) = org.json.JSONObject().put("error", message).toString()
 
         fun reason(code: Int) = when (code) {
-            200 -> "OK"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"
+            200 -> "OK"; 204 -> "No Content"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"
             405 -> "Method Not Allowed"; 409 -> "Conflict"; 413 -> "Payload Too Large"
             431 -> "Request Header Fields Too Large"; 500 -> "Internal Server Error"
             else -> "Status"

@@ -60,7 +60,9 @@ class ModelCatalogTest {
         // ⚠ `builtIn`, not `all`: this is about the archives WE publish, and an
         // imported model has none. `all` also varies with what is on the disk
         // of whoever is running the suite.
-        for (spec in ModelCatalog.builtIn.filter { it.files.isEmpty() }) {
+        // ⚠ Nor a community conversion: hosted under its converter's own name, its arch read from the `soc` in its
+        // `swap_features.json` instead ([ModelCatalog.communityModels]).
+        for (spec in ModelCatalog.builtIn.filter { it.files.isEmpty() && !it.community }) {
             for (b in spec.builds) {
                 assertTrue("${b.archive} is not ${b.tier}", b.archive.endsWith("${b.tier}.zip"))
             }
@@ -629,5 +631,26 @@ class ModelCatalogTest {
         assertEquals(listOf("euler", "euler_a"), ModelCatalog.schedulersFor(Family.ANIMA))
         assertEquals("anima.sample", SdSampler.typeFor(Family.ANIMA, inpaint = false))
         assertEquals("anima.inpaint", SdSampler.typeFor(Family.ANIMA, inpaint = true))
+    }
+
+    @Test
+    fun communityConversionsAreV75BuildsWithTheFilesTheirKindNeeds() {
+        // ⭐ npuforge on an 8 Gen 3 (SM8650): v75 contexts, so the 8 Gen 3 and later; read from each zip by range.
+        val c = ModelCatalog.communityModels
+        assertEquals(4, c.size)
+        assertTrue(c.all { it.community && it.minHtpArch == 75 && it.builds.single().minArch == 75 })
+        assertTrue(c.all { it.baseUrl.startsWith("https://huggingface.co/JIONing/") })
+        assertTrue(c.all { it in ModelCatalog.builtIn })
+        val swaps = c.filter { it.family == Family.SDXL_SWAP }
+        assertEquals(2, swaps.size)
+        assertTrue(swaps.all { it.requiredFiles == ModelCatalog.SDXL_SWAP_V2_REQUIRED && it.promptTokens == 462 })
+        assertTrue(swaps.all { ModelFeatures.IP_ADAPTER in it.featureSet && ModelFeatures.CONTROLNET in it.featureSet })
+        // ⚠ The DMD two are PLAIN SDXL at 231 tokens: without `qnn_context.txt` they would be read as 77.
+        val dmd = c.filter { it.family == Family.SDXL }
+        assertEquals(2, dmd.size)
+        assertTrue(dmd.all { CustomModels.LONG_CONTEXT_FILE in it.requiredFiles && it.promptTokens == 231 })
+        assertTrue(dmd.all { it.scheduler == "lcm" && it.steps == 8 && it.cfg == 1.0 })
+        // ⚠ The control: ours are not community.
+        assertTrue(ModelCatalog.sdxlSwapModels.none { it.community })
     }
 }

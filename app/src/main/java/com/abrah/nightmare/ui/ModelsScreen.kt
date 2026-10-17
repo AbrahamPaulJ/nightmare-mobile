@@ -156,8 +156,10 @@ data class ModelRow(
     val fetchBytes: Long = 0,
     /** ⭐ [ModelSpec.ramNeeded] — non-zero: the chip could, the RAM cannot. */
     val needsRam: Long = 0,
-    /** ⭐ [com.abrah.nightmare.ModelSpec.cpuDecodeOn]: this chip decodes it on the CPU; the row says so, ⋮ tests the NPU's. */
-    val cpuDecode: Boolean = false,
+    /** ⭐ [com.abrah.nightmare.ModelSpec.noHmxOn]: this chip runs it with HMX off; the row says so, ⋮ tests the NPU. */
+    val noHmx: Boolean = false,
+    /** ⭐ [com.abrah.nightmare.ModelSpec.npuTestOn]: ⋮ offers Diagnose (Iris too, which keeps HMX). */
+    val npuTest: Boolean = false,
     /** ⭐ [com.abrah.nightmare.CustomModels.ramTight] — an import that Android will likely close. */
     val ramTight: Boolean = false,
     /** ⭐ Its files are Local Dream's ([com.abrah.nightmare.LocalDreamModels]): a badge, no Delete. */
@@ -187,7 +189,7 @@ fun ModelsScreen(
     onSelect: (ModelSpec) -> Unit,
     /** ⭐ An imported model's new shown name ([com.abrah.nightmare.HarnessViewModel.renameModel]). */
     onRename: (ModelSpec, String) -> Unit = { _, _ -> },
-    /** ⭐ ⋮ "Test the NPU decode" ([com.abrah.nightmare.HarnessViewModel.diagnoseBlank]), on a [ModelRow.cpuDecode] row. */
+    /** ⭐ ⋮ "Test the NPU" ([com.abrah.nightmare.HarnessViewModel.diagnoseBlank]), on a [ModelRow.noHmx] row. */
     onTestNpu: (ModelSpec) -> Unit = {},
     /**
      * ⭐⭐ A Use waiting on a flow choice — see

@@ -13,7 +13,8 @@ which phones can run it; inside a family, models differ in style.
 |---|---|---|---|---|---|
 | **SD 1.5** | 6 | ~1 GB | 512–1024 | Fast; realistic, anime and general mixes | Snapdragon 888+ |
 | **SD 1.5 Swap** *(experimental)* | AbsoluteReality, CuteYukiMix, Anything V5, or your own npuforge conversion | ~1.3 GB | 512 | LoRAs, ControlNet (canny, depth, openpose) and an IP-Adapter reference picture chosen per render | defaults: 8 Elite+; your own conversion: the phone that made it |
-| **SDXL** | 10 | ~3.5 GB | 1024 | Sharper, better composition | 8 Gen 3+ |
+| **SDXL** | 10, and 2 in **Community** (8 steps, DMD2 merged) | ~3.5 GB | 1024 | Sharper, better composition | 8 Gen 3+ |
+| **SDXL Swap** | Illustrious XL, Juggernaut XL, 2 in **Community**, or your own npuforge conversion | ~3.9 GB | 1024 | LoRAs, ControlNet (canny, depth, openpose) and an IP-Adapter reference picture chosen per render | defaults: 8 Elite+; Community: 8 Gen 3+; your own conversion: the phone that made it |
 | **Anima** | 9 | ~4.3 GB | 1024 | Anime; slow (about 80 s a picture) | 8 Gen 3+ |
 | **FLUX.2** | Klein 4B, Klein 9B | 6.7 GB, 10.7 GB | 512–2048 | Understands sentences; edits photos. 9B: more detail, slower, starts at 768 | 8 Gen 3+ (alpha on 8 Gen 3, where the 4B is a Q8_0 GGUF: 6.9 GB in all); the 9B also on 8 Gen 2 (alpha) |
 | **Z-Image** | Turbo | 8.8 GB | 512–2048 | Photorealistic, fast for its size | 8 Gen 2+ (alpha on 8 Gen 2 and 8 Gen 3, where it is a Q4_0 GGUF: 6.3 GB in all) |
@@ -38,6 +39,10 @@ Besides picture models, **Models** also holds:
 <figure markdown>
   ![The Models tab, SD 1.5 family](../img/models-installed.png){ .screen }
 </figure>
+
+**Community** models (a tab on the SDXL and SDXL Swap pages, and a badge on their rows) were converted by
+people in the community with npuforge on an 8 Gen 3, so they run on the 8 Gen 3 and newer, where our own
+SDXL Swap conversions need an 8 Elite. They are downloaded unchanged from their converters' pages.
 
 ## Which to start with
 

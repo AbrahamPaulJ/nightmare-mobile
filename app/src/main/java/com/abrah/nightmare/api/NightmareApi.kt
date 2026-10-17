@@ -37,6 +37,7 @@ class NightmareApi(private val ctx: Context) {
 
     fun handle(req: MiniHttp.Request, res: MiniHttp.Response) {
         try {
+            if (corsPreflight(req, res, ApiSettings.cors(ctx))) return
             route(req, res)
         } catch (e: ApiError) {
             if (!res.started) res.json(e.code, MiniHttp.err(e.message ?: "error"))
@@ -88,5 +89,18 @@ class NightmareApi(private val ctx: Context) {
     companion object {
         const val API_VERSION = 1
         private const val TAG = "NmApi"
+
+        /**
+         * ⭐ "Allow browser pages" ([ApiSettings.cors]): the CORS headers on this answer, and true when [req] was a
+         * preflight, answered here with 204 before the token check (a browser sends no `Authorization` with it).
+         * Off: nothing changes, and an `OPTIONS` meets the token check like any call.
+         */
+        fun corsPreflight(req: MiniHttp.Request, res: MiniHttp.Response, cors: Boolean): Boolean {
+            if (!cors) return false
+            res.extra.putAll(ApiSettings.CORS_HEADERS)
+            if (req.method != "OPTIONS") return false
+            res.send(204, "text/plain", ByteArray(0))
+            return true
+        }
     }
 }

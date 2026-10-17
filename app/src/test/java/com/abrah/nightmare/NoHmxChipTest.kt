@@ -7,27 +7,39 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * ⭐ The 8s Gen 4 / 8s Gen 3 grey picture (1.6.185): the decode on the CPU there, a way to test the NPU's decode
- * on demand, and the engine's own reading of the NPU kept for the report.
+ * ⭐ The 8s Gen 4 / 8s Gen 3 grey (then noisy) picture: HMX off there since 1.6.193 (the CPU decode of 1.6.185 gave
+ * noise), a way to test the NPU on demand, and the engine's own reading of the NPU kept for the report.
  */
-class CpuDecodeChipTest {
+class NoHmxChipTest {
 
     private fun caps(soc: String) = DeviceProbe.Caps(arch = 73, vtcmMb = 8, measured = false, soc = soc)
 
     @Test
-    fun theTwoSChipsDecodeOnTheCpuAndThe8Gen2DoesNot() {
-        assertTrue(caps("SM8735").ditCpuDecode)
-        assertTrue(caps("SM8635").ditCpuDecode)
+    fun theTwoSChipsRunWithHmxOffAndThe8Gen2DoesNot() {
+        assertTrue(caps("SM8735").ditNoHmx)
+        assertTrue(caps("SM8635").ditNoHmx)
         // ⚠ The control: the 8 Gen 2 runs the same v73 skel clean.
-        assertFalse(caps("SM8550").ditCpuDecode)
+        assertFalse(caps("SM8550").ditNoHmx)
         val zit = ModelCatalog.byId("z_image_turbo")!!
-        assertTrue(zit.cpuDecodeOn(caps("SM8735")))
-        assertFalse(zit.cpuDecodeOn(caps("SM8550")))
+        assertTrue(zit.noHmxOn(caps("SM8735")))
+        assertFalse(zit.noHmxOn(caps("SM8550")))
     }
 
     @Test
-    fun theDecodeSpecMovesOnlyTheVae() {
-        assertEquals("diffusion=HTP0,te=HTP0,vae=CPU", BackendProcess.CPU_DECODE_SPEC)
+    fun irisKeepsHmxButIsOfferedTheTestAndWanIsNotOffered() {
+        // ⚠ Iris ABORTS with HMX off (BF16 rows, `dsp-rsp NO-SUPPORT`): it keeps HMX, and gets the test.
+        val iris = ModelCatalog.byId("iris_3b_turbo")!!
+        assertFalse(iris.noHmxOn(caps("SM8735")))
+        assertTrue(iris.npuTestOn(caps("SM8735")))
+        assertFalse(iris.npuTestOn(caps("SM8550")))
+        assertFalse(ModelCatalog.WAN22.noHmxOn(caps("SM8635")))
+    }
+
+    @Test
+    fun theLaunchTurnsHmxOffByGgmlsOwnSwitch() {
+        // ⚠ The leg that came back with a picture on both chips set exactly this ([BlankDiagnosis.LEGS] `no_hmx`).
+        val leg = BlankDiagnosis.LEGS.first { it.id == "no_hmx" }
+        assertEquals(mapOf(BackendProcess.NO_HMX_KEY to "0"), leg.env)
     }
 
     @Test

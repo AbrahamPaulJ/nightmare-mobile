@@ -48,6 +48,46 @@ class ApiTest {
         return code to text
     }
 
+    /** ⭐ GitHub #54: a handler shaped like [NightmareApi.handle], the token check stood in for by a 401. */
+    private fun corsServer(cors: Boolean): (MiniHttp.Request, MiniHttp.Response) -> Unit = { req, res ->
+        if (!NightmareApi.corsPreflight(req, res, cors)) {
+            if (req.headers["authorization"] == "Bearer t") res.json(200, "{}") else res.json(401, MiniHttp.err("a token is needed"))
+        }
+    }
+
+    private fun preflight(port: Int, auth: String? = null, method: String = "OPTIONS"): HttpURLConnection =
+        (URL("http://127.0.0.1:$port/run").openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            setRequestProperty("Origin", "http://example.com")
+            setRequestProperty("Access-Control-Request-Method", "POST")
+            if (auth != null) setRequestProperty("Authorization", auth)
+        }
+
+    @Test
+    fun withBrowserPagesAllowedAPreflightIsAnsweredBeforeTheTokenAndEveryAnswerCarriesTheHeaders() {
+        serving(corsServer(cors = true)) { port ->
+            val pre = preflight(port)
+            assertEquals(204, pre.responseCode)
+            assertEquals("*", pre.getHeaderField("Access-Control-Allow-Origin"))
+            assertTrue(pre.getHeaderField("Access-Control-Allow-Headers").contains("Authorization"))
+            // ⭐ The token is still the gate: a real call without it is refused, with the headers so the page can read why.
+            val bare = preflight(port, method = "GET")
+            assertEquals(401, bare.responseCode)
+            assertEquals("*", bare.getHeaderField("Access-Control-Allow-Origin"))
+            assertEquals(200, preflight(port, auth = "Bearer t", method = "GET").responseCode)
+        }
+    }
+
+    @Test
+    fun withBrowserPagesOffNothingChanges() {
+        // ⚠ The control: off (the default), a preflight meets the token check and no answer has the headers.
+        serving(corsServer(cors = false)) { port ->
+            val pre = preflight(port)
+            assertEquals(401, pre.responseCode)
+            assertEquals(null, pre.getHeaderField("Access-Control-Allow-Origin"))
+        }
+    }
+
     @Test
     fun aRequestReachesTheHandlerWithItsPathQueryAndBody() {
         serving({ req, res -> res.json(200, """{"m":"${req.method}","p":"${req.path}","q":"${req.query["a"]}","b":"${req.text()}"}""") }) { port ->

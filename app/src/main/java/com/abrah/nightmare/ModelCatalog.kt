@@ -516,6 +516,11 @@ data class ModelSpec(
      */
     val isCustom: Boolean = false,
     /**
+     * ⭐ Converted and hosted by a community member, not by us ([ModelCatalog.communityModels]): a "Community" chip
+     * on its family page and a badge on its row.
+     */
+    val community: Boolean = false,
+    /**
      * ⭐ An absolute folder this model lives in, outside the models root — Local Dream's imports
      * ([LocalDreamModels]). Null for everything else: [dir] is then root + [id].
      */
@@ -592,10 +597,16 @@ data class ModelSpec(
     val isDit: Boolean get() = family.dit
 
     /**
-     * ⭐ A chip where this model's decode runs on the CPU ([DeviceProbe.DIT_CPU_DECODE_SOCS]): a note on the row and a
-     * "Test the NPU decode" in its menu. Iris has no VAE, Wan is not offered there.
+     * ⭐ A chip where this model runs with the NPU's matrix unit off ([DeviceProbe.DIT_NO_HMX_SOCS]): a note on the row.
+     * ⚠⚠ Not Iris: with HMX off it ABORTS (`dsp-rsp NO-SUPPORT`, the S25 at v79, 2026-10-18): HVX matmuls take only
+     * Q4_0 / Q4_1 / Q8_0 / IQ4_NL / MXFP4 weights (`matmul-ops.c`) and Iris keeps BF16 rows (`docs/IRIS.md` §4).
+     * Wan is not offered there.
      */
-    fun cpuDecodeOn(caps: DeviceProbe.Caps): Boolean = isDit && family != Family.IRIS && family != Family.WAN && caps.ditCpuDecode
+    fun noHmxOn(caps: DeviceProbe.Caps): Boolean =
+        isDit && family != Family.WAN && family != Family.IRIS && caps.ditNoHmx
+
+    /** ⭐ ⋮ Test the NPU on this chip: every [noHmxOn] model, and Iris, whose static there was the DiT's. */
+    fun npuTestOn(caps: DeviceProbe.Caps): Boolean = isDit && family != Family.WAN && caps.ditNoHmx
 
     /**
      * ⭐ A TRUE inpainting checkpoint — a 9-channel UNet whose `conv_in`
@@ -1684,7 +1695,7 @@ object ModelCatalog {
             // ⚠ An entry whose archive size is not known yet (still uploading) is
             // not offered: `missing()` checks exact sizes, so it could not install.
             sdxlSwapModels.filter { m -> m.builds.all { it.bytes > 0 } } +
-            animaModels + ditModels
+            communityModels + animaModels + ditModels
     }
 
     /** ⚠ Kept as its own list so a family can be counted, filtered and tested. */
@@ -1851,6 +1862,67 @@ object ModelCatalog {
     )
 
     const val SDXL_SWAP_BASE_URL = "https://huggingface.co/AbrahamPJ/nightmare-sdxl-swap-models/resolve/main/"
+
+    /**
+     * ⭐⭐ COMMUNITY conversions (the user, 2026-10-18): npuforge 1.0.12 run ON an 8 Gen 3 (SM8650, `soc` in each
+     * `swap_features.json`), so v75 contexts that load on the 8 Gen 3 and everything after (contexts run forward,
+     * `docs/DEVICES.md` §2): the gap the S25's v79 conversions leave. Hosted UNCHANGED on the converter's own
+     * Hugging Face, and marked [ModelSpec.community] so the app says whose they are. ⚠ The README and guide name
+     * none of them (the user's call).
+     * ⚠ Read by range request, not trusted from the names: the two `_swap` zips are SDXL Swap v2 with LoRA,
+     * ControlNet and IP-Adapter (462 tokens); the two DMD ones are PLAIN SDXL with DMD2 merged (231 tokens, no
+     * `config.json`, so the defaults are upstream's for its DMD2 builds: LCM, 8 steps, cfg 1).
+     */
+    val communityModels: List<ModelSpec> = listOf(
+        communitySwap(
+            "community_lustify_apex_v8_swap", "Lustify Apex V8 Swap", "JIONing/apexV8",
+            "lustifyNSFWCheckpoint_apexV8_npuforge_swap_ControlNet_IP-Adapt.zip", 3_816_006_388L,
+            prompt = P_SDXL, negative = NEG_GENERAL,
+        ),
+        communitySwap(
+            "community_rinflanime_v50_swap", "rinFlanime Illustrious v5 Swap", "JIONing/rinFlanimeIllustrious_v50",
+            "rinFlanimeIllustrious_v50_npuforge_swap.zip", 3_907_307_857L,
+            prompt = P_ILLUSTRIOUS, negative = NEG_ANIME,
+        ),
+        communityDmd(
+            "community_lustify_apex_v8_dmd2", "Lustify Apex V8 DMD2", "JIONing/apexV8",
+            "lustifyNSFWCheckpoint_apexV8+dmd2_8gen3.zip", 3_859_554_287L,
+            prompt = P_SDXL, negative = NEG_GENERAL,
+        ),
+        communityDmd(
+            "community_rinflanime_v50_wicked_city_dmd2", "rinFlanime v5 Wicked City DMD2", "JIONing/rinFlanimeIllustrious_v50",
+            "rinFlanimeIllustrious_v50+Wicked_City_Illustrious_0.1@0.8+dm.zip", 3_859_554_609L,
+            prompt = P_ILLUSTRIOUS, negative = NEG_ANIME,
+        ),
+    )
+
+    private fun hf(repo: String) = "https://huggingface.co/$repo/resolve/main/"
+
+    private fun communitySwap(
+        id: String, label: String, repo: String, archive: String, bytes: Long, prompt: String, negative: String,
+    ) = sdxlSwap(
+        id, label, archive, bytes, prompt, negative,
+        features = setOf(ModelFeatures.LORA, ModelFeatures.CONTROLNET, ModelFeatures.IP_ADAPTER),
+    ).copy(
+        builds = listOf(Build(SDXL_TIER, archive, bytes, minArch = 75, minVtcmMb = 8)),
+        baseUrl = hf(repo),
+        tier = SDXL_TIER,
+        minHtpArch = 75,
+        community = true,
+    )
+
+    private fun communityDmd(
+        id: String, label: String, repo: String, archive: String, bytes: Long, prompt: String, negative: String,
+    ) = sdxl(id, label, archive, bytes, prompt, negative).copy(
+        baseUrl = hf(repo),
+        // ⚠ Without `qnn_context.txt` the backend reads a 231-token UNet as 77 ([SDXL_SWAP_V2_REQUIRED]'s trap).
+        requiredFiles = SDXL_REQUIRED + CustomModels.LONG_CONTEXT_FILE,
+        promptTokens = 231,
+        scheduler = "lcm",
+        steps = 8,
+        cfg = 1.0,
+        community = true,
+    )
     private const val ILLUSTRIOUS_SWAP_BYTES = 3_899_749_590L
     private const val JUGGERNAUT_SWAP_BYTES = 3_886_131_553L
 

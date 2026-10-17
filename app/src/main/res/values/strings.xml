@@ -228,6 +228,8 @@
     <string name="anima_lowram_hint">For Anima only: load each model on demand and free it after use. Required on devices with less than 16GB RAM. Disables in-progress preview.</string>
     <string name="anima_seq_dit">Anima DiT sequential loading</string>
     <string name="anima_seq_dit_hint">Only with Anima low RAM mode: never keep both DiT halves in memory at the same time. Enable this if you have 12GB RAM but Anima low RAM mode still cannot run. Slower per step.</string>
+    <string name="wan_stream">Video: stream the model</string>
+    <string name="wan_stream_hint">Wan streams its model from storage instead of holding it in memory. About 30% slower. Turn it on if your videos come out as a coloured grid or noise</string>
     <string name="cn_label">ControlNet</string>
     <string name="cn_hint">canny finds the edges of a photo, openpose finds the pose and depth the depth in a photo, or each takes a ready-made skeleton or depth map</string>
     <string name="cn_not_installed">The %1$s ControlNet is not installed on this phone yet.</string>
@@ -297,6 +299,7 @@
     <string name="mb_models_count">%1$d models</string>
     <string name="mb_sub_base">Base</string>
     <string name="mb_sub_imported">Imported</string>
+    <string name="mb_sub_community">Community</string>
     <string name="mb_no_match">No models match.</string>
     <string name="mb_group_classic">Classic diffusion</string>
     <string name="mb_group_dit">Modern DiT</string>
@@ -531,7 +534,6 @@
     <string name="inspector_drop_upscaled_body">The original above becomes this node\'s output. Auto upscale stays on, so the next Run upscales again.</string>
     <string name="inspector_unknown_node_type">unknown node type. Is its plugin loaded?</string>
     <string name="inspector_no_widgets">this node has no widgets</string>
-    <string name="inspector_inputs">inputs: %1$s</string>
     <string name="inspector_reset_node">Reset node</string>
     <string name="inspector_delete_node">Delete node</string>
     <string name="inspector_reset_title">Reset this node?</string>
@@ -627,8 +629,8 @@
     <string name="models_import_failed">import failed: %1$s</string>
     <string name="models_needs_ram">%1$s needs a phone with %3$d GB of RAM; this one has %2$d GB</string>
     <string name="models_needs_arch">%1$s needs an HTP arch of %2$d or newer; this device reports %3$d</string>
-    <string name="dit_cpu_decode">Decodes on the CPU on the %1$s (slower): the NPU decode came back grey. ⋮ Test the NPU decode helps fix it</string>
-    <string name="test_npu_decode">Test the NPU decode</string>
+    <string name="dit_no_hmx">Runs with the NPU\'s matrix unit off and decodes on the CPU on the %1$s: right pictures, but much slower (minutes at 512, far longer at 1024). ⋮ Test the NPU helps find a faster fix</string>
+    <string name="test_npu">Test the NPU</string>
     <string name="diagnose">Diagnose</string>
     <string name="diagnose_note">This picture came back one flat colour. Diagnose renders a small picture up to %1$d times, each with one part moved off the NPU, and adds which ones come back clean to this report. About 10 to 25 minutes.</string>
     <string name="diagnose_report_title">Diagnosis of a blank picture</string>
@@ -933,6 +935,8 @@
     <string name="api_switch_hint">Port %1$d. Off by default; a notification shows while it listens.</string>
     <string name="api_token_label">Token (send as Authorization: Bearer …)</string>
     <string name="api_copy">Copy token</string>
+    <string name="api_cors">Allow browser pages</string>
+    <string name="api_cors_hint">A web page in a browser may call the API. Every call still needs the token</string>
     <string name="api_regenerate">New token</string>
     <string name="api_no_network">No Wi-Fi or tailnet address right now</string>
     <string name="api_channel">Local API</string>

@@ -81,6 +81,19 @@ class ModelBrowserTest {
     }
 
     @Test
+    fun communityConversionsHaveTheirOwnChipAndAreNotBase() {
+        // ⭐ The user, 2026-10-18: a Community subsection, so whose they are is said.
+        val ours = spec("illustrious_xl_swap")
+        val theirs = spec("community_rinflanime_v50_swap")
+        val rows = listOf(row(ours), row(theirs))
+        val community = sectionsOf(rows, ModelKind.ALL, "", Family.SDXL_SWAP, SubKind.COMMUNITY)
+        assertEquals(listOf(theirs.id), community.available.map { it.spec.id })
+        val base = sectionsOf(rows, ModelKind.ALL, "", Family.SDXL_SWAP, SubKind.BASE)
+        assertEquals(listOf(ours.id), base.available.map { it.spec.id })
+        assertTrue(matchesQuery(theirs, "community"))
+    }
+
+    @Test
     fun archLabels() {
         assertEquals("8 Elite+", archLabel(79))
         assertEquals("8 Gen 3+", archLabel(75))

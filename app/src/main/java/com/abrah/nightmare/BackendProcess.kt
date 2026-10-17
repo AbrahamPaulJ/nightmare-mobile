@@ -72,8 +72,8 @@ object BackendProcess {
     /** Newest-first, same convention as the harness log. */
     val output = ArrayDeque<String>()
 
-    /** ⭐ The engine's device spec with only the decode (the VAE) on the CPU ([DeviceProbe.DIT_CPU_DECODE_SOCS]). */
-    const val CPU_DECODE_SPEC = "diffusion=HTP0,te=HTP0,vae=CPU"
+    /** ⭐ ggml-hexagon's HMX count, 0 where HMX makes a DiT picture grey or noise ([DeviceProbe.DIT_NO_HMX_SOCS]). */
+    const val NO_HMX_KEY = "GGML_HEXAGON_NHMX"
 
     /**
      * ⭐ One Diagnose leg's environment for the NEXT DiT launch ([BlankDiagnosis.Leg.env]); empty otherwise.
@@ -84,7 +84,7 @@ object BackendProcess {
 
     /**
      * ⭐ Diagnose is running: every launch, its control included, decodes on the NPU even on a
-     * [DeviceProbe.DIT_CPU_DECODE_SOCS] chip, because the NPU decode is what it tests. Cleared with [diagnosticEnv].
+     * [DeviceProbe.DIT_NO_HMX_SOCS] chip, because the NPU decode is what it tests. Cleared with [diagnosticEnv].
      */
     @Volatile
     var diagnosing: Boolean = false
@@ -695,6 +695,9 @@ object BackendProcess {
                 // reports success.
                 val spec = ModelCatalog.byId(modelId)
                 val dit = !upscalerOnly && spec?.isDit == true
+                // ⭐ Settings → Memory → Video: stream the model ([Prefs.wanStreamBudget], GitHub #48): a Wan clip the key
+                // left resident streams too. ⚠ The key keeps what was asked ([launchedKey] below), so it still matches.
+                val budget = memoryBudget ?: Prefs.wanStreamBudget(context, spec)
                 // ⚠⚠ The engine is DOWNLOADED, not shipped (`DitEngine`), so
                 // "missing" is an ordinary state and not a broken build: an
                 // app update replaces the native dir, and before 1.5.502 this
@@ -791,7 +794,7 @@ object BackendProcess {
                     if (!upscalerOnly && spec?.family?.dit == true) {
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
                         // ⭐ A memory budget only evicts with `all=disk`: without it the segments stay resident.
-                        (readDitParamsOverride(context) ?: "all=disk".takeIf { belowV79 || memoryBudget != null })
+                        (readDitParamsOverride(context) ?: "all=disk".takeIf { belowV79 || budget != null })
                             ?.let { add("--dit_params_backend"); add(it) }
                     }
                     // ⭐ Only meaningful WITH --lowram, as upstream passes it.
@@ -825,11 +828,13 @@ object BackendProcess {
                     // the defaults leaves the skel unable to resolve what it
                     // links against. Upstream's exact list.
                     if (dit) {
-                        // ⭐⭐ The decode on the CPU where the NPU's decode comes back flat grey
-                        // ([DeviceProbe.DIT_CPU_DECODE_SOCS]). ⚠ Not during Diagnose: its legs are about
-                        // the NPU decode, and one that wants the CPU says so itself.
-                        if (DeviceProbe.caps().ditCpuDecode && !diagnosing && spec?.family != Family.WAN) {
-                            put("NM_DIT_BACKEND", CPU_DECODE_SPEC)
+                        // ⭐⭐ HMX off where it makes the picture grey or noise ([ModelSpec.noHmxOn]), and the decode
+                        // on the CPU with it: without HMX the VAE's HMX-repacked convolutions abort at 1024²
+                        // (`dsp-rsp NO-SUPPORT`, Anima 2.9B on the S25, 2026-10-18). ⚠ Not during Diagnose's NPU
+                        // legs: HMX is what they test, and a leg that wants it off says so itself ([BlankDiagnosis]).
+                        if (spec?.noHmxOn(DeviceProbe.caps()) == true && !diagnosing) {
+                            put(NO_HMX_KEY, "0")
+                            put("NM_DIT_BACKEND", BlankDiagnosis.CPU_VAE)
                         }
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }
@@ -851,7 +856,7 @@ object BackendProcess {
                         // resident and fails at block 25 of 30 (the S25 forced to v75 at 2.75). Wan gets
                         // one per clip instead, with `all=disk`: [memoryBudget] (`docs/VIDEO-GGML.md` §4).
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
-                        (readDitMaxVramOverride(context) ?: memoryBudget ?: lowArchDitBudget(spec, DeviceProbe.caps().arch).takeIf { belowV79 && spec?.family != Family.WAN }
+                        (readDitMaxVramOverride(context) ?: budget ?: lowArchDitBudget(spec, DeviceProbe.caps().arch).takeIf { belowV79 && spec?.family != Family.WAN }
                             ?: kreaBudget(spec, DeviceProbe.caps().ramBytes, ErrorReport.availableRamBytes()))
                             ?.let { put("DIT_MAX_VRAM", it) }
                         // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
