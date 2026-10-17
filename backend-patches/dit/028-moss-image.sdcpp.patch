@@ -69,10 +69,10 @@ index 96050ce..054df00 100644
      return false;
 diff --git a/src/model/diffusion/moss_image.hpp b/src/model/diffusion/moss_image.hpp
 new file mode 100644
-index 0000000..8bd5880
+index 0000000..9bfe9c3
 --- /dev/null
 +++ b/src/model/diffusion/moss_image.hpp
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,275 @@
 +#ifndef __SD_MODEL_DIFFUSION_MOSS_IMAGE_HPP__
 +#define __SD_MODEL_DIFFUSION_MOSS_IMAGE_HPP__
 +
@@ -94,6 +94,9 @@ index 0000000..8bd5880
 +        int64_t head_dim = 128;
 +        int64_t depth    = 42;
 +        int64_t freq_dim = 256;
++        // proj.q / proj.k / proj.v apart (the release weights, community GGUFs, the 8-step LoRA's targets),
++        // or fused as proj.qkv (Comfy-Org's checkpoints).
++        bool split_qkv = false;
 +
 +        static MOSSImageConfig detect_from_weights(const String2TensorStorage& weights, const std::string& prefix) {
 +            MOSSImageConfig config;
@@ -114,6 +117,8 @@ index 0000000..8bd5880
 +                    config.head_dim = tensor.ne[0];
 +                } else if (key == "time_embedding.0.weight") {
 +                    config.freq_dim = tensor.ne[0];
++                } else if (key == "layers.0.proj.q.weight") {
++                    config.split_qkv = true;
 +                }
 +                if (starts_with(key, "layers.")) {
 +                    depth = std::max<int64_t>(depth, std::stoi(key.substr(7)) + 1);
@@ -182,7 +187,13 @@ index 0000000..8bd5880
 +            blocks["norm2"]            = std::make_shared<RMSNorm>(config.dim, 1e-6f);
 +            blocks["q_norm"]           = std::make_shared<RMSNorm>(config.head_dim, 1e-6f);
 +            blocks["k_norm"]           = std::make_shared<RMSNorm>(config.head_dim, 1e-6f);
-+            blocks["proj.qkv"]         = std::make_shared<Linear>(config.dim, config.dim * 3, false);
++            if (config.split_qkv) {
++                blocks["proj.q"] = std::make_shared<Linear>(config.dim, config.dim, false);
++                blocks["proj.k"] = std::make_shared<Linear>(config.dim, config.dim, false);
++                blocks["proj.v"] = std::make_shared<Linear>(config.dim, config.dim, false);
++            } else {
++                blocks["proj.qkv"] = std::make_shared<Linear>(config.dim, config.dim * 3, false);
++            }
 +            blocks["proj.o"]           = std::make_shared<Linear>(config.dim, config.dim, false);
 +            blocks["proj.ffn_up_gate"] = std::make_shared<Linear>(config.dim, config.ffn_dim * 2, false);
 +            blocks["proj.ffn_down"]    = std::make_shared<Linear>(config.ffn_dim, config.dim, false);
@@ -195,9 +206,14 @@ index 0000000..8bd5880
 +            auto part   = [&](int i) { return ggml_ext_slice(c, mod, 0, i * config.dim, (i + 1) * config.dim); };
 +            auto y      = norm("norm1", x);
 +            y           = ggml_add(c, ggml_add(c, y, ggml_mul(c, y, part(1))), part(0));
-+            auto qkv    = linear("proj.qkv", y);
++            auto heads  = [&](ggml_tensor* h) { return ggml_reshape_4d(c, h, config.head_dim, config.dim / config.head_dim, x->ne[1], x->ne[2]); };
++            ggml_tensor* qkv = config.split_qkv ? nullptr : linear("proj.qkv", y);
 +            auto split  = [&](int i) {
-+                return ggml_reshape_4d(c, ggml_ext_slice(c, qkv, 0, i * config.dim, (i + 1) * config.dim), config.head_dim, config.dim / config.head_dim, x->ne[1], x->ne[2]);
++                if (config.split_qkv) {
++                    static const char* names[] = {"proj.q", "proj.k", "proj.v"};
++                    return heads(linear(names[i], y));
++                }
++                return heads(ggml_ext_slice(c, qkv, 0, i * config.dim, (i + 1) * config.dim));
 +            };
 +            auto q       = norm("q_norm", split(0));
 +            auto k       = norm("k_norm", split(1));
