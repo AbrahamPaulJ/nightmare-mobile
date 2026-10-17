@@ -1181,6 +1181,8 @@ private val KNOB_RESOURCES = mapOf(
     "hand_pad" to com.abrah.nightmare.R.string.knob_detect_pad,
     "face_blur" to com.abrah.nightmare.R.string.knob_detect_blur,
     "hand_blur" to com.abrah.nightmare.R.string.knob_detect_blur,
+    "face_denoise" to com.abrah.nightmare.R.string.knob_detail_denoise,
+    "hand_denoise" to com.abrah.nightmare.R.string.knob_detail_denoise,
     "autosave" to com.abrah.nightmare.R.string.knob_autosave,
     "only_masked" to com.abrah.nightmare.R.string.knob_only_masked,
     "tap_select" to com.abrah.nightmare.R.string.knob_tap_select,

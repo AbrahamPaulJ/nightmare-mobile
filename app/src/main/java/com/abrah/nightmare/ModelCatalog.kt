@@ -132,6 +132,12 @@ enum class Family(
      */
     IRIS("Iris", GP_DIT, GP_DIT_NEG, "iris", dit = true),
     /**
+     * ⭐⭐ **MOSS-Image** (OpenMOSS, Apache 2.0) on the DiT engine (`docs/MOSS.md`, engine `dit/028`): a 5B DiT,
+     * Qwen3.5 9B as its text encoder, the FLUX.2 VAE, and lodestones' 8-step DMD LoRA applied on EVERY render
+     * ([ModelSpec.ownLora]). ⚠ Text to image only: nothing else measured.
+     */
+    MOSS("MOSS-Image", GP_DIT, GP_DIT_NEG, "moss", dit = true),
+    /**
      * ⭐⭐ **Wan 2.2 TI2V 5B video** on the DiT engine (`docs/VIDEO-GGML.md`): a prompt, or a
      * prompt and a start picture, into a clip through `/video` (backend 028, engine ABI 106).
      * ⚠⚠ NOT a checkpoint: its one model ([ModelCatalog.WAN22]) is kept out of
@@ -548,6 +554,12 @@ data class ModelSpec(
      * exact size; the installer skips it ([toFetch]); this model's own copy wins when it has one.
      */
     val partsFrom: String? = null,
+    /**
+     * ⭐ A LoRA file in this model's own folder, applied at full strength on every render before the node's own
+     * LoRAs: MOSS-Image's 8-step DMD distillation. ⚠⚠ At run time, never merged: its change to each weight is
+     * about 1/1000 of a Q4_0 rounding step, so a merge into the shipped Q4_0 erases it (measured 2026-10-18).
+     */
+    val ownLora: String? = null,
     /**
      * ⭐ The size a node STARTS at when it takes this model — a new flow, or
      * "Use" on the Models tab — when that is not [native]. Null = [native].
@@ -1017,6 +1029,10 @@ object ModelCatalog {
     const val KREA2 = "krea2"
     /** ⭐ Iris 3B Turbo (backend-patches/035): Krea 2's own-files launch with no VAE file. */
     const val IRIS = "iris"
+
+    /** ⭐ MOSS-Image's own LoRA, in its folder ([ModelSpec.ownLora]). */
+    const val MOSS_LORA = "dmd8.safetensors"
+
     /**
      * ⭐⭐ Iris 3B Turbo's training buckets, square first (the model card): its ONLY sizes
      * ([ModelSpec.fixedSizes]). Multiples of 16, which is all the engine needs; most are off [DIT_STEP]'s grid.
@@ -2081,7 +2097,10 @@ object ModelCatalog {
         sizes: List<Res>? = null,
         /** ⭐ 1 for every turbo here; a base model (Anima 2.9B) wants its own. */
         cfg: Double = 1.0,
+        /** ⚠ See [ModelSpec.ownLora]. */
+        ownLora: String? = null,
     ) = ModelSpec(
+        ownLora = ownLora,
         startRes = startRes,
         fixedSizes = sizes != null,
         lowram = lowram,
@@ -2356,6 +2375,25 @@ object ModelCatalog {
                 ),
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
                 RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+            ),
+        ),
+        // ⭐⭐ MOSS-Image (OpenMOSS, Apache 2.0; `docs/MOSS.md`): the SFT DiT as Q4_0 (ours, made from realrebelai's
+        // Q8_0; the NPU runs no K-quant), Qwen3.5 9B Q4_0 and its own tokenizer.json (a vocabulary Qwen2's is not:
+        // the engine reads it via `SD_QWEN35_TOKENIZER`, [BackendProcess]), the FLUX.2 VAE, and lodestones' 8-step
+        // LoRA on every render ([ModelSpec.ownLora]). Measured on the S25 (v79, `all=disk`): 512² 8 steps 3.4 min,
+        // 1024² 11.5 min. ⚠ v79 only: never run on an 8 Gen 3. Sizes read off the files 2026-10-17.
+        dit(
+            "moss_image", "MOSS-Image (8 steps)", Family.MOSS, KREA2, steps = 8,
+            ownDitParts = true,
+            minArch = DIT_MIN_ARCH,
+            prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
+            ownLora = MOSS_LORA,
+            files = listOf(
+                RemoteFile(HF + "AbrahamPJ/nightmare-moss-image/resolve/main/moss-image-sft-q4_0.gguf", "dit.gguf", 3_217_359_072L),
+                RemoteFile(HF + "unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_0.gguf", "llm.gguf", 5_379_417_312L),
+                RemoteFile(HF + "realrebelai/MOSS-Image_GGUFs/resolve/main/MOSS-VAE.safetensors", "vae.safetensors", 249_521_372L),
+                RemoteFile(HF + "OpenMOSS-Team/MOSS-Image-Base/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", 19_989_325L),
+                RemoteFile(HF + "lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors", MOSS_LORA, 1_189_176_800L),
             ),
         ),
         // ⭐ FLUX.2 Klein 9B — the same architecture as 4B, so the same family,

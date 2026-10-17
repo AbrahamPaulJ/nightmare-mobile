@@ -857,11 +857,13 @@ object Ops {
                     put("tile_size", tileSize)
                 }
                 scheduler?.let { put("scheduler", it) }
-                if (loras.isNotEmpty()) {
+                // ⭐ The running model's own LoRA first, on every render ([BackendProcess.launchedOwnLora]).
+                val sent = listOfNotNull(BackendProcess.launchedOwnLora()?.let { it to 1.0 }) + loras
+                if (sent.isNotEmpty()) {
                     put(
                         "loras",
                         org.json.JSONArray().apply {
-                            for ((path, mult) in loras) {
+                            for ((path, mult) in sent) {
                                 put(JSONObject().put("path", path).put("multiplier", mult))
                             }
                         },

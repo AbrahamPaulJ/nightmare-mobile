@@ -2544,6 +2544,9 @@ internal fun NodeInspectorBody(
                 nodeBase = if (node.type in com.abrah.nightmare.WAN_TYPES) com.abrah.nightmare.LoraLibrary.Base.WAN
                 else com.abrah.nightmare.LoraLibrary.Base.of((type as? com.abrah.nightmare.SdSampler)?.family),
                 experimental = com.abrah.nightmare.LoraSources.Target.experimental((type as? com.abrah.nightmare.SdSampler)?.family),
+                // ⭐ GitHub #51: below 0 where the engine takes it, the DiT families and Wan (`LoraSpec.MIN_NEGATIVE`).
+                allowNegative = node.type in com.abrah.nightmare.WAN_TYPES ||
+                    (type as? com.abrah.nightmare.SdSampler)?.family?.dit == true,
             )
         }
 

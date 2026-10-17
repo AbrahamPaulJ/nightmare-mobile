@@ -345,6 +345,29 @@ class ModelCatalogTest {
         assertEquals("CONV_2D_UPSCALE|CONCAT|SWIGLU", BackendProcess.lowArchOpFilter(73))
     }
 
+    /** ⭐ MOSS-Image's own encoder (24 Q5_K `ssm_out` blocks, measured) passes the NPU-type check; another size does not. */
+    @Test
+    fun theCataloguesOwnEncoderSkipsTheTypeCheck() {
+        val moss = ModelCatalog.byId("moss_image")!!
+        assertEquals(true, BackendProcess.shipsThisEncoder(moss, 5_379_417_312L))
+        assertEquals(false, BackendProcess.shipsThisEncoder(moss, 5_680_522_464L))
+        assertEquals("dmd8.safetensors", moss.ownLora)
+        assertEquals(Family.MOSS, moss.family)
+    }
+
+    /** ⭐ GitHub #52: the engine is told the table's arch, so a failed DSP query cannot fall back to v73. */
+    @Test
+    fun theEngineIsToldTheArchTheChipTableKnows() {
+        fun caps(soc: String, arch: Int) = DeviceProbe.Caps(arch, 8, measured = false, soc = soc)
+        assertEquals("75", BackendProcess.ditArchEnv(caps("SM8650", 75)))
+        assertEquals("79", BackendProcess.ditArchEnv(caps("SM8750", 79)))
+        assertEquals("73", BackendProcess.ditArchEnv(caps("SM8635", 73)))
+        // ⚠ No skel for v69: the engine's own floor is right there.
+        assertEquals(null, BackendProcess.ditArchEnv(caps("SM8450", 69)))
+        // ⚠ A chip the table does not name keeps the engine's own query.
+        assertEquals(null, BackendProcess.ditArchEnv(caps("SM9999", 75)))
+    }
+
     /**
      * ⭐ 8 Gen 3 (v75) DiT, alpha (`docs/DIT.md` §9e): the quantised builds only. FP8 stays v79 —
      * below it the engine runs `F8_E4M3` matmuls on the CPU — and Qwen hands a v75 phone its

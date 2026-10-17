@@ -21,6 +21,7 @@ which phones can run it; inside a family, models differ in style.
 | **Anima DiT** | Turbo 1.1 | 3.2 GB (4.2 GB download, converted on the phone) | 512–2048 | Anime; about a minute at 1024 | 8 Gen 2+ (alpha on 8 Gen 2 and 8 Gen 3) |
 | **Anima DiT** | 2.9B (preview) | 4.1 GB (6.7 GB download, converted on the phone) | 512–2048 | Anime, a larger base model: 28 steps at CFG 4, about 7 minutes at 1024 on an 8 Elite | 8 Gen 2+ (alpha) |
 | **Krea 2** | Turbo | 9.5 GB | 512–2048 | Text to image only. On a 12 GB phone it renders in parts: about 3.5 to 4 min at 1024 | 12 GB RAM, and 8 Elite+ (alpha on 8 Gen 3) |
+| **MOSS-Image** | 8 steps | about 10 GB | 512–2048 | Text to image only. Careful and detailed, with an 8-step speed-up applied every time; slow: about 3 min at 512 and 11 to 12 min at 1024 | 8 Elite+ |
 | **Iris** | 3B Turbo | 5.8 GB (6 GB download, converted on the phone) | only its trained sizes, about 1 MP: 1024x1024, 896x1200, 896x1344, 752x1344 and the turned versions | Text to image only. Draws pixels directly, with no VAE; about 2.5 min at 1024 | 8 Gen 2+ (alpha below the 8 Elite; not yet run on a real 8 Gen 2 or 8 Gen 3) |
 
 Qwen Image 2.1 and its Turbo each keep their own copy of the text encoder and decoder (6.6 GB),

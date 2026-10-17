@@ -119,8 +119,10 @@ class VideoGraphTest {
         assertTrue(isSampler("wanfun.sample"))
         // 2026-10-16: `iris.sample`, Iris 3B Turbo (`docs/IRIS.md`).
         assertTrue(isSampler("iris.sample"))
-        assertEquals(23, SAMPLER_TYPES.size)
-        assertEquals(20, IMAGE_SAMPLER_TYPES.size)
+        // 2026-10-18: `moss.sample`, MOSS-Image (`docs/MOSS.md`).
+        assertTrue(isSampler("moss.sample"))
+        assertEquals(24, SAMPLER_TYPES.size)
+        assertEquals(21, IMAGE_SAMPLER_TYPES.size)
         assertEquals(9, INPAINT_TYPES.size)
     }
 

@@ -113,6 +113,18 @@ class DetailerTest {
         assertEquals(0.3f, Detailer.settings(mapOf("hand_conf" to "0.1"), face).conf)
     }
 
+    /** ⭐ GitHub #46: a part's own strength wins; absent or blank, it follows the node's Fix strength, then 0.4. */
+    @Test
+    fun eachPartHasItsOwnStrengthFollowingFixStrength() {
+        val face = com.abrah.nightmare.detail.PartDetector.Part.FACE
+        val hand = com.abrah.nightmare.detail.PartDetector.Part.HAND
+        assertEquals(0.4f, Detailer.denoiseOf(emptyMap(), face))
+        val node = mapOf(Detailer.DETAIL_DENOISE to "0.55", "hand_denoise" to "0.7", "face_denoise" to "")
+        assertEquals(0.55f, Detailer.denoiseOf(node, face))
+        assertEquals(0.7f, Detailer.denoiseOf(node, hand))
+        assertEquals(1f, Detailer.denoiseOf(mapOf("face_denoise" to "3"), face))
+    }
+
     @Test
     fun paddingGrowsTheBoxByItsShare() {
         val b = YoloDecode.Box(100f, 100f, 200f, 200f, 0.9f)

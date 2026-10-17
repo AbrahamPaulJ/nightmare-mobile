@@ -58,7 +58,10 @@ its size; the bin deletes it. The **Files** button in a node's LoRA list does th
 
 1. Tap a FLUX.2, Z-Image, SD 1.5 Swap or SDXL Swap generator node.
 2. Under **LoRAs**, tick the ones you want. A checkbox per installed file.
-3. Set each one's **strength** with its slider (1.0 is the adapter's full effect).
+3. Set each one's **strength** with its slider (1.0 is the adapter's full effect), or tap the number beside it
+   to type one, such as 0.35 or 1.25. On the DiT models (FLUX.2, Z-Image, Qwen Image, Krea 2, Anima) and Wan the
+   slider runs from -2 to 2 and stops at 0 in the middle: below 0 pushes away from what the LoRA learned. On the
+   SD 1.5 and SDXL Swap models it runs from 0 to 2, because their NPU cannot apply a negative weight.
 4. Run.
 
 <figure markdown>

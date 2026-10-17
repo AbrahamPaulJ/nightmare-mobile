@@ -406,6 +406,8 @@ object CustomModels {
         Family.ANIMA_DIT -> Defaults("euler", 10, 1.0)
         // Iris 3B Turbo: 4 steps at cfg 1, its model card's (`docs/IRIS.md`).
         Family.IRIS -> Defaults("euler", 4, 1.0)
+        // MOSS-Image with its 8-step LoRA: 8 steps, no CFG (lodestones' card).
+        Family.MOSS -> Defaults("euler", 8, 1.0)
     }
 
     /**
@@ -473,6 +475,8 @@ object CustomModels {
             Family.ANIMA_DIT -> ModelCatalog.KREA2
             // ⚠ Unreachable: nothing imports an Iris checkpoint (only the catalogue builds it).
             Family.IRIS -> ModelCatalog.IRIS
+            // ⚠ Unreachable, as Iris: only the catalogue builds MOSS-Image.
+            Family.MOSS -> ModelCatalog.KREA2
             // ⚠ Unreachable: nothing imports a video model ([ModelCatalog.WAN22]).
             Family.WAN -> ModelCatalog.WAN
         },
@@ -482,7 +486,7 @@ object CustomModels {
                 Family.SD15, Family.SD15_SWAP -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL, Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
-                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN -> ModelCatalog.DIT_RES
+                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN, Family.MOSS -> ModelCatalog.DIT_RES
                 // ⚠ Unreachable, as for `backendType`; the catalogue entry carries [ModelCatalog.IRIS_SIZES].
                 Family.IRIS -> ModelCatalog.IRIS_SIZES.first()
             },
@@ -498,6 +502,8 @@ object CustomModels {
             Family.FLUX2, Family.ZIMAGE, Family.KREA2, Family.ANIMA_DIT -> listOf(weights) + DIT_PARTS
             // ⚠ No VAE: Iris renders pixels (backend 035).
             Family.IRIS -> listOf(weights, "llm.gguf", "tokenizer.json")
+            // ⚠ Unreachable (catalogue only); the catalogue entry lists its own five.
+            Family.MOSS -> listOf(weights) + DIT_PARTS + ModelCatalog.MOSS_LORA
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
             Family.QWEN21 -> listOf(weights) + ModelCatalog.QWEN21_PARTS
             Family.WAN -> ModelCatalog.WAN22.requiredFiles
@@ -526,6 +532,8 @@ object CustomModels {
             Family.ANIMA_DIT -> false
             // ⚠ The same launch as Krea 2 (all=disk).
             Family.IRIS -> false
+            // ⚠ The same launch as Krea 2 (all=disk), as measured.
+            Family.MOSS -> false
             Family.WAN -> false
         },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which
@@ -1263,6 +1271,7 @@ object CustomModels {
         )
         // ⭐ Anima comes in sizes the engine does not run (a tester's "Anima 3.8B" rendered a blur, 2026-10-17).
         if (family == Family.ANIMA_DIT) animaSizeProblem(json)?.let { throw IOException(it) }
+        packedQuantProblem(json)?.let { throw IOException(it) }
         return if (family == Family.FLUX2 && isKlein9b(json)) DitVariant.KLEIN_9B
         else DitVariant.defaultFor(family)
     }
@@ -1289,6 +1298,29 @@ object CustomModels {
         if (!other) return null
         return "that is an Anima size the app does not run (${blocks ?: "?"} blocks, width ${width ?: "?"}), so it " +
             "would render a blur. Anima 2B ($ANIMA_2B_BLOCKS blocks) and 2.9B (40), both at width $ANIMA_2B_WIDTH, import"
+    }
+
+    /**
+     * ⭐ ComfyUI's 4-bit formats, packed two weights to a byte: the engine reads none of them (GitHub #50).
+     * ⚠ Only `int8_tensorwise` (and its ConvRot form) is read; fp8 needs no format entry at all.
+     */
+    val PACKED_QUANTS = setOf("convrot_w4a4", "asym_w4a8_int8", "nvfp4", "mxfp4", "nf4", "fp4", "int4")
+
+    private val QUANT_FORMAT = Regex("format\\\\*\"\\s*:\\s*\\\\*\"([A-Za-z0-9_]+)")
+
+    /**
+     * ⭐ Why a checkpoint's weights are in a format the engine cannot read, said for a person; null when they are not.
+     *
+     * ⚠⚠ Why (GitHub #50, 2026-10-17): a Krea 2 fine-tune's "int4" build (`convrot_w4a4`, read off its header: I8
+     * weights half as wide as the model, F32 row scales) imported, then the launch died on 200 "wrong shape" lines.
+     * ⚠ Not a dtype guess (declined 2026-09-21, `docs/DIT.md` §2e): the file names its format in
+     * `__metadata__._quantization_metadata`, a JSON string, so its quotes arrive escaped.
+     */
+    internal fun packedQuantProblem(header: String): String? {
+        val format = QUANT_FORMAT.findAll(header).map { it.groupValues[1].lowercase() }
+            .firstOrNull { it in PACKED_QUANTS } ?: return null
+        return "this file stores its weights as $format, a 4-bit format made for NVIDIA cards that the engine " +
+            "cannot read. Import the GGUF or fp8 version of this model instead"
     }
 
     /** ⚠ Pure: an Anima header's DiT block count (the LLM adapter's own never count); null when it lists none. */

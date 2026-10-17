@@ -586,6 +586,7 @@
     <string name="models_family_krea">About 9.5 GB. 12 GB phones and up, 8 Gen 3 or newer (alpha on 8 Gen 3). On a 12 GB phone it renders in parts: about 3.5 to 4 minutes at 1024x1024. Text to image only; it does not edit. Use Wi-Fi.</string>
     <string name="models_family_animadit">About 3.2 GB. Downloads Anima\'s official 4.2 GB file and converts it on the phone, so it needs ~7.5 GB free while it installs. About 1 minute a picture at 1024², any size from 512. 8 Gen 2 or newer (alpha on 8 Gen 2 and 8 Gen 3). Not an edit model. Use Wi-Fi.</string>
     <string name="models_family_iris">About 5.8 GB. Downloads the official 6 GB file from speridlabs and converts it on the phone, so it needs ~10 GB free while it installs. About 2.5 minutes a picture at 1024x1024 on an 8 Elite. No VAE. Only the sizes it was trained at (about 1 MP each). 8 Gen 2 or newer (alpha below the 8 Elite, not yet run on a real 8 Gen 2 or 8 Gen 3). Text to image only. Use Wi-Fi.</string>
+    <string name="models_family_moss">About 10 GB. 8 Elite or newer. A careful, detailed picture model with an 8-step speed-up applied every time. Slow on a phone: about 3 minutes at 512x512 and 11 to 12 minutes at 1024x1024 on an 8 Elite. Text to image only. Use Wi-Fi.</string>
     <string name="models_family_other">About 3.5 GB each, and ~7.5 GB free while it unpacks. Use Wi-Fi.</string>
     <string name="models_import_checkpoint">Import a checkpoint</string>
     <string name="models_import_dit_body">One .safetensors or .gguf. A checkpoint from CivitAI or Hugging Face, used as it is. No conversion. Klein 4B and Z-Image ones borrow a text encoder and VAE (up to 2.6 GB to fetch, nothing if you have that model). Klein 9B and Krea 2 ones get their own copy (4.8 GB and 2.6 GB). A file bigger than about half your phone\'s RAM will likely be closed by Android while it renders.</string>
@@ -794,6 +795,7 @@
     <string name="hint_detect_conf">Lower finds small or blurred ones, higher skips things that only look like one</string>
     <string name="hint_detect_pad">How far the redraw reaches past what was found (hair, ears, wrists)</string>
     <string name="hint_detect_blur">How soft the edge of the redrawn patch is</string>
+    <string name="hint_detect_denoise">How much is redrawn, for this tab only. Until you move it, it follows Fix strength</string>
     <string name="hint_fix_faces">After the render: find each face and redraw it close up with this prompt and model, then blend it back (ADetailer). Needs the face and hand detector from Models, Tools. Adds a render per face.</string>
     <string name="hint_fix_hands">After the render: find each hand and redraw it close up, as Fix faces does. Adds a render per hand.</string>
     <string name="more_options">More options</string>
@@ -1139,6 +1141,10 @@
     <string name="lora_folder_new">New folder</string>
     <string name="lora_folder_name_hint">Folder name</string>
     <string name="lora_folder_add">Add</string>
+    <string name="lora_weight_title">LoRA weight</string>
+    <string name="lora_weight_set">Set</string>
+    <string name="lora_weight_range">From %1$s to %2$s. Negative weights work on DiT models only.</string>
+    <string name="lora_weight_range_negative">From %1$s to %2$s. Below 0 it pushes away from what the LoRA learned.</string>
     <string name="lora_folder_count">%1$s (%2$d)</string>
     <string name="lora_cd_folder">Open or close the folder %1$s</string>
     <string name="lora_base_auto">Auto (%1$s)</string>

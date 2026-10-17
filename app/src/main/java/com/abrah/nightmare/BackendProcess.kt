@@ -292,6 +292,19 @@ object BackendProcess {
         private set
 
     /**
+     * ⭐ The running model's OWN LoRA ([ModelSpec.ownLora]: MOSS-Image's 8-step distillation) as a path, or null.
+     * [Ops.generate] sends it first on EVERY render, whoever asks: the node, Diagnose, `dit_bench`, the agent API.
+     * ⚠⚠ Why here and not in the node (1.6.192): it was added to `Fused.runDit` alone, and `dit_bench` rendered MOSS
+     * without it, a mosaic. Derived from [launchedKey], the model that is actually running.
+     */
+    fun launchedOwnLora(): String? {
+        val key = launchedKey ?: return null
+        val ctx = appContext ?: return null
+        val spec = ModelCatalog.byId(key.model) ?: return null
+        return spec.ownLora?.let { File(spec.dir(ctx), it).absolutePath }
+    }
+
+    /**
      * True when the running process is an upscale-only server — no checkpoint.
      *
      * ⚠ Distinct from `launchedKey == null`, which also means "nothing is
@@ -466,6 +479,31 @@ object BackendProcess {
      * takes a fallback that faults the DSP inside `glu_swiglu_f32_per_thread` (`dspqueue_read failed
      * 0x2e`). On the CPU: Klein 9B 1024² renders the v75 picture (54.9 dB), 166 s against 149 s.
      */
+    /** The arches the DiT engine carries a skel for (`assets/ditlibs`). */
+    val DIT_SKEL_ARCHES = setOf(73, 75, 79, 81)
+
+    /**
+     * ⭐ `GGML_HEXAGON_ARCH` from the chip table, or null when the table does not name this chip.
+     *
+     * ⚠⚠ Why (GitHub #52, a vivo SM8650, 2026-10-17): the engine asks the DSP its version, and that query failed
+     * (`FastRPC capability query failed (err 12)`, 2.4 GB free); ggml-hexagon then DEFAULTS TO v73, opened a v73
+     * session on a v75 DSP, failed, and aborted. [DeviceProbe.SOC_TO_ARCH] already picks which skel the app unpacks,
+     * so telling the engine the same arch adds no trust. ⚠ Only a skel the engine ships ([DIT_SKEL_ARCHES]): an
+     * 8 Gen 1 (v69) asked for would fail; the engine's own floor (73) is right there.
+     */
+    internal fun ditArchEnv(caps: DeviceProbe.Caps): String? =
+        caps.arch.takeIf { caps.soc in DeviceProbe.SOC_TO_ARCH && it in DIT_SKEL_ARCHES }?.toString()
+
+    /**
+     * ⭐ `llm.gguf` is exactly the encoder the catalogue downloads for [spec] (its name at its exact size), so the
+     * NPU-type check does not apply: it was measured with that file. ⚠ Why (MOSS-Image, 2026-10-18): unsloth's
+     * Qwen3.5 "Q4_0" has 24 Q5_K `ssm_out` blocks, which ggml-hexagon hands to the CPU; it rendered on the S25 (the
+     * timings in `docs/MOSS.md` include them), and the check refused it at launch. A user's swapped-in encoder,
+     * any other size, is still checked (Telegram #6290's Q4_K_M).
+     */
+    internal fun shipsThisEncoder(spec: ModelSpec, teBytes: Long): Boolean =
+        spec.files.any { it.name == "llm.gguf" && it.bytes == teBytes }
+
     internal fun lowArchOpFilter(arch: Int): String =
         if (arch < 75) "CONV_2D_UPSCALE|CONCAT|SWIGLU" else "CONV_2D_UPSCALE|CONCAT"
 
@@ -693,9 +731,15 @@ object BackendProcess {
                 // ⭐ A DiT text encoder the NPU cannot run, named before the launch (Telegram #6290: an
                 // "uncensored" Q4_K_M encoder copied over Klein 4B's Q4_0 `llm.gguf` did not work). ⚠ Not Wan:
                 // its umT5 runs on the CPU, and is Q4_K_M on purpose (`docs/VIDEO-GGML.md` §3).
+                // ⭐ The model's own LoRA must be there: without it MOSS-Image renders 8 steps of grain.
+                if (!upscalerOnly) spec?.ownLora?.let { name ->
+                    if (!File(model, name).isFile) return@withContext Start.Failed(
+                        "${spec.label} is missing $name. Download it again in Models"
+                    )
+                }
                 if (!upscalerOnly && spec?.family?.dit == true && spec.family != Family.WAN) {
                     val te = File(model, "llm.gguf")
-                    val bad = if (te.isFile) GgufHeader.unrunnableBlockTypes(te) else emptySet()
+                    val bad = if (te.isFile && !shipsThisEncoder(spec, te.length())) GgufHeader.unrunnableBlockTypes(te) else emptySet()
                     if (bad.isNotEmpty()) return@withContext Start.Failed(
                         "${te.name} in ${spec.label} uses ${bad.sorted().joinToString()}, which the NPU cannot run. " +
                             "Use a Q4_0 or Q8_0 text encoder (the one this model downloads is Q4_0)"
@@ -843,6 +887,11 @@ object BackendProcess {
                         if (spec?.family in NO_MM_ADD_FUSION) put("GGML_HEXAGON_OPFUSION", ANIMA_OPFUSION)
                         // ⭐ A chip that ran short of VTCM runs unfused ([HexFallback]).
                         if (HexFallback.noFusion(context)) put("GGML_HEXAGON_OPFUSION", "0")
+                        // ⭐ MOSS-Image's Qwen3.5 is not Qwen2's vocabulary: the engine reads its tokenizer.json from here
+                        // (`dit/028`), and refuses to start without it.
+                        if (spec?.family == Family.MOSS) put("SD_QWEN35_TOKENIZER", File(model, "tokenizer.json").absolutePath)
+                        // ⭐ The arch from the chip table, so a failed DSP query cannot fall back to v73 ([ditArchEnv]).
+                        ditArchEnv(DeviceProbe.caps())?.let { put("GGML_HEXAGON_ARCH", it) }
                         putAll(readDitEnvOverride(context))
                         // ⭐ Last, so a Diagnose leg wins over everything above ([BlankDiagnosis]).
                         putAll(diagnosticEnv - BlankDiagnosis.OPFILTER_ADD)

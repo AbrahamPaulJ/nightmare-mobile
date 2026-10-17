@@ -40,7 +40,16 @@ object Detailer {
      * how far the redraw reaches past the box, and how soft its pasted edge is. Plain node params with no knob of
      * their own, so a flow saves them; absent = A1111 ADetailer's defaults, what every render used before.
      */
-    data class Settings(val conf: Float = PartDetector.CONF, val pad: Float = GROW, val blur: Float = DEFAULT_BLUR)
+    data class Settings(
+        val conf: Float = PartDetector.CONF,
+        val pad: Float = GROW,
+        val blur: Float = DEFAULT_BLUR,
+        /**
+         * ⭐ This part's own strength, or null to follow the node's [DETAIL_DENOISE] ([denoiseOf]). ADetailer's
+         * per-unit "inpaint denoising strength" (GitHub #46, 1.6.192): a face and a hand rarely want the same.
+         */
+        val denoise: Float? = null,
+    )
 
     /** ⭐ The paste's feather until 1.6.185, 1/24 of the patch's short side (`InpaintPixels.FEATHER_DIVISOR`). */
     const val DEFAULT_BLUR = 1f / 24
@@ -59,14 +68,26 @@ object Detailer {
         return Triple("${p}_conf", "${p}_pad", "${p}_blur")
     }
 
+    /** The param name of [part]'s own strength ([Settings.denoise]); absent or blank = the node's Fix strength. */
+    fun denoiseKey(part: PartDetector.Part): String =
+        (if (part == PartDetector.Part.FACE) "face" else "hand") + "_denoise"
+
     /** ⚠ Pure: [part]'s settings out of a node's [params], each kept in its range. */
     fun settings(params: Map<String, String>, part: PartDetector.Part): Settings {
         val (c, p, b) = keys(part)
         val d = Settings()
         fun f(k: String, def: Float, range: ClosedFloatingPointRange<Float>) =
             (params[k]?.toFloatOrNull() ?: def).coerceIn(range.start, range.endInclusive)
-        return Settings(f(c, d.conf, CONF_RANGE), f(p, d.pad, PAD_RANGE), f(b, d.blur, BLUR_RANGE))
+        return Settings(
+            f(c, d.conf, CONF_RANGE), f(p, d.pad, PAD_RANGE), f(b, d.blur, BLUR_RANGE),
+            params[denoiseKey(part)]?.toFloatOrNull()?.coerceIn(0f, 1f),
+        )
     }
+
+    /** ⚠ Pure: the strength [part] is redrawn at, its own ([Settings.denoise]) or else the node's Fix strength. */
+    fun denoiseOf(params: Map<String, String>, part: PartDetector.Part): Float =
+        settings(params, part).denoise
+            ?: (params[DETAIL_DENOISE]?.toFloatOrNull() ?: DEFAULT_DENOISE.toFloat()).coerceIn(0f, 1f)
 
     /** ⚠ Smaller than this share of the picture's short side is a speck, or a face too far to help. */
     const val MIN_SIDE = 0.03f

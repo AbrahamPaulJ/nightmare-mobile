@@ -79,4 +79,24 @@ class LoraSpecTest {
         assertEquals("0.05", LoraSpec.number(0.05))
         assertEquals("0", LoraSpec.number(0.0))
     }
+
+    /** ⭐ GitHub #51: -2..2 where a negative weight works, 0..2 elsewhere; a drag near 0 is 0; typed to 0.01. */
+    @Test
+    fun negativeWeightsWhereTheEngineTakesThem() {
+        assertEquals(-2.0, LoraSpec.range(true).start, 0.0)
+        assertEquals(0.0, LoraSpec.range(false).start, 0.0)
+        assertEquals(0.0, LoraSpec.snapped(0.04, true), 0.0)
+        assertEquals(0.0, LoraSpec.snapped(-0.05, true), 0.0)
+        assertEquals(-0.5, LoraSpec.snapped(-0.52, true), 1e-9)
+        assertEquals(0.0, LoraSpec.snapped(-0.5, false), 0.0)
+        assertEquals(0.05, LoraSpec.snapped(0.05, false), 1e-9)
+        assertEquals(0.35, LoraSpec.typed("0,35", true)!!, 1e-9)
+        assertEquals(-0.5, LoraSpec.typed(" -0.5 ", true)!!, 1e-9)
+        assertEquals(0.0, LoraSpec.typed("-0.5", false)!!, 0.0)
+        assertEquals(2.0, LoraSpec.typed("9", true)!!, 0.0)
+        assertEquals(1.23, LoraSpec.typed("1.234", true)!!, 1e-9)
+        assertEquals(null, LoraSpec.typed("abc", true))
+        // ⚠ A negative weight survives the param string both ways.
+        assertEquals(-0.5, LoraSpec.parse(LoraSpec.format(listOf(LoraSpec.Entry("a.safetensors", -0.5)))).single().strength, 1e-9)
+    }
 }

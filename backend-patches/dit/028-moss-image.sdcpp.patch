@@ -1,0 +1,862 @@
+diff --git a/src/conditioning/conditioner.hpp b/src/conditioning/conditioner.hpp
+index 5633f2a..8204c94 100644
+--- a/src/conditioning/conditioner.hpp
++++ b/src/conditioning/conditioner.hpp
+@@ -1834,8 +1834,17 @@ struct LLMEmbedder : public Conditioner {
+             arch = LLM::LLMArch::QWEN3_VL;
+         } else if (sd_version_is_z_image(version) || version == VERSION_OVIS_IMAGE || version == VERSION_FLUX2_KLEIN) {
+             arch = LLM::LLMArch::QWEN3;
++        } else if (version == VERSION_MOSS_IMAGE) {
++            arch = LLM::LLMArch::QWEN3_5;
+         }
+-        if (arch == LLM::LLMArch::MISTRAL_SMALL_3_2 || arch == LLM::LLMArch::MINISTRAL_3_3B) {
++        if (arch == LLM::LLMArch::QWEN3_5) {
++            // Qwen3.5's vocabulary is not Qwen2's: its tokenizer.json, named by the environment (no ABI change).
++            const char* path = getenv("SD_QWEN35_TOKENIZER");
++            if (path == nullptr || *path == '\0') {
++                throw std::runtime_error("MOSS-Image needs the Qwen3.5 tokenizer.json: set SD_QWEN35_TOKENIZER to its path");
++            }
++            tokenizer = std::make_shared<Qwen35Tokenizer>(path);
++        } else if (arch == LLM::LLMArch::MISTRAL_SMALL_3_2 || arch == LLM::LLMArch::MINISTRAL_3_3B) {
+             tokenizer = std::make_shared<MistralTokenizer>();
+         } else if (arch == LLM::LLMArch::GPT_OSS_20B) {
+             tokenizer = std::make_shared<GPTOSSTokenizer>();
+@@ -2160,7 +2169,12 @@ struct LLMEmbedder : public Conditioner {
+         int64_t t0                     = ggml_time_ms();
+         RefImageResizeMode resize_mode = conditioner_params.ref_image_params.vlm_resize_mode;
+ 
+-        if (sd_version_is_minimax_h3(version)) {
++        if (version == VERSION_MOSS_IMAGE) {
++            prompt_template_encode_start_idx = 0;
++            max_length                       = 4096;
++            prompt                           = "<|im_start|>user\n" + conditioner_params.text + "<|im_end|>\n<|im_start|>assistant\n<think>\n";
++            prompt_attn_range                = {0, 0};
++        } else if (sd_version_is_minimax_h3(version)) {
+             prompt_template_encode_start_idx = 0;
+             out_layers                       = {50};
+             prompt_attn_range                = {0, 0};
+diff --git a/src/model.h b/src/model.h
+index 96050ce..054df00 100644
+--- a/src/model.h
++++ b/src/model.h
+@@ -60,6 +60,7 @@ enum SDVersion {
+     VERSION_MAGE_FLOW,
+     VERSION_ESRGAN,
+     VERSION_IRIS,
++    VERSION_MOSS_IMAGE,
+     VERSION_COUNT,
+ };
+ 
+@@ -247,7 +248,8 @@ static inline bool sd_version_uses_flux_vae(SDVersion version) {
+ }
+ 
+ static inline bool sd_version_uses_flux2_vae(SDVersion version) {
+-    if (sd_version_is_flux2(version) || sd_version_is_ernie_image(version) || sd_version_is_lens(version) || sd_version_is_ideogram4(version) || sd_version_is_sefi_image(version)) {
++    if (sd_version_is_flux2(version) || sd_version_is_ernie_image(version) || sd_version_is_lens(version) || sd_version_is_ideogram4(version) || sd_version_is_sefi_image(version) ||
++        version == VERSION_MOSS_IMAGE) {
+         return true;
+     }
+     return false;
+@@ -298,7 +300,8 @@ static inline bool sd_version_is_dit(SDVersion version) {
+         sd_version_is_sefi_image(version) ||
+         sd_version_is_krea2(version) ||
+         sd_version_is_mage_flow(version) ||
+-        version == VERSION_IRIS) {
++        version == VERSION_IRIS ||
++        version == VERSION_MOSS_IMAGE) {
+         return true;
+     }
+     return false;
+diff --git a/src/model/diffusion/moss_image.hpp b/src/model/diffusion/moss_image.hpp
+new file mode 100644
+index 0000000..9bfe9c3
+--- /dev/null
++++ b/src/model/diffusion/moss_image.hpp
+@@ -0,0 +1,275 @@
++#ifndef __SD_MODEL_DIFFUSION_MOSS_IMAGE_HPP__
++#define __SD_MODEL_DIFFUSION_MOSS_IMAGE_HPP__
++
++#include <algorithm>
++#include <cinttypes>
++
++#include "model/common/ggml_block.hpp"
++#include "model/common/rope.hpp"
++#include "model/diffusion/dit.hpp"
++#include "model/diffusion/model.hpp"
++#include "model_loader.h"
++
++namespace MOSSImage {
++    struct MOSSImageConfig {
++        int64_t dim      = 3072;
++        int64_t ffn_dim  = 8192;
++        int64_t text_dim = 4096;
++        int64_t channels = 128;
++        int64_t head_dim = 128;
++        int64_t depth    = 42;
++        int64_t freq_dim = 256;
++        // proj.q / proj.k / proj.v apart (the release weights, community GGUFs, the 8-step LoRA's targets),
++        // or fused as proj.qkv (Comfy-Org's checkpoints).
++        bool split_qkv = false;
++
++        static MOSSImageConfig detect_from_weights(const String2TensorStorage& weights, const std::string& prefix) {
++            MOSSImageConfig config;
++            int64_t depth = 0;
++            for (const auto& [name, tensor] : weights) {
++                if (!starts_with(name, prefix + ".")) {
++                    continue;
++                }
++                auto key = name.substr(prefix.size() + 1);
++                if (key == "video_embedder.weight") {
++                    config.channels = tensor.ne[0];
++                    config.dim      = tensor.ne[1];
++                } else if (key == "text_embedder.proj.weight") {
++                    config.text_dim = tensor.ne[0];
++                } else if (key == "layers.0.proj.ffn_down.weight") {
++                    config.ffn_dim = tensor.ne[0];
++                } else if (key == "layers.0.q_norm.weight") {
++                    config.head_dim = tensor.ne[0];
++                } else if (key == "time_embedding.0.weight") {
++                    config.freq_dim = tensor.ne[0];
++                } else if (key == "layers.0.proj.q.weight") {
++                    config.split_qkv = true;
++                }
++                if (starts_with(key, "layers.")) {
++                    depth = std::max<int64_t>(depth, std::stoi(key.substr(7)) + 1);
++                }
++            }
++            if (depth) {
++                config.depth = depth;
++                LOG_VERBOSE("moss_image: dim = %" PRId64 ", ffn_dim = %" PRId64 ", depth = %" PRId64 ", head_dim = %" PRId64,
++                            config.dim, config.ffn_dim, config.depth, config.head_dim);
++            }
++            return config;
++        }
++    };
++
++    inline ggml_tensor* situ(ggml_context* c, ggml_tensor* hidden, ggml_tensor* gate) {
++        auto a = ggml_scale(c, ggml_tanh(c, ggml_scale(c, gate, 0.25f)), 4.f);
++        a      = ggml_mul(c, a, ggml_sigmoid(c, gate));
++        auto b = ggml_scale(c, ggml_tanh(c, ggml_scale(c, hidden, 1.f / 25.f)), 25.f);
++        return ggml_mul(c, a, b);
++    }
++
++    struct TextBlock : public GGMLBlock {
++        MOSSImageConfig config;
++
++        TextBlock(const MOSSImageConfig& config)
++            : config(config) {
++            blocks["norm1"]    = std::make_shared<RMSNorm>(config.dim, 1e-6f);
++            blocks["norm2"]    = std::make_shared<RMSNorm>(config.dim, 1e-6f);
++            blocks["q_norm"]   = std::make_shared<RMSNorm>(config.head_dim, 1e-6f);
++            blocks["k_norm"]   = std::make_shared<RMSNorm>(config.head_dim, 1e-6f);
++            blocks["qkv"]      = std::make_shared<Linear>(config.dim, config.dim * 3, true);
++            blocks["proj"]     = std::make_shared<Linear>(config.dim, config.dim, true);
++            blocks["ffn_up"]   = std::make_shared<Linear>(config.dim, config.ffn_dim, true);
++            blocks["ffn_gate"] = std::make_shared<Linear>(config.dim, config.ffn_dim, true);
++            blocks["ffn_down"] = std::make_shared<Linear>(config.ffn_dim, config.dim, true);
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* pe) {
++            auto c      = ctx->ggml_ctx;
++            auto linear = [&](const char* name, ggml_tensor* h) { return std::dynamic_pointer_cast<Linear>(blocks[name])->forward(ctx, h); };
++            auto norm   = [&](const char* name, ggml_tensor* h) { return std::dynamic_pointer_cast<RMSNorm>(blocks[name])->forward(ctx, h); };
++            auto y      = norm("norm1", x);
++            auto qkv    = linear("qkv", y);
++            auto split  = [&](int i) {
++                return ggml_reshape_4d(c, ggml_ext_slice(c, qkv, 0, i * config.dim, (i + 1) * config.dim), config.head_dim, config.dim / config.head_dim, x->ne[1], x->ne[2]);
++            };
++            auto q = norm("q_norm", split(0));
++            auto k = norm("k_norm", split(1));
++            auto v = split(2);
++            y      = Rope::attention(ctx, q, k, v, pe, nullptr, 1.f, false);
++            y      = linear("proj", y);
++            x      = ggml_add(c, x, y);
++            y      = norm("norm2", x);
++            y      = situ(c, linear("ffn_up", y), linear("ffn_gate", y));
++            y      = linear("ffn_down", y);
++            return ggml_add(c, x, y);
++        }
++    };
++
++    struct Block : public GGMLBlock {
++        MOSSImageConfig config;
++
++        Block(const MOSSImageConfig& config)
++            : config(config) {
++            blocks["norm1"]            = std::make_shared<RMSNorm>(config.dim, 1e-6f);
++            blocks["norm2"]            = std::make_shared<RMSNorm>(config.dim, 1e-6f);
++            blocks["q_norm"]           = std::make_shared<RMSNorm>(config.head_dim, 1e-6f);
++            blocks["k_norm"]           = std::make_shared<RMSNorm>(config.head_dim, 1e-6f);
++            if (config.split_qkv) {
++                blocks["proj.q"] = std::make_shared<Linear>(config.dim, config.dim, false);
++                blocks["proj.k"] = std::make_shared<Linear>(config.dim, config.dim, false);
++                blocks["proj.v"] = std::make_shared<Linear>(config.dim, config.dim, false);
++            } else {
++                blocks["proj.qkv"] = std::make_shared<Linear>(config.dim, config.dim * 3, false);
++            }
++            blocks["proj.o"]           = std::make_shared<Linear>(config.dim, config.dim, false);
++            blocks["proj.ffn_up_gate"] = std::make_shared<Linear>(config.dim, config.ffn_dim * 2, false);
++            blocks["proj.ffn_down"]    = std::make_shared<Linear>(config.ffn_dim, config.dim, false);
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* pe, ggml_tensor* mod) {
++            auto c      = ctx->ggml_ctx;
++            auto linear = [&](const char* name, ggml_tensor* h) { return std::dynamic_pointer_cast<Linear>(blocks[name])->forward(ctx, h); };
++            auto norm   = [&](const char* name, ggml_tensor* h) { return std::dynamic_pointer_cast<RMSNorm>(blocks[name])->forward(ctx, h); };
++            auto part   = [&](int i) { return ggml_ext_slice(c, mod, 0, i * config.dim, (i + 1) * config.dim); };
++            auto y      = norm("norm1", x);
++            y           = ggml_add(c, ggml_add(c, y, ggml_mul(c, y, part(1))), part(0));
++            auto heads  = [&](ggml_tensor* h) { return ggml_reshape_4d(c, h, config.head_dim, config.dim / config.head_dim, x->ne[1], x->ne[2]); };
++            ggml_tensor* qkv = config.split_qkv ? nullptr : linear("proj.qkv", y);
++            auto split  = [&](int i) {
++                if (config.split_qkv) {
++                    static const char* names[] = {"proj.q", "proj.k", "proj.v"};
++                    return heads(linear(names[i], y));
++                }
++                return heads(ggml_ext_slice(c, qkv, 0, i * config.dim, (i + 1) * config.dim));
++            };
++            auto q       = norm("q_norm", split(0));
++            auto k       = norm("k_norm", split(1));
++            auto v       = split(2);
++            y            = Rope::attention(ctx, q, k, v, pe, nullptr, 1.f, false);
++            y            = linear("proj.o", y);
++            y            = ggml_mul(c, y, part(2));
++            x            = ggml_add(c, x, y);
++            y            = norm("norm2", x);
++            y            = ggml_add(c, ggml_add(c, y, ggml_mul(c, y, part(4))), part(3));
++            auto up_gate = linear("proj.ffn_up_gate", y);
++            y            = situ(c, ggml_ext_slice(c, up_gate, 0, 0, config.ffn_dim), ggml_ext_slice(c, up_gate, 0, config.ffn_dim, 2 * config.ffn_dim));
++            y            = linear("proj.ffn_down", y);
++            y            = ggml_mul(c, y, part(5));
++            return ggml_add(c, x, y);
++        }
++    };
++
++    struct Model : public GGMLBlock {
++        MOSSImageConfig config;
++
++        Model(const MOSSImageConfig& config)
++            : config(config) {
++            blocks["video_embedder"]     = std::make_shared<Linear>(config.channels, config.dim, true);
++            blocks["text_embedder.proj"] = std::make_shared<Linear>(config.text_dim, config.dim, true);
++            for (int i = 0; i < 2; ++i) {
++                blocks["text_embedder.blocks." + std::to_string(i)] = std::make_shared<TextBlock>(config);
++            }
++            blocks["time_embedding.0"]        = std::make_shared<Linear>(config.freq_dim, config.dim, true);
++            blocks["time_embedding.2"]        = std::make_shared<Linear>(config.dim, config.dim, true);
++            blocks["shared_block_modulation"] = std::make_shared<Linear>(config.dim, 6 * config.dim, true);
++            blocks["video_head_modulation"]   = std::make_shared<Linear>(config.dim, 2 * config.dim, true);
++            for (int64_t i = 0; i < config.depth; ++i) {
++                blocks["layers." + std::to_string(i)] = std::make_shared<Block>(config);
++            }
++            blocks["final_norm_video"]   = std::make_shared<RMSNorm>(config.dim, 1e-6f);
++            blocks["final_linear_video"] = std::make_shared<Linear>(config.dim, config.channels, false);
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* image, ggml_tensor* time, ggml_tensor* text, ggml_tensor* pe, const std::vector<int>& skip) {
++            auto c            = ctx->ggml_ctx;
++            auto linear       = [&](const char* name, ggml_tensor* h) { return std::dynamic_pointer_cast<Linear>(blocks[name])->forward(ctx, h); };
++            int64_t image_len = image->ne[0] * image->ne[1];
++            auto x            = linear("video_embedder", DiT::patchify(c, image, 1, 1));
++            text              = linear("text_embedder.proj", text);
++            auto text_pe      = ggml_ext_slice(c, pe, 3, image_len, image_len + text->ne[1]);
++            for (int i = 0; i < 2; ++i) {
++                text = std::dynamic_pointer_cast<TextBlock>(blocks["text_embedder.blocks." + std::to_string(i)])->forward(ctx, text, text_pe);
++            }
++            time      = linear("time_embedding.2", ggml_silu(c, linear("time_embedding.0", time)));
++            auto mod  = linear("shared_block_modulation", time);
++            auto head = linear("video_head_modulation", time);
++            x         = ggml_concat(c, x, text, 1);
++            for (int64_t i = 0; i < config.depth; ++i) {
++                if (std::find(skip.begin(), skip.end(), i) == skip.end()) {
++                    x = std::dynamic_pointer_cast<Block>(blocks["layers." + std::to_string(i)])->forward(ctx, x, pe, mod);
++                    sd::ggml_graph_cut::mark_graph_cut(x, "moss_image.layers." + std::to_string(i), "x");
++                }
++            }
++            x          = ggml_ext_slice(c, x, 1, 0, image_len);
++            x          = std::dynamic_pointer_cast<RMSNorm>(blocks["final_norm_video"])->forward(ctx, x);
++            auto shift = ggml_ext_slice(c, head, 0, 0, config.dim);
++            auto scale = ggml_ext_slice(c, head, 0, config.dim, 2 * config.dim);
++            x          = ggml_add(c, ggml_add(c, x, ggml_mul(c, x, scale)), shift);
++            x          = linear("final_linear_video", x);
++            return DiT::unpatchify(c, x, image->ne[1], image->ne[0], 1, 1);
++        }
++    };
++
++    struct MOSSImageRunner : public DiffusionModelRunner {
++        MOSSImageConfig config;
++        Model model;
++        std::vector<float> pe_data, time_data;
++
++        MOSSImageRunner(ggml_backend_t backend, const String2TensorStorage& weights, const std::string& prefix, std::shared_ptr<RunnerWeightManager> weight_manager = nullptr)
++            : DiffusionModelRunner(backend, prefix, weight_manager), config(MOSSImageConfig::detect_from_weights(weights, prefix)), model(config) {
++            model.init(params_ctx, weights, prefix);
++        }
++
++        std::string get_desc() override { return "MOSS-Image"; }
++        void get_param_tensors(std::map<std::string, ggml_tensor*>& tensors, const std::string& prefix) override {
++            model.get_param_tensors(tensors, prefix);
++        }
++
++        sd::Tensor<float> compute(int n_threads, const DiffusionParams& inputs) override {
++            if (!inputs.x || !inputs.context || !inputs.timesteps || inputs.context->empty()) {
++                LOG_ERROR("MOSS-Image requires latents, timesteps and text features");
++                return {};
++            }
++            std::vector<int> skip;
++            if (auto extra = std::get_if<SkipLayerDiffusionExtra>(&inputs.extra)) {
++                if (extra->skip_layers) {
++                    skip = *extra->skip_layers;
++                }
++            }
++            auto graph = [&]() {
++                auto gf   = new_graph_custom(65536);
++                auto x    = make_input(*inputs.x);
++                auto text = make_input(*inputs.context);
++                GGML_ASSERT(x->ne[3] == 1 && x->ne[2] == config.channels && text->ne[0] == config.text_dim);
++                int64_t h = x->ne[1], w = x->ne[0], nt = text->ne[1];
++                // Image tokens first (axis 1 = the text length, axes 2/3 centred rows/columns), then the text
++                // tokens counting up on axis 1. Our fork's embed_nd gives the [2, 2, head_dim/2, n] table directly.
++                std::vector<std::vector<float>> ids;
++                for (int64_t token = 0; token < h * w + nt; ++token) {
++                    float pos[4] = {0.f, float(token - h * w), 0.f, 0.f};
++                    if (token < h * w) {
++                        pos[1] = float(nt);
++                        pos[2] = float(token / w) - float(h - 1) / 2.f;
++                        pos[3] = float(token % w) - float(w - 1) / 2.f;
++                    }
++                    ids.push_back({pos[0], pos[1], pos[2], pos[3]});
++                }
++                pe_data = Rope::embed_nd(ids, 1, 10000.f, std::vector<int>(4, static_cast<int>(config.head_dim / 4)));
++                time_data.resize(config.freq_dim);
++                for (int64_t i = 0; i < config.freq_dim / 2; ++i) {
++                    double angle                       = inputs.timesteps->values()[0] * std::pow(10000.0, -double(i) / double(config.freq_dim / 2));
++                    time_data[i]                       = float(std::cos(angle));
++                    time_data[i + config.freq_dim / 2] = float(std::sin(angle));
++                }
++                auto pe   = ggml_new_tensor_4d(compute_ctx, GGML_TYPE_F32, 2, 2, config.head_dim / 2, h * w + nt);
++                auto time = ggml_new_tensor_3d(compute_ctx, GGML_TYPE_F32, config.freq_dim, 1, 1);
++                set_backend_tensor_data(pe, pe_data.data());
++                set_backend_tensor_data(time, time_data.data());
++                auto ctx = get_context();
++                ggml_build_forward_expand(gf, model.forward(&ctx, x, time, text, pe, skip));
++                return gf;
++            };
++            return restore_trailing_singleton_dims(GGMLRunner::compute(graph, n_threads, false), inputs.x->dim());
++        }
++    };
++}  // namespace MOSSImage
++
++#endif  // __SD_MODEL_DIFFUSION_MOSS_IMAGE_HPP__
+diff --git a/src/model/te/llm.hpp b/src/model/te/llm.hpp
+index a0efc65..a17ea88 100644
+--- a/src/model/te/llm.hpp
++++ b/src/model/te/llm.hpp
+@@ -34,6 +34,7 @@
+ #include "tokenizers/gpt_oss_tokenizer.h"
+ #include "tokenizers/mistral_tokenizer.h"
+ #include "tokenizers/qwen2_tokenizer.h"
++#include "tokenizers/qwen35_tokenizer.h"
+ 
+ namespace LLM {
+     constexpr int LLM_GRAPH_SIZE = 65536;
+@@ -42,6 +43,7 @@ namespace LLM {
+         QWEN2_5_VL,
+         QWEN3,
+         QWEN3_VL,
++        QWEN3_5,
+         MISTRAL_SMALL_3_2,
+         MINISTRAL_3_3B,
+         GEMMA3_12B,
+@@ -55,6 +57,7 @@ namespace LLM {
+         "qwen2.5vl",
+         "qwen3",
+         "qwen3vl",
++        "qwen3.5",
+         "mistral_small3.2",
+         "ministral3.3b",
+         "gemma3_12b",
+@@ -114,6 +117,7 @@ namespace LLM {
+         bool qk_norm                    = false;
+         bool final_norm                 = true;
+         bool rms_norm_add               = false;
++        bool qwen35_gguf                = false;
+         bool normalize_input            = false;
+         int64_t vocab_size              = 152064;
+         int64_t max_position_embeddings = 128000;
+@@ -132,6 +136,14 @@ namespace LLM {
+         int global_head_dim         = 0;
+         int num_global_kv_heads     = 0;
+         float global_partial_rotary = 1.f;
++
++        // Qwen3.5: partial RoPE, and its Gated DeltaNet (linear attention) layers
++        float partial_rotary        = 1.f;
++        int linear_head_dim         = 128;
++        int linear_key_heads        = 16;
++        int linear_value_heads      = 32;
++        int linear_conv_kernel      = 4;
++        std::set<int> linear_attention_layers;
+         bool global_k_eq_v          = false;
+         bool v_norm                 = false;
+         bool layer_scalar           = false;
+@@ -148,6 +160,19 @@ namespace LLM {
+                 config.num_kv_heads = 8;
+                 config.qkv_bias     = false;
+                 config.rms_norm_eps = 1e-5f;
++            } else if (arch == LLMArch::QWEN3_5) {
++                config.hidden_size             = 4096;
++                config.intermediate_size       = 12288;
++                config.head_dim                = 256;
++                config.num_heads               = 16;
++                config.num_kv_heads            = 4;
++                config.qkv_bias                = false;
++                config.qk_norm                 = true;
++                config.rms_norm_add            = true;
++                config.partial_rotary          = 0.25f;
++                config.rope_thetas             = {10000000.f};
++                config.max_position_embeddings = 262144;
++                config.vocab_size              = 248320;
+             } else if (arch == LLMArch::QWEN3 || arch == LLMArch::QWEN3_VL) {
+                 config.head_dim     = 128;
+                 config.num_heads    = 32;
+@@ -307,6 +332,41 @@ namespace LLM {
+             if ((arch == LLMArch::QWEN3 || arch == LLMArch::QWEN3_VL) && config.num_layers == 28) {
+                 config.num_heads = 16;
+             }
++            if (arch == LLMArch::QWEN3_5) {
++                config.qwen35_gguf  = tensor_storage_map.count(prefix + ".model.layers.0.linear_attn.A") > 0;
++                config.rms_norm_add = !config.qwen35_gguf;
++                for (const auto& [name, tensor] : tensor_storage_map) {
++                    if (!starts_with(name, prefix + ".")) {
++                        continue;
++                    }
++                    if (ends_with(name, "self_attn.q_norm.weight")) {
++                        config.head_dim = static_cast<int>(tensor.ne[0]);
++                    } else if (ends_with(name, "linear_attn.norm.weight")) {
++                        config.linear_head_dim = static_cast<int>(tensor.ne[0]);
++                    } else if (ends_with(name, "linear_attn.conv1d.weight")) {
++                        config.linear_conv_kernel = static_cast<int>(tensor.ne[0]);
++                        const auto pos            = name.find("layers.");
++                        config.linear_attention_layers.insert(std::stoi(name.substr(pos + 7)));
++                    }
++                }
++                for (const auto& [name, tensor] : tensor_storage_map) {
++                    if (!starts_with(name, prefix + ".")) {
++                        continue;
++                    }
++                    if (ends_with(name, "self_attn.q_proj.weight")) {
++                        config.num_heads = static_cast<int>(tensor.ne[1] / (2 * config.head_dim));
++                    } else if (ends_with(name, "self_attn.k_proj.weight")) {
++                        config.num_kv_heads = static_cast<int>(tensor.ne[1] / config.head_dim);
++                    } else if (ends_with(name, "linear_attn.in_proj_z.weight")) {
++                        config.linear_value_heads = static_cast<int>(tensor.ne[1] / config.linear_head_dim);
++                    }
++                }
++                for (const auto& [name, tensor] : tensor_storage_map) {
++                    if (starts_with(name, prefix + ".") && ends_with(name, "linear_attn.in_proj_qkv.weight")) {
++                        config.linear_key_heads = static_cast<int>((tensor.ne[1] / config.linear_head_dim - config.linear_value_heads) / 2);
++                    }
++                }
++            }
+             if (arch == LLMArch::QWEN3_VL &&
+                 (config.num_layers == 50 || config.num_layers == 64) &&
+                 config.hidden_size == 5120) {
+@@ -1107,6 +1167,81 @@ namespace LLM {
+         }
+     };
+ 
++    struct Qwen35DeltaNet : public UnaryBlock {
++        int head_dim;
++        int key_heads;
++        int value_heads;
++        int conv_dim;
++        int kernel;
++        bool gguf_layout;
++
++        Qwen35DeltaNet(const LLMConfig& config)
++            : head_dim(config.linear_head_dim), key_heads(config.linear_key_heads), value_heads(config.linear_value_heads), conv_dim(head_dim * (key_heads * 2 + value_heads)), kernel(config.linear_conv_kernel), gguf_layout(config.qwen35_gguf) {
++            auto hidden_size      = config.hidden_size;
++            blocks["in_proj_qkv"] = std::make_shared<Linear>(hidden_size, conv_dim, false);
++            blocks["in_proj_z"]   = std::make_shared<Linear>(hidden_size, head_dim * value_heads, false);
++            blocks["in_proj_a"]   = std::make_shared<Linear>(hidden_size, value_heads, false);
++            blocks["in_proj_b"]   = std::make_shared<Linear>(hidden_size, value_heads, false);
++            blocks["out_proj"]    = std::make_shared<Linear>(head_dim * value_heads, hidden_size, false);
++            blocks["norm"]        = std::make_shared<LLMRMSNorm>(head_dim, 1e-6f);
++        }
++
++        void init_params(ggml_context* ctx, const String2TensorStorage& = {}, std::string = "") override {
++            params["conv1d.weight"]             = gguf_layout ? ggml_new_tensor_2d(ctx, GGML_TYPE_F32, kernel, conv_dim) : ggml_new_tensor_3d(ctx, GGML_TYPE_F32, kernel, 1, conv_dim);
++            params[gguf_layout ? "A" : "A_log"] = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, value_heads);
++            params["dt_bias"]                   = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, value_heads);
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) override {
++            auto c          = ctx->ggml_ctx;
++            const int64_t n = x->ne[1];
++            GGML_ASSERT(x->ne[2] == 1);
++            auto linear        = [&](const char* name) { return std::dynamic_pointer_cast<Linear>(blocks[name])->forward(ctx, x); };
++            auto qkv           = linear("in_proj_qkv");
++            auto padded        = ggml_pad_ext(c, qkv, 0, 0, kernel - 1, 0, 0, 0, 0, 0);
++            ggml_tensor* mixed = nullptr;
++            // Causal depthwise convolution, with zero state for every independent prompt.
++            for (int i = 0; i < kernel; ++i) {
++                auto w    = ggml_cont(c, ggml_view_2d(c, params["conv1d.weight"], 1, conv_dim, kernel * sizeof(float), i * sizeof(float)));
++                w         = ggml_reshape_1d(c, w, conv_dim);
++                auto part = ggml_mul(c, ggml_ext_slice(c, padded, 1, i, i + n), w);
++                mixed     = mixed ? ggml_add(c, mixed, part) : part;
++            }
++            mixed      = ggml_silu(c, mixed);
++            auto heads = [&](int start, int count) {
++                auto h = ggml_ext_slice(c, mixed, 0, start, start + head_dim * count);
++                return ggml_reshape_4d(c, h, head_dim, count, n, 1);
++            };
++            auto repeat_keys = [&](ggml_tensor* h) {
++                h = ggml_scale(c, ggml_rms_norm(c, h, 1e-6f / head_dim), 1.f / std::sqrt(float(head_dim)));
++                // llama.cpp reorders V heads and stores negative exp(A_log) and offset norms.
++                if (gguf_layout) {
++                    return h;
++                }
++                // ggml GDN broadcasts heads cyclically; Qwen uses adjacent repeated heads.
++                h          = ggml_reshape_4d(c, h, head_dim, 1, key_heads, n);
++                auto shape = ggml_new_tensor_4d(c, GGML_TYPE_F32, head_dim, value_heads / key_heads, key_heads, n);
++                return ggml_reshape_4d(c, ggml_repeat(c, h, shape), head_dim, value_heads, n, 1);
++            };
++            auto q     = repeat_keys(heads(0, key_heads));
++            auto k     = repeat_keys(heads(head_dim * key_heads, key_heads));
++            auto v     = heads(2 * head_dim * key_heads, value_heads);
++            auto beta  = ggml_reshape_4d(c, ggml_sigmoid(c, linear("in_proj_b")), 1, value_heads, n, 1);
++            auto decay = ggml_softplus(c, ggml_add(c, linear("in_proj_a"), params["dt_bias"]));
++            auto a     = gguf_layout ? params["A"] : ggml_neg(c, ggml_exp(c, params["A_log"]));
++            decay      = ggml_mul(c, decay, a);
++            decay      = ggml_reshape_4d(c, decay, 1, value_heads, n, 1);
++            auto state = ggml_ext_zeros(c, head_dim, head_dim, value_heads, 1);
++            auto out   = ggml_gated_delta_net(c, q, k, v, decay, beta, state, 1);
++            out        = ggml_view_3d(c, out, head_dim, value_heads, n, head_dim * sizeof(float), head_dim * value_heads * sizeof(float), 0);
++            out        = std::dynamic_pointer_cast<LLMRMSNorm>(blocks["norm"])->forward(ctx, out);
++            auto z     = ggml_reshape_3d(c, linear("in_proj_z"), head_dim, value_heads, n);
++            out        = ggml_mul(c, out, ggml_silu(c, z));
++            out        = ggml_reshape_3d(c, out, head_dim * value_heads, n, 1);
++            return std::dynamic_pointer_cast<Linear>(blocks["out_proj"])->forward(ctx, out);
++        }
++    };
++
+     struct Attention : public GGMLBlock {
+     protected:
+         LLMArch arch;
+@@ -1148,7 +1283,7 @@ namespace LLM {
+               unscaled_attention(config.unscaled_attention),
+               rms_norm_eps(config.rms_norm_eps),
+               rope_pairs(0) {
+-            blocks["q_proj"] = std::make_shared<Linear>(config.hidden_size, num_heads * head_dim, config.qkv_bias);
++            blocks["q_proj"] = std::make_shared<Linear>(config.hidden_size, num_heads * head_dim * (arch == LLMArch::QWEN3_5 ? 2 : 1), config.qkv_bias);
+             blocks["k_proj"] = std::make_shared<Linear>(config.hidden_size, num_kv_heads * head_dim, config.qkv_bias);
+             if (!k_eq_v) {
+                 blocks["v_proj"] = std::make_shared<Linear>(config.hidden_size, num_kv_heads * head_dim, config.qkv_bias);
+@@ -1160,7 +1295,7 @@ namespace LLM {
+             }
+             // Proportional RoPE rotates only the leading `rope_pairs` dimension pairs of the head;
+             // the rest are left unrotated through freq_factors (see rope_freq_factors()).
+-            float partial = global_layer ? config.global_partial_rotary : 1.f;
++            float partial = global_layer && config.global_partial_rotary != 1.f ? config.global_partial_rotary : config.partial_rotary;
+             rope_pairs    = static_cast<int>(partial * head_dim / 2.f);
+         }
+ 
+@@ -1194,6 +1329,14 @@ namespace LLM {
+             auto k = k_proj->forward(ctx, x);               // [N, n_token, num_kv_heads*head_dim]
+             auto v = k_eq_v ? k : v_proj->forward(ctx, x);  // [N, n_token, num_kv_heads*head_dim]
+ 
++            // Qwen3.5: q_proj carries the query and an output gate, interleaved per head.
++            ggml_tensor* output_gate = nullptr;
++            if (arch == LLMArch::QWEN3_5) {
++                q           = ggml_reshape_4d(ctx->ggml_ctx, q, head_dim * 2, num_heads, n_token, N);
++                output_gate = ggml_ext_slice(ctx->ggml_ctx, q, 0, head_dim, head_dim * 2);
++                output_gate = ggml_reshape_3d(ctx->ggml_ctx, output_gate, head_dim * num_heads, n_token, N);
++                q           = ggml_ext_slice(ctx->ggml_ctx, q, 0, 0, head_dim);
++            }
+             q = ggml_reshape_4d(ctx->ggml_ctx, q, head_dim, num_heads, n_token, N);     // [N, n_token, num_heads, head_dim]
+             k = ggml_reshape_4d(ctx->ggml_ctx, k, head_dim, num_kv_heads, n_token, N);  // [N, n_token, num_kv_heads, head_dim]
+             v = ggml_reshape_4d(ctx->ggml_ctx, v, head_dim, num_kv_heads, n_token, N);  // [N, n_token, num_kv_heads, head_dim]
+@@ -1249,6 +1392,14 @@ namespace LLM {
+                                                  1.f,
+                                                  32.f,
+                                                  1.f);
++            } else if (arch == LLMArch::QWEN3_5) {
++                // The head is sliced (query[..., :rotary_dim]), so rotate_half pairs i with i + rotary_dim/2:
++                // n_dims = rotary_dim reproduces it, as upstream's LLaDA2 path does.
++                int rotary_dim = rope_pairs * 2;
++                q              = ggml_rope_ext(ctx->ggml_ctx, q, input_pos, nullptr, rotary_dim, GGML_ROPE_TYPE_NEOX,
++                                               static_cast<int>(max_position_embeddings), rope_thetas[0], 1.f, 0.f, 1.f, 32.f, 1.f);
++                k              = ggml_rope_ext(ctx->ggml_ctx, k, input_pos, nullptr, rotary_dim, GGML_ROPE_TYPE_NEOX,
++                                               static_cast<int>(max_position_embeddings), rope_thetas[0], 1.f, 0.f, 1.f, 32.f, 1.f);
+             } else if (arch == LLMArch::GEMMA3_12B) {
+                 float rope_theta = (rope_index == 1 ? 10000.0f : 1000000.0f);
+                 float rope_scale = (rope_index == 1 ? 1.f : 8.f);
+@@ -1379,6 +1530,9 @@ namespace LLM {
+                 x = ggml_ext_attention_ext(ctx->ggml_ctx, ctx->backend, q, k, v, num_heads, attention_mask, true, ctx->flash_attn_enabled);  // [N, n_token, hidden_size]
+             }
+ 
++            if (output_gate) {
++                x = ggml_mul(ctx->ggml_ctx, x, ggml_sigmoid(ctx->ggml_ctx, output_gate));
++            }
+             x = out_proj->forward(ctx, x);  // [N, n_token, hidden_size]
+             return x;
+         }
+@@ -1428,7 +1582,11 @@ namespace LLM {
+             if (!config.sliding_attention.empty()) {
+                 sliding_attention = config.sliding_attention[layer_index % config.sliding_attention.size()];
+             }
+-            blocks["self_attn"] = std::make_shared<Attention>(config, sliding_attention == 0);
++            if (config.arch == LLMArch::QWEN3_5 && config.linear_attention_layers.count(layer_index)) {
++                blocks["linear_attn"] = std::make_shared<Qwen35DeltaNet>(config);
++            } else {
++                blocks["self_attn"] = std::make_shared<Attention>(config, sliding_attention == 0);
++            }
+             if (config.arch == LLMArch::GPT_OSS_20B) {
+                 blocks["mlp"] = std::make_shared<GPTOSSMLP>(config);
+             } else {
+@@ -1453,7 +1611,7 @@ namespace LLM {
+                              ggml_tensor* attention_mask         = nullptr,
+                              ggml_tensor* sliding_attention_mask = nullptr) {
+             // x: [N, n_token, hidden_size]
+-            auto self_attn                                  = std::dynamic_pointer_cast<Attention>(blocks["self_attn"]);
++            auto self_attn                                  = blocks.count("self_attn") ? std::dynamic_pointer_cast<Attention>(blocks["self_attn"]) : nullptr;
+             auto input_layernorm                            = std::dynamic_pointer_cast<LLMRMSNorm>(blocks["input_layernorm"]);
+             auto pre_ffw_norm                               = std::dynamic_pointer_cast<LLMRMSNorm>(blocks[pre_ffw_norm_name]);
+             std::shared_ptr<LLMRMSNorm> post_attention_norm = nullptr;
+@@ -1473,7 +1631,11 @@ namespace LLM {
+ 
+             auto residual = x;
+             x             = input_layernorm->forward(ctx, x);
+-            x             = self_attn->forward(ctx, x, input_pos, block_attention_mask, rope_index);
++            if (blocks.count("linear_attn")) {
++                x = std::dynamic_pointer_cast<Qwen35DeltaNet>(blocks["linear_attn"])->forward(ctx, x);
++            } else {
++                x = self_attn->forward(ctx, x, input_pos, block_attention_mask, rope_index);
++            }
+             if (post_attention_norm != nullptr) {
+                 x = post_attention_norm->forward(ctx, x);
+             }
+@@ -2018,6 +2180,7 @@ namespace LLM {
+             if (config.arch == LLMArch::MISTRAL_SMALL_3_2 ||
+                 config.arch == LLMArch::MINISTRAL_3_3B ||
+                 config.arch == LLMArch::QWEN3 ||
++                config.arch == LLMArch::QWEN3_5 ||
+                 config.arch == LLMArch::GEMMA3_12B ||
+                 config.arch == LLMArch::GEMMA4_12B ||
+                 config.arch == LLMArch::GEMMA2_2B ||
+diff --git a/src/model_loader.cpp b/src/model_loader.cpp
+index 2d9f642..4d844fb 100644
+--- a/src/model_loader.cpp
++++ b/src/model_loader.cpp
+@@ -416,6 +416,11 @@ bool ModelLoader::init_from_diffusers_file(const std::string& file_path, const s
+ SDVersion ModelLoader::get_sd_version() const {
+     TensorStorage token_embedding_weight, input_block_weight, context_ebedding_weight;
+ 
++    if (tensor_storage_map.count("model.diffusion_model.video_embedder.weight") &&
++        tensor_storage_map.count("model.diffusion_model.shared_block_modulation.weight")) {
++        return VERSION_MOSS_IMAGE;
++    }
++
+     bool has_multiple_encoders = false;
+     bool is_unet               = false;
+ 
+diff --git a/src/name_conversion.cpp b/src/name_conversion.cpp
+index 59fe9be..5ecacaa 100644
+--- a/src/name_conversion.cpp
++++ b/src/name_conversion.cpp
+@@ -1516,6 +1516,26 @@ std::string convert_tensor_name(std::string name, SDVersion version) {
+ 
+     replace_with_prefix_map(name, prefix_map);
+ 
++    if (version == VERSION_MOSS_IMAGE) {
++        const std::string te_prefix = "text_encoders.llm.";
++        if (starts_with(name, te_prefix + "blk.")) {
++            static const std::vector<std::pair<std::string, std::string>> qwen35_name_map = {
++                {"attn_post_norm.", "post_attention_layernorm."},
++                {"post_attention_norm.", "post_attention_layernorm."},
++                {"attn_qkv.", "linear_attn.in_proj_qkv."},
++                {"attn_gate.", "linear_attn.in_proj_z."},
++                {"ssm_conv1d.", "linear_attn.conv1d."},
++                {"ssm_dt.bias", "linear_attn.dt_bias"},
++                {"ssm_norm.", "linear_attn.norm."},
++                {"ssm_out.", "linear_attn.out_proj."},
++                {"ssm_alpha.", "linear_attn.in_proj_a."},
++                {"ssm_beta.", "linear_attn.in_proj_b."},
++                {"ssm_a", "linear_attn.A"},
++            };
++            replace_with_name_map(name, qwen35_name_map);
++        }
++    }
++
+     if (version == VERSION_QWEN_IMAGE_2_1 || sd_version_is_boogu_image(version) || sd_version_is_krea2(version) || sd_version_is_mage_flow(version) || sd_version_is_minimax_h3(version)) {
+         const std::string hf_vision_prefix = "text_encoders.llm.model.visual.";
+         if (starts_with(name, hf_vision_prefix)) {
+diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
+index f15ec4c..ff4bba0 100644
+--- a/src/pipeline/diffusion_engine.cpp
++++ b/src/pipeline/diffusion_engine.cpp
+@@ -99,6 +99,7 @@ const char* model_version_to_str[] = {
+     "Mage Flow",
+     "ESRGAN",
+     "Iris-3B",
++    "MOSS-Image",
+ };
+ 
+ static_assert(VERSION_COUNT == sizeof(model_version_to_str) / sizeof(model_version_to_str[0]),
+@@ -1263,9 +1264,10 @@ bool StableDiffusionGGML::build_denoiser() {
+                    sd_version_is_boogu_image(version) ||
+                    sd_version_is_pid(version) ||
+                    sd_version_is_ideogram4(version) ||
+-                   version == VERSION_IRIS) {
++                   version == VERSION_IRIS ||
++                   version == VERSION_MOSS_IMAGE) {
+             pred_type = FLOW_PRED;
+-            if (sd_version_is_wan(version)) {
++            if (sd_version_is_wan(version) || version == VERSION_MOSS_IMAGE) {
+                 default_flow_shift = 5.f;
+             } else if (sd_version_is_hunyuan_video(version)) {
+                 default_flow_shift = 7.f;
+@@ -2314,7 +2316,7 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
+                     unet_extra.ip_scale   = ip_adapter_strength;
+                 }
+                 diffusion_params.extra = unet_extra;
+-            } else if (sd_version_is_sd3(version)) {
++            } else if (sd_version_is_sd3(version) || version == VERSION_MOSS_IMAGE) {
+                 diffusion_params.extra = SkipLayerDiffusionExtra{local_skip_layers};
+             } else if (sd_version_is_flux(version) || sd_version_is_flux2(version) || sd_version_is_longcat(version) || sd_version_is_sefi_image(version)) {
+                 diffusion_params.extra = FluxDiffusionExtra{&guidance_tensor,
+@@ -2409,9 +2411,13 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
+                                         &controls);
+             }
+             const std::vector<int>* uncond_skip_layers = nullptr;
++            // MOSS-Image's negative branch skips DiT layer 22 (zero-based), as its own pipeline does.
++            static const std::vector<int> moss_skip_layers = {22};
+             if (is_skiplayer_step && slg_uncond) {
+                 LOG_VERBOSE("Skipping layers at uncond step %d\n", step);
+                 uncond_skip_layers = &skip_layer_guidance.layers();
++            } else if (version == VERSION_MOSS_IMAGE) {
++                uncond_skip_layers = &moss_skip_layers;
+             }
+             uncond_out = run_condition(uncond,
+                                        uncond.c_concat.empty() ? nullptr : &uncond.c_concat,
+diff --git a/src/pipeline/model_builders.cpp b/src/pipeline/model_builders.cpp
+index bfe73b0..c6301cb 100644
+--- a/src/pipeline/model_builders.cpp
++++ b/src/pipeline/model_builders.cpp
+@@ -26,6 +26,7 @@
+ #include "model/diffusion/minit2i.hpp"
+ #include "model/diffusion/mmdit.hpp"
+ #include "model/diffusion/model.hpp"
++#include "model/diffusion/moss_image.hpp"
+ #include "model/diffusion/pid.hpp"
+ #include "model/diffusion/qwen_image.hpp"
+ #include "model/diffusion/qwen_image_2_1.hpp"
+@@ -374,6 +375,11 @@ namespace sd::model_builders {
+                                                                tensor_storage_map, version, "", false, weight_manager);
+             result.diffusion   = std::make_shared<Iris::IrisRunner>(ctx.backends.runtime_backend(SDBackendModule::DIFFUSION),
+                                                                   tensor_storage_map, "model.diffusion_model", weight_manager);
++        } else if (version == VERSION_MOSS_IMAGE) {
++            result.conditioner = std::make_shared<LLMEmbedder>(ctx.backends.runtime_backend(SDBackendModule::TE),
++                                                               tensor_storage_map, version, "", false, weight_manager);
++            result.diffusion   = std::make_shared<MOSSImage::MOSSImageRunner>(ctx.backends.runtime_backend(SDBackendModule::DIFFUSION),
++                                                                            tensor_storage_map, "model.diffusion_model", weight_manager);
+         } else {  // SD1.x SD2.x SDXL
+             std::map<std::string, std::string> embbeding_map;
+             for (uint32_t i = 0; i < sd_ctx_params->embedding_count; i++) {
+diff --git a/src/tokenizers/qwen35_tokenizer.cpp b/src/tokenizers/qwen35_tokenizer.cpp
+new file mode 100644
+index 0000000..bb98d96
+--- /dev/null
++++ b/src/tokenizers/qwen35_tokenizer.cpp
+@@ -0,0 +1,70 @@
++#include "qwen35_tokenizer.h"
++
++#include <algorithm>
++#include <fstream>
++#include <sstream>
++#include <stdexcept>
++
++#include "core/util.h"
++#include "json.hpp"
++
++Qwen35Tokenizer::Qwen35Tokenizer(const std::string& tokenizer_json_path) {
++    UNK_TOKEN = "<|endoftext|>";
++    EOS_TOKEN = "<|endoftext|>";
++    PAD_TOKEN = "<|endoftext|>";
++
++    std::ifstream file(tokenizer_json_path, std::ios::binary);
++    if (!file) {
++        throw std::runtime_error("cannot open the Qwen3.5 tokenizer.json: " + tokenizer_json_path);
++    }
++    std::stringstream buffer;
++    buffer << file.rdbuf();
++    const nlohmann::json json = nlohmann::json::parse(buffer.str());
++    const auto& model         = json.at("model");
++
++    auto byte_unicode_pairs = bytes_to_unicode();
++    byte_encoder            = std::map<int, std::u32string>(byte_unicode_pairs.begin(), byte_unicode_pairs.end());
++    for (auto& pair : byte_unicode_pairs) {
++        byte_decoder[pair.second] = pair.first;
++    }
++
++    for (const auto& [token, id] : model.at("vocab").items()) {
++        std::u32string t = utf8_to_utf32(token);
++        encoder[t]       = id.get<int>();
++        decoder[id.get<int>()] = t;
++    }
++
++    int rank = 0;
++    for (const auto& merge : model.at("merges")) {
++        std::string a, b;
++        if (merge.is_array()) {
++            a = merge.at(0).get<std::string>();
++            b = merge.at(1).get<std::string>();
++        } else {
++            const std::string s = merge.get<std::string>();
++            const size_t space  = s.find(' ');
++            a                   = s.substr(0, space);
++            b                   = s.substr(space + 1);
++        }
++        bpe_ranks[{utf8_to_utf32(a), utf8_to_utf32(b)}] = rank++;
++    }
++    bpe_len = rank;
++
++    // The special tokens ("<|im_start|>", "<think>", ...) are matched whole in the text, before the BPE.
++    int max_id = 0;
++    for (const auto& added : json.at("added_tokens")) {
++        const std::string content = added.at("content").get<std::string>();
++        const int id              = added.at("id").get<int>();
++        std::u32string t          = utf8_to_utf32(content);
++        encoder[t]                = id;
++        decoder[id]               = t;
++        special_tokens.push_back(content);
++        if (content == UNK_TOKEN) {
++            UNK_TOKEN_ID = EOS_TOKEN_ID = PAD_TOKEN_ID = id;
++        }
++        max_id = std::max(max_id, id);
++    }
++    encoder_len = max_id + 1;
++    LOG_VERBOSE("qwen3.5 tokenizer: %zu tokens, %d merges, %zu special, pad %d",
++                encoder.size(), bpe_len, special_tokens.size(), PAD_TOKEN_ID);
++}
+diff --git a/src/tokenizers/qwen35_tokenizer.h b/src/tokenizers/qwen35_tokenizer.h
+new file mode 100644
+index 0000000..9c1c82b
+--- /dev/null
++++ b/src/tokenizers/qwen35_tokenizer.h
+@@ -0,0 +1,15 @@
++#ifndef __SD_TOKENIZERS_QWEN35_TOKENIZER_H__
++#define __SD_TOKENIZERS_QWEN35_TOKENIZER_H__
++
++#include <string>
++
++#include "bpe_tokenizer.h"
++
++// Qwen3.5 (MOSS-Image's text encoder): Qwen2's byte-level BPE and split regex, but its own 248k vocabulary,
++// which is not ordered as bytes + merges, so it is read whole from the model's tokenizer.json.
++class Qwen35Tokenizer : public BPETokenizer {
++public:
++    explicit Qwen35Tokenizer(const std::string& tokenizer_json_path);
++};
++
++#endif  // __SD_TOKENIZERS_QWEN35_TOKENIZER_H__

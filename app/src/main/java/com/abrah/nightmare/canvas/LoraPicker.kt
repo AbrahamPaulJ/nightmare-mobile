@@ -106,12 +106,14 @@ fun LoraPicker(
     nodeBase: com.abrah.nightmare.LoraLibrary.Base? = null,
     /** ⭐ LoRAs are hit and miss on this family ([com.abrah.nightmare.LoraSources.Target.experimental]). */
     experimental: Boolean = false,
+    /** ⭐ This family takes a negative weight ([LoraSpec.MIN_NEGATIVE]): the DiT engine, not the SD templates. */
+    allowNegative: Boolean = false,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.loras_title)) },
         text = {
-            LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt, onReplacePrompt, onDelete, library, nodeBase, experimental)
+            LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt, onReplacePrompt, onDelete, library, nodeBase, experimental, allowNegative)
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
         // ⚠ The dismiss SLOT, so Files sits left of Done — the same
@@ -173,6 +175,7 @@ fun LoraPickerContent(
     library: List<com.abrah.nightmare.LoraLibrary.Item>? = null,
     nodeBase: com.abrah.nightmare.LoraLibrary.Base? = null,
     experimental: Boolean = false,
+    allowNegative: Boolean = false,
 ) {
     // ⚠ Seeded from the param and re-seeded when it changes, so the sheet shows
     // what the node actually carries rather than a copy that drifted.
@@ -196,6 +199,16 @@ fun LoraPickerContent(
     // ⭐ Which LoRA's note is open, if any; which one is being deleted.
     var noting by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<String?>(null) }
+    // ⭐ Which LoRA's weight is being typed (GitHub #51).
+    var typing by remember { mutableStateOf<String?>(null) }
+    typing?.let { name ->
+        val entry = chosen.firstOrNull { it.name == name }
+        if (entry == null) typing = null
+        else LoraWeightDialog(entry.strength, allowNegative, onDismiss = { typing = null }) { w ->
+            commit(chosen.map { if (it.name == name) it.copy(strength = w) else it })
+            typing = null
+        }
+    }
     noting?.let { name ->
         val item = items.firstOrNull { it.name == name }
         LoraNoteDialog(
@@ -385,14 +398,14 @@ fun LoraPickerContent(
                             // ⚠ Snapped to the step before it is stored, so the
                             // string never carries a float's tail — `0.8500001`
                             // is not a strength anyone typed.
-                            val snapped = Math.round(v / LoraSpec.STEP) * LoraSpec.STEP
+                            val snapped = LoraSpec.snapped(v.toDouble(), allowNegative)
                             commit(
                                 chosen.map {
                                     if (it.name == name) it.copy(strength = snapped) else it
                                 },
                             )
                         },
-                        valueRange = LoraSpec.MIN.toFloat()..LoraSpec.MAX.toFloat(),
+                        valueRange = LoraSpec.range(allowNegative).let { it.start.toFloat()..it.endInclusive.toFloat() },
                         // ⚠⚠ **No `steps`, so no TICKS.** Passing the step count
                         // makes Material draw a mark per stop — forty of them
                         // across a phone-width slider, which came out as a
@@ -402,7 +415,8 @@ fun LoraPickerContent(
                         // which is the half that actually matters.
                         modifier = Modifier.weight(1f),
                     )
-                    com.abrah.nightmare.ui.MetaPill(modifier = Modifier.padding(start = 8.dp)) {
+                    // ⭐ GitHub #51: tap the weight to type it (0.35, -0.5, 1.25), [LoraWeightDialog].
+                    com.abrah.nightmare.ui.MetaPill(modifier = Modifier.padding(start = 8.dp).clickable { typing = name }) {
                         Text(
                             LoraSpec.number(entry.strength),
                             style = com.abrah.nightmare.ui.metaValueStyle(),
@@ -617,4 +631,50 @@ private fun sortLabel(s: com.abrah.nightmare.LoraLibrary.Sort): Int = when (s) {
     com.abrah.nightmare.LoraLibrary.Sort.NEWEST -> R.string.lora_sort_newest
     com.abrah.nightmare.LoraLibrary.Sort.MOST_USED -> R.string.lora_sort_used
     com.abrah.nightmare.LoraLibrary.Sort.SIZE -> R.string.lora_sort_size
+}
+
+/**
+ * ⭐ GitHub #51: a LoRA's weight TYPED, for the value a slider cannot land on (0.35, -0.5, 1.25). Kept to two
+ * decimals and to the family's range ([LoraSpec.typed]); Set stays dimmed while the text is not a number.
+ * ⚠ Untested as a dialog: a text field in a dialog window never idles under Robolectric (bisected 2026-10-17:
+ * the field alone and the dialog alone render, the pair times out), so its rules live in [LoraSpec.typed] and
+ * `LoraSpecTest` pins those. Checked on the phone.
+ */
+@Composable
+internal fun LoraWeightDialog(
+    current: Double,
+    allowNegative: Boolean,
+    onDismiss: () -> Unit,
+    onSet: (Double) -> Unit,
+) {
+    var text by remember { mutableStateOf(LoraSpec.number(current)) }
+    val parsed = LoraSpec.typed(text, allowNegative)
+    val range = LoraSpec.range(allowNegative)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.lora_weight_title)) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                supportingText = {
+                    Text(
+                        stringResource(
+                            if (allowNegative) R.string.lora_weight_range_negative else R.string.lora_weight_range,
+                            LoraSpec.number(range.start), LoraSpec.number(range.endInclusive),
+                        ),
+                    )
+                },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { parsed?.let(onSet) }, enabled = parsed != null) { Text(stringResource(R.string.lora_weight_set)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }

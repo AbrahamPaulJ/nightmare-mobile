@@ -559,6 +559,7 @@
     <string name="models_family_krea">约 9.5 GB。12 GB 及以上内存的手机，8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。在 12 GB 手机上分段运行：1024x1024 约需 3.5 到 4 分钟。只能文生图，不能编辑。请使用 Wi-Fi。</string>
     <string name="models_family_animadit">约 3.2 GB。下载 Anima 官方 4.2 GB 文件并在手机上转换，安装时需要约 7.5 GB 可用空间。1024² 每张图片约 1 分钟，支持 512 起的任意尺寸。需要 8 Gen 2 或更新芯片（8 Gen 2 和 8 Gen 3 上为 alpha）。不是编辑模型。请使用 Wi-Fi。</string>
     <string name="models_family_iris">约 5.8 GB。下载 speridlabs 官方的 6 GB 文件并在手机上转换，因此安装时需要约 10 GB 可用空间。在 8 Elite 上 1024x1024 每张约 2.5 分钟。无 VAE。仅支持训练时的尺寸（每张约 100 万像素）。8 Gen 2 或更新（8 Elite 以下为 alpha，尚未在真实的 8 Gen 2 或 8 Gen 3 上运行）。仅文生图。请使用 Wi-Fi。</string>
+    <string name="models_family_moss">约 10 GB。8 Elite 或更新芯片。细致、细节丰富的图像模型，每次都会应用 8 步加速。在手机上较慢：8 Elite 上 512x512 约 3 分钟，1024x1024 约 11 到 12 分钟。仅文生图。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>
     <string name="models_import_dit_body">一个 .safetensors 或 .gguf 检查点，可来自 CivitAI 或 Hugging Face，直接使用，无需转换。Klein 4B 和 Z-Image 会借用文本编码器和 VAE（最多需下载 2.6 GB；已有该模型则无需下载）。Klein 9B 和 Krea 2 会获取自己的副本（分别为 4.8 GB 和 2.6 GB）。大于手机约一半内存的文件在渲染时很可能被 Android 关闭。</string>
@@ -767,6 +768,7 @@
     <string name="hint_detect_conf">调低能找到小的或模糊的，调高会跳过只是看起来像的</string>
     <string name="hint_detect_pad">重绘超出检测框的范围（头发、耳朵、手腕）</string>
     <string name="hint_detect_blur">重绘区域边缘的柔和程度</string>
+    <string name="hint_detect_denoise">重绘的程度，仅对此标签页生效。在你调整之前，它跟随“修复强度”</string>
     <string name="hint_fix_faces">生成后：找到每张脸，用同样的提示词和模型近距离重绘，再融合回去（ADetailer）。需要从 模型、工具 下载面部和手部检测器。每张脸多一次生成。</string>
     <string name="hint_fix_hands">生成后：找到每只手并近距离重绘，与修复面部相同。每只手多一次生成。</string>
     <string name="more_options">更多选项</string>
@@ -1108,6 +1110,10 @@
     <string name="lora_folder_new">新建文件夹</string>
     <string name="lora_folder_name_hint">文件夹名称</string>
     <string name="lora_folder_add">添加</string>
+    <string name="lora_weight_title">LoRA 权重</string>
+    <string name="lora_weight_set">设置</string>
+    <string name="lora_weight_range">从 %1$s 到 %2$s。负权重仅适用于 DiT 模型。</string>
+    <string name="lora_weight_range_negative">从 %1$s 到 %2$s。低于 0 会远离 LoRA 学到的效果。</string>
     <string name="lora_folder_count">%1$s（%2$d）</string>
     <string name="lora_cd_folder">打开或关闭文件夹 %1$s</string>
     <string name="lora_base_auto">自动（%1$s）</string>

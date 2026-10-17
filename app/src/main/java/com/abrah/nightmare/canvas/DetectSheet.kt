@@ -146,12 +146,22 @@ private fun DetectPanel(
         set.blur.toString(),
         { onSetParam(kBlur, it) },
     )
+    // ⭐ This part's own strength (GitHub #46): shows the node's Fix strength until it is moved.
+    val kDen = Detailer.denoiseKey(part)
+    val followed = Detailer.denoiseOf(params - kDen, part)
+    SliderRow(
+        Widget(kDen, "float", followed.toString(), 0.0, 1.0, hintRes = R.string.hint_detect_denoise),
+        Detailer.denoiseOf(params, part).toString(),
+        { onSetParam(kDen, it) },
+    )
     OutlinedButton(
         onClick = {
             val d = Detailer.Settings()
             onSetParam(kConf, d.conf.toString())
             onSetParam(kPad, d.pad.toString())
             onSetParam(kBlur, d.blur.toString())
+            // ⚠ Blank, not a number: back to following Fix strength.
+            onSetParam(kDen, "")
         },
         enabled = set != Detailer.Settings(),
     ) { Text(stringResource(R.string.detect_reset)) }

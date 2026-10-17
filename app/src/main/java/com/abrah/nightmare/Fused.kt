@@ -653,6 +653,8 @@ class SdSampler(
          * ([ModelSpec.fixedSizes]); it stays out until a masked render is measured.
          */
         val IRIS = SdSampler("iris.sample", Family.IRIS, inpaint = false)
+        /** ⭐ MOSS-Image (`docs/MOSS.md`) — text to image only, its 8-step LoRA always on ([ModelSpec.ownLora]). */
+        val MOSS = SdSampler("moss.sample", Family.MOSS, inpaint = false)
         /**
          * ⭐⭐ **DiT inpaint = masked img2img of the cut + the feathered paste
          * back** — Z-Image, Qwen Image 2.1 and Krea 2 (the user's call,
@@ -695,7 +697,7 @@ class SdSampler(
          * until the engine's behaviour is understood. `notes/PROGRESS.md`.
          */
         val ALL = listOf(
-            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT, IRIS,
+            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT, IRIS, MOSS,
             SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, SDXL_SWAP_INPAINT, ANIMA_INPAINT,
             ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT, ANIMA_DIT_INPAINT,
         )
@@ -1166,7 +1168,7 @@ class SdSampler(
      * ControlNet pack), not Iris (no VAE to mask through) or Wan (a video).
      */
     private val offersDetail: Boolean
-        get() = !inpaint && family !in setOf(Family.SD15_SWAP, Family.SDXL_SWAP, Family.IRIS, Family.WAN)
+        get() = !inpaint && family !in setOf(Family.SD15_SWAP, Family.SDXL_SWAP, Family.IRIS, Family.WAN, Family.MOSS)
 
     /** ⭐ True when [node] will run the detail pass: what the Run's up-front tool check asks. */
     internal fun detailWanted(node: Node): Boolean = offersDetail && effectiveParams(node).let { p ->
@@ -1193,7 +1195,7 @@ class SdSampler(
     private fun detailWidgets(): List<Widget> = listOfNotNull(
         // ⭐ On every sampler but Wan and Iris: it acts on image to image, inpaint and Fix faces / hands.
         Widget(MATCH_COLORS, "bool", "false", hintRes = R.string.hint_match_colours)
-            .takeIf { family != Family.WAN && family != Family.IRIS },
+            .takeIf { family != Family.WAN && family != Family.IRIS && family != Family.MOSS },
     ) + if (!offersDetail) emptyList() else listOf(
         Widget(com.abrah.nightmare.detail.Detailer.FIX_FACES, "bool", "false", hintRes = R.string.hint_fix_faces),
         Widget(com.abrah.nightmare.detail.Detailer.FIX_HANDS, "bool", "false", hintRes = R.string.hint_fix_hands),
@@ -1226,7 +1228,9 @@ class SdSampler(
         val pos = PromptLoras.extract(wired.positive)
         val neg = PromptLoras.extract(wired.negative)
         val prompt = Value.Prompt(pos.text, neg.text)
-        val p = withPromptLoras(ctx, node, base, pos.tags) + ("denoise" to (base[d.DETAIL_DENOISE] ?: d.DEFAULT_DENOISE))
+        val p0 = withPromptLoras(ctx, node, base, pos.tags)
+        // ⭐ Each part at its own strength ([com.abrah.nightmare.detail.Detailer.denoiseOf]), set per part below.
+        var p = p0 + ("denoise" to (base[d.DETAIL_DENOISE] ?: d.DEFAULT_DENOISE))
         var bmp = ctx.images.get(img.id) ?: return img
         val spec = ModelCatalog.byId(p["model"].orEmpty()) ?: defaultSpec()
         // ⭐ The patch: a DiT renders any size, so a square at about a megapixel's edge; an SD graph only
@@ -1263,6 +1267,7 @@ class SdSampler(
         }
         for (part in parts) {
             val set = d.settings(base, part)
+            p = p0 + ("denoise" to d.denoiseOf(base, part).toString())
             val found = com.abrah.nightmare.detail.PartDetector.detect(appCtx, bmp, part, set.conf).orEmpty()
             val boxes = d.chosen(found, bmp.width, bmp.height)
             ctx.say(

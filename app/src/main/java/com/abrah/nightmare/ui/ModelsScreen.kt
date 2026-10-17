@@ -854,6 +854,8 @@ private fun familyNote(family: Family): String = stringResource(when (family) {
         Family.ANIMA_DIT -> R.string.models_family_animadit
         // ⚠ The 6 GB download and the converted 3.4 GB are on disk at once, like Anima's.
         Family.IRIS -> R.string.models_family_iris
+        // ⚠ Its 9B text encoder makes it a 10 GB download, and it is slow: measured times, said up front.
+        Family.MOSS -> R.string.models_family_moss
         // ⚠ The free-space figure is the one that surprises:
         // the archive and its unpacked copy are both on disk
         // at once, so a 3.5 GB download needs ~7.5 GB free.

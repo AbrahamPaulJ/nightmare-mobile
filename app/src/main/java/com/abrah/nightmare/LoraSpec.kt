@@ -38,6 +38,37 @@ object LoraSpec {
     const val STEP = 0.05
 
     /**
+     * ⭐ The floor where a negative weight works: the DiT families (GitHub #51), whose engine takes any multiplier.
+     * ⚠⚠ Not SD 1.5 / SDXL: their NPU template quantizes `lora_S` to [0, 0.25] (SDXL [0, 0.05]), so a negative
+     * weight there is silently 0, the LoRA off (npuforge `SD15-LORA-CN-TEMPLATE.md`).
+     */
+    const val MIN_NEGATIVE = -2.0
+
+    /** The slider's range: [MIN_NEGATIVE]..[MAX] where a negative weight works, [MIN]..[MAX] elsewhere. */
+    fun range(negative: Boolean): ClosedFloatingPointRange<Double> = (if (negative) MIN_NEGATIVE else MIN)..MAX
+
+    /**
+     * ⚠ Pure: a dragged value on the [STEP] grid, kept in [range]. ⭐ Within one step of 0 it IS 0 on a
+     * range that crosses it (#51: "snap to 0 near the middle"), so a drag cannot leave 0.05 behind by accident.
+     */
+    fun snapped(v: Double, negative: Boolean): Double {
+        val r = range(negative)
+        val s = Math.round(v / STEP) * STEP
+        return if (negative && kotlin.math.abs(s) <= STEP) 0.0 else s.coerceIn(r.start, r.endInclusive)
+    }
+
+    /**
+     * ⚠ Pure: a TYPED weight (#51: "0.35, -0.5, 1.25"), to two decimals and kept in [range]; null when it is not
+     * a number. A comma is read as the decimal point, as a European keyboard types it.
+     */
+    fun typed(text: String, negative: Boolean): Double? {
+        val v = text.trim().replace(',', '.').toDoubleOrNull() ?: return null
+        if (v.isNaN() || v.isInfinite()) return null
+        val r = range(negative)
+        return (Math.round(v * 100) / 100.0).coerceIn(r.start, r.endInclusive)
+    }
+
+    /**
      * Split the param. Never throws: a name that is not installed is still an
      * entry, because the sheet has to SHOW it in order for anyone to remove it
      * — a workflow that arrived from another phone is exactly that case.

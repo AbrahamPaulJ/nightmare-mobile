@@ -360,6 +360,18 @@ class DitImportTest {
         assertEquals(null, CustomModels.animaSizeProblem("{}"))
     }
 
+    /** ⭐ GitHub #50: a 4-bit ComfyUI checkpoint is refused at import; fp8 and int8 are not. Lines from the real header. */
+    @Test
+    fun packedFourBitCheckpointsAreRefused() {
+        val int4 = """{"__metadata__":{"_quantization_metadata":"{\"format_version\": \"1.0\", \"layers\": """ +
+            """{\"blocks.0.attn.gate\": {\"format\": \"convrot_w4a4\", \"convrot_groupsize\": 256, \"quant_group_size\": 64}}}",""" +
+            """"converted_by":"Star Ultimate Model Converter"},"blocks.0.attn.wq.weight":{"dtype":"I8","shape":[6144,3072],"data_offsets":[0,1]}}"""
+        assertTrue(CustomModels.packedQuantProblem(int4)!!.contains("convrot_w4a4"))
+        val int8 = int4.replace("convrot_w4a4", "int8_tensorwise")
+        assertEquals(null, CustomModels.packedQuantProblem(int8))
+        assertEquals(null, CustomModels.packedQuantProblem(kleinNames))
+    }
+
     @Test
     fun itTellsKlein9bFromKlein4bByWidth() {
         val k4 = """{"img_in.weight":{"dtype":"BF16","shape":[3072,128],"data_offsets":[265033344,265819776]}}"""
