@@ -1049,6 +1049,7 @@
     <string name="controlnet_build_older">сборка для старых чипов</string>
     <string name="draw_clear_drawing">Стереть рисунок</string>
     <string name="mb_local_dream">Local Dream</string>
+    <string name="mb_kept_by_local_dream">хранится в Local Dream, удалите там</string>
     <string name="ld_delete_refused">%1$s находится в папке Local Dream (Download/LocalDream). Nightmare использует её там и никогда не удаляет: удалите её в Local Dream.</string>
     <string name="ld_folder_note">Модели из папки Local Dream (Download/LocalDream, Local Dream 3.0 alpha.5 и новее) используются на месте, без повторной загрузки. Nightmare никогда их не меняет и не удаляет.</string>
     <string name="lora_base_all">Все</string>

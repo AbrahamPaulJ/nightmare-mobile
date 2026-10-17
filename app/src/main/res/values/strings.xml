@@ -1053,6 +1053,7 @@
     <string name="controlnet_build_older">older-chip build</string>
     <string name="draw_clear_drawing">Clear drawing</string>
     <string name="mb_local_dream">Local Dream</string>
+    <string name="mb_kept_by_local_dream">kept by Local Dream, delete it there</string>
     <string name="ld_delete_refused">%1$s is in Local Dream\'s folder (Download/LocalDream). Nightmare uses it there and never deletes it. Delete it in Local Dream.</string>
     <string name="ld_folder_note">Models in Local Dream\'s folder (Download/LocalDream, Local Dream 3.0 alpha.5 or later) are used where they are, without a second download. Nightmare never changes or deletes them.</string>
     <string name="lora_base_all">All</string>

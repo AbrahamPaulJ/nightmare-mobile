@@ -556,8 +556,9 @@ private fun ModelMenu(
     onRename: (ModelSpec) -> Unit,
     onTestNpu: (ModelSpec) -> Unit,
 ) {
-    // ⚠ Never Local Dream's files — it keeps them, and deletes them itself.
-    val canDelete = (row.installed || row.spec.isCustom || row.partial) && row.progress == null && !row.fromLocalDream
+    // ⚠ Never Local Dream's files — it keeps them, and deletes them itself. Shown greyed with why, as on the model
+    // in use: with no ⋮ at all, one of them read as an import that cannot be deleted (GitHub #56).
+    val canDelete = (row.installed || row.spec.isCustom || row.partial) && row.progress == null
     val canRepair = row.partial && row.build != null && row.progress == null
     // ⭐ Our own imports only: a name lives in the model's `config.json`, and Local Dream's are its files.
     val canRename = row.spec.isCustom && row.installed && row.spec.home != null && row.progress == null && !row.fromLocalDream
@@ -598,11 +599,12 @@ private fun ModelMenu(
                 DropdownMenuItem(
                     text = {
                         Text(
-                            if (row.selected) stringResource(R.string.delete) + ": " + stringResource(R.string.in_use).lowercase()
+                            if (row.fromLocalDream) stringResource(R.string.delete) + ": " + stringResource(R.string.mb_kept_by_local_dream)
+                            else if (row.selected) stringResource(R.string.delete) + ": " + stringResource(R.string.in_use).lowercase()
                             else stringResource(R.string.delete),
                         )
                     },
-                    enabled = !busy && !row.selected,
+                    enabled = !busy && !row.selected && !row.fromLocalDream,
                     onClick = { open = false; onDelete(row.spec) },
                 )
             }
