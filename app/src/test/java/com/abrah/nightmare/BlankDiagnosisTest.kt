@@ -127,4 +127,29 @@ class BlankDiagnosisTest {
         val fine = BlankDiagnosis.conclusion(listOf(shipped, o("vae_cpu", Verdict.CLEAN)))
         assertTrue(fine, fine.startsWith("With HMX the DiT is right here"))
     }
+
+    @Test
+    fun aCulpritLegIsJudgedAgainstTheShippedPicture() {
+        // ⚠ The real lines (an 8s Gen 4, Z-Image, 1.6.195): every HMX leg "clean" by grain, and the report said
+        // "only the decode needed HMX off". The shipped picture, the seed's noise decoded (nine legs byte for
+        // byte), and the DiT on the CPU with the text encoder on HMX (a picture, another one).
+        val legs = BlankDiagnosis.legsAfter(Verdict.CLEAN, shipped = true, hasVae = true).associateBy { it.id }
+        fun o(id: String, thumb: String) = Outcome(legs.getValue(id), Verdict.CLEAN, 1000, "mean 128, spread 55.5, grain 0.34, 8x8 $thumb")
+        val shipped = Outcome(
+            BlankDiagnosis.SHIPPED, Verdict.CLEAN, 1000,
+            "mean 144, spread 55.3, grain 0.05, 8x8 6e747573777674718b8a8c90938e908eb8b5aba4c37ca9aec8beb0a2653792c4cec98863373193caced39846342e5271d7d2cf6d27214a6bd1d0ccc1b5aeaab4",
+        )
+        val seedNoise = "84897c757d7c7975777d7b747c79817d7d847e778283757d86808b81837b83767982787b898581857a798282788a7a787c897a8e818384887d857f827e758494"
+        val judged = listOf(
+            o("vae_cpu", seedNoise), o("te_cpu", seedNoise), o("cpu_attention", seedNoise),
+            o("dit_cpu", "0c2615061a110c020d251a0d1f110f021d4530112f2522052457431f4e424f0f214e3b245147461c1c322921433c321e92ad9fa7a4a8a6909da89fa0a89ba1b1"),
+            o("hvx_matmul", "7170707875757b6c77687676767561776a6d78786a8f88777a74756e77827b876f71887b6574766c707481706c727a717379716c7681747a6a636f7071807e73"),
+        ).map { BlankDiagnosis.against(shipped, it) }
+        assertTrue(judged.map { it.verdict }.toString(), judged.all { it.verdict == Verdict.WRONG })
+        val c = BlankDiagnosis.conclusion(listOf(shipped) + judged)
+        assertEquals("With HMX the picture is wrong, whichever part is on the CPU. No single op group off HMX fixes it: keep HMX off.", c)
+        // ⚠ The control: the shipped picture itself, a few greys off, is the same picture.
+        val near = shipped.detail.substringAfter("8x8 ").chunked(2).joinToString("") { "%02x".format((it.toInt(16) + 5).coerceAtMost(255)) }
+        assertEquals(Verdict.CLEAN, BlankDiagnosis.against(shipped, o("cpu_norm", near)).verdict)
+    }
 }

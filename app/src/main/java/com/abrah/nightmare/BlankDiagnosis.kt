@@ -111,7 +111,8 @@ object BlankDiagnosis {
         return legs.filter { (hasVae && !noise) || it.id !in DECODE_ONLY }
     }
 
-    enum class Verdict { CLEAN, FLAT, NOISE, FAILED }
+    /** ⭐ [WRONG]: a picture, but not the control's (the culprit legs only, [against]). */
+    enum class Verdict { CLEAN, FLAT, NOISE, WRONG, FAILED }
 
     /** [detail]: the colour for FLAT, [describe] for CLEAN and NOISE, the error for FAILED. */
     data class Outcome(val leg: Leg, val verdict: Verdict, val ms: Long, val detail: String)
@@ -166,6 +167,32 @@ object BlankDiagnosis {
         return diff.toDouble() / (2L * (w - 1) * (h - 1)) / sd
     }
 
+    /** ⭐ Pure: a [describe] line's 8x8 thumbnail, 64 greys, or null. */
+    fun thumb(detail: String): IntArray? =
+        Regex("8x8 ([0-9a-f]{128})").find(detail)?.groupValues?.get(1)?.chunked(2)?.map { it.toInt(16) }?.toIntArray()
+
+    /**
+     * ⭐ Two thumbnails within this mean grey difference are the same picture. ⚠ A guess until measured: HMX on
+     * against off on the S25, where both are right, gives the spread a right picture may have.
+     */
+    const val SAME_PICTURE = 16.0
+
+    /**
+     * ⭐⭐ Pure: a culprit leg ([legsAfter], after a clean [SHIPPED]) judged against the shipped picture. The same
+     * seed, steps and size, so a right render IS that picture; a CLEAN one that is not is [Verdict.WRONG].
+     * ⚠ Why (an 8s Gen 4, Z-Image, 1.6.195): with HMX on, nine legs moving nine different op groups came back
+     * byte-identical, grain 0.34, all "clean": the seed's noise decoded with the DiT changing nothing, under
+     * [NOISE_GRAIN] at 256x256. The report concluded "only the decode needed HMX off", the opposite of what it showed.
+     */
+    fun against(control: Outcome, leg: Outcome): Outcome {
+        if (leg.verdict != Verdict.CLEAN) return leg
+        val a = thumb(control.detail) ?: return leg
+        val b = thumb(leg.detail) ?: return leg
+        val d = a.indices.sumOf { kotlin.math.abs(a[it] - b[it]) } / a.size.toDouble()
+        return if (d <= SAME_PICTURE) leg
+        else leg.copy(verdict = Verdict.WRONG, detail = leg.detail + " (%.0f from the shipped picture)".format(java.util.Locale.ROOT, d))
+    }
+
     /** ⭐ Pure: CLEAN or NOISE for a picture that came back ([NOISE_GRAIN]). */
     fun verdictOf(px: IntArray, w: Int, h: Int): Verdict =
         if (grain(grey(px), w, h) >= NOISE_GRAIN) Verdict.NOISE else Verdict.CLEAN
@@ -182,15 +209,15 @@ object BlankDiagnosis {
         val hmx = by["vae_cpu"]
         if (shippedLeg?.verdict == Verdict.CLEAN && hmx != null && "baseline" !in by) {
             if (hmx.verdict == Verdict.CLEAN) return "With HMX the DiT is right here: only the decode needed HMX off."
-            val bad = if (hmx.verdict == Verdict.NOISE) "noise" else "flat"
+            val bad = when (hmx.verdict) { Verdict.NOISE -> "noise"; Verdict.WRONG -> "wrong"; else -> "flat" }
             fun ok(id: String) = by[id]?.verdict == Verdict.CLEAN
             val part = when {
                 ok("te_cpu") && !ok("dit_cpu") -> "With HMX the text encoder makes it $bad."
                 ok("dit_cpu") && !ok("te_cpu") -> "With HMX the DiT makes it $bad."
-                else -> "With HMX the picture is $bad."
+                else -> "With HMX the picture is $bad, whichever part is on the CPU."
             }
             val fixes = outcomes.filter { it.verdict == Verdict.CLEAN && it.leg.id !in PARTS }.map { it.leg.what }
-            return part + if (fixes.isEmpty()) " No single op group off HMX fixes it." else " Clean with HMX on and: ${fixes.joinToString("; ")}."
+            return part + if (fixes.isEmpty()) " No single op group off HMX fixes it: keep HMX off." else " Clean with HMX on and: ${fixes.joinToString("; ")}."
         }
         val base = by["baseline"] ?: shippedLeg ?: return "Not run."
         if (base.verdict == Verdict.CLEAN) return "Not reproduced: the control rendered at ${SIZE}x$SIZE, $STEPS steps."

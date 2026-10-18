@@ -638,7 +638,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val control = if (shipped) BlankDiagnosis.SHIPPED else BlankDiagnosis.LEGS.first()
         // A guess until the control is in: what a grey picture would need.
         var total = 1 + BlankDiagnosis.legsAfter(BlankDiagnosis.Verdict.FLAT, shipped, hasVae).size
-        suspend fun leg(i: Int, leg: BlankDiagnosis.Leg, npu: Boolean): BlankDiagnosis.Outcome {
+        suspend fun leg(
+            i: Int, leg: BlankDiagnosis.Leg, npu: Boolean,
+            judge: (BlankDiagnosis.Outcome) -> BlankDiagnosis.Outcome = { it },
+        ): BlankDiagnosis.Outcome {
             onLeg(i, total, leg)
             say("diagnose ${i + 1}/$total: ${leg.what}")
             // ⚠ The shipped launch (HMX off where [DeviceProbe.DIT_NO_HMX_SOCS]) is kept unless the NPU is under test.
@@ -679,7 +682,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             val outcome = once().let { first ->
                 if (first.verdict != BlankDiagnosis.Verdict.FAILED) first
                 else once().let { second -> second.copy(detail = second.detail + " (after a retry)") }
-            }
+            }.let(judge)
             say("  ${outcome.verdict.name.lowercase()} in ${outcome.ms / 1000} s: ${outcome.detail.take(80)}")
             return outcome
         }
@@ -693,9 +696,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     if (stopWhenClean) emptyList() else BlankDiagnosis.legsAfter(BlankDiagnosis.Verdict.FLAT, shipped, hasVae)
                 }
                 total = 1 + rest.size
+                // ⭐ The culprit legs are judged against the shipped picture ([BlankDiagnosis.against]).
+                val culprit = shipped && hasVae && first.verdict == BlankDiagnosis.Verdict.CLEAN
                 for ((i, l) in rest.withIndex()) {
                     if (cancelled()) break
-                    out += leg(i + 1, l, npu = !noise)
+                    out += leg(i + 1, l, npu = !noise) { if (culprit) BlankDiagnosis.against(first, it) else it }
                 }
             }
         } finally {
