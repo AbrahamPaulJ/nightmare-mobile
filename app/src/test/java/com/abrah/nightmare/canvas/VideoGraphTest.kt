@@ -121,8 +121,10 @@ class VideoGraphTest {
         assertTrue(isSampler("iris.sample"))
         // 2026-10-18: `moss.sample`, MOSS-Image (`docs/MOSS.md`).
         assertTrue(isSampler("moss.sample"))
-        assertEquals(24, SAMPLER_TYPES.size)
-        assertEquals(21, IMAGE_SAMPLER_TYPES.size)
+        // 2026-10-18: `ideogram.sample`, Ideogram 4 (`docs/ROADMAP.md`).
+        assertTrue(isSampler("ideogram.sample"))
+        assertEquals(25, SAMPLER_TYPES.size)
+        assertEquals(22, IMAGE_SAMPLER_TYPES.size)
         assertEquals(9, INPAINT_TYPES.size)
     }
 

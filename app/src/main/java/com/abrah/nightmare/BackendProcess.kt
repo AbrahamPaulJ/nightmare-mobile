@@ -516,9 +516,12 @@ object BackendProcess {
      * Measured on the S25 2026-10-17: at 4 GiB, 5.36 GB free at launch fell to 1.82 at the worst (3.54
      * used), each GiB more costs ~1.07 GB; whole needs ~2.2 GB more than 4. With a 1.5 GB floor: whole
      * from [KREA_WHOLE_FREE], 5 from [KREA_5_FREE]. Null on a 16 GB phone or unknown RAM, as before.
+     * ⭐ Ideogram 4 too: its DiT and TurboTime LoRA are 6.2 GB on the NPU, Krea's size. ⚠ Unbudgeted on the S25
+     * (2026-10-18, 6.0 GB free) the engine mapped all 6,192 MB as one segment and lmkd reclaimed the APP mid-step
+     * ("min watermark is breached and swap is low"); sd-cli at 2.5 GiB rendered. Krea's thresholds, unmeasured whole.
      */
     internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long, availBytes: Long): String? {
-        if (spec?.family != Family.KREA2 || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
+        if (spec?.family !in setOf(Family.KREA2, Family.IDEOGRAM) || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
         return when {
             availBytes >= KREA_WHOLE_FREE -> null
             availBytes >= KREA_5_FREE -> "5"
@@ -735,6 +738,12 @@ object BackendProcess {
                 // "uncensored" Q4_K_M encoder copied over Klein 4B's Q4_0 `llm.gguf` did not work). ⚠ Not Wan:
                 // its umT5 runs on the CPU, and is Q4_K_M on purpose (`docs/VIDEO-GGML.md` §3).
                 // ⭐ The model's own LoRA must be there: without it MOSS-Image renders 8 steps of grain.
+                // ⭐ A model this chip cannot run in any way we have ([ModelSpec.chipBlocked]): refused, not 3 minutes
+                // of noise. ⚠ Not under Diagnose: ⋮ Test the NPU is how a fix for it would be found.
+                if (!upscalerOnly && !diagnosing && spec?.chipBlocked(DeviceProbe.caps()) == true) return@withContext Start.Failed(
+                    "${spec.label} does not run on the ${DeviceProbe.caps().soc.let { DeviceProbe.DIT_NO_HMX_SOCS[it] ?: it }} yet: " +
+                        "every way of running it there gives noise"
+                )
                 if (!upscalerOnly) spec?.ownLora?.let { name ->
                     if (!File(model, name).isFile) return@withContext Start.Failed(
                         "${spec.label} is missing $name. Download it again in Models"

@@ -499,6 +499,11 @@ private fun StatusLine(row: ModelRow, modifier: Modifier) {
                 R.string.dit_no_hmx,
                 com.abrah.nightmare.DeviceProbe.caps().soc.let { com.abrah.nightmare.DeviceProbe.DIT_NO_HMX_SOCS[it] ?: it },
             )
+            // ⭐ Installed or not ([com.abrah.nightmare.ModelSpec.chipBlocked]): Iris on an 8s Gen 3/4.
+            spec.chipBlocked(com.abrah.nightmare.DeviceProbe.caps()) -> stringResource(
+                R.string.dit_chip_blocked,
+                com.abrah.nightmare.DeviceProbe.caps().soc.let { com.abrah.nightmare.DeviceProbe.DIT_NO_HMX_SOCS[it] ?: it },
+            )
             row.ramTight -> stringResource(R.string.ram_tight).trim().removePrefix("·").trim()
             spec.isCustom && row.missing.isNotEmpty() -> stringResource(R.string.incomplete_missing, row.missing.joinToString())
             row.unsupported() && row.needsRam > 0 ->

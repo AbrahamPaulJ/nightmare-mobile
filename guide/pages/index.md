@@ -59,9 +59,9 @@ step.
 | chip | can run |
 |---|---|
 | Snapdragon 888 and newer | SD 1.5 models, upscaling |
-| Snapdragon 8 Gen 2, 8s Gen 3 and newer | + **alpha:** Z-Image, FLUX.2 Klein 9B, Anima DiT, Iris (on the 8s Gen 4 and 8s Gen 3 with the NPU's matrix unit off: right pictures, but much slower; Iris is still noisy there) |
+| Snapdragon 8 Gen 2, 8s Gen 3 and newer | + **alpha:** Z-Image, FLUX.2 Klein 9B, Anima DiT, Iris (on the 8s Gen 4 and 8s Gen 3 with the NPU's matrix unit off: right pictures, but much slower; Iris is not offered there, it gives noise) |
 | Snapdragon 8 Gen 3 and newer | + SDXL and Anima; **alpha:** FLUX.2, Qwen Image, Anima DiT, Iris, Z-Image, Krea 2 (12 GB) |
-| Snapdragon 8 Elite and newer | + video; Krea 2 with 12 GB of RAM or more |
+| Snapdragon 8 Elite and newer | + video, MOSS-Image; Ideogram 4 and Krea 2 with 12 GB of RAM or more |
 
 - **Storage**: models are downloaded separately, from about 1 GB (an SD 1.5 model) to
   13.8 GB (Qwen Image on a 16 GB phone). The app tells you each size before you download.

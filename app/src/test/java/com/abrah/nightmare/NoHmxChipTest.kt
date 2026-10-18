@@ -36,6 +36,21 @@ class NoHmxChipTest {
     }
 
     @Test
+    fun irisIsNotOfferedOnTheTwoSChips() {
+        // ⭐ Noise in every leg of an 8s Gen 4's ⋮ Test the NPU, and an abort with HMX off: no build there.
+        val iris = ModelCatalog.byId("iris_3b_turbo")!!
+        assertTrue(iris.chipBlocked(caps("SM8735")))
+        assertTrue(iris.chipBlocked(caps("SM8635")))
+        assertNull(iris.buildFor(caps("SM8735")))
+        // ⚠ The controls: the 8 Gen 2 keeps it, and the other DiT models stay offered on the two chips.
+        assertFalse(iris.chipBlocked(caps("SM8550")))
+        assertTrue(iris.buildFor(caps("SM8550")) != null)
+        val zit = ModelCatalog.byId("z_image_turbo")!!
+        assertFalse(zit.chipBlocked(caps("SM8735")))
+        assertTrue(zit.buildFor(caps("SM8735")) != null)
+    }
+
+    @Test
     fun theLaunchTurnsHmxOffByGgmlsOwnSwitch() {
         // ⚠ The leg that came back with a picture on both chips set exactly this ([BlankDiagnosis.LEGS] `no_hmx`).
         val leg = BlankDiagnosis.LEGS.first { it.id == "no_hmx" }

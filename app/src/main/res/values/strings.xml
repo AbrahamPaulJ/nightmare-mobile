@@ -589,6 +589,7 @@
     <string name="models_family_animadit">About 3.2 GB. Downloads Anima\'s official 4.2 GB file and converts it on the phone, so it needs ~7.5 GB free while it installs. About 1 minute a picture at 1024², any size from 512. 8 Gen 2 or newer (alpha on 8 Gen 2 and 8 Gen 3). Not an edit model. Use Wi-Fi.</string>
     <string name="models_family_iris">About 5.8 GB. Downloads the official 6 GB file from speridlabs and converts it on the phone, so it needs ~10 GB free while it installs. About 2.5 minutes a picture at 1024x1024 on an 8 Elite. No VAE. Only the sizes it was trained at (about 1 MP each). 8 Gen 2 or newer (alpha below the 8 Elite, not yet run on a real 8 Gen 2 or 8 Gen 3). Text to image only. Use Wi-Fi.</string>
     <string name="models_family_moss">About 10 GB. 8 Elite or newer. A careful, detailed picture model with an 8-step speed-up applied every time. Slow on a phone: about 3 minutes at 512x512 and 11 to 12 minutes at 1024x1024 on an 8 Elite. Text to image only. Use Wi-Fi.</string>
+    <string name="models_family_ideogram">About 11.6 GB. 12 GB phones and up, 8 Elite or newer. Best at readable text in a picture: signs, posters, labels. An 8-step speed-up applied every time. About 5.5 minutes at 768x768 on an 8 Elite. Text to image only. Non-commercial use only (Ideogram\'s licence). Use Wi-Fi.</string>
     <string name="models_family_other">About 3.5 GB each, and ~7.5 GB free while it unpacks. Use Wi-Fi.</string>
     <string name="models_import_checkpoint">Import a checkpoint</string>
     <string name="models_import_dit_body">One .safetensors or .gguf. A checkpoint from CivitAI or Hugging Face, used as it is. No conversion. Klein 4B and Z-Image ones borrow a text encoder and VAE (up to 2.6 GB to fetch, nothing if you have that model). Klein 9B and Krea 2 ones get their own copy (4.8 GB and 2.6 GB). A file bigger than about half your phone\'s RAM will likely be closed by Android while it renders.</string>
@@ -629,7 +630,9 @@
     <string name="models_import_failed">import failed: %1$s</string>
     <string name="models_needs_ram">%1$s needs a phone with %3$d GB of RAM; this one has %2$d GB</string>
     <string name="models_needs_arch">%1$s needs an HTP arch of %2$d or newer; this device reports %3$d</string>
+    <string name="models_not_on_chip">%1$s does not run on the %2$s yet: every way of running it there gives noise</string>
     <string name="dit_no_hmx">Runs with the NPU\'s matrix unit off and decodes on the CPU on the %1$s: right pictures, but much slower (minutes at 512, far longer at 1024). ⋮ Test the NPU helps find a faster fix</string>
+    <string name="dit_chip_blocked">Does not run on the %1$s yet: every test there gave noise. If it is installed, deleting it frees the space</string>
     <string name="test_npu">Test the NPU</string>
     <string name="diagnose">Diagnose</string>
     <string name="diagnose_note">This picture came back one flat colour. Diagnose renders a small picture up to %1$d times, each with one part moved off the NPU, and adds which ones come back clean to this report. About 10 to 25 minutes.</string>

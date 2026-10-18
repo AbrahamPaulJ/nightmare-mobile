@@ -99,7 +99,7 @@ DiT engine (libdit_engine.so and its Hexagon skels)
     with ggml's Hexagon backend, plus this project's LoRA patch
     (backend-patches/dit/), built by this repository's CI and downloaded by the
     app; the skels ship in the APK. Runs FLUX.2 Klein 4B and 9B, Z-Image Turbo,
-    Qwen Image 2.1, Krea 2 Turbo, Iris 3B Turbo, Anima and MOSS-Image on the NPU. Not included in this repository.
+    Qwen Image 2.1, Krea 2 Turbo, Iris 3B Turbo, Anima, MOSS-Image and Ideogram 4 on the NPU. Not included in this repository.
 
 stable-diffusion.cpp
     leejet, with Hexagon optimisation by happyyzy
@@ -196,6 +196,28 @@ MOSS-Image 8-step DMD LoRA
     https://huggingface.co/lodestones/MOSS-Image-SFT-8-steps-dmd
     Apache 2.0. Downloaded by the app at the user's request and applied at
     run time, unmodified; not included here.
+
+Ideogram 4
+    Ideogram, Inc.; GGUF by leejet
+    https://huggingface.co/ideogram-ai/ideogram-4-fp8
+    https://huggingface.co/leejet/ideogram-4-GGUF
+    Ideogram 4 is provided under and subject to the Ideogram Non-Commercial Model
+    Agreement available at
+    https://github.com/ideogram-oss/ideogram-4/model_licenses/LICENSE-IDEOGRAM-4-NON-COMMERCIAL.
+    All rights reserved. Copyright © Ideogram, Inc.
+    Downloaded by the app at the user's request; not included here. Its VAE is
+    the FLUX.2 VAE. Non-commercial use only.
+
+Ideogram 4 TurboTime LoRA
+    ostris
+    https://huggingface.co/ostris/ideogram_4_turbotime_lora
+    Ideogram Non-Commercial Model Agreement (as above). Downloaded by the app at
+    the user's request and applied at run time, unmodified; not included here.
+
+Qwen3-VL-8B-Instruct (Ideogram 4's text encoder)
+    Qwen team; GGUF by unsloth
+    https://huggingface.co/unsloth/Qwen3-VL-8B-Instruct-GGUF
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
 
 Qwen3.5-9B (MOSS-Image's text encoder and tokenizer)
     Qwen team; GGUF by unsloth

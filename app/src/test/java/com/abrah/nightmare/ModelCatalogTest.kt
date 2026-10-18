@@ -335,6 +335,11 @@ class ModelCatalogTest {
         assertEquals(null, BackendProcess.kreaBudget(krea, sixteen, 1_000_000_000L))
         assertEquals(null, BackendProcess.kreaBudget(krea, 0L, 0L))
         assertEquals(null, BackendProcess.kreaBudget(klein9, twelve, 0L))
+        // ⭐ Ideogram 4 streams the same way (the app was reaped loading it whole on the S25, 2026-10-18).
+        val ideo = ModelCatalog.byId("ideogram_4_turbo")!!
+        assertEquals("4", BackendProcess.kreaBudget(ideo, twelve, 6_000_000_000L))
+        assertEquals(null, BackendProcess.kreaBudget(ideo, sixteen, 6_000_000_000L))
+        assertEquals(null, ideo.buildFor(caps(79, 8, eight)))
         // ⭐ GitHub #30: Klein 9B gets the smaller 8 Gen 3 budget; every other DiT keeps 2.75.
         assertEquals("2.25", BackendProcess.lowArchDitBudget(klein9, 75))
         assertEquals("2.75", BackendProcess.lowArchDitBudget(krea, 75))
@@ -355,6 +360,20 @@ class ModelCatalogTest {
         assertEquals(false, BackendProcess.shipsThisEncoder(moss, 5_680_522_464L))
         assertEquals("dmd8.safetensors", moss.ownLora)
         assertEquals(Family.MOSS, moss.family)
+    }
+
+    /** ⭐ Ideogram 4: the MOSS shape (own encoder, own LoRA on every render, a `krea2` launch), on the 8 Elite only. */
+    @Test
+    fun ideogramCarriesItsTurboLoraAndOwnEncoder() {
+        val ideo = ModelCatalog.byId("ideogram_4_turbo")!!
+        assertEquals(Family.IDEOGRAM, ideo.family)
+        assertEquals("turbotime.safetensors", ideo.ownLora)
+        assertEquals(ModelCatalog.KREA2, ideo.backendType)
+        assertEquals(true, ideo.ownDitParts)
+        assertEquals(true, BackendProcess.shipsThisEncoder(ideo, 4_787_333_984L))
+        assertEquals(listOf("dit.gguf", "llm.gguf", "vae.safetensors", "tokenizer.json", "turbotime.safetensors"), ideo.requiredFiles)
+        assertEquals(ModelCatalog.DIT_MIN_ARCH, ideo.builds.single().minArch)
+        assertEquals(8, ideo.steps)
     }
 
     /** ⭐ GitHub #52: the engine is told the table's arch, so a failed DSP query cannot fall back to v73. */

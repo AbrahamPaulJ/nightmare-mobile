@@ -138,6 +138,12 @@ enum class Family(
      */
     MOSS("MOSS-Image", GP_DIT, GP_DIT_NEG, "moss", dit = true),
     /**
+     * ⭐⭐ **Ideogram 4** (Ideogram, non-commercial) on the DiT engine (`docs/ROADMAP.md` "Models past Wan 5B", engine
+     * `dit/029`): a 9.3B single-stream DiT, Qwen3-VL-8B as its text encoder, the FLUX.2 VAE, and ostris' TurboTime LoRA
+     * applied on EVERY render ([ModelSpec.ownLora]): 8 steps, no CFG, no unconditional model. ⚠ Text to image only.
+     */
+    IDEOGRAM("Ideogram 4", GP_DIT, GP_DIT_NEG, "ideogram", dit = true),
+    /**
      * ⭐⭐ **Wan 2.2 TI2V 5B video** on the DiT engine (`docs/VIDEO-GGML.md`): a prompt, or a
      * prompt and a start picture, into a clip through `/video` (backend 028, engine ABI 106).
      * ⚠⚠ NOT a checkpoint: its one model ([ModelCatalog.WAN22]) is kept out of
@@ -650,7 +656,16 @@ data class ModelSpec(
      * not a slower one, none. Falling back to "download the biggest and hope"
      * is how a user spends 3.5 GB on a file their chip rejects at load.
      */
-    fun buildFor(caps: DeviceProbe.Caps): Build? = builds.firstOrNull { it.runsOn(caps) }
+    fun buildFor(caps: DeviceProbe.Caps): Build? = builds.firstOrNull { it.runsOn(caps) }?.takeIf { !chipBlocked(caps) }
+
+    /**
+     * ⭐ This chip cannot run this model in any way we have: Iris 3B Turbo on a [DeviceProbe.DIT_NO_HMX_SOCS] chip.
+     * ⚠⚠ Why (an 8s Gen 4's ⋮ Test the NPU, 1.6.195, 2026-10-18, `docs/DEVICES.md` §3b): noise in every leg, and with
+     * HMX off it aborts (its BF16 rows, [noHmxOn]); made to run, HVX alone would be ~an hour a picture. So [buildFor]
+     * offers no build (dimmed, install refused), an installed copy is told so, and its launch is refused
+     * ([BackendProcess]) except under Diagnose. Lift it if an engine makes HMX right there (the HMX self-test).
+     */
+    fun chipBlocked(caps: DeviceProbe.Caps): Boolean = family == Family.IRIS && caps.ditNoHmx
 
     /**
      * ⭐ The files THIS phone installs and runs: the [buildFor] build's own list
@@ -1043,6 +1058,9 @@ object ModelCatalog {
 
     /** ⭐ MOSS-Image's own LoRA, in its folder ([ModelSpec.ownLora]). */
     const val MOSS_LORA = "dmd8.safetensors"
+
+    /** ⭐ Ideogram 4's own LoRA, in its folder ([ModelSpec.ownLora]): ostris' TurboTime, its few-step distillation. */
+    const val IDEOGRAM_LORA = "turbotime.safetensors"
 
     /**
      * ⭐⭐ Iris 3B Turbo's training buckets, square first (the model card): its ONLY sizes
@@ -2466,6 +2484,30 @@ object ModelCatalog {
                 RemoteFile(HF + "realrebelai/MOSS-Image_GGUFs/resolve/main/MOSS-VAE.safetensors", "vae.safetensors", 249_521_372L),
                 RemoteFile(HF + "OpenMOSS-Team/MOSS-Image-Base/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", 19_989_325L),
                 RemoteFile(HF + "lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors", MOSS_LORA, 1_189_176_800L),
+            ),
+        ),
+        // ⭐⭐ Ideogram 4 (Ideogram Non-Commercial Model Agreement; `NOTICE`): leejet's Q4_0 DiT, unsloth's Qwen3-VL-8B
+        // Q4_0 (the engine reads 13 of its hidden layers) with Qwen3-VL's tokenizer.json (the backend loads one for a
+        // `krea2` launch), Klein's FLUX.2 VAE, and ostris' TurboTime LoRA on every render ([ModelSpec.ownLora]): the
+        // base needs a second 9.3B unconditional model and 20+ steps. ⚠ `dit/029` is what makes it usable: the stock
+        // engine runs its rope as composed ops, 73-85 s a step at 768². Measured on the S25 (v79, sd-cli, `all=disk`
+        // 2.5 GiB): 768² 8 steps 324 s, 36-42 s a step, the sign's text spelled right. ⚠ v79 only. Sizes read off the
+        // files 2026-10-18.
+        dit(
+            "ideogram_4_turbo", "Ideogram 4 (8 steps)", Family.IDEOGRAM, KREA2, steps = 8,
+            ownDitParts = true,
+            // ⚠ Krea 2's gate and budget ([BackendProcess.kreaBudget]): 6.2 GB on the NPU, streamed below 16 GB.
+            minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+            minArch = DIT_MIN_ARCH,
+            startRes = Res(768, 768),
+            prompt = "a cozy bookshop storefront at dusk, a wide wooden sign above the window reads OPEN LATE, warm light, realistic photograph",
+            ownLora = IDEOGRAM_LORA,
+            files = listOf(
+                RemoteFile(HF + "leejet/ideogram-4-GGUF/resolve/main/ideogram4-Q4_0.gguf", "dit.gguf", 5_643_820_832L),
+                RemoteFile(HF + "unsloth/Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen3-VL-8B-Instruct-Q4_0.gguf", "llm.gguf", 4_787_333_984L),
+                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
+                RemoteFile(HF + "Qwen/Qwen3-VL-8B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+                RemoteFile(HF + "ostris/ideogram_4_turbotime_lora/resolve/main/ideogram_4_turbotime_v1.safetensors", IDEOGRAM_LORA, 846_778_576L),
             ),
         ),
         // ⭐ FLUX.2 Klein 9B — the same architecture as 4B, so the same family,

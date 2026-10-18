@@ -858,6 +858,8 @@ private fun familyNote(family: Family): String = stringResource(when (family) {
         Family.IRIS -> R.string.models_family_iris
         // ⚠ Its 9B text encoder makes it a 10 GB download, and it is slow: measured times, said up front.
         Family.MOSS -> R.string.models_family_moss
+        // ⚠ The same shape as MOSS: a 10.5 GB download (an 8B encoder) and minutes a picture, said up front.
+        Family.IDEOGRAM -> R.string.models_family_ideogram
         // ⚠ The free-space figure is the one that surprises:
         // the archive and its unpacked copy are both on disk
         // at once, so a 3.5 GB download needs ~7.5 GB free.
