@@ -134,12 +134,22 @@ object WanVideoNode : NodeType {
      * rendered NOISE at 832x480 2 s, which fit [V75_NPU_BYTES] and so ran resident, and a clean clip at 1280x704,
      * which ran budgeted; a fresh backend per clip did not help. The same tester's LoRA put the resident DiT at
      * 3.0 GB and fastrpc refused the compute. Budgeted, the weights stream and a LoRA's add little.
+     * ⚠⚠ [stream] (Settings → Memory → Video: stream the model, GitHub #48/#59) budgets EVERY clip, and the budget
+     * must sit BELOW the weights: the engine keeps the whole graph resident whenever weights plus compute fit, so
+     * the switch's first fixed 4 GiB still ran a 2 s 480p clip resident (2,892 + 528 MB) and a 16 GB 8 Elite drew
+     * its colour grid there, while 5 s (compute 1.46 GB) streamed and came out clean. 2.75 when one block fits it,
+     * else 4: such a clip is over 4 GiB whole, so it streams there too.
      */
-    fun memoryBudget(pinned: Long, ramBytes: Long, arch: Int): String? = when {
+    fun memoryBudget(
+        pinned: Long, ramBytes: Long, arch: Int, stream: Boolean = com.abrah.nightmare.Prefs.wanStream,
+    ): String? = when {
         arch in 1..78 -> "2.75"
+        stream -> if (pinned - DIT_BYTES + BLOCK_BYTES <= STREAM_FLOOR) "2.75" else "4"
         ramBytes in 1 until com.abrah.nightmare.Prefs.LOWRAM_BELOW_BYTES -> "4".takeIf { pinned > BUDGET_FROM }
         else -> null
     }
+
+    private const val STREAM_FLOOR = 2_816L shl 20
 
     private const val BUDGET_FROM = 4_608L shl 20
 

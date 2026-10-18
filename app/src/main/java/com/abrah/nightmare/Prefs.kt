@@ -56,6 +56,7 @@ object Prefs {
         nodesVertical = p.getBoolean(KEY_NODES_VERTICAL, false)
         hideChat = p.getBoolean(KEY_HIDE_CHAT, false)
         moreOptionsOpen = p.getBoolean(KEY_MORE_OPTIONS, false)
+        wanStream = p.getBoolean(KEY_WAN_STREAM, false)
     }
 
     /** ⭐ A sampler's "More options" fold open (the user, 2026-10-17: closed by default, remembered). */
@@ -232,12 +233,19 @@ object Prefs {
 
     /**
      * ⭐ Video: stream the model (1.6.193, GitHub #48; OFF by default, ours, not upstream's). Every Wan clip runs
-     * under [WAN_STREAM_GIB] with `all=disk`, as v75 always does: a OnePlus 8 Elite (16 GB, so never budgeted)
-     * rendered every clip as a colour grid with the DiT resident, and on v75 the resident run was the noisy one and
-     * the streamed run clean (`docs/VIDEO-GGML.md` §4). ~30% slower, so never the default: the S25 is clean resident.
+     * under a budget with `all=disk`, as v75 always does ([wanStream], `WanVideoNode.memoryBudget`): a OnePlus
+     * 8 Elite (16 GB, so never budgeted) rendered every clip as a colour grid with the DiT resident, and on v75 the
+     * resident run was the noisy one and the streamed run clean (`docs/VIDEO-GGML.md` §4). ~30% slower, so never
+     * the default: the S25 is clean resident.
      */
     const val KEY_WAN_STREAM = "wan_stream"
-    const val WAN_STREAM_GIB = "4"
+
+    /**
+     * ⚠ [KEY_WAN_STREAM] held in memory: a Wan node's launch key reads it with no Context
+     * (`WanVideoNode.keyFor`). Loaded by [load], kept in step by [setLowRam].
+     */
+    var wanStream: Boolean = false
+        private set
 
     /**
      * ⚠ 13 GiB, between the classes rather than at "16": a 12 GB phone reports
@@ -281,6 +289,7 @@ object Prefs {
     }
 
     fun setLowRam(context: Context, key: String, on: Boolean) {
+        if (key == KEY_WAN_STREAM) wanStream = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()
     }
 
@@ -290,10 +299,6 @@ object Prefs {
      * ([ModelSpec.lowram] — Z-Image's `te=disk`; Qwen is `all=disk` in the backend
      * whatever this says).
      */
-    /** ⭐ [KEY_WAN_STREAM]'s budget for a launch of [spec], or null (not Wan, or the switch off). */
-    fun wanStreamBudget(context: Context, spec: ModelSpec?): String? =
-        WAN_STREAM_GIB.takeIf { spec?.family == Family.WAN && lowRam(context).wanStream }
-
     fun lowRamFor(context: Context, spec: ModelSpec): Boolean = when (spec.family) {
         Family.SDXL, Family.SDXL_SWAP -> lowRam(context).sdxl
         Family.ANIMA -> lowRam(context).anima

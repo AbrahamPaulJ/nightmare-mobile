@@ -4858,6 +4858,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * `<model>=<bytes>` sets (0 clears; a value BELOW the need forces the QNN
      * error the retry learns from), `sdxl_lowram=0|1` sets that real preference
      * (the group exists only without `--lowram`), a bare model id prints.
+     * `wan_stream=0|1` sets Video: stream the model, the same way (GitHub #59).
      */
     private fun spillFillOp(arg: String?) {
         val (k, v) = arg.orEmpty().split('=', limit = 2).let { it[0] to it.getOrNull(1) }
@@ -4865,6 +4866,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             k == "sdxl_lowram" && v != null -> {
                 Prefs.setLowRam(ctx, Prefs.KEY_SDXL_LOWRAM, v == "1")
                 say("spillfill: sdxl lowram = ${Prefs.lowRam(ctx).sdxl}")
+            }
+            k == "wan_stream" && v != null -> {
+                Prefs.setLowRam(ctx, Prefs.KEY_WAN_STREAM, v == "1")
+                say("spillfill: wan stream = ${Prefs.wanStream}")
             }
             v != null -> {
                 SpillFill.setForTest(ctx, k, v.toLongOrNull() ?: 0L)

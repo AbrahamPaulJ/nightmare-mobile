@@ -698,9 +698,9 @@ object BackendProcess {
                 // reports success.
                 val spec = ModelCatalog.byId(modelId)
                 val dit = !upscalerOnly && spec?.isDit == true
-                // ⭐ Settings → Memory → Video: stream the model ([Prefs.wanStreamBudget], GitHub #48): a Wan clip the key
-                // left resident streams too. ⚠ The key keeps what was asked ([launchedKey] below), so it still matches.
-                val budget = memoryBudget ?: Prefs.wanStreamBudget(context, spec)
+                // ⭐ Settings → Memory → Video: stream the model (GitHub #48/#59) arrives HERE, in the key: its budget
+                // depends on the clip (`WanVideoNode.memoryBudget`), which a launch-time default could not see.
+                val budget = memoryBudget
                 // ⚠⚠ The engine is DOWNLOADED, not shipped (`DitEngine`), so
                 // "missing" is an ordinary state and not a broken build: an
                 // app update replaces the native dir, and before 1.5.502 this

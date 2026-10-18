@@ -72,6 +72,8 @@ class OpService : Service() {
         // the selection itself -- otherwise a scripted op renders against
         // V1_MODEL while the UI and the backend use whatever the user picked.
         SelectedModel.load(this)
+        // ⚠ And the settings held in memory: a Wan clip's launch key reads `Prefs.wanStream` (GitHub #59).
+        Prefs.load(this)
         // ⚠⚠ FIRST, before any early return. A service started with
         // startForegroundService() that does not call startForeground() within
         // ~5 s is killed with ForegroundServiceDidNotStartInTimeException --
