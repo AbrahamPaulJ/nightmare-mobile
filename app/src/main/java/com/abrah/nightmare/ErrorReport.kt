@@ -230,7 +230,7 @@ object ErrorReport {
                 } + " · VTCM ${caps.vtcmMb} MB" +
                 // ⭐ The engine's own reading of the NPU, when a DiT launch has printed it ([BackendProcess.engineNpu]).
                 BackendProcess.engineNpu.let { e ->
-                    if (e.isEmpty()) "" else " · engine says ${listOfNotNull(e["arch"], e["hwinfo"]).joinToString(", ")}"
+                    if (e.isEmpty()) "" else " · engine says ${listOfNotNull(e["arch"], e["hwinfo"], e["hmx"]).joinToString(", ")}"
                 },
             ramTotal = DeviceProbe.totalRamBytes(),
             ramAvailable = availableRamBytes(),

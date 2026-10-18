@@ -1080,6 +1080,9 @@ object BackendProcess {
         return when {
             t.startsWith("Hexagon Arch version ") -> "arch" to t.removePrefix("Hexagon Arch version ")
             " hwinfo: " in t -> "hwinfo" to t.substringAfter(" hwinfo: ")
+            // ⭐ Engine `dit/030`: one Q4_0 matmul on HMX against the CPU at session start ("ok", "WRONG", "WRONG
+            // (zeros)", "FAILED", "skipped (HMX off)"), the check the 8s Gen 3/4 HMX question was missing.
+            " HMX self-test: " in t -> "hmx" to "HMX self-test " + t.substringAfter(" HMX self-test: ")
             else -> null
         }
     }

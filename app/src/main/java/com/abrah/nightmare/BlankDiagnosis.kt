@@ -172,8 +172,10 @@ object BlankDiagnosis {
         Regex("8x8 ([0-9a-f]{128})").find(detail)?.groupValues?.get(1)?.chunked(2)?.map { it.toInt(16) }?.toIntArray()
 
     /**
-     * ⭐ Two thumbnails within this mean grey difference are the same picture. ⚠ A guess until measured: HMX on
-     * against off on the S25, where both are right, gives the spread a right picture may have.
+     * ⭐ Two thumbnails within this mean grey difference are the same picture. Measured 2026-10-18: on the S25 every
+     * leg of a full Diagnose (Anima Turbo 1.1, 256², 2 steps) is right and lands 0 to 7.1 from the control (the DiT on
+     * the CPU the farthest); the 8s Gen 4's wrong legs land 32.9 to 100.6 from its right picture (Z-Image, Anima 2.9B,
+     * Anima Turbo). 16 sits in that gap.
      */
     const val SAME_PICTURE = 16.0
 

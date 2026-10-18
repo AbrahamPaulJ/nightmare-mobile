@@ -81,5 +81,10 @@ class NoHmxChipTest {
             BackendProcess.engineNpuLine("   821.3ms [  INFO ] [dit] util.cpp:628  - ggml-hex: HTP0 hwinfo: threads 4, hvx 4, hmx 1, vtcm 8 MB"),
         )
         assertNull(BackendProcess.engineNpuLine("   784.7ms [  INFO ] [dit] util.cpp:628  - ggml-hex: device 0: HTP0 (phys=0, virt=0, domain=cdsp:3)"))
+        // ⭐ Engine `dit/030`'s self-test line (its format, `ggml-hexagon.cpp`).
+        assertEquals(
+            "hmx" to "HMX self-test WRONG (zeros), rel-err 1.0000, out/ref 0.000, max-err 41.2",
+            BackendProcess.engineNpuLine("   830.0ms [  INFO ] [dit] util.cpp:628  - ggml-hex: HTP0 HMX self-test: WRONG (zeros), rel-err 1.0000, out/ref 0.000, max-err 41.2"),
+        )
     }
 }
