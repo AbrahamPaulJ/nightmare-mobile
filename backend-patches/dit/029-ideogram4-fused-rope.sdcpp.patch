@@ -1,0 +1,93 @@
+diff --git a/src/model/diffusion/ideogram4.hpp b/src/model/diffusion/ideogram4.hpp
+index 9e2aa36..d163307 100644
+--- a/src/model/diffusion/ideogram4.hpp
++++ b/src/model/diffusion/ideogram4.hpp
+@@ -200,6 +200,43 @@ namespace Ideogram4 {
+                                              axis_wrap_dims);
+     }
+ 
++    // nightmare (dit/029): Q/K norm and rope as ONE fused op (the HTP's qknorm_rope), as flux.hpp, krea2.hpp,
++    // anima.hpp and wan.hpp already do. The composed Rope::apply_rope cost ~73 s a step at 768x768 on the S25
++    // (permutes, conts and two REPEATs per q and k in each of 34 blocks, a 511 MB CPU compute buffer). The fused
++    // kernel rotates interleaved pairs (2j, 2j+1) and Ideogram's rope is split-half (j, j+d/2): q, k and the norm
++    // weight get the same channel permutation into interleaved order, which leaves q.k, so the attention, unchanged.
++    // NM_IDEOGRAM_COMPOSED_ROPE=1 keeps the old path (the A/B control).
++    class Ideogram4QKNorm : public RMSNorm {
++    public:
++        using RMSNorm::RMSNorm;
++
++        ggml_tensor* forward_rope(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* pe) {
++            static const bool composed = getenv("NM_IDEOGRAM_COMPOSED_ROPE") != nullptr;
++            if (composed || ctx->backend == nullptr || x->ne[3] != 1 || x->type != GGML_TYPE_F32) {
++                return nullptr;
++            }
++            ggml_tensor* w = params["weight"];
++            if (ctx->weight_adapter) {
++                w = ctx->weight_adapter->patch_weight(ctx->ggml_ctx, ctx->backend, w, prefix + "weight");
++            }
++            const int64_t d    = x->ne[0];
++            const int64_t half = d / 2;
++            // x: [d, H, L, 1] -> [d/2, 2, H, L] -> [2, d/2, H, L]: new[2j] = x[j], new[2j+1] = x[j + d/2]
++            ggml_tensor* xi = ggml_view_4d(ctx->ggml_ctx, x, half, 2, x->ne[1], x->ne[2],
++                                           half * ggml_element_size(x), x->nb[1], x->nb[2], 0);
++            xi              = ggml_cont(ctx->ggml_ctx, ggml_permute(ctx->ggml_ctx, xi, 1, 0, 2, 3));
++            xi              = ggml_reshape_4d(ctx->ggml_ctx, xi, d, x->ne[1], x->ne[2], 1);
++            ggml_tensor* wi = ggml_reshape_2d(ctx->ggml_ctx, w, half, 2);
++            wi              = ggml_cont(ctx->ggml_ctx, ggml_transpose(ctx->ggml_ctx, wi));
++            wi              = ggml_reshape_1d(ctx->ggml_ctx, wi, d);
++            ggml_tensor* out = ggml_qknorm_rope(ctx->ggml_ctx, xi, wi, pe, eps);  // [d, L, H]
++            if (!ggml_backend_supports_op(ctx->backend, out)) {
++                return nullptr;
++            }
++            return out;
++        }
++    };
++
+     class Ideogram4Attention : public GGMLBlock {
+     protected:
+         int64_t hidden_size;
+@@ -211,8 +248,8 @@ namespace Ideogram4 {
+             : hidden_size(hidden_size), num_heads(num_heads), head_dim(hidden_size / num_heads) {
+             GGML_ASSERT(hidden_size % num_heads == 0);
+             blocks["qkv"]    = make_linear(hidden_size, hidden_size * 3, false);
+-            blocks["norm_q"] = std::make_shared<RMSNorm>(head_dim, eps);
+-            blocks["norm_k"] = std::make_shared<RMSNorm>(head_dim, eps);
++            blocks["norm_q"] = std::make_shared<Ideogram4QKNorm>(head_dim, eps);
++            blocks["norm_k"] = std::make_shared<Ideogram4QKNorm>(head_dim, eps);
+             blocks["o"]      = make_linear(hidden_size, hidden_size, false);
+         }
+ 
+@@ -224,8 +261,8 @@ namespace Ideogram4 {
+             int64_t N       = x->ne[2];
+ 
+             auto qkv_proj = std::dynamic_pointer_cast<Linear>(blocks["qkv"]);
+-            auto norm_q   = std::dynamic_pointer_cast<RMSNorm>(blocks["norm_q"]);
+-            auto norm_k   = std::dynamic_pointer_cast<RMSNorm>(blocks["norm_k"]);
++            auto norm_q   = std::dynamic_pointer_cast<Ideogram4QKNorm>(blocks["norm_q"]);
++            auto norm_k   = std::dynamic_pointer_cast<Ideogram4QKNorm>(blocks["norm_k"]);
+             auto out_proj = std::dynamic_pointer_cast<Linear>(blocks["o"]);
+ 
+             auto qkv     = qkv_proj->forward(ctx, x);
+@@ -234,10 +271,18 @@ namespace Ideogram4 {
+             auto k       = ggml_reshape_4d(ctx->ggml_ctx, qkv_vec[1], head_dim, num_heads, n_token, N);
+             auto v       = ggml_reshape_4d(ctx->ggml_ctx, qkv_vec[2], head_dim, num_heads, n_token, N);
+ 
+-            q = norm_q->forward(ctx, q);
+-            k = norm_k->forward(ctx, k);
+-
+-            x = Rope::attention(ctx, q, k, v, pe, mask, 1.f / 128.f, false);
++            ggml_tensor* q_rope = norm_q->forward_rope(ctx, q, pe);
++            ggml_tensor* k_rope = q_rope != nullptr ? norm_k->forward_rope(ctx, k, pe) : nullptr;
++            if (q_rope != nullptr && k_rope != nullptr) {
++                // what Rope::attention does after its rope: q, k [H, L, d], v [N, L, H, d]
++                x = ggml_ext_attention_ext(ctx->ggml_ctx, ctx->backend, q_rope, k_rope, v, num_heads, mask, true,
++                                           ctx->flash_attn_enabled, 1.f / 128.f);
++            } else {
++                q = norm_q->forward(ctx, q);
++                k = norm_k->forward(ctx, k);
++
++                x = Rope::attention(ctx, q, k, v, pe, mask, 1.f / 128.f, false);
++            }
+             x = out_proj->forward(ctx, x);
+             return x;
+         }
