@@ -1,0 +1,88 @@
+diff --git a/src/ggml-hexagon/htp/concat-ops.c b/src/ggml-hexagon/htp/concat-ops.c
+index 966e867..e5d9eab 100644
+--- a/src/ggml-hexagon/htp/concat-ops.c
++++ b/src/ggml-hexagon/htp/concat-ops.c
+@@ -230,6 +230,51 @@ static void concat_generic(unsigned int nth, unsigned int ith, void * data) {
+     }
+ }
+ 
++// Contiguous concat (nightmare dit/031): with src0, src1 and dst all contiguous, a concat along `dim` is, for
++// each index above `dim`, one block of src0 followed by one block of src1, so it is copied as 64 KB HVX pieces.
++// TAEHV's channel concats fell to concat_generic's per-element scalar copy at ~1 GB/s: 36 of them took 3.4 s
++// of a Wan 2.2 5B 832x480 2 s decode on an 8 Elite.
++#define CONCAT_CONTIG_PIECE (64u * 1024u)
++
++struct htp_concat_contig_context {
++    struct htp_ops_context * octx;
++    uint32_t outer;    // product of dst->ne above dim
++    uint32_t bytes0;   // src0 bytes per outer index
++    uint32_t bytes1;   // src1 bytes per outer index
++    uint32_t pieces0;  // CONCAT_CONTIG_PIECE pieces in bytes0
++    uint32_t pieces1;
++};
++
++static void concat_contig(unsigned int nth, unsigned int ith, void * data) {
++    const struct htp_concat_contig_context * c = (const struct htp_concat_contig_context *) data;
++    const struct htp_ops_context * octx = c->octx;
++
++    const uint8_t * s0 = (const uint8_t *) htp_tensor_data(octx->src[0]);
++    const uint8_t * s1 = (const uint8_t *) htp_tensor_data(octx->src[1]);
++    uint8_t *       d  = (uint8_t *) htp_tensor_data(octx->dst);
++
++    const uint32_t per   = c->pieces0 + c->pieces1;
++    const uint32_t total = c->outer * per;
++    const uint32_t chunk = (total + nth - 1) / nth;
++    const uint32_t start = MIN(ith * chunk, total);
++    const uint32_t end   = MIN(start + chunk, total);
++
++    for (uint32_t u = start; u < end; u++) {
++        const uint32_t o    = u / per;
++        uint32_t       p    = u - o * per;
++        uint8_t *      drow = d + (size_t) o * (c->bytes0 + c->bytes1);
++        if (p < c->pieces0) {
++            const uint32_t off = p * CONCAT_CONTIG_PIECE;
++            hvx_copy_uu(drow + off, s0 + (size_t) o * c->bytes0 + off, MIN(CONCAT_CONTIG_PIECE, c->bytes0 - off), 1);
++        } else {
++            p -= c->pieces0;
++            const uint32_t off = p * CONCAT_CONTIG_PIECE;
++            hvx_copy_uu(drow + c->bytes0 + off, s1 + (size_t) o * c->bytes1 + off,
++                        MIN(CONCAT_CONTIG_PIECE, c->bytes1 - off), 1);
++        }
++    }
++}
++
+ int op_concat(struct htp_ops_context * octx) {
+     const struct htp_tensor * src0 = octx->src[0];
+     const struct htp_tensor * src1 = octx->src[1];
+@@ -253,6 +298,31 @@ int op_concat(struct htp_ops_context * octx) {
+ 
+     void (*worker_func)(unsigned int, unsigned int, void *) = concat_generic;
+ 
++    if (octx->ctx->mdev.count == 1 && dim >= 0 && dim < HTP_OP_MAX_DIMS &&
++        htp_tensor_is_contiguous(src0, type_size) && htp_tensor_is_contiguous(src1, type_size) &&
++        htp_tensor_is_contiguous(dst, type_size)) {
++        struct htp_concat_contig_context c;
++        uint32_t elems0 = 1, elems1 = 1, outer = 1;
++        for (int k = 0; k <= dim; k++) {
++            elems0 *= src0->ne[k];
++            elems1 *= src1->ne[k];
++        }
++        for (int k = dim + 1; k < HTP_OP_MAX_DIMS; k++) {
++            outer *= dst->ne[k];
++        }
++        c.octx    = octx;
++        c.outer   = outer;
++        c.bytes0  = elems0 * type_size;
++        c.bytes1  = elems1 * type_size;
++        c.pieces0 = (c.bytes0 + CONCAT_CONTIG_PIECE - 1) / CONCAT_CONTIG_PIECE;
++        c.pieces1 = (c.bytes1 + CONCAT_CONTIG_PIECE - 1) / CONCAT_CONTIG_PIECE;
++        if (outer == 0 || c.pieces0 + c.pieces1 == 0) {
++            return HTP_STATUS_OK;
++        }
++        work_queue_run(octx->ctx->work_queue, concat_contig, &c, n_threads);
++        return HTP_STATUS_OK;
++    }
++
+     if (dim == 0 && is_2d && is_src1_transposed && !is_src0_transposed) {
+         const uint32_t total_rows = dst->ne[1];
+         const size_t dst_data_row_size = dst->ne[0] * type_size;
