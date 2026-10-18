@@ -362,6 +362,20 @@ class CustomModelsTest {
         assertFalse(File(root(), "junk").exists())
     }
 
+    /** ⚠ GitHub #58: a CPU (MNN) model is refused as one, not imported as an "incomplete" SD 1.5. */
+    @Test
+    fun aCpuModelIsRefusedAndCleansUp() {
+        val zip = zipOf(listOf("clip_v2.mnn", "unet.mnn", "vae_decoder.mnn", "vae_encoder.mnn", "tokenizer.json"))
+        val e = assertThrows(java.io.IOException::class.java) {
+            CustomModels.import(ctx, "cpu", { zip.inputStream() })
+        }
+        assertTrue(e.message!!, "CPU model" in e.message!!)
+        assertFalse(File(root(), "cpu").exists())
+        // ⚠ The control: an NPU model with a stray unet.mnn beside its unet.bin still imports.
+        CustomModels.import(ctx, "npu", { zipOf(ModelCatalog.SD15_REQUIRED + "unet.mnn").inputStream() })
+        assertTrue(File(root(), "npu/unet.bin").isFile)
+    }
+
     /**
      * ⚠ An incomplete-but-classifiable archive is KEPT. The files are the
      * user's, and deleting would mean re-importing gigabytes to find out what

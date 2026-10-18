@@ -1408,6 +1408,15 @@ object CustomModels {
             throw e
         }
 
+        // ⚠ A CPU (MNN) model, the rule [localDream] skips by (GitHub #58: Local Dream's `_mnn_int4` zip). It carries
+        // `clip_v2.mnn`, so it classified as SD 1.5 and then read "incomplete: missing unet.bin…" as if half-made.
+        if (File(dir, "unet.mnn").isFile && !File(dir, "unet.bin").isFile) {
+            dir.deleteRecursively()
+            throw IOException(
+                "a CPU model (unet.mnn, no unet.bin): this app runs models on the NPU only. " +
+                    "Import the NPU version of this checkpoint, the zip holding unet.bin",
+            )
+        }
         val spec = specFor(dir)
         if (spec == null) {
             dir.deleteRecursively()
