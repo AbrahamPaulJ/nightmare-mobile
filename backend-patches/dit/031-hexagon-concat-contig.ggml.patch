@@ -1,12 +1,12 @@
 diff --git a/src/ggml-hexagon/htp/concat-ops.c b/src/ggml-hexagon/htp/concat-ops.c
-index 966e867..e5d9eab 100644
+index 966e867..b34678f 100644
 --- a/src/ggml-hexagon/htp/concat-ops.c
 +++ b/src/ggml-hexagon/htp/concat-ops.c
 @@ -230,6 +230,51 @@ static void concat_generic(unsigned int nth, unsigned int ith, void * data) {
      }
  }
  
-+// Contiguous concat (nightmare dit/031): with src0, src1 and dst all contiguous, a concat along `dim` is, for
++// Contiguous concat (nightmare dit/031), on one device (mdev.count is 0 there, not 1): with src0, src1 and dst all contiguous, a concat along `dim` is, for
 +// each index above `dim`, one block of src0 followed by one block of src1, so it is copied as 64 KB HVX pieces.
 +// TAEHV's channel concats fell to concat_generic's per-element scalar copy at ~1 GB/s: 36 of them took 3.4 s
 +// of a Wan 2.2 5B 832x480 2 s decode on an 8 Elite.
@@ -58,7 +58,7 @@ index 966e867..e5d9eab 100644
  
      void (*worker_func)(unsigned int, unsigned int, void *) = concat_generic;
  
-+    if (octx->ctx->mdev.count == 1 && dim >= 0 && dim < HTP_OP_MAX_DIMS &&
++    if (octx->ctx->mdev.count <= 1 && dim >= 0 && dim < HTP_OP_MAX_DIMS &&
 +        htp_tensor_is_contiguous(src0, type_size) && htp_tensor_is_contiguous(src1, type_size) &&
 +        htp_tensor_is_contiguous(dst, type_size)) {
 +        struct htp_concat_contig_context c;
