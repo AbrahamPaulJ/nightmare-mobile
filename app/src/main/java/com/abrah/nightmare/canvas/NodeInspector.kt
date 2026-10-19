@@ -2719,7 +2719,9 @@ internal fun NodeInspectorBody(
                     // the engine's own ([ModelCatalog.DIT_SAMPLERS]); the widget's
                     // options say so, and the picker reads them.
                     val allowed = w.options ?: ModelCatalog.SCHEDULERS
-                    val ditIds = allowed.all { it in ModelCatalog.DIT_SAMPLER_IDS } &&
+                    // ⚠ By BASE: since engine ABI 108 a DiT value carries a schedule too (`euler_karras`), and a
+                    // raw-value test sent DiT nodes to the SD list, which has no ER-SDE, Res Multistep or iPNDM.
+                    val ditIds = allowed.all { ModelCatalog.splitScheduler(it).first in ModelCatalog.DIT_SAMPLER_IDS } &&
                         allowed.any { ModelCatalog.SAMPLERS.none { s -> s.first == it } }
                     val samplers = if (ditIds) ModelCatalog.DIT_SAMPLERS.filter { it.first in allowed }
                     else ModelCatalog.SAMPLERS.filter { (id, _) ->

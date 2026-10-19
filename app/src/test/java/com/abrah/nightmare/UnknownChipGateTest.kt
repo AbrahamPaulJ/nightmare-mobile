@@ -98,26 +98,33 @@ class UnknownChipGateTest {
     }
 
     /**
-     * ⭐⭐⭐ A whole generation newer (SM8950 / SM8975 — the 8 Elite Gen 6, reported 2026-10-09
-     * as npuforge's "Device Creation failure") is NOT handed v81: no Skel here knows its HTP.
-     * It is marked newer-than-staged, and every NPU gate refuses it.
+     * ⭐⭐⭐ One generation newer (SM8950 / SM8975, the 8 Elite Gen 6) is v85 since 1.6.202: its runtime is
+     * DOWNLOADED ([QnnPack], the user's call 2026-10-19), not refused, and every NPU build runs forward on it.
+     * ⚠ NOT handed v81 (a user's npuforge compile died "Device Creation failure", 2026-10-09). Two generations
+     * on is still newer-than-staged and refused.
      */
     @Test
-    fun aNewerGenerationIsRefusedNotGuessed() {
-        for (soc in listOf("SM8950", "SM8975", "SM9050P")) {
+    fun theNextGenerationIsV85AndTheOneAfterIsRefused() {
+        for (soc in listOf("SM8950", "SM8975")) {
             val arch = DeviceProbe.archFromPartNumber(soc)
-            assertEquals("$soc", DeviceProbe.NEWER_THAN_STAGED, arch)
+            assertEquals("$soc", 85, arch)
             val caps = DeviceProbe.Caps(arch!!, 8, measured = false, soc = soc)
-            assertTrue("$soc not flagged", caps.npuTooNew)
-            assertTrue("$soc counted as unknown — it would be offered everything", caps.known)
-            assertFalse("$soc offered a v68 context", caps.supportsArch(68))
+            assertFalse("$soc flagged too new", caps.npuTooNew)
+            assertTrue("$soc refused a v79 context", caps.supportsArch(79))
         }
+        val far = DeviceProbe.archFromPartNumber("SM9050P")
+        assertEquals(DeviceProbe.NEWER_THAN_STAGED, far)
+        val caps = DeviceProbe.Caps(far!!, 8, measured = false, soc = "SM9050P")
+        assertTrue(caps.npuTooNew)
+        assertTrue("counted as unknown, it would be offered everything", caps.known)
+        assertFalse(caps.supportsArch(68))
     }
 
-    /** ⚠ A MEASURED arch without a Skel here (say v85) is refused the same way. */
+    /** ⭐ A MEASURED v85 runs what a v81 runs (the pack's runtime); an arch past every pack is refused. */
     @Test
-    fun aMeasuredUnstagedArchRunsNothing() {
-        val caps = DeviceProbe.Caps(85, 8, measured = true, soc = "SM8975")
+    fun aMeasuredV85RunsAndAnUnknownArchDoesNot() {
+        assertTrue(DeviceProbe.Caps(85, 8, measured = true, soc = "SM8975").supportsArch(79))
+        val caps = DeviceProbe.Caps(89, 8, measured = true, soc = "SM9050")
         assertFalse(caps.supportsArch(79))
         assertTrue(caps.npuTooNew)
     }

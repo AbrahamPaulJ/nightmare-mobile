@@ -80,6 +80,9 @@ object DeviceProbe {
     /** Every arch whose libraries the APK carries. ⚠ Keep in step with `tools/stage_backend.ps1`. */
     val STAGED_ARCHES = listOf(68, 69, 73, 75, 79, 81)
 
+    /** ⭐ Arches served by a DOWNLOADED runtime ([QnnPack]: v85, QAIRT 2.51), fetched on that phone only. */
+    val PACK_ARCHES: Set<Int> get() = QnnPack.ARCHES
+
     /**
      * ⭐⭐ Chips whose DiT models run with the NPU's matrix unit OFF (`GGML_HEXAGON_NHMX=0`), to the name a person
      * knows them by (`docs/DEVICES.md` §3b). With HMX every picture came back flat grey, and with the decode on the
@@ -112,7 +115,7 @@ object DeviceProbe {
         val ramBytes: Long = 0L,
     ) {
         /** ⚠ The APK has to carry this arch's Skel, or NPU init fails whatever the model. */
-        val staged: Boolean get() = arch in STAGED_ARCHES
+        val staged: Boolean get() = arch in STAGED_ARCHES || arch in PACK_ARCHES
 
         /** ⭐ DiT models run with HMX off on this chip: a known one ([DIT_NO_HMX_SOCS]), or its self-test failed ([hmxBad]). */
         val ditNoHmx: Boolean get() = soc in DIT_NO_HMX_SOCS || hmxBad
@@ -141,7 +144,7 @@ object DeviceProbe {
         fun supportsArch(min: Int): Boolean = staged && arch >= min
 
         /** ⭐ A chip whose NPU is newer than every arch this APK's runtime knows. */
-        val npuTooNew: Boolean get() = arch > (STAGED_ARCHES.maxOrNull() ?: 0)
+        val npuTooNew: Boolean get() = arch > ((STAGED_ARCHES + PACK_ARCHES).maxOrNull() ?: 0)
     }
 
     /**
@@ -254,6 +257,8 @@ object DeviceProbe {
      * and was handed v81 until a user's npuforge compile died with "Device Creation failure"
      * (2026-10-09): no Skel here knows it. It gets [NEWER_THAN_STAGED], which every NPU
      * gate refuses ([Caps.supportsArch]) and the device sheet explains.
+     * ⭐ ONE generation on is assumed v85 since 1.6.202 (the user's call 2026-10-19): its runtime is fetched
+     * ([QnnPack]) and the probe then MEASURES with it. Two generations on is still [NEWER_THAN_STAGED].
      */
     internal fun archFromPartNumber(soc: String): Int? {
         if (!soc.startsWith("SM")) return null
@@ -261,6 +266,7 @@ object DeviceProbe {
             ?: return null
         val newestKnown = SOC_TO_ARCH.keys.mapNotNull { partNumberOf(it) }.maxOrNull() ?: return null
         if (n < newestKnown) return null
+        if (n / 100 == newestKnown / 100 + 1) return PACK_ARCHES.maxOrNull() ?: NEWER_THAN_STAGED
         if (n / 100 > newestKnown / 100) return NEWER_THAN_STAGED
         return SOC_TO_ARCH.values.maxOrNull()
     }
@@ -291,7 +297,8 @@ object DeviceProbe {
      * always correct, where a guessed arch is fast and sometimes fatal.
      */
     fun runtimeLibs(all: List<String>): List<String> {
-        val arch = SOC_TO_ARCH[soc()] ?: measured?.arch ?: return all
+        // ⭐ A pack arch (v85) unpacks only the shared pair here; [QnnPack.overlay] lays its own over them.
+        val arch = SOC_TO_ARCH[soc()] ?: measured?.arch ?: archFromPartNumber(soc())?.takeIf { it in PACK_ARCHES } ?: return all
         val token = "V$arch"
         return all.filter { n ->
             // Shared libraries carry no arch token; the per-arch trio does.

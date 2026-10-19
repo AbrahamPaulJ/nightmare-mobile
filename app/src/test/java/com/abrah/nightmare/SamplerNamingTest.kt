@@ -20,7 +20,7 @@ class SamplerNamingTest {
     /** ⭐ Round trip: every shipped wire value must survive split → join. */
     @Test
     fun everyWireValueRoundTrips() {
-        for (v in ModelCatalog.SCHEDULERS + ModelCatalog.DIT_SAMPLER_IDS) {
+        for (v in ModelCatalog.SCHEDULERS + ModelCatalog.DIT_SCHEDULERS) {
             val (base, schedule) = ModelCatalog.splitScheduler(v)
             assertEquals("$v did not round-trip", v, ModelCatalog.joinScheduler(base, schedule))
         }
@@ -72,14 +72,23 @@ class SamplerNamingTest {
         assertEquals("", schedule)
     }
 
-    /** ⭐ The DiT families offer the engine's names and no schedules; Anima (QNN) its two. */
+    /**
+     * ⭐ The DiT families offer the engine's names, and since engine ABI 108 (`dit/032`) the same three schedules as
+     * SD; Wan and Iris their names only (no schedule in the video request; Iris has its own sigmas); Anima (QNN) its two.
+     */
     @Test
     fun ditFamiliesOfferTheEnginesSamplers() {
-        assertEquals(ModelCatalog.DIT_SAMPLER_IDS, ModelCatalog.schedulersFor(Family.FLUX2))
+        assertEquals(ModelCatalog.DIT_SCHEDULERS, ModelCatalog.schedulersFor(Family.FLUX2))
         assertTrue("er_sde" in ModelCatalog.schedulersFor(Family.ANIMA_DIT))
+        assertTrue("er_sde_karras" in ModelCatalog.schedulersFor(Family.ZIMAGE))
+        assertEquals(ModelCatalog.DIT_SAMPLER_IDS, ModelCatalog.schedulersFor(Family.WAN))
+        assertEquals(ModelCatalog.DIT_SAMPLER_IDS, ModelCatalog.schedulersFor(Family.IRIS))
         assertEquals(listOf("euler", "euler_a"), ModelCatalog.schedulersFor(Family.ANIMA))
-        assertFalse(ModelCatalog.schedulesSupported("dpm++2m"))
-        assertEquals("dpm++2m", ModelCatalog.joinScheduler("dpm++2m", "_karras"))
+        assertEquals("dpm++2m_karras", ModelCatalog.joinScheduler("dpm++2m", "_karras"))
+        assertEquals("er_sde" to "_exponential", ModelCatalog.splitScheduler("er_sde_exponential"))
+        assertEquals("ER-SDE Karras", ModelCatalog.schedulerLabel("er_sde_karras"))
+        // ⚠ LCM has no schedule to change, on either engine.
+        assertEquals("lcm", ModelCatalog.joinScheduler("lcm", "_karras"))
     }
 
     /** Labels read the way other SD tools name them. */

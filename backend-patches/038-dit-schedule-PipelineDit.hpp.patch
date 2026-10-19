@@ -1,0 +1,41 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -6,6 +6,7 @@
+ #include <algorithm>
+ #include <chrono>
+ #include <cstdlib>
++#include <cstring>
+ #include <string>
+ #include <vector>
+ 
+@@ -65,7 +66,20 @@
+ // nightmare (029): the stable-diffusion.cpp samplers the app offers on a DiT
+ // node. Anything else (an SD scheduler id, an old flow) renders with Euler, as
+ // before: str_to_sample_method maps an unknown name to SAMPLE_METHOD_COUNT.
+-inline const char *ditSampleMethod(const std::string &s) {
++// nightmare (038): the app's one wire value carries a schedule the way the SD
++// samplers' does ("euler_karras"): the suffix is the engine's schedule
++// (ABI 108), the rest its sampler. "" = the model's own schedule.
++inline std::string ditSchedule(const std::string &s) {
++  for (const char *sfx : {"_karras", "_exponential"}) {
++    const size_t n = std::strlen(sfx);
++    if (s.size() > n && s.compare(s.size() - n, n, sfx) == 0) return sfx + 1;
++  }
++  return "";
++}
++
++inline const char *ditSampleMethod(const std::string &full) {
++  const std::string sch = ditSchedule(full);
++  const std::string s = sch.empty() ? full : full.substr(0, full.size() - sch.size() - 1);
+   static const char *const kAllowed[] = {
+       "euler", "euler_a", "heun", "dpm++2m", "dpm++2m_sde",
+       "er_sde", "res_multistep", "lcm", "ipndm"};
+@@ -364,6 +378,8 @@
+     // nightmare (029): the node's sampler when it is one the engine knows by
+     // name and we offer; Euler otherwise (every turbo DiT here is tuned for it).
+     params.sample_method = ditSampleMethod(req.scheduler_type);
++    const std::string schedule = ditSchedule(req.scheduler_type);
++    params.scheduler = schedule.empty() ? nullptr : schedule.c_str();
+     params.denoise_strength = req.denoise_strength;
+     if ((!native_edit || edit_from_base) && !init_rgb.empty()) {
+       params.init_image_rgb = init_rgb.data();

@@ -1793,7 +1793,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // refused up front rather than after 3.5 GB.
         val build = spec.buildFor(DeviceProbe.caps())
         if (build == null) {
-            modelError = if (spec.chipBlocked(DeviceProbe.caps()))
+            modelError = if (spec.noEngineFor(DeviceProbe.caps()))
+                text(R.string.models_no_engine_arch, spec.label, DeviceProbe.caps().arch)
+            else if (spec.chipBlocked(DeviceProbe.caps()))
                 text(R.string.models_not_on_chip, spec.label, DeviceProbe.caps().soc.let { DeviceProbe.DIT_NO_HMX_SOCS[it] ?: it })
             else if (spec.ramNeeded(DeviceProbe.caps()) > 0)
                 text(R.string.models_needs_ram, spec.label, DeviceProbe.caps().ramBytes shr 30, Prefs.ramClassGb(spec.ramNeeded(DeviceProbe.caps())))

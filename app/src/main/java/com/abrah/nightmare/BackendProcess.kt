@@ -402,6 +402,9 @@ object BackendProcess {
             tmp.setExecutable(true, false)
             check(tmp.renameTo(dst)) { "cannot replace ${dst.absolutePath}" }
         }
+        // ⭐ A v85 phone: QAIRT 2.51's runtime over the APK's 2.50 ([QnnPack], fetched once, ~38 MB). ⚠ Throws when it
+        // cannot be fetched, which a launch reports as its reason rather than a QNN init failure naming nothing.
+        if (DeviceProbe.caps().arch in DeviceProbe.PACK_ARCHES) QnnPack.overlay(context, dir)
         Log.i(TAG, "runtime: ${names.size}/${all.size} libs (${DeviceProbe.caps()}) in ${dir.absolutePath}")
         runtimeUnpacked = dir
         return dir

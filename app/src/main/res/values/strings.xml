@@ -631,6 +631,8 @@
     <string name="models_needs_ram">%1$s needs a phone with %3$d GB of RAM; this one has %2$d GB</string>
     <string name="models_needs_arch">%1$s needs an HTP arch of %2$d or newer; this device reports %3$d</string>
     <string name="models_not_on_chip">%1$s does not run on the %2$s yet: every way of running it there gives noise</string>
+    <string name="models_no_engine_arch">%1$s does not run on this phone\'s NPU (v%2$d) yet: the engine these models use has not been built for it. The SD 1.5, SDXL and Anima models run</string>
+    <string name="dit_no_engine_arch">Not on this NPU (v%1$d) yet: the engine these models use has not been built for it</string>
     <string name="dit_no_hmx">Runs with the NPU\'s matrix unit off and decodes on the CPU on the %1$s: right pictures, but much slower (Z-Image on an 8s Gen 4: about 23 min at 512, 47 min at 1024). ⋮ Test the NPU helps find a faster fix</string>
     <string name="dit_chip_blocked">Does not run on the %1$s yet: every test there gave noise. If it is installed, deleting it frees the space</string>
     <string name="test_npu">Test the NPU</string>

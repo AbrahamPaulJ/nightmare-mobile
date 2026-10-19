@@ -3,6 +3,7 @@ package com.abrah.nightmare
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -31,8 +32,10 @@ class DitRefLogTest {
 
     private val said = mutableListOf<String>()
 
+    private val host = WholeRenderHost()
+
     private fun exec() = Executor(
-        WholeRenderHost(),
+        host,
         android = ApplicationProvider.getApplicationContext(),
     )
 
@@ -46,7 +49,9 @@ class DitRefLogTest {
         return f.absolutePath
     }
 
-    private fun graph(type: String, photo: String? = null, reference: String? = null): Graph {
+    private fun graph(
+        type: String, photo: String? = null, reference: String? = null, extra: Map<String, String> = emptyMap(),
+    ): Graph {
         val wires = mutableMapOf("prompt" to Source("prompt"))
         if (photo != null) wires["image"] = Source("photo")
         if (reference != null) wires["reference"] = Source("ref")
@@ -60,7 +65,7 @@ class DitRefLogTest {
                     mapOf(
                         "model" to "m", "width" to "64", "height" to "64",
                         "steps" to "4", "cfg" to "1.0", "seed" to "1",
-                    ),
+                    ) + extra,
                     wires,
                 ),
             )
@@ -76,6 +81,16 @@ class DitRefLogTest {
             "a text-to-image run sends no picture, so [ref] has nothing to say: ${refLines()}",
             refLines().isEmpty(),
         )
+    }
+
+    /**
+     * ⚠ Engine ABI 108 (backend 038): a DiT node's schedule rides on its sampler value (`euler_karras`) and must reach
+     * the host whole. A filter on the bare sampler ids dropped it, and every Karras render came back Normal.
+     */
+    @Test
+    fun aDitScheduleReachesTheHost() = runBlocking {
+        run(graph(SdSampler.FLUX2.name, extra = mapOf("scheduler" to "euler_karras")))
+        assertEquals("euler_karras", host.scheduler)
     }
 
     /** ⚠ Same for FLUX.2 — the family is not the test, having a picture is. */
@@ -106,6 +121,9 @@ class DitRefLogTest {
 }
 
 private class WholeRenderHost : OpHost {
+    /** The last scheduler a whole render was sent. */
+    var scheduler: String? = null
+
     override suspend fun residentHandles(): Set<String> = emptySet()
 
     override suspend fun generate(
@@ -115,8 +133,10 @@ private class WholeRenderHost : OpHost {
         loras: List<Pair<String, Double>>,
         onProgress: (Ops.Progress) -> Unit,
         scheduler: String?,
-    ): Ops.Result<Ops.Decoded> =
-        Ops.Result.Ok(Ops.Decoded(ditSolidPng(width, height, 0xFF112233.toInt()), "sha", 1L, 2L))
+    ): Ops.Result<Ops.Decoded> {
+        this.scheduler = scheduler
+        return Ops.Result.Ok(Ops.Decoded(ditSolidPng(width, height, 0xFF112233.toInt()), "sha", 1L, 2L))
+    }
 
     override suspend fun latentBlend(a: String, b: String, maskPng: ByteArray) =
         Ops.Result.Err(501, "no")

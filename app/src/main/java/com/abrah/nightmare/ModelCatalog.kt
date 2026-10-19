@@ -665,7 +665,14 @@ data class ModelSpec(
      * offers no build (dimmed, install refused), an installed copy is told so, and its launch is refused
      * ([BackendProcess]) except under Diagnose. Lift it if an engine makes HMX right there (the HMX self-test).
      */
-    fun chipBlocked(caps: DeviceProbe.Caps): Boolean = family == Family.IRIS && caps.ditNoHmx
+    fun chipBlocked(caps: DeviceProbe.Caps): Boolean = (family == Family.IRIS && caps.ditNoHmx) || noEngineFor(caps)
+
+    /**
+     * ⭐ A DiT model on an NPU the engine has no skel for: v85 (the 8 Elite Gen 6), which runs the NPU models through
+     * a downloaded runtime ([QnnPack]) while ggml-hexagon cannot be built for it yet (Hexagon SDK 6.6 lacks its HVX
+     * intrinsics, CI 39247195316). The user's call 2026-10-19: those stay dimmed, with this reason, until it can.
+     */
+    fun noEngineFor(caps: DeviceProbe.Caps): Boolean = isDit && caps.arch in DeviceProbe.PACK_ARCHES
 
     /**
      * ⭐ The files THIS phone installs and runs: the [buildFor] build's own list
@@ -1345,12 +1352,20 @@ object ModelCatalog {
      * one. Offering the SD ids there would be many names for one sampler,
      * and Karras means nothing on flow-match. ⇒ Two, named for what they do.
      * ⭐ The DiT families take the engine's own samplers by name (backend 029,
-     * GitHub #19): [DIT_SAMPLERS], no schedules.
+     * GitHub #19): [DIT_SAMPLERS], and since engine ABI 108 (`dit/032`, a tester's wish
+     * 2026-10-19) Karras and Exponential too ([DIT_SCHEDULERS]). ⚠ Not Wan (its video
+     * request has no schedule) and not Iris (its own Turbo sigmas).
      */
     fun schedulersFor(family: Family): List<String> = when {
         family == Family.ANIMA -> listOf("euler", "euler_a")
-        family.dit -> DIT_SAMPLER_IDS
+        family == Family.WAN || family == Family.IRIS -> DIT_SAMPLER_IDS
+        family.dit -> DIT_SCHEDULERS
         else -> SCHEDULERS
+    }
+
+    /** ⭐ The DiT samplers, each with the schedules ([SCHEDULES]) the engine takes since ABI 108. */
+    val DIT_SCHEDULERS: List<String> by lazy {
+        DIT_SAMPLER_IDS.flatMap { id -> SCHEDULES.map { (sfx, _) -> joinScheduler(id, sfx) } }.distinct()
     }
 
     /**
@@ -1405,7 +1420,7 @@ object ModelCatalog {
      * ⚠ LCM has no schedule of its own to change — the backend's LCM scheduler ignores both
      * (upstream guards the same: `karrasSupported = baseId != "lcm"`), and DiT samplers take none.
      */
-    fun schedulesSupported(base: String) = base != "lcm" && SAMPLERS.any { it.first == base }
+    fun schedulesSupported(base: String) = base != "lcm" && (SAMPLERS.any { it.first == base } || base in DIT_SAMPLER_IDS)
 
     /** ⚠ Kept for its callers: Karras is one of the schedules. */
     fun karrasSupported(base: String) = schedulesSupported(base)

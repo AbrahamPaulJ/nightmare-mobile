@@ -23,6 +23,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 | 8 Gen 2, 8s Gen 3 and newer | **alpha:** Z-Image Turbo as a Q4_0 GGUF, FLUX.2 Klein 9B, Anima Turbo 1.1 and Iris 3B Turbo on the DiT engine. On the 8s Gen 4 and 8s Gen 3 they run with the NPU's matrix unit off and decode on the CPU for now, because with it the picture comes back grey or as noise: right pictures, but much slower (minutes at 512, far longer at 1024). A model's ⋮ **Test the NPU** finds which part fails, so it can be made fast again, and every error report now says whether the matrix unit computed a test sum right when the model started. Iris 3B Turbo is not offered there: every way of running it gives noise |
 | 8 Gen 3 and newer | SDXL, Anima, community-converted SDXL and SDXL Swap models; **alpha:** FLUX.2 Klein 4B / 9B, Qwen Image 2.1 and 2.1 Turbo, Anima Turbo 1.1 on the DiT engine, Iris 3B Turbo (not yet run on an 8 Gen 3), Z-Image Turbo as a Q4_0 GGUF, your own quantised (GGUF) DiT, Wan 2.2 video |
 | 8 Elite and newer | Z-Image Turbo in FP8, SDXL Swap, MOSS-Image, Ideogram 4, Neodragon text and image to video, and all of the above |
+| 8 Elite Gen 6 | **untested, no tester yet:** SD 1.5, SDXL, Anima and the other NPU models, with the newer NPU's runtime (about 38 MB) fetched on first use. The DiT models (FLUX.2, Z-Image, Qwen, Krea, MOSS, Ideogram, Iris, Wan) are not offered there yet: their engine cannot be built for that NPU yet |
 | 12 GB RAM | Ideogram 4 (8 Elite), Krea 2 Turbo (8 Elite; alpha on 8 Gen 3); on 12 GB it renders in parts, about 3.5 to 4 min at 1024² |
 
 ## Features
@@ -76,7 +77,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **A tag toolbar**: while you type: make the tag under the cursor heavier or lighter, delete it, add one after it, undo, redo.
 - **Tag autocomplete**: matching Danbooru tags under the prompt box as you type, most used first; one tap downloads the list, or import your own CSV, plus an optional translation CSV to search in your own language.
 - **`<lora:name:0.8>` in a prompt**: a prompt pasted from CivitAI applies the LoRAs it names (when you have them) and the tags never reach the text encoder. Type `<lora:` and your LoRAs are offered as chips, the strength left selected to type over.
-- **Samplers**: DPM++ 2M, 2M SDE, 3M and 3M SDE, Euler, Euler A and LCM with a Normal, Karras or Exponential schedule on SD 1.5 and SDXL; Euler, Heun, DPM++ 2M, ER-SDE, Res Multistep and more on the DiT models, so a checkpoint runs the way its author intended.
+- **Samplers**: DPM++ 2M, 2M SDE, 3M and 3M SDE, Euler, Euler A and LCM with a Normal, Karras or Exponential schedule on SD 1.5 and SDXL; Euler, Heun, DPM++ 2M, ER-SDE, Res Multistep and more on the DiT models, with the same three schedules (not on Wan or Iris), so a checkpoint runs the way its author intended.
 - **Translate**: a Russian or Chinese prompt to English, offline (Firefox Translations), keeping weights like `(long hair:1.2)`.
 
 ### Your phone, your files

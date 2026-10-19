@@ -499,6 +499,10 @@ private fun StatusLine(row: ModelRow, modifier: Modifier) {
                 R.string.dit_no_hmx,
                 com.abrah.nightmare.DeviceProbe.caps().soc.let { com.abrah.nightmare.DeviceProbe.DIT_NO_HMX_SOCS[it] ?: it },
             )
+            // ⭐ A DiT model on v85: its engine is not built for that NPU yet ([com.abrah.nightmare.ModelSpec.noEngineFor]).
+            spec.noEngineFor(com.abrah.nightmare.DeviceProbe.caps()) -> stringResource(
+                R.string.dit_no_engine_arch, com.abrah.nightmare.DeviceProbe.caps().arch,
+            )
             // ⭐ Installed or not ([com.abrah.nightmare.ModelSpec.chipBlocked]): Iris on an 8s Gen 3/4.
             spec.chipBlocked(com.abrah.nightmare.DeviceProbe.caps()) -> stringResource(
                 R.string.dit_chip_blocked,

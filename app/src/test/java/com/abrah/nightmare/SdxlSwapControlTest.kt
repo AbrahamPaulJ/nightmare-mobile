@@ -47,7 +47,7 @@ class SdxlSwapControlTest {
         val v68 = DeviceProbe.Caps(arch = 68, vtcmMb = 2, measured = true, soc = "SM8350")
         assertEquals("depth/controlnet_min.bin", ControlNetCatalog.buildFor("depth", v68)!!.path)
         assertNull(ControlNetCatalog.buildFor("openpose", v68))
-        assertNull(ControlNetCatalog.buildFor("canny", caps(DeviceProbe.NEWER_THAN_STAGED, "SM8950")))
+        assertNull(ControlNetCatalog.buildFor("canny", caps(DeviceProbe.NEWER_THAN_STAGED, "SM9050")))
     }
 
     @Test

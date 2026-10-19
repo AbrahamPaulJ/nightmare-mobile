@@ -245,7 +245,7 @@ class ResolutionTest {
             // and like the size it is a request field, never a relaunch.
             val sch = w.getValue("scheduler")
             assertTrue("${t.name}.scheduler must not relaunch", !sch.contextKey)
-            assertEquals(ModelCatalog.DIT_SAMPLER_IDS, sch.options)
+            assertEquals(ModelCatalog.DIT_SCHEDULERS, sch.options)
             assertEquals(ModelCatalog.DIT_DEFAULT_SAMPLER, sch.default)
         }
         val a = Node("f", SdSampler.FLUX2.name, mapOf("model" to "flux2_klein_4b", "width" to "512", "height" to "2048"))

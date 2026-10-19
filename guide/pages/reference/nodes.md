@@ -104,7 +104,7 @@ the node's settings. It opens and closes with a tap and remembers which; closed,
 | **Fix strength** | with Fix faces or Fix hands on | How much of each face or hand is redrawn. 0.4 keeps the pose and fixes the detail |
 | **Variation seed**, **Variation strength** | SD 1.5, SDXL and Anima (not the DiT models yet) | A second seed mixed into the starting noise, as in the WebUI: a picture you like, nudged. Strength 0 is the seed alone; 0.05 to 0.3 keeps the picture and changes details; 1 is the variation seed alone. Under **More options** |
 | **Match colours** | every Image node but Iris, Wan, MOSS and Ideogram | Image to image, inpaint and Fix faces / hands come back in the colours of the picture going in, so a redrawn patch has no tinted seam. Does nothing when nothing goes in and nothing is fixed |
-| **Schedule** | SD 1.5, SDXL | How the noise steps are spaced: Normal, Karras or Exponential (not with LCM) |
+| **Schedule** | SD 1.5, SDXL, the DiT models but Wan and Iris | How the noise steps are spaced: Normal, Karras or Exponential (not with LCM). Normal is each model's own; on a 4- or 8-step DiT model the other two need about 12 steps |
 | **Denoise** | with an image | How much of the photo is replaced. 0 keeps it, 1 replaces it. Image to image opens at 0.65, Image edit at 1.0 |
 | **Resolution** | SD 1.5 | The sizes this model supports. A new size reloads the model on the next Run |
 | **Aspect** | SDXL, Anima; FLUX.2, Z-Image, Qwen, Krea 2, Anima DiT | SDXL and Anima: crops the fixed 1024 square to that ratio. The others: sets Width and Height to that ratio. No reload |

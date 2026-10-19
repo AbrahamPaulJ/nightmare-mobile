@@ -1823,8 +1823,9 @@ class SdSampler(
             // masked render that dropped them would ignore what it displays.
             loras = lorasFor(ctx, p[LORAS]),
             onProgress = ctx.onProgress,
-            // ⭐ The node's sampler (GitHub #19); an SD id from an old flow is Euler at the backend.
-            scheduler = p["scheduler"]?.takeIf { it in ModelCatalog.DIT_SAMPLER_IDS },
+            // ⭐ The node's sampler (GitHub #19) and, since engine ABI 108, its schedule (`euler_karras`, backend 038);
+            // an SD id from an old flow is Euler at the backend.
+            scheduler = p["scheduler"]?.takeIf { it in ModelCatalog.schedulersFor(family) },
         )
         val out = when (r) {
             is Ops.Result.Ok -> r.value
@@ -2114,8 +2115,9 @@ class SdSampler(
             referencePngs = listOfNotNull(referencePng),
             loras = lorasFor(ctx, p[LORAS]),
             onProgress = ctx.onProgress,
-            // ⭐ The node's sampler (GitHub #19); an SD id from an old flow is Euler at the backend.
-            scheduler = p["scheduler"]?.takeIf { it in ModelCatalog.DIT_SAMPLER_IDS },
+            // ⭐ The node's sampler (GitHub #19) and, since engine ABI 108, its schedule (`euler_karras`, backend 038);
+            // an SD id from an old flow is Euler at the backend.
+            scheduler = p["scheduler"]?.takeIf { it in ModelCatalog.schedulersFor(family) },
         )
         val out = when (r) {
             is Ops.Result.Ok -> r.value
