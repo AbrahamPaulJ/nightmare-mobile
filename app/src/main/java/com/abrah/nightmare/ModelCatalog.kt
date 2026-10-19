@@ -2510,7 +2510,7 @@ object ModelCatalog {
         // LoRA on every render ([ModelSpec.ownLora]). Measured on the S25 (v79, `all=disk`): 512² 8 steps 3.4 min,
         // 1024² 11.5 min. ⚠ v79 only: never run on an 8 Gen 3. Sizes read off the files 2026-10-17.
         dit(
-            "moss_image", "MOSS-Image (8 steps)", Family.MOSS, KREA2, steps = 8,
+            "moss_image", "MOSS-Image SFT (8 steps)", Family.MOSS, KREA2, steps = 8,
             ownDitParts = true,
             minArch = DIT_MIN_ARCH,
             prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
