@@ -31,19 +31,21 @@ and it downloads on first use; the app shows which ones your phone can run.
 ### The canvas
 - **Built for a phone**: big ports, snap to connect, pinch to zoom (out to 0.15x to see a big flow whole); the picture appears on the node that made it. The run bar folds to one row (+ Node, Run, the time, the locks) for more canvas.
 - **Local Dream's models, no second download**: models Local Dream keeps in `Download/LocalDream` are listed and run in place, never changed or deleted.
+- **SDXL without the NPU**: Local Dream's SDXL CPU/GPU zips (`_mnn`) import from **+** and render on the GPU, about 17 s a step at 1024² on an 8 Elite (the CPU is about 4 times slower), for phones whose NPU cannot run SDXL.
 - **UltraFix**: Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
 - **More options** on the Image node holds the after-render switches below, folded away; closed, it names the ones that are on.
   Switching one on that needs a download (the upscaler, the face and hand detector) offers it there and then.
 - **Hires fix**: one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
   Every other model has **Enlarge ×2** instead, so its picture can be enlarged and passed on to an inpaint that fixes faces.
 - **Fix faces / Fix hands** (ADetailer): switches on the Image node. After the render the phone finds each face and
-  hand (Bingsu's YOLOv8 detectors, a 25 MB Tools download) and redraws it close up with the same prompt and model, its tone matched to the picture along the edge. **Detection settings** shows what is found on your last picture and sets the confidence, padding, mask blur and strength, for faces and hands apart.
+  hand (Bingsu's YOLOv8 detectors, a 25 MB Tools download) and redraws it enlarged, close up, with the same prompt, model and LoRAs (the Swap models too), its tone matched to the picture along the edge. **Detection settings** shows what is found on your last picture and sets the confidence, padding, mask blur and strength, for faces and hands apart.
 - **Colour**: **Match colours** on the Image node keeps an image to image, inpaint or Fix faces result in the colours of
   the picture going in; **Auto colour** and **Adjust colours** (brightness, contrast, saturation, warmth) on the Output node.
 - **LoRA library**: sort LoRAs by name, newest, most used or size, filter by base model, star favourites, set a LoRA's model by hand when its file is not recognised, and sort them into your own folders.
 - **Draw on a picture**: doodle shapes and colours over the image node's photo (or a blank page) and let image to image make them real; pinch to zoom, pick a colour from the picture or any colour from a picker.
-- **Recipes**: text to image, image to image, inpaint, upscale, image edit, text / image to video, motion transfer and two Advanced flows, listed from least to most demanding; one your phone can't run says so.
+- **Recipes**: text to image, image to image, inpaint, upscale, image edit, a still from Wan 2.2, text / image to video, motion transfer and two Advanced flows, listed from least to most demanding; one your phone can't run says so.
 - **Several checkpoints in one graph**: each generate node has its own model; the run loads each once and tells you the cost first.
+- **Variation seed**: a second seed and a strength on SD 1.5, SDXL and Anima: small changes around a picture you like, keeping its composition.
 - **Batching**: sweep seed, steps, CFG, denoise or scheduler; two at once makes a grid. Every result keeps the graph that made it.
 - **Results**: star, save, share, reopen any picture as the flow that made it; each keeps how long it took. Fold the big preview away and the grid fills the screen. In a picture's info, long-press its prompt, negative, seed or the picture itself and **Use** them on the open flow, each matched to the node you pick.
 
@@ -63,7 +65,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.
 - **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with an optional second reference picture.
-- **Text and image to video**: **Wan 2.2**, 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag; **Match picture** sets the clip to the photo's shape), or **Neodragon** from the same flow's Model choice: 49 frames at 1024×640 in about 25 s on an 8 Elite. Big clips are decoded in tiles, so 704×1280 for 5 s renders on a 12 GB phone. **Chain** clips from the last frame and the last node hands the output **one joined film**; every part is kept in Results too, with the picture it started from.
+- **Text and image to video**: **Wan 2.2**, 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag; **Match picture** sets the clip to the photo's shape), or **Neodragon** from the same flow's Model choice: 49 frames at 1024×640 in about 25 s on an 8 Elite. Big clips are decoded in tiles, so 704×1280 for 5 s renders on a 12 GB phone. **Wan 2.2: text to image** makes one still from the video model in about 16 s. **Chain** clips from the last frame and the last node hands the output **one joined film**; every part is kept in Results too, with the picture it started from.
 - **Motion transfer** (Wan 2.2 Fun Control): your picture moving like a video you choose, by its pose or a control video you already have (a pose or depth video). Pick the part of the video (its length is the clip's, up to 5 s, at any size up to 1280×704) and crop it on its first frame. 480×832 for 2 s in about 90 s on an 8 Elite.
 
 ### LoRA, ControlNet and IP-Adapter
@@ -88,7 +90,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **A report when the phone restarts mid-run**: the next launch says what was running and how much memory was free at each step, ready to copy into a bug report.
 - **Three views of one flow**: **Default** (one step at a time, the easy way in), **Advanced** (the whole flow as connected boxes) and **Chat** (hide it in Settings if you don't use it), switched from one button beside the current model (tap the model to change it); in **Default**, **Swap flow** moves to another flow for the same model keeping your prompt and settings. Models, Flows, Results and the current flow live in a sidebar; Models, Flows, Results and Settings open as sheets over the flow.
 - **An agent**: ask for pictures in words: an AI model you bring your own key for (OpenRouter, OpenAI, DeepSeek, xAI, Groq or a local server) builds the flow on your canvas, finds and downloads LoRAs, uses a picture you attach, runs it and shows you the picture; no picture is ever sent to the AI model ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/agent/)).
-- **A local API**: a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; pictures and Motion transfer's video go in the request; token-protected, off by default; **Allow browser pages** lets a web page call it too ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
+- **A local API**: a script, desktop app or AI agent on your Wi-Fi or tailnet can run any flow; pictures and Motion transfer's video go in the request; token-protected, off by default; it also speaks the AUTOMATIC1111 WebUI API (`/sdapi/v1/txt2img`), so apps such as Layla can use your phone as their image generator; **Allow browser pages** lets a web page call it too ([guide](https://abrahampaulj.github.io/nightmare-mobile/reference/api/)).
 - **Offline and private**: nothing is uploaded, no account (the optional agent talks to the provider you choose); a failure report never includes your prompt.
 
 The [user guide](https://abrahampaulj.github.io/nightmare-mobile/) explains each of these, with measurements.

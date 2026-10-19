@@ -45,6 +45,8 @@ Qualcomm AI Runtime (QAIRT / QNN)
     Runtime libraries used to execute models on the Hexagon NPU. Distributed
     under Qualcomm's own licence terms, which are separate from and not
     superseded by this project's licence. Not included in this repository.
+    On a Hexagon v85 phone only, QAIRT 2.51's runtime libraries are downloaded
+    unchanged from https://huggingface.co/AbrahamPJ/nightmare-qnn-v85.
 
 QuickJS
     Fabrice Bellard and Charlie Gordon
@@ -366,6 +368,14 @@ ADetailer face and hand detectors (Fix faces, Fix hands)
     Apache 2.0 as its model card states. Exported to ONNX unchanged and
     mirrored at https://huggingface.co/AbrahamPJ/nightmare-adetailer;
     downloaded at the user's request.
+
+Anima 2.9B Turbo LoRA (built into Anima 2.9B)
+    Karely_ai
+    https://civitai.com/models/2857451/anima-29b-turbo-lora-remapped
+    CivitAI permissions: re-hosting, derivatives and commercial use allowed,
+    no credit required. Re-hosted unchanged at
+    https://huggingface.co/AbrahamPJ/nightmare-anima-turbo-lora; downloaded
+    with Anima 2.9B at the user's request.
 
 MoveNet MultiPose Lightning (the openpose detector)
     Google; ONNX export by Xenova
