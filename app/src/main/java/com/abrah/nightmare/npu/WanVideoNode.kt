@@ -94,7 +94,8 @@ object WanVideoNode : NodeType {
         // knob loop); merged with the prompt's `<lora:…>` tags in [runPorts].
         Widget(com.abrah.nightmare.SdSampler.LORAS, "string", ""),
         Widget("seed", "int", "0", hintRes = R.string.hint_seed_clip),
-        Widget("seconds", "int", "5", 1.0, MAX_SECONDS.toDouble(), hintRes = R.string.hint_wan_seconds),
+        // ⭐ 0 = ONE frame, a still picture (a tester's wish, 2026-10-19: "1 frame Wan 2.2, basically a txt to img").
+        Widget("seconds", "int", "5", 0.0, MAX_SECONDS.toDouble(), hintRes = R.string.hint_wan_seconds),
         // ⭐ The framing, exactly as [VideoSampleNode] carries it.
         Widget("x", "float", "0.0", 0.0, 1.0, hintRes = R.string.hint_drag_frame),
         Widget("y", "float", "0.0", 0.0, 1.0),
@@ -252,8 +253,8 @@ object WanVideoNode : NodeType {
         return if (p["shape"] == "portrait") h to w else w to h
     }
 
-    /** ⚠ Pure: `24·s + 1` frames for [seconds], clamped to 1..[MAX_SECONDS]. */
-    fun framesFor(seconds: Int): Int = seconds.coerceIn(1, MAX_SECONDS) * FPS + 1
+    /** ⚠ Pure: `24·s + 1` frames for [seconds], clamped to 0..[MAX_SECONDS]: 0 is one frame, a still. */
+    fun framesFor(seconds: Int): Int = seconds.coerceIn(0, MAX_SECONDS) * FPS + 1
 
     /**
      * ⭐ quanhaol's Self-Forcing timesteps 1000/750/500/250 warped by shift 5, through `lcm`

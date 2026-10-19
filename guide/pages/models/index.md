@@ -20,7 +20,7 @@ which phones can run it; inside a family, models differ in style.
 | **Z-Image** | Turbo | 8.8 GB | 512–2048 | Photorealistic, fast for its size | 8 Gen 2+ (alpha on 8 Gen 2 and 8 Gen 3, where it is a Q4_0 GGUF: 6.3 GB in all) |
 | **Qwen Image** | 2.1, 2.1 Turbo | 10.8 GB (16 GB phone: 13.8 GB FP8); Turbo 10.8 GB | 512–2048 | Follows long instructions, legible text; edits photos; slow. Turbo: 8 steps, about 2.5 times faster | 8 Gen 3+ (alpha on 8 Gen 3, which always takes the 10.8 GB build) |
 | **Anima DiT** | Turbo 1.1 | 3.2 GB (4.2 GB download, converted on the phone) | 512–2048 | Anime; about a minute at 1024 | 8 Gen 2+ (alpha on 8 Gen 2 and 8 Gen 3) |
-| **Anima DiT** | 2.9B (preview) | 4.1 GB (6.7 GB download, converted on the phone) | 512–2048 | Anime, a larger base model: 28 steps at CFG 4, about 7 minutes at 1024 on an 8 Elite | 8 Gen 2+ (alpha) |
+| **Anima DiT** | 2.9B (preview) | 4.2 GB (6.8 GB download, converted on the phone) | 512–2048 | Anime, a larger model with a built-in turbo LoRA: 8 steps at CFG 1, about 95 s at 1024 on an 8 Elite | 8 Gen 2+ (alpha) |
 | **Krea 2** | Turbo | 9.5 GB | 512–2048 | Text to image only. On a 12 GB phone it renders in parts: about 3.5 to 4 min at 1024 | 12 GB RAM, and 8 Elite+ (alpha on 8 Gen 3) |
 | **MOSS-Image** | 8 steps | about 10 GB | 512–2048 | Text to image only. Careful and detailed, with an 8-step speed-up applied every time; slow: about 3 min at 512 and 11 to 12 min at 1024 | 8 Elite+ |
 | **Ideogram 4** | 8 steps | about 11.6 GB | 512–2048, starts at 768 | Text to image only. The best at readable text in a picture (signs, posters, labels), with an 8-step speed-up applied every time; about 5.5 min at 768. Non-commercial use only | 12 GB RAM, and 8 Elite+ |

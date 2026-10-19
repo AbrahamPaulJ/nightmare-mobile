@@ -158,6 +158,17 @@ object CustomModels {
      * both read as SD 1.5 and a folder that is not one fails at LAUNCH with the
      * backend's own words, which is what §3b already argues for a QNN import.
      */
+    /**
+     * ⭐ An SDXL package for the CPU (MNN, upstream's `sdxlmnn`, backend 036): `unet.mnn` beside SDXL's second
+     * CLIP and no `unet.bin`. GitHub #58: 8 Gen 2 users on Local Dream's light SDXL models.
+     */
+    fun isSdxlMnn(dir: File): Boolean =
+        File(dir, "unet.mnn").isFile && !File(dir, "unet.bin").isFile && File(dir, SDXL_MARK).isFile
+
+    /** ⚠ A CPU (MNN) model this app does not run: SD 1.5's (`unet.mnn`, no `unet.bin`, not [isSdxlMnn]). */
+    fun isCpuOnly(dir: File): Boolean =
+        File(dir, "unet.mnn").isFile && !File(dir, "unet.bin").isFile && !isSdxlMnn(dir)
+
     val UPSTREAM_MARKS: List<Pair<String, Family>> = listOf(
         "ZIMAGE" to Family.ZIMAGE,
         "KLEIN" to Family.FLUX2,
@@ -259,14 +270,14 @@ object CustomModels {
      * markers — never a guess, never a marker written) and its SDXL built-ins this catalogue lacks.
      * Each carries its folder as [ModelSpec.home]. ⚠ An id this app already has (a built-in, or
      * one of our imports) is skipped: ours wins, and a catalogue id resolves to Local Dream's copy
-     * through [ModelSpec.dir] anyway. ⚠ A CPU (MNN) model — `unet.mnn`, no `unet.bin` — is skipped:
-     * this app has no CPU path.
+     * through [ModelSpec.dir] anyway. ⚠ An SD 1.5 CPU (MNN) model is skipped ([isCpuOnly]): this app runs
+     * SDXL on the CPU (backend 036) and nothing else.
      */
     private fun localDream(taken: Set<String>): List<ModelSpec> {
         if (!LocalDreamModels.available()) return emptyList()
         return LocalDreamModels.root().listFiles().orEmpty()
             .filter { it.isDirectory && it.name !in taken && !it.name.startsWith("_") }
-            .filterNot { File(it, "unet.mnn").isFile && !File(it, "unet.bin").isFile }
+            .filterNot { isCpuOnly(it) }
             .mapNotNull { dir ->
                 val family = LocalDreamModels.SDXL_BUILT_INS[dir.name]?.let { Family.SDXL }
                     ?: UPSTREAM_MARKS.firstOrNull { (name, _) -> File(dir, name).isFile }?.second
@@ -453,13 +464,14 @@ object CustomModels {
         steps = cfg.steps ?: dirDefaults(dir, family).steps,
         cfg = cfg.cfg ?: dirDefaults(dir, family).cfg,
         family = family,
+        runtime = if (family == Family.SDXL && isSdxlMnn(dir)) Runtime.CPU else Runtime.NPU,
         backendType = when (family) {
             Family.SD15 -> if (File(dir, INPAINT_MARK).isFile) ModelCatalog.SD15_NPU_INPAINT
                 else ModelCatalog.SD15_NPU
             // ⭐ The same `--type` as SD 1.5: patch 015 finds the template's extra
             // inputs by probing the UNet at load, so nothing at launch says "Swap".
             Family.SD15_SWAP -> ModelCatalog.SD15_NPU
-            Family.SDXL -> ModelCatalog.SDXL_NPU
+            Family.SDXL -> if (isSdxlMnn(dir)) ModelCatalog.SDXL_MNN else ModelCatalog.SDXL_NPU
             // ⭐ Same `--type` as SDXL: patch 018 probes the UNet for `lora_S` at load.
             Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU
             Family.ANIMA -> ModelCatalog.ANIMA_NPU
@@ -498,7 +510,7 @@ object CustomModels {
         requiredFiles = when (family) {
             Family.SD15 -> ModelCatalog.SD15_REQUIRED
             Family.SD15_SWAP -> ModelCatalog.SD15_SWAP_REQUIRED
-            Family.SDXL -> ModelCatalog.SDXL_REQUIRED
+            Family.SDXL -> if (isSdxlMnn(dir)) ModelCatalog.SDXL_MNN_REQUIRED else ModelCatalog.SDXL_REQUIRED
             Family.SDXL_SWAP -> ModelCatalog.SDXL_SWAP_REQUIRED
             Family.ANIMA -> ModelCatalog.ANIMA_REQUIRED
             // ⚠ The weights by the name actually on disk — a `.gguf` import
@@ -1408,12 +1420,13 @@ object CustomModels {
             throw e
         }
 
-        // ⚠ A CPU (MNN) model, the rule [localDream] skips by (GitHub #58: Local Dream's `_mnn_int4` zip). It carries
-        // `clip_v2.mnn`, so it classified as SD 1.5 and then read "incomplete: missing unet.bin…" as if half-made.
-        if (File(dir, "unet.mnn").isFile && !File(dir, "unet.bin").isFile) {
+        // ⚠ An SD 1.5 CPU (MNN) model, the rule [localDream] skips by (GitHub #58: Local Dream's `_mnn_int4` zip). It
+        // carries `clip_v2.mnn`, so it classified as SD 1.5 and then read "incomplete: missing unet.bin…" as if
+        // half-made. ⭐ SDXL's MNN package is a model here ([isSdxlMnn], backend 036).
+        if (isCpuOnly(dir)) {
             dir.deleteRecursively()
             throw IOException(
-                "a CPU model (unet.mnn, no unet.bin): this app runs models on the NPU only. " +
+                "an SD 1.5 CPU model (unet.mnn, no unet.bin): this app runs SD 1.5 on the NPU only. " +
                     "Import the NPU version of this checkpoint, the zip holding unet.bin",
             )
         }

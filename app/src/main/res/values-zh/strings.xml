@@ -604,7 +604,7 @@
     <string name="models_needs_ram">%1$s 需要配备 %3$d GB 内存的手机；此手机有 %2$d GB</string>
     <string name="models_needs_arch">%1$s 需要 HTP v%2$d 或更新架构；此设备报告为 v%3$d</string>
     <string name="models_not_on_chip">%1$s 暂不支持 %2$s：在该芯片上无论用哪种方式运行都只得到噪点</string>
-    <string name="dit_no_hmx">在 %1$s 上关闭 NPU 的矩阵单元并在 CPU 上解码：图片正确，但慢很多（512 需数分钟，1024 更久）。⋮ 测试NPU 有助于找到更快的修复</string>
+    <string name="dit_no_hmx">在 %1$s 上关闭 NPU 的矩阵单元并在 CPU 上解码：图片正确，但慢很多（8s Gen 4 上的 Z-Image：512 约 23 分钟，1024 约 47 分钟）。⋮ 测试NPU 有助于找到更快的修复</string>
     <string name="dit_chip_blocked">暂不支持 %1$s：在该芯片上的每项测试都只得到噪点。如已安装，删除可释放空间</string>
     <string name="test_npu">测试NPU</string>
     <string name="diagnose">诊断</string>
@@ -645,6 +645,10 @@
     <string name="models_named_not_installed">尚未安装 %1$s</string>
     <string name="models_named_incomplete">%1$s 不完整：缺少 %2$s</string>
     <string name="hint_fixed_family_shape">此系列以固定的 %1$s 渲染并裁剪为所选形状，无需重新加载，但更宽的图片并不代表更大的图片</string>
+    <string name="knob_subseed">变化种子</string>
+    <string name="knob_subseed_strength">变化强度</string>
+    <string name="hint_subseed">第二个种子，按变化强度混入：同一张图片，略作改变。</string>
+    <string name="hint_subseed_strength">变化种子的比例：0 只用主种子，小值（0.05 到 0.3）保留画面、改变细节，1 只用变化种子。</string>
     <string name="hint_seed_picture">0 = 每次运行生成新图片。输入节点上显示的种子可再次生成该图片。</string>
     <string name="hint_sampler">采样器；蒸馏模型通常需要作者发布时指定的采样器</string>
     <string name="hint_prompt_cond">要绘制的内容，采样器通过 cond 连线读取</string>
@@ -700,11 +704,13 @@
     <string name="flow_swap_i2i_about">用 Swap 模型重新演绎照片，并支持相同的三项功能。除非提供其他图片，否则 ControlNet 会读取照片本身。</string>
     <string name="flow_flux_edit_name">图像编辑</string>
     <string name="flow_flux_edit_about">适用于配备 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）的 FLUX.2 Klein 或 Qwen Image 2.1。输入照片和提示词：整张图片会根据提示词重新渲染，而不是轻微调整。可将第二张图片连接到 reference 端口，并在提示词中称它们为 image 1 和 image 2。</string>
+    <string name="flow_wan_t2i_name">Wan 2.2：文生图</string>
+    <string name="flow_wan_t2i_about">用视频模型 Wan 2.2 把提示词生成一张图片：只有一帧，视频要几分钟，这里只要几秒。</string>
     <string name="flow_t2v_name">文生视频</string>
     <string name="flow_t2v_about">提示词生成视频。默认使用 Wan 2.2（需要几分钟，效果好得多）；将视频节点切换为 Neodragon 约 30 秒生成 2 秒。</string>
     <string name="flow_i2v_name">图生视频</string>
     <string name="flow_i2v_about">以图片为第一帧，按提示词运动。默认使用 Wan 2.2；为了速度可在视频节点选择 Neodragon。</string>
-    <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
+    <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧；0 生成一张静止图片。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
     <string name="hint_wan_size">Wan 2.2 为 1280x704 设计：更小的尺寸（包括 832x480）可能模糊或变形。任意比例，像素总数不超过 1280x704；超出时另一边会自动缩小。1280x704 耗时约为 832x480 的三倍。</string>
     <string name="wan_too_big_seconds">%1$s、%2$s 秒可能超出这台手机 NPU 的承受范围。这个尺寸下大约 %3$s 秒可行</string>
     <string name="wan_too_big_any">%1$s 在任何时长下都可能超出这台手机 NPU 的承受范围。请换小一点的尺寸</string>
@@ -783,6 +789,7 @@
     <string name="run_detail_no_square">已跳过修复面部和手部：无法以 %1$dx%2$d 加载模型</string>
     <string name="run_detail_faces">修复面部：找到 %1$d 个</string>
     <string name="run_detail_hands">修复手部：找到 %1$d 只</string>
+    <string name="run_detail_skipped">%1$d 处已是全尺寸，保持原样</string>
     <string name="knob_autosave">自动保存</string>
     <string name="knob_only_masked">仅遮罩区域</string>
     <string name="knob_tap_select">点击选择</string>

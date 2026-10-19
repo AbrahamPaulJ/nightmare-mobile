@@ -114,8 +114,8 @@ object DeviceProbe {
         /** ⚠ The APK has to carry this arch's Skel, or NPU init fails whatever the model. */
         val staged: Boolean get() = arch in STAGED_ARCHES
 
-        /** ⭐ DiT models run with HMX off on this chip ([DIT_NO_HMX_SOCS]). */
-        val ditNoHmx: Boolean get() = soc in DIT_NO_HMX_SOCS
+        /** ⭐ DiT models run with HMX off on this chip: a known one ([DIT_NO_HMX_SOCS]), or its self-test failed ([hmxBad]). */
+        val ditNoHmx: Boolean get() = soc in DIT_NO_HMX_SOCS || hmxBad
 
         /**
          * ⭐⭐⭐ **Do we actually KNOW this chip, or is [arch] the floor
@@ -142,6 +142,39 @@ object DeviceProbe {
 
         /** ⭐ A chip whose NPU is newer than every arch this APK's runtime knows. */
         val npuTooNew: Boolean get() = arch > (STAGED_ARCHES.maxOrNull() ?: 0)
+    }
+
+    /**
+     * ⭐⭐ **This phone's HMX failed the engine's self-test** (`dit/030`: one Q4_0 matmul on HMX against the CPU at
+     * session start). The user's call (2026-10-19): ACT on it, so a chip no list names (#58's SM7750, Anima flat grey)
+     * gets HMX off after its first DiT launch, not after a report. Two SM8735 said `WRONG (zeros)`, rel-err 1.0000.
+     * ⚠ Only a WRONG or FAILED from a launch with HMX ON sets it ([recordHmxSelfTest]); a launch with HMX off says
+     * "skipped". Kept per phone across restarts: the chip does not change. Loaded by [loadHmxVerdict] at app start.
+     */
+    @Volatile
+    var hmxBad: Boolean = false
+        private set
+
+    private const val HMX_PREFS = "device_probe"
+    private const val HMX_BAD_KEY = "hmx_self_test_bad"
+
+    fun loadHmxVerdict(context: Context) {
+        hmxBad = context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).getBoolean(HMX_BAD_KEY, false)
+    }
+
+    /** ⭐ The self-test said this HMX is wrong ([BackendProcess.engineNpuLine]'s "hmx"): remembered. True when NEW. */
+    fun recordHmxSelfTest(context: Context, verdict: String): Boolean {
+        if (!hmxSelfTestFailed(verdict) || hmxBad) return false
+        hmxBad = true
+        context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit().putBoolean(HMX_BAD_KEY, true).apply()
+        Log.w(TAG, "HMX self-test failed on ${soc()}: DiT models run with HMX off from now on ($verdict)")
+        return true
+    }
+
+    /** ⚠ Pure: "HMX self-test WRONG (zeros), rel-err 1.0000…" or "…FAILED" is a failure; ok / skipped are not. */
+    fun hmxSelfTestFailed(verdict: String): Boolean {
+        val v = verdict.removePrefix("HMX self-test").trim()
+        return v.startsWith("WRONG") || v.startsWith("FAILED")
     }
 
     /** Set once [measure] succeeds. ⚠ Volatile: written on IO, read on main. */

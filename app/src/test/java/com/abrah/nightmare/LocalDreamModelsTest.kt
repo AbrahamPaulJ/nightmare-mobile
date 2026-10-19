@@ -72,7 +72,7 @@ class LocalDreamModelsTest {
         sd15(File(ld, "cuteyukimix"))
         val spec = ModelCatalog.byId("cuteyukimix")!!
         try {
-            ModelInstaller.delete(ctx, spec, force = true)
+            ModelInstaller.delete(ctx, spec)
             fail("deleted from Local Dream's folder")
         } catch (e: IllegalStateException) {
             assertTrue(e.message!!.contains("Local Dream"))

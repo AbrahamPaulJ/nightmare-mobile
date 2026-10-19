@@ -19,6 +19,7 @@ import org.json.JSONObject
  * | `POST /run` | [RunRequest]; JSON at the end, or server-sent events with `"stream": true` |
  * | `GET /results/<run>/<file>` | a result picture or clip |
  * | `POST /cancel` | stops the API's render |
+ * | `/sdapi/v1/…` | Automatic1111's txt2img, sd-models, options, samplers, progress ([A1111]) |
  *
  * ⚠ The HTTP shell only: every command is [ApiCore]'s, which the in-app agent calls too.
  * ⚠ Its own [HarnessOps] (and so its own picture store); the backend process is shared.
@@ -35,6 +36,9 @@ class NightmareApi(private val ctx: Context) {
         holder = "api",
     )
 
+    /** ⭐ Automatic1111's calls ([A1111]), for apps that speak only that (Layla). */
+    private val a1111 = A1111(core)
+
     fun handle(req: MiniHttp.Request, res: MiniHttp.Response) {
         try {
             if (corsPreflight(req, res, ApiSettings.cors(ctx))) return
@@ -46,10 +50,17 @@ class NightmareApi(private val ctx: Context) {
 
     private fun route(req: MiniHttp.Request, res: MiniHttp.Response) {
         if (req.path == "/info" && req.method == "GET") return res.json(200, info().toString())
-        if (!ApiSettings.matches(ApiSettings.token(ctx), req.headers["authorization"], req.query["token"])) {
+        val all = req.path.trim('/').split('/').filter { it.isNotEmpty() }
+        // ⭐ `/t/<token>/…`: the token in the address, for an app with no header or password field that appends its
+        // own paths to the address it was given (an A1111 client's `/sdapi/v1/txt2img`), where `?token=` would break.
+        val inPath = all.getOrNull(1)?.takeIf { all.first() == "t" }
+        val parts = if (inPath != null) all.drop(2) else all
+        if (!ApiSettings.matches(ApiSettings.token(ctx), req.headers["authorization"], inPath ?: req.query["token"])) {
             throw ApiError(401, "a token is needed. Settings → API on the phone")
         }
-        val parts = req.path.trim('/').split('/').filter { it.isNotEmpty() }
+        if (a1111.handles(parts)) return a1111.route(req.method, parts, req::text, res)
+        // ⚠ A tester's Layla POSTed its txt2img body to "/" with a valid token (2026-10-19): the base URL as typed.
+        if (req.method == "POST" && parts.isEmpty()) return a1111.route("POST", A1111.TXT2IMG, req::text, res)
         when {
             req.method == "GET" && parts == listOf("models") -> res.json(200, core.models().toString())
             req.method == "GET" && parts == listOf("flows") -> res.json(200, core.flows().toString())

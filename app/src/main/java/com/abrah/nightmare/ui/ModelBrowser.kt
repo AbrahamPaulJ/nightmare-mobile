@@ -380,8 +380,8 @@ internal fun SectionHeader(text: String, collapsed: Boolean? = null, onToggle: (
  * grey out the in use model completely. i cant switch to a different flow of
  * same model"*). Use means "open a flow with this", which is still a choice when
  * it is already selected; "In use" moved to a badge and the status dot.
- * ⚠ Delete lives in ⋮, and on the model in use it is refused there — removing
- * it would leave the backend pointed at a directory that is gone.
+ * ⚠ Delete lives in ⋮. On the model in use it stops the backend first and selects another
+ * ([com.abrah.nightmare.ModelInstaller.delete], GitHub #56).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -551,7 +551,7 @@ private fun QueuedButton(onClick: () -> Unit) {
     }
 }
 
-/** ⭐ ⋮ — Delete (refused on the model in use) and Repair. */
+/** ⭐ ⋮ — Delete (on the model in use too: it is released first) and Repair. */
 @Composable
 private fun ModelMenu(
     row: ModelRow,
@@ -605,11 +605,11 @@ private fun ModelMenu(
                     text = {
                         Text(
                             if (row.fromLocalDream) stringResource(R.string.delete) + ": " + stringResource(R.string.mb_kept_by_local_dream)
-                            else if (row.selected) stringResource(R.string.delete) + ": " + stringResource(R.string.in_use).lowercase()
                             else stringResource(R.string.delete),
                         )
                     },
-                    enabled = !busy && !row.selected && !row.fromLocalDream,
+                    // ⭐ The model in use too (GitHub #56): the delete lets the backend go first and selects another.
+                    enabled = !busy && !row.fromLocalDream,
                     onClick = { open = false; onDelete(row.spec) },
                 )
             }

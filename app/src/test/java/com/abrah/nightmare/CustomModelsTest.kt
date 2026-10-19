@@ -376,6 +376,29 @@ class CustomModelsTest {
         assertTrue(File(root(), "npu/unet.bin").isFile)
     }
 
+    /** ⭐ GitHub #56: the SELECTED model deletes (it was refused, and stayed "in use" after Wan runs). */
+    @Test
+    fun theSelectedModelDeletes() {
+        CustomModels.import(ctx, "mine", { zipOf(ModelCatalog.SD15_REQUIRED).inputStream() })
+        CustomModels.scan(ctx)
+        SelectedModel.set(ctx, "mine")
+        ModelInstaller.delete(ctx, ModelCatalog.byId("mine")!!)
+        assertFalse(File(root(), "mine").exists())
+    }
+
+    /** ⭐ GitHub #58: SDXL's MNN package (Local Dream's layout, `SDXL` marker) imports as SDXL on the CPU. */
+    @Test
+    fun anSdxlMnnPackageImportsAsSdxlOnTheCpu() {
+        val zip = zipOf(ModelCatalog.SDXL_MNN_REQUIRED + "SDXL" + "vae_tile_size.txt")
+        CustomModels.import(ctx, "xlcpu", { zip.inputStream() })
+        val spec = CustomModels.scan(ctx).single { it.id == "xlcpu" }
+        assertEquals(Family.SDXL, spec.family)
+        assertEquals(ModelCatalog.SDXL_MNN, spec.backendType)
+        assertEquals(Runtime.CPU, spec.runtime)
+        assertEquals(ModelCatalog.SDXL_MNN_REQUIRED, spec.requiredFiles)
+        assertTrue(spec.fixedCanvas)
+    }
+
     /**
      * ⚠ An incomplete-but-classifiable archive is KEPT. The files are the
      * user's, and deleting would mean re-importing gigabytes to find out what

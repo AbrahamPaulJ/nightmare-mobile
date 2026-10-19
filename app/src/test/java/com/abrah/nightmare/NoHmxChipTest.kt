@@ -87,4 +87,17 @@ class NoHmxChipTest {
             BackendProcess.engineNpuLine("   830.0ms [  INFO ] [dit] util.cpp:628  - ggml-hex: HTP0 HMX self-test: WRONG (zeros), rel-err 1.0000, out/ref 0.000, max-err 41.2"),
         )
     }
+
+    /**
+     * ⭐ The user's call (2026-10-19): a WRONG or FAILED self-test turns HMX off on this phone; ok and "skipped"
+     * (a launch with HMX already off) do not. The two SM8735 reports' line is the first case.
+     */
+    @Test
+    fun aFailedSelfTestTurnsHmxOff() {
+        assertTrue(DeviceProbe.hmxSelfTestFailed("HMX self-test WRONG (zeros), rel-err 1.0000, out/ref 0.000, max-err 22"))
+        assertTrue(DeviceProbe.hmxSelfTestFailed("HMX self-test WRONG, rel-err 0.4100"))
+        assertTrue(DeviceProbe.hmxSelfTestFailed("HMX self-test FAILED"))
+        assertFalse(DeviceProbe.hmxSelfTestFailed("HMX self-test ok, rel-err 0.0003"))
+        assertFalse(DeviceProbe.hmxSelfTestFailed("HMX self-test skipped (HMX off)"))
+    }
 }

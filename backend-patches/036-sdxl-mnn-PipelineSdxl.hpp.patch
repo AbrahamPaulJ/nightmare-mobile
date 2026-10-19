@@ -1,0 +1,35 @@
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -450,6 +450,8 @@
+              (unsigned long long)bytes, bytes / (1024.0 * 1024.0));
+   }
+ 
++ protected:
++  // nightmare (036): protected for PipelineSdxlMnn, which shares the dual CLIP.
+   void loadClipsIfNeeded() {
+     if (!clip_interpreter_) {
+       clip_interpreter_ = createMnnInterpreterMmap(clip_path_.c_str());
+@@ -501,6 +503,7 @@
+     if (lowram_) QNN_INFO("[lowram] SDXL CLIP MNN released");
+   }
+ 
++ private:
+   void loadVaeEncoderIfNeeded() {
+     if (vae_encoder_) return;
+     if (vae_encoder_path_.empty())
+@@ -722,12 +725,15 @@
+     return mask;
+   }
+ 
++ protected:
+   const std::string clip_path_;
+   const std::string clip2_path_;
+   const std::string unet_path_;
+   const std::string vae_decoder_path_;
+   const std::string vae_encoder_path_;
+   const bool lowram_;
++
++ private:
+   const int long_seq_;
+   const bool tpl_inpaint_;
+   const bool tpl_control_;

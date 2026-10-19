@@ -139,6 +139,35 @@ class ApiTest {
         assertFalse(ApiSettings.matches("abc", "Bearer abd", null))
         assertFalse(ApiSettings.matches("abc", null, null))
         assertFalse(ApiSettings.matches("abc", "Bearer ", null))
+        // ⭐ HTTP Basic, the token as the password: an A1111 client's --api-auth ([A1111]).
+        val basic = java.util.Base64.getEncoder().encodeToString("layla:abc".toByteArray())
+        assertTrue(ApiSettings.matches("abc", "Basic $basic", null))
+        assertFalse(ApiSettings.matches("abc", "Basic " + java.util.Base64.getEncoder().encodeToString("layla:abd".toByteArray()), null))
+    }
+
+    // --- Automatic1111's txt2img ([A1111]) -----------------------------------------------
+
+    /** ⭐ A client's own defaults land on what the model renders: never a 400 the person cannot fix. */
+    @Test
+    fun anA1111BodyMapsOntoTheModel() {
+        val sdxl = com.abrah.nightmare.ModelCatalog.byId("sdxl_dreamshaper")!!
+        val k = A1111(ApiCore(androidx.test.core.app.ApplicationProvider.getApplicationContext(), com.abrah.nightmare.HarnessOps(
+            androidx.test.core.app.ApplicationProvider.getApplicationContext(),
+            object : com.abrah.nightmare.HarnessOps.Sink { override fun say(text: String, bad: Boolean) {} },
+        ), "test")).knobsFor(sdxl, org.json.JSONObject(
+            """{"steps":12,"cfg_scale":1.5,"sampler_name":"DPM++ 2M","scheduler":"Karras","width":832,"height":1216}"""
+        ))
+        assertEquals("12", k["steps"])
+        assertEquals("1.5", k["cfg"])
+        assertEquals("dpm_karras", k["scheduler"])
+        // ⚠ A fixed canvas takes an aspect, never a size.
+        assertEquals("2:3", k["aspect"])
+        assertEquals(null, k["width"])
+        assertEquals("dpm_karras", A1111.samplerFor(sdxl, "DPM++ 2M Karras", ""))
+        assertEquals("euler_a", A1111.samplerFor(sdxl, "Euler a", "Automatic"))
+        assertEquals(null, A1111.samplerFor(sdxl, "UniPC", ""))
+        assertEquals("16:9", A1111.nearestAspect(1920, 1080))
+        assertEquals("1:1", A1111.nearestAspect(512, 512))
     }
 
     // --- a /run body ------------------------------------------------------------------

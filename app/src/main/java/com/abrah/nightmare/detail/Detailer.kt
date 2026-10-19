@@ -194,8 +194,11 @@ object Detailer {
         render: suspend (imagePng: ByteArray, maskPng: ByteArray) -> Bitmap,
         /** ⭐ Padding and Mask blur ([Settings]); confidence was spent choosing [boxes]. */
         settings: Settings = Settings(),
+        /** ⭐ Told how many parts were left as they were ([zoomRect] returned null). */
+        onSkipped: (Int) -> Unit = {},
     ): Bitmap {
         var cur = img
+        var skipped = 0
         for (b in boxes) {
             val r = grown(b, cur.width, cur.height, settings.pad)
             val mask = Bitmap.createBitmap(cur.width, cur.height, Bitmap.Config.ARGB_8888)
@@ -205,7 +208,17 @@ object Detailer {
                 // background that a redraw would only disturb.
                 drawOval(RectF(r[0].toFloat(), r[1].toFloat(), r[2].toFloat(), r[3].toFloat()), Paint().apply { color = Color.WHITE; isAntiAlias = true })
             }
-            val cut = MaskCropNode.cut(cur, mask, patchW, patchH, true)
+            // ⭐⭐ ZOOMED IN: the part with context, enlarged into the model (A1111 ADetailer's "only masked"). ⚠ Not
+            // [MaskCropNode.cut]: an inpaint never crops below the model's canvas, so on a picture rendered at the
+            // model's own size every face was redrawn WHOLE-FRAME at 0.4 and came back softer (a tester, 2026-10-19;
+            // measured: sharpness 1877 -> 1395 on a 75 px face, SD 1.5 Swap at 512).
+            val rect = zoomRect(r, cur.width, cur.height, patchW, patchH)
+            if (rect == null) {
+                skipped++
+                mask.recycle()
+                continue
+            }
+            val cut = MaskCropNode.Cut(InpaintPixels.cut(cur, rect, patchW, patchH), InpaintPixels.cut(mask, rect, patchW, patchH), rect)
             val drawn = render(ImageStore.encodePng(cut.image), ImageStore.encodePng(cut.mask))
             debugSink?.let { it("cut", cut.image); it("mask", cut.mask); it("drawn", drawn) }
             // ⭐ The edge tone always (the user's call, 2026-10-17), after Match colours when that is on.
@@ -217,6 +230,34 @@ object Detailer {
             cur = InpaintPixels.composite(cur, patch, dst, cut.mask, featherFrac = settings.blur)
             mask.recycle()
         }
+        if (skipped > 0) onSkipped(skipped)
         return cur
+    }
+
+    /** ⭐ Context around a part, each side, as a share of its grown box. */
+    const val CONTEXT = 0.25f
+
+    /** ⚠ Below this enlargement a redraw only re-noises the part: it is left as it is. */
+    const val MIN_ZOOM = 1.25f
+
+    /**
+     * ⚠ Pure: the rect (left, top, width, height) to redraw the part [r] (left, top, right, bottom) in: [CONTEXT]
+     * around it, at [outW]:[outH]'s aspect, slid inside [w]x[h]; null when it would be enlarged less than [MIN_ZOOM]
+     * (a close-up face already has the model's whole canvas).
+     */
+    fun zoomRect(r: IntArray, w: Int, h: Int, outW: Int, outH: Int): IntArray? {
+        val long = maxOf(outW, outH).toFloat()
+        val aw = outW / long
+        val ah = outH / long
+        val bw = (r[2] - r[0]).toFloat()
+        val bh = (r[3] - r[1]).toFloat()
+        val side = maxOf(bw * (1f + 2f * CONTEXT) / aw, bh * (1f + 2f * CONTEXT) / ah)
+            .coerceAtMost(minOf(w / aw, h / ah))
+        if (side * MIN_ZOOM > long) return null
+        val cw = Math.round(side * aw).coerceIn(1, w)
+        val ch = Math.round(side * ah).coerceIn(1, h)
+        val left = Math.round((r[0] + r[2]) / 2f - cw / 2f).coerceIn(0, w - cw)
+        val top = Math.round((r[1] + r[3]) / 2f - ch / 2f).coerceIn(0, h - ch)
+        return intArrayOf(left, top, cw, ch)
     }
 }

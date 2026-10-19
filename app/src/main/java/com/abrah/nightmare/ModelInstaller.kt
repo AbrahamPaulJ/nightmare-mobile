@@ -222,10 +222,12 @@ object ModelInstaller {
      * longer there, and the failure surfaces as a launch error naming a path
      * rather than as "you deleted the model you were using".
      */
-    fun delete(context: Context, spec: ModelSpec, force: Boolean = false) {
-        if (!force && spec.id == SelectedModel.id) {
-            throw IllegalStateException("\"${spec.label}\" is the selected model; pick another first")
-        }
+    fun delete(context: Context, spec: ModelSpec) {
+        // ⭐⭐ The model the BACKEND holds is let go first, and that is the only "in use" there is (GitHub #56: an SDXL
+        // model stayed undeletable after Wan runs, because it was still the selected one; the reporter asked for a
+        // "release models" button). Selected-but-not-loaded was refused for nothing: the callers move the selection.
+        // ⚠ Blocking (the process exits first): call it off the main thread. The UI refuses it mid-render.
+        if (BackendProcess.launchedKey?.model == spec.id) BackendProcess.stop()
         // ⚠⚠ Never in Local Dream's folder (the user, 2026-10-09: used in place, never deleted).
         if (spec.fromLocalDream(context)) {
             throw IllegalStateException(context.getString(R.string.ld_delete_refused, spec.label))

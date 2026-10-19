@@ -48,7 +48,7 @@ data class RunRequest(
 ) {
     companion object {
         /** ⭐ The knobs [applyOverrides] sends to every sampler that has them. */
-        val KNOBS = listOf("seed", "steps", "cfg", "denoise", "scheduler", "width", "height", "aspect", "loras")
+        val KNOBS = listOf("seed", "subseed", "subseed_strength", "steps", "cfg", "denoise", "scheduler", "width", "height", "aspect", "loras")
 
         fun parse(text: String): RunRequest {
             val o = try {

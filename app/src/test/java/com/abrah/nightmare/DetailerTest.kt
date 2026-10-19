@@ -4,6 +4,7 @@ import com.abrah.nightmare.detail.Detailer
 import com.abrah.nightmare.detail.YoloDecode
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -53,6 +54,23 @@ class DetailerTest {
         assertEquals(Detailer.MAX_PER_PART, chosen.size)
         assertEquals(160f, chosen.first().w, 1e-4f)
         assertEquals(true, chosen.none { it.w < 30f })
+    }
+
+    /**
+     * ⭐ A tester (2026-10-19): fixed faces came back BLURRIER. The redraw was the whole 512 frame (an inpaint never
+     * crops below the canvas), so it gained nothing. Now a 75 px face is redrawn zoomed in; a close-up is left alone.
+     */
+    @Test
+    fun aSmallFaceIsRedrawnZoomedInAndACloseUpIsLeftAlone() {
+        val r = Detailer.zoomRect(intArrayOf(331, 66, 408, 169), 512, 512, 512, 512)!!
+        // 103 px tall plus 25% context each side: about 155 px square, a 3.3x zoom, centred and on the picture.
+        assertEquals(155f, r[3].toFloat(), 2f)
+        assertEquals(r[2], r[3])
+        assertTrue(r[0] >= 0 && r[1] >= 0 && r[0] + r[2] <= 512 && r[1] + r[3] <= 512)
+        assertEquals(null, Detailer.zoomRect(intArrayOf(165, 25, 436, 448), 512, 512, 512, 512))
+        // ⚠ The canvas's aspect, so the patch is not stretched: a portrait SDXL canvas gets a portrait cut.
+        val p = Detailer.zoomRect(intArrayOf(500, 300, 600, 420), 832, 1216, 832, 1216)!!
+        assertEquals(832f / 1216f, p[2].toFloat() / p[3], 0.01f)
     }
 
     @Test

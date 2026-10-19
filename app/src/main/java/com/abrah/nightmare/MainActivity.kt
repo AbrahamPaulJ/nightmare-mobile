@@ -152,6 +152,7 @@ class MainActivity : ComponentActivity() {
         // against it. Loading late would render the first graph against the
         // previous selection.
         SelectedModel.load(this)
+        DeviceProbe.loadHmxVerdict(this)
         // ⭐ The API, if it was left on (`api/ApiService.kt`).
         runCatching { com.abrah.nightmare.api.ApiService.syncWith(this) }
         // ⚠ Before NODE_TYPES is touched: the upscale node's default and its
@@ -693,16 +694,7 @@ fun HarnessScreen(
             // moment the answer means something. Android 13+ drops every
             // notification silently without it, and the shade is where a
             // 4 GB download is watched once the screen is off.
-            val notifyAsk = rememberLauncherForActivityResult(
-                androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-            ) { }
-            val notifyCtx = androidx.compose.ui.platform.LocalContext.current
-            val askToNotify: () -> Unit = {
-                if (android.os.Build.VERSION.SDK_INT >= 33 &&
-                    notifyCtx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) notifyAsk.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-            }
+            val askToNotify = com.abrah.nightmare.ui.rememberNotifyAsk()
             LibraryScreen(
                 tab = vm.libraryTab,
                 onTab = vm::switchLibraryTab,
@@ -987,6 +979,7 @@ fun HarnessScreen(
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
         androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshApi() }
+        val askApiNotify = com.abrah.nightmare.ui.rememberNotifyAsk()
         com.abrah.nightmare.ui.SettingsScreen(
             theme = vm.theme,
             onTheme = vm::chooseTheme,
@@ -1020,7 +1013,8 @@ fun HarnessScreen(
             matureContent = vm.matureContent,
             onMatureContent = vm::chooseMatureContent,
             api = com.abrah.nightmare.ui.ApiState(vm.apiOn, vm.apiToken, vm.apiAddresses, vm.apiCors),
-            onApi = vm::chooseApi,
+            // ⚠ The listening notice is a notification: unasked, Android 13+ drops it in silence (2026-10-19).
+            onApi = { on -> if (on) askApiNotify(); vm.chooseApi(on) },
             onRegenerateApiToken = vm::regenerateApiToken,
             onApiCors = vm::chooseApiCors,
             defaultView = vm.defaultViewChoice,

@@ -91,6 +91,14 @@ object Backend {
     private const val SSE_READ_TIMEOUT_MS = STAGE_TIMEOUT_MS
 
     /**
+     * ⭐ [STAGE_TIMEOUT_MS], but a CPU (MNN) model's stage or the gap between two of its steps takes minutes:
+     * SDXL at 1024² on the CPU (backend 036) failed at 120 s with `SocketTimeoutException` while it was
+     * sampling (the S25, 2026-10-19). ⚠ Read per call: the backend the call goes to decides.
+     */
+    private fun stageTimeoutMs(): Int =
+        if (BackendProcess.launchedKey?.type == ModelCatalog.SDXL_MNN) DIT_SSE_READ_TIMEOUT_MS else STAGE_TIMEOUT_MS
+
+    /**
      * ⭐ The same gap for a DiT `/generate` — [Ops.generate] is DiT-only.
      *
      * ⚠⚠ Reported 2026-09-28: a Qwen Image 2.1 EDIT at 1024² failed with
@@ -145,7 +153,7 @@ object Backend {
                 // ⚠ CONNECT stays short -- reaching a local socket is instant or
                 // it is broken. Only the READ waits on a stage load.
                 connectTimeout = TIMEOUT_MS
-                readTimeout = STAGE_TIMEOUT_MS
+                readTimeout = stageTimeoutMs()
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
             }
@@ -254,7 +262,7 @@ object Backend {
          * endpoint added without thinking about it gets the patient timeout
          * rather than a spurious six-second failure.
          */
-        readTimeoutMs: Int = STAGE_TIMEOUT_MS,
+        readTimeoutMs: Int = stageTimeoutMs(),
     ): Response =
         withContext(Dispatchers.IO) {
             val started = System.nanoTime()
@@ -347,7 +355,7 @@ object Backend {
     suspend fun postSse(
         path: String,
         json: String,
-        readTimeoutMs: Int = SSE_READ_TIMEOUT_MS,
+        readTimeoutMs: Int = stageTimeoutMs(),
         onEvent: (SseEvent) -> Unit,
     ): Response = withContext(Dispatchers.IO) {
         val started = System.nanoTime()
@@ -489,6 +497,9 @@ object Ops {
      * `lora_dir` by PATH — so a pack directory is named after its contents
      * ([SwapInputs.packDir]), never reused for a different LoRA set.
      */
+    /** ⭐ A1111's variation seed (backend 037): the noise slerped from the seed's toward [subseed]'s by [strength]. */
+    data class Variation(val subseed: Int, val strength: Double)
+
     data class TemplateInputs(
         val loraDir: String? = null,
         val loraStrength: Double = 1.0,
@@ -651,6 +662,8 @@ object Ops {
         inpaintMask: ByteArray? = null,
         /** ⭐ SD 1.5 Swap only ([TemplateInputs]); every other model gets null. */
         template: TemplateInputs? = null,
+        /** ⭐ A1111's variation seed (backend 037); null = the seed alone. */
+        variation: Variation? = null,
         onProgress: (Progress) -> Unit = {},
     ): Result<Sampled> {
         val body = JSONObject()
@@ -659,6 +672,10 @@ object Ops {
             .put("steps", steps)
             .put("cfg", cfg)
             .put("seed", seed)
+            .apply { variation?.let { put("subseed", it.subseed.toLong() and 0xFFFFFFFFL); put("subseed_strength", it.strength) } }
+            // ⭐ An SDXL CPU model's UNet on the GPU (MNN OpenCL, upstream's switch): 17.4 s a step at 1024² against
+            // 65 s on 4 CPU cores (the S25, 2026-10-19). The first GPU run writes `unet.mnnc` beside the model.
+            .apply { if (BackendProcess.launchedKey?.type == ModelCatalog.SDXL_MNN) put("use_opencl", true) }
             .put("width", width)
             .put("height", height)
             .put("scheduler", scheduler)

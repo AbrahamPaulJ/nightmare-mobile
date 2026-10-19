@@ -1,0 +1,51 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -25,6 +25,7 @@
+ #include "PipelineSd15Inpaint.hpp"
+ #include "PipelineSd15Npu.hpp"
+ #include "PipelineSdxl.hpp"
++#include "PipelineSdxlMnn.hpp"
+ #include "QnnRuntime.hpp"
+ #include "RequestParser.hpp"
+ #include "SDUtils.hpp"
+@@ -77,6 +78,8 @@
+     kSd15Npu,
+     kSd15NpuInpaint,
+     kSdxl,
++    // nightmare (036): upstream's SDXL on MNN (CPU, or the GPU via OpenCL).
++    kSdxlMnn,
+     kAnima,
+     kControlNet,
+     kSd15NpuControlInpaint,
+@@ -123,9 +126,9 @@
+   int dit_threads = 4;
+   int dit_vae_tile_size = 64;
+ 
+-  bool isSdxl() const { return type == ModelType::kSdxl; }
++  bool isSdxl() const { return type == ModelType::kSdxl || type == ModelType::kSdxlMnn; }
+   bool isAnima() const { return type == ModelType::kAnima; }
+-  bool isMnn() const { return type == ModelType::kSd15Cpu; }
++  bool isMnn() const { return type == ModelType::kSd15Cpu || type == ModelType::kSdxlMnn; }
+   // DiT formats served by libdit_engine.so: no fixed canvas, no QNN contexts.
+   bool isDit() const {
+     return type == ModelType::kZImage || type == ModelType::kFlux2Klein ||
+@@ -335,6 +338,8 @@
+     opts.type = ServerOptions::ModelType::kSd15Cpu;
+   else if (typeStr == "sdxl")
+     opts.type = ServerOptions::ModelType::kSdxl;
++  else if (typeStr == "sdxlmnn")
++    opts.type = ServerOptions::ModelType::kSdxlMnn;
+   else if (typeStr == "sd15npu")
+     opts.type = ServerOptions::ModelType::kSd15Npu;
+   else if (typeStr == "sd15npu_inpaint")
+@@ -684,6 +689,10 @@
+           text_encoder, opts.model_dir, clip_path, unet_path, vae_decoder_path,
+           vae_encoder_path, opts.patch_path, opts.use_v_pred, controlnet_path);
+     }
++    case ServerOptions::ModelType::kSdxlMnn:
++      return std::make_unique<PipelineSdxlMnn>(
++          text_encoder, opts.model_dir, clip_path, clip2_path, unet_path,
++          vae_decoder_path, vae_encoder_path, opts.use_v_pred, opts.lowram);
+     case ServerOptions::ModelType::kSdxl:
+     default:
+       return std::make_unique<PipelineSdxl>(

@@ -619,7 +619,7 @@
     <string name="models_needs_ram">Для %1$s нужен телефон с %3$d ГБ ОЗУ; на этом %2$d ГБ</string>
     <string name="models_needs_arch">Для %1$s нужна архитектура HTP v%2$d или новее; это устройство сообщает v%3$d</string>
     <string name="models_not_on_chip">%1$s пока не работает на %2$s: любой способ запуска там даёт шум</string>
-    <string name="dit_no_hmx">На %1$s работает с выключенным матричным блоком NPU и декодирует на CPU: картинки правильные, но намного медленнее (минуты при 512, гораздо дольше при 1024). ⋮ Проверить NPU поможет найти более быстрое решение</string>
+    <string name="dit_no_hmx">На %1$s работает с выключенным матричным блоком NPU и декодирует на CPU: картинки правильные, но намного медленнее (Z-Image на 8s Gen 4: около 23 мин при 512, 47 мин при 1024). ⋮ Проверить NPU поможет найти более быстрое решение</string>
     <string name="dit_chip_blocked">Пока не работает на %1$s: каждый тест там давал шум. Если модель установлена, удаление освободит место</string>
     <string name="test_npu">Проверить NPU</string>
     <string name="diagnose">Диагностика</string>
@@ -660,6 +660,10 @@
     <string name="models_named_not_installed">%1$s не установлена</string>
     <string name="models_named_incomplete">%1$s установлена не полностью: отсутствует %2$s</string>
     <string name="hint_fixed_family_shape">это семейство рендерит фиксированный размер %1$s и обрезает до выбранной формы: перезагрузка не нужна, но более широкое изображение не становится больше</string>
+    <string name="knob_subseed">Зерно вариации</string>
+    <string name="knob_subseed_strength">Сила вариации</string>
+    <string name="hint_subseed">Второе зерно, подмешанное с силой вариации: та же картинка, слегка изменённая.</string>
+    <string name="hint_subseed_strength">Доля зерна вариации: 0 только основное зерно, малые значения (0,05–0,3) сохраняют картинку и меняют детали, 1 только зерно вариации.</string>
     <string name="hint_seed_picture">0 = новое изображение при каждом запуске. Введите зерно с узла, чтобы вернуть это изображение.</string>
     <string name="hint_sampler">сэмплер; дистиллированной модели обычно нужен опубликованный её автором</string>
     <string name="hint_prompt_cond">что рисовать: сэмплер читает это через провод cond</string>
@@ -715,11 +719,13 @@
     <string name="flow_swap_i2i_about">Фотография переосмысливается моделью Swap с теми же тремя возможностями. ControlNet читает саму фотографию, если не дать ему другое изображение.</string>
     <string name="flow_flux_edit_name">Редактирование изображения</string>
     <string name="flow_flux_edit_about">FLUX.2 Klein или Qwen Image 2.1 на 8 Gen 3 или новее (альфа на 8 Gen 3). Фотография и промпт: всё изображение перерисовывается по нему, а не слегка изменяется. Подключите второе изображение к порту reference и назовите их image 1 и image 2 в промпте.</string>
+    <string name="flow_wan_t2i_name">Wan 2.2: текст в картинку</string>
+    <string name="flow_wan_t2i_about">Описание в одну картинку от Wan 2.2, видеомодели: один кадр, поэтому секунды там, где ролик занимает минуты.</string>
     <string name="flow_t2v_name">Текст в видео</string>
     <string name="flow_t2v_about">Описание в ролик. По умолчанию Wan 2.2 (минуты, намного лучше); переключите узел видео на Neodragon для 2 с примерно за 30 с.</string>
     <string name="flow_i2v_name">Изображение в видео</string>
     <string name="flow_i2v_about">Картинка как первый кадр ролика, движущегося по описанию. По умолчанию Wan 2.2; Neodragon на узле видео для скорости.</string>
-    <string name="hint_wan_seconds">Длина клипа в секундах, 24 кадра в секунду. 5 с при 480p занимают около 3 мин на 8 Elite.</string>
+    <string name="hint_wan_seconds">Длина клипа в секундах, 24 кадра в секунду; 0 даёт одну неподвижную картинку. 5 с при 480p занимают около 3 мин на 8 Elite.</string>
     <string name="hint_wan_size">Wan 2.2 рассчитан на 1280x704: меньшие размеры, включая 832x480, могут выглядеть размыто или с искажениями. Любая форма до 1280x704 пикселей; другая сторона уменьшается, если превысить предел. 1280x704 занимает примерно втрое больше времени, чем 832x480.</string>
     <string name="wan_too_big_seconds">%1$s на %2$s с, скорее всего, слишком много для NPU этого телефона. При этом размере помещается около %3$s с</string>
     <string name="wan_too_big_any">%1$s, скорее всего, слишком много для NPU этого телефона при любой длине. Попробуйте размер поменьше</string>
@@ -798,6 +804,7 @@
     <string name="run_detail_no_square">Исправление лиц и рук пропущено: не удалось загрузить модель в %1$dx%2$d</string>
     <string name="run_detail_faces">исправление лиц: найдено %1$d</string>
     <string name="run_detail_hands">исправление рук: найдено %1$d</string>
+    <string name="run_detail_skipped">уже в полном размере: %1$d, оставлено как есть</string>
     <string name="knob_autosave">Автосохранение</string>
     <string name="knob_only_masked">Только маска</string>
     <string name="knob_tap_select">Выбор касанием</string>

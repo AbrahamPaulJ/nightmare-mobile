@@ -270,6 +270,10 @@ class SdSampler(
         /** ⭐ A1111's img2img colour correction ([ColorTools.matchColors]); the id is the row's words. */
         const val MATCH_COLORS = "match_colours"
 
+        /** ⭐ A1111's variation seed and its strength ([variationOf], backend 037). */
+        const val SUBSEED = "subseed"
+        const val SUBSEED_STRENGTH = "subseed_strength"
+
         /** ⚠ A DiT detail patch's edge at most: a face needs no megapixel, and each costs a full DiT run. */
         const val DETAIL_DIT_EDGE = 768
 
@@ -392,10 +396,20 @@ class SdSampler(
             return if (w > 0 && h > 0) w.toFloat() / h else 1f
         }
 
+        /**
+         * ⭐⭐ The canvas [params] render at: a fixed-canvas family's ([ModelSpec.fixedCanvas]) own square, whatever
+         * the node holds; the node's width and height otherwise. ⚠ GitHub #60: an SDXL Swap node holding 1536x2048
+         * launched the backend at that size, the backend rendered its frozen 1024², and the 3:4 crop asked for
+         * 1152x1536 out of it. The backend forces the canvas for these families, so the node's size is never news.
+         */
+        fun canvasOf(params: Map<String, String>): Res? =
+            ModelCatalog.byId(params["model"].orEmpty())?.takeIf { it.fixedCanvas }?.native
+
         /** [SdSampler.framesTo], for a caller holding no type. */
         fun framedSize(node: Node): Pair<Int, Int> {
-            val w = node.params["width"]?.toIntOrNull() ?: 0
-            val h = node.params["height"]?.toIntOrNull() ?: 0
+            val canvas = canvasOf(node.params)
+            val w = canvas?.width ?: node.params["width"]?.toIntOrNull() ?: 0
+            val h = canvas?.height ?: node.params["height"]?.toIntOrNull() ?: 0
             val t = nodeAspect(node)?.let { ModelCatalog.aspectTarget(it, Res(w, h)) }
             return if (t != null) t.width to t.height else w to h
         }
@@ -866,6 +880,10 @@ class SdSampler(
             "seed", "int", "0",
             hintRes = R.string.hint_seed_picture,
         ),
+        // ⭐ A1111's variation seed (backend 037; a tester's wish, 2026-10-19): a picture you like, nudged. ⚠ Not on a
+        // DiT model (`ditWidgets()` is built from this list): its engine takes no second seed yet.
+        if (!family.dit) Widget(SUBSEED, "int", "0", hintRes = R.string.hint_subseed) else null,
+        if (!family.dit) Widget(SUBSEED_STRENGTH, "float", "0.0", 0.0, 1.0, hintRes = R.string.hint_subseed_strength) else null,
         // ⚠ Read only when a picture is wired AND `start_from` is `image`.
         // ⚠ An INPAINT node starts at 0.65 on every family: FLUX.2 / Qwen's 1.0
         // is their EDIT mode, and on a masked img2img it would repaint the whole
@@ -1119,6 +1137,13 @@ class SdSampler(
 
     override fun contextKey(node: Node) = backendContextKey(node)
 
+    /** ⚠ The size a fixed-canvas family renders, not a stray one the node holds ([canvasOf], GitHub #60). */
+    override fun effectiveParams(node: Node): Map<String, String> {
+        val p = super.effectiveParams(node)
+        val canvas = canvasOf(p) ?: return p
+        return p + mapOf("width" to canvas.width.toString(), "height" to canvas.height.toString())
+    }
+
     /**
      * ⚠⚠ **Null — this node demands NO size of anything.** It fits whatever it
      * is handed (§5.7), which is what retires `sizeRefusal` for the image path:
@@ -1170,7 +1195,7 @@ class SdSampler(
      * ControlNet pack), not Iris (no VAE to mask through) or Wan (a video).
      */
     private val offersDetail: Boolean
-        get() = !inpaint && family !in setOf(Family.SD15_SWAP, Family.SDXL_SWAP, Family.IRIS, Family.WAN, Family.MOSS, Family.IDEOGRAM)
+        get() = !inpaint && family !in setOf(Family.IRIS, Family.WAN, Family.MOSS, Family.IDEOGRAM)
 
     /** ⭐ True when [node] will run the detail pass: what the Run's up-front tool check asks. */
     internal fun detailWanted(node: Node): Boolean = offersDetail && effectiveParams(node).let { p ->
@@ -1248,6 +1273,12 @@ class SdSampler(
             }
             spec.native.width to spec.native.height
         }
+        // ⭐ A Swap model redraws a face with its LoRA pack (a character LoRA is what keeps the face theirs, the
+        // user's call 2026-10-19), and with no ControlNet hint or reference: both describe the WHOLE picture, and a
+        // crop of a face is not it. ⚠ [swapInputs] with both switched off, so the pack is built the one way.
+        val template = if (family == Family.SD15_SWAP || family == Family.SDXL_SWAP) {
+            swapInputs(ctx, node, p0 + mapOf(CONTROLNET to SwapInputs.NONE, IP_ADAPTER to IpAdapter.NONE), emptyMap())
+        } else null
         var cond: String? = null
         val render: suspend (ByteArray, ByteArray) -> android.graphics.Bitmap = { imagePng, maskPng ->
             if (family.dit) runDitMasked(ctx, node, p, prompt, imagePng, maskPng, pw, ph)
@@ -1257,7 +1288,7 @@ class SdSampler(
                     is Ops.Result.Err -> throw OpFailure("encode_text", r.code, r.body)
                 }.also { cond = it }
                 val start = encode(ctx, imagePng, ENCODE_SEED, pw, ph)
-                val drawn = sample(ctx, p, c, start, pw, ph, null, imagePng, maskPng)
+                val drawn = sample(ctx, p, c, start, pw, ph, null, imagePng, maskPng, template = template)
                 val blended = when (val r = ctx.host.latentBlend(start, drawn, maskPng)) {
                     is Ops.Result.Ok -> r.value.handle
                     is Ops.Result.Err -> throw OpFailure("latent_blend", r.code, r.body)
@@ -1276,7 +1307,9 @@ class SdSampler(
                 if (part == com.abrah.nightmare.detail.PartDetector.Part.FACE) ctx.text(R.string.run_detail_faces, "fixing faces: %1\$d found", boxes.size)
                 else ctx.text(R.string.run_detail_hands, "fixing hands: %1\$d found", boxes.size)
             )
-            if (boxes.isNotEmpty()) bmp = d.fix(bmp, boxes, pw, ph, matching(p), render, set)
+            if (boxes.isNotEmpty()) bmp = d.fix(bmp, boxes, pw, ph, matching(p), render, set) { n ->
+                ctx.say(ctx.text(R.string.run_detail_skipped, "%1\$d already at full size, left as it is", n))
+            }
         }
         return Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
     }
@@ -2242,6 +2275,12 @@ class SdSampler(
         is Ops.Result.Err -> throw OpFailure("vae_encode", r.code, r.body)
     }
 
+    /** ⭐ The node's variation seed, or null when its strength is 0 (the plain seed, bit for bit). */
+    private fun variationOf(p: Map<String, String>): Ops.Variation? {
+        val strength = p[SUBSEED_STRENGTH]?.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return null
+        return Ops.Variation(p[SUBSEED]?.toIntOrNull() ?: 0, strength.coerceAtMost(1.0))
+    }
+
     private suspend fun sample(
         ctx: NodeCtx,
         p: Map<String, String>,
@@ -2261,6 +2300,7 @@ class SdSampler(
             width = w,
             height = h,
             latentHandle = latent,
+            variation = variationOf(p),
             denoise = p["denoise"]?.toDoubleOrNull() ?: defaultDenoise(family).toDouble(),
             scheduler = p["scheduler"].orEmpty(),
             condHandle = cond,

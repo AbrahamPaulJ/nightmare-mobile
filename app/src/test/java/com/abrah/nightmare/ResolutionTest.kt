@@ -198,6 +198,25 @@ class ResolutionTest {
         assertEquals(backendContextKey(square), backendContextKey(wide))
     }
 
+    /**
+     * ⚠ GitHub #60: an SDXL node holding a size its frozen canvas is not (1536x2048) launched the backend at it,
+     * rendered 1024², and the 3:4 crop asked 1152x1536 of that. Launch, render and crop now read the canvas.
+     */
+    @Test
+    fun aFixedCanvasIgnoresAStraySizeOnTheNode() {
+        val sdxl = ModelCatalog.byId("sdxl_dreamshaper")!!
+        val node = Node(
+            "g", "sdxl.sample",
+            mapOf("model" to sdxl.id, "width" to "1536", "height" to "2048", "aspect" to "3:4"),
+        )
+        val key = backendContextKey(node)
+        assertEquals(sdxl.native, Res(key.width, key.height))
+        val p = SdSampler.SDXL.effectiveParams(node)
+        assertEquals(sdxl.native.width.toString(), p["width"])
+        assertEquals(sdxl.native.height.toString(), p["height"])
+        assertEquals(768 to 1024, SdSampler.framedSize(node))
+    }
+
     // ---- the knob itself -------------------------------------------------
 
     /** Every node that names a checkpoint, i.e. everything that forces a launch. */

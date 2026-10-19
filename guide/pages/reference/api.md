@@ -33,6 +33,23 @@ Every real call still needs it. `EventSource` cannot send headers, so give it `?
 | `GET /results/<run>/<file>` | a result picture (PNG) or clip (MP4) |
 | `POST /cancel` | stops the API's render |
 
+## Apps that speak Automatic1111's API
+
+Apps made for the Stable Diffusion WebUI (Automatic1111), such as Layla, can use the phone as their image
+server. Give them `http://<phone>:8820` as the WebUI address and the token as the password (any user
+name; it goes as HTTP Basic). An app with no password field takes `http://<phone>:8820/t/<token>` as the address.
+
+| call | what it does |
+|---|---|
+| `POST /sdapi/v1/txt2img` | text to image: `prompt`, `negative_prompt`, `steps`, `cfg_scale`, `width`, `height`, `seed`, `sampler_name`, `batch_size` (up to 4 pictures). Answers `{"images": [<base64 PNG>], "parameters", "info"}` |
+| `GET /sdapi/v1/sd-models` | your installed image models |
+| `GET`, `POST /sdapi/v1/options` | `sd_model_checkpoint`: the model the next picture uses (the app's selected one until set) |
+| `GET /sdapi/v1/samplers` | the sampler names |
+| `GET /sdapi/v1/progress` | how far the current picture is |
+
+The app's own defaults are not errors here: a sampler the model does not have keeps the model's own, and
+a size becomes the nearest one the model renders (SDXL and Anima: the nearest shape). `info` says what ran.
+
 ## Running a flow
 
 ```sh

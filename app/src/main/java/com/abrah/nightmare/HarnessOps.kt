@@ -1932,6 +1932,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         try {
             ModelInstaller.delete(ctx, spec)
             say("deleted ${spec.id}")
+            // ⚠ The selection moves with it, as the Models screen's delete does ([HarnessViewModel.deleteModel]).
+            if (SelectedModel.id == spec.id) {
+                (ModelCatalog.installed(ctx).firstOrNull { it.id != spec.id } ?: ModelCatalog.byId(V1_MODEL))
+                    ?.let { SelectedModel.set(ctx, it.id); say("selected ${it.id}") }
+            }
         } catch (e: Exception) {
             say("delete refused. ${e.message}", bad = true)
         }
@@ -3364,6 +3369,15 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * twice at seed 12345, the Fix switches off then on, into `files/detail_run/` (off.png, on.png). Proves
      * the detail pass the way [loraNode] proves LoRAs: through the node, not around it.
      */
+    /** ⭐ `detail_run`'s shots: close-up, half body, full body pair, a group, hands. Neutral and clothed. */
+    private val DETAIL_SHOTS = listOf(
+        "close-up portrait photo of a middle-aged man with a grey beard, wearing a blue sweater, soft window light",
+        "half body photo of a young woman in a red coat standing on a city street, looking at the camera",
+        "full body photo of two friends waving at the camera in a park, faces and hands visible",
+        "photo of four colleagues in business clothes standing together in an office, smiling at the camera",
+        "photo of a woman holding a coffee cup with both hands at a cafe table, hands in focus",
+    )
+
     private suspend fun detailRun(arg: String?) {
         val parts = arg.orEmpty().split(",")
         val which = parts.getOrNull(0)?.trim().orEmpty().ifEmpty { "faces" }
@@ -3373,6 +3387,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val size = parts.getOrNull(2)?.trim()?.split("x")?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 2 }
         val rw = size?.get(0) ?: spec.native.width
         val rh = size?.get(1) ?: spec.native.height
+        // ⭐ A shot (the user's call 2026-10-19, "a proper test of the detailer flows"): which picture the fix gets.
+        val shot = parts.getOrNull(3)?.trim()?.toIntOrNull()?.coerceIn(0, DETAIL_SHOTS.size - 1)
         val key = ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, if (spec.isDit) ModelCatalog.DIT_RES.width else rw, if (spec.isDit) ModelCatalog.DIT_RES.height else rh)
         val out = java.io.File(ctx.getExternalFilesDir(null), "detail_run").apply { mkdirs() }
         suspend fun leg(label: String, on: Boolean) {
@@ -3391,7 +3407,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             val wf = com.abrah.nightmare.canvas.Workflow(
                 Graph(listOf(
                     Node("prompt", "core.prompt", params = mapOf(
-                        "prompt" to if (size != null) "photo of a young woman with long brown hair in a white dress standing in a park, looking at the camera"
+                        "prompt" to if (shot != null) DETAIL_SHOTS[shot]
+                            else if (size != null) "photo of a young woman with long brown hair in a white dress standing in a park, looking at the camera"
                             else "full body photo of two friends waving at the camera in a park, faces and hands visible",
                         "negative" to "worst quality, low quality, blurry, lowres, watermark, text",
                     )),
@@ -3417,7 +3434,51 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("    saved on-$name.png ${bmp.width}x${bmp.height}")
         }
         try { leg("on", true) } finally { com.abrah.nightmare.detail.Detailer.debugSink = null }
+        detailSharpness(java.io.File(out, "off.png"), java.io.File(out, "on.png"), which, spec)
         say("detail_run: done")
+    }
+
+    /**
+     * ⭐ Per found face / hand: its size against the model's canvas (above 1.0 the redraw is SMALLER than the part,
+     * then enlarged back: the "blurrier" suspect), and the sharpness inside it before and after (variance of the
+     * Laplacian on grey; higher is sharper). A tester (2026-10-19): faces came back blurrier, hands sometimes gone.
+     */
+    private fun detailSharpness(off: java.io.File, on: java.io.File, which: String, spec: ModelSpec) {
+        val a = android.graphics.BitmapFactory.decodeFile(off.path) ?: return
+        val b = android.graphics.BitmapFactory.decodeFile(on.path) ?: return
+        val d = com.abrah.nightmare.detail.Detailer
+        val det = com.abrah.nightmare.detail.PartDetector
+        for (part in com.abrah.nightmare.detail.PartDetector.Part.entries) {
+            if ((part.name == "FACE" && which == "hands") || (part.name == "HAND" && which == "faces")) continue
+            val boxes = d.chosen(det.detect(ctx, a, part).orEmpty(), a.width, a.height)
+            say("  ${part.name.lowercase()}: ${boxes.size} found")
+            for (box in boxes) {
+                val g = d.grown(box, a.width, a.height)
+                val side = maxOf(g[2] - g[0], g[3] - g[1])
+                val scale = side.toFloat() / minOf(spec.native.width, spec.native.height)
+                say("    box ${g.joinToString(",")}  cut/canvas %.2f  sharp off %.0f on %.0f".format(
+                    scale, laplacianVar(a, g), laplacianVar(b, g)))
+            }
+        }
+    }
+
+    /** ⚠ Pure: variance of the 4-neighbour Laplacian of grey inside [r] (l, t, r, b). */
+    private fun laplacianVar(bmp: android.graphics.Bitmap, r: IntArray): Double {
+        val w = r[2] - r[0]
+        val h = r[3] - r[1]
+        if (w < 3 || h < 3) return 0.0
+        val px = IntArray(w * h).also { bmp.getPixels(it, 0, w, r[0], r[1], w, h) }
+        fun grey(i: Int) = ((px[i] shr 16 and 255) * 299 + (px[i] shr 8 and 255) * 587 + (px[i] and 255) * 114) / 1000.0
+        var sum = 0.0
+        var sq = 0.0
+        var n = 0
+        for (y in 1 until h - 1) for (x in 1 until w - 1) {
+            val i = y * w + x
+            val l = grey(i - 1) + grey(i + 1) + grey(i - w) + grey(i + w) - 4 * grey(i)
+            sum += l; sq += l * l; n++
+        }
+        val mean = sum / n
+        return sq / n - mean * mean
     }
 
     private suspend fun poseInstall() {
@@ -4883,7 +4944,15 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         want: ContextKey? = null,
         upscalerOnly: Boolean = false,
     ): Boolean {
-        if (launchOnce(want, upscalerOnly)) return true
+        if (launchOnce(want, upscalerOnly)) {
+            // ⭐⭐ The engine's HMX self-test failed, the first time on this phone ([DeviceProbe.hmxBad], the user's
+            // call 2026-10-19): every picture with HMX would be grey or noise, so start again with it off. ⚠ Once:
+            // the relaunch runs HMX off, its self-test says "skipped", and nothing sets the flag again.
+            if (!BackendProcess.takeHmxFailure()) return true
+            say("this phone's NPU matrix unit (HMX) failed its self-test. Starting again without it: slower, but right")
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
+            return launchOnce(want, upscalerOnly)
+        }
         // ⭐⭐ A checkpoint whose QNN contexts need a bigger spill-fill group than
         // the backend's constant, or no group at all ([SpillFill]): launch once
         // more with what the log taught. ⚠ Once — [SpillFill.learn] is false when

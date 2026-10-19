@@ -42,7 +42,7 @@ import java.io.File
  * ⚠ [holder] names who holds [RunLock] while a render runs ("api", "agent").
  * ⚠ Blocking: call off the main thread.
  */
-class ApiCore(private val ctx: Context, val ops: HarnessOps, private val holder: String) {
+class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder: String) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val resultsDir = File(ctx.filesDir, "api/results")

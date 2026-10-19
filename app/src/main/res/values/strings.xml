@@ -631,7 +631,7 @@
     <string name="models_needs_ram">%1$s needs a phone with %3$d GB of RAM; this one has %2$d GB</string>
     <string name="models_needs_arch">%1$s needs an HTP arch of %2$d or newer; this device reports %3$d</string>
     <string name="models_not_on_chip">%1$s does not run on the %2$s yet: every way of running it there gives noise</string>
-    <string name="dit_no_hmx">Runs with the NPU\'s matrix unit off and decodes on the CPU on the %1$s: right pictures, but much slower (minutes at 512, far longer at 1024). ⋮ Test the NPU helps find a faster fix</string>
+    <string name="dit_no_hmx">Runs with the NPU\'s matrix unit off and decodes on the CPU on the %1$s: right pictures, but much slower (Z-Image on an 8s Gen 4: about 23 min at 512, 47 min at 1024). ⋮ Test the NPU helps find a faster fix</string>
     <string name="dit_chip_blocked">Does not run on the %1$s yet: every test there gave noise. If it is installed, deleting it frees the space</string>
     <string name="test_npu">Test the NPU</string>
     <string name="diagnose">Diagnose</string>
@@ -672,6 +672,10 @@
     <string name="models_named_not_installed">%1$s is not installed</string>
     <string name="models_named_incomplete">%1$s is incomplete: missing %2$s</string>
     <string name="hint_fixed_family_shape">this family renders a fixed %1$s and crops to shape. It costs no reload, but a wider picture is not a bigger one</string>
+    <string name="knob_subseed">Variation seed</string>
+    <string name="knob_subseed_strength">Variation strength</string>
+    <string name="hint_subseed">A second seed, mixed in by Variation strength: the same picture, nudged.</string>
+    <string name="hint_subseed_strength">How much of the variation seed: 0 is the seed alone, small values (0.05 to 0.3) keep the picture and change details, 1 is the variation seed alone.</string>
     <string name="hint_seed_picture">0 = a new picture every Run. Type the seed shown on the node to get that one back.</string>
     <string name="hint_sampler">the sampler; a distilled model usually needs the one its author published</string>
     <string name="hint_prompt_cond">what to draw: the sampler reads it through the cond wire</string>
@@ -727,11 +731,13 @@
     <string name="flow_swap_i2i_about">A photo re-imagined by a Swap model, with the same three. ControlNet reads the photo itself unless you give it another picture.</string>
     <string name="flow_flux_edit_name">Image edit</string>
     <string name="flow_flux_edit_about">FLUX.2 Klein or Qwen Image 2.1, on an 8 Gen 3 or newer (alpha on 8 Gen 3). A photo and a prompt: the whole picture is re-rendered to follow it, rather than nudged. Wire a second picture into the reference port and name them as image 1 and image 2 in the prompt.</string>
+    <string name="flow_wan_t2i_name">Wan 2.2: text to image</string>
+    <string name="flow_wan_t2i_about">A prompt into one picture from Wan 2.2, the video model: a single frame, so it takes seconds where a clip takes minutes.</string>
     <string name="flow_t2v_name">Text to video</string>
     <string name="flow_t2v_about">A prompt into a clip. Wan 2.2 by default (minutes, much better); switch the video node to Neodragon for 2 s in about 30 s.</string>
     <string name="flow_i2v_name">Image to video</string>
     <string name="flow_i2v_about">A picture as the first frame of a clip, moving the way the prompt says. Wan 2.2 by default; Neodragon on the video node for speed.</string>
-    <string name="hint_wan_seconds">Clip length in seconds, 24 frames each. 5 s at 480p takes about 3 minutes on an 8 Elite.</string>
+    <string name="hint_wan_seconds">Clip length in seconds, 24 frames each; 0 makes one still picture. 5 s at 480p takes about 3 minutes on an 8 Elite.</string>
     <string name="hint_wan_size">Wan 2.2 is made for 1280x704: smaller sizes, 832x480 included, can look soft or distorted. Any shape up to 1280x704 worth of pixels; the other side shrinks when you pass it. 1280x704 takes about three times as long as 832x480.</string>
     <string name="wan_too_big_seconds">%1$s for %2$s s is probably too much for this phone\'s NPU. About %3$s s fits at this size</string>
     <string name="wan_too_big_any">%1$s is probably too much for this phone\'s NPU at any length. Try a smaller size</string>
@@ -810,6 +816,7 @@
     <string name="run_detail_no_square">Fix faces and hands skipped: could not load the model at %1$dx%2$d for it</string>
     <string name="run_detail_faces">fixing faces: %1$d found</string>
     <string name="run_detail_hands">fixing hands: %1$d found</string>
+    <string name="run_detail_skipped">%1$d already at full size, left as it is</string>
     <string name="knob_autosave">Autosave</string>
     <string name="knob_only_masked">Only masked</string>
     <string name="knob_tap_select">Tap select</string>

@@ -1,0 +1,54 @@
+--- a/src/Pipeline.hpp
++++ b/src/Pipeline.hpp
+@@ -63,6 +63,10 @@
+   int steps = 20;
+   float cfg = 7.5f;
+   unsigned seed = 0;
++  // nightmare (037): A1111's variation seed. The starting noise is slerped from
++  // seed's toward subseed's by subseed_strength (0 = off, 1 = subseed's alone).
++  unsigned subseed = 0;
++  float subseed_strength = 0.0f;
+   std::string scheduler_type = "dpm";
+   bool use_opencl = false;
+   bool show_diffusion_process = false;
+@@ -494,6 +498,23 @@
+     return std::vector<float>(lat.begin(), lat.end());
+   }
+ 
++  // nightmare (037): A1111's `slerp` (modules/processing.py) between two noises.
++  static xt::xarray<float> slerpNoise(float val, const xt::xarray<float> &low,
++                                      const xt::xarray<float> &high) {
++    double nl = 0.0, nh = 0.0, dot = 0.0;
++    for (size_t i = 0; i < low.size(); ++i) {
++      nl += (double)low.data()[i] * low.data()[i];
++      nh += (double)high.data()[i] * high.data()[i];
++      dot += (double)low.data()[i] * high.data()[i];
++    }
++    dot /= std::sqrt(nl) * std::sqrt(nh);
++    if (std::abs(dot) > 0.9995) return xt::eval((1.0f - val) * low + val * high);
++    const double omega = std::acos(dot), so = std::sin(omega);
++    const float a = (float)(std::sin((1.0 - val) * omega) / so);
++    const float b = (float)(std::sin(val * omega) / so);
++    return xt::eval(a * low + b * high);
++  }
++
+   int opTextSeqLen() const { return textSeqLen(); }
+   int opTextHiddenDim() const { return textHiddenDim(); }
+   int opLatentChannels() const { return latentChannels(); }
+@@ -1423,6 +1444,16 @@
+                                      sample_width};
+     xt::random::seed(req.seed);
+     xt::xarray<float> latents = xt::random::randn<float>(shape);
++    // nightmare (037): the variation seed, A1111's slerp. ⚠ The seed's stream is
++    // restored after, so every later draw (latents_noise, the detail injection)
++    // is the one the plain seed makes: strength 0 is bit-identical to before.
++    if (req.subseed_strength > 0.0f) {
++      xt::random::seed(req.subseed);
++      xt::xarray<float> sub = xt::random::randn<float>(shape);
++      latents = slerpNoise(std::min(req.subseed_strength, 1.0f), latents, sub);
++      xt::random::seed(req.seed);
++      (void)xt::random::randn<float>(shape);
++    }
+     xt::xarray<float> latents_noise = xt::random::randn<float>(shape);
+ 
+     // Scale initial latents by init_noise_sigma (required for Euler

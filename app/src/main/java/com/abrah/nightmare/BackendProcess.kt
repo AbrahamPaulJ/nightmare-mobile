@@ -666,6 +666,8 @@ object BackendProcess {
     ): Start =
         withContext(Dispatchers.IO) {
             if (isRunning) return@withContext Start.Failed("already running")
+            // ⚠ A self-test line from a previous launch must not relaunch this one.
+            hmxFailedThisLaunch = false
             try {
                 val nativeDir = context.applicationInfo.nativeLibraryDir
                 val exe = File(nativeDir, EXECUTABLE)
@@ -1087,9 +1089,22 @@ object BackendProcess {
         }
     }
 
+    /**
+     * ⭐ This launch's HMX self-test failed for the first time on this phone ([DeviceProbe.recordHmxSelfTest]):
+     * [HarnessOps.launchBackend] relaunches once with HMX off. Consumed by [takeHmxFailure].
+     */
+    @Volatile
+    private var hmxFailedThisLaunch = false
+
+    fun takeHmxFailure(): Boolean = hmxFailedThisLaunch.also { hmxFailedThisLaunch = false }
+
     private fun say(line: String) {
         Log.i(TAG, line)
-        engineNpuLine(line)?.let { engineNpu = engineNpu + it }
+        engineNpuLine(line)?.let { kv ->
+            engineNpu = engineNpu + kv
+            val ctx = appContext
+            if (kv.first == "hmx" && ctx != null && DeviceProbe.recordHmxSelfTest(ctx, kv.second)) hmxFailedThisLaunch = true
+        }
         synchronized(output) {
             output.addFirst(line)
             while (output.size > 400) output.removeLast()

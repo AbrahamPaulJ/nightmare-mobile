@@ -133,6 +133,7 @@ private class WholeRenderHost : OpHost {
         scheduler: String, condHandle: String, aspect: String?,
         inpaintImage: ByteArray?, inpaintMask: ByteArray?,
         template: Ops.TemplateInputs?,
+        variation: Ops.Variation?,
         onProgress: (Ops.Progress) -> Unit,
     ) = Ops.Result.Err(501, "no")
 

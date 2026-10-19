@@ -862,6 +862,7 @@ internal val MORE_OPTIONS = setOf(
     com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE,
     com.abrah.nightmare.SdSampler.HIRES, com.abrah.nightmare.SdSampler.ENLARGE,
     com.abrah.nightmare.SdSampler.MATCH_COLORS,
+    com.abrah.nightmare.SdSampler.SUBSEED, com.abrah.nightmare.SdSampler.SUBSEED_STRENGTH,
 )
 
 /**

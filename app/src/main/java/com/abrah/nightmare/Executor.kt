@@ -138,6 +138,8 @@ interface OpHost {
         inpaintMask: ByteArray? = null,
         /** ⭐ SD 1.5 Swap's LoRA / ControlNet ([Ops.TemplateInputs]); null for every other model. */
         template: Ops.TemplateInputs? = null,
+        /** ⭐ A1111's variation seed ([Ops.Variation]); null = the seed alone. */
+        variation: Ops.Variation? = null,
         onProgress: (Ops.Progress) -> Unit,
     ): Ops.Result<Ops.Sampled>
 
@@ -238,6 +240,7 @@ object BackendHost : OpHost {
         scheduler: String, condHandle: String, aspect: String?,
         inpaintImage: ByteArray?, inpaintMask: ByteArray?,
         template: Ops.TemplateInputs?,
+        variation: Ops.Variation?,
         onProgress: (Ops.Progress) -> Unit,
         // ⚠ Named, not positional. Ops.sample grew preview arguments BEFORE
         // onProgress, and a positional forward silently bound the callback to
@@ -256,6 +259,7 @@ object BackendHost : OpHost {
         scheduler = scheduler, condHandle = condHandle, aspect = aspect,
         inpaintImage = inpaintImage, inpaintMask = inpaintMask,
         template = template,
+        variation = variation,
         onProgress = onProgress,
     )
 
@@ -774,7 +778,9 @@ fun backendContextKey(node: Node): ContextKey {
     // no graph compiled per shape. Keying on the node's width/height would
     // relaunch the backend for every slider move, so it keys on the model's
     // native size — one process serves every size.
-    val dit = ModelCatalog.byId(node.str("model"))?.takeIf { it.isDit }
+    // ⚠ A fixed-canvas family (SDXL, Anima on the NPU) keys on its own square too: the backend forces it, and a
+    // stray size on the node launched at 1536x2048 for a 1024² model (GitHub #60, [SdSampler.canvasOf]).
+    val dit = ModelCatalog.byId(node.str("model"))?.takeIf { it.isDit || it.fixedCanvas }
     return ContextKey(
         ModelCatalog.backendTypeOf(node.str("model")),
         node.str("model"),

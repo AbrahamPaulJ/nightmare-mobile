@@ -59,9 +59,16 @@ object ApiSettings {
         return t
     }
 
-    /** ⭐ `Authorization: Bearer <token>`, or `?token=` for a picture opened in a browser. */
+    /**
+     * ⭐ `Authorization: Bearer <token>`, or `?token=` for a picture opened in a browser, or HTTP Basic with the token
+     * as the password (any user name): what an Automatic1111 client sends for its `--api-auth` ([A1111]).
+     */
     fun matches(expected: String, header: String?, query: String?): Boolean {
-        val given = header?.removePrefix("Bearer ")?.trim()?.takeIf { it.isNotEmpty() } ?: query ?: return false
+        val basic = header?.trim()?.takeIf { it.startsWith("Basic ", ignoreCase = true) }?.let {
+            runCatching { String(java.util.Base64.getDecoder().decode(it.substring(6).trim()), Charsets.UTF_8) }.getOrNull()
+                ?.substringAfter(':')
+        }
+        val given = basic ?: header?.removePrefix("Bearer ")?.trim()?.takeIf { it.isNotEmpty() } ?: query ?: return false
         return MessageDigest.isEqual(expected.toByteArray(), given.toByteArray())
     }
 

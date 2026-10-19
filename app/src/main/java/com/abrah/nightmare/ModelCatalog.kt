@@ -1040,6 +1040,20 @@ object ModelCatalog {
     val SDXL_NPU_RES = Res(1024, 1024)
 
     /**
+     * ⭐ SDXL on the CPU (MNN): upstream's `--type sdxlmnn` (backend 036), an IMPORT only (GitHub #58: Fancy AI /
+     * Local Dream's `_mnn` zips). The same family, nodes and fixed 1024² canvas as [SDXL_NPU]; runs on any chip.
+     */
+    const val SDXL_MNN = "sdxlmnn"
+
+    /** ⭐ What an SDXL MNN package holds (upstream's layout; the `.weight` files are the weights). */
+    val SDXL_MNN_REQUIRED = listOf(
+        "tokenizer.json",
+        "clip.mnn", "pos_emb.bin", "token_emb.bin",
+        "clip_2.mnn", "clip_2.mnn.weight", "pos_emb_2.bin", "token_emb_2.bin",
+        "unet.mnn", "unet.mnn.weight", "vae_decoder.mnn", "vae_encoder.mnn",
+    )
+
+    /**
      * ⭐ The same pair for Anima. ⚠ 1024 is forced by the backend exactly as it
      * is for SDXL — `RequestParser.hpp` guards on `sdxl || anima`.
      */
@@ -1058,6 +1072,9 @@ object ModelCatalog {
 
     /** ⭐ MOSS-Image's own LoRA, in its folder ([ModelSpec.ownLora]). */
     const val MOSS_LORA = "dmd8.safetensors"
+
+    /** ⭐ Anima 2.9B's own LoRA ([ModelSpec.ownLora]): Karely_ai's turbo, 8 steps at CFG 1 (GitHub #55). */
+    const val ANIMA29_TURBO_LORA = "anima29_turbo.safetensors"
 
     /** ⭐ Ideogram 4's own LoRA, in its folder ([ModelSpec.ownLora]): ostris' TurboTime, its few-step distillation. */
     const val IDEOGRAM_LORA = "turbotime.safetensors"
@@ -2428,11 +2445,15 @@ object ModelCatalog {
         // dropped), to [AnimaGguf.ANIMA_29_PREVIEW_BYTES]. Measured on the S25 (1.6.186): 1024², 20 steps, CFG 4, 300 s.
         // ⚠ Its own copy of Turbo's encoder, VAE and tokenizer (0.9 GB): [ModelSpec.partsFrom] reaches the backend
         // for Wan only. ⚠ Below v79 never run (as Turbo was before its 8 Gen 2 report).
+        // ⭐⭐ With Karely_ai's turbo LoRA on every render ([ModelSpec.ownLora], GitHub #55, the user's call 2026-10-19:
+        // the easiest path, on by default): 8 steps at CFG 1, 95 s at 1024² on the S25 against ~7 min for the base's
+        // 28 at CFG 4. Re-hosted unchanged on our HF (CivitAI serves it only with a key; its permissions allow it).
         dit(
-            "anima_29b_preview", "Anima 2.9B (preview)", Family.ANIMA_DIT, KREA2, steps = 28, cfg = 4.0,
+            "anima_29b_preview", "Anima 2.9B (preview)", Family.ANIMA_DIT, KREA2, steps = 8, cfg = 1.0,
             prompt = "",
             minArch = DIT_V73_MIN_ARCH,
             ownDitParts = true,
+            ownLora = ANIMA29_TURBO_LORA,
             files = listOf(
                 RemoteFile(
                     HF + "Gazingstars123/Anima-2.9B/resolve/main/Anima-2.9B-preview-v1.safetensors",
@@ -2442,6 +2463,7 @@ object ModelCatalog {
                 RemoteFile(HF + "mradermacher/Qwen3-0.6B-Base-GGUF/resolve/main/Qwen3-0.6B-Base.Q8_0.gguf", "llm.gguf", 639_447_232L),
                 RemoteFile(HF + "circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors", "vae.safetensors", 253_806_246L),
                 RemoteFile(HF + "Qwen/Qwen3-0.6B-Base/resolve/main/tokenizer.json", "tokenizer.json", 7_031_645L),
+                RemoteFile(HF + "AbrahamPJ/nightmare-anima-turbo-lora/resolve/main/anima29_turbo_remapped.safetensors", ANIMA29_TURBO_LORA, 148_911_854L),
             ),
         ),
         // ⭐⭐ Iris 3B Turbo (speridlabs, Apache 2.0; `docs/IRIS.md`): a pixel-space DiT, so no

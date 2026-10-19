@@ -203,6 +203,17 @@ class VideoGraphTest {
         assertEquals(Source("image"), wanI2v.graph.byId.getValue("video").inputs["image"])
     }
 
+    /** ⭐ Wan 2.2 text to image: the T2V shape at ONE frame (`seconds` 0), its last frame the picture. */
+    @Test
+    fun wanImageIsOneFrameOfTheClipFlow() {
+        val wf = wanImageWorkflow()
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        val v = wf.graph.byId.getValue("video")
+        assertEquals("0", v.params["seconds"])
+        assertEquals(1, wan.framesOf(v, wan.effectiveParams(v)))
+        assertEquals(Source("video", wan.LAST_FRAME), wf.graph.nodes.single { it.type == "core.output" }.inputs["media"])
+    }
+
     /**
      * ⭐⭐ Its framing view is the CLIP's size, read off its `width`/`height` — 832x480 by default,
      * snapped to Wan's 32 px grid — and a photo wires straight in, as for `nd.sample`.
@@ -282,13 +293,13 @@ class VideoGraphTest {
         assertNull(com.abrah.nightmare.sizeRefusal(g, NODE_TYPES, "a", "b", "image"))
     }
 
-    /** ⚠ Wan wants 4n+1 frames: 24 a second plus one, 1 to 5 seconds. */
+    /** ⚠ Wan wants 4n+1 frames: 24 a second plus one, 1 to 5 seconds; 0 seconds is ONE frame, a still. */
     @Test
     fun wanFrameCountsAreFourNPlusOne() {
         val wan = com.abrah.nightmare.npu.WanVideoNode
         assertEquals(121, wan.framesFor(5))
         assertEquals(25, wan.framesFor(1))
-        assertEquals(25, wan.framesFor(0))
+        assertEquals(1, wan.framesFor(0))
         assertEquals(121, wan.framesFor(9))
         for (s in 1..5) assertEquals(1, wan.framesFor(s) % 4)
     }

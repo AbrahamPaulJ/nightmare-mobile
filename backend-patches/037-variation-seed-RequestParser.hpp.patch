@@ -1,0 +1,12 @@
+--- a/src/RequestParser.hpp
++++ b/src/RequestParser.hpp
+@@ -40,6 +40,9 @@
+   req.seed = json.value(
+       "seed", (unsigned)hashSeed(
+                   std::chrono::system_clock::now().time_since_epoch().count()));
++  // nightmare (037): A1111's variation seed (Pipeline::slerpNoise).
++  req.subseed = json.value("subseed", 0u);
++  req.subseed_strength = json.value("subseed_strength", 0.0f);
+   req.width = json.value("width", 512);
+   req.height = json.value("height", 512);
+   if (json.contains("size")) {
