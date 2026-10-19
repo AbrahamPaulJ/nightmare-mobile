@@ -1,0 +1,31 @@
+diff --git a/src/ggml-hexagon/CMakeLists.txt b/src/ggml-hexagon/CMakeLists.txt
+index 845b922..4c15815 100644
+--- a/src/ggml-hexagon/CMakeLists.txt
++++ b/src/ggml-hexagon/CMakeLists.txt
+@@ -80,6 +80,8 @@ build_htp_skel(v73)
+ build_htp_skel(v75)
+ build_htp_skel(v79)
+ build_htp_skel(v81)
++# nightmare (dit/033): the 8 Elite Gen 6's v85, built by name like v73/v75.
++build_htp_skel(v85)
+ 
+ # Install Hexagon skels required at runtime
+ install(FILES ${HTP_SKELS} TYPE LIB)
+diff --git a/src/ggml-hexagon/ggml-hexagon.cpp b/src/ggml-hexagon/ggml-hexagon.cpp
+index 6cda5bc..1047665 100644
+--- a/src/ggml-hexagon/ggml-hexagon.cpp
++++ b/src/ggml-hexagon/ggml-hexagon.cpp
+@@ -7900,9 +7900,10 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
+             if (opt_arch < 73) {
+                 GGML_LOG_WARN("ggml-hex: Hexagon arch v%d is under supported range, capping at v73\n", opt_arch);
+                 opt_arch = 73;
+-            } else if (opt_arch > 81) {
+-                GGML_LOG_WARN("ggml-hex: Hexagon arch v%d is over supported range, capping at v81\n", opt_arch);
+-                opt_arch = 81;
++            } else if (opt_arch > 85) {
++                // nightmare (dit/033): v85 has its own skel now.
++                GGML_LOG_WARN("ggml-hex: Hexagon arch v%d is over supported range, capping at v85\n", opt_arch);
++                opt_arch = 85;
+             }
+         }
+     } else {
