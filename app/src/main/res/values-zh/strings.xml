@@ -1205,4 +1205,10 @@
     <string name="face_edit_failed">人脸编辑失败。%1$s</string>
     <string name="palette_node_face_edit">人脸编辑</string>
     <string name="palette_about_face_edit">调整图片中人脸的微笑、眼睛、视线、嘴型和头部转动（LivePortrait）</string>
+    <string name="references_title">参考图</string>
+    <string name="references_hint">编辑会读取但不重绘的图片。上方的图片是图 1；在提示词中写图 2、3 或 4 来使用它们。</string>
+    <string name="references_full">连同底图最多 %1$d 张图片。</string>
+    <string name="references_add">添加参考图</string>
+    <string name="references_remove">移除图 %1$d</string>
+    <string name="references_no_room">大约还有 %1$d MB 可用内存。在 %2$s 下再加一张参考图很可能内存不足：请降低尺寸或关闭其他应用。</string>
 </resources>

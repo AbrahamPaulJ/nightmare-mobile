@@ -93,6 +93,25 @@ class DitRefLogTest {
         assertEquals("euler_karras", host.scheduler)
     }
 
+    /** ⭐ Images 2 to 4 (2026-10-21): `reference`, `reference_3`, `reference_4`, sent to the host in that order. */
+    @Test
+    fun threeReferencesReachTheHostInOrder() = runBlocking {
+        val colours = listOf(0xFFFF0000.toInt(), 0xFF00FF00.toInt(), 0xFF0000FF.toInt())
+        val files = colours.mapIndexed { i, c -> tmp.newFile("r$i.png").apply { writeBytes(ditSolidPng(16 + 8 * i, 16, c)) }.absolutePath }
+        val base = graph(SdSampler.FLUX2.name, photo = photoFile())
+        val sampler = base.byId.getValue("sample")
+        val ports = listOf("reference") + SdSampler.EXTRA_REFS
+        val g = base.copy(nodes = base.nodes.map { if (it.id == "sample") sampler.copy(inputs = sampler.inputs + ports.mapIndexed { i, p -> p to Source("r$i") }) else it } +
+            files.mapIndexed { i, f -> Node("r$i", "core.image", mapOf("uri" to f)) })
+        val r = run(g)
+        assertTrue("error=${r.error}", r.error == null)
+        val widths = host.refs.map { b ->
+            android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                .also { android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size, it) }.outWidth
+        }
+        assertEquals(listOf(16, 24, 32), widths)
+    }
+
     /** ⚠ Same for FLUX.2 — the family is not the test, having a picture is. */
     @Test
     fun aKleinTextToImageSaysNothingEither() = runBlocking {
@@ -124,6 +143,9 @@ private class WholeRenderHost : OpHost {
     /** The last scheduler a whole render was sent. */
     var scheduler: String? = null
 
+    /** The references the last whole render was sent, in order. */
+    var refs: List<ByteArray> = emptyList()
+
     override suspend fun residentHandles(): Set<String> = emptySet()
 
     override suspend fun generate(
@@ -135,6 +157,7 @@ private class WholeRenderHost : OpHost {
         scheduler: String?,
     ): Ops.Result<Ops.Decoded> {
         this.scheduler = scheduler
+        this.refs = referencePngs
         return Ops.Result.Ok(Ops.Decoded(ditSolidPng(width, height, 0xFF112233.toInt()), "sha", 1L, 2L))
     }
 

@@ -322,6 +322,9 @@ fun NodeInspector(
     onReset: ((String) -> Unit)? = null,
     /** ⭐ The Default view's sampler Reset defaults — [CanvasState.resetSamplerDefaults]. */
     onResetDefaults: ((String) -> Unit)? = null,
+    /** ⭐ A DiT edit's References row ([ReferencesRow]): add (sampler, uri) and remove (sampler, port). */
+    onAddReference: ((String, String) -> Unit)? = null,
+    onRemoveReference: ((String, String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from an inpaint node's Tap-select row. */
     onInstallSegmenter: (() -> Unit)? = null,
     /** ⭐⭐ …and delete it from there too. */
@@ -723,6 +726,22 @@ fun NodeInspector(
             busy = busy,
             onReset = onReset,
             onResetDefaults = onResetDefaults,
+            references = if (onAddReference == null || !nodeShowsReferences(node, types)) null else
+                state.referencePorts(nodeId, types).mapNotNull { port ->
+                    node.inputs[port]?.let { src -> ReferenceSlot(port, src.node, state.pictureInto(nodeId, types, port)?.let(imageFor)) }
+                },
+            referenceRoomless = if (!nodeShowsReferences(node, types)) null else {
+                val ctx = LocalContext.current
+                remember(nodeId, node.params["width"], node.params["height"], node.inputs.size) {
+                    referenceRoomless(
+                        ctx,
+                        node.params["width"]?.toIntOrNull() ?: 1024, node.params["height"]?.toIntOrNull() ?: 1024,
+                        state.referencePorts(nodeId, types).count { node.inputs[it] != null },
+                    )
+                }
+            },
+            onAddReference = onAddReference?.let { f -> { uri: String -> f(nodeId, uri) } },
+            onRemoveReference = onRemoveReference?.let { f -> { port: String -> f(nodeId, port) } },
             // ⚠⚠ **Not offered when the node ALREADY auto-upscales** — the
             // user's call, 2026-09-22. The button's whole job is to put an
             // upscale into the flow behind this output, and the checkbox above
@@ -1240,6 +1259,11 @@ internal fun NodeInspectorBody(
     onReset: ((String) -> Unit)? = null,
     /** ⭐ The Default view's sampler Reset defaults — [CanvasState.resetSamplerDefaults]. */
     onResetDefaults: ((String) -> Unit)? = null,
+    /** ⭐ A DiT edit's References row ([ReferencesRow]); null where the node has none. */
+    references: List<ReferenceSlot>? = null,
+    referenceRoomless: String? = null,
+    onAddReference: ((String) -> Unit)? = null,
+    onRemoveReference: ((String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from the Tap-select row; null hides the button. */
     onInstallSegmenter: (() -> Unit)? = null,
     /** ⭐⭐ …and delete it, the other half of saying it is here. */
@@ -2154,6 +2178,16 @@ internal fun NodeInspectorBody(
             drivingTile(node, live, drivingVideo, clipW, clipH) {
                 DrivingVideoPanel(node, live, drivingVideo, clipW, clipH) { onSetParams(nodeId, it) }
             }
+        }
+        // ⭐ The Default view's References row on a DiT edit (images 2 to 4); Advanced wires them ([ReferencesRow]).
+        if (!nodeActions && references != null && onAddReference != null && onRemoveReference != null) {
+            ReferencesRow(
+                slots = references,
+                roomless = referenceRoomless,
+                onAdd = onAddReference,
+                onReplace = { src, uri -> onSetParam(src, "uri", uri) },
+                onRemove = onRemoveReference,
+            )
         }
         if (popup && (cropSource != null || refSource != null || controlTile != null || videoTile != null)) {
             InpaintEditors(

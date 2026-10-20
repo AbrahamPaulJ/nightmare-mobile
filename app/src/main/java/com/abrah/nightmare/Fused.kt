@@ -178,6 +178,9 @@ class SdSampler(
         // IP-Adapter refuses it with a message ([SwapInputs.resolve]).
         // ⭐ SDXL Swap too since 1.6.101 (backend 024).
         if (family.edit || family == Family.SD15_SWAP || family == Family.SDXL_SWAP) Port("reference", "IMAGE") else null,
+        // ⭐ Images 3 and 4 on a DiT edit (the user's call, 2026-10-21: up to 4 in all): sent after `reference`, whole,
+        // bounded by [REF_MAX]. ⚠ Shown one at a time in the graph ([inputsFor]): wiring one reveals the next.
+        *(if (family.edit && family.dit && !inpaint) EXTRA_REFS.map { Port(it, "IMAGE") }.toTypedArray() else emptyArray()),
         // ⭐⭐ SD 1.5 Swap's ControlNet picture — OPTIONAL: unwired, the picture
         // picked on the node is used ([CONTROL_IMAGE]). Swap only, for the same
         // reason `reference` is FLUX.2 only: a port that always errors is worse
@@ -186,6 +189,12 @@ class SdSampler(
         if (family == Family.SD15_SWAP || family == Family.SDXL_SWAP) Port(CONTROL, "IMAGE") else null,
     )
     override val outputs = listOf(Port("image", "IMAGE"))
+
+    /** ⭐ Growing reference ports: [EXTRA_REFS] each appear once the reference before it is wired (or it is). */
+    override fun inputsFor(node: Node): List<Port> = inputs.filter { port ->
+        val i = EXTRA_REFS.indexOf(port.name)
+        i < 0 || node.inputs[port.name] != null || node.inputs[if (i == 0) "reference" else EXTRA_REFS[i - 1]] != null
+    }
     /** ⚠ Inpaint is its OWN palette section (the user's call, 2026-09-16). */
     override val category = if (inpaint) "inpaint" else "generate"
 
@@ -604,6 +613,10 @@ class SdSampler(
          * reached for during the next crash the way it was during the last one.
          */
         const val REF_MAX = "ref_max"
+
+        /** ⭐ A DiT edit's references after `reference` (image 2): images 3 and 4 ([MAX_REFERENCES] in all). */
+        val EXTRA_REFS = listOf("reference_3", "reference_4")
+        const val MAX_REFERENCES = 4
 
         /**
          * ⚠ Longest edge, aspect always preserved. [REF_ORIGINAL] is the
@@ -1341,6 +1354,7 @@ class SdSampler(
                 inputs["image"] as? Value.Image,
                 inputs["reference"] as? Value.Image,
                 w, h,
+                extraRefs = EXTRA_REFS.mapNotNull { inputs[it] as? Value.Image },
             )
         }
         val aspect = nodeAspect(node)
@@ -2005,6 +2019,8 @@ class SdSampler(
         reference: Value.Image?,
         w0: Int,
         h0: Int,
+        /** ⭐ Images 3 and 4 ([EXTRA_REFS]), in order. */
+        extraRefs: List<Value.Image> = emptyList(),
     ): Value {
         // ⚠ [ModelCatalog.ditSnap], not a local copy: the size control offers
         // only grid values and this must agree with it ([ModelCatalog.DIT_STEP]).
@@ -2112,7 +2128,11 @@ class SdSampler(
             height = h,
             imagePng = png,
             denoise = p["denoise"]?.toDoubleOrNull() ?: defaultDenoise(family).toDouble(),
-            referencePngs = listOfNotNull(referencePng),
+            referencePngs = listOfNotNull(referencePng) + extraRefs.map { r ->
+                val bmp = ctx.images.get(r.id)
+                    ?: throw IllegalStateException("node \"${node.id}\": reference image ${r.id} is no longer in the store")
+                ImageStore.encodePng(boundReference(bmp, p[REF_MAX]))
+            },
             loras = lorasFor(ctx, p[LORAS]),
             onProgress = ctx.onProgress,
             // ⭐ The node's sampler (GitHub #19) and, since engine ABI 108, its schedule (`euler_karras`, backend 038);

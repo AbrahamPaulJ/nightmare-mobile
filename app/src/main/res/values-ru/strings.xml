@@ -1232,4 +1232,10 @@
     <string name="face_edit_failed">Правка лица не удалась. %1$s</string>
     <string name="palette_node_face_edit">Правка лица</string>
     <string name="palette_about_face_edit">улыбка, глаза, взгляд, рот и поворот головы у лиц на картинке (LivePortrait)</string>
+    <string name="references_title">Референсы</string>
+    <string name="references_hint">Картинки, которые правка читает, но не перерисовывает. Картинка выше: изображение 1; назовите в промпте изображение 2, 3 или 4.</string>
+    <string name="references_full">Не больше %1$d картинок вместе с основной.</string>
+    <string name="references_add">Добавить референс</string>
+    <string name="references_remove">Убрать изображение %1$d</string>
+    <string name="references_no_room">Свободно около %1$d МБ. Ещё один референс при %2$s скорее всего не уместится в памяти: уменьшите размер или закройте другие приложения.</string>
 </resources>

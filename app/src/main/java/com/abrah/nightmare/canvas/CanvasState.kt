@@ -1002,6 +1002,51 @@ data class CanvasState(
         wireConfirming = if (wire?.toNode == id || wire?.from?.node == id) false else wireConfirming,
     )
 
+    /** ⭐ A DiT edit's reference ports in order (image 2, 3, 4): `reference` then [com.abrah.nightmare.SdSampler.EXTRA_REFS]. */
+    fun referencePorts(samplerId: String, types: Map<String, NodeType>): List<String> {
+        val type = workflow.graph.byId[samplerId]?.let { types[it.type] } ?: return emptyList()
+        val all = listOf("reference") + com.abrah.nightmare.SdSampler.EXTRA_REFS
+        return all.filter { name -> type.inputs.any { it.name == name } }
+    }
+
+    /**
+     * ⭐ The Default view's "+" on a DiT edit's References row (the user's call, 2026-10-21): a new image node holding
+     * [uri], wired into the first FREE reference port. ⚠ An image node, never a hidden param — the rule
+     * [com.abrah.nightmare.canvas.swapWired] keeps for Swap's pictures — so Advanced shows the same picture on a wire.
+     */
+    fun addReference(samplerId: String, uri: String, types: Map<String, NodeType>): CanvasState {
+        val sampler = workflow.graph.byId[samplerId] ?: return this
+        val port = referencePorts(samplerId, types).firstOrNull { sampler.inputs[it] == null } ?: return this
+        val id = workflow.graph.freeId("reference")
+        val node = com.abrah.nightmare.Node(id, "core.image", params = mapOf("uri" to uri))
+        val at = workflow.positions[samplerId]?.let { Pt(it.x - 320f, it.y + 260f + 120f * referencePorts(samplerId, types).indexOf(port)) }
+            ?: Pt(0f, 0f)
+        val wired = sampler.copy(inputs = sampler.inputs + (port to com.abrah.nightmare.Source(id)))
+        return copy(
+            workflow = Workflow(
+                graph = workflow.graph.copy(nodes = workflow.graph.nodes.map { if (it.id == samplerId) wired else it } + node),
+                positions = workflow.positions + (id to at),
+            ),
+            message = null,
+        )
+    }
+
+    /**
+     * ⭐ The References row's x: the wire goes, and so does its image node when nothing else reads it. ⚠ The later
+     * references move up a port, so images stay numbered 2, 3, 4 with no gap (a gap would hide a port in Advanced).
+     */
+    fun removeReference(samplerId: String, port: String, types: Map<String, NodeType>): CanvasState {
+        val sampler = workflow.graph.byId[samplerId] ?: return this
+        val src = sampler.inputs[port]?.node ?: return this
+        val ports = referencePorts(samplerId, types)
+        val kept = ports.filter { it != port }.mapNotNull { sampler.inputs[it] }
+        val restacked = sampler.inputs - ports.toSet() + ports.zip(kept).toMap()
+        val graph = workflow.graph.copy(nodes = workflow.graph.nodes.map { if (it.id == samplerId) sampler.copy(inputs = restacked) else it })
+        val orphan = graph.nodes.none { n -> n.inputs.values.any { it.node == src } } && graph.byId[src]?.type == "core.image"
+        val next = copy(workflow = workflow.copy(graph = graph), message = null)
+        return if (orphan) next.removeNode(src) else next
+    }
+
     /**
      * Pinch. [focus] is the midpoint between the fingers, in screen space.
      *

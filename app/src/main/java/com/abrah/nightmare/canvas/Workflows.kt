@@ -747,18 +747,6 @@ fun fluxEditWorkflow(): Workflow {
     )
 }
 
-/**
- * ⭐⭐ Enlarge a picture, and nothing else.
- *
- * ⚠⚠ **No sampler, no checkpoint, no [ContextKey] at all.** An upscaler binds
- * nothing at backend launch — `/upscale` builds its own QNN context per request
- * and frees it after — so this graph pins the process to nothing and runs beside
- * any model.
- *
- * ⚠ It exists because wiring a photo straight into an upscale node by hand gave
- * no clue what was missing: the node needs an upscaler INSTALLED (Models →
- * Upscalers). Asked for from the phone, 2026-09-11.
- */
 /** ⭐ [FACE_EDIT]: a picture, its faces edited ([com.abrah.nightmare.portrait.FaceEditNode]), the output. */
 fun faceEditWorkflow(): Workflow = Workflow(
     Graph(
@@ -775,6 +763,18 @@ fun faceEditWorkflow(): Workflow = Workflow(
     positions = flowLayout("image", "face", "output"),
 )
 
+/**
+ * ⭐⭐ Enlarge a picture, and nothing else.
+ *
+ * ⚠⚠ **No sampler, no checkpoint, no [ContextKey] at all.** An upscaler binds
+ * nothing at backend launch — `/upscale` builds its own QNN context per request
+ * and frees it after — so this graph pins the process to nothing and runs beside
+ * any model.
+ *
+ * ⚠ It exists because wiring a photo straight into an upscale node by hand gave
+ * no clue what was missing: the node needs an upscaler INSTALLED (Models →
+ * Upscalers). Asked for from the phone, 2026-09-11.
+ */
 fun upscaleWorkflow(): Workflow = Workflow(
     Graph(
         listOf(

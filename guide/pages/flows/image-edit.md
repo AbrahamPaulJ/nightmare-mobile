@@ -29,11 +29,20 @@ changes. *Make it winter*, *turn the car red*, *put a hat on the dog*.
 
 Start with FLUX.2. Reach for Qwen when FLUX.2 does not understand what you asked.
 
-## Two pictures: the reference port
+## More pictures: references
 
-The Image edit node has a second input, **reference**. Wire another Image node into it and
-you can combine two pictures: in the prompt, the base photo is **image 1** and the reference is
-**image 2**: `put the jacket from image 2 on the person in image 1`.
+Up to **four pictures** can go into one edit: the base photo is **image 1** and up to three
+references are **image 2, 3 and 4**. Name them in the prompt:
+`put the jacket from image 2 and the hat from image 3 on the person in image 1`.
+
+- **Default view:** the edit page has a **References** row. Tap **+** to add a picture, tap a
+  thumbnail to replace it, and its **x** to remove it (the ones after it move up a number). The
+  **+** is dimmed, and says why when tapped, once there are four pictures or when this phone does
+  not have the memory for another at the current size.
+- **Advanced view:** the node has a **reference** input; wiring a picture into it shows a
+  **reference 3** input, and that one shows **reference 4**.
+
+Each reference makes the edit slower and needs more memory, so add only the ones you need.
 
 <figure markdown>
   ![The Image edit node with a reference](../img/inspector-flux-reference.png){ .screen }

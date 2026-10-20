@@ -1236,4 +1236,10 @@
     <string name="face_edit_failed">Face edit failed. %1$s</string>
     <string name="palette_node_face_edit">Face edit</string>
     <string name="palette_about_face_edit">smile, eyes, gaze, mouth and head turn on the faces in a picture (LivePortrait)</string>
+    <string name="references_title">References</string>
+    <string name="references_hint">Pictures the edit reads but does not redraw. The picture above is image 1; name image 2, 3 or 4 in the prompt to use one.</string>
+    <string name="references_full">Up to %1$d pictures in all, the base one included.</string>
+    <string name="references_add">Add a reference</string>
+    <string name="references_remove">Remove image %1$d</string>
+    <string name="references_no_room">About %1$d MB is free. Another reference at %2$s would likely run out of memory: lower the size or close other apps.</string>
 </resources>

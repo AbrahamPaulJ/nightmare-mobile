@@ -445,7 +445,7 @@ data class NodeBox(
         topLeft.y + Sizes.HEADER_HEIGHT + Sizes.PORT_TOP + i * Sizes.PORT_SPACING,
     )
 
-    val inputs: List<Port> get() = type?.inputs.orEmpty()
+    val inputs: List<Port> get() = type?.inputsFor(node).orEmpty()
     val outputs: List<Port> get() = type?.outputs.orEmpty()
 }
 
@@ -622,7 +622,7 @@ fun layout(
         val type = types[n.type]
         val pos = workflow.positions[n.id] ?: Pt(0f, 0f)
         val width = workflow.widthOf(n.id, type)
-        val nIn = type?.inputs?.size ?: 0
+        val nIn = type?.inputsFor(n)?.size ?: 0
         val nOut = type?.outputs?.size ?: 0
         val shown = previews[n.id]
         val shownBefore = beforePreviews[n.id]

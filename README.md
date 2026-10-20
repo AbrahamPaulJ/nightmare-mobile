@@ -67,7 +67,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Tap to select**: tap an object and the mask follows its outline (Segment Anything 2.1).
 - **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.
-- **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with an optional second reference picture.
+- **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with up to three reference pictures (images 2 to 4), added from a References row or wired in.
 - **Text and image to video**: **Wan 2.2**, 5 second clips at 832×480 in about 3 minutes (any shape up to 1280×704, 1 to 5 s; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag; **Match picture** sets the clip to the photo's shape), or **Neodragon** from the same flow's Model choice: 49 frames at 1024×640 in about 25 s on an 8 Elite. Big clips are decoded in tiles, so 704×1280 for 5 s renders on a 12 GB phone. **Seconds 0** on the video node makes one still in about 16 s. **Chain** clips from the last frame and the last node hands the output **one joined film**; every part is kept in Results too, with the picture it started from.
 - **Motion transfer** (Wan 2.2 Fun Control): your picture moving like a video you choose, by its pose or a control video you already have (a pose or depth video). Pick the part of the video (its length is the clip's, up to 5 s, at any size up to 1280×704) and crop it on its first frame. 480×832 for 2 s in about 90 s on an 8 Elite.
 

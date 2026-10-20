@@ -398,6 +398,12 @@ interface NodeType {
      * they connect it.
      */
     val inputs: List<Port>
+
+    /**
+     * ⭐ The inputs [node] SHOWS: [inputs] unless a type grows its ports with its wires (a DiT edit's references,
+     * [SdSampler.inputsFor]). ⚠ Drawing and sizing only; a wire into any declared port stays valid.
+     */
+    fun inputsFor(node: Node): List<Port> = inputs
     val outputs: List<Port>
 
     /** Groups nodes in the palette, and is the only thing that earns a hue (docs/UI.md §1). */
