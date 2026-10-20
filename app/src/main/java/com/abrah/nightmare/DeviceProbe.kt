@@ -202,6 +202,29 @@ object DeviceProbe {
     fun soc(): String = (Build.SOC_MODEL ?: "").uppercase()
 
     /**
+     * ⭐ The cDSP's Hexagon arch as the phone's own FastRPC shell was built for it, read off that ELF's
+     * `e_flags` (`EF_HEXAGON_MACH_V79` = 0x79), with the path it came from; null when no shell is readable.
+     * ⚠ A diagnostic beside the chip table, not a gate yet: GitHub #61/#62's SM8975 failed loading a V85 skel
+     * ("skel load 1002") and the table's v85 for it is a guess one generation past the newest known part.
+     * ⚠ The app can read it where adb cannot (SELinux): FastRPC loads the unsigned shell from the app's process.
+     */
+    val dspShellArch: Pair<String, String>? by lazy {
+        val dirs = listOf("/vendor/dsp/cdsp", "/vendor/dsp", "/vendor/lib/rfsa/adsp", "/odm/lib/rfsa/adsp", "/vendor/dsp/cdsp1")
+        val names = listOf("fastrpc_shell_unsigned_3", "fastrpc_shell_3")
+        dirs.asSequence().flatMap { d -> names.asSequence().map { File(d, it) } }.firstNotNullOfOrNull { f ->
+            runCatching {
+                java.io.RandomAccessFile(f, "r").use { r ->
+                    val h = ByteArray(40).also { r.readFully(it) }
+                    val machine = (h[18].toInt() and 0xFF) or ((h[19].toInt() and 0xFF) shl 8)
+                    if (h[0] != 0x7F.toByte() || machine != 164) return@use null
+                    val flags = (h[36].toInt() and 0xFF) or ((h[37].toInt() and 0xFF) shl 8)
+                    "v%x".format(flags and 0xFFF) to f.path
+                }
+            }.getOrNull()
+        }.also { Log.i(TAG, "cDSP shell: ${it?.let { (a, p) -> "$a ($p)" } ?: "not readable"}") }
+    }
+
+    /**
      * ⭐⭐ What to gate and label with.
      *
      * ⚠ A measurement always wins. Failing that, the tables; failing those, the

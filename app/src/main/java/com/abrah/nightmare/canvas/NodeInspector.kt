@@ -320,6 +320,8 @@ fun NodeInspector(
     onDropReceived: ((String) -> Unit)? = null,
     /** ⭐⭐ Put a node's knobs back to their defaults — [CanvasState.resetNode]. */
     onReset: ((String) -> Unit)? = null,
+    /** ⭐ The Default view's sampler Reset defaults — [CanvasState.resetSamplerDefaults]. */
+    onResetDefaults: ((String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from an inpaint node's Tap-select row. */
     onInstallSegmenter: (() -> Unit)? = null,
     /** ⭐⭐ …and delete it from there too. */
@@ -719,6 +721,7 @@ fun NodeInspector(
             onDeleteControlNet = onDeleteControlNet,
             busy = busy,
             onReset = onReset,
+            onResetDefaults = onResetDefaults,
             // ⚠⚠ **Not offered when the node ALREADY auto-upscales** — the
             // user's call, 2026-09-22. The button's whole job is to put an
             // upscale into the flow behind this output, and the checkbox above
@@ -1232,6 +1235,8 @@ internal fun NodeInspectorBody(
     onDropEnlargement: (() -> Unit)? = null,
     /** ⭐⭐ Put this node's knobs back to their defaults — [CanvasState.resetNode]. */
     onReset: ((String) -> Unit)? = null,
+    /** ⭐ The Default view's sampler Reset defaults — [CanvasState.resetSamplerDefaults]. */
+    onResetDefaults: ((String) -> Unit)? = null,
     /** ⭐⭐ Download the segmenter from the Tap-select row; null hides the button. */
     onInstallSegmenter: (() -> Unit)? = null,
     /** ⭐⭐ …and delete it, the other half of saying it is here. */
@@ -1301,6 +1306,7 @@ internal fun NodeInspectorBody(
     // other one in the app.
     var confirmingDelete by remember { mutableStateOf(false) }
     var confirmingReset by remember { mutableStateOf(false) }
+    var confirmingDefaults by remember { mutableStateOf(false) }
     // ⚠ Null when not renaming. Keyed on the node so opening another node's
     // sheet cannot leave a half-typed name from the last one behind.
     var renaming by remember(nodeId) { mutableStateOf<TextFieldValue?>(null) }
@@ -1333,10 +1339,12 @@ internal fun NodeInspectorBody(
             } else Modifier),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
+        // ⚠ A FlowRow so the Default view's Swap flow sits beside the name when it fits (below).
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Bottom,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             // ⭐⭐ **Double-tap the name to rename the node.**
             //
@@ -1359,7 +1367,7 @@ internal fun NodeInspectorBody(
                     nodeId,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 20.sp,
-                    modifier = Modifier.pointerInput(nodeId) {
+                    modifier = Modifier.align(Alignment.CenterVertically).pointerInput(nodeId) {
                         detectTapGestures(
                             onDoubleTap = {
                                 renaming = TextFieldValue(nodeId, TextRange(0, nodeId.length))
@@ -1373,6 +1381,7 @@ internal fun NodeInspectorBody(
                     node.type,
                     style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.Bottom),
                 )
             } else {
                 val focus = remember { FocusRequester() }
@@ -1396,6 +1405,36 @@ internal fun NodeInspectorBody(
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
             }
+            // ⭐⭐ Swap flow and Remove input (the user's ask, 2026-10-11): the Default view only
+            // ([nodeActions] is Advanced's sheet), and only a one-sampler flow ([swapFlows] null else).
+            // Advanced just shows the graph the swap produced.
+            // ⚠ On the NAME's row, at its end, and down a line only when the name leaves no room
+            // (the user, 2026-10-20: a line of its own under a short name was wasted height).
+            if (!nodeActions && swapFlows != null) {
+                Spacer(Modifier.weight(1f))
+                if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && swapFlows.size > 1) {
+                    var choosing by remember(nodeId) { mutableStateOf(false) }
+                    com.abrah.nightmare.ui.LabeledAction(
+                        com.abrah.nightmare.ui.SwapIcon, stringResource(R.string.swap_flow), { choosing = true },
+                    )
+                    if (choosing) SwapFlowDialog(swapFlows, onPick = { choosing = false; onSwapFlow(it) }, onDismiss = { choosing = false })
+                }
+                if (node.type == "core.image") swapFlows.firstOrNull { !it.takesPicture }?.let { t2i ->
+                    var confirming by remember(nodeId) { mutableStateOf(false) }
+                    com.abrah.nightmare.ui.LabeledAction(
+                        Icons.Filled.Close, stringResource(R.string.remove_input), { confirming = true },
+                    )
+                    if (confirming) androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { confirming = false },
+                        title = { Text(stringResource(R.string.remove_input_title)) },
+                        text = { Text(stringResource(R.string.remove_input_body)) },
+                        confirmButton = {
+                            TextButton(onClick = { confirming = false; onSwapFlow(t2i.recipe) }) { Text(stringResource(R.string.remove_input)) }
+                        },
+                        dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
+                    )
+                }
+            }
         }
 
         // ⭐⭐ The crop node's real interface. Its four params are the rectangle;
@@ -1417,33 +1456,6 @@ internal fun NodeInspectorBody(
         // not something to persist. ⚠⚠ Declared HERE rather than beside the
         // other knob-popup state below, because [LoraRow] is now drawn under
         // the checkpoint picker and a Kotlin local has to exist before its use.
-        // ⭐⭐ Swap flow and Remove input (the user's ask, 2026-10-11): the Default view only
-        // ([nodeActions] is Advanced's sheet), and only a one-sampler flow ([swapFlows] null else).
-        // Advanced just shows the graph the swap produced.
-        if (!nodeActions && swapFlows != null) {
-            if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && swapFlows.size > 1) {
-                var choosing by remember(nodeId) { mutableStateOf(false) }
-                com.abrah.nightmare.ui.LabeledAction(
-                    com.abrah.nightmare.ui.SwapIcon, stringResource(R.string.swap_flow), { choosing = true },
-                )
-                if (choosing) SwapFlowDialog(swapFlows, onPick = { choosing = false; onSwapFlow(it) }, onDismiss = { choosing = false })
-            }
-            if (node.type == "core.image") swapFlows.firstOrNull { !it.takesPicture }?.let { t2i ->
-                var confirming by remember(nodeId) { mutableStateOf(false) }
-                com.abrah.nightmare.ui.LabeledAction(
-                    Icons.Filled.Close, stringResource(R.string.remove_input), { confirming = true },
-                )
-                if (confirming) androidx.compose.material3.AlertDialog(
-                    onDismissRequest = { confirming = false },
-                    title = { Text(stringResource(R.string.remove_input_title)) },
-                    text = { Text(stringResource(R.string.remove_input_body)) },
-                    confirmButton = {
-                        TextButton(onClick = { confirming = false; onSwapFlow(t2i.recipe) }) { Text(stringResource(R.string.remove_input)) }
-                    },
-                    dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
-                )
-            }
-        }
         var pickingLoras by remember(nodeId) { mutableStateOf(false) }
         // ⚠ Whether ⓘ is open. Local, keyed on the node, same as the picker.
         var showingInfo by remember(nodeId) { mutableStateOf(false) }
@@ -2729,7 +2741,7 @@ internal fun NodeInspectorBody(
                     }
                     // ⭐ The schedules this family offers at all (GitHub #19: Karras became one of
                     // three, beside Exponential). ⚠ Its own dropdown, not a checkbox per schedule.
-                    val schedules = ModelCatalog.SCHEDULES.filter { (sfx, _) ->
+                    val schedules = ModelCatalog.DIT_SCHEDULES.filter { (sfx, _) ->
                         sfx.isEmpty() || allowed.any { it.endsWith(sfx) }
                     }
                     ChoiceDropdown(
@@ -3233,6 +3245,24 @@ internal fun NodeInspectorBody(
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp),
             ) { Text(stringResource(R.string.inspector_delete_node)) }
         }
+        // ⭐ The Default view's half of Reset, on every sampler (the user, 2026-10-20): no Delete there,
+        // and it keeps what was picked ([CanvasState.resetSamplerDefaults]). Same quiet outlined button.
+        if (!nodeActions && onResetDefaults != null && type is com.abrah.nightmare.SdSampler) {
+            androidx.compose.material3.OutlinedButton(
+                onClick = { confirmingDefaults = true }, shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
+            ) { Text(stringResource(R.string.inspector_reset_defaults)) }
+        }
+    }
+
+    if (confirmingDefaults && onResetDefaults != null) {
+        com.abrah.nightmare.ui.ConfirmDelete(
+            title = stringResource(R.string.inspector_reset_defaults_title),
+            confirmLabel = stringResource(R.string.inspector_reset),
+            body = stringResource(R.string.inspector_reset_defaults_body),
+            onConfirm = { onResetDefaults(nodeId) },
+            onDismiss = { confirmingDefaults = false },
+        )
     }
 
     if (confirmingReset && onReset != null) {
@@ -5377,12 +5407,14 @@ private fun missingText(spec: com.abrah.nightmare.ModelSpec?, feature: String): 
         androidx.compose.ui.res.stringResource(res, name)
     }
 
-/** ⭐ A schedule suffix's name in the phone's language ([ModelCatalog.SCHEDULES]). */
+/** ⭐ A schedule suffix's name in the phone's language ([ModelCatalog.DIT_SCHEDULES]). */
 @Composable
 private fun scheduleLabel(sfx: String): String = stringResource(
     when (sfx) {
         "_karras" -> R.string.schedule_karras
         "_exponential" -> R.string.schedule_exponential
+        "_sgm_uniform" -> R.string.schedule_sgm_uniform
+        "_bong_tangent" -> R.string.schedule_bong_tangent
         else -> R.string.schedule_normal
     },
 )

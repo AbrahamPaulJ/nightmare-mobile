@@ -187,6 +187,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "upscalers" -> listUpscalers()
             "upscaler_install" -> installUpscaler(arg)
             "models" -> listModels()
+            // ⭐ The cDSP's arch from the phone's own FastRPC shell ([DeviceProbe.dspShellArch]); logs on DeviceProbe.
+            "dsp_arch" -> say("dsp_arch: ${DeviceProbe.dspShellArch ?: "not readable"} · table v${DeviceProbe.caps().arch}")
             "model_install" -> installModel(arg)
             "model_delete" -> deleteModel(arg)
             "model_use" -> useModel(arg)

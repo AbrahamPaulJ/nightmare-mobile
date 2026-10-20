@@ -4362,7 +4362,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             spec = null,
             title = text(R.string.models_use_named, spec.label),
             offer = if (spec == ModelCatalog.WAN22_FUN) com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.MOTION)
-            else com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.WAN_T2I, com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V),
+            else com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V),
             unsavedFlow = unsavedFlow(),
         )
     }

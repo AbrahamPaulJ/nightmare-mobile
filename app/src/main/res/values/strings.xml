@@ -539,6 +539,9 @@
     <string name="inspector_reset_title">Reset this node?</string>
     <string name="inspector_reset">Reset</string>
     <string name="inspector_reset_body">Every knob on "%1$s" goes back to its default. Its wires, its place on the canvas and any picture on it stay.</string>
+    <string name="inspector_reset_defaults">Reset defaults</string>
+    <string name="inspector_reset_defaults_title">Reset to defaults?</string>
+    <string name="inspector_reset_defaults_body">Steps, CFG, the scheduler and every other setting go back to the defaults of this model. The model, seed, LoRAs, size and any painted mask stay.</string>
     <string name="inspector_none">None</string>
     <string name="inspector_choose">Choose</string>
     <string name="inspector_change">Change</string>
@@ -733,8 +736,6 @@
     <string name="flow_swap_i2i_about">A photo re-imagined by a Swap model, with the same three. ControlNet reads the photo itself unless you give it another picture.</string>
     <string name="flow_flux_edit_name">Image edit</string>
     <string name="flow_flux_edit_about">FLUX.2 Klein or Qwen Image 2.1, on an 8 Gen 3 or newer (alpha on 8 Gen 3). A photo and a prompt: the whole picture is re-rendered to follow it, rather than nudged. Wire a second picture into the reference port and name them as image 1 and image 2 in the prompt.</string>
-    <string name="flow_wan_t2i_name">Wan 2.2: text to image</string>
-    <string name="flow_wan_t2i_about">A prompt into one picture from Wan 2.2, the video model: a single frame, so it takes seconds where a clip takes minutes.</string>
     <string name="flow_t2v_name">Text to video</string>
     <string name="flow_t2v_about">A prompt into a clip. Wan 2.2 by default (minutes, much better); switch the video node to Neodragon for 2 s in about 30 s.</string>
     <string name="flow_i2v_name">Image to video</string>
@@ -1189,6 +1190,8 @@
     <string name="schedule_normal">Normal</string>
     <string name="schedule_karras">Karras</string>
     <string name="schedule_exponential">Exponential</string>
+    <string name="schedule_sgm_uniform">SGM Uniform</string>
+    <string name="schedule_bong_tangent">Bong Tangent</string>
     <string name="schedule_unavailable">LCM uses its own schedule</string>
     <string name="drawer_support">Support</string>
     <string name="support_coffee">Buy me a coffee</string>

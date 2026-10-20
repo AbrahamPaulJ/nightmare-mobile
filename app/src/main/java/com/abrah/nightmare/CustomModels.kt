@@ -758,7 +758,13 @@ object CustomModels {
             ensureDitParts(context, variant, dir, onProgress, isCancelled)
             // ⭐ A `.gguf` keeps its format: the engine picks the loader by name.
             val dest = File(dir, if (head.gguf) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
-            open().use { input ->
+            // ⭐ A safetensors goes through [Fp8Widen]: its non-matmul fp8 tensors become F32 on the way.
+            if (!head.gguf) open().use { input ->
+                dest.outputStream().buffered(BUFFER).use { outS ->
+                    val widened = Fp8Widen.copy(input, outS, { done -> onProgress(ModelInstaller.Progress("importing", done, 0)) }, isCancelled)
+                    if (widened > 0) Log.i(TAG, "widened $widened fp8 tensors of '$name' to F32")
+                }
+            } else open().use { input ->
                 dest.outputStream().buffered(BUFFER).use { outS ->
                     val buf = ByteArray(BUFFER)
                     var done = 0L

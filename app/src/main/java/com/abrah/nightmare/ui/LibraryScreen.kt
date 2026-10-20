@@ -335,7 +335,11 @@ fun SwipeTabs(
     page: @Composable (Int) -> Unit,
 ) {
     val state = rememberPagerState(initialPage = initialPage, pageCount = { labels.size })
-    androidx.compose.runtime.LaunchedEffect(state.currentPage) { onPage(state.currentPage) }
+    // ⚠⚠ The SETTLED page, never `currentPage`: Run's turn to the output (below) passes every page
+    // between, each one went out as the inspected node, moved [initialPage] mid-animation and
+    // restarted the effect below, which cancelled the turn and then skipped (a scroll "in progress"):
+    // the Default view stopped half-swiped on the node before the output (the user, 2026-10-20).
+    androidx.compose.runtime.LaunchedEffect(state.settledPage) { onPage(state.settledPage) }
     // ⭐ A page chosen from OUTSIDE — the Nodes view turning to the output node after a Run.
     // ⚠ Never mid-swipe, and a no-op when the caller's page is the one already showing.
     androidx.compose.runtime.LaunchedEffect(initialPage) {

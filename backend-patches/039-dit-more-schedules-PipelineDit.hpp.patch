@@ -1,0 +1,14 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -69,8 +69,10 @@
+ // nightmare (038): the app's one wire value carries a schedule the way the SD
+ // samplers' does ("euler_karras"): the suffix is the engine's schedule
+ // (ABI 108), the rest its sampler. "" = the model's own schedule.
++// nightmare (039): SGM Uniform and Bong Tangent too, names the engine's
++// str_to_scheduler already knows (no engine change).
+ inline std::string ditSchedule(const std::string &s) {
+-  for (const char *sfx : {"_karras", "_exponential"}) {
++  for (const char *sfx : {"_karras", "_exponential", "_sgm_uniform", "_bong_tangent"}) {
+     const size_t n = std::strlen(sfx);
+     if (s.size() > n && s.compare(s.size() - n, n, sfx) == 0) return sfx + 1;
+   }

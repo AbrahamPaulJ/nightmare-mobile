@@ -228,6 +228,8 @@ object ErrorReport {
                     caps.known -> " (from the chip table)"
                     else -> " (unknown chip, the floor)"
                 } + " · VTCM ${caps.vtcmMb} MB" +
+                // ⭐ What the phone's own FastRPC shell was built for ([DeviceProbe.dspShellArch]).
+                (DeviceProbe.dspShellArch?.let { (a, _) -> " · cDSP shell says $a" } ?: "") +
                 // ⭐ The engine's own reading of the NPU, when a DiT launch has printed it ([BackendProcess.engineNpu]).
                 BackendProcess.engineNpu.let { e ->
                     if (e.isEmpty()) "" else " · engine says ${listOfNotNull(e["arch"], e["hwinfo"], e["hmx"]).joinToString(", ")}"

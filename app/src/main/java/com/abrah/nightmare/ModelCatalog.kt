@@ -1363,9 +1363,9 @@ object ModelCatalog {
         else -> SCHEDULERS
     }
 
-    /** ⭐ The DiT samplers, each with the schedules ([SCHEDULES]) the engine takes since ABI 108. */
+    /** ⭐ The DiT samplers, each with the schedules ([DIT_SCHEDULES]) the engine takes since ABI 108. */
     val DIT_SCHEDULERS: List<String> by lazy {
-        DIT_SAMPLER_IDS.flatMap { id -> SCHEDULES.map { (sfx, _) -> joinScheduler(id, sfx) } }.distinct()
+        DIT_SAMPLER_IDS.flatMap { id -> DIT_SCHEDULES.map { (sfx, _) -> joinScheduler(id, sfx) } }.distinct()
     }
 
     /**
@@ -1399,6 +1399,16 @@ object ModelCatalog {
     )
 
     /**
+     * ⭐ The DiT engine's schedules: [SCHEDULES] plus SGM Uniform and Bong Tangent (testers' wishes, 2026-10-20, the
+     * user's call: every DiT model). stable-diffusion.cpp already knows both names (`str_to_scheduler`); backend 039
+     * passes the suffixes through. ⚠ Not on the SD samplers: their backend has neither.
+     */
+    val DIT_SCHEDULES: List<Pair<String, String>> = SCHEDULES + listOf(
+        "_sgm_uniform" to "SGM Uniform",
+        "_bong_tangent" to "Bong Tangent",
+    )
+
+    /**
      * ⭐ The DiT engine's samplers by its own names (stable-diffusion.cpp), the ones backend 029
      * passes through; anything else renders with Euler. Heun runs the model twice a step.
      */
@@ -1428,7 +1438,7 @@ object ModelCatalog {
     /** `"dpm_sde_karras"` -> `("dpm_sde", "_karras")`; a DiT id comes back whole with `""`. */
     fun splitScheduler(value: String): Pair<String, String> {
         if (value in DIT_SAMPLER_IDS && SAMPLERS.none { it.first == value }) return value to ""
-        val sfx = SCHEDULES.map { it.first }.filter { it.isNotEmpty() }.firstOrNull { value.endsWith(it) } ?: ""
+        val sfx = DIT_SCHEDULES.map { it.first }.filter { it.isNotEmpty() }.firstOrNull { value.endsWith(it) } ?: ""
         val base = value.removeSuffix(sfx)
         // ⚠ An unrecognised base falls back to the default rather than being
         // passed through: the backend would silently treat it as `dpm`, and a
@@ -1452,7 +1462,7 @@ object ModelCatalog {
         val (base, sfx) = splitScheduler(value)
         val name = SAMPLERS.firstOrNull { it.first == base }?.second
             ?: DIT_SAMPLERS.firstOrNull { it.first == base }?.second ?: base
-        val sched = SCHEDULES.firstOrNull { it.first == sfx && sfx.isNotEmpty() }?.second
+        val sched = DIT_SCHEDULES.firstOrNull { it.first == sfx && sfx.isNotEmpty() }?.second
         return if (sched != null) "$name $sched" else name
     }
 

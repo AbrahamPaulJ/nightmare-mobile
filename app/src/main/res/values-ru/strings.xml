@@ -527,6 +527,9 @@
     <string name="inspector_reset_title">Сбросить этот узел?</string>
     <string name="inspector_reset">Сбросить</string>
     <string name="inspector_reset_body">Все регуляторы «%1$s» вернутся к значениям по умолчанию. Провода, положение на холсте и изображения останутся.</string>
+    <string name="inspector_reset_defaults">Сбросить настройки</string>
+    <string name="inspector_reset_defaults_title">Вернуть настройки по умолчанию?</string>
+    <string name="inspector_reset_defaults_body">Шаги, CFG, планировщик и остальные настройки вернутся к значениям этой модели. Модель, сид, LoRA, размер и нарисованная маска останутся.</string>
     <string name="inspector_none">Нет</string>
     <string name="inspector_choose">Выбрать</string>
     <string name="inspector_change">Изменить</string>
@@ -721,8 +724,6 @@
     <string name="flow_swap_i2i_about">Фотография переосмысливается моделью Swap с теми же тремя возможностями. ControlNet читает саму фотографию, если не дать ему другое изображение.</string>
     <string name="flow_flux_edit_name">Редактирование изображения</string>
     <string name="flow_flux_edit_about">FLUX.2 Klein или Qwen Image 2.1 на 8 Gen 3 или новее (альфа на 8 Gen 3). Фотография и промпт: всё изображение перерисовывается по нему, а не слегка изменяется. Подключите второе изображение к порту reference и назовите их image 1 и image 2 в промпте.</string>
-    <string name="flow_wan_t2i_name">Wan 2.2: текст в картинку</string>
-    <string name="flow_wan_t2i_about">Описание в одну картинку от Wan 2.2, видеомодели: один кадр, поэтому секунды там, где ролик занимает минуты.</string>
     <string name="flow_t2v_name">Текст в видео</string>
     <string name="flow_t2v_about">Описание в ролик. По умолчанию Wan 2.2 (минуты, намного лучше); переключите узел видео на Neodragon для 2 с примерно за 30 с.</string>
     <string name="flow_i2v_name">Изображение в видео</string>
@@ -1185,6 +1186,8 @@
     <string name="schedule_normal">Обычное</string>
     <string name="schedule_karras">Karras</string>
     <string name="schedule_exponential">Exponential</string>
+    <string name="schedule_sgm_uniform">SGM Uniform</string>
+    <string name="schedule_bong_tangent">Bong Tangent</string>
     <string name="schedule_unavailable">У LCM своё расписание</string>
     <string name="drawer_support">Поддержка</string>
     <string name="support_coffee">Угостить кофе</string>

@@ -512,6 +512,9 @@
     <string name="inspector_reset_title">重置此节点？</string>
     <string name="inspector_reset">重置</string>
     <string name="inspector_reset_body">“%1$s”上的所有控件将恢复默认值。连线、画布位置以及节点上的图片会保留。</string>
+    <string name="inspector_reset_defaults">恢复默认</string>
+    <string name="inspector_reset_defaults_title">恢复默认设置？</string>
+    <string name="inspector_reset_defaults_body">步数、CFG、调度器和其他设置将恢复为此模型的默认值。模型、种子、LoRA、尺寸和已绘制的蒙版会保留。</string>
     <string name="inspector_none">无</string>
     <string name="inspector_choose">选择</string>
     <string name="inspector_change">更改</string>
@@ -706,8 +709,6 @@
     <string name="flow_swap_i2i_about">用 Swap 模型重新演绎照片，并支持相同的三项功能。除非提供其他图片，否则 ControlNet 会读取照片本身。</string>
     <string name="flow_flux_edit_name">图像编辑</string>
     <string name="flow_flux_edit_about">适用于配备 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）的 FLUX.2 Klein 或 Qwen Image 2.1。输入照片和提示词：整张图片会根据提示词重新渲染，而不是轻微调整。可将第二张图片连接到 reference 端口，并在提示词中称它们为 image 1 和 image 2。</string>
-    <string name="flow_wan_t2i_name">Wan 2.2：文生图</string>
-    <string name="flow_wan_t2i_about">用视频模型 Wan 2.2 把提示词生成一张图片：只有一帧，视频要几分钟，这里只要几秒。</string>
     <string name="flow_t2v_name">文生视频</string>
     <string name="flow_t2v_about">提示词生成视频。默认使用 Wan 2.2（需要几分钟，效果好得多）；将视频节点切换为 Neodragon 约 30 秒生成 2 秒。</string>
     <string name="flow_i2v_name">图生视频</string>
@@ -1158,6 +1159,8 @@
     <string name="schedule_normal">普通</string>
     <string name="schedule_karras">Karras</string>
     <string name="schedule_exponential">Exponential</string>
+    <string name="schedule_sgm_uniform">SGM Uniform</string>
+    <string name="schedule_bong_tangent">Bong Tangent</string>
     <string name="schedule_unavailable">LCM 使用自己的调度</string>
     <string name="drawer_support">支持</string>
     <string name="support_coffee">请我喝杯咖啡</string>

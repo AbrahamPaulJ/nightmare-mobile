@@ -20,7 +20,6 @@ The list is ordered by **what the flow asks of your phone**, lightest first:
 | [Upscale a photo](upscale.md) | A picture enlarged up to 4× | an upscaler (8–24 MB) |
 | **Advanced**: [Text to image / Image to image with LoRA, ControlNet, IP-Adapter](advanced.md) | The same two jobs, steered by LoRAs, a ControlNet and a reference picture | a Swap model (SD 1.5 or SDXL) |
 | [Image edit](image-edit.md) | A photo changed to follow an instruction | FLUX.2 or Qwen Image, 8 Gen 3 |
-| [Wan 2.2: text to image](video.md#wan-22-settings) | One picture from the video model, in seconds | Wan 2.2, 8 Elite (alpha on 8 Gen 3) |
 | [Text to video](video.md) | A prompt in, a 2-second clip out | the video models, 8 Elite |
 | [Image to video](video.md#image-to-video) | A photo brought to life | the video models, 8 Elite |
 | [Text to video, Wan 2.2](video.md#wan-22-better-clips-slower) | Up to 5 seconds, much better, about 3 minutes | Wan 2.2, 8 Elite (alpha on 8 Gen 3) |

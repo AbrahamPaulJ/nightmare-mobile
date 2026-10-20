@@ -203,15 +203,16 @@ class VideoGraphTest {
         assertEquals(Source("image"), wanI2v.graph.byId.getValue("video").inputs["image"])
     }
 
-    /** ⭐ Wan 2.2 text to image: the T2V shape at ONE frame (`seconds` 0), its last frame the picture. */
+    /**
+     * ⭐ `seconds` 0 on the Wan node is ONE frame, its last frame the picture. ⚠ The node's, not a flow's: the
+     * "Wan 2.2: text to image" flow went (the user, 2026-10-21: no flow just for that); the node keeps 0 s.
+     */
     @Test
-    fun wanImageIsOneFrameOfTheClipFlow() {
-        val wf = wanImageWorkflow()
+    fun wanAtZeroSecondsIsOneFrame() {
         val wan = com.abrah.nightmare.npu.WanVideoNode
-        val v = wf.graph.byId.getValue("video")
-        assertEquals("0", v.params["seconds"])
+        val v = wanT2v.graph.byId.getValue("video").let { it.copy(params = it.params + ("seconds" to "0")) }
         assertEquals(1, wan.framesOf(v, wan.effectiveParams(v)))
-        assertEquals(Source("video", wan.LAST_FRAME), wf.graph.nodes.single { it.type == "core.output" }.inputs["media"])
+        assertTrue(wan.outputs.any { it.name == wan.LAST_FRAME })
     }
 
     /**

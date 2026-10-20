@@ -102,4 +102,16 @@ class SamplerNamingTest {
         assertEquals("ER-SDE", ModelCatalog.schedulerLabel("er_sde"))
         assertEquals("DPM++ 2M", ModelCatalog.schedulerLabel("dpm++2m"))
     }
+
+    /** ⭐ SGM Uniform and Bong Tangent (backend 039): every DiT sampler has them, no SD sampler does. */
+    @Test
+    fun theDitModelsGetSgmUniformAndBongTangent() {
+        assertTrue("euler_sgm_uniform" in ModelCatalog.DIT_SCHEDULERS)
+        assertTrue("euler_a_bong_tangent" in ModelCatalog.DIT_SCHEDULERS)
+        assertTrue(ModelCatalog.SCHEDULERS.none { it.endsWith("_sgm_uniform") || it.endsWith("_bong_tangent") })
+        assertEquals("euler_a" to "_bong_tangent", ModelCatalog.splitScheduler("euler_a_bong_tangent"))
+        assertEquals("dpm++2m_sde" to "_sgm_uniform", ModelCatalog.splitScheduler("dpm++2m_sde_sgm_uniform"))
+        assertEquals("Euler SGM Uniform", ModelCatalog.schedulerLabel("euler_sgm_uniform"))
+        assertEquals("lcm", ModelCatalog.joinScheduler("lcm", "_sgm_uniform"))
+    }
 }

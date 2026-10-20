@@ -815,11 +815,20 @@ data class CanvasState(
      * ⚠ Behind a confirm at the call site, like delete — it is not undoable
      * and it can throw away a prompt somebody typed.
      */
-    fun resetNode(nodeId: String, types: Map<String, NodeType>): CanvasState {
+    fun resetNode(
+        nodeId: String,
+        types: Map<String, NodeType>,
+        /** ⭐ Params left as they are ([resetSamplerDefaults]). */
+        keep: Set<String> = emptySet(),
+        /** ⭐ Written over the declared defaults ([resetSamplerDefaults]: the model's recipe). */
+        overlay: Map<String, String> = emptyMap(),
+    ): CanvasState {
         val node = workflow.graph.byId[nodeId] ?: return this
         val defaults = types[node.type]?.widgets.orEmpty()
             .mapNotNull { w -> w.default?.let { w.name to it } }
             .toMap()
+            .filterKeys { it !in keep }
+            .let { d -> d + overlay.filterKeys { it in d } }
         if (defaults.isEmpty()) return this
         return copy(
             workflow = workflow.copy(
@@ -838,6 +847,24 @@ data class CanvasState(
                 ),
             ),
             message = null,
+        )
+    }
+
+    /**
+     * ⭐⭐ The Default view's **Reset defaults** on a sampler (the user's ask, 2026-10-20): [resetNode] minus
+     * what the person CHOSE rather than tuned (the checkpoint, seed, LoRAs, size, a painted mask), with the
+     * checkpoint's own steps / cfg / scheduler over the declared defaults. ⚠ The declared ones follow the
+     * top-bar model ([com.abrah.nightmare.SdSampler]'s `defaultSpec`), not this node's, hence the overlay.
+     */
+    fun resetSamplerDefaults(nodeId: String, types: Map<String, NodeType>): CanvasState {
+        val node = workflow.graph.byId[nodeId] ?: return this
+        val spec = com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())
+        return resetNode(
+            nodeId, types,
+            keep = SAMPLER_CHOICES,
+            overlay = spec?.let {
+                mapOf("steps" to it.steps.toString(), "cfg" to it.cfg.toString(), "scheduler" to it.scheduler)
+            }.orEmpty(),
         )
     }
 
@@ -1081,6 +1108,12 @@ data class CanvasState(
     }
 
     private companion object {
+        /** ⭐ What [resetSamplerDefaults] leaves: picked, not tuned. */
+        val SAMPLER_CHOICES = setOf(
+            "model", "seed", com.abrah.nightmare.SdSampler.LORAS, "width", "height", "aspect",
+            com.abrah.nightmare.MaskNode.OPS,
+        )
+
         /**
          * ⚠⚠ A REFERENCE width in world units, not the real viewport — this
          * class is Compose-free and unit-tested, so it cannot measure the

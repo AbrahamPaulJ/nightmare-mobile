@@ -528,18 +528,6 @@ val RECIPES: List<Recipe> = listOf(
         labelRes = R.string.flow_flux_edit_name,
         aboutRes = R.string.flow_flux_edit_about,
     ),
-    // ⭐ Wan 2.2 as a picture model: ONE frame (`seconds` 0), its last frame the output (a tester's wish, 2026-10-19).
-    // ⚠ Here, before the clips: one frame of the clip's model costs less than any clip.
-    Recipe(
-        WAN_T2I, "Wan 2.2: text to image",
-        "A prompt into one picture from Wan 2.2, the video model: a single frame, so it takes seconds where a clip " +
-            "takes minutes.",
-        ::wanImageWorkflow,
-        usesCheckpoint = false,
-        minArch = com.abrah.nightmare.ModelCatalog.WAN22.builds.minOf { it.minArch },
-        labelRes = R.string.flow_wan_t2i_name,
-        aboutRes = R.string.flow_wan_t2i_about,
-    ),
     // ⭐⭐ Text to video and Image to video: ONE flow each for Wan 2.2 and Neodragon (the user's call,
     // 2026-10-15: "merge them, default to Wan 2.2 5B"), the model a choice on the video node.
     Recipe(
@@ -577,7 +565,6 @@ val RECIPES: List<Recipe> = listOf(
 /** ⭐ The video recipes' ids ([com.abrah.nightmare.HarnessViewModel.askUseWan]). ⚠ `t2v`/`i2v` are the
  *  ids the Neodragon flows had: saved references and the Flows icons keep working. */
 const val T2V = "t2v"
-const val WAN_T2I = "wan_t2i"
 const val I2V = "i2v"
 const val MOTION = "motion"
 
@@ -849,19 +836,6 @@ fun motionTransferWorkflow(): Workflow = Workflow(
     ),
     flowLayout("prompt", "image", "clip", "motion", "output"),
 )
-
-/** ⭐ [WAN_T2I]: the Text to video flow at ONE frame (`seconds` 0), the Wan node's last frame as the picture. */
-fun wanImageWorkflow(): Workflow = wanVideoWorkflow(i2v = false).let { wf ->
-    val g = wf.graph
-    wf.copy(graph = g.copy(nodes = g.nodes.map { n ->
-        when (n.id) {
-            "prompt" -> n.copy(params = n.params + ("prompt" to "portrait photo of a red fox in a snowy pine forest, soft morning light, detailed fur"))
-            "video" -> n.copy(params = n.params + ("seconds" to "0"))
-            "output" -> n.copy(inputs = sources("media" to "video:" + com.abrah.nightmare.npu.WanVideoNode.LAST_FRAME))
-            else -> n
-        }
-    }))
-}
 
 fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
     Graph(

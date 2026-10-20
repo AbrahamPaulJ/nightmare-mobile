@@ -666,6 +666,7 @@ fun CanvasScreen(
         onDropEnlargement = onDropEnlargement,
         onDropReceived = onDropReceived,
         onReset = { id -> onEdit { st -> st.resetNode(id, types) } },
+        onResetDefaults = { id -> onEdit { st -> st.resetSamplerDefaults(id, types) } },
         onInstallSegmenter = onInstallSegmenter,
         onDeleteSegmenter = onDeleteSegmenter,
         segmenterInstalled = segmenterInstalled,
