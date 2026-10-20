@@ -774,6 +774,7 @@ fun HarnessScreen(
                         onDeleteDetailer = vm::deleteDetailer,
                         livePortrait = vm.livePortraitRow,
                         onInstallLivePortrait = { askToNotify(); vm.installLivePortrait() },
+                        onUseLivePortrait = vm::askUseLivePortrait,
                         onDeleteLivePortrait = vm::deleteLivePortrait,
                         depth = vm.depthRow,
                         onInstallDepth = { askToNotify(); vm.installDepth() },

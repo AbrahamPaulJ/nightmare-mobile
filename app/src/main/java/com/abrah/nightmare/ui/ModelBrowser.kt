@@ -75,7 +75,7 @@ import com.abrah.nightmare.R
 // ============================================================================
 
 /** ⭐ The chips at the top of Models. */
-enum class ModelKind { ALL, GENERATE, EDIT, INPAINT, VIDEO, UPSCALE, TOOLS }
+enum class ModelKind { ALL, GENERATE, EDIT, INPAINT, VIDEO, UPSCALE, FACES, TOOLS }
 
 /** ⭐ A family page's sub-chips; only the non-empty ones are drawn. */
 enum class SubKind { ALL, BASE, INPAINT, COMMUNITY, IMPORTED }
@@ -93,12 +93,12 @@ fun ModelSpec.isInpaintModel(): Boolean = when (family) {
         label.contains("inpaint", ignoreCase = true)
 }
 
-/** ⭐ Whether a CHECKPOINT row belongs under [kind]. Video/Upscale/Tools hold no checkpoints. */
+/** ⭐ Whether a CHECKPOINT row belongs under [kind]. Video/Upscale/Faces/Tools hold no checkpoints. */
 fun matchesKind(spec: ModelSpec, kind: ModelKind): Boolean = when (kind) {
     ModelKind.ALL, ModelKind.GENERATE -> true
     ModelKind.EDIT -> spec.family.edit
     ModelKind.INPAINT -> spec.isInpaintModel()
-    ModelKind.VIDEO, ModelKind.UPSCALE, ModelKind.TOOLS -> false
+    ModelKind.VIDEO, ModelKind.UPSCALE, ModelKind.FACES, ModelKind.TOOLS -> false
 }
 
 fun matchesSub(spec: ModelSpec, sub: SubKind): Boolean = when (sub) {
@@ -209,6 +209,7 @@ internal fun kindLabel(k: ModelKind): String = stringResource(
         ModelKind.INPAINT -> R.string.mb_kind_inpaint
         ModelKind.VIDEO -> R.string.video
         ModelKind.UPSCALE -> R.string.upscalers
+        ModelKind.FACES -> R.string.mb_kind_faces
         ModelKind.TOOLS -> R.string.tools
     },
 )

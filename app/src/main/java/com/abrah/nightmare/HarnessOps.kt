@@ -192,6 +192,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "lp_edit" -> lpEdit(arg)
             // ⭐ The "Edit a face" FLOW through the executor (`--es arg <file>@slider=v,…`): the node, not the native call.
             "face_flow" -> faceFlow(arg)
+            // ⭐ "Animate a portrait" through the executor: `--es arg <photo>@<video>[@seconds]`.
+            "animate_flow" -> animateFlow(arg)
             "models" -> listModels()
             "model_install" -> installModel(arg)
             "model_delete" -> deleteModel(arg)
@@ -3226,6 +3228,28 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         } catch (e: Throwable) {
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
         }
+    }
+
+    private suspend fun animateFlow(arg: String?) {
+        val parts = arg.orEmpty().split('@')
+        if (parts.size < 2) { say("animate_flow: --es arg <photo>@<video>[@seconds]", bad = true); return }
+        val base = com.abrah.nightmare.canvas.animatePortraitWorkflow()
+        val g = base.graph.copy(nodes = base.graph.nodes.map { n ->
+            when (n.id) {
+                "image" -> n.copy(params = n.params + ("uri" to parts[0]))
+                "clip" -> n.copy(params = n.params + ("uri" to parts[1]))
+                "animate" -> parts.getOrNull(2)?.let { n.copy(params = n.params + (com.abrah.nightmare.portrait.AnimatePortraitNode.SECONDS to it)) } ?: n
+                else -> n
+            }
+        })
+        val r = runWorkflow(base.copy(graph = g), onNode = { n ->
+            say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} ${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+        })
+        if (r.error != null) { say("animate_flow: refused. ${r.error}", bad = true); return }
+        val v = r.outputs["animate"] as? Value.Video ?: run { say("animate_flow: no clip", bad = true); return }
+        val dst = java.io.File(ctx.getExternalFilesDir(null), "lp/animate_${System.currentTimeMillis()}.mp4").apply { parentFile?.mkdirs() }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { java.io.File(v.path).copyTo(dst, overwrite = true) }
+        say("animate_flow: ${v.frames} frames ${v.w}x${v.h} in ${r.totalMs} ms -> $dst")
     }
 
     private suspend fun faceFlow(arg: String?) {

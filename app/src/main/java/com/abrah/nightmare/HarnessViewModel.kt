@@ -1052,6 +1052,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val ids = runCatching { contextKeyModels(Graph(ordered), typesFor(graph)) }.getOrNull().orEmpty()
             val labels = ids.mapNotNull { id -> ModelCatalog.byId(id)?.let(::labelOf) }.toMutableList()
             if (graph.nodes.any { it.type == "nd.sample" }) labels += com.abrah.nightmare.npu.NpuFiles.LABEL
+            // ⭐ A Face edit or Animate portrait flow names LivePortrait, not the last checkpoint (the user, 2026-10-21).
+            if (graph.nodes.any { it.type == com.abrah.nightmare.portrait.FaceEditNode.name || it.type == com.abrah.nightmare.portrait.AnimatePortraitNode.name }) {
+                labels += com.abrah.nightmare.portrait.LivePortrait.LABEL
+            }
             return labels.distinct().joinToString(" + ").ifEmpty {
                 ModelCatalog.byId(SelectedModel.id)?.let(::labelOf) ?: SelectedModel.id
             }
@@ -2718,8 +2722,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         // ⭐ Face edit with a slider moved needs LivePortrait: asked here too, before anything renders.
         val faceEditing = graph.nodes.any { n ->
-            n.type == com.abrah.nightmare.portrait.FaceEditNode.name &&
-                com.abrah.nightmare.portrait.FaceEditNode.slidersOf(n).any { it != 0f }
+            n.type == com.abrah.nightmare.portrait.AnimatePortraitNode.name ||
+                (n.type == com.abrah.nightmare.portrait.FaceEditNode.name &&
+                    com.abrah.nightmare.portrait.FaceEditNode.slidersOf(n).any { it != 0f })
         }
         if (faceEditing && !com.abrah.nightmare.portrait.LivePortrait.isInstalled(ctx)) {
             missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT)
@@ -4485,6 +4490,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             title = text(R.string.models_use_named, spec.label),
             offer = if (spec == ModelCatalog.WAN22_FUN) com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.MOTION)
             else com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V),
+            unsavedFlow = unsavedFlow(),
+        )
+    }
+
+    /** ⭐ Use on LivePortrait: Edit a face or Animate a portrait, [askUseWan]'s shape. */
+    fun askUseLivePortrait() {
+        pendingUse = PendingUse(
+            spec = null,
+            title = text(R.string.models_use_named, com.abrah.nightmare.portrait.LivePortrait.LABEL),
+            offer = com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.FACE_EDIT, com.abrah.nightmare.canvas.ANIMATE),
             unsavedFlow = unsavedFlow(),
         )
     }
@@ -7458,7 +7473,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyControlHints(graph: com.abrah.nightmare.Graph) {
         val live = mutableSetOf<String>()
         for (n in graph.nodes) {
-            if (n.type == com.abrah.nightmare.npu.WanFunNode.name) {
+            if (n.type == com.abrah.nightmare.npu.WanFunNode.name || n.type == com.abrah.nightmare.portrait.AnimatePortraitNode.name) {
                 if (applyDrivingLoop(graph, n)) live += n.id
                 continue
             }
@@ -7512,12 +7527,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * ⭐ Motion transfer's control hint: its driving window, cropped, as a loop on the graph
      * ([com.abrah.nightmare.canvas.DrivingLoops]) over its first frame. True while it has one.
+     * ⭐ Animate portrait's too (the user, 2026-10-21: "both image and clip like with wan fun"): its driver, whole
+     * frames, from the start.
      */
     private fun applyDrivingLoop(graph: com.abrah.nightmare.Graph, n: com.abrah.nightmare.Node): Boolean {
-        val uri = n.inputs[com.abrah.nightmare.npu.WanFunNode.CONTROL]?.node?.let { graph.byId[it] }
+        val animate = n.type == com.abrah.nightmare.portrait.AnimatePortraitNode.name
+        val port = if (animate) com.abrah.nightmare.portrait.AnimatePortraitNode.DRIVER else com.abrah.nightmare.npu.WanFunNode.CONTROL
+        val uri = n.inputs[port]?.node?.let { graph.byId[it] }
             ?.takeIf { it.type == com.abrah.nightmare.npu.LoadVideoNode.name }
             ?.params?.get("uri")?.takeIf { it.isNotBlank() } ?: return false
-        val p = com.abrah.nightmare.applyDefaults(nodeTypes[n.type]?.widgets.orEmpty(), n)
+        val p = if (animate) emptyMap() else com.abrah.nightmare.applyDefaults(nodeTypes[n.type]?.widgets.orEmpty(), n)
         val (w, h) = com.abrah.nightmare.npu.WanVideoNode.sizeOf(p)
         val window = com.abrah.nightmare.npu.WanFun.windowOf(p)
         val sig = listOf(uri, window, com.abrah.nightmare.npu.WanFun.rectOf(p)?.toList(), w, h).joinToString("|")
@@ -7527,7 +7546,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         hintJobs.remove(n.id)?.cancel()
         hintJobs[n.id] = viewModelScope.launch {
             val frames = withContext(kotlinx.coroutines.Dispatchers.Default) {
-                com.abrah.nightmare.canvas.drivingLoop(getApplication(), uri, p, w, h)
+                com.abrah.nightmare.canvas.drivingLoop(getApplication(), uri, p, w, h, wholeFrame = animate)
             }
             if (hintPending[n.id] != sig) return@launch
             hintPending.remove(n.id)

@@ -34,7 +34,8 @@ import java.io.File
  */
 @Composable
 fun ClipPlayer(path: String, modifier: Modifier = Modifier) {
-    if (!File(path).isFile) return
+    val isUri = path.startsWith("content://")
+    if (!isUri && !File(path).isFile) return
     AndroidView(
         factory = { ctx ->
             VideoView(ctx).apply {
@@ -55,7 +56,7 @@ fun ClipPlayer(path: String, modifier: Modifier = Modifier) {
         update = { v ->
             if (v.tag != path) {
                 v.tag = path
-                v.setVideoPath(path)
+                if (isUri) v.setVideoURI(android.net.Uri.parse(path)) else v.setVideoPath(path)
             }
         },
         // ⚠⚠ Stopped on the way out, or the SurfaceView keeps a decoder and an

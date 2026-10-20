@@ -624,7 +624,10 @@ fun layout(
         val width = workflow.widthOf(n.id, type)
         val nIn = type?.inputsFor(n)?.size ?: 0
         val nOut = type?.outputs?.size ?: 0
-        val shown = previews[n.id]
+        // ⭐ Animate portrait shows the photo coming in until it has run, as Motion transfer does.
+        val shown = previews[n.id] ?: if (n.type == com.abrah.nightmare.portrait.AnimatePortraitNode.name) {
+            n.inputs["image"]?.node?.let { previews[it] }
+        } else null
         val shownBefore = beforePreviews[n.id]
         // ⚠ The picture is inset from both edges, so its width is the node's
         // width less the padding -- using the full width would draw it over the
@@ -688,7 +691,8 @@ fun layout(
         // ([controlHints]); the source was shown at first and is what the
         // user had to point out.
         // ⭐ Motion transfer too: its hint is the driving window ([DrivingLoops]), the user's call 2026-10-17.
-        val hinted = com.abrah.nightmare.SdSampler.isSwapType(n.type) || n.type == com.abrah.nightmare.npu.WanFunNode.name
+        val hinted = com.abrah.nightmare.SdSampler.isSwapType(n.type) || n.type == com.abrah.nightmare.npu.WanFunNode.name ||
+            n.type == com.abrah.nightmare.portrait.AnimatePortraitNode.name
         val refPreview = (if (hinted) controlHints[n.id] else n.inputs["reference"]?.node?.let { previews[it] })
             ?.let { (id, aspect) ->
                 NodeBox.Preview(id, (previewWidth / aspect.coerceAtLeast(0.05f)))

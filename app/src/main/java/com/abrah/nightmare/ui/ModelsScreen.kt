@@ -269,6 +269,8 @@ fun ModelsScreen(
     /** ⭐ Face edit's LivePortrait set ([com.abrah.nightmare.portrait.LivePortrait]). */
     livePortrait: ToolRow? = null,
     onInstallLivePortrait: () -> Unit = {},
+    /** ⭐ Use on LivePortrait: Edit a face or Animate a portrait ([com.abrah.nightmare.HarnessViewModel.askUseLivePortrait]). */
+    onUseLivePortrait: () -> Unit = {},
     onDeleteLivePortrait: () -> Unit = {},
     /** ⭐ The fourth Tools row — SD 1.5 Swap's depth estimator. */
     depth: ToolRow? = null,
@@ -440,6 +442,7 @@ fun ModelsScreen(
             if (rows.any { it.spec.isInpaintModel() }) add(ModelKind.INPAINT)
             if (video != null || wans.isNotEmpty()) add(ModelKind.VIDEO)
             if (upscalers.isNotEmpty()) add(ModelKind.UPSCALE)
+            if (livePortrait != null) add(ModelKind.FACES)
             if (segmenter != null || parser != null || describe.isNotEmpty()) add(ModelKind.TOOLS)
         }
         // ⚠ Back leaves the family page before it leaves the screen.
@@ -485,14 +488,6 @@ fun ModelsScreen(
                             ) { deletingDetailer = true }
                         }
                     }
-                    if (livePortrait != null && match(livePortraitWords.orEmpty())) {
-                        item {
-                            ToolCard(
-                                livePortrait, busy, onInstallLivePortrait, onCancel,
-                                detail = stringResource(R.string.liveportrait_about),
-                            ) { deletingLivePortrait = true }
-                        }
-                    }
                     for ((type, row) in controlnets) {
                         if (!match(row.label)) continue
                         item {
@@ -534,6 +529,25 @@ fun ModelsScreen(
                         }
                     }
         }
+        // ⭐ LivePortrait is a MODEL with its own tab and a Use, as the upscalers have (the user, 2026-10-21), not a Tools row.
+        val faceItems: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
+                    if (livePortrait != null) {
+                        item {
+                            AddonCard(
+                                title = livePortrait.label,
+                                detail = stringResource(R.string.liveportrait_about),
+                                installed = livePortrait.installed,
+                                sizeBytes = if (livePortrait.installed) livePortrait.onDisk else livePortrait.bytes,
+                                busy = busy,
+                                progress = livePortrait.progress,
+                                onCancel = onCancel,
+                                onInstall = onInstallLivePortrait,
+                                onDelete = { deletingLivePortrait = true },
+                                onUse = onUseLivePortrait,
+                            )
+                        }
+                    }
+        }
         val upscalerItems: androidx.compose.foundation.lazy.LazyListScope.(List<UpscalerRow>) -> Unit = { shown ->
                     items(shown, key = { "up_" + it.spec.id }) { row ->
                         UpscalerCard(
@@ -567,6 +581,16 @@ fun ModelsScreen(
                         )
                     }
                     upscalerItems(upscalers)
+                }
+                fp == null && kind == ModelKind.FACES -> {
+                    item {
+                        Text(
+                            stringResource(R.string.faces_note),
+                            style = NoteTextStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    faceItems()
                 }
                 else -> {
                     if (fp == null) {
@@ -612,9 +636,9 @@ fun ModelsScreen(
                     val ups = if (!searchAll) emptyList()
                         else upscalers.filter { matchesWords(it.spec.label + " upscale upscaler", query) }
                     val tools = searchAll && (listOfNotNull(segmenter, parser, pose, depth) + controlnets.values + describe.values)
-                        .any { matchesWords(it.label, query) } || (searchAll && detailerWords != null && matchesWords(detailerWords, query)) ||
-                        (searchAll && livePortraitWords != null && matchesWords(livePortraitWords, query))
-                    val otherHits = neoHit || wanHits.isNotEmpty() || ups.isNotEmpty() || tools
+                        .any { matchesWords(it.label, query) } || (searchAll && detailerWords != null && matchesWords(detailerWords, query))
+                    val faces = searchAll && livePortraitWords != null && matchesWords(livePortraitWords, query)
+                    val otherHits = neoHit || wanHits.isNotEmpty() || ups.isNotEmpty() || faces || tools
                     for ((gi, group) in groups.withIndex()) {
                     val (heading, groupRows) = group
                     val sec = sectionsOf(
@@ -681,6 +705,10 @@ fun ModelsScreen(
                         if (ups.isNotEmpty()) {
                             item { SectionHeader(kindLabel(ModelKind.UPSCALE)) }
                             upscalerItems(ups)
+                        }
+                        if (faces) {
+                            item { SectionHeader(kindLabel(ModelKind.FACES)) }
+                            faceItems()
                         }
                         if (tools) {
                             item { SectionHeader(kindLabel(ModelKind.TOOLS)) }

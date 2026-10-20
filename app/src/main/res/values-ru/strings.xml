@@ -266,6 +266,8 @@
     <string name="mb_kind_generate">Генерация</string>
     <string name="mb_kind_edit">Правка</string>
     <string name="mb_kind_inpaint">Дорисовка</string>
+    <string name="mb_kind_faces">Лица</string>
+    <string name="faces_note">Модели, которые двигают лица на ваших картинках и видео, на NPU. «Использовать» открывает схему с ней.</string>
     <string name="mb_search_hint">Поиск моделей, напр. \"anime\", \"inpaint\", \"flux\"</string>
     <string name="mb_family">Семейство: %1$s</string>
     <string name="mb_all_families">Все семейства</string>
@@ -1213,15 +1215,18 @@
     <string name="knob_lp_head_yaw">Поворот головы</string>
     <string name="knob_lp_head_roll">Наклон головы</string>
     <string name="knob_lp_largest_only">Только самое крупное лицо</string>
-    <string name="liveportrait_about">Меняет лица на картинке: улыбка, глаза, взгляд, рот и поворот головы. Для узла «Правка лица» и «Править лицо» в Результатах (LivePortrait от Kuaishou, MIT).</string>
+    <string name="liveportrait_about">Меняет лица на картинке: улыбка, глаза, взгляд, рот и поворот головы. Для узла «Правка лица», «Править лицо» в Результатах и «Оживить портрет» (LivePortrait от Kuaishou, MIT).</string>
     <string name="models_delete_liveportrait_body">Освобождает %1$d МБ. Вернуть его: загрузка %2$d МБ. «Правка лица» попросит его снова при следующем запуске.</string>
     <string name="face_edit_open">Править лицо</string>
     <string name="face_edit_title">Править лицо</string>
     <string name="face_edit_hold_hint">Удерживайте картинку, чтобы увидеть оригинал.</string>
-    <string name="face_edit_not_installed">Скачайте «Редактор лиц (LivePortrait)» в Модели, Инструменты, чтобы видеть предпросмотр. Запуск тоже его попросит.</string>
+    <string name="face_edit_not_installed">Скачайте «Редактор лиц (LivePortrait)» в Модели, Лица, чтобы видеть предпросмотр. Запуск тоже его попросит.</string>
     <string name="face_edit_no_picture">Сначала выберите или создайте картинку, затем правьте лицо здесь с живым предпросмотром.</string>
     <string name="face_edit_no_face">На этой картинке не найдено лицо.</string>
     <string name="face_edit_done">Готово</string>
+    <string name="face_edit_nothing_changed">Пока ничего не изменено. Нажмите на картинку, чтобы править лицо.</string>
+    <string name="animate_driver_title">Ведущее видео</string>
+    <string name="animate_driver_none">Подключите узел «Видео» к \"driver\" и выберите видео с лицом: портрет будет двигаться так же.</string>
     <string name="face_edit_group_eyes">Глаза</string>
     <string name="face_edit_group_mouth">Рот</string>
     <string name="face_edit_group_head">Голова</string>
@@ -1238,4 +1243,8 @@
     <string name="references_add">Добавить референс</string>
     <string name="references_remove">Убрать изображение %1$d</string>
     <string name="references_no_room">Свободно около %1$d МБ. Ещё один референс при %2$s скорее всего не уместится в памяти: уменьшите размер или закройте другие приложения.</string>
+    <string name="flow_animate_name">Оживить портрет</string>
+    <string name="flow_animate_about">Лицо на фото двигается так же, как лицо в выбранном вами видео. Чекпойнт не нужен.</string>
+    <string name="palette_node_animate">Оживить портрет</string>
+    <string name="palette_about_animate">лицо на фото двигается как лицо в выбранном видео (LivePortrait)</string>
 </resources>

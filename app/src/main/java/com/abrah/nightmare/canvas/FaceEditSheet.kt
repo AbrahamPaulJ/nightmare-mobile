@@ -1,18 +1,17 @@
 package com.abrah.nightmare.canvas
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material3.Button
@@ -43,10 +42,9 @@ import com.abrah.nightmare.portrait.FaceEditNode
 import com.abrah.nightmare.portrait.LivePortrait
 
 /**
- * ⭐⭐ Face edit's own viewer (the user's ask, 2026-10-21: "its own sheet viewer like crop, mask"): the picture coming
- * in, the 14 sliders in three groups, a LIVE preview (LivePortrait runs ~0.25 s an edit on an 8 Elite), hold the
- * picture to see the original. Done writes the sliders to the node in one change; Cancel leaves it as it was.
- * ⚠ The sliders are [SliderRow]s and the switch a [BoolKnobRow] (`docs/UI.md` §8.9a), never copies.
+ * ⭐⭐ Face edit's node page (the user's call, 2026-10-21): the picture big, a tap on it opens the viewer, a line of
+ * what is changed, and Edit face. NO sliders here: they are the viewer's. Once it has run, the inspector draws the
+ * result above this with its actions UNDER it and no bin; before that, this draws the picture coming in.
  */
 @Composable
 internal fun FaceEditControls(
@@ -55,8 +53,11 @@ internal fun FaceEditControls(
     /** The picture coming in ([CanvasState.pictureInto]); null before there is one. */
     source: ImageBitmap?,
     onSetParams: (node: String, values: Map<String, String>) -> Unit,
+    /** Whether the inspector already shows this node's result (then the picture is not drawn twice). */
+    hasResult: Boolean,
+    open: Boolean,
+    onOpen: (Boolean) -> Unit,
 ) {
-    var open by remember(nodeId) { mutableStateOf(false) }
     if (source == null) {
         Text(
             stringResource(R.string.face_edit_no_picture),
@@ -65,12 +66,32 @@ internal fun FaceEditControls(
         )
         return
     }
-    com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Face, stringResource(R.string.face_edit_open), { open = true })
+    if (!hasResult) {
+        Image(
+            source,
+            contentDescription = stringResource(R.string.face_edit_open),
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            modifier = Modifier.fillMaxWidth().heightIn(max = pictureCap())
+                .clip(RoundedCornerShape(10.dp))
+                .clickable { onOpen(true) },
+        )
+    }
+    val context = LocalContext.current
+    val changed = LivePortrait.SLIDERS.mapNotNull { n ->
+        val v = node.params[n]?.toFloatOrNull() ?: 0f
+        if (v == 0f) null else "${n.knobLabel(context)} ${"%.1f".format(java.util.Locale.ROOT, v)}"
+    }
+    Text(
+        if (changed.isEmpty()) stringResource(R.string.face_edit_nothing_changed) else changed.joinToString(" · "),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Face, stringResource(R.string.face_edit_open), { onOpen(true) })
     if (open) FaceEditSheet(
         source = source,
         start = node.params,
-        onDone = { values -> onSetParams(nodeId, values); open = false },
-        onCancel = { open = false },
+        onDone = { values -> onSetParams(nodeId, values); onOpen(false) },
+        onCancel = { onOpen(false) },
     )
 }
 
@@ -86,6 +107,7 @@ internal fun FaceEditSheet(
     val values = remember {
         mutableStateMapOf<String, String>().apply {
             for (w in FaceEditNode.widgets) put(w.name, start[w.name] ?: w.default.orEmpty())
+            put(FaceEditNode.LARGEST_ONLY, "false")
         }
     }
     var preview by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -107,7 +129,7 @@ internal fun FaceEditSheet(
         working = true
         val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
-                FaceEditNode.edit(context, source.asAndroidBitmap(), sliders, values[FaceEditNode.LARGEST_ONLY] != "false")
+                FaceEditNode.edit(context, source.asAndroidBitmap(), sliders, largestOnly = false)
             }
         }
         working = false
@@ -116,39 +138,31 @@ internal fun FaceEditSheet(
     }
 
     com.abrah.nightmare.ui.PullDownSheet(onDismiss = onCancel) {
+        // ⚠ No scroll: the picture stays in view while the sliders move (the user, 2026-10-21). ⭐ It takes ALL the
+        // height the three rows and the buttons leave (weight), fitted to the width or the height, whichever it hits.
         Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.weight(1f).padding(horizontal = 16.dp).padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             com.abrah.nightmare.ui.SectionHeading(
                 stringResource(R.string.face_edit_title),
                 if (installed) stringResource(R.string.face_edit_hold_hint) else stringResource(R.string.face_edit_not_installed),
             )
             Box(
-                Modifier.fillMaxWidth().heightIn(max = 420.dp)
-                    .aspectRatio(source.width.toFloat() / source.height, matchHeightConstraintsFirst = true)
-                    .align(Alignment.CenterHorizontally)
-                    .clip(RoundedCornerShape(12.dp))
+                Modifier.weight(1f).fillMaxWidth()
                     .pointerInput(Unit) { detectTapGestures(onPress = { holding = true; tryAwaitRelease(); holding = false }) },
                 contentAlignment = Alignment.Center,
             ) {
-                Image(if (holding) source else preview ?: source, contentDescription = null, modifier = Modifier.fillMaxWidth())
+                Image(
+                    if (holding) source else preview ?: source,
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                )
                 if (working) CircularProgressIndicator(Modifier.align(Alignment.TopEnd).padding(8.dp))
             }
             problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-            for ((title, names) in GROUPS) {
-                com.abrah.nightmare.ui.SectionHeading(stringResource(title))
-                for (name in names) {
-                    val w = FaceEditNode.widgets.first { it.name == name }
-                    SliderRow(w, values[name].orEmpty(), onSet = { values[name] = it })
-                }
-            }
-            BoolKnobRow(
-                label = stringResource(R.string.knob_lp_largest_only),
-                hint = null,
-                checked = values[FaceEditNode.LARGEST_ONLY] != "false",
-                onChange = { values[FaceEditNode.LARGEST_ONLY] = it.toString() },
-            )
+            FaceSliders(value = { values[it].orEmpty() }, onSet = { k, v -> values[k] = v })
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(onClick = { for (n in LivePortrait.SLIDERS) values[n] = "0.0" }) {
                     Text(stringResource(R.string.inspector_reset))
@@ -156,6 +170,34 @@ internal fun FaceEditSheet(
                 androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                 TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
                 Button(onClick = { onDone(values.toMap()) }) { Text(stringResource(R.string.face_edit_done)) }
+            }
+        }
+    }
+}
+
+/**
+ * ⭐⭐ Face edit's controls as THREE rows, Eyes / Mouth / Head (the user's call, 2026-10-21): each a dropdown choosing
+ * which control its one slider moves, so the 14 fit under a picture that stays in view. Every value is kept when the
+ * dropdown moves on. ⚠ The dropdown is [ChoiceDropdown] and the slider [SliderRow] (`docs/UI.md` §8.9a).
+ */
+@Composable
+internal fun FaceSliders(value: (String) -> String, onSet: (String, String) -> Unit) {
+    for ((title, names) in GROUPS) {
+        val labels = names.map { it.knobLabel(LocalContext.current) }
+        // ⭐ Opens on a control that is moved, else the group's first.
+        var picked by remember(title) { mutableStateOf(names.firstOrNull { (value(it).toFloatOrNull() ?: 0f) != 0f } ?: names.first()) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(0.45f)) {
+                ChoiceDropdown(
+                    label = stringResource(title),
+                    hint = null,
+                    options = labels,
+                    current = labels[names.indexOf(picked)],
+                    onPick = { l -> picked = names[labels.indexOf(l)] },
+                )
+            }
+            Box(Modifier.weight(0.55f)) {
+                SliderRow(FaceEditNode.widgets.first { it.name == picked }, value(picked), onSet = { onSet(picked, it) })
             }
         }
     }

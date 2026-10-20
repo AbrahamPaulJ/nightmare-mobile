@@ -19,6 +19,7 @@ The list is ordered by **what the flow asks of your phone**, lightest first:
 | [Inpaint](inpaint.md) | Redo only the area you paint | SD 1.5, SDXL or Anima |
 | [Upscale a photo](upscale.md) | A picture enlarged up to 4× | an upscaler (8–24 MB) |
 | [Edit a face](face-edit.md) | Smile, eyes, gaze, mouth and head turn, by sliders | the Face editor (180 MB) |
+| [Animate a portrait](face-edit.md#animate-a-portrait) | A photo's face moving like the face in a video | the Face editor (180 MB) |
 | **Advanced**: [Text to image / Image to image with LoRA, ControlNet, IP-Adapter](advanced.md) | The same two jobs, steered by LoRAs, a ControlNet and a reference picture | a Swap model (SD 1.5 or SDXL) |
 | [Image edit](image-edit.md) | A photo changed to follow an instruction | FLUX.2 or Qwen Image, 8 Gen 3 |
 | [Text to video](video.md) | A prompt in, a 2-second clip out | the video models, 8 Elite |

@@ -1,0 +1,31 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -505,7 +505,15 @@
+     // FLUX.2 / Z-Image parts (a Qwen3-4B text encoder, their VAE); a package
+     // missing one must fail, not load the wrong family's file in silence.
+     // Klein 9B keeps [ditFile]: its own Qwen3-8B wins over the shared 4B.
+-    const auto own = [&](const char *name) { return (dir / name).string(); };
++    // nightmare (040): an own-only package may borrow a SIBLING's parts (--wan_parts, the app's
++    // ModelSpec.partsFrom): MOSS-Image Base reads SFT's Qwen3.5 encoder, VAE and tokenizer. The
++    // model's own copy still wins; with no donor this is the old own-only lookup.
++    const auto own = [&](const char *name) {
++      const auto mine = dir / name;
++      if (std::filesystem::exists(mine) || opts.wan_parts.empty()) return mine.string();
++      const auto donor = std::filesystem::path(opts.wan_parts) / name;
++      return std::filesystem::exists(donor) ? donor.string() : mine.string();
++    };
+     std::string llm_path =
+         own_only ? own("llm.gguf") : ditFile(dir, "llm.gguf");
+     std::string llm_vision_path = qwen ? own("llm_vision.gguf") : "";
+@@ -1868,7 +1876,10 @@
+                   opts.type != ServerOptions::ModelType::kKrea2 &&
+                   opts.type != ServerOptions::ModelType::kIris
+               ? ditFile(mdir, "tokenizer.json")
+-              : (mdir / "tokenizer.json").string());
++              // nightmare (040): an own-only package's tokenizer may be its donor's (--wan_parts).
++              : (std::filesystem::exists(mdir / "tokenizer.json") || opts.wan_parts.empty()
++                     ? (mdir / "tokenizer.json").string()
++                     : (std::filesystem::path(opts.wan_parts) / "tokenizer.json").string()));
+       // Anima's LLM adapter is fed by a second (T5) tokenizer.
+       if (opts.isAnima())
+         text_encoder->loadT5Tokenizer((mdir / "tokenizer_t5.json").string());

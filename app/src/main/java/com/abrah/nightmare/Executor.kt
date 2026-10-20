@@ -2666,6 +2666,7 @@ val NODE_TYPES: Map<String, NodeType> = (
         SelectObjectNode,
         // ⭐ LivePortrait's face editor (docs/LIVEPORTRAIT.md), in-process on the NPU like the video nodes.
         com.abrah.nightmare.portrait.FaceEditNode,
+        com.abrah.nightmare.portrait.AnimatePortraitNode,
     )).associateBy { it.name }
 
 /**

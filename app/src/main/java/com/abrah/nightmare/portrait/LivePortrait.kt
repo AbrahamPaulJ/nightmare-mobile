@@ -91,7 +91,7 @@ object LivePortrait {
 
     fun dir(context: Context): File = File(ModelStorage.root(context), "npu/liveportrait")
 
-    // ---- the Models, Tools row: [com.abrah.nightmare.detail.PartDetector]'s shape exactly
+    // ---- the Models, Faces row: [com.abrah.nightmare.detail.PartDetector]'s shape exactly
 
     const val LABEL = "Face editor (LivePortrait)"
 

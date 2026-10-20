@@ -914,7 +914,12 @@ object BackendProcess {
                         if (HexFallback.noFusion(context)) put("GGML_HEXAGON_OPFUSION", "0")
                         // ⭐ MOSS-Image's Qwen3.5 is not Qwen2's vocabulary: the engine reads its tokenizer.json from here
                         // (`dit/028`), and refuses to start without it.
-                        if (spec?.family == Family.MOSS) put("SD_QWEN35_TOKENIZER", File(model, "tokenizer.json").absolutePath)
+                        // ⭐ Its own tokenizer, else its donor's ([ModelSpec.partsFrom]: MOSS Base borrows SFT's, backend 040).
+                        if (spec?.family == Family.MOSS) put(
+                            "SD_QWEN35_TOKENIZER",
+                            (File(model, "tokenizer.json").takeIf { it.isFile } ?: spec.donorDir(model)?.let { File(it, "tokenizer.json") }
+                                ?: File(model, "tokenizer.json")).absolutePath,
+                        )
                         // ⭐ The arch from the chip table, so a failed DSP query cannot fall back to v73 ([ditArchEnv]).
                         ditArchEnv(DeviceProbe.caps())?.let { put("GGML_HEXAGON_ARCH", it) }
                         putAll(readDitEnvOverride(context))

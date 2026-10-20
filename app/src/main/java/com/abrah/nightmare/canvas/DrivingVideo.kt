@@ -313,6 +313,8 @@ internal fun drivingLoop(
     params: Map<String, String>,
     clipW: Int,
     clipH: Int,
+    /** ⭐ The frame as it is, at its own shape (Animate portrait reads the whole frame); [clipW]/[clipH] unused. */
+    wholeFrame: Boolean = false,
 ): List<android.graphics.Bitmap>? {
     val (startS, endS) = WanFun.windowOf(params)
     val r = android.media.MediaMetadataRetriever()
@@ -328,6 +330,12 @@ internal fun drivingLoop(
             val us = ((startS + i.toDouble() / LOOP_FPS) * 1_000_000).toLong()
             val src = r.getScaledFrameAtTime(us, android.media.MediaMetadataRetriever.OPTION_CLOSEST, 512, 512)
                 ?: return@mapNotNull null
+            if (wholeFrame) {
+                val s = LOOP_EDGE.toFloat() / maxOf(src.width, src.height, 1)
+                return@mapNotNull android.graphics.Bitmap.createScaledBitmap(
+                    src, (src.width * s).toInt().coerceAtLeast(1), (src.height * s).toInt().coerceAtLeast(1), true,
+                ).also { if (it !== src) src.recycle() }
+            }
             val box = drivingRectOf(params, src.width, src.height, clipW, clipH)
             val fit = WanFun.fitRect(floatArrayOf(box.x, box.y, box.w, box.h), src.width, src.height, clipW, clipH)
             com.abrah.nightmare.CropNode.render(src, fit[0], fit[1], fit[2], fit[3], outW, outH, com.abrah.nightmare.CropNode.PAD_BLACK)

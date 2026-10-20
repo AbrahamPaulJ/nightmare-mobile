@@ -3,9 +3,9 @@ package com.abrah.nightmare.canvas
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import com.abrah.nightmare.NODE_TYPES
 import com.abrah.nightmare.Node
@@ -21,8 +21,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * ⭐ Face edit's viewer ([FaceEditControls] → [FaceEditSheet]): DRAWN from the node page, and Done writes every slider
- * in ONE change. ⚠ A tree test, not a golden: the sheet is its own window (`docs/UI.md` §8.9).
+ * ⭐ Face edit's viewer ([FaceEditControls] → [FaceEditSheet]): DRAWN from the node page, its three rows
+ * ([FaceSliders]) in the viewer only, and Done writes every slider in ONE change. ⚠ A tree test, not a golden: the sheet is its own window (`docs/UI.md` §8.9).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
@@ -52,18 +52,25 @@ class FaceEditSheetTest {
     }
 
     @Test
-    fun theViewerOpensWithItsThreeGroupsAndDoneWritesEverySlider() {
+    fun theViewerOpensWithItsThreeRowsAndDoneWritesEverySlider() {
         show(withPicture = true)
         rule.onNodeWithText("Edit face").performClick()
-        for (g in listOf("Eyes", "Mouth", "Head")) rule.onNodeWithText(g).performScrollTo().assertIsDisplayed()
+        // ⭐ Three rows in the viewer and NONE on the page (the user's call, 2026-10-21): the page says what is changed.
+        for (g in listOf("Eyes", "Mouth", "Head")) {
+            assertEquals(g, 1, rule.onAllNodesWithText(g).fetchSemanticsNodes().size)
+        }
+        rule.onNodeWithText("Smile 0.6").assertExists()
+        // ⭐ A row opens on the control that is moved: Mouth on Smile.
+        assertEquals(1, rule.onAllNodesWithText("Smile").fetchSemanticsNodes().size)
         // ⚠ The click ACTION, not a tap at coordinates: the sheet is a window Robolectric lays out off the root.
-        rule.onNodeWithText("Done").performScrollTo()
+        rule.onNodeWithText("Done")
             .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         rule.waitForIdle()
         val w = checkNotNull(written) { "Done wrote nothing" }
         assertTrue(LivePortrait.SLIDERS.all { it in w })
         assertEquals("0.6", w["mouth_smile"])
-        assertEquals("true", w[FaceEditNode.LARGEST_ONLY])
+        // ⚠ Every face, always: the switch is gone.
+        assertEquals("false", w[FaceEditNode.LARGEST_ONLY])
     }
 
     /** ⚠ No picture yet: a line saying what to do, no button that opens onto nothing. */

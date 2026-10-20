@@ -611,7 +611,8 @@ fun NodeInspector(
                 nodeId, types, port = com.abrah.nightmare.SdSampler.CONTROL,
             )?.let(imageFor),
             // ⭐ The Video node wired into Motion transfer's `control`: its chosen video.
-            drivingVideo = node.inputs[com.abrah.nightmare.npu.WanFunNode.CONTROL]
+            // ⭐ …and into Animate portrait's `driver`, the same picker's video.
+            drivingVideo = (node.inputs[com.abrah.nightmare.npu.WanFunNode.CONTROL] ?: node.inputs[com.abrah.nightmare.portrait.AnimatePortraitNode.DRIVER])
                 ?.let { state.workflow.graph.byId[it.node] }
                 ?.takeIf { it.type == com.abrah.nightmare.npu.LoadVideoNode.name }
                 ?.params?.get("uri")?.takeIf { it.isNotBlank() },
@@ -941,6 +942,8 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         )
     ) return true
     if (node.type in PAINTS && name == com.abrah.nightmare.MaskNode.OPS) return true
+    // ⭐ Face edit's 14 sliders are its three category rows ([FaceSliders]), on the page and in the viewer.
+    if (node.type == com.abrah.nightmare.portrait.FaceEditNode.name && name in com.abrah.nightmare.portrait.LivePortrait.SLIDERS) return true
     // ⭐ Motion transfer's window and video crop belong to its Video tab ([DrivingVideoPanel]).
     if (node.type == com.abrah.nightmare.npu.WanFunNode.name && name in com.abrah.nightmare.npu.WanFun.VIDEO_PARAMS) return true
     // ⭐ SD 1.5 Swap's ControlNet knobs live in its ControlNet TILE ([ControlNetPanel]),
@@ -1486,6 +1489,9 @@ internal fun NodeInspectorBody(
         var pickingLoras by remember(nodeId) { mutableStateOf(false) }
         // ⚠ Whether ⓘ is open. Local, keyed on the node, same as the picker.
         var showingInfo by remember(nodeId) { mutableStateOf(false) }
+        // ⭐ Face edit's viewer, opened by its button AND by a tap on the picture (the user, 2026-10-21).
+        var faceEditing by remember(nodeId) { mutableStateOf(false) }
+        val faceNode = node.type == com.abrah.nightmare.portrait.FaceEditNode.name
         if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
             CheckpointPicker(
                 // ⭐⭐ Derived from the TYPES, not from a hardcoded family list:
@@ -2389,10 +2395,6 @@ internal fun NodeInspectorBody(
                 onBlankHandled = { afterBlank = false },
             )
         }
-        // ⭐ Face edit's viewer, where the image node's controls are ([FaceEditControls]).
-        if (node.type == com.abrah.nightmare.portrait.FaceEditNode.name) {
-            FaceEditControls(nodeId, node, faceSource, onSetParams)
-        }
         // ⭐ The Video node's own controls, where the image node's are ([VideoPicker]).
         if (node.type == com.abrah.nightmare.npu.LoadVideoNode.name) {
             VideoPicker(
@@ -2432,7 +2434,9 @@ internal fun NodeInspectorBody(
             // call, 2026-09-22, and the same order the Received half uses.
             // ⚠ The SAME row the fullscreen viewer draws, in the same order,
             // with the same confirm on the bin (`docs/UI.md` §8.3).
-            if (onSaveImage != null) {
+            // ⭐ A Face edit node draws it UNDER its picture and without the bin (the user, 2026-10-21): the
+            // picture is the page there, and Run makes it again.
+            val actions: @Composable () -> Unit = { if (onSaveImage != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -2444,7 +2448,7 @@ internal fun NodeInspectorBody(
                         // ⭐⭐ With a Received picture above, this drops the
                         // ENLARGEMENT and leaves that one as the node's output.
                         // With no pair, it empties the node as it always did.
-                        onDelete = if (beforeImage != null) onDropEnlargement else onClearOutput,
+                        onDelete = if (faceNode) null else if (beforeImage != null) onDropEnlargement else onClearOutput,
                         deleteTitle = if (beforeImage != null) stringResource(R.string.inspector_drop_upscaled_title) else null,
                         deleteBody = if (beforeImage != null) {
                             stringResource(R.string.inspector_drop_upscaled_body)
@@ -2469,7 +2473,8 @@ internal fun NodeInspectorBody(
                         onInfo = onInfo?.let { { showingInfo = true } },
                     )
                 }
-            }
+            } }
+            if (!faceNode) actions()
             // ⭐⭐ A clip loops here exactly as it does on the node.
             //
             // ⚠ Its OWN ticker rather than one shared with the canvas: the sheet
@@ -2522,7 +2527,30 @@ internal fun NodeInspectorBody(
                         else Modifier.heightIn(max = pictureCap()),
                     )
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable { onViewFullscreen() },
+                    .clickable { if (faceNode) faceEditing = true else onViewFullscreen() },
+            )
+            if (faceNode) actions()
+        }
+        // ⭐ Animate portrait's page shows the driving clip PLAYING (the user, 2026-10-21: "similar to sampler of wan
+        // fun", the input clip), above the seconds it reads.
+        if (node.type == com.abrah.nightmare.portrait.AnimatePortraitNode.name) {
+            Text(stringResource(R.string.animate_driver_title), style = MaterialTheme.typography.titleSmall)
+            if (drivingVideo == null) {
+                Text(stringResource(R.string.animate_driver_none), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                com.abrah.nightmare.ui.ClipPlayer(
+                    drivingVideo,
+                    Modifier.fillMaxWidth().height(pictureCap(pair = true)).clip(RoundedCornerShape(10.dp)),
+                )
+            }
+        }
+        // ⭐ Face edit's page: the picture (above, once it has run), what is changed, Edit face ([FaceEditControls]).
+        if (faceNode) {
+            FaceEditControls(
+                nodeId, node, faceSource, onSetParams,
+                hasResult = preview != null,
+                open = faceEditing,
+                onOpen = { faceEditing = it },
             )
         }
 
@@ -2638,7 +2666,7 @@ internal fun NodeInspectorBody(
         // than redundant: a hand-typed `content://media/.../258620` is a
         // valid-looking string that resolves to nothing, or to somebody else's
         // picture.
-        val picked = if (node.type == "core.image") "uri" else null
+        val picked = if (node.type in com.abrah.nightmare.PICKED_TYPES) "uri" else null
 
         // ⭐⭐⭐ **The LAST-node rule** (`isLastOfKind`): only the last sampler
         // in a chain may arm a sweep. Sweeping an earlier one re-runs everything
@@ -3567,7 +3595,7 @@ private fun ChoiceInfoButton(label: String, onInfo: () -> Unit) {
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun ChoiceDropdown(
+internal fun ChoiceDropdown(
     label: String,
     hint: String?,
     options: List<String>,

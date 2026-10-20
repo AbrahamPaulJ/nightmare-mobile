@@ -28,11 +28,13 @@ object FaceEditNode : NodeType {
     override val defaultId = "face"
     override val about = "smile, eyes, gaze, mouth and head turn on the faces in a picture (LivePortrait)"
 
-    /** ⭐ Only the biggest face; off = every face found. */
+    /**
+     * ⚠ RETIRED (the user, 2026-10-21: every face, no switch). Kept as a name so a saved flow holding it loads; the
+     * node and the viewer ignore it and edit every face found.
+     */
     const val LARGEST_ONLY = "largest_only"
 
-    override val widgets: List<Widget> = LivePortrait.SLIDERS.map { Widget(it, "float", "0.0", -1.0, 1.0) } +
-        Widget(LARGEST_ONLY, "bool", "true")
+    override val widgets: List<Widget> = LivePortrait.SLIDERS.map { Widget(it, "float", "0.0", -1.0, 1.0) }
 
     override fun contextKey(node: Node): ContextKey? = null
 
@@ -48,11 +50,11 @@ object FaceEditNode : NodeType {
         if (sliders.all { it == 0f }) return src
         val android = ctx.android ?: throw IllegalStateException("face edit needs the app")
         if (!LivePortrait.isInstalled(android)) {
-            throw NeedsDownload(NeedsDownload.LIVEPORTRAIT, "node \"${node.id}\": download ${LivePortrait.LABEL} first. In Models, Tools")
+            throw NeedsDownload(NeedsDownload.LIVEPORTRAIT, "node \"${node.id}\": download ${LivePortrait.LABEL} first. In Models, Faces")
         }
         val bmp = ctx.images.get(src.id)
             ?: throw IllegalStateException("node \"${node.id}\": the picture is no longer held. Run again")
-        val out = withContext(Dispatchers.IO) { edit(android, bmp, sliders, node.params[LARGEST_ONLY] != "false") }
+        val out = withContext(Dispatchers.IO) { edit(android, bmp, sliders, largestOnly = false) }
             ?: throw IllegalArgumentException("node \"${node.id}\": no face found in the picture")
         return Value.Image(ctx.images.put(out), out.width, out.height)
     }

@@ -400,6 +400,7 @@ private fun recipeIcon(id: String): androidx.compose.ui.graphics.vector.ImageVec
     "inpaint" -> EraserIcon
     "upscale" -> UpscaleIcon
     "face_edit" -> Icons.Filled.Face
+    "animate_portrait" -> Icons.Filled.PlayArrow
     "flux_edit" -> Icons.Filled.Edit
     "t2v", "i2v", "motion" -> Icons.Filled.PlayArrow
     else -> FlowsIcon

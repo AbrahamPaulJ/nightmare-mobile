@@ -185,17 +185,19 @@ Iris 3B Turbo
     not included here. Its text encoder is Qwen3-VL-4B-Instruct (Apache 2.0),
     as for Krea 2 Turbo.
 
-MOSS-Image (SFT)
+MOSS-Image (SFT and Base)
     OpenMOSS team; GGUF by realrebelai, requantised to Q4_0 by this project
     https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT
+    https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base
     https://huggingface.co/realrebelai/MOSS-Image_GGUFs
     https://huggingface.co/AbrahamPJ/nightmare-moss-image
     Apache 2.0. Downloaded by the app at the user's request; not included here.
     Its VAE is the FLUX.2 VAE.
 
-MOSS-Image 8-step DMD LoRA
+MOSS-Image 8-step DMD LoRAs (SFT and Base)
     lodestones
     https://huggingface.co/lodestones/MOSS-Image-SFT-8-steps-dmd
+    https://huggingface.co/lodestones/MOSS-Image-Base-8-steps-dmd
     Apache 2.0. Downloaded by the app at the user's request and applied at
     run time, unmodified; not included here.
 
@@ -369,7 +371,7 @@ ADetailer face and hand detectors (Fix faces, Fix hands)
     mirrored at https://huggingface.co/AbrahamPJ/nightmare-adetailer;
     downloaded at the user's request.
 
-LivePortrait (Face edit, Edit face in Results)
+LivePortrait (Face edit, Edit face in Results, Animate a portrait)
     Kuaishou Technology, https://github.com/KwaiVGI/LivePortrait, MIT.
     Converted to QNN context binaries per chip (with the YOLOFace detector and
     the 2DFAN4 landmarker it needs) by facefusion-mobile and hosted at

@@ -1,7 +1,7 @@
 # Download, switch and delete
 
 Open **Models**. Along the top are chips by what a model does: **All**, **Generate**, **Edit**,
-**Inpaint**, then **Video**, **Upscalers** and **Tools**, with a search box under them
+**Inpaint**, then **Video**, **Upscalers**, **Faces** and **Tools**, with a search box under them
 (try `anime`, `inpaint`, `flux`) and a **Family** menu that opens one family's own page, with
 its typical size and anything to know before downloading.
 

@@ -263,6 +263,8 @@
     <string name="mb_kind_generate">生成</string>
     <string name="mb_kind_edit">编辑</string>
     <string name="mb_kind_inpaint">局部重绘</string>
+    <string name="mb_kind_faces">人脸</string>
+    <string name="faces_note">在 NPU 上让图片和视频中的人脸动起来的模型。点“使用”打开相应流程。</string>
     <string name="mb_search_hint">搜索模型，例如 \"anime\"、\"inpaint\"、\"flux\"</string>
     <string name="mb_family">系列：%1$s</string>
     <string name="mb_all_families">全部系列</string>
@@ -1186,15 +1188,18 @@
     <string name="knob_lp_head_yaw">转头</string>
     <string name="knob_lp_head_roll">歪头</string>
     <string name="knob_lp_largest_only">仅最大的脸</string>
-    <string name="liveportrait_about">调整图片中的人脸：微笑、眼睛、视线、嘴型和头部转动。用于“人脸编辑”节点和结果中的“编辑人脸”（LivePortrait，Kuaishou，MIT）。</string>
+    <string name="liveportrait_about">调整图片中的人脸：微笑、眼睛、视线、嘴型和头部转动。用于“人脸编辑”节点、结果中的“编辑人脸”和“让肖像动起来”（LivePortrait，Kuaishou，MIT）。</string>
     <string name="models_delete_liveportrait_body">释放 %1$d MB。重新获取需下载 %2$d MB。“人脸编辑”会在下次运行时再次请求。</string>
     <string name="face_edit_open">编辑人脸</string>
     <string name="face_edit_title">编辑人脸</string>
     <string name="face_edit_hold_hint">按住图片可查看原图。</string>
-    <string name="face_edit_not_installed">在“模型”的“工具”中下载人脸编辑器（LivePortrait）即可预览。运行时也会请求下载。</string>
+    <string name="face_edit_not_installed">在“模型”的“人脸”中下载人脸编辑器（LivePortrait）即可预览。运行时也会请求下载。</string>
     <string name="face_edit_no_picture">先选择或生成图片，然后在这里实时预览编辑人脸。</string>
     <string name="face_edit_no_face">这张图片中没有找到人脸。</string>
     <string name="face_edit_done">完成</string>
+    <string name="face_edit_nothing_changed">尚未更改。点按图片即可编辑人脸。</string>
+    <string name="animate_driver_title">驱动视频</string>
+    <string name="animate_driver_none">将“视频”节点接入 \"driver\" 并选择一个有人脸的视频：肖像会照着它动。</string>
     <string name="face_edit_group_eyes">眼睛</string>
     <string name="face_edit_group_mouth">嘴</string>
     <string name="face_edit_group_head">头部</string>
@@ -1211,4 +1216,8 @@
     <string name="references_add">添加参考图</string>
     <string name="references_remove">移除图 %1$d</string>
     <string name="references_no_room">大约还有 %1$d MB 可用内存。在 %2$s 下再加一张参考图很可能内存不足：请降低尺寸或关闭其他应用。</string>
+    <string name="flow_animate_name">让肖像动起来</string>
+    <string name="flow_animate_about">照片中的人脸按照你选择的视频中人脸的动作运动。无需检查点。</string>
+    <string name="palette_node_animate">肖像动画</string>
+    <string name="palette_about_animate">让照片中的人脸像所选视频中的人脸一样运动（LivePortrait）</string>
 </resources>

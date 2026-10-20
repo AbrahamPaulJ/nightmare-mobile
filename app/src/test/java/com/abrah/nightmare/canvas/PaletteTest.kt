@@ -30,8 +30,8 @@ class PaletteTest {
      * registered and this list is what guards the retirement.
      */
     @Test fun commonHoldsTheAgnosticNodes() = assertEquals(
-        // ⭐ 2026-10-15: the Video node (Motion transfer's driving clip) joined them; 2026-10-21 Face edit (no checkpoint).
-        listOf("core.image", "core.prompt", "core.video", "core.output", "face.edit"),
+        // ⭐ 2026-10-15: the Video node (Motion transfer's driving clip) joined them; 2026-10-21 Face edit and Animate portrait (no checkpoint).
+        listOf("core.image", "core.prompt", "core.video", "core.output", "face.animate", "face.edit"),
         sections.getValue("common").map { it.single().name },
     )
 

@@ -2533,6 +2533,26 @@ object ModelCatalog {
                 RemoteFile(HF + "lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors", MOSS_LORA, 1_189_176_800L),
             ),
         ),
+        // ⭐ MOSS-Image BASE (#6960, a tester's wish): the pre-SFT model, as Q4_0 (ours, from realrebelai's Base Q8_0,
+        // 2026-10-21; the same 3,217,359,072 bytes as SFT's, the same layout), with lodestones' Base 8-step DMD LoRA
+        // (CFG 1, 4-8 steps, its card). ⭐ SFT's encoder, VAE and tokenizer are BORROWED when SFT is installed
+        // ([ModelSpec.partsFrom], backend 040): 5.6 GB not fetched twice; this list still names them for a phone
+        // without SFT. ⚠ Never run on a phone until measured (PROGRESS).
+        dit(
+            "moss_image_base", "MOSS-Image Base (8 steps)", Family.MOSS, KREA2, steps = 8,
+            ownDitParts = true,
+            minArch = DIT_MIN_ARCH,
+            partsFrom = "moss_image",
+            prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
+            ownLora = MOSS_LORA,
+            files = listOf(
+                RemoteFile(HF + "AbrahamPJ/nightmare-moss-image/resolve/main/moss-image-base-q4_0.gguf", "dit.gguf", 3_217_359_072L),
+                RemoteFile(HF + "unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_0.gguf", "llm.gguf", 5_379_417_312L),
+                RemoteFile(HF + "realrebelai/MOSS-Image_GGUFs/resolve/main/MOSS-VAE.safetensors", "vae.safetensors", 249_521_372L),
+                RemoteFile(HF + "OpenMOSS-Team/MOSS-Image-Base/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", 19_989_325L),
+                RemoteFile(HF + "lodestones/MOSS-Image-Base-8-steps-dmd/resolve/main/lora.safetensors", MOSS_LORA, 1_189_176_800L),
+            ),
+        ),
         // ⭐⭐ Ideogram 4 (Ideogram Non-Commercial Model Agreement; `NOTICE`): leejet's Q4_0 DiT, unsloth's Qwen3-VL-8B
         // Q4_0 (the engine reads 13 of its hidden layers) with Qwen3-VL's tokenizer.json (the backend loads one for a
         // `krea2` launch), Klein's FLUX.2 VAE, and ostris' TurboTime LoRA on every render ([ModelSpec.ownLora]): the

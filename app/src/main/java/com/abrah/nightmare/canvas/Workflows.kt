@@ -492,6 +492,16 @@ val RECIPES: List<Recipe> = listOf(
         labelRes = R.string.flow_face_edit_name,
         aboutRes = R.string.flow_face_edit_about,
     ),
+    // ⭐ Animate a portrait (LivePortrait, the user's call 2026-10-21): ~0.2 s a frame on the NPU, a 10 s clip in
+    // about a minute and a half on an 8 Elite; far less than any generated clip, so before the video models.
+    Recipe(
+        ANIMATE, "Animate a portrait",
+        "A photo of a face moving the way a face moves in a video you choose. No checkpoint involved.",
+        ::animatePortraitWorkflow,
+        usesCheckpoint = false,
+        labelRes = R.string.flow_animate_name,
+        aboutRes = R.string.flow_animate_about,
+    ),
     // ⭐⭐⭐ **Image edit — FLUX.2 only, and placed by what it COSTS.**
     //
     // ⚠⚠ Its position is the rule, not a preference: this list runs from
@@ -576,6 +586,7 @@ val RECIPES: List<Recipe> = listOf(
  *  ids the Neodragon flows had: saved references and the Flows icons keep working. */
 const val T2V = "t2v"
 const val FACE_EDIT = "face_edit"
+const val ANIMATE = "animate_portrait"
 const val I2V = "i2v"
 const val MOTION = "motion"
 
@@ -761,6 +772,22 @@ fun faceEditWorkflow(): Workflow = Workflow(
         )
     ),
     positions = flowLayout("image", "face", "output"),
+)
+
+/** ⭐ [ANIMATE]: a portrait and a driving clip into [com.abrah.nightmare.portrait.AnimatePortraitNode], the clip out. */
+fun animatePortraitWorkflow(): Workflow = Workflow(
+    Graph(
+        listOf(
+            Node("image", "core.image", params = mapOf("uri" to "")),
+            Node("clip", com.abrah.nightmare.npu.LoadVideoNode.name, params = mapOf("uri" to "")),
+            Node(
+                "animate", com.abrah.nightmare.portrait.AnimatePortraitNode.name,
+                inputs = sources("image" to "image", com.abrah.nightmare.portrait.AnimatePortraitNode.DRIVER to "clip"),
+            ),
+            Node("output", "core.output", inputs = sources("media" to "animate")),
+        )
+    ),
+    positions = flowLayout("image", "clip", "animate", "output"),
 )
 
 /**

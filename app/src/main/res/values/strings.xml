@@ -286,6 +286,8 @@
     <string name="mb_kind_generate">Generate</string>
     <string name="mb_kind_edit">Edit</string>
     <string name="mb_kind_inpaint">Inpaint</string>
+    <string name="mb_kind_faces">Faces</string>
+    <string name="faces_note">Models that move the faces in your pictures and videos, on the NPU. Use opens a flow with it.</string>
     <string name="mb_search_hint">Search models, e.g. \"anime\", \"inpaint\", \"flux\"</string>
     <string name="mb_family">Family: %1$s</string>
     <string name="mb_all_families">All families</string>
@@ -1217,15 +1219,18 @@
     <string name="knob_lp_head_yaw">Head turn</string>
     <string name="knob_lp_head_roll">Head tilt</string>
     <string name="knob_lp_largest_only">Biggest face only</string>
-    <string name="liveportrait_about">Moves the faces in a picture: smile, eyes, gaze, mouth and head turn. For the Face edit node and Edit face in Results (LivePortrait by Kuaishou, MIT).</string>
+    <string name="liveportrait_about">Moves the faces in a picture: smile, eyes, gaze, mouth and head turn. For the Face edit node, Edit face in Results and Animate a portrait (LivePortrait by Kuaishou, MIT).</string>
     <string name="models_delete_liveportrait_body">Frees %1$d MB. Getting it back is a %2$d MB download. Face edit will ask for it again on the next Run.</string>
     <string name="face_edit_open">Edit face</string>
     <string name="face_edit_title">Edit face</string>
     <string name="face_edit_hold_hint">Hold the picture to see the original.</string>
-    <string name="face_edit_not_installed">Download the Face editor (LivePortrait) in Models, Tools to see a preview. Run asks for it too.</string>
+    <string name="face_edit_not_installed">Download the Face editor (LivePortrait) in Models, Faces to see a preview. Run asks for it too.</string>
     <string name="face_edit_no_picture">Pick or render the picture first, then edit its face here with a live preview.</string>
     <string name="face_edit_no_face">No face found in this picture.</string>
     <string name="face_edit_done">Done</string>
+    <string name="face_edit_nothing_changed">Nothing changed yet. Tap the picture to edit the face.</string>
+    <string name="animate_driver_title">Driving video</string>
+    <string name="animate_driver_none">Wire a Video node into \"driver\" and choose a video with a face: the portrait moves the way it moves.</string>
     <string name="face_edit_group_eyes">Eyes</string>
     <string name="face_edit_group_mouth">Mouth</string>
     <string name="face_edit_group_head">Head</string>
@@ -1242,4 +1247,8 @@
     <string name="references_add">Add a reference</string>
     <string name="references_remove">Remove image %1$d</string>
     <string name="references_no_room">About %1$d MB is free. Another reference at %2$s would likely run out of memory: lower the size or close other apps.</string>
+    <string name="flow_animate_name">Animate a portrait</string>
+    <string name="flow_animate_about">A photo of a face moving the way a face moves in a video you choose. No checkpoint involved.</string>
+    <string name="palette_node_animate">Animate portrait</string>
+    <string name="palette_about_animate">a photo of a face moved like the face in a video you choose (LivePortrait)</string>
 </resources>
