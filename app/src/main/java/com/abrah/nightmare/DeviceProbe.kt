@@ -162,7 +162,39 @@ object DeviceProbe {
     private const val HMX_BAD_KEY = "hmx_self_test_bad"
 
     fun loadHmxVerdict(context: Context) {
-        hmxBad = context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).getBoolean(HMX_BAD_KEY, false)
+        val prefs = context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE)
+        hmxBad = prefs.getBoolean(HMX_BAD_KEY, false)
+        packFallback = prefs.getInt(PACK_FALLBACK_KEY, 0).takeIf { it > 0 }
+    }
+
+    /**
+     * ⭐ The arch a phone runs on after its GUESSED pack arch would not load ([learnPackFallback]); null until then.
+     * ⚠ GitHub #61/#62: the first real SM8975 failed `Failed to load skel, error: 1002` on the V85 trio, and its v85
+     * is [archFromPartNumber]'s guess. The context binaries run forward-only, so a v81-class chip runs them on the
+     * APK's own 2.50 runtime and V81 trio. Kept per phone, like [hmxBad]: the chip does not change.
+     */
+    @Volatile
+    var packFallback: Int? = null
+        private set
+
+    private const val PACK_FALLBACK_KEY = "pack_fallback_arch"
+    const val PACK_FALLBACK_ARCH = 81
+
+    /** ⚠ Pure: a backend log that died loading the NPU skel (the transport, before any model). */
+    fun skelLoadFailed(tail: List<String>): Boolean =
+        tail.any { "Failed to load skel" in it || "Transport layer setup failed" in it }
+
+    /**
+     * ⭐ A launch on a guessed pack arch died at the skel ([skelLoadFailed]): remember [PACK_FALLBACK_ARCH] and say so.
+     * True when NEW, so the caller relaunches once ([HarnessOps.launchBackend]). ⚠ Never on a measured or tabled chip.
+     */
+    fun learnPackFallback(context: Context, tail: List<String>): Boolean {
+        if (packFallback != null || measured != null || SOC_TO_ARCH[soc()] != null) return false
+        if (archFromPartNumber(soc()) !in PACK_ARCHES || !skelLoadFailed(tail)) return false
+        packFallback = PACK_FALLBACK_ARCH
+        context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit().putInt(PACK_FALLBACK_KEY, PACK_FALLBACK_ARCH).apply()
+        Log.w(TAG, "the v${archFromPartNumber(soc())} skel would not load on ${soc()}: running as v$PACK_FALLBACK_ARCH from now on")
+        return true
     }
 
     /** ⭐ The self-test said this HMX is wrong ([BackendProcess.engineNpuLine]'s "hmx"): remembered. True when NEW. */
@@ -202,29 +234,6 @@ object DeviceProbe {
     fun soc(): String = (Build.SOC_MODEL ?: "").uppercase()
 
     /**
-     * ⭐ The cDSP's Hexagon arch as the phone's own FastRPC shell was built for it, read off that ELF's
-     * `e_flags` (`EF_HEXAGON_MACH_V79` = 0x79), with the path it came from; null when no shell is readable.
-     * ⚠ A diagnostic beside the chip table, not a gate yet: GitHub #61/#62's SM8975 failed loading a V85 skel
-     * ("skel load 1002") and the table's v85 for it is a guess one generation past the newest known part.
-     * ⚠ The app can read it where adb cannot (SELinux): FastRPC loads the unsigned shell from the app's process.
-     */
-    val dspShellArch: Pair<String, String>? by lazy {
-        val dirs = listOf("/vendor/dsp/cdsp", "/vendor/dsp", "/vendor/lib/rfsa/adsp", "/odm/lib/rfsa/adsp", "/vendor/dsp/cdsp1")
-        val names = listOf("fastrpc_shell_unsigned_3", "fastrpc_shell_3")
-        dirs.asSequence().flatMap { d -> names.asSequence().map { File(d, it) } }.firstNotNullOfOrNull { f ->
-            runCatching {
-                java.io.RandomAccessFile(f, "r").use { r ->
-                    val h = ByteArray(40).also { r.readFully(it) }
-                    val machine = (h[18].toInt() and 0xFF) or ((h[19].toInt() and 0xFF) shl 8)
-                    if (h[0] != 0x7F.toByte() || machine != 164) return@use null
-                    val flags = (h[36].toInt() and 0xFF) or ((h[37].toInt() and 0xFF) shl 8)
-                    "v%x".format(flags and 0xFFF) to f.path
-                }
-            }.getOrNull()
-        }.also { Log.i(TAG, "cDSP shell: ${it?.let { (a, p) -> "$a ($p)" } ?: "not readable"}") }
-    }
-
-    /**
      * ⭐⭐ What to gate and label with.
      *
      * ⚠ A measurement always wins. Failing that, the tables; failing those, the
@@ -237,7 +246,7 @@ object DeviceProbe {
         measured?.let { return it }
         val soc = soc()
         return Caps(
-            arch = SOC_TO_ARCH[soc] ?: archFromPartNumber(soc) ?: FLOOR_ARCH,
+            arch = SOC_TO_ARCH[soc] ?: packFallback ?: archFromPartNumber(soc) ?: FLOOR_ARCH,
             vtcmMb = when {
                 soc in SOC_HAS_8MB_VTCM -> 8
                 // ⚠ A chip NEWER than every 8 MB part we know is far likelier
@@ -321,7 +330,7 @@ object DeviceProbe {
      */
     fun runtimeLibs(all: List<String>): List<String> {
         // ⭐ A pack arch (v85) unpacks only the shared pair here; [QnnPack.overlay] lays its own over them.
-        val arch = SOC_TO_ARCH[soc()] ?: measured?.arch ?: archFromPartNumber(soc())?.takeIf { it in PACK_ARCHES } ?: return all
+        val arch = SOC_TO_ARCH[soc()] ?: measured?.arch ?: packFallback ?: archFromPartNumber(soc())?.takeIf { it in PACK_ARCHES } ?: return all
         val token = "V$arch"
         return all.filter { n ->
             // Shared libraries carry no arch token; the per-arch trio does.

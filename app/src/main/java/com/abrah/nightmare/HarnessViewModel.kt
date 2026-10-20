@@ -1473,6 +1473,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         lap("pose")
         refreshDetailer()
         lap("detailer")
+        refreshLivePortrait()
+        lap("liveportrait")
         refreshDepth()
         lap("depth")
         refreshDescribe()
@@ -2145,6 +2147,47 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * ⭐ **Edit face** on a kept picture (Results, both rows): the "Edit a face" flow on its file, kept as a new result
+     * ([upscaleResult]'s shape). ⚠ Every way out TOASTS: Results does not show the run log.
+     */
+    fun faceEditResult(r: com.abrah.nightmare.canvas.Result, params: Map<String, String>) {
+        val ctx = getApplication<Application>()
+        if (!com.abrah.nightmare.portrait.LivePortrait.isInstalled(ctx)) {
+            missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT)
+            return
+        }
+        val file = results.imageFile(r.id)
+        if (!file.isFile) {
+            toast(text(R.string.upscale_picture_gone))
+            return
+        }
+        val base = com.abrah.nightmare.canvas.faceEditWorkflow()
+        // ⚠⚠ The PATH, not a `file://` URI ([LoadImageNode] reads a non-content uri as a path).
+        val g = base.graph.copy(nodes = base.graph.nodes.map { n ->
+            when (n.id) {
+                "image" -> n.copy(params = n.params + ("uri" to file.absolutePath))
+                "face" -> n.copy(params = params)
+                else -> n
+            }
+        })
+        val wf = base.copy(graph = g)
+        val refused = run("face edit") {
+            toast(text(R.string.face_edit_working))
+            val out = ops.runWorkflow(wf)
+            val img = out.outputs["face"]?.previewImage()
+            if (out.error != null || img == null) {
+                val why = out.error ?: out.runs.lastOrNull { it.outcome == Outcome.FAILED }?.detail ?: "no picture"
+                say("face edit failed. $why", bad = true)
+                toast(text(R.string.face_edit_failed, why))
+                return@run
+            }
+            keepResult(img.id, flow = wf)
+            toast(text(R.string.face_edit_kept))
+        }
+        refused?.let { toast(text(R.string.upscale_not_done, it)) }
+    }
+
+    /**
      * ⭐⭐ **UltraFix** on a kept picture ([UltraFix]) — from the upscale chooser in Results and the
      * viewer. The picture's own model when it is an installed SD 1.5 / SDXL one, else the selected;
      * the picture at full size (snapped to multiples of 8) through `/generate` with `ultrafix`.
@@ -2446,6 +2489,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.POSE -> "pose-tool"
                 com.abrah.nightmare.NeedsDownload.DEPTH -> "depth-tool"
                 com.abrah.nightmare.NeedsDownload.DETAILER -> "detailer-tool"
+                com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> "liveportrait-tool"
                 else -> "cn-tool-$key"
             }
         }
@@ -2458,6 +2502,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             com.abrah.nightmare.NeedsDownload.POSE -> com.abrah.nightmare.pose.PoseDetector.LABEL
             com.abrah.nightmare.NeedsDownload.DEPTH -> com.abrah.nightmare.pose.DepthEstimator.LABEL
             com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.LABEL
+            com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> com.abrah.nightmare.portrait.LivePortrait.LABEL
             else -> cnRows[key]?.label ?: key
         },
     )
@@ -2552,6 +2597,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             com.abrah.nightmare.NeedsDownload.POSE -> com.abrah.nightmare.pose.PoseDetector.BYTES
             com.abrah.nightmare.NeedsDownload.DEPTH -> com.abrah.nightmare.pose.DepthEstimator.BYTES
             com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.BYTES
+            com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> com.abrah.nightmare.portrait.LivePortrait.BYTES
             else -> cnRows[m.key]?.bytes ?: 0L
         }
     }
@@ -2586,6 +2632,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.POSE -> poseRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.DEPTH -> depthRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.DETAILER -> detailerRow?.installed == true
+                com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> livePortraitRow?.installed == true
                 else -> cnRows[m.key]?.installed == true
             }
         }
@@ -2669,6 +2716,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.DETAILER)
             return false
         }
+        // ⭐ Face edit with a slider moved needs LivePortrait: asked here too, before anything renders.
+        val faceEditing = graph.nodes.any { n ->
+            n.type == com.abrah.nightmare.portrait.FaceEditNode.name &&
+                com.abrah.nightmare.portrait.FaceEditNode.slidersOf(n).any { it != 0f }
+        }
+        if (faceEditing && !com.abrah.nightmare.portrait.LivePortrait.isInstalled(ctx)) {
+            missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT)
+            return false
+        }
         // ⭐ Hires fix and Enlarge need an upscaler: asked here too, where they used to skip with a run-log
         // line nobody saw (2026-10-17).
         val enlarging = graph.nodes.any { n -> (nodeTypes[n.type] as? com.abrah.nightmare.SdSampler)?.upscalerWanted(n) == true }
@@ -2742,6 +2798,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.POSE -> installPose()
                 com.abrah.nightmare.NeedsDownload.DEPTH -> installDepth()
                 com.abrah.nightmare.NeedsDownload.DETAILER -> installDetailer()
+                com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> installLivePortrait()
                 else -> installControlNet(m.key)
             }
         }
@@ -2957,6 +3014,71 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         com.abrah.nightmare.pose.PoseDetector.delete(getApplication())
         say("deleted ${com.abrah.nightmare.pose.PoseDetector.LABEL}")
         refreshPose()
+    }
+
+    // ---- LivePortrait, Face edit's models ([com.abrah.nightmare.portrait.LivePortrait]) ----------------
+
+    /** ⭐ The Tools row for LivePortrait: the detector's shape exactly (below). */
+    var livePortraitRow by mutableStateOf<com.abrah.nightmare.ui.ToolRow?>(null)
+        private set
+
+    private val LIVEPORTRAIT_INSTALL_ID = "liveportrait-tool"
+
+    fun refreshLivePortrait() {
+        val ctx = getApplication<Application>()
+        val lp = com.abrah.nightmare.portrait.LivePortrait
+        lp.refresh(ctx)
+        livePortraitRow = com.abrah.nightmare.ui.ToolRow(
+            label = lp.LABEL,
+            bytes = lp.BYTES,
+            installed = lp.installed,
+            onDisk = if (lp.installed) lp.bytesOnDisk(ctx) else 0L,
+            progress = if (installing == LIVEPORTRAIT_INSTALL_ID) installProgress else null,
+        )
+    }
+
+    fun installLivePortrait() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        val lp = com.abrah.nightmare.portrait.LivePortrait
+        installing = LIVEPORTRAIT_INSTALL_ID
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, lp.BYTES)
+        refreshLivePortrait()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                lp.install(ctx, onProgress = { p -> viewModelScope.launch { tickProgress(p) } }, isCancelled = { cancelInstall })
+                viewModelScope.launch {
+                    say("installed ${lp.LABEL}")
+                    downloadSucceeded(lp.LABEL)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    ErrorReport.record(e)
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(lp.LABEL, modelError!!)
+                    say("install failed. $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshLivePortrait()
+                }
+            }
+        }
+    }
+
+    fun deleteLivePortrait() {
+        com.abrah.nightmare.portrait.LivePortrait.delete(getApplication())
+        say("deleted ${com.abrah.nightmare.portrait.LivePortrait.LABEL}")
+        refreshLivePortrait()
     }
 
     // ---- the face and hand detector (Fix faces / Fix hands) -----------------

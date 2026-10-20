@@ -70,6 +70,7 @@ nav:
       - Inpaint: flows/inpaint.md
       - Add Objects: flows/add-objects.md
       - Upscale a photo: flows/upscale.md
+      - Edit a face: flows/face-edit.md
       - "Advanced: LoRA, ControlNet, IP-Adapter": flows/advanced.md
       - Image edit: flows/image-edit.md
       - Video: flows/video.md

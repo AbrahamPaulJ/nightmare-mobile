@@ -2,6 +2,7 @@ package com.abrah.nightmare.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -398,6 +399,7 @@ private fun recipeIcon(id: String): androidx.compose.ui.graphics.vector.ImageVec
     "img2img", "swap_i2i" -> SendToIcon
     "inpaint" -> EraserIcon
     "upscale" -> UpscaleIcon
+    "face_edit" -> Icons.Filled.Face
     "flux_edit" -> Icons.Filled.Edit
     "t2v", "i2v", "motion" -> Icons.Filled.PlayArrow
     else -> FlowsIcon

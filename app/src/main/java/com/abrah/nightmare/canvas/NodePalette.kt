@@ -191,6 +191,7 @@ private fun paletteName(type: NodeType): String {
         "Inpaint" -> R.string.palette_node_inpaint
         "Video" -> R.string.palette_node_video
         "Segment model" -> R.string.palette_node_segment_model
+        "Face edit" -> R.string.palette_node_face_edit
         "prompt" -> R.string.palette_node_prompt
         "output" -> R.string.palette_node_output
         "image" -> R.string.palette_node_image
@@ -217,6 +218,7 @@ private fun paletteAbout(type: NodeType): String {
         "a prompt, or a prompt and a photo, into a picture" -> R.string.palette_about_image
         "a prompt, or a prompt and a photo, into a 2 second clip" -> R.string.palette_about_video
         "wire into Inpaint, then tap objects in its mask editor to select them" -> R.string.palette_about_segment_model
+        com.abrah.nightmare.portrait.FaceEditNode.about -> R.string.palette_about_face_edit
         else -> null
     }
     return id?.let { stringResource(it) } ?: type.about

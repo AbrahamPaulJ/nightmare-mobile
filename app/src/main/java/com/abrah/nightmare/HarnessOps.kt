@@ -186,9 +186,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // a tab is a download nobody can debug. `--es arg upscaler_anime`.
             "upscalers" -> listUpscalers()
             "upscaler_install" -> installUpscaler(arg)
+            // ⭐ LivePortrait ([com.abrah.nightmare.portrait.LivePortrait]): fetch this phone's tier; edit a picture file.
+            // `--es arg /sdcard/Download/face.jpg@mouth_smile=1,head_yaw=-0.5` (a slider list after `@`).
+            "lp_install" -> lpInstall()
+            "lp_edit" -> lpEdit(arg)
+            // ⭐ The "Edit a face" FLOW through the executor (`--es arg <file>@slider=v,…`): the node, not the native call.
+            "face_flow" -> faceFlow(arg)
             "models" -> listModels()
-            // ⭐ The cDSP's arch from the phone's own FastRPC shell ([DeviceProbe.dspShellArch]); logs on DeviceProbe.
-            "dsp_arch" -> say("dsp_arch: ${DeviceProbe.dspShellArch ?: "not readable"} · table v${DeviceProbe.caps().arch}")
             "model_install" -> installModel(arg)
             "model_delete" -> deleteModel(arg)
             "model_use" -> useModel(arg)
@@ -3210,6 +3214,81 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * ⚠ Synchronous and chatty on purpose: this exists because the UI path
      * reported nothing usable when the download failed.
      */
+    private suspend fun lpInstall() {
+        val lp = com.abrah.nightmare.portrait.LivePortrait
+        val tier = lp.tiers().first()
+        say("lp_install: tier $tier, ${lp.missingBytes(ctx, tier)} B to fetch into ${lp.dir(ctx)}")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                lp.installTier(ctx, tier, onProgress = { p -> if (p.done == p.total) say("  ${p.phase} ${p.done}/${p.total}") })
+            }
+            say("  ok   installed: ${lp.installed(ctx, tier)}")
+        } catch (e: Throwable) {
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    private suspend fun faceFlow(arg: String?) {
+        val (path, spec) = arg.orEmpty().split('@', limit = 2).let { it[0] to it.getOrElse(1) { "mouth_smile=0.6" } }
+        val base = com.abrah.nightmare.canvas.faceEditWorkflow()
+        val sliders = spec.split(',').filter { '=' in it }.associate { kv -> kv.split('=', limit = 2).let { it[0].trim() to it[1].trim() } }
+        val g = base.graph.copy(nodes = base.graph.nodes.map { n ->
+            when (n.id) {
+                "image" -> n.copy(params = n.params + ("uri" to path))
+                "face" -> n.copy(params = n.params.filterKeys { it !in com.abrah.nightmare.portrait.LivePortrait.SLIDERS } + sliders)
+                else -> n
+            }
+        })
+        val r = runWorkflow(base.copy(graph = g), onNode = { n ->
+            say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} ${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
+        })
+        if (r.error != null) { say("face_flow: refused. ${r.error}", bad = true); return }
+        val out = r.outputs["face"] as? Value.Image ?: run { say("face_flow: no picture", bad = true); return }
+        val bmp = images.get(out.id) ?: run { say("face_flow: picture not held", bad = true); return }
+        val dst = java.io.File(ctx.getExternalFilesDir(null), "lp/flow_${System.currentTimeMillis()}.png").apply { parentFile?.mkdirs() }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            dst.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        say("face_flow: ${out.w}x${out.h} in ${r.totalMs} ms -> $dst")
+    }
+
+    private suspend fun lpEdit(arg: String?) {
+        val (path, spec) = arg.orEmpty().split('@', limit = 2).let { it[0] to it.getOrElse(1) { "mouth_smile=1" } }
+        val lp = com.abrah.nightmare.portrait.LivePortrait
+        val sliders = FloatArray(lp.SLIDERS.size)
+        for (kv in spec.split(',').filter { '=' in it }) {
+            val (k, v) = kv.split('=', limit = 2)
+            val i = lp.SLIDERS.indexOf(k.trim())
+            if (i < 0) { say("lp_edit: no slider \"$k\" (${lp.SLIDERS.joinToString()})", bad = true); return }
+            sliders[i] = v.toFloatOrNull() ?: 0f
+        }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val t0 = System.nanoTime()
+                val tier = lp.open(ctx)
+                val tOpen = (System.nanoTime() - t0) / 1e6
+                val bmp = android.graphics.BitmapFactory.decodeFile(path)
+                    ?: run { say("lp_edit: cannot read $path", bad = true); return@withContext }
+                val w = bmp.width
+                val h = bmp.height
+                val px = IntArray(w * h).also { bmp.getPixels(it, 0, w, 0, 0, w, h) }
+                // ⭐ Twice: the first run pays the NPU's warm-up, the second is the number to quote.
+                var out: IntArray? = null
+                val ms = (1..2).map {
+                    out = com.abrah.nightmare.portrait.NativePortrait.edit(px, w, h, sliders, false)
+                    com.abrah.nightmare.portrait.NativePortrait.lastMs()
+                }
+                val o = out ?: run { say("lp_edit: ${com.abrah.nightmare.portrait.NativePortrait.lastError()}", bad = true); return@withContext }
+                val res = android.graphics.Bitmap.createBitmap(o, w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                val dst = java.io.File(ctx.getExternalFilesDir(null), "lp/edit_${System.currentTimeMillis()}.png").apply { parentFile?.mkdirs() }
+                dst.outputStream().use { res.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                say("lp_edit: tier $tier, open ${"%.0f".format(tOpen)} ms, ${w}x$h, edit ${ms.joinToString { "%.0f".format(it) }} ms -> $dst")
+            } catch (e: Throwable) {
+                say("lp_edit: FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+            }
+        }
+    }
+
     suspend fun installUpscaler(id: String?) {
         val spec = UpscalerCatalog.byId(id.orEmpty())
         if (spec == null) {
@@ -4959,6 +5038,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // the backend's constant, or no group at all ([SpillFill]): launch once
         // more with what the log taught. ⚠ Once — [SpillFill.learn] is false when
         // nothing is new, which is what makes this a retry and not a loop.
+        // ⭐ A v85 guess whose skel would not load (GitHub #62): once more on the V81 runtime the APK carries.
+        if (DeviceProbe.learnPackFallback(ctx, BackendProcess.tail())) {
+            say("this phone's NPU would not take the v85 runtime. Starting again as v${DeviceProbe.PACK_FALLBACK_ARCH}")
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop(); BackendProcess.forgetRuntime() }
+            return launchOnce(want, upscalerOnly)
+        }
         val modelId = want?.model ?: SelectedModel.id
         if (upscalerOnly || !SpillFill.learn(ctx, modelId)) return false
         say("this checkpoint needs ${SpillFill.describe(ctx, modelId)}. Starting again with it")

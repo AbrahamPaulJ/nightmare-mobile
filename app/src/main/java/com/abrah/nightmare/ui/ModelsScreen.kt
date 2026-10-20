@@ -266,6 +266,10 @@ fun ModelsScreen(
     detailer: ToolRow? = null,
     onInstallDetailer: () -> Unit = {},
     onDeleteDetailer: () -> Unit = {},
+    /** ⭐ Face edit's LivePortrait set ([com.abrah.nightmare.portrait.LivePortrait]). */
+    livePortrait: ToolRow? = null,
+    onInstallLivePortrait: () -> Unit = {},
+    onDeleteLivePortrait: () -> Unit = {},
     /** ⭐ The fourth Tools row — SD 1.5 Swap's depth estimator. */
     depth: ToolRow? = null,
     onInstallDepth: () -> Unit = {},
@@ -360,6 +364,8 @@ fun ModelsScreen(
     var deletingParser by remember { mutableStateOf(false) }
     var deletingPose by remember { mutableStateOf(false) }
     var deletingDetailer by remember { mutableStateOf(false) }
+    var deletingLivePortrait by remember { mutableStateOf(false) }
+    val livePortraitWords = livePortrait?.let { it.label + " liveportrait face edit smile expression head portrait animate" }
     // ⚠ What a search finds the detector by, here AND in the tools-matched test below: one list of words.
     val detailerWords = detailer?.let { it.label + " adetailer face hand fix" }
     var deletingDepth by remember { mutableStateOf(false) }
@@ -477,6 +483,14 @@ fun ModelsScreen(
                                 detailer, busy, onInstallDetailer, onCancel,
                                 detail = stringResource(R.string.detailer_about),
                             ) { deletingDetailer = true }
+                        }
+                    }
+                    if (livePortrait != null && match(livePortraitWords.orEmpty())) {
+                        item {
+                            ToolCard(
+                                livePortrait, busy, onInstallLivePortrait, onCancel,
+                                detail = stringResource(R.string.liveportrait_about),
+                            ) { deletingLivePortrait = true }
                         }
                     }
                     for ((type, row) in controlnets) {
@@ -598,7 +612,8 @@ fun ModelsScreen(
                     val ups = if (!searchAll) emptyList()
                         else upscalers.filter { matchesWords(it.spec.label + " upscale upscaler", query) }
                     val tools = searchAll && (listOfNotNull(segmenter, parser, pose, depth) + controlnets.values + describe.values)
-                        .any { matchesWords(it.label, query) } || (searchAll && detailerWords != null && matchesWords(detailerWords, query))
+                        .any { matchesWords(it.label, query) } || (searchAll && detailerWords != null && matchesWords(detailerWords, query)) ||
+                        (searchAll && livePortraitWords != null && matchesWords(livePortraitWords, query))
                     val otherHits = neoHit || wanHits.isNotEmpty() || ups.isNotEmpty() || tools
                     for ((gi, group) in groups.withIndex()) {
                     val (heading, groupRows) = group
@@ -740,6 +755,15 @@ fun ModelsScreen(
             body = stringResource(R.string.models_delete_depth_body, mb(depth.onDisk), mb(depth.bytes)),
             onConfirm = onDeleteDepth,
             onDismiss = { deletingDepth = false },
+        )
+    }
+
+    if (deletingLivePortrait && livePortrait != null) {
+        ConfirmDelete(
+            title = stringResource(R.string.models_delete_title, livePortrait.label),
+            body = stringResource(R.string.models_delete_liveportrait_body, mb(livePortrait.onDisk), mb(livePortrait.bytes)),
+            onConfirm = onDeleteLivePortrait,
+            onDismiss = { deletingLivePortrait = false },
         )
     }
 

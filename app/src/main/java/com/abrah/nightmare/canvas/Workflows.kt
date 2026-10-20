@@ -482,6 +482,16 @@ val RECIPES: List<Recipe> = listOf(
         labelRes = R.string.flow_upscale_name,
         aboutRes = R.string.flow_upscale_about,
     ),
+    // ⭐ Edit a face (LivePortrait, the user's call 2026-10-21): checkpoint-free like Upscale, ~0.25 s on the NPU on
+    // every tier down to v68, so it sits with it.
+    Recipe(
+        FACE_EDIT, "Edit a face",
+        "A photo's faces changed by sliders: smile, eyes, gaze, mouth and head turn. No checkpoint involved.",
+        ::faceEditWorkflow,
+        usesCheckpoint = false,
+        labelRes = R.string.flow_face_edit_name,
+        aboutRes = R.string.flow_face_edit_about,
+    ),
     // ⭐⭐⭐ **Image edit — FLUX.2 only, and placed by what it COSTS.**
     //
     // ⚠⚠ Its position is the rule, not a preference: this list runs from
@@ -565,6 +575,7 @@ val RECIPES: List<Recipe> = listOf(
 /** ⭐ The video recipes' ids ([com.abrah.nightmare.HarnessViewModel.askUseWan]). ⚠ `t2v`/`i2v` are the
  *  ids the Neodragon flows had: saved references and the Flows icons keep working. */
 const val T2V = "t2v"
+const val FACE_EDIT = "face_edit"
 const val I2V = "i2v"
 const val MOTION = "motion"
 
@@ -748,6 +759,22 @@ fun fluxEditWorkflow(): Workflow {
  * no clue what was missing: the node needs an upscaler INSTALLED (Models →
  * Upscalers). Asked for from the phone, 2026-09-11.
  */
+/** ⭐ [FACE_EDIT]: a picture, its faces edited ([com.abrah.nightmare.portrait.FaceEditNode]), the output. */
+fun faceEditWorkflow(): Workflow = Workflow(
+    Graph(
+        listOf(
+            Node("image", "core.image", params = mapOf("uri" to "")),
+            Node(
+                "face", com.abrah.nightmare.portrait.FaceEditNode.name,
+                params = mapOf("mouth_smile" to "0.6"),
+                inputs = sources("image" to "image"),
+            ),
+            Node("output", "core.output", inputs = sources("media" to "face")),
+        )
+    ),
+    positions = flowLayout("image", "face", "output"),
+)
+
 fun upscaleWorkflow(): Workflow = Workflow(
     Graph(
         listOf(

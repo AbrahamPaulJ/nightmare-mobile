@@ -1189,6 +1189,21 @@ private val KNOB_RESOURCES = mapOf(
     "only_masked" to com.abrah.nightmare.R.string.knob_only_masked,
     "tap_select" to com.abrah.nightmare.R.string.knob_tap_select,
     "pick_select" to com.abrah.nightmare.R.string.knob_pick_select,
+    "eyebrow_direction" to com.abrah.nightmare.R.string.knob_lp_eyebrow_direction,
+    "eye_gaze_horizontal" to com.abrah.nightmare.R.string.knob_lp_eye_gaze_horizontal,
+    "eye_gaze_vertical" to com.abrah.nightmare.R.string.knob_lp_eye_gaze_vertical,
+    "eye_open_ratio" to com.abrah.nightmare.R.string.knob_lp_eye_open_ratio,
+    "lip_open_ratio" to com.abrah.nightmare.R.string.knob_lp_lip_open_ratio,
+    "mouth_grim" to com.abrah.nightmare.R.string.knob_lp_mouth_grim,
+    "mouth_pout" to com.abrah.nightmare.R.string.knob_lp_mouth_pout,
+    "mouth_purse" to com.abrah.nightmare.R.string.knob_lp_mouth_purse,
+    "mouth_smile" to com.abrah.nightmare.R.string.knob_lp_mouth_smile,
+    "mouth_position_horizontal" to com.abrah.nightmare.R.string.knob_lp_mouth_position_horizontal,
+    "mouth_position_vertical" to com.abrah.nightmare.R.string.knob_lp_mouth_position_vertical,
+    "head_pitch" to com.abrah.nightmare.R.string.knob_lp_head_pitch,
+    "head_yaw" to com.abrah.nightmare.R.string.knob_lp_head_yaw,
+    "head_roll" to com.abrah.nightmare.R.string.knob_lp_head_roll,
+    "largest_only" to com.abrah.nightmare.R.string.knob_lp_largest_only,
 )
 
 /**

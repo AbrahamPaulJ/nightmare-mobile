@@ -359,6 +359,12 @@ object BackendProcess {
      */
     fun runtimeDir(context: Context): File = File(context.filesDir, RUNTIME_DIR)
 
+    /** ⭐ The next [prepareRuntime] lays the runtime out again ([DeviceProbe.learnPackFallback] changed the arch). */
+    @Synchronized
+    fun forgetRuntime() {
+        runtimeUnpacked = null
+    }
+
     @Synchronized
     fun prepareRuntime(context: Context): File {
         runtimeUnpacked?.let { return it }

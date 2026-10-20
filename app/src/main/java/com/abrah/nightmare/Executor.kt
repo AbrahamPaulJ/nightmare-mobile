@@ -54,6 +54,8 @@ class NeedsDownload(val tool: String, message: String) : Exception(message) {
         const val DEPTH = "depth"
         /** ⭐ Fix faces / Fix hands' detector ([com.abrah.nightmare.detail.PartDetector]). */
         const val DETAILER = "adetailer"
+        /** ⭐ Face edit's LivePortrait set ([com.abrah.nightmare.portrait.LivePortrait]). */
+        const val LIVEPORTRAIT = "liveportrait"
     }
 }
 
@@ -2656,6 +2658,8 @@ val NODE_TYPES: Map<String, NodeType> = (
         com.abrah.nightmare.npu.LoadVideoNode,
         // ⭐ Tap to select — wired into an inpaint node (docs/SEGMENTER.md).
         SelectObjectNode,
+        // ⭐ LivePortrait's face editor (docs/LIVEPORTRAIT.md), in-process on the NPU like the video nodes.
+        com.abrah.nightmare.portrait.FaceEditNode,
     )).associateBy { it.name }
 
 /**

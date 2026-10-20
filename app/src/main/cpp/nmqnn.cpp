@@ -554,6 +554,110 @@ bool bindTensors(Model* m, const QnnSystemContext_GraphInfo_t& gi) {
   return true;
 }
 
+// ⭐ The body of NativeQnn.load, shared with the C++ API ([nmqnn::load]). ⚠ Caller holds g_mu.
+Model* loadLocked(const std::string& p) {
+
+  // mmap rather than read(): contextCreateFromBinary deserialises into its own
+  // storage, so a heap copy would be a transient duplicate of the whole file -- 1.4 GB
+  // for clipg and ssd1bunet. On an 11 GB phone that was enough to put the process into
+  // lmkd's sights (MemFree was observed at 110 MB with eight background apps culled in
+  // one sweep). The mapping is dropped as soon as the context exists.
+  // ⚠ Logged BEFORE the load, not after. A crash inside the deserialiser
+  // takes the process with it, so a line printed on success names every binary
+  // EXCEPT the one that failed -- which is the only one worth knowing.
+  LOGI("loading %s", p.c_str());
+
+  int fd = open(p.c_str(), O_RDONLY);
+  if (fd < 0) { fail("cannot open " + p); return nullptr; }
+  struct stat st{};
+  if (fstat(fd, &st) != 0) { close(fd); fail("cannot stat " + p); return nullptr; }
+  size_t sz = (size_t)st.st_size;
+  void* blob = mmap(nullptr, sz, PROT_READ, MAP_PRIVATE, fd, 0);
+  close(fd);
+  if (blob == MAP_FAILED) { fail("mmap failed for " + p); return nullptr; }
+  // The pages are read once, front to back, and never needed again.
+  madvise(blob, sz, MADV_SEQUENTIAL);
+
+  struct MapGuard {
+    void* p; size_t n;
+    ~MapGuard() { if (p) munmap(p, n); }
+  } guard{blob, sz};
+
+  auto m = std::make_unique<Model>();
+
+  // The binary's metadata is what names the tensors and gives their encodings; it
+  // has to be parsed before the context exists.
+  if (g_be.sys.systemContextCreate(&m->sysCtx) != QNN_SUCCESS) {
+    fail("systemContextCreate failed");
+    return nullptr;
+  }
+  const QnnSystemContext_BinaryInfo_t* info = nullptr;
+  Qnn_ContextBinarySize_t infoSize = 0;
+  if (g_be.sys.systemContextGetBinaryInfo(m->sysCtx, blob, sz, &info,
+                                          &infoSize) != QNN_SUCCESS || !info) {
+    fail("systemContextGetBinaryInfo failed for " + p);
+    return nullptr;
+  }
+
+  const QnnSystemContext_GraphInfo_t* graphs = nullptr;
+  uint32_t numGraphs = 0;
+  if (info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_1) {
+    graphs = info->contextBinaryInfoV1.graphs;
+    numGraphs = info->contextBinaryInfoV1.numGraphs;
+  } else if (info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
+    graphs = info->contextBinaryInfoV2.graphs;
+    numGraphs = info->contextBinaryInfoV2.numGraphs;
+  } else if (info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
+    graphs = info->contextBinaryInfoV3.graphs;
+    numGraphs = info->contextBinaryInfoV3.numGraphs;
+  } else {
+    fail("unsupported binary info version");
+    return nullptr;
+  }
+  if (numGraphs != 1) {
+    // Every binary this project converts holds exactly one graph; more than one
+    // would mean the wrong file was pushed.
+    fail(p + ": expected 1 graph, found " + std::to_string(numGraphs));
+    return nullptr;
+  }
+
+  if (g_be.qnn.contextCreateFromBinary(g_be.backend, g_be.device, nullptr, blob,
+                                       sz, &m->context, nullptr) != QNN_SUCCESS) {
+    fail("contextCreateFromBinary failed for " + p);
+    return nullptr;
+  }
+  if (!bindTensors(m.get(), graphs[0])) return nullptr;
+
+  LOGI("loaded %s (%.2f MB, %zu in, %zu out)", p.c_str(), sz / 1048576.0,
+       m->inputs.size(), m->outputs.size());
+  return m.release();
+}
+
+// ⭐ One execute with inputs matched BY NAME; outputs in binary order. ⚠ Caller holds g_mu.
+bool runLocked(Model* m, const std::vector<std::string>& names, const std::vector<const float*>& data,
+               std::vector<std::vector<float>>* outs) {
+  if (!m) return fail("null model handle");
+  if (names.size() != m->inputs.size() || data.size() != names.size())
+    return fail("expected " + std::to_string(m->inputs.size()) + " inputs, got " + std::to_string(names.size()));
+  for (size_t i = 0; i < names.size(); ++i) {
+    int slot = -1;
+    for (size_t k = 0; k < m->inputs.size(); ++k)
+      if (names[i] == tName(m->inputs[k])) { slot = (int)k; break; }
+    if (slot < 0) return fail("no graph input named " + names[i]);
+    if (!writeTensor(m->inputs[slot], m->inBuf[slot].data(), data[i], numElems(m->inputs[slot]))) return false;
+  }
+  Qnn_ErrorHandle_t e = g_be.qnn.graphExecute(m->graph, m->inputs.data(), (uint32_t)m->inputs.size(),
+                                             m->outputs.data(), (uint32_t)m->outputs.size(), nullptr, nullptr);
+  if (e != QNN_SUCCESS) return fail("graphExecute failed: " + std::to_string((long long)e));
+  outs->resize(m->outputs.size());
+  for (size_t i = 0; i < m->outputs.size(); ++i) {
+    size_t n = numElems(m->outputs[i]);
+    (*outs)[i].resize(n);
+    if (!readTensor(m->outputs[i], m->outBuf[i].data(), (*outs)[i].data(), n)) return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -590,81 +694,7 @@ Java_com_abrah_nightmare_npu_NativeQnn_load(JNIEnv* env, jclass, jstring jPath) 
   const char* path = env->GetStringUTFChars(jPath, nullptr);
   std::string p(path);
   env->ReleaseStringUTFChars(jPath, path);
-
-  // mmap rather than read(): contextCreateFromBinary deserialises into its own
-  // storage, so a heap copy would be a transient duplicate of the whole file -- 1.4 GB
-  // for clipg and ssd1bunet. On an 11 GB phone that was enough to put the process into
-  // lmkd's sights (MemFree was observed at 110 MB with eight background apps culled in
-  // one sweep). The mapping is dropped as soon as the context exists.
-  // ⚠ Logged BEFORE the load, not after. A crash inside the deserialiser
-  // takes the process with it, so a line printed on success names every binary
-  // EXCEPT the one that failed -- which is the only one worth knowing.
-  LOGI("loading %s", p.c_str());
-
-  int fd = open(p.c_str(), O_RDONLY);
-  if (fd < 0) { fail("cannot open " + p); return 0; }
-  struct stat st{};
-  if (fstat(fd, &st) != 0) { close(fd); fail("cannot stat " + p); return 0; }
-  size_t sz = (size_t)st.st_size;
-  void* blob = mmap(nullptr, sz, PROT_READ, MAP_PRIVATE, fd, 0);
-  close(fd);
-  if (blob == MAP_FAILED) { fail("mmap failed for " + p); return 0; }
-  // The pages are read once, front to back, and never needed again.
-  madvise(blob, sz, MADV_SEQUENTIAL);
-
-  struct MapGuard {
-    void* p; size_t n;
-    ~MapGuard() { if (p) munmap(p, n); }
-  } guard{blob, sz};
-
-  auto m = std::make_unique<Model>();
-
-  // The binary's metadata is what names the tensors and gives their encodings; it
-  // has to be parsed before the context exists.
-  if (g_be.sys.systemContextCreate(&m->sysCtx) != QNN_SUCCESS) {
-    fail("systemContextCreate failed");
-    return 0;
-  }
-  const QnnSystemContext_BinaryInfo_t* info = nullptr;
-  Qnn_ContextBinarySize_t infoSize = 0;
-  if (g_be.sys.systemContextGetBinaryInfo(m->sysCtx, blob, sz, &info,
-                                          &infoSize) != QNN_SUCCESS || !info) {
-    fail("systemContextGetBinaryInfo failed for " + p);
-    return 0;
-  }
-
-  const QnnSystemContext_GraphInfo_t* graphs = nullptr;
-  uint32_t numGraphs = 0;
-  if (info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_1) {
-    graphs = info->contextBinaryInfoV1.graphs;
-    numGraphs = info->contextBinaryInfoV1.numGraphs;
-  } else if (info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
-    graphs = info->contextBinaryInfoV2.graphs;
-    numGraphs = info->contextBinaryInfoV2.numGraphs;
-  } else if (info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
-    graphs = info->contextBinaryInfoV3.graphs;
-    numGraphs = info->contextBinaryInfoV3.numGraphs;
-  } else {
-    fail("unsupported binary info version");
-    return 0;
-  }
-  if (numGraphs != 1) {
-    // Every binary this project converts holds exactly one graph; more than one
-    // would mean the wrong file was pushed.
-    fail(p + ": expected 1 graph, found " + std::to_string(numGraphs));
-    return 0;
-  }
-
-  if (g_be.qnn.contextCreateFromBinary(g_be.backend, g_be.device, nullptr, blob,
-                                       sz, &m->context, nullptr) != QNN_SUCCESS) {
-    fail("contextCreateFromBinary failed for " + p);
-    return 0;
-  }
-  if (!bindTensors(m.get(), graphs[0])) return 0;
-
-  LOGI("loaded %s (%.2f MB, %zu in, %zu out)", p.c_str(), sz / 1048576.0,
-       m->inputs.size(), m->outputs.size());
-  return (jlong)(intptr_t)m.release();
+  return (jlong)(intptr_t)loadLocked(p);
 }
 
 /** "name:d0,d1,...:dtype" per tensor, inputs then outputs, separated by ';'. */
@@ -785,3 +815,51 @@ Java_com_abrah_nightmare_npu_NativeQnn_free(JNIEnv*, jclass, jlong h) {
 }
 
 }  // extern "C"
+
+// ---------------------------------------------------------------------------
+// ⭐ The same runner for C++ in this library (`nmqnn_api.h`): the portrait pipeline runs
+// whole edits and video frames natively, never copying a 29 MB tensor through JNI.
+// ---------------------------------------------------------------------------
+
+#include "nmqnn_api.h"
+
+namespace nmqnn {
+
+Handle load(const std::string& path) {
+  std::lock_guard<std::mutex> lk(g_mu);
+  if (!g_be.ready) { fail("backend not initialised"); return nullptr; }
+  return loadLocked(path);
+}
+
+bool run(Handle h, const std::vector<std::string>& names, const std::vector<const float*>& data,
+         std::vector<std::vector<float>>* outs) {
+  std::lock_guard<std::mutex> lk(g_mu);
+  return runLocked((Model*)h, names, data, outs);
+}
+
+std::vector<std::string> outputNames(Handle h) {
+  std::lock_guard<std::mutex> lk(g_mu);
+  std::vector<std::string> r;
+  if (auto* m = (Model*)h) for (auto& t : m->outputs) r.emplace_back(tName(t));
+  return r;
+}
+
+size_t inputElems(Handle h, const std::string& name) {
+  std::lock_guard<std::mutex> lk(g_mu);
+  if (auto* m = (Model*)h)
+    for (auto& t : m->inputs) if (name == tName(t)) return numElems(t);
+  return 0;
+}
+
+void release(Handle h) {
+  std::lock_guard<std::mutex> lk(g_mu);
+  auto* m = (Model*)h;
+  if (!m) return;
+  if (m->context) g_be.qnn.contextFree(m->context, nullptr);
+  if (m->sysCtx) g_be.sys.systemContextFree(m->sysCtx);
+  delete m;
+}
+
+std::string lastError() { return g_err; }
+
+}  // namespace nmqnn

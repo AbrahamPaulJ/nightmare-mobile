@@ -620,6 +620,7 @@ fun NodeInspector(
             // ([MaskFraming]); it is not a second opinion about which picture
             // this is.
             maskSource = if (node.type in PAINTS) sourceId?.let(imageFor) else null,
+            faceSource = if (node.type == com.abrah.nightmare.portrait.FaceEditNode.name) sourceId?.let(imageFor) else null,
             // ⚠ Only for a node that HAS a picture and did not make it from a
             // photo the user chose: a `load_image` already has swap/remove.
             onSaveImage = previewId?.takeIf { node.type !in com.abrah.nightmare.PICKED_TYPES }
@@ -1144,6 +1145,8 @@ internal fun NodeInspectorBody(
     drivingVideo: String? = null,
     /** The picture an `image.mask` node is painted on — its upstream image. */
     maskSource: ImageBitmap? = null,
+    /** ⭐ The picture into a Face edit node ([FaceEditControls]), by the same [CanvasState.pictureInto]. */
+    faceSource: ImageBitmap? = null,
     /** ⭐ The same three actions the fullscreen viewer offers. Null hides them. */
     onSaveImage: (() -> Unit)? = null,
     /** ⭐ Hand this node's picture to another app. */
@@ -2351,6 +2354,10 @@ internal fun NodeInspectorBody(
                 afterBlank = afterBlank,
                 onBlankHandled = { afterBlank = false },
             )
+        }
+        // ⭐ Face edit's viewer, where the image node's controls are ([FaceEditControls]).
+        if (node.type == com.abrah.nightmare.portrait.FaceEditNode.name) {
+            FaceEditControls(nodeId, node, faceSource, onSetParams)
         }
         // ⭐ The Video node's own controls, where the image node's are ([VideoPicker]).
         if (node.type == com.abrah.nightmare.npu.LoadVideoNode.name) {

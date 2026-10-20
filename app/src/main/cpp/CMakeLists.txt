@@ -80,7 +80,10 @@ if(NOT EXISTS ${QNN_INC}/QNN/QnnBackend.h)
         "Run tools/fetch_qnn_headers.ps1 first (they are fetched, not committed).")
 endif()
 
-add_library(nmqnn SHARED nmqnn.cpp)
+# ⭐ LivePortrait rides in the same library (nmportrait.cpp, docs/LIVEPORTRAIT.md): it calls the runner
+# in C++ (nmqnn_api.h), so a video frame's 37 MB of tensors never cross JNI. portrait/ is copied from
+# facefusion-mobile unchanged.
+add_library(nmqnn SHARED nmqnn.cpp nmportrait.cpp portrait/ffcv.cpp portrait/ffportrait.cpp)
 
 # ⚠ Both roots. `nmqnn.cpp` includes "QNN/QnnBackend.h", while the SDK's own
 # sub-headers include their siblings unqualified ("QnnCommon.h" from

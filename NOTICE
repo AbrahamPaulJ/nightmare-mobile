@@ -369,6 +369,14 @@ ADetailer face and hand detectors (Fix faces, Fix hands)
     mirrored at https://huggingface.co/AbrahamPJ/nightmare-adetailer;
     downloaded at the user's request.
 
+LivePortrait (Face edit, Edit face in Results)
+    Kuaishou Technology, https://github.com/KwaiVGI/LivePortrait, MIT.
+    Converted to QNN context binaries per chip (with the YOLOFace detector and
+    the 2DFAN4 landmarker it needs) by facefusion-mobile and hosted at
+    https://huggingface.co/AbrahamPJ/facefusion-mobile-models; downloaded at
+    the user's request. Its keypoint and image code (ffportrait, ffcv) is
+    facefusion-mobile's, by the same author.
+
 Anima 2.9B Turbo LoRA (built into Anima 2.9B)
     Karely_ai
     https://civitai.com/models/2857451/anima-29b-turbo-lora-remapped

@@ -30,6 +30,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
@@ -163,6 +164,8 @@ fun ResultsScreen(
     onUpscale: (Result, String, Int) -> Unit = { _, _, _ -> },
     /** ⭐ UltraFix ([com.abrah.nightmare.UltraFix]) from the same chooser; null hides it. */
     onUltraFix: ((Result, com.abrah.nightmare.UltraFix.Params) -> Unit)? = null,
+    /** ⭐ Edit face on a kept picture ([com.abrah.nightmare.canvas.FaceEditSheet]), after Upscale in both rows. */
+    onEditFace: ((Result, Map<String, String>) -> Unit)? = null,
     upscalers: List<UpscalerRow> = emptyList(),
     onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
     /** ⭐ Non-null while an upscale runs, naming it. */
@@ -193,6 +196,9 @@ fun ResultsScreen(
     /** ⭐ The ids a Share popup is asking about — one, or the selection. */
     var sharing by remember { mutableStateOf<List<String>?>(null) }
     val onlyPictureToFlow = stringResource(R.string.results_only_picture_to_flow)
+    val faceNotClip = stringResource(R.string.face_edit_not_clip)
+    var editingFace by remember { mutableStateOf<Result?>(null) }
+    editingFace?.let { r -> FaceEditFor(r, imageFor, onEditFace, onToast) { editingFace = null } }
 
     Column(modifier.fillMaxSize()) {
         if (results.isEmpty()) {
@@ -534,6 +540,14 @@ fun ResultsScreen(
                         tint = onSurface.copy(alpha = if (upscaling == null) 1f else 0.38f),
                     )
                 }
+                // ⭐ Edit face, after Upscale, refusing a clip by name as Upscale does.
+                onEditFace?.let {
+                    IconButton(onClick = {
+                        if (shown.videoPath != null) onToast(faceNotClip) else editingFace = shown
+                    }, modifier = small) {
+                        Icon(Icons.Filled.Face, contentDescription = stringResource(R.string.face_edit_open), tint = onSurface)
+                    }
+                }
                 IconButton(onClick = { info = shown }, modifier = small) {
                     Icon(Icons.Filled.Info, contentDescription = stringResource(R.string.picture_cd_info_picture), tint = onSurface)
                 }
@@ -767,6 +781,8 @@ fun ResultViewer(
     onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
     onToast: (String) -> Unit = {},
     onUltraFix: ((Result, com.abrah.nightmare.UltraFix.Params) -> Unit)? = null,
+    /** ⭐ Edit face on a kept picture ([com.abrah.nightmare.canvas.FaceEditSheet]), after Upscale in both rows. */
+    onEditFace: ((Result, Map<String, String>) -> Unit)? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var upscalingPick by remember { mutableStateOf<Result?>(null) }
@@ -785,7 +801,10 @@ fun ResultViewer(
     // button's fill, with its icon cut off. `PictureActions` hit exactly this
     // and dropped to 32dp; this row has more width to play with because it has
     // no surrounding sheet padding.
-    val viewerIcon = Modifier.size(40.dp)
+    // ⚠ 36dp since Edit face made it NINE (2026-10-21): 9 × 36 = 324dp fits a 360dp phone; 9 × 40 would not.
+    val viewerIcon = Modifier.size(36.dp)
+    var editingFace by remember { mutableStateOf<Result?>(null) }
+    editingFace?.let { r -> FaceEditFor(r, imageFor, onEditFace, onToast) { editingFace = null } }
     // ⚠⚠ STATE objects, not values: they are handed to [viewerZoom], whose
     // gesture lambda outlives the composition that built it.
     val scaleState = remember { mutableStateOf(1f) }
@@ -1061,6 +1080,13 @@ fun ResultViewer(
                         tint = androidx.compose.ui.graphics.Color.White
                             .copy(alpha = if (upscaling == null) 1f else 0.38f),
                     )
+                }
+            }
+            // ⭐ Edit face, after Upscale, as in the Results row.
+            onEditFace?.let {
+                val notClip = stringResource(R.string.face_edit_not_clip)
+                IconButton(onClick = { if (current.videoPath != null) onToast(notClip) else editingFace = current }, modifier = viewerIcon) {
+                    Icon(Icons.Filled.Face, contentDescription = stringResource(R.string.face_edit_open), tint = androidx.compose.ui.graphics.Color.White)
                 }
             }
             IconButton(onClick = { showInfo = !showInfo }, modifier = viewerIcon) {
@@ -1964,5 +1990,28 @@ private fun UltraFixFor(r: Result, onUltraFix: ((Result, com.abrah.nightmare.Ult
         start = remember { com.abrah.nightmare.UltraFix.load(ctx) },
         onConfirm = { p -> onClose(); onUltraFix?.invoke(r, p) },
         onDismiss = onClose,
+    )
+}
+
+/** ⭐ Results' Edit face: the SAME viewer as the node's ([com.abrah.nightmare.canvas.FaceEditSheet]), on the kept picture. */
+@Composable
+private fun FaceEditFor(
+    r: Result,
+    imageFor: (String) -> ImageBitmap?,
+    onEditFace: ((Result, Map<String, String>) -> Unit)?,
+    onToast: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val src = imageFor(r.id)
+    val loading = stringResource(R.string.face_edit_loading)
+    if (src == null || onEditFace == null) {
+        LaunchedEffect(r.id) { onToast(loading); onClose() }
+        return
+    }
+    com.abrah.nightmare.canvas.FaceEditSheet(
+        source = src,
+        start = emptyMap(),
+        onDone = { values -> onClose(); onEditFace(r, values) },
+        onCancel = onClose,
     )
 }
