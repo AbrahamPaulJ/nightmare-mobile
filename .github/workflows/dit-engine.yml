@@ -257,7 +257,8 @@ jobs:
           # NOT, and the v75 skel in the APK is the PC build from the same ggml
           # (`dit-engine-abi105-a4/assets/ditlibs/README-v75.txt`). Run 38089788580 died here.
           # The `skels` input builds them on purpose (v73: 8 Gen 2 / 8s Gen 3 / 8s Gen 4).
-          for V in v73 v75; do
+          # ⚠ Every skel the `skels` input asked for (v85 was built and left behind, run 39442574609).
+          for V in v73 v75 ${{ inputs.skels }}; do
             S=cpp/dit/build/android/sdcpp/ggml/src/ggml-hexagon/libggml-htp-$V.so
             if [ -f "$S" ]; then cp "$S" "$GITHUB_WORKSPACE/out/"; else echo "no $V skel in this build"; fi
           done
