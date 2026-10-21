@@ -686,9 +686,16 @@ data class ModelSpec(
     /** ⭐ [partsFrom]'s folder beside [modelDir], or null. */
     fun donorDir(modelDir: File): File? = partsFrom?.let { File(modelDir.parentFile, it) }
 
-    /** ⭐ Whether [f] is served by the donor ([partsFrom]) rather than [modelDir]. */
+    /**
+     * ⭐ Whether [f] is served by the donor ([partsFrom]) rather than [modelDir].
+     *
+     * ⚠⚠ Only a file the donor's catalogue entry lists from the SAME url: MOSS Base's DiT and LoRA have the same
+     * names AND sizes as SFT's (3,217,359,072 and 1,189,176,800 bytes), so a name-and-size match called Base
+     * installed with nothing to fetch on any phone with SFT, and its launch found no folder (Saved #6990, 1.6.208).
+     */
     fun borrows(modelDir: File, f: RemoteFile): Boolean =
         File(modelDir, f.name).length() != f.bytes &&
+            partsFrom?.let { ModelCatalog.byId(it) }?.active?.any { it.name == f.name && it.url == f.url } == true &&
             donorDir(modelDir)?.let { File(it, f.name).length() == f.bytes } == true
 
     /** ⭐ What an install must fetch: [active] less what the donor holds whole. */

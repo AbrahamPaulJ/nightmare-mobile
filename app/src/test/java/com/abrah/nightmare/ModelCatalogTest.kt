@@ -362,6 +362,25 @@ class ModelCatalogTest {
         assertEquals(Family.MOSS, moss.family)
     }
 
+    /**
+     * ⭐ MOSS Base borrows SFT's encoder, VAE and tokenizer, never SFT's DiT or LoRA: those have the same names and
+     * sizes but other urls (Saved #6990: Base read installed at 0 MB with SFT present, and could not start).
+     */
+    @Test
+    fun mossBaseBorrowsOnlyWhatSftShares() {
+        val base = ModelCatalog.byId("moss_image_base")!!
+        val sft = ModelCatalog.byId("moss_image")!!
+        val root = kotlin.io.path.createTempDirectory().toFile()
+        val own = java.io.File(root, base.id).apply { mkdirs() }
+        val donor = java.io.File(root, sft.id).apply { mkdirs() }
+        sft.files.forEach { f -> java.io.RandomAccessFile(java.io.File(donor, f.name), "rw").use { it.setLength(f.bytes) } }
+        val borrowed = base.files.filter { base.borrows(own, it) }.map { it.name }
+        assertEquals(listOf("llm.gguf", "vae.safetensors", "tokenizer.json"), borrowed)
+        // ⚠ The trap: SFT's DiT and LoRA are exactly Base's sizes.
+        assertEquals(base.files.first { it.name == "dit.gguf" }.bytes, sft.files.first { it.name == "dit.gguf" }.bytes)
+        root.deleteRecursively()
+    }
+
     /** ⭐ Ideogram 4: the MOSS shape (own encoder, own LoRA on every render, a `krea2` launch), on the 8 Elite only. */
     @Test
     fun ideogramCarriesItsTurboLoraAndOwnEncoder() {
