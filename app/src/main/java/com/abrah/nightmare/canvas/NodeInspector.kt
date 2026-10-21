@@ -2457,58 +2457,9 @@ internal fun NodeInspectorBody(
             com.abrah.nightmare.ui.ResultInfoDialog(onInfo()) { showingInfo = false }
         }
         if (pickingLoras) {
-            val ctx = androidx.compose.ui.platform.LocalContext.current
-            // ⚠ Re-read every time it opens: an import on the Settings tab
-            // happens while a graph is on the canvas, and a list cached at
-            // composition would not show the file that was just added.
-            // ⚠⚠ Keyed on [loraEpoch] as well, so an Add made from INSIDE this
-            // dialog lands in its own list. Without it the read is remembered
-            // across the import and the file a person just picked is invisible
-            // until they close and reopen — which is exactly the shape of bug
-            // the Add button was added to remove.
-            val installed = remember(pickingLoras, loraEpoch) {
-                com.abrah.nightmare.BackendProcess.lorasDir(ctx).listFiles { f ->
-                    f.isFile && f.extension.equals("safetensors", ignoreCase = true)
-                }.orEmpty().map { it.name to it.length() }.sortedBy { it.first.lowercase() }
-            }
-            // ⭐ Each file's date and base (headers only, cached), read off the main thread.
-            val library by androidx.compose.runtime.produceState<List<com.abrah.nightmare.LoraLibrary.Item>?>(null, pickingLoras, loraEpoch) {
-                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    com.abrah.nightmare.LoraLibrary.list(
-                        com.abrah.nightmare.BackendProcess.lorasDir(ctx), com.abrah.nightmare.LoraLibrary.baseOverrides(ctx),
-                    )
-                }
-            }
-            // ⭐ Notes beside the files ([com.abrah.nightmare.LoraNotes]); re-read
-            // with the list, written straight back on save.
-            val loraDir = com.abrah.nightmare.BackendProcess.lorasDir(ctx)
-            var loraNotes by remember(pickingLoras, loraEpoch) {
-                mutableStateOf(com.abrah.nightmare.LoraNotes.read(loraDir))
-            }
-            LoraPicker(
-                installed = installed,
-                spec = node.params[com.abrah.nightmare.SdSampler.LORAS].orEmpty(),
-                onSet = { onSetParam(nodeId, com.abrah.nightmare.SdSampler.LORAS, it) },
-                onDismiss = { pickingLoras = false },
-                onImport = onImportLora,
-                // ⭐ Only where this family's LoRAs can be searched ([com.abrah.nightmare.LoraSources.Target.of]).
-                onBrowse = (type as? com.abrah.nightmare.SdSampler)?.family
-                    ?.let { com.abrah.nightmare.LoraSources.Target.of(it) }
-                    ?.let { t -> onBrowseLoras?.let { cb -> { cb(t) } } },
-                notes = loraNotes,
-                onSaveNote = { name, note ->
-                    loraNotes = com.abrah.nightmare.LoraNotes.write(loraDir, name, note)
-                },
-                onAddToPrompt = onAddToPrompt,
-                onReplacePrompt = onReplacePrompt,
-                onDelete = onDeleteLora,
-                library = library,
-                nodeBase = if (node.type in com.abrah.nightmare.WAN_TYPES) com.abrah.nightmare.LoraLibrary.Base.WAN
-                else com.abrah.nightmare.LoraLibrary.Base.of((type as? com.abrah.nightmare.SdSampler)?.family),
-                experimental = com.abrah.nightmare.LoraSources.Target.experimental((type as? com.abrah.nightmare.SdSampler)?.family),
-                // ⭐ GitHub #51: below 0 where the engine takes it, the DiT families and Wan (`LoraSpec.MIN_NEGATIVE`).
-                allowNegative = node.type in com.abrah.nightmare.WAN_TYPES ||
-                    (type as? com.abrah.nightmare.SdSampler)?.family?.dit == true,
+            NodeLoraPicker(
+                nodeId, node, type, loraEpoch, onSetParam, onImportLora, onBrowseLoras, onAddToPrompt, onReplacePrompt,
+                onDeleteLora, onDismiss = { pickingLoras = false },
             )
         }
 
@@ -4544,6 +4495,81 @@ private fun ChoiceRow(
             Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/**
+ * ⭐ The node page's LoRA picker, out of [NodeInspectorBody]. ⚠ Its own function for size, not reuse: R8 built that
+ * ~17k-instruction method with one register an object on one path and an int on another, which ART below 17 rejects
+ * (1.6.207's crash on open, and again before 1.6.210's release: `tools/verify_dex.sh`). Every block moved out of it
+ * keeps it further from that edge.
+ */
+@Composable
+private fun NodeLoraPicker(
+    nodeId: String,
+    node: com.abrah.nightmare.Node,
+    type: NodeType?,
+    loraEpoch: Int,
+    onSetParam: (node: String, name: String, value: String) -> Unit,
+    onImportLora: (() -> Unit)?,
+    onBrowseLoras: ((com.abrah.nightmare.LoraSources.Target) -> Unit)?,
+    onAddToPrompt: ((String) -> Unit)?,
+    onReplacePrompt: ((String) -> Unit)?,
+    onDeleteLora: ((String) -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // ⚠ Re-read every time it opens: an import on the Settings tab
+    // happens while a graph is on the canvas, and a list cached at
+    // composition would not show the file that was just added.
+    // ⚠⚠ Keyed on [loraEpoch] as well, so an Add made from INSIDE this
+    // dialog lands in its own list. Without it the read is remembered
+    // across the import and the file a person just picked is invisible
+    // until they close and reopen — which is exactly the shape of bug
+    // the Add button was added to remove.
+    val installed = remember(loraEpoch) {
+        com.abrah.nightmare.BackendProcess.lorasDir(ctx).listFiles { f ->
+            f.isFile && f.extension.equals("safetensors", ignoreCase = true)
+        }.orEmpty().map { it.name to it.length() }.sortedBy { it.first.lowercase() }
+    }
+    // ⭐ Each file's date and base (headers only, cached), read off the main thread.
+    val library by androidx.compose.runtime.produceState<List<com.abrah.nightmare.LoraLibrary.Item>?>(null, loraEpoch) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.abrah.nightmare.LoraLibrary.list(
+                com.abrah.nightmare.BackendProcess.lorasDir(ctx), com.abrah.nightmare.LoraLibrary.baseOverrides(ctx),
+            )
+        }
+    }
+    // ⭐ Notes beside the files ([com.abrah.nightmare.LoraNotes]); re-read
+    // with the list, written straight back on save.
+    val loraDir = com.abrah.nightmare.BackendProcess.lorasDir(ctx)
+    var loraNotes by remember(loraEpoch) {
+        mutableStateOf(com.abrah.nightmare.LoraNotes.read(loraDir))
+    }
+    LoraPicker(
+        installed = installed,
+        spec = node.params[com.abrah.nightmare.SdSampler.LORAS].orEmpty(),
+        onSet = { onSetParam(nodeId, com.abrah.nightmare.SdSampler.LORAS, it) },
+        onDismiss = onDismiss,
+        onImport = onImportLora,
+        // ⭐ Only where this family's LoRAs can be searched ([com.abrah.nightmare.LoraSources.Target.of]).
+        onBrowse = (type as? com.abrah.nightmare.SdSampler)?.family
+            ?.let { com.abrah.nightmare.LoraSources.Target.of(it) }
+            ?.let { t -> onBrowseLoras?.let { cb -> { cb(t) } } },
+        notes = loraNotes,
+        onSaveNote = { name, note ->
+            loraNotes = com.abrah.nightmare.LoraNotes.write(loraDir, name, note)
+        },
+        onAddToPrompt = onAddToPrompt,
+        onReplacePrompt = onReplacePrompt,
+        onDelete = onDeleteLora,
+        library = library,
+        nodeBase = if (node.type in com.abrah.nightmare.WAN_TYPES) com.abrah.nightmare.LoraLibrary.Base.WAN
+        else com.abrah.nightmare.LoraLibrary.Base.of((type as? com.abrah.nightmare.SdSampler)?.family),
+        experimental = com.abrah.nightmare.LoraSources.Target.experimental((type as? com.abrah.nightmare.SdSampler)?.family),
+        // ⭐ GitHub #51: below 0 where the engine takes it, the DiT families and Wan (`LoraSpec.MIN_NEGATIVE`).
+        allowNegative = node.type in com.abrah.nightmare.WAN_TYPES ||
+            (type as? com.abrah.nightmare.SdSampler)?.family?.dit == true,
+    )
 }
 
 /**
