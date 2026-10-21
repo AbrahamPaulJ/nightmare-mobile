@@ -1,0 +1,16 @@
+diff --git a/src/ggml-hexagon/htp/hvx-base.h b/src/ggml-hexagon/htp/hvx-base.h
+index 6aae531..816c706 100644
+--- a/src/ggml-hexagon/htp/hvx-base.h
++++ b/src/ggml-hexagon/htp/hvx-base.h
+@@ -9,7 +9,10 @@
+ #include "hex-utils.h"
+ #include "hvx-types.h"
+ 
+-#if __HVX_ARCH__ < 73
++#if __HVX_ARCH__ < 75
++#undef Q6_Vsf_equals_Vw
++#undef Q6_Vh_equals_Vhf
++#undef Q6_Vhf_equals_Vh
+ // nightmare dit/034: v69 (8 Gen 1 / 8+ Gen 1) lacks v73's vconv. The three this code uses, from base HVX and v68's
+ // qfloat, under the same names so no caller changes. v73 and up never see these.
+ 
