@@ -29,8 +29,10 @@ on:
         description: "NDK the engine's build.sh documents"
         default: "29.0.14206865"
       local_dream_ref:
-        description: "xororz/local-dream ref (blank = default branch)"
-        default: ""
+        # ⚠ Every shipped engine is built on alpha.4: blank took local-dream's moved default branch and
+        # 003 no longer applied (run 39534075463).
+        description: "xororz/local-dream ref (the shipped engines' tag; blank = default branch)"
+        default: "v3.0.0-alpha.4"
       sdcpp_ref:
         description: "happyyzy/stable-diffusion.cpp ref (blank = local-dream's pinned submodule, which is what you want)"
         default: ""
