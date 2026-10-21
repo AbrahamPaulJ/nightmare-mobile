@@ -160,6 +160,8 @@ fun ResultsScreen(
     detailsFor: (Result) -> List<Pair<String, String>> = { emptyList() },
     /** ⭐ GitHub #33: what its Info can send to the open flow ([InfoTransfer]); null offers nothing. */
     transferFor: (Result) -> InfoTransfer? = { null },
+    /** ⭐ Diagnose from its Info ([ResultInfoDialog]): null where it cannot be. */
+    diagnoseFor: (Result) -> (() -> Unit)? = { null },
     /** ⭐ Upscale with an installed upscaler; the enlarged picture becomes a new item. */
     onUpscale: (Result, String, Int) -> Unit = { _, _, _ -> },
     /** ⭐ UltraFix ([com.abrah.nightmare.UltraFix]) from the same chooser; null hides it. */
@@ -629,7 +631,7 @@ fun ResultsScreen(
         }
     }
 
-    info?.let { r -> ResultInfoDialog(detailsFor(r), onClose = { info = null }, transfer = transferFor(r)) }
+    info?.let { r -> ResultInfoDialog(detailsFor(r), onClose = { info = null }, transfer = transferFor(r), onDiagnose = diagnoseFor(r)) }
 
     var ultrafixing by remember { mutableStateOf<Result?>(null) }
     ultrafixing?.let { r -> UltraFixFor(r, onUltraFix) { ultrafixing = null } }
@@ -757,6 +759,8 @@ fun ResultViewer(
     onOpenFlow: (Result) -> Unit,
     /** ⭐ GitHub #33: what its Info can send to the open flow ([InfoTransfer]). */
     transferFor: (Result) -> InfoTransfer? = { null },
+    /** ⭐ Diagnose from its Info ([ResultInfoDialog]): null where it cannot be. */
+    diagnoseFor: (Result) -> (() -> Unit)? = { null },
     onDelete: (Result) -> Unit,
     /** ⭐ Write this picture into the phone's gallery. */
     onSave: (Result) -> Unit = {},
@@ -1122,7 +1126,7 @@ fun ResultViewer(
 
         // ⭐ The SAME info dialog the Results row opens — one function, so the two
         // cannot drift (`docs/ARCHITECTURE.md` §5.6).
-        if (showInfo) ResultInfoDialog(detailsFor(current), onClose = { showInfo = false }, transfer = transferFor(current))
+        if (showInfo) ResultInfoDialog(detailsFor(current), onClose = { showInfo = false }, transfer = transferFor(current), onDiagnose = diagnoseFor(current))
 
         if (confirmingDelete) {
             // ⚠ The SAME body as the card's confirm — one constant, not two copies.
@@ -1687,9 +1691,27 @@ fun ResultInfoDialog(
      * own Info, whose pictures are already on the canvas.
      */
     transfer: InfoTransfer? = null,
+    /**
+     * ⭐ Diagnose this picture ([com.abrah.nightmare.HarnessViewModel.diagnosePicture]): a DiT picture whose model is
+     * installed. Null offers nothing. Asks first: it is many renders.
+     */
+    onDiagnose: (() -> Unit)? = null,
     onClose: () -> Unit,
 ) {
     val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+    var askingDiagnose by remember { mutableStateOf(false) }
+    if (askingDiagnose && onDiagnose != null) {
+        AlertDialog(
+            onDismissRequest = { askingDiagnose = false },
+            title = { Text(stringResource(R.string.diagnose)) },
+            text = { Text(stringResource(R.string.diagnose_picture_note, com.abrah.nightmare.BlankDiagnosis.LEGS.size)) },
+            dismissButton = { TextButton(onClick = { askingDiagnose = false }) { Text(stringResource(R.string.cancel)) } },
+            confirmButton = {
+                TextButton(onClick = { askingDiagnose = false; onClose(); onDiagnose() }) { Text(stringResource(R.string.diagnose)) }
+            },
+        )
+        return
+    }
     val all = details.joinToString("\n") { (k, v) -> "$k: $v" }
     // ⭐ Selected rows by index; -1 is the picture row. Empty = not selecting.
     var selected by remember(details) { mutableStateOf(emptySet<Int>()) }
@@ -1779,6 +1801,9 @@ fun ResultInfoDialog(
                         onClose()
                         transfer.onUse(chosen)
                     }) { Text(stringResource(R.string.transfer_use_n, selected.size)) }
+                }
+                if (selected.isEmpty() && onDiagnose != null) {
+                    TextButton(onClick = { askingDiagnose = true }) { Text(stringResource(R.string.diagnose)) }
                 }
                 TextButton(onClick = onClose) { Text(stringResource(R.string.close)) }
             }

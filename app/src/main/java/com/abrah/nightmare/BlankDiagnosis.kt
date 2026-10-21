@@ -247,4 +247,64 @@ object BlankDiagnosis {
         }
         append("conclusion: ").append(conclusion(outcomes))
     }
+
+    /** ⭐ The control of a picture's Diagnose: its own flow, launched as shipped. */
+    val PICTURE_CONTROL = Leg("shipped", "as shipped", emptyMap())
+
+    /** ⚠ The legs that are the shipped launch itself on a chip that already runs with HMX off. */
+    private val HMX_LEGS = setOf("no_hmx", "hvx_matmul")
+
+    /**
+     * ⭐⭐ Diagnose ONE picture, from its ⓘ in Results ([HarnessViewModel.diagnosePicture]): after [PICTURE_CONTROL], each
+     * leg is one change on the SHIPPED launch, and the picture's own flow, size, steps and seed are re-run per leg.
+     * ⚠ Why (Boingo's SM8850, TG #6213-6240): Klein on v81 came back with blown colours, grain and two glitch bars at
+     * the right, and clean on the S25 (v79). A fault that shows at the picture's own size and inputs is missed by the
+     * blank check's 256², 2 steps. `baseline` is left out: on every chip it is the control, except a no-HMX one, where
+     * the HMX legs are the shipped launch too ([shippedNoHmx]). The decode legs need a VAE ([hasVae]: not Iris).
+     */
+    fun pictureLegs(hasVae: Boolean, shippedNoHmx: Boolean): List<Leg> = LEGS.filter {
+        it.id != "baseline" && (hasVae || it.id !in DECODE_ONLY) && !(shippedNoHmx && it.id in HMX_LEGS)
+    }
+
+    /** ⭐ Pure: the mean absolute difference per channel (0-255) of two same-size pictures, or null when they differ in size. */
+    fun meanDiff(a: IntArray, b: IntArray): Double? {
+        if (a.size != b.size || a.isEmpty()) return null
+        var sum = 0L
+        for (i in a.indices) {
+            val p = a[i]; val q = b[i]
+            sum += kotlin.math.abs(((p shr 16) and 0xFF) - ((q shr 16) and 0xFF)) +
+                kotlin.math.abs(((p shr 8) and 0xFF) - ((q shr 8) and 0xFF)) + kotlin.math.abs((p and 0xFF) - (q and 0xFF))
+        }
+        return sum / (3.0 * a.size)
+    }
+
+    /** One leg of a picture's Diagnose: [diff] from the control (null for the control), or the [error] it failed with. */
+    data class PictureRow(val n: Int, val what: String, val ms: Long, val diff: Double?, val error: String?)
+
+    /**
+     * ⭐ Pure: the section a picture's Diagnose report carries. A leg the same as the shipped picture byte for byte did
+     * not touch the fault. ⚠ A difference alone is not the verdict: on a healthy S25 (Anima Turbo 1.1, 512², 4 steps,
+     * 2026-10-21) every leg that moves real work drifts 0.1 to 21.8 of 255 (the DiT or HMX off the most), while group
+     * norms, pads and fusions came back 0.00. So the largest changes are ranked, and the person names the clean one
+     * from Results by eye.
+     */
+    fun pictureReport(model: String, setup: String, rows: List<PictureRow>, total: Int): String = buildString {
+        appendLine("picture diagnosis (${rows.size} of $total legs): $model, $setup")
+        for (r in rows) {
+            val what = when {
+                r.error != null -> "failed: ${r.error.take(160)}"
+                r.diff == null -> if (r.n == 1) "the control" else "no control picture to compare with"
+                r.diff == 0.0 -> "same as shipped"
+                r.diff < 0.0 -> "came out a different size from shipped"
+                else -> "differs from shipped by %.1f of 255".format(java.util.Locale.ROOT, r.diff)
+            }
+            appendLine("  ${r.n.toString().padStart(2)}. ${r.what}: %.0f s, $what".format(java.util.Locale.ROOT, r.ms / 1000.0))
+        }
+        val moved = rows.filter { it.error == null && it.diff != null && it.diff != 0.0 }.sortedByDescending { kotlin.math.abs(it.diff!!) }
+        val same = rows.filter { it.error == null && it.diff == 0.0 }.map { it.what }
+        appendLine("not involved (the shipped picture exactly): " + same.ifEmpty { listOf("none") }.joinToString("; "))
+        append("largest changes: ").append(
+            moved.take(4).joinToString("; ") { "${it.what} %.1f".format(java.util.Locale.ROOT, it.diff) }.ifEmpty { "none" },
+        ).append(". A right phone drifts up to ~22 of 255 here: compare the pictures by eye.")
+    }
 }

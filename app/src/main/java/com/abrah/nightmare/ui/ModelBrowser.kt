@@ -497,7 +497,12 @@ private fun StatusLine(row: ModelRow, modifier: Modifier) {
         // ⚠ The facts the old card said in words, kept where they matter.
         val note = when {
             row.noHmx -> stringResource(
-                R.string.dit_no_hmx,
+                // ⭐ The 8 Gen 1: HVX only by design (`dit/034`), with no ⋮ Test the NPU to offer.
+                if (com.abrah.nightmare.DeviceProbe.caps().arch < com.abrah.nightmare.ModelCatalog.DIT_V73_MIN_ARCH) {
+                    R.string.dit_hvx_only
+                } else {
+                    R.string.dit_no_hmx
+                },
                 com.abrah.nightmare.DeviceProbe.caps().soc.let { com.abrah.nightmare.DeviceProbe.DIT_NO_HMX_SOCS[it] ?: it },
             )
             // ⭐ A DiT model on v85: its engine is not built for that NPU yet ([com.abrah.nightmare.ModelSpec.noEngineFor]).

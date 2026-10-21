@@ -50,6 +50,18 @@ class NoHmxChipTest {
         assertTrue(zit.buildFor(caps("SM8735")) != null)
     }
 
+    /** ⭐ The 8 Gen 1 (v69, engine `dit/034`): HVX only by design, so the HMX-off launch, and no NPU test to offer. */
+    @Test
+    fun theEightGenOneRunsHvxOnlyWithNoNpuTest() {
+        fun v69(soc: String) = DeviceProbe.Caps(arch = 69, vtcmMb = 8, measured = false, soc = soc)
+        for (soc in listOf("SM8450", "SM8475")) {
+            assertTrue(soc, v69(soc).ditNoHmx)
+            assertTrue(soc, ModelCatalog.byId("anima_turbo_1_1")!!.noHmxOn(v69(soc)))
+            assertFalse(soc, ModelCatalog.byId("anima_turbo_1_1")!!.npuTestOn(v69(soc)))
+            assertTrue(soc, ModelCatalog.byId("iris_3b_turbo")!!.chipBlocked(v69(soc)))
+        }
+    }
+
     @Test
     fun theLaunchTurnsHmxOffByGgmlsOwnSwitch() {
         // ⚠ The leg that came back with a picture on both chips set exactly this ([BlankDiagnosis.LEGS] `no_hmx`).

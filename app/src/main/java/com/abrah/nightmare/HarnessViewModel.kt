@@ -8791,6 +8791,62 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (refused != null) diagnosis = null
     }
 
+    /**
+     * ⭐ The DiT model a kept picture was made with, when it can be diagnosed: a picture (not a clip), its flow kept,
+     * its model installed and runnable here. Null offers nothing ([diagnoseFor]).
+     */
+    private fun pictureDiagnoseModel(r: com.abrah.nightmare.canvas.Result): ModelSpec? {
+        if (r.videoPath != null) return null
+        val g = results.flow(r.id)?.workflow?.graph ?: return null
+        val ctx = getApplication<Application>()
+        return g.nodes.firstNotNullOfOrNull { n ->
+            n.params["model"]?.takeIf { isSampler(n.type) }?.let { ModelCatalog.byId(it) }
+                ?.takeIf { it.isDit && it.family != Family.WAN && !it.chipBlocked(DeviceProbe.caps()) && it.missing(ctx).isEmpty() }
+        }
+    }
+
+    /** ⭐ Diagnose from a kept picture's ⓘ ([diagnosePicture]), or null when [pictureDiagnoseModel] says it cannot be. */
+    fun diagnoseFor(r: com.abrah.nightmare.canvas.Result): (() -> Unit)? =
+        pictureDiagnoseModel(r)?.let { spec -> { diagnosePicture(r, spec) } }
+
+    /**
+     * ⭐⭐ Diagnose ONE picture: its own flow re-run once per [BlankDiagnosis.pictureLegs] leg, each a fresh backend with
+     * that leg's environment, every picture kept in Results as one group labelled by leg, and a report saying which
+     * legs came out different from the shipped one. ⚠ Why: Boingo's v81 Klein artefacts (TG #6213-6240) show at the
+     * picture's own size and inputs, not at the blank check's 256². ⚠ The seed is pinned to the one the picture used,
+     * and the node cache dropped per leg: an unchanged graph would otherwise come back from the cache, not the NPU.
+     */
+    fun diagnosePicture(r: com.abrah.nightmare.canvas.Result, spec: ModelSpec) {
+        val flow = results.flow(r.id)?.workflow ?: return
+        val seed = r.seed?.takeIf { it.isNotBlank() && it != "0" }
+        val graph = flow.graph.nodes.filter { isSampler(it.type) && it.params["seed"].let { s -> s.isNullOrBlank() || s == "0" } }
+            .fold(flow.graph) { g, n -> if (seed == null) g else g.withParams(n.id, mapOf("seed" to seed)) }
+        val types = typesFor(graph)
+        val terminal = terminalImageNodes(graph, types).singleOrNull() ?: run {
+            runError = text(R.string.batch_nothing_to_collect)
+            return
+        }
+        val legs = listOf(BlankDiagnosis.PICTURE_CONTROL) +
+            BlankDiagnosis.pictureLegs(spec.family != Family.IRIS, spec.noHmxOn(DeviceProbe.caps()))
+        val setup = results.details(r.id).filter { it.first in setOf("size", "steps", "cfg", "scheduler") }
+            .joinToString(", ") { "${it.first} ${it.second}" } + (seed?.let { ", seed $it" } ?: "")
+        diagnosis = Diagnosis(0, legs.size, "")
+        val refused = run("diagnose picture") {
+            val batchId = "d" + System.currentTimeMillis()
+            val kept = flow.copy(graph = graph)
+            val rows = ops.diagnosePicture(
+                kept, terminal, legs, types,
+                onLeg = { i, n, leg -> diagnosis = Diagnosis(i + 1, n, leg.what) },
+                // ⭐ Kept as each leg lands, one group labelled by leg, so a Cancel keeps what was rendered.
+                onPicture = { i, leg, id -> keepResult(id, flow = kept, batchId = batchId, batchLabel = "${i + 1}. ${leg.what}", from = terminal) },
+            )
+            refreshResults()
+            lastDiagnosis = BlankDiagnosis.pictureReport(spec.label, setup, rows, legs.size)
+            diagnosis = Diagnosis(legs.size, legs.size, "", report = errorReport(text(R.string.diagnose_picture_report_title)))
+        }
+        if (refused != null) diagnosis = null
+    }
+
     fun cancelDiagnose() {
         cancelRun()
         diagnosis = null

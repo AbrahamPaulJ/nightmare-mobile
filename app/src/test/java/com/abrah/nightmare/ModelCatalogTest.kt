@@ -32,7 +32,7 @@ class ModelCatalogTest {
         for (m in ModelCatalog.all.filter { it.files.isNotEmpty() }) {
             assertEquals("${m.id}: duplicate file name", m.files.size, m.files.map { it.name }.toSet().size)
             assertEquals("${m.id}: files must be exactly what the backend loads", m.requiredFiles.toSet(), m.files.map { it.name }.toSet())
-            assertTrue("${m.id}: DiT is v73+ only", m.builds.all { it.minArch >= ModelCatalog.DIT_V73_MIN_ARCH })
+            assertTrue("${m.id}: DiT is v69+ only", m.builds.all { it.minArch >= ModelCatalog.DIT_V69_MIN_ARCH })
         }
     }
 
@@ -402,8 +402,11 @@ class ModelCatalogTest {
         assertEquals("75", BackendProcess.ditArchEnv(caps("SM8650", 75)))
         assertEquals("79", BackendProcess.ditArchEnv(caps("SM8750", 79)))
         assertEquals("73", BackendProcess.ditArchEnv(caps("SM8635", 73)))
-        // ⚠ No skel for v69: the engine's own floor is right there.
-        assertEquals(null, BackendProcess.ditArchEnv(caps("SM8450", 69)))
+        // ⭐ v69 has our skel (dit/034), and the engine would floor a queried v69 at v73 without being told.
+        assertEquals("69", BackendProcess.ditArchEnv(caps("SM8450", 69)))
+        assertEquals("69", BackendProcess.ditArchEnv(caps("SM8475", 69)))
+        // ⚠ No skel for v68.
+        assertEquals(null, BackendProcess.ditArchEnv(caps("SM8350", 68)))
         // ⚠ A chip the table does not name keeps the engine's own query.
         assertEquals(null, BackendProcess.ditArchEnv(caps("SM9999", 75)))
     }
@@ -437,6 +440,10 @@ class ModelCatalogTest {
         for (id in listOf("flux2_klein_9b", "anima_turbo_1_1", "iris_3b_turbo")) {
             assertTrue("$id on v73", ModelCatalog.byId(id)!!.buildFor(v73) != null)
         }
+        // ⭐ v69 (8 Gen 1), alpha: only what rendered right on the S25 forced to the v69 skel (`docs/DEVICES.md` §3c).
+        val v69 = caps(69, 8, sixteen)
+        val onV69 = ModelCatalog.all.filter { it.isDit && it.buildFor(v69) != null }.map { it.id }.toSet()
+        assertEquals(setOf("anima_turbo_1_1", "anima_29b_preview"), onV69)
         // ⚠ Not run right at v73 (or, Klein 4B, the user's call): they keep the v75 floor.
         for (id in listOf("flux2_klein_4b", "qwen_image_2_1", "qwen_image_2_1_turbo", "krea2_turbo", "wan22_ti2v_turbo")) {
             assertEquals("$id must not open on v73", null, ModelCatalog.byId(id)!!.buildFor(v73))

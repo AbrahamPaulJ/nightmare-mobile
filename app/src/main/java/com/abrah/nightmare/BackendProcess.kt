@@ -486,10 +486,14 @@ object BackendProcess {
      * `CONV_2D_UPSCALE|CONCAT` from v75 (comments at the call). ⭐ `SWIGLU` on v73: its DMA queue's
      * 2D descriptors are 16-bit, and a row stride past 64 KB (FLUX.2 Klein's fused single-stream rows)
      * takes a fallback that faults the DSP inside `glu_swiglu_f32_per_thread` (`dspqueue_read failed
-     * 0x2e`). On the CPU: Klein 9B 1024² renders the v75 picture (54.9 dB), 166 s against 149 s.
+     * 0x2e`). On the CPU: Klein 9B 1024² renders the v75 picture (54.9 dB), 166 s against 149 s. v69 has the
+     * same 16-bit descriptors (`dma-queue.h`'s `< 75`), so it takes the v73 filter.
      */
-    /** The arches the DiT engine carries a skel for (`assets/ditlibs`). */
-    val DIT_SKEL_ARCHES = setOf(73, 75, 79, 81)
+    /**
+     * The arches the DiT engine carries a skel for (`assets/ditlibs`). ⭐ v69 (8 Gen 1) is ours, engine `dit/034`:
+     * built from the shipped tree with v69 versions of v73's three vconv conversions, HVX only.
+     */
+    val DIT_SKEL_ARCHES = setOf(69, 73, 75, 79, 81)
 
     /**
      * ⭐ `GGML_HEXAGON_ARCH` from the chip table, or null when the table does not name this chip.
@@ -497,8 +501,9 @@ object BackendProcess {
      * ⚠⚠ Why (GitHub #52, a vivo SM8650, 2026-10-17): the engine asks the DSP its version, and that query failed
      * (`FastRPC capability query failed (err 12)`, 2.4 GB free); ggml-hexagon then DEFAULTS TO v73, opened a v73
      * session on a v75 DSP, failed, and aborted. [DeviceProbe.SOC_TO_ARCH] already picks which skel the app unpacks,
-     * so telling the engine the same arch adds no trust. ⚠ Only a skel the engine ships ([DIT_SKEL_ARCHES]): an
-     * 8 Gen 1 (v69) asked for would fail; the engine's own floor (73) is right there.
+     * so telling the engine the same arch adds no trust. ⚠ Only a skel the engine ships ([DIT_SKEL_ARCHES]).
+     * ⭐ And the 8 Gen 1 needs it: the engine floors a queried v69 at v73 and would open the v73 skel; told 69 it
+     * opens ours (an env arch is taken as given, `ggml_hexagon_init`).
      */
     internal fun ditArchEnv(caps: DeviceProbe.Caps): String? =
         caps.arch.takeIf { caps.soc in DeviceProbe.SOC_TO_ARCH && it in DIT_SKEL_ARCHES }?.toString()

@@ -469,20 +469,22 @@ object TemplateLora {
             else (1f + mant / 8f) * Math.scalb(1f, exp - 7)
         }
 
-        private fun halfToFloat(h: Short): Float {
-            val bits = h.toInt() and 0xFFFF
-            val sign = (bits ushr 15) shl 31
-            val exp = (bits ushr 10) and 0x1F
-            val mant = bits and 0x3FF
-            return when (exp) {
-                0 -> if (mant == 0) Float.fromBits(sign) else {
-                    // subnormal: mant * 2^-24
-                    val v = mant * (1.0f / (1 shl 24))
-                    if (sign != 0) -v else v
-                }
-                0x1F -> Float.fromBits(sign or 0x7F800000 or (mant shl 13))
-                else -> Float.fromBits(sign or ((exp + 112) shl 23) or (mant shl 13))
+    }
+
+    /** IEEE fp16 bits to a float; pure Kotlin, so a JVM test can call it ([GgufWiden] does too). */
+    internal fun halfToFloat(h: Short): Float {
+        val bits = h.toInt() and 0xFFFF
+        val sign = (bits ushr 15) shl 31
+        val exp = (bits ushr 10) and 0x1F
+        val mant = bits and 0x3FF
+        return when (exp) {
+            0 -> if (mant == 0) Float.fromBits(sign) else {
+                // subnormal: mant * 2^-24
+                val v = mant * (1.0f / (1 shl 24))
+                if (sign != 0) -v else v
             }
+            0x1F -> Float.fromBits(sign or 0x7F800000 or (mant shl 13))
+            else -> Float.fromBits(sign or ((exp + 112) shl 23) or (mant shl 13))
         }
     }
 }

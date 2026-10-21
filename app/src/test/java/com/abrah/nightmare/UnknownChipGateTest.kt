@@ -67,7 +67,9 @@ class UnknownChipGateTest {
     fun the8sGen3GetsTheV73DitBuildsAndNothingThatNeeds8Mb() {
         val caps = DeviceProbe.Caps(arch = 73, vtcmMb = DeviceProbe.FLOOR_VTCM_MB, measured = false, soc = "SM8635")
         for (id in listOf("z_image_turbo", "flux2_klein_9b", "anima_turbo_1_1")) {
-            assertEquals("$id on the 8s Gen 3", 73, ModelCatalog.byId(id)!!.buildFor(caps)?.minArch)
+            // ⚠ At most 73: Anima Turbo's floor is v69 since the 8 Gen 1 alpha (`docs/DEVICES.md` §3c).
+            val floor = ModelCatalog.byId(id)!!.buildFor(caps)?.minArch
+            assertTrue("$id on the 8s Gen 3: $floor", floor != null && floor <= 73)
         }
         assertNull("Krea 2 is v75", ModelCatalog.byId("krea2_turbo")!!.buildFor(caps))
         assertEquals(DeviceProbe.FLOOR_VTCM_MB, DeviceProbe.FLOOR_VTCM_MB.coerceAtMost(ModelCatalog.ditVtcmFloor(73)))

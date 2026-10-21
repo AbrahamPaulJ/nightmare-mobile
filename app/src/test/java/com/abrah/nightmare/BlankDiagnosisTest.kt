@@ -152,4 +152,42 @@ class BlankDiagnosisTest {
         val near = shipped.detail.substringAfter("8x8 ").chunked(2).joinToString("") { "%02x".format((it.toInt(16) + 5).coerceAtMost(255)) }
         assertEquals(Verdict.CLEAN, BlankDiagnosis.against(shipped, o("cpu_norm", near)).verdict)
     }
+
+    /** ⭐ A picture's Diagnose (Boingo's v81 Klein artefacts): each leg one change on the shipped launch. */
+    @Test
+    fun aPicturesLegsAreOneChangeEachOnTheShippedLaunch() {
+        val legs = BlankDiagnosis.pictureLegs(hasVae = true, shippedNoHmx = false).map { it.id }
+        // ⚠ No `baseline`: the control is the shipped picture itself.
+        assertTrue("baseline" !in legs)
+        assertEquals(BlankDiagnosis.LEGS.size - 1, legs.size)
+        // ⚠ Iris has no VAE; a no-HMX chip's HMX legs are its shipped launch.
+        val iris = BlankDiagnosis.pictureLegs(hasVae = false, shippedNoHmx = true).map { it.id }
+        assertTrue(BlankDiagnosis.DECODE_ONLY.none { it in iris })
+        assertTrue("no_hmx" !in iris && "hvx_matmul" !in iris)
+    }
+
+    @Test
+    fun aPicturesReportNamesTheLegsThatChangedIt() {
+        assertEquals(0.0, BlankDiagnosis.meanDiff(intArrayOf(0x102030, 0x405060), intArrayOf(0x102030, 0x405060))!!, 0.0)
+        // One channel of one pixel 30 apart over 6 channel values: 5.
+        assertEquals(5.0, BlankDiagnosis.meanDiff(intArrayOf(0x102030, 0x405060), intArrayOf(0x2E2030, 0x405060))!!, 1e-9)
+        assertEquals(null, BlankDiagnosis.meanDiff(intArrayOf(1), intArrayOf(1, 2)))
+        val report = BlankDiagnosis.pictureReport(
+            "FLUX.2 Klein 4B", "size 704x1536, steps 4, seed 7",
+            listOf(
+                BlankDiagnosis.PictureRow(1, "as shipped", 41_000, null, null),
+                BlankDiagnosis.PictureRow(2, "text encoder on the CPU", 44_000, 0.0, null),
+                BlankDiagnosis.PictureRow(3, "attention on the CPU", 52_000, 23.4, null),
+                BlankDiagnosis.PictureRow(4, "DiT on the CPU", 900_000, null, "the backend stopped"),
+            ),
+            total = 17,
+        )
+        assertTrue(report, report.startsWith("picture diagnosis (4 of 17 legs): FLUX.2 Klein 4B, size 704x1536, steps 4, seed 7"))
+        assertTrue(report, "1. as shipped: 41 s, the control" in report)
+        assertTrue(report, "2. text encoder on the CPU: 44 s, same as shipped" in report)
+        assertTrue(report, "3. attention on the CPU: 52 s, differs from shipped by 23.4 of 255" in report)
+        assertTrue(report, "4. DiT on the CPU: 900 s, failed: the backend stopped" in report)
+        assertTrue(report, "not involved (the shipped picture exactly): text encoder on the CPU" in report)
+        assertTrue(report, "largest changes: attention on the CPU 23.4." in report)
+    }
 }

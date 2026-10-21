@@ -90,8 +90,12 @@ object DeviceProbe {
      * (Anima Turbo 1.1) found `no_hmx` the only leg with a picture in it; `vae_cpu`'s "clean" was the seed's noise
      * decoded (two Anima models, one thumbnail byte for byte). The 8 Gen 2 is clean on the same v73 skel with HMX.
      * Cost at 256x256, 2 steps: Anima 55 s for 29, Z-Image 113 s for 25, Klein 9B 323 s for 34.
+     * ⭐ The 8 Gen 1 / 8+ Gen 1 (v69) for another reason: ggml's HMX kernels are v73+ code, so its skel
+     * (`dit/034`) runs HVX only, and the same launch (HMX off, decode on the CPU) is what it gets.
      */
-    val DIT_NO_HMX_SOCS = mapOf("SM8735" to "8s Gen 4", "SM8635" to "8s Gen 3")
+    val DIT_NO_HMX_SOCS = mapOf(
+        "SM8735" to "8s Gen 4", "SM8635" to "8s Gen 3", "SM8450" to "8 Gen 1", "SM8475" to "8+ Gen 1",
+    )
 
     /**
      * The HTP as far as we know it.

@@ -611,8 +611,12 @@ data class ModelSpec(
     fun noHmxOn(caps: DeviceProbe.Caps): Boolean =
         isDit && family != Family.WAN && family != Family.IRIS && caps.ditNoHmx
 
-    /** ⭐ ⋮ Test the NPU on this chip: every [noHmxOn] model, and Iris, whose static there was the DiT's. */
-    fun npuTestOn(caps: DeviceProbe.Caps): Boolean = isDit && family != Family.WAN && caps.ditNoHmx
+    /**
+     * ⭐ ⋮ Test the NPU on this chip: every [noHmxOn] model, and Iris, whose static there was the DiT's.
+     * ⚠ Not below v73: the 8 Gen 1's skel has no HMX to test (`dit/034`), so the legs would only fail.
+     */
+    fun npuTestOn(caps: DeviceProbe.Caps): Boolean =
+        isDit && family != Family.WAN && caps.ditNoHmx && caps.arch >= ModelCatalog.DIT_V73_MIN_ARCH
 
     /**
      * ⭐ A TRUE inpainting checkpoint — a 9-channel UNet whose `conv_in`
@@ -2304,6 +2308,13 @@ object ModelCatalog {
     const val DIT_V73_MIN_ARCH = 73
 
     /**
+     * ⭐ v69 (8 Gen 1, 8+ Gen 1), ALPHA: our skel (engine `dit/034`), HVX only, decode on the CPU
+     * ([DeviceProbe.DIT_NO_HMX_SOCS]). Only the models that rendered right on the S25 forced to it
+     * (`docs/DEVICES.md` §3c). Its VTCM floor is [ditVtcmFloor]'s, as v73's. No real 8 Gen 1 has run it.
+     */
+    const val DIT_V69_MIN_ARCH = 69
+
+    /**
      * ⭐ The v73 builds' VTCM floor: the chip table's own floor, so the 8s Gen 3 (SM8635, under 8 MB) gets them
      * as alpha (the user's call, 2026-10-17). ⚠ The 8 MB every other build asks is the QNN context binaries'
      * rule, fixed at build time. ggml-hexagon sizes its work to the session's VTCM at run time: a fusion that
@@ -2458,7 +2469,8 @@ object ModelCatalog {
         dit(
             "anima_turbo_1_1", "Anima Turbo 1.1", Family.ANIMA_DIT, KREA2, steps = 10,
             prompt = "",
-            minArch = DIT_V73_MIN_ARCH,
+            // ⭐ v69 too: the S25 forced to v69, HVX only, 512² 4 steps, a clean picture (`docs/DEVICES.md` §3c).
+            minArch = DIT_V69_MIN_ARCH,
             ownDitParts = true,
             files = listOf(
                 RemoteFile(
@@ -2483,7 +2495,8 @@ object ModelCatalog {
         dit(
             "anima_29b_preview", "Anima 2.9B (preview)", Family.ANIMA_DIT, KREA2, steps = 8, cfg = 1.0,
             prompt = "",
-            minArch = DIT_V73_MIN_ARCH,
+            // ⭐ v69 too: the S25 forced to v69 through the app, 512² 4 steps, turbo LoRA on, 357 s, clean (`DEVICES.md` §3c).
+            minArch = DIT_V69_MIN_ARCH,
             ownDitParts = true,
             ownLora = ANIMA29_TURBO_LORA,
             files = listOf(

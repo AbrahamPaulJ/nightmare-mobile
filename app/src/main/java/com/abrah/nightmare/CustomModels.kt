@@ -764,18 +764,12 @@ object CustomModels {
                     val widened = Fp8Widen.copy(input, outS, { done -> onProgress(ModelInstaller.Progress("importing", done, 0)) }, isCancelled)
                     if (widened > 0) Log.i(TAG, "widened $widened fp8 tensors of '$name' to F32")
                 }
+            // ⭐ A GGUF through [GgufWiden]: a quantized tensor the engine reads off the matmul path becomes BF16.
             } else open().use { input ->
                 dest.outputStream().buffered(BUFFER).use { outS ->
-                    val buf = ByteArray(BUFFER)
-                    var done = 0L
-                    while (true) {
-                        if (isCancelled()) throw ModelInstaller.Cancelled()
-                        val n = input.read(buf)
-                        if (n <= 0) break
-                        outS.write(buf, 0, n)
-                        done += n
-                        onProgress(ModelInstaller.Progress("importing", done, 0))
-                    }
+                    val r = GgufWiden.copy(input, outS, variant.family, { done -> onProgress(ModelInstaller.Progress("importing", done, 0)) }, isCancelled)
+                    if (r.widened > 0) Log.i(TAG, "widened ${r.widened} quantized tensors of '$name' to BF16")
+                    if (r.left.isNotEmpty()) Log.w(TAG, "'$name' keeps quantized tensors off the matmul path: ${r.left.joinToString()}")
                 }
             }
             if (dest.length() <= 0L) throw java.io.IOException("the picked file was empty")

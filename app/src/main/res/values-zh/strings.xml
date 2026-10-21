@@ -564,7 +564,7 @@
     <string name="models_family_zimage">8 Elite 或更新芯片上约 8.8 GB；8 Gen 3 和 8 Gen 2 上为更小的 Q4_0 版本（alpha）。仍在完善中：某些 8 Elite 手机上会崩溃。请使用 Wi-Fi。</string>
     <string name="models_family_qwen">约 10.8 GB。支持 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。可编辑和生成，速度比 FLUX.2 慢。请使用 Wi-Fi。</string>
     <string name="models_family_krea">约 9.5 GB。12 GB 及以上内存的手机，8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。在 12 GB 手机上分段运行：1024x1024 约需 3.5 到 4 分钟。只能文生图，不能编辑。请使用 Wi-Fi。</string>
-    <string name="models_family_animadit">约 3.2 GB。下载 Anima 官方 4.2 GB 文件并在手机上转换，安装时需要约 7.5 GB 可用空间。1024² 每张图片约 1 分钟，支持 512 起的任意尺寸。需要 8 Gen 2 或更新芯片（8 Gen 2 和 8 Gen 3 上为 alpha）。不是编辑模型。请使用 Wi-Fi。</string>
+    <string name="models_family_animadit">约 3.2 GB。下载 Anima 官方 4.2 GB 文件并在手机上转换，安装时需要约 7.5 GB 可用空间。1024² 每张图片约 1 分钟，支持 512 起的任意尺寸。需要 8 Gen 1 或更新芯片（8 Gen 1、8 Gen 2 和 8 Gen 3 上为 alpha；8 Gen 1 上每张图需要几分钟）。不是编辑模型。请使用 Wi-Fi。</string>
     <string name="models_family_iris">约 5.8 GB。下载 speridlabs 官方的 6 GB 文件并在手机上转换，因此安装时需要约 10 GB 可用空间。在 8 Elite 上 1024x1024 每张约 2.5 分钟。无 VAE。仅支持训练时的尺寸（每张约 100 万像素）。8 Gen 2 或更新（8 Elite 以下为 alpha，尚未在真实的 8 Gen 2 或 8 Gen 3 上运行）。仅文生图。请使用 Wi-Fi。</string>
     <string name="models_family_moss">约 10 GB。8 Elite 或更新芯片。细致、细节丰富的图像模型，每次都会应用 8 步加速。在手机上较慢：8 Elite 上 512x512 约 3 分钟，1024x1024 约 11 到 12 分钟。仅文生图。请使用 Wi-Fi。</string>
     <string name="models_family_ideogram">约 11.6 GB。12 GB 及以上内存的手机，8 Elite 或更新芯片。最擅长在图中写出清晰可读的文字：招牌、海报、标签。每次都会应用 8 步加速。8 Elite 上 768x768 约 5.5 分钟。仅文生图。仅限非商业用途（Ideogram 许可）。请使用 Wi-Fi。</string>
@@ -612,6 +612,7 @@
     <string name="models_no_engine_arch">%1$s 暂不能在此手机的 NPU（v%2$d）上运行：这些模型使用的引擎尚未为它构建。SD 1.5、SDXL 和 Anima 模型可以运行</string>
     <string name="dit_no_engine_arch">暂不支持此 NPU（v%1$d）：这些模型使用的引擎尚未为它构建</string>
     <string name="dit_no_hmx">在 %1$s 上关闭 NPU 的矩阵单元并在 CPU 上解码：图片正确，但慢很多（8s Gen 4 上的 Z-Image：512 约 23 分钟，1024 约 47 分钟）。⋮ 测试NPU 有助于找到更快的修复</string>
+    <string name="dit_hvx_only">%1$s 上为测试版：只用 NPU 的向量单元（引擎的矩阵单元代码需要 8 Gen 2 或更新），并在 CPU 上解码，所以一张图需要几分钟。尚未在真机上运行</string>
     <string name="dit_chip_blocked">暂不支持 %1$s：在该芯片上的每项测试都只得到噪点。如已安装，删除可释放空间</string>
     <string name="test_npu">测试NPU</string>
     <string name="diagnose">诊断</string>
@@ -620,6 +621,8 @@
     <string name="diagnose_starting">正在开始…</string>
     <string name="diagnose_progress">第 %1$d / %2$d 项：%3$s</string>
     <string name="diagnose_keep_open">请保持应用打开。完成后会打开报告，照常分享即可。</string>
+    <string name="diagnose_picture_note">诊断会用这张图自己的设置和 seed 重新生成最多 %1$d 次，每次把一个部分移出 NPU，并把所有图片作为一组保存在结果里，标明移动了什么。结果正确的那一张就指出要修复的部分。耗时约为这张图的 %1$d 倍。</string>
+    <string name="diagnose_picture_report_title">图片诊断</string>
     <string name="upscale_no_upscaler">放大失败：没有名为 %1$s 的放大器</string>
     <string name="upscale_picture_gone">放大失败：该图片文件已不存在</string>
     <string name="upscale_with">正在用 %1$s 放大…</string>

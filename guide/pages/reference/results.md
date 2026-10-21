@@ -29,7 +29,7 @@ always get back to exactly how it was made.
 | **Share** | Shares the picture with another app |
 | **Send to a flow** | Offers the flows that take a photo: Image to image, Inpaint, Image edit, Upscale, Image to video, and opens the one you pick with this picture in it |
 | **Upscale** | Enlarges it with an upscaler; the bigger copy is kept as a new item. The same window offers **UltraFix**: see below |
-| ⓘ **What made this** | The prompt, model, seed and settings, and a way to use them on the open flow: see below |
+| ⓘ **What made this** | The prompt, model, seed and settings, and a way to use them on the open flow; on a DiT picture, **Diagnose**: see below |
 | **Open flow** / share the flow | Reopens the flow that made it on the canvas, or shares that flow as a file |
 
 A clip plays on its card; tap it to play it full screen. A [chain of clips](../flows/video.md#longer-clips-one-film)
@@ -49,6 +49,21 @@ In **ⓘ What made this**, the rows you can reuse are tinted: the **picture**, i
    node already says; otherwise it is replaced.
 5. **Use.** The canvas opens with the changed nodes selected. A copied seed is **locked**, so the
    next Run reproduces it; unlock it on the run bar to go back to random.
+
+## Diagnose a picture that came out wrong
+
+On a picture from a DiT model (FLUX.2, Z-Image, Qwen, Krea 2, Anima, Iris, MOSS, Ideogram),
+**ⓘ What made this** also offers **Diagnose**. Use it when a model makes broken pictures on your
+phone (blown colours, grain, stripes) that it does not make elsewhere.
+
+1. Tap **Diagnose**, read the note and tap **Diagnose** again.
+2. The app renders the same picture again, with its own settings and seed, up to 17 times. Each
+   time one part of the work moves off the NPU. Keep the app open: it takes about 17 times as long
+   as the picture did.
+3. Every picture lands in Results as one group, each labelled with what was moved. A report opens
+   at the end that says which ones came out different from the first.
+4. Find the one that looks right, and send the report with its label to the developer. That names
+   the part of the NPU to fix on your chip.
 
 ## Selecting several
 

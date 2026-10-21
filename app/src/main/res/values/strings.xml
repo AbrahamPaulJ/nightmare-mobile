@@ -591,7 +591,7 @@
     <string name="models_family_zimage">About 8.8 GB on an 8 Elite or newer; a smaller Q4_0 build on 8 Gen 3 and 8 Gen 2 (alpha). Still maturing: it crashes on some 8 Elite phones. Use Wi-Fi.</string>
     <string name="models_family_qwen">About 10.8 GB. 8 Gen 3 or newer (alpha on 8 Gen 3). Edits and generates; slower than FLUX.2. Use Wi-Fi.</string>
     <string name="models_family_krea">About 9.5 GB. 12 GB phones and up, 8 Gen 3 or newer (alpha on 8 Gen 3). On a 12 GB phone it renders in parts: about 3.5 to 4 minutes at 1024x1024. Text to image only; it does not edit. Use Wi-Fi.</string>
-    <string name="models_family_animadit">About 3.2 GB. Downloads Anima\'s official 4.2 GB file and converts it on the phone, so it needs ~7.5 GB free while it installs. About 1 minute a picture at 1024², any size from 512. 8 Gen 2 or newer (alpha on 8 Gen 2 and 8 Gen 3). Not an edit model. Use Wi-Fi.</string>
+    <string name="models_family_animadit">About 3.2 GB. Downloads Anima\'s official 4.2 GB file and converts it on the phone, so it needs ~7.5 GB free while it installs. About 1 minute a picture at 1024², any size from 512. 8 Gen 1 or newer (alpha on 8 Gen 1, 8 Gen 2 and 8 Gen 3; on the 8 Gen 1 several minutes a picture). Not an edit model. Use Wi-Fi.</string>
     <string name="models_family_iris">About 5.8 GB. Downloads the official 6 GB file from speridlabs and converts it on the phone, so it needs ~10 GB free while it installs. About 2.5 minutes a picture at 1024x1024 on an 8 Elite. No VAE. Only the sizes it was trained at (about 1 MP each). 8 Gen 2 or newer (alpha below the 8 Elite, not yet run on a real 8 Gen 2 or 8 Gen 3). Text to image only. Use Wi-Fi.</string>
     <string name="models_family_moss">About 10 GB. 8 Elite or newer. A careful, detailed picture model with an 8-step speed-up applied every time. Slow on a phone: about 3 minutes at 512x512 and 11 to 12 minutes at 1024x1024 on an 8 Elite. Text to image only. Use Wi-Fi.</string>
     <string name="models_family_ideogram">About 11.6 GB. 12 GB phones and up, 8 Elite or newer. Best at readable text in a picture: signs, posters, labels. An 8-step speed-up applied every time. About 5.5 minutes at 768x768 on an 8 Elite. Text to image only. Non-commercial use only (Ideogram\'s licence). Use Wi-Fi.</string>
@@ -639,6 +639,7 @@
     <string name="models_no_engine_arch">%1$s does not run on this phone\'s NPU (v%2$d) yet: the engine these models use has not been built for it. The SD 1.5, SDXL and Anima models run</string>
     <string name="dit_no_engine_arch">Not on this NPU (v%1$d) yet: the engine these models use has not been built for it</string>
     <string name="dit_no_hmx">Runs with the NPU\'s matrix unit off and decodes on the CPU on the %1$s: right pictures, but much slower (Z-Image on an 8s Gen 4: about 23 min at 512, 47 min at 1024). ⋮ Test the NPU helps find a faster fix</string>
+    <string name="dit_hvx_only">Alpha on the %1$s: the NPU\'s vector units only (the engine\'s matrix-unit code needs an 8 Gen 2 or newer) and the decode on the CPU, so a picture takes several minutes. Not yet run on a real one</string>
     <string name="dit_chip_blocked">Does not run on the %1$s yet: every test there gave noise. If it is installed, deleting it frees the space</string>
     <string name="test_npu">Test the NPU</string>
     <string name="diagnose">Diagnose</string>
@@ -647,6 +648,8 @@
     <string name="diagnose_starting">Starting…</string>
     <string name="diagnose_progress">%1$d of %2$d: %3$s</string>
     <string name="diagnose_keep_open">Keep the app open. The report opens when it is done; share it as usual.</string>
+    <string name="diagnose_picture_note">Diagnose renders this picture again up to %1$d times, with its own settings and seed, each time with one part moved off the NPU, and keeps every picture in Results as one group, labelled by what was moved. The one that comes out right names the part to fix. It takes about %1$d times as long as this picture did.</string>
+    <string name="diagnose_picture_report_title">Diagnosis of a picture</string>
     <string name="upscale_no_upscaler">upscale failed. No upscaler named %1$s</string>
     <string name="upscale_picture_gone">upscale failed. That picture\'s file is gone</string>
     <string name="upscale_with">Upscaling with %1$s…</string>

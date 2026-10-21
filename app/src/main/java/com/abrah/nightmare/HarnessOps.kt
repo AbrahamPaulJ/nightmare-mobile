@@ -218,6 +218,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 if (env.isNotEmpty()) say("diagnose: injected on every leg: $env")
                 say(diagnoseBlank(model, inject = env, stopWhenClean = !full).report(ModelCatalog.byId(model)?.label ?: model))
             }
+            // ⭐ Diagnose one kept picture headless (`--es arg <result id>`): its flow per leg, pictures to
+            // `files/diagnose_picture/<n>.png`, the report to the log. What a picture's ⓘ → Diagnose runs.
+            "diagnose_picture" -> diagnosePictureOp(arg)
             "lora_node" -> loraNode(arg)
             "swap" -> swapOp(arg)
             "ultrafix" -> ultrafixOp(arg)
@@ -720,6 +723,101 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         return BlankDiagnosis.Run(out, total, side)
     }
 
+    /**
+     * ⭐⭐ Diagnose ONE picture's [workflow] ([BlankDiagnosis.pictureLegs]): once per [legs] entry a fresh backend with
+     * that leg's environment, the node cache dropped (an unchanged graph would come back from it, not the NPU), and the
+     * [terminal] node's picture compared with the first leg's. [onLeg] before each leg; [onPicture] gets each picture's
+     * id, to keep. ⚠ The `finally` clears the environment and stops the backend, so the next Run launches as shipped.
+     */
+    suspend fun diagnosePicture(
+        workflow: com.abrah.nightmare.canvas.Workflow,
+        terminal: String,
+        legs: List<BlankDiagnosis.Leg>,
+        types: Map<String, NodeType> = nodeTypes(),
+        onLeg: (Int, Int, BlankDiagnosis.Leg) -> Unit = { _, _, _ -> },
+        onPicture: (Int, BlankDiagnosis.Leg, String) -> Unit = { _, _, _ -> },
+    ): List<BlankDiagnosis.PictureRow> {
+        val rows = ArrayList<BlankDiagnosis.PictureRow>()
+        var control: IntArray? = null
+        try {
+            for ((i, leg) in legs.withIndex()) {
+                onLeg(i, legs.size, leg)
+                say("diagnose picture ${i + 1}/${legs.size}: ${leg.what}")
+                BackendProcess.diagnosticEnv = leg.env
+                stopBackend()
+                dropNodeCache()
+                val t0 = System.currentTimeMillis()
+                val run = if (ensureBackendFor(workflow.graph, types)) runWorkflow(workflow) else null
+                val ms = System.currentTimeMillis() - t0
+                val img = run?.outputs?.get(terminal)?.previewImage()
+                val bmp = img?.let { images.get(it.id) }
+                if (img == null || bmp == null) {
+                    val why = run?.error ?: BackendProcess.failureReason() ?: "the backend would not start"
+                    say("  failed in ${ms / 1000} s: ${why.take(120)}", bad = true)
+                    rows += BlankDiagnosis.PictureRow(i + 1, leg.what, ms, null, why)
+                    continue
+                }
+                onPicture(i, leg, img.id)
+                val px = IntArray(bmp.width * bmp.height).also { bmp.getPixels(it, 0, bmp.width, 0, 0, bmp.width, bmp.height) }
+                val diff = if (i == 0) null else control?.let { BlankDiagnosis.meanDiff(it, px) ?: -1.0 }
+                if (control == null) control = px
+                say("  ${ms / 1000} s" + (diff?.let { ", %.2f from shipped".format(java.util.Locale.ROOT, it) } ?: ""))
+                rows += BlankDiagnosis.PictureRow(i + 1, leg.what, ms, diff, null)
+            }
+        } finally {
+            BackendProcess.diagnosticEnv = emptyMap()
+            // ⚠ NonCancellable: a Cancel lands here as a cancellation, which would skip a plain suspend call.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { stopBackend() }
+        }
+        return rows
+    }
+
+    /** ⭐ The `diagnose_picture` op: [diagnosePicture] on a kept result, pinned to its seed, pictures to a folder. */
+    private suspend fun diagnosePictureOp(arg: String?) {
+        // ⭐ `new[,steps]`: a fresh Text to image flow on the selected model and size (`model_use`, `res_use`), seed 42 and
+        // a neutral prompt, diagnosed with nothing kept: the leg loop on a picture small enough to test with.
+        if (arg?.startsWith("new") == true) {
+            val steps = arg.substringAfter(',', "").toIntOrNull()
+            val spec = SelectedModel.spec
+            if (!spec.isDit) { say("diagnose_picture new: select a DiT model first", bad = true); return }
+            val wf0 = com.abrah.nightmare.canvas.defaultWorkflow()
+            val g = wf0.graph.withParams("generate", mapOf("seed" to "42") + (steps?.let { mapOf("steps" to it.toString()) } ?: emptyMap()))
+                .withParams("prompt", mapOf("prompt" to (if (spec.family == Family.ANIMA_DIT) "safe, " else "") + "a red fox in snow, daylight", "negative" to ""))
+            val legs = listOf(BlankDiagnosis.PICTURE_CONTROL) +
+                BlankDiagnosis.pictureLegs(spec.family != Family.IRIS, spec.noHmxOn(DeviceProbe.caps()))
+            val dir = java.io.File(ctx.filesDir, "diagnose_picture").apply { deleteRecursively(); mkdirs() }
+            val rows = diagnosePicture(wf0.copy(graph = g), "output", legs) { i, _, id ->
+                images.get(id)?.let { b -> java.io.File(dir, "%02d.png".format(i + 1)).outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } }
+            }
+            say(BlankDiagnosis.pictureReport(spec.label, "new flow, ${SelectedModel.res.width}x${SelectedModel.res.height}, seed 42", rows, legs.size))
+            say("pictures in ${dir.absolutePath}")
+            return
+        }
+        val store = com.abrah.nightmare.canvas.ResultsStore(java.io.File(ctx.filesDir, "results"))
+        // ⚠ No id: the newest kept DiT picture.
+        val r = store.all().firstOrNull { it.id == arg } ?: store.all().firstOrNull { k ->
+            k.videoPath == null && store.flow(k.id)?.workflow?.graph?.nodes.orEmpty()
+                .any { n -> isSampler(n.type) && ModelCatalog.byId(n.params["model"].orEmpty())?.isDit == true }
+        }
+        val flow = r?.let { store.flow(it.id)?.workflow }
+        if (r == null || flow == null) { say("diagnose_picture: no kept result ${arg.orEmpty()}", bad = true); return }
+        val types = nodeTypes()
+        val seed = r.seed?.takeIf { it.isNotBlank() && it != "0" }
+        val graph = flow.graph.nodes.filter { isSampler(it.type) && it.params["seed"].let { s -> s.isNullOrBlank() || s == "0" } }
+            .fold(flow.graph) { g, n -> if (seed == null) g else g.withParams(n.id, mapOf("seed" to seed)) }
+        val terminal = terminalImageNodes(graph, types).singleOrNull()
+        val spec = graph.nodes.firstNotNullOfOrNull { n -> n.params["model"]?.takeIf { isSampler(n.type) }?.let { ModelCatalog.byId(it) } }
+        if (terminal == null || spec?.isDit != true) { say("diagnose_picture: ${r.id} is not one DiT picture", bad = true); return }
+        val legs = listOf(BlankDiagnosis.PICTURE_CONTROL) +
+            BlankDiagnosis.pictureLegs(spec.family != Family.IRIS, spec.noHmxOn(DeviceProbe.caps()))
+        val dir = java.io.File(ctx.filesDir, "diagnose_picture").apply { deleteRecursively(); mkdirs() }
+        val rows = diagnosePicture(flow.copy(graph = graph), terminal, legs, types) { i, _, id ->
+            images.get(id)?.let { b -> java.io.File(dir, "%02d.png".format(i + 1)).outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } }
+        }
+        say(BlankDiagnosis.pictureReport(spec.label, "result ${r.id}, seed ${seed ?: "as kept"}", rows, legs.size))
+        say("pictures in ${dir.absolutePath}")
+    }
+
     private fun loraProbeSteps(spec: ModelSpec): Int = if (spec.family == Family.ANIMA_DIT) spec.steps else 4
 
     private fun loraProbeCfg(spec: ModelSpec): Double = if (spec.family == Family.ANIMA_DIT) spec.cfg else 1.0
@@ -1098,13 +1196,18 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             base = f.readBytes()
         }
         val t0 = System.currentTimeMillis()
-        val r = Ops.generate(
+        // ⚠ In use for the render, as [runWorkflow] marks it: unmarked, the app released the backend mid-render while
+        // the person used the phone ("exited 143, stopped by the app", Klein 9B forced to v69, 2026-10-21).
+        BackendIdle.begin()
+        RunWakeLock.begin(ctx)
+        val r = try { Ops.generate(
+            // ⚠ Anima leads with its rating tag, as [loraProbePrompt] does: without one it picks its own rating.
             prompt = if (mode == "edit") "make it winter, snow on the roof and ground"
-                else "a lovely cat holding a sign that says 'Nightmare',",
+                else (if (spec.family == Family.ANIMA_DIT) "safe, " else "") + "a lovely cat holding a sign that says 'Nightmare',",
             negative = negative, steps = steps, cfg = cfg, seed = 12345,
             width = res.width, height = res.height,
             imagePng = base, denoise = 1.0,
-        )
+        ) } finally { BackendIdle.end(); RunWakeLock.end() }
         val ms = System.currentTimeMillis() - t0
         when (r) {
             is Ops.Result.Err -> say("dit_bench ${spec.id} $mode,$steps FAILED after $ms ms. Http ${r.code} ${r.body.take(200)}", bad = true)

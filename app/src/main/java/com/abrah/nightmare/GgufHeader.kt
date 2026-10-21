@@ -126,7 +126,7 @@ object GgufHeader {
     }
 
     /** ggml's block layout per type: (elements per block, bytes per block). */
-    private val BLOCKS = mapOf(
+    internal val BLOCKS = mapOf(
         "F32" to (1 to 4), "F16" to (1 to 2), "BF16" to (1 to 2), "F64" to (1 to 8),
         "I8" to (1 to 1), "I16" to (1 to 2), "I32" to (1 to 4), "I64" to (1 to 8),
         "Q4_0" to (32 to 18), "Q4_1" to (32 to 20), "Q5_0" to (32 to 22), "Q5_1" to (32 to 24),
@@ -200,7 +200,7 @@ object GgufHeader {
         return ok
     }
 
-    private fun readString(b: ByteBuffer): String {
+    internal fun readString(b: ByteBuffer): String {
         val n = b.long
         if (n !in 0..(1L shl 20)) throw IOException("this GGUF's header is not readable")
         val a = ByteArray(n.toInt())
@@ -215,7 +215,7 @@ object GgufHeader {
     }
 
     /** Value sizes by GGUF value type; 8 = string, 9 = array. */
-    private fun skipValue(b: ByteBuffer, type: Int) {
+    internal fun skipValue(b: ByteBuffer, type: Int) {
         when (type) {
             0, 1, 7 -> b.position(b.position() + 1)
             2, 3 -> b.position(b.position() + 2)
