@@ -178,4 +178,23 @@ class GgufImportTest {
         val kQuant = t("token_embd.weight" to "Q4_K", "blk.0.attn_q.weight" to "Q4_K", "blk.0.ffn_down.weight" to "Q6_K")
         assertEquals(setOf("Q4_K", "Q6_K"), GgufHeader.blockTypesOutside(kQuant, GgufHeader.NPU_MATMUL))
     }
+
+    /**
+     * ⭐ ComfyUI-style names (`model.diffusion_model.…`, Mr-J's Klein-Pmaster 9B Q4_0, TG 2026-10-22): its block
+     * matmuls stay Q4_0 (they were all widened, 5.25 GB to 18 GB) and its `img_in` still says 9B (it read as a 4B and
+     * launched on Qwen3-4B).
+     */
+    @Test
+    fun prefixedNamesAreReadByPathNotByStart() {
+        val p = "model.diffusion_model."
+        assertFalse(GgufWiden.widens(Family.FLUX2, p + "double_blocks.0.img_attn.qkv.weight", "Q4_0", longArrayOf(4096, 12288)))
+        assertFalse(GgufWiden.widens(Family.FLUX2, p + "single_blocks.3.linear1.weight", "Q4_0", longArrayOf(4096, 36864)))
+        assertTrue(GgufWiden.widens(Family.FLUX2, p + "img_in.weight", "Q4_0", longArrayOf(128, 4096)))
+        // ⚠ Unprefixed names keep the rule they had.
+        assertFalse(GgufWiden.widens(Family.FLUX2, "double_blocks.0.img_attn.qkv.weight", "Q4_0", longArrayOf(4096, 12288)))
+        val k9 = "{\"${p}img_in.weight\":{\"dtype\":\"Q4_0\",\"shape\":[4096,128]}}"
+        val k4 = "{\"${p}img_in.weight\":{\"dtype\":\"BF16\",\"shape\":[3072,128]}}"
+        assertTrue(CustomModels.isKlein9b(k9))
+        assertFalse(CustomModels.isKlein9b(k4))
+    }
 }

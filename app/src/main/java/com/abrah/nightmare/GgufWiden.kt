@@ -46,8 +46,16 @@ object GgufWiden {
     internal fun widens(family: Family?, name: String, type: String, ne: LongArray): Boolean {
         if (type in FLOATS) return false
         if (ne.size < 2) return true
-        return family == Family.FLUX2 && !name.startsWith("double_blocks.") && !name.startsWith("single_blocks.")
+        return family == Family.FLUX2 && !IN_BLOCKS.containsMatchIn(name)
     }
+
+    /**
+     * ⚠⚠ A block weight by PATH, not by the name's start: ComfyUI-style files prefix every name
+     * (`model.diffusion_model.double_blocks.0.…`, Mr-J's Klein-Pmaster 9B Q4_0, TG 2026-10-22), and `startsWith`
+     * called all 115 block matmuls "outside the blocks": a 5.25 GB Q4_0 imported as 18 GB of BF16. The engine strips
+     * those prefixes itself.
+     */
+    private val IN_BLOCKS = Regex("""(^|\.)(double|single)_blocks\.""")
 
     private class Info(val name: String, val dims: LongArray, val type: Int, val offset: Long) {
         val elements: Long get() = dims.fold(1L) { a, d -> a * d }

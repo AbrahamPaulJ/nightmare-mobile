@@ -1336,9 +1336,6 @@ internal fun NodeInspectorBody(
 ) {
     // ⚠ Local: an unanswered confirm is not something to persist, same as every
     // other one in the app.
-    var confirmingDelete by remember { mutableStateOf(false) }
-    var confirmingReset by remember { mutableStateOf(false) }
-    var confirmingDefaults by remember { mutableStateOf(false) }
     // ⚠ Null when not renaming. Keyed on the node so opening another node's
     // sheet cannot leave a half-typed name from the last one behind.
     var renaming by remember(nodeId) { mutableStateOf<TextFieldValue?>(null) }
@@ -2504,6 +2501,10 @@ internal fun NodeInspectorBody(
         // picture.
         val picked = if (node.type in com.abrah.nightmare.PICKED_TYPES) "uri" else null
 
+        // ⚠⚠ The knob list is a composable LAMBDA, as the panels above are, so it compiles OUTSIDE this method:
+        // inline, R8 built this body into a method ART's verifier rejects (`type=Conflict`, 1.6.207 and the 1.6.212
+        // candidate; `notes/HANDOFF.md` §3b, `tools/verify_dex.sh`). Blocks move out of this body, never in.
+        val knobList: @Composable () -> Unit = {
         // ⭐⭐⭐ **The LAST-node rule** (`isLastOfKind`): only the last sampler
         // in a chain may arm a sweep. Sweeping an earlier one re-runs everything
         // downstream, so ten seeds on a two-sampler chain is twenty renders —
@@ -3074,61 +3075,90 @@ internal fun NodeInspectorBody(
             }
             }        }
         }
+        }
+        knobList()
 
         // ⚠ No "inputs: prompt ← prompt" line (removed 1.6.193, the user): the wires are on the canvas, and a
         // sheet that repeats them only takes height. A wire is a gesture there, never edited here.
 
-        // ⚠ Delete lives here rather than on the canvas: a gesture that
-        // removes a node is a gesture someone makes by accident, and this
-        // is already the "I meant this node" surface.
+        // ⭐ Reset / Delete / Reset defaults and their confirms: [NodeActionsFooter], OUT of this function on
+        // purpose (`notes/HANDOFF.md` §3b: R8 builds a class ART rejects once this body grows; 1.6.212 tipped it).
+        NodeActionsFooter(
+            nodeId = nodeId, nodeActions = nodeActions, isImage = node.type == "core.image",
+            isSampler = type is com.abrah.nightmare.SdSampler,
+            onReset = onReset, onResetDefaults = onResetDefaults, onDelete = onDelete,
+        )
+    }
+}
+
+/**
+ * ⭐ The node sheet's footer: Reset, Delete and the Default view's Reset defaults, with their confirms. Moved out of
+ * [NodeInspectorBody] whole (1.6.212): that body sits at the edge where R8 builds a class ART's verifier rejects
+ * (`notes/HANDOFF.md` §3b, `tools/verify_dex.sh`), so blocks move OUT of it, never in.
+ */
+@Composable
+private fun NodeActionsFooter(
+    nodeId: String,
+    nodeActions: Boolean,
+    isImage: Boolean,
+    isSampler: Boolean,
+    onReset: ((String) -> Unit)?,
+    onResetDefaults: ((String) -> Unit)?,
+    onDelete: (String) -> Unit,
+) {
+    var confirmingDelete by remember { mutableStateOf(false) }
+    var confirmingReset by remember { mutableStateOf(false) }
+    var confirmingDefaults by remember { mutableStateOf(false) }
+    // ⚠ Delete lives here rather than on the canvas: a gesture that
+    // removes a node is a gesture someone makes by accident, and this
+    // is already the "I meant this node" surface.
+    //
+    // ⚠⚠ …which was the whole argument for it NOT asking, and it was
+    // wrong. Being the deliberate surface makes the button reachable, not
+    // the tap deliberate: this sits at the bottom of a scrolling sheet
+    // full of knobs, so it is one mis-scrolled tap away from taking the
+    // node and every wire on it with no undo. Every other destructive
+    // action in the app already asks -- multi-select delete, a saved flow,
+    // a model -- and this was the one that did not. `docs/UI.md` §5.
+    if (nodeActions) Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // ⭐⭐ **Reset — the knobs back to their defaults**, asked for
+        // 2026-09-22. ⚠ Behind a confirm like Delete beside it: it is not
+        // undoable and it can throw away a prompt somebody typed.
+        // ⚠⚠ NOT error-coloured. It keeps the node, its wires and its
+        // picture, so it is not the same kind of act as the button next to
+        // it, and colouring them alike would make the pair read as two ways
+        // to destroy something.
+        // ⚠⚠ **Not on a `core.image` node** — the user's call, 2026-09-22.
+        // Its only knob IS the photo, and the bin beside the picker already
+        // forgets it, so Reset would be the same button twice — one of them
+        // behind a confirm that says "every knob" when there is one.
         //
-        // ⚠⚠ …which was the whole argument for it NOT asking, and it was
-        // wrong. Being the deliberate surface makes the button reachable, not
-        // the tap deliberate: this sits at the bottom of a scrolling sheet
-        // full of knobs, so it is one mis-scrolled tap away from taking the
-        // node and every wire on it with no undo. Every other destructive
-        // action in the app already asks -- multi-select delete, a saved flow,
-        // a model -- and this was the one that did not. `docs/UI.md` §5.
-        if (nodeActions) Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            // ⭐⭐ **Reset — the knobs back to their defaults**, asked for
-            // 2026-09-22. ⚠ Behind a confirm like Delete beside it: it is not
-            // undoable and it can throw away a prompt somebody typed.
-            // ⚠⚠ NOT error-coloured. It keeps the node, its wires and its
-            // picture, so it is not the same kind of act as the button next to
-            // it, and colouring them alike would make the pair read as two ways
-            // to destroy something.
-            // ⚠⚠ **Not on a `core.image` node** — the user's call, 2026-09-22.
-            // Its only knob IS the photo, and the bin beside the picker already
-            // forgets it, so Reset would be the same button twice — one of them
-            // behind a confirm that says "every knob" when there is one.
-            //
-            // ⚠⚠⚠ The rule lives HERE, where `node` is, and not at the call
-            // site that passes `onReset` in. Gated there, it was still drawn in
-            // every screenshot test, because the goldens call this function
-            // directly — which is `docs/UI.md` §5's blind spot exactly: a test
-            // that does not drive the production wiring cannot see it.
-            // ⭐ Violet Studio: Reset a quiet outlined button, Delete a red one — equal width, side by side.
-            if (onReset != null && node.type != "core.image") {
-                com.abrah.nightmare.ui.StudioOutlinedButton(
-                    onClick = { confirmingReset = true }, shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                ) { Text(stringResource(R.string.inspector_reset_node)) }
-            }
+        // ⚠⚠⚠ The rule lives HERE, where `node` is, and not at the call
+        // site that passes `onReset` in. Gated there, it was still drawn in
+        // every screenshot test, because the goldens call this function
+        // directly — which is `docs/UI.md` §5's blind spot exactly: a test
+        // that does not drive the production wiring cannot see it.
+        // ⭐ Violet Studio: Reset a quiet outlined button, Delete a red one — equal width, side by side.
+        if (onReset != null && !isImage) {
             com.abrah.nightmare.ui.StudioOutlinedButton(
-                onClick = { confirmingDelete = true }, shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
-                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                onClick = { confirmingReset = true }, shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-            ) { Text(stringResource(R.string.inspector_delete_node)) }
+            ) { Text(stringResource(R.string.inspector_reset_node)) }
         }
-        // ⭐ The Default view's half of Reset, on every sampler (the user, 2026-10-20): no Delete there,
-        // and it keeps what was picked ([CanvasState.resetSamplerDefaults]). Same quiet outlined button.
-        if (!nodeActions && onResetDefaults != null && type is com.abrah.nightmare.SdSampler) {
-            com.abrah.nightmare.ui.StudioOutlinedButton(
-                onClick = { confirmingDefaults = true }, shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
-            ) { Text(stringResource(R.string.inspector_reset_defaults)) }
-        }
+        com.abrah.nightmare.ui.StudioOutlinedButton(
+            onClick = { confirmingDelete = true }, shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
+            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+        ) { Text(stringResource(R.string.inspector_delete_node)) }
+    }
+    // ⭐ The Default view's half of Reset, on every sampler (the user, 2026-10-20): no Delete there,
+    // and it keeps what was picked ([CanvasState.resetSamplerDefaults]). Same quiet outlined button.
+    if (!nodeActions && onResetDefaults != null && isSampler) {
+        com.abrah.nightmare.ui.StudioOutlinedButton(
+            onClick = { confirmingDefaults = true }, shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
+        ) { Text(stringResource(R.string.inspector_reset_defaults)) }
     }
 
     if (confirmingDefaults && onResetDefaults != null) {

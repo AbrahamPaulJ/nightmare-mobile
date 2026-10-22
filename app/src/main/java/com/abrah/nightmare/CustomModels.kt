@@ -1146,7 +1146,9 @@ object CustomModels {
     fun isKlein9b(header: String): Boolean =
         KLEIN_IMG_IN.find(header)?.groupValues?.get(1) == "4096"
 
-    private val KLEIN_IMG_IN = Regex("\"img_in\\.weight\"\\s*:\\s*\\{[^}]*\"shape\"\\s*:\\s*\\[\\s*(\\d+)")
+    // ⚠ Any prefix (`model.diffusion_model.img_in.weight`, ComfyUI-style): anchored on the quote, a prefixed 9B read as
+    // a 4B and launched on the shared Qwen3-4B, `ggml_can_mul_mat` at its first step (TG 2026-10-22, Klein-Pmaster).
+    private val KLEIN_IMG_IN = Regex("\"(?:[^\"]*\\.)?img_in\\.weight\"\\s*:\\s*\\{[^}]*\"shape\"\\s*:\\s*\\[\\s*(\\d+)")
 
     /**
      * ⭐⭐ The family of a marker-less DiT directory, and the marker written so
