@@ -200,6 +200,11 @@ jobs:
             # tree cannot tell "003 did nothing" from "001 already changed
             # something", so the assertion compares the diff either side of
             # each apply.
+            # ⚠ `add -A -N` first: a file an earlier patch CREATED is untracked and
+            # invisible to `git diff`, so a patch that edits only it (dit/035 on
+            # 028's moss_image.hpp) read as "applied nothing". Intent-to-add puts
+            # its content in the diff without staging it.
+            git -C "$repo" add -A -N
             before=$(git -C "$repo" diff | sha256sum)
             git -C "$repo" apply -v $args "$GITHUB_WORKSPACE/nightmare/$rel"
             after=$(git -C "$repo" diff | sha256sum)
