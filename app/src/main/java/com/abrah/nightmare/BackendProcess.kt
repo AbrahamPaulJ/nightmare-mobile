@@ -548,12 +548,11 @@ object BackendProcess {
      * opens ours (an env arch is taken as given, `ggml_hexagon_init`).
      */
     /**
-     * ⭐ The DiT text encoder and VAE go to the CPU: a chip KNOWN to be below v73 (a real 8 Gen 1 hangs in the encoder's
-     * NPU graph, 1.6.212). ⚠⚠ `known` first ([DeviceProbe.Caps.known]): an unrecognised chip reads as the v68 floor,
-     * and 1.6.212's `arch < 73` alone put every such phone's Klein 4B encoder on the CPU (a tester: 50 s to 6 min,
-     * 2026-10-22, the chip not yet named).
+     * ⭐ The whole DiT on the CPU: a chip KNOWN to be below v73 (a real 8 Gen 1's NPU never finishes a DiT graph, see the
+     * launch). ⚠⚠ `known` first ([DeviceProbe.Caps.known]): an unrecognised chip reads as the v68 floor, and 1.6.212's
+     * `arch < 73` alone put every such phone's Klein 4B encoder on the CPU (a tester: 50 s to 6 min, 2026-10-22).
      */
-    internal fun ditEncoderOnCpu(caps: DeviceProbe.Caps): Boolean = caps.known && caps.arch < ModelCatalog.DIT_V73_MIN_ARCH
+    internal fun ditOnCpu(caps: DeviceProbe.Caps): Boolean = caps.known && caps.arch < ModelCatalog.DIT_V73_MIN_ARCH
 
     internal fun ditArchEnv(caps: DeviceProbe.Caps): String? =
         caps.arch.takeIf {
@@ -926,11 +925,12 @@ object BackendProcess {
                             put(NO_HMX_KEY, "0")
                             put("NM_DIT_BACKEND", BlankDiagnosis.CPU_VAE)
                         }
-                        // ⚠⚠ A REAL v69 (8 Gen 1, 8+ Gen 1) never returns from the text encoder's NPU graph: two
-                        // testers' logs (SM8450, SM8475, 1.6.211) both stop at `qwen3 executing segment 1/1`, the
-                        // phone idle, for 3 to 7 min. The S25 forced to v69 runs it, so it is the hardware, not the
-                        // skel's code. Anima's encoder is a 0.6B Qwen3: on the CPU it costs seconds.
-                        if (ditEncoderOnCpu(DeviceProbe.caps()) && !diagnosing) put("NM_DIT_BACKEND", BlankDiagnosis.CPU_TE_VAE)
+                        // ⚠⚠ A REAL v69 (8 Gen 1, 8+ Gen 1) never returns from a DiT graph on the NPU: two testers'
+                        // logs (SM8450, SM8475, 1.6.211) stop at `qwen3 executing segment 1/1`, and with the encoder on
+                        // the CPU (1.6.212) Anima's first DiT segment (`anima.prelude`) hangs the same way (Saved #7056,
+                        // 1.6.214), the phone idle. The S25 forced to v69 runs both, so it is the hardware. ⇒ The whole
+                        // DiT on the CPU there: Anima Turbo 512² 10 steps 520 s on the S25's CPU, so ~15-20 min there.
+                        if (ditOnCpu(DeviceProbe.caps()) && !diagnosing) put("NM_DIT_BACKEND", BlankDiagnosis.CPU_ALL)
 
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }

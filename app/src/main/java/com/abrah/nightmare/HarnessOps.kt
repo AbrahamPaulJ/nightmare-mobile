@@ -3401,7 +3401,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     }
 
     private suspend fun lpEdit(arg: String?) {
-        val (path, spec) = arg.orEmpty().split('@', limit = 2).let { it[0] to it.getOrElse(1) { "mouth_smile=1" } }
+        val parts = arg.orEmpty().split('@', limit = 3)
+        val path = parts[0]
+        val spec = parts.getOrElse(1) { "mouth_smile=1" }
+        // ⭐ An optional third part forces a tier (`…@v68`): another chip's build A/B'd on this phone (an 8 Gen 1's "no change").
+        val forced = parts.getOrNull(2)?.trim()?.takeIf { it.isNotEmpty() }
+        // ⚠ `v69!`: open the files as they are on disk, unchecked (a graph swapped in from another tier).
+        val unchecked = forced?.endsWith("!") == true
+        val only = forced?.removeSuffix("!")
         val lp = com.abrah.nightmare.portrait.LivePortrait
         val sliders = FloatArray(lp.SLIDERS.size)
         for (kv in spec.split(',').filter { '=' in it }) {
@@ -3413,7 +3420,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val t0 = System.nanoTime()
-                val tier = lp.open(ctx)
+                if (only != null && !unchecked && !lp.installed(ctx, only)) lp.installTier(ctx, only)
+                val tier = lp.open(ctx, only, unchecked)
                 val tOpen = (System.nanoTime() - t0) / 1e6
                 val bmp = android.graphics.BitmapFactory.decodeFile(path)
                     ?: run { say("lp_edit: cannot read $path", bad = true); return@withContext }

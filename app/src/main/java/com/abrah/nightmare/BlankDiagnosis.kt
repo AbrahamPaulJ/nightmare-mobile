@@ -89,6 +89,8 @@ object BlankDiagnosis {
     const val CPU_VAE = "diffusion=HTP0,te=HTP0,vae=CPU"
     /** ⭐ A real v69's launch ([BackendProcess]): its NPU never returns from the text encoder's graph. */
     const val CPU_TE_VAE = "diffusion=HTP0,te=CPU,vae=CPU"
+    /** ⭐ The whole DiT on the CPU: a real 8 Gen 1, whose NPU never finishes a DiT graph ([BackendProcess.ditOnCpu]). */
+    const val CPU_ALL = "diffusion=CPU,te=CPU,vae=CPU"
 
     /**
      * ⭐ Pure: the legs after the control. [control] is how it came out; [shipped], whether the control was

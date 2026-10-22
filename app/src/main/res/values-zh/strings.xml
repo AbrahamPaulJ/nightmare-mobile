@@ -613,7 +613,7 @@
     <string name="models_no_engine_arch">%1$s 暂不能在此手机的 NPU（v%2$d）上运行：这些模型使用的引擎尚未为它构建。SD 1.5、SDXL 和 Anima 模型可以运行</string>
     <string name="dit_no_engine_arch">暂不支持此 NPU（v%1$d）：这些模型使用的引擎尚未为它构建</string>
     <string name="dit_no_hmx">在 %1$s 上关闭 NPU 的矩阵单元并在 CPU 上解码：图片正确，但慢很多（8s Gen 4 上的 Z-Image：512 约 23 分钟，1024 约 47 分钟）。⋮ 测试NPU 有助于找到更快的修复</string>
-    <string name="dit_hvx_only">%1$s 上为测试版：只用 NPU 的向量单元（引擎的矩阵单元代码需要 8 Gen 2 或更新），并在 CPU 上解码，所以一张图需要几分钟。尚未在真机上运行</string>
+    <string name="dit_hvx_only">在 %1$s 上 DiT 模型在 CPU 上运行：那里的 NPU 连第一步都无法完成。很慢：一张 512x512 的图约需 15 到 20 分钟</string>
     <string name="dit_chip_blocked">暂不支持 %1$s：在该芯片上的每项测试都只得到噪点。如已安装，删除可释放空间</string>
     <string name="test_npu">测试NPU</string>
     <string name="diagnose">诊断</string>

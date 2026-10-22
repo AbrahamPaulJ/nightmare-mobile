@@ -63,8 +63,10 @@ object FaceEditNode : NodeType {
      * ⭐ The edit itself, shared by the node, its viewer and Results. Null when no face was found; throws on a failure.
      * ⚠ Blocking (~250 ms on an 8 Elite, plus ~0.8 s the first time while the five graphs load).
      */
-    fun edit(context: android.content.Context, bmp: android.graphics.Bitmap, sliders: FloatArray, largestOnly: Boolean): android.graphics.Bitmap? {
-        LivePortrait.open(context)
+    fun edit(context: android.content.Context, bmp: android.graphics.Bitmap, sliders: FloatArray, largestOnly: Boolean): android.graphics.Bitmap? =
+        LivePortrait.using(context) { editOpen(bmp, sliders, largestOnly) }
+
+    private fun editOpen(bmp: android.graphics.Bitmap, sliders: FloatArray, largestOnly: Boolean): android.graphics.Bitmap? {
         val w = bmp.width
         val h = bmp.height
         val px = IntArray(w * h).also { bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, false).getPixels(it, 0, w, 0, 0, w, h) }

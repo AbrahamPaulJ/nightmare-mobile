@@ -75,7 +75,13 @@ struct Session {
 
   bool exec(nmqnn::Handle h, const std::vector<std::string>& names, const std::vector<const float*>& data,
             std::vector<std::vector<float>>* outs, const char* what) {
-    if (nmqnn::run(h, names, data, outs)) return true;
+    // ⭐ One line a graph, BEFORE it runs: a tier that stalls on the NPU names its graph (an 8 Gen 1's v68 pack, 2026-10-22).
+    LOGI("run %s", what);
+    const auto t0 = std::chrono::steady_clock::now();
+    const bool ok = nmqnn::run(h, names, data, outs);
+    LOGI("%s %s in %.0f ms", what, ok ? "done" : "FAILED",
+         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+    if (ok) return true;
     return fail(std::string(what) + ": " + nmqnn::lastError());
   }
 

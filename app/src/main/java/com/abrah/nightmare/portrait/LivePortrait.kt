@@ -42,6 +42,20 @@ object LivePortrait {
             F("lp_gencut_v68.bin", 124_687_256L, "c1ba997af5e31fd63da6c302f7d07dce289d5db3b6e72396e4cb9747c0177127"),
             F("lp_mlp_v68.bin", 909_184L, "9873ae3399a2b38e98bcebc1ed20f6c5cb045b75a407e63c9368c8a2253beecd"),
         ),
+        // ⭐ The 8 Gen 1 / 8+ Gen 1 (SM8450, SM8475: v69, 8 MB VTCM). ⚠⚠ v68's generator is built for 2 MB VTCM and never
+        // returned (an 8 Gen 1 tester's face edit spun forever, and blocked every preview behind it; the S25 hangs on it
+        // too): the same conversions emitted for v69 at 8 MB (facefusion-mobile `emit_arch.sh v69 8`, 2026-10-22), generator
+        // 140 ms on the S25 (a v69 context runs forward). Never run on a real 8 Gen 1 yet.
+        "v69" to listOf(
+            F("yoloface_v69.bin", 3_937_424L, "8d4b117836cb00e663cd9709479aa4059c5f701a1567110f3b74fe1608269928"),
+            F("fan2d_v69.bin", 24_796_608L, "757d1fefd6607b22fbf802b6d4edc7adc03a0cb88e131d77dd1e83a94f663e2f"),
+            F("lp_feature_v69.bin", 1_583_608L, "f6961d97959db97a43f08b29f1bf894056114c2f644dff8d4f12b64b515ac97a"),
+            // ⚠ From `lp_motion`, not v68's `lp_motionc`: that one at v68/v69 loses the head pose (head_yaw 15 came out
+            // unturned on the S25, 15.6 dB from v79's; this one turns like v79, and a zero edit returns the face, 33 dB).
+            F("lp_motion_v69.bin", 39_764_416L, "918536dfa6340d2772ce3ebcd3ada397fe9e4d6bbcf82b742dc33420960f9020"),
+            F("lp_gencut_v69.bin", 117_515_160L, "893e26c90788226c6ca2ead447f9f0a14a7b872cf8771acda7b2ab6b6b6d2ed7"),
+            F("lp_mlp_v69.bin", 909_184L, "9873ae3399a2b38e98bcebc1ed20f6c5cb045b75a407e63c9368c8a2253beecd"),
+        ),
         "v73" to listOf(
             F("yoloface_v73.bin", 3_994_768L, "f38df2db356c2c81b2e25625961daf12f59273ec53c26b40693ee743cb0ba018"),
             F("fan2d_v73.bin", 24_993_216L, "c0726e27f9edbd1d5b265f44909bf90a7d25cb12480bd72ca480b602941e8933"),
@@ -86,6 +100,8 @@ object LivePortrait {
         caps.arch >= 81 -> listOf("v81", "v73", "v68")
         caps.arch >= 79 && caps.soc == "SM8750" -> listOf("v79", "v73", "v68")
         caps.arch >= 73 -> listOf("v73", "v68")
+        // ⭐ v69 with its 8 MB: the v69 build first ([FILES]' note); v68 only as the fallback.
+        caps.arch >= 69 -> listOf("v69", "v68")
         else -> listOf("v68")
     }
 
@@ -161,15 +177,43 @@ object LivePortrait {
         private set
 
     /**
+     * ⭐⭐ Let go once idle, and at once before a render ([com.abrah.nightmare.PictureModels.releaseAll]), like every other
+     * held picture model. ⚠⚠ Why (an 8 Gen 1 tester, 1.6.209 and 1.6.214, Saved #6992-7064): nothing ever closed it, so
+     * after one face edit ~190 MB of context binaries stayed on the NPU for the life of the process, beside every later
+     * render; on that 7.5 GB phone each SD 1.5 Swap render then failed in its VAE encoder (`Dma execution failed on the
+     * skel side 1003`, 0.8 GB free). The face editor arrived in 1.6.205.
+     */
+    internal val idle = com.abrah.nightmare.segment.IdleRelease(com.abrah.nightmare.segment.IdleRelease.IDLE_MS) {
+        close()
+        Log.i(TAG, "released (idle, low memory or a render)")
+    }
+
+    /** ⭐ Let the graphs go now if nothing is using them. */
+    fun trim() = idle.releaseNow()
+
+    /** ⭐ [block] with LivePortrait open, counted as a use so a release waits for it ([idle]). Inline: suspend calls work inside. */
+    internal inline fun <T> using(context: Context, block: () -> T): T {
+        idle.begin()
+        try {
+            open(context)
+            return block()
+        } finally {
+            idle.end()
+        }
+    }
+
+    /**
      * ⭐ Opens the first installed tier that LOADS, in [tiers] order. ⚠ Blocking (~1 s). Throws with every tier's reason.
+     * [only] opens that one tier and nothing else: the harness's A/B of another chip's build (`lp_edit`).
      */
     @Synchronized
-    fun open(context: Context): String {
-        openTier?.let { return it }
+    fun open(context: Context, only: String? = null, unchecked: Boolean = false): String {
+        openTier?.let { if (only == null || (it == only && !unchecked)) return it else close() }
         com.abrah.nightmare.npu.QnnRunner(context).initBackend()
         val why = mutableListOf<String>()
-        for (t in tiers()) {
-            if (!installed(context, t)) { why += "$t not installed"; continue }
+        for (t in if (only != null) listOf(only) else tiers()) {
+            // ⚠ [unchecked]: the harness's hand-assembled tier (a file swapped from another tier), sizes not ours.
+            if (!unchecked && !installed(context, t)) { why += "$t not installed"; continue }
             if (NativePortrait.open(dir(context).absolutePath, t)) {
                 openTier = t
                 Log.i(TAG, "open: $t")

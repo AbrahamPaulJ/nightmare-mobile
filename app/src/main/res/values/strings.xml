@@ -640,7 +640,7 @@
     <string name="models_no_engine_arch">%1$s does not run on this phone\'s NPU (v%2$d) yet: the engine these models use has not been built for it. The SD 1.5, SDXL and Anima models run</string>
     <string name="dit_no_engine_arch">Not on this NPU (v%1$d) yet: the engine these models use has not been built for it</string>
     <string name="dit_no_hmx">Runs with the NPU\'s matrix unit off and decodes on the CPU on the %1$s: right pictures, but much slower (Z-Image on an 8s Gen 4: about 23 min at 512, 47 min at 1024). ⋮ Test the NPU helps find a faster fix</string>
-    <string name="dit_hvx_only">Alpha on the %1$s: the NPU\'s vector units only (the engine\'s matrix-unit code needs an 8 Gen 2 or newer) and the decode on the CPU, so a picture takes several minutes. Not yet run on a real one</string>
+    <string name="dit_hvx_only">On the %1$s the DiT models run on the CPU: the NPU there never finishes their first step. Slow: a 512x512 picture takes about 15 to 20 minutes</string>
     <string name="dit_chip_blocked">Does not run on the %1$s yet: every test there gave noise. If it is installed, deleting it frees the space</string>
     <string name="test_npu">Test the NPU</string>
     <string name="diagnose">Diagnose</string>

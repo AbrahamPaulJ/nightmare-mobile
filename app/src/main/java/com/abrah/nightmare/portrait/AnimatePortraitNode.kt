@@ -88,8 +88,8 @@ object AnimatePortraitNode : NodeType {
         if (sized !== src && sized !== portrait) sized.recycle()
         val seconds = node.params[SECONDS]?.toIntOrNull()?.coerceIn(1, 30) ?: 10
 
-        return withContext(Dispatchers.IO) {
-            LivePortrait.open(app)
+        // ⭐ Held as a use for the whole clip, then let go like the face editor ([LivePortrait.using]).
+        return withContext(Dispatchers.IO) { LivePortrait.using(app) {
             val r = MediaMetadataRetriever()
             try {
                 r.setDataSource(driver.path)
@@ -149,7 +149,7 @@ object AnimatePortraitNode : NodeType {
             } finally {
                 r.release()
             }
-        }
+        } }
     }
 
     private fun sha1(s: String): String =
