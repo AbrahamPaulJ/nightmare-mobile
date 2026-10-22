@@ -1,0 +1,41 @@
+# Nightmare Mobile
+
+> An Android app that runs a node graph for image and video generation entirely on the phone's Qualcomm Hexagon NPU, with no server, account or cloud.
+
+Requires Android 12 or newer on arm64 with a Snapdragon Hexagon NPU; installed as an APK, with models downloaded on first use rather than bundled. Features include text to image, image to image, inpainting, upscaling, face and hand fixing, face editing, portrait animation, LoRA support, batching and a catalogue of 46 checkpoints including SD 1.5, SDXL, Anima and DiT family models.
+
+## Docs
+
+- [Nightmare Mobile](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/README.md): Node graph app for image and video generation on Android, running on the Snapdragon Hexagon NPU, with no cloud.
+
+## Pages
+
+- [Nightmare user guide](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/index.md): How flows of nodes make pictures and videos on the phone, and where to start in the guide.
+- [Flows](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/index.md): Ready-made and saved flows, how the phone's chip dims unsupported ones, and how models are chosen per generator.
+- [Models](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/models/index.md): Downloading models, the model families and their sizes, upscalers, video models, and community NPU conversions.
+- [Reference](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/reference/index.md): Look-up pages for every node and setting, the results gallery, memory and speed switches, and the glossary.
+- [Getting started](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/start/index.md): Three short pages: install and check the phone, make a first picture, and learn the canvas.
+- [Install and check your phone](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/start/install.md): Installing the APK from GitHub releases, updating without losing data, and checking your chip, NPU generation and VTCM.
+- [Local API](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/reference/api.md): Enabling the local HTTP API, token and CORS settings, network restrictions, and using it with Automatic1111 apps.
+- [Troubleshooting](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/troubleshooting.md): Sending error reports, memory-related SIGKILL crashes, dimmed flows, unsupported models, and slow or stuck downloads.
+- [Glossary](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/glossary.md): Definitions of terms like CFG, checkpoint, denoise, DiT, edit model, embedding, family, flow, HTP/NPU, inpaint and LoRA.
+- [Add Objects](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/add-objects.md): Pasting a real object from another photo into an inpaint mask, placing it as a layer, and repainting only its edges.
+- [Advanced: LoRA, ControlNet and IP-Adapter](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/advanced.md): Text to image and image to image with Swap models using LoRA, ControlNet types canny, depth and openpose, and IP-Adapter.
+- [Batching](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/batch.md): Running a flow many times with one or two settings varied, arming sweeps, and where the batch results are kept.
+- [Edit a face](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/face-edit.md): Installing the Face editor (LivePortrait) and using sliders for eyes, mouth and head pose to change faces.
+- [Image edit](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/image-edit.md): Instruction-based image editing with FLUX.2 Klein or Qwen Image 2.1, including using up to four reference pictures.
+- [Image to image](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/image-to-image.md): Restyling a photo at a chosen Denoise strength, and drawing colours or shapes on it to guide the result.
+- [Inpaint](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/inpaint.md): Painting a mask to redo only part of a photo, writing prompts for the area, and which inpainting models to use.
+- [Text to image](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/text-to-image.md): Generating a picture from a prompt, prompt-writing per model family, and the generator's size and sampling settings.
+- [Upscale a photo](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/upscale.md): Enlarging a gallery picture with an upscaler model: installing upscalers, flow steps, the 4096-pixel limit, and upscaling any flow's result.
+- [Video](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/flows/video.md): Text to video and image to video flows: installing Wan 2.2 or Neodragon, writing prompts with motion, crop preview, playback and saving…
+- [Bring your own model](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/models/bring-your-own.md): Importing your own converted .zip, checkpoint .safetensors or .gguf, or upscaler .bin files, and converting models for the NPU with npuforge.
+- [LoRAs and embeddings](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/models/loras.md): What LoRAs and embeddings are, which model families take them, and downloading LoRAs from CivitAI or Hugging Face.
+- [Download, switch and delete](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/models/manage.md): The Models screen: chips, search and family menu, reading model cards, downloading and queuing, switching models, deleting and repairing.
+- [Chat](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/reference/agent.md): Setting up the chat agent: choosing a provider and API key, picking a tool-calling model, and how it builds and edits flows.
+- [Memory and speed](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/reference/memory.md): Why the first Run is slow, when models stay loaded, and which models are let go after each Run.
+- [Nodes and their settings](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/reference/nodes.md): The five node kinds, prompt editing with tag weights, autocomplete, translation, and writing prompts from pictures.
+- [Results](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/reference/results.md): Browsing saved pictures and clips, viewing them full screen, and reusing a picture's prompt, negative or seed.
+- [Settings](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/reference/settings.md): The five Settings tabs: theme and views, tag autocomplete and translation dictionaries, models, performance and advanced options.
+- [The canvas](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/start/canvas.md): The main screen: Default, Advanced and Chat views of a flow, the Run bar, and the sidebar sheets.
+- [Your first picture](https://raw.githubusercontent.com/AbrahamPaulJ/nightmare-mobile/main/guide/pages/start/first-picture.md): Walkthrough: downloading AbsoluteReality, opening the Text to image flow, writing a prompt, and running it.
