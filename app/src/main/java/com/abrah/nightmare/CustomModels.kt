@@ -129,6 +129,22 @@ object CustomModels {
     /** ⭐ An Anima DiT folder holding the 2.9B (40 blocks, [ANIMA_BLOCKS]): a base model, so base defaults. */
     const val ANIMA29_MARK = "ANIMA29"
 
+    /** ⭐ Ours: an imported MOSS-Image checkpoint ([Family.MOSS]), which upstream has no import for. */
+    const val MOSS_MARK = "MOSS"
+
+    /**
+     * ⭐ A MOSS import whose NAME says it is few-step (a DMD LoRA baked in: molbal's "Turbo GGUF (8 step)"): 8 steps at
+     * CFG 1. Without it a MOSS import is taken for a base fine-tune (Moody Moss Mix: 25 steps, CFG 3), since nothing in
+     * the weights says which ([mossFewStep]).
+     */
+    const val MOSS_FEW_STEP_MARK = "MOSSFAST"
+
+    /**
+     * ⭐ One line, a model id: an import that borrows that installed model's parts ([ModelSpec.partsFrom]) instead of
+     * a copy of its own. A MOSS import beside the built-in reads its 5.6 GB of encoder, VAE and tokenizer from there.
+     */
+    const val PARTS_FROM_FILE = "parts-from"
+
     /** The DiT weights as GGUF — the backend prefers it to `dit.safetensors` (014). */
     const val DIT_GGUF = "dit.gguf"
 
@@ -319,6 +335,7 @@ object CustomModels {
             Family.FLUX2.takeIf { File(dir, FLUX2_MARK).isFile },
             Family.KREA2.takeIf { File(dir, KREA2_MARK).isFile },
             Family.ANIMA_DIT.takeIf { File(dir, ANIMA_DIT_MARK).isFile },
+            Family.MOSS.takeIf { File(dir, MOSS_MARK).isFile },
         )
         // ⭐⭐⭐ **A DiT folder pushed over adb has no marker, and is a model
         // anyway** — [detectDit] reads the family out of `dit.safetensors`.
@@ -427,9 +444,14 @@ object CustomModels {
      * ⭐ [familyDefaults], but Anima 2.9B ([ANIMA29_MARK]) is a base model, not the turbo: 28 steps at CFG 4, the
      * floor of its card's 28-50 and 3.5-5 (Gazingstars123/Anima-2.9B). Turbo's 10 at CFG 1 would come out mushy.
      */
-    private fun dirDefaults(dir: File, family: Family): Defaults =
-        if (family == Family.ANIMA_DIT && File(dir, ANIMA29_MARK).isFile) Defaults("euler", 28, 4.0)
-        else familyDefaults(family)
+    private fun dirDefaults(dir: File, family: Family): Defaults = when {
+        family == Family.ANIMA_DIT && File(dir, ANIMA29_MARK).isFile -> Defaults("euler", 28, 4.0)
+        // ⭐ An imported MOSS runs without the built-in's LoRA: a base fine-tune unless its name says few-step
+        // (25 steps at CFG 3, Moody Moss Mix's card and the DeBand quality variants').
+        family == Family.MOSS && File(dir, MOSS_MARK).isFile && !File(dir, MOSS_FEW_STEP_MARK).isFile ->
+            Defaults("euler", 25, 3.0)
+        else -> familyDefaults(family)
+    }
 
     private fun customSpec(dir: File, cfg: Config, family: Family): ModelSpec {
         // ⭐ A FLUX.2 folder holding Klein 9B weights ([KLEIN9B_MARK]): the 9B's
@@ -446,7 +468,10 @@ object CustomModels {
         startRes = if (klein9b) Res(768, 768) else null,
         // ⚠ Qwen and Krea 2 read their own directory only (backend 013/014);
         // a 9B's encoder is not the family's shared one.
-        ownDitParts = klein9b || family == Family.QWEN21 || family == Family.KREA2 || family == Family.ANIMA_DIT,
+        ownDitParts = klein9b || family == Family.QWEN21 || family == Family.KREA2 || family == Family.ANIMA_DIT ||
+            family == Family.MOSS,
+        // ⭐ An import that borrows an installed model's parts ([PARTS_FROM_FILE]): MOSS beside the built-in.
+        partsFrom = runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull()?.takeIf { isValidName(it) },
         id = dir.name,
         label = cfg.label ?: dir.name,
         // ⭐ What the conversion kept ([ModelFeatures]) — the node dims the rest.
@@ -489,7 +514,7 @@ object CustomModels {
             Family.ANIMA_DIT -> ModelCatalog.KREA2
             // ⚠ Unreachable: nothing imports an Iris checkpoint (only the catalogue builds it).
             Family.IRIS -> ModelCatalog.IRIS
-            // ⚠ Unreachable, as Iris: only the catalogue builds MOSS-Image.
+            // ⭐ An imported MOSS-Image ([MOSS_MARK]): the built-in's launch (the engine reads MOSS off the weights).
             Family.MOSS -> ModelCatalog.KREA2
             // ⚠ Unreachable, as MOSS: only the catalogue builds Ideogram 4.
             Family.IDEOGRAM -> ModelCatalog.KREA2
@@ -518,8 +543,8 @@ object CustomModels {
             Family.FLUX2, Family.ZIMAGE, Family.KREA2, Family.ANIMA_DIT -> listOf(weights) + DIT_PARTS
             // ⚠ No VAE: Iris renders pixels (backend 035).
             Family.IRIS -> listOf(weights, "llm.gguf", "tokenizer.json")
-            // ⚠ Unreachable (catalogue only); the catalogue entry lists its own five.
-            Family.MOSS -> listOf(weights) + DIT_PARTS + ModelCatalog.MOSS_LORA
+            // ⭐ No LoRA: an import runs without the built-in's ([ModelSpec.ownLora] is the catalogue's alone).
+            Family.MOSS -> listOf(weights) + DIT_PARTS
             Family.IDEOGRAM -> listOf(weights) + DIT_PARTS + ModelCatalog.IDEOGRAM_LORA
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
             Family.QWEN21 -> listOf(weights) + ModelCatalog.QWEN21_PARTS
@@ -759,7 +784,10 @@ object CustomModels {
             // checkpoint is 4-9 GB, so a failure to produce them should not cost
             // the bigger copy. ⚠ `dir` exists already because the VAE lands in
             // it ([ensureDitParts]).
-            ensureDitParts(context, variant, dir, onProgress, isCancelled)
+            // ⭐ A MOSS import borrows an installed MOSS-Image's 5.6 GB of parts rather than copying them.
+            val lender = if (variant == DitVariant.MOSS) mossLender(context, dir) else null
+            if (lender != null) File(dir, PARTS_FROM_FILE).writeText(lender.id)
+            else ensureDitParts(context, variant, dir, onProgress, isCancelled)
             // ⭐ A `.gguf` keeps its format: the engine picks the loader by name.
             val dest = File(dir, if (head.gguf) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
             // ⚠⚠ Into `.part`, renamed when whole: a process killed mid-copy left a truncated `dit.safetensors` whose
@@ -785,6 +813,7 @@ object CustomModels {
             File(dir, mark).writeBytes(ByteArray(0))
             if (variant == DitVariant.KLEIN_9B) File(dir, KLEIN9B_MARK).writeBytes(ByteArray(0))
             if (variant.family == Family.ANIMA_DIT && animaBlocks(head.json) == 40) File(dir, ANIMA29_MARK).writeBytes(ByteArray(0))
+            if (variant == DitVariant.MOSS && mossFewStep(name)) File(dir, MOSS_FEW_STEP_MARK).writeBytes(ByteArray(0))
             // ⭐ The weights are the user's, so their SIZE is not ours to check
             // ([ModelSpec.BRING_YOUR_OWN]).
             File(dir, ModelSpec.BRING_YOUR_OWN).writeBytes(ByteArray(0))
@@ -954,8 +983,9 @@ object CustomModels {
         val own = donor.dir(context)
         val roots = listOf(own) + ModelCatalog.root(context).listFiles().orEmpty()
             .filter { it.isDirectory && it != own && it != modelDir }
+        // ⚠ Not the donor's own LoRA (MOSS-Image's 1.19 GB 8-step one): an import runs without it.
         return donor.files
-            .filter { it.name != ModelSpec.DIT_WEIGHTS && it.name != DIT_GGUF }
+            .filter { it.name != ModelSpec.DIT_WEIGHTS && it.name != DIT_GGUF && it.name != donor.ownLora }
             .mapNotNull { f ->
                 val dest = File(modelDir, f.name)
                 if (dest.length() == f.bytes) return@mapNotNull null
@@ -1046,6 +1076,7 @@ object CustomModels {
         Family.FLUX2 -> "KLEIN"
         Family.KREA2 -> KREA2_MARK
         Family.ANIMA_DIT -> ANIMA_DIT_MARK
+        Family.MOSS -> MOSS_MARK
         else -> throw IllegalArgumentException("$family does not import a single weights file")
     }
 
@@ -1127,6 +1158,9 @@ object CustomModels {
             Family.KREA2 to listOf("txtfusion.", "tproj.", "tmlp.", "qknorm."),
             // ⭐ Anima (Cosmos-Predict2 + its LLM adapter): no other family has these.
             Family.ANIMA_DIT to listOf("llm_adapter.", "t_embedder.", "x_embedder.", "adaln_modulation_self_attn"),
+            // ⭐ MOSS-Image's own names (molbal's Turbo GGUF and a ComfyUI fp8, read 2026-10-22; the engine detects it by
+            // the first two, `dit/028`). ⚠ `proj.qkv` fused or `proj.q/k/v` apart: the engine reads both.
+            Family.MOSS to listOf("video_embedder.", "shared_block_modulation.", "final_linear_video.", "video_head_modulation."),
         )
         val hits = signatures.filterValues { keys -> keys.count(header::contains) >= 2 }.keys
         return hits.singleOrNull()
@@ -1265,7 +1299,9 @@ object CustomModels {
         KLEIN_9B(Family.FLUX2, "flux2_klein_9b", true),
         ZIMAGE(Family.ZIMAGE, "z_image_turbo", false),
         KREA2(Family.KREA2, "krea2_turbo", true),
-        ANIMA(Family.ANIMA_DIT, "anima_turbo_1_1", true);
+        ANIMA(Family.ANIMA_DIT, "anima_turbo_1_1", true),
+        /** ⭐ Borrows an installed MOSS-Image's parts when one has them whole ([mossLender]), else its own copy. */
+        MOSS(Family.MOSS, "moss_image", true);
 
         companion object {
             /** When the file's names say nothing, the tab's family decides. */
@@ -1273,6 +1309,7 @@ object CustomModels {
                 Family.ZIMAGE -> ZIMAGE
                 Family.KREA2 -> KREA2
                 Family.ANIMA_DIT -> ANIMA
+                Family.MOSS -> MOSS
                 else -> KLEIN_4B
             }
         }
@@ -1318,6 +1355,7 @@ object CustomModels {
         // ⭐ Anima comes in sizes the engine does not run (a tester's "Anima 3.8B" rendered a blur, 2026-10-17).
         if (family == Family.ANIMA_DIT) animaSizeProblem(json)?.let { throw IOException(it) }
         packedQuantProblem(json)?.let { throw IOException(it) }
+        int8Problem(head)?.let { throw IOException(it) }
         return if (family == Family.FLUX2 && isKlein9b(json)) DitVariant.KLEIN_9B
         else DitVariant.defaultFor(family)
     }
@@ -1368,6 +1406,41 @@ object CustomModels {
         return "this file stores its weights as $format, a 4-bit format made for NVIDIA cards that the engine " +
             "cannot read. Import the GGUF or fp8 version of this model instead"
     }
+
+    /**
+     * ⭐ Why a checkpoint whose matmul weights are int8 cannot run, said for a person; null when they are not.
+     *
+     * ⚠⚠ Why (2026-10-22, MOSS uploads on CivitAI): ComfyUI's `int8_tensorwise` (often with ConvRot) is read by the
+     * loader but every int8 matmul in our engine's ggml aborts (`ggml_ext_linear_i8_tensorwise`: "not available in
+     * this ggml revision"), so the import would copy 5 GB and die at the first step. Safetensors say it in their
+     * dtype (`I8`); a ComfyUI GGUF stores I8 tensors with `comfy.gguf.quant.*` metadata.
+     */
+    internal fun int8Problem(head: DitHead): String? {
+        val int8 = if (head.gguf) "I8" in head.types else INT8_WEIGHT.containsMatchIn(head.json)
+        if (!int8) return null
+        return "this file stores its weights as int8 (ComfyUI's int8 or ConvRot format), which the engine cannot " +
+            "run yet. Import the GGUF (Q4_0 or Q8_0) or fp8 version of this model instead"
+    }
+
+    private val INT8_WEIGHT = Regex("\"[^\"]*weight\"\\s*:\\s*\\{\\s*\"dtype\"\\s*:\\s*\"I8\"")
+
+    /**
+     * ⭐ The installed MOSS-Image whose encoder, VAE and tokenizer a MOSS import can read instead of copying 5.6 GB,
+     * or null: a built-in MOSS folder beside [modelDir] holding all three at their exact published sizes. ⚠ The
+     * donor is read as a sibling folder ([ModelSpec.donorDir]), so it must share [modelDir]'s parent.
+     */
+    private fun mossLender(context: Context, modelDir: File): ModelSpec? =
+        ModelCatalog.builtIn.filter { it.family == Family.MOSS }.firstOrNull { spec ->
+            val d = File(modelDir.parentFile, spec.id)
+            d.isDirectory && spec.files.filter { it.name in DIT_PARTS }.let { parts ->
+                parts.size == DIT_PARTS.size && parts.all { File(d, it.name).length() == it.bytes }
+            }
+        }
+
+    /** ⚠ Pure: whether a MOSS import's name says few-step ([MOSS_FEW_STEP_MARK]). */
+    internal fun mossFewStep(name: String): Boolean = MOSS_FEW_STEP.containsMatchIn(name)
+
+    private val MOSS_FEW_STEP = Regex("(?i)turbo|dmd|lightning|hyper|lcm|fast|(?<![0-9])(4|6|8|10)[-_ ]?steps?")
 
     /** ⚠ Pure: an Anima header's DiT block count (the LLM adapter's own never count); null when it lists none. */
     internal fun animaBlocks(header: String): Int? = KEY.findAll(header).map { it.groupValues[1] }
@@ -1552,6 +1625,7 @@ object CustomModels {
         "zimage" to Family.ZIMAGE,
         "krea2" to Family.KREA2,
         "anima" to Family.ANIMA_DIT,
+        "moss" to Family.MOSS,
     )
 
     // ---- config.json -----------------------------------------------------

@@ -395,6 +395,15 @@ class ModelCatalogTest {
         assertEquals(8, ideo.steps)
     }
 
+    /** ⭐ Only a chip KNOWN to be below v73 gets the CPU encoder: an unrecognised one reads as the v68 floor. */
+    @Test
+    fun onlyAKnownOldChipRunsTheDitEncoderOnTheCpu() {
+        assertEquals(true, BackendProcess.ditEncoderOnCpu(DeviceProbe.Caps(69, 8, measured = false, soc = "SM8450")))
+        assertEquals(false, BackendProcess.ditEncoderOnCpu(DeviceProbe.Caps(73, 8, measured = false, soc = "SM8550")))
+        assertEquals(false, BackendProcess.ditEncoderOnCpu(DeviceProbe.Caps(DeviceProbe.FLOOR_ARCH, 2, measured = false, soc = "SM9999")))
+        assertEquals(true, BackendProcess.ditEncoderOnCpu(DeviceProbe.Caps(DeviceProbe.FLOOR_ARCH, 2, measured = true, soc = "SM9999")))
+    }
+
     /** ⭐ GitHub #52: the engine is told the table's arch, so a failed DSP query cannot fall back to v73. */
     @Test
     fun theEngineIsToldTheArchTheChipTableKnows() {

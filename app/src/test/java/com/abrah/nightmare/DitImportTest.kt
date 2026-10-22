@@ -468,4 +468,29 @@ class DitImportTest {
         assertEquals(CustomModels.ImportKind.Upscaler, kind(ByteArray(64) { 7 }, "4x.bin"))
         assertEquals(CustomModels.ImportKind.Unknown, kind(ByteArray(64) { 7 }, "notes.txt"))
     }
+
+    /** ⭐ MOSS-Image imports (2026-10-22): read off molbal's Turbo GGUF and Moody Moss Mix's fp8 / int8 headers. */
+    @Test fun mossIsReadOffItsNamesAndInt8IsRefused() {
+        val moss = """{"video_embedder.weight":{"dtype":"BF16","shape":[3072,128],"data_offsets":[0,1]},""" +
+            """"shared_block_modulation.weight":{"dtype":"BF16","shape":[18432,3072],"data_offsets":[1,2]},""" +
+            """"layers.0.proj.qkv.weight":{"dtype":"F8_E4M3","shape":[9216,3072],"data_offsets":[2,3]}}"""
+        assertEquals(Family.MOSS, CustomModels.ditFamilyOf(moss))
+        val fp8 = CustomModels.DitHead(moss, false, emptySet())
+        assertEquals(CustomModels.DitVariant.MOSS, CustomModels.checkDit(fp8, null))
+        assertEquals(null, CustomModels.int8Problem(fp8))
+        // ⚠ ComfyUI int8: the I8 weight is refused, its `weight_scale` and `comfy_quant` tensors are not what decides.
+        val int8 = moss.replace("\"F8_E4M3\"", "\"I8\"")
+        assertTrue(CustomModels.int8Problem(CustomModels.DitHead(int8, false, emptySet()))!!.contains("int8"))
+        val scaleOnly = moss.replace("\"layers.0.proj.qkv.weight\"", "\"layers.0.proj.qkv.comfy_quant\"").replace("\"F8_E4M3\"", "\"U8\"")
+        assertEquals(null, CustomModels.int8Problem(CustomModels.DitHead(scaleOnly, false, emptySet())))
+        assertTrue(CustomModels.int8Problem(CustomModels.DitHead(moss, true, setOf("BF16", "I8"))) != null)
+        assertEquals(null, CustomModels.int8Problem(CustomModels.DitHead(moss, true, setOf("BF16", "Q4_0"))))
+    }
+
+    @Test fun mossFewStepComesFromTheName() {
+        assertTrue(CustomModels.mossFewStep("mossImageTurboGGUF8_v10_3308669"))
+        assertTrue(CustomModels.mossFewStep("moss_8step_dmd"))
+        assertEquals(false, CustomModels.mossFewStep("moodyMossMixFreeDownload_v1025STEPSCFG3_3307707"))
+        assertEquals(false, CustomModels.mossFewStep("moss-image-sft-q8_0"))
+    }
 }

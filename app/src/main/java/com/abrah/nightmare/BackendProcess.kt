@@ -547,6 +547,14 @@ object BackendProcess {
      * ⭐ And the 8 Gen 1 needs it: the engine floors a queried v69 at v73 and would open the v73 skel; told 69 it
      * opens ours (an env arch is taken as given, `ggml_hexagon_init`).
      */
+    /**
+     * ⭐ The DiT text encoder and VAE go to the CPU: a chip KNOWN to be below v73 (a real 8 Gen 1 hangs in the encoder's
+     * NPU graph, 1.6.212). ⚠⚠ `known` first ([DeviceProbe.Caps.known]): an unrecognised chip reads as the v68 floor,
+     * and 1.6.212's `arch < 73` alone put every such phone's Klein 4B encoder on the CPU (a tester: 50 s to 6 min,
+     * 2026-10-22, the chip not yet named).
+     */
+    internal fun ditEncoderOnCpu(caps: DeviceProbe.Caps): Boolean = caps.known && caps.arch < ModelCatalog.DIT_V73_MIN_ARCH
+
     internal fun ditArchEnv(caps: DeviceProbe.Caps): String? =
         caps.arch.takeIf {
             it in DIT_SKEL_ARCHES &&
@@ -917,7 +925,7 @@ object BackendProcess {
                         // testers' logs (SM8450, SM8475, 1.6.211) both stop at `qwen3 executing segment 1/1`, the
                         // phone idle, for 3 to 7 min. The S25 forced to v69 runs it, so it is the hardware, not the
                         // skel's code. Anima's encoder is a 0.6B Qwen3: on the CPU it costs seconds.
-                        if (DeviceProbe.caps().arch < ModelCatalog.DIT_V73_MIN_ARCH && !diagnosing) put("NM_DIT_BACKEND", BlankDiagnosis.CPU_TE_VAE)
+                        if (ditEncoderOnCpu(DeviceProbe.caps()) && !diagnosing) put("NM_DIT_BACKEND", BlankDiagnosis.CPU_TE_VAE)
 
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }

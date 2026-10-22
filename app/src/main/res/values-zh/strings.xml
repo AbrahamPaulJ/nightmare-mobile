@@ -567,7 +567,7 @@
     <string name="models_family_krea">约 9.5 GB。12 GB 及以上内存的手机，8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。在 12 GB 手机上分段运行：1024x1024 约需 3.5 到 4 分钟。只能文生图，不能编辑。请使用 Wi-Fi。</string>
     <string name="models_family_animadit">约 3.2 GB。下载 Anima 官方 4.2 GB 文件并在手机上转换，安装时需要约 7.5 GB 可用空间。1024² 每张图片约 1 分钟，支持 512 起的任意尺寸。需要 8 Gen 1 或更新芯片（8 Gen 1、8 Gen 2 和 8 Gen 3 上为 alpha；8 Gen 1 上每张图需要几分钟）。不是编辑模型。请使用 Wi-Fi。</string>
     <string name="models_family_iris">约 5.8 GB。下载 speridlabs 官方的 6 GB 文件并在手机上转换，因此安装时需要约 10 GB 可用空间。在 8 Elite 上 1024x1024 每张约 2.5 分钟。无 VAE。仅支持训练时的尺寸（每张约 100 万像素）。8 Gen 2 或更新（8 Elite 以下为 alpha，尚未在真实的 8 Gen 2 或 8 Gen 3 上运行）。仅文生图。请使用 Wi-Fi。</string>
-    <string name="models_family_moss">约 10 GB。8 Elite 或更新芯片。细致、细节丰富的图像模型，每次都会应用 8 步加速。在手机上较慢：8 Elite 上 512x512 约 3 分钟，1024x1024 约 11 到 12 分钟。仅文生图。请使用 Wi-Fi。</string>
+    <string name="models_family_moss">约 10 GB。8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。细致、细节丰富的图像模型，每次都会应用 8 步加速。8 Elite 上 512x512 约 50 秒，1024x1024 不到 3 分钟。仅文生图。请使用 Wi-Fi。</string>
     <string name="models_family_ideogram">约 11.6 GB。12 GB 及以上内存的手机，8 Elite 或更新芯片。最擅长在图中写出清晰可读的文字：招牌、海报、标签。每次都会应用 8 步加速。8 Elite 上 768x768 约 5.5 分钟。仅文生图。仅限非商业用途（Ideogram 许可）。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>

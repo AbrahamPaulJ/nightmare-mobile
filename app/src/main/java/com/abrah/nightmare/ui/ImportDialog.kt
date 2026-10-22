@@ -98,7 +98,7 @@ fun ImportDialog(onDismiss: () -> Unit, onChoose: (name: String) -> Unit) {
 }
 
 /** ⭐ The DiT families a checkpoint file can be imported as ([com.abrah.nightmare.CustomModels.DitVariant]). */
-val IMPORTABLE_DIT = listOf(Family.ANIMA_DIT, Family.FLUX2, Family.ZIMAGE, Family.KREA2)
+val IMPORTABLE_DIT = listOf(Family.ANIMA_DIT, Family.FLUX2, Family.ZIMAGE, Family.KREA2, Family.MOSS)
 
 /** ⭐ Asked only when the file's tensor names named no family. Null = cancel. */
 @Composable

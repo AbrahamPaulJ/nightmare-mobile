@@ -802,8 +802,11 @@ data class ModelSpec(
         // ⚠ DiT only. An SD model whose own tokenizer went missing must read
         // as broken, not borrow one.
         val shared = File(d.parentFile, CustomModels.DIT_SHARED)
+        // ⭐ …or the donor's folder ([partsFrom]): a MOSS import beside the built-in (`CustomModels.PARTS_FROM_FILE`).
+        val donor = donorDir(d)
         return requiredFiles.filter {
-            !File(d, it).exists() && !(usesDitShared && File(shared, it).exists())
+            !File(d, it).exists() && !(usesDitShared && File(shared, it).exists()) &&
+                !(donor != null && File(donor, it).isFile)
         }
     }
 
@@ -1022,7 +1025,9 @@ data class ModelSpec(
         // ⚠⚠ …and a part the DONOR lends ([partsFrom], the same [borrows] rule [missingIn] and
         // [toFetch] use): MOSS Base beside SFT reads SFT's 5.38 GB `llm.gguf`, and counting only
         // its own folder told the residency gate ~4.4 GB for a ~10 GB load (Wan Fun's umT5 alike).
-        val lent = active.filter { borrows(d, it) }.sumOf { f -> donorDir(d)?.let { File(it, f.name).length() } ?: 0L }
+        // ⚠ A custom spec has no [active] files to match by url: a MOSS import counts what its folder lacks and the donor holds.
+        val lent = if (isCustom) requiredFiles.filter { !File(d, it).exists() }.sumOf { n -> donorDir(d)?.let { File(it, n).length() } ?: 0L }
+            else active.filter { borrows(d, it) }.sumOf { f -> donorDir(d)?.let { File(it, f.name).length() } ?: 0L }
         if (!usesDitShared) return own + lent
         val shared = File(d.parentFile, CustomModels.DIT_SHARED)
         return own + lent + requiredFiles
@@ -2547,12 +2552,13 @@ object ModelCatalog {
         // ⭐⭐ MOSS-Image (OpenMOSS, Apache 2.0; `docs/MOSS.md`): the SFT DiT as Q4_0 (ours, made from realrebelai's
         // Q8_0; the NPU runs no K-quant), Qwen3.5 9B Q4_0 and its own tokenizer.json (a vocabulary Qwen2's is not:
         // the engine reads it via `SD_QWEN35_TOKENIZER`, [BackendProcess]), the FLUX.2 VAE, and lodestones' 8-step
-        // LoRA on every render ([ModelSpec.ownLora]). Measured on the S25 (v79, `all=disk`): 512² 8 steps 3.4 min,
-        // 1024² 11.5 min. ⚠ v79 only: never run on an 8 Gen 3. Sizes read off the files 2026-10-17.
+        // LoRA on every render ([ModelSpec.ownLora]). Measured on the S25 (v79, `all=disk`, engine `dit/035`): 512² 8
+        // steps 50 s, 1024² 163 s. ⭐ v75 (8 Gen 3) ALPHA since 1.6.214: right on the S25 forced to v75, 512² 133 s; a real
+        // 8 Gen 3 is owed (`docs/MOSS.md` §3b). Sizes read off the files 2026-10-17.
         dit(
             "moss_image", "MOSS-Image SFT (8 steps)", Family.MOSS, KREA2, steps = 8,
             ownDitParts = true,
-            minArch = DIT_MIN_ARCH,
+            minArch = DIT_GGML_MIN_ARCH,
             prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
             ownLora = MOSS_LORA,
             files = listOf(
@@ -2571,7 +2577,7 @@ object ModelCatalog {
         dit(
             "moss_image_base", "MOSS-Image Base (8 steps)", Family.MOSS, KREA2, steps = 8,
             ownDitParts = true,
-            minArch = DIT_MIN_ARCH,
+            minArch = DIT_GGML_MIN_ARCH,
             partsFrom = "moss_image",
             prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
             ownLora = MOSS_LORA,

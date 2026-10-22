@@ -68,7 +68,11 @@ object DitEngine {
      * decode's seam flicker, `docs/VIDEO-GGML.md` §3). Still ABI 106: an engine without 018 ignores
      * the key, so the backend did not move. CI run 38509077877; skels unchanged.
      *
-     * ⭐⭐ The EIGHTEENTH engine, current: `dit-engine-abi108`, CI 39248301752: the seventeenth + `dit/031` (Hexagon
+     * ⭐⭐ The NINETEENTH engine, current: `dit-engine-abi108-mossrope`, CI 39739946133: the eighteenth + `dit/035`,
+     * MOSS-Image's Q/K norm and rope as one fused op (its composed rope was ~13 of 18.7 s a step at 512², `docs/MOSS.md`
+     * §3). Still ABI 108; backend and skels unchanged.
+     *
+     * The EIGHTEENTH engine: `dit-engine-abi108`, CI 39248301752: the seventeenth + `dit/031` (Hexagon
      * concat of contiguous tensors as HVX block copies: Wan decode 7.50 to 4.85 s, pictures bit-identical) + `dit/032`
      * (**ABI 108**: `dit_gen_params.scheduler`, Karras and Exponential on the DiT samplers; backend 038). ⚠ A
      * two-binary change: an ABI 107 backend refuses this engine and the other way round. New v73-v81 skels.
@@ -143,7 +147,7 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108/dit-engine-abi108.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108-mossrope/dit-engine-abi108-mossrope.zip"
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -153,7 +157,7 @@ object DitEngine {
      * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
      */
     const val HF_URL =
-        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108.zip"
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108-mossrope.zip"
 
     /**
      * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
@@ -164,11 +168,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_192_647L
+    const val BYTES = 23_194_267L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 55_949_712L
+    const val FILE_BYTES = 55_954_064L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -178,7 +182,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "ace1018665adf601a2a50496d901ed10fdaf777b20a4684de5029b141a57ae9f"
+    private const val SHA256 = "cd6202ae546c1de52f3fbc0e2edd3372396bc9b14043e9ea698c2eb528b6c945"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 
