@@ -571,7 +571,12 @@ object BackendProcess {
      * any other size, is still checked (Telegram #6290's Q4_K_M).
      */
     internal fun shipsThisEncoder(spec: ModelSpec, teBytes: Long): Boolean =
-        spec.files.any { it.name == "llm.gguf" && it.bytes == teBytes }
+        // ⚠⚠ An IMPORT lists no files: its encoder is a copy of its family's built-in one ([CustomModels.ditPartsPlan]),
+        // so the family's catalogue encoders count too. Without this every MOSS import with its own copy of the stock
+        // Qwen3.5 was refused at launch ("uses Q5_K", a tester's Moody Moss Mix, 1.6.214); one borrowing the built-in's
+        // folder has no `llm.gguf` of its own and was never checked, which is why the S25 passed.
+        (spec.files + if (spec.isCustom) ModelCatalog.builtIn.filter { it.family == spec.family }.flatMap { it.files } else emptyList())
+            .any { it.name == "llm.gguf" && it.bytes == teBytes }
 
     internal fun lowArchOpFilter(arch: Int): String =
         if (arch < 75) "CONV_2D_UPSCALE|CONCAT|SWIGLU" else "CONV_2D_UPSCALE|CONCAT"

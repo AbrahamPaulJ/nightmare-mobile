@@ -45,7 +45,10 @@ object Fp8Widen {
 
     /** ⭐ [Act] for one tensor, or null to copy it as it is. */
     internal fun actOf(name: String, dtype: String, shape: List<Long>): Act? {
-        if (name == MARKER || (dtype != F8 && dtype != E5M2)) return null
+        // ⚠ The marker's VALUE is never read, but its dtype is: an E5M2 marker alone stopped a KJ Z-Image at load
+        // (`unsupported dtype 'F8_E5M2' (tensor 'scaled_fp8')`, the S25, 1.6.215's first build).
+        if (name == MARKER) return if (dtype == E5M2) Act.E4M3 else null
+        if (dtype != F8 && dtype != E5M2) return null
         val matmul = shape.size == 2 && shape[1] % 32 == 0L && shape[1] > 0 && shape[0] >= 32
         return when {
             !matmul -> Act.F32

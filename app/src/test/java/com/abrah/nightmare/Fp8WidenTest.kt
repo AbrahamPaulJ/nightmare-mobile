@@ -117,9 +117,12 @@ class Fp8WidenTest {
         val src = file(listOf(
             T("double_blocks.0.img_attn.norm.key_norm.weight", "F8_E5M2", listOf(4), byteArrayOf(0x3C, 0x40, 0xBC.toByte(), 0x3D)),
             T("double_blocks.0.img_attn.qkv.weight", "F8_E5M2", listOf(64, 32), matmulBytes),
+            // ⚠ A KJ file's marker in E5M2: the engine reads its dtype (and nothing else) at load.
+            T("scaled_fp8", "F8_E5M2", listOf(2), byteArrayOf(0, 0)),
         ))
         val (n, out) = copy(src)
-        assertEquals(2, n)
+        assertEquals(3, n)
+        assertEquals("F8_E4M3", parse(out).first.getJSONObject("scaled_fp8").getString("dtype"))
         val (h, body) = parse(out)
         assertEquals("F32", h.getJSONObject("double_blocks.0.img_attn.norm.key_norm.weight").getString("dtype"))
         assertEquals(listOf(1f, 2f, -1f, 1.25f), floats(data(h, body, "double_blocks.0.img_attn.norm.key_norm.weight")))

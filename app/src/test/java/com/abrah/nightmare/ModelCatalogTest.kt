@@ -360,6 +360,10 @@ class ModelCatalogTest {
         assertEquals(false, BackendProcess.shipsThisEncoder(moss, 5_680_522_464L))
         assertEquals("dmd8.safetensors", moss.ownLora)
         assertEquals(Family.MOSS, moss.family)
+        // ⭐ An import (no files of its own) with its own copy of that encoder passes too (a tester's Moody, 1.6.214).
+        val import = moss.copy(id = "moody", files = emptyList(), isCustom = true)
+        assertEquals(true, BackendProcess.shipsThisEncoder(import, 5_379_417_312L))
+        assertEquals(false, BackendProcess.shipsThisEncoder(import, 5_680_522_464L))
     }
 
     /**
