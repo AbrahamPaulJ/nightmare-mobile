@@ -32,9 +32,8 @@ so installing both takes about 21.6 GB.
 Anima and Anima DiT share one page in **Family ▾ → Anima**: the DiT ones first, then the ones
 converted for the NPU.
 
-On an **8 Elite Gen 6** (untested: no tester has one yet) the NPU models run with a newer runtime the app
-fetches once (about 38 MB). The DiT models are dimmed there with the reason: their engine cannot be built for
-that NPU yet.
+On an **8 Elite Gen 6** (alpha, not yet confirmed on a real one) the NPU models run with a newer runtime the app
+fetches once (about 38 MB), and the DiT models with a Gen 6 build of the engine's NPU code.
 
 Besides picture models, **Models** also holds:
 

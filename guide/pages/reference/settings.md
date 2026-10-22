@@ -139,6 +139,6 @@ default) lets a web page in a browser call it too; every call still needs the to
 
 ### Clean temp files
 
-Finds part-finished downloads and scratch files and deletes them after asking. Your models,
+Finds part-finished downloads, scratch files and the outputs of the app's test tools, and deletes them after asking. Your models,
 pictures, saved flows and embeddings are never touched. (An unfinished download then starts
 again from the beginning.)

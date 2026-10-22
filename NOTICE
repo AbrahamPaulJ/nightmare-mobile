@@ -100,7 +100,9 @@ DiT engine (libdit_engine.so and its Hexagon skels)
     xororz/local-dream's engine wrapper (v3.0.0-alpha.3) around stable-diffusion.cpp
     with ggml's Hexagon backend, plus this project's LoRA patch
     (backend-patches/dit/), built by this repository's CI and downloaded by the
-    app; the skels ship in the APK. Runs FLUX.2 Klein 4B and 9B, Z-Image Turbo,
+    app; the skels ship in the APK. The 8 Gen 1 (v69) and 8 Elite Gen 6 (v85) skels
+    are built by this project from the same sources (backend-patches/dit/033, 034;
+    v85 with Hexagon SDK 6.7, as local-dream v3.0.0-alpha.6 does). Runs FLUX.2 Klein 4B and 9B, Z-Image Turbo,
     Qwen Image 2.1, Krea 2 Turbo, Iris 3B Turbo, Anima, MOSS-Image and Ideogram 4 on the NPU. Not included in this repository.
 
 stable-diffusion.cpp
