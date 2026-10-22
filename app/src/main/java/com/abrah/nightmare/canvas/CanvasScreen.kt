@@ -1,5 +1,8 @@
 package com.abrah.nightmare.canvas
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.border
 import androidx.compose.runtime.rememberCoroutineScope
@@ -643,7 +646,8 @@ fun CanvasScreen(
     // ⭐⭐ An empty image node tapped on the canvas: the file picker, directly
     // ([CanvasState.pickImageFor]). ⚠ The SAME launcher the sheet's + uses
     // ([rememberImagePick]), and the pick lands through the same setParam.
-    val pickTarget = remember { mutableStateOf<String?>(null) }
+    // ⚠ Saveable: the picker is another activity, and a recreation while it is open dropped the chosen photo.
+    val pickTarget = androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val launchImagePick = rememberImagePick { uri ->
         pickTarget.value?.let { id -> onEdit { s -> s.setParam(id, "uri", uri) } }
     }
@@ -1157,7 +1161,7 @@ private fun TopBar(
 private fun ViewsInfoDialog(onDismiss: () -> Unit) {
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        confirmButton = { com.abrah.nightmare.ui.StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
         title = { Text(stringResource(R.string.views_info_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1360,12 +1364,12 @@ private fun SaveWorkflowDialog(
             // ⚠ Disabled while the name is refused, so "save" never does
             // nothing. A button that is enabled and silently no-ops is worse
             // than one that is visibly unavailable with the reason above it.
-            Button(
+            StudioButton(
                 onClick = { onSave(name) },
                 enabled = name.isNotBlank() && why == null,
             ) { Text(stringResource(R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -1559,7 +1563,7 @@ private fun RunBar(
             // Removed at the user's request, 2026-09-10: the Batch button. It
             // opened a second way to build a sweep, and there is only one now
             // — arm a knob from its own node.
-            if (graphControls) OutlinedButton(
+            if (graphControls) StudioOutlinedButton(
                 onClick = onAdd,
                 shape = RoundedCornerShape(12.dp),
                 // ⚠ 14 rather than M3's 24: the label is two characters and a
@@ -1804,7 +1808,7 @@ private fun SelectionBar(
         // ⚠ Hidden once everything IS selected, rather than shown doing
         // nothing. A control that cannot change anything is noise.
         if (count < total) {
-            OutlinedButton(
+            StudioOutlinedButton(
                 onClick = onSelectAll,
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
@@ -2444,9 +2448,9 @@ private fun ModelSwapDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(swap, takeRecipe, takePrompt) }) { Text(stringResource(R.string.canvas_switch)) }
+            StudioTextButton(onClick = { onConfirm(swap, takeRecipe, takePrompt) }) { Text(stringResource(R.string.canvas_switch)) }
         },
-        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioTextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -2522,7 +2526,7 @@ internal fun RunButton(
 ) {
     val runModifier = modifier
     if (busy && onCancelRun != null) {
-        Button(
+        StudioButton(
             onClick = onCancelRun,
             shape = RoundedCornerShape(12.dp),
             // ⚠ The SAME width as Run — it replaces it in place, and a
@@ -2543,7 +2547,7 @@ internal fun RunButton(
             )
         }
     } else {
-        Button(
+        StudioButton(
             onClick = onRun,
             enabled = !busy,
             shape = RoundedCornerShape(12.dp),

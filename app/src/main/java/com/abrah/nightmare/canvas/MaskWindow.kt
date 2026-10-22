@@ -1,4 +1,5 @@
 package com.abrah.nightmare.canvas
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.border
@@ -135,7 +136,7 @@ private enum class MaskParam(@androidx.annotation.StringRes val labelRes: Int) {
  * theirs, so switching between them keeps the selection.
  */
 @Composable
-private fun MaskParamSlider(
+internal fun MaskParamSlider(
     tool: MaskTool,
     brush: Float,
     onBrush: (Float) -> Unit,
@@ -168,7 +169,7 @@ private fun MaskParamSlider(
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box {
-            TextButton(
+            StudioTextButton(
                 onClick = { menu = true },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
             ) {

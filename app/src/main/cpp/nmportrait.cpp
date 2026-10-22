@@ -154,6 +154,9 @@ struct Session {
       }
       std::vector<std::vector<float>> hm;
       if (!exec(fan, {"input"}, {fin.data()}, &hm, "face landmarker")) return {};
+      // ⚠ Sized before it is read: decodeHeatmaps walks 68x64x64 floats, and a landmarker graph of
+      // another shape was an out-of-bounds read rather than an error.
+      if (hm.empty() || hm[0].size() < (size_t)68 * 64 * 64) { fail("face landmarker: unexpected output"); return {}; }
       float xy[136], peak[68];
       ffcv::decodeHeatmaps(hm[0].data(), 68, 64, 64, xy, peak);
       for (int k = 0; k < 68; ++k) { xy[2 * k] = xy[2 * k] / 64.f * MS; xy[2 * k + 1] = xy[2 * k + 1] / 64.f * MS; }
@@ -323,6 +326,14 @@ std::mutex g_mu;
 std::unique_ptr<Session> g_s;
 std::string g_err;
 
+// ⚠ Every JNI entry checks this before [fromArgb], which trusts w*h: a caller whose array is
+// shorter than the size it claims was an out-of-bounds read of the Java heap.
+bool argbFits(JNIEnv* env, jintArray px, int w, int h) {
+  if (!px || w <= 0 || h <= 0) { g_err = "bad picture size"; return false; }
+  if ((long long)env->GetArrayLength(px) < (long long)w * h) { g_err = "picture pixels shorter than its size"; return false; }
+  return true;
+}
+
 ffcv::Image fromArgb(JNIEnv* env, jintArray px, int w, int h) {
   ffcv::Image img(w, h, 3);
   jint* p = env->GetIntArrayElements(px, nullptr);
@@ -405,6 +416,7 @@ Java_com_abrah_nightmare_portrait_NativePortrait_edit(JNIEnv* env, jclass, jintA
   float sl[ffportrait::kSliderCount];
   env->GetFloatArrayRegion(jSliders, 0, ffportrait::kSliderCount, sl);
   for (float& v : sl) v = std::max(-1.f, std::min(1.f, v));
+  if (!argbFits(env, px, w, h)) return nullptr;
   ffcv::Image img = fromArgb(env, px, w, h);
   g_s->err.clear();
   double t0 = nowMs();
@@ -421,6 +433,7 @@ Java_com_abrah_nightmare_portrait_NativePortrait_setPortrait(JNIEnv* env, jclass
   std::lock_guard<std::mutex> lk(g_mu);
   if (!g_s) { g_err = "LivePortrait is not open"; return JNI_FALSE; }
   g_s->err.clear();
+  if (!argbFits(env, px, w, h)) return JNI_FALSE;
   bool ok = g_s->setPortrait(fromArgb(env, px, w, h));
   if (!ok) g_err = g_s->err;
   return ok ? JNI_TRUE : JNI_FALSE;
@@ -433,6 +446,7 @@ Java_com_abrah_nightmare_portrait_NativePortrait_animate(JNIEnv* env, jclass, ji
   if (!g_s) { g_err = "LivePortrait is not open"; return nullptr; }
   g_s->err.clear();
   ffcv::Image out;
+  if (!argbFits(env, px, w, h)) return nullptr;
   double t0 = nowMs();
   if (!g_s->animate(fromArgb(env, px, w, h), out)) { g_err = g_s->err; return nullptr; }
   g_s->msLast = nowMs() - t0;

@@ -1,5 +1,6 @@
 package com.abrah.nightmare.canvas
 
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -66,6 +67,8 @@ internal fun DetectSettingsRow(
     /** The node's last picture ([NodeInspectorBody]'s preview); null before its first render. */
     picture: ImageBitmap?,
     onSetParam: (name: String, value: String) -> Unit,
+    /** ⭐ Several at once, ONE revision: Reset ([com.abrah.nightmare.canvas.CanvasState.setParams]). */
+    onSetParams: (Map<String, String>) -> Unit,
 ) {
     var open by rememberSaveable { mutableStateOf<Int?>(null) }
     Row(
@@ -89,7 +92,7 @@ internal fun DetectSettingsRow(
     com.abrah.nightmare.ui.PullDownSheet(onDismiss = { open = null }) {
         Box(Modifier.fillMaxWidth().height(dialogH * 0.92f)) {
             InpaintPopupBody(tab, labels, onTab = { open = it }) {
-                DetectPanel(parts[tab], params, picture, onSetParam)
+                DetectPanel(parts[tab], params, picture, onSetParam, onSetParams)
             }
         }
     }
@@ -102,6 +105,7 @@ private fun DetectPanel(
     params: Map<String, String>,
     picture: ImageBitmap?,
     onSetParam: (String, String) -> Unit,
+    onSetParams: (Map<String, String>) -> Unit,
 ) {
     val context = LocalContext.current
     val set = Detailer.settings(params, part)
@@ -115,7 +119,8 @@ private fun DetectPanel(
             }
         }
     }
-    val installed = remember(part) { PartDetector.isInstalled(context) }
+    // ⚠ Not remembered: a download finished while the sheet is open must show the picture, not "no detector".
+    val installed = PartDetector.isInstalled(context)
     if (picture == null) {
         Note(stringResource(R.string.detect_render_first))
     } else if (!installed) {
@@ -154,14 +159,19 @@ private fun DetectPanel(
         Detailer.denoiseOf(params, part).toString(),
         { onSetParam(kDen, it) },
     )
-    OutlinedButton(
+    StudioOutlinedButton(
         onClick = {
             val d = Detailer.Settings()
-            onSetParam(kConf, d.conf.toString())
-            onSetParam(kPad, d.pad.toString())
-            onSetParam(kBlur, d.blur.toString())
-            // ⚠ Blank, not a number: back to following Fix strength.
-            onSetParam(kDen, "")
+            // ⚠ ONE write: four were four revisions and four autosaves for one tap (the crop's rule).
+            onSetParams(
+                mapOf(
+                    kConf to d.conf.toString(),
+                    kPad to d.pad.toString(),
+                    kBlur to d.blur.toString(),
+                    // ⚠ Blank, not a number: back to following Fix strength.
+                    kDen to "",
+                ),
+            )
         },
         enabled = set != Detailer.Settings(),
     ) { Text(stringResource(R.string.detect_reset)) }

@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
@@ -153,7 +154,7 @@ fun ErrorDetails(
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
-                    androidx.compose.material3.Button(onClick = onDiagnose, modifier = Modifier.padding(bottom = 12.dp)) {
+                    com.abrah.nightmare.ui.StudioButton(onClick = onDiagnose, modifier = Modifier.padding(bottom = 12.dp)) {
                         Text(stringResource(R.string.diagnose))
                     }
                 }
@@ -169,17 +170,17 @@ fun ErrorDetails(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            StudioTextButton(onClick = {
                 runCatching { com.abrah.nightmare.Share.report(ctx, text) }
                 onDismiss()
             }) { Text(stringResource(R.string.err_share)) }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = { clipboard.setText(AnnotatedString(text)) }) {
+                StudioTextButton(onClick = { clipboard.setText(AnnotatedString(text)) }) {
                     Text(stringResource(R.string.err_copy))
                 }
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+                StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
             }
         },
     )

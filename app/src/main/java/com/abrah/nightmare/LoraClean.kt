@@ -45,8 +45,11 @@ object LoraClean {
         val out = JSONObject()
         header.optJSONObject("__metadata__")?.let { out.put("__metadata__", it) }
         var at = 0L
+        val dataBytes = file.length() - dataStart
         for ((name, t) in ordered) {
             val (b, e) = t.getJSONArray("data_offsets").let { it.getLong(0) to it.getLong(1) }
+            // ⚠ A broken table is refused with a reason, not a NegativeArraySize / OOM from the copy below.
+            if (b < 0 || e < b || e > dataBytes) throw java.io.IOException("${file.name}: tensor '$name' lies outside the file ($b..$e)")
             val width = INT_BYTES[t.optString("dtype")]
             val size = if (width != null) (e - b) / width * 4 else e - b
             out.put(name, JSONObject().apply {
@@ -73,8 +76,16 @@ object LoraClean {
                     src.seek(dataStart + b)
                     var left = e - b
                     if (dtype in INT_BYTES) {
-                        val raw = ByteArray(left.toInt()).also { src.readFully(it) }
-                        dst.write(toF32(raw, dtype))
+                        // ⚠ In slabs of whole elements: one big int tensor read at once, plus its F32 copy, was an
+                        // OutOfMemoryError (and past 2 GB an Int overflow).
+                        val width = INT_BYTES.getValue(dtype)
+                        val slab = ByteArray(buf.size / width * width)
+                        while (left > 0) {
+                            val n = minOf(left, slab.size.toLong()).toInt()
+                            src.readFully(slab, 0, n)
+                            dst.write(toF32(slab.copyOf(n), dtype))
+                            left -= n
+                        }
                     } else while (left > 0) {
                         val n = src.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
                         if (n < 0) throw java.io.EOFException("${file.name} ends inside its data")

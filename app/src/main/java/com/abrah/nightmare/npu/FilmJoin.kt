@@ -57,14 +57,17 @@ object FilmJoin {
     data class Joined(val frames: Int, val copied: Boolean)
 
     /** Joins [film] and [part] into [out]: the film without its last frame, then all of the part. */
-    fun join(film: File, part: File, out: File, fps: Int, log: (String) -> Unit = { Log.i(TAG, it) }): Joined {
+    fun join(
+        film: File, part: File, out: File, fps: Int, log: (String) -> Unit = { Log.i(TAG, it) },
+        isCancelled: () -> Boolean = { false },
+    ): Joined {
         val tmp = File(out.parentFile, out.name + ".part")
         tmp.delete()
         val copied = runCatching { copySamples(film, part, tmp, fps) }.getOrElse { e ->
             log("  join: copying failed (${e.message}); re-encoding")
             null
         }
-        val joined = copied ?: reencode(film, part, tmp, fps, log)
+        val joined = copied ?: reencode(film, part, tmp, fps, log, isCancelled)
         check(tmp.renameTo(out) || (tmp.copyTo(out, overwrite = true).exists() && tmp.delete())) { "could not write ${out.name}" }
         return joined
     }
@@ -75,7 +78,8 @@ object FilmJoin {
 
     private fun open(f: File): Track {
         val ex = MediaExtractor()
-        ex.setDataSource(f.absolutePath)
+        // ⚠ Released on a throw here too (an unreadable file): it leaked a native extractor per try.
+        try { ex.setDataSource(f.absolutePath) } catch (e: Exception) { ex.release(); throw e }
         val i = (0 until ex.trackCount).firstOrNull {
             ex.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
         } ?: run { ex.release(); error("no video track in ${f.name}") }
@@ -99,7 +103,7 @@ object FilmJoin {
 
     private fun copySamples(film: File, part: File, out: File, fps: Int): Joined? {
         val a = open(film)
-        val b = open(part)
+        val b = try { open(part) } catch (e: Exception) { a.extractor.release(); throw e }
         try {
             if (a.format.getString(MediaFormat.KEY_MIME) != b.format.getString(MediaFormat.KEY_MIME)) return null
             if (a.csd("csd-0") != b.csd("csd-0") || a.csd("csd-1") != b.csd("csd-1")) return null
@@ -150,7 +154,9 @@ object FilmJoin {
 
     /** ⭐ Frames [from] onward of a clip, a few at a time, in order ([BATCH]). */
     private class Frames(f: File) : AutoCloseable {
-        private val r = MediaMetadataRetriever().apply { setDataSource(f.absolutePath) }
+        private val r = MediaMetadataRetriever().also { m ->
+            try { m.setDataSource(f.absolutePath) } catch (e: Exception) { runCatching { m.release() }; throw e }
+        }
         val count = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull() ?: 0
         private var start = -1
         private var held: List<Bitmap> = emptyList()
@@ -164,14 +170,15 @@ object FilmJoin {
         override fun close() { runCatching { r.release() } }
     }
 
-    private fun reencode(film: File, part: File, out: File, fps: Int, log: (String) -> Unit): Joined {
+    private fun reencode(film: File, part: File, out: File, fps: Int, log: (String) -> Unit, isCancelled: () -> Boolean): Joined {
         Frames(film).use { a ->
             Frames(part).use { b ->
                 check(a.count >= 2 && b.count >= 1) { "cannot read the frames to join" }
                 val keep = a.count - 1
                 val total = keep + b.count
                 val first = a.at(0)
-                VideoWriter.encode(total, first.width, first.height, fps, out, log) { i ->
+                // ⚠ Cancellable like every other encode: the join was the one caller that passed none.
+                VideoWriter.encode(total, first.width, first.height, fps, out, log, isCancelled) { i ->
                     if (i < keep) a.at(i) else b.at(i - keep)
                 }
                 return Joined(total, copied = false)

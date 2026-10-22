@@ -1,5 +1,8 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
+import com.abrah.nightmare.ui.StudioTextButton
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -138,6 +141,7 @@ fun AgentScreen(
     modifier: Modifier = Modifier,
 ) {
     var setup by rememberSaveable { mutableStateOf(!ui.config.ready) }
+    var clearing by remember { mutableStateOf(false) }
     // ⭐ A setup that is not ready (no key, no model) shows the setup, never an empty chat that cannot send.
     LaunchedEffect(ui.config.ready) { if (!ui.config.ready) setup = true }
     Column(modifier.fillMaxSize()) {
@@ -146,8 +150,17 @@ fun AgentScreen(
             Spacer(Modifier.weight(1f))
             if (!setup) {
                 // ⭐ Clear chat — the conversation and its attachments; the setup stays.
-                IconButton(onClick = act.onNewChat, enabled = !ui.busy && ui.items.isNotEmpty()) {
+                // ⚠ Behind the one confirm (`docs/UI.md` §8.2): it deletes the attachments too.
+                IconButton(onClick = { clearing = true }, enabled = !ui.busy && ui.items.isNotEmpty()) {
                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.agent_clear_chat))
+                }
+                if (clearing) {
+                    ConfirmDelete(
+                        title = stringResource(R.string.agent_clear_chat_title),
+                        body = stringResource(R.string.agent_clear_chat_body),
+                        onConfirm = act.onNewChat,
+                        onDismiss = { clearing = false },
+                    )
                 }
             }
             IconButton(onClick = { setup = !setup || !ui.config.ready }) {
@@ -221,7 +234,7 @@ private fun AgentChat(ui: AgentUi, act: AgentActions, modifier: Modifier) {
                     DownloadCard(
                         title = name, emphasised = false, status = p.phase, detail = stringResource(R.string.agent_downloading_lora),
                         progress = p,
-                    ) { OutlinedButton(onClick = act.onCancelDownload) { Text(stringResource(R.string.cancel)) } }
+                    ) { StudioOutlinedButton(onClick = act.onCancelDownload) { Text(stringResource(R.string.cancel)) } }
                 }
             }
             if (ui.busy && live == null && ui.download == null) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp)) }
@@ -319,7 +332,10 @@ internal fun chatBlocks(items: List<ChatItem>): List<ChatBlock> {
 @Composable
 private fun ToolGroup(tools: List<ChatItem.Tool>) {
     val failed = tools.count { !it.ok }
-    var open by rememberSaveable(tools.size, failed) { mutableStateOf(failed > 0) }
+    // ⚠ Keyed on nothing but its place in the list (the block's key, via `itemsIndexed`): keyed on the tool
+    // COUNT, an expanded group snapped shut whenever the next call joined it. A failure opens it ONCE.
+    var open by rememberSaveable { mutableStateOf(failed > 0) }
+    LaunchedEffect(failed > 0) { if (failed > 0) open = true }
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable { open = !open }.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -328,7 +344,7 @@ private fun ToolGroup(tools: List<ChatItem.Tool>) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 if (failed == 0) Icons.Filled.Check else Icons.Filled.Close, contentDescription = null,
-                tint = if (failed == 0) Success else MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp),
+                tint = if (failed == 0) MaterialTheme.studio.success else MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -375,7 +391,7 @@ private fun ChatRow(item: ChatItem, act: AgentActions) {
         }
         is ChatItem.Ask -> Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                .background(com.abrah.nightmare.ui.Warning.copy(alpha = 0.10f)).padding(14.dp),
+                .background(MaterialTheme.studio.warning.copy(alpha = 0.10f)).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(item.question, style = MaterialTheme.typography.bodyMedium)
@@ -384,9 +400,9 @@ private fun ChatRow(item: ChatItem, act: AgentActions) {
                     // ⚠ The safe option first and the action last, where the thumb lands — §8.1's order.
                     item.options.asReversed().forEachIndexed { i, o ->
                         if (i == item.options.size - 1) {
-                            Button(onClick = { act.onAnswer(item.id, o) }, shape = RoundedCornerShape(12.dp)) { Text(o) }
+                            StudioButton(onClick = { act.onAnswer(item.id, o) }, shape = RoundedCornerShape(12.dp)) { Text(o) }
                         } else {
-                            OutlinedButton(onClick = { act.onAnswer(item.id, o) }, shape = RoundedCornerShape(12.dp)) { Text(o) }
+                            StudioOutlinedButton(onClick = { act.onAnswer(item.id, o) }, shape = RoundedCornerShape(12.dp)) { Text(o) }
                         }
                     }
                 }
@@ -456,12 +472,24 @@ private fun ChatPicture(path: String) {
 @Composable
 private fun AgentSetup(ui: AgentUi, act: AgentActions, onSave: (SetupInput) -> Unit) {
     val config = ui.config
-    var provider by remember { mutableStateOf(config.provider) }
-    var base by remember { mutableStateOf(config.baseUrl) }
-    var key by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf(config.model) }
+    // ⚠⚠ Keyed on the CONFIG, like [instructions]: tapping a saved setup reloads it, and unkeyed fields kept
+    // showing the old provider and model, which Save then wrote over the setup just applied.
+    var provider by remember(config) { mutableStateOf(config.provider) }
+    var base by remember(config) { mutableStateOf(config.baseUrl) }
+    var key by remember(config) { mutableStateOf("") }
+    var model by remember(config) { mutableStateOf(config.model) }
     var instructions by remember(config) { mutableStateOf(config.instructions) }
     var profileName by remember { mutableStateOf("") }
+    // ⚠ A saved setup holds its API key: forgetting one asks first (`docs/UI.md` §8.2).
+    var forgetting by remember { mutableStateOf<String?>(null) }
+    forgetting?.let { name ->
+        ConfirmDelete(
+            title = stringResource(R.string.agent_profile_delete_title, name),
+            body = stringResource(R.string.agent_profile_delete_body),
+            onConfirm = { act.onDeleteProfile(name) },
+            onDismiss = { forgetting = null },
+        )
+    }
     var modelFocus by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val uri = LocalUriHandler.current
@@ -476,7 +504,7 @@ private fun AgentSetup(ui: AgentUi, act: AgentActions, onSave: (SetupInput) -> U
             Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 for (name in ui.profiles) {
                     Pill(name, false) { act.onUseProfile(name) }
-                    IconButton(onClick = { act.onDeleteProfile(name) }, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = { forgetting = name }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.agent_profile_delete, name), modifier = Modifier.size(16.dp))
                     }
                 }
@@ -512,7 +540,7 @@ private fun AgentSetup(ui: AgentUi, act: AgentActions, onSave: (SetupInput) -> U
             modifier = Modifier.fillMaxWidth(),
         )
         provider.keyPage?.let { page ->
-            TextButton(onClick = { runCatching { uri.openUri(page) } }) { Text(stringResource(R.string.agent_get_key, provider.label)) }
+            StudioTextButton(onClick = { runCatching { uri.openUri(page) } }) { Text(stringResource(R.string.agent_get_key, provider.label)) }
         }
         OutlinedTextField(
             value = model, onValueChange = { model = it.trim() }, singleLine = true,
@@ -561,7 +589,7 @@ private fun AgentSetup(ui: AgentUi, act: AgentActions, onSave: (SetupInput) -> U
             label = { Text(stringResource(R.string.agent_profile_name)) },
             modifier = Modifier.fillMaxWidth(),
         )
-        Button(
+        StudioButton(
             onClick = { onSave(SetupInput(provider, base, model, key.ifBlank { null }, instructions, profileName.ifBlank { null })) },
             // ⚠ A cloud provider needs a key, typed now or saved before: without one the setup closed
             // and every Send was refused in silence, the box clearing (the user, 2026-10-12).

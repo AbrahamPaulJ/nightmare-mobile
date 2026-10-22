@@ -41,6 +41,9 @@ val VIDEO_MODEL_TYPES = setOf("nd.sample", com.abrah.nightmare.npu.WanVideoNode.
 
 private fun optionalPicture(type: String, port: String): Boolean = when (port) {
     SdSampler.CONTROL, "reference" -> type in IMAGE_SAMPLER_TYPES
+    // ⚠ Images 3 and 4 of an edit too: an empty one there failed "no image chosen" where the
+    // same node wired into `reference` was skipped with a warning.
+    in SdSampler.EXTRA_REFS -> type in IMAGE_SAMPLER_TYPES
     "image" -> type in IMAGE_SAMPLER_TYPES && type !in INPAINT_TYPES
     else -> false
 }

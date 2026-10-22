@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -79,7 +80,7 @@ fun ImportCallout(
                     Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.error)
                 }
             }
-            Button(onClick = onImport, enabled = enabled) {
+            StudioButton(onClick = onImport, enabled = enabled) {
                 Text(buttonLabel ?: stringResource(R.string.flows_import_flow))
             }
         }

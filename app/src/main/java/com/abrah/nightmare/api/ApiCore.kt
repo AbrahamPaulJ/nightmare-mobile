@@ -45,7 +45,11 @@ import java.io.File
 class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder: String) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    val resultsDir = File(ctx.filesDir, "api/results")
+    /**
+     * ⚠ One per holder: the agent wrote into the API's, and the API's [KEEP_RUNS] prune deleted pictures the chat
+     * still showed. The agent's go with its chat (`AgentSession.clearFiles`).
+     */
+    val resultsDir = File(ctx.filesDir, if (holder == "api") "api/results" else "$holder/results")
     private val uploadsDir = File(ctx.cacheDir, "api/uploads")
     private val store get() = WorkflowStore(File(ctx.filesDir, "workflows"))
     @Volatile private var runJob: Job? = null
@@ -90,6 +94,8 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
     fun workflowFor(id: String): Workflow = when {
         id == "current" -> runCatching { store.load("current")?.workflow }.getOrNull() ?: defaultWorkflow()
         id.startsWith("saved:") -> try {
+            // ⚠ The name is a path on disk: the same rule as save and rename, or `saved:../../…` reads any .json.
+            store.validName(id.removePrefix("saved:"))?.let { throw ApiError(400, "bad flow name: $it") }
             store.load(id.removePrefix("saved:"))?.workflow ?: throw ApiError(404, "no saved flow \"${id.removePrefix("saved:")}\"")
         } catch (e: WorkflowFormatError) {
             throw ApiError(400, "that saved flow cannot be read: ${e.message}")
@@ -151,14 +157,20 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
                 ?: throw ApiError(409, "model \"$id\" is not installed. List_models / GET /models lists what is")
         }
         val runId = "r" + System.currentTimeMillis().toString(36)
-        var graph = applyOverrides(base.graph, types, req, spec) { node, b64 -> upload(runId, node, b64) }
-        for ((node, url) in inputPaths) {
-            val n = graph.byId[node] ?: throw ApiError(400, "input_images: no node \"$node\" in this flow")
-            if (n.type != "core.image") throw ApiError(400, "input_images: \"$node\" is not an image node")
-            graph = graph.withParam(node, "uri", resultFileOf(url).absolutePath)
+        // ⚠ Uploads land before the checks below: a refusal deletes them, or a client retrying fills the cache.
+        try {
+            var graph = applyOverrides(base.graph, types, req, spec) { node, b64 -> upload(runId, node, b64) }
+            for ((node, url) in inputPaths) {
+                val n = graph.byId[node] ?: throw ApiError(400, "input_images: no node \"$node\" in this flow")
+                if (n.type != "core.image") throw ApiError(400, "input_images: \"$node\" is not an image node")
+                graph = graph.withParam(node, "uri", resultFileOf(url).absolutePath)
+            }
+            modelsMissing(graph, types)?.let { throw ApiError(409, it) }
+            return Prepared(runId, base.copy(graph = graph))
+        } catch (e: Throwable) {
+            File(uploadsDir, runId).deleteRecursively()
+            throw e
         }
-        modelsMissing(graph, types)?.let { throw ApiError(409, it) }
-        return Prepared(runId, base.copy(graph = graph))
     }
 
     /** What a render made: the answer (as the HTTP API says it) and the pictures, by node. */
@@ -170,6 +182,7 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
      */
     fun run(p: Prepared, event: (String, JSONObject) -> Unit = { _, _ -> }): RunResult {
         if (!RunLock.tryAcquire(holder)) {
+            File(uploadsDir, p.runId).deleteRecursively()
             throw ApiError(409, when (RunLock.heldBy) {
                 "canvas" -> "the app is rendering. Try again when it finishes"
                 else -> "already rendering (${RunLock.heldBy})"
@@ -279,7 +292,7 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
             throw ApiError(400, "images.$node is not base64")
         }
         val dir = File(uploadsDir, runId).apply { mkdirs() }
-        return File(dir, "$node.bin").apply { writeBytes(bytes) }.absolutePath
+        return File(dir, fileStem(node) + ".bin").apply { writeBytes(bytes) }.absolutePath
     }
 
     /**
@@ -298,7 +311,7 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
         for ((node, v) in picked) {
             when (v) {
                 is Value.Video -> {
-                    val f = File(dir, "$node.mp4")
+                    val f = File(dir, fileStem(node) + ".mp4")
                     File(v.path).copyTo(f, overwrite = true)
                     out.put(JSONObject().put("node", node).put("kind", "video").put("w", v.w).put("h", v.h)
                         .put("url", "/results/$runId/${f.name}"))
@@ -306,7 +319,7 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
                 else -> {
                     val img = v as? Value.Image ?: continue
                     val bmp = ops.images.get(img.id) ?: continue
-                    val f = File(dir, "$node.png").apply { writeBytes(ImageStore.encodePng(bmp)) }
+                    val f = File(dir, fileStem(node) + ".png").apply { writeBytes(ImageStore.encodePng(bmp)) }
                     images += node to img.id
                     out.put(JSONObject().put("node", node).put("kind", "image").put("w", img.w).put("h", img.h)
                         .put("url", "/results/$runId/${f.name}"))
@@ -336,5 +349,12 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
 
     companion object {
         const val KEEP_RUNS = 20
+
+        /**
+         * ⭐⚠ A node id as a file name. Ids come from the caller's graph (or a shared flow the agent opens): `../x`
+         * wrote outside the run's folder. Anything but `[A-Za-z0-9_-]` becomes `_`; [resultFile]'s rule accepts it.
+         */
+        fun fileStem(node: String): String =
+            node.replace(Regex("[^A-Za-z0-9_-]"), "_").take(64).ifEmpty { "node" }
     }
 }

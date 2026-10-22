@@ -244,48 +244,57 @@ class ResultsStore(private val dir: File) {
                 id = "r" + System.currentTimeMillis() + "_" + n++
             }
             val tmpPng = File(dir, "$id.png.tmp")
-            tmpPng.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            if (!tmpPng.renameTo(png(id))) {
-                tmpPng.copyTo(png(id), overwrite = true); tmpPng.delete()
-            }
-
-            if (video != null && video.isFile) {
-                runCatching { video.copyTo(mp4(id), overwrite = true) }
-            }
-            val r = Result(
-                id, System.currentTimeMillis(), imageId, seed, model, prompt,
-                bitmap.width, bitmap.height, batchId, batchLabel,
-                videoPath = mp4(id).takeIf { it.isFile }?.path,
-                favourite = favourite,
-                auto = auto,
-                times = times,
-            )
-            val json = JSONObject()
-                .put("savedAt", r.savedAt)
-                .put("imageId", r.imageId ?: JSONObject.NULL)
-                .put("seed", r.seed ?: JSONObject.NULL)
-                .put("model", r.model ?: JSONObject.NULL)
-                .put("prompt", r.prompt ?: JSONObject.NULL)
-                .put("width", r.width)
-                .put("height", r.height)
-                // ⚠ Written even when null, so a reader never has to guess whether
-                // an absent key means "not a batch" or "an older file".
-                .put("batchId", r.batchId ?: JSONObject.NULL)
-                .put("batchLabel", r.batchLabel)
-                .put("favourite", r.favourite)
-                .put("auto", r.auto)
-                .put("times", JSONObject(r.times as Map<*, *>))
-                // ⭐ The graph, as the same JSON a saved workflow uses — so
-                // reopening a result is exactly reopening a workflow, with no
-                // second format to keep in step.
-                .put("flow", workflow.toJson(types))
-                .toString()
             val tmpMeta = File(dir, "$id.json.tmp")
-            tmpMeta.writeText(json)
-            if (!tmpMeta.renameTo(meta(id))) {
-                tmpMeta.copyTo(meta(id), overwrite = true); tmpMeta.delete()
+            // ⚠⚠ A keep that fails part way takes its files with it: the claimed empty PNG and the temps are
+            // never listed ([all] lists by metadata) and never deleted, yet [bytes] counts them for ever.
+            try {
+                if (!tmpPng.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }) {
+                    throw java.io.IOException("the picture could not be encoded")
+                }
+                if (!tmpPng.renameTo(png(id))) {
+                    tmpPng.copyTo(png(id), overwrite = true); tmpPng.delete()
+                }
+
+                if (video != null && video.isFile) {
+                    runCatching { video.copyTo(mp4(id), overwrite = true) }
+                }
+                val r = Result(
+                    id, System.currentTimeMillis(), imageId, seed, model, prompt,
+                    bitmap.width, bitmap.height, batchId, batchLabel,
+                    videoPath = mp4(id).takeIf { it.isFile }?.path,
+                    favourite = favourite,
+                    auto = auto,
+                    times = times,
+                )
+                val json = JSONObject()
+                    .put("savedAt", r.savedAt)
+                    .put("imageId", r.imageId ?: JSONObject.NULL)
+                    .put("seed", r.seed ?: JSONObject.NULL)
+                    .put("model", r.model ?: JSONObject.NULL)
+                    .put("prompt", r.prompt ?: JSONObject.NULL)
+                    .put("width", r.width)
+                    .put("height", r.height)
+                    // ⚠ Written even when null, so a reader never has to guess whether
+                    // an absent key means "not a batch" or "an older file".
+                    .put("batchId", r.batchId ?: JSONObject.NULL)
+                    .put("batchLabel", r.batchLabel)
+                    .put("favourite", r.favourite)
+                    .put("auto", r.auto)
+                    .put("times", JSONObject(r.times as Map<*, *>))
+                    // ⭐ The graph, as the same JSON a saved workflow uses — so
+                    // reopening a result is exactly reopening a workflow, with no
+                    // second format to keep in step.
+                    .put("flow", workflow.toJson(types))
+                    .toString()
+                tmpMeta.writeText(json)
+                if (!tmpMeta.renameTo(meta(id))) {
+                    tmpMeta.copyTo(meta(id), overwrite = true); tmpMeta.delete()
+                }
+                return r
+            } catch (e: Throwable) {
+                for (f in listOf(tmpPng, tmpMeta, png(id), mp4(id), meta(id))) f.delete()
+                throw e
             }
-            return r
         }
     }
 
@@ -299,8 +308,8 @@ class ResultsStore(private val dir: File) {
      * ⚠ A result with no `batchId` is its own group of one — so the list has a
      * single shape and the UI does not branch on "is this a batch" per row.
      */
-    fun grouped(): List<ResultGroup> {
-        val (batched, single) = all().partition { it.batchId != null }
+    fun grouped(all: List<Result> = all()): List<ResultGroup> {
+        val (batched, single) = all.partition { it.batchId != null }
         val groups = batched.groupBy { it.batchId }
             .map { (id, items) -> ResultGroup(id, items.sortedByDescending { it.savedAt }) }
         return (groups + single.map { ResultGroup(null, listOf(it)) })

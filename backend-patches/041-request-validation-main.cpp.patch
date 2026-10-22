@@ -1,0 +1,186 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -5,6 +5,7 @@
+ #include <fstream>
+ #include <cstdlib>
+ #include <iostream>
++#include <limits>
+ #include <map>
+ #include <memory>
+ #include <mutex>
+@@ -754,6 +755,52 @@
+ };
+ static std::map<std::string, LatentHandle> g_latent_handles;
+ 
++// nightmare (041): the two tables are BOUNDED. Nothing ever erased from them, so every distinct
++// prompt pair added a cond (7.5 MB on SDXL's 462-token context) and every seed a latent, and a
++// long session of prompt tweaks grew the backend by GBs until lmkd took it. Least recently USED
++// goes first once the pair passes kHandleCapBytes; a lookup counts as a use, so a cond reused
++// across a batch stays, and the handle just registered is never the one evicted. ⚠ Safe for the
++// app: the executor asks GET /handles before trusting a cached handle and recomputes what is gone.
++static constexpr size_t kHandleCapBytes = (size_t)512 << 20;
++static std::map<std::string, uint64_t> g_handle_used;
++static uint64_t g_handle_clock = 0;
++
++static size_t handleBytes(const Conditioning &c) {
++  return (c.hidden.size() + c.pooled.size() + c.time_ids.size()) * sizeof(float);
++}
++static size_t handleBytes(const LatentHandle &l) { return l.data.size() * sizeof(float); }
++
++// ⚠ The caller holds g_handle_mutex.
++static void touchHandle(const std::string &h) { g_handle_used[h] = ++g_handle_clock; }
++
++// ⚠ The caller holds g_handle_mutex. [keep] = the handle just registered.
++static void evictHandles(const std::string &keep) {
++  size_t total = 0;
++  for (const auto &kv : g_cond_handles) total += handleBytes(kv.second);
++  for (const auto &kv : g_latent_handles) total += handleBytes(kv.second);
++  while (total > kHandleCapBytes) {
++    std::string oldest;
++    uint64_t best = std::numeric_limits<uint64_t>::max();
++    auto consider = [&](const std::string &h) {
++      if (h == keep) return;
++      auto it = g_handle_used.find(h);
++      const uint64_t t = it == g_handle_used.end() ? 0 : it->second;
++      if (t < best) { best = t; oldest = h; }
++    };
++    for (const auto &kv : g_cond_handles) consider(kv.first);
++    for (const auto &kv : g_latent_handles) consider(kv.first);
++    if (oldest.empty()) break;
++    if (auto c = g_cond_handles.find(oldest); c != g_cond_handles.end()) {
++      total -= handleBytes(c->second);
++      g_cond_handles.erase(c);
++    } else if (auto l = g_latent_handles.find(oldest); l != g_latent_handles.end()) {
++      total -= handleBytes(l->second);
++      g_latent_handles.erase(l);
++    }
++    g_handle_used.erase(oldest);
++  }
++}
++
+ // One sample, one handle -- the body shared by both /sample paths.
+ //
+ // ⚠ Factored rather than copied, because of the KEY below: it is the rule
+@@ -884,12 +931,25 @@
+     lh.channels = out.channels;
+     lh.data = std::move(out.latent_data);
+     g_latent_handles[handle] = std::move(lh);
++    touchHandle(handle);
++    evictHandles(handle);
+     body["latents_resident"] = g_latent_handles.size();
+   }
+ 
+   return body;
+ }
+ 
++// nightmare (041): a size from a request body is checked before anything is allocated from it.
++// 0 sized an empty buffer the graph then wrote into, a negative one wrapped `(size_t)3*w*h`, and
++// a size off the 8 grid or past the graph is refused by name (QnnModel's vaeCountsMatch catches a
++// size the VAE was not built for; this catches the nonsense ones first).
++static void requireOpSize(int width, int height) {
++  if (width <= 0 || height <= 0 || width > 4096 || height > 4096 || width % 8 != 0 ||
++      height % 8 != 0)
++    throw std::invalid_argument("width and height must be multiples of 8 between 8 and 4096, got " +
++                                std::to_string(width) + "x" + std::to_string(height));
++}
++
+ static void registerOpEndpoints(httplib::Server &svr, Pipeline *pipeline) {
+   svr.Post("/encode_text", [pipeline](const httplib::Request &request,
+                                       httplib::Response &res) {
+@@ -971,6 +1031,8 @@
+       {
+         std::lock_guard<std::mutex> hl(g_handle_mutex);
+         g_cond_handles[handle] = std::move(cond);
++        touchHandle(handle);
++        evictHandles(handle);
+         out["handles_resident"] = g_cond_handles.size();
+       }
+ 
+@@ -1031,6 +1093,7 @@
+         auto it = g_cond_handles.find(h);
+         if (it == g_cond_handles.end())
+           throw std::invalid_argument("unknown cond_handle: " + h);
++        touchHandle(h);
+         req->init_cond_hidden = it->second.hidden;
+         req->init_cond_pooled = it->second.pooled;
+         req->init_cond_time_ids = it->second.time_ids;
+@@ -1050,6 +1113,7 @@
+           auto it = g_latent_handles.find(h);
+           if (it == g_latent_handles.end())
+             throw std::invalid_argument("unknown latent_handle: " + h);
++          touchHandle(h);
+           req->init_latents = it->second.data;
+         }
+         req->img2img = true;
+@@ -1165,6 +1229,7 @@
+       GenerationRequest req;
+       req.width = json.value("width", 512);
+       req.height = json.value("height", 512);
++      requireOpSize(req.width, req.height);
+ 
+       const size_t want = (size_t)pipeline->opLatentChannels() *
+                           (size_t)(req.width / 8) * (size_t)(req.height / 8);
+@@ -1182,6 +1247,7 @@
+         auto it = g_latent_handles.find(h);
+         if (it == g_latent_handles.end())
+           throw std::invalid_argument("unknown latent_handle: " + h);
++        touchHandle(h);
+         latents = it->second.data;
+         req.width = it->second.width;
+         req.height = it->second.height;
+@@ -1281,6 +1347,7 @@
+       GenerationRequest req;
+       req.width = json.value("width", 512);
+       req.height = json.value("height", 512);
++      requireOpSize(req.width, req.height);
+       // ⚠ The seed matters: the latent is mean + std * noise, so it is what
+       // makes the same image encode to the same latent twice.
+       req.seed = json.value("seed", 42);
+@@ -1334,6 +1401,8 @@
+         lh.channels = pipeline->opLatentChannels();
+         lh.data = std::move(latents);
+         g_latent_handles[handle] = std::move(lh);
++        touchHandle(handle);
++        evictHandles(handle);
+         body["latents_resident"] = g_latent_handles.size();
+       }
+       res.status = 200;
+@@ -1378,6 +1447,8 @@
+         auto ib = g_latent_handles.find(hb);
+         if (ib == g_latent_handles.end())
+           throw std::invalid_argument("unknown latent handle b: " + hb);
++        touchHandle(ha);
++        touchHandle(hb);
+         la = ia->second;
+         lb = ib->second;
+       }
+@@ -1464,6 +1535,8 @@
+       {
+         std::lock_guard<std::mutex> hl(g_handle_mutex);
+         g_latent_handles[handle] = std::move(out);
++        touchHandle(handle);
++        evictHandles(handle);
+         body["latents_resident"] = g_latent_handles.size();
+       }
+       res.status = 200;
+@@ -1699,6 +1772,10 @@
+                  process_height);
+       }
+ 
++      // nightmare (041): the NPU is one device. /generate and /sample hold this mutex; /upscale
++      // built a QNN context beside a running UNet or DiT (the app reuses the running backend for
++      // Results' upscale), which is 027's second-PD failure or an OOM. It waits its turn instead.
++      std::unique_lock<std::mutex> npu_lock(g_generation_mutex);
+       auto start_time = std::chrono::high_resolution_clock::now();
+ 
+       xt::xarray<uint8_t> upscaled;
+@@ -1730,6 +1807,9 @@
+         upscaled = upscaler::upscaleWithQnn(process_image, process_width,
+                                             process_height, tempUpscalerApp);
+       }
++      // ⚠ The context is freed under the lock too, before the next render may map its own.
++      tempUpscalerApp.reset();
++      npu_lock.unlock();
+ 
+       auto end_time = std::chrono::high_resolution_clock::now();
+       int duration = std::chrono::duration_cast<std::chrono::milliseconds>(

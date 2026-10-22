@@ -140,7 +140,23 @@ fun Workflow.toJson(types: Map<String, NodeType>, view: SavedView? = null): Stri
         .toString(2)
 }
 
-fun workflowFromJson(json: String): LoadedWorkflow {
+fun workflowFromJson(json: String): LoadedWorkflow = try {
+    parseWorkflow(json)
+} catch (e: org.json.JSONException) {
+    // ⚠ A truncated or hand-edited file throws from `getJSONObject` / `getDouble` deep inside; every caller
+    // catches [WorkflowFormatError] and says "this file is not a workflow", so a raw JSONException was a crash.
+    throw WorkflowFormatError("not a workflow file: ${e.message}")
+}
+
+/**
+ * ⭐ An id names files (`<id>.png` in a run's outputs, the API's uploads), so one from a shared or API-sent
+ * flow must not be able to walk out of the folder it lands in. ⚠ Refused rather than renamed: every wire
+ * names it too, and a quiet rename would rewire somebody's graph.
+ */
+internal fun badNodeId(id: String): Boolean =
+    id == "." || id == ".." || id.any { it == '/' || it == '\\' || it.isISOControl() }
+
+private fun parseWorkflow(json: String): LoadedWorkflow {
     val root = try {
         JSONObject(json)
     } catch (e: Exception) {
@@ -162,9 +178,15 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     val sizes = mutableMapOf<String, Float>()
     val proseLines = mutableMapOf<String, Int>()
     val positions = mutableMapOf<String, Pt>()
+    var duplicates = 0
     for (i in 0 until nodesJson.length()) {
         val o = nodesJson.getJSONObject(i)
         val id = o.optString("id").ifEmpty { throw WorkflowFormatError("node $i has no id") }
+        if (badNodeId(id)) throw WorkflowFormatError("node $i has an id that names a path: \"$id\"")
+        // ⚠ Two nodes under one id drew stacked and shared one position: the second silently won every map.
+        // ⚠⚠ The later copy is DROPPED with a note, never the whole file refused: refusing would fail the
+        // autosave's restore and lose the canvas of anyone whose flow already carries one.
+        if (positions.containsKey(id)) { duplicates++; continue }
         val type = o.optString("type").ifEmpty {
             throw WorkflowFormatError("node \"$id\" has no type")
         }
@@ -182,10 +204,12 @@ fun workflowFromJson(json: String): LoadedWorkflow {
             o.optDouble("x", 0.0).toFloat(),
             o.optDouble("y", 0.0).toFloat(),
         )
-        if (o.has("w")) sizes[id] = o.getDouble("w").toFloat()
+        // ⚠ Clamped as [Workflow.resized] and [Workflow.proseResized] clamp: a hand-edited 0 or 1e9 is a node
+        // nobody can see or grab.
+        if (o.has("w")) sizes[id] = o.getDouble("w").toFloat().coerceIn(Sizes.NODE_WIDTH, Sizes.NODE_MAX_WIDTH)
         // ⚠ Absent in every flow written before this existed, which is correct:
         // `proseLinesOf` falls back to the default.
-        if (o.has("lines")) proseLines[id] = o.getInt("lines")
+        if (o.has("lines")) proseLines[id] = o.getInt("lines").coerceIn(1, Sizes.PROSE_MAX_LINES)
     }
 
     // ⚠⚠ RENAMES FIRST, and everything after this line may assume current
@@ -198,7 +222,9 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     ))
     // ⚠ LAST: every node it looks for has its current name and shape by now.
     val notes = mutableListOf<String>()
-    val migrated = migrateUpscaleNodes(migrateCropNodes(collapsed, notes), notes)
+    if (duplicates > 0) notes += "removed " + (if (duplicates == 1) "a node" else "$duplicates nodes") +
+        " that repeated another node's name"
+    val migrated = droppingDanglingInputs(migrateUpscaleNodes(migrateCropNodes(collapsed, notes), notes), notes)
 
     val requiresJson = root.optJSONArray("requires")
     val requires = (0 until (requiresJson?.length() ?: 0)).map {
@@ -220,6 +246,26 @@ fun workflowFromJson(json: String): LoadedWorkflow {
     return LoadedWorkflow(
         Workflow(Graph(migrated.first), migrated.second, sizes, proseLines), requires, view, notes,
     )
+}
+
+/**
+ * ⭐ A wire from a node the file does not have is DROPPED, with a note. ⚠ Kept, it was invisible (`wires()`
+ * draws only wires with both ends) and the graph could never run, with nothing on screen saying why.
+ */
+private fun droppingDanglingInputs(
+    input: Pair<List<Node>, Map<String, Pt>>,
+    notes: MutableList<String>,
+): Pair<List<Node>, Map<String, Pt>> {
+    val ids = input.first.map { it.id }.toSet()
+    var dropped = 0
+    val nodes = input.first.map { n ->
+        val kept = n.inputs.filterValues { it.node in ids }
+        dropped += n.inputs.size - kept.size
+        if (kept.size == n.inputs.size) n else n.copy(inputs = kept)
+    }
+    if (dropped == 0) return input
+    notes += "removed " + (if (dropped == 1) "a wire" else "$dropped wires") + " from a node the file does not have"
+    return nodes to input.second
 }
 
 /**
@@ -542,9 +588,11 @@ private fun collapseVideoChain(
         val pos = positions.toMutableMap()
         for (n in nodes) {
             if (n !in strays) { out += n; continue }
-            var id = "${'$'}{n.id}_text"
+            // ⚠⚠ Plain templates. These were escaped with a `'$'` char literal, which made them LITERAL text:
+            // the node was named "${n.id}_text" verbatim, `i++` never ran, and a third stray looped forever.
+            var id = "${n.id}_text"
             var i = 2
-            while (id in taken) id = "${'$'}{n.id}_text${'$'}{i++}"
+            while (id in taken) id = "${n.id}_text${i++}"
             taken += id
             out += Node(id, "core.prompt", mapOf(
                 "prompt" to n.params["prompt"].orEmpty(),
@@ -733,8 +781,14 @@ class WorkflowStore(private val dir: File) {
         val tmp = File(dir, "$name.json.${Thread.currentThread().id}.${System.nanoTime()}.tmp")
         tmp.writeText(workflow.toJson(types, view))
         val dest = file(name)
-        if (dest.exists()) dest.delete()
-        if (!tmp.renameTo(dest)) {
+        // ⚠⚠ ONE atomic replace, no `dest.delete()` first: that left a window in which the autosave did not
+        // exist at all, and a process death inside it lost the canvas the temp file was there to protect.
+        try {
+            java.nio.file.Files.move(
+                tmp.toPath(), dest.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (e: java.io.IOException) {
             tmp.copyTo(dest, overwrite = true)
             tmp.delete()
         }

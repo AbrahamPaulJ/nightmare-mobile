@@ -43,11 +43,11 @@ object Fp8Widen {
      */
     fun copy(input: InputStream, out: OutputStream, onBytes: (Long) -> Unit = {}, isCancelled: () -> Boolean = { false }): Int {
         val lenBytes = ByteArray(8)
-        if (readUpTo(input, lenBytes) != 8) throw EOFException("this file is too small to be a checkpoint")
+        if (input.readUpTo(lenBytes) != 8) throw EOFException("this file is too small to be a checkpoint")
         val headerLen = ByteBuffer.wrap(lenBytes).order(ByteOrder.LITTLE_ENDIAN).long
         if (headerLen !in 2..MAX_HEADER) throw java.io.IOException("this is not a .safetensors file (its header claims $headerLen bytes)")
         val headerBytes = ByteArray(headerLen.toInt())
-        if (readUpTo(input, headerBytes).toLong() != headerLen) throw EOFException("the file ends inside its header")
+        if (input.readUpTo(headerBytes).toLong() != headerLen) throw EOFException("the file ends inside its header")
         var read = 8L + headerLen
         val header = JSONObject(String(headerBytes, Charsets.UTF_8))
         val entries = header.keys().asSequence().filter { it != "__metadata__" }
@@ -92,6 +92,8 @@ object Fp8Widen {
         var at = 0L
         for ((name, t) in tensors) {
             val (b, e) = t.getJSONArray("data_offsets").let { it.getLong(0) to it.getLong(1) }
+            // ⚠ Checked before anything is written: `e < b` made a negative size, and the copy below an array of it.
+            if (b < 0 || e < b) throw java.io.IOException("tensor '$name' has a broken place in the file ($b..$e)")
             val size = if (name in wide) (e - b) * 4 else e - b
             newHeader.put(name, JSONObject().apply {
                 put("dtype", if (name in wide) "F32" else t.getString("dtype"))
@@ -113,41 +115,26 @@ object Fp8Widen {
             val (b, e) = t.getJSONArray("data_offsets").let { it.getLong(0) to it.getLong(1) }
             if (b < pos) throw java.io.IOException("tensor '$name' overlaps the one before it")
             if (b > pos) {
-                skipExactly(input, b - pos)
+                input.skipExactly(b - pos)
                 read += b - pos
             }
             if (name in wide) {
-                if (isCancelled()) throw ModelInstaller.Cancelled()
-                val raw = ByteArray((e - b).toInt())
-                if (readUpTo(input, raw).toLong() != e - b) throw EOFException("the file ends inside '$name'")
-                out.write(toF32(raw))
-                read += raw.size
-                onBytes(read)
+                // ⚠ In slabs (one byte per element), never the whole tensor: a big one plus its 4x F32 copy was an
+                // OutOfMemoryError, an Error the import's `catch (e: Exception)` does not see.
+                var left = e - b
+                while (left > 0) {
+                    if (isCancelled()) throw ModelInstaller.Cancelled()
+                    val n = minOf(left, buf.size.toLong()).toInt()
+                    if (input.readUpTo(buf, 0, n) != n) throw EOFException("the file ends inside '$name'")
+                    out.write(toF32(buf, n))
+                    left -= n
+                    read += n
+                    onBytes(read)
+                }
             } else pump(e - b)
             pos = e
         }
         return wide.size
-    }
-
-    /** ⚠ Not `readNBytes`/`skipNBytes`: API 33, and minSdk is 31. */
-    private fun readUpTo(input: InputStream, into: ByteArray): Int {
-        var got = 0
-        while (got < into.size) {
-            val n = input.read(into, got, into.size - got)
-            if (n < 0) break
-            got += n
-        }
-        return got
-    }
-
-    private fun skipExactly(input: InputStream, count: Long) {
-        var left = count
-        val sink = ByteArray(minOf(count, 1L shl 16).toInt())
-        while (left > 0) {
-            val n = input.read(sink, 0, minOf(sink.size.toLong(), left).toInt())
-            if (n < 0) throw EOFException("the file ends between its tensors")
-            left -= n
-        }
     }
 
     private fun shapeOf(t: JSONObject): List<Long> =
@@ -166,9 +153,9 @@ object Fp8Widen {
     }
 
     /** ⭐ fp8 (E4M3) bytes as little-endian `F32`. */
-    internal fun toF32(raw: ByteArray): ByteArray {
-        val dst = ByteBuffer.allocate(raw.size * 4).order(ByteOrder.LITTLE_ENDIAN)
-        for (b in raw) dst.putFloat(LUT[b.toInt() and 0xFF])
+    internal fun toF32(raw: ByteArray, count: Int = raw.size): ByteArray {
+        val dst = ByteBuffer.allocate(count * 4).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until count) dst.putFloat(LUT[raw[i].toInt() and 0xFF])
         return dst.array()
     }
 }

@@ -1,0 +1,13 @@
+--- a/src/Pipeline.hpp
++++ b/src/Pipeline.hpp
+@@ -472,6 +472,10 @@
+     // "Touch the crop and it is fixed" worked because by then a sample HAD run,
+     // so the re-encode the changed crop forced was a correct one.
+     ScopedSizeOverride io(req.width, req.height, req.width / 8, req.height / 8);
++    // nightmare (041): 032's rule on the encode side too. Under lowram the ~575 MB encoder
++    // otherwise stayed mapped after a /vae_encode, and the next ControlNet or upscale loaded
++    // beside it. No-op without lowram.
++    ScopeExit transient_guard{[this]() { releaseTransientModels(); }};
+ 
+     // NHWC bytes -> NCHW floats in [-1, 1]. ⚠ The same normalisation
+     // RequestParser applies to an img2img image (x / 127.5 - 1); a different

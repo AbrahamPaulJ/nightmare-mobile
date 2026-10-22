@@ -459,23 +459,32 @@ object AddObjects {
      * wherever [mask] did not choose them.
      */
     fun cutout(source: Bitmap, mask: Bitmap, o: Placed): Bitmap {
-        val l = (o.bx * source.width).toInt().coerceIn(0, source.width - 1)
-        val t = (o.by * source.height).toInt().coerceIn(0, source.height - 1)
-        val cw = (o.bw * source.width).toInt().coerceIn(1, source.width - l)
-        val ch = (o.bh * source.height).toInt().coerceIn(1, source.height - t)
-        val out = Bitmap.createBitmap(source, l, t, cw, ch).copy(Bitmap.Config.ARGB_8888, true)
+        // ⚠⚠ Both rectangles from ROUNDED edges (start and end), one rule for both bitmaps: left and
+        // width truncated separately, at two scales (the mask is [WORK_EDGE]), put the alpha a few
+        // source pixels off the object on a 4000x3000 photo, a background sliver on one side.
+        fun span(start: Float, size: Float, len: Int): Pair<Int, Int> {
+            val a = Math.round(start * len).coerceIn(0, len - 1)
+            val b = Math.round((start + size) * len).coerceIn(a + 1, len)
+            return a to b - a
+        }
+        val (l, cw) = span(o.bx, o.bw, source.width)
+        val (t, ch) = span(o.by, o.bh, source.height)
+        val region = Bitmap.createBitmap(source, l, t, cw, ch)
+        val out = region.copy(Bitmap.Config.ARGB_8888, true)
+        if (region !== source) region.recycle()
         // ⚠⚠⚠ **The white box.** A JPEG decodes with `hasAlpha = false`, the
         // copy inherits it, and a bitmap that says it has no alpha is DRAWN
         // OPAQUE whatever its pixels hold — so the whole rectangle around the
         // object, background and all, was pasted (reported twice, 2026-09-23).
         out.setHasAlpha(true)
         // The mask's matching region, scaled to the cut.
-        val ml = (o.bx * mask.width).toInt().coerceIn(0, mask.width - 1)
-        val mt = (o.by * mask.height).toInt().coerceIn(0, mask.height - 1)
-        val mw = (o.bw * mask.width).toInt().coerceIn(1, mask.width - ml)
-        val mh = (o.bh * mask.height).toInt().coerceIn(1, mask.height - mt)
-        val m = Bitmap.createScaledBitmap(Bitmap.createBitmap(mask, ml, mt, mw, mh), cw, ch, true)
+        val (ml, mw) = span(o.bx, o.bw, mask.width)
+        val (mt, mh) = span(o.by, o.bh, mask.height)
+        val mCut = Bitmap.createBitmap(mask, ml, mt, mw, mh)
+        val m = Bitmap.createScaledBitmap(mCut, cw, ch, true)
         val a = IntArray(cw * ch).also { m.getPixels(it, 0, cw, 0, 0, cw, ch) }
+        if (m !== mask) m.recycle()
+        if (mCut !== mask && mCut !== m) mCut.recycle()
         val c = IntArray(cw * ch).also { out.getPixels(it, 0, cw, 0, 0, cw, ch) }
         for (i in c.indices) {
             val alpha = a[i] shr 16 and 0xFF

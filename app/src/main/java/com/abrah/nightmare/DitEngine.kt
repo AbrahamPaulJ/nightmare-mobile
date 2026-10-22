@@ -208,11 +208,32 @@ object DitEngine {
         installed = isInstalled(context)
     }
 
-    /** Fetch and unpack. ⚠ Blocking — off the main thread. */
+    /**
+     * Fetch and unpack. ⚠ Blocking — off the main thread.
+     *
+     * ⚠⚠ One at a time, and the second caller re-checks: two DiT installs (or an install and an import) both
+     * appended to the same `dit-engine.zip.part` and unpacked into the same `.so.part`, and one renamed it while
+     * the other still wrote, so a short engine could be stamped installed. [ModelInstaller]'s guard is per
+     * MODEL id; the engine is shared by all of them.
+     */
     fun install(
         context: Context,
         onProgress: (ModelInstaller.Progress) -> Unit,
         isCancelled: () -> Boolean = { false },
+    ) = synchronized(installLock) {
+        if (isInstalled(context)) {
+            refresh(context)
+            return@synchronized
+        }
+        installOnce(context, onProgress, isCancelled)
+    }
+
+    private val installLock = Any()
+
+    private fun installOnce(
+        context: Context,
+        onProgress: (ModelInstaller.Progress) -> Unit,
+        isCancelled: () -> Boolean,
     ) {
         val dir = dir(context).apply { mkdirs() }
         val zip = File(dir, "dit-engine.zip.part")

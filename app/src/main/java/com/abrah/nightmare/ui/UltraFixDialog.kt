@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
@@ -57,14 +58,14 @@ fun UltraFixDialog(start: UltraFix.Params, onConfirm: (UltraFix.Params) -> Unit,
                     checked = p.qualityPrompt,
                     onChange = { p = p.copy(qualityPrompt = it) },
                 )
-                TextButton(onClick = { p = UltraFix.Params() }) { Text(stringResource(R.string.ultrafix_restore)) }
+                StudioTextButton(onClick = { p = UltraFix.Params() }) { Text(stringResource(R.string.ultrafix_restore)) }
                 Text(stringResource(R.string.ultrafix_note), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         // ⚠ Cancel left, the doing one right (`docs/UI.md` §8.1).
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
         confirmButton = {
-            TextButton(onClick = { onConfirm(p.copy(denoiseSteps = p.denoiseSteps.coerceAtMost(denoiseMax))) }) {
+            StudioTextButton(onClick = { onConfirm(p.copy(denoiseSteps = p.denoiseSteps.coerceAtMost(denoiseMax))) }) {
                 Text(stringResource(R.string.ultrafix_title))
             }
         },

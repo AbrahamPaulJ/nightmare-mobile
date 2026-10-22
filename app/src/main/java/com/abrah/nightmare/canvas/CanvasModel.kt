@@ -827,7 +827,10 @@ fun portAt(boxes: List<NodeBox>, worldPoint: Pt, radius: Float = Sizes.PORT_HIT_
  * ⚠ LAST match wins, because later nodes are drawn on top. Returning the first
  * would pick whichever overlapping node happens to be behind.
  */
-fun nodeAt(boxes: List<NodeBox>, worldPoint: Pt): NodeBox? = boxes.lastOrNull { it.contains(worldPoint) }
+fun nodeAt(boxes: List<NodeBox>, worldPoint: Pt, selected: Set<String> = emptySet()): NodeBox? =
+    // ⚠⚠ The DRAW order: `GraphCanvas` paints [selected] nodes last, so they are the ones on top. Hit-testing
+    // the graph's own order toggled the hidden node under a raised one in multi-select.
+    boxes.sortedBy { if (it.id in selected) 1 else 0 }.lastOrNull { it.contains(worldPoint) }
 
 /**
  * Whether a wire from [from] to [to] is allowed, and why not when it is not.

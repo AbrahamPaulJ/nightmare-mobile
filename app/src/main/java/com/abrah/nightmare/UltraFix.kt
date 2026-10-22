@@ -41,9 +41,11 @@ object UltraFix {
     private fun prefs(c: Context) = c.getSharedPreferences("ultrafix", Context.MODE_PRIVATE)
 
     fun load(c: Context): Params = prefs(c).let {
+        val steps = it.getInt("steps", 10).coerceIn(STEPS_MIN, STEPS_MAX)
         Params(
-            it.getInt("steps", 10).coerceIn(STEPS_MIN, STEPS_MAX),
-            it.getInt("denoise_steps", 4),
+            steps,
+            // ⚠ Clamped like [steps]: an unclamped value let the dialog read "30 of 10" ([strength] hid it).
+            it.getInt("denoise_steps", 4).coerceIn(0, minOf(steps, DENOISE_STEPS_MAX)),
             it.getBoolean("quality", true),
         )
     }

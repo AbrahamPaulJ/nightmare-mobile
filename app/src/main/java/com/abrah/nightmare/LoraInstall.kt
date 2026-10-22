@@ -72,7 +72,8 @@ object LoraInstall {
      * gets the version id appended rather than overwriting someone's LoRA.
      */
     internal fun targetName(dir: File, file: LoraSources.LoraFile, version: LoraSources.Version, bytes: Long): String {
-        val base = File(file.name).name.ifBlank { "lora_${version.id}.safetensors" }
+        // ⚠ No comma: a node's `loras` param is a comma list ([LoraSpec]), so `a,b.safetensors` read back as two.
+        val base = File(file.name).name.replace(',', '_').ifBlank { "lora_${version.id}.safetensors" }
         val existing = File(dir, base)
         if (!existing.exists() || existing.length() == bytes) return base
         val stem = base.removeSuffix(".safetensors")

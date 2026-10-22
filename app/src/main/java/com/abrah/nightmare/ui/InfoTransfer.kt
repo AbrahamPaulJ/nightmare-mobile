@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -118,9 +119,9 @@ fun TransferDialog(
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
         confirmButton = {
-            TextButton(enabled = picks.isNotEmpty(), onClick = { onApply(picks, append) }) {
+            StudioTextButton(enabled = picks.isNotEmpty(), onClick = { onApply(picks, append) }) {
                 Text(stringResource(R.string.transfer_use))
             }
         },

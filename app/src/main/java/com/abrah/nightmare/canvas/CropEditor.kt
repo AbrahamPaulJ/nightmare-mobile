@@ -17,6 +17,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -231,6 +233,7 @@ fun CropEditor(
     var scale by remember(source) { mutableFloatStateOf(0f) }
     var offset by remember(source) { mutableStateOf(Offset.Zero) }
     var view by remember(source) { mutableStateOf(Size.Zero) }
+    var laidOut by remember { mutableStateOf(Size.Zero) }
     // ⚠⚠ What this editor last handed upstream. Without it the emitted rect
     // comes straight back as the `rect` argument and re-frames the view mid
     // gesture -- the picture would jump on every pointer event. Compared with a
@@ -248,6 +251,9 @@ fun CropEditor(
     fun clamp() {
         if (view.width <= 0f || view.height <= 0f) return
         scale = max(scale, CropGeometry.minScale(view.width, view.height, pw, ph, outW, rule))
+        // ⚠⚠ …and a CEILING: past the smallest rect the node stores ([CropRect.MIN]) the view kept zooming
+        // while the stored frame stopped, so the render reached further than the screen showed.
+        scale = minOf(scale, view.width / (CropRect.MIN * pw), view.height / (CropRect.MIN * ph))
         offset = CropView.clampOffset(
             view.width, view.height, pw, ph, scale, offset.x, offset.y,
         )
@@ -292,9 +298,39 @@ fun CropEditor(
                 .size(frameW, frameH)
                 .clip(RoundedCornerShape(10.dp))
         ) {
+        // ⚠⚠ The view is measured in LAYOUT and the stored rect followed in an effect, never in the draw
+        // lambda: drawing wrote `view` and `emitted` and called [onChangeNow], a graph write plus an autosave,
+        // from inside the draw phase.
+        LaunchedEffect(laidOut, source, rect) {
+            if (laidOut.width <= 0f) return@LaunchedEffect
+            // ⚠ [view] is keyed on the picture and [laidOut] is not: a new picture in the same frame size
+            // resets [view] while the layout does not change again.
+            if (view != laidOut) { view = laidOut; emitted = null }
+            if (scale <= 0f || emitted == null) {
+                frameFrom(rect)
+                emitted = current()
+                // ⚠⚠ A stored frame the rule does not allow — padding on an
+                // image-to-image node, from before the rule, or past the
+                // outpaint limit — is WRITTEN BACK as the clamped one. Showing
+                // the clamp while the node kept the old rect would render a
+                // framing the editor never showed.
+                val shown = emitted
+                if (interactive && shown != null && !shown.near(rect)) onChangeNow(shown)
+            } else if (emitted?.near(rect) == false) {
+                // Changed from outside -- someone typed in the number fields.
+                frameFrom(rect)
+                emitted = current()
+            }
+        }
         Canvas(
             Modifier
                 .fillMaxSize()
+                .onSizeChanged {
+                    // ⚠ Re-framed when the SHAPE changes too, not only the picture: a
+                    // rewire that changes the demanded size changes the viewport, and a
+                    // scale computed for the old one frames the wrong region.
+                    laidOut = Size(it.width.toFloat(), it.height.toFloat())
+                }
                 .then(if (!interactive) Modifier else Modifier.pointerInput(source, outW, aspect, rule) {
                     detectTransformGestures { centroid, pan, zoom, _ ->
                         if (scale <= 0f) return@detectTransformGestures
@@ -313,25 +349,6 @@ fun CropEditor(
                     }
                 })
         ) {
-            // ⚠ Re-framed when the SHAPE changes too, not only the picture: a
-            // rewire that changes the demanded size changes the viewport, and a
-            // scale computed for the old one frames the wrong region.
-            if (view != size) {
-                view = size
-                frameFrom(rect)
-                emitted = current()
-                // ⚠⚠ A stored frame the rule does not allow — padding on an
-                // image-to-image node, from before the rule, or past the
-                // outpaint limit — is WRITTEN BACK as the clamped one. Showing
-                // the clamp while the node kept the old rect would render a
-                // framing the editor never showed.
-                val shown = emitted
-                if (interactive && shown != null && !shown.near(rect)) onChangeNow(shown)
-            } else if (emitted?.near(rect) == false) {
-                // Changed from outside -- someone typed in the number fields.
-                frameFrom(rect)
-                emitted = current()
-            }
             if (scale <= 0f) return@Canvas
 
             val iw = (pw * scale).roundToInt()
@@ -613,6 +630,14 @@ fun CropRect.asRefParams(): List<Pair<String, String>> = listOf(
     com.abrah.nightmare.SdSampler.REF_Y to round3(y),
     com.abrah.nightmare.SdSampler.REF_W to round3(w),
     com.abrah.nightmare.SdSampler.REF_H to round3(h),
+)
+
+/** ⭐ Motion transfer's driving window ([com.abrah.nightmare.npu.WanFun.VX]): rounded like [asParams]. */
+fun CropRect.asVideoParams(): Map<String, String> = mapOf(
+    com.abrah.nightmare.npu.WanFun.VX to round3(x),
+    com.abrah.nightmare.npu.WanFun.VY to round3(y),
+    com.abrah.nightmare.npu.WanFun.VW to round3(w),
+    com.abrah.nightmare.npu.WanFun.VH to round3(h),
 )
 
 /** ⭐ The ControlNet picture's own region ([com.abrah.nightmare.SdSampler.CTL_X]) — [refCropRectOf]'s sibling. */

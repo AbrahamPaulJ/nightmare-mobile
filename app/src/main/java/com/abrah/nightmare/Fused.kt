@@ -357,7 +357,10 @@ class SdSampler(
             val cn = p[CONTROLNET].orEmpty().ifBlank { SwapInputs.NONE }
             if (cn == SwapInputs.NONE) return null
             val raw = wired ?: picked ?: photo ?: return null
-            return SwapInputs.hint(context, raw, cn, controlFrame(node, p, photo != null), aspect = swapAspect(node, p))
+            // ⚠⚠ At the RUN's size ([SwapInputs.sizeFor] the node's family): the default 512 showed
+            // SDXL Swap a sparser canny than the 1024 pass its ControlNet is actually given.
+            val size = ModelCatalog.byId(p["model"].orEmpty())?.family?.let(SwapInputs::sizeFor) ?: SwapInputs.SIZE
+            return SwapInputs.hint(context, raw, cn, controlFrame(node, p, photo != null), size, swapAspect(node, p))
         }
 
         /**
@@ -1337,13 +1340,21 @@ class SdSampler(
         val pos = PromptLoras.extract(wired.positive)
         val neg = PromptLoras.extract(wired.negative)
         val prompt = if (pos.tags.isEmpty() && neg.tags.isEmpty()) wired else Value.Prompt(pos.text, neg.text)
+        // ⚠ A tag in the NEGATIVE is stripped like any other but never applied (a LoRA has no
+        // negative side), and a pasted CivitAI negative carries them: said, not silently dropped.
+        if (neg.tags.isNotEmpty()) {
+            ctx.warn(ctx.text(R.string.run_lora_tags_negative, "LoRA tags in the negative prompt were left out. Put them in the prompt to use them"))
+        }
         val p = withPromptLoras(ctx, node, effectiveParams(node), pos.tags)
         fun str(k: String) = p[k].orEmpty()
         fun num(k: String) = p[k]?.toDoubleOrNull() ?: 0.0
         fun int(k: String) = p[k]?.toIntOrNull() ?: 0
         fun flag(k: String) = p[k].equals("true", ignoreCase = true)
-        val w = int("width")
-        val h = int("height")
+        // ⚠ A DiT INPAINT snaps here, before the cut is framed and padded to this canvas: [runDit]
+        // snaps its own size, but [runDitMasked] got the raw one, so a hand-edited or agent-written
+        // 1000x750 reached the engine at a size the grid never offers ([ModelCatalog.ditSnap]).
+        val w = int("width").let { if (family.dit && inpaint) ModelCatalog.ditSnap(it) else it }
+        val h = int("height").let { if (family.dit && inpaint) ModelCatalog.ditSnap(it) else it }
         // ⭐⭐ A DiT model renders whole, so it leaves here — EXCEPT an inpaint
         // one, which first needs the mask this function builds below. That
         // path rejoins at [runDitMasked] and returns before any op endpoint is
@@ -1673,6 +1684,10 @@ class SdSampler(
             return finishInpaint(ctx, node, p, photoIn, frame, frameRect, cut, patchBmp)
         }
 
+        // ⚠⚠ The mask is resolved (a tap or a pick ran the segmenter or the parser): let them go
+        // before the UNet loads, as the Swap and DiT paths already do. Plain SD 1.5 / SDXL inpaint
+        // held them through its render for their idle window ([PictureModels], a rule kept in N-1).
+        if (template == null) PictureModels.releaseAll()
         val base = encode(ctx, imagePng, ENCODE_SEED, w, h)
         // ⭐⭐ The picture and mask go to `sample` as well. A 9-channel inpaint
         // checkpoint conditions on them and SEES the hole it fills; every other
@@ -1897,9 +1912,14 @@ class SdSampler(
             ctx.warn(ctx.text(R.string.run_lora_tags_unused, "LoRA tags in the prompt were left out. This model takes no LoRAs"))
             return p
         }
+        // ⚠ `.safetensors` only, as the picker lists them: `<lora:lora_notes>` resolved to the notes JSON.
         val installed = ctx.android?.let { BackendProcess.lorasDir(it).list()?.toList() }.orEmpty()
+            .filter { it.endsWith(".safetensors", ignoreCase = true) }
+        // ⚠ Clamped to the slider's range: `<lora:x:5>` sent 5.0 past the 2.0 the picker allows,
+        // and a negative weight where the template quantizes it to 0 ([LoraSpec.MIN_NEGATIVE]).
+        val range = LoraSpec.range(negative = family.dit)
         val add = tags.mapNotNull { t ->
-            PromptLoras.resolve(t.name, installed)?.let { LoraSpec.Entry(it, t.strength) }
+            PromptLoras.resolve(t.name, installed)?.let { LoraSpec.Entry(it, t.strength.coerceIn(range)) }
                 ?: run {
                     ctx.warn(ctx.text(R.string.run_lora_tag_missing, "LoRA \"%1\$s\" from the prompt is not installed. Skipped", t.name))
                     null
@@ -2030,6 +2050,10 @@ class SdSampler(
         val kept = fixed?.let { ModelCatalog.keptSize(it, w0, h0) }
         val w = kept?.width ?: ModelCatalog.ditSnap(w0)
         val h = kept?.height ?: ModelCatalog.ditSnap(h0)
+        // ⚠ Kept for Match colours: the result is matched to the FRAMED picture it was made from,
+        // as the SD path does. Matching the whole photo pulled a framed dark corner of a bright
+        // photo toward the photo's brightness.
+        var framed: android.graphics.Bitmap? = null
         val png = photo?.let {
             val src = ctx.images.get(it.id)
                 ?: throw IllegalStateException("node \"${node.id}\": image ${it.id} is no longer in the store")
@@ -2039,6 +2063,7 @@ class SdSampler(
                 p["w"]?.toFloatOrNull() ?: 1f, p["h"]?.toFloatOrNull() ?: 1f,
                 w, h, padFill(node.type, p),
             )
+            framed = frame
             ImageStore.encodePng(frame)
         }
         // ⭐⭐ The reference goes over the wire at its OWN size — no
@@ -2145,7 +2170,7 @@ class SdSampler(
         }
         val bmp = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
-        val made = matched(ctx, p, Value.Image(ctx.images.put(bmp), bmp.width, bmp.height), photo?.let { ctx.images.get(it.id) })
+        val made = matched(ctx, p, Value.Image(ctx.images.put(bmp), bmp.width, bmp.height), framed)
         return if (png == null) made else keepPhotoOnly(ctx, node, p, made)
     }
 

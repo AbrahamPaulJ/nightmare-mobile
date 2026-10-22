@@ -303,7 +303,10 @@ object SwapInputs {
         // ⭐ SDXL Swap reads its own ControlNet (`sdxl_<type>`, [ControlNetCatalog.idFor]).
         val id = ControlNetCatalog.idFor(spec.family, type)
         val cn = controlnetFile(context, id)
-        if (!cn.isFile) {
+        // ⚠⚠ [ControlNetCatalog.isInstalled] (this tier's exact size), not `isFile`: AI Hub's
+        // v79-only canny, or a models folder moved from an 8 Elite to an 8 Gen 1, is a foreign
+        // context that failed at LOAD, mid-run, instead of offering this phone's download.
+        if (!ControlNetCatalog.isInstalled(context, id)) {
             if (ControlNetCatalog.buildFor(id) == null) {
                 throw NeedsInput("the $type ControlNet is not available for this model or phone yet")
             }

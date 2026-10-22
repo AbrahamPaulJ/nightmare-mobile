@@ -83,7 +83,18 @@ class VmCanvasHost(
         }
     }
 
-    override fun cancelRun() = main { vm.cancelRun() }
+    /** ⭐ True while [downloadLora] waits: the chat's Stop then stops the download too. */
+    @Volatile private var downloading = false
+    @Volatile private var stopped = false
+
+    override fun cancelRun() {
+        main { vm.cancelRun() }
+        // ⚠ Stop used to leave the agent's LoRA download running, the chat busy until the file finished.
+        if (downloading) {
+            stopped = true
+            main { vm.cancelModelInstall() }
+        }
+    }
 
     override fun lastRun() = main {
         val g = vm.canvas.workflow.graph
@@ -97,8 +108,15 @@ class VmCanvasHost(
 
     override fun downloadLora(label: String, version: LoraSources.Version): String? {
         if (main { vm.installingNow }) return "another download is running. Try again when it finishes"
-        main { vm.downloadLora(label, version) }
-        while (main { vm.installingNow }) Thread.sleep(500)
+        stopped = false
+        downloading = true
+        try {
+            main { vm.downloadLora(label, version) }
+            while (main { vm.installingNow }) Thread.sleep(500)
+        } finally {
+            downloading = false
+        }
+        if (stopped) return "the person stopped the download"
         return main { vm.loraFetchError?.let { it.second.message ?: "the download failed" } }
     }
 

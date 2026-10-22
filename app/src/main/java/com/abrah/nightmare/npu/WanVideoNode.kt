@@ -462,6 +462,10 @@ object WanVideoNode : NodeType {
                 loras.joinToString(";") { (f, s) -> "$f@$s" },
             ) + listOfNotNull(
                 vaeTile.takeIf { it > 0 }?.let { "vae_tile=$it" },
+                // ⚠⚠ The FRAMING too: `source.address()` is the unframed photo, so dragging the crop at
+                // the same seed wrote the old clip's name (GitHub #27 again), and a chain served the old
+                // film ([FilmJoin], keyed on this file's name).
+                source?.let { "frame=" + listOf("x", "y", "w", "h").joinToString(",") { k -> p[k].orEmpty() } },
                 motion?.let { m -> "motion=${m.uri}/${m.mode.id}/${m.startMs}/${m.rect?.joinToString(",").orEmpty()}" },
             ))
                 .joinToString("\u0000")
@@ -575,7 +579,10 @@ object WanVideoNode : NodeType {
             if (prevFilm != null) {
                 val film = File(dir, "film_" + sha1(prevFilm.name + "\u0000" + out.name) + ".mp4")
                 filmFrames = if (film.isFile) FilmJoin.frames(film) else {
-                    val j = FilmJoin.join(prevFilm, out, film, FPS) { Log.i(TAG, it); ctx.say(it.trim()) }
+                    val j = FilmJoin.join(
+                        prevFilm, out, film, FPS, { Log.i(TAG, it); ctx.say(it.trim()) },
+                        VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]),
+                    )
                     ctx.say("  joined onto the film so far: ${j.frames} frames (${"%.1f".format(j.frames.toDouble() / FPS)} s)" +
                         if (j.copied) "" else ", re-encoded")
                     j.frames

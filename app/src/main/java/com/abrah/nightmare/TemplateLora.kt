@@ -414,15 +414,22 @@ object TemplateLora {
         private val dataStart: Long
 
         init {
-            val lenBuf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
-            raf.channel.read(lenBuf, 0)
-            val len = lenBuf.getLong(0)
-            require(len in 2..(64L * 1024 * 1024)) { "not a .safetensors file (header claims $len bytes)" }
-            val hb = ByteArray(len.toInt())
-            raf.seek(8)
-            raf.readFully(hb)
-            header = JSONObject(String(hb, Charsets.UTF_8))
-            dataStart = 8 + len
+            // ⚠ A header that fails to parse closes the file here: the caller's `use` never got an object to close,
+            // so a bad LoRA leaked one descriptor per Run.
+            try {
+                val lenBuf = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+                raf.channel.read(lenBuf, 0)
+                val len = lenBuf.getLong(0)
+                require(len in 2..(64L * 1024 * 1024)) { "not a .safetensors file (header claims $len bytes)" }
+                val hb = ByteArray(len.toInt())
+                raf.seek(8)
+                raf.readFully(hb)
+                header = JSONObject(String(hb, Charsets.UTF_8))
+                dataStart = 8 + len
+            } catch (t: Throwable) {
+                raf.close()
+                throw t
+            }
         }
 
         val names: Set<String> = header.keys().asSequence().filter { it != "__metadata__" }.toSet()

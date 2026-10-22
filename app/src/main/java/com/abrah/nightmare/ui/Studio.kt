@@ -47,7 +47,7 @@ fun StudioCard(
 ) {
     val shape = RoundedCornerShape(16.dp)
     val color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surfaceVariant
-    val border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) Accent else MaterialTheme.colorScheme.outline)
+    val border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) MaterialTheme.studio.accentText else MaterialTheme.colorScheme.outline)
     val inner: @Composable () -> Unit = { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content) }
     if (onClick != null) {
         Surface(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = shape, color = color, border = border, content = inner)

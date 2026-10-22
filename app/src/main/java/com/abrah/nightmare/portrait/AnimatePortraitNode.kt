@@ -10,6 +10,7 @@ import com.abrah.nightmare.NodeType
 import com.abrah.nightmare.Port
 import com.abrah.nightmare.Value
 import com.abrah.nightmare.Widget
+import com.abrah.nightmare.npu.DriverFrames
 import com.abrah.nightmare.npu.VideoWriter
 import java.io.File
 import java.security.MessageDigest
@@ -50,6 +51,9 @@ object AnimatePortraitNode : NodeType {
      */
     private const val BATCH = 8
 
+    /** ⭐ The clip's long side at most: within every phone AVC encoder's range (Wan caps by area). */
+    private const val MAX_EDGE = 1280
+
     override val widgets = listOf(Widget(SECONDS, "int", "10", 1.0, 30.0))
 
     override fun contextKey(node: Node): ContextKey? = null
@@ -65,11 +69,23 @@ object AnimatePortraitNode : NodeType {
         }
         val src = ctx.images.get(photo.id)
             ?: throw IllegalStateException("node \"${node.id}\": the photo is no longer held. Run again")
+        // ⚠⚠ Capped at [MAX_EDGE]: a 4080x3060 camera photo is past what phone AVC encoders take (it
+        // failed at `configure`), and every frame allocated ~48 MB at that size twice over.
+        val k = minOf(1f, MAX_EDGE.toFloat() / maxOf(src.width, src.height))
+        val sized = if (k < 1f) {
+            Bitmap.createScaledBitmap(src, Math.round(src.width * k).coerceAtLeast(2), Math.round(src.height * k).coerceAtLeast(2), true)
+        } else src
         // ⚠ H.264 wants even sides ([VideoWriter.encode]).
-        val w = src.width and 1.inv()
-        val h = src.height and 1.inv()
-        val portrait = if (w == src.width && h == src.height) src else Bitmap.createBitmap(src, 0, 0, w, h)
-        val px = IntArray(w * h).also { portrait.copy(Bitmap.Config.ARGB_8888, false).getPixels(it, 0, w, 0, 0, w, h) }
+        val w = sized.width and 1.inv()
+        val h = sized.height and 1.inv()
+        val portrait = if (w == sized.width && h == sized.height) sized else Bitmap.createBitmap(sized, 0, 0, w, h)
+        val px = IntArray(w * h).also {
+            val argb = portrait.copy(Bitmap.Config.ARGB_8888, false)
+            argb.getPixels(it, 0, w, 0, 0, w, h)
+            argb.recycle()
+        }
+        if (portrait !== src) portrait.recycle()
+        if (sized !== src && sized !== portrait) sized.recycle()
         val seconds = node.params[SECONDS]?.toIntOrNull()?.coerceIn(1, 30) ?: 10
 
         return withContext(Dispatchers.IO) {
@@ -79,7 +95,7 @@ object AnimatePortraitNode : NodeType {
                 r.setDataSource(driver.path)
                 val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
                 val count = (minOf(durMs, seconds * 1000L) * FPS / 1000L).toInt()
-                val frames = DriverFrames(r, durMs)
+                val frames = DriverFrames(r, durMs, BATCH)
                 if (count < 2) throw IllegalArgumentException("node \"${node.id}\": the driving video is too short")
                 val key = sha1("${photo.id}\u0000${driver.path}\u0000$seconds")
                 val out = File(File(app.cacheDir, "video").apply { mkdirs() }, "portrait_$key.mp4")
@@ -87,12 +103,17 @@ object AnimatePortraitNode : NodeType {
                 val loop = ArrayList<Bitmap>()
                 val loopScale = 320f / maxOf(w, h)
                 var first: Bitmap? = null
+                // ⚠ The previous frame, recycled once the encoder has drawn it (the next ask): over
+                // 250 frames none was, and a long clip piled native bitmaps up beside LivePortrait.
+                var prev: Bitmap? = null
                 val t0 = System.nanoTime()
                 VideoWriter.encode(
                     count, w, h, FPS, out,
                     log = { line -> android.util.Log.i("AnimatePortrait", line) },
                     isCancelled = VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]),
                 ) { i ->
+                    prev?.takeIf { it !== first }?.recycle()
+                    prev = null
                     // ⚠ Frame 0 can be asked for twice (the encoder's software retry): start the motion over.
                     if (i == 0) {
                         loop.clear()
@@ -105,13 +126,18 @@ object AnimatePortraitNode : NodeType {
                         ?: throw IllegalStateException("node \"${node.id}\": could not read frame ${i + 1} of the driving video")
                     val dw = frame.width
                     val dh = frame.height
-                    val dpx = IntArray(dw * dh).also { frame.copy(Bitmap.Config.ARGB_8888, false).getPixels(it, 0, dw, 0, 0, dw, dh) }
+                    val dpx = IntArray(dw * dh).also {
+                        val argb = frame.copy(Bitmap.Config.ARGB_8888, false)
+                        argb.getPixels(it, 0, dw, 0, 0, dw, dh)
+                        argb.recycle()
+                    }
                     val moved = NativePortrait.animate(dpx, dw, dh)
                         ?: throw IllegalStateException("node \"${node.id}\": ${NativePortrait.lastError()}")
                     val bmp = Bitmap.createBitmap(moved, w, h, Bitmap.Config.ARGB_8888)
                     if (i == 0) first = bmp
                     loop += Bitmap.createScaledBitmap(bmp, (w * loopScale).toInt().coerceAtLeast(2), (h * loopScale).toInt().coerceAtLeast(2), true)
                     ctx.onProgress(com.abrah.nightmare.Ops.Progress(((i + 1) * 100 / count).coerceIn(0, 100), 100, 0L))
+                    prev = bmp
                     bmp
                 }
                 ctx.say("$count frames in ${"%.1f".format((System.nanoTime() - t0) / 1e9)} s · ${frames.describe()}")
@@ -124,43 +150,6 @@ object AnimatePortraitNode : NodeType {
                 r.release()
             }
         }
-    }
-
-    /**
-     * ⭐ The driver's frame at a time, decoded in order a batch at a time (`getFramesAtIndex`), each source frame read
-     * once. ⚠ RGB_565 halves a batch (8 x 4 MB at 1080x1920); `getPixels` still gives ARGB.
-     * ⚠ Without a frame count (some containers), one exact seek per frame, as before.
-     */
-    private class DriverFrames(private val r: MediaMetadataRetriever, private val durMs: Long) {
-        private val srcCount = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull() ?: 0
-        private val params = MediaMetadataRetriever.BitmapParams().apply { preferredConfig = Bitmap.Config.RGB_565 }
-        private var start = -1
-        private var held: List<Bitmap> = emptyList()
-        private val distinct = HashSet<Int>()
-        private var seeks = 0
-
-        fun at(ms: Long): Bitmap? {
-            if (srcCount <= 0 || durMs <= 0) {
-                seeks++
-                return r.getFrameAtTime(ms * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
-            }
-            val i = (ms * srcCount / durMs).toInt().coerceIn(0, srcCount - 1)
-            if (i !in start until start + held.size) {
-                start = i
-                held = runCatching { r.getFramesAtIndex(i, minOf(BATCH, srcCount - i), params) }.getOrDefault(emptyList())
-                if (held.isEmpty()) {
-                    seeks++
-                    return r.getFrameAtTime(ms * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
-                }
-            }
-            distinct += i
-            return held[i - start]
-        }
-
-        /** For the run log: how the driver was read. */
-        fun describe(): String =
-            if (srcCount <= 0) "driver read by seeking ($seeks)"
-            else "driver: ${distinct.size} of its $srcCount frames" + (if (seeks > 0) ", $seeks by seeking" else "")
     }
 
     private fun sha1(s: String): String =

@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import com.abrah.nightmare.DeviceProbe
+import com.abrah.nightmare.Prefs
 import com.abrah.nightmare.R
 import com.abrah.nightmare.SelectedModel
 import java.net.Inet4Address
@@ -37,9 +39,13 @@ class ApiService : Service() {
             return START_NOT_STICKY
         }
         if (server == null) {
+            // ⚠ STICKY: after a process death this restarts with no activity, so it loads what OpService loads
+            // (the HMX verdict, `Prefs.wanStream`, the mirror, the CivitAI key) or API renders run on defaults.
             SelectedModel.load(this)
+            DeviceProbe.loadHmxVerdict(this)
+            Prefs.load(this)
             val api = NightmareApi(applicationContext)
-            server = MiniHttp(ApiSettings.PORT, api::handle).also {
+            server = MiniHttp(ApiSettings.PORT, api::handle, admit = api::authorized).also {
                 try {
                     it.start()
                 } catch (e: Exception) {

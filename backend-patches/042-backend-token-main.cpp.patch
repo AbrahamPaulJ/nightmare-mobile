@@ -1,0 +1,41 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -2041,12 +2041,32 @@
+ 
+   // --- HTTP Server ---
+   httplib::Server svr;
+-  svr.set_default_headers({
+-      {"Access-Control-Allow-Origin", "*"},
+-      {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"},
+-      {"Access-Control-Allow-Headers", "Content-Type, Authorization"},
+-      {"Access-Control-Max-Age", "86400"},
+-  });
++  // nightmare (042): no wildcard CORS. Nothing that talks to this server is a browser, and
++  // `Access-Control-Allow-Origin: *` let any web page the phone opened read /handles and every
++  // image a no-preflight POST got back.
++  //
++  // ⭐⭐ And a token. Loopback is every app on the phone, and request bodies name files this
++  // process writes and deletes (/video's `out`) or maps (`controlnet`, `lora_dir`, `ip_dir`). The
++  // app launches us with NM_BACKEND_TOKEN in the environment (Android hides other apps' /proc)
++  // and sends it as X-Nightmare-Token on every request; anything else is a 401 before routing.
++  // ⚠ Unset (a backend run by hand for the harness), nothing is checked, as before.
++  if (const char *tok = std::getenv("NM_BACKEND_TOKEN"); tok != nullptr && *tok != '\0') {
++    const std::string token(tok);
++    svr.set_pre_routing_handler(
++        [token](const httplib::Request &req, httplib::Response &res) {
++          const std::string got = req.get_header_value("X-Nightmare-Token");
++          // Constant time over the token's length: no early exit on the first wrong byte.
++          unsigned char diff = got.size() == token.size() ? 0 : 1;
++          for (size_t i = 0; i < token.size(); ++i)
++            diff |= (unsigned char)(token[i] ^ (i < got.size() ? got[i] : 0));
++          if (diff == 0) return httplib::Server::HandlerResponse::Unhandled;
++          res.status = 401;
++          res.set_content(
++              R"({"error":{"message":"missing or wrong backend token","type":"auth_error"}})",
++              "application/json");
++          return httplib::Server::HandlerResponse::Handled;
++        });
++  }
+   svr.Options(R"(.*)", [](const httplib::Request &, httplib::Response &res) {
+     res.status = 204;
+   });

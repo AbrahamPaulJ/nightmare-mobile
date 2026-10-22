@@ -135,7 +135,8 @@ class HostSurface(
                 val w = a.getInt("width")
                 val h = a.getInt("height")
                 require(w > 0 && h > 0) { "image.crop needs a positive size, got ${w}x$h" }
-                require(x >= 0 && y >= 0 && x + w <= src.width && y + h <= src.height) {
+                // ⚠ Summed as Long: `x = 1, width = Int.MAX_VALUE` overflowed to a negative and passed.
+                require(x >= 0 && y >= 0 && x.toLong() + w <= src.width && y.toLong() + h <= src.height) {
                     "image.crop ${w}x$h at ($x,$y) does not fit in ${src.width}x${src.height}"
                 }
                 val out = Bitmap.createBitmap(src, x, y, w, h)

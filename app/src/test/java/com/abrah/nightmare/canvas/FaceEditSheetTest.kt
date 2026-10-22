@@ -69,8 +69,9 @@ class FaceEditSheetTest {
         val w = checkNotNull(written) { "Done wrote nothing" }
         assertTrue(LivePortrait.SLIDERS.all { it in w })
         assertEquals("0.6", w["mouth_smile"])
-        // ⚠ Every face, always: the switch is gone.
-        assertEquals("false", w[FaceEditNode.LARGEST_ONLY])
+        // ⚠ Every face, always: the switch is gone, and so is its write (retired, read by nothing,
+        // and hashed into the cache key, so writing it re-ran an unchanged node once).
+        assertTrue(FaceEditNode.LARGEST_ONLY !in w)
     }
 
     /** ⚠ No picture yet: a line saying what to do, no button that opens onto nothing. */

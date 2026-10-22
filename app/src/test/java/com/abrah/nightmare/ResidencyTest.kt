@@ -96,4 +96,19 @@ class ResidencyTest {
         assertTrue(why, why.contains("8.2 GB"))
         assertTrue(why, why.contains("10.9 GB"))
     }
+
+    /**
+     * ⭐ The PHONE's floor: Klein 4B on a tester's 12 GB S25 Ultra left 0.8 GB and the phone went black (release);
+     * the dev phone keeps 1.5 to 2.0 GB after the same model (keep). Unreadable never releases.
+     */
+    @Test fun aStarvedPhoneReleasesAndAComfortableOneKeeps() {
+        val s25u = 12_508_000_000L
+        assertTrue(Residency.phoneStarved(800_000_000L, s25u))
+        assertFalse(Residency.phoneStarved(1_530_000_000L, phone12))
+        assertFalse(Residency.phoneStarved(2_050_000_000L, phone12))
+        assertFalse(Residency.phoneStarved(0L, s25u))
+        assertFalse(Residency.phoneStarved(800_000_000L, 0L))
+        // ⚠ A small phone still keeps a whole GiB.
+        assertTrue(Residency.phoneStarved(900_000_000L, 6_000_000_000L))
+    }
 }

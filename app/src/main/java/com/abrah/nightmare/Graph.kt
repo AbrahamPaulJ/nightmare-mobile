@@ -777,7 +777,12 @@ data class Graph(val nodes: List<Node>) {
      * `grow`/`feather`/padding stay — those are settings, not content.
      */
     fun withNewPicture(nodeId: String, uri: String): Graph =
-        withParam(nodeId, "uri", uri).forgettingPictureWork { dependsOn(it, nodeId) }
+        withParam(nodeId, "uri", uri)
+            // ⚠ …and the node's own DOODLE: it was drawn on the old picture, and `withDrawing` would stretch
+            // it over the new one at Run. The view model's Clear and Blank page already empty it; this was the
+            // third door, the inspector's picker, that kept it.
+            .let { g -> if (g.byId[nodeId]?.params?.get(LoadImageNode.DRAWING).isNullOrEmpty()) g else g.withParam(nodeId, LoadImageNode.DRAWING, "") }
+            .forgettingPictureWork { dependsOn(it, nodeId) }
 
     /**
      * ⭐⭐ The ONE place a framing and a painting are forgotten — for every node

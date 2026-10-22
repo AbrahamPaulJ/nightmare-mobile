@@ -28,8 +28,11 @@ object Prefs {
      */
     enum class Theme { SYSTEM, DARK, LIGHT }
 
-    /** ⚠ Backing state so Compose recomposes; loaded by [load] before first draw. */
-    var theme: Theme = Theme.SYSTEM
+    /**
+     * ⚠ Backing state so Compose recomposes; loaded by [load] before first draw.
+     * ⚠ Every in-memory value is @Volatile: the API's, the agent's and OpService's threads read them too.
+     */
+    @Volatile var theme: Theme = Theme.SYSTEM
         private set
 
     fun load(context: Context) {
@@ -41,8 +44,7 @@ object Prefs {
         theme = Theme.entries.firstOrNull { it.name == raw } ?: Theme.SYSTEM
         downloadBase = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
             .getString(KEY_MIRROR, null)?.takeIf { it.isNotBlank() } ?: HF_ORIGIN
-        civitaiKey = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-            .getString(KEY_CIVITAI_KEY, null).orEmpty()
+        civitaiKey = loadCivitaiKey(context)
         matureContent = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
             .getBoolean(KEY_MATURE, false)
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -60,7 +62,7 @@ object Prefs {
     }
 
     /** ⭐ A sampler's "More options" fold open (the user, 2026-10-17: closed by default, remembered). */
-    var moreOptionsOpen: Boolean = false
+    @Volatile var moreOptionsOpen: Boolean = false
         private set
 
     fun setMoreOptionsOpen(context: Context, value: Boolean) {
@@ -79,7 +81,7 @@ object Prefs {
      * ⭐ What the app opens on. NULL until the person has been asked (first launch: Nodes for
      * beginners, Graph for advanced). ⚠ Agent is never a default — it needs a key first.
      */
-    var defaultView: MainView? = null
+    @Volatile var defaultView: MainView? = null
         private set
 
     fun setDefaultView(context: Context, value: MainView) {
@@ -88,7 +90,7 @@ object Prefs {
     }
 
     /** ⭐ The Nodes view top to bottom instead of swiped left to right. */
-    var nodesVertical: Boolean = false
+    @Volatile var nodesVertical: Boolean = false
         private set
 
     fun setNodesVertical(context: Context, value: Boolean) {
@@ -97,7 +99,7 @@ object Prefs {
     }
 
     /** ⭐ Chat taken off the view button (the user, 2026-10-13): Default and Advanced only. */
-    var hideChat: Boolean = false
+    @Volatile var hideChat: Boolean = false
         private set
 
     fun setHideChat(context: Context, value: Boolean) {
@@ -108,6 +110,7 @@ object Prefs {
     // ---- the LoRA browser (`docs/LORA-BROWSER.md`) ---------------------------
 
     private const val KEY_CIVITAI_KEY = "civitai_api_key"
+    private const val KEY_CIVITAI_SEALED = "civitai_api_key_sealed"
     private const val KEY_MATURE = "civitai_mature"
 
     /**
@@ -116,13 +119,36 @@ object Prefs {
      * ⚠ App-private preferences, never logged, never put in a URL: it travels
      * only as an `Authorization` header to CivitAI ([LoraSources]).
      */
-    var civitaiKey: String = ""
+    @Volatile var civitaiKey: String = ""
         private set
 
     fun setCivitaiKey(context: Context, value: String) {
         civitaiKey = value.trim()
-        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
-            .putString(KEY_CIVITAI_KEY, civitaiKey).apply()
+        val e = context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+        val sealed = civitaiKey.takeIf { it.isNotEmpty() }?.let { runCatching { com.abrah.nightmare.agent.KeyVault.seal(it) }.getOrNull() }
+        when {
+            civitaiKey.isEmpty() -> e.remove(KEY_CIVITAI_KEY).remove(KEY_CIVITAI_SEALED)
+            sealed != null -> e.putString(KEY_CIVITAI_SEALED, sealed).remove(KEY_CIVITAI_KEY)
+            // ⚠ No Keystore (a JVM test): kept plain as before rather than lost.
+            else -> e.putString(KEY_CIVITAI_KEY, civitaiKey).remove(KEY_CIVITAI_SEALED)
+        }
+        e.apply()
+    }
+
+    /**
+     * ⭐ Sealed with the agent's [agent.KeyVault] (AES-GCM, key in the Android Keystore), as the LLM key is: it sat in
+     * plain prefs. ⚠ A key saved plain by an older build is read, then sealed in place.
+     */
+    private fun loadCivitaiKey(context: Context): String {
+        val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        p.getString(KEY_CIVITAI_SEALED, null)?.let { s -> runCatching { com.abrah.nightmare.agent.KeyVault.open(s) }.getOrNull()?.let { return it } }
+        val plain = p.getString(KEY_CIVITAI_KEY, null).orEmpty()
+        if (plain.isNotEmpty()) {
+            runCatching { com.abrah.nightmare.agent.KeyVault.seal(plain) }.getOrNull()?.let { sealed ->
+                p.edit().putString(KEY_CIVITAI_SEALED, sealed).remove(KEY_CIVITAI_KEY).apply()
+            }
+        }
+        return plain
     }
 
     /**
@@ -130,7 +156,7 @@ object Prefs {
      * default (the user's call, 2026-10-07): since April 2026 civitai.com
      * answers with SFW results only, civitai.red with everything.
      */
-    var matureContent: Boolean = false
+    @Volatile var matureContent: Boolean = false
         private set
 
     fun setMatureContent(context: Context, value: Boolean) {
@@ -177,7 +203,7 @@ object Prefs {
      * ⚠ A custom value is whatever the user typed, so it is normalised on the
      * way in rather than trusted on the way out.
      */
-    var downloadBase: String = HF_ORIGIN
+    @Volatile var downloadBase: String = HF_ORIGIN
         private set
 
     fun setDownloadBase(context: Context, value: String) {
@@ -244,7 +270,7 @@ object Prefs {
      * ⚠ [KEY_WAN_STREAM] held in memory: a Wan node's launch key reads it with no Context
      * (`WanVideoNode.keyFor`). Loaded by [load], kept in step by [setLowRam].
      */
-    var wanStream: Boolean = false
+    @Volatile var wanStream: Boolean = false
         private set
 
     /**

@@ -1,5 +1,8 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -138,8 +141,15 @@ fun LoraBrowserContent(
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val cache = remember { HashMap<String, Page>() }
     val scope = rememberCoroutineScope()
+    // ⚠ The running "Load more", cancelled by a NEW search: its late page was appended to the next search's
+    // list, with the old search's cursor, and its `loading = false` cut across the new one.
+    val more = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
 
-    LaunchedEffect(source, target, sort, query.trim(), now) {
+    // ⚠⚠ The key and the mature switch are keys too: pasting a CivitAI key into the banner left the "needs a
+    // key" error and the old results up until the query changed.
+    LaunchedEffect(source, target, sort, query.trim(), now, civitaiKey, mature) {
+        more[0]?.cancel()
+        more[0] = null
         val q = query.trim()
         if (!immediate && q.isNotEmpty()) delay(DEBOUNCE_MS)
         immediate = false
@@ -147,7 +157,7 @@ fun LoraBrowserContent(
         listState.scrollToItem(0)
         loading = true
         error = null
-        val key = "$source|$target|$sort|$q|$mature"
+        val key = "$source|$target|$sort|$q|$mature|${civitaiKey.isNotBlank()}"
         val result = runCatching {
             cache[key] ?: run {
                 val link = LoraSources.parseLink(q)
@@ -253,11 +263,11 @@ fun LoraBrowserContent(
         val cursor = next
         if (cursor != null && hits.isNotEmpty()) {
             item {
-                TextButton(
+                StudioTextButton(
                     enabled = !loading,
                     onClick = {
                         loading = true
-                        scope.launch {
+                        more[0] = scope.launch {
                             runCatching { search(source, target, query.trim(), sort, cursor) }
                                 .also { r -> r.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it } }
                                 .onSuccess { p -> hits = (hits + p.hits).distinctBy { it.id }; next = p.next }
@@ -423,7 +433,7 @@ private fun ColumnScope.LoraDetail(
                         Badge(sourceLabel(hit.source))
                         if (hit.nsfw) Badge("NSFW", MaterialTheme.colorScheme.error)
                     }
-                    OutlinedButton(onClick = { runCatching { uri.openUri(hit.pageUrl) } }) {
+                    StudioOutlinedButton(onClick = { runCatching { uri.openUri(hit.pageUrl) } }) {
                         Text(stringResource(R.string.lb_open_page))
                     }
                 }
@@ -481,9 +491,9 @@ private fun VersionCard(
             progress = progress,
         ) {
             when {
-                progress != null -> OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-                here -> OutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.lb_added)) }
-                else -> Button(
+                progress != null -> StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+                here -> StudioOutlinedButton(onClick = {}, enabled = false) { Text(stringResource(R.string.lb_added)) }
+                else -> StudioButton(
                     onClick = { onDownload(hit.name, v) },
                     enabled = !busy && file != null && !tooLarge && !v.earlyAccess,
                 ) { Text(stringResource(R.string.download)) }
@@ -520,7 +530,7 @@ internal fun CivitaiKeyField(key: String, onSave: (String) -> Unit) {
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(8.dp))
-        Button(onClick = { onSave(text) }, enabled = text != key) { Text(stringResource(R.string.save)) }
+        StudioButton(onClick = { onSave(text) }, enabled = text != key) { Text(stringResource(R.string.save)) }
     }
 }
 

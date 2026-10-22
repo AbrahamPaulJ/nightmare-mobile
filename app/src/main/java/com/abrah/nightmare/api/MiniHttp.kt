@@ -10,8 +10,11 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * ⭐⭐ The Nightmare API's HTTP server — HTTP/1.1, one request per connection, nothing
@@ -21,12 +24,16 @@ import java.util.concurrent.Executors
  * ⚠ [allow] is asked about every peer BEFORE a byte is read: the server binds every
  * interface (a phone on Wi-Fi has no other way to be reached), and "LAN only" is
  * enforced here ([isLocalPeer]), not by the bind.
- * ⚠ Bounded: headers 16 KB, body [MAX_BODY] (base64 pictures), 30 s to send a request.
+ * ⚠ Bounded: headers 16 KB in [HEAD_DEADLINE_MS], body [MAX_BODY] (base64 pictures), 30 s per read.
+ * ⚠ A body over [OPEN_BODY] is read only when [admit] passes on the headers alone: a peer with no
+ * token cannot make the phone allocate 64 MB per connection (pre-auth memory DoS).
  */
 class MiniHttp(
     private val port: Int,
     private val handler: (Request, Response) -> Unit,
     private val allow: (InetAddress) -> Boolean = ::isLocalPeer,
+    /** Asked with the body still EMPTY. Null = every body is read (the tests' plain servers). */
+    private val admit: ((Request) -> Boolean)? = null,
 ) {
     class Request(
         val method: String,
@@ -111,7 +118,11 @@ class MiniHttp(
         s.reuseAddress = true
         s.bind(InetSocketAddress(port), 16)
         server = s
-        val p = Executors.newFixedThreadPool(THREADS) { r -> Thread(r, "nm-api").apply { isDaemon = true } }
+        // ⚠ A BOUNDED queue: with an unbounded one, slow clients holding every worker made each later socket wait
+        // forever, holding a file descriptor apiece. A connection past the queue is closed at once.
+        val p = ThreadPoolExecutor(
+            THREADS, THREADS, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(QUEUE),
+        ) { r -> Thread(r, "nm-api").apply { isDaemon = true } }
         pool = p
         Thread({
             while (!s.isClosed) {
@@ -120,7 +131,11 @@ class MiniHttp(
                     runCatching { c.close() }
                     continue
                 }
-                p.execute { serve(c) }
+                try {
+                    p.execute { serve(c) }
+                } catch (e: RejectedExecutionException) {
+                    runCatching { c.close() }
+                }
             }
         }, "nm-api-accept").apply { isDaemon = true }.start()
     }
@@ -145,11 +160,16 @@ class MiniHttp(
                 return
             } catch (e: IOException) {
                 return
+            } catch (e: Throwable) {
+                // ⚠⚠ Throwable, here and below: an Error escaping a pool thread (no uncaught handler) kills the WHOLE
+                // app, mid-render, from one malformed request.
+                runCatching { res.json(400, err(e.message ?: e.javaClass.simpleName)) }
+                return
             }
             try {
                 handler(req, res)
                 if (!res.started) res.json(500, err("no response"))
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 if (!res.started) runCatching { res.json(500, err(e.message ?: e.javaClass.simpleName)) }
             }
         }
@@ -160,9 +180,12 @@ class MiniHttp(
     private fun read(input: InputStream, peer: InetAddress): Request {
         val head = ByteArrayOutputStream()
         var matched = 0
+        // ⚠ The read timeout is per read: one byte every 29 s held a worker for days. The head has a whole-request deadline.
+        val deadline = System.nanoTime() + HEAD_DEADLINE_MS * 1_000_000L
         while (matched < 4) {
             val b = input.read()
             if (b < 0) throw IOException("closed")
+            if (System.nanoTime() > deadline) throw IOException("headers too slow")
             head.write(b)
             if (head.size() > MAX_HEAD) throw BadRequest(431, "headers too large")
             matched = when {
@@ -179,8 +202,31 @@ class MiniHttp(
             val i = l.indexOf(':')
             if (i <= 0) null else l.substring(0, i).trim().lowercase() to l.substring(i + 1).trim()
         }.toMap()
-        val length = headers["content-length"]?.toLongOrNull() ?: 0L
+        // ⚠ A chunked body used to read as EMPTY and draw a misleading "give exactly one of flow and graph".
+        if (headers["transfer-encoding"]?.contains("chunked", ignoreCase = true) == true) {
+            throw BadRequest(411, "send a Content-Length, not a chunked body")
+        }
+        val length = headers["content-length"]?.let { it.toLongOrNull() ?: throw BadRequest(400, "bad Content-Length") } ?: 0L
+        if (length < 0) throw BadRequest(400, "bad Content-Length")
         if (length > MAX_BODY) throw BadRequest(413, "body over ${MAX_BODY / (1024 * 1024)} MB")
+        val target = first[1]
+        val q = target.indexOf('?')
+        // ⚠ A stray `%zz` threw IllegalArgumentException, which nothing caught.
+        fun decode(s: String) = try {
+            URLDecoder.decode(s, "UTF-8")
+        } catch (e: IllegalArgumentException) {
+            throw BadRequest(400, "bad percent-encoding in the address")
+        }
+        val path = decode(if (q >= 0) target.substring(0, q) else target)
+        val query = if (q < 0) emptyMap() else target.substring(q + 1).split('&').filter { it.isNotEmpty() }.associate {
+            val e = it.indexOf('=')
+            if (e < 0) decode(it) to ""
+            else decode(it.substring(0, e)) to decode(it.substring(e + 1))
+        }
+        val method = first[0].uppercase()
+        if (length > OPEN_BODY && admit?.invoke(Request(method, path, query, headers, ByteArray(0), peer)) == false) {
+            throw BadRequest(401, "a token is needed. Settings → API on the phone")
+        }
         val body = ByteArray(length.toInt())
         var got = 0
         while (got < body.size) {
@@ -188,29 +234,25 @@ class MiniHttp(
             if (n < 0) throw IOException("body cut short")
             got += n
         }
-        val target = first[1]
-        val q = target.indexOf('?')
-        val path = URLDecoder.decode(if (q >= 0) target.substring(0, q) else target, "UTF-8")
-        val query = if (q < 0) emptyMap() else target.substring(q + 1).split('&').filter { it.isNotEmpty() }.associate {
-            val e = it.indexOf('=')
-            if (e < 0) URLDecoder.decode(it, "UTF-8") to ""
-            else URLDecoder.decode(it.substring(0, e), "UTF-8") to URLDecoder.decode(it.substring(e + 1), "UTF-8")
-        }
-        return Request(first[0].uppercase(), path, query, headers, body, peer)
+        return Request(method, path, query, headers, body, peer)
     }
 
     companion object {
         const val MAX_HEAD = 16 * 1024
         const val MAX_BODY = 64L * 1024 * 1024
         const val READ_TIMEOUT_MS = 30_000
+        const val HEAD_DEADLINE_MS = 30_000L
+        /** ⭐ The most a peer may send before [admit] has seen a token: an A1111 txt2img body with no picture fits. */
+        const val OPEN_BODY = 64L * 1024
         /** ⚠ Small: one render runs at a time ([com.abrah.nightmare.RunLock]); the rest are reads. */
         const val THREADS = 6
+        const val QUEUE = 16
 
         fun err(message: String) = org.json.JSONObject().put("error", message).toString()
 
         fun reason(code: Int) = when (code) {
             200 -> "OK"; 204 -> "No Content"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 404 -> "Not Found"
-            405 -> "Method Not Allowed"; 409 -> "Conflict"; 413 -> "Payload Too Large"
+            405 -> "Method Not Allowed"; 409 -> "Conflict"; 411 -> "Length Required"; 413 -> "Payload Too Large"
             431 -> "Request Header Fields Too Large"; 500 -> "Internal Server Error"
             else -> "Status"
         }

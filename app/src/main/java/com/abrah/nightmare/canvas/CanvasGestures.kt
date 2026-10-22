@@ -30,7 +30,7 @@ fun Modifier.canvasGestures(
     types: () -> Map<String, NodeType>,
     density: Float,
     onGesture: (CanvasState) -> Unit,
-): Modifier = pointerInput(Unit) {
+): Modifier = pointerInput(density) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
 
@@ -107,6 +107,11 @@ fun Modifier.canvasGestures(
                 // ⚠⚠ Two fingers are ALWAYS a pinch, even if the gesture began
                 // on a node. A second finger arriving mid-drag means the user
                 // wants to zoom, not to fling the node they were holding.
+                // ⚠⚠ So it stops being a node press, a wire or a resize ([CanvasState.pinched]), and the
+                // long press is disarmed: the release was a TAP and 500 ms of pinch was a multi-select.
+                current = current.pinched()
+                longFired = true
+                slopBroken = true
                 val zoom = event.calculateZoom()
                 val centroid = event.calculateCentroid(useCurrent = true)
                 if (zoom != 1f && zoom > 0f) {

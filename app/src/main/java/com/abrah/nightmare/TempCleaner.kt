@@ -48,8 +48,17 @@ object TempCleaner {
     private const val TAG = "TempCleaner"
 
     /** ⚠ Harness output, not app state. `notes/HANDOFF.md` §5. */
-    private val SCRATCH_DIRS = listOf("dit_edit", "inpaint", "inpaint-debug", "t2i")
-    private val SCRATCH_FILES = listOf("aspect_probe.png")
+    // ⚠⚠ EVERY harness op's output folder ([HarnessOps]), not the four it started with: the rest piled up across
+    // test sessions on the S25 (dit_bench, detail_run, swap, ...) beside hand-run leftovers (the user, 2026-10-22:
+    // "free up some space, I suspect temp files from older sessions"). Keep in step with HarnessOps' outputs.
+    private val SCRATCH_DIRS = listOf(
+        "dit_edit", "inpaint", "inpaint-debug", "t2i", "detail_run", "dit_bench", "dit_lora", "hires", "lora_node",
+        "parse", "segment", "swap", "ultrafix", "zit_ab", "lp",
+    )
+    private val SCRATCH_FILES = listOf("aspect_probe.png", "aspect_i2i.png", "lp_in.png", "pose.mp4")
+
+    /** ⭐ Harness outputs in INTERNAL storage (`diagnose_picture`'s legs). */
+    private val INTERNAL_SCRATCH_DIRS = listOf("diagnose_picture")
 
     /** Bytes [clean] would free right now. ⚠ Call off the main thread. */
     fun scan(context: Context, busy: Boolean = false): Long =
@@ -94,10 +103,16 @@ object TempCleaner {
         if (ext != null) {
             for (d in SCRATCH_DIRS) File(ext, d).takeIf { it.isDirectory }?.let { out += it }
             for (f in SCRATCH_FILES) File(ext, f).takeIf { it.isFile }?.let { out += it }
+            // ⭐ Logcats a test session saved beside them (`app73_krea2_turbo.logcat`).
+            ext.listFiles().orEmpty().filter { it.isFile && it.name.endsWith(".logcat") }.forEach { out += it }
         }
-        context.cacheDir?.listFiles()?.forEach { out += it }
+        for (d in INTERNAL_SCRATCH_DIRS) File(context.filesDir, d).takeIf { it.isDirectory }?.let { out += it }
+        // ⚠ While busy, not the clips a run is writing or showing, nor the API's uploads.
+        context.cacheDir?.listFiles()?.filter { !busy || it.name !in LIVE_CACHE }?.forEach { out += it }
         return out
     }
+
+    private val LIVE_CACHE = setOf("video", "api")
 
     private fun sizeOf(f: File): Long =
         if (f.isDirectory) f.walkTopDown().filter { it.isFile }.sumOf { it.length() }

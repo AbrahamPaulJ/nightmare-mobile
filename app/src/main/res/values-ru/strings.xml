@@ -238,6 +238,7 @@
     <string name="cn_about_sdxl">ControlNet для моделей SDXL Swap. Работает только с конвертацией, где отмечен ControlNet: Illustrious XL Swap, скачанный начиная с 1.6.122, или ваша собственная из npuforge 1.0.12 и новее.</string>
     <string name="ip_about_sdxl">IP-Adapter для моделей SDXL Swap: эталонное изображение направляет рендер. Работает только с конвертацией, где отмечен IP-Adapter: Illustrious XL Swap, скачанный начиная с 1.6.122, или ваша собственная из npuforge 1.0.12 и новее.</string>
     <string name="run_lora_tags_unused">Теги LoRA в промпте пропущены: эта модель не принимает LoRA</string>
+    <string name="run_lora_tags_negative">Теги LoRA в негативном промпте пропущены. Чтобы их использовать, перенесите их в промпт</string>
     <string name="run_lora_tag_missing">LoRA «%1$s» из промпта не установлена: пропущена</string>
     <string name="run_lora_motion_skipped">Перенос движения не принимает LoRA: «%1$s» из промпта пропущена</string>
     <string name="run_wan_ram_warning">%1$s на %2$s с требует около %3$s ГБ на NPU, больше, чем спокойно вмещают %4$s ГБ памяти этого телефона. Приложение может остановиться или перезапуститься. 480p или меньше секунд надёжнее</string>
@@ -1250,4 +1251,19 @@
     <string name="flow_animate_about">Лицо на фото двигается так же, как лицо в выбранном вами видео. Чекпойнт не нужен.</string>
     <string name="palette_node_animate">Оживить портрет</string>
     <string name="palette_about_animate">лицо на фото двигается как лицо в выбранном видео (LivePortrait)</string>
+    <!-- review fixes (2026-10-22): canvas, inspector, ui -->
+    <string name="inspector_sweep_count">Сколько: %1$d</string>
+    <string name="inspector_sweep_seeds">%1$d запусков, у каждого новый случайный сид</string>
+    <string name="output_auto_upscale_on">этот выход уже увеличивает каждый результат. Снимите автоувеличение, чтобы выбрать</string>
+    <string name="inspector_sweep_this">перебирать этот параметр</string>
+    <string name="inspector_sweeping">перебор: %1$s</string>
+    <string name="agent_clear_chat_title">Удалить этот чат?</string>
+    <string name="agent_clear_chat_body">Переписка и прикреплённые к ней изображения будут удалены. Настройка останется.</string>
+    <string name="agent_profile_delete_title">Удалить настройку %1$s?</string>
+    <string name="agent_profile_delete_body">Сохранённый в ней API-ключ удаляется вместе с ней. Текущая настройка не меняется.</string>
+    <string name="clip_unreadable">не удаётся воспроизвести клип</string>
+    <string name="cd_kept_picture">сохранённое изображение</string>
+    <string name="flow_this_chip">этот чип</string>
+    <string name="flows_section_advanced">Дополнительно</string>
+    <string name="search_clear">Очистить поиск</string>
 </resources>

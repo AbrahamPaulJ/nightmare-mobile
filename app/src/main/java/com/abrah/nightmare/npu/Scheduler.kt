@@ -22,9 +22,11 @@ fun timestepEmbedding(
     val out = FloatArray(dim)
     for (i in 0 until half) {
         val exponent = -ln(maxPeriod.toDouble()) * i / (half - downscaleFreqShift)
-        val emb = t * exp(exponent)
-        val s = (scale * sin(emb)).toFloat()
-        val c = (scale * cos(emb)).toFloat()
+        // ⚠ diffusers scales the ARGUMENT (`sin(scale * emb)`), not the result. Every caller
+        // passes 1 today, so nothing rendered differently; a future one passing 1000 would have.
+        val emb = scale * t * exp(exponent)
+        val s = sin(emb).toFloat()
+        val c = cos(emb).toFloat()
         // flip_sin_to_cos puts cos first, which is what SDXL's UNet expects.
         if (flipSinToCos) { out[i] = c; out[half + i] = s }
         else { out[i] = s; out[half + i] = c }

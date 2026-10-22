@@ -1,11 +1,7 @@
 package com.abrah.nightmare.ui
 
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.abrah.nightmare.R
@@ -41,15 +37,11 @@ fun ConfirmDelete(
             // ⚠ Dismiss BEFORE acting: the action often closes the surface this
             // dialog belongs to, and a flag left set re-opens it over the next
             // screen asking about something already gone.
-            Button(
-                onClick = { onDismiss(); onConfirm() },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                ),
-            ) { Text(confirmLabel) }
+            // ⚠ The error fill WITH `onError`: the default white label was 2.47:1 on #FF7B92.
+            StudioDangerButton(onClick = { onDismiss(); onConfirm() }) { Text(confirmLabel) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }

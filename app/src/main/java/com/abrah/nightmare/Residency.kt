@@ -87,6 +87,29 @@ object Residency {
     }
 
     /**
+     * ⭐⭐ **…and the PHONE must be left something.** [releaseAfterRun] answers "does the model survive a second
+     * render", which Klein 4B does at 57% of a 12 GB S25 Ultra. It does not answer whether Android can still draw:
+     * that phone sat at 0.8 GB free after a Klein render and went black, touch dead, the app crashing, until the
+     * 60 s out-of-sight release (TG, a tester's SM-S938B, 1.6.209, 2026-10-22). The dev phone keeps 1.5 to 2.0 GB
+     * free after the same model (the table above), so a floor between the two releases the starved phone and keeps
+     * the fast rerun everywhere else.
+     *
+     * ⚠ Unlike the share, this IS a free-memory reading, and on purpose: it guards the phone's own UI, which needs
+     * free memory now, not the next render, which needs the footprint argument above. Unreadable (0) is "fine".
+     */
+    fun phoneStarved(availBytes: Long, deviceRamBytes: Long): Boolean {
+        if (availBytes <= 0L || deviceRamBytes <= 0L) return false
+        return availBytes < maxOf(PHONE_FLOOR_MIN_BYTES, deviceRamBytes * PHONE_FLOOR_PERCENT / 100)
+    }
+
+    const val PHONE_FLOOR_PERCENT = 10
+    const val PHONE_FLOOR_MIN_BYTES = 1L shl 30
+
+    /** ⭐ The run log's sentence for a [phoneStarved] release. */
+    fun whyStarved(label: String, availBytes: Long): String =
+        "released $label. Only ${gib(availBytes)} was left free for the phone, so the next Run reloads it"
+
+    /**
      * ⭐ The sentence the run log prints when a release happens, so the ~3 s on
      * the NEXT Run has a stated reason rather than looking like a stall.
      *

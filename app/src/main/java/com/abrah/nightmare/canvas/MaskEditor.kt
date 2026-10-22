@@ -103,8 +103,8 @@ class ObjectLayerEdit(
 class ObjectItem(val index: Int, val obj: com.abrah.nightmare.AddObjects.Placed, val cut: ImageBitmap)
 
 /** ⚠ How small or large an object may be pinched, as a share of the picture's width. */
-private const val OBJECT_MIN_W = 0.03f
-private const val OBJECT_MAX_W = 3f
+internal const val OBJECT_MIN_W = 0.03f
+internal const val OBJECT_MAX_W = 3f
 
 /**
  * ⭐⭐ Paint an inpaint mask over [source] with a finger.

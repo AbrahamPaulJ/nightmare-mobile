@@ -187,7 +187,12 @@ object CrashReport {
     private val stages = mutableListOf<String>()
     @Volatile private var header: String? = null
 
-    /** ⚠ Line 1 is what [pending] calls "doing"; the rest is evidence for the Details box. */
+    /**
+     * ⚠ Line 1 is what [pending] calls "doing"; the rest is evidence for the Details box.
+     * ⚠ Synchronized, and written beside then renamed over: the RAM thread and a render thread both write, and a
+     * truncate-then-write raced into a garbled or empty breadcrumb.
+     */
+    @Synchronized
     private fun write(context: Context) {
         val what = marked ?: return
         val text = buildString {
@@ -202,9 +207,15 @@ object CrashReport {
         // RESTARTS mid-run loses it — the 1.6.153 tester whose S24 Ultra rebooted on the
         // second SDXL run found no report (2026-10-14). A few small writes per run.
         runCatching {
-            java.io.FileOutputStream(breadcrumb(context)).use { out ->
+            val dest = breadcrumb(context)
+            val tmp = java.io.File(dest.path + ".tmp")
+            java.io.FileOutputStream(tmp).use { out ->
                 out.write(text.toByteArray())
                 out.fd.sync()
+            }
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
             }
         }
     }

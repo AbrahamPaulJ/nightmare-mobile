@@ -119,7 +119,7 @@ object SafetensorsGguf {
                     var written = 0L
                     var r = 0L
                     while (r < rowsOut) {
-                        if (isCancelled()) throw IOException("cancelled")
+                        if (isCancelled()) throw ModelInstaller.Cancelled() // ⚠ Its own type: a plain IOException read as a FAILED download
                         val n = minOf(group.toLong(), rowsOut - r).toInt()
                         val real = minOf(n.toLong(), maxOf(0L, rowsIn - r)).toInt()
                         val raw = ByteArray(real * rowIn * width).also { if (real > 0) raf.readFully(it) }

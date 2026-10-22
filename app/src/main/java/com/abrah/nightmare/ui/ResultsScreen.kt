@@ -1,5 +1,8 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -130,7 +133,10 @@ fun ResultsScreen(
      */
     selected: Set<String> = emptySet(),
     onToggleSelect: (Result) -> Unit = {},
-    onSelectAll: () -> Unit = {},
+    /** ⚠ With the ids the filters SHOW: "All" picked hidden pictures too, and Delete then took them. */
+    onSelectAll: (List<String>) -> Unit = {},
+    /** ⚠ Drops selected ids a filter change has hidden, so an action never reaches what is off screen. */
+    onRetainSelection: (Set<String>) -> Unit = {},
     onClearSelection: () -> Unit = {},
     onDeleteSelected: () -> Unit = {},
     /** ⚠ A batch goes as a whole — see [BatchCard]. */
@@ -235,6 +241,10 @@ fun ResultsScreen(
                     (query.isBlank() || tags.text.contains(query.trim(), ignoreCase = true))
             }
         val selecting = selected.isNotEmpty()
+        LaunchedEffect(items, selected) {
+            val visible = items.mapTo(HashSet()) { it.id }
+            if (selected.any { it !in visible }) onRetainSelection(visible)
+        }
 
         // ⭐⭐ A PERSISTENT notice while an upscale runs — a toast is gone in
         // seconds and an upscale is not (the user's call, 2026-09-17).
@@ -458,7 +468,7 @@ fun ResultsScreen(
                 // branch. The share also does the Spacer's old job of pushing
                 // the controls away from the count.
                 val small = Modifier.weight(1f).height(40.dp)
-                TextButton(onClick = onSelectAll, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                StudioTextButton(onClick = { onSelectAll(items.map { it.id }) }, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Text(stringResource(R.string.all))
                 }
                 // ⭐ Star the selection — no confirm, a star is one tap to undo.
@@ -656,18 +666,18 @@ fun ResultsScreen(
             title = { Text(pluralStringResource(R.plurals.results_share_count, n, n)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                    StudioButton(
                         onClick = { sharing = null; onShareResults(ids, false) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(pluralStringResource(R.plurals.results_share_images, n, n)) }
-                    OutlinedButton(
+                    StudioOutlinedButton(
                         onClick = { sharing = null; onShareResults(ids, true) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(pluralStringResource(R.plurals.results_share_workflows, n, n)) }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { sharing = null }) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioTextButton(onClick = { sharing = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 
@@ -681,11 +691,11 @@ fun ResultsScreen(
                 )
             },
             confirmButton = {
-                Button(onClick = { confirmingDownload = false; onSaveSelected() }) {
+                StudioButton(onClick = { confirmingDownload = false; onSaveSelected() }) {
                     Text(stringResource(R.string.results_save_count, selected.size))
                 }
             },
-            dismissButton = { TextButton(onClick = { confirmingDownload = false }) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioTextButton(onClick = { confirmingDownload = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 
@@ -886,7 +896,7 @@ fun ResultViewer(
             (imageFor(item.id) ?: thumbnailFor(item.id))?.let { bmp ->
                 Image(
                     bitmap = bmp,
-                    contentDescription = item.batchLabel.ifBlank { "the kept picture" },
+                    contentDescription = item.batchLabel.ifBlank { stringResource(R.string.cd_kept_picture) },
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
@@ -1154,369 +1164,8 @@ fun ResultViewer(
     }
 }
 
-/**
- * ⭐⭐ A sweep, as ONE card — **its items always visible, and selected or
- * deleted as a whole.**
- *
- * ⚠⚠ It shipped collapsed behind a "show all" button with a cover thumbnail.
- * Both were wrong: the cover is a picture that stands for nine others and says
- * nothing about them, and a strip you have to reveal is a strip nobody looks
- * at. Reported from the phone, 2026-09-10 — show them by default, no hide.
- *
- * ⚠⚠ And a batch is ONE thing to the selection: long-press anywhere selects
- * the whole sweep, and deleting removes all of its items. Selecting individual
- * items inside a batch was two selection models in one list, and the user asked
- * for the batch to behave like a single card.
- */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-private fun BatchCard(
-    group: ResultGroup,
-    thumbnailFor: (String) -> ImageBitmap?,
-    onOpenFlow: (Result) -> Unit,
-    onView: (Result) -> Unit,
-    onDelete: (ResultGroup) -> Unit,
-    isSelected: Boolean = false,
-    onToggleSelect: () -> Unit = {},
-    selecting: Boolean = false,
-    onSave: () -> Unit = {},
-    onShareFlow: (Result) -> Unit = {},
-) {
-    val cover = group.cover
-    Card(
-        Modifier
-            .fillMaxWidth()
-            // ⚠⚠ Long press ANYWHERE on the card, not only on a thumbnail. The
-            // card is the row; making the 84dp picture the only target meant
-            // most of what looks selectable was not.
-            .combinedClickable(
-                onClick = { if (selecting) onToggleSelect() },
-                onLongClick = onToggleSelect,
-            ),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant,
-        ),
-    ) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ResultCardHeader(
-                title = pluralStringResource(R.plurals.results_pictures, group.size, group.size),
-                label = cover.label,
-                meta = listOfNotNull(cover.model, "${cover.width}x${cover.height}")
-                    .joinToString("  "),
-                onDelete = { onDelete(group) },
-                onSave = onSave,
-                onShareFlow = { onShareFlow(cover) },
-                onOpenFlow = { onOpenFlow(cover) },
-            )
-            // ⭐ The strip, always. DreamUI's shape: bordered thumbnails in a
-            // scrolling row, each labelled with the value that made it.
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                for (item in group.items) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        thumbnailFor(item.id)?.let {
-                            Image(
-                                bitmap = it,
-                                contentDescription = item.batchLabel,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant,
-                                        RoundedCornerShape(6.dp),
-                                    )
-                                    // ⚠ A tap opens the viewer at THIS item, so
-                                    // the swipe starts where the eye already is.
-                                    // ⚠⚠ …unless a selection is on, when the
-                                    // whole card is the target.
-                                    .combinedClickable(
-                                        onClick = {
-                                            if (selecting) onToggleSelect() else onView(item)
-                                        },
-                                        onLongClick = onToggleSelect,
-                                    ),
-                            )
-                        }
-                        // ⭐ The value that made this one different. A strip of
-                        // near-identical pictures says nothing without it.
-                        Text(
-                            item.batchLabel,
-                            style = NoteTextStyle,
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * ⭐⭐ A single kept picture — **laid out exactly like [BatchCard].**
- *
- * ⚠⚠ It used to be a different shape: an 84dp thumbnail on the LEFT with the
- * text beside it, where a batch put its text on top and its pictures in a strip
- * below. Two arrangements in one scrolling list read as two kinds of thing.
- * Asked for from the phone, 2026-09-10 — use the batch arrangement for both.
- *
- * ⇒ Same order everywhere now: title, label, meta; then the action row
- * (destructive, save, share, then the primary); then the picture(s). A batch
- * shows several; this shows one.
- */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-private fun ResultCard(
-    result: Result,
-    thumbnail: ImageBitmap?,
-    onOpenFlow: () -> Unit,
-    onView: () -> Unit,
-    onDelete: () -> Unit,
-    onLongPress: () -> Unit = {},
-    isSelected: Boolean = false,
-    selecting: Boolean = false,
-    onSave: () -> Unit = {},
-    onShareFlow: () -> Unit = {},
-    /** ⭐ Star this result — the flag the Favourites chip filters on. */
-    onToggleFavourite: (Result) -> Unit = {},
-) {
-    Card(
-        Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = { if (selecting) onLongPress() },
-                onLongClick = onLongPress,
-            ),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant,
-        ),
-    ) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ResultCardHeader(
-                // ⚠ A kept clip and a kept picture are the same card, and
-                // nothing on it said which -- the thumbnail is a poster frame,
-                // which looks exactly like a render. The card says so, and the
-                // badge on the thumbnail below says it again where the tap is.
-                title = if (result.videoPath != null) "1 clip" else "1 picture",
-                label = result.label,
-                // ⚠ The seed has left this line — it is its own control below,
-                // because it is the one piece of metadata people want to TAKE
-                // rather than read.
-                meta = listOfNotNull(
-                    result.model,
-                    "${result.width}x${result.height}",
-                ).joinToString("  "),
-                onDelete = onDelete,
-                onSave = onSave,
-                onShareFlow = onShareFlow,
-                onOpenFlow = onOpenFlow,
-                // ⭐ Copyable, and on the action row rather than its own.
-                // [SeedRow] is the SAME control the inspector and the viewer
-                // use — not a second copy button. No `onLock` here: locking
-                // writes onto the OPEN canvas, and a result in a list is not
-                // necessarily from the graph that is open.
-                seed = result.seed?.toString(),
-                onToggleFavourite = { onToggleFavourite(result) },
-                favourite = result.favourite,
-            )
-
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                thumbnail?.let {
-                    Box(contentAlignment = Alignment.Center) {
-                        Image(
-                            bitmap = it,
-                            contentDescription = stringResource(R.string.cd_open_fullscreen),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .border(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.outlineVariant,
-                                    RoundedCornerShape(6.dp),
-                                )
-                                .combinedClickable(
-                                    onClick = { if (selecting) onLongPress() else onView() },
-                                    onLongClick = onLongPress,
-                                ),
-                        )
-                        // ⚠ Drawn OVER the poster and not clickable: the tap
-                        // target is the picture underneath, so a badge that ate
-                        // the touch would make the one thumbnail that plays the
-                        // one thumbnail that cannot be opened.
-                        if (result.videoPath != null) {
-                            Text(
-                                "▶",
-                                color = androidx.compose.ui.graphics.Color.White,
-                                fontSize = 20.sp,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * ⭐⭐ The header both cards share — title, label, meta, and ONE action row.
- *
- * ⚠⚠ Extracted rather than copied, because `docs/UI.md` §5 already records what
- * happens when two surfaces showing one picture drift: an action ends up on one
- * and not the other, and it reads as a bug. One function is one answer to "what
- * can I do with this".
- *
- * ⚠ Order, fixed: **delete, save, share picture, share flow, Open flow.**
- * Destructive first because the thumb lands on the right, primary last for the
- * same reason. §7.1 — every label Capitalised.
- */
-@Composable
-private fun ResultCardHeader(
-    title: String,
-    label: String,
-    meta: String,
-    onDelete: () -> Unit,
-    onSave: () -> Unit,
-    onShareFlow: () -> Unit,
-    onOpenFlow: () -> Unit,
-    /**
-     * ⭐ The seed, shown INLINE with the actions rather than on a row of its
-     * own. Null on a batch — a group has one seed per picture, so a single
-     * value there would name one of eight.
-     */
-    seed: String? = null,
-    /** ⭐ Star this one, or null on a surface that cannot. */
-    onToggleFavourite: (() -> Unit)? = null,
-    favourite: Boolean = false,
-) {
-    // ⚠⚠ **Three rows, not five.** The card was title / label / meta /
-    // actions / seed stacked, which on a phone meant a handful of results filled
-    // the screen with mostly chrome. Reported from the phone 2026-09-11 ("way
-    // too much space per card").
-    // ⇒ The count and the metadata share the first line, and the seed shares
-    // the action row.
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            Text(
-                "  $meta",
-                style = NoteTextStyle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Text(label, style = NoteTextStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Row(
-            Modifier.fillMaxWidth().padding(top = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // ⚠⚠ The seed sits at the START and a weighted spacer pushes the
-            // actions right, so the buttons land in the SAME place whether or
-            // not there is a seed — a batch card has none, and right-aligning
-            // the group would otherwise make the two card kinds disagree.
-            // ⚠⚠ COMPACT here, and it has to be: the card row is five controls
-            // on a phone now, and the full seed pill pushed the Open button off
-            // the edge the moment the star joined it. Reported 2026-09-15.
-            // ⇒ The number and its copy button, no container and no "seed"
-            // caption — the row it sits in already says what it is.
-            if (seed != null) {
-                com.abrah.nightmare.canvas.SeedRow(seed = seed, compact = true)
-            }
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Filled.Delete,
-                    contentDescription = stringResource(R.string.cd_delete_result),
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            // ⭐⭐ The STAR — the flag the Favourites chip filters on. Here as
-            // well as on the canvas, because a picture is usually decided to be
-            // a favourite when it is being looked at in the list, not at the
-            // moment it was made.
-            onToggleFavourite?.let { toggle ->
-                IconButton(onClick = toggle, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Filled.Star,
-                        contentDescription =
-                            if (favourite) stringResource(R.string.results_cd_remove_favourite)
-                            else stringResource(R.string.results_cd_add_favourite),
-                        tint = if (favourite) com.abrah.nightmare.ui.StarKept
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-            // ⚠ The DOWNLOAD glyph, not the floppy: the disk means "keep in
-            // Results" everywhere since 2026-09-15, and this button has always
-            // written to the gallery. `PictureActions` has the table.
-            IconButton(onClick = onSave, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    com.abrah.nightmare.ui.DownloadIcon,
-                    contentDescription = stringResource(R.string.results_cd_save_gallery),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            // ⚠⚠ **No picture-share on the CARD.** On a batch it shared the
-            // cover — one of ten — which is a control that quietly does a
-            // tenth of what it looks like. Sharing all hundred is not a thing
-            // anyone wants either. ⇒ The picture is shared from the ZOOM
-            // VIEWER, where exactly one picture is on screen and there is no
-            // ambiguity about which. The FLOW share stays here, because a batch
-            // has one flow. The user's call, 2026-09-10.
-            // ⚠⚠ A SECOND share, for the flow rather than the picture. They are
-            // genuinely different things to send — one is a JPEG for a friend,
-            // the other is a graph they can run — and collapsing them into one
-            // control would make the app choose which the user meant.
-            // ⚠⚠ **The glyphs swapped, 2026-09-11 at the user's request.**
-            // Sharing a flow is still sharing, so it takes the ordinary share
-            // arrow everyone already reads as "send this somewhere"; the
-            // node-graph glyph moved to OPEN, where it names the thing being
-            // opened rather than the act of sending it.
-            IconButton(onClick = onShareFlow, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    ShareIcon,
-                    contentDescription = stringResource(R.string.results_cd_share_flow),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            // ⚠ The glyph REPLACES the label rather than joining it: the row
-            // is four controls on a phone, and a text button among three icons
-            // was the widest thing on the card. It stays a filled Button so it
-            // still reads as the card's primary action.
-            // ⚠ Tighter padding: the row gained the star, and the primary
-            // button is the one that must not be the thing pushed off the edge.
-            Button(
-                onClick = onOpenFlow,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Icon(
-                    ShareFlowIcon,
-                    contentDescription = stringResource(R.string.open_flow),
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        }
-    }
-}
-
+// ⚠ `BatchCard`, `ResultCard` and `ResultCardHeader` were deleted: nothing called them since the grid
+// replaced the card list ([HistoryThumb]). `onSaveGroup`, `onShareFlow` and `onDeleteGroup` only fed them.
 
 /** ⭐ A grid thumbnail's corners — its clip AND its ring, so the two cannot disagree. */
 private val ThumbShape = RoundedCornerShape(8.dp)
@@ -1613,7 +1262,7 @@ private fun HistoryThumb(
                         // ⭐ Violet Studio: the picture in the frame wears the accent; a multi-select
                         // pick the filled violet, thicker.
                         width = if (picked) 3.dp else 2.dp,
-                        color = if (picked) MaterialTheme.colorScheme.primary else Accent,
+                        color = if (picked) MaterialTheme.colorScheme.primary else MaterialTheme.studio.accentText,
                         // ⚠ The thumbnail's own shape — a 12dp ring on an 8dp picture left
                         // the corners mismatched (the user, 2026-10-10).
                         shape = ThumbShape,
@@ -1662,13 +1311,15 @@ private fun HistoryThumb(
  * the file, so the person holding the phone has to be able to find it.
  */
 @Composable
-private fun UnreadablePicture(
+internal fun UnreadablePicture(
     modifier: Modifier = Modifier.fillMaxSize(),
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    /** ⭐ [ClipPlayer] says "clip" ([R.string.clip_unreadable]). */
+    text: Int = R.string.results_unreadable,
 ) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Text(
-            stringResource(R.string.results_unreadable),
+            stringResource(text),
             style = NoteTextStyle,
             color = color,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -1705,9 +1356,9 @@ fun ResultInfoDialog(
             onDismissRequest = { askingDiagnose = false },
             title = { Text(stringResource(R.string.diagnose)) },
             text = { Text(stringResource(R.string.diagnose_picture_note, com.abrah.nightmare.BlankDiagnosis.LEGS.size)) },
-            dismissButton = { TextButton(onClick = { askingDiagnose = false }) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioTextButton(onClick = { askingDiagnose = false }) { Text(stringResource(R.string.cancel)) } },
             confirmButton = {
-                TextButton(onClick = { askingDiagnose = false; onClose(); onDiagnose() }) { Text(stringResource(R.string.diagnose)) }
+                StudioTextButton(onClick = { askingDiagnose = false; onClose(); onDiagnose() }) { Text(stringResource(R.string.diagnose)) }
             },
         )
         return
@@ -1787,7 +1438,7 @@ fun ResultInfoDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(all)) }) {
+            StudioTextButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(all)) }) {
                 Icon(CopyIcon, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.size(6.dp))
                 Text(stringResource(R.string.results_copy_all))
@@ -1796,16 +1447,16 @@ fun ResultInfoDialog(
         confirmButton = {
             Row {
                 if (selected.isNotEmpty() && transfer != null) {
-                    TextButton(onClick = {
+                    StudioTextButton(onClick = {
                         val chosen = selected.sorted().mapNotNull { items[it] }
                         onClose()
                         transfer.onUse(chosen)
                     }) { Text(stringResource(R.string.transfer_use_n, selected.size)) }
                 }
                 if (selected.isEmpty() && onDiagnose != null) {
-                    TextButton(onClick = { askingDiagnose = true }) { Text(stringResource(R.string.diagnose)) }
+                    StudioTextButton(onClick = { askingDiagnose = true }) { Text(stringResource(R.string.diagnose)) }
                 }
-                TextButton(onClick = onClose) { Text(stringResource(R.string.close)) }
+                StudioTextButton(onClick = onClose) { Text(stringResource(R.string.close)) }
             }
         },
     )
@@ -1881,12 +1532,14 @@ fun UpscalePicker(
                 val fits = { s: Int ->
                     width == null || height == null || maxOf(width, height) * s <= com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE
                 }
-                if (!fits(upscaleScale)) upscaleScale = (upscaleScale downTo 2).firstOrNull(fits) ?: 2
+                // ⚠ Derived, not written back: a state write in composition forced a second pass, and it
+                // overwrote the remembered choice for the NEXT, smaller picture.
+                val scale = if (fits(upscaleScale)) upscaleScale else (upscaleScale downTo 2).firstOrNull(fits) ?: 2
                 val tooBig = stringResource(R.string.upscale_scale_too_big, com.abrah.nightmare.UpscaleNode.MAX_OUT_EDGE)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (s in 2..com.abrah.nightmare.UpscaleNode.NATIVE_SCALE) {
                         androidx.compose.material3.FilterChip(
-                            selected = upscaleScale == s,
+                            selected = scale == s,
                             onClick = {
                                 if (fits(s)) upscaleScale = s
                                 else android.widget.Toast.makeText(context, tooBig, android.widget.Toast.LENGTH_SHORT).show()
@@ -1910,9 +1563,9 @@ fun UpscalePicker(
                             Text(upscalerAbout, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                         }
                         when {
-                            u.installed -> Button(onClick = { onPick(u.spec.id, upscaleScale) }, enabled = fits(upscaleScale)) { Text(stringResource(R.string.use)) }
+                            u.installed -> StudioButton(onClick = { onPick(u.spec.id, scale) }, enabled = fits(scale)) { Text(stringResource(R.string.use)) }
                             u.progress != null -> Text(stringResource(R.string.results_mb_progress, u.progress.done shr 20, u.progress.total shr 20), style = MeasureTextStyle)
-                            u.build != null -> OutlinedButton(onClick = { onInstall(u.spec) }) {
+                            u.build != null -> StudioOutlinedButton(onClick = { onInstall(u.spec) }) {
                                 Text(stringResource(R.string.device_mb, u.build.bytes shr 20))
                             }
                             else -> Text(stringResource(R.string.cannot_run_it), style = NoteTextStyle)
@@ -1931,11 +1584,11 @@ fun UpscalePicker(
                         stringResource(if (big) R.string.ultrafix_about else R.string.ultrafix_needs),
                         style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedButton(onClick = go, enabled = big) { Text(stringResource(R.string.ultrafix_open)) }
+                    StudioOutlinedButton(onClick = go, enabled = big) { Text(stringResource(R.string.ultrafix_open)) }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -2002,8 +1655,8 @@ private fun ResultFilterDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
-        dismissButton = { TextButton(onClick = onClear) { Text(stringResource(R.string.picture_clear)) } },
+        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
+        dismissButton = { StudioTextButton(onClick = onClear) { Text(stringResource(R.string.picture_clear)) } },
     )
 }
 

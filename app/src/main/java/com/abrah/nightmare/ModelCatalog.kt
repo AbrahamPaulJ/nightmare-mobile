@@ -453,11 +453,11 @@ data class ModelSpec(
     val tier: String = ModelCatalog.TIER,
     /**
      * ⚠ The HTP architecture below which this model cannot load AT ALL.
-     * SDXL is compiled `_8gen3`, so 75. ✅ **Enforced** — `buildFor` returns
-     * null below this and the row says the device cannot run it
-     * (`docs/DEVICES.md`). ⚠⚠ Enforced is not TESTED: the APK carries all six
-     * arch tiers, and every row above this phone's V79 is derived from
-     * LocalDream's measurements rather than re-measured here.
+     * SDXL is compiled `_8gen3`, so 75.
+     *
+     * ⚠⚠ **Not what gates a device.** [buildFor] reads [builds] (each [Build.minArch]) and never this
+     * field; it survives only as `ModelBrowser`'s fallback for an entry with no builds (an import).
+     * A new entry's chip floor goes in its builds, or this says one thing and the gate another.
      */
     val minHtpArch: Int = 68,
     /**
@@ -672,11 +672,12 @@ data class ModelSpec(
     fun chipBlocked(caps: DeviceProbe.Caps): Boolean = (family == Family.IRIS && caps.ditNoHmx) || noEngineFor(caps)
 
     /**
-     * ⭐ A DiT model on an NPU the engine has no skel for: v85 (the 8 Elite Gen 6), which runs the NPU models through
-     * a downloaded runtime ([QnnPack]) while ggml-hexagon cannot be built for it yet (Hexagon SDK 6.6 lacks its HVX
-     * intrinsics, CI 39247195316). The user's call 2026-10-19: those stay dimmed, with this reason, until it can.
+     * ⭐ A DiT model on an NPU the engine has no skel for. ⚠ v85 (the 8 Elite Gen 6) was the case (Hexagon SDK 6.6
+     * lacked its HVX intrinsics) until the v85 skel, built with SDK 6.7 ([BackendProcess.DIT_SKEL_ARCHES]); a pack
+     * arch with no skel is still dimmed, with this reason.
      */
-    fun noEngineFor(caps: DeviceProbe.Caps): Boolean = isDit && caps.arch in DeviceProbe.PACK_ARCHES
+    fun noEngineFor(caps: DeviceProbe.Caps): Boolean =
+        isDit && caps.arch in DeviceProbe.PACK_ARCHES && caps.arch !in BackendProcess.DIT_SKEL_ARCHES
 
     /**
      * ⭐ The files THIS phone installs and runs: the [buildFor] build's own list
@@ -868,8 +869,12 @@ data class ModelSpec(
      */
     fun fetchBytes(context: Context, build: Build?): Long =
         if (active.isNotEmpty()) {
-            active.sumOf { f ->
-                val have = File(dir(context), f.name).takeIf { it.isFile }?.length() ?: 0L
+            // ⚠⚠ The installer's own list and folder ([toFetch], [ownDir]): summing every [active]
+            // file against [dir] counted the parts a donor lends ([partsFrom]), so MOSS Base beside SFT
+            // promised ~5.6 GB more than it fetched, and the free-space story disagreed with the bar.
+            val own = ownDir(context)
+            toFetch(context).sumOf { f ->
+                val have = File(own, f.name).takeIf { it.isFile }?.length() ?: 0L
                 (f.bytes - have).coerceAtLeast(0L)
             }
         } else build?.bytes ?: 0L
@@ -1013,10 +1018,14 @@ data class ModelSpec(
      */
     fun loadedBytes(context: Context): Long {
         val own = bytesOnDisk(context)
-        if (!usesDitShared) return own
         val d = dir(context)
+        // ⚠⚠ …and a part the DONOR lends ([partsFrom], the same [borrows] rule [missingIn] and
+        // [toFetch] use): MOSS Base beside SFT reads SFT's 5.38 GB `llm.gguf`, and counting only
+        // its own folder told the residency gate ~4.4 GB for a ~10 GB load (Wan Fun's umT5 alike).
+        val lent = active.filter { borrows(d, it) }.sumOf { f -> donorDir(d)?.let { File(it, f.name).length() } ?: 0L }
+        if (!usesDitShared) return own + lent
         val shared = File(d.parentFile, CustomModels.DIT_SHARED)
-        return own + requiredFiles
+        return own + lent + requiredFiles
             .filter { !File(d, it).exists() }
             .sumOf { File(shared, it).length() }
     }
@@ -2518,7 +2527,8 @@ object ModelCatalog {
         //
         // ⚠ Only its trained sizes ([IRIS_SIZES]): at 512² its patches decode apart into blocks.
         // ⚠ Needs `GGML_HEXAGON_OPFUSION` without MUL_MAT_ADD, as Anima does ([BackendProcess]).
-        // ⚠ Offered on 8 Gen 3 (v75) like every DiT here, with the same below-v79 env; never run on one yet.
+        // ⚠ Offered from v73 ([DIT_V73_MIN_ARCH]) like every DiT here, with the same below-v79 env; never run
+        // below v79 yet.
         dit(
             "iris_3b_turbo", "Iris 3B Turbo", Family.IRIS, IRIS, steps = 4,
             ownDitParts = true,

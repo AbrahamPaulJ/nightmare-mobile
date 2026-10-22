@@ -87,6 +87,8 @@ object BlankDiagnosis {
 
     /** ⭐ The engine's device spec with the decode on the CPU: the culprit legs keep a known-good decode. */
     const val CPU_VAE = "diffusion=HTP0,te=HTP0,vae=CPU"
+    /** ⭐ A real v69's launch ([BackendProcess]): its NPU never returns from the text encoder's graph. */
+    const val CPU_TE_VAE = "diffusion=HTP0,te=CPU,vae=CPU"
 
     /**
      * ⭐ Pure: the legs after the control. [control] is how it came out; [shipped], whether the control was
@@ -298,13 +300,15 @@ object BlankDiagnosis {
                 r.diff < 0.0 -> "came out a different size from shipped"
                 else -> "differs from shipped by %.1f of 255".format(java.util.Locale.ROOT, r.diff)
             }
-            appendLine("  ${r.n.toString().padStart(2)}. ${r.what}: %.0f s, $what".format(java.util.Locale.ROOT, r.ms / 1000.0))
+            // ⚠ Only the number goes through format(): [what] holds an error's text, and a `%` in it
+            // ("...100%...") threw UnknownFormatConversionException and lost the whole report.
+            appendLine("  ${r.n.toString().padStart(2)}. ${r.what}: " + "%.0f s".format(java.util.Locale.ROOT, r.ms / 1000.0) + ", $what")
         }
         val moved = rows.filter { it.error == null && it.diff != null && it.diff != 0.0 }.sortedByDescending { kotlin.math.abs(it.diff!!) }
         val same = rows.filter { it.error == null && it.diff == 0.0 }.map { it.what }
         appendLine("not involved (the shipped picture exactly): " + same.ifEmpty { listOf("none") }.joinToString("; "))
         append("largest changes: ").append(
-            moved.take(4).joinToString("; ") { "${it.what} %.1f".format(java.util.Locale.ROOT, it.diff) }.ifEmpty { "none" },
+            moved.take(4).joinToString("; ") { it.what + " %.1f".format(java.util.Locale.ROOT, it.diff) }.ifEmpty { "none" },
         ).append(". A right phone drifts up to ~22 of 255 here: compare the pictures by eye.")
     }
 }

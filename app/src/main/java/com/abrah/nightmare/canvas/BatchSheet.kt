@@ -1,5 +1,7 @@
 package com.abrah.nightmare.canvas
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -177,7 +179,7 @@ fun BatchSheet(
             }
         },
         confirmButton = {
-            Button(
+            StudioButton(
                 onClick = { onRun(spec) },
                 enabled = !spec.isEmpty,
             ) {
@@ -187,7 +189,7 @@ fun BatchSheet(
                 )
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

@@ -177,7 +177,7 @@ object VideoClipEncodeNode : VideoNode() {
         )
         val r = runner(ctx, node)
         ctx.say("encoding the prompt")
-        val v = Video(a, r) { ctx.say(it.trim()); Log.i(TAG, it) }
+        val v = Video(a, r, log = { ctx.say(it.trim()); Log.i(TAG, it) })
         val cond = v.encodePrompt(prompt)
         val out = LinkedHashMap<String, Value>()
         out["cond"] = Value.Tensors(
@@ -291,7 +291,7 @@ object VideoVaeEncodeNode : VideoNode() {
                 )
             val seed = node.params["seed"]?.toLongOrNull() ?: 0L
             val used = if (seed == 0L) System.currentTimeMillis() else seed
-            val v = Video(a, runner(ctx, node)) { ctx.say(it.trim()); Log.i("ndVaeEncode", it) }
+            val v = Video(a, runner(ctx, node), log = { ctx.say(it.trim()); Log.i("ndVaeEncode", it) })
             ctx.say("encoding the first frame")
             val lat = v.encodeImage(bmp, Random(used))
             Value.Tensors(
@@ -345,7 +345,7 @@ object VideoSampleSplitNode : VideoNode() {
             val seed = node.params["seed"]?.toLongOrNull() ?: 0L
             val used = if (seed == 0L) System.currentTimeMillis() else seed
             val r = runner(ctx, node)
-            val v = Video(a, r) { ctx.say(it.trim()); Log.i("ndSample", it) }
+            val v = Video(a, r, log = { ctx.say(it.trim()); Log.i("ndSample", it) })
             // ⚠⚠ Before the loop maps three ~1.5 GB stages. The first-frame
             // graphs may still be resident from this same graph run, and
             // leaving them put ~7.5 GB of context in one process and got the
@@ -410,7 +410,7 @@ object VideoVaeDecodeNode : VideoNode() {
             val lb = TensorStore.get(lh.id) ?: throw IllegalStateException(
                 "node \"${node.id}\": that latent has been evicted. Run again"
             )
-            val v = Video(a, runner(ctx, node)) { ctx.say(it.trim()); Log.i("ndVaeDecode", it) }
+            val v = Video(a, runner(ctx, node), log = { ctx.say(it.trim()); Log.i("ndVaeDecode", it) })
             ctx.say("decoding")
             val lat = com.abrah.nightmare.npu.Latent(
                 lb.meta.getValue("c"), lb.meta.getValue("t"),

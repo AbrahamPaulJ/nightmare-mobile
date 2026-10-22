@@ -77,13 +77,27 @@ object PluginInstaller {
                 "plugin id \"${plugin.id}\" is not a safe directory name"
             }
             val dest = File(pluginsDir, plugin.id)
-            if (dest.exists()) dest.deleteRecursively()
-            if (!stage.renameTo(dest)) {
-                // ⚠ rename fails across filesystems. Copy is the fallback, not
-                // the default: a rename is atomic and a copy is not, so a
-                // process death mid-copy leaves a partial plugin.
-                stage.copyRecursively(dest, overwrite = true)
+            // ⚠⚠ The old version is moved ASIDE, not deleted first: a failed copy then
+            // put nothing back, and an upgrade that failed uninstalled the plugin. It is
+            // restored on failure and deleted only once the new one is in place.
+            // ⚠ Aside into STAGING, never into the plugins directory: `plugin_dir` loads every
+            // directory there, so a leftover after a crash would register the node type twice.
+            // A rename across filesystems fails, and then it is the old delete-first path.
+            val old = File(staging, "old-" + plugin.id + "-" + System.nanoTime())
+            if (dest.exists() && !dest.renameTo(old)) dest.deleteRecursively()
+            try {
+                if (!stage.renameTo(dest)) {
+                    // ⚠ rename fails across filesystems. Copy is the fallback, not
+                    // the default: a rename is atomic and a copy is not, so a
+                    // process death mid-copy leaves a partial plugin.
+                    stage.copyRecursively(dest, overwrite = true)
+                }
+            } catch (e: Exception) {
+                dest.deleteRecursively()
+                if (old.exists()) old.renameTo(dest)
+                throw e
             }
+            old.deleteRecursively()
             return dest
         } finally {
             stage.deleteRecursively()

@@ -67,7 +67,18 @@ private val NightmareDark = darkColorScheme(
     onBackground = NightOn,
     outline = NightBorder,
     outlineVariant = Color(0xFF2C2140),
+    // ⚠⚠ Every remaining role SET (the review, 2026-10-22): an unset `tertiary` fell back
+    // to Material's baseline PINK on the LoRA picker and Models, and the default `onError`
+    // is WHITE, which on #FF7B92 is 2.47:1, the label of every confirmed delete.
+    tertiary = Accent,
+    onTertiary = NightSurface,
+    tertiaryContainer = Color(0xFF35204F),
+    onTertiaryContainer = NightOn,
+    onSecondary = NightSurface,
     error = Color(0xFFFF7B92),
+    onError = Color(0xFF3B0A14),
+    errorContainer = Color(0xFF4A1622),
+    onErrorContainer = Color(0xFFFFD9DF),
 )
 
 /**
@@ -83,8 +94,17 @@ private val LightOnMuted = Color(0xFF5E5E6E)
 
 private val NightmareLight = lightColorScheme(
     primary = Color(0xFF7C4DFF),
+    // ⚠ The containers SET too: left out, Material's lavender came back in a selected card.
+    primaryContainer = Color(0xFFEDE5FF),
+    onPrimaryContainer = Color(0xFF21143F),
+    secondary = Color(0xFF6E3BD8),
+    onSecondary = Color.White,
     secondaryContainer = Color(0xFFEDE5FF),
     onSecondaryContainer = Color(0xFF21143F),
+    tertiary = Color(0xFF6E3BD8),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFEDE5FF),
+    onTertiaryContainer = Color(0xFF21143F),
     onPrimary = Color.White,
     background = Color.White,
     onBackground = LightOn,
@@ -101,6 +121,78 @@ private val NightmareLight = lightColorScheme(
     outline = Color(0xFFC9C9D4),
     outlineVariant = Color(0xFFE2E2E9),
     error = Color(0xFFD93838),
+    onError = Color.White,
+    errorContainer = Color(0xFFFDE7E9),
+    onErrorContainer = Color(0xFF5C0A14),
+)
+
+/**
+ * ⭐⭐ The tokens Material has no role for, per theme (`MaterialTheme.studio`). ⚠ Use these,
+ * not the fixed [Accent] / [Success] / [Warning]: those are the DARK values, and on white
+ * Success is 1.58:1 and Warning 1.65:1.
+ */
+@androidx.compose.runtime.Immutable
+data class StudioColors(
+    /** ⭐ Violet TEXT on a surface: text buttons, links, accent labels. ⚠ `primary` is a FILL
+     *  colour; as text it is 3.41:1 on a dialog (#251B36). This is 6.15:1 there. */
+    val accentText: Color,
+    /** ⭐ The edge of a CONTROL (an outlined button, a field): 3:1 against a card, where the
+     *  quiet `outline` (a card's border, a divider) is 1.39:1. */
+    val controlBorder: Color,
+    val success: Color,
+    val warning: Color,
+)
+
+private val DarkStudio = StudioColors(
+    accentText = Color(0xFFB08AFF),
+    controlBorder = Color(0xFF74609A),
+    success = Success,
+    warning = Warning,
+)
+
+private val LightStudio = StudioColors(
+    accentText = Color(0xFF6E3BD8),
+    controlBorder = Color(0xFF85859A),
+    success = Color(0xFF1B7F52),
+    warning = Color(0xFF8A5A00),
+)
+
+val LocalStudioColors = androidx.compose.runtime.staticCompositionLocalOf { DarkStudio }
+
+/** ⭐ `MaterialTheme.studio.accentText` and friends. */
+val MaterialTheme.studio: StudioColors
+    @Composable @androidx.compose.runtime.ReadOnlyComposable get() = LocalStudioColors.current
+
+/**
+ * ⭐⭐ Violet Studio's shape and spacing scale, ONE place (the user's calls, 2026-10-22: 12dp
+ * buttons and fields, 16dp cards, the 12dp screen gutter kept). The theme's [Shapes] carry
+ * them, so a default `Card`, field, menu or dialog already matches; a call that needs a
+ * corner by NAME uses [Radius].
+ */
+object Radius {
+    val badge = 8.dp
+    val control = 12.dp
+    val card = 16.dp
+    val sheet = 24.dp
+}
+
+object Space {
+    val xs = 4.dp
+    val s = 8.dp
+    val m = 12.dp
+    val l = 16.dp
+    val xl = 24.dp
+}
+
+private val StudioShapes = androidx.compose.material3.Shapes(
+    // ⚠ extraSmall is what an OutlinedTextField and a menu read: 4dp by default, so 22 of
+    // the 23 fields had square-ish corners beside 12dp buttons.
+    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(Radius.control),
+    small = androidx.compose.foundation.shape.RoundedCornerShape(Radius.control),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(Radius.card),
+    large = androidx.compose.foundation.shape.RoundedCornerShape(Radius.sheet),
+    // ⚠ AlertDialog's corner (28 by default): the same as a sheet's.
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(Radius.sheet),
 )
 
 /**
@@ -108,7 +200,11 @@ private val NightmareLight = lightColorScheme(
  * (`LogTextStyle`) until the user found Inter "not changed" on 1.6.082 —
  * 2026-10-06 they chose Inter everywhere except true measurements.
  */
-val NoteTextStyle: TextStyle by lazy { TextStyle(fontFamily = Inter, fontSize = 12.sp) }
+val NoteTextStyle: TextStyle by lazy {
+    // ⚠ 16sp line height (the user, 2026-10-22): 12sp with none packed wrapped lines tight;
+    // the SIZE stays 12 because node knobs already take too much height.
+    TextStyle(fontFamily = Inter, fontSize = 12.sp, lineHeight = 16.sp)
+}
 
 /**
  * ⚠ Monospace ONLY for a true measurement — the run log, the backend log,
@@ -127,13 +223,13 @@ fun NightmareTheme(
     MaterialTheme(
         colorScheme = if (darkTheme) NightmareDark else NightmareLight,
         typography = InterTypography,
-        shapes = androidx.compose.material3.Shapes(
-            small = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-            medium = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-            large = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-        ),
-        content = content,
-    )
+        shapes = StudioShapes,
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalStudioColors provides if (darkTheme) DarkStudio else LightStudio,
+            content = content,
+        )
+    }
 }
 
 /**

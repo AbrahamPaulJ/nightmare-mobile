@@ -52,12 +52,18 @@ object LoadVideoNode : NodeType {
                 val dir = File(platform.cacheDir, "videos_in").apply { mkdirs() }
                 val f = File(dir, "in_${sha1("$uri\u0000$size")}.mp4")
                 if (!f.isFile || f.length() == 0L) {
+                    // ⚠⚠ Into `.part`, renamed when whole: the copy went straight to its content-addressed name, so a
+                    // process killed mid-copy (lmkd, a 200 MB driver) left a truncated clip that `length() != 0`
+                    // accepted for ever, and that URI always failed at frame N or read short.
+                    val part = File(dir, f.name + ".part")
                     try {
-                        platform.contentResolver.openInputStream(u)?.use { i -> f.outputStream().use { i.copyTo(it) } }
+                        platform.contentResolver.openInputStream(u)?.use { i -> part.outputStream().use { i.copyTo(it) } }
                             ?: throw IllegalArgumentException("nothing to read at $uri")
+                        if (!part.renameTo(f)) throw java.io.IOException("could not move ${part.name} into place")
                     } catch (e: SecurityException) {
-                        f.delete()
                         throw IllegalStateException("node \"${node.id}\": no longer permitted to read $uri. Pick the video again")
+                    } finally {
+                        part.delete()
                     }
                 }
                 f

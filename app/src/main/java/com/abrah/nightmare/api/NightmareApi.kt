@@ -48,6 +48,16 @@ class NightmareApi(private val ctx: Context) {
         }
     }
 
+    /**
+     * ⭐ Does [req] carry the token? ONE check, made by [route] and, on the headers alone, by [MiniHttp] before it
+     * reads a big body ([MiniHttp.OPEN_BODY]).
+     */
+    fun authorized(req: MiniHttp.Request): Boolean {
+        val all = req.path.trim('/').split('/').filter { it.isNotEmpty() }
+        val inPath = all.getOrNull(1)?.takeIf { all.first() == "t" }
+        return ApiSettings.matches(ApiSettings.token(ctx), req.headers["authorization"], inPath ?: req.query["token"])
+    }
+
     private fun route(req: MiniHttp.Request, res: MiniHttp.Response) {
         if (req.path == "/info" && req.method == "GET") return res.json(200, info().toString())
         val all = req.path.trim('/').split('/').filter { it.isNotEmpty() }
@@ -55,9 +65,7 @@ class NightmareApi(private val ctx: Context) {
         // own paths to the address it was given (an A1111 client's `/sdapi/v1/txt2img`), where `?token=` would break.
         val inPath = all.getOrNull(1)?.takeIf { all.first() == "t" }
         val parts = if (inPath != null) all.drop(2) else all
-        if (!ApiSettings.matches(ApiSettings.token(ctx), req.headers["authorization"], inPath ?: req.query["token"])) {
-            throw ApiError(401, "a token is needed. Settings → API on the phone")
-        }
+        if (!authorized(req)) throw ApiError(401, "a token is needed. Settings → API on the phone")
         if (a1111.handles(parts)) return a1111.route(req.method, parts, req::text, res)
         // ⚠ A tester's Layla POSTed its txt2img body to "/" with a valid token (2026-10-19): the base URL as typed.
         if (req.method == "POST" && parts.isEmpty()) return a1111.route("POST", A1111.TXT2IMG, req::text, res)

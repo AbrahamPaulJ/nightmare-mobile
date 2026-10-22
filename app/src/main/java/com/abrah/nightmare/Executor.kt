@@ -675,22 +675,6 @@ private fun Node.dbl(name: String): Double =
         ?: throw IllegalArgumentException("node \"$id\": param \"$name\" is not a number: ${params[name]}")
 
 /**
- * ⭐⭐ The [ContextKey] of a node that names a checkpoint -- the ONE place the
- * three backend node types derive one.
- *
- * ⚠⚠ `--type` used to be the literal `"sd15npu"` written out four times: here
- * three times and once in [BackendProcess]. Four literals that must agree are a
- * bug waiting for the second family, and the failure is silent rather than
- * loud -- `sdxl` forces 1024 inside the backend's request parser whatever the
- * client sends, so a node keyed at 512 against an SDXL process renders 1024 and
- * reports success. ⇒ Both sides now read [ModelCatalog.backendTypeOf], and a
- * family is data.
- *
- * ⚠ Keyed on the node's OWN `model` param, not on [SelectedModel]: the graph is
- * authoritative (`docs/MODELS.md` §4), and it is what the executor refuses two
- * of.
- */
-/**
  * ⭐⭐ The aspect chip, declared **only by the families that can honour it**.
  *
  * ⚠⚠ Not a context-key knob and deliberately not locked: `aspect_ratio` is a
@@ -706,10 +690,10 @@ private fun Node.dbl(name: String): Double =
  * written stays in `node.params` and keeps being hashed into the cache key
  * (that is `applyDefaults`' rule), which is correct: it is the value the node
  * would use again if the user switched back.
- */
-/** ⚠ `internal`: the fused sampler declares the same knob, and a second
- * copy of "which families crop to shape" is the drift `aspectAgrees` stops. */
-/*
+ *
+ * ⚠ `internal`: the fused sampler declares the same knob, and a second
+ * copy of "which families crop to shape" is the drift `aspectAgrees` stops.
+ *
  * ⚠⚠ [spec] is the model of the TYPE declaring it — `SdSampler` passes its own
  * family's. Reading the top-bar selection here gave an SD 1.5 node an aspect
  * chip whenever SDXL was selected, which read as "the model switch did nothing"
@@ -781,6 +765,22 @@ fun nodeAspect(node: Node): String? {
     return node.params["aspect"]
 }
 
+/**
+ * ⭐⭐ The [ContextKey] of a node that names a checkpoint -- the ONE place the
+ * three backend node types derive one.
+ *
+ * ⚠⚠ `--type` used to be the literal `"sd15npu"` written out four times: here
+ * three times and once in [BackendProcess]. Four literals that must agree are a
+ * bug waiting for the second family, and the failure is silent rather than
+ * loud -- `sdxl` forces 1024 inside the backend's request parser whatever the
+ * client sends, so a node keyed at 512 against an SDXL process renders 1024 and
+ * reports success. ⇒ Both sides now read [ModelCatalog.backendTypeOf], and a
+ * family is data.
+ *
+ * ⚠ Keyed on the node's OWN `model` param, not on [SelectedModel]: the graph is
+ * authoritative (`docs/MODELS.md` §4), and it is what the executor refuses two
+ * of.
+ */
 fun backendContextKey(node: Node): ContextKey {
     // ⭐⭐ A DiT model's size is a REQUEST field, not a launch one: no patch,
     // no graph compiled per shape. Keying on the node's width/height would
@@ -996,24 +996,6 @@ fun modelPromptRetarget(
 
 
 /**
- * conditioning + seed -> latent handle. The fused sampler of ARCHITECTURE §3.
- *
- * ⭐⭐ **It has no prompt.** The text lives in exactly one place --
- * `encode_text` -- and arrives here as a wire, which is ComfyUI's shape: a
- * KSampler takes CONDITIONING and carries no text field at all.
- *
- * ⚠ It carried both for a while, because `/sample` is the FUSED op and takes
- * prompt strings; the cond wire came later. That left two sources of truth for
- * one thing, and the inspector had to explain in words that the box the user
- * could type in was ignored. A knob that must apologise for itself is the wrong
- * knob (docs/ARCHITECTURE.md §3).
- *
- * ⚠ ONE cond port, where ComfyUI has two (positive and negative). Not a
- * simplification: `/encode_text` encodes prompt AND negative into a single
- * tensor whose halves the UNet reads as the CFG batch, so a graph that wired
- * them separately would be lying about what the backend can do.
- */
-/**
  * ⭐⭐⭐ **The process scheduler** — a topological order that switches backend
  * context as few times as it can.
  *
@@ -1124,6 +1106,24 @@ fun keyTransitions(order: List<Node>, keyOf: (Node) -> ContextKey?): Int {
     return n
 }
 
+/**
+ * conditioning + seed -> latent handle. The fused sampler of ARCHITECTURE §3.
+ *
+ * ⭐⭐ **It has no prompt.** The text lives in exactly one place --
+ * `encode_text` -- and arrives here as a wire, which is ComfyUI's shape: a
+ * KSampler takes CONDITIONING and carries no text field at all.
+ *
+ * ⚠ It carried both for a while, because `/sample` is the FUSED op and takes
+ * prompt strings; the cond wire came later. That left two sources of truth for
+ * one thing, and the inspector had to explain in words that the box the user
+ * could type in was ignored. A knob that must apologise for itself is the wrong
+ * knob (docs/ARCHITECTURE.md §3).
+ *
+ * ⚠ ONE cond port, where ComfyUI has two (positive and negative). Not a
+ * simplification: `/encode_text` encodes prompt AND negative into a single
+ * tensor whose halves the UNet reads as the CFG batch, so a graph that wired
+ * them separately would be lying about what the backend can do.
+ */
 object SampleNode : NodeType {
     /** ⚠ Reaches the backend, so never run for a preview. [NodeType.appSide]. */
     override val appSide = false
@@ -2891,12 +2891,15 @@ class Executor(
         // no backend at all -- asking a server that need not exist whether it
         // holds tensors nobody named would make an all-app-side graph fail for
         // a reason that has nothing to do with it.
-        val resident = if (keys.isEmpty()) emptySet() else host.residentHandles()
+        // ⚠ null = not asked: the graph names no backend, so residency is UNKNOWN, not empty.
+        // An empty set here dropped every cached handle on each app-side-only run (a preview),
+        // and the next real Run re-rendered latents the server still held.
+        val resident: Set<String>? = if (keys.isEmpty()) null else host.residentHandles()
             ?: return GraphRun(emptyList(), emptyMap(), sinceMs(),
                 "GET /handles unreachable. Backend down, nothing can run")
         val pruned = cache.prune { v ->
             when (v) {
-                is Value.Handle -> v.id in resident
+                is Value.Handle -> resident == null || v.id in resident
                 is Value.Image -> v.id in images
                 // ⚠⚠ A clip is kept while its FILE is there, not while its
                 // poster frame is. The poster lives in a store bounded at
@@ -2936,167 +2939,180 @@ class Executor(
         // ⚠ Tracks what the BACKEND holds, so a group boundary is a change of
         // key rather than "this node names one".
         var loaded: ContextKey? = null
-        for (node in scheduled) {
-            // ⭐⭐ The relaunch. ⚠ Before the node runs and after everything the
-            // previous key needed is done — which is what [scheduleByKey]
-            // guarantees, and why the switch can be this simple.
-            val want = try {
-                nodeTypes.getValue(node.id).contextKey(node)
-            } catch (e: IllegalArgumentException) {
-                null
-            }
-            if (want != null && want != loaded) {
-                // ⚠⚠ A failed switch stops the graph. Carrying on would run the
-                // rest against whatever is still loaded and produce plausible
-                // pictures from the wrong checkpoint — the silent failure this
-                // whole key mechanism exists to prevent.
-                if (loaded != null || switchKey != null) {
-                    val ok = switchKey?.invoke(want) ?: false
-                    if (!ok) {
-                        return GraphRun(
-                            runs, values.mapValues { (id, byPort) -> byPort.getValue(outName(id)) },
-                            sinceMs(), "could not load $want",
-                        )
-                    }
+        try {
+            for (node in scheduled) {
+                // ⭐⭐ The relaunch. ⚠ Before the node runs and after everything the
+                // previous key needed is done — which is what [scheduleByKey]
+                // guarantees, and why the switch can be this simple.
+                val want = try {
+                    nodeTypes.getValue(node.id).contextKey(node)
+                } catch (e: IllegalArgumentException) {
+                    null
                 }
-                loaded = want
-            }
-            val type = nodeTypes.getValue(node.id)
-            onStart(node.id, node.type)
-
-            // A node whose upstream failed cannot run and must not be reported
-            // as cached. BLOCKED is its own outcome so a log reader can see
-            // where the damage started rather than counting failures.
-            val missing = node.inputs.filterValues { resolve(it) == null }
-            if (missing.isNotEmpty()) {
-                val r = NodeRun(node.id, node.type, Outcome.BLOCKED, 0,
-                    "waiting on " + missing.values.joinToString(", "))
-                runs += r; onNode(r)
-                continue
-            }
-
-            val inputs = node.inputs.mapValues { (_, up) -> resolve(up)!! }
-            // ⚠ effectiveParams, not node.params: a widget left at its default
-            // must key identically to one set explicitly to that value.
-            val params = try {
-                type.effectiveParams(node)
-            } catch (e: Exception) {
-                val r = NodeRun(node.id, node.type, Outcome.FAILED, 0,
-                    e.message ?: e.javaClass.simpleName)
-                stopped = stopped ?: "${node.id}: ${e.message}"
-                runs += r; onNode(r)
-                continue
-            }
-            val key = cacheKey(node.type, type.version, params, inputs)
-
-            // ⚠ A node with a side effect is never served from the cache, and
-            // never put into it either -- storing it would only invite a later
-            // change to start trusting it.
-            // ⭐⭐ Which ports anything downstream reads — see [NodeCtx.wanted].
-            // Computed from the graph, which is the only thing that knows.
-            val wanted = order.flatMap { c -> c.inputs.values.filter { it.node == node.id } }
-                .mapTo(mutableSetOf()) { it.port ?: outName(node.id) }
-            val ports = type.outputs.map { it.name }
-            // ⚠⚠ Cached per OUTPUT PORT. A two-output node whose consumers were
-            // wired one at a time must not recompute the half it already has,
-            // and a flat per-node entry cannot express "I have `cond` but not
-            // `frame_cond`".
-            val hits = if (type.cacheable) {
-                ports.mapNotNull { portName ->
-                    cache.get(portKey(key, portName))?.let { portName to it }
-                }.toMap()
-            } else {
-                emptyMap()
-            }
-            // ⚠ Everything downstream wants, plus the PRIMARY port, must be
-            // present. The primary is the one the canvas draws, so a hit that
-            // lacked it would leave the node blank.
-            val need = (wanted + ports.take(1)).filter { it in ports }
-            if (hits.isNotEmpty() && need.isNotEmpty() && need.all { it in hits }) {
-                values[node.id] = hits.toMutableMap()
-                val shown = hits[outName(node.id)] ?: hits.values.first()
-                val r = NodeRun(node.id, node.type, Outcome.CACHED, 0, shown.describe())
-                runs += r; onNode(r)
-                continue
-            }
-
-            val n0 = wallNanos()
-            val r = try {
-                // ⭐⭐⭐ **A node's work never runs on the main thread** (1.6.083).
-                // simpleperf on the phone, 2026-10-06, an inpaint run: 49% of the
-                // MAIN thread was `SdSampler.run` — PNG encode 17%, the inpaint
-                // composite 14.5%, `LoadImageNode`'s decode 13%, crop 8% — and the
-                // Results sheet's slide stuttered over it. From the canvas the run
-                // is on `Dispatchers.Main`, so the node goes to Default and its
-                // callbacks come BACK to main in order (`relay`, FIFO).
-                // ⚠ Only from main: a harness op or a JVM test calls from its own
-                // thread, and is left exactly as it was.
-                val outer = currentCoroutineContext()
-                val fromMain = outer[kotlin.coroutines.ContinuationInterceptor] is kotlinx.coroutines.MainCoroutineDispatcher
-                val relay = kotlinx.coroutines.CoroutineScope(outer)
-                fun back(f: () -> Unit) { if (fromMain) relay.launch { f() } else f() }
-                val ctx = NodeCtx(
-                    host, images, android,
-                    onProgress = { p -> back { onPhase(node.id, p.phase); onProgress(node.id, p.step, p.total) } },
-                    say = { line -> back { onLog(node.id, line) } },
-                    warn = { line -> back { onLog(node.id, line); onWarn(node.id, line) } },
-                    wanted = wanted,
-                    ancestorTypes = ancestorTypes(node.id, order),
-                    switchKey = switchKey?.let { sw ->
-                        val tracked: suspend (ContextKey) -> Boolean = { k -> sw(k).also { ok -> if (ok) loaded = k } }
-                        tracked
-                    },
-                )
-                // ⚠⚠ The node is run with the SAME params the key was computed
-                // from. Keying on the effective values but running on the
-                // written ones is the classic way a cache starts serving a
-                // result the node never produced -- and it would only show up
-                // once a widget had a default, which is to say once plugins
-                // existed.
-                val produced = if (fromMain) {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                        type.runPorts(ctx, node.copy(params = params), inputs)
+                if (want != null && want != loaded) {
+                    // ⚠⚠ A failed switch stops the graph. Carrying on would run the
+                    // rest against whatever is still loaded and produce plausible
+                    // pictures from the wrong checkpoint — the silent failure this
+                    // whole key mechanism exists to prevent.
+                    if (loaded != null || switchKey != null) {
+                        val ok = switchKey?.invoke(want) ?: false
+                        if (!ok) {
+                            return GraphRun(
+                                runs, values.mapValues { (id, byPort) -> byPort.getValue(outName(id)) },
+                                sinceMs(), "could not load $want",
+                                prunedHandles = pruned, waiting = waiting, missing = missingTool,
+                            )
+                        }
                     }
-                } else type.runPorts(ctx, node.copy(params = params), inputs)
-                if (type.cacheable) {
-                    produced.forEach { (portName, pv) -> cache.put(portKey(key, portName), pv) }
+                    loaded = want
                 }
-                values[node.id] = produced.toMutableMap()
-                // ⚠ The PRIMARY port is what the run line shows. A node that made
-                // two things describes the one the canvas draws, not an
-                // arbitrary map entry.
-                val v = produced[outName(node.id)] ?: produced.values.first()
-                NodeRun(node.id, node.type, Outcome.RAN,
-                    (wallNanos() - n0) / 1_000_000, v.describe())
-            } catch (e: NeedsInput) {
-                // ⭐ Waiting on a person — BLOCKED, and no graph error.
-                waiting = waiting ?: (node.id to (e.message ?: "needs you"))
-                NodeRun(node.id, node.type, Outcome.BLOCKED, 0, e.message ?: "needs you")
-            } catch (e: NeedsDownload) {
-                // ⭐ A failure like any other, plus what to offer ([GraphRun.missing]).
-                if (stopped == null) missingTool = e.tool
-                stopped = stopped ?: "${node.id}: ${e.message}"
-                NodeRun(node.id, node.type, Outcome.FAILED, (wallNanos() - n0) / 1_000_000, e.message ?: "needs a download")
-            } catch (e: Exception) {
-                // ⭐ The stack for the error report's share icon — the message
-                // below is all that reaches the screen.
-                if (stopped == null) ErrorReport.record(e)
-                stopped = stopped ?: "${node.id}: ${e.message}"
-                NodeRun(node.id, node.type, Outcome.FAILED,
-                    (wallNanos() - n0) / 1_000_000,
-                    e.message ?: e.javaClass.simpleName)
+                val type = nodeTypes.getValue(node.id)
+                onStart(node.id, node.type)
+
+                // A node whose upstream failed cannot run and must not be reported
+                // as cached. BLOCKED is its own outcome so a log reader can see
+                // where the damage started rather than counting failures.
+                val missing = node.inputs.filterValues { resolve(it) == null }
+                if (missing.isNotEmpty()) {
+                    val r = NodeRun(node.id, node.type, Outcome.BLOCKED, 0,
+                        "waiting on " + missing.values.joinToString(", "))
+                    runs += r; onNode(r)
+                    continue
+                }
+
+                val inputs = node.inputs.mapValues { (_, up) -> resolve(up)!! }
+                // ⚠ effectiveParams, not node.params: a widget left at its default
+                // must key identically to one set explicitly to that value.
+                val params = try {
+                    type.effectiveParams(node)
+                } catch (e: Exception) {
+                    val r = NodeRun(node.id, node.type, Outcome.FAILED, 0,
+                        e.message ?: e.javaClass.simpleName)
+                    stopped = stopped ?: "${node.id}: ${e.message}"
+                    runs += r; onNode(r)
+                    continue
+                }
+                val key = cacheKey(node.type, type.version, params, inputs)
+
+                // ⚠ A node with a side effect is never served from the cache, and
+                // never put into it either -- storing it would only invite a later
+                // change to start trusting it.
+                // ⭐⭐ Which ports anything downstream reads — see [NodeCtx.wanted].
+                // Computed from the graph, which is the only thing that knows.
+                val wanted = order.flatMap { c -> c.inputs.values.filter { it.node == node.id } }
+                    .mapTo(mutableSetOf()) { it.port ?: outName(node.id) }
+                val ports = type.outputs.map { it.name }
+                // ⚠⚠ Cached per OUTPUT PORT. A two-output node whose consumers were
+                // wired one at a time must not recompute the half it already has,
+                // and a flat per-node entry cannot express "I have `cond` but not
+                // `frame_cond`".
+                val hits = if (type.cacheable) {
+                    ports.mapNotNull { portName ->
+                        cache.get(portKey(key, portName))?.let { portName to it }
+                    }.toMap()
+                } else {
+                    emptyMap()
+                }
+                // ⚠ Everything downstream wants, plus the PRIMARY port, must be
+                // present. The primary is the one the canvas draws, so a hit that
+                // lacked it would leave the node blank.
+                val need = (wanted + ports.take(1)).filter { it in ports }
+                if (hits.isNotEmpty() && need.isNotEmpty() && need.all { it in hits }) {
+                    values[node.id] = hits.toMutableMap()
+                    val shown = hits[outName(node.id)] ?: hits.values.first()
+                    val r = NodeRun(node.id, node.type, Outcome.CACHED, 0, shown.describe())
+                    runs += r; onNode(r)
+                    continue
+                }
+
+                val n0 = wallNanos()
+                val r = try {
+                    // ⭐⭐⭐ **A node's work never runs on the main thread** (1.6.083).
+                    // simpleperf on the phone, 2026-10-06, an inpaint run: 49% of the
+                    // MAIN thread was `SdSampler.run` — PNG encode 17%, the inpaint
+                    // composite 14.5%, `LoadImageNode`'s decode 13%, crop 8% — and the
+                    // Results sheet's slide stuttered over it. From the canvas the run
+                    // is on `Dispatchers.Main`, so the node goes to Default and its
+                    // callbacks come BACK to main in order (`relay`, FIFO).
+                    // ⚠ Only from main: a harness op or a JVM test calls from its own
+                    // thread, and is left exactly as it was.
+                    val outer = currentCoroutineContext()
+                    val fromMain = outer[kotlin.coroutines.ContinuationInterceptor] is kotlinx.coroutines.MainCoroutineDispatcher
+                    val relay = kotlinx.coroutines.CoroutineScope(outer)
+                    fun back(f: () -> Unit) { if (fromMain) relay.launch { f() } else f() }
+                    val ctx = NodeCtx(
+                        host, images, android,
+                        onProgress = { p -> back { onPhase(node.id, p.phase); onProgress(node.id, p.step, p.total) } },
+                        say = { line -> back { onLog(node.id, line) } },
+                        warn = { line -> back { onLog(node.id, line); onWarn(node.id, line) } },
+                        wanted = wanted,
+                        ancestorTypes = ancestorTypes(node.id, order),
+                        switchKey = switchKey?.let { sw ->
+                            val tracked: suspend (ContextKey) -> Boolean = { k -> sw(k).also { ok -> if (ok) loaded = k } }
+                            tracked
+                        },
+                    )
+                    // ⚠⚠ The node is run with the SAME params the key was computed
+                    // from. Keying on the effective values but running on the
+                    // written ones is the classic way a cache starts serving a
+                    // result the node never produced -- and it would only show up
+                    // once a widget had a default, which is to say once plugins
+                    // existed.
+                    val produced = if (fromMain) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                            type.runPorts(ctx, node.copy(params = params), inputs)
+                        }
+                    } else type.runPorts(ctx, node.copy(params = params), inputs)
+                    if (type.cacheable) {
+                        produced.forEach { (portName, pv) -> cache.put(portKey(key, portName), pv) }
+                    }
+                    values[node.id] = produced.toMutableMap()
+                    // ⚠ The PRIMARY port is what the run line shows. A node that made
+                    // two things describes the one the canvas draws, not an
+                    // arbitrary map entry.
+                    val v = produced[outName(node.id)] ?: produced.values.first()
+                    NodeRun(node.id, node.type, Outcome.RAN,
+                        (wallNanos() - n0) / 1_000_000, v.describe())
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // ⚠⚠ A cancelled run is not a FAILED node. The generic catch below
+                    // swallowed it, so Cancel showed as a red failure, the error report
+                    // kept the cancellation's stack, and a cancelled preview reported
+                    // success to its caller (which then marked its signature done).
+                    // ⚠ Only a REAL cancel (this run's Job no longer active) is rethrown; a stray
+                    // one (a `withTimeout` inside a node) is that node failing, as it always was.
+                    if (kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]?.isActive == false) throw e
+                    stopped = stopped ?: "${node.id}: ${e.message}"
+                    NodeRun(node.id, node.type, Outcome.FAILED, (wallNanos() - n0) / 1_000_000, e.message ?: "timed out")
+                } catch (e: NeedsInput) {
+                    // ⭐ Waiting on a person — BLOCKED, and no graph error.
+                    waiting = waiting ?: (node.id to (e.message ?: "needs you"))
+                    NodeRun(node.id, node.type, Outcome.BLOCKED, 0, e.message ?: "needs you")
+                } catch (e: NeedsDownload) {
+                    // ⭐ A failure like any other, plus what to offer ([GraphRun.missing]).
+                    if (stopped == null) missingTool = e.tool
+                    stopped = stopped ?: "${node.id}: ${e.message}"
+                    NodeRun(node.id, node.type, Outcome.FAILED, (wallNanos() - n0) / 1_000_000, e.message ?: "needs a download")
+                } catch (e: Exception) {
+                    // ⭐ The stack for the error report's share icon — the message
+                    // below is all that reaches the screen.
+                    if (stopped == null) ErrorReport.record(e)
+                    stopped = stopped ?: "${node.id}: ${e.message}"
+                    NodeRun(node.id, node.type, Outcome.FAILED,
+                        (wallNanos() - n0) / 1_000_000,
+                        e.message ?: e.javaClass.simpleName)
+                }
+                runs += r; onNode(r)
             }
-            runs += r; onNode(r)
+        } finally {
+            // ⚠⚠⚠ **The video runner is released HERE, once, when the graph is
+            // done** — not per node. Residency across node boundaries is the whole
+            // reason the split is affordable: `clipg` costs 1897 ms to map and 40 ms
+            // to run, and two phases need it. ⚠ Holding it past the run is what put
+            // ~7.5 GB of context in one process and got the app killed
+            // (`docs/NEODRAGON.md` §8), so it is released however the run ended —
+            // including a node that threw.
+            com.abrah.nightmare.npu.VideoRunner.releaseAll()
         }
-
-        // ⚠⚠⚠ **The video runner is released HERE, once, when the graph is
-        // done** — not per node. Residency across node boundaries is the whole
-        // reason the split is affordable: `clipg` costs 1897 ms to map and 40 ms
-        // to run, and two phases need it. ⚠ Holding it past the run is what put
-        // ~7.5 GB of context in one process and got the app killed
-        // (`docs/NEODRAGON.md` §8), so it is released however the run ended —
-        // including a node that threw.
-        com.abrah.nightmare.npu.VideoRunner.releaseAll()
 
         return GraphRun(
             runs = runs,

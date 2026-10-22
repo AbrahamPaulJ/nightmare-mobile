@@ -1,5 +1,7 @@
 package com.abrah.nightmare
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import com.abrah.nightmare.ui.LoraBrowserContent
@@ -185,7 +187,9 @@ class MainActivity : ComponentActivity() {
         // Nothing waits on it — the counts appear when it lands.
         val appCtx = applicationContext
         Thread { PromptTokens.ensureLoaded(appCtx) }.start()
-        takeOp(intent)
+        // ⚠ Only a fresh launch: a rotation or a relaunch from recents hands back the
+        // SAME intent, which replayed the last adb op (`model_delete X`) every time.
+        if (savedInstanceState == null) takeOp(intent)
         setContent {
             // ⚠⚠ Read from the view model, not from `Prefs` directly: the object
             // is a plain singleton with no Compose state, so a write to it would
@@ -235,7 +239,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun takeOp(intent: Intent?) {
-        val op = intent?.getStringExtra(EXTRA_OP) ?: return
+        intent ?: return
+        // ⚠⚠ Ops arrive ONLY through the `.HarnessEntry` alias, which the manifest guards
+        // with DUMP (the shell holds it, no installed app can): this activity is the
+        // exported launcher, so any app could otherwise send `op model_delete`.
+        if (intent.component?.className != "$packageName.HarnessEntry") return
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        val op = intent.getStringExtra(EXTRA_OP) ?: return
+        intent.removeExtra(EXTRA_OP)
         // ⚠ The `arg` extra too, as `OpService` reads it — it was dropped here,
         // so a foreground `dit_bench t2i,20` arrived with no arguments (2026-10-06).
         pending = op + (intent.getStringExtra(OpService.EXTRA_ARG)?.let { " $it" } ?: "")
@@ -244,7 +255,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         /**
-         * `adb shell am start -n com.abrah.nightmare/.MainActivity --es op start`
+         * `adb shell am start -n com.abrah.nightmare/.HarnessEntry --es op start`
          *
          * Ops: start, stop, health, encode_text, vae_decode, sample, graph.
          */
@@ -262,7 +273,10 @@ fun HarnessScreen(
     var drawerOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var saveRequest by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     // ⭐ …and the "Save, then open" answer of the unsaved-flow dialog raises the same one.
-    LaunchedEffect(vm.saveAsk) { if (vm.saveAsk > 0) saveRequest++ }
+    // ⚠ Against the last ask HANDLED, saved across recreation: `saveAsk` only grows and the
+    // VM outlives a rotation, so `> 0` reopened the Save dialog on every config change.
+    var seenSaveAsk by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(vm.saveAsk) }
+    LaunchedEffect(vm.saveAsk) { if (vm.saveAsk > seenSaveAsk) { seenSaveAsk = vm.saveAsk; saveRequest++ } }
     // ⭐⭐ A sidebar tap's destination is composed two frames later, after the sidebar has gone
     // (the user, 2026-10-09: "delay when i click models … i can see it disappear late").
     val shellScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -329,13 +343,13 @@ fun HarnessScreen(
             // user's call, 2026-10-10): Save (then open), Open anyway, Cancel.
             confirmButton = {
                 androidx.compose.foundation.layout.Row {
-                    androidx.compose.material3.TextButton(onClick = vm::dismissPendingOpen) {
+                    com.abrah.nightmare.ui.StudioTextButton(onClick = vm::dismissPendingOpen) {
                         Text(stringResource(R.string.cancel))
                     }
-                    androidx.compose.material3.TextButton(onClick = vm::confirmPendingOpen) {
+                    com.abrah.nightmare.ui.StudioTextButton(onClick = vm::confirmPendingOpen) {
                         Text(stringResource(R.string.flow_open_anyway))
                     }
-                    androidx.compose.material3.TextButton(onClick = vm::savePendingOpen) {
+                    com.abrah.nightmare.ui.StudioTextButton(onClick = vm::savePendingOpen) {
                         Text(stringResource(R.string.save))
                     }
                 }
@@ -353,12 +367,12 @@ fun HarnessScreen(
             title = { Text(stringResource(R.string.view_ask_title)) },
             text = { Text(stringResource(R.string.view_ask_body)) },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { vm.chooseDefaultView(MainView.NODES) }) {
+                com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.chooseDefaultView(MainView.NODES) }) {
                     Text(stringResource(R.string.view_ask_nodes))
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { vm.chooseDefaultView(MainView.GRAPH) }) {
+                com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.chooseDefaultView(MainView.GRAPH) }) {
                     Text(stringResource(R.string.view_ask_graph))
                 }
             },
@@ -711,7 +725,8 @@ fun HarnessScreen(
                     // re-readable Uri for a copy that takes minutes. ⚠ `*/*`: `.safetensors`,
                     // `.gguf` and `.bin` have no registered MIME type, and a zip often arrives as
                     // `application/octet-stream`.
-                    var importName by remember { mutableStateOf("") }
+                    // ⚠ Saveable: the picker round trip can recreate the activity.
+                    var importName by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
                     val importPicker = rememberLauncherForActivityResult(
                         androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
                     ) { uri ->
@@ -812,6 +827,7 @@ fun HarnessScreen(
                         selected = vm.selectedResults,
                         onToggleSelect = { vm.toggleResultSelected(it.id) },
                         onSelectAll = vm::toggleSelectAllResults,
+                        onRetainSelection = vm::retainResultSelection,
                         onClearSelection = vm::clearResultSelection,
                         onDeleteSelected = vm::deleteSelectedResults,
                         onDeleteGroup = vm::deleteResultGroup,
@@ -950,7 +966,8 @@ fun HarnessScreen(
         // the filter has to be wide and the EXTENSION is what validates
         // ([HarnessViewModel.importLora]).
         // ⭐ Tag autocomplete's CSVs: which dictionary the picker is for, captured before it opens.
-        var tagPickTranslation by remember { mutableStateOf(false) }
+        // ⚠ Saveable: lost across a recreation mid-pick, a translation CSV imported as the main dictionary.
+        var tagPickTranslation by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
         val tagPicker = rememberLauncherForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
         ) { uri -> if (uri != null) vm.importTags(uri, tagPickTranslation) }
@@ -1001,7 +1018,8 @@ fun HarnessScreen(
                     android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                     android.net.Uri.parse("package:${appCtx.packageName}"),
                 )
-                appCtx.startActivity(intent)
+                // ⚠ Some ROMs removed this screen: ActivityNotFoundException, as the storage-access sibling guards.
+                runCatching { appCtx.startActivity(intent) }
             },
             loras = vm.loraRows,
             onImportLora = {
@@ -1163,26 +1181,26 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
                 // ⚠ A translation or describe model has nothing to Run — the
                 // prompt it was fetched for is written the moment it lands.
                 done && (knob != null || m is HarnessViewModel.MissingModel.Translate || m is HarnessViewModel.MissingModel.Describe) ->
-                    androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) { Text(stringResource(R.string.ok)) }
-                done -> androidx.compose.material3.Button(onClick = {
+                    com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.dismissMissingModel() }) { Text(stringResource(R.string.ok)) }
+                done -> com.abrah.nightmare.ui.StudioButton(onClick = {
                     vm.dismissMissingModel()
                     vm.runCanvasOrBatch()
                 }) { Text(stringResource(R.string.run)) }
-                progress != null -> androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) {
+                progress != null -> com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.dismissMissingModel() }) {
                     Text(stringResource(R.string.model_hide))
                 }
-                else -> androidx.compose.material3.Button(onClick = { vm.downloadMissingModel() }) {
+                else -> com.abrah.nightmare.ui.StudioButton(onClick = { vm.downloadMissingModel() }) {
                     Text(androidx.compose.ui.res.stringResource(if (repair.isNotEmpty()) R.string.repair else R.string.download))
                 }
             }
         },
         dismissButton = {
             if (progress != null) {
-                androidx.compose.material3.TextButton(onClick = { vm.cancelModelInstall(); vm.dismissMissingModel() }) {
+                com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.cancelModelInstall(); vm.dismissMissingModel() }) {
                     Text(stringResource(R.string.model_cancel_download))
                 }
             } else if (!done) {
-                androidx.compose.material3.TextButton(onClick = { vm.dismissMissingModel() }) {
+                com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.dismissMissingModel() }) {
                     Text(stringResource(R.string.model_not_now))
                 }
             }
@@ -1422,7 +1440,7 @@ private fun OpButtons(
 
 @Composable
 private fun Op(label: String, busy: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Button(
+    StudioButton(
         onClick = onClick,
         enabled = !busy,
         modifier = modifier,
@@ -1438,7 +1456,7 @@ private fun Stub(
     busy: Boolean,
     onNotWired: (String, String) -> Unit,
 ) {
-    OutlinedButton(
+    StudioOutlinedButton(
         onClick = { onNotWired(op, step) },
         enabled = !busy,
         modifier = Modifier.fillMaxWidth(),

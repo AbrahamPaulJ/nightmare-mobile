@@ -59,8 +59,10 @@ object VideoGate {
 
     /**
      * Run the canary if this version has no answer. ⚠ Blocking, seconds — off
-     * the main thread.
+     * the main thread. ⚠ Synchronized: launch and the Models screen both ask, and two
+     * canaries in-process at once is the crash the gate exists to avoid.
      */
+    @Synchronized
     fun probeIfNeeded(context: Context, versionCode: Int, runner: () -> NpuCanary.Result?) {
         if (supported != null) return
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)

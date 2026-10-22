@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -350,7 +351,7 @@ fun SettingsScreen(
                                     )
                                 }
                                 if (onDeleteEmbedding != null) {
-                                    OutlinedButton(onClick = { deletingEmbedding = row.name }) {
+                                    StudioOutlinedButton(onClick = { deletingEmbedding = row.name }) {
                                         Text(stringResource(R.string.delete))
                                     }
                                 }
@@ -402,7 +403,7 @@ fun SettingsScreen(
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.error,
                     )
-                    OutlinedButton(onClick = { onModelsPlace(com.abrah.nightmare.ModelStorage.Place.DOWNLOAD) }) {
+                    StudioOutlinedButton(onClick = { onModelsPlace(com.abrah.nightmare.ModelStorage.Place.DOWNLOAD) }) {
                         Text(stringResource(R.string.models_folder_allow))
                     }
                 }
@@ -417,7 +418,7 @@ fun SettingsScreen(
                         detail = moving.phase,
                         progress = moving,
                     ) {
-                        OutlinedButton(onClick = onCancelInstall) { Text(stringResource(R.string.cancel)) }
+                        StudioOutlinedButton(onClick = onCancelInstall) { Text(stringResource(R.string.cancel)) }
                     }
                 } else if (strandedModels.first > 0) {
                     // ⭐ What the OTHER place still holds — an interrupted move,
@@ -433,7 +434,7 @@ fun SettingsScreen(
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedButton(onClick = { onModelsPlace(modelsPlace) }, enabled = !installing) {
+                    StudioOutlinedButton(onClick = { onModelsPlace(modelsPlace) }, enabled = !installing) {
                         Text(stringResource(R.string.models_move_here))
                     }
                 }
@@ -583,7 +584,7 @@ fun SettingsScreen(
                                     )
                                 }
                                 if (onDeleteLora != null) {
-                                    OutlinedButton(onClick = { deletingLora = row.name }) {
+                                    StudioOutlinedButton(onClick = { deletingLora = row.name }) {
                                         Text(stringResource(R.string.delete))
                                     }
                                 }
@@ -621,7 +622,7 @@ fun SettingsScreen(
                 if (!batteryUnrestricted) {
                     StudioCard {
                         SectionHeading(stringResource(R.string.battery_title), stringResource(R.string.battery_body))
-                        OutlinedButton(onClick = onRequestBatteryUnrestricted, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
+                        StudioOutlinedButton(onClick = onRequestBatteryUnrestricted, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
                             Text(stringResource(R.string.battery_allow))
                         }
                     }
@@ -647,7 +648,7 @@ fun SettingsScreen(
                     style = NoteTextStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedButton(
+                StudioOutlinedButton(
                     enabled = !scanning,
                     onClick = {
                         scanning = true
@@ -715,12 +716,12 @@ fun SettingsScreen(
                 )
             },
             confirmButton = {
-                androidx.compose.material3.Button(onClick = onConfirmMove) {
+                com.abrah.nightmare.ui.StudioButton(onClick = onConfirmMove) {
                     Text(stringResource(R.string.models_move_action))
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = onDismissMove) { Text(stringResource(R.string.cancel)) }
+                com.abrah.nightmare.ui.StudioTextButton(onClick = onDismissMove) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -850,17 +851,17 @@ private fun ApiSection(api: ApiState, onApi: (Boolean) -> Unit, onRegenerate: ()
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            androidx.compose.material3.TextButton(onClick = { revealed = !revealed }) {
+            com.abrah.nightmare.ui.StudioTextButton(onClick = { revealed = !revealed }) {
                 Text(stringResource(if (revealed) R.string.api_hide else R.string.api_reveal))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // ⚠ Destructive first, primary last (`docs/UI.md` §8.1). Rotating asks: clients holding
             // the old token stop working.
-            OutlinedButton(onClick = { rotating = true }, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
+            StudioOutlinedButton(onClick = { rotating = true }, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
                 Text(stringResource(R.string.api_regenerate))
             }
-            androidx.compose.material3.Button(
+            com.abrah.nightmare.ui.StudioButton(
                 onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(api.token)) },
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                 modifier = Modifier.weight(1f),
@@ -878,10 +879,10 @@ private fun ApiSection(api: ApiState, onApi: (Boolean) -> Unit, onRegenerate: ()
             title = { Text(stringResource(R.string.api_rotate_title)) },
             text = { Text(stringResource(R.string.api_rotate_body)) },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { rotating = false; onRegenerate() }) { Text(stringResource(R.string.api_regenerate)) }
+                com.abrah.nightmare.ui.StudioTextButton(onClick = { rotating = false; onRegenerate() }) { Text(stringResource(R.string.api_regenerate)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { rotating = false }) { Text(stringResource(R.string.cancel)) }
+                com.abrah.nightmare.ui.StudioTextButton(onClick = { rotating = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -921,17 +922,17 @@ private fun TagDictionaryCard(
             } else {
                 androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
             }
-            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+            StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (s.mainName == null) {
-                    androidx.compose.material3.Button(onClick = onDownload) { Text(stringResource(R.string.download)) }
+                    com.abrah.nightmare.ui.StudioButton(onClick = onDownload) { Text(stringResource(R.string.download)) }
                 }
-                OutlinedButton(onClick = { onImport(false) }) {
+                StudioOutlinedButton(onClick = { onImport(false) }) {
                     Text(stringResource(if (s.mainName == null) R.string.tag_import else R.string.tag_replace))
                 }
                 if (s.mainName != null) {
-                    OutlinedButton(onClick = { onDelete(false) }) { Text(stringResource(R.string.delete)) }
+                    StudioOutlinedButton(onClick = { onDelete(false) }) { Text(stringResource(R.string.delete)) }
                 }
             }
         }
@@ -944,11 +945,11 @@ private fun TagDictionaryCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { onImport(true) }) {
+            StudioOutlinedButton(onClick = { onImport(true) }) {
                 Text(stringResource(if (s.translationName == null) R.string.tag_import else R.string.tag_replace))
             }
             if (s.translationName != null) {
-                OutlinedButton(onClick = { onDelete(true) }) { Text(stringResource(R.string.delete)) }
+                StudioOutlinedButton(onClick = { onDelete(true) }) { Text(stringResource(R.string.delete)) }
             }
         }
     }

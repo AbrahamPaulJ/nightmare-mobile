@@ -107,6 +107,14 @@ object ModelInstaller {
         val engineBytes = if (spec.isDit && !DitEngine.isInstalled(context)) DitEngine.BYTES else 0L
         // ⭐ Less what a donor model holds whole ([ModelSpec.partsFrom]: Fun Control's umT5 and TAEHV).
         val fetchList = spec.toFetch(context)
+        // ⚠⚠ What the spec calls MISSING, not every file whose size differs from the catalogue's. A user-swapped
+        // `llm.gguf` its header proves whole, or a bring-your-own `dit.safetensors`, passes [ModelSpec.missing] at
+        // another size; fetched again, the smaller one was Range-resumed into a file of the official LENGTH made of
+        // two files' bytes (it then passed the size check and rendered garbage), the larger one deleted as junk
+        // (a 6 GB fine-tune). Repair pressed for a missing VAE must touch the VAE only. ⚠ `null` = the spec reads
+        // another folder (Local Dream's): fetch as before, nothing of the user's is in ours.
+        val missingNow = if (spec.dir(context) == modelDir) spec.missing(context).toSet() else null
+        val wanted = { f: RemoteFile -> missingNow == null || f.name in missingNow }
         val packageTotal = engineBytes + fetchList.sumOf { maxOf(it.bytes, it.sourceBytes) }
         if (engineBytes > 0) {
             DitEngine.install(context, { p ->
@@ -122,7 +130,7 @@ object ModelInstaller {
         // A file already present at its full size is skipped by [fetch], which
         // is what lets an interrupted 7 GB install pick up where it stopped.
         if (spec.active.isNotEmpty()) {
-            val need = fetchList.sumOf { f ->
+            val need = fetchList.filter(wanted).sumOf { f ->
                 val out = File(modelDir, f.name)
                 val have = out.takeIf { it.isFile }?.length() ?: 0L
                 when {
@@ -143,7 +151,9 @@ object ModelInstaller {
             for (f in fetchList) {
                 val out = File(modelDir, f.name)
                 val convert = f.convert
-                if (convert == null) {
+                if (!wanted(f)) {
+                    Log.i(TAG, "kept ${f.name} (${out.length()} bytes): the spec accepts it as it is")
+                } else if (convert == null) {
                     fetch(f.url, out, f.bytes, "downloading", { p ->
                         onProgress(Progress(p.phase, before + p.done, total))
                     }, isCancelled)
@@ -156,9 +166,16 @@ object ModelInstaller {
                         onProgress(Progress(p.phase, before + p.done, total))
                     }, isCancelled)
                     val part = File(modelDir, f.name + ".part")
-                    val written = convert.run(src, part, { done, all ->
-                        onProgress(Progress("converting", before + done * f.sourceBytes / all.coerceAtLeast(1L), total))
-                    }, isCancelled)
+                    // ⚠ A failed or cancelled conversion deletes its 2-3 GB `.part`; the source stays, so a retry
+                    // converts again without downloading.
+                    val written = try {
+                        convert.run(src, part, { done, all ->
+                            onProgress(Progress("converting", before + done * f.sourceBytes / all.coerceAtLeast(1L), total))
+                        }, isCancelled)
+                    } catch (t: Throwable) {
+                        part.delete()
+                        throw t
+                    }
                     // ⚠⚠ The WRITER's count, not `part.length()`: on Android 17 that read 0 for a finished
                     // 2.28 GB Anima conversion (a tester's S25 and ours, 2026-10-16), so every Anima Turbo
                     // 1.1 download failed at the very end. All four logged until it is understood.
@@ -242,9 +259,10 @@ object ModelInstaller {
         }
     }
 
-    /** ⚠ A download and its parallel partial ([fetchParallel]'s `.mt` + `.mt.ranges`). */
+    /** ⚠ A download, its single-stream partial (`.part`) and its parallel one ([fetchParallel]'s `.mt` + `.mt.ranges`). */
     private fun discard(f: File) {
         f.delete()
+        partOf(f).delete()
         File(f.path + ".mt").delete()
         File(f.path + ".mt.ranges").delete()
     }
@@ -313,15 +331,21 @@ object ModelInstaller {
             Log.i(TAG, "already downloaded: ${dest.name}")
             return
         }
+        // ⚠⚠ The single stream writes `<dest>.part` and renames it on the exact size, as the parallel path does
+        // with `.mt`: a partial under the FINAL name is a file every other reader (a GGUF's header check, a custom
+        // DiT's exists check) can take for an installed one. ⚠ A short [dest] from a build before this is that
+        // partial: it becomes the `.part` and keeps resuming.
+        val part = partOf(dest)
+        if (!part.exists() && dest.isFile && dest.length() in 1 until bytes) dest.renameTo(part)
         // ⭐⭐ Big files over [PARALLEL] connections — unless a single-stream partial is
         // already here, which keeps resuming the way it started.
-        if (bytes >= parallelMinBytes && !(dest.exists() && dest.length() > 0)) {
+        if (bytes >= parallelMinBytes && !(part.exists() && part.length() > 0)) {
             if (fetchParallel(url, dest, bytes, label, onProgress, isCancelled)) return
         }
-        var from = if (dest.exists()) dest.length() else 0L
+        var from = if (part.exists()) part.length() else 0L
         // A partial LONGER than the target is not a partial; it is junk.
         if (from > bytes) {
-            dest.delete()
+            part.delete()
             from = 0L
         }
 
@@ -338,10 +362,16 @@ object ModelInstaller {
             val code = conn.responseCode
             if (code !in 200..299) throw IOException("HTTP $code for $url")
             val append = from > 0 && code == HttpURLConnection.HTTP_PARTIAL
+            // ⚠⚠ A 206 from the WRONG offset (a mirror that rounds ranges, or ignores the start) appended at ours
+            // gives the right length of the wrong bytes, and the size is the only integrity check there is.
+            if (append && rangeStart(conn).let { it >= 0 && it != from }) {
+                part.delete()
+                throw IOException("the server resumed ${dest.name} from the wrong place. Download again. That file starts over.")
+            }
             if (!append) from = 0L
 
             conn.inputStream.use { input ->
-                java.io.FileOutputStream(dest, append).use { output ->
+                java.io.FileOutputStream(part, append).use { output ->
                     val buf = ByteArray(BUFFER)
                     var written = from
                     var last = 0L
@@ -372,24 +402,33 @@ object ModelInstaller {
             conn.disconnect()
         }
 
-        if (dest.length() != bytes) {
-            // ⚠ Said for a PERSON — it reaches the Models screen verbatim. It
-            // printed `size mismatch for X.zip: 913410048 != 1056615116` until the
-            // design review, 2026-09-15; the file name stays for the harness log.
-            // ⚠ LONGER than expected is not a short download and cannot be
-            // resumed — the next attempt discards it (see the top of [fetch]).
-            // Saying "resume" there promised a thing that does not happen.
-            throw IOException(
-                if (dest.length() > bytes) {
-                    "the download came out larger than expected (${dest.name}) and is " +
-                        "damaged. Download again. That file starts over."
-                } else {
-                    "the download stopped short. ${dest.length() shr 20} of ${bytes shr 20} MB " +
-                        "arrived (${dest.name}). Download again to resume."
-                }
-            )
+        if (part.length() == bytes) {
+            if (!part.renameTo(dest)) throw IOException("could not move ${part.name} into place")
+            return
         }
+        // ⚠ Said for a PERSON — it reaches the Models screen verbatim. It
+        // printed `size mismatch for X.zip: 913410048 != 1056615116` until the
+        // design review, 2026-09-15; the file name stays for the harness log.
+        // ⚠ LONGER than expected is not a short download and cannot be
+        // resumed — the next attempt discards it (see the top of [fetch]).
+        // Saying "resume" there promised a thing that does not happen.
+        throw IOException(
+            if (part.length() > bytes) {
+                "the download came out larger than expected (${dest.name}) and is " +
+                    "damaged. Download again. That file starts over."
+            } else {
+                "the download stopped short. ${part.length() shr 20} of ${bytes shr 20} MB " +
+                    "arrived (${dest.name}). Download again to resume."
+            }
+        )
     }
+
+    /** ⚠ [fetchOnce]'s single-stream partial. */
+    private fun partOf(dest: File) = File(dest.path + ".part")
+
+    /** The first byte a 206 carries (`Content-Range: bytes 100-199/1000`); -1 when it does not say. */
+    private fun rangeStart(conn: HttpURLConnection): Long =
+        conn.getHeaderField("Content-Range")?.substringAfter("bytes ", "")?.substringBefore('-')?.trim()?.toLongOrNull() ?: -1L
 
     /**
      * ⭐ How many connections a big download uses (a tester, 2026-10-13: *"increase the
@@ -477,6 +516,9 @@ object ModelInstaller {
         val stop = java.util.concurrent.atomic.AtomicBoolean(false)
         val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
         val source = Prefs.apply(url)
+        // ⚠ Live connections, disconnected on cancel: a worker blocked in `read` otherwise waits out the 60 s read
+        // timeout before it sees `stop`, and the Cancel the person pressed does nothing for a minute.
+        val live: MutableSet<HttpURLConnection> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
         fun range(i: Int) {
             var tries = 0
@@ -488,10 +530,14 @@ object ModelInstaller {
                     instanceFollowRedirects = true
                     setRequestProperty("Range", "bytes=$pos-${ends[i] - 1}")
                 }
+                live.add(conn)
                 try {
+                    if (stop.get()) break
                     val code = conn.responseCode
                     if (code == HttpURLConnection.HTTP_OK) throw RangesRefused()
                     if (code != HttpURLConnection.HTTP_PARTIAL) throw IOException("HTTP $code for $url")
+                    // ⚠ A 206 for another offset would be written at ours (see [fetchOnce]).
+                    if (rangeStart(conn).let { it >= 0 && it != pos }) throw RangesRefused()
                     java.io.RandomAccessFile(mt, "rw").use { raf ->
                         raf.seek(pos)
                         conn.inputStream.use { input ->
@@ -525,6 +571,7 @@ object ModelInstaller {
                     Log.w(TAG, "range $i of ${dest.name}: ${e.message}; retry $tries")
                     Thread.sleep(1_000L * tries)
                 } finally {
+                    live.remove(conn)
                     conn.disconnect()
                 }
             }
@@ -545,7 +592,7 @@ object ModelInstaller {
         }
         var lastPersist = 0L
         while (workers.any { it.isAlive }) {
-            if (isCancelled()) stop.set(true)
+            if (isCancelled() && !stop.getAndSet(true)) live.forEach { runCatching { it.disconnect() } }
             val now = android.os.SystemClock.uptimeMillis()
             if (now - lastPersist >= PERSIST_MS) {
                 lastPersist = now

@@ -178,7 +178,16 @@ object ImageCaption : DescribeModel {
         val opts = OrtSession.SessionOptions().apply { setIntraOpNumThreads(4) }
         fun open(i: Int) = env.createSession(FILES.file(context, FILES.files[i].first).absolutePath, opts)
         val vocab = ByteLevel.vocab(FILES.file(context, FILES.files[4].first).readText())
-        val m = Model(env, open(0), open(1), open(2), open(3), vocab)
+        // ⚠⚠ One at a time, closing what opened when a later one throws (an OOM under the 1.5-2.3 GB
+        // peak is the usual one): the 366 MB fp32 vision session leaked on every retry.
+        val opened = ArrayList<OrtSession>(4)
+        try {
+            for (i in 0..3) opened += open(i)
+        } catch (e: Throwable) {
+            opened.forEach { runCatching { it.close() } }
+            throw e
+        }
+        val m = Model(env, opened[0], opened[1], opened[2], opened[3], vocab)
         Log.i(TAG, "opened in ${(System.nanoTime() - t) / 1_000_000} ms")
         return m.also { model = it }
     }

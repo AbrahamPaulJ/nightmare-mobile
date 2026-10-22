@@ -1,5 +1,7 @@
 package com.abrah.nightmare.canvas
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -24,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -90,7 +91,10 @@ internal fun ObjectPlacer(
     modifier: Modifier = Modifier,
 ) {
     val aspect = photo.width.toFloat() / photo.height.coerceAtLeast(1)
-    val cutAspect = placing.cut.width.toFloat() / placing.cut.height.coerceAtLeast(1)
+    // ⚠ Through rememberUpdatedState, as [current] is: the gesture below is keyed on Unit, and
+    // `nextPlacing()` swaps the cut in the same composition, so a captured value resized the second object
+    // with the FIRST one's shape ([MaskEditor]'s stale-capture note).
+    val cutAspect by rememberUpdatedState(placing.cut.width.toFloat() / placing.cut.height.coerceAtLeast(1))
     val current by rememberUpdatedState(placing.obj)
     val change by rememberUpdatedState(onChange)
     val cutImage = remember(placing.cut) { placing.cut.asImageBitmap() }
@@ -122,7 +126,7 @@ internal fun ObjectPlacer(
                                     val c = down.fold(Offset.Zero) { acc, p -> acc + p.position } / down.size.toFloat()
                                     val spread = down.map { (it.position - c).getDistance() }.average().toFloat()
                                     if (startSpread == 0f) { startSpread = spread; startW = o.w }
-                                    if (startSpread > 0f) w = (startW * spread / startSpread).coerceIn(0.03f, 1.5f)
+                                    if (startSpread > 0f) w = (startW * spread / startSpread).coerceIn(OBJECT_MIN_W, OBJECT_MAX_W)
                                 } else startSpread = 0f
                                 // ⚠ Resized about its CENTRE, so a pinch does not
                                 // walk the object off towards the top-left.
@@ -188,7 +192,8 @@ internal fun ObjectChooser(
     // ⭐ The mask window's own undo and redo ([EditHistory]).
     val history = rememberEditHistory(uri, mask)
     var tool by remember { mutableStateOf(MaskTool.BRUSH) }
-    var radius by remember { mutableStateOf(0.06f) }
+    // ⚠ The mask window's brush ([BRUSH_DEFAULT]): 0.06 was the DreamUI drift MaskWindow already fixed.
+    var radius by remember { mutableStateOf(BRUSH_DEFAULT) }
     // ⚠ Bumped when a tap or a pick lands in its model's cache, so the view
     // re-resolves (the resolve below reads the caches only).
     var warmed by remember { mutableIntStateOf(0) }
@@ -275,7 +280,12 @@ internal fun ObjectChooser(
                                 }
                             }
                             if (tool == MaskTool.BRUSH || tool == MaskTool.ERASE) {
-                                Slider(value = radius, onValueChange = { radius = it }, valueRange = 0.02f..0.25f)
+                                // ⭐ The mask window's own slider, px readout and all ([MaskParamSlider]).
+                                MaskParamSlider(
+                                    tool = tool, brush = radius, onBrush = { radius = it },
+                                    grow = 0f, growMin = 0f, growMax = 0f, onGrow = null,
+                                    feather = 0f, featherMax = 0f, onFeather = null,
+                                )
                             }
                             if (canPick) {
                                 val picked = mask.ops.filterIsInstance<MaskOp.Pick>().map { it.target }.toSet()
@@ -312,8 +322,8 @@ internal fun ObjectChooser(
                     Modifier.fillMaxWidth().padding(top = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                 ) {
-                    OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-                    Button(onClick = { onDone(mask.encode()) }, enabled = source != null && !mask.isEmpty && !busy) {
+                    StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+                    StudioButton(onClick = { onDone(mask.encode()) }, enabled = source != null && !mask.isEmpty && !busy) {
                         Text(stringResource(R.string.crop_done))
                     }
                 }

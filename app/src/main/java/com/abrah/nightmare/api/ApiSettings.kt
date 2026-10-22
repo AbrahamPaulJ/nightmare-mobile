@@ -68,9 +68,13 @@ object ApiSettings {
             runCatching { String(java.util.Base64.getDecoder().decode(it.substring(6).trim()), Charsets.UTF_8) }.getOrNull()
                 ?.substringAfter(':')
         }
-        val given = basic ?: header?.removePrefix("Bearer ")?.trim()?.takeIf { it.isNotEmpty() } ?: query ?: return false
+        // ⚠ The scheme is case-insensitive (RFC 7235): `bearer x` was refused.
+        val bearer = header?.trim()?.replace(BEARER, "")
+        val given = basic ?: bearer?.trim()?.takeIf { it.isNotEmpty() } ?: query ?: return false
         return MessageDigest.isEqual(expected.toByteArray(), given.toByteArray())
     }
+
+    private val BEARER = Regex("""^bearer\b\s*""", RegexOption.IGNORE_CASE)
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 }

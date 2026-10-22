@@ -1,5 +1,7 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Face
@@ -122,7 +124,7 @@ fun WorkflowsScreen(
                         val section = r.section
                         if (section != null && recipes.getOrNull(i - 1)?.section != section) {
                             Text(
-                                section,
+                                sectionLabel(section),
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
@@ -304,12 +306,12 @@ internal fun NameDialog(
             )
         },
         confirmButton = {
-            Button(
+            StudioButton(
                 onClick = { onConfirm(name) },
                 enabled = name.isNotBlank() && name.trim() != initial,
             ) { Text(confirm) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -345,7 +347,7 @@ private fun RecipeCard(
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(recipeIcon(r.id), contentDescription = null, tint = Accent.copy(alpha = fade), modifier = Modifier.size(24.dp))
+                Icon(recipeIcon(r.id), contentDescription = null, tint = MaterialTheme.studio.accentText.copy(alpha = fade), modifier = Modifier.size(24.dp))
             }
             androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f).padding(end = 8.dp)) {
@@ -359,7 +361,7 @@ private fun RecipeCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     if (r.minArch > 68) Badge(archLabel(r.minArch))
-                    r.section?.let { Badge(it, MaterialTheme.colorScheme.primary) }
+                    r.section?.let { Badge(sectionLabel(it), MaterialTheme.colorScheme.primary) }
                 }
                 Text(
                     r.aboutRes?.let { stringResource(it) } ?: r.about,
@@ -372,7 +374,7 @@ private fun RecipeCard(
                     Text(
                         stringResource(
                             R.string.flow_unsupported,
-                            caps.soc.ifEmpty { "this chip" },
+                            caps.soc.ifEmpty { stringResource(R.string.flow_this_chip) },
                             caps.arch,
                             r.minArch,
                             archLabel(r.minArch),
@@ -383,7 +385,7 @@ private fun RecipeCard(
                 }
             }
             if (ok) {
-                androidx.compose.material3.Button(onClick = onOpen, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
+                com.abrah.nightmare.ui.StudioButton(onClick = onOpen, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
                     Text(stringResource(R.string.flows_open))
@@ -405,3 +407,11 @@ private fun recipeIcon(id: String): androidx.compose.ui.graphics.vector.ImageVec
     "t2v", "i2v", "motion" -> Icons.Filled.PlayArrow
     else -> FlowsIcon
 }
+
+/**
+ * ⭐ A recipe section's heading in the reader's language. ⚠ [com.abrah.nightmare.canvas.Recipe.section] stays an id
+ * ([com.abrah.nightmare.canvas.ADVANCED]): the list groups by it, so it must not change with the locale.
+ */
+@Composable
+private fun sectionLabel(section: String): String =
+    if (section == com.abrah.nightmare.canvas.ADVANCED) stringResource(R.string.flows_section_advanced) else section

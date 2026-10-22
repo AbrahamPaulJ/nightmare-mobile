@@ -20,7 +20,10 @@ object RunWakeLock {
     @Synchronized
     fun begin(context: Context) {
         holders++
-        if (holders > 1) return
+        // ⚠⚠ A nested begin RENEWS the timeout. Acquired once, a 100-render grid or a Wan seed
+        // sweep past an hour lost the lock while still counted as held, and the screen-off pause
+        // this exists to stop came back mid-batch. The cap is now per item, not per batch.
+        lock?.let { held -> runCatching { held.acquire(MAX_MS) }; return }
         runCatching {
             val pm = context.getSystemService(PowerManager::class.java) ?: return
             lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "nightmare:run").apply {

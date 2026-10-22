@@ -85,8 +85,15 @@ object NpuCanary {
         // moment, so it is exactly what a cache is for.
         val bin = File(context.cacheDir, BIN.substringAfterLast('/'))
         return try {
-            if (!bin.isFile || bin.length() == 0L) {
-                context.assets.open(BIN).use { ins -> bin.outputStream().use { ins.copyTo(it) } }
+            // ⚠⚠ Copied EVERY run (58 KB), via `.part` + rename: "present and non-empty" kept a copy truncated by a
+            // kill mid-copy, or a stale one after an APK carried a rebuilt canary, and its failed load reads as
+            // Unsupported, which [VideoGate] then remembers for the whole versionCode. The rename never truncates
+            // a file a previous load may still map.
+            val part = File(bin.path + ".part")
+            context.assets.open(BIN).use { ins -> part.outputStream().use { ins.copyTo(it) } }
+            if (!part.renameTo(bin)) {
+                part.delete()
+                return Result.Inconclusive("could not stage the canary binary")
             }
             val x = readFloats(context, IN)
             val ref = readFloats(context, REF)

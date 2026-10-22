@@ -123,20 +123,31 @@ object IpAdapter {
 
     private fun stamp(context: Context) = File(dir(context), ".rev")
 
+    /**
+     * ⭐ The [REVISION] [part] was fetched at: its own `<file>.rev`, else the folder-wide `.rev` an
+     * older install wrote. ⚠⚠ Per part, because the parts are fetched per adapter: one shared stamp
+     * bumped by installing Plus would have called a Face head from the old revision current.
+     */
+    private fun revOf(context: Context, part: Part): Int =
+        (File(dir(context), part.file + ".rev").takeIf { it.isFile } ?: stamp(context))
+            .let { f -> runCatching { f.readText().trim().toInt() }.getOrDefault(0) }
+
+    /** ⚠ Same size is not same file: the Plus and Face heads are byte-identical in LENGTH. */
+    private fun current(context: Context, part: Part): Boolean =
+        file(context, part).length() == part.bytes && revOf(context, part) >= REVISION
+
     /** ⭐ Does this Swap model take a reference picture? Only a v2 conversion does. */
     fun supports(modelDir: File): Boolean = File(modelDir, TARGETS_FILE).isFile
 
     fun isInstalled(context: Context, adapter: String): Boolean {
         val head = HEADS[adapter] ?: return false
-        return file(context, ENCODER).length() == ENCODER.bytes &&
-            file(context, head).length() == head.bytes &&
-            runCatching { stamp(context).readText().trim().toInt() }.getOrDefault(0) >= REVISION
+        return current(context, ENCODER) && current(context, head)
     }
 
     /** The download still missing for [adapter], in bytes (the encoder is shared). */
     fun bytesToFetch(context: Context, adapter: String): Long {
         val head = HEADS[adapter] ?: return 0L
-        return listOf(ENCODER, head).filter { file(context, it).length() != it.bytes }.sumOf { it.bytes }
+        return listOf(ENCODER, head).filterNot { current(context, it) }.sumOf { it.bytes }
     }
 
     fun bytesOnDisk(context: Context): Long = dir(context).walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -152,7 +163,9 @@ object IpAdapter {
         dir(context).mkdirs()
         for (part in listOf(ENCODER, head)) {
             val target = file(context, part)
-            if (target.length() == part.bytes) continue
+            // ⚠⚠ Skipped only when CURRENT: a size match alone kept a re-exported file of the same
+            // length after a [REVISION] bump, and the stamp below then called the old bytes new.
+            if (current(context, part)) continue
             val tmp = File(target.path + ".part")
             UpscalerCatalog.download(part.url, tmp, part.bytes, onProgress, isCancelled)
             if (tmp.length() != part.bytes) {
@@ -164,6 +177,7 @@ object IpAdapter {
                 tmp.copyTo(target, overwrite = true)
                 tmp.delete()
             }
+            File(dir(context), part.file + ".rev").writeText(REVISION.toString())
         }
         stamp(context).writeText(REVISION.toString())
         Log.i(TAG, "installed IP-Adapter $adapter (${bytesOnDisk(context)} bytes)")
@@ -255,14 +269,20 @@ object IpAdapter {
     /** ⭐ The 224² square the encoder reads — what the node's tile shows. */
     fun square(src: Bitmap): Bitmap {
         var b = src
+        // ⚠ Each intermediate is recycled once the next exists (never [src], the caller's): the
+        // halving chain of a 4096 px photo left ~85 MB of native pixels for the GC.
+        fun drop(old: Bitmap, next: Bitmap) { if (old !== src && old !== next) old.recycle() }
         while (minOf(b.width, b.height) >= EDGE * 2) {
-            b = Bitmap.createScaledBitmap(b, b.width / 2, b.height / 2, true)
+            val next = Bitmap.createScaledBitmap(b, b.width / 2, b.height / 2, true)
+            drop(b, next)
+            b = next
         }
         val s = EDGE.toFloat() / minOf(b.width, b.height)
         val w = maxOf(EDGE, Math.round(b.width * s))
         val h = maxOf(EDGE, Math.round(b.height * s))
         val scaled = Bitmap.createScaledBitmap(b, w, h, true)
-        return Bitmap.createBitmap(scaled, (w - EDGE) / 2, (h - EDGE) / 2, EDGE, EDGE)
+        drop(b, scaled)
+        return Bitmap.createBitmap(scaled, (w - EDGE) / 2, (h - EDGE) / 2, EDGE, EDGE).also { drop(scaled, it) }
     }
 
     /** Every `ipk_i` / `ipv_i` for [chw] (CLIP pixels), UNSCALED, keyed by input name. */
@@ -365,7 +385,9 @@ object IpAdapter {
     private fun negFor(context: Context, adapter: String): Map<String, FloatArray> {
         val d = File(dir(context), "neg_$adapter")
         val done = File(d, ".done")
-        if (!done.isFile) {
+        // ⚠ Its stamp is compared, not just its existence: K/V cached from an older head would
+        // otherwise outlive a [REVISION] bump on the uncond side of every render.
+        if (runCatching { done.readText().trim().toInt() }.getOrDefault(0) < REVISION) {
             write(d, kv(context, adapter, FloatArray(3 * EDGE * EDGE)), 1f)
             done.writeText(REVISION.toString())
         }

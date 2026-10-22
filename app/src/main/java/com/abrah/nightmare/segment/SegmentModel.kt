@@ -390,7 +390,15 @@ class SegmentModel private constructor(
                 File(dir, name).absolutePath,
                 OrtSession.SessionOptions().apply { setIntraOpNumThreads(THREADS) },
             )
-            SegmentModel(env, open("trunk.onnx"), open("prompt.onnx"), open("decoder.onnx"))
+            // ⚠ Closing what opened when a later graph throws, or each failed open leaked the trunk.
+            val opened = ArrayList<OrtSession>(3)
+            try {
+                for (n in listOf("trunk.onnx", "prompt.onnx", "decoder.onnx")) opened += open(n)
+            } catch (t: Throwable) {
+                opened.forEach { runCatching { it.close() } }
+                throw t
+            }
+            SegmentModel(env, opened[0], opened[1], opened[2])
         } catch (t: Throwable) {
             Log.e(TAG, "failed to open segmenter", t)
             null

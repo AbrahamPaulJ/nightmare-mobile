@@ -151,21 +151,35 @@
             </intent-filter>
         </activity>
 
+        <!-- The FOREGROUND harness entry: the same activity, reached with the same
+             "op" and "arg" extras, but guarded by DUMP like OpService. MainActivity
+             honours an op ONLY when the intent names this alias, because the
+             launcher component above is exported to every app on the phone.
+             notes/HANDOFF.md section 5. -->
+        <activity-alias
+            android:name=".HarnessEntry"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+
         <!-- The headless front end: same ops, no window.
              Started by `am startservice` with the same "op" string extra the
              activity takes (the exact command is in notes/HANDOFF.md section 5;
              it cannot be written here because XML forbids a double hyphen
              inside a comment, and the merger reports that only as "Error
              parsing AndroidManifest.xml" with no line number).
-             exported so the shell can start it; there is no other caller and
-             nothing sensitive behind it (the ops it runs are all local, and
-             the backend it drives already listens on loopback). The phone is
-             somebody's actual phone, and taking their screen for a 30 s check
-             is not something a test loop should ever need to do.
-             notes/HANDOFF.md section 5. -->
+             exported so the shell can start it. The phone is somebody's actual
+             phone, and taking their screen for a 30 s check is not something a
+             test loop should ever need to do. notes/HANDOFF.md section 5.
+             WARNING: guarded by the DUMP permission. The ops behind it delete
+             models, start multi-GB downloads and switch the API on, and with no
+             permission ANY installed app could send them. The shell user holds
+             DUMP; an ordinary app cannot be granted it (signature, privileged
+             or development only), so the adb harness is unchanged. -->
         <service
             android:name=".OpService"
             android:exported="true"
+            android:permission="android.permission.DUMP"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

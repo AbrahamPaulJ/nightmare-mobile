@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,6 +43,6 @@ fun DiagnoseDialog(step: Int, total: Int, what: String, report: String?, onCance
                 Text(stringResource(R.string.diagnose_keep_open), style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { StudioTextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
     )
 }

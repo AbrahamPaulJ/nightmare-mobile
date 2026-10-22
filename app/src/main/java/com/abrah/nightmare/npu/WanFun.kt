@@ -177,14 +177,18 @@ object WanFun {
             if (count == 0) throw IOException("the driving video is too short: it needs at least a quarter of a second")
             val rgb = ByteArray(w * h * 3)
             val px = IntArray(w * h)
+            // ⚠⚠ In order, a batch at a time ([DriverFrames], Animate a portrait's reader): one exact
+            // seek per frame failed partway on the S25 ("could not read frame 15") and decoded from
+            // the previous keyframe every time.
+            val driver = DriverFrames(r, duration)
             BufferedOutputStream(FileOutputStream(out), 1 shl 20).use { os ->
                 os.write("NMV1".toByteArray(Charsets.US_ASCII))
                 os.write(ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
                     .putInt(w).putInt(h).putInt(count).putInt(WanVideoNode.FPS).array())
                 for (i in 0 until count) {
                     if (isCancelled()) throw IOException("cancelled")
-                    val us = startMs * 1000L + i * 1_000_000L / WanVideoNode.FPS
-                    val src = r.getFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST)
+                    val ms = startMs + i * 1000L / WanVideoNode.FPS
+                    val src = driver.at(ms)
                         ?: throw IOException("could not read frame ${i + 1} of the driving video")
                     // ⭐ The Video tab's box, black past the frame (it may zoom out √2); else the centre.
                     val framed = if (rect != null) {

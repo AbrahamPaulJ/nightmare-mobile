@@ -35,7 +35,6 @@ object VideoStructure {
     val maskFill get() = cfg.getDouble("mask_fill").toFloat()
     val gamma get() = cfg.getDouble("gamma").toFloat()
 
-    @Synchronized
     /**
      * The frame size the video path animates, for the crop UI.
      *
@@ -63,6 +62,9 @@ object VideoStructure {
     var frameSize: Pair<Int, Int> = 512 to 320
         private set
 
+    // ⚠ On [load], not on [cropWidth], where it sat above that function's KDoc: the crop UI and a
+    // render could both pass the `loaded` check and write the lateinit fields at once.
+    @Synchronized
     fun load(ctx: Context) {
         if (loaded) return
         cfg = JSONObject(NpuFiles.asset(ctx, "video_structure.json").bufferedReader().readText())

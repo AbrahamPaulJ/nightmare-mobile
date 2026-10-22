@@ -60,6 +60,18 @@ class AgentSession(
     /** `attachment:N` → its file, for the agent's `input_images`. */
     private val attachments = ConcurrentHashMap<String, String>()
 
+    /**
+     * ⭐ A chat lives in memory only, so at start every file a past one left (attachments, the run
+     * pictures shown in it, its `results/`) is nobody's: `filesDir/agent` grew without bound.
+     * ⚠ Joined before anything writes there, or a picture attached at once could be swept.
+     */
+    @Volatile private var cleanup: Job = scope.launch(Dispatchers.IO) { clearFiles() }
+
+    /** ⚠ Only with no chat on screen: its pictures are these files. */
+    private fun clearFiles() {
+        File(ctx.filesDir, "agent").listFiles().orEmpty().forEach { runCatching { it.deleteRecursively() } }
+    }
+
     fun send(text: String) {
         val t = text.trim()
         val picture = attached
@@ -136,6 +148,7 @@ class AgentSession(
     /** ⭐ A picked picture, copied into the app (a content URI can lose its grant). */
     fun attach(uri: String) {
         scope.launch {
+            cleanup.join()
             val path = withContext(Dispatchers.IO) {
                 runCatching {
                     val bytes = if (uri.startsWith("content://")) {
@@ -154,6 +167,7 @@ class AgentSession(
     fun showPictures(bitmaps: List<android.graphics.Bitmap>) {
         if (bitmaps.isEmpty()) return
         scope.launch {
+            cleanup.join()
             val paths = withContext(Dispatchers.IO) {
                 bitmaps.mapIndexed { i, bmp ->
                     File(File(ctx.filesDir, "agent").apply { mkdirs() }, "run_${System.currentTimeMillis()}_$i.png")
@@ -201,8 +215,9 @@ class AgentSession(
         agent = null
         mode = null
         attached = null
-        attachments.values.forEach { runCatching { File(it).delete() } }
         attachments.clear()
+        // ⚠ Every file the chat showed, not only what it sent: run pictures and a dropped attachment were kept forever.
+        cleanup = scope.launch(Dispatchers.IO) { clearFiles() }
     }
 
     fun saveConfig(input: SetupInput) {
@@ -241,7 +256,8 @@ class AgentSession(
         scope.launch {
             val r = withContext(Dispatchers.IO) {
                 runCatching {
-                    val key = typedKey?.takeIf { it.isNotBlank() } ?: AgentConfig.key(ctx)
+                    // ⚠ The stored key only for the provider and address it was saved for ([AgentConfig.keyFor]).
+                    val key = typedKey?.takeIf { it.isNotBlank() } ?: AgentConfig.keyFor(ctx, provider, baseUrl)
                     LlmClient(if (provider == Provider.CUSTOM) baseUrl else provider.baseUrl, key, "")
                         .models(chatOnly = provider == Provider.OPENROUTER)
                 }

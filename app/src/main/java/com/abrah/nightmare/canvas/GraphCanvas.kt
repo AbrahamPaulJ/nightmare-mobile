@@ -211,7 +211,10 @@ fun GraphCanvas(
     controlClipFor: (String) -> ImageBitmap? = { null },
 
 ) {
-    val measurer = rememberTextMeasurer()
+    // ⚠⚠ Sized to the graph: `drawNode` measures ~8 texts a node (title, captions, tags, status, ports), and
+    // the default cache of 8 thrashed on any graph past one node, re-laying-out every paragraph each pan frame.
+    // Rounded up to 64 so adding a node does not throw the cache away.
+    val measurer = rememberTextMeasurer(cacheSize = ((16 + 8 * workflow.graph.nodes.size + 63) / 64) * 64)
     val context = androidx.compose.ui.platform.LocalContext.current
     Box(modifier.background(CanvasColors.background)) {
         Canvas(Modifier.fillMaxSize()) {

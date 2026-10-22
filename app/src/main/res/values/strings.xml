@@ -258,6 +258,7 @@
     <string name="cn_about_sdxl">A ControlNet for SDXL Swap models. Only a conversion made with ControlNet ticked can use it: Illustrious XL Swap downloaded since 1.6.122, or your own from npuforge 1.0.12 or newer.</string>
     <string name="ip_about_sdxl">IP-Adapter for SDXL Swap models: a reference picture steers the render. Only a conversion made with IP-Adapter ticked can use it: Illustrious XL Swap downloaded since 1.6.122, or your own from npuforge 1.0.12 or newer.</string>
     <string name="run_lora_tags_unused">LoRA tags in the prompt were left out. This model takes no LoRAs</string>
+    <string name="run_lora_tags_negative">LoRA tags in the negative prompt were left out. Put them in the prompt to use them</string>
     <string name="run_lora_tag_missing">LoRA "%1$s" from the prompt is not installed. Skipped</string>
     <string name="run_lora_motion_skipped">Motion transfer takes no LoRAs: "%1$s" from the prompt was skipped</string>
     <string name="run_wan_ram_warning">%1$s for %2$s s needs about %3$s GB on the NPU, more than this phone\'s %4$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer</string>
@@ -1254,4 +1255,19 @@
     <string name="flow_animate_about">A photo of a face moving the way a face moves in a video you choose. No checkpoint involved.</string>
     <string name="palette_node_animate">Animate portrait</string>
     <string name="palette_about_animate">a photo of a face moved like the face in a video you choose (LivePortrait)</string>
+    <!-- review fixes (2026-10-22): canvas, inspector, ui -->
+    <string name="inspector_sweep_count">How many: %1$d</string>
+    <string name="inspector_sweep_seeds">%1$d runs, each with a new random seed</string>
+    <string name="output_auto_upscale_on">this output already enlarges every render. Untick auto upscale to choose</string>
+    <string name="inspector_sweep_this">sweep this parameter</string>
+    <string name="inspector_sweeping">sweeping %1$s</string>
+    <string name="agent_clear_chat_title">Delete this chat?</string>
+    <string name="agent_clear_chat_body">The conversation and the pictures attached to it are deleted. Your setup stays.</string>
+    <string name="agent_profile_delete_title">Delete the setup %1$s?</string>
+    <string name="agent_profile_delete_body">Its saved API key is deleted with it. The setup in use stays as it is.</string>
+    <string name="clip_unreadable">can\'t play this clip</string>
+    <string name="cd_kept_picture">the kept picture</string>
+    <string name="flow_this_chip">this chip</string>
+    <string name="flows_section_advanced">Advanced</string>
+    <string name="search_clear">Clear the search</string>
 </resources>

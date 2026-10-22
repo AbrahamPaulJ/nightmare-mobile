@@ -207,7 +207,10 @@ object DepthEstimator {
      * person dragged, and the drag stuttered (a tester's log, 2026-10-13).
      */
     fun cancel(thread: Thread) {
-        runs[thread]?.let { runCatching { it.setTerminate(true) } }
+        // ⚠ Inside the map's own per-key lock: the run's `finally` removes its entry BEFORE closing
+        // the options, so a terminate either lands first or finds nothing. A plain get-then-call
+        // could reach a RunOptions the running thread had already closed (a freed native handle).
+        runs.computeIfPresent(thread) { _, o -> runCatching { o.setTerminate(true) }; o }
     }
 
     /**

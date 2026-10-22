@@ -45,23 +45,52 @@ data class AgentConfig(
             )
         }
 
-        /** [key] null keeps the stored one; blank deletes it. */
+        /**
+         * [key] null keeps the stored one; blank deletes it.
+         * ⚠⚠ A kept key stays only with the provider AND address it was typed for ([KEY_FOR]): switching
+         * OpenRouter to a test `http://` server used to send the OpenRouter key there, in the clear.
+         */
         fun save(ctx: Context, provider: Provider, baseUrl: String, model: String, key: String?, instructions: String) {
-            val e = prefs(ctx).edit()
+            val p = prefs(ctx)
+            val base = if (provider == Provider.CUSTOM) baseUrl.trim() else provider.baseUrl
+            val e = p.edit()
                 .putString("provider", provider.name)
-                .putString("base", if (provider == Provider.CUSTOM) baseUrl.trim() else provider.baseUrl)
+                .putString("base", base)
                 .putString("model", model.trim())
                 .putString("instructions", instructions.trim())
             when {
-                key == null -> Unit
-                key.isBlank() -> e.remove("key")
-                else -> e.putString("key", KeyVault.seal(key.trim()))
+                key == null -> if (boundTo(p) != binding(provider, base)) e.remove("key").remove(KEY_FOR)
+                key.isBlank() -> e.remove("key").remove(KEY_FOR)
+                else -> e.putString("key", KeyVault.seal(key.trim())).putString(KEY_FOR, binding(provider, base))
             }
             e.apply()
         }
 
-        fun key(ctx: Context): String =
-            prefs(ctx).getString("key", null)?.let { runCatching { KeyVault.open(it) }.getOrNull() }.orEmpty()
+        fun key(ctx: Context): String {
+            val p = prefs(ctx)
+            val provider = Provider.of(p.getString("provider", null))
+            return keyFor(ctx, provider, p.getString("base", null)?.takeIf { it.isNotBlank() } ?: provider.baseUrl)
+        }
+
+        /** ⭐ The stored key, only when it was saved for [provider] at [baseUrl]; else "". */
+        fun keyFor(ctx: Context, provider: Provider, baseUrl: String): String {
+            val p = prefs(ctx)
+            val base = if (provider == Provider.CUSTOM) baseUrl.trim() else provider.baseUrl
+            if (boundTo(p) != binding(provider, base)) return ""
+            return p.getString("key", null)?.let { runCatching { KeyVault.open(it) }.getOrNull() }.orEmpty()
+        }
+
+        private const val KEY_FOR = "key_for"
+
+        private fun binding(provider: Provider, base: String) = provider.name + "|" + base.trim().trimEnd('/')
+
+        /** ⚠ A key saved before [KEY_FOR] existed belongs to the setup it was saved with: the one stored now. */
+        private fun boundTo(p: android.content.SharedPreferences): String? {
+            if (!p.contains("key")) return null
+            p.getString(KEY_FOR, null)?.let { return it }
+            val provider = Provider.of(p.getString("provider", null))
+            return binding(provider, p.getString("base", null)?.takeIf { it.isNotBlank() } ?: provider.baseUrl)
+        }
 
         // ---- named setups (the user's choice, 2026-10-08) --------------------------------
 
@@ -78,6 +107,7 @@ data class AgentConfig(
                 .put("model", p.getString("model", ""))
                 .put("instructions", p.getString("instructions", ""))
                 .put("key", p.getString("key", null) ?: JSONObject.NULL)
+                .put(KEY_FOR, boundTo(p) ?: JSONObject.NULL)
             val kept = profileArray(ctx).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
                 .filter { it.getString("name") != name.trim() }
             p.edit().putString("profiles", JSONArray(kept + entry).toString()).apply()
@@ -92,7 +122,15 @@ data class AgentConfig(
                 .putString("base", o.optString("base"))
                 .putString("model", o.optString("model"))
                 .putString("instructions", o.optString("instructions"))
-            if (o.isNull("key")) e.remove("key") else e.putString("key", o.getString("key"))
+            if (o.isNull("key")) {
+                e.remove("key").remove(KEY_FOR)
+            } else {
+                // ⚠ A setup saved before [KEY_FOR] existed: its key is its own provider's and address's.
+                val provider = Provider.of(o.optString("provider"))
+                val bound = o.optString(KEY_FOR).takeIf { it.isNotBlank() }
+                    ?: binding(provider, o.optString("base").takeIf { it.isNotBlank() } ?: provider.baseUrl)
+                e.putString("key", o.getString("key")).putString(KEY_FOR, bound)
+            }
             e.apply()
         }
 

@@ -2,6 +2,10 @@ package com.abrah.nightmare.ui
 
 import android.widget.VideoView
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
@@ -36,6 +40,13 @@ import java.io.File
 fun ClipPlayer(path: String, modifier: Modifier = Modifier) {
     val isUri = path.startsWith("content://")
     if (!isUri && !File(path).isFile) return
+    // ⚠⚠ A clip that will not decode SAYS so, as a picture does ([UnreadablePicture]): the error listener
+    // below used to swallow it and leave the black rectangle its own comment promised it would not.
+    var failed by remember(path) { mutableStateOf(false) }
+    if (failed) {
+        UnreadablePicture(modifier, text = com.abrah.nightmare.R.string.clip_unreadable)
+        return
+    }
     AndroidView(
         factory = { ctx ->
             VideoView(ctx).apply {
@@ -50,7 +61,7 @@ fun ClipPlayer(path: String, modifier: Modifier = Modifier) {
                 // rectangle the user can only close by guessing. Returning true
                 // says it is handled, which stops the platform's own
                 // "Can't play this video" dialog from appearing over ours.
-                setOnErrorListener { _, _, _ -> true }
+                setOnErrorListener { _, _, _ -> failed = true; true }
             }
         },
         update = { v ->

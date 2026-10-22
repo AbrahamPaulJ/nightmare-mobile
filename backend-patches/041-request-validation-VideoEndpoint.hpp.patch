@@ -1,0 +1,61 @@
+--- a/src/VideoEndpoint.hpp
++++ b/src/VideoEndpoint.hpp
+@@ -58,9 +58,12 @@
+       if (req->prompt.empty()) throw std::invalid_argument("Prompt empty");
+       if (out.empty()) throw std::invalid_argument("'out' is required");
+       // Wan 2.2's VAE downsamples 16x and its DiT patches 2x2.
++      // nightmare (041): and at most 4096, and steps at least 1 (a negative reached the engine).
+       if (req->width < 256 || req->height < 256 || req->width % 32 != 0 ||
+-          req->height % 32 != 0)
+-        throw std::invalid_argument("width and height must be multiples of 32, at least 256");
++          req->height % 32 != 0 || req->width > 4096 || req->height > 4096)
++        throw std::invalid_argument("width and height must be multiples of 32, 256 to 4096");
++      if (req->steps < 1 || req->steps > 1000)
++        throw std::invalid_argument("steps must be between 1 and 1000");
+       if (req->frames < 1 || (req->frames - 1) % 4 != 0)
+         throw std::invalid_argument("frames must be 4n+1");
+       if (json.contains("image")) {
+@@ -83,8 +86,9 @@
+         int32_t head[4] = {};
+         cv.read(magic, 4);
+         cv.read(reinterpret_cast<char *>(head), sizeof(head));
++        // nightmare (041): bounded sides too, or `w*h*3*count` wrapped size_t on a corrupt header.
+         if (!cv || std::string(magic, 4) != "NMV1" || head[0] <= 0 || head[1] <= 0 ||
+-            head[2] <= 0 || head[2] > 1000)
++            head[0] > 4096 || head[1] > 4096 || head[2] <= 0 || head[2] > 1000)
+           throw std::invalid_argument("control_video is not an NMV1 file: " + path);
+         const size_t bytes = static_cast<size_t>(head[0]) * head[1] * 3 * head[2];
+         req->control_rgb.resize(bytes);
+@@ -127,6 +131,10 @@
+       res.set_chunked_content_provider(
+           "text/event-stream",
+           [pipeline, req, out, &generation_mutex](intptr_t, httplib::DataSink &sink) -> bool {
++            // nightmare (041): delete `out` on failure only if THIS request opened it. An engine
++            // that failed to load, or a client gone before frame 0, removed whatever file was
++            // already at that path.
++            bool opened = false;
+             try {
+               std::lock_guard<std::mutex> generation_lock(generation_mutex);
+               std::ofstream file;
+@@ -146,10 +154,11 @@
+                       throw std::runtime_error(
+                           "Client disconnected, generation aborted");
+                   },
+-                  [&file, &out, &req](int index, int count, const uint8_t *rgb,
++                  [&file, &out, &req, &opened](int index, int count, const uint8_t *rgb,
+                                       int w, int h) {
+                     if (index == 0) {
+                       file.open(out, std::ios::binary | std::ios::trunc);
++                      opened = true;
+                       if (!file) throw std::runtime_error("cannot write " + out);
+                       const int32_t header[4] = {w, h, count, req->fps};
+                       file.write("NMV1", 4);
+@@ -177,7 +186,7 @@
+               sink.done();
+               return true;
+             } catch (const std::exception &e) {
+-              std::remove(out.c_str());
++              if (opened) std::remove(out.c_str());
+               nlohmann::json err = {{"type", "error"}, {"message", e.what()}};
+               std::string ev = "event: error\ndata: " + err.dump() + "\n\n";
+               sink.write(ev.c_str(), ev.size());

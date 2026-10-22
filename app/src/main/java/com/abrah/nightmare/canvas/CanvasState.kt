@@ -355,7 +355,7 @@ data class CanvasState(
         portAt(bs, world)?.let { port ->
             return copy(gesture = Gesture.DraggingWire(port, world), message = null)
         }
-        nodeAt(bs, world)?.let { box ->
+        nodeAt(bs, world, selection)?.let { box ->
             // ⚠⚠ The press changes the SELECTION not at all, in either mode.
             //
             // In multi-select the RELEASE toggles, and a press that also added
@@ -791,7 +791,9 @@ data class CanvasState(
         }
         if (made.isEmpty()) return this
         return copy(
-            workflow = Workflow(graph, positions),
+            // ⚠⚠ `copy`, never `Workflow(graph, positions)`: the constructor drops every node's
+            // [Workflow.sizes] and [Workflow.proseLines], so a clone snapped every resized node back.
+            workflow = workflow.copy(graph = graph, positions = positions),
             selection = made,
             message = null,
         )
@@ -893,9 +895,12 @@ data class CanvasState(
             params = type.widgets.mapNotNull { w -> w.default?.let { w.name to it } }.toMap(),
         )
         return copy(
-            workflow = Workflow(
+            // ⚠ `copy`: keeps the other nodes' sizes and prose lines ([cloneSelected]'s note).
+            workflow = workflow.copy(
                 graph = workflow.graph.copy(nodes = workflow.graph.nodes + node),
                 positions = workflow.positions + (id to at),
+                sizes = workflow.sizes - id,
+                proseLines = workflow.proseLines - id,
             ),
             // ⚠⚠ **A NEW node must never inherit a picture.** [freeId] hands back
             // the lowest unused name, so deleting `upscale` and adding another
@@ -959,18 +964,28 @@ data class CanvasState(
         fun <V> Map<String, V>.moveKey(): Map<String, V> =
             if (!containsKey(from)) this else (this - from) + (name to getValue(from))
         return copy(
-            workflow = Workflow(
+            workflow = workflow.copy(
                 graph = workflow.graph.copy(nodes = nodes),
                 positions = workflow.positions.moveKey(),
                 sizes = workflow.sizes.moveKey(),
+                proseLines = workflow.proseLines.moveKey(),
             ),
             previews = previews.moveKey(),
+            controlHints = controlHints.moveKey(),
             rendered = rendered.moveKey(),
             beforePreviews = beforePreviews.moveKey(),
             beforeHidden = beforeHidden.moveKey(),
             videos = videos.moveKey(),
             selection = if (from in selection) selection - from + name else selection,
             editing = if (editing == from) name else editing,
+            viewingNode = if (viewingNode == from) name else viewingNode,
+            // ⚠ A picked wire names node ids too; left alone it would point at a node that no longer exists.
+            wire = wire?.let { w ->
+                w.copy(
+                    toNode = if (w.toNode == from) name else w.toNode,
+                    from = if (w.from.node == from) w.from.copy(node = name) else w.from,
+                )
+            },
         )
     }
 
@@ -982,11 +997,15 @@ data class CanvasState(
      * the user has to guess at.
      */
     fun removeNode(id: String) = copy(
-        workflow = Workflow(
+        // ⚠ `copy`: keeps the other nodes' sizes and prose lines ([cloneSelected]'s note).
+        workflow = workflow.copy(
             // ⭐ A deleted ControlNet / IP-Adapter picture node switches its tool off ([switchingOffAfterRemoving]).
             graph = workflow.graph.without(id).switchingOffAfterRemoving(workflow.graph, id),
             positions = workflow.positions - id,
+            sizes = workflow.sizes - id,
+            proseLines = workflow.proseLines - id,
         ),
+        controlHints = controlHints - id,
         // ⚠ The picture goes with the node. Leaving it behind makes the map
         // grow forever, and worse, hands it to the next node that takes this id.
         // ⚠⚠ Same for [rendered], [beforePreviews] and [videos] — see [addNode]'s note.
@@ -1023,7 +1042,7 @@ data class CanvasState(
             ?: Pt(0f, 0f)
         val wired = sampler.copy(inputs = sampler.inputs + (port to com.abrah.nightmare.Source(id)))
         return copy(
-            workflow = Workflow(
+            workflow = workflow.copy(
                 graph = workflow.graph.copy(nodes = workflow.graph.nodes.map { if (it.id == samplerId) wired else it } + node),
                 positions = workflow.positions + (id to at),
             ),
@@ -1077,6 +1096,15 @@ data class CanvasState(
      * refuses the movement, or locking the view would turn every two-finger
      * gesture back into a tap that clears the selection.
      */
+    /**
+     * ⭐ A SECOND finger arrived: whatever the first one started is now a pinch. ⚠⚠ A node drag, a wire or a
+     * resize left as it was would end as a TAP on release (the inspector or the picker opened mid-pinch), fire
+     * the long press (multi-select), or connect a wire at the centroid. A moved pan does none of those.
+     */
+    fun pinched(): CanvasState =
+        if (gesture is Gesture.Idle || (gesture as? Gesture.Panning)?.moved == true) this
+        else copy(gesture = Gesture.Panning(moved = true))
+
     private fun moving(): CanvasState {
         val g = gesture
         return if (g is Gesture.Panning && !g.moved) copy(gesture = g.copy(moved = true)) else this

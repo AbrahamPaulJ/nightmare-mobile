@@ -167,12 +167,25 @@ object VideoWriter {
 
         val codec = codecName?.let { MediaCodec.createByCodecName(it) } ?: MediaCodec.createEncoderByType(MIME)
         val encoderName = codec.name
-        codec.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        val surface = codec.createInputSurface()
-        codec.start()
-        log("      encoder $encoderName")
-
-        val muxer = MediaMuxer(tmp.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        // ⚠⚠ The setup releases what it made when any step throws (an unsupported size refuses at
+        // `configure`). It ran before the `try` below, so each failed attempt leaked a started
+        // hardware codec and its surface, until codec creation failed app-wide. A start failure is
+        // [EncoderStalled], so [encode] retries it on the software encoder as it does a stall.
+        var surface: android.view.Surface? = null
+        val muxer = try {
+            codec.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            surface = codec.createInputSurface()
+            codec.start()
+            log("      encoder $encoderName")
+            MediaMuxer(tmp.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        } catch (e: Exception) {
+            runCatching { codec.stop() }
+            runCatching { codec.release() }
+            runCatching { surface?.release() }
+            if (e is java.io.IOException) throw e
+            throw EncoderStalled("the video encoder ($encoderName) could not start at ${w}x$h: ${e.message}", encoderName)
+        }
+        val inputSurface = surface!!
         var track = -1
         var muxing = false
         var outFrame = 0L
@@ -258,9 +271,9 @@ object VideoWriter {
                 // Even with the muxer override, feeding the encoder a sane cadence keeps
                 // its rate control sensible rather than treating the clip as 62 fps.
                 // ⚠ Blocks while a stalled encoder holds every input buffer: the watchdog frees it.
-                val canvas = surface.lockCanvas(dst)
+                val canvas = inputSurface.lockCanvas(dst)
                 canvas.drawBitmap(bmp, null, dst, null)
-                surface.unlockCanvasAndPost(canvas)
+                inputSurface.unlockCanvasAndPost(canvas)
                 progressAt.set(System.currentTimeMillis())
                 drain(false)
                 if ((i + 1) % 16 == 0) log("      encoded ${i + 1}/$count")
@@ -281,7 +294,7 @@ object VideoWriter {
             watchdog.interrupt()
             runCatching { codec.stop() }
             runCatching { codec.release() }
-            runCatching { surface.release() }
+            runCatching { inputSurface.release() }
             if (muxing) runCatching { muxer.stop() }
             runCatching { muxer.release() }
             if (!finished) tmp.delete()

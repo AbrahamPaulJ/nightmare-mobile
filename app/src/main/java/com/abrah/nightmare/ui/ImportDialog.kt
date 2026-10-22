@@ -1,5 +1,7 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -90,8 +92,8 @@ fun ImportDialog(onDismiss: () -> Unit, onChoose: (name: String) -> Unit) {
                 )
             }
         },
-        confirmButton = { Button(onClick = { onChoose(trimmed) }, enabled = ok) { Text(stringResource(R.string.import_choose_file)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { StudioButton(onClick = { onChoose(trimmed) }, enabled = ok) { Text(stringResource(R.string.import_choose_file)) } },
+        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -127,6 +129,6 @@ fun FamilyAskDialog(onAnswer: (Family?) -> Unit) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onAnswer(null) }) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { StudioTextButton(onClick = { onAnswer(null) }) { Text(stringResource(R.string.cancel)) } },
     )
 }

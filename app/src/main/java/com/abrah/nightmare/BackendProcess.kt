@@ -5,6 +5,7 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.concurrent.withLock
 
 /**
  * Starts and stops the forked C++ backend as a child process of this app.
@@ -292,6 +293,24 @@ object BackendProcess {
         private set
 
     /**
+     * ⭐⭐ The running launch's backend token, sent by [Backend] on every request (backend-patches
+     * 042). ⚠ Never logged or put in a report. Null before the first launch: a hand-run backend
+     * started without `NM_BACKEND_TOKEN` checks nothing, so the harness can still drive one.
+     */
+    @Volatile
+    var token: String? = null
+        private set
+
+    private const val TOKEN_ENV = "NM_BACKEND_TOKEN"
+
+    /** 192 random bits, hex. */
+    private fun newToken(): String {
+        val b = ByteArray(24)
+        java.security.SecureRandom().nextBytes(b)
+        return b.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
      * ⭐ The running model's OWN LoRA ([ModelSpec.ownLora]: MOSS-Image's 8-step distillation) as a path, or null.
      * [Ops.generate] sends it first on EVERY render, whoever asks: the node, Diagnose, `dit_bench`, the agent API.
      * ⚠⚠ Why here and not in the node (1.6.192): it was added to `Fused.runDit` alone, and `dit_bench` rendered MOSS
@@ -350,6 +369,10 @@ object BackendProcess {
     @Volatile
     private var runtimeUnpacked: File? = null
 
+    /** ⚠ The arch [runtimeUnpacked] was laid out for: a different [DeviceProbe.caps] arch lays it out again. */
+    @Volatile
+    private var runtimeArch: Int? = null
+
     /**
      * ⭐ Where the QNN runtime, the DiT skels and the downloaded DiT engine all
      * live: INTERNAL storage, which is the only writable place a `.so` can be
@@ -363,11 +386,20 @@ object BackendProcess {
     @Synchronized
     fun forgetRuntime() {
         runtimeUnpacked = null
+        runtimeArch = null
     }
+
+    /** A per-arch QNN library (`libQnnHtpV85Stub.so`), as opposed to the shared pair. */
+    private val QNN_ARCH_FILE = Regex("""libQnnHtpV\d{2}(Skel|Stub)?\.so""")
 
     @Synchronized
     fun prepareRuntime(context: Context): File {
-        runtimeUnpacked?.let { return it }
+        // ⚠⚠ Keyed on the arch, not "done once per process": the probe runs ON this runtime and can change the arch
+        // under it. A v85 phone that had learned the v81 fallback (#61/#62) unpacked 2.50 + V81, then measured v85,
+        // and the backend's 2.50 `libQnnHtp` asked for the V85 stub and found a 2.51 one left by an earlier overlay:
+        // "Stub lib id mismatch: expected 2.50, detected 2.51", every NPU model dead (TG, SM8975, 1.6.209 and 211).
+        val arch = DeviceProbe.caps().arch
+        if (runtimeArch == arch) runtimeUnpacked?.let { return it }
         val dir = runtimeDir(context).apply { mkdirs() }
         val all = context.assets.list("qnnlibs").orEmpty().toList()
         check(all.isNotEmpty()) {
@@ -381,6 +413,13 @@ object BackendProcess {
         // ⚠ An SoC we do not recognise gets every arch and lets QNN choose:
         // slower to unpack, always correct. A guessed arch is fast and fatal.
         val names = DeviceProbe.runtimeLibs(all)
+        // ⚠ Another arch's trio left by an earlier layout is DELETED, never left for `libQnnHtp` to find: the arch it
+        // dispatches to is the DEVICE's, so a stale stub of another SDK beside the wrong shared pair is the failure
+        // above. Unlinking a mapped file is safe (the inode lives on for whoever has it open).
+        val keepPack = arch in DeviceProbe.PACK_ARCHES
+        dir.listFiles().orEmpty()
+            .filter { f -> QNN_ARCH_FILE.matches(f.name) && f.name !in names && !(keepPack && f.name in QnnPack.FILES) }
+            .forEach { f -> if (f.delete()) Log.i(TAG, "removed stale ${f.name}") }
         for (n in names) {
             val dst = File(dir, n)
             val tmp = File(dir, "$n.tmp")
@@ -413,6 +452,7 @@ object BackendProcess {
         if (DeviceProbe.caps().arch in DeviceProbe.PACK_ARCHES) QnnPack.overlay(context, dir)
         Log.i(TAG, "runtime: ${names.size}/${all.size} libs (${DeviceProbe.caps()}) in ${dir.absolutePath}")
         runtimeUnpacked = dir
+        runtimeArch = arch
         return dir
     }
 
@@ -492,8 +532,10 @@ object BackendProcess {
     /**
      * The arches the DiT engine carries a skel for (`assets/ditlibs`). ⭐ v69 (8 Gen 1) is ours, engine `dit/034`:
      * built from the shipped tree with v69 versions of v73's three vconv conversions, HVX only.
+     * ⭐ v85 (8 Elite Gen 6) is `dit/033`: the SAME tree, built with Hexagon SDK 6.7 (the first with v85's HVX
+     * intrinsics, CI 39445483546), the very change local-dream alpha.6 made. The shipped engine opens it when told 85.
      */
-    val DIT_SKEL_ARCHES = setOf(69, 73, 75, 79, 81)
+    val DIT_SKEL_ARCHES = setOf(69, 73, 75, 79, 81, 85)
 
     /**
      * ⭐ `GGML_HEXAGON_ARCH` from the chip table, or null when the table does not name this chip.
@@ -506,7 +548,12 @@ object BackendProcess {
      * opens ours (an env arch is taken as given, `ggml_hexagon_init`).
      */
     internal fun ditArchEnv(caps: DeviceProbe.Caps): String? =
-        caps.arch.takeIf { caps.soc in DeviceProbe.SOC_TO_ARCH && it in DIT_SKEL_ARCHES }?.toString()
+        caps.arch.takeIf {
+            it in DIT_SKEL_ARCHES &&
+                // ⭐ …or MEASURED, or the v85 the part number names: the table does not list the 8 Elite Gen 6,
+                // and the engine caps a QUERIED arch at v81, so untold it would open v81's skel on a v85 DSP.
+                (caps.soc in DeviceProbe.SOC_TO_ARCH || caps.measured || it in DeviceProbe.PACK_ARCHES)
+        }?.toString()
 
     /**
      * ⭐ `llm.gguf` is exactly the encoder the catalogue downloads for [spec] (its name at its exact size), so the
@@ -678,10 +725,15 @@ object BackendProcess {
         /** ⭐ [ContextKey.memoryBudget]: `DIT_MAX_VRAM` and `all=disk` for this launch. */
         memoryBudget: String? = null,
     ): Start =
-        withContext(Dispatchers.IO) {
+        // ⚠⚠ [launchLock] for the whole launch: the API, OpService and the UI all reach here, and two starts at
+        // once orphaned one (A won the port; B's monitor cleared `process` and the key for A, so A was never held,
+        // stopped or recognised again). A [stop] in progress also holds it, so nothing launches beside a dying one.
+        withContext(Dispatchers.IO) { launchLock.withLock {
             if (isRunning) return@withContext Start.Failed("already running")
             // ⚠ A self-test line from a previous launch must not relaunch this one.
             hmxFailedThisLaunch = false
+            // ⚠ Nor its arch / hwinfo / HMX lines reach this launch's error report.
+            engineNpu = emptyMap()
             try {
                 val nativeDir = context.applicationInfo.nativeLibraryDir
                 val exe = File(nativeDir, EXECUTABLE)
@@ -861,6 +913,12 @@ object BackendProcess {
                             put(NO_HMX_KEY, "0")
                             put("NM_DIT_BACKEND", BlankDiagnosis.CPU_VAE)
                         }
+                        // ⚠⚠ A REAL v69 (8 Gen 1, 8+ Gen 1) never returns from the text encoder's NPU graph: two
+                        // testers' logs (SM8450, SM8475, 1.6.211) both stop at `qwen3 executing segment 1/1`, the
+                        // phone idle, for 3 to 7 min. The S25 forced to v69 runs it, so it is the hardware, not the
+                        // skel's code. Anima's encoder is a 0.6B Qwen3: on the CPU it costs seconds.
+                        if (DeviceProbe.caps().arch < ModelCatalog.DIT_V73_MIN_ARCH && !diagnosing) put("NM_DIT_BACKEND", BlankDiagnosis.CPU_TE_VAE)
+
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }
                         readDitLoraModeOverride(context)?.let { put("NM_DIT_LORA_MODE", it) }
@@ -973,10 +1031,15 @@ object BackendProcess {
                 for (k in listOf("LOCALDREAM_SDXL_SPILL_FILL_BYTES", "LOCALDREAM_ANIMA_SPILL_FILL_BYTES")) {
                     env[k]?.let { say("spill-fill group: $k=$it") }
                 }
+                // ⭐ A fresh token per launch, in the ENVIRONMENT (backend-patches 042): Android hides
+                // another app's /proc, and a command line would be printed in every report.
+                val launchToken = newToken()
+                token = launchToken
                 val p = ProcessBuilder(cmd).apply {
                     directory(File(nativeDir))
                     redirectErrorStream(true)
                     environment().putAll(env)
+                    environment()[TOKEN_ENV] = launchToken
                 }.start()
                 process = p
                 // ⚠ Recorded from the values actually placed on the command
@@ -1000,7 +1063,14 @@ object BackendProcess {
                 Log.e(TAG, "start failed", e)
                 Start.Failed("${e.javaClass.simpleName}: ${e.message}")
             }
-        }
+        } }
+
+    /**
+     * ⚠ Serialises [start] and [stop] — NOT `this`'s monitor, which [prepareRuntime] holds across a QNN pack
+     * download and [monitor]'s exit bookkeeping takes; neither of those ever takes this lock, so there is no
+     * cycle. Reentrant only so a future stop inside a launch cannot deadlock itself.
+     */
+    private val launchLock = java.util.concurrent.locks.ReentrantLock()
 
     /**
      * Drains the child's stdout.
@@ -1060,7 +1130,7 @@ object BackendProcess {
         }.apply { isDaemon = true; name = "backend-monitor" }.start()
     }
 
-    fun stop() {
+    fun stop(): Unit = launchLock.withLock {
         val p = synchronized(this) {
             val was = process
             process = null

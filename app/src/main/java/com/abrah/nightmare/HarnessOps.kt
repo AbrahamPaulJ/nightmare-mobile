@@ -163,13 +163,16 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "preview" -> previewCost()
             "canvas_run" -> canvasRun()
             // ⭐ The local API on / off with no screen (`docs/AGENT-API.md`): `--es arg on|off`.
-            // ⚠ Logs the token — this is the developer harness, on the owner's own logcat.
+            // ⚠ The FULL token goes to logcat only (the harness reads it there; only the shell can). [say] gets the
+            // last four: run from MainActivity it lands in the in-app log, which an error report carries unredacted.
             "api" -> {
                 com.abrah.nightmare.api.ApiSettings.setEnabled(ctx, arg != "off")
                 com.abrah.nightmare.api.ApiService.syncWith(ctx)
+                val token = com.abrah.nightmare.api.ApiSettings.token(ctx)
+                android.util.Log.i("Harness", "api token $token")
                 say("api: ${if (arg != "off") "on" else "off"} " +
                     com.abrah.nightmare.api.ApiService.addresses().joinToString { "$it:${com.abrah.nightmare.api.ApiSettings.PORT}" } +
-                    " token ${com.abrah.nightmare.api.ApiSettings.token(ctx)}")
+                    " token …${token.takeLast(4)}")
             }
             "workflow_io" -> workflowRoundTrip()
             "save_image" -> saveImage()
@@ -195,6 +198,15 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ "Animate a portrait" through the executor: `--es arg <photo>@<video>[@seconds]`.
             "animate_flow" -> animateFlow(arg)
             "models" -> listModels()
+            // ⭐ What Settings → Clean temp files frees, headless: `temp_clean` lists, `temp_clean go` deletes. A test
+            // session cleans the phone after itself without its screen (the user, 2026-10-22).
+            "temp_clean" -> {
+                val busy = RunLock.heldBy != null
+                val targets = TempCleaner.targets(ctx, busy)
+                targets.forEach { say("  ${it.absolutePath}") }
+                if (arg == "go") say("temp_clean: freed ${TempCleaner.clean(ctx, busy) shr 20} MB")
+                else say("temp_clean: ${targets.size} item(s), ${TempCleaner.scan(ctx, busy) shr 20} MB. `--es arg go` deletes them")
+            }
             "model_install" -> installModel(arg)
             "model_delete" -> deleteModel(arg)
             "model_use" -> useModel(arg)
@@ -2323,7 +2335,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     ): GraphRun {
         // ⭐ In use for the whole run, so an out-of-sight release waits for it
         // ([BackendIdle]) — and `finally`, so a failed run still ends the use.
-        BackendIdle.begin()
+        // ⚠ Off Main: `begin` waits on a release that may be mid-stop (up to 5 s), and this
+        // is called from viewModelScope.
+        // ⚠ NonCancellable: a cancel landing as `withContext` returns would throw AFTER
+        // `begin` and before the `try`, leaking the use (no `end`).
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.NonCancellable) { BackendIdle.begin() }
         RunWakeLock.begin(ctx)
         try {
             return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn, onPhase)
@@ -2366,9 +2382,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // an imported DiT keeps 2.6 GB of what it loads in the shared directory
         // ([ModelSpec.loadedBytes]). It is the number the run bar shows too.
         val bytes = spec.loadedBytes(ctx)
-        if (!Residency.releaseAfterRun(bytes, mi.totalMem)) return
+        val tooBig = Residency.releaseAfterRun(bytes, mi.totalMem)
+        // ⭐ …or the phone itself was left too little to draw with ([Residency.phoneStarved]).
+        val starved = !tooBig && Residency.phoneStarved(mi.availMem, mi.totalMem)
+        if (!tooBig && !starved) return
         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-            say(Residency.why(spec.label, bytes, mi.totalMem))
+            say(if (tooBig) Residency.why(spec.label, bytes, mi.totalMem) else Residency.whyStarved(spec.label, mi.availMem))
             stopBackend()
         }
     }
@@ -2490,7 +2509,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             onNode = { n ->
                 val recipe = if (n.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) {
                     workflow.graph.byId[n.id]
-                        ?.let { runCatching { SampleNode.effectiveParams(it) }.getOrNull() }
+                        // ⚠ THIS node's type: the legacy SampleNode's defaults (its model, denoise
+                        // 0.65) are not what a fused or DiT sampler ran with absent params.
+                        ?.let { node -> runCatching { (nodeTypes()[node.type] ?: SampleNode).effectiveParams(node) }.getOrNull() }
                         ?.let { p ->
                             // ⚠⚠ The EFFECTIVE step count when a latent is
                             // wired, because `denoise` eats steps

@@ -1,5 +1,7 @@
 package com.abrah.nightmare.canvas
 
+import com.abrah.nightmare.ui.studio
+import com.abrah.nightmare.ui.StudioTextButton
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.async
 import androidx.compose.foundation.BorderStroke
@@ -764,7 +766,7 @@ fun NodeInspector(
                 if (clipNoUpscale != null || nodeId in clipNodes(state.workflow.graph, state.videos)) {
                     clipNoUpscale ?: stringResource(R.string.output_clip_no_upscale)
                 } else if (com.abrah.nightmare.MediaOutputNode.autoUpscales(node) && beforeId != null) {
-                    "this output already enlarges every render. Untick auto upscale to choose"
+                    stringResource(R.string.output_auto_upscale_on)
                 } else null,
             onInfo = detailsOf?.takeIf { previewId != null }?.let { d -> { d(nodeId) } },
         )
@@ -973,12 +975,12 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
             com.abrah.nightmare.MediaOutputNode.BRIGHTNESS, com.abrah.nightmare.MediaOutputNode.CONTRAST,
             com.abrah.nightmare.MediaOutputNode.SATURATION, com.abrah.nightmare.MediaOutputNode.WARMTH,
         ) && node.type == com.abrah.nightmare.MediaOutputNode.name &&
-        node.params[com.abrah.nightmare.MediaOutputNode.ADJUST] != "true"
+        !isOn(node.params[com.abrah.nightmare.MediaOutputNode.ADJUST])
     ) return true
     // ⭐ Fix strength only while Fix faces or Fix hands is on: the Upscaler chooser's rule, above.
     if (name == com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE &&
-        node.params[com.abrah.nightmare.detail.Detailer.FIX_FACES] != "true" &&
-        node.params[com.abrah.nightmare.detail.Detailer.FIX_HANDS] != "true"
+        !isOn(node.params[com.abrah.nightmare.detail.Detailer.FIX_FACES]) &&
+        !isOn(node.params[com.abrah.nightmare.detail.Detailer.FIX_HANDS])
     ) return true
     // ⭐ An inpaint node's grow and feather are drawn IN the Mask tab of its
     // popup, under the picture they change — never loose in the knob list
@@ -1459,9 +1461,9 @@ internal fun NodeInspectorBody(
                         title = { Text(stringResource(R.string.remove_input_title)) },
                         text = { Text(stringResource(R.string.remove_input_body)) },
                         confirmButton = {
-                            TextButton(onClick = { confirming = false; onSwapFlow(t2i.recipe) }) { Text(stringResource(R.string.remove_input)) }
+                            StudioTextButton(onClick = { confirming = false; onSwapFlow(t2i.recipe) }) { Text(stringResource(R.string.remove_input)) }
                         },
-                        dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
+                        dismissButton = { StudioTextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
                     )
                 }
             }
@@ -1747,7 +1749,7 @@ internal fun NodeInspectorBody(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = { onSetParams(nodeId, mapOf("width" to "$mw", "height" to "$mh")) }) {
+                    StudioTextButton(onClick = { onSetParams(nodeId, mapOf("width" to "$mw", "height" to "$mh")) }) {
                         Text(stringResource(R.string.wan_match_picture, "${mw}x$mh"))
                     }
                 }
@@ -2061,15 +2063,18 @@ internal fun NodeInspectorBody(
                 val frame = if (framed) rect else CropRect.WHOLE
                 val src = if (!framed) raw else {
                     val outSize = framingOutSize(node, type)
-                    remember(raw, rect, outSize, node.params[CropNode.PAD]) {
+                    val fill = effectivePad(node, type)
+                    // ⚠ OFF the main thread: a full-resolution re-cut on the UI thread at every crop change.
+                    // ⚠ The photo itself for the frame or two before the first cut lands.
+                    rememberOffMain(node.id, "mask source", raw, rect, outSize, fill, keep = true) {
                         val (outW, outH) = outSize
                         CropNode.render(
                             raw.asAndroidBitmap(),
                             rect.x, rect.y, rect.w, rect.h,
                             outW, outH,
-                            node.params[CropNode.PAD],
+                            fill,
                         ).first.asImageBitmap()
-                    }
+                    } ?: raw
                 }
                 MaskToolbar(
                     nodeId = nodeId,
@@ -2526,7 +2531,7 @@ internal fun NodeInspectorBody(
             if (shownMore.isEmpty()) break
             MoreOptionsHeader(
                 open = moreOpen,
-                on = shownMore.filter { it.type == "bool" && (node.params[it.name] ?: it.default) == "true" }
+                on = shownMore.filter { it.type == "bool" && isOn(node.params[it.name] ?: it.default) }
                     .map { it.name.localizedKnobLabel() },
                 onToggle = {
                     moreOpen = !moreOpen
@@ -2539,7 +2544,11 @@ internal fun NodeInspectorBody(
             if (w.name == picked) continue
             // ⭐ Detection settings (GitHub #46): above Fix strength, under the same rule ([DetectSettingsRow]).
             if (w.name == com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE && !hiddenKnob(node, w.name)) {
-                DetectSettingsRow(node.params, preview) { name, v -> onSetParam(nodeId, name, v) }
+                DetectSettingsRow(
+                    node.params, preview,
+                    onSetParam = { name, v -> onSetParam(nodeId, name, v) },
+                    onSetParams = { onSetParams(nodeId, it) },
+                )
             }
             // ⚠ The doodle layer is drawn, never typed (`DrawWindow.kt`).
             if (node.type == "core.image" && w.name == com.abrah.nightmare.LoadImageNode.DRAWING) continue
@@ -2597,21 +2606,7 @@ internal fun NodeInspectorBody(
                         // "dpm_sde_karras" listed for a sampler they chose as
                         // "DPM++ 2M SDE".
                         .map { if (w.name == "scheduler") ModelCatalog.schedulerLabel(it) else it }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(w.name.localizedKnobLabel(), style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                stringResource(
-                                    R.string.inspector_batching_values,
-                                    picked.size,
-                                    picked.joinToString(", "),
-                                ),
-                                style = NoteTextStyle,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        BatchToggle(armed = armedChoice, onClick = { batching = w })
-                    }
+                    ArmedSweepRow(w.name.localizedKnobLabel(), picked, armedChoice) { batching = w }
                     continue
                 }
                 // ⭐⭐ **The sampler is FIVE names and a Karras toggle**, not nine
@@ -2718,14 +2713,9 @@ internal fun NodeInspectorBody(
                         { motionInfo = true }
                     } else null,
                 )
-                // ⚠ `scheduler` is batchable and is NOT a range — its popup is
-                // a multi-select over these same options.
-                if (sweepable(w.name)) {
-                    BatchToggle(
-                        armed = com.abrah.nightmare.BatchParams.armed(node, w.name),
-                        onClick = { batching = w },
-                    )
-                }
+                // ⚠ No sweep toggle here: the one batchable CHOICE, `scheduler`, has its own branch above
+                // ([com.abrah.nightmare.BatchParams.ALLOWED]). One here was unreachable, and would have drawn
+                // the icon on a line of its own.
                 continue
             }
             // ⚠ The sampler used to need a case here: it carried a prompt that
@@ -2808,21 +2798,7 @@ internal fun NodeInspectorBody(
             // 2026-09-10.
             if (armedSpec != null) {
                 val vals = com.abrah.nightmare.BatchParams.valuesOf(w.name, armedSpec)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(w.name.localizedKnobLabel(), style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            stringResource(
-                                R.string.inspector_batching_values,
-                                vals.size,
-                                vals.joinToString(", "),
-                            ),
-                            style = NoteTextStyle,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    BatchToggle(armed = armedSpec, onClick = { batching = w })
-                }
+                ArmedSweepRow(w.name.localizedKnobLabel(), vals, armedSpec) { batching = w }
                 continue
             }
             if (why == null && w.numeric && w.min != null && w.max != null) {
@@ -3050,7 +3026,7 @@ internal fun NodeInspectorBody(
             if (isProse && why == null && (onTranslate != null || onDescribe != null)) {
                 val name = w.name
                 val show: (String) -> Unit = { text ->
-                    if (wanted || isProse) seeded.value = TextFieldValue(text, TextRange(text.length))
+                    seeded.value = TextFieldValue(text, TextRange(text.length))
                 }
                 Row(Modifier.align(Alignment.TopEnd)) {
                 if (name == "prompt" && onDescribe != null) {
@@ -3133,12 +3109,12 @@ internal fun NodeInspectorBody(
             // that does not drive the production wiring cannot see it.
             // ⭐ Violet Studio: Reset a quiet outlined button, Delete a red one — equal width, side by side.
             if (onReset != null && node.type != "core.image") {
-                androidx.compose.material3.OutlinedButton(
+                com.abrah.nightmare.ui.StudioOutlinedButton(
                     onClick = { confirmingReset = true }, shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                 ) { Text(stringResource(R.string.inspector_reset_node)) }
             }
-            androidx.compose.material3.OutlinedButton(
+            com.abrah.nightmare.ui.StudioOutlinedButton(
                 onClick = { confirmingDelete = true }, shape = RoundedCornerShape(12.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
                 colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -3148,7 +3124,7 @@ internal fun NodeInspectorBody(
         // ⭐ The Default view's half of Reset, on every sampler (the user, 2026-10-20): no Delete there,
         // and it keeps what was picked ([CanvasState.resetSamplerDefaults]). Same quiet outlined button.
         if (!nodeActions && onResetDefaults != null && type is com.abrah.nightmare.SdSampler) {
-            androidx.compose.material3.OutlinedButton(
+            com.abrah.nightmare.ui.StudioOutlinedButton(
                 onClick = { confirmingDefaults = true }, shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
             ) { Text(stringResource(R.string.inspector_reset_defaults)) }
@@ -3281,7 +3257,7 @@ private fun LoraRow(
             )
         }
         if (why == null) {
-            TextButton(onClick = onOpen) {
+            StudioTextButton(onClick = onOpen) {
                 Text(stringResource(if (entries.isEmpty()) R.string.inspector_choose else R.string.inspector_change))
             }
         }
@@ -3659,7 +3635,7 @@ private fun InpaintEditors(
     val grow = node.params["grow"]
     val feather = node.params["feather"]
     val (outW0, outH0) = framingOutSize(node, type)
-    val pad = node.params[CropNode.PAD]
+    val pad = effectivePad(node, type)
     // ⚠⚠ Keyed on the render SIZE and the padding too — keyed on the photo and
     // rect alone, a resolution change left both previews at the old shape.
     // ⭐⭐ Placed objects, on the photo BEFORE it is framed and their bands in
@@ -3965,12 +3941,29 @@ internal fun pictureCap(pair: Boolean = false): androidx.compose.ui.unit.Dp {
  * ⚠ It shows ARMED state by colour, not by a second label: the row is already
  * a name, a value and a slider, and a fourth element would wrap on a phone.
  */
+/** ⭐ An ARMED knob's row: its name, what it will sweep, and the toggle. ONE function for the choice and the range. */
+@Composable
+private fun ArmedSweepRow(label: String, values: List<String>, armed: String, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                stringResource(R.string.inspector_batching_values, values.size, values.joinToString(", ")),
+                style = NoteTextStyle,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        BatchToggle(armed = armed, onClick = onClick)
+    }
+}
+
 @Composable
 private fun BatchToggle(armed: String?, onClick: () -> Unit) {
     IconButton(onClick = onClick, modifier = Modifier.size(32.dp)) {
         Icon(
             com.abrah.nightmare.ui.BatchIcon,
-            contentDescription = if (armed == null) "sweep this parameter" else "sweeping $armed",
+            contentDescription = if (armed == null) stringResource(R.string.inspector_sweep_this)
+            else stringResource(R.string.inspector_sweeping, armed),
             tint = if (armed != null) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
@@ -4114,16 +4107,16 @@ private fun DescribeToggle(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(caption, style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = {
+                    StudioTextButton(onClick = {
                         onWrite(com.abrah.nightmare.ImageCaption.appended(latest.value, caption)); close()
                     }) { Text(stringResource(R.string.describe_add)) }
-                    TextButton(onClick = { onWrite(caption); close() }) {
+                    StudioTextButton(onClick = { onWrite(caption); close() }) {
                         Text(stringResource(R.string.describe_replace))
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioTextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
         )
         working -> AlertDialog(
             onDismissRequest = close,
@@ -4135,7 +4128,7 @@ private fun DescribeToggle(
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioTextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
         )
         else -> AlertDialog(
             onDismissRequest = close,
@@ -4186,13 +4179,13 @@ private fun DescribeToggle(
                             }
                         }
                     }
-                    androidx.compose.material3.OutlinedButton(onClick = pick, modifier = Modifier.fillMaxWidth()) {
+                    com.abrah.nightmare.ui.StudioOutlinedButton(onClick = pick, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.describe_from_phone))
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioTextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
@@ -4285,6 +4278,12 @@ private fun BatchDialog(
     var chosen by remember {
         mutableStateOf(stored.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet())
     }
+    // ⭐ The SEED is swept by COUNT ([com.abrah.nightmare.BatchParams.isCount]): one "how many" slider. ⚠ From/to
+    // sliders over 1..10 read as seeds 1, 2, 3, while `rollSeeds` swaps them for random ones at the start.
+    val isCount = com.abrah.nightmare.BatchParams.isCount(widget.name)
+    var count by remember {
+        mutableStateOf(parsed.size.takeIf { it >= com.abrah.nightmare.BatchParams.MIN_PER_AXIS } ?: 4)
+    }
 
     // ⚠⚠ Everything below is DERIVED from the sliders — no second source of
     // truth to drift from them.
@@ -4324,7 +4323,11 @@ private fun BatchDialog(
         if (sweep.int) v.roundToInt().toString() else fixed(v, dp)
     }
 
-    val spec = if (!isRange) chosen.joinToString(", ") else values.joinToString(", ")
+    val spec = when {
+        !isRange -> chosen.joinToString(", ")
+        isCount -> (1..count).joinToString(", ")
+        else -> values.joinToString(", ")
+    }
     val others = alreadyArmed -
         (if (com.abrah.nightmare.BatchParams.armed(node, widget.name) != null) 1 else 0)
     val why = com.abrah.nightmare.BatchParams.refusalFor(widget.name, spec, others)
@@ -4355,11 +4358,26 @@ private fun BatchDialog(
                                     onClick = {
                                         chosen = if (o in chosen) chosen - o else chosen + o
                                     },
-                                    label = { Text(o, fontSize = 12.sp) },
+                                    // ⚠ The scheduler's LABEL, as the armed row writes it; `dpm_sde_karras` is an id.
+                                    label = { Text(if (widget.name == "scheduler") ModelCatalog.schedulerLabel(o) else o, fontSize = 12.sp) },
                                     shape = RoundedCornerShape(10.dp),
                                 )
                             }
                         }
+                    }
+                    isCount -> {
+                        Text(stringResource(R.string.inspector_sweep_count, count), style = MaterialTheme.typography.bodyMedium)
+                        Slider(
+                            value = count.toFloat(),
+                            onValueChange = {
+                                count = it.roundToInt().coerceIn(
+                                    com.abrah.nightmare.BatchParams.MIN_PER_AXIS, com.abrah.nightmare.BatchParams.MAX_PER_AXIS,
+                                )
+                            },
+                            valueRange = com.abrah.nightmare.BatchParams.MIN_PER_AXIS.toFloat()..com.abrah.nightmare.BatchParams.MAX_PER_AXIS.toFloat(),
+                            steps = com.abrah.nightmare.BatchParams.MAX_PER_AXIS - com.abrah.nightmare.BatchParams.MIN_PER_AXIS - 1,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                     // ⭐ RANGE: from, to, and a step that only gets coarser.
                     else -> {
@@ -4403,10 +4421,11 @@ private fun BatchDialog(
                 Text(
                     why ?: when {
                         armedValues.isEmpty() -> stringResource(R.string.inspector_not_sweeping)
+                        isCount -> stringResource(R.string.inspector_sweep_seeds, armedValues.size)
                         else -> stringResource(
                             R.string.inspector_sweep_runs,
                             armedValues.size,
-                            armedValues.joinToString(", "),
+                            armedValues.joinToString(", ") { if (widget.name == "scheduler") ModelCatalog.schedulerLabel(it) else it },
                         )
                     },
                     style = NoteTextStyle,
@@ -4416,7 +4435,7 @@ private fun BatchDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            StudioTextButton(
                 onClick = { onSet(spec); onDismiss() },
                 enabled = why == null,
             ) { Text(stringResource(if (armedValues.isEmpty()) R.string.inspector_release else R.string.inspector_arm)) }
@@ -4425,9 +4444,9 @@ private fun BatchDialog(
             // ⚠ Release reachable WITHOUT dragging a slider to nothing — one
             // tap, the same as the run bar's ✕.
             if (com.abrah.nightmare.BatchParams.armed(node, widget.name) != null) {
-                TextButton(onClick = { onSet(""); onDismiss() }) { Text(stringResource(R.string.inspector_release)) }
+                StudioTextButton(onClick = { onSet(""); onDismiss() }) { Text(stringResource(R.string.inspector_release)) }
             } else {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+                StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             }
         },
     )
@@ -4526,7 +4545,9 @@ private fun NodeLoraPicker(
     // across the import and the file a person just picked is invisible
     // until they close and reopen — which is exactly the shape of bug
     // the Add button was added to remove.
-    val installed = remember(loraEpoch) {
+    // ⚠⚠ OFF the main thread ([rememberOffMain], `docs/UI.md` §8.9a): a directory scan in composition is what
+    // made this sheet open choppy once already (the note at the top of [NodeInspector]).
+    val installed = rememberOffMain(nodeId, "lora files", loraEpoch) {
         com.abrah.nightmare.BackendProcess.lorasDir(ctx).listFiles { f ->
             f.isFile && f.extension.equals("safetensors", ignoreCase = true)
         }.orEmpty().map { it.name to it.length() }.sortedBy { it.first.lowercase() }
@@ -4542,9 +4563,11 @@ private fun NodeLoraPicker(
     // ⭐ Notes beside the files ([com.abrah.nightmare.LoraNotes]); re-read
     // with the list, written straight back on save.
     val loraDir = com.abrah.nightmare.BackendProcess.lorasDir(ctx)
-    var loraNotes by remember(loraEpoch) {
-        mutableStateOf(com.abrah.nightmare.LoraNotes.read(loraDir))
-    }
+    val notesRead = rememberOffMain(nodeId, "lora notes", loraEpoch) { com.abrah.nightmare.LoraNotes.read(loraDir) }
+    var savedNotes by remember(loraEpoch) { mutableStateOf<Map<String, String>?>(null) }
+    // ⚠ Nothing until both land (a frame or two): a picker drawn on an EMPTY list marks every chosen LoRA missing.
+    if (installed == null || notesRead == null) return
+    val loraNotes = savedNotes ?: notesRead
     LoraPicker(
         installed = installed,
         spec = node.params[com.abrah.nightmare.SdSampler.LORAS].orEmpty(),
@@ -4557,7 +4580,7 @@ private fun NodeLoraPicker(
             ?.let { t -> onBrowseLoras?.let { cb -> { cb(t) } } },
         notes = loraNotes,
         onSaveNote = { name, note ->
-            loraNotes = com.abrah.nightmare.LoraNotes.write(loraDir, name, note)
+            savedNotes = com.abrah.nightmare.LoraNotes.write(loraDir, name, note)
         },
         onAddToPrompt = onAddToPrompt,
         onReplacePrompt = onReplacePrompt,
@@ -4687,8 +4710,8 @@ private fun VideoPicker(current: String, onPicked: (String) -> Unit, onClear: ()
     val pick = rememberVideoPick(onPicked)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            androidx.compose.material3.OutlinedButton(onClick = pick.photos) { Text(stringResource(R.string.video_in_choose)) }
-            TextButton(onClick = pick.files) { Text(stringResource(R.string.pick_files)) }
+            com.abrah.nightmare.ui.StudioOutlinedButton(onClick = pick.photos) { Text(stringResource(R.string.video_in_choose)) }
+            StudioTextButton(onClick = pick.files) { Text(stringResource(R.string.pick_files)) }
         }
         // ⭐ Under the buttons: the clip's first and last frames, not its file name (the user's
         // call, 2026-10-16), with ✕ to clear it.
@@ -4919,7 +4942,7 @@ private fun SwapFlowDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -4982,7 +5005,7 @@ internal fun ImageActions(onPick: () -> Unit, onClear: () -> Unit, tint: Color? 
 /** ⭐ "Files" — [ImagePick.files], beside the gallery icon and under the empty frame. */
 @Composable
 internal fun FilesButton(onClick: () -> Unit, tint: Color? = null) {
-    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp)) {
+    StudioTextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp)) {
         Text(
             stringResource(R.string.pick_files),
             color = tint ?: MaterialTheme.colorScheme.primary,
@@ -5009,7 +5032,7 @@ internal fun SizePill(width: Int, height: Int, tint: Color? = null) {
     // ⭐ [com.abrah.nightmare.ui.MetaPill] — the same height, typeface and corners as the seed beside it.
     // A [tint] means it sits over a picture (the fullscreen viewers).
     com.abrah.nightmare.ui.MetaPill(onPicture = tint != null) {
-        Text("$width × $height", style = com.abrah.nightmare.ui.metaValueStyle(), modifier = Modifier.padding(end = 8.dp))
+        Text("${width}x$height", style = com.abrah.nightmare.ui.metaValueStyle(), modifier = Modifier.padding(end = 8.dp))
     }
 }
 
@@ -5044,7 +5067,7 @@ internal fun SeedRow(
 ) {
     val clipboard = LocalClipboardManager.current
     val muted = if (tint != null) tint.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
-    val iconTint = if (tint != null) tint else com.abrah.nightmare.ui.Accent
+    val iconTint = if (tint != null) tint else MaterialTheme.studio.accentText
     val parts: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
         if (!compact) Text(stringResource(R.string.inspector_seed_label), style = MaterialTheme.typography.labelLarge, color = muted)
         Text(
@@ -5345,6 +5368,8 @@ private fun DrawControls(
 @Composable
 private fun DrawSheet(uri: String, drawing: String, onDone: (android.graphics.Bitmap?) -> Unit, onCancel: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    // ⚠ A decode that FAILS must end the spinner too: it used to stay null, and the sheet spun for ever.
+    var unreadable by remember(uri, drawing) { mutableStateOf(false) }
     val loaded by androidx.compose.runtime.produceState<Pair<ImageBitmap, android.graphics.Bitmap?>?>(null, uri, drawing) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
@@ -5356,12 +5381,14 @@ private fun DrawSheet(uri: String, drawing: String, onDone: (android.graphics.Bi
                 photo?.let { it.asImageBitmap() to layer }
             }.getOrNull()
         }
+        unreadable = value == null
     }
     com.abrah.nightmare.ui.PullDownSheet(onDismiss = onCancel) {
         val l = loaded
         if (l == null) {
             Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                androidx.compose.material3.CircularProgressIndicator()
+                if (unreadable) Text(stringResource(R.string.objects_this_unreadable), color = MaterialTheme.colorScheme.error)
+                else androidx.compose.material3.CircularProgressIndicator()
             }
         } else {
             // ⚠ Scrolls on a short phone; the canvas consumes its own drag, so drawing never scrolls.
@@ -5478,3 +5505,17 @@ internal fun TagSuggestions(value: TextFieldValue, onPick: (IntRange, String) ->
         }
     }
 }
+
+/**
+ * ⭐ The fill a node's bars RENDER with, for every view of it (the Mask tab's framed source, both editor
+ * tiles). ⚠⚠ The raw `pad` param is null on a node nobody touched, which drew BLACK bars while the inpaint
+ * default and the run use blur ([com.abrah.nightmare.SdSampler.padFill], defaults applied).
+ */
+internal fun effectivePad(node: com.abrah.nightmare.Node, type: NodeType?): String =
+    com.abrah.nightmare.SdSampler.padFill(node.type, com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node))
+
+/**
+ * ⭐ How the inspector reads a bool param: as the run does (`equals("true", ignoreCase = true)` in `Fused.kt`).
+ * ⚠ A case-sensitive `== "true"` in two places hid a "True" switch's sliders that [BoolKnobRow] drew as on.
+ */
+private fun isOn(v: String?): Boolean = v.equals("true", ignoreCase = true)

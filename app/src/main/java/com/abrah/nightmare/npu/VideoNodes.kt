@@ -243,8 +243,11 @@ object VideoSampleNode : NodeType {
         // read its DECLARED default, and comparing against "false" to mean
         // "true unless" encodes that default in a second place.
         val upscale = effectiveParams(node)["upscale"].equals("true", ignoreCase = true)
+        // ⚠ The framing is in the key, as on Wan: the source's address is the UNFRAMED photo, so a
+        // moved crop at the same seed was served the old clip.
+        val framing = source?.let { effectiveParams(node).let { p -> listOf("x", "y", "w", "h").joinToString(",") { k -> p[k].orEmpty() } } }
         val key = sha1(
-            listOf(prompt, seed.toString(), upscale.toString(), source?.address().orEmpty())
+            (listOf(prompt, seed.toString(), upscale.toString(), source?.address().orEmpty()) + listOfNotNull(framing))
                 .joinToString("\u0000")
         )
         val out = File(File(android.cacheDir, "video").apply { mkdirs() }, "clip_$key.mp4")
@@ -288,13 +291,13 @@ object VideoSampleNode : NodeType {
             // costs (docs/NEODRAGON.md): the MMDiT is ~2/3 of the render.
             var base = 0
             var span = PHASE_WEIGHT.getValue("text encoders")
-            val r = Video(android, runner) { line ->
+            val r = Video(android, runner, { line ->
                 // ⚠ The pipeline's own lines, live in the run panel. They are
                 // indented and wordy by design — they were written to be read
                 // while waiting.
                 ctx.say(line.trim())
                 Log.i(TAG, line)
-            }.generate(prompt, used, bitmap) { stage, i, n ->
+            }, wantUpscale = upscale).generate(prompt, used, bitmap) { stage, i, n ->
                 val key = PHASE_WEIGHT.keys.firstOrNull { stage.startsWith(it) }
                 if (key != null) {
                     base = PHASE_START.getValue(key)

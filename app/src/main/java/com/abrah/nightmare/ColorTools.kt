@@ -2,6 +2,7 @@ package com.abrah.nightmare
 
 import kotlin.math.cbrt
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -24,8 +25,10 @@ object ColorTools {
 
     private fun lin(c: Int): Double = (c / 255.0).let { if (it <= 0.04045) it / 12.92 else ((it + 0.055) / 1.055).pow(2.4) }
 
+    // ⚠ ROUNDED, here and in [autoColor] / [adjust]: a truncating toInt() pulled most pixels down a
+    // level on the Lab round trip, so even an identity match darkened the whole picture slightly.
     private fun gam(v: Double): Int =
-        (255.0 * (if (v <= 0.0031308) 12.92 * v else 1.055 * v.pow(1 / 2.4) - 0.055)).toInt().coerceIn(0, 255)
+        (255.0 * (if (v <= 0.0031308) 12.92 * v else 1.055 * v.pow(1 / 2.4) - 0.055)).roundToInt().coerceIn(0, 255)
 
     private fun f(t: Double) = if (t > 216.0 / 24389) cbrt(t) else (24389.0 / 27 * t + 16) / 116
 
@@ -103,7 +106,7 @@ object ColorTools {
         val lut = Array(3) { c ->
             val lo = percentile(hist[c], px.size, 0.005)
             val hi = percentile(hist[c], px.size, 0.995)
-            IntArray(256) { v -> if (hi - lo < 16) v else ((v - lo) * 255.0 / (hi - lo)).toInt().coerceIn(0, 255) }
+            IntArray(256) { v -> if (hi - lo < 16) v else ((v - lo) * 255.0 / (hi - lo)).roundToInt().coerceIn(0, 255) }
         }
         val mean = DoubleArray(3)
         for (p in px) { mean[0] += lut[0][p ushr 16 and 0xFF]; mean[1] += lut[1][p ushr 8 and 0xFF]; mean[2] += lut[2][p and 0xFF] }
@@ -112,9 +115,9 @@ object ColorTools {
         val gain = DoubleArray(3) { c -> if (mean[c] < 1) 1.0 else 1 + (grey / mean[c] - 1) * 0.5 }
         return IntArray(px.size) { i ->
             val p = px[i]
-            val r = (lut[0][p ushr 16 and 0xFF] * gain[0]).toInt().coerceIn(0, 255)
-            val g = (lut[1][p ushr 8 and 0xFF] * gain[1]).toInt().coerceIn(0, 255)
-            val b = (lut[2][p and 0xFF] * gain[2]).toInt().coerceIn(0, 255)
+            val r = (lut[0][p ushr 16 and 0xFF] * gain[0]).roundToInt().coerceIn(0, 255)
+            val g = (lut[1][p ushr 8 and 0xFF] * gain[1]).roundToInt().coerceIn(0, 255)
+            val b = (lut[2][p and 0xFF] * gain[2]).roundToInt().coerceIn(0, 255)
             (p and 0xFF000000.toInt()) or (r shl 16) or (g shl 8) or b
         }
     }
@@ -137,7 +140,7 @@ object ColorTools {
             r = y + (r - y) * sat; g = y + (g - y) * sat; b = y + (b - y) * sat
             r = (r - 128f) * con + 128f + add; g = (g - 128f) * con + 128f + add; b = (b - 128f) * con + 128f + add
             r *= 1 + w; b *= 1 - w
-            (p and 0xFF000000.toInt()) or (r.toInt().coerceIn(0, 255) shl 16) or (g.toInt().coerceIn(0, 255) shl 8) or b.toInt().coerceIn(0, 255)
+            (p and 0xFF000000.toInt()) or (r.roundToInt().coerceIn(0, 255) shl 16) or (g.roundToInt().coerceIn(0, 255) shl 8) or b.roundToInt().coerceIn(0, 255)
         }
     }
 
@@ -146,9 +149,11 @@ object ColorTools {
     fun pixels(b: android.graphics.Bitmap): IntArray =
         IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) }
 
+    // ⚠ One allocation: `createBitmap(px, …)` is immutable, and copying it made two full-size bitmaps
+    // (64 MB each at 4096 px) beside a loaded model, the first never recycled.
     fun bitmap(px: IntArray, w: Int, h: Int): android.graphics.Bitmap =
-        android.graphics.Bitmap.createBitmap(px, w, h, android.graphics.Bitmap.Config.ARGB_8888)
-            .copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+        android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            .also { it.setPixels(px, 0, w, 0, 0, w, h) }
 
     /** ⭐ [target] matched to [reference] of any size (sampled down to ~256 px for its statistics). */
     fun matchBitmap(target: android.graphics.Bitmap, reference: android.graphics.Bitmap, strength: Float = 1f): android.graphics.Bitmap {
@@ -156,6 +161,8 @@ object ColorTools {
         val small = android.graphics.Bitmap.createScaledBitmap(
             reference, (reference.width * s).toInt().coerceAtLeast(1), (reference.height * s).toInt().coerceAtLeast(1), true,
         )
-        return bitmap(matchColors(pixels(target), pixels(small), strength), target.width, target.height)
+        val refPx = pixels(small)
+        if (small !== reference) small.recycle()
+        return bitmap(matchColors(pixels(target), refPx, strength), target.width, target.height)
     }
 }

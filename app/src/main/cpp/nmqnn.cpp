@@ -84,11 +84,22 @@
 namespace {
 
 std::string g_err;  // last error, surfaced to Kotlin as an exception message
+// ⚠ Its own lock, not g_mu: `lastError` read the string unlocked while another thread's fail()
+// wrote it (a torn std::string read is UB), and taking g_mu would wait out a whole execute.
+std::mutex g_err_mu;
 
 bool fail(const std::string& m) {
-  g_err = m;
+  {
+    std::lock_guard<std::mutex> lk(g_err_mu);
+    g_err = m;
+  }
   LOGE("%s", m.c_str());
   return false;
+}
+
+std::string lastErrorCopy() {
+  std::lock_guard<std::mutex> lk(g_err_mu);
+  return g_err;
 }
 
 // ---------------------------------------------------------------------------
@@ -449,14 +460,27 @@ bool initBackend(const std::string& backendPath, const std::string& systemPath,
 
   if (g_be.qnn.logCreate) g_be.qnn.logCreate(qnnLog, QNN_LOG_LEVEL_WARN, &g_be.log);
 
-  if (g_be.qnn.backendCreate(g_be.log, nullptr, &g_be.backend) != QNN_SUCCESS)
+  // ⚠ A failure past this point frees what was created, so the next init (a retry) does not
+  // create a second backend and log over the first and leak them.
+  auto undo = [] {
+    if (g_be.backend && g_be.qnn.backendFree) g_be.qnn.backendFree(g_be.backend);
+    g_be.backend = nullptr;
+    if (g_be.log && g_be.qnn.logFree) g_be.qnn.logFree(g_be.log);
+    g_be.log = nullptr;
+  };
+  if (g_be.qnn.backendCreate(g_be.log, nullptr, &g_be.backend) != QNN_SUCCESS) {
+    undo();
     return fail("backendCreate failed");
+  }
 
   // This is the call that failed with err 4000 when qnn-net-run was exec'd out of
   // the APK. In-process it succeeds, which is the whole point of this file.
   if (g_be.qnn.deviceCreate &&
-      g_be.qnn.deviceCreate(g_be.log, nullptr, &g_be.device) != QNN_SUCCESS)
+      g_be.qnn.deviceCreate(g_be.log, nullptr, &g_be.device) != QNN_SUCCESS) {
+    g_be.device = nullptr;
+    undo();
     return fail("deviceCreate failed -- the DSP is not reachable from this process");
+  }
 
   // Burst clocks. Without this the HTP ramps lazily and every measured latency in
   // docs/ (which were all taken with --perf_profile burst) is unreproducible here.
@@ -505,6 +529,14 @@ struct Model {
   std::vector<Qnn_Tensor_t> inputs, outputs;      // shallow copies of binary metadata
   std::vector<std::vector<uint8_t>> inBuf, outBuf;
   QnnSystemContext_Handle_t sysCtx = nullptr;
+
+  // ⚠⚠ Frees what it holds, so every failure path of [loadLocked] (a unique_ptr going out of
+  // scope) does too: a `bindTensors` failure after contextCreateFromBinary leaked the whole
+  // context, up to 1.5 GB of NPU mapping with nothing pointing at it. ⚠ Caller holds g_mu.
+  ~Model() {
+    if (context) g_be.qnn.contextFree(context, nullptr);
+    if (sysCtx) g_be.sys.systemContextFree(sysCtx);
+  }
 };
 
 
@@ -639,11 +671,14 @@ bool runLocked(Model* m, const std::vector<std::string>& names, const std::vecto
   if (!m) return fail("null model handle");
   if (names.size() != m->inputs.size() || data.size() != names.size())
     return fail("expected " + std::to_string(m->inputs.size()) + " inputs, got " + std::to_string(names.size()));
+  std::vector<bool> seen(m->inputs.size(), false);  // ⚠ each slot once, as the JNI execute
   for (size_t i = 0; i < names.size(); ++i) {
     int slot = -1;
     for (size_t k = 0; k < m->inputs.size(); ++k)
       if (names[i] == tName(m->inputs[k])) { slot = (int)k; break; }
     if (slot < 0) return fail("no graph input named " + names[i]);
+    if (seen[slot]) return fail("graph input " + names[i] + " given twice");
+    seen[slot] = true;
     if (!writeTensor(m->inputs[slot], m->inBuf[slot].data(), data[i], numElems(m->inputs[slot]))) return false;
   }
   Qnn_ErrorHandle_t e = g_be.qnn.graphExecute(m->graph, m->inputs.data(), (uint32_t)m->inputs.size(),
@@ -668,7 +703,7 @@ extern "C" {
 
 JNIEXPORT jstring JNICALL
 Java_com_abrah_nightmare_npu_NativeQnn_lastError(JNIEnv* env, jclass) {
-  return env->NewStringUTF(g_err.c_str());
+  return env->NewStringUTF(lastErrorCopy().c_str());
 }
 
 JNIEXPORT jboolean JNICALL
@@ -741,6 +776,9 @@ Java_com_abrah_nightmare_npu_NativeQnn_execute(JNIEnv* env, jclass, jlong h,
          std::to_string(nGiven));
     return nullptr;
   }
+  // ⚠ Each slot written once: names {a, a} for inputs {a, b} passed the count check and left
+  // b holding the previous execute's bytes, a silent and plausible output.
+  std::vector<bool> seen(m->inputs.size(), false);
 
   for (jsize i = 0; i < nGiven; ++i) {
     auto jn = (jstring)env->GetObjectArrayElement(jNames, i);
@@ -752,6 +790,8 @@ Java_com_abrah_nightmare_npu_NativeQnn_execute(JNIEnv* env, jclass, jlong h,
     for (size_t k = 0; k < m->inputs.size(); ++k)
       if (name == tName(m->inputs[k])) { slot = (int)k; break; }
     if (slot < 0) { fail("no graph input named " + name); return nullptr; }
+    if (seen[slot]) { fail("graph input " + name + " given twice"); return nullptr; }
+    seen[slot] = true;
 
     auto arr = (jfloatArray)env->GetObjectArrayElement(jData, i);
     size_t want = numElems(m->inputs[slot]);
@@ -777,11 +817,15 @@ Java_com_abrah_nightmare_npu_NativeQnn_execute(JNIEnv* env, jclass, jlong h,
 
   jclass fac = env->FindClass("[F");
   jobjectArray res = env->NewObjectArray((jsize)m->outputs.size(), fac, nullptr);
+  // ⚠ A null here is an OutOfMemoryError already pending: returning lets Java throw it. Calling
+  // on with it pending (SetFloatArrayRegion on null) aborted the whole process instead.
+  if (!res) return nullptr;
   for (size_t i = 0; i < m->outputs.size(); ++i) {
     size_t n = numElems(m->outputs[i]);
     jfloatArray a = env->NewFloatArray((jsize)n);
+    if (!a) return nullptr;
     std::vector<float> tmp(n);
-    if (!readTensor(m->outputs[i], m->outBuf[i].data(), tmp.data(), n)) return nullptr;
+    if (!readTensor(m->outputs[i], m->outBuf[i].data(), tmp.data(), n)) { env->DeleteLocalRef(a); return nullptr; }
     env->SetFloatArrayRegion(a, 0, (jsize)n, tmp.data());
     env->SetObjectArrayElement(res, (jsize)i, a);
     env->DeleteLocalRef(a);
@@ -809,9 +853,7 @@ Java_com_abrah_nightmare_npu_NativeQnn_free(JNIEnv*, jclass, jlong h) {
   std::lock_guard<std::mutex> lk(g_mu);
   auto* m = (Model*)(intptr_t)h;
   if (!m) return;
-  if (m->context) g_be.qnn.contextFree(m->context, nullptr);
-  if (m->sysCtx) g_be.sys.systemContextFree(m->sysCtx);
-  delete m;
+  delete m;  // ~Model frees the context and the system context
 }
 
 }  // extern "C"
@@ -855,11 +897,9 @@ void release(Handle h) {
   std::lock_guard<std::mutex> lk(g_mu);
   auto* m = (Model*)h;
   if (!m) return;
-  if (m->context) g_be.qnn.contextFree(m->context, nullptr);
-  if (m->sysCtx) g_be.sys.systemContextFree(m->sysCtx);
-  delete m;
+  delete m;  // ~Model frees the context and the system context
 }
 
-std::string lastError() { return g_err; }
+std::string lastError() { return lastErrorCopy(); }
 
 }  // namespace nmqnn

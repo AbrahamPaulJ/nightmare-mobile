@@ -267,7 +267,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         val resident = BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }
         if (resident?.family == family) {
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                // ⚠ After the render in flight, never under it (canvas or API): the
+                // other stop paths go through `run`, which refuses while busy.
+                while (busy || RunLock.heldBy != null) kotlinx.coroutines.delay(500)
+                if (BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }?.family == family) BackendProcess.stop()
+            }
             say("${family.label} low RAM setting changed. The next Run relaunches the backend")
         }
     }
@@ -305,7 +310,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun cleanTempFiles() {
         viewModelScope.launch {
             val freed = withContext(Dispatchers.IO) {
-                TempCleaner.clean(getApplication(), busy = working)
+                // ⚠ An API render is busy too, and `working` does not see it.
+                TempCleaner.clean(getApplication(), busy = working || RunLock.heldBy != null)
             }
             say("cleaned ${freed shr 20} MB of temp files")
         }
@@ -333,6 +339,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val shown = buildSet {
                 c.previews.values.forEach { add(it.first) }
                 c.beforePreviews.values.forEach { add(it.first) }
+                // ⚠ The ControlNet hints too: they live only in the 12-entry store, and a pruned
+                // one left its Swap node blank with a signature that said it was done.
+                c.controlHints.values.forEach { add(it.first) }
                 addAll(c.rendered.values)
                 c.viewing?.let { add(it) }
             }
@@ -543,16 +552,20 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * makes that safe, so it is not offered as a choice.
      */
     private fun guardedOpen(label: String, open: () -> Unit) {
-        if (runLog.running) {
-            say("\"$label\" not opened. This flow is still rendering", bad = true)
-            workflowError = "Still rendering. Wait for it to finish, or close the run."
-            return
-        }
+        if (refuseWhileRendering(label)) return
         if (activeFlow.dirty) {
             pendingOpen = PendingOpen(label, open)
             return
         }
         open()
+    }
+
+    /** ⭐ The ONE "still rendering" refusal every path that replaces or retargets the canvas calls. */
+    private fun refuseWhileRendering(label: String): Boolean {
+        if (!runLog.running) return false
+        say("\"$label\" not opened. This flow is still rendering", bad = true)
+        workflowError = "Still rendering. Wait for it to finish, or close the run."
+        return true
     }
 
     fun confirmPendingOpen() {
@@ -2814,6 +2827,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // prompt box's dialog spins on "Describing…" forever. ⚠ Not on Hide —
         // the download goes on and the describe still happens when it lands.
         (missingModel as? MissingModel.Describe)?.let { if (installing != it.installId) cancelPendingDescribe() }
+        // ⚠ And a translation the same way: left pending, it fired whenever the model landed
+        // later, on whatever node then had that id.
+        (missingModel as? MissingModel.Translate)?.let { if (installing != it.installId) pendingTranslation = null }
         missingModel = null
     }
 
@@ -3569,7 +3585,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             val out = runCatching { com.abrah.nightmare.PromptTranslate.translate(ctx, text, source) }
+            (out.exceptionOrNull() as? kotlinx.coroutines.CancellationException)?.let { throw it }
             out.onSuccess { english ->
+                // ⚠ Only over the text it translated: typing during the translation
+                // was overwritten by the result of the OLD text.
+                if (canvas.workflow.graph.byId[nodeId]?.params?.get(param) != text) return@onSuccess
                 editCanvas { s -> s.setParam(nodeId, param, english) }
                 done(english)
             }.onFailure { e ->
@@ -3710,6 +3730,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun startMove(plan: MovePlan) {
         if (working) { say("finish the current run or download first", bad = true); return }
+        // ⚠⚠ Process-wide, not this VM's `installing`: a move outlives a cleared VM (it
+        // is blocking I/O), and the next VM's `resumeMove` started a SECOND move over
+        // the same files while the first was still copying.
+        if (!moveInFlight.compareAndSet(false, true)) { say("a models move is already running", bad = true); return }
         val ctx = getApplication<Application>()
         val from = if (plan.to == ModelStorage.Place.APP) ModelStorage.Place.DOWNLOAD else ModelStorage.Place.APP
         installing = MOVE_ID
@@ -3742,6 +3766,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 ModelStorage.setPendingMove(ctx, null)
                 downloadCancelled()
                 say("move stopped. What moved is in use, the rest is listed in Settings", bad = true)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // ⚠ The VM went, not the move: keep the pending marker so the next
+                // launch resumes it (the catch below cleared it and called it a failure).
+                throw e
             } catch (e: Exception) {
                 ErrorReport.record(e)
                 modelError = e.message ?: e.javaClass.simpleName
@@ -3749,6 +3777,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 downloadFailed("Moving models", modelError!!)
                 say("move failed. $modelError", bad = true)
             } finally {
+                moveInFlight.set(false)
                 BackendKeepAliveService.release(ctx, BackendKeepAliveService.MOVE)
                 installing = null
                 installProgress = null
@@ -3882,7 +3911,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     "only .safetensors files are supported"
                 }
                 val dir = BackendProcess.lorasDir(ctx).apply { mkdirs() }
-                val safeName = java.io.File(displayName).name
+                // ⚠ No comma: a node's `loras` param is a comma list ([LoraSpec]).
+                val safeName = java.io.File(displayName).name.replace(',', '_')
                     .ifBlank { "lora_${System.currentTimeMillis()}.safetensors" }
                 val target = java.io.File(dir, safeName)
                 ctx.contentResolver.openInputStream(uri)?.use { input ->
@@ -4553,6 +4583,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         pendingUse = null
         if (recipe == null) {
             // ⚠ Null for an upscaler or the video models: there is no global selection to make.
+            if (spec != null && refuseWhileRendering(spec.label)) return
             spec?.let { selectModel(it) }
             return
         }
@@ -5824,26 +5855,41 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⇒ Nothing in the UI ever ADDS or removes a preview -- only
         // [resolvePreviews] and the Run do -- so the invariant is simply that
         // this map does not travel through the composition at all.
+        val prev = canvas
+        // ⚠⚠ Every map the VM writes asynchronously (hints, clips, before/after) is
+        // the VM's for the same reason as previews: a pan that started before a run
+        // finished republished its press-time copy and wiped the clip. Only a key the
+        // UI's own edit made (a rename's new id) comes from [next]; a deleted node's
+        // keys are dropped.
+        val ids = if (changed) next.workflow.graph.nodes.mapTo(HashSet()) { it.id } else emptySet()
+        val oldIds = if (changed) prev.workflow.graph.nodes.mapTo(HashSet()) { it.id } else emptySet()
+        fun <V> ours(vm: Map<String, V>, ui: Map<String, V>): Map<String, V> =
+            if (!changed || vm === ui) vm
+            else vm.filterKeys { it in ids } + ui.filterKeys { it in ids && it !in oldIds }
         canvas = next.copy(
-            previews = canvas.previews,
+            previews = ours(prev.previews, next.previews),
             // ⚠ The VM's, for the same reason as previews.
-            rendered = canvas.rendered,
+            rendered = ours(prev.rendered, next.rendered),
+            controlHints = ours(prev.controlHints, next.controlHints),
+            videos = ours(prev.videos, next.videos),
+            beforePreviews = ours(prev.beforePreviews, next.beforePreviews),
+            beforeHidden = ours(prev.beforeHidden, next.beforeHidden),
             // ⚠ The crop request is the VM's too, for the same reason: it is set
             // when a picture ARRIVES, between two frames, and a pointer event
             // carrying the last frame's copy would erase it. ⚠ Closing the sheet
             // still clears it.
-            cropRequest = if (next.editing == null) null else canvas.cropRequest ?: next.cropRequest,
+            cropRequest = if (next.editing == null) null else prev.cropRequest ?: next.cropRequest,
         )
-        // ⚠⚠ …or when only the VIEW moved. A pan changes no node, so the graph
-        // was saved and the viewport was not -- and a cold start then reopened
-        // the user's own workflow onto empty space, which is the bug the saved
-        // view exists to fix. ⚠ Gated on Idle, so this is one debounced write
-        // per gesture rather than one per pointer event.
-        val viewMoved = next.viewport != canvas.viewport ||
-            next.zoomLocked != canvas.zoomLocked || next.panLocked != canvas.panLocked
-        if ((changed || viewMoved) &&
-            next.gesture is com.abrah.nightmare.canvas.Gesture.Idle
-        ) saveWorkflow()
+        // ⚠⚠ …or when only the VIEW moved, or a gesture ENDED. A node drag's release
+        // hands back the same workflow object and a pan changes no node, so neither
+        // `changed` nor a viewport compare against [next] itself (the old code) ever
+        // saved them: positions and view were lost to a reclaim. ⚠ Gated on Idle, so
+        // this is one debounced write per gesture rather than one per pointer event.
+        val idle = next.gesture is com.abrah.nightmare.canvas.Gesture.Idle
+        val gestureEnded = idle && prev.gesture !is com.abrah.nightmare.canvas.Gesture.Idle
+        val viewMoved = next.viewport != prev.viewport ||
+            next.zoomLocked != prev.zoomLocked || next.panLocked != prev.panLocked
+        if (idle && (changed || viewMoved || gestureEnded)) saveWorkflow()
         // ⭐ A picture that can be made without the NPU is made now, not at
         // Run. ⚠ Guarded on an actual edit: `updateCanvas` also fires on every
         // pointer event of a pan, and relaunching the job for those would be
@@ -5880,6 +5926,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * PNGs decoded per frame is a megabyte per card per frame.
      */
     private val thumbs = mutableStateMapOf<String, ImageBitmap>()
+    /** ⚠ Insertion order for [thumbs], oldest first. ~0.6 MB each at 384 px. */
+    private val thumbOrder = ArrayDeque<String>()
+    private val THUMB_CACHE = 96
+
+    /** ⚠ Every per-result cache, on every delete path (only one used to clear any). */
+    private fun forgetCached(id: String) {
+        thumbs.remove(id); thumbOrder.remove(id)
+        fullImages.remove(id); fullImageOrder.remove(id)
+        unreadable.remove(id)
+        resultTagCache.remove(id)
+    }
 
     /**
      * ⚠⚠ Ids with a decode already in flight, so a LazyVerticalGrid
@@ -5910,7 +5967,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 val bmp = results.thumbnail(id)?.asImageBitmap()
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                     thumbLoading.remove(id)
-                    if (bmp != null) thumbs[id] = bmp else markUnreadable(id, "thumbnail")
+                    if (bmp != null) {
+                        // ⚠ Bounded like [fullImages]: unbounded, a long scroll of a
+                        // big library pinned hundreds of MB the model needed.
+                        thumbOrder.addLast(id)
+                        while (thumbs.size >= THUMB_CACHE) {
+                            val oldest = thumbOrder.removeFirstOrNull() ?: break
+                            thumbs.remove(oldest)
+                        }
+                        thumbs[id] = bmp
+                    } else markUnreadable(id, "thumbnail")
                 }
             }
         }
@@ -5938,9 +6004,21 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshResults() {
+        // ⚠ ONE listing: `grouped()` used to list and parse every result's JSON a second time.
         kept = results.all()
-        keptGroups = results.grouped()
+        keptGroups = results.grouped(kept)
         keptBytes = results.bytes()
+        // ⚠⚠ The viewer swipes a COPY taken when it opened, so it must follow the
+        // refresh: its star read the stale `favourite` (a second tap re-sent
+        // `!false`, never un-starring) and a picture deleted after a swipe stayed
+        // on screen. Gone ids leave the set; an empty set closes the viewer.
+        if (viewingResult != null) {
+            val byId = (kept + keptGroups.flatMap { it.items }).associateBy { it.id }
+            val next = viewingSet.mapNotNull { byId[it.id] }
+            viewingSet = next
+            if (next.isEmpty()) closeResult()
+            else if (next.none { it.id == viewingResult?.id }) viewingResult = next.first()
+        }
     }
 
     /**
@@ -6373,6 +6451,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * ⚠ The mask does not travel: it was painted for the old flow's framing.
      */
     fun swapFlow(recipe: com.abrah.nightmare.canvas.Recipe) {
+        // ⚠ The same refusal as [guardedOpen]: swapping under a render let the finished
+        // run write its pictures onto the NEW graph's node ids.
+        if (refuseWhileRendering(recipe.label)) return
         val old = canvas.workflow.graph
         val oldSampler = old.nodes.singleOrNull { it.type in SAMPLER_TYPES } ?: return
         val oldPrompt = old.nodes.firstOrNull { it.type == "core.prompt" }
@@ -6451,6 +6532,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             "autosave is on. Every Run is kept. Turn it off on the Output node to keep by hand."
         } else null
 
+    /** ⚠ Image ids whose keep is still being written. See [keepResult]. */
+    private val keeping = mutableSetOf<String>()
+
     fun keepResult(
         imageId: String,
         flow: com.abrah.nightmare.canvas.Workflow? = null,
@@ -6471,6 +6555,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             say("that picture is no longer in memory", bad = true)
             return
         }
+        // ⚠ Synchronous, on Main: [kept] only learns of a keep after the IO write, so a
+        // double tap (or autosave plus a tap) stored the same picture twice.
+        if (!keeping.add(imageId)) return
         val kept = flow ?: canvas.workflow
         val graph = kept.graph
         // ⭐⭐ The sampler UPSTREAM OF THIS PICTURE, through [samplerFor] — the
@@ -6497,8 +6584,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // (`docs/ARCHITECTURE.md` §5.7), so the selected one names only one branch.
         val modelLabel = (ModelCatalog.byId(sampler?.params?.get("model").orEmpty()) ?: SelectedModel.spec).label
         // ⚠ The video sampler carries its prompt itself; every picture recipe
-        // puts it on a `clip_encode`. Neither graph has both.
-        val prompt = graph.nodes.firstOrNull { it.type == "sd.clip_encode" }?.params?.get("prompt")
+        // puts it on a `core.prompt`. Neither graph has both. ⚠⚠ The prompt WIRED into this
+        // sampler first: the load renames `sd.clip_encode` to `core.prompt`
+        // ([migrateType]), so matching only the old name kept every result with NO prompt
+        // (Results' header, UltraFix's prompt and the saved file's name all lost it).
+        val prompt = sampler?.inputs?.get("prompt")?.node?.let { graph.byId[it] }
+            ?.takeIf { it.type == "core.prompt" }?.params?.get("prompt")
+            ?: graph.nodes.firstOrNull { it.type == "core.prompt" }?.params?.get("prompt")
+            ?: graph.nodes.firstOrNull { it.type == "sd.clip_encode" }?.params?.get("prompt")
             ?: graph.nodes.firstOrNull { it.type == "nd.clip_encode" }?.params?.get("prompt")
         val workflow = kept
         val types = nodeTypes
@@ -6547,6 +6640,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     onFailure = { say("could not keep it. ${it.message}", bad = true) },
                 )
                 refreshResults()
+                keeping.remove(imageId)
             }
         }
     }
@@ -6633,9 +6727,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * leave selection mode at all — the bar hides when the set is empty, and
      * nothing could empty it. Reported from the phone, 2026-09-10.
      */
-    fun toggleSelectAllResults() {
-        val everything = kept.map { it.id }.toSet()
+    fun toggleSelectAllResults(visible: List<String> = kept.map { it.id }) {
+        // ⚠⚠ The ids the filters SHOW (Favourites, models, search): "All" over every kept
+        // result meant Delete took pictures the person could not see.
+        val everything = visible.toSet()
         selectedResults = if (selectedResults.containsAll(everything)) emptySet() else everything
+    }
+
+    /** ⚠ A filter change hides some of the selection: those leave it. */
+    fun retainResultSelection(visible: Set<String>) {
+        selectedResults = selectedResults.filterTo(HashSet()) { it in visible }
     }
 
     fun clearResultSelection() { selectedResults = emptySet() }
@@ -6650,7 +6751,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * reaches it names the count.
      */
     fun deleteResultGroup(g: com.abrah.nightmare.canvas.ResultGroup) {
-        g.items.forEach { results.delete(it.id) }
+        g.items.forEach { results.delete(it.id); forgetCached(it.id) }
         // ⚠ The selection may have held the group's cover; drop it or the bar
         // would keep counting a picture that no longer exists.
         selectedResults = selectedResults - g.items.map { it.id }.toSet()
@@ -6683,7 +6784,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteSelectedResults() {
         val ids = expandSelection(selectedResults)
-        ids.forEach { results.delete(it) }
+        ids.forEach { results.delete(it); forgetCached(it) }
         selectedResults = emptySet()
         say("forgot " + ids.size + " picture" + (if (ids.size == 1) "" else "s"))
         refreshResults()
@@ -7272,9 +7373,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteResult(id: String) {
-        if (viewingResult?.id == id) closeResult()
+        // ⚠ No close here: [refreshResults] drops the id from the viewer's set and
+        // closes it only when nothing is left (it used to close only for the picture
+        // the viewer OPENED on, so a swiped-to picture stayed up after its delete).
         results.delete(id)
-        thumbs.remove(id)
+        forgetCached(id)
         refreshResults()
         say("forgot that one")
     }
@@ -7326,6 +7429,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
             kotlinx.coroutines.delay(PREVIEW_DEBOUNCE_MS)
+            // ⚠⚠ Never beside a render: a preview runs the SAME executor, so its
+            // `finally` (the Residency release, VideoRunner.releaseAll) stopped the
+            // backend or freed the video contexts mid-render, and two runs entered the
+            // one JS runtime from two threads. It waits instead; a newer edit cancels
+            // this wait like it cancels the debounce.
+            while (busy || RunLock.heldBy != null) kotlinx.coroutines.delay(400)
             try {
                 resolvePreviews(previewTargets(canvas.workflow.graph, typesFor(canvas.workflow.graph)))
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -7969,7 +8078,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         saveJob = null
         if (pending != null && pending.isActive) {
             pending.cancel()
-            writeWorkflow(canvas.workflow)
+            // ⚠ With the view: without it the flush dropped the locks and viewport.
+            writeWorkflow(canvas.workflow, canvas.savedView)
         }
         super.onCleared()
     }
@@ -8918,6 +9028,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
          * frame updates the node before the eye moves back to it.
          */
         const val PREVIEW_DEBOUNCE_MS = 220L
+        /** ⭐ A DiT stream silent this long at Cancel is a stuck engine, not a slow step (see `run`'s cancel). */
+        const val STUCK_QUIET_MS = 30_000L
 
         /** ⚠ Ten 1024² bitmaps is ~40 MB — past this the map is dropped whole. */
         const val FULL_IMAGE_CACHE = 12
@@ -8973,10 +9085,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (installing != null) {
             val what = if (installing == VIDEO_INSTALL_ID) "the video models"
                 else ModelCatalog.byId(installing.orEmpty())?.label ?: "a model"
-            runError = if (installing == MOVE_ID) "models are moving. Run once they have"
+            val why = if (installing == MOVE_ID) "models are moving. Run once they have"
                 else "$what is downloading. Run once it has finished"
+            // ⚠ Not on the run bar for the housekeeping a rotation re-fires (`health`):
+            // nobody pressed Run, and the bar said "X is downloading. Run once…".
+            if (label != "health") runError = why
             say("$label ignored. $what is downloading", bad = true)
-            return runError
+            return why
         }
         if (busy) {
             say("$label ignored. Already running", bad = true)
@@ -9008,6 +9123,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 // leaves the scope believing the job is still alive.
                 runError = "cancelled"
                 say("$label cancelled")
+                // ⚠⚠ A DiT engine that has said nothing for [STUCK_QUIET_MS] is stuck INSIDE a DSP call: it only
+                // notices a hang-up between steps, so it would run on, and every later request queued behind it
+                // (two 8 Gen 1 testers: "Run" again after Cancel waited for ever, TG 2026-10-21/22). Stopped here,
+                // before `busy` clears, so a new Run cannot race the stop. A talking engine stops at its next step.
+                if (Backend.quietForMs() > STUCK_QUIET_MS &&
+                    BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }?.family?.dit == true
+                ) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                        say("the engine was not responding, so it was stopped. The next Run starts it again")
+                        BackendProcess.stop()
+                    }
+                }
                 throw e
             } catch (e: Throwable) {
                 // ⚠⚠ Throwable, not Exception. `UnsatisfiedLinkError` from a
@@ -9124,3 +9251,6 @@ internal fun seedToPin(live: String?, rolled: String?): String? {
     val current = live?.trim().orEmpty()
     return if (current.isEmpty() || current == "0") rolled else null
 }
+
+/** ⚠ One models move per PROCESS ([HarnessViewModel.startMove]). */
+private val moveInFlight = java.util.concurrent.atomic.AtomicBoolean(false)

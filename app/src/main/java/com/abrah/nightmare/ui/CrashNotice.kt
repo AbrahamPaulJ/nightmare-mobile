@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
@@ -65,20 +66,23 @@ fun CrashNotice(report: CrashReport.Report, onDismiss: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         // ⚠ Horizontal too: a tombstone's register dump is wide
                         // and wrapping it makes it unreadable as a dump.
+                        // ⚠ …and VERTICAL: capped at 260dp with no scroll, a long tombstone showed its first
+                        // ~20 lines and the rest only through Copy ([ErrorDetails] scrolls; this must too).
                         modifier = Modifier
                             .heightIn(max = 260.dp)
+                            .verticalScroll(rememberScrollState())
                             .horizontalScroll(rememberScrollState()),
                     )
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
         // ⭐ The report as text, for a bug report: what happened, while doing what, and the
         // evidence (the breadcrumb's RAM per node, then any tombstone).
         dismissButton = {
             val clipboard = LocalClipboardManager.current
             val during = report.doing?.let { stringResource(R.string.crash_during, it) }
-            TextButton(onClick = {
+            StudioTextButton(onClick = {
                 clipboard.setText(
                     AnnotatedString(listOfNotNull(report.headline, during, report.trace).joinToString("\n\n")),
                 )

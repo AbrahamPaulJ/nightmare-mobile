@@ -64,7 +64,7 @@ object GgufWiden {
         isCancelled: () -> Boolean = { false },
     ): Result {
         val head = ByteArray(HEAD)
-        val got = readUpTo(input, head)
+        val got = input.readUpTo(head)
         val b = ByteBuffer.wrap(head, 0, got).order(ByteOrder.LITTLE_ENDIAN)
         var alignment = 32
         val kvEnd: Int
@@ -158,7 +158,7 @@ object GgufWiden {
         }
         zeros(align(written) - written)
 
-        skipExactly(rest, align(headerEnd.toLong()) - headerEnd)
+        rest.skipExactly(align(headerEnd.toLong()) - headerEnd)
         read = align(headerEnd.toLong())
         var pos = 0L
         var outPos = 0L
@@ -166,7 +166,7 @@ object GgufWiden {
             val type = GgufHeader.typeName(t.type)
             val bytes = size(type, t.elements)
             if (t.offset < pos) throw IOException("tensor '${t.name}' overlaps the one before it")
-            skipExactly(rest, t.offset - pos)
+            rest.skipExactly(t.offset - pos)
             read += t.offset - pos
             val dst = newOffset.getValue(t.name)
             zeros(dst - outPos)
@@ -197,7 +197,7 @@ object GgufWiden {
         while (blocks > 0) {
             if (isCancelled()) throw ModelInstaller.Cancelled()
             val n = minOf(blocks, slab.toLong()).toInt()
-            if (readUpTo(input, raw, n * bytes) != n * bytes) throw EOFException("the file ends inside a tensor")
+            if (input.readUpTo(raw, 0, n * bytes) != n * bytes) throw EOFException("the file ends inside a tensor")
             dequantize(type, raw, n, f)
             val count = minOf(left, (n * per).toLong()).toInt()
             for (i in 0 until count) {
@@ -268,27 +268,6 @@ object GgufWiden {
                 }
                 else -> throw IOException("cannot dequantize $type")
             }
-        }
-    }
-
-    /** ⚠ Not `readNBytes`/`skipNBytes`: API 33, and minSdk is 31. */
-    private fun readUpTo(input: InputStream, into: ByteArray, count: Int = into.size): Int {
-        var got = 0
-        while (got < count) {
-            val n = input.read(into, got, count - got)
-            if (n < 0) break
-            got += n
-        }
-        return got
-    }
-
-    private fun skipExactly(input: InputStream, count: Long) {
-        var left = count
-        val sink = ByteArray(minOf(maxOf(count, 1L), 1L shl 16).toInt())
-        while (left > 0) {
-            val n = input.read(sink, 0, minOf(sink.size.toLong(), left).toInt())
-            if (n < 0) throw EOFException("the file ends between its tensors")
-            left -= n
         }
     }
 }

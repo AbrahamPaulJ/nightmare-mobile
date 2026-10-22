@@ -1,5 +1,10 @@
 package com.abrah.nightmare.canvas
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -106,8 +111,9 @@ internal fun FaceEditSheet(
     val context = LocalContext.current
     val values = remember {
         mutableStateMapOf<String, String>().apply {
+            // ⚠ No `largest_only`: retired, read by nothing, yet hashed into the cache key, so every Done
+            // re-ran the node once with nothing changed.
             for (w in FaceEditNode.widgets) put(w.name, start[w.name] ?: w.default.orEmpty())
-            put(FaceEditNode.LARGEST_ONLY, "false")
         }
     }
     var preview by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -125,14 +131,20 @@ internal fun FaceEditSheet(
         kotlinx.coroutines.delay(120)
         val node = com.abrah.nightmare.Node("face", FaceEditNode.name, params = values.toMap())
         val sliders = FaceEditNode.slidersOf(node)
-        if (sliders.all { it == 0f }) { preview = null; problem = null; return@LaunchedEffect }
+        if (sliders.all { it == 0f }) { preview = null; problem = null; working = false; return@LaunchedEffect }
         working = true
-        val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                FaceEditNode.edit(context, source.asAndroidBitmap(), sliders, largestOnly = false)
+        // ⚠⚠ `finally`: a slider moved mid-edit CANCELS this effect at the `withContext`, and the old
+        // `working = false` after it never ran, so the next edit's early return (Reset to 0) left the spinner
+        // turning over a finished picture (the user's phone, 2026-10-22).
+        val r = try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    FaceEditNode.edit(context, source.asAndroidBitmap(), sliders, largestOnly = false)
+                }
             }
+        } finally {
+            working = false
         }
-        working = false
         r.onSuccess { b -> preview = b?.asImageBitmap(); problem = if (b == null) noFace else null }
             .onFailure { problem = it.message ?: it.javaClass.simpleName }
     }
@@ -159,17 +171,25 @@ internal fun FaceEditSheet(
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
                 )
-                if (working) CircularProgressIndicator(Modifier.align(Alignment.TopEnd).padding(8.dp))
+                // ⚠ CENTRED, small, on a scrim: the picture is letterboxed (Fit) inside this box, so the box's
+                // corner sat outside the picture, in the empty band (the user, 2026-10-22).
+                if (working) Box(
+                    Modifier.size(44.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp, color = androidx.compose.ui.graphics.Color.White)
+                }
             }
             problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             FaceSliders(value = { values[it].orEmpty() }, onSet = { k, v -> values[k] = v })
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { for (n in LivePortrait.SLIDERS) values[n] = "0.0" }) {
+                StudioOutlinedButton(onClick = { for (n in LivePortrait.SLIDERS) values[n] = "0.0" }) {
                     Text(stringResource(R.string.inspector_reset))
                 }
                 androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-                TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-                Button(onClick = { onDone(values.toMap()) }) { Text(stringResource(R.string.face_edit_done)) }
+                StudioTextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+                StudioButton(onClick = { onDone(values.toMap()) }) { Text(stringResource(R.string.face_edit_done)) }
             }
         }
     }

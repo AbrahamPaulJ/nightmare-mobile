@@ -48,6 +48,9 @@ class Plugin(
         /** The manifest `api` this app implements. */
         const val API = 1
 
+        /** ⚠ Keep in step with the `when (port.type)` in [run]. */
+        private val RUNNABLE_OUTPUTS = setOf("IMAGE", "LATENT")
+
         fun parse(manifestJson: String, script: String): Plugin {
             val j = JSONObject(manifestJson)
             val id = j.getString("id")
@@ -72,6 +75,18 @@ class Plugin(
                 )
             }
             require(nodes.isNotEmpty()) { "plugin $id declares no nodes" }
+            // ⚠⚠ Refused HERE what [run] cannot produce. v1 returns exactly one output, IMAGE or
+            // LATENT; a second declared port passed the executor's wiring check and its consumer
+            // sat BLOCKED "waiting on" forever, with nothing naming the manifest as the cause.
+            for (n in nodes) {
+                require(n.outputs.size == 1) {
+                    "plugin $id node ${n.type} declares ${n.outputs.size} outputs; api $API supports exactly one"
+                }
+                val t = n.outputs.single().type
+                require(t in RUNNABLE_OUTPUTS) {
+                    "plugin $id node ${n.type} outputs $t; api $API can return ${RUNNABLE_OUTPUTS.joinToString(", ")}"
+                }
+            }
             val perms = j.optJSONArray("permissions")
             val permissions = (0 until (perms?.length() ?: 0)).map { perms!!.getString(it) }
             // ⚠⚠ An unknown permission is REFUSED, not ignored. Ignoring one

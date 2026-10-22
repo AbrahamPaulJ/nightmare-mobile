@@ -1,0 +1,65 @@
+--- a/src/PipelineSdxlMnn.hpp
++++ b/src/PipelineSdxlMnn.hpp
+@@ -112,6 +112,7 @@
+     auto &net = loadStage(1, vae_encoder_path_, req);
+     auto input = net.getSessionInput(sessions_[1], "input");
+     MNN::Tensor host(input, MNN::Tensor::CAFFE);
++    requireFloats(host, (size_t)3 * output_width * output_height, "vae encoder input");
+     memcpy(host.host<float>(), image, host.size());
+     input->copyFromHostTensor(&host);
+     const auto code = net.runSession(sessions_[1]);
+@@ -121,6 +122,7 @@
+       auto output = net.getSessionOutput(sessions_[1], name);
+       MNN::Tensor output_host(output, MNN::Tensor::CAFFE);
+       output->copyToHostTensor(&output_host);
++      requireFloats(output_host, (size_t)4 * sample_width * sample_height, name);
+       memcpy(destination, output_host.host<float>(), output_host.size());
+     }
+   }
+@@ -130,6 +132,7 @@
+     auto &net = loadStage(2, vae_decoder_path_, req);
+     auto input = net.getSessionInput(sessions_[2], "input");
+     MNN::Tensor host(input, MNN::Tensor::CAFFE);
++    requireFloats(host, (size_t)4 * sample_width * sample_height, "vae decoder input");
+     memcpy(host.host<float>(), latents, host.size());
+     input->copyFromHostTensor(&host);
+     const auto code = net.runSession(sessions_[2]);
+@@ -137,6 +140,7 @@
+     auto output = net.getSessionOutput(sessions_[2], "output");
+     MNN::Tensor output_host(output, MNN::Tensor::CAFFE);
+     output->copyToHostTensor(&output_host);
++    requireFloats(output_host, (size_t)3 * output_width * output_height, "vae decoder output");
+     memcpy(pixels, output_host.host<float>(), output_host.size());
+   }
+ 
+@@ -147,6 +151,16 @@
+   }
+ 
+  private:
++  // nightmare (041): the tensor must hold exactly the floats the caller's buffer does (sized
++  // from the Config.hpp globals); `host.size()` bytes were copied either way, so a size the VAE
++  // was not built for read or wrote past the request's buffer.
++  static void requireFloats(const MNN::Tensor &t, size_t want, const char *what) {
++    if ((size_t)t.size() != want * sizeof(float))
++      throw std::invalid_argument(std::string(what) + ": the model holds " +
++                                  std::to_string(t.size() / sizeof(float)) + " values, the request " +
++                                  std::to_string(want) + " (a size this VAE was not built for)");
++  }
++
+   MNN::Interpreter &loadStage(size_t stage, const std::string &path,
+                               const GenerationRequest &req) {
+     if (nets_[stage]) return *nets_[stage];
+@@ -172,7 +186,12 @@
+     }
+     if (stage == 0) net.setSessionMode(MNN::Interpreter::Session_Resize_Defer);
+     sessions_[stage] = net.createSession(config);
+-    if (!sessions_[stage]) throw std::runtime_error(path);
++    // nightmare (041): drop the net too, or the next call takes `if (nets_[stage]) return` and
++    // runs a null session.
++    if (!sessions_[stage]) {
++      nets_[stage].reset();
++      throw std::runtime_error(path);
++    }
+     if (stage != 0) net.releaseModel();
+     return net;
+   }

@@ -1,5 +1,7 @@
 package com.abrah.nightmare.canvas
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import android.graphics.Bitmap
 import android.graphics.BlurMaskFilter
 import android.graphics.Paint
@@ -210,6 +212,14 @@ internal fun DrawWindow(
     var cleared by remember { mutableStateOf(false) }
     var layer by remember { mutableStateOf(DrawLayer.render(existing, initialStrokes, size)) }
     fun commit() { layer = DrawLayer.render(base, strokes, size) }
+    // ⚠⚠ A NEW stroke is drawn onto the layer in place; only undo, redo and clear replay ([commit]). Replaying
+    // every stroke (each blur a software mask filter) into a fresh 2048² bitmap made each stroke slower than the
+    // last and allocated 16 MB per stroke on the main thread. [layerRev] is what tells the draw to repaint.
+    var layerRev by remember { mutableIntStateOf(0) }
+    fun append(s: DrawStroke) {
+        android.graphics.Canvas(layer).drawPath(DrawLayer.pathOf(s.points), DrawLayer.paintFor(s))
+        layerRev++
+    }
 
     var erase by remember { mutableStateOf(false) }
     // ⭐ The eyedropper (Local Dream's picker mode): the next touch takes its colour from the picture.
@@ -320,9 +330,10 @@ internal fun DrawWindow(
                                 picking = false
                                 erase = false
                             } else if (painting) {
-                                strokes = strokes + current(pts)
+                                val made = current(pts)
+                                strokes = strokes + made
                                 redo = emptyList()
-                                commit()
+                                append(made)
                             }
                             live = null
                         }
@@ -339,6 +350,7 @@ internal fun DrawWindow(
                 val dst = androidx.compose.ui.unit.IntSize(this.size.width.toInt(), this.size.height.toInt())
                 drawImage(photo, dstSize = dst, filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium)
                 val scale = this.size.width / size.width
+                if (layerRev < 0) return@Canvas // ⚠ READ here, so a stroke drawn in place repaints
                 drawIntoCanvas { c ->
                     val n = c.nativeCanvas
                     // ⚠ Its own layer, so a live ERASER cuts the drawing and not the photo under it.
@@ -400,8 +412,8 @@ internal fun DrawWindow(
         Text(stringResource(R.string.draw_note), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // ⚠ The safe action first and the doing one last, where the thumb lands (`docs/UI.md` §8.1).
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-            Button(onClick = {
+            StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+            StudioButton(onClick = {
                 val changed = cleared || strokes.isNotEmpty()
                 if (!changed) onCancel() else onDone(layer.takeUnless { DrawLayer.isEmpty(it) })
             }) { Text(stringResource(R.string.draw_done)) }
@@ -473,9 +485,9 @@ private fun ColorPickerDialog(initial: Int, onPick: (Int) -> Unit, onDismiss: ()
             }
         },
         confirmButton = {
-            Button(onClick = { onPick(chosen.toArgb()); onDismiss() }) { Text(stringResource(R.string.draw_use_color)) }
+            StudioButton(onClick = { onPick(chosen.toArgb()); onDismiss() }) { Text(stringResource(R.string.draw_use_color)) }
         },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { com.abrah.nightmare.ui.StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

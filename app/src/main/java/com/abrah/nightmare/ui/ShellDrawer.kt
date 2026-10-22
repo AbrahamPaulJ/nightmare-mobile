@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -179,13 +180,13 @@ fun ShellDrawer(
                                 flowName, style = MaterialTheme.typography.bodyLarge,
                                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                             )
-                            if (flowDirty) StateBadge(stringResource(R.string.shell_unsaved), Warning)
+                            if (flowDirty) StateBadge(stringResource(R.string.shell_unsaved), MaterialTheme.studio.warning)
                         }
-                        OutlinedButton(
+                        StudioOutlinedButton(
                             onClick = go(onSaveFlow),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.5.dp, Accent),
+                            border = BorderStroke(1.5.dp, MaterialTheme.studio.accentText),
                         ) {
                             Icon(SaveIcon, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -204,9 +205,9 @@ fun ShellDrawer(
                                     maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                                 )
                                 when (load.state) {
-                                    LoadState.IDLE -> StateBadge(stringResource(R.string.load_idle), Success)
-                                    LoadState.LOADING -> StateBadge(stringResource(R.string.load_loading), Warning)
-                                    LoadState.LOADED -> StateBadge(stringResource(R.string.load_loaded), Accent)
+                                    LoadState.IDLE -> StateBadge(stringResource(R.string.load_idle), MaterialTheme.studio.success)
+                                    LoadState.LOADING -> StateBadge(stringResource(R.string.load_loading), MaterialTheme.studio.warning)
+                                    LoadState.LOADED -> StateBadge(stringResource(R.string.load_loaded), MaterialTheme.studio.accentText)
                                     LoadState.NONE -> Unit
                                 }
                             }
@@ -253,7 +254,7 @@ internal fun SupportDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.support_body), style = MaterialTheme.typography.bodyMedium)
-                androidx.compose.material3.Button(onClick = { open(COFFEE_URL) }, modifier = Modifier.fillMaxWidth()) {
+                com.abrah.nightmare.ui.StudioButton(onClick = { open(COFFEE_URL) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Favorite, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.support_coffee))
@@ -281,7 +282,7 @@ internal fun SupportDialog(onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        confirmButton = { com.abrah.nightmare.ui.StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
     )
 }
 

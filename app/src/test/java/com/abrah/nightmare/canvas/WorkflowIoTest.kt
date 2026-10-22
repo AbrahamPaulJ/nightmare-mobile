@@ -550,6 +550,39 @@ class WorkflowIoTest {
     }
 
     /**
+     * ⚠⚠ Stray prompt-carrying `nd.sample`s each get their OWN prompt node, named after them. The names were
+     * escaped into literal text once: every stray was called `${'$'}{n.id}_text`, and the third looped forever.
+     */
+    @Test
+    fun strayVideoSamplerPromptsGetDistinctNodes() {
+        val old = """
+            {"format":1,"nodes":[
+              {"id":"a","type":"nd.sample","params":{"prompt":"one"},"inputs":{}},
+              {"id":"a_text","type":"core.prompt","params":{"prompt":"taken"},"inputs":{}},
+              {"id":"b","type":"nd.sample","params":{"prompt":"two"},"inputs":{}},
+              {"id":"c","type":"nd.sample","params":{"prompt":"three"},"inputs":{}}
+            ]}
+        """.trimIndent()
+        val g = workflowFromJson(old).workflow.graph
+        assertEquals("a_text2", g.byId.getValue("a").inputs.getValue("prompt").node)
+        assertEquals("b_text", g.byId.getValue("b").inputs.getValue("prompt").node)
+        assertEquals("three", g.byId.getValue("c_text").params["prompt"])
+    }
+
+    /** ⚠ An id names files, so one that walks out of its folder is refused; so is a second node under one id. */
+    @Test
+    fun pathIdsAreRefusedAndDuplicateIdsDropped() {
+        fun flow(vararg ids: String) = """{"format":1,"nodes":[""" +
+            ids.joinToString(",") { """{"id":"$it","type":"core.prompt","params":{},"inputs":{}}""" } + "]}"
+        assertThrows(WorkflowFormatError::class.java) { workflowFromJson(flow("../x")) }
+        assertThrows(WorkflowFormatError::class.java) { workflowFromJson(flow("..")) }
+        // ⚠ A repeated id loads with the later copy dropped and a note, never refused (an autosave holding one
+        // would otherwise fail to restore and lose the canvas).
+        workflowFromJson(flow("p", "p")).let { assertEquals(1, it.workflow.graph.nodes.size); assertTrue(it.notes.isNotEmpty()) }
+        assertEquals(1, workflowFromJson(flow("p")).workflow.graph.nodes.size)
+    }
+
+    /**
      * ⭐⭐ **An image-to-video graph keeps its PICTURE.**
      *
      * ⚠⚠ The photo is the one thing the user chose, so it has to survive

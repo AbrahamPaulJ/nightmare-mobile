@@ -1,5 +1,7 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
@@ -259,6 +261,11 @@ internal fun SearchBox(
         singleLine = true,
         shape = RoundedCornerShape(16.dp),
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        // ⭐ ✕ clears the search in one tap, only while there is text (the user, 2026-10-22). ⚠ Here, so the Models
+        // browser and the LoRA browser both get it: they share this one box.
+        trailingIcon = if (query.isEmpty()) null else {
+            { IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.search_clear)) } }
+        },
         // ⚠ Only with [onSubmit]: the Models browser's keyboard stays as it was.
         keyboardOptions = if (onSubmit == null) androidx.compose.foundation.text.KeyboardOptions.Default
         else androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
@@ -299,7 +306,7 @@ internal fun FamilyMenu(counts: List<Pair<Family, Int>>, onPick: (Family) -> Uni
     var open by remember { mutableStateOf(false) }
     var widthPx by remember { mutableStateOf(0) }
     Box(Modifier.fillMaxWidth()) {
-        OutlinedButton(
+        StudioOutlinedButton(
             onClick = { open = true },
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().onSizeChanged { widthPx = it.width },
@@ -536,8 +543,8 @@ private fun ModelAction(
     onUse: (ModelSpec) -> Unit,
 ) {
     when {
-        row.progress != null -> OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-        row.installed -> Button(onClick = { onUse(row.spec) }, enabled = !busy) {
+        row.progress != null -> StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+        row.installed -> StudioButton(onClick = { onUse(row.spec) }, enabled = !busy) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(4.dp))
             Text(stringResource(R.string.use))
@@ -545,7 +552,7 @@ private fun ModelAction(
         row.spec.isCustom -> {}
         row.build == null -> {}
         row.queued -> QueuedButton { onInstall(row.spec) }
-        else -> OutlinedButton(onClick = { onInstall(row.spec) }, enabled = !busy || row.queueable) {
+        else -> StudioOutlinedButton(onClick = { onInstall(row.spec) }, enabled = !busy || row.queueable) {
             Text(stringResource(if (row.partial) R.string.repair else R.string.download))
         }
     }
@@ -554,7 +561,7 @@ private fun ModelAction(
 /** ⭐ A model waiting behind the download in flight: says so, and a tap takes it out of the queue. */
 @Composable
 private fun QueuedButton(onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick) {
+    StudioOutlinedButton(onClick = onClick) {
         Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(4.dp))
         Text(stringResource(R.string.download_queued))
@@ -720,15 +727,15 @@ internal fun AddonCard(
                     }
                 }
                 when {
-                    progress != null -> OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-                    installed && onUse != null -> Button(onClick = onUse, enabled = !busy) {
+                    progress != null -> StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+                    installed && onUse != null -> StudioButton(onClick = onUse, enabled = !busy) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(R.string.use))
                     }
                     installed || onInstall == null -> {}
                     queued -> QueuedButton(onInstall)
-                    else -> OutlinedButton(onClick = onInstall, enabled = !busy || queueable) {
+                    else -> StudioOutlinedButton(onClick = onInstall, enabled = !busy || queueable) {
                         Text(stringResource(if (partial) R.string.repair else R.string.download))
                     }
                 }

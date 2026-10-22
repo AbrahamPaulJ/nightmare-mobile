@@ -629,11 +629,15 @@ object CustomModels {
     private fun basename(entry: String): String =
         entry.substringAfterLast('/').substringAfterLast('\\')
 
-    /** ⚠ A directory name: no separators, no leading dot, not empty. */
+    /**
+     * ⚠ A directory name: no separators, no leading dot or underscore, not empty.
+     * ⚠⚠ The underscore because `_loras`, `_dit_shared`, `_controlnet` live beside the models, and both imports
+     * `deleteRecursively` the directory they are given first: a typed `_loras` deleted every installed LoRA.
+     */
     fun isValidName(name: String): Boolean =
         name.isNotBlank() &&
             name.none { it == '/' || it == '\\' || it == ':' } &&
-            !name.startsWith(".")
+            !name.startsWith(".") && !name.startsWith("_")
 
     /**
      * ⭐ The name an import takes when the user left the box EMPTY — the zip's own
@@ -758,21 +762,26 @@ object CustomModels {
             ensureDitParts(context, variant, dir, onProgress, isCancelled)
             // ⭐ A `.gguf` keeps its format: the engine picks the loader by name.
             val dest = File(dir, if (head.gguf) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
+            // ⚠⚠ Into `.part`, renamed when whole: a process killed mid-copy left a truncated `dit.safetensors` whose
+            // header [detectDit] read on the next scan and marked, so a custom spec (no sizes to check) listed it
+            // installed and Run failed inside the engine. The `catch` below cannot run when the process dies.
+            val part = File(dir, dest.name + ".part")
             // ⭐ A safetensors goes through [Fp8Widen]: its non-matmul fp8 tensors become F32 on the way.
             if (!head.gguf) open().use { input ->
-                dest.outputStream().buffered(BUFFER).use { outS ->
+                part.outputStream().buffered(BUFFER).use { outS ->
                     val widened = Fp8Widen.copy(input, outS, { done -> onProgress(ModelInstaller.Progress("importing", done, 0)) }, isCancelled)
                     if (widened > 0) Log.i(TAG, "widened $widened fp8 tensors of '$name' to F32")
                 }
             // ⭐ A GGUF through [GgufWiden]: a quantized tensor the engine reads off the matmul path becomes BF16.
             } else open().use { input ->
-                dest.outputStream().buffered(BUFFER).use { outS ->
+                part.outputStream().buffered(BUFFER).use { outS ->
                     val r = GgufWiden.copy(input, outS, variant.family, { done -> onProgress(ModelInstaller.Progress("importing", done, 0)) }, isCancelled)
                     if (r.widened > 0) Log.i(TAG, "widened ${r.widened} quantized tensors of '$name' to BF16")
                     if (r.left.isNotEmpty()) Log.w(TAG, "'$name' keeps quantized tensors off the matmul path: ${r.left.joinToString()}")
                 }
             }
-            if (dest.length() <= 0L) throw java.io.IOException("the picked file was empty")
+            if (part.length() <= 0L) throw java.io.IOException("the picked file was empty")
+            if (!part.renameTo(dest)) throw java.io.IOException("could not move ${part.name} into place")
             File(dir, mark).writeBytes(ByteArray(0))
             if (variant == DitVariant.KLEIN_9B) File(dir, KLEIN9B_MARK).writeBytes(ByteArray(0))
             if (variant.family == Family.ANIMA_DIT && animaBlocks(head.json) == 40) File(dir, ANIMA29_MARK).writeBytes(ByteArray(0))
@@ -1005,7 +1014,15 @@ object CustomModels {
             step.dest.parentFile?.mkdirs()
             if (step.from != null) {
                 onProgress(ModelInstaller.Progress("preparing the shared parts", before, total))
-                copyPart(step.from, step.dest)
+                // ⚠⚠ Via `.part`: `_dit_shared/llm.gguf` killed half-copied was a short file every other import's
+                // [ModelSpec.missing] accepts on existence alone (custom specs carry no sizes), so each one
+                // launched on a truncated encoder. [ModelInstaller.fetch] below does the same since 1.6.212.
+                val tmp = File(step.dest.path + ".part")
+                copyPart(step.from, tmp)
+                if (tmp.length() != f.bytes || !tmp.renameTo(step.dest)) {
+                    tmp.delete()
+                    throw IOException("${f.name}: could not copy it into place")
+                }
             } else {
                 ModelInstaller.fetch(f.url, step.dest, f.bytes, "downloading the shared parts", { p ->
                     onProgress(ModelInstaller.Progress(p.phase, before + p.done, total))
@@ -1050,7 +1067,7 @@ object CustomModels {
         val head = ByteArray(8)
         val json: String
         open().use { input ->
-            if (input.readNBytes(head, 0, 8) != 8) {
+            if (input.readUpTo(head, 0, 8) != 8) {
                 throw java.io.IOException("this file is too small to be a checkpoint")
             }
             var len = 0L
@@ -1063,7 +1080,7 @@ object CustomModels {
                 )
             }
             val body = ByteArray(minOf(len, 512L * 1024).toInt())
-            input.readNBytes(body, 0, body.size)
+            input.readUpTo(body)
             json = String(body, Charsets.UTF_8)
         }
         if (!json.trimStart().startsWith("{")) {
@@ -1186,7 +1203,7 @@ object CustomModels {
      */
     fun sniffImport(displayName: String?, open: () -> InputStream): ImportKind {
         val magic = ByteArray(9)
-        val n = open().use { it.readNBytes(magic, 0, 9) }
+        val n = open().use { it.readUpTo(magic, 0, 9) }
         if (n >= 4 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte() &&
             magic[2] == 0x03.toByte() && magic[3] == 0x04.toByte()
         ) return ImportKind.Zip
@@ -1226,10 +1243,10 @@ object CustomModels {
     fun ditHeader(open: () -> InputStream): DitHead {
         val magic = ByteArray(4)
         open().use {
-            if (it.readNBytes(magic, 0, 4) != 4) throw IOException("this file is too small to be a checkpoint")
+            if (it.readUpTo(magic, 0, 4) != 4) throw IOException("this file is too small to be a checkpoint")
         }
         if (!magic.contentEquals(GgufHeader.MAGIC)) return DitHead(safetensorsHeader(open), false, emptySet())
-        val head = open().use { it.readNBytes(GGUF_HEAD_BYTES) }
+        val head = open().use { it.readUpTo(GGUF_HEAD_BYTES) }
         val t = GgufHeader.parse(head)
         return DitHead(t.json, true, t.types)
     }

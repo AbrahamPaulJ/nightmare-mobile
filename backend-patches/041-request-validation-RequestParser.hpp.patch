@@ -1,0 +1,47 @@
+--- a/src/RequestParser.hpp
++++ b/src/RequestParser.hpp
+@@ -50,6 +50,17 @@
+     req.width = size;
+     req.height = size;
+   }
++  // nightmare (041): sizes and steps from the body are bounded before anything is sized from
++  // them. A DiT reached decode_image and the engine with 0, a negative (which wraps
++  // `(size_t)3*w*h`) or 100000; `steps` 0 read timesteps(0) of an empty schedule on img2img.
++  // 8192 is ultrafix's own ceiling; every family's real canvas is far below it.
++  if (req.width <= 0 || req.height <= 0 || req.width > 8192 || req.height > 8192 ||
++      req.width % 8 != 0 || req.height % 8 != 0)
++    throw std::invalid_argument("width and height must be multiples of 8 between 8 and 8192, got " +
++                                std::to_string(req.width) + "x" + std::to_string(req.height));
++  if (req.steps < 1 || req.steps > 1000)
++    throw std::invalid_argument("steps must be between 1 and 1000, got " +
++                                std::to_string(req.steps));
+ 
+   // --- Ultrafix: tiled img2img over a large upscaled image ----------------
+   // width/height stay at the full image size; the UNet/VAE graphs run at the
+@@ -162,6 +173,13 @@
+       throw std::invalid_argument("'reference_images' must be an array");
+     if (refs.empty())
+       throw std::invalid_argument("reference_images must not be empty");
++    // nightmare (041): bounded. Each one is decoded at native size on the HTTP thread, BEFORE
++    // the generation mutex, so a small PNG declaring 16k x 16k was 768 MB per reference in
++    // every queued request. The app sends at most the base plus four.
++    constexpr size_t kMaxReferences = 8;
++    if (refs.size() > kMaxReferences)
++      throw std::invalid_argument("at most " + std::to_string(kMaxReferences) +
++                                  " reference_images");
+     req.reference_images.reserve(refs.size());
+     for (const auto &encoded : refs) {
+       if (!encoded.is_string())
+@@ -170,6 +188,12 @@
+         const std::string dec_str = base64_decode(encoded.get<std::string>());
+         const std::vector<uint8_t> dec_buf(dec_str.begin(), dec_str.end());
+         ReferenceImage ref;
++        int iw = 0, ih = 0, ic = 0;
++        if (!stbi_info_from_memory(dec_buf.data(), (int)dec_buf.size(), &iw, &ih, &ic))
++          throw std::runtime_error("not an image");
++        if ((size_t)iw * (size_t)ih > (size_t)8192 * 8192)
++          throw std::runtime_error("reference is " + std::to_string(iw) + "x" +
++                                   std::to_string(ih) + ", over 8192x8192");
+         decode_reference_image(dec_buf, ref.rgb, ref.width, ref.height);
+         if (ref.rgb.empty() || ref.width <= 0 || ref.height <= 0)
+           throw std::runtime_error("Reference image decode failed");

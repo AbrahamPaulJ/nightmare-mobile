@@ -1,5 +1,6 @@
 package com.abrah.nightmare.canvas
 
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -476,7 +477,7 @@ fun RunLogPanel(
                     style = MeasureTextStyle,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                TextButton(onClick = onCancelBatch) {
+                StudioTextButton(onClick = onCancelBatch) {
                     Text(stringResource(R.string.batch_stop), fontSize = 12.sp)
                 }
             }
@@ -754,7 +755,7 @@ private const val AUTOSCROLL_SLACK = 24
  * dropped, which is exactly where a failure starts. The whole history is still
  * in the harness log.
  */
-private const val MAX_LINES = 40
+internal const val MAX_LINES = 40
 
 /** How a finished node reads in the log. */
 fun runLineOf(id: String, outcome: Outcome, ms: Long, detail: String): RunLine = RunLine(
@@ -839,7 +840,7 @@ private fun SeedsSummary(seeds: List<SeedState>, chip: @Composable (SeedState) -
     if (open) androidx.compose.material3.AlertDialog(
         onDismissRequest = { open = false },
         confirmButton = {
-            androidx.compose.material3.TextButton(onClick = { open = false }) { Text(stringResource(R.string.ok)) }
+            com.abrah.nightmare.ui.StudioTextButton(onClick = { open = false }) { Text(stringResource(R.string.ok)) }
         },
         title = { Text(stringResource(R.string.log_seeds_title)) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { seeds.forEach { chip(it) } } },

@@ -1,0 +1,29 @@
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -645,12 +645,14 @@
+ 
+   void loadIp(const std::string &dir) {
+     if (ip_loaded_ && dir == ip_dir_) return;
+-    ip_pos_.assign(ip_inputs_.size(), {});
+-    ip_neg_.assign(ip_inputs_.size(), {});
++    // nightmare (041): read into locals and swap only on success. The members were emptied
++    // first, so a throw (one .raw missing) left `ip_loaded_` true with the OLD dir and empty or
++    // half-new buffers, and the next request for the old dir bound zeros with no error.
++    std::vector<std::vector<float>> pos(ip_inputs_.size()), neg(ip_inputs_.size());
+     for (size_t i = 0; i < ip_inputs_.size(); ++i) {
+       const auto &in = ip_inputs_[i];
+       for (int side = 0; side < 2; ++side) {
+-        auto &buf = side ? ip_pos_[i] : ip_neg_[i];
++        auto &buf = side ? pos[i] : neg[i];
+         buf.assign(in.second, 0.0f);
+         if (dir.empty()) continue;
+         const std::string path =
+@@ -665,6 +667,8 @@
+                                       std::to_string(in.second * 4));
+       }
+     }
++    ip_pos_ = std::move(pos);
++    ip_neg_ = std::move(neg);
+     ip_dir_ = dir;
+     ip_loaded_ = true;
+     ip_bound_ = -1;

@@ -409,6 +409,11 @@ class ModelCatalogTest {
         assertEquals(null, BackendProcess.ditArchEnv(caps("SM8350", 68)))
         // ⚠ A chip the table does not name keeps the engine's own query.
         assertEquals(null, BackendProcess.ditArchEnv(caps("SM9999", 75)))
+        // ⭐ The 8 Elite Gen 6 is not in the table, and the engine caps a QUERIED arch at v81: told 85, measured or
+        // named by its part number, it opens the v85 skel (dit/033, local-dream alpha.6's change).
+        assertEquals("85", BackendProcess.ditArchEnv(caps("SM8975", 85)))
+        assertEquals("85", BackendProcess.ditArchEnv(DeviceProbe.Caps(85, 12, measured = true, soc = "SM8975")))
+        assertEquals("75", BackendProcess.ditArchEnv(DeviceProbe.Caps(75, 8, measured = true, soc = "SM9999")))
     }
 
     /**

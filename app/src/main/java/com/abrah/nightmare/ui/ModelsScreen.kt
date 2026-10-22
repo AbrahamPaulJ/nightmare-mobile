@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -345,7 +346,7 @@ fun ModelsScreen(
             },
             // ⚠ ONE action button. Choosing a flow IS the confirmation, so
             // there is nothing for a confirm button to do.
-            confirmButton = { TextButton(onClick = onCancelUse) { Text(stringResource(R.string.cancel)) } },
+            confirmButton = { StudioTextButton(onClick = onCancelUse) { Text(stringResource(R.string.cancel)) } },
         )
     }
 
@@ -557,8 +558,12 @@ fun ModelsScreen(
                         )
                     }
         }
+        // ⚠⚠ One list state PER PAGE (`docs/UI.md` §4b): one LazyColumn serves every kind pill and the family
+        // page, so a shared state opened Tools scrolled to row 25 of All, with its note off screen.
+        val listState = remember(kind, fp) { androidx.compose.foundation.lazy.LazyListState() }
         LazyColumn(
             Modifier.fillMaxWidth().padding(top = 8.dp),
+            state = listState,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when {

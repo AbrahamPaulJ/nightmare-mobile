@@ -56,11 +56,12 @@ class BackendKeepAliveService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, n)
         }
-        // ⚠ STICKY: unlike OpService, this one is not driven by a single
-        // command — it exists for as long as a backend is resident, and if
-        // the OS restarts it after reclaiming it anyway there is nothing to
-        // redo, only the priority to reassert.
-        return START_STICKY
+        // ⚠⚠ NOT_STICKY, and a null intent stops at once. It was STICKY ("only the priority to reassert"), but
+        // the OS restarts a sticky service only after the PROCESS died, and the backend is that process's child:
+        // the restart put "keeping model loaded" back up with no backend and no holder, so no `release()` ever
+        // took it down. The hold is re-taken by the next launch ([BackendProcess]), never by the OS.
+        if (intent == null) stopSelf(startId)
+        return START_NOT_STICKY
     }
 
     /**

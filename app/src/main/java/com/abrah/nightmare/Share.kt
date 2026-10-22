@@ -62,7 +62,10 @@ object Share {
     fun image(context: Context, bitmap: android.graphics.Bitmap, name: String) {
         val f = File(staging(context), sanitise(name) + ".png")
         f.outputStream().use {
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            // ⚠ false, not a throw: an empty file would be shared as the picture.
+            if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) {
+                throw java.io.IOException("the picture could not be encoded")
+            }
         }
         send(context, uriFor(context, f), "image/png", "Share picture")
     }
@@ -125,8 +128,16 @@ object Share {
     fun many(context: Context, entries: List<Pair<String, (File) -> Unit>>, mime: String, title: String) {
         val dir = staging(context)
         val uris = ArrayList<android.net.Uri>()
+        val used = HashSet<String>()
         for ((name, write) in entries) {
-            val f = File(dir, sanitise(name.substringBeforeLast('.')) + "." + name.substringAfterLast('.'))
+            // ⚠ Two names that sanitise alike ("a/b", "a b") were ONE file, written twice and shared twice. And the
+            // extension is sanitised too: with no dot, `substringAfterLast` returned the whole raw name.
+            val stem = sanitise(name.substringBeforeLast('.', name))
+            val ext = name.substringAfterLast('.', "").replace(Regex("[^A-Za-z0-9]"), "").take(8).ifEmpty { "bin" }
+            var file = "$stem.$ext"
+            var n = 2
+            while (!used.add(file)) file = "$stem-${n++}.$ext"
+            val f = File(dir, file)
             write(f)
             uris += uriFor(context, f)
         }

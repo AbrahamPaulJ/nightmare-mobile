@@ -41,6 +41,9 @@ object InpaintPixels {
         val small = if (w == mask.width && h == mask.height) mask else Bitmap.createScaledBitmap(mask, w, h, true)
         val px = IntArray(w * h)
         small.getPixels(px, 0, w, 0, 0, w, h)
+        // ⚠ Transient copies are recycled where made (here, [composite], [feather]): each is up to
+        // 64 MB at 4096 px, allocated beside a loaded model, and the GC frees native pixels late.
+        if (small !== mask) small.recycle()
         var l = w; var t = h; var r = -1; var b = -1
         for (y in 0 until h) for (x in 0 until w) {
             if ((px[y * w + x] and 0xFF) >= 128) {
@@ -116,6 +119,7 @@ object InpaintPixels {
         Canvas(out).drawBitmap(masked, r.left.toFloat(), r.top.toFloat(), null)
         alpha.recycle()
         masked.recycle()
+        if (scaled !== patch) scaled.recycle()
         return out
     }
 
@@ -144,6 +148,7 @@ object InpaintPixels {
         val small = Bitmap.createScaledBitmap(cropMask, dw, dh, true)
         val px = IntArray(dw * dh)
         small.getPixels(px, 0, dw, 0, 0, dw, dh)
+        if (small !== cropMask) small.recycle()
 
         // Band off the shorter edge so the feather is the same physical width on
         // both axes.

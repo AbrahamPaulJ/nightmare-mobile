@@ -43,7 +43,15 @@ object Backend {
      * have hit the same thing. The backend is on this phone; no proxy can reach it.
      */
     private fun open(path: String): HttpURLConnection =
-        URL("$BASE$path").openConnection(java.net.Proxy.NO_PROXY) as HttpURLConnection
+        (URL("$BASE$path").openConnection(java.net.Proxy.NO_PROXY) as HttpURLConnection).apply {
+            // ⚠⚠ The launch's token (backend-patches 042) on EVERY request: the socket is loopback,
+            // but loopback is every app on the phone, and the body names files the backend writes
+            // and deletes. A backend this app did not launch (a hand-run one) checks nothing.
+            BackendProcess.token?.let { setRequestProperty(TOKEN_HEADER, it) }
+        }
+
+    /** ⭐ The header backend 042 checks against its `NM_BACKEND_TOKEN`. */
+    const val TOKEN_HEADER = "X-Nightmare-Token"
 
     /**
      * Milliseconds. Generous: a cold backend takes 4-5 s to answer /health.
@@ -321,6 +329,16 @@ object Backend {
      * treat the resulting failure as a cancellation rather than as a backend
      * error.
      */
+    /**
+     * ⭐ When the streaming request in flight last heard anything (`System.nanoTime`). A DiT engine stuck inside one
+     * DSP call sends nothing, and only answers a hang-up between steps ([quietForMs] tells the two apart).
+     */
+    @Volatile
+    private var streamActivityAt: Long = 0L
+
+    /** Milliseconds since the stream last spoke; 0 when there is none. */
+    fun quietForMs(): Long = streamActivityAt.takeIf { it > 0L }?.let { (System.nanoTime() - it) / 1_000_000 } ?: 0L
+
     fun abortInFlight(): Boolean {
         val c = inFlight ?: return false
         // ⚠ On the caller's thread, not the reader's: `disconnect()` is what
@@ -371,6 +389,7 @@ object Backend {
             setRequestProperty("Accept-Encoding", "identity")
         }
         inFlight = conn
+        streamActivityAt = System.nanoTime()
         try {
             conn.outputStream.use { it.write(json.toByteArray()) }
             val code = conn.responseCode
@@ -387,6 +406,7 @@ object Backend {
             conn.inputStream.bufferedReader().use { r ->
                 while (true) {
                     val line = r.readLine() ?: break
+                    streamActivityAt = System.nanoTime()
                     when {
                         // A blank line terminates a frame. Emit whatever the
                         // preceding lines built and reset.

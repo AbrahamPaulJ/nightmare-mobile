@@ -235,6 +235,7 @@
     <string name="cn_about_sdxl">SDXL Swap 模型的 ControlNet。只有勾选了 ControlNet 的转换才能使用：1.6.122 起下载的 Illustrious XL Swap，或你用 npuforge 1.0.12 及以上版本自己转换的模型。</string>
     <string name="ip_about_sdxl">SDXL Swap 模型的 IP-Adapter：参考图片引导生成。只有勾选了 IP-Adapter 的转换才能使用：1.6.122 起下载的 Illustrious XL Swap，或你用 npuforge 1.0.12 及以上版本自己转换的模型。</string>
     <string name="run_lora_tags_unused">提示词中的 LoRA 标签已忽略，此模型不支持 LoRA</string>
+    <string name="run_lora_tags_negative">反向提示词中的 LoRA 标签已忽略。要使用它们，请放到提示词中</string>
     <string name="run_lora_tag_missing">提示词中的 LoRA “%1$s” 未安装，已跳过</string>
     <string name="run_lora_motion_skipped">动作迁移不使用 LoRA：已跳过提示词中的“%1$s”</string>
     <string name="run_wan_ram_warning">%1$s、%2$s 秒需要约 %3$s GB 的 NPU 内存，超出这台手机 %4$s GB 内存能稳妥容纳的量。应用可能会停止或重启。480p 或更短的时长更稳妥</string>
@@ -1223,4 +1224,19 @@
     <string name="flow_animate_about">照片中的人脸按照你选择的视频中人脸的动作运动。无需检查点。</string>
     <string name="palette_node_animate">肖像动画</string>
     <string name="palette_about_animate">让照片中的人脸像所选视频中的人脸一样运动（LivePortrait）</string>
+    <!-- review fixes (2026-10-22): canvas, inspector, ui -->
+    <string name="inspector_sweep_count">数量：%1$d</string>
+    <string name="inspector_sweep_seeds">%1$d 次运行，每次使用新的随机种子</string>
+    <string name="output_auto_upscale_on">此输出已放大每次渲染。取消勾选自动放大后才能选择</string>
+    <string name="inspector_sweep_this">遍历此参数</string>
+    <string name="inspector_sweeping">正在遍历 %1$s</string>
+    <string name="agent_clear_chat_title">删除此对话？</string>
+    <string name="agent_clear_chat_body">对话及其附带的图片将被删除。设置会保留。</string>
+    <string name="agent_profile_delete_title">删除设置 %1$s？</string>
+    <string name="agent_profile_delete_body">其中保存的 API 密钥会一并删除。当前使用的设置不变。</string>
+    <string name="clip_unreadable">无法播放此片段</string>
+    <string name="cd_kept_picture">已保存的图片</string>
+    <string name="flow_this_chip">此芯片</string>
+    <string name="flows_section_advanced">高级</string>
+    <string name="search_clear">清除搜索</string>
 </resources>

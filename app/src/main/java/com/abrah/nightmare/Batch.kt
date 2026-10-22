@@ -63,8 +63,8 @@ data class BatchSpec(val axes: List<BatchAxis> = emptyList()) {
             }
             out = next
         }
-        // The loop above emits the last axis fastest; reverse the pairing so
-        // the first axis reads as the outer one.
+        // The axes are walked last-first above, so the FIRST axis ends up the outer
+        // (slowest-changing) one in the emitted order: nothing is reversed after.
         return out
     }
 
@@ -169,8 +169,11 @@ object BatchValues {
             // ⚠ Counted before it is built: `0.001` over `1..1000` is a million
             // strings, and allocating them to then reject the list is the wrong
             // order on a device with 12 GB and a 4096² render in flight.
-            val n = ((to - from) / step).toInt() + 1
-            if (n > MAX_VALUES) return emptyList()
+            // ⚠ The epsilon: `0.15..0.6 by 0.05` divides to 8.999..., and a bare toInt() dropped
+            // the 0.6 the person typed. Compared as a Double first so a huge span cannot overflow.
+            val span = kotlin.math.floor((to - from) / step + 1e-9)
+            if (span + 1 > MAX_VALUES) return emptyList()
+            val n = span.toInt() + 1
             // ⚠ Whole numbers stay whole: a seed of "3.0" is not a seed.
             val whole = from % 1.0 == 0.0 && to % 1.0 == 0.0 && step % 1.0 == 0.0
             return (0 until n).map { i ->

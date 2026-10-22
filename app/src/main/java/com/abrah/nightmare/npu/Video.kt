@@ -30,6 +30,9 @@ class Video(
     private val ctx: Context,
     private val runner: QnnRunner,
     private val log: (String) -> Unit,
+    /** ⚠ The node's Upscale knob. It was hashed into the clip's key and never reached here, so an
+     * unticked box still came out 640x1024 under a different file name. */
+    private val wantUpscale: Boolean = true,
 ) {
 
     private val vs get() = VideoStructure.cfg
@@ -387,6 +390,7 @@ class Video(
      */
     /** True when quicksrm2x is on the device; the video is 320x512 without it. */
     private val upscale: Boolean by lazy {
+        if (!wantUpscale) return@lazy false.also { log("      upscale off -> 320x512") }
         runner.isReady("quicksrm2x").also {
             log(if (it) "      QuickSRNet 2x enabled -> 640x1024"
                 else "      QuickSRNet absent -> 320x512")

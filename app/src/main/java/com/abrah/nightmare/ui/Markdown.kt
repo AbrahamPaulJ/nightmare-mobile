@@ -129,14 +129,17 @@ internal fun markdownBlocks(md: String): List<MdBlock> {
                 flush()
                 out += MdBlock.Item("•", t.drop(2).trim(), (line.length - t.length) / 2)
             }
-            Regex("^\\d+[.)] ").containsMatchIn(t) -> {
+            // ⚠ One to three digits: "2026. was a year" is a sentence, not item 2026.
+            Regex("^\\d{1,3}[.)] ").containsMatchIn(t) -> {
                 flush()
                 val n = t.takeWhile { it.isDigit() }
                 out += MdBlock.Item("$n.", t.substringAfter(' ').trim(), (line.length - t.length) / 2)
             }
             t.isEmpty() -> flush()
             else -> {
-                if (para.isNotEmpty()) para.append(' ')
+                // ⚠ A single line break is KEPT: an agent's "Key: value" lines are lines, and joining them
+                // with spaces collapsed a list of settings into one run-on line.
+                if (para.isNotEmpty()) para.append('\n')
                 para.append(t)
             }
         }
@@ -150,7 +153,7 @@ internal fun markdownBlocks(md: String): List<MdBlock> {
 @Composable
 private fun inline(text: String, color: Color): AnnotatedString {
     val codeBg = MaterialTheme.colorScheme.surfaceContainerHighest
-    val link = Accent
+    val link = MaterialTheme.studio.accentText
     return remember(text, color) { inlineOf(text, codeBg, link) }
 }
 
@@ -158,14 +161,19 @@ private fun inline(text: String, color: Color): AnnotatedString {
 private fun <T> remember(a: Any, b: Any, f: () -> T): T = androidx.compose.runtime.remember(a, b, f)
 
 internal fun inlineOf(text: String, codeBg: Color, link: Color): AnnotatedString = buildAnnotatedString {
-    val token = Regex("""\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|\[([^\]]+)]\(([^)\s]+)\)|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)""")
+    // ⚠ `***x***` FIRST (bold italic, group 1): left to `**…**` it
+    // rendered a bold "*x" and a stray "*". ⚠ Bold is parsed AGAIN inside, so a bold `code` shows code.
+    val token = Regex("""\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|\[([^\]]+)]\(([^)\s]+)\)|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])|(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)""")
     var at = 0
     for (m in token.findAll(text)) {
         append(text.substring(at, m.range.first))
-        val g = m.groupValues
+        val all = m.groupValues
+        // ⚠ Group 1 is bold italic; the rest shift down one so the cases below read as before.
+        val g = listOf(all[0]) + all.drop(2)
         when {
-            g[1].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(g[1]) }
-            g[2].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(g[2]) }
+            all[1].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, fontStyle = FontStyle.Italic)) { append(inlineOf(all[1], codeBg, link)) }
+            g[1].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(inlineOf(g[1], codeBg, link)) }
+            g[2].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(inlineOf(g[2], codeBg, link)) }
             g[3].isNotEmpty() -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg)) { append(g[3]) }
             g[4].isNotEmpty() -> withLink(LinkAnnotation.Url(g[5], TextLinkStyles(SpanStyle(color = link, textDecoration = TextDecoration.Underline)))) { append(g[4]) }
             g[6].isNotEmpty() -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(g[6]) }

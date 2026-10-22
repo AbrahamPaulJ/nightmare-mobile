@@ -48,7 +48,10 @@ object ImageSaver {
      */
     fun saveBitmap(ctx: Context, bitmap: android.graphics.Bitmap, name: String): String =
         insert(ctx, name) { out ->
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+            // ⚠ compress says false instead of throwing; ignored, an empty row was published as a saved picture.
+            if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)) {
+                throw java.io.IOException("the picture could not be encoded")
+            }
         }
 
     /** ⭐ A PNG already on disk, copied out without passing through the heap. */

@@ -361,6 +361,8 @@ object DeviceProbe {
      * ⚠ Returns null rather than throwing: an unprobeable device still has the
      * tables, and losing the app to a diagnostic would be absurd.
      */
+    private const val PROBE_TIMEOUT_S = 20L
+
     suspend fun measure(context: Context): Caps? = withContext(Dispatchers.IO) {
         try {
             val exe = File(context.applicationInfo.nativeLibraryDir, BackendProcess.EXECUTABLE)
@@ -375,8 +377,18 @@ object DeviceProbe {
                 ).joinToString(":")
                 environment()["DSP_LIBRARY_PATH"] = runtime.absolutePath
             }.start()
+            // ⚠ A wedged DSP never closes the child's stdout, and `readText` would hold this IO thread (and the
+            // child) for ever. The probe answers in well under a second; past [PROBE_TIMEOUT_S] it is killed, the
+            // read ends, and the tables stand in as for any unprobeable phone.
+            val watchdog = Thread {
+                if (!p.waitFor(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)) {
+                    Log.w(TAG, "device_info did not exit in $PROBE_TIMEOUT_S s; killing it")
+                    p.destroyForcibly()
+                }
+            }.apply { isDaemon = true; name = "device-probe-watchdog"; start() }
             val out = p.inputStream.bufferedReader().use { it.readText() }
             p.waitFor()
+            watchdog.interrupt()
 
             // ⚠ The JSON is one line among the runtime's own chatter, so it is
             // found rather than assumed to be the whole output.
@@ -393,6 +405,13 @@ object DeviceProbe {
             )
             Log.i(TAG, "probed $caps")
             measured = caps
+            // ⚠ A MEASURED pack arch outranks a learned fallback: 2.50 cannot drive a v85 DSP at all, so the v81
+            // fallback (a guess about a part number) only ever made things worse once the chip had answered.
+            if (caps.arch in PACK_ARCHES && packFallback != null) {
+                packFallback = null
+                context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit().remove(PACK_FALLBACK_KEY).apply()
+                Log.w(TAG, "measured v${caps.arch}: the v$PACK_FALLBACK_ARCH fallback is dropped")
+            }
             caps
         } catch (e: Throwable) {
             Log.w(TAG, "device probe failed", e)

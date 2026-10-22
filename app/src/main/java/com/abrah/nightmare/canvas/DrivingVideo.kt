@@ -1,5 +1,6 @@
 package com.abrah.nightmare.canvas
 
+import com.abrah.nightmare.ui.StudioTextButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
@@ -44,7 +45,7 @@ import com.abrah.nightmare.ui.NoteTextStyle
 internal fun MotionModeInfo(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
         title = { Text(stringResource(R.string.motion_info_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -201,12 +202,8 @@ internal fun DrivingVideoPanel(
                 source = frame,
                 rect = drivingRectOf(params, frame.width, frame.height, clipW, clipH),
                 onChange = { r ->
-                    onSetParams(
-                        mapOf(
-                            WanFun.VX to r.x.toString(), WanFun.VY to r.y.toString(),
-                            WanFun.VW to r.w.toString(), WanFun.VH to r.h.toString(),
-                        )
-                    )
+                    // ⚠ Rounded as every other editor writes ([asVideoParams]); `CropRect.near` assumes 3 decimals.
+                    onSetParams(r.asVideoParams())
                 },
                 interactive = true,
                 outW = clipW,

@@ -1,5 +1,7 @@
 package com.abrah.nightmare.canvas
 
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -137,16 +139,16 @@ internal fun IpAdapterPanel(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // ⚠ Destructive first, primary last (`docs/UI.md` §8.1).
             if (own) {
-                OutlinedButton(onClick = { onSetParam(SdSampler.IP_IMAGE, ""); cropping = false }) {
+                StudioOutlinedButton(onClick = { onSetParam(SdSampler.IP_IMAGE, ""); cropping = false }) {
                     Text(stringResource(R.string.cn_clear))
                 }
             }
             if (wired != null) {
-                OutlinedButton(onClick = { cropping = !cropping }) {
+                StudioOutlinedButton(onClick = { cropping = !cropping }) {
                     Text(stringResource(if (cropping) R.string.crop_done else R.string.crop))
                 }
             }
-            Button(onClick = pick) {
+            StudioButton(onClick = pick) {
                 Text(stringResource(if (!own) R.string.cn_pick else R.string.cn_replace))
             }
         }
