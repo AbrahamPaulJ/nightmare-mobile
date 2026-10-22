@@ -30,13 +30,13 @@ If a package contains LocalDream's empty `V_PRED` marker, Nightmare launches the
 native backend in v-prediction mode. Packages without it keep the existing epsilon
 behavior.
 
-## FLUX.2, Z-Image, Krea 2 and Anima: one .safetensors or .gguf
+## FLUX.2, Z-Image, Krea 2, Anima and MOSS-Image: one .safetensors or .gguf
 
 These build their model at load time from ordinary weights, so **a fine-tune from CivitAI or
 Hugging Face imports as-is**. No conversion, no PC. Both `.safetensors` and `.gguf` work.
 
 Import the file with **+** (above). The app reads the file's tensor names to tell Anima, FLUX.2
-Klein (4B or 9B), Z-Image and Krea 2 apart, so an Anima file from CivitAI lands on the **Anima**
+Klein (4B or 9B), Z-Image, Krea 2 and MOSS-Image apart, so an Anima file from CivitAI lands on the **Anima**
 page without you choosing anything.
 
 On **Family ▾ → Anima**, both kinds of Anima are listed: first the ones on the DiT engine (any
@@ -49,6 +49,12 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
 - **Anima** takes its text encoder and VAE (0.9 GB) from Anima Turbo 1.1 the same way. Anima 2B and 2.9B (40 blocks) both import; a 2.9B starts at 28 steps and CFG 4, as a base model wants; another size is refused. An
   imported `.safetensors` runs as it is: about 20% slower than the built-in, which the app
   converts to Q8_0. A Q8_0 `.gguf` runs at the built-in's speed.
+- **MOSS-Image** uses the text encoder, VAE and tokenizer of the MOSS-Image you have installed, so
+  an import costs only its own weights (without one, it downloads its own 5.6 GB). An import runs
+  without the built-in's 8-step speed-up: a "Turbo" or "8 step" file has it built in and starts at
+  8 steps and CFG 1 (the app reads that from the file's name); any other starts at 25 steps and
+  CFG 3, as MOSS fine-tunes ask. A Q4_0 `.gguf` such as molbal's *MOSS Image Turbo GGUF* is the
+  fastest MOSS-Image: about 40 s at 512x512 and 2.5 min at 1024x1024 on an 8 Elite.
 
 !!! warning "Size and memory"
     A checkpoint bigger than about half your phone's RAM is marked *likely too big for this
@@ -56,9 +62,10 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
     (Q4_0, Q8_0 or fp8) of the same model is the fix. Q4_0, Q8_0, MXFP4 and fp8 are the formats
     known to run on the NPU; others (Q4_K, Q6_K…) are untested.
 
-!!! warning "Z-Image .gguf"
-    A Z-Image `.gguf` imports, but in our test (Q4_0) the picture came out as noise. Use a
-    Z-Image fine-tune as an fp8 `.safetensors` for now. FLUX.2 `.gguf` files render correctly.
+!!! warning "int8 and 4-bit files"
+    Files made for NVIDIA cards in ComfyUI's int8 or 4-bit formats (int8, ConvRot, int4, nf4,
+    nvfp4) are refused on import with a message: the engine cannot run them yet. Pick the `.gguf`
+    (Q4_0 or Q8_0) or fp8 version of the same model.
 
 !!! note "Qwen Image"
     Qwen Image fine-tunes cannot be imported from the phone yet. A Qwen folder made by
