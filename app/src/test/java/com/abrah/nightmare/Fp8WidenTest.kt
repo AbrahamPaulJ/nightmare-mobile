@@ -108,4 +108,42 @@ class Fp8WidenTest {
         assertTrue(Fp8Widen.widens("pad", "F8_E4M3", listOf(1L, 3840L)))
         assertFalse(Fp8Widen.widens("norm.scale", "BF16", listOf(128L)))
     }
+
+    /** ⭐ A Klein 9B "pruned_fp8" all in E5M2 (1.6.214, the engine reads no E5M2): norms to F32, matmuls to E4M3, same size. */
+    @Test
+    fun e5m2NormsBecomeF32AndE5m2MatmulsBecomeE4m3() {
+        // E5M2: 1.0 = 0x3C, 2.0 = 0x40, -1.0 = 0xBC, 1.25 = 0x3D, 2^-8 = 0x1C, 448 = 0x5F (exactly 448: 1.75 * 2^8)
+        val matmulBytes = ByteArray(64 * 32) { listOf(0x3C, 0x40, 0xBC, 0x3D, 0x1C, 0x5F)[it % 6].toByte() }
+        val src = file(listOf(
+            T("double_blocks.0.img_attn.norm.key_norm.weight", "F8_E5M2", listOf(4), byteArrayOf(0x3C, 0x40, 0xBC.toByte(), 0x3D)),
+            T("double_blocks.0.img_attn.qkv.weight", "F8_E5M2", listOf(64, 32), matmulBytes),
+        ))
+        val (n, out) = copy(src)
+        assertEquals(2, n)
+        val (h, body) = parse(out)
+        assertEquals("F32", h.getJSONObject("double_blocks.0.img_attn.norm.key_norm.weight").getString("dtype"))
+        assertEquals(listOf(1f, 2f, -1f, 1.25f), floats(data(h, body, "double_blocks.0.img_attn.norm.key_norm.weight")))
+        assertEquals("F8_E4M3", h.getJSONObject("double_blocks.0.img_attn.qkv.weight").getString("dtype"))
+        val q = data(h, body, "double_blocks.0.img_attn.qkv.weight")
+        assertEquals(matmulBytes.size, q.size)
+        // E4M3: 1.0 = 0x38, 2.0 = 0x40, -1.0 = 0xB8, 1.25 = 0x3A, 2^-8 = 0x02 (subnormal 2 * 2^-9), 448 = 0x7E
+        assertEquals(listOf(0x38, 0x40, 0xB8, 0x3A, 0x02, 0x7E), q.take(6).map { it.toInt() and 0xFF })
+        assertEquals(listOf(1f, 2f, -1f, 1.25f, 1f / 256, 448f), floats(Fp8Widen.toF32(q, 6)))
+    }
+
+    /** ⭐ The table is right at its edges: saturation past 448, NaN kept, and every in-range code exact. */
+    @Test
+    fun e5m2ToE4m3IsExactInE4m3sNormalRange() {
+        val e5 = (0 until 256).map { Fp8Widen.toF32(byteArrayOf(it.toByte()), 1, e5m2 = true).let { b -> ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).float } }
+        for (c in 0 until 256) {
+            val v = e5[c]
+            val back = Fp8Widen.toF32(byteArrayOf(Fp8Widen.E5M2_TO_E4M3[c]), 1).let { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).float }
+            val a = kotlin.math.abs(v)
+            when {
+                v.isNaN() -> assertTrue(back.isNaN())
+                a >= 448f -> assertEquals(if (v < 0) -448f else 448f, back)
+                a >= 1f / 64 -> assertEquals("code $c", v, back)
+            }
+        }
+    }
 }

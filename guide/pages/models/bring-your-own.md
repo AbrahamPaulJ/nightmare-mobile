@@ -54,7 +54,14 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
   without the built-in's 8-step speed-up: a "Turbo" or "8 step" file has it built in and starts at
   8 steps and CFG 1 (the app reads that from the file's name); any other starts at 25 steps and
   CFG 3, as MOSS fine-tunes ask. A Q4_0 `.gguf` such as molbal's *MOSS Image Turbo GGUF* is the
-  fastest MOSS-Image: about 40 s at 512x512 and 2.5 min at 1024x1024 on an 8 Elite.
+  fastest MOSS-Image: about 40 s at 512x512 and 2.5 min at 1024x1024 on an 8 Elite (it is also in the
+  catalogue as **MOSS-Image Turbo**).
+
+!!! example "Example: Moody Moss Mix (25 steps)"
+    On its CivitAI page pick the **fp8** file (*V1.0 25 STEPS CFG3*, about 4.8 GB), not the int8 one.
+    Install MOSS-Image SFT first, then import the file with **+**. It starts at 25 steps and CFG 3,
+    which is what it needs: fewer steps leave it unfinished. About 3 min at 512x512 and 16 min at
+    1024x1024 on an 8 Elite.
 
 !!! warning "Size and memory"
     A checkpoint bigger than about half your phone's RAM is marked *likely too big for this

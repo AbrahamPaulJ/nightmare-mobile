@@ -487,6 +487,14 @@ class DitImportTest {
         assertEquals(null, CustomModels.int8Problem(CustomModels.DitHead(moss, true, setOf("BF16", "Q4_0"))))
     }
 
+    /** ⭐ A KJ Z-Image carries `t_embedder.` and `x_embedder.`: two Anima hits, so Anima needs `llm_adapter.` too. */
+    @Test fun aZImageWithEmbedderNamesIsNotAnima() {
+        val kj = """{"cap_embedder.0.weight":{},"noise_refiner.0.attention.qkv.weight":{},"t_embedder.mlp.0.weight":{},"x_embedder.weight":{}}"""
+        assertEquals(Family.ZIMAGE, CustomModels.ditFamilyOf(kj))
+        val anima = """{"llm_adapter.blocks.0.w":{},"t_embedder.1.linear_1.weight":{},"x_embedder.proj.1.weight":{}}"""
+        assertEquals(Family.ANIMA_DIT, CustomModels.ditFamilyOf(anima))
+    }
+
     @Test fun mossFewStepComesFromTheName() {
         assertTrue(CustomModels.mossFewStep("mossImageTurboGGUF8_v10_3308669"))
         assertTrue(CustomModels.mossFewStep("moss_8step_dmd"))

@@ -2589,6 +2589,23 @@ object ModelCatalog {
                 RemoteFile(HF + "lodestones/MOSS-Image-Base-8-steps-dmd/resolve/main/lora.safetensors", MOSS_LORA, 1_189_176_800L),
             ),
         ),
+        // ⭐ MOSS-Image TURBO (1.6.215, the user's call): molbal's "MOSS Image Turbo GGUF (8 step)" Q4_0, SFT with
+        // lodestones' 8-step LoRA merged before quantizing (CivitAI 3415613, every permission open; re-hosted on ours).
+        // No run-time LoRA, so the fastest MOSS: S25 1024² 8 steps 145 s against SFT's 163 s (`docs/MOSS.md` §3).
+        // Fused `proj.qkv` (Comfy-Org's layout). SFT's parts BORROWED as Base does ([ModelSpec.partsFrom]).
+        dit(
+            "moss_image_turbo", "MOSS-Image Turbo (8 steps)", Family.MOSS, KREA2, steps = 8,
+            ownDitParts = true,
+            minArch = DIT_GGML_MIN_ARCH,
+            partsFrom = "moss_image",
+            prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
+            files = listOf(
+                RemoteFile(HF + "AbrahamPJ/nightmare-moss-image/resolve/main/moss-image-turbo-q4_0-molbal.gguf", "dit.gguf", 3_328_170_880L),
+                RemoteFile(HF + "unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_0.gguf", "llm.gguf", 5_379_417_312L),
+                RemoteFile(HF + "realrebelai/MOSS-Image_GGUFs/resolve/main/MOSS-VAE.safetensors", "vae.safetensors", 249_521_372L),
+                RemoteFile(HF + "OpenMOSS-Team/MOSS-Image-Base/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", 19_989_325L),
+            ),
+        ),
         // ⭐⭐ Ideogram 4 (Ideogram Non-Commercial Model Agreement; `NOTICE`): leejet's Q4_0 DiT, unsloth's Qwen3-VL-8B
         // Q4_0 (the engine reads 13 of its hidden layers) with Qwen3-VL's tokenizer.json (the backend loads one for a
         // `krea2` launch), Klein's FLUX.2 VAE, and ostris' TurboTime LoRA on every render ([ModelSpec.ownLora]): the

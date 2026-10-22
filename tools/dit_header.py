@@ -113,7 +113,9 @@ def main():
         by[ty][1] += n
     for ty, (n, size) in sorted(by.items(), key=lambda kv: -kv[1][1]):
         print(f"  {ty:8s} {n:5d} tensors  {size / 1e9:6.2f} GB")
-    hits = [f for f, keys in SIGNATURES.items() if sum(k in names for k in keys) >= 2]
+    # Anima only with llm_adapter. (Z-Image's t_embedder./x_embedder. are two Anima hits)
+    hits = [f for f, keys in SIGNATURES.items()
+            if sum(k in names for k in keys) >= 2 and (f != "Anima DiT" or "llm_adapter." in names)]
     family = hits[0] if len(hits) == 1 else None
     print("family:", family or ("ambiguous: " + ", ".join(hits) if hits else "none named (the app asks)"))
     if family == "FLUX.2":

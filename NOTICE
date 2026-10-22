@@ -203,6 +203,14 @@ MOSS-Image 8-step DMD LoRAs (SFT and Base)
     Apache 2.0. Downloaded by the app at the user's request and applied at
     run time, unmodified; not included here.
 
+MOSS-Image Turbo (Q4_0 GGUF, the SFT 8-step DMD LoRA merged in)
+    molbal, "MOSS Image Turbo GGUF (8 step)"
+    https://civitai.com/models/3009877
+    https://huggingface.co/AbrahamPJ/nightmare-moss-image (re-hosted unmodified,
+    as its CivitAI permissions allow). Built from MOSS-Image SFT and lodestones'
+    LoRA, both Apache 2.0. Downloaded by the app at the user's request; not
+    included here.
+
 Ideogram 4
     Ideogram, Inc.; GGUF by leejet
     https://huggingface.co/ideogram-ai/ideogram-4-fp8

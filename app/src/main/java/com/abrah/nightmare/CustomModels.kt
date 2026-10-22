@@ -798,7 +798,7 @@ object CustomModels {
             if (!head.gguf) open().use { input ->
                 part.outputStream().buffered(BUFFER).use { outS ->
                     val widened = Fp8Widen.copy(input, outS, { done -> onProgress(ModelInstaller.Progress("importing", done, 0)) }, isCancelled)
-                    if (widened > 0) Log.i(TAG, "widened $widened fp8 tensors of '$name' to F32")
+                    if (widened > 0) Log.i(TAG, "converted $widened fp8 tensors of '$name' (non-matmul to F32, E5M2 matmuls to E4M3)")
                 }
             // ⭐ A GGUF through [GgufWiden]: a quantized tensor the engine reads off the matmul path becomes BF16.
             } else open().use { input ->
@@ -1162,7 +1162,11 @@ object CustomModels {
             // the first two, `dit/028`). ⚠ `proj.qkv` fused or `proj.q/k/v` apart: the engine reads both.
             Family.MOSS to listOf("video_embedder.", "shared_block_modulation.", "final_linear_video.", "video_head_modulation."),
         )
-        val hits = signatures.filterValues { keys -> keys.count(header::contains) >= 2 }.keys
+        // ⚠ Anima only with `llm_adapter.`: Z-Image's own `t_embedder.` and `x_embedder.` are two Anima hits, and a KJ
+        // Z-Image read as Z-Image AND Anima, so as nothing (2026-10-22, `docs/IMPORTS.md` §4).
+        val hits = signatures.filter { (family, keys) ->
+            keys.count(header::contains) >= 2 && (family != Family.ANIMA_DIT || "llm_adapter." in header)
+        }.keys
         return hits.singleOrNull()
     }
 

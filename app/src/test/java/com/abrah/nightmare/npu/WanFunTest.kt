@@ -99,16 +99,20 @@ class WanFunTest {
     @Test
     fun funControlBorrowsTurbosParts() {
         val funSpec = com.abrah.nightmare.ModelCatalog.WAN22_FUN
+        // ⚠ Sparse and always deleted: setLength writes the 3.6 GB umT5 out in zeros on Windows.
         val root = kotlin.io.path.createTempDirectory().toFile()
-        val own = java.io.File(root, funSpec.id).apply { mkdirs() }
-        val turbo = java.io.File(root, "wan22_ti2v_turbo").apply { mkdirs() }
-        val umt5 = funSpec.files.first { it.name == "umt5.gguf" }
-        assertEquals(false, funSpec.borrows(own, umt5))
-        java.io.RandomAccessFile(java.io.File(turbo, "umt5.gguf"), "rw").use { it.setLength(umt5.bytes) }
-        assertEquals(true, funSpec.borrows(own, umt5))
-        // ⚠ A partial copy in the donor is not borrowed.
-        java.io.RandomAccessFile(java.io.File(turbo, "umt5.gguf"), "rw").use { it.setLength(umt5.bytes - 1) }
-        assertEquals(false, funSpec.borrows(own, umt5))
-        root.deleteRecursively()
+        try {
+            val own = java.io.File(root, funSpec.id).apply { mkdirs() }
+            val turbo = java.io.File(root, "wan22_ti2v_turbo").apply { mkdirs() }
+            val umt5 = funSpec.files.first { it.name == "umt5.gguf" }
+            assertEquals(false, funSpec.borrows(own, umt5))
+            com.abrah.nightmare.sparseFile(java.io.File(turbo, "umt5.gguf"), umt5.bytes)
+            assertEquals(true, funSpec.borrows(own, umt5))
+            // ⚠ A partial copy in the donor is not borrowed.
+            com.abrah.nightmare.sparseFile(java.io.File(turbo, "umt5.gguf"), umt5.bytes - 1)
+            assertEquals(false, funSpec.borrows(own, umt5))
+        } finally {
+            root.deleteRecursively()
+        }
     }
 }

@@ -370,15 +370,38 @@ class ModelCatalogTest {
     fun mossBaseBorrowsOnlyWhatSftShares() {
         val base = ModelCatalog.byId("moss_image_base")!!
         val sft = ModelCatalog.byId("moss_image")!!
+        // ⚠ Sparse, and deleted whatever happens: a plain setLength writes SFT's ~10 GB of zeros on Windows, and a
+        // failed run left 8 GB in Temp (2026-10-22, "not enough space on the disk").
         val root = kotlin.io.path.createTempDirectory().toFile()
-        val own = java.io.File(root, base.id).apply { mkdirs() }
-        val donor = java.io.File(root, sft.id).apply { mkdirs() }
-        sft.files.forEach { f -> java.io.RandomAccessFile(java.io.File(donor, f.name), "rw").use { it.setLength(f.bytes) } }
-        val borrowed = base.files.filter { base.borrows(own, it) }.map { it.name }
-        assertEquals(listOf("llm.gguf", "vae.safetensors", "tokenizer.json"), borrowed)
-        // ⚠ The trap: SFT's DiT and LoRA are exactly Base's sizes.
-        assertEquals(base.files.first { it.name == "dit.gguf" }.bytes, sft.files.first { it.name == "dit.gguf" }.bytes)
-        root.deleteRecursively()
+        try {
+            val own = java.io.File(root, base.id).apply { mkdirs() }
+            val donor = java.io.File(root, sft.id).apply { mkdirs() }
+            sft.files.forEach { f -> sparseFile(java.io.File(donor, f.name), f.bytes) }
+            val borrowed = base.files.filter { base.borrows(own, it) }.map { it.name }
+            assertEquals(listOf("llm.gguf", "vae.safetensors", "tokenizer.json"), borrowed)
+            // ⚠ The trap: SFT's DiT and LoRA are exactly Base's sizes.
+            assertEquals(base.files.first { it.name == "dit.gguf" }.bytes, sft.files.first { it.name == "dit.gguf" }.bytes)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    /** ⭐ MOSS Turbo: the LoRA is baked into its DiT, so no run-time LoRA; SFT's three parts borrowed, as Base's. */
+    @Test
+    fun mossTurboHasNoOwnLoraAndBorrowsSftsParts() {
+        val turbo = ModelCatalog.byId("moss_image_turbo")!!
+        val sft = ModelCatalog.byId("moss_image")!!
+        assertEquals(null, turbo.ownLora)
+        assertEquals(Family.MOSS, turbo.family)
+        val root = kotlin.io.path.createTempDirectory().toFile()
+        try {
+            val own = java.io.File(root, turbo.id).apply { mkdirs() }
+            val donor = java.io.File(root, sft.id).apply { mkdirs() }
+            sft.files.forEach { f -> sparseFile(java.io.File(donor, f.name), f.bytes) }
+            assertEquals(listOf("llm.gguf", "vae.safetensors", "tokenizer.json"), turbo.files.filter { turbo.borrows(own, it) }.map { it.name })
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     /** ⭐ Ideogram 4: the MOSS shape (own encoder, own LoRA on every render, a `krea2` launch), on the 8 Elite only. */
