@@ -937,6 +937,7 @@
     <string name="run_object_source_missing">исходное фото объекта больше не читается: добавьте его снова в редакторе маски</string>
     <string name="run_reimagining_picture">переосмысляю картинку</string>
     <string name="run_filling_padding">заполняю поля</string>
+    <string name="run_editing_marked_area">редактирую отмеченную область</string>
     <string name="run_repainting_marked_area">перерисовываю отмеченную область</string>
     <string name="run_controlnet_picture_missing">картинку ControlNet больше нельзя прочитать: выберите её снова</string>
     <string name="run_ip_adapter_picture_missing">картинку IP-Adapter больше нельзя прочитать: выберите её снова</string>
@@ -1055,6 +1056,7 @@
     <string name="draw_size">Размер</string>
     <string name="draw_opacity">Прозрачность</string>
     <string name="draw_softness">Мягкость</string>
+    <string name="draw_note_inpaint">Нарисуйте внутри маски то, что должно там быть, нужными цветами и примерной формой: перерисовка последует им. Рисунок ложится на узел изображения, поэтому его видит и изображение в изображение.</string>
     <string name="draw_note">Рисуйте поверх картинки и запускайте: «изображение в изображение» следует вашим цветам и формам. Само фото сохраняется; рисунок остаётся слоем поверх него.</string>
     <string name="draw_done">Готово</string>
     <string name="draw_on_picture">Рисовать</string>

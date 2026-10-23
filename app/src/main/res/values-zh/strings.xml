@@ -916,6 +916,7 @@
     <string name="run_object_source_missing">某个物体的源照片已无法读取，请在遮罩编辑器中重新添加</string>
     <string name="run_reimagining_picture">正在重新构想图片</string>
     <string name="run_filling_padding">正在填充扩展区域</string>
+    <string name="run_editing_marked_area">正在编辑你标记的区域</string>
     <string name="run_repainting_marked_area">正在重绘你标记的区域</string>
     <string name="run_controlnet_picture_missing">ControlNet 图片已无法读取，请重新选择</string>
     <string name="run_ip_adapter_picture_missing">IP-Adapter 图片已无法读取，请重新选择</string>
@@ -1028,6 +1029,7 @@
     <string name="draw_size">大小</string>
     <string name="draw_opacity">不透明度</string>
     <string name="draw_softness">柔和度</string>
+    <string name="draw_note_inpaint">在蒙版内画出应在那里的内容，用它的颜色和大致形状：重绘会跟随它们。画在图像节点上，因此图生图也能看到。</string>
     <string name="draw_note">在图片上涂画，然后运行：图生图会跟随你的颜色和形状。原图会保留；涂画是叠在上面的一层。</string>
     <string name="draw_done">完成</string>
     <string name="draw_on_picture">绘制</string>

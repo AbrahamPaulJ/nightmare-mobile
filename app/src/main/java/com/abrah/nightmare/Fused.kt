@@ -719,33 +719,26 @@ class SdSampler(
         val KREA2_INPAINT = SdSampler("krea2.inpaint", Family.KREA2, inpaint = true)
         val ANIMA_DIT_INPAINT = SdSampler("animadit.inpaint", Family.ANIMA_DIT, inpaint = true)
         /**
-         * ⚠⚠⚠ **`flux2.inpaint` is BUILT and NOT REGISTERED, on purpose.**
-         * Everything behind it works — [runDitMasked] sends `mask` on
-         * `/generate`, the backend reports `Mask:1`, `PipelineDit` binds
-         * `mask_image` beside the clean reference, and [finishInpaint]
-         * composites the result. Measured on device 2026-09-20 against the
-         * SAME mask the SD path uses:
-         *
-         *     SD 1.5, denoise 0.65   6303 pixels changed, 1500 strongly
-         *     Klein,  denoise 0.65    821 pixels changed,    1 strongly
-         *     Klein,  denoise 1.0     821 pixels changed,    1 strongly
-         *
-         * ⚠⚠ Identical at both denoise values, and confined to the mask's own
-         * bounding box — so the engine HONOURS the mask (nothing outside it
-         * moves) and then regenerates almost nothing inside it. Denoise having
-         * no effect rules out "the reference out-weighs the redraw". The SD
-         * path proves the mask content and the composite are right, so the
-         * difference is inside `libdit_engine.so`, which we cannot read.
-         *
-         * ⇒ Registering it would put a checkpoint in the inpaint picker that
-         * renders confidently and ignores what the user painted — the same
-         * "it still RENDERED" class as the stale-skel noise bug. It stays out
-         * until the engine's behaviour is understood. `notes/PROGRESS.md`.
+         * ⚠⚠ Klein's MASKED redraw ([runDitMasked] with `mask`) regenerates almost nothing inside the mask:
+         * measured 2026-09-20 against the mask the SD path uses, SD 1.5 at 0.65 changed 6303 px, Klein 821 at
+         * 0.65 and 1.0 alike, all inside the mask's box. With a mask the backend makes the base Klein's
+         * reference AND init (`edit_from_base`), and the reference holds the area. ⇒ [FLUX2_INPAINT] edits the
+         * cut instead ([runDitEditCut]).
          */
+        /**
+         * ⭐⭐ FLUX.2 Klein inpaint = **crop, edit, paste back** (the user's call, 2026-10-23: a mask on Edit nodes).
+         * The masked redraw stays out: with a mask the backend makes the base Klein's reference AND its init, and
+         * the reference pulls the masked area back (measured 2026-09-20 above, 821 px changed against SD 1.5's
+         * 6303). So the cut goes as a plain EDIT (no mask, strength 1, the base reference-only, as the Edit flow
+         * runs it) and [finishInpaint] keeps every pixel outside the mask ([runDitEditCut]). Reached from Image
+         * edit by Swap flow, or the Inpaint flow's picker.
+         */
+        val FLUX2_INPAINT = SdSampler("flux2.inpaint", Family.FLUX2, inpaint = true)
+
         val ALL = listOf(
             SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT, IRIS, MOSS, IDEOGRAM,
             SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, SDXL_SWAP_INPAINT, ANIMA_INPAINT,
-            ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT, ANIMA_DIT_INPAINT,
+            ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT, ANIMA_DIT_INPAINT, FLUX2_INPAINT,
         )
 
         /**
@@ -768,10 +761,8 @@ class SdSampler(
          *
          * ⚠ It is a fact about the REGISTRY, not about the engine: a family
          * can inpaint exactly when an inpaint type is registered for it. That
-         * is why FLUX.2 answers false — `flux2.inpaint` is written and
-         * deliberately not in [ALL] (the engine honours the mask and then
-         * regenerates nothing inside it, `notes/PROGRESS.md`) — and it is why
-         * registering it would light this up everywhere at once.
+         * is why FLUX.2 answered false until [FLUX2_INPAINT] (crop, edit, paste
+         * back) was registered on 2026-10-23, which lit it up everywhere at once.
          */
         /**
          * ⭐⭐⭐ **The denoise a node of this family is born with.**
@@ -1710,7 +1701,9 @@ class SdSampler(
         // below confines it to the mask ([SdSampler.ZIMAGE_INPAINT]).
         // `docs/MODELS.md` §9.
         if (family.dit) {
-            val patchBmp = runDitMasked(ctx, node, p, prompt, imagePng, maskPng, w, h)
+            // ⭐ Klein edits the cut whole and the paste keeps the rest ([FLUX2_INPAINT]); the others redraw in the mask.
+            val patchBmp = if (family == Family.FLUX2) runDitEditCut(ctx, node, p, prompt, imagePng, inputs, w, h)
+            else runDitMasked(ctx, node, p, prompt, imagePng, maskPng, w, h)
             return finishInpaint(ctx, node, p, photoIn, frame, frameRect, cut, patchBmp)
         }
 
@@ -1852,6 +1845,51 @@ class SdSampler(
      * ⚠ The image and mask are already the CANVAS-padded cut the SD path
      * built, so the engine sees exactly the frame the user painted on.
      */
+    /**
+     * ⭐ Klein's half of [FLUX2_INPAINT]: the cut as a plain edit, NO mask and strength 1, so the base is reference 1
+     * only and the full distilled schedule runs (what the Edit flow sends), with the node's wired `reference` after it.
+     * [finishInpaint] then pastes it back along the mask.
+     */
+    private suspend fun runDitEditCut(
+        ctx: NodeCtx,
+        node: Node,
+        p: Map<String, String>,
+        prompt: Value.Prompt,
+        imagePng: ByteArray,
+        inputs: Map<String, Value>,
+        w: Int,
+        h: Int,
+    ): android.graphics.Bitmap {
+        ctx.say(ctx.text(R.string.run_editing_marked_area, "editing the area you marked"))
+        PictureModels.releaseAll()
+        val refs = listOfNotNull(inputs["reference"] as? Value.Image).map { r ->
+            val bmp = ctx.images.get(r.id)
+                ?: throw IllegalStateException("node \"${node.id}\": reference image ${r.id} is no longer in the store")
+            ImageStore.encodePng(boundReference(bmp, p[REF_MAX]))
+        }
+        val r = ctx.host.generate(
+            prompt = prompt.positive,
+            negative = prompt.negative,
+            steps = p["steps"]?.toIntOrNull() ?: 4,
+            cfg = p["cfg"]?.toDoubleOrNull() ?: 1.0,
+            seed = p["seed"]?.toIntOrNull() ?: 0,
+            width = w,
+            height = h,
+            imagePng = imagePng,
+            denoise = 1.0,
+            referencePngs = refs,
+            loras = lorasFor(ctx, p[LORAS]),
+            onProgress = ctx.onProgress,
+            scheduler = p["scheduler"]?.takeIf { it in ModelCatalog.schedulersFor(family) },
+        )
+        val out = when (r) {
+            is Ops.Result.Ok -> r.value
+            is Ops.Result.Err -> throw OpFailure("generate", r.code, r.body)
+        }
+        return android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
+            ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
+    }
+
     private suspend fun runDitMasked(
         ctx: NodeCtx,
         node: Node,

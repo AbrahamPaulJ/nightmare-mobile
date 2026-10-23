@@ -69,11 +69,8 @@ class PaletteTest {
         // one still loads, still wires into `segmenter` and still gets its Tap
         // tool, which `theSegmentNodeIsRetiredButStillRegistered` pins.
         assertEquals(listOf("Inpaint"), inpaint.map { it.first().paletteName })
-        // ⚠ No FLUX.2: `flux2.inpaint` is written but NOT registered, because
-        // the engine honours the mask and then regenerates nothing inside it
-        // (measured 2026-09-20, `SdSampler.ALL`). This list is what guards
-        // that decision — registering it silently would show up here first.
-        assertEquals(listOf("SD 1.5", "SD 1.5 Swap", "SDXL", "SDXL Swap", "Anima", "Z-Image", "Qwen Image", "Krea 2", "Anima DiT"), inpaint.first().map { it.paletteVariant })
+        // ⭐ FLUX.2 since 2026-10-23: `flux2.inpaint` crops, edits and pastes back (`SdSampler.FLUX2_INPAINT`).
+        assertEquals(listOf("SD 1.5", "SD 1.5 Swap", "SDXL", "SDXL Swap", "Anima", "FLUX.2", "Z-Image", "Qwen Image", "Krea 2", "Anima DiT"), inpaint.first().map { it.paletteVariant })
         assertFalse(sections.getValue("generate").flatten().any { it.name.endsWith(".inpaint") })
     }
 

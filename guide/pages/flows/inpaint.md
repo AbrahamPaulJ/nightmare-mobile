@@ -11,12 +11,15 @@ Remove something, replace it, change clothes, fix a face, or extend the photo pa
 
 1. **Flows → Inpaint: paint an area to redo.**
 2. Tap the **image** node and choose the photo.
-3. Tap the **Inpaint** node. Its sheet shows two small pictures, **Crop** and **Mask**.
+3. Tap the **Inpaint** node. Its sheet shows small pictures: **Crop**, **Mask** and **Draw**.
 4. Tap **Mask** and paint over what you want redone (details below). Pull the window down to
    close it.
 5. Write the prompt: describe **what should be in the painted area**, in the context of the
    whole picture. `a red leather jacket` rather than `change the jacket`.
-6. **Run.**
+6. Optional: tap **Draw** and paint, inside the masked area, what should be there in its colours and rough
+   shape (a red blob where a red scarf should go). The repaint follows it. The drawing is on the image node, so
+   it shows on that node too.
+7. **Run.**
 
 <div class="screens" markdown>
 <figure markdown>
@@ -39,7 +42,11 @@ converted in npuforge with **Inpaint** ticked is one too.
 **Z-Image**, **Qwen Image**, **Krea 2** and **Anima DiT** inpaint as well, by redrawing the area around your
 mask at the **Denoise** strength and blending the result back along the mask. They do not see
 the hole the way an inpainting model does, so they are best for changing what is there
-(Denoise 0.5–0.8) rather than filling a large empty area. FLUX.2 does not inpaint yet.
+(Denoise 0.5–0.8) rather than filling a large empty area.
+
+**FLUX.2 Klein** inpaints as an edit: write the change as an instruction (`make the jacket red`), not a
+description. It edits the area around your mask and only the masked part is pasted back, so everything
+outside the mask stays exactly as it was. It has no Denoise: the edit always runs in full.
 
 ## The mask editor
 

@@ -18,6 +18,10 @@ changes. *Make it winter*, *turn the car red*, *put a hat on the dog*.
 4. Write the instruction in the **prompt**: `make it a snowy winter evening`.
 5. **Run.**
 
+To change only one part of the picture with FLUX.2, open the **Image** node's page (Default view) and choose **Swap flow →
+Inpaint**: the same picture opens with a **Mask** to paint. Klein then edits around the mask and only the
+masked part is pasted back, so the rest stays exactly as it was ([Inpaint](inpaint.md)).
+
 ## FLUX.2 or Qwen?
 
 | | FLUX.2 Klein 4B | Qwen Image 2.1 |

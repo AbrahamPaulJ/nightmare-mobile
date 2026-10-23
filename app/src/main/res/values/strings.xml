@@ -945,6 +945,7 @@
     <string name="run_object_source_missing">an object\'s source photo can no longer be read. Add it again in the mask editor</string>
     <string name="run_reimagining_picture">re-imagining the picture</string>
     <string name="run_filling_padding">filling the padding</string>
+    <string name="run_editing_marked_area">editing the area you marked</string>
     <string name="run_repainting_marked_area">repainting the area you marked</string>
     <string name="run_controlnet_picture_missing">the ControlNet picture can no longer be read. Pick it again</string>
     <string name="run_ip_adapter_picture_missing">the IP-Adapter picture can no longer be read. Pick it again</string>
@@ -1059,6 +1060,7 @@
     <string name="draw_size">Size</string>
     <string name="draw_opacity">Opacity</string>
     <string name="draw_softness">Softness</string>
+    <string name="draw_note_inpaint">Paint inside the mask what should be there, in its colours and rough shape: the repaint follows them. It paints on the image node, so image to image sees it too.</string>
     <string name="draw_note">Paint over the picture, then run: image to image follows your colours and shapes. The photo itself is kept; the drawing is a layer on it.</string>
     <string name="draw_done">Done</string>
     <string name="draw_on_picture">Draw</string>

@@ -97,10 +97,7 @@ class VideoGraphTest {
         // plus FLUX.2 and Z-Image, neither of which has a REGISTERED inpaint
         // type) plus the one video sampler. Asserted by NUMBER so adding a type
         // without deciding whether it rolls a seed fails here rather than
-        // silently. ⚠⚠ `flux2.inpaint` exists in code and is deliberately not
-        // in `SdSampler.ALL` — see the note there. If this count moves to 10,
-        // somebody registered it, and the measurements that argued against
-        // that need re-taking first.
+        // silently. ⭐ `flux2.inpaint` registered 2026-10-23 (crop, edit, paste back).
         // ⚠ Ten since 2026-09-27: `qwen21.sample` (Qwen Image 2.1, no inpaint
         // type, rolls a seed like every other image sampler). Eleven since
         // 2026-09-28: `krea2.sample` (Krea 2 Turbo, the same shape). Twelve since
@@ -123,9 +120,10 @@ class VideoGraphTest {
         assertTrue(isSampler("moss.sample"))
         // 2026-10-18: `ideogram.sample`, Ideogram 4 (`docs/ROADMAP.md`).
         assertTrue(isSampler("ideogram.sample"))
-        assertEquals(25, SAMPLER_TYPES.size)
-        assertEquals(22, IMAGE_SAMPLER_TYPES.size)
-        assertEquals(9, INPAINT_TYPES.size)
+        assertTrue(isSampler("flux2.inpaint"))
+        assertEquals(26, SAMPLER_TYPES.size)
+        assertEquals(23, IMAGE_SAMPLER_TYPES.size)
+        assertEquals(10, INPAINT_TYPES.size)
     }
 
     @Test

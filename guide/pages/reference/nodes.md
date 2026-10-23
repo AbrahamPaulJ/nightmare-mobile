@@ -128,6 +128,7 @@ Everything the image generator has, plus the mask. Families: **SD 1.5**, **SD 1.
 | setting | what it does |
 |---|---|
 | **Mask** | The area to repaint. [Inpaint](../flows/inpaint.md#the-mask-editor) |
+| **Draw** | Paint colours and rough shapes inside the mask; the repaint follows them. It draws on the image node feeding the inpaint, the same layer as that node's own Draw |
 | **Only masked** | *On (default):* work on a crop around the mask. More detail where you painted |
 | **Stitch to original image** | *Off (default):* the result is the frame you chose. *On:* pasted back into the whole photo |
 | **Grow** | Widen or narrow a tapped or picked area |

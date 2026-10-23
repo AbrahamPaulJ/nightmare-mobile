@@ -683,6 +683,12 @@ fun NodeInspector(
             },
             onClearImage = { onClearImage(nodeId) },
             onSaveDrawing = { onSaveDrawing(nodeId, it) },
+            // ⭐ An inpaint node's Draw tab paints on the Image node feeding it ([DrawSource]).
+            drawSource = if (node.type !in com.abrah.nightmare.INPAINT_TYPES) null else
+                node.inputs["image"]?.node?.let { src -> state.workflow.graph.byId[src] }
+                    ?.takeIf { it.type == "core.image" && !it.params["uri"].isNullOrBlank() }
+                    ?.let { img -> DrawSource(img.id, img.params["uri"].orEmpty(), img.params[com.abrah.nightmare.LoadImageNode.DRAWING].orEmpty()) },
+            onSaveDrawingOn = { id, bmp -> onSaveDrawing(id, bmp) },
             onBlankPicture = { onBlankPicture(nodeId) },
             onSetVideoModel = { neo -> onSetVideoModel(nodeId, neo) },
             swapFlows = swapFlows,
@@ -1027,7 +1033,8 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         // `encode_seed` are not listed because the sampler no longer declares
         // them at all (2026-09-15) — hiding a widget that does not exist is a
         // rule nobody can check.
-        "denoise" -> !hasImage
+        // ⚠ …and not on Klein's inpaint: it always edits the cut whole ([com.abrah.nightmare.SdSampler.FLUX2_INPAINT]).
+        "denoise" -> !hasImage || node.type == com.abrah.nightmare.SdSampler.FLUX2_INPAINT.name
         // The mask half only exists once something is painted or wired.
         com.abrah.nightmare.MaskCropNode.ONLY_MASKED,
         com.abrah.nightmare.PasteNode.STITCH,
@@ -1239,6 +1246,9 @@ internal fun NodeInspectorBody(
     onToggleSeedLock: (SeedLock) -> Unit = {},
     onClearImage: () -> Unit = {},
     onSaveDrawing: (android.graphics.Bitmap?) -> Unit = {},
+    /** ⭐ The Image node an inpaint node's Draw tab paints on; null on every other node. */
+    drawSource: DrawSource? = null,
+    onSaveDrawingOn: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
     onBlankPicture: () -> Unit = {},
     /** ⭐ This video node's model: Wan 2.2 (false) or Neodragon (true). */
     onSetVideoModel: (Boolean) -> Unit = {},
@@ -1505,11 +1515,9 @@ internal fun NodeInspectorBody(
             CheckpointPicker(
                 // ⭐⭐ Derived from the TYPES, not from a hardcoded family list:
                 // a checkpoint is offered here when its family has an inpaint
-                // sampler at all. One source of truth, so registering
-                // `flux2.inpaint` would light this up with nothing to keep in
-                // sync — and NOT registering it keeps FLUX.2 out, which is
-                // where it stands (see `SdSampler.ALL`: the engine honours the
-                // mask and then regenerates nothing inside it).
+                // sampler at all. One source of truth: registering
+                // `flux2.inpaint` (2026-10-23) lit FLUX.2 up here with nothing
+                // to keep in sync.
                 // ⚠ The rule this replaced spelled the exclusion as
                 // "never a DiT model", which was a fact about the engine
                 // hardcoded in the UI.
@@ -2222,6 +2230,7 @@ internal fun NodeInspectorBody(
                 openTab = cropRequestTab,
                 control = controlTile ?: videoTile,
                 ip = ipTile,
+                draw = drawSource?.let { d -> drawTile(d, onSaveDrawingOn) },
             )
         } else {
             cropPanel()
@@ -3666,6 +3675,8 @@ private fun InpaintEditors(
     /** ⭐ SD 1.5 Swap's ControlNet tile, then its IP-Adapter tile, last in the row. */
     control: EditorTile? = null,
     ip: EditorTile? = null,
+    /** ⭐ An inpaint node's Draw tab, after Mask ([drawTile]). */
+    draw: EditorTile? = null,
 ) {
     // ⚠⚠ Keyed on the NODE: the inspector can now switch node under this
     // composable ([NodeStrip]), and an unkeyed `remember` would leave the
@@ -3774,6 +3785,7 @@ private fun InpaintEditors(
     val tiles = buildList {
         if (photo != null) add(EditorTile(stringResource(R.string.crop), framed?.asImageBitmap(), panel = cropPanel))
         if (paints && photo != null) add(EditorTile(stringResource(R.string.inspector_mask), masked, panel = maskPanel))
+        if (paints && photo != null) draw?.let { add(it) }
         // ⚠⚠ Not on SD 1.5 Swap: there the `reference` picture is IP-Adapter's,
         // and its tile crops it (the same `ref_*` region) — two tiles showing
         // one picture read as two inputs (reported 2026-10-01).
@@ -5377,6 +5389,47 @@ private fun InspectorFrame(
             Column(Modifier.fillMaxSize().padding(top = 8.dp), content = content) // ⚠ the keyboard: `belowChrome`
         }
     }
+}
+
+/** ⭐ The Image node an inpaint node's Draw tab paints on: its id, picture and drawing layer. */
+internal data class DrawSource(val nodeId: String, val uri: String, val drawing: String)
+
+/**
+ * ⭐⭐ An inpaint node's **Draw** tab (the user's call, 2026-10-23: the mask and the drawing in one window). It
+ * paints the Image node feeding it, through that node's own [DrawControls], so the doodle reaches the render the
+ * one way it already does (`LoadImageNode.withDrawing`); painted inside the mask, the repaint follows its colours
+ * and shapes (A1111's inpaint sketch).
+ */
+@Composable
+private fun drawTile(src: DrawSource, onSave: (String, android.graphics.Bitmap?) -> Unit): EditorTile {
+    val context = LocalContext.current
+    // ⚠ Off the main thread, at thumbnail size, as every tile is.
+    val thumb by androidx.compose.runtime.produceState<ImageBitmap?>(null, src.uri, src.drawing) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val bytes = if (src.uri.startsWith("content://")) {
+                    context.contentResolver.openInputStream(android.net.Uri.parse(src.uri))?.use { it.readBytes() }
+                } else java.io.File(src.uri).readBytes()
+                bytes?.let { com.abrah.nightmare.ImageStore().decode(it, 768) }
+                    ?.let { com.abrah.nightmare.LoadImageNode.withDrawing(it, src.drawing) }?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    return EditorTile(stringResource(R.string.draw_title), thumb, panel = {
+        thumb?.let {
+            androidx.compose.foundation.Image(
+                it, contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().heightIn(max = pictureCap()).clip(RoundedCornerShape(com.abrah.nightmare.ui.Radius.control)),
+            )
+        }
+        Text(stringResource(R.string.draw_note_inpaint), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        DrawControls(
+            nodeId = src.nodeId, uri = src.uri, drawing = src.drawing,
+            onSaveDrawing = { onSave(src.nodeId, it) },
+            afterBlank = false, onBlankHandled = {},
+        )
+    })
 }
 
 /**

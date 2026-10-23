@@ -42,9 +42,7 @@ package com.abrah.nightmare
  * would carry "stay resident" to a 12 GB one and kill it; it would join
  * [cacheKey] like any other param, re-rendering the node and everything
  * downstream to produce an identical picture unless specially excluded the way
- * `batch:` is; and an inpaint node can never BE a DiT model
- * ([SdSampler.ALL] has no `flux2.inpaint`), so the knob would have been inert
- * on half the nodes it appeared on.
+ * `batch:` is.
  */
 object Residency {
 

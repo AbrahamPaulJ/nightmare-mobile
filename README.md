@@ -72,7 +72,9 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **A real inpainting model**: AbsoluteReality Inpaint sees the hole it fills.
 
 ### Editing
-- **Inpaint and outpaint**: paint a mask, or zoom the frame out past the photo and the padding is generated.
+- **Inpaint and outpaint**: paint a mask, or zoom the frame out past the photo and the padding is generated. FLUX.2
+  Klein inpaints as an edit: it edits around the mask and only the masked part is pasted back. **Draw** in the
+  same window paints colours and rough shapes for the repaint to follow.
 - **Tap to select**: tap an object and the mask follows its outline (Segment Anything 2.1).
 - **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.

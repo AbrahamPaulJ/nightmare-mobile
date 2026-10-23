@@ -139,12 +139,45 @@ class DitRefLogTest {
     }
 }
 
+/**
+ * ⭐⭐ Klein inpaint is crop, EDIT, paste back (`SdSampler.FLUX2_INPAINT`, 2026-10-23): the engine gets the cut with
+ * NO mask and strength 1, because with a mask Klein redraws almost nothing inside it (measured 2026-09-20).
+ */
+@RunWith(RobolectricTestRunner::class)
+class FluxInpaintTest {
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    @Test
+    fun kleinEditsTheCutWholeAndTheMaskStaysInTheApp() = runBlocking {
+        val host = WholeRenderHost()
+        val f = tmp.newFile("photo.png").apply { writeBytes(ditSolidPng(64, 64, 0xFF3366AA.toInt())) }
+        val g = Graph(listOf(
+            Node("prompt", "core.prompt", mapOf("prompt" to "make it red", "negative" to "")),
+            Node("photo", "core.image", mapOf("uri" to f.absolutePath)),
+            Node("s", SdSampler.FLUX2_INPAINT.name, mapOf(
+                "model" to "flux2_klein_4b", "width" to "512", "height" to "512", "steps" to "4", "seed" to "1",
+                MaskNode.OPS to "s0.3:0.5,0.5~0,0.02",
+            ), sources("prompt" to "prompt", "image" to "photo")),
+        ))
+        val r = Executor(host, android = ApplicationProvider.getApplicationContext()).run(g)
+        assertEquals(null, r.error)
+        assertEquals("no mask reaches Klein", null, host.mask)
+        assertEquals(1.0, host.denoise!!, 0.0)
+        assertTrue(SdSampler.canInpaint(Family.FLUX2))
+    }
+}
+
 private class WholeRenderHost : OpHost {
     /** The last scheduler a whole render was sent. */
     var scheduler: String? = null
 
     /** The references the last whole render was sent, in order. */
     var refs: List<ByteArray> = emptyList()
+
+    /** The last whole render's mask and strength. */
+    var mask: ByteArray? = null
+    var denoise: Double? = null
 
     override suspend fun residentHandles(): Set<String> = emptySet()
 
@@ -158,6 +191,8 @@ private class WholeRenderHost : OpHost {
     ): Ops.Result<Ops.Decoded> {
         this.scheduler = scheduler
         this.refs = referencePngs
+        this.mask = maskPng
+        this.denoise = denoise
         return Ops.Result.Ok(Ops.Decoded(ditSolidPng(width, height, 0xFF112233.toInt()), "sha", 1L, 2L))
     }
 
