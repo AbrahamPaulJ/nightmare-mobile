@@ -163,8 +163,12 @@ class FluxInpaintTest {
         val r = Executor(host, android = ApplicationProvider.getApplicationContext()).run(g)
         assertEquals(null, r.error)
         assertEquals("no mask reaches Klein", null, host.mask)
-        assertEquals(1.0, host.denoise!!, 0.0)
+        assertEquals("Klein inpaint starts at the full edit", 1.0, host.denoise!!, 0.0)
         assertTrue(SdSampler.canInpaint(Family.FLUX2))
+        // ⭐ …and a Denoise the user set reaches the engine (the user, 2026-10-23: let people experiment).
+        val tried = Graph(g.nodes.map { if (it.id == "s") it.copy(params = it.params + ("denoise" to "0.7")) else it })
+        assertEquals(null, Executor(host, android = ApplicationProvider.getApplicationContext()).run(tried).error)
+        assertEquals(0.7, host.denoise!!, 1e-9)
     }
 }
 

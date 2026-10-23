@@ -311,7 +311,7 @@ internal fun NameDialog(
                 enabled = name.isNotBlank() && name.trim() != initial,
             ) { Text(confirm) }
         },
-        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

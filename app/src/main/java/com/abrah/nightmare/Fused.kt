@@ -922,8 +922,9 @@ class SdSampler(
         // ⚠ Read only when a picture is wired AND `start_from` is `image`.
         // ⚠ An INPAINT node starts at 0.65 on every family: FLUX.2 / Qwen's 1.0
         // is their EDIT mode, and on a masked img2img it would repaint the whole
-        // cut with nothing tying it to its surroundings.
-        Widget("denoise", "float", if (inpaint) INPAINT_DENOISE else defaultDenoise(family), 0.0, 1.0),
+        // cut with nothing tying it to its surroundings. ⭐ Except Klein's inpaint, which IS an edit of the cut
+        // ([FLUX2_INPAINT]): 1.0 there, like its Image edit, and lower for the user to try (the user, 2026-10-23).
+        Widget("denoise", "float", if (inpaint && family != Family.FLUX2) INPAINT_DENOISE else defaultDenoise(family), 0.0, 1.0),
         Widget(
             "scheduler", "string", defaultSpec().scheduler,
             options = ModelCatalog.schedulersFor(family),
@@ -1868,7 +1869,7 @@ class SdSampler(
      * built, so the engine sees exactly the frame the user painted on.
      */
     /**
-     * ⭐ Klein's half of [FLUX2_INPAINT]: the cut as a plain edit, NO mask and strength 1, so the base is reference 1
+     * ⭐ Klein's half of [FLUX2_INPAINT]: the cut as a plain edit, NO mask and (by default) strength 1, so the base is reference 1
      * only and the full distilled schedule runs (what the Edit flow sends), with the node's wired `reference` after it.
      * [finishInpaint] then pastes it back along the mask.
      */
@@ -1898,7 +1899,9 @@ class SdSampler(
             width = w,
             height = h,
             imagePng = imagePng,
-            denoise = 1.0,
+            // ⭐ The node's Denoise, 1.0 by default (the full edit); below it Klein starts from the cut as well
+            // (`edit_from_base`) and tends to keep it, as on Image edit (the user's call: let people try).
+            denoise = p["denoise"]?.toDoubleOrNull() ?: 1.0,
             referencePngs = refs,
             loras = lorasFor(ctx, p[LORAS]),
             onProgress = ctx.onProgress,

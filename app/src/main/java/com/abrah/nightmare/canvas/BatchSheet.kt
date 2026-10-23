@@ -2,6 +2,7 @@ package com.abrah.nightmare.canvas
 
 import com.abrah.nightmare.ui.StudioButton
 import com.abrah.nightmare.ui.StudioTextButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -189,7 +190,7 @@ fun BatchSheet(
                 )
             }
         },
-        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

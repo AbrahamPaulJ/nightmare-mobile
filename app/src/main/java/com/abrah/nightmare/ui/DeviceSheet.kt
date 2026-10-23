@@ -106,7 +106,7 @@ fun DeviceSheet(caps: DeviceProbe.Caps, onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
+        confirmButton = { StudioButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
     )
 }
 

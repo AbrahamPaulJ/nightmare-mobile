@@ -1,6 +1,7 @@
 package com.abrah.nightmare.canvas
 
 import com.abrah.nightmare.ui.StudioTextButton
+import com.abrah.nightmare.ui.StudioButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
@@ -45,7 +46,7 @@ import com.abrah.nightmare.ui.NoteTextStyle
 internal fun MotionModeInfo(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        confirmButton = { StudioButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
         title = { Text(stringResource(R.string.motion_info_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {

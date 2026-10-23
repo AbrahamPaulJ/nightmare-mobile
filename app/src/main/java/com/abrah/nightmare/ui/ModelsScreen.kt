@@ -346,7 +346,7 @@ fun ModelsScreen(
             },
             // ⚠ ONE action button. Choosing a flow IS the confirmation, so
             // there is nothing for a confirm button to do.
-            confirmButton = { StudioTextButton(onClick = onCancelUse) { Text(stringResource(R.string.cancel)) } },
+            confirmButton = { StudioButton(onClick = onCancelUse) { Text(stringResource(R.string.cancel)) } },
         )
     }
 

@@ -119,9 +119,9 @@ fun TransferDialog(
                 }
             }
         },
-        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
         confirmButton = {
-            StudioTextButton(enabled = picks.isNotEmpty(), onClick = { onApply(picks, append) }) {
+            StudioButton(enabled = picks.isNotEmpty(), onClick = { onApply(picks, append) }) {
                 Text(stringResource(R.string.transfer_use))
             }
         },

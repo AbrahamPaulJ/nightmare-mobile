@@ -170,17 +170,17 @@ fun ErrorDetails(
             }
         },
         confirmButton = {
-            StudioTextButton(onClick = {
+            StudioButton(onClick = {
                 runCatching { com.abrah.nightmare.Share.report(ctx, text) }
                 onDismiss()
             }) { Text(stringResource(R.string.err_share)) }
         },
         dismissButton = {
             Row {
-                StudioTextButton(onClick = { clipboard.setText(AnnotatedString(text)) }) {
+                StudioOutlinedButton(onClick = { clipboard.setText(AnnotatedString(text)) }) {
                     Text(stringResource(R.string.err_copy))
                 }
-                StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+                StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
             }
         },
     )

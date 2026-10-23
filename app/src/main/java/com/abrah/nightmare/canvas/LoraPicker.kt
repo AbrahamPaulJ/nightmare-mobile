@@ -3,6 +3,7 @@ package com.abrah.nightmare.canvas
 import com.abrah.nightmare.ui.studio
 import com.abrah.nightmare.ui.StudioOutlinedButton
 import com.abrah.nightmare.ui.StudioTextButton
+import com.abrah.nightmare.ui.StudioButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -118,7 +119,7 @@ fun LoraPicker(
         text = {
             LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt, onReplacePrompt, onDelete, library, nodeBase, experimental, allowNegative)
         },
-        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
+        confirmButton = { StudioButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
         // ⚠ The dismiss SLOT, so Files sits left of Done — the same
         // "destructive-or-secondary left, primary right" order `ModelAction`
         // and `PictureActions` keep (`docs/UI.md` §8.1, §8.3).
@@ -611,7 +612,7 @@ fun LoraNoteDialog(
                 }
             }
         },
-        confirmButton = { StudioTextButton(onClick = ::close) { Text(stringResource(R.string.crop_done)) } },
+        confirmButton = { StudioButton(onClick = ::close) { Text(stringResource(R.string.crop_done)) } },
     )
 }
 
@@ -676,8 +677,8 @@ internal fun LoraWeightDialog(
             )
         },
         confirmButton = {
-            StudioTextButton(onClick = { parsed?.let(onSet) }, enabled = parsed != null) { Text(stringResource(R.string.lora_weight_set)) }
+            StudioButton(onClick = { parsed?.let(onSet) }, enabled = parsed != null) { Text(stringResource(R.string.lora_weight_set)) }
         },
-        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }

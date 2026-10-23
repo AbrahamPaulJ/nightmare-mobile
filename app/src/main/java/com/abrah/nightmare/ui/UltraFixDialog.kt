@@ -63,9 +63,9 @@ fun UltraFixDialog(start: UltraFix.Params, onConfirm: (UltraFix.Params) -> Unit,
             }
         },
         // ⚠ Cancel left, the doing one right (`docs/UI.md` §8.1).
-        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
         confirmButton = {
-            StudioTextButton(onClick = { onConfirm(p.copy(denoiseSteps = p.denoiseSteps.coerceAtMost(denoiseMax))) }) {
+            StudioButton(onClick = { onConfirm(p.copy(denoiseSteps = p.denoiseSteps.coerceAtMost(denoiseMax))) }) {
                 Text(stringResource(R.string.ultrafix_title))
             }
         },

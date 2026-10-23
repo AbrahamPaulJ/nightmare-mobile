@@ -51,8 +51,8 @@ android {
         // a minor bump per push, which is what the rule exists to stop. The
         // minor moves only when a release is called a release. âš  versionCode
         // stays a plain incrementing integer; Android requires that.
-        versionCode = 530
-        versionName = "1.6.223"
+        versionCode = 531
+        versionName = "1.6.224"
         ndk { abiFilters += "arm64-v8a" }
 
         // The plugin runtime and the NPU runner, both built from source.

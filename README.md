@@ -47,7 +47,7 @@ and it downloads on first use; the app shows which ones your phone can run.
   30 seconds at 25 fps. The photo keeps its own pose and follows the video's changes. About 0.2 s a frame on an 8 Elite,
   no checkpoint involved; the same Faces download.
 - **Colour**: **Match colours** on the Image node keeps an image to image, inpaint or Fix faces result in the colours of
-  the picture going in; **Auto colour** and **Adjust colours** (brightness, contrast, saturation, warmth) on the Output node.
+  the picture going in; **Colour correction** and **Adjust colours** (brightness, contrast, saturation, warmth) on the Output node, after every Run or on the last picture at a tap, without rendering it again.
 - **LoRA library**: sort LoRAs by name, newest, most used or size, filter by base model, star favourites, set a LoRA's model by hand when its file is not recognised, and sort them into your own folders.
 - **Draw on a picture**: doodle shapes and colours over the image node's photo (or a blank page) and let image to image make them real; pinch to zoom, pick a colour from the picture or any colour from a picker.
 - **Recipes**: text to image, image to image, inpaint, upscale, edit a face, image edit, text / image to video, motion transfer and two Advanced flows, listed from least to most demanding; one your phone can't run says so.

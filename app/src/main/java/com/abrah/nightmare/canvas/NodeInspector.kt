@@ -2,9 +2,13 @@ package com.abrah.nightmare.canvas
 
 import com.abrah.nightmare.ui.studio
 import com.abrah.nightmare.ui.StudioTextButton
+import com.abrah.nightmare.ui.StudioButton
+import com.abrah.nightmare.ui.StudioOutlinedButton
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.async
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -316,8 +320,8 @@ fun NodeInspector(
     loraEpoch: Int = 0,
     /** ⭐⭐ Enlarge the node's picture by editing the flow behind it. */
     onUpscale: ((String) -> Unit)? = null,
-    /** ⭐ Re-run only the Output's post-processing on the last picture ([com.abrah.nightmare.HarnessViewModel.applyPostNow]). */
-    onApplyPostNow: (() -> Unit)? = null,
+    /** ⭐ Apply one post-processing step to the last picture now ([com.abrah.nightmare.HarnessViewModel.applyPostNow]). */
+    onApplyPostNow: ((String) -> Unit)? = null,
     /** ⭐⭐⭐ Drop the enlargement, keeping what the node received. */
     onDropEnlargement: ((String) -> Unit)? = null,
     /** ⭐⭐⭐ Drop what the node received, keeping the enlargement. */
@@ -910,17 +914,55 @@ internal val OUTPUT_POST = setOf(
     com.abrah.nightmare.MediaOutputNode.BRIGHTNESS, com.abrah.nightmare.MediaOutputNode.CONTRAST, com.abrah.nightmare.MediaOutputNode.SATURATION, com.abrah.nightmare.MediaOutputNode.WARMTH,
 )
 
+/** ⭐ The Output switches drawn as cards ([OutputPostCard]), in the knob order. */
+internal val OUTPUT_POST_CARDS = setOf(com.abrah.nightmare.MediaOutputNode.UPSCALE, com.abrah.nightmare.MediaOutputNode.AUTO_COLOR, com.abrah.nightmare.MediaOutputNode.ADJUST)
+
 /**
- * ⭐ **Apply now** (the user's call, 2026-10-23): the Output's post-processing on the picture it already has,
- * without locking a seed — the flow reruns on its last seeds, so only this step works.
+ * ⭐⭐ One post-processing step on the Output node, as the user's mock (2026-10-23): an icon tile, the name and what it
+ * does, then **After every Run** (the switch, [com.abrah.nightmare.ui.SwitchRow]) beside a button that applies the step
+ * to the last picture NOW ([com.abrah.nightmare.HarnessViewModel.applyPostNow]: no render, no seed locked). Its
+ * upscaler choice or sliders follow it in the knob list.
  */
 @Composable
-private fun ApplyPostNowButton(onClick: () -> Unit, busy: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        com.abrah.nightmare.ui.StudioOutlinedButton(onClick = onClick, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.post_apply_now))
+private fun OutputPostCard(
+    name: String,
+    checked: Boolean,
+    enabled: Boolean,
+    locked: String?,
+    divider: Boolean,
+    onChange: (Boolean) -> Unit,
+    onNow: (() -> Unit)?,
+    busy: Boolean,
+) {
+    val (icon, title, desc, button) = when (name) {
+        com.abrah.nightmare.MediaOutputNode.UPSCALE -> listOf(com.abrah.nightmare.ui.UpscaleIcon, R.string.post_upscale_title, R.string.post_upscale_desc, R.string.post_upscale_now)
+        com.abrah.nightmare.MediaOutputNode.AUTO_COLOR -> listOf(com.abrah.nightmare.ui.SparkleIcon, R.string.post_colour_title, R.string.post_colour_desc, R.string.post_colour_now)
+        else -> listOf(com.abrah.nightmare.ui.TuneIcon, R.string.post_adjust_title, R.string.post_adjust_desc, R.string.post_adjust_now)
+    }
+    if (divider) androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(com.abrah.nightmare.ui.Radius.control))
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon as androidx.compose.ui.graphics.vector.ImageVector, contentDescription = null, tint = MaterialTheme.studio.accentText)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(title as Int), style = MaterialTheme.typography.titleMedium)
+                Text(locked ?: stringResource(desc as Int), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Text(stringResource(R.string.post_apply_now_hint), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            com.abrah.nightmare.ui.SwitchRow(
+                stringResource(R.string.post_every_run), null, checked, onChange,
+                modifier = Modifier.weight(1f), enabled = enabled,
+            )
+            if (onNow != null) com.abrah.nightmare.ui.StudioOutlinedButton(onClick = onNow, enabled = enabled && !busy) {
+                Text(stringResource(button as Int))
+            }
+        }
     }
 }
 
@@ -1000,16 +1042,8 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // pair of chips and a line of help text about something the node does not
     // do — and it sat directly under the checkbox that decides, so it read as
     // part of it.
-    if ((name == com.abrah.nightmare.MediaOutputNode.UPSCALER || name == com.abrah.nightmare.MediaOutputNode.SCALE) &&
-        !com.abrah.nightmare.MediaOutputNode.autoUpscales(node)
-    ) return true
-    // ⭐ The colour sliders only while Adjust colours is on: the same rule.
-    if (name in setOf(
-            com.abrah.nightmare.MediaOutputNode.BRIGHTNESS, com.abrah.nightmare.MediaOutputNode.CONTRAST,
-            com.abrah.nightmare.MediaOutputNode.SATURATION, com.abrah.nightmare.MediaOutputNode.WARMTH,
-        ) && node.type == com.abrah.nightmare.MediaOutputNode.name &&
-        !isOn(node.params[com.abrah.nightmare.MediaOutputNode.ADJUST])
-    ) return true
+    // ⚠ Rule changed 2026-10-23: shown whether or not Auto upscale is on, because the card's Upscale button uses them.
+    // ⚠ The colour sliders show whether or not Adjust colours is on (2026-10-23): its Adjust button applies them now.
     // ⭐ Fix strength and Fix seed only while Fix faces or Fix hands is on: the Upscaler chooser's rule, above.
     if ((name == com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE || name == com.abrah.nightmare.detail.Detailer.FIX_SEED) &&
         !isOn(node.params[com.abrah.nightmare.detail.Detailer.FIX_FACES]) &&
@@ -1050,8 +1084,7 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         // `encode_seed` are not listed because the sampler no longer declares
         // them at all (2026-09-15) — hiding a widget that does not exist is a
         // rule nobody can check.
-        // ⚠ …and not on Klein's inpaint: it always edits the cut whole ([com.abrah.nightmare.SdSampler.FLUX2_INPAINT]).
-        "denoise" -> !hasImage || node.type == com.abrah.nightmare.SdSampler.FLUX2_INPAINT.name
+        "denoise" -> !hasImage
         // The mask half only exists once something is painted or wired.
         com.abrah.nightmare.MaskCropNode.ONLY_MASKED,
         com.abrah.nightmare.PasteNode.STITCH,
@@ -1354,8 +1387,8 @@ internal fun NodeInspectorBody(
     onInstallControlNet: ((String) -> Unit)? = null,
     onDeleteControlNet: ((String) -> Unit)? = null,
     busy: Boolean = false,
-    /** ⭐ The Output node's Apply now ([com.abrah.nightmare.HarnessViewModel.applyPostNow]); null draws no button. */
-    onApplyPostNow: (() -> Unit)? = null,
+    /** ⭐ A post-processing card's button: apply that step to the last picture now ([com.abrah.nightmare.HarnessViewModel.applyPostNow]). */
+    onApplyPostNow: ((String) -> Unit)? = null,
     /** ⭐⭐ What made this picture — the rows for [com.abrah.nightmare.ui.ResultInfoDialog]. */
     onInfo: (() -> List<Pair<String, String>>)? = null,
     /** ⚠ For a golden only: draw the inpaint popup's tab INLINE, since a Dialog is a window a screenshot cannot reach. */
@@ -1482,24 +1515,26 @@ internal fun NodeInspectorBody(
                 Spacer(Modifier.weight(1f))
                 if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && swapFlows.size > 1) {
                     var choosing by remember(nodeId) { mutableStateOf(false) }
-                    com.abrah.nightmare.ui.LabeledAction(
-                        com.abrah.nightmare.ui.SwapIcon, stringResource(R.string.swap_flow), { choosing = true },
-                    )
+                    // ⭐ An icon only, at the name's end (the user's mock, 2026-10-23).
+                    IconButton(onClick = { choosing = true }) {
+                        Icon(com.abrah.nightmare.ui.SwapIcon, contentDescription = stringResource(R.string.swap_flow), tint = MaterialTheme.studio.accentText)
+                    }
                     if (choosing) SwapFlowDialog(swapFlows, onPick = { choosing = false; onSwapFlow(it) }, onDismiss = { choosing = false })
                 }
                 if (node.type == "core.image") swapFlows.firstOrNull { !it.takesPicture }?.let { t2i ->
                     var confirming by remember(nodeId) { mutableStateOf(false) }
-                    com.abrah.nightmare.ui.LabeledAction(
-                        Icons.Filled.Close, stringResource(R.string.remove_input), { confirming = true },
-                    )
+                    // ⭐ The card's ✕ (the user's mock, 2026-10-23): it asks first, so an icon is enough.
+                    IconButton(onClick = { confirming = true }) {
+                        Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.remove_input), tint = MaterialTheme.colorScheme.onSurface)
+                    }
                     if (confirming) androidx.compose.material3.AlertDialog(
                         onDismissRequest = { confirming = false },
                         title = { Text(stringResource(R.string.remove_input_title)) },
                         text = { Text(stringResource(R.string.remove_input_body)) },
                         confirmButton = {
-                            StudioTextButton(onClick = { confirming = false; onSwapFlow(t2i.recipe) }) { Text(stringResource(R.string.remove_input)) }
+                            StudioButton(onClick = { confirming = false; onSwapFlow(t2i.recipe) }) { Text(stringResource(R.string.remove_input)) }
                         },
-                        dismissButton = { StudioTextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
+                        dismissButton = { StudioOutlinedButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
                     )
                 }
             }
@@ -2419,12 +2454,15 @@ internal fun NodeInspectorBody(
             // ⭐ Blank page lives IN the empty frame now (the user's mock, 2026-10-11); the draw
             // sheet opens once the blank picture has landed ([DrawControls]).
             var afterBlank by remember(nodeId) { mutableStateOf(false) }
+            // ⭐ Draw is a tile in the picture's row (the user's mock, 2026-10-23); the sheet stays [DrawControls]'.
+            var drawRequest by remember(nodeId) { androidx.compose.runtime.mutableIntStateOf(0) }
             ImagePicker(
                 current = node.params["uri"].orEmpty(),
                 onPicked = { uri -> onSetParam(nodeId, "uri", uri) },
                 onClear = onClearImage,
                 emptyHeight = pictureCap(),
                 onBlank = { afterBlank = true; onBlankPicture() },
+                onDraw = { drawRequest++ },
             )
             DrawControls(
                 nodeId = nodeId,
@@ -2433,6 +2471,8 @@ internal fun NodeInspectorBody(
                 onSaveDrawing = onSaveDrawing,
                 afterBlank = afterBlank,
                 onBlankHandled = { afterBlank = false },
+                openRequest = drawRequest,
+                buttons = false,
             )
         }
         // ⭐ The Video node's own controls, where the image node's are ([VideoPicker]).
@@ -2806,6 +2846,19 @@ internal fun NodeInspectorBody(
             if (w.name == com.abrah.nightmare.AddObjects.ENABLE) continue
             // ⚠ …and the same for Pick by name, drawn in the same place.
             if (w.name == com.abrah.nightmare.SdSampler.PICK_SELECT) continue
+            // ⭐ The Output node's three post-processing switches are CARDS ([OutputPostCard], the user's mock 2026-10-23).
+            if (isOutput && w.name in OUTPUT_POST_CARDS) {
+                OutputPostCard(
+                    w.name,
+                    checked = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true),
+                    enabled = why == null, locked = why,
+                    divider = w.name != com.abrah.nightmare.MediaOutputNode.UPSCALE,
+                    onChange = { v -> if (why == null) onSetParam(nodeId, w.name, v.toString()) },
+                    onNow = onApplyPostNow?.let { now -> { now(w.name) } },
+                    busy = busy,
+                )
+                continue
+            }
             if (w.type == "bool") {
                 BoolKnobRow(
                     label = if (why != null) stringResource(R.string.knob_locked, w.name.localizedKnobLabel())
@@ -3115,8 +3168,6 @@ internal fun NodeInspectorBody(
                 )
             }
             }        }
-        // ⭐ Apply now, at the end of the Output node's open Post-processing fold ([ApplyPostNowButton]).
-        if (pass == 1 && isOutput && onApplyPostNow != null) ApplyPostNowButton(onApplyPostNow, busy)
         }
         }
         knobList()
@@ -4192,7 +4243,7 @@ private fun DescribeToggle(
                 }
             },
             confirmButton = {},
-            dismissButton = { StudioTextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioOutlinedButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
         )
         working -> AlertDialog(
             onDismissRequest = close,
@@ -4204,7 +4255,7 @@ private fun DescribeToggle(
                 }
             },
             confirmButton = {},
-            dismissButton = { StudioTextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioOutlinedButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
         )
         else -> AlertDialog(
             onDismissRequest = close,
@@ -4261,7 +4312,7 @@ private fun DescribeToggle(
                 }
             },
             confirmButton = {},
-            dismissButton = { StudioTextButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioOutlinedButton(onClick = close) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
@@ -4511,7 +4562,7 @@ private fun BatchDialog(
             }
         },
         confirmButton = {
-            StudioTextButton(
+            StudioButton(
                 onClick = { onSet(spec); onDismiss() },
                 enabled = why == null,
             ) { Text(stringResource(if (armedValues.isEmpty()) R.string.inspector_release else R.string.inspector_arm)) }
@@ -4520,9 +4571,9 @@ private fun BatchDialog(
             // ⚠ Release reachable WITHOUT dragging a slider to nothing — one
             // tap, the same as the run bar's ✕.
             if (com.abrah.nightmare.BatchParams.armed(node, widget.name) != null) {
-                StudioTextButton(onClick = { onSet(""); onDismiss() }) { Text(stringResource(R.string.inspector_release)) }
+                StudioOutlinedButton(onClick = { onSet(""); onDismiss() }) { Text(stringResource(R.string.inspector_release)) }
             } else {
-                StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+                StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             }
         },
     )
@@ -4884,6 +4935,8 @@ private fun ImagePicker(
     emptyHeight: androidx.compose.ui.unit.Dp = 140.dp,
     /** ⭐ "Blank page", the frame's right half; null draws the old single + frame. */
     onBlank: (() -> Unit)? = null,
+    /** ⭐ The Draw tile beside the picker's ([ImageActions] tiles); null draws none. */
+    onDraw: (() -> Unit)? = null,
 ) {
     val pick = rememberImagePick(onPicked)
 
@@ -4952,6 +5005,8 @@ private fun ImagePicker(
                 ImageActions(
                     onPick = pick,
                     onClear = onClear,
+                    onDraw = onDraw,
+                    tiles = true,
                 )
                 // ⭐⭐⭐ **The FILE's name, not the URI.** The user's call,
                 // 2026-09-22: *"show the correct image name not the content://
@@ -4970,7 +5025,7 @@ private fun ImagePicker(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 4.dp),
+                    modifier = Modifier.padding(start = 12.dp),
                 )
             }
         }
@@ -5018,7 +5073,7 @@ private fun SwapFlowDialog(
                 }
             }
         },
-        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { StudioButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -5056,7 +5111,34 @@ private fun PickerHalf(
  * the same two jobs.
  */
 @Composable
-internal fun ImageActions(onPick: () -> Unit, onClear: () -> Unit, tint: Color? = null) {
+internal fun ImageActions(
+    onPick: () -> Unit,
+    onClear: () -> Unit,
+    tint: Color? = null,
+    /** ⭐ The Draw tile, shown with [tiles]. */
+    onDraw: (() -> Unit)? = null,
+    /**
+     * ⭐ The Image node's row as square tiles (the user's mock, 2026-10-23): Photos (filled), Files, Draw, Delete (red),
+     * then the name. ⚠ The fullscreen viewer keeps the plain icons over its picture.
+     */
+    tiles: Boolean = false,
+) {
+    if (tiles) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            ActionTile(painterResource(R.drawable.ic_gallery), stringResource(R.string.inspector_cd_choose_different), filled = true, onClick = onPick)
+            (onPick as? ImagePick)?.let {
+                ActionTile(androidx.compose.ui.graphics.vector.rememberVectorPainter(com.abrah.nightmare.ui.FolderIcon), stringResource(R.string.pick_files), onClick = it.files)
+            }
+            onDraw?.let {
+                ActionTile(androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Filled.Edit), stringResource(R.string.draw_on_picture), onClick = it)
+            }
+            ActionTile(
+                androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Filled.Delete), stringResource(R.string.inspector_cd_remove_picture),
+                danger = true, onClick = onClear,
+            )
+        }
+        return
+    }
     IconButton(onClick = onPick) {
         Icon(
             painterResource(R.drawable.ic_gallery),
@@ -5075,6 +5157,36 @@ internal fun ImageActions(onPick: () -> Unit, onClear: () -> Unit, tint: Color? 
             contentDescription = stringResource(R.string.inspector_cd_remove_picture),
             tint = tint ?: MaterialTheme.colorScheme.error,
         )
+    }
+}
+
+/** ⭐ One square tile of [ImageActions]' row: 48dp, the control corner, outlined; [filled] violet, [danger] a red glyph. */
+@Composable
+private fun ActionTile(
+    painter: androidx.compose.ui.graphics.painter.Painter,
+    description: String,
+    filled: Boolean = false,
+    danger: Boolean = false,
+    onClick: () -> Unit,
+) {
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(com.abrah.nightmare.ui.Radius.control),
+        color = if (filled) MaterialTheme.colorScheme.primary else Color.Transparent,
+        border = if (filled) null else BorderStroke(1.dp, MaterialTheme.studio.controlBorder),
+        modifier = Modifier.size(48.dp).semantics { this.contentDescription = description },
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter, contentDescription = null,
+                tint = when {
+                    filled -> MaterialTheme.colorScheme.onPrimary
+                    danger -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
+                modifier = Modifier.size(22.dp),
+            )
+        }
     }
 }
 
@@ -5466,11 +5578,16 @@ private fun DrawControls(
     /** ⭐ Blank page was tapped in the empty frame ([ImagePicker]); open the sheet once it lands. */
     afterBlank: Boolean,
     onBlankHandled: () -> Unit,
+    /** ⭐ Bumped by a Draw tile elsewhere ([ImageActions]) to open the sheet. */
+    openRequest: Int = 0,
+    /** ⚠ False when the Draw tile lives in the picture's row: only the sheet is drawn here. */
+    buttons: Boolean = true,
 ) {
     var open by remember(nodeId) { mutableStateOf(false) }
     LaunchedEffect(uri, afterBlank) { if (afterBlank && uri.isNotBlank()) { onBlankHandled(); open = true } }
+    LaunchedEffect(openRequest) { if (openRequest > 0 && uri.isNotBlank()) open = true }
     if (uri.isBlank() && drawing.isBlank()) return
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    if (buttons) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (uri.isNotBlank()) {
             com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Edit, stringResource(R.string.draw_on_picture), { open = true })
         }

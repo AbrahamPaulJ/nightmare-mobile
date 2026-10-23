@@ -76,13 +76,13 @@ fun CrashNotice(report: CrashReport.Report, onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        confirmButton = { StudioButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
         // ⭐ The report as text, for a bug report: what happened, while doing what, and the
         // evidence (the breadcrumb's RAM per node, then any tombstone).
         dismissButton = {
             val clipboard = LocalClipboardManager.current
             val during = report.doing?.let { stringResource(R.string.crash_during, it) }
-            StudioTextButton(onClick = {
+            StudioOutlinedButton(onClick = {
                 clipboard.setText(
                     AnnotatedString(listOfNotNull(report.headline, during, report.trace).joinToString("\n\n")),
                 )

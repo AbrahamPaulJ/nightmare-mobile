@@ -487,7 +487,7 @@ private fun ColorPickerDialog(initial: Int, onPick: (Int) -> Unit, onDismiss: ()
         confirmButton = {
             StudioButton(onClick = { onPick(chosen.toArgb()); onDismiss() }) { Text(stringResource(R.string.draw_use_color)) }
         },
-        dismissButton = { com.abrah.nightmare.ui.StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { com.abrah.nightmare.ui.StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

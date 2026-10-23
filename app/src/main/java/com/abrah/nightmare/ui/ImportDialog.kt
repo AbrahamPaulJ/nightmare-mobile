@@ -93,7 +93,7 @@ fun ImportDialog(onDismiss: () -> Unit, onChoose: (name: String) -> Unit) {
             }
         },
         confirmButton = { StudioButton(onClick = { onChoose(trimmed) }, enabled = ok) { Text(stringResource(R.string.import_choose_file)) } },
-        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -129,6 +129,6 @@ fun FamilyAskDialog(onAnswer: (Family?) -> Unit) {
                 }
             }
         },
-        confirmButton = { StudioTextButton(onClick = { onAnswer(null) }) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { StudioButton(onClick = { onAnswer(null) }) { Text(stringResource(R.string.cancel)) } },
     )
 }

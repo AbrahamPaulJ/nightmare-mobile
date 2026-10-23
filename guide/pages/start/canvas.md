@@ -168,12 +168,12 @@ A flow with two or more Image nodes (generate, then inpaint) shows one chip, e.g
 
 ## Swap flow and Remove input (Default view)
 
-On a flow with one Image node, its page has **Swap flow**: open another flow for the same
+On a flow with one Image node, its page has **Swap flow**, the two-arrow icon at the end of its name: open another flow for the same
 model (text to image, image to image, inpaint, ...). The prompt, seed, steps, CFG, sampler,
 size, LoRAs and the picture come with you; a mask does not.
 
-On the picture's page, **Remove input** takes the flow back to text to image, keeping the
-prompt and settings.
+On the picture's page, the **✕** at the end of its name (**Remove input**) takes the flow back to
+text to image, keeping the prompt and settings. It asks first.
 
 ## Saving your work
 

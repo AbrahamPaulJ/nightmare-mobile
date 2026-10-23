@@ -41,7 +41,7 @@ fun ConfirmDelete(
             StudioDangerButton(onClick = { onDismiss(); onConfirm() }) { Text(confirmLabel) }
         },
         dismissButton = {
-            StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }

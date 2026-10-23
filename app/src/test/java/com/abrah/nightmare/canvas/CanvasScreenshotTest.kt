@@ -544,6 +544,32 @@ open class CanvasScreenshotTest {
     }
 
     /**
+     * ⭐ The Output node's Post-processing open (the user's mock, 2026-10-23): three cards, each an icon tile, its name
+     * and what it does, then After every Run beside its Upscale / Correct / Adjust button, the sliders under Adjust.
+     */
+    @Test
+    fun theOutputsPostProcessingCards() {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        // ⚠ The fold's open state is an app pref: put back after, or every later sheet golden draws its fold open.
+        com.abrah.nightmare.Prefs.setMoreOptionsOpen(ctx, true)
+        try { outputPost() } finally { com.abrah.nightmare.Prefs.setMoreOptionsOpen(ctx, false) }
+    }
+
+    private fun outputPost() = shoot("inspector-output-post") {
+        Surface(Modifier.fillMaxSize()) {
+            NodeInspectorBody(
+                nodeId = "out",
+                node = Node("out", com.abrah.nightmare.MediaOutputNode.name, params = mapOf("auto_colour" to "true")),
+                type = NODE_TYPES[com.abrah.nightmare.MediaOutputNode.name],
+                onSetParam = { _, _, _ -> },
+                onDelete = {},
+                onReset = {},
+                onApplyPostNow = {},
+            )
+        }
+    }
+
+    /**
      * ⭐⭐⭐ **The auto-upscaling output — Received above Made, both with a
      * full row of icons above the picture they act on.**
      *

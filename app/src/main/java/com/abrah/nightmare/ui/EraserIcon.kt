@@ -317,3 +317,21 @@ val TranslateIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
             "l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12z" +
             "m-2.62 7l1.62-4.33L19.12 17h-3.24z")
 }
+
+/** ⭐ Material's auto_awesome — the Output node's Colour correction card. */
+val SparkleIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("AutoAwesome",
+        "M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z")
+}
+
+/** ⭐ Material's tune — the Output node's Adjust colours card. */
+val TuneIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("Tune",
+        "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z")
+}
+
+/** ⭐ Material's folder — the Image node's "a file" picker. */
+val FolderIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("Folder",
+        "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z")
+}

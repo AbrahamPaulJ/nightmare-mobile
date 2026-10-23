@@ -867,7 +867,7 @@ private fun SeedsSummary(seeds: List<SeedState>, chip: @Composable (SeedState) -
     if (open) androidx.compose.material3.AlertDialog(
         onDismissRequest = { open = false },
         confirmButton = {
-            com.abrah.nightmare.ui.StudioTextButton(onClick = { open = false }) { Text(stringResource(R.string.ok)) }
+            com.abrah.nightmare.ui.StudioButton(onClick = { open = false }) { Text(stringResource(R.string.ok)) }
         },
         title = { Text(stringResource(R.string.log_seeds_title)) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { seeds.forEach { chip(it) } } },

@@ -136,3 +136,8 @@ fun StudioDangerButton(
 @Composable
 fun dangerTextColors(): ButtonColors =
     ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+
+/** ⭐ A red OUTLINED action: a dialog's destructive button that is not its confirm ("Open anyway" over unsaved edits). */
+@Composable
+fun dangerOutlinedColors(): ButtonColors =
+    ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)

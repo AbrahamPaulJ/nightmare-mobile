@@ -1,6 +1,7 @@
 package com.abrah.nightmare.canvas
 
 import com.abrah.nightmare.ui.StudioTextButton
+import com.abrah.nightmare.ui.StudioButton
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -172,7 +173,7 @@ fun RunFrame(
     if (full) {
         AlertDialog(
             onDismissRequest = { full = false },
-            confirmButton = { StudioTextButton(onClick = { full = false }) { Text(stringResource(R.string.close)) } },
+            confirmButton = { StudioButton(onClick = { full = false }) { Text(stringResource(R.string.close)) } },
             text = {
                 Column(
                     Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),

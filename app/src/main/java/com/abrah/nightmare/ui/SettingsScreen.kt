@@ -721,7 +721,7 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                com.abrah.nightmare.ui.StudioTextButton(onClick = onDismissMove) { Text(stringResource(R.string.cancel)) }
+                com.abrah.nightmare.ui.StudioOutlinedButton(onClick = onDismissMove) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -879,10 +879,10 @@ private fun ApiSection(api: ApiState, onApi: (Boolean) -> Unit, onRegenerate: ()
             title = { Text(stringResource(R.string.api_rotate_title)) },
             text = { Text(stringResource(R.string.api_rotate_body)) },
             confirmButton = {
-                com.abrah.nightmare.ui.StudioTextButton(onClick = { rotating = false; onRegenerate() }) { Text(stringResource(R.string.api_regenerate)) }
+                com.abrah.nightmare.ui.StudioButton(onClick = { rotating = false; onRegenerate() }) { Text(stringResource(R.string.api_regenerate)) }
             },
             dismissButton = {
-                com.abrah.nightmare.ui.StudioTextButton(onClick = { rotating = false }) { Text(stringResource(R.string.cancel)) }
+                com.abrah.nightmare.ui.StudioOutlinedButton(onClick = { rotating = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }

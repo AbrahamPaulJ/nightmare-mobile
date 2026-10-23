@@ -43,6 +43,6 @@ fun DiagnoseDialog(step: Int, total: Int, what: String, report: String?, onCance
                 Text(stringResource(R.string.diagnose_keep_open), style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { StudioTextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { StudioButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
     )
 }

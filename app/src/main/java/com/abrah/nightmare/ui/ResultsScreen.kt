@@ -677,7 +677,7 @@ fun ResultsScreen(
                 }
             },
             confirmButton = {},
-            dismissButton = { StudioTextButton(onClick = { sharing = null }) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioOutlinedButton(onClick = { sharing = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 
@@ -695,7 +695,7 @@ fun ResultsScreen(
                     Text(stringResource(R.string.results_save_count, selected.size))
                 }
             },
-            dismissButton = { StudioTextButton(onClick = { confirmingDownload = false }) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioOutlinedButton(onClick = { confirmingDownload = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 
@@ -1356,9 +1356,9 @@ fun ResultInfoDialog(
             onDismissRequest = { askingDiagnose = false },
             title = { Text(stringResource(R.string.diagnose)) },
             text = { Text(stringResource(R.string.diagnose_picture_note, com.abrah.nightmare.BlankDiagnosis.LEGS.size)) },
-            dismissButton = { StudioTextButton(onClick = { askingDiagnose = false }) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { StudioOutlinedButton(onClick = { askingDiagnose = false }) { Text(stringResource(R.string.cancel)) } },
             confirmButton = {
-                StudioTextButton(onClick = { askingDiagnose = false; onClose(); onDiagnose() }) { Text(stringResource(R.string.diagnose)) }
+                StudioButton(onClick = { askingDiagnose = false; onClose(); onDiagnose() }) { Text(stringResource(R.string.diagnose)) }
             },
         )
         return
@@ -1438,7 +1438,7 @@ fun ResultInfoDialog(
             }
         },
         dismissButton = {
-            StudioTextButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(all)) }) {
+            StudioOutlinedButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(all)) }) {
                 Icon(CopyIcon, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.size(6.dp))
                 Text(stringResource(R.string.results_copy_all))
@@ -1447,16 +1447,16 @@ fun ResultInfoDialog(
         confirmButton = {
             Row {
                 if (selected.isNotEmpty() && transfer != null) {
-                    StudioTextButton(onClick = {
+                    StudioButton(onClick = {
                         val chosen = selected.sorted().mapNotNull { items[it] }
                         onClose()
                         transfer.onUse(chosen)
                     }) { Text(stringResource(R.string.transfer_use_n, selected.size)) }
                 }
                 if (selected.isEmpty() && onDiagnose != null) {
-                    StudioTextButton(onClick = { askingDiagnose = true }) { Text(stringResource(R.string.diagnose)) }
+                    StudioButton(onClick = { askingDiagnose = true }) { Text(stringResource(R.string.diagnose)) }
                 }
-                StudioTextButton(onClick = onClose) { Text(stringResource(R.string.close)) }
+                StudioButton(onClick = onClose) { Text(stringResource(R.string.close)) }
             }
         },
     )
@@ -1588,7 +1588,7 @@ fun UpscalePicker(
                 }
             }
         },
-        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { StudioButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -1655,8 +1655,8 @@ private fun ResultFilterDialog(
                 }
             }
         },
-        confirmButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
-        dismissButton = { StudioTextButton(onClick = onClear) { Text(stringResource(R.string.picture_clear)) } },
+        confirmButton = { StudioButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
+        dismissButton = { StudioOutlinedButton(onClick = onClear) { Text(stringResource(R.string.picture_clear)) } },
     )
 }
 

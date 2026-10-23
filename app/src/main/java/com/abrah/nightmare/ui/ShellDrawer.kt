@@ -282,7 +282,7 @@ internal fun SupportDialog(onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { com.abrah.nightmare.ui.StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        confirmButton = { com.abrah.nightmare.ui.StudioButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
     )
 }
 

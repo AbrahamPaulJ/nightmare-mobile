@@ -343,13 +343,13 @@ fun HarnessScreen(
             // user's call, 2026-10-10): Save (then open), Open anyway, Cancel.
             confirmButton = {
                 androidx.compose.foundation.layout.Row {
-                    com.abrah.nightmare.ui.StudioTextButton(onClick = vm::dismissPendingOpen) {
+                    com.abrah.nightmare.ui.StudioButton(onClick = vm::dismissPendingOpen) {
                         Text(stringResource(R.string.cancel))
                     }
-                    com.abrah.nightmare.ui.StudioTextButton(onClick = vm::confirmPendingOpen) {
+                    com.abrah.nightmare.ui.StudioButton(onClick = vm::confirmPendingOpen) {
                         Text(stringResource(R.string.flow_open_anyway))
                     }
-                    com.abrah.nightmare.ui.StudioTextButton(onClick = vm::savePendingOpen) {
+                    com.abrah.nightmare.ui.StudioButton(onClick = vm::savePendingOpen) {
                         Text(stringResource(R.string.save))
                     }
                 }
@@ -367,12 +367,12 @@ fun HarnessScreen(
             title = { Text(stringResource(R.string.view_ask_title)) },
             text = { Text(stringResource(R.string.view_ask_body)) },
             confirmButton = {
-                com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.chooseDefaultView(MainView.NODES) }) {
+                com.abrah.nightmare.ui.StudioButton(onClick = { vm.chooseDefaultView(MainView.NODES) }) {
                     Text(stringResource(R.string.view_ask_nodes))
                 }
             },
             dismissButton = {
-                com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.chooseDefaultView(MainView.GRAPH) }) {
+                com.abrah.nightmare.ui.StudioOutlinedButton(onClick = { vm.chooseDefaultView(MainView.GRAPH) }) {
                     Text(stringResource(R.string.view_ask_graph))
                 }
             },
@@ -1182,12 +1182,12 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
                 // ⚠ A translation or describe model has nothing to Run — the
                 // prompt it was fetched for is written the moment it lands.
                 done && (knob != null || m is HarnessViewModel.MissingModel.Translate || m is HarnessViewModel.MissingModel.Describe) ->
-                    com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.dismissMissingModel() }) { Text(stringResource(R.string.ok)) }
+                    com.abrah.nightmare.ui.StudioButton(onClick = { vm.dismissMissingModel() }) { Text(stringResource(R.string.ok)) }
                 done -> com.abrah.nightmare.ui.StudioButton(onClick = {
                     vm.dismissMissingModel()
                     vm.runCanvasOrBatch()
                 }) { Text(stringResource(R.string.run)) }
-                progress != null -> com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.dismissMissingModel() }) {
+                progress != null -> com.abrah.nightmare.ui.StudioButton(onClick = { vm.dismissMissingModel() }) {
                     Text(stringResource(R.string.model_hide))
                 }
                 else -> com.abrah.nightmare.ui.StudioButton(onClick = { vm.downloadMissingModel() }) {
@@ -1197,11 +1197,11 @@ private fun MissingModelDialog(m: HarnessViewModel.MissingModel, vm: HarnessView
         },
         dismissButton = {
             if (progress != null) {
-                com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.cancelModelInstall(); vm.dismissMissingModel() }) {
+                com.abrah.nightmare.ui.StudioOutlinedButton(onClick = { vm.cancelModelInstall(); vm.dismissMissingModel() }) {
                     Text(stringResource(R.string.model_cancel_download))
                 }
             } else if (!done) {
-                com.abrah.nightmare.ui.StudioTextButton(onClick = { vm.dismissMissingModel() }) {
+                com.abrah.nightmare.ui.StudioOutlinedButton(onClick = { vm.dismissMissingModel() }) {
                     Text(stringResource(R.string.model_not_now))
                 }
             }

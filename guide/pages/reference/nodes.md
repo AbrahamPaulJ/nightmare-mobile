@@ -61,8 +61,10 @@ for anime, Tags is the accurate one. Nothing is filtered, and nothing leaves the
 A photo from your gallery. Tap **Choose** to pick one (**Change** once there is one). It opens
 your phone's **photo picker** (on a phone without one, your **Gallery** app, which may ask for
 the Photos and videos permission); **Files** beside it opens the file browser instead, for a
-picture that is not in your gallery. It appears on the node straight away, no Run needed. The
-picture's own buttons swap it or clear it.
+picture that is not in your gallery. It appears on the node straight away, no Run needed. Once
+there is a picture, a row of square buttons sits above it: **Photos** (another picture from the
+picker), **Files**, **Draw** (paint over it, see Image to image) and the red bin (clear it), then
+the file's name.
 
 <figure markdown>
   ![The Image node before a photo is chosen](../img/inspector-load-image.png){ .screen }
@@ -184,14 +186,17 @@ It has no **Seconds** (the part of the video sets the length) and takes no LoRAs
 
 ## Output
 
-Where the result lands. It shows the picture or clip; tap it to see it full screen. Auto upscale, Auto colour and Adjust colours sit under **Post-processing** at the end of its settings, folded until you open it; while it is closed, its header names the ones switched on. **Apply now** at its end applies them to the last picture straight away: the flow reruns on that picture's seeds, so nothing is rendered again and no seed is locked.
+Where the result lands. It shows the picture or clip; tap it to see it full screen. Its finishing steps sit under **Post-processing** at the end of its settings, folded until you open it (closed, its header names the ones switched on). There are three cards, **Upscale**, **Colour correction** and **Adjust colours**, each with:
+
+- **After every Run**: a switch that applies the step to every new picture.
+- A button (**Upscale**, **Correct**, **Adjust**) that applies it to the last picture right now. Nothing is rendered again and no seed is locked: the flow reruns on that picture's own seeds, so only the Output works.
 
 | setting | what it does |
 |---|---|
 | **Autosave** | *On (default):* every Run is kept in Results with the flow that made it |
-| **Auto upscale** | Enlarge the result before keeping it. The node then shows what it received above what it made. Greyed out on an output wired a video: a clip cannot be upscaled (the **Upscale** button is greyed out too) |
-| **Auto colour** | Stretches the levels and balances the white of the result, after any upscale. A warm scene stays warm |
-| **Adjust colours** | Shows **Brightness**, **Contrast**, **Saturation** and **Warmth** (each -1 to 1, 0 unchanged). The render is cached, so moving a slider and running again redoes only the output |
+| **Upscale** | Enlarge the result before keeping it. The node then shows what it received above what it made. Greyed out on an output wired a video: a clip cannot be upscaled |
+| **Colour correction** | Fixes a dull or tinted picture: darks darker, brights brighter, a colour cast removed, after any upscale. A warm scene stays warm |
+| **Adjust colours** | **Brightness**, **Contrast**, **Saturation** and **Warmth** sliders (each -1 to 1, 0 unchanged), after Colour correction |
 | **Upscaler** | Which upscaler to use. Install them under Models → Upscalers |
 | **Scale** | 2×, 3× or 4×. A result that would pass 4096 px gets the largest scale that fits |
 | **Save** (video) | Also write the MP4 to `Movies/Nightmare` |

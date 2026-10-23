@@ -320,7 +320,7 @@ fun CanvasScreen(
      * (`HarnessViewModel.offerUpscaleNode`).
      */
     onUpscaleNode: ((String) -> Unit)? = null,
-    onApplyPostNow: (() -> Unit)? = null,
+    onApplyPostNow: ((String) -> Unit)? = null,
     /** ⭐⭐ What made this node's picture, for the ⓘ dialog. */
     detailsOfNode: ((String) -> List<Pair<String, String>>)? = null,
     /** ⭐⭐⭐ Drop the enlargement, keeping what the output received. */
@@ -1178,7 +1178,7 @@ private fun TopBar(
 private fun ViewsInfoDialog(onDismiss: () -> Unit) {
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { com.abrah.nightmare.ui.StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
+        confirmButton = { com.abrah.nightmare.ui.StudioButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
         title = { Text(stringResource(R.string.views_info_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1386,7 +1386,7 @@ private fun SaveWorkflowDialog(
                 enabled = name.isNotBlank() && why == null,
             ) { Text(stringResource(R.string.save)) }
         },
-        dismissButton = { StudioTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -2473,9 +2473,9 @@ private fun ModelSwapDialog(
             }
         },
         confirmButton = {
-            StudioTextButton(onClick = { onConfirm(swap, takeRecipe, takePrompt) }) { Text(stringResource(R.string.canvas_switch)) }
+            StudioButton(onClick = { onConfirm(swap, takeRecipe, takePrompt) }) { Text(stringResource(R.string.canvas_switch)) }
         },
-        dismissButton = { StudioTextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

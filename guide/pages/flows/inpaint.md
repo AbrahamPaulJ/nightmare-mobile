@@ -46,7 +46,7 @@ the hole the way an inpainting model does, so they are best for changing what is
 
 **FLUX.2 Klein** inpaints as an edit: write the change as an instruction (`make the jacket red`), not a
 description. It edits the area around your mask and only the masked part is pasted back, so everything
-outside the mask stays exactly as it was. It has no Denoise: the edit always runs in full.
+outside the mask stays exactly as it was. Its **Denoise** starts at 1.0, the full edit, as on Image edit; lower values make Klein start from your picture too, which tends to keep it as it is. Try it.
 
 ## The mask editor
 

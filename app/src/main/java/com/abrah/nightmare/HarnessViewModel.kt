@@ -8594,13 +8594,19 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /** ⭐ The seeds [applyPostNow] hands the next [runCanvas], read before that run clears the last one's status. */
     private var runPinned: Map<String, Map<String, String>> = emptyMap()
 
+    /** ⭐ Params [applyPostNow] switches on for the next [runCanvas] only, by node; never written into the flow. */
+    private var runOverrides: Map<String, Map<String, String>> = emptyMap()
+
     /**
-     * ⭐⭐ **Apply now** under the Output node's Post-processing (the user's call, 2026-10-23: "user would have to lock
-     * the seed and hit Run again after turning on a post process toggle"). Runs the flow on the LAST run's seeds,
-     * pinned for this run only, so every node above the Output comes from the cache and only its upscale and
-     * colour run. ⚠ Nothing is locked: the flow keeps its random seeds. With nothing run yet it is a plain Run.
+     * ⭐⭐ A post-processing card's button on the Output node (Upscale, Correct, Adjust: the user's mock, 2026-10-23,
+     * after "user would have to lock the seed and hit Run again after turning on a post process toggle"). Runs the
+     * flow on the LAST run's seeds, pinned for this run only, with [step] switched on for it, so every node above
+     * the Output comes from the cache and only the Output works. ⚠ Nothing is locked or saved: the seeds stay
+     * random and the switch stays as it was. With nothing run yet it is a plain Run plus the step.
      */
-    fun applyPostNow() {
+    fun applyPostNow(step: String) {
+        runOverrides = canvas.workflow.graph.nodes.filter { it.type == MediaOutputNode.name }
+            .associate { it.id to mapOf(step to "true") }
         val g = canvas.workflow.graph
         runPinned = g.nodes.filter { isSampler(it.type) }.associate { n ->
             n.id to buildMap {
@@ -8667,8 +8673,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val pinned = runPinned.also { runPinned = emptyMap() }
+        val overrides = runOverrides.also { runOverrides = emptyMap() }
         val r = ops.runWorkflow(
-            canvas.workflow,
+            if (overrides.isEmpty()) canvas.workflow else canvas.workflow.copy(
+                graph = Graph(canvas.workflow.graph.nodes.map { n -> overrides[n.id]?.let { n.copy(params = n.params + it) } ?: n }),
+            ),
             pinned = pinned,
             // ⭐ Named before it runs, so a 24 s sampler is a node with a name
             // rather than a frozen screen.
