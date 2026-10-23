@@ -84,7 +84,14 @@ data class SeedState(
      * have three (the user's call, 2026-09-17).
      */
     val label: String? = null,
-)
+    /**
+     * ⭐ Which seed: the picture's (`seed`), or its Fix faces / hands pass's
+     * ([com.abrah.nightmare.detail.Detailer.FIX_SEED], the user's call 2026-10-23: keep the picture, try another face).
+     */
+    val param: String = "seed",
+) {
+    val isFix: Boolean get() = param == com.abrah.nightmare.detail.Detailer.FIX_SEED
+}
 
 /**
  * ⭐⭐ What the canvas shows WHILE it renders.
@@ -224,8 +231,8 @@ fun RunLogPanel(
      * state is stated always, and the toggle is the same control either way.
      */
     seeds: List<SeedState> = emptyList(),
-    /** ⭐ Lock or release ONE sampler's seed, by node id. */
-    onToggleSeed: (String) -> Unit = {},
+    /** ⭐ Lock or release ONE seed: a sampler's, or its fix pass's ([SeedState.param]). */
+    onToggleSeed: (SeedState) -> Unit = {},
     /** ⭐ The armed seed sweeps, by node — each shows on its own sampler's row. */
     seedSweeps: List<ArmedSweep> = emptyList(),
     /** ⚠ A swept seed needs its own release — the lock toggle is hidden. */
@@ -283,7 +290,7 @@ fun RunLogPanel(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) { val chip: @Composable (SeedState) -> Unit = { st ->
-        val seedSweep = seedSweeps.firstOrNull { it.nodeId == st.nodeId }?.count
+        val seedSweep = seedSweeps.firstOrNull { it.nodeId == st.nodeId }?.count?.takeIf { !st.isFix }
         Row(
             Modifier
                 .clip(RoundedCornerShape(10.dp))
@@ -308,6 +315,8 @@ fun RunLogPanel(
                     // cannot find its anchor must FAIL, not carry on.
                     when {
                         seedSweep != null -> pluralStringResource(R.plurals.log_batching_seeds, seedSweep, seedSweep)
+                        st.isFix && st.value != null -> stringResource(R.string.log_fix_seed_locked, st.value)
+                        st.isFix -> stringResource(R.string.log_fix_seed_random)
                         st.value != null -> stringResource(R.string.log_seed_locked, st.value)
                         else -> stringResource(R.string.log_seed_random)
                     }.let { t -> st.label?.let { stringResource(R.string.log_labeled_status, it, t) } ?: t },
@@ -343,7 +352,7 @@ fun RunLogPanel(
                 }
                 if (seedSweep == null) {
                 IconButton(
-                    onClick = { onToggleSeed(st.nodeId) },
+                    onClick = { onToggleSeed(st) },
                     // ⚠ Shrunk from the 48dp default. A touch target that size
                     // sets the height of the whole row, which is what made this
                     // line cost vertical space above AND below the text.
@@ -370,7 +379,8 @@ fun RunLogPanel(
         }
         // ⭐ One sampler: its chip. Two or more: ONE summary chip and a list of the same chips
         // (the user's pick, 2026-10-12), so the bar above Run never grows with the flow.
-        if (seeds.size == 1) chip(seeds.single()) else SeedsSummary(seeds, chip)
+        // ⭐ One sampler's picture and Fix seeds side by side; several samplers fold into the summary.
+        if (seeds.map { it.nodeId }.distinct().size == 1) seeds.forEach { chip(it) } else SeedsSummary(seeds, chip)
         ram?.let { RamPill(it) } }
         // ⚠⚠ **Only when there is a run to describe.** Closing the panel clears
         // the state, but the seed row above is a property of the CANVAS rather

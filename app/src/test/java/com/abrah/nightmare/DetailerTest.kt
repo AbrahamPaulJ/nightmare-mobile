@@ -19,6 +19,20 @@ class DetailerTest {
         return FloatArray(5 * n) { i -> rows[i % n][i / n] }
     }
 
+    /** ⭐ Saved #7072: the base memo's key drops exactly the fix's params, and the fix runs on its own seed. */
+    @Test
+    fun theFixParamsAreTheOnesThatLeaveThePictureAlone() {
+        for (k in listOf("fix_faces", "fix_hands", "detail_denoise", "fix_seed", "face_conf", "hand_pad", "face_blur", "hand_denoise")) {
+            assertTrue(k, k in Detailer.PARAMS)
+        }
+        for (k in listOf("seed", "steps", "cfg", "denoise", "model", "prompt", "width")) {
+            assertTrue(k, k !in Detailer.PARAMS)
+        }
+        assertEquals("7", Detailer.seedOf(mapOf("seed" to "7")))
+        assertEquals("7", Detailer.seedOf(mapOf("seed" to "7", "fix_seed" to "0")))
+        assertEquals("9", Detailer.seedOf(mapOf("seed" to "7", "fix_seed" to "9")))
+    }
+
     @Test
     fun overlappingBoxesCollapseToTheMostConfident() {
         val out = head(

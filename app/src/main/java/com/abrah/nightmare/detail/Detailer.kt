@@ -29,6 +29,25 @@ object Detailer {
     const val DETAIL_DENOISE = "detail_denoise"
     const val DEFAULT_DENOISE = "0.4"
 
+    /**
+     * ⭐ The fix pass's own seed (the user's call, 2026-10-23): 0 rolls a new one each Run, so with the picture's seed
+     * locked, Run keeps the picture and tries another face; a number reproduces that face. Absent = the picture's seed,
+     * what every fix used before. ⚠ It cannot carry a face to ANOTHER picture: the fix redraws the face that is there.
+     */
+    const val FIX_SEED = "fix_seed"
+
+    /**
+     * ⭐⭐ Every param that changes ONLY the fix pass, never the picture under it: what the sampler's base memo leaves
+     * out of its key (`SdSampler.run`), so switching Fix faces on, or a new Fix strength or Fix seed, redraws the faces
+     * on the picture already made instead of rendering it again (Saved #7072). ⚠ A new fix param belongs here.
+     */
+    val PARAMS: Set<String> = setOf(FIX_FACES, FIX_HANDS, DETAIL_DENOISE, FIX_SEED) +
+        PartDetector.Part.entries.flatMap { keys(it).toList() + denoiseKey(it) }
+
+    /** ⚠ Pure: the seed the fix pass runs with: its own when set, else the picture's [seed]. */
+    fun seedOf(params: Map<String, String>): String =
+        params[FIX_SEED]?.trim()?.takeIf { it.isNotEmpty() && it != "0" } ?: params["seed"].orEmpty()
+
     /** ⚠ A crowd is not a portrait: the largest few of each kind, so a run cannot take an hour. */
     const val MAX_PER_PART = 4
 

@@ -71,6 +71,28 @@ class FusedSamplerTest {
 
     // --- what each wiring means ---------------------------------------------
 
+    /**
+     * ⭐⭐ Saved #7072: "I fix the seed and rerun with the face fix enabled. Currently it reruns the full diffusion
+     * sampling". Switching Fix faces on, or a new Fix strength, keeps the picture; a new seed does not.
+     */
+    @Test
+    fun turningTheFixOnKeepsThePictureItIsFixing() = runBlocking {
+        val host = RecordingHost()
+        val ex = exec(host)
+        val plain = graph(type = SdSampler.SD15.name, params = mapOf("seed" to "4242"))
+        assertNull(ex.run(plain).error)
+        assertEquals(1, host.samples)
+        val fixed = graph(type = SdSampler.SD15.name, params = mapOf("seed" to "4242", "fix_faces" to "true"))
+        assertNull(ex.run(fixed).error)
+        assertEquals("the picture under the fix is the last run's", 1, host.samples)
+        val stronger = graph(type = SdSampler.SD15.name, params = mapOf("seed" to "4242", "fix_faces" to "true", "detail_denoise" to "0.6"))
+        assertNull(ex.run(stronger).error)
+        assertEquals(1, host.samples)
+        val reseeded = graph(type = SdSampler.SD15.name, params = mapOf("seed" to "4243", "fix_faces" to "true"))
+        assertNull(ex.run(reseeded).error)
+        assertEquals("a new seed is a new picture", 2, host.samples)
+    }
+
     @Test
     fun aPromptAloneIsTextToImage() = runBlocking {
         val host = RecordingHost()

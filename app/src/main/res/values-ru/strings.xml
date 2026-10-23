@@ -786,6 +786,11 @@
     <string name="hint_adjust_colours">Яркость, контраст, насыщенность и теплота вручную, после автоцвета. Ползунок пересчитывает только этот узел.</string>
     <string name="hint_warmth">Ниже 0 холоднее (синее), выше 0 теплее (оранжевее).</string>
     <string name="knob_enlarge">Увеличить ×2</string>
+    <string name="knob_fix_seed">Сид исправления</string>
+    <string name="hint_fix_seed">Сид исправления. 0 = новое лицо или рука при каждом запуске: закрепите сид картинки и запустите снова, чтобы сохранить картинку и попробовать другое. Введите показанное число, чтобы вернуть это исправление.</string>
+    <string name="run_detail_reused">картинка из прошлого запуска: выполняется только исправление</string>
+    <string name="log_fix_seed_locked">сид исправления: %1$s</string>
+    <string name="log_fix_seed_random">сид исправления: случайный</string>
     <string name="knob_fix_faces">Исправить лица</string>
     <string name="knob_fix_hands">Исправить руки</string>
     <string name="knob_detail_denoise">Сила исправления</string>

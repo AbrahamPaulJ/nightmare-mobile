@@ -989,6 +989,23 @@ class CanvasStateTest {
     }
 
     /**
+     * ⭐ The Fix seed rides the same run line after the picture's (`HarnessOps.runRolled`), and neither is read as
+     * the other: a locked picture seed leaves the line starting "fix seed", which the picture's `^seed` must not match.
+     */
+    @Test
+    fun theFixSeedIsReadApartFromThePicturesSeed() {
+        val g = Graph(listOf(Node("s", "sd15.sample", mapOf("seed" to "0", "fix_faces" to "true"))))
+        val both = "seed 11  fix seed 22  900 ms"
+        assertEquals("11", seedFor(g, "s") { both })
+        assertEquals("22", fixSeedFor(g, "s") { both })
+        val fixOnly = "fix seed 33  900 ms"
+        assertNull("a locked picture seed is not the fix's", seedFor(g, "s") { fixOnly })
+        assertEquals("33", fixSeedFor(g, "s") { fixOnly })
+        val pinned = Graph(listOf(Node("s", "sd15.sample", mapOf("seed" to "5", "fix_seed" to "44"))))
+        assertEquals("44", fixSeedFor(pinned, "s"))
+    }
+
+    /**
      * ⚠⚠⚠ The seed lock is a TOGGLE that stays on screen. Reported 2026-09-23:
      * *"when i click it it just disappears"* — the first version only existed
      * while there was something left to lock. Lock, then unlock, round trip.

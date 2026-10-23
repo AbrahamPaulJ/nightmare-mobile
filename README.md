@@ -39,7 +39,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Hires fix**: one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
   Every other model has **Enlarge ×2** instead, so its picture can be enlarged and passed on to an inpaint that fixes faces.
 - **Fix faces / Fix hands** (ADetailer): switches on the Image node. After the render the phone finds each face and
-  hand (Bingsu's YOLOv8 detectors, a 25 MB Tools download) and redraws it enlarged, close up, with the same prompt, model and LoRAs (the Swap models too), its tone matched to the picture along the edge. **Detection settings** shows what is found on your last picture and sets the confidence, padding, mask blur and strength, for faces and hands apart.
+  hand (Bingsu's YOLOv8 detectors, a 25 MB Tools download) and redraws it enlarged, close up, with the same prompt, model and LoRAs (the Swap models too), its tone matched to the picture along the edge. **Detection settings** shows what is found on your last picture and sets the confidence, padding, mask blur and strength, for faces and hands apart. Switching a fix on keeps the picture you already made and redraws only its faces; a **Fix seed** with its own padlock tries another face on the same picture.
 - **Edit a face** (LivePortrait): sliders for smile, eyes, gaze, mouth and a head turn, nod or tilt on the faces in any
   picture, previewed live in their own window (about a quarter of a second an edit on an 8 Elite). A **Face edit** node to wire
   after any picture, the **Edit a face** flow, and **Edit face** on a picture in Results. A 180 MB download in Models, Faces.

@@ -1072,6 +1072,19 @@ fun samplerFor(graph: com.abrah.nightmare.Graph, nodeId: String): String? {
 /** ⚠ Anchored: `HarnessOps` prepends it, so a seed elsewhere in the line is not this. */
 private val ROLLED_SEED = Regex("""^seed (\d+)""")
 
+/** ⭐ The fix pass's rolled seed, written after the picture's (`HarnessOps.runRolled`): `"seed 1  fix seed 2  …"`. */
+private val ROLLED_FIX_SEED = Regex("""(?:^|\s)fix seed (\d+)""")
+
+/**
+ * ⭐ The Fix seed of the sampler [nodeId] ([com.abrah.nightmare.detail.Detailer.FIX_SEED]): its pinned value, or the one
+ * its last run rolled, or null with neither. The fix seed's [seedFor], for the run bar's second lock.
+ */
+fun fixSeedFor(graph: com.abrah.nightmare.Graph, nodeId: String, detailFor: (String) -> String? = { null }): String? {
+    val node = graph.byId[nodeId] ?: return null
+    ROLLED_FIX_SEED.find(detailFor(nodeId).orEmpty())?.let { return it.groupValues[1] }
+    return node.params[com.abrah.nightmare.detail.Detailer.FIX_SEED]?.trim()?.takeIf { it.isNotBlank() && it != "0" }
+}
+
 /**
  * ⭐⭐ A type whose stripped name is not what the thing is CALLED.
  *
@@ -1184,6 +1197,7 @@ private val KNOB_RESOURCES = mapOf(
     "fix_faces" to com.abrah.nightmare.R.string.knob_fix_faces,
     "fix_hands" to com.abrah.nightmare.R.string.knob_fix_hands,
     "detail_denoise" to com.abrah.nightmare.R.string.knob_detail_denoise,
+    "fix_seed" to com.abrah.nightmare.R.string.knob_fix_seed,
     "face_conf" to com.abrah.nightmare.R.string.knob_detect_conf,
     "hand_conf" to com.abrah.nightmare.R.string.knob_detect_conf,
     "face_pad" to com.abrah.nightmare.R.string.knob_detect_pad,

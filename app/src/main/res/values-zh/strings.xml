@@ -771,6 +771,11 @@
     <string name="hint_adjust_colours">在自动调色之后手动调整亮度、对比度、饱和度和色温。移动滑块只重新运行此节点。</string>
     <string name="hint_warmth">小于 0 更冷（偏蓝），大于 0 更暖（偏橙）。</string>
     <string name="knob_enlarge">放大 ×2</string>
+    <string name="knob_fix_seed">修复种子</string>
+    <string name="hint_fix_seed">修复的种子。0 = 每次运行换一张脸或一只手：锁定图片的种子再运行，即可保留图片并尝试另一张。输入显示的数字可找回那次修复。</string>
+    <string name="run_detail_reused">图片沿用上次运行的结果：只运行修复</string>
+    <string name="log_fix_seed_locked">修复种子：%1$s</string>
+    <string name="log_fix_seed_random">修复种子：随机</string>
     <string name="knob_fix_faces">修复面部</string>
     <string name="knob_fix_hands">修复手部</string>
     <string name="knob_detail_denoise">修复强度</string>

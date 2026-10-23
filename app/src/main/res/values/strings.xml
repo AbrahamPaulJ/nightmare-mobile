@@ -798,6 +798,11 @@
     <string name="hint_adjust_colours">Brightness, contrast, saturation and warmth by hand, after Auto colour. Moving a slider redoes only this node.</string>
     <string name="hint_warmth">Below 0 cooler (bluer), above 0 warmer (more orange).</string>
     <string name="knob_enlarge">Enlarge ×2</string>
+    <string name="knob_fix_seed">Fix seed</string>
+    <string name="hint_fix_seed">The seed of the fix. 0 = a new face or hand every Run: lock the picture\'s seed and Run again to keep the picture and try another. Type the number shown to get that fix back.</string>
+    <string name="run_detail_reused">the picture is the one from the last run: only the fix runs</string>
+    <string name="log_fix_seed_locked">fix seed: %1$s</string>
+    <string name="log_fix_seed_random">fix seed: random</string>
     <string name="knob_fix_faces">Fix faces</string>
     <string name="knob_fix_hands">Fix hands</string>
     <string name="knob_detail_denoise">Fix strength</string>

@@ -257,6 +257,20 @@ class SdSampler(
     override val showsResult = false
 
     companion object {
+        /**
+         * ⭐ The last few pictures under a fix ([run]), by base key. ⚠ A few, not one: two samplers in a flow each
+         * keep theirs. ⚠ An entry whose picture the store dropped is a miss, never a blank.
+         */
+        private val bases = object : LinkedHashMap<String, Value.Image>(8, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Value.Image>?) = size > 4
+        }
+
+        internal fun baseMemo(ctx: NodeCtx, key: String): Value.Image? = synchronized(bases) {
+            bases[key]?.takeIf { ctx.images.get(it.id) != null }
+        }
+
+        internal fun remember(key: String, img: Value.Image) = synchronized(bases) { bases[key] = img }
+
         /** ⭐ The Hires fix switch ([hiresFix]); the id is the row's words ("Hires fix"). */
         const val HIRES = "hires_fix"
         /**
@@ -1202,8 +1216,22 @@ class SdSampler(
 
     // ⭐ ONE exit for every family's render, so [ENLARGE] and the detail pass cannot be missed by the
     // next return added. ⚠ Detail LAST: it redraws faces on the final, biggest picture.
-    override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
-        render(ctx, node, inputs).let { v -> if (v is Value.Image) detail(ctx, node, inputs, enlarge(ctx, node, v)) else v }
+    override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
+        // ⭐⭐ The picture under the fix, remembered without the fix's own params ([com.abrah.nightmare.detail.Detailer.PARAMS]): Fix faces
+        // switched on, or a new Fix strength or Fix seed, redraws the faces on the picture already made (Saved #7072,
+        // "it reruns the full diffusion sampling"). ⚠ Safe because Run rolls seed 0 into a real seed first
+        // (`HarnessOps.runRolled`): an unlocked seed is a new key, so a new picture.
+        val baseKey = if (offersDetail) cacheKey(name, version, node.params - com.abrah.nightmare.detail.Detailer.PARAMS, inputs) else null
+        baseKey?.let { k -> baseMemo(ctx, k) }?.let { kept ->
+            ctx.say(ctx.text(R.string.run_detail_reused, "the picture is the one from the last run: only the fix runs"))
+            return detail(ctx, node, inputs, kept)
+        }
+        val v = render(ctx, node, inputs)
+        if (v !is Value.Image) return v
+        val big = enlarge(ctx, node, v)
+        if (baseKey != null) remember(baseKey, big)
+        return detail(ctx, node, inputs, big)
+    }
 
     /**
      * ⭐ Where Fix faces / Fix hands are offered ([com.abrah.nightmare.detail.Detailer]): every family with
@@ -1246,6 +1274,7 @@ class SdSampler(
             com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE, "float",
             com.abrah.nightmare.detail.Detailer.DEFAULT_DENOISE, 0.0, 1.0, hintRes = R.string.hint_detail_denoise,
         ),
+        Widget(com.abrah.nightmare.detail.Detailer.FIX_SEED, "int", "0", hintRes = R.string.hint_fix_seed),
     )
 
     /**
@@ -1273,7 +1302,8 @@ class SdSampler(
         val prompt = Value.Prompt(pos.text, neg.text)
         val p0 = withPromptLoras(ctx, node, base, pos.tags)
         // ⭐ Each part at its own strength ([com.abrah.nightmare.detail.Detailer.denoiseOf]), set per part below.
-        var p = p0 + ("denoise" to (base[d.DETAIL_DENOISE] ?: d.DEFAULT_DENOISE))
+        // ⭐ The fix's own seed when set ([com.abrah.nightmare.detail.Detailer.FIX_SEED]), else the picture's.
+        var p = p0 + ("denoise" to (base[d.DETAIL_DENOISE] ?: d.DEFAULT_DENOISE)) + ("seed" to d.seedOf(base))
         var bmp = ctx.images.get(img.id) ?: return img
         val spec = ModelCatalog.byId(p["model"].orEmpty()) ?: defaultSpec()
         // ⭐ The patch: a DiT renders any size, so a square at about a megapixel's edge; an SD graph only

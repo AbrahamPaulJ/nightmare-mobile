@@ -591,25 +591,40 @@ fun CanvasScreen(
             seeds = if (mainView == com.abrah.nightmare.MainView.AGENT) emptyList() else state.workflow.graph.nodes.filter {
                 com.abrah.nightmare.isSampler(it.type)
             }.let { samplers ->
-                samplers.map { n ->
-                    SeedState(
+                samplers.flatMap { n ->
+                    val picture = SeedState(
                         value = n.params["seed"]?.trim()?.takeIf { it.isNotEmpty() && it != "0" },
                         lastRolled = seedFor(state.workflow.graph, n.id) { status[it]?.detail },
                         nodeId = n.id,
                         label = n.id.takeIf { samplers.size > 1 },
                     )
+                    // ⭐ A second lock while Fix faces or Fix hands is on (com.abrah.nightmare.detail.Detailer.FIX_SEED, the user's call
+                    // 2026-10-23): the picture's seed locked and this one free, each Run keeps the picture and tries
+                    // another face.
+                    val fixOn = listOf(com.abrah.nightmare.detail.Detailer.FIX_FACES, com.abrah.nightmare.detail.Detailer.FIX_HANDS).any { n.params[it].equals("true", ignoreCase = true) }
+                    if (!fixOn) listOf(picture) else listOf(
+                        picture,
+                        SeedState(
+                            value = n.params[com.abrah.nightmare.detail.Detailer.FIX_SEED]?.trim()?.takeIf { it.isNotEmpty() && it != "0" },
+                            lastRolled = fixSeedFor(state.workflow.graph, n.id) { status[it]?.detail },
+                            nodeId = n.id,
+                            label = n.id.takeIf { samplers.size > 1 },
+                            param = com.abrah.nightmare.detail.Detailer.FIX_SEED,
+                        ),
+                    )
                 }
             },
-            onToggleSeed = { id ->
-                state.workflow.graph.byId[id]?.let { n ->
-                    val pinned = n.params["seed"]?.trim()?.takeIf { it.isNotEmpty() && it != "0" }
+            onToggleSeed = { chip ->
+                state.workflow.graph.byId[chip.nodeId]?.let { n ->
+                    val pinned = n.params[chip.param]?.trim()?.takeIf { it.isNotEmpty() && it != "0" }
                     if (pinned != null) {
-                        onEdit { st -> st.setParam(n.id, "seed", "0") }
+                        onEdit { st -> st.setParam(n.id, chip.param, "0") }
                     } else {
                         // ⚠ Only when there IS a rolled seed to pin. Locking
                         // before anything has run would pin nothing.
-                        seedFor(state.workflow.graph, n.id) { status[it]?.detail }
-                            ?.let { rolled -> onEdit { st -> st.setParam(n.id, "seed", rolled) } }
+                        (if (chip.isFix) fixSeedFor(state.workflow.graph, n.id) { status[it]?.detail }
+                        else seedFor(state.workflow.graph, n.id) { status[it]?.detail })
+                            ?.let { rolled -> onEdit { st -> st.setParam(n.id, chip.param, rolled) } }
                     }
                 }
             },
@@ -1410,7 +1425,7 @@ private fun RunBar(
      * found or written.
      */
     seeds: List<SeedState> = emptyList(),
-    onToggleSeed: (String) -> Unit = {},
+    onToggleSeed: (SeedState) -> Unit = {},
     /** ⭐ Backend relaunches this graph will cost. 0 on a single-checkpoint one. */
     plannedLoads: Int = 0,
     /** ⚠ False in the Nodes view: no + Node, no zoom or pan locks — there is no graph on screen. */

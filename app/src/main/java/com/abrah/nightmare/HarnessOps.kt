@@ -2464,7 +2464,18 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             onWarn(s.consumer, line)
         }
         val rolled = mutableMapOf<String, Int>()
+        val rolledFix = mutableMapOf<String, Int>()
         val nodes = runnable.nodes.map { n ->
+            // ⭐ The Fix seed rolls like the picture's ([com.abrah.nightmare.detail.Detailer.FIX_SEED], 0 = a new face
+            // each Run), only while a fix is on: rolling it with no fix would make an unchanged flow full price.
+            val fixOn = isSampler(n.type) && listOf(com.abrah.nightmare.detail.Detailer.FIX_FACES, com.abrah.nightmare.detail.Detailer.FIX_HANDS)
+                .any { n.params[it].equals("true", ignoreCase = true) }
+            @Suppress("NAME_SHADOWING")
+            val n = if (fixOn && (n.params[com.abrah.nightmare.detail.Detailer.FIX_SEED] ?: "0").trim().toIntOrNull() == 0) {
+                val s = java.util.Random().nextInt(Int.MAX_VALUE - 1) + 1
+                rolledFix[n.id] = s
+                n.copy(params = n.params + (com.abrah.nightmare.detail.Detailer.FIX_SEED to s.toString()))
+            } else n
             // ⚠ The DEFAULT comes from the node's own type, not from
             // `SampleNode`: two samplers declare a `seed` widget and hardcoding
             // one of them would read the wrong default for the other.
@@ -2535,7 +2546,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 } else {
                     ""
                 }
-                val seeded = rolled[n.id]?.let { "seed $it  " }.orEmpty()
+                val seeded = rolled[n.id]?.let { "seed $it  " }.orEmpty() +
+                    rolledFix[n.id]?.let { "fix seed $it  " }.orEmpty()
                 onNode(
                     if (seeded.isEmpty() && recipe.isEmpty()) n
                     else n.copy(detail = "$seeded${n.detail}$recipe")

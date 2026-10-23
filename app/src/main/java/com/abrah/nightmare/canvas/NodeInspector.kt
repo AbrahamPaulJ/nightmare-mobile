@@ -885,7 +885,7 @@ fun NodeInspector(
 /** ⭐ A sampler's after-render knobs, drawn under [MoreOptionsHeader]. */
 internal val MORE_OPTIONS = setOf(
     com.abrah.nightmare.detail.Detailer.FIX_FACES, com.abrah.nightmare.detail.Detailer.FIX_HANDS,
-    com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE,
+    com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE, com.abrah.nightmare.detail.Detailer.FIX_SEED,
     com.abrah.nightmare.SdSampler.HIRES, com.abrah.nightmare.SdSampler.ENLARGE,
     com.abrah.nightmare.SdSampler.MATCH_COLORS,
     com.abrah.nightmare.SdSampler.SUBSEED, com.abrah.nightmare.SdSampler.SUBSEED_STRENGTH,
@@ -987,8 +987,8 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
         ) && node.type == com.abrah.nightmare.MediaOutputNode.name &&
         !isOn(node.params[com.abrah.nightmare.MediaOutputNode.ADJUST])
     ) return true
-    // ⭐ Fix strength only while Fix faces or Fix hands is on: the Upscaler chooser's rule, above.
-    if (name == com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE &&
+    // ⭐ Fix strength and Fix seed only while Fix faces or Fix hands is on: the Upscaler chooser's rule, above.
+    if ((name == com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE || name == com.abrah.nightmare.detail.Detailer.FIX_SEED) &&
         !isOn(node.params[com.abrah.nightmare.detail.Detailer.FIX_FACES]) &&
         !isOn(node.params[com.abrah.nightmare.detail.Detailer.FIX_HANDS])
     ) return true
