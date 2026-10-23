@@ -119,8 +119,11 @@ object Backend {
      * ⚠ Long on purpose: a backend that DIES closes the socket, which reads as
      * an immediate EOF, not a timeout — so this only ever bounds a genuine hang,
      * and Cancel still stops one at any time.
+     * ⚠⚠ 30 min, not 10: on a CPU-only phone ONE silent stage outlasts 10 (an 8 GB 8 Gen 1, Anima Turbo at
+     * 768x704, 2026-10-23: a 602 s full-frame decode with no event in it). The render finished in the backend
+     * at 1,150 s and the app had already given up and thrown it away.
      */
-    internal const val DIT_SSE_READ_TIMEOUT_MS = 600_000
+    internal const val DIT_SSE_READ_TIMEOUT_MS = 1_800_000
 
     data class Response(val code: Int, val body: String, val millis: Long)
 

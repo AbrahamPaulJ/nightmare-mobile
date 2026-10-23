@@ -89,6 +89,19 @@ class DialogGoldenTest {
         capture("dialog-output-upscale")
     }
 
+    /** ⭐ The library sheet's head: Models and Flows as two cards (Flows open), and the Flows "+" after them. */
+    @Test
+    fun theLibraryTogglesModelsAndFlows() {
+        show {
+            com.abrah.nightmare.ui.LibraryScreen(
+                tab = com.abrah.nightmare.ui.LibraryTab.FLOWS, onTab = {}, showTabs = false,
+                models = {}, flows = {},
+                flowsAction = { com.abrah.nightmare.ui.ImportButton(enabled = true) {} },
+            )
+        }
+        capture("library-toggle")
+    }
+
     /** ⭐ …and Adjust colours' four sliders the same way. */
     @Test
     fun theAdjustCardOpensItsSliders() {

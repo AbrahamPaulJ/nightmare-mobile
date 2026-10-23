@@ -1081,6 +1081,11 @@
     <string name="draw_blank_sub">Начать с холста</string>
     <string name="pick_add_image">Добавить изображение</string>
     <string name="pick_add_image_sub">Выбрать из файлов</string>
+    <string name="pick_photos_title">Выбрать из фото</string>
+    <string name="pick_photos_sub">Из вашей галереи</string>
+    <string name="pick_files_title">Выбрать из файлов</string>
+    <string name="pick_files_sub">Из памяти устройства</string>
+    <string name="pick_add">Добавить</string>
     <string name="draw_pick">Пипетка</string>
     <string name="draw_more_colors">Другие цвета</string>
     <string name="draw_choose_color">Выберите цвет</string>
@@ -1286,5 +1291,9 @@
     <string name="cd_kept_picture">сохранённое изображение</string>
     <string name="flow_this_chip">этот чип</string>
     <string name="flows_section_advanced">Дополнительно</string>
+    <string name="flows_section_pictures">Изображения</string>
+    <string name="flows_section_faces">Лица</string>
+    <string name="flows_section_edit">Редактирование</string>
+    <string name="flows_section_video">Видео</string>
     <string name="search_clear">Очистить поиск</string>
 </resources>

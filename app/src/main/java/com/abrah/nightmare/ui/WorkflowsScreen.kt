@@ -67,17 +67,8 @@ fun WorkflowsScreen(
     onOpenSaved: (String) -> Unit,
     onDeleteSaved: (String) -> Unit,
     onRenameSaved: (String, String) -> Unit = { _, _ -> },
-    /**
-     * ⭐ Bring in a flow, or a pack of nodes, that someone sent you.
-     *
-     * ⚠ Nullable so this screen still renders in a preview and a golden, where
-     * there is no `ActivityResultLauncher` to hand it — the same shape
-     * `ModelsScreen.onImport` uses. Null hides the row rather than showing dead
-     * buttons.
-     */
     /** ⭐ Hand a saved flow to another app, as importable JSON. */
     onShareSaved: (String) -> Unit = {},
-    onImportFlow: (() -> Unit)? = null,
     /**
      * ⭐ What this phone can run, for the per-flow gate ([Recipe.runsOnDevice]).
      *
@@ -118,29 +109,33 @@ fun WorkflowsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (page == 0) {
-                    itemsIndexed(recipes, key = { _, r -> "r-${r.id}" }) { i, r ->
-                        // ⭐ A section's heading, above the first card of its run
-                        // ([Recipe.section]) — "Advanced", 2026-10-01.
-                        val section = r.section
-                        if (section != null && recipes.getOrNull(i - 1)?.section != section) {
-                            Text(
-                                sectionLabel(section),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
-                            )
+                    // ⭐⭐ One CARD per section ([Recipe.section]: Pictures, Faces, Advanced, Edit, Video), the user's
+                    // call 2026-10-23; a run of recipes sharing one is a section, so the list's cost order holds.
+                    val sections = recipes.fold(mutableListOf<MutableList<Recipe>>()) { acc, r ->
+                        if (acc.lastOrNull()?.first()?.section == r.section) acc.last().add(r) else acc.add(mutableListOf(r))
+                        acc
+                    }
+                    items(sections, key = { "s-${it.first().id}" }) { run ->
+                        PanelCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(PANEL_PAD), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                run.first().section?.let {
+                                    Text(sectionLabel(it), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.studio.accentText)
+                                }
+                                for (r in run) {
+                                    // ⭐ The CARD opens it. An "Open" button beside a row whose
+                                    // only purpose is to be opened is a second target for one
+                                    // intent -- and on a phone the card is the bigger, easier one.
+                                    //
+                                    // ⭐⭐⭐ …unless this phone cannot run it. A flow
+                                    // needing an arch this chip does not have is drawn dimmed,
+                                    // is not clickable, and says why — the Models tab's
+                                    // "Unsupported" treatment for a whole flow
+                                    // ([Recipe.runsOnDevice]).
+                                    val ok = r.runsOnDevice(caps)
+                                    RecipeCard(r, ok, caps) { onOpenRecipe(r) }
+                                }
+                            }
                         }
-                        // ⭐ The CARD opens it. An "Open" button beside a row whose
-                        // only purpose is to be opened is a second target for one
-                        // intent -- and on a phone the card is the bigger, easier one.
-                        //
-                        // ⭐⭐⭐ …unless this phone cannot run it. A flow
-                        // needing an arch this chip does not have is drawn dimmed,
-                        // is not clickable, and says why — the Models tab's
-                        // "Unsupported" treatment for a whole flow
-                        // ([Recipe.runsOnDevice]).
-                        val ok = r.runsOnDevice(caps)
-                        RecipeCard(r, ok, caps) { onOpenRecipe(r) }
                     }
                 } else {
                     if (saved.isEmpty()) {
@@ -222,37 +217,8 @@ fun WorkflowsScreen(
                         }
                     }
                 }
-                // ⭐⭐ Import LAST, and on BOTH sub-tabs (the user's call,
-                // 2026-09-17), so it is where the thumb looks whichever list is
-                // showing.
-                //
-                // ⚠ It was FIRST, on the Models tab's reasoning that someone who
-                // already has a file is not browsing ours. That is true of a
-                // CHECKPOINT — a rare, deliberate act — and wrong here: the Flows
-                // tab is opened to pick a flow, many times a session, and a card
-                // about importing sat above the thing every visit is for. The
-                // user's call, 2026-09-10.
-                if (onImportFlow != null) {
-                    item {
-                        // ⚠⚠ **Flows only.** Importing a NODE PACK moved to Settings,
-                        // at the user's call 2026-09-11: a flow is inert data that
-                        // the app can refuse to open, where a pack is CODE with no
-                        // validation gate yet (`docs/ARCHITECTURE.md` §8c). Two
-                        // actions that differ that much in consequence do not belong
-                        // on one card, and this tab is the one a person visits to
-                        // run something.
-                        // ⚠ [ImportCallout] is the SAME card Models and Settings
-                        // draw. It used to be a plain card with two bare buttons
-                        // labelled "Flow" and "Nodes" — labels that only parsed
-                        // while they sat side by side.
-                        ImportCallout(
-                            title = stringResource(R.string.flows_import),
-                            body = stringResource(R.string.flows_import_note),
-                            buttonLabel = stringResource(R.string.flows_import_flow),
-                            onImport = onImportFlow,
-                        )
-                    }
-                }
+                // ⚠ No Import card: a flow is imported with the "+" in the sheet's header, as a model is
+                // (`LibraryScreen` flowsAction, the user's call 2026-10-23).
             }
         }
     }
@@ -361,7 +327,7 @@ private fun RecipeCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     if (r.minArch > 68) Badge(archLabel(r.minArch))
-                    r.section?.let { Badge(sectionLabel(it), MaterialTheme.colorScheme.primary) }
+                    // ⚠ No section badge: the section is the card around this one (its heading).
                 }
                 Text(
                     r.aboutRes?.let { stringResource(it) } ?: r.about,
@@ -413,5 +379,11 @@ private fun recipeIcon(id: String): androidx.compose.ui.graphics.vector.ImageVec
  * ([com.abrah.nightmare.canvas.ADVANCED]): the list groups by it, so it must not change with the locale.
  */
 @Composable
-private fun sectionLabel(section: String): String =
-    if (section == com.abrah.nightmare.canvas.ADVANCED) stringResource(R.string.flows_section_advanced) else section
+private fun sectionLabel(section: String): String = when (section) {
+    com.abrah.nightmare.canvas.PICTURES -> stringResource(R.string.flows_section_pictures)
+    com.abrah.nightmare.canvas.FACES -> stringResource(R.string.flows_section_faces)
+    com.abrah.nightmare.canvas.ADVANCED -> stringResource(R.string.flows_section_advanced)
+    com.abrah.nightmare.canvas.EDIT -> stringResource(R.string.flows_section_edit)
+    com.abrah.nightmare.canvas.VIDEO -> stringResource(R.string.flows_section_video)
+    else -> section
+}

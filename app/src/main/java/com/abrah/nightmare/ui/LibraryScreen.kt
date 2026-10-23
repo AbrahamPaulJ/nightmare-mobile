@@ -83,25 +83,34 @@ fun LibraryScreen(
     onMenu: (() -> Unit)? = null,
     /** ⭐ Drawn at the Models title's end: the import "+" ([ImportButton]). */
     modelsAction: (@Composable () -> Unit)? = null,
+    /** ⭐ …and at the Flows title's end: a flow's import "+", the same button (the user, 2026-10-23). */
+    flowsAction: (@Composable () -> Unit)? = null,
 ) {
     if (!showTabs) {
         // ⭐⭐ A [PullDownSheet] again, like Settings (the user, 2026-10-10: "make models, flows,
         // results just like settings — sheet with top bar and close btn"). Settings' layout: the
         // header (☰ + title) under the sheet's bar, the page filling the rest.
         Column(modifier.fillMaxSize().navigationBarsPadding().padding(16.dp)) {
-            ScreenHeader(
-                stringResource(
-                    when (tab) {
-                        LibraryTab.MODELS -> R.string.nav_models
-                        LibraryTab.FLOWS -> R.string.nav_flows
-                        LibraryTab.RESULTS -> R.string.nav_results
-                    },
-                ),
+            // ⭐⭐ Models and Flows as TWO CARDS at the top, the open one selected (the user, 2026-10-23: "go to Flows
+            // from Models and vice versa, both cards on top and we can toggle"); each list's "+" after them.
+            if (tab != LibraryTab.RESULTS) Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.s),
+            ) {
+                LibraryToggleCard(ModelsIcon, stringResource(R.string.nav_models), tab == LibraryTab.MODELS, Modifier.weight(1f)) {
+                    onTab(LibraryTab.MODELS)
+                }
+                LibraryToggleCard(FlowsIcon, stringResource(R.string.nav_flows), tab == LibraryTab.FLOWS, Modifier.weight(1f)) {
+                    onTab(LibraryTab.FLOWS)
+                }
+                if (tab == LibraryTab.MODELS) modelsAction?.invoke() else flowsAction?.invoke()
+            } else ScreenHeader(
+                stringResource(R.string.nav_results),
                 onClose = null,
                 // ⭐ No ☰ of its own: the main bar's, in the gap above the sheet, is the one
                 // ([PullDownSheet]'s `onMenu`, the user's mock 2026-10-10).
                 onMenu = null,
-                trailing = { if (tab == LibraryTab.MODELS) modelsAction?.invoke() },
             )
             // ⚠ The list scrolls only the list — the sheet is pulled by its bar ([keepScrollInside]).
             Column(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp).keepScrollInside()) {
@@ -194,6 +203,31 @@ fun LibraryScreen(
                 LibraryTab.FLOWS -> flows()
                 LibraryTab.RESULTS -> results()
             }
+        }
+    }
+}
+
+/** ⭐ One of the Models / Flows cards at the top of the library sheet: [StudioCard], selected when it is open. */
+@Composable
+private fun LibraryToggleCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    StudioCard(modifier, selected = selected, onClick = if (selected) null else onClick) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            androidx.compose.material3.Icon(
+                icon, contentDescription = null, modifier = Modifier.size(22.dp),
+                tint = if (selected) MaterialTheme.studio.accentText else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            androidx.compose.foundation.layout.Spacer(Modifier.width(Space.s))
+            Text(
+                label, style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

@@ -1210,6 +1210,9 @@ object ModelCatalog {
      * picture really is 16:9 — and the sliders are right there for anyone who
      * wants 1344x768 (1.75) instead.
      */
+    /** ⚠ The most [ditFit] may grow a node's area: a new picture or ratio changes the shape, not the cost. */
+    const val DIT_FIT_MAX_GROW = 1.25
+
     fun ditFit(aspect: Float, around: Res): Res {
         if (!aspect.isFinite() || aspect <= 0f) return around
         val want = kotlin.math.ln(aspect.toDouble())
@@ -1218,7 +1221,13 @@ object ModelCatalog {
         // ⚠⚠ Every pair on the grid, scored by RATIO first. 25 candidates —
         // one per width, each with the single height nearest the ratio, because
         // a second height on the same width is strictly further from it.
+        // ⚠⚠⚠ …but never more than [DIT_FIT_MAX_GROW] times the area the node renders. Ratio-first with no cap
+        // sent an odd-shaped photo to the ONE pair that hits its exact ratio: a 1600x1536 picture (25:24) moved a
+        // FLUX.2 edit set to 640x1152 to 1600x1536, 3.3x the pixels, and lmkd reaped the app at sampling (the
+        // user's report 2026-10-23, "i definitely used smaller resolutions"). A picture changes the SHAPE; the
+        // size stays the person's. 1.25 keeps the aspect picker's 4:3 at 1280x960 and 3:2 at 1344x896 from 1024².
         val candidates = grid.map { w -> Res(w, ditSnap((w / aspect).toInt())) }
+            .let { all -> all.filter { it.width.toDouble() * it.height <= area * DIT_FIT_MAX_GROW }.ifEmpty { all } }
         // ⚠ Log ratio, matching `HarnessViewModel.autoFraming`'s `far`: it makes
         // 2:3 and 3:2 equally far from 1:1, which a plain difference does not.
         fun err(r: Res) = kotlin.math.abs(kotlin.math.ln(r.width.toDouble() / r.height) - want)

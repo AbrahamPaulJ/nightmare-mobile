@@ -447,6 +447,7 @@ val RECIPES: List<Recipe> = listOf(
         "txt2img", "Text to image",
         "A prompt in, a picture out. The one to start with.",
         ::defaultWorkflow,
+        section = PICTURES,
         labelRes = R.string.flow_txt2img_name,
         aboutRes = R.string.flow_txt2img_about,
     ),
@@ -457,6 +458,7 @@ val RECIPES: List<Recipe> = listOf(
         // ⚠ Not an edit model (FLUX.2, Qwen Image): there the job is an EDIT
         // and has its own card, further down where its requirements put it.
         families = com.abrah.nightmare.Family.entries.filterNot { it.edit }.toSet(),
+        section = PICTURES,
         labelRes = R.string.flow_img2img_name,
         aboutRes = R.string.flow_img2img_about,
     ),
@@ -465,6 +467,7 @@ val RECIPES: List<Recipe> = listOf(
         "Paint over part of a photo and only that part is re-imagined. Open the " +
             "sampler and tap Mask to paint.",
         ::inpaintWorkflow,
+        section = PICTURES,
         labelRes = R.string.flow_inpaint_name,
         aboutRes = R.string.flow_inpaint_about,
     ),
@@ -479,6 +482,7 @@ val RECIPES: List<Recipe> = listOf(
             "the upscaler is its own small model, installed under Models.",
         ::upscaleWorkflow,
         usesCheckpoint = false,
+        section = PICTURES,
         labelRes = R.string.flow_upscale_name,
         aboutRes = R.string.flow_upscale_about,
     ),
@@ -489,6 +493,7 @@ val RECIPES: List<Recipe> = listOf(
         "A photo's faces changed by sliders: smile, eyes, gaze, mouth and head turn. No checkpoint involved.",
         ::faceEditWorkflow,
         usesCheckpoint = false,
+        section = FACES,
         labelRes = R.string.flow_face_edit_name,
         aboutRes = R.string.flow_face_edit_about,
     ),
@@ -499,6 +504,7 @@ val RECIPES: List<Recipe> = listOf(
         "A photo of a face moving the way a face moves in a video you choose. No checkpoint involved.",
         ::animatePortraitWorkflow,
         usesCheckpoint = false,
+        section = FACES,
         labelRes = R.string.flow_animate_name,
         aboutRes = R.string.flow_animate_about,
     ),
@@ -545,6 +551,7 @@ val RECIPES: List<Recipe> = listOf(
         ::fluxEditWorkflow,
         families = com.abrah.nightmare.Family.entries.filter { it.edit }.toSet(),
         minArch = com.abrah.nightmare.ModelCatalog.DIT_GGML_MIN_ARCH,
+        section = EDIT,
         labelRes = R.string.flow_flux_edit_name,
         aboutRes = R.string.flow_flux_edit_about,
     ),
@@ -557,6 +564,7 @@ val RECIPES: List<Recipe> = listOf(
         { wanVideoWorkflow(i2v = false) },
         usesCheckpoint = false,
         minArch = com.abrah.nightmare.ModelCatalog.WAN22.builds.minOf { it.minArch },
+        section = VIDEO,
         labelRes = R.string.flow_t2v_name,
         aboutRes = R.string.flow_t2v_about,
     ),
@@ -567,6 +575,7 @@ val RECIPES: List<Recipe> = listOf(
         { wanVideoWorkflow(i2v = true) },
         usesCheckpoint = false,
         minArch = com.abrah.nightmare.ModelCatalog.WAN22.builds.minOf { it.minArch },
+        section = VIDEO,
         labelRes = R.string.flow_i2v_name,
         aboutRes = R.string.flow_i2v_about,
     ),
@@ -577,6 +586,7 @@ val RECIPES: List<Recipe> = listOf(
         ::motionTransferWorkflow,
         usesCheckpoint = false,
         minArch = com.abrah.nightmare.ModelCatalog.WAN22_FUN.builds.minOf { it.minArch },
+        section = VIDEO,
         labelRes = R.string.flow_motion_name,
         aboutRes = R.string.flow_motion_about,
     ),
@@ -648,6 +658,11 @@ fun inpaintWorkflow(): Workflow = Workflow(
 
 /** The Flows list's heading for the SD 1.5 Swap recipes. */
 const val ADVANCED = "Advanced"
+/** ⭐ The Flows list's other sections, a card each (the user, 2026-10-23), in the list's cost order. */
+const val PICTURES = "Pictures"
+const val FACES = "Faces"
+const val EDIT = "Edit"
+const val VIDEO = "Video"
 
 /**
  * ⭐⭐ The Advanced flows: an SD 1.5 Swap sampler built whatever is selected

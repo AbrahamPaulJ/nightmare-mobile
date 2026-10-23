@@ -339,6 +339,26 @@ class ResolutionTest {
     }
 
     /**
+     * ⚠⚠ A picture changes the SHAPE, never the cost: a 1600x1536 photo (25:24, exact only at 1600x1536) moved a
+     * FLUX.2 edit set to 640x1152 to 1600x1536 and lmkd reaped the app (2026-10-23). Every shape stays within
+     * [ModelCatalog.DIT_FIT_MAX_GROW] of the node's area.
+     */
+    @Test
+    fun ditFitNeverGrowsTheAreaPastTheCap() {
+        val node = Res(640, 1152)
+        val got = ModelCatalog.ditFit(1600f / 1536f, node)
+        assertTrue("$got", got.width.toLong() * got.height <= node.width.toLong() * node.height * ModelCatalog.DIT_FIT_MAX_GROW)
+        assertTrue("$got is landscape-ish like the photo", got.width >= got.height)
+        for (aspect in listOf(0.5f, 0.6f, 25f / 24f, 1.3f, 1.9f, 2.4f)) {
+            // ⚠ Not from 512²: the 512 minimum edge makes 1:2 cost 512x1024 whatever the cap.
+            for (start in listOf(Res(640, 1152), Res(768, 768), Res(1024, 1024))) {
+                val r = ModelCatalog.ditFit(aspect, start)
+                assertTrue("$aspect from $start -> $r", r.width.toLong() * r.height <= start.width.toLong() * start.height * ModelCatalog.DIT_FIT_MAX_GROW)
+            }
+        }
+    }
+
+    /**
      * ⭐⭐ **The size is editable and the model is not**, on every backend node.
      *
      * ⚠⚠ This pair is the whole reason [Widget.contextKey] exists as a field of

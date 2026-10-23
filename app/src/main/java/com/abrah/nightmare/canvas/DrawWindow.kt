@@ -1,7 +1,6 @@
 package com.abrah.nightmare.canvas
 
 import com.abrah.nightmare.ui.StudioButton
-import com.abrah.nightmare.ui.StudioOutlinedButton
 import android.graphics.Bitmap
 import android.graphics.BlurMaskFilter
 import android.graphics.Paint
@@ -69,7 +68,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.abrah.nightmare.R
 import com.abrah.nightmare.ui.NoteTextStyle
-import com.abrah.nightmare.ui.Pill
 
 /**
  * ⭐⭐⭐ **Doodle on a picture** (the user's list, 2026-10-09 — Local Dream's Draw screen): colour,
@@ -192,16 +190,21 @@ private val SWATCHES = listOf(
 ).map { it.toInt() }
 
 /**
- * ⭐⭐ The window: the picture with its layer, the tools under it, Cancel / Done at the foot.
- * [photo] is the node's picture WITHOUT the drawing; [existing] the drawing so far (or null).
- * [onDone] gets the new layer, or null when it ends up empty (the drawing is then removed).
+ * ⭐⭐ The window, laid out as the MASK window is (the user, 2026-10-23: "make draw sheet consistent to mask sheet"):
+ * the tools as ICON chips with undo, redo and clear beside them, the picture, ONE [DropdownSlider] for size, opacity,
+ * softness and hue, then the colours. [photo] is the node's picture WITHOUT the drawing; [existing] the drawing so far.
+ *
+ * ⭐⭐ AUTOSAVED, like the mask: no Done or Cancel. [onSave] gets the layer [SAVE_DELAY_MS] after the last change and
+ * once more when the window goes, or null when it ends up empty (the drawing is then removed). Undo is the way back.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun DrawWindow(
     photo: ImageBitmap,
     existing: Bitmap?,
-    onDone: (Bitmap?) -> Unit,
-    onCancel: () -> Unit,
+    onSave: (Bitmap?) -> Unit,
+    /** ⭐ A heading, for the sheet the image node opens; the inpaint window's tab already names it. */
+    title: String? = null,
     /** ⚠ For a golden: strokes already made, so the picture shows them. */
     initialStrokes: List<DrawStroke> = emptyList(),
 ) {
@@ -209,7 +212,6 @@ internal fun DrawWindow(
     var base by remember { mutableStateOf(existing) }
     var strokes by remember { mutableStateOf(initialStrokes) }
     var redo by remember { mutableStateOf(emptyList<DrawStroke>()) }
-    var cleared by remember { mutableStateOf(false) }
     var layer by remember { mutableStateOf(DrawLayer.render(existing, initialStrokes, size)) }
     fun commit() { layer = DrawLayer.render(base, strokes, size) }
     // ⚠⚠ A NEW stroke is drawn onto the layer in place; only undo, redo and clear replay ([commit]). Replaying
@@ -220,12 +222,28 @@ internal fun DrawWindow(
         android.graphics.Canvas(layer).drawPath(DrawLayer.pathOf(s.points), DrawLayer.paintFor(s))
         layerRev++
     }
+    // ⭐ Autosave: [dirty] counts changes, [saved] the last one written. ⚠ A COPY is handed over, because the
+    // layer keeps being drawn into in place while the save encodes it off the main thread.
+    var dirty by remember { mutableIntStateOf(0) }
+    var saved by remember { mutableIntStateOf(0) }
+    val latestSave by androidx.compose.runtime.rememberUpdatedState(onSave)
+    fun save() {
+        if (saved == dirty) return
+        saved = dirty
+        val l = layer
+        latestSave(if (DrawLayer.isEmpty(l)) null else l.copy(Bitmap.Config.ARGB_8888, false))
+    }
+    androidx.compose.runtime.LaunchedEffect(dirty) {
+        if (dirty > 0) { kotlinx.coroutines.delay(SAVE_DELAY_MS); save() }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { save() } }
 
     var erase by remember { mutableStateOf(false) }
     // ⭐ The eyedropper (Local Dream's picker mode): the next touch takes its colour from the picture.
     var picking by remember { mutableStateOf(false) }
     var choosing by remember { mutableStateOf(false) }
     var color by remember { mutableIntStateOf(SWATCHES[2]) }
+    var hue by remember { mutableFloatStateOf(0f) }
     // ⭐ Two fingers zoom and pan, as in the mask window ([MaskEditor]); reset with the picture.
     var zoom by remember(photo) { mutableFloatStateOf(1f) }
     var pan by remember(photo) { mutableStateOf(Offset.Zero) }
@@ -240,22 +258,24 @@ internal fun DrawWindow(
     )
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.draw_title), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            IconButton(onClick = {
-                strokes.lastOrNull()?.let { redo = redo + it; strokes = strokes.dropLast(1); commit() }
-            }, enabled = strokes.isNotEmpty()) {
-                Icon(com.abrah.nightmare.ui.UndoIcon, contentDescription = stringResource(R.string.draw_undo))
+        title?.let { Text(it, style = MaterialTheme.typography.titleLarge) }
+        // ⭐ The mask window's row: the tools as icon chips, then undo, redo and clear as small icon buttons. The
+        // words survive as content descriptions.
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DrawTool(com.abrah.nightmare.ui.BrushIcon, stringResource(R.string.draw_brush), !erase && !picking) { erase = false; picking = false }
+            DrawTool(com.abrah.nightmare.ui.EraserIcon, stringResource(R.string.draw_eraser), erase && !picking) { erase = true; picking = false }
+            DrawTool(com.abrah.nightmare.ui.EyedropperIcon, stringResource(R.string.draw_pick), picking) { picking = !picking }
+            DrawAction(com.abrah.nightmare.ui.UndoIcon, stringResource(R.string.draw_undo), strokes.isNotEmpty()) {
+                strokes.lastOrNull()?.let { redo = redo + it; strokes = strokes.dropLast(1); commit(); dirty++ }
             }
-            IconButton(onClick = {
-                redo.lastOrNull()?.let { strokes = strokes + it; redo = redo.dropLast(1); commit() }
-            }, enabled = redo.isNotEmpty()) {
-                Icon(com.abrah.nightmare.ui.RedoIcon, contentDescription = stringResource(R.string.draw_redo))
+            DrawAction(com.abrah.nightmare.ui.RedoIcon, stringResource(R.string.draw_redo), redo.isNotEmpty()) {
+                redo.lastOrNull()?.let { strokes = strokes + it; redo = redo.dropLast(1); commit(); dirty++ }
             }
-            IconButton(onClick = {
-                base = null; strokes = emptyList(); redo = emptyList(); cleared = true; commit()
-            }, enabled = base != null || strokes.isNotEmpty()) {
-                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.draw_clear))
+            DrawAction(Icons.Filled.Delete, stringResource(R.string.draw_clear), base != null || strokes.isNotEmpty()) {
+                base = null; strokes = emptyList(); redo = emptyList(); commit(); dirty++
             }
         }
         // ⭐ The picture, at its own shape, as wide as the sheet allows and no taller than half the screen.
@@ -334,6 +354,7 @@ internal fun DrawWindow(
                                 strokes = strokes + made
                                 redo = emptyList()
                                 append(made)
+                                dirty++
                             }
                             live = null
                         }
@@ -362,11 +383,19 @@ internal fun DrawWindow(
             }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill(stringResource(R.string.draw_brush), !erase && !picking) { erase = false; picking = false }
-            Pill(stringResource(R.string.draw_eraser), erase && !picking) { erase = true; picking = false }
-            Pill(stringResource(R.string.draw_pick), picking) { picking = !picking }
-        }
+        // ⭐⭐ ONE slider for the four (the mask window's [DropdownSlider]); hue only while painting.
+        DropdownSlider(
+            listOfNotNull(
+                SliderChoice(stringResource(R.string.draw_size), sizeFrac, 0.005f..0.15f, "${(sizeFrac * 100).toInt().coerceAtLeast(1)}%", { sizeFrac = it }),
+                SliderChoice(stringResource(R.string.draw_opacity), opacity, 0.05f..1f, "${(opacity * 100).toInt()}%", { opacity = it }),
+                SliderChoice(stringResource(R.string.draw_softness), softness, 0f..1f, "${(softness * 100).toInt()}%", { softness = it }),
+                if (erase) null else SliderChoice(stringResource(R.string.draw_hue), hue, 0f..360f, "${hue.toInt()}°", {
+                    hue = it
+                    color = android.graphics.Color.HSVToColor(floatArrayOf(it, 0.85f, 0.95f))
+                }),
+            ),
+            stringResource(R.string.cd_choose_mask_slider),
+        )
         if (!erase) {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -400,28 +429,39 @@ internal fun DrawWindow(
                     )
                 }
             }
-            var hue by remember { mutableFloatStateOf(0f) }
-            DrawSlider(stringResource(R.string.draw_hue), hue, 0f..360f, "${hue.toInt()}°") {
-                hue = it
-                color = android.graphics.Color.HSVToColor(floatArrayOf(it, 0.85f, 0.95f))
-            }
-        }
-        DrawSlider(stringResource(R.string.draw_size), sizeFrac, 0.005f..0.15f, "${(sizeFrac * 100).toInt().coerceAtLeast(1)}%") { sizeFrac = it }
-        DrawSlider(stringResource(R.string.draw_opacity), opacity, 0.05f..1f, "${(opacity * 100).toInt()}%") { opacity = it }
-        DrawSlider(stringResource(R.string.draw_softness), softness, 0f..1f, "${(softness * 100).toInt()}%") { softness = it }
-        Text(stringResource(R.string.draw_note), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        // ⚠ The safe action first and the doing one last, where the thumb lands (`docs/UI.md` §8.1).
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-            StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-            StudioButton(onClick = {
-                val changed = cleared || strokes.isNotEmpty()
-                if (!changed) onCancel() else onDone(layer.takeUnless { DrawLayer.isEmpty(it) })
-            }) { Text(stringResource(R.string.draw_done)) }
         }
         Spacer(Modifier.height(8.dp))
     }
     if (choosing) {
         ColorPickerDialog(color, onPick = { color = it; erase = false; picking = false }, onDismiss = { choosing = false })
+    }
+}
+
+/** ⚠ How long after the last change the drawing is saved: one file per pause, not one per stroke. */
+private const val SAVE_DELAY_MS = 600L
+
+/** ⭐ A tool as the mask window draws one: an icon chip, selected or not ([MaskToolbar]'s brush and eraser). */
+@Composable
+private fun DrawTool(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    androidx.compose.material3.FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp)) },
+        shape = RoundedCornerShape(10.dp),
+    )
+}
+
+/** ⭐ Undo, redo and clear as the mask window's small icon buttons, centred on the chips' line. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun androidx.compose.foundation.layout.FlowRowScope.DrawAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.align(Alignment.CenterVertically).size(34.dp)) {
+        Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -489,14 +529,4 @@ private fun ColorPickerDialog(initial: Int, onPick: (Int) -> Unit, onDismiss: ()
         },
         dismissButton = { com.abrah.nightmare.ui.StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
-}
-
-/** ⭐ A labelled slider with its value — one line, the mask window's shape. */
-@Composable
-private fun DrawSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, shown: String, onChange: (Float) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(76.dp))
-        Slider(value = value.coerceIn(range.start, range.endInclusive), onValueChange = onChange, valueRange = range, modifier = Modifier.weight(1f))
-        Text(shown, style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(48.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
-    }
 }

@@ -788,14 +788,24 @@ object CustomModels {
             val lender = if (variant == DitVariant.MOSS) mossLender(context, dir) else null
             if (lender != null) File(dir, PARTS_FROM_FILE).writeText(lender.id)
             else ensureDitParts(context, variant, dir, onProgress, isCancelled)
+            // ⭐⭐ A 16-bit MOSS safetensors becomes a Q8_0 GGUF AS it is read ([MossGguf]): a 9.5 GB fp16 one was reaped at
+            // its first render on a 12 GB phone and needs that much free to copy; ~5 GB as Q8_0, read once, no copy.
+            val toQ8 = variant == DitVariant.MOSS && !head.gguf && MossGguf.converts(head.json)
             // ⭐ A `.gguf` keeps its format: the engine picks the loader by name.
-            val dest = File(dir, if (head.gguf) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
+            val dest = File(dir, if (head.gguf || toQ8) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
             // ⚠⚠ Into `.part`, renamed when whole: a process killed mid-copy left a truncated `dit.safetensors` whose
             // header [detectDit] read on the next scan and marked, so a custom spec (no sizes to check) listed it
             // installed and Run failed inside the engine. The `catch` below cannot run when the process dies.
             val part = File(dir, dest.name + ".part")
+            if (toQ8) {
+                val bytes = SafetensorsGguf.convertStream(
+                    open, part, MossGguf.rule,
+                    { done, total -> onProgress(ModelInstaller.Progress("converting to Q8_0", done, total)) }, isCancelled,
+                )
+                Log.i(TAG, "converted '$name' to a Q8_0 GGUF: $bytes bytes")
+            }
             // ⭐ A safetensors goes through [Fp8Widen]: its non-matmul fp8 tensors become F32 on the way.
-            if (!head.gguf) open().use { input ->
+            else if (!head.gguf) open().use { input ->
                 part.outputStream().buffered(BUFFER).use { outS ->
                     val widened = Fp8Widen.copy(input, outS, { done -> onProgress(ModelInstaller.Progress("importing", done, 0)) }, isCancelled)
                     if (widened > 0) Log.i(TAG, "converted $widened fp8 tensors of '$name' (non-matmul to F32, E5M2 matmuls to E4M3)")

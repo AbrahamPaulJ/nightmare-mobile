@@ -63,6 +63,12 @@ object ErrorReport {
         val backendTail: List<String>,
         val appLog: List<String>,
         val failure: Failure?,
+        /**
+         * ⭐ The QNN runtime folder (`filesDir/qnnruntime`), name and size, when the backend failed in QNN: a v85
+         * phone runs QAIRT 2.51's core libraries over 2.50's, and two SM8975 reports (`Failed to load skel, 1002`)
+         * said nothing about which files the DSP was handed (`docs/DEVICES.md` §4b).
+         */
+        val qnnRuntime: List<Pair<String, Long>> = emptyList(),
     )
 
     /**
@@ -124,9 +130,14 @@ object ErrorReport {
      */
     internal fun routine(line: String): Boolean {
         val t = line.trim()
+        // ⚠ Except an `<I>` line naming a VERSION, a skel or stub, or a library: what loaded is the evidence a
+        // QNN failure needs, and it was all being left out (the SM8975 report, 2026-10-23).
+        if ("QnnDsp <I>" in t && KEEP_INFO.any { it in t }) return false
         return t.isEmpty() || "QnnDsp <I>" in t || "htpPerfInfrastructure" in t ||
             "m_CFBCallbackInfoObj" in t || "setInferenceBufferForHtpExtensionSkel" in t
     }
+
+    private val KEEP_INFO = listOf("ersion", "kel", "tub", ".so", "rch", "SoC", "soc")
 
     private fun gb(bytes: Long) = if (bytes <= 0) "?" else String.format(Locale.US, "%.2f GB", bytes / 1e9)
 
@@ -148,6 +159,10 @@ object ErrorReport {
             appendLine("storage free: ${gb(f.storageFree)}")
             appendLine("model: ${f.model ?: "none"}")
             f.modelFiles.forEach { (name, bytes) -> appendLine("  $name  ${mb(bytes)}") }
+            if (f.qnnRuntime.isNotEmpty()) {
+                appendLine("qnn runtime:")
+                f.qnnRuntime.forEach { (name, bytes) -> appendLine("  $name  ${mb(bytes)}") }
+            }
             appendLine()
             append("backend: ").appendLine(
                 when {
@@ -244,6 +259,10 @@ object ErrorReport {
             backendTail = BackendProcess.tail(),
             appLog = appLog,
             failure = last,
+            qnnRuntime = if (BackendProcess.tail().none { "QnnDsp <E>" in it }) emptyList() else runCatching {
+                BackendProcess.runtimeDir(context).listFiles().orEmpty().filter { it.isFile }
+                    .sortedBy { it.name }.map { it.name to it.length() }
+            }.getOrDefault(emptyList()),
         )
         return render(facts, prompts)
     }

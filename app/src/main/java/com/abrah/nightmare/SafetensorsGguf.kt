@@ -62,9 +62,18 @@ object SafetensorsGguf {
 
     private fun read(raf: RandomAccessFile, rule: Rule): Pair<List<Tensor>, Long> {
         val lenBuf = ByteArray(8).also { raf.readFully(it) }
+        val headerLen = headerLength(lenBuf)
+        val header = JSONObject(String(ByteArray(headerLen.toInt()).also { raf.readFully(it) }, Charsets.UTF_8))
+        return tensorsOf(header, rule) to (8 + headerLen)
+    }
+
+    private fun headerLength(lenBuf: ByteArray): Long {
         val headerLen = ByteBuffer.wrap(lenBuf).order(ByteOrder.LITTLE_ENDIAN).long
         if (headerLen <= 0 || headerLen > 64L shl 20) throw IOException("not a safetensors file")
-        val header = JSONObject(String(ByteArray(headerLen.toInt()).also { raf.readFully(it) }, Charsets.UTF_8))
+        return headerLen
+    }
+
+    private fun tensorsOf(header: JSONObject, rule: Rule): List<Tensor> {
         val tensors = header.keys().asSequence().filter { it != "__metadata__" }.sorted().filter { key ->
             rule.keep(rule.prefixes.firstOrNull { key.startsWith(it) }?.let { key.removePrefix(it) } ?: key)
         }.map { key ->
@@ -80,62 +89,115 @@ object SafetensorsGguf {
             Tensor(name, shape, out, dtype, off.getLong(0), off.getLong(1), type)
         }.toList()
         rule.check(tensors.map { it.name })
-        return tensors to (8 + headerLen)
+        return tensors
+    }
+
+    /** ⭐ Where [write] reads a tensor's bytes from: a seekable file, or a stream read once from front to back. */
+    private interface Src {
+        /** Positions at [offset] into the data section (after the header). */
+        fun seek(offset: Long)
+        fun readFully(b: ByteArray)
     }
 
     /** ⭐ Returns the bytes written, from the open file's position after a sync ([Converter.run]). */
-    fun convert(src: File, dst: File, rule: Rule, onProgress: (Long, Long) -> Unit, isCancelled: () -> Boolean): Long {
+    fun convert(src: File, dst: File, rule: Rule, onProgress: (Long, Long) -> Unit, isCancelled: () -> Boolean): Long =
         RandomAccessFile(src, "r").use { raf ->
             val (tensors, base) = read(raf, rule)
-            val total = tensors.sumOf { it.outBytes }
-            val fos = FileOutputStream(dst)
-            BufferedOutputStream(fos, 1 shl 20).use { out ->
-                val head = Le()
-                head.bytes("GGUF".toByteArray()); head.u32(3); head.u64(tensors.size.toLong()); head.u64((rule.kv.size + rule.kvU32.size).toLong())
-                for ((k, v) in rule.kv) { head.str(k); head.u32(8); head.str(v) }
-                for ((k, v) in rule.kvU32) { head.str(k); head.u32(4); head.u32(v) }
-                var offset = 0L
-                for (t in tensors) {
-                    head.str(t.name); head.u32(t.outShape.size)
-                    for (d in t.outShape.reversedArray()) head.u64(d)
-                    head.u32(t.type); head.u64(offset)
-                    offset += pad(t.outBytes)
-                }
-                head.zeros((ALIGN - head.size() % ALIGN) % ALIGN)
-                out.write(head.toByteArray())
+            write(tensors, dst, rule, onProgress, isCancelled, object : Src {
+                override fun seek(offset: Long) = raf.seek(base + offset)
+                override fun readFully(b: ByteArray) = raf.readFully(b)
+            })
+        }
 
-                var done = 0L
-                for (t in tensors) {
-                    val width = when (t.dtype) { "F32" -> 4; "BF16", "F16" -> 2; else -> throw IOException("unsupported dtype ${t.dtype}") }
-                    if (t.end - t.begin != t.elements * width) throw IOException("${t.name}: size does not match its shape")
-                    raf.seek(base + t.begin)
-                    // ⚠ Row by row, in groups of whole rows: a row is where padding goes and where a Q8_0
-                    // block must not straddle. A 1-D tensor is one row.
-                    val rowIn = (if (t.shape.size > 1) t.shape.last() else t.elements).toInt()
-                    val rowOut = (if (t.outShape.size > 1) t.outShape.last() else t.outElements).toInt()
-                    val rowsIn = t.elements / rowIn
-                    val rowsOut = t.outElements / rowOut
-                    val group = maxOf(1, CHUNK / maxOf(rowOut, 1))
-                    var written = 0L
-                    var r = 0L
-                    while (r < rowsOut) {
-                        if (isCancelled()) throw ModelInstaller.Cancelled() // ⚠ Its own type: a plain IOException read as a FAILED download
-                        val n = minOf(group.toLong(), rowsOut - r).toInt()
-                        val real = minOf(n.toLong(), maxOf(0L, rowsIn - r)).toInt()
-                        val raw = ByteArray(real * rowIn * width).also { if (real > 0) raf.readFully(it) }
-                        val data = encode(t, raw, real, n, rowIn, rowOut, width)
-                        out.write(data)
-                        written += data.size
-                        r += n
-                    }
-                    out.write(ByteArray((pad(written) - written).toInt()))
-                    done += t.outBytes
-                    onProgress(done, total)
+    /**
+     * ⭐⭐ The same conversion from a STREAM read once, front to back: an import from Android's picker, whose 9.5 GB
+     * fp16 checkpoint cannot first be copied onto a phone with 1 GB free (a tester's MOSS import, 2026-10-23). ⚠ The
+     * tensors go out in the FILE's order, so the read never goes back; the engine reads a GGUF by name, and the size
+     * is the same in any order.
+     */
+    fun convertStream(
+        open: () -> java.io.InputStream,
+        dst: File,
+        rule: Rule,
+        onProgress: (Long, Long) -> Unit,
+        isCancelled: () -> Boolean,
+    ): Long = java.io.DataInputStream(java.io.BufferedInputStream(open(), 1 shl 20)).use { input ->
+        val lenBuf = ByteArray(8).also { input.readFully(it) }
+        val headerLen = headerLength(lenBuf)
+        val header = JSONObject(String(ByteArray(headerLen.toInt()).also { input.readFully(it) }, Charsets.UTF_8))
+        val tensors = tensorsOf(header, rule).sortedBy { it.begin }
+        var at = 0L
+        write(tensors, dst, rule, onProgress, isCancelled, object : Src {
+            override fun seek(offset: Long) {
+                if (offset < at) throw IOException("the file's tensors overlap")
+                var skip = offset - at
+                while (skip > 0) {
+                    val n = input.skip(skip)
+                    if (n <= 0) throw IOException("the file ended early")
+                    skip -= n
                 }
-                out.flush()
-                fos.fd.sync()
-                return fos.channel.position()
+                at = offset
             }
+            override fun readFully(b: ByteArray) { input.readFully(b); at += b.size }
+        })
+    }
+
+    private fun write(
+        tensors: List<Tensor>,
+        dst: File,
+        rule: Rule,
+        onProgress: (Long, Long) -> Unit,
+        isCancelled: () -> Boolean,
+        src: Src,
+    ): Long {
+        val total = tensors.sumOf { it.outBytes }
+        val fos = FileOutputStream(dst)
+        BufferedOutputStream(fos, 1 shl 20).use { out ->
+            val head = Le()
+            head.bytes("GGUF".toByteArray()); head.u32(3); head.u64(tensors.size.toLong()); head.u64((rule.kv.size + rule.kvU32.size).toLong())
+            for ((k, v) in rule.kv) { head.str(k); head.u32(8); head.str(v) }
+            for ((k, v) in rule.kvU32) { head.str(k); head.u32(4); head.u32(v) }
+            var offset = 0L
+            for (t in tensors) {
+                head.str(t.name); head.u32(t.outShape.size)
+                for (d in t.outShape.reversedArray()) head.u64(d)
+                head.u32(t.type); head.u64(offset)
+                offset += pad(t.outBytes)
+            }
+            head.zeros((ALIGN - head.size() % ALIGN) % ALIGN)
+            out.write(head.toByteArray())
+
+            var done = 0L
+            for (t in tensors) {
+                val width = when (t.dtype) { "F32" -> 4; "BF16", "F16" -> 2; else -> throw IOException("unsupported dtype ${t.dtype}") }
+                if (t.end - t.begin != t.elements * width) throw IOException("${t.name}: size does not match its shape")
+                src.seek(t.begin)
+                // ⚠ Row by row, in groups of whole rows: a row is where padding goes and where a Q8_0
+                // block must not straddle. A 1-D tensor is one row.
+                val rowIn = (if (t.shape.size > 1) t.shape.last() else t.elements).toInt()
+                val rowOut = (if (t.outShape.size > 1) t.outShape.last() else t.outElements).toInt()
+                val rowsIn = t.elements / rowIn
+                val rowsOut = t.outElements / rowOut
+                val group = maxOf(1, CHUNK / maxOf(rowOut, 1))
+                var written = 0L
+                var r = 0L
+                while (r < rowsOut) {
+                    if (isCancelled()) throw ModelInstaller.Cancelled() // ⚠ Its own type: a plain IOException read as a FAILED download
+                    val n = minOf(group.toLong(), rowsOut - r).toInt()
+                    val real = minOf(n.toLong(), maxOf(0L, rowsIn - r)).toInt()
+                    val raw = ByteArray(real * rowIn * width).also { if (real > 0) src.readFully(it) }
+                    val data = encode(t, raw, real, n, rowIn, rowOut, width)
+                    out.write(data)
+                    written += data.size
+                    r += n
+                }
+                out.write(ByteArray((pad(written) - written).toInt()))
+                done += t.outBytes
+                onProgress(done, total)
+            }
+            out.flush()
+            fos.fd.sync()
+            return fos.channel.position()
         }
     }
 

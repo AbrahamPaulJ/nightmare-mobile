@@ -1,0 +1,45 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -2,6 +2,7 @@
+ #define PIPELINEDIT_HPP
+ 
+ #include <dlfcn.h>
++#include <unistd.h>
+ 
+ #include <algorithm>
+ #include <chrono>
+@@ -444,8 +445,22 @@
+       widest = std::max(
+           widest, static_cast<long>(reference_widths[i]) * reference_heights[i]);
+     }
+-    const long budget =
++    long budget =
+         vae_passes > 1 ? kTileAbovePixelsMultiPass : kTileAbovePixels;
++    // ⚠⚠ …and a third for a phone under [kLowRamBytes], whose VAE may run on
++    // the CPU (an 8 GB 8 Gen 1, SM8450 / v69, 2026-10-23): Anima's Wan VAE
++    // decoding 768x704 full-frame took 3,964 MB of RAM and 602 s, and the app
++    // was reaped at 768x768; 512x512 took 1,922 MB and lived. Tiles above
++    // 512x512 keep every pass at that cost on such a phone.
++    {
++      const long pages = sysconf(_SC_PHYS_PAGES);
++      const long page = sysconf(_SC_PAGE_SIZE);
++      const long long ram = pages > 0 && page > 0
++                                ? static_cast<long long>(pages) * page
++                                : 0;
++      if (ram > 0 && ram < kLowRamBytes)
++        budget = std::min(budget, kTileAbovePixelsLowRam);
++    }
+     // ⚠⚠ …and a SIDE limit, for Qwen Image 2.1's Wan VAE: a full-frame pass
+     // with a 1280 px side aborts the NPU (`dspqueue_read failed 0x2e`, 0.2 s
+     // into the decode) at 768x1280 and 1280x768 alike, while 1024x1152 --
+@@ -586,6 +601,10 @@
+   // day at 288 MB a pass, and 1024x1024 at 1536 MB a pass was not. A request
+   // that runs the VAE more than once uses this instead.
+   static constexpr long kTileAbovePixelsMultiPass = 640L * 640L;
++  // ⚠ Below 10 GiB (an 8 GB phone reports ~7.5): tile above 512x512, the
++  // largest full-frame decode measured alive on one (see generate()).
++  static constexpr long long kLowRamBytes = 10LL << 30;
++  static constexpr long kTileAbovePixelsLowRam = 512L * 512L;
+   // ⚠ Qwen Image 2.1's Wan VAE, full frame: 1152 measured clean, 1280 aborts
+   // the NPU (see the tiling decision in generate()). 1216 untried.
+   static constexpr int kMaxFullFrameSideQwen = 1152;

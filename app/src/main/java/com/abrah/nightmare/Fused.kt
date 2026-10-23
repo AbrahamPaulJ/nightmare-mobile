@@ -645,6 +645,27 @@ class SdSampler(
          */
         const val REF_MAX = "ref_max"
 
+        /**
+         * ⭐⭐ A FLUX.2 Klein run that READS a picture (edit, image to image, inpaint, a reference) above 512x512
+         * streams its DiT under a 4 GiB budget (`DIT_MAX_VRAM` with `all=disk`, [ContextKey.memoryBudget]) below
+         * the 16 GB class. Every picture adds a full canvas of tokens AND a VAE encode, so the 3.9 GB DiT plus
+         * ~1.5 GB of compute is more than a 12 GB phone keeps free. Measured on the S25 2026-10-23, 576x1024 with
+         * a reference: unbudgeted, reaped by lmkd 7 s into the edit with 6.3 GB free (the user's crash at 5.3 GB
+         * free, the same); 2.75 GiB, 138 s; 4 GiB, 127 s, and it completed from 2.1 GB free. 512x512 with a
+         * reference renders unbudgeted in 20 s, so it keeps full speed, as does text to image.
+         * ⚠ Not an engine regression: the DiT (3,882 MB) and the compute (1,460 MB) match `docs/DIT.md` §9.
+         */
+        // ⚠ Not below v79: a chip there already runs EVERY DiT at its own 2.75 (`BackendProcess.lowArchDitBudget`, the
+        // ~3.1 GB map), and a key budget would override it with this larger one.
+        internal fun kleinEditBudget(family: Family, pictures: Int, w: Int, h: Int, ramBytes: Long, arch: Int): String? =
+            "4".takeIf {
+                family == Family.FLUX2 && pictures > 0 && w.toLong() * h > KLEIN_RESIDENT_EDIT_PX &&
+                    ramBytes in 1 until Prefs.LOWRAM_BELOW_BYTES && arch !in 1..78
+            }
+
+        /** ⚠ The largest Klein edit measured to fit resident on a 12 GB phone ([kleinEditBudget]). */
+        const val KLEIN_RESIDENT_EDIT_PX = 512L * 512L
+
         /** ⭐ A DiT edit's references after `reference` (image 2): images 3 and 4 ([MAX_REFERENCES] in all). */
         val EXTRA_REFS = listOf("reference_3", "reference_4")
         const val MAX_REFERENCES = 4
@@ -1171,7 +1192,18 @@ class SdSampler(
         Widget(IP_IMAGE, "string", ""),
     )
 
-    override fun contextKey(node: Node) = backendContextKey(node)
+    override fun contextKey(node: Node): ContextKey {
+        val key = backendContextKey(node)
+        val p = effectiveParams(node)
+        val pictures = (listOf("image", "reference") + EXTRA_REFS).count { node.inputs[it] != null }
+        val budget = kleinEditBudget(
+            family, pictures,
+            p["width"]?.toIntOrNull() ?: 0, p["height"]?.toIntOrNull() ?: 0,
+            DeviceProbe.caps().ramBytes,
+            DeviceProbe.caps().let { if (it.known) it.arch else 0 },
+        )
+        return if (budget == null) key else key.copy(memoryBudget = budget)
+    }
 
     /** ⚠ The size a fixed-canvas family renders, not a stray one the node holds ([canvasOf], GitHub #60). */
     override fun effectiveParams(node: Node): Map<String, String> {

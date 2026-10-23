@@ -1054,6 +1054,11 @@
     <string name="draw_blank_sub">从画布开始</string>
     <string name="pick_add_image">添加图片</string>
     <string name="pick_add_image_sub">从文件中选择</string>
+    <string name="pick_photos_title">从相册选择</string>
+    <string name="pick_photos_sub">从图库中挑选</string>
+    <string name="pick_files_title">从文件选择</string>
+    <string name="pick_files_sub">从设备存储中选择</string>
+    <string name="pick_add">添加</string>
     <string name="draw_pick">取色</string>
     <string name="draw_more_colors">更多颜色</string>
     <string name="draw_choose_color">选择颜色</string>
@@ -1259,5 +1264,9 @@
     <string name="cd_kept_picture">已保存的图片</string>
     <string name="flow_this_chip">此芯片</string>
     <string name="flows_section_advanced">高级</string>
+    <string name="flows_section_pictures">图片</string>
+    <string name="flows_section_faces">人脸</string>
+    <string name="flows_section_edit">编辑</string>
+    <string name="flows_section_video">视频</string>
     <string name="search_clear">清除搜索</string>
 </resources>

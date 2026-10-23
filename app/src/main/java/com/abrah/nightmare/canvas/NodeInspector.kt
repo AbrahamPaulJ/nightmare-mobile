@@ -2692,9 +2692,13 @@ internal fun NodeInspectorBody(
         // so nothing that changes the picture is out of sight. One loop draws both halves: a second copy
         // of the knob loop would stop agreeing with the first.
         val isOutput = node.type == com.abrah.nightmare.MediaOutputNode.name
-        val (moreWidgets, mainWidgets) = widgets.partition {
+        val (moreUnsorted, mainWidgets) = widgets.partition {
             (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && it.name in MORE_OPTIONS) ||
                 (isOutput && it.name in OUTPUT_POST)
+        }
+        // ⭐ The variation seed LAST in the fold (the user, 2026-10-23); a stable sort keeps the rest in the knob order.
+        val moreWidgets = moreUnsorted.sortedBy {
+            it.name == com.abrah.nightmare.SdSampler.SUBSEED || it.name == com.abrah.nightmare.SdSampler.SUBSEED_STRENGTH
         }
         val prefsContext = LocalContext.current
         var moreOpen by remember { mutableStateOf(com.abrah.nightmare.Prefs.moreOptionsOpen) }
@@ -4855,7 +4859,7 @@ private fun NodeLoraPicker(
  * the file app"*) and [files] (the document picker, for a picture the gallery
  * does not index — a PNG in an app folder). Invoking it opens [photos], so every
  * caller that took a `() -> Unit` keeps working; [ImageActions] and the empty
- * frame offer [files] as a small "Files" button.
+ * frame offer [files] as the folder icon ([FilesButton]).
  *
  * ⚠⚠ [photos] on a phone WITHOUT Android's photo picker (no Google services on
  * Android ≤ 12 — Chinese phones) opens the phone's own GALLERY app, which shows
@@ -4952,7 +4956,7 @@ private fun VideoPicker(current: String, onPicked: (String) -> Unit, onClear: ()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             com.abrah.nightmare.ui.StudioOutlinedButton(onClick = pick.photos) { Text(stringResource(R.string.video_in_choose)) }
-            StudioTextButton(onClick = pick.files) { Text(stringResource(R.string.pick_files)) }
+            FilesButton(pick.files)
         }
         // ⭐ Under the buttons: the clip's first and last frames, not its file name (the user's
         // call, 2026-10-16), with ✕ to clear it.
@@ -5096,10 +5100,30 @@ private fun ImagePicker(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(44.dp),
                 ) else Row(Modifier.fillMaxSize()) {
-                    // ⭐⭐ Two halves, a dashed divider between (the user's mock, 2026-10-11): a picture
-                    // from the phone, or a blank page to draw on. ⚠ Each half is its own target.
-                    PickerHalf(Icons.Filled.Add, R.string.pick_add_image, R.string.pick_add_image_sub, pick, Modifier.weight(1f))
+                    // ⭐⭐ The user's mock (2026-10-23): the left half is the PHOTOS picker over the FILES picker, each
+                    // with its own Add, a dashed line between them; the right half a blank page. No Files button under
+                    // the frame any more. ⚠ Each part is its own target, the button and the area around it alike.
                     val divider = MaterialTheme.colorScheme.outlineVariant
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                        PickerHalf(
+                            painterResource(R.drawable.ic_gallery), R.string.pick_photos_title, R.string.pick_photos_sub,
+                            pick.photos, Modifier.weight(1f), add = true,
+                        )
+                        Box(
+                            Modifier.fillMaxWidth().height(2.dp).padding(horizontal = 2.dp).drawBehind {
+                                drawLine(
+                                    divider, androidx.compose.ui.geometry.Offset(0f, size.height / 2),
+                                    androidx.compose.ui.geometry.Offset(size.width, size.height / 2),
+                                    strokeWidth = 2.dp.toPx(),
+                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 10f)),
+                                )
+                            },
+                        )
+                        PickerHalf(
+                            androidx.compose.ui.graphics.vector.rememberVectorPainter(com.abrah.nightmare.ui.FolderIcon),
+                            R.string.pick_files_title, R.string.pick_files_sub, pick.files, Modifier.weight(1f), add = true,
+                        )
+                    }
                     Box(
                         Modifier.fillMaxHeight().width(2.dp).padding(vertical = 2.dp).drawBehind {
                             drawLine(
@@ -5110,10 +5134,14 @@ private fun ImagePicker(
                             )
                         },
                     )
-                    PickerHalf(Icons.Filled.Edit, R.string.draw_blank, R.string.draw_blank_sub, onBlank, Modifier.weight(1f))
+                    PickerHalf(
+                        androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Filled.Edit),
+                        R.string.draw_blank, R.string.draw_blank_sub, onBlank, Modifier.weight(1f).fillMaxHeight(),
+                    )
                 }
             }
-            FilesButton(pick.files)
+            // ⚠ The FILES picker is in the frame (above); a lone Add frame (no Blank page) still offers it under.
+            if (onBlank == null) FilesButton(pick.files)
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ImageActions(
@@ -5191,28 +5219,37 @@ private fun SwapFlowDialog(
     )
 }
 
-/** ⭐ One half of the empty picture frame: an icon, a title and a line under it. */
+/** ⭐ One part of the empty picture frame: an icon, a title, a line under it, and with [add] an Add button. */
 @Composable
 private fun PickerHalf(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: androidx.compose.ui.graphics.painter.Painter,
     @androidx.annotation.StringRes title: Int,
     @androidx.annotation.StringRes sub: Int,
     onClick: () -> Unit,
     modifier: Modifier,
+    add: Boolean = false,
 ) {
     Column(
-        modifier.fillMaxHeight().clickable(onClick = onClick).padding(8.dp),
+        modifier.fillMaxWidth().clickable(onClick = onClick).padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
-        Spacer(Modifier.height(10.dp))
-        Text(stringResource(title), style = MaterialTheme.typography.titleMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(36.dp))
+        Spacer(Modifier.height(6.dp))
+        Text(stringResource(title), style = MaterialTheme.typography.titleSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         Text(
             stringResource(sub), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
+        if (add) {
+            Spacer(Modifier.height(8.dp))
+            StudioButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.pick_add))
+            }
+        }
     }
 }
 
@@ -5313,16 +5350,18 @@ private fun ActionTile(
     }
 }
 
-/** ⭐ "Files" — [ImagePick.files], beside the gallery icon and under the empty frame. */
+/**
+ * ⭐⭐ "A file" — the document picker, as the FOLDER ICON tile the Image node's row draws ([ActionTile]), never the
+ * word (the user, 2026-10-23: "i still see Files across the app"). ONE function for every place that offers it: the
+ * empty Image frame, the Video picker and the LoRA picker. The word stays as the content description.
+ */
 @Composable
-internal fun FilesButton(onClick: () -> Unit, tint: Color? = null) {
-    StudioTextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp)) {
-        Text(
-            stringResource(R.string.pick_files),
-            color = tint ?: MaterialTheme.studio.accentText,
-            style = MaterialTheme.typography.labelMedium,
-        )
-    }
+internal fun FilesButton(onClick: () -> Unit) {
+    ActionTile(
+        androidx.compose.ui.graphics.vector.rememberVectorPainter(com.abrah.nightmare.ui.FolderIcon),
+        stringResource(R.string.pick_files),
+        onClick = onClick,
+    )
 }
 
 /**
@@ -5671,20 +5710,12 @@ private fun drawTile(src: DrawSource, onSave: (String, android.graphics.Bitmap?)
             }.getOrNull()
         }
     }
+    // ⭐⭐ The tab IS the draw window, as the Mask tab is the mask editor (the user, 2026-10-23): no thumbnail and
+    // Draw button opening a second sheet. ⚠ Keyed on the picture so a new one reloads it.
     return EditorTile(stringResource(R.string.draw_title), thumb, panel = {
-        thumb?.let {
-            androidx.compose.foundation.Image(
-                it, contentDescription = null,
-                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().heightIn(max = pictureCap()).clip(RoundedCornerShape(com.abrah.nightmare.ui.Radius.control)),
-            )
+        androidx.compose.runtime.key(src.uri) {
+            DrawPanel(src.uri, src.drawing, { onSave(src.nodeId, it) }, note = stringResource(R.string.draw_note_inpaint), scroll = false)
         }
-        Text(stringResource(R.string.draw_note_inpaint), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        DrawControls(
-            nodeId = src.nodeId, uri = src.uri, drawing = src.drawing,
-            onSaveDrawing = { onSave(src.nodeId, it) },
-            afterBlank = false, onBlankHandled = {},
-        )
     })
 }
 
@@ -5718,16 +5749,33 @@ private fun DrawControls(
             com.abrah.nightmare.ui.LabeledAction(Icons.Filled.Delete, stringResource(R.string.draw_clear_drawing), { onSaveDrawing(null) })
         }
     }
-    if (open) DrawSheet(uri, drawing, onDone = { onSaveDrawing(it); open = false }, onCancel = { open = false })
+    if (open) com.abrah.nightmare.ui.PullDownSheet(onDismiss = { open = false }) {
+        DrawPanel(uri, drawing, onSaveDrawing, title = stringResource(R.string.draw_title), note = stringResource(R.string.draw_note))
+    }
 }
 
-/** ⭐ The window in the app's sheet, with the picture and the layer so far decoded off the main thread. */
+/**
+ * ⭐⭐ The draw window with the picture and the layer so far decoded off the main thread: the image node's sheet and
+ * the inpaint window's Draw TAB, which draws it in place (the user, 2026-10-23: no button opening a second sheet).
+ * ⚠⚠ Loaded ONCE per picture: the window autosaves, each save is a new `drawing` path, and a load keyed on it
+ * reopened the window mid-drawing (strokes, undo and zoom gone). It reads the drawing current at opening.
+ */
 @Composable
-private fun DrawSheet(uri: String, drawing: String, onDone: (android.graphics.Bitmap?) -> Unit, onCancel: () -> Unit) {
+private fun DrawPanel(
+    uri: String,
+    drawing: String,
+    onSave: (android.graphics.Bitmap?) -> Unit,
+    title: String? = null,
+    note: String? = null,
+    /** ⚠⚠ False inside the inpaint window, whose page already scrolls: a scroll inside it crashed on Draw. */
+    scroll: Boolean = true,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val drawingAtOpen = remember(uri) { drawing }
     // ⚠ A decode that FAILS must end the spinner too: it used to stay null, and the sheet spun for ever.
-    var unreadable by remember(uri, drawing) { mutableStateOf(false) }
-    val loaded by androidx.compose.runtime.produceState<Pair<ImageBitmap, android.graphics.Bitmap?>?>(null, uri, drawing) {
+    var unreadable by remember(uri) { mutableStateOf(false) }
+    val loaded by androidx.compose.runtime.produceState<Pair<ImageBitmap, android.graphics.Bitmap?>?>(null, uri) {
+        val drawing = drawingAtOpen
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
                 val bytes = if (uri.startsWith("content://")) {
@@ -5740,18 +5788,32 @@ private fun DrawSheet(uri: String, drawing: String, onDone: (android.graphics.Bi
         }
         unreadable = value == null
     }
-    com.abrah.nightmare.ui.PullDownSheet(onDismiss = onCancel) {
-        val l = loaded
-        if (l == null) {
-            Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                if (unreadable) Text(stringResource(R.string.objects_this_unreadable), color = MaterialTheme.colorScheme.error)
-                else androidx.compose.material3.CircularProgressIndicator()
-            }
-        } else {
-            // ⚠ Scrolls on a short phone; the canvas consumes its own drag, so drawing never scrolls.
-            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
-                DrawWindow(photo = l.first, existing = l.second, onDone = onDone, onCancel = onCancel)
-            }
+    val l = loaded
+    if (l == null) {
+        Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+            if (unreadable) Text(stringResource(R.string.objects_this_unreadable), color = MaterialTheme.colorScheme.error)
+            else androidx.compose.material3.CircularProgressIndicator()
+        }
+    } else {
+        DrawPanelBody(l.first, l.second, onSave, title, note, scroll)
+    }
+}
+
+/** ⭐ [DrawPanel] once the picture is loaded: the window and its note. */
+@Composable
+internal fun DrawPanelBody(
+    photo: ImageBitmap,
+    layer: android.graphics.Bitmap?,
+    onSave: (android.graphics.Bitmap?) -> Unit,
+    title: String?,
+    note: String?,
+    scroll: Boolean,
+) {
+    // ⚠ Scrolls on a short phone; the canvas consumes its own drag, so drawing never scrolls.
+    Column(if (scroll) Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()) else Modifier) {
+        DrawWindow(photo = photo, existing = layer, onSave = onSave, title = title)
+        note?.let {
+            Text(it, style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
         }
     }
 }

@@ -181,4 +181,48 @@ class SafetensorsGgufTest {
         assertEquals(dst.length(), written)
         assertTrue(GgufHeader.isComplete(dst))
     }
+
+    /**
+     * ⭐ [SafetensorsGguf.convertStream] (an import read once from the picker, [MossGguf]) writes the same size of whole
+     * GGUF as [SafetensorsGguf.convert] from a file, with MOSS's types: block weights Q8_0, the embedders F32.
+     * ⚠ The tensors are deliberately not in name order in the file, which is what the stream has to follow.
+     */
+    @Test
+    fun aMossStreamConvertsLikeTheFile() {
+        val src = safetensors(listOf(
+            t("video_embedder.weight", 64, 32),
+            t("layers.0.proj.qkv.weight", 96, 64),
+            t("shared_block_modulation.weight", 64, 64),
+            t("layers.0.norm1.weight", 64),
+            t("time_embedding.0.weight", 64, 32),
+        ))
+        val fromFile = tmp.newFile("file.gguf")
+        val fromStream = tmp.newFile("stream.gguf")
+        SafetensorsGguf.convert(src, fromFile, MossGguf.rule, { _, _ -> }, { false })
+        val written = SafetensorsGguf.convertStream({ src.inputStream() }, fromStream, MossGguf.rule, { _, _ -> }, { false })
+        assertEquals(fromFile.length(), fromStream.length())
+        assertEquals(fromStream.length(), written)
+        assertTrue(GgufHeader.isComplete(fromStream))
+        assertEquals(setOf("Q8_0", "F32"), GgufHeader.parse(fromStream.readBytes()).types)
+        val (plan, _) = SafetensorsGguf.plan(src, MossGguf.rule)
+        val by = plan.associateBy { it.name }
+        assertEquals(SafetensorsGguf.Q8_0, by.getValue("layers.0.proj.qkv.weight").type)
+        assertEquals(SafetensorsGguf.Q8_0, by.getValue("shared_block_modulation.weight").type)
+        assertEquals(SafetensorsGguf.F32, by.getValue("video_embedder.weight").type)
+        assertEquals(SafetensorsGguf.F32, by.getValue("time_embedding.0.weight").type)
+        assertEquals(SafetensorsGguf.F32, by.getValue("layers.0.norm1.weight").type)
+    }
+
+    /** ⭐ Only 16- or 32-bit block weights convert: fp8 is already MOSS-sized, int8 is refused before this. */
+    @Test
+    fun onlySixteenBitMossConverts() {
+        fun head(dtype: String) = JSONObject().put(
+            "layers.0.proj.qkv.weight",
+            JSONObject().put("dtype", dtype).put("shape", JSONArray(listOf(96, 64))).put("data_offsets", JSONArray(listOf(0, 1))),
+        ).toString()
+        assertTrue(MossGguf.converts(head("F16")))
+        assertTrue(MossGguf.converts(head("BF16")))
+        assertEquals(false, MossGguf.converts(head("F8_E4M3")))
+        assertEquals(false, MossGguf.converts(head("I8")))
+    }
 }

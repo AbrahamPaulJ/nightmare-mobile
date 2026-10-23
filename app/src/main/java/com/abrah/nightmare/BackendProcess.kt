@@ -605,6 +605,27 @@ object BackendProcess {
     private const val KREA_WHOLE_FREE = 7_300_000_000L
     private const val KREA_5_FREE = 6_100_000_000L
 
+    /**
+     * ⭐⭐ An IMPORTED DiT too big to hold whole streams under 4 GiB below the 16 GB class, as Krea 2 does
+     * ([kreaBudget]): a tester's 10.2 GB fp16 MOSS checkpoint on a 12 GB S25 (5.5 GB free) was reaped by lmkd within
+     * 10 s of its first render (Saved #7118, 1.6.218). ⚠ Imports only, and only over [IMPORT_STREAM_FROM]: a
+     * built-in's memory is measured per family, and a 3-5 GB GGUF or fp8 import renders whole. Whole whenever what is
+     * free holds the DiT plus Krea's measured ~2.2 GB of headroom.
+     */
+    internal fun importBudget(spec: ModelSpec?, ditBytes: Long, ramBytes: Long, availBytes: Long): String? {
+        if (spec?.isCustom != true || !spec.isDit || ditBytes <= IMPORT_STREAM_FROM) return null
+        if (ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
+        return "4".takeIf { availBytes < ditBytes + IMPORT_HEADROOM }
+    }
+
+    private const val IMPORT_STREAM_FROM = 6_000_000_000L
+    private const val IMPORT_HEADROOM = 2_200_000_000L
+
+    /** ⚠ The DiT file's size in [spec]'s folder (`dit.safetensors` / `dit.gguf`), or 0. */
+    private fun ditBytesOf(context: Context, spec: ModelSpec?): Long = runCatching {
+        spec?.dir(context)?.listFiles().orEmpty().filter { it.isFile && it.name.startsWith("dit.") }.maxOfOrNull { it.length() } ?: 0L
+    }.getOrDefault(0L)
+
     /** ⚠ Diagnostic: the engine's VRAM budget (`DIT_MAX_VRAM`, GiB) on any chip. */
     private fun readDitMaxVramOverride(context: Context): String? =
         readDiagnosticFile(context, "nightmare-dit-max-vram.txt")?.takeIf { it.isNotEmpty() }
@@ -953,7 +974,8 @@ object BackendProcess {
                         // one per clip instead, with `all=disk`: [memoryBudget] (`docs/VIDEO-GGML.md` §4).
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
                         (readDitMaxVramOverride(context) ?: budget ?: lowArchDitBudget(spec, DeviceProbe.caps().arch).takeIf { belowV79 && spec?.family != Family.WAN }
-                            ?: kreaBudget(spec, DeviceProbe.caps().ramBytes, ErrorReport.availableRamBytes()))
+                            ?: kreaBudget(spec, DeviceProbe.caps().ramBytes, ErrorReport.availableRamBytes())
+                            ?: importBudget(spec, ditBytesOf(context, spec), DeviceProbe.caps().ramBytes, ErrorReport.availableRamBytes()))
                             ?.let { put("DIT_MAX_VRAM", it) }
                         // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
                         // up blocks) computes garbage: 1.6.131's 8 Gen 3 renders came back solid red /

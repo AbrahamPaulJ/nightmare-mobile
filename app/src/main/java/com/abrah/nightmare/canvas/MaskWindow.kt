@@ -42,7 +42,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,6 +68,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.Image
@@ -155,52 +155,84 @@ internal fun MaskParamSlider(
         MaskTool.TAP, MaskTool.PICK -> listOfNotNull(MaskParam.GROW.takeIf { onGrow != null }, MaskParam.FEATHER.takeIf { onFeather != null })
     }
     if (options.isEmpty()) return
-    var param by remember(options) { mutableStateOf(options.first()) }
+    DropdownSlider(
+        options.map { param ->
+            when (param) {
+                MaskParam.SIZE -> SliderChoice(
+                    stringResource(param.labelRes), brush, BRUSH_MIN..BRUSH_MAX,
+                    stringResource(R.string.mask_pixels, (brush * 2 * 512).roundToInt()), onBrush, onBrushDone,
+                )
+                MaskParam.GROW -> SliderChoice(
+                    stringResource(param.labelRes), grow, growMin..growMax,
+                    stringResource(R.string.mask_pixels, (grow * 512).roundToInt()), { onGrow?.invoke(it) },
+                )
+                MaskParam.FEATHER -> SliderChoice(
+                    stringResource(param.labelRes), feather, 0f..featherMax,
+                    stringResource(R.string.mask_pixels, (feather * 512).roundToInt()), { onFeather?.invoke(it) },
+                )
+            }
+        },
+        stringResource(R.string.cd_choose_mask_slider),
+    )
+}
+
+/** ⭐ One parameter of a [DropdownSlider]: its name, value, range, readout and setter. */
+internal class SliderChoice(
+    val label: String,
+    val value: Float,
+    val range: ClosedFloatingPointRange<Float>,
+    val shown: String,
+    val onChange: (Float) -> Unit,
+    /** ⭐ When the finger lifts off the track — for a value stored once per drag. */
+    val onDone: (() -> Unit)? = null,
+)
+
+/**
+ * ⭐⭐ ONE slider for several parameters: a dropdown naming the one it moves, the track, the value. The mask
+ * window's (Size / Grow / Feather) and the draw window's (Size / Opacity / Softness / Hue) — one line instead of
+ * four (the user, 2026-10-23: "dropdown + slider combos where possible"). ⚠ The choice is kept while the LABELS stay
+ * the same, so brush and eraser (which share theirs) keep it.
+ */
+@Composable
+internal fun DropdownSlider(choices: List<SliderChoice>, chooseDescription: String) {
+    if (choices.isEmpty()) return
+    var picked by remember(choices.map { it.label }) { mutableStateOf(choices.first().label) }
     var menu by remember { mutableStateOf(false) }
-    val (range, value) = when (param) {
-        MaskParam.SIZE -> BRUSH_MIN..BRUSH_MAX to brush
-        MaskParam.GROW -> growMin..growMax to grow
-        MaskParam.FEATHER -> 0f..featherMax to feather
-    }
-    val shown = when (param) {
-        MaskParam.SIZE -> stringResource(R.string.mask_pixels, (brush * 2 * 512).roundToInt())
-        MaskParam.GROW -> stringResource(R.string.mask_pixels, (grow * 512).roundToInt())
-        MaskParam.FEATHER -> stringResource(R.string.mask_pixels, (feather * 512).roundToInt())
-    }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    val c = choices.firstOrNull { it.label == picked } ?: choices.first()
+    // ⚠ Room round the dropdown, taken from the track (the user, 2026-10-23: "squeezed in there, ugly with no room").
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Box {
             StudioTextButton(
                 onClick = { menu = true },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
+                modifier = Modifier.widthIn(min = 96.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
             ) {
-                Text(stringResource(param.labelRes), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Text(c.label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 Icon(
                     androidx.compose.material.icons.Icons.Filled.ArrowDropDown,
-                    contentDescription = stringResource(R.string.cd_choose_mask_slider),
+                    contentDescription = chooseDescription,
                     modifier = Modifier.size(18.dp),
                 )
             }
             androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                for (o in options) {
-                    DropdownMenuItem(text = { Text(stringResource(o.labelRes)) }, onClick = { param = o; menu = false })
+                for (o in choices) {
+                    DropdownMenuItem(text = { Text(o.label) }, onClick = { picked = o.label; menu = false })
                 }
             }
         }
         Slider(
-            value = value.coerceIn(range.start, range.endInclusive),
-            onValueChange = { v ->
-                when (param) {
-                    MaskParam.SIZE -> onBrush(v)
-                    MaskParam.GROW -> onGrow?.invoke(v)
-                    MaskParam.FEATHER -> onFeather?.invoke(v)
-                }
-            },
-            valueRange = range,
-            onValueChangeFinished = { if (param == MaskParam.SIZE) onBrushDone?.invoke() },
+            value = c.value.coerceIn(c.range.start, c.range.endInclusive),
+            onValueChange = c.onChange,
+            valueRange = c.range,
+            onValueChangeFinished = { c.onDone?.invoke() },
             modifier = Modifier.weight(1f),
         )
         Text(
-            shown,
+            c.shown,
             style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
@@ -1011,30 +1043,17 @@ internal fun MaskToolbar(
                 ),
             ) {
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(
-                            checked = tapSelect,
-                            onCheckedChange = { v ->
-                                onSetParam(com.abrah.nightmare.SdSampler.TAP_SELECT, v.toString())
-                                com.abrah.nightmare.MaskDefaults.set(context, com.abrah.nightmare.SdSampler.TAP_SELECT, v)
-                            },
-                        )
-                        // ⭐⭐ **"Show tap to select icon"** — the user's wording,
-                        // 2026-09-22. ⚠ It says what the tick DOES: it puts the
-                        // Tap tool in the toolbar above. It does not start
-                        // selecting anything, and "Tap to select" read as though
-                        // it might.
-                        // ⚠ "Enable tap to select" — the user's wording,
-                        // 2026-09-23, replacing "Show tap to select icon".
-                        Text(
-                            stringResource(R.string.mask_enable_tap_select),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+                    // ⭐⭐ "Enable tap to select" (the user's wording, 2026-09-23): it puts the Tap tool in the toolbar
+                    // above. ⚠ A SWITCH like Add Objects below (the user, 2026-10-23: two checkboxes and a switch).
+                    BoolKnobRow(
+                        label = stringResource(R.string.mask_enable_tap_select),
+                        hint = null,
+                        checked = tapSelect,
+                        onChange = { v ->
+                            onSetParam(com.abrah.nightmare.SdSampler.TAP_SELECT, v.toString())
+                            com.abrah.nightmare.MaskDefaults.set(context, com.abrah.nightmare.SdSampler.TAP_SELECT, v)
+                        },
+                    )
                     // ⭐⭐⭐ **The download is the SAME card the Models tab draws**
                     // — `ToolCard` over `DownloadCard`: the size, the progress bar,
                     // Cancel while it runs, Delete when it is there
@@ -1083,27 +1102,18 @@ internal fun MaskToolbar(
                 ),
             ) {
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(
-                            checked = pickSelect,
-                            onCheckedChange = { v ->
-                                // ⚠ The tick IS the switch: `MaskNode.opsOf` adds
-                                // the node's chips to the mask while it is on and
-                                // drops them when it is off. Nothing else to write.
-                                onSetParam(com.abrah.nightmare.SdSampler.PICK_SELECT, v.toString())
-                                com.abrah.nightmare.MaskDefaults.set(context, com.abrah.nightmare.SdSampler.PICK_SELECT, v)
-                                if (v) tool = MaskTool.PICK
-                            },
-                        )
-                        Text(
-                            stringResource(R.string.mask_pick_show),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+                    BoolKnobRow(
+                        label = stringResource(R.string.mask_pick_show),
+                        hint = null,
+                        checked = pickSelect,
+                        onChange = { v ->
+                            // ⚠ The switch is all there is: `MaskNode.opsOf` adds the node's chips to the mask
+                            // while it is on and drops them when it is off. Nothing else to write.
+                            onSetParam(com.abrah.nightmare.SdSampler.PICK_SELECT, v.toString())
+                            com.abrah.nightmare.MaskDefaults.set(context, com.abrah.nightmare.SdSampler.PICK_SELECT, v)
+                            if (v) tool = MaskTool.PICK
+                        },
+                    )
                     if (pickSelect || parserRow?.progress != null) {
                         parserRow?.let { row ->
                             Box(Modifier.padding(bottom = 4.dp)) {

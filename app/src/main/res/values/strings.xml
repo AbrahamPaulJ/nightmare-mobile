@@ -1085,6 +1085,11 @@
     <string name="draw_blank_sub">Start with a canvas</string>
     <string name="pick_add_image">Add image</string>
     <string name="pick_add_image_sub">Choose from files</string>
+    <string name="pick_photos_title">Choose from photos</string>
+    <string name="pick_photos_sub">Pick from your gallery</string>
+    <string name="pick_files_title">Choose from files</string>
+    <string name="pick_files_sub">Select from device storage</string>
+    <string name="pick_add">Add</string>
     <string name="draw_pick">Pick colour</string>
     <string name="draw_more_colors">More colours</string>
     <string name="draw_choose_color">Choose a colour</string>
@@ -1290,5 +1295,9 @@
     <string name="cd_kept_picture">the kept picture</string>
     <string name="flow_this_chip">this chip</string>
     <string name="flows_section_advanced">Advanced</string>
+    <string name="flows_section_pictures">Pictures</string>
+    <string name="flows_section_faces">Faces</string>
+    <string name="flows_section_edit">Edit</string>
+    <string name="flows_section_video">Video</string>
     <string name="search_clear">Clear the search</string>
 </resources>

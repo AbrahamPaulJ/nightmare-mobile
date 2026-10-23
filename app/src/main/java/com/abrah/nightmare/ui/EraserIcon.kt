@@ -330,6 +330,12 @@ val TuneIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
         "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z")
 }
 
+/** ⭐ Material's colorize (an eyedropper) — the draw window's Pick colour tool. */
+val EyedropperIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+    materialIcon("Colorize",
+        "M20.71 5.63l-2.34-2.34a.996.996 0 0 0-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z")
+}
+
 /** ⭐ Material's folder — the Image node's "a file" picker. */
 val FolderIcon: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
     materialIcon("Folder",

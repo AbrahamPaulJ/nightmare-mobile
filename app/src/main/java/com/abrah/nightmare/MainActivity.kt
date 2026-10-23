@@ -690,6 +690,11 @@ fun HarnessScreen(
             // notification silently without it, and the shade is where a
             // 4 GB download is watched once the screen is off.
             val askToNotify = com.abrah.nightmare.ui.rememberNotifyAsk()
+            // ⭐ The flow importer, for the Flows "+" in the sheet's header (the user, 2026-10-23: the + like Models,
+            // not a card at the end of the list). ⚠ Its own launcher: a flow and a model accept different files.
+            val flowPicker = rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+            ) { uri -> if (uri != null) vm.importWorkflow(uri) }
             LibraryScreen(
                 tab = vm.libraryTab,
                 onTab = vm::switchLibraryTab,
@@ -697,6 +702,13 @@ fun HarnessScreen(
                 onMenu = { drawerOpen = true },
                 modelsAction = {
                     com.abrah.nightmare.ui.ImportButton(enabled = !vm.working) { vm.importOpen = true }
+                },
+                // ⚠ `application/octet-stream` alongside the real type: plenty of providers hand a file over as
+                // octet-stream, and filtering on the exact type greys out the file the user came to pick.
+                flowsAction = {
+                    com.abrah.nightmare.ui.ImportButton(enabled = !vm.working) {
+                        flowPicker.launch(arrayOf("application/json", "application/octet-stream"))
+                    }
                 },
                 models = {
                     // ⭐⭐ The ONE import picker (the Models "+", 2026-10-14): the file says what it is
@@ -832,13 +844,6 @@ fun HarnessScreen(
                     )
                 },
                 flows = {
-                    // ⚠ Two pickers, because the two imports accept different
-                    // things and a single launcher would have to guess from the
-                    // extension — which is exactly how a .zip picked as a flow
-                    // becomes "could not import that file".
-                    val flowPicker = rememberLauncherForActivityResult(
-                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-                    ) { uri -> if (uri != null) vm.importWorkflow(uri) }
                     WorkflowsScreen(
                         recipes = com.abrah.nightmare.canvas.RECIPES.filter {
                             !com.abrah.nightmare.npu.VideoGate.hidden ||
@@ -852,14 +857,6 @@ fun HarnessScreen(
                         onDeleteSaved = vm::deleteSaved,
                         onRenameSaved = vm::renameWorkflow,
                         onShareSaved = vm::shareSavedWorkflow,
-                        // ⚠ `application/octet-stream` alongside the real type, for
-                        // the reason the model importer documents: plenty of
-                        // providers hand a file over as octet-stream, and filtering
-                        // on the exact type greys out the file the user came to pick
-                        // with nothing on screen explaining why.
-                        onImportFlow = {
-                            flowPicker.launch(arrayOf("application/json", "application/octet-stream"))
-                        },
                     )
                 },
             )

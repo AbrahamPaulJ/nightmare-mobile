@@ -92,7 +92,7 @@ class DrawWindowTest {
                     androidx.compose.ui.Modifier.fillMaxSize(),
                     color = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
                 ) {
-                    DrawWindow(photo.asImageBitmap(), null, onDone = {}, onCancel = {}, initialStrokes = strokes)
+                    DrawWindow(photo.asImageBitmap(), null, onSave = {}, initialStrokes = strokes)
                 }
             }
         }

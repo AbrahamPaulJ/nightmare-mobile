@@ -127,11 +127,8 @@ fun LoraPicker(
         confirmButton = {
             com.abrah.nightmare.ui.DialogButtonStack {
                 if (onImport != null || onBrowse != null) Row(horizontalArrangement = Arrangement.spacedBy(com.abrah.nightmare.ui.Space.s)) {
-                    onImport?.let {
-                        com.abrah.nightmare.ui.StudioOutlinedButton(onClick = it, modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.pick_files))
-                        }
-                    }
+                    // ⭐ The folder icon tile ([FilesButton]), as everywhere a file is picked.
+                    onImport?.let { FilesButton(it) }
                     onBrowse?.let {
                         com.abrah.nightmare.ui.StudioOutlinedButton(onClick = it, modifier = Modifier.weight(1f)) {
                             Text(stringResource(R.string.lb_open))

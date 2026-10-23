@@ -1,0 +1,48 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -756,19 +756,13 @@
+   static bool forwardProgress(int step, int total_steps, float step_seconds,
+                               void *user_data) {
+     auto *cb = static_cast<Callbacks *>(user_data);
+-    if (total_steps > 0) {
+-      cb->sampling_started = true;
+-      cb->sample_steps = total_steps;
+-      cb->sampled_steps =
+-          std::max(cb->sampled_steps, std::clamp(step, 0, total_steps));
+-      if (step == 1)
+-        cb->first_step_ms = static_cast<int>(step_seconds * 1000.0f);
+-    }
+ 
+     // img2img/inpaint first encodes the source image, so reserve one slot
+     // before sampling. Every mode reserves the last slot for VAE decode. Most
+     // importantly, use the *effective* step count reported by the engine:
+-    // denoise strength trims a 4-step Klein request to only 1-3 sampling steps.
++    // denoise strength trims a 4-step Klein request to only 1-3 sampling steps
++    // (image.cpp: t_enc = floor(steps * strength), one less at full strength,
++    // and t_enc + 1 sampling steps).
+     const int expected_steps =
+         cb->full_sampling_schedule || !cb->req->img2img ||
+                 cb->req->denoise_strength >= 1.0f
+@@ -778,6 +772,22 @@
+                                    cb->req->denoise_strength) +
+                       1,
+                   1, std::max(1, cb->req->steps));
++
++    // Only the SAMPLER moves the bar. The engine's one progress callback also
++    // carries the VAE's tiles (tiling.cpp: 0..n tiles) and the loader's tensor
++    // counts, and a tiled reference encode reported 3 of 3 "steps" before
++    // sampling began: the bar jumped to 85% in seconds and sat there for the
++    // whole render (2026-10-23, Klein 4B and 9B at 576x1024). So a callback
++    // counts only when its total is the sampling schedule's own length.
++    if (total_steps > 0 && (total_steps == expected_steps ||
++                            total_steps == std::max(1, cb->req->steps))) {
++      cb->sampling_started = true;
++      cb->sample_steps = total_steps;
++      cb->sampled_steps =
++          std::max(cb->sampled_steps, std::clamp(step, 0, total_steps));
++      if (step == 1)
++        cb->first_step_ms = static_cast<int>(step_seconds * 1000.0f);
++    }
+     const int sample_steps =
+         cb->sample_steps > 0 ? cb->sample_steps : expected_steps;
+     const int pre_sample = cb->pre_sample_steps;
