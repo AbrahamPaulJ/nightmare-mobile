@@ -833,6 +833,7 @@
     <string name="run_detail_no_square">Fix faces and hands skipped: could not load the model at %1$dx%2$d for it</string>
     <string name="run_detail_faces">fixing faces: %1$d found</string>
     <string name="run_detail_hands">fixing hands: %1$d found</string>
+    <string name="run_detail_failed">Fix faces and hands could not redraw: %1$s. The picture is kept as it was</string>
     <string name="run_detail_skipped">%1$d already at full size, left as it is</string>
     <string name="knob_autosave">Autosave</string>
     <string name="knob_only_masked">Only masked</string>

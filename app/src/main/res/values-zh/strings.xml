@@ -806,6 +806,7 @@
     <string name="run_detail_no_square">已跳过修复面部和手部：无法以 %1$dx%2$d 加载模型</string>
     <string name="run_detail_faces">修复面部：找到 %1$d 个</string>
     <string name="run_detail_hands">修复手部：找到 %1$d 只</string>
+    <string name="run_detail_failed">修复脸和手失败：%1$s。图片保持原样</string>
     <string name="run_detail_skipped">%1$d 处已是全尺寸，保持原样</string>
     <string name="knob_autosave">自动保存</string>
     <string name="knob_only_masked">仅遮罩区域</string>

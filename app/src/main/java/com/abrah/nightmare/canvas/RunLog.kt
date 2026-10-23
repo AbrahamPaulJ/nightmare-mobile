@@ -285,103 +285,7 @@ fun RunLogPanel(
         // ⚠⚠ The seed chip and the RAM pill are items of ONE wrapping row: side by side when they
         // fit, RAM on its own line when not. Beside a fixed RAM pill the chip was squeezed: at 320dp
         // its text wrapped letter by letter and the padlock got no width (2026-10-12).
-        if (seeds.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) { val chip: @Composable (SeedState) -> Unit = { st ->
-        val seedSweep = seedSweeps.firstOrNull { it.nodeId == st.nodeId }?.count?.takeIf { !st.isFix }
-        Row(
-            Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(start = 10.dp, end = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // ⚠⚠ ONE line, and a TIGHT one. The first version of this row wrapped
-            // a sentence of explanation and took three lines of a bar that sits
-            // over the canvas, so an always-present row has to cost one line at
-            // most. The state is the number and the glyph; the meaning is
-            // learned once.
-                Text(
-                    // ⚠⚠ A batch sweep outranks both other states: "random" is
-                    // wrong when four specific seeds are about to run, and a
-                    // lock cannot coexist with a sweep of the same knob.
-                    //
-                    // ⚠⚠⚠ This line was "fixed" once and silently was not: the
-                    // edit targeted a `stringResource` form this file never had,
-                    // so the replace missed and the script still reported
-                    // success. Reported from the phone twice. ⇒ An edit that
-                    // cannot find its anchor must FAIL, not carry on.
-                    when {
-                        seedSweep != null -> pluralStringResource(R.plurals.log_batching_seeds, seedSweep, seedSweep)
-                        st.isFix && st.value != null -> stringResource(R.string.log_fix_seed_locked, st.value)
-                        st.isFix -> stringResource(R.string.log_fix_seed_random)
-                        st.value != null -> stringResource(R.string.log_seed_locked, st.value)
-                        else -> stringResource(R.string.log_seed_random)
-                    }.let { t -> st.label?.let { stringResource(R.string.log_labeled_status, it, t) } ?: t },
-                    style = MeasureTextStyle,
-                    color = if (st.value != null) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    // ⚠⚠ Weighted, not fill: measured first and unweighted, a locked seed's longer
-                    // text wrapped and took the whole chip, and the padlock beside it got ZERO
-                    // width, so a locked seed showed no lock at all (phone screenshot, 2026-10-12).
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                // ⚠ A real glyph, not an emoji: an emoji renders in the system
-                // font at whatever weight and colour that font decides, so it
-                // cannot be tinted with the row it belongs to and lands
-                // differently on every device.
-                // ⚠⚠ A ✕ while swept, the padlock otherwise. Two different
-                // actions must not share one glyph: releasing a sweep and
-                // locking a seed are opposites, and the row has space for one.
-                if (seedSweep != null) {
-                    IconButton(onClick = {
-                        seedSweeps.firstOrNull { it.nodeId == st.nodeId }?.let(onReleaseSeedSweep)
-                    }, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            Icons.Filled.Close,
-                            contentDescription = stringResource(R.string.log_cd_release_seed_sweep),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(15.dp),
-                        )
-                    }
-                }
-                if (seedSweep == null) {
-                IconButton(
-                    onClick = { onToggleSeed(st) },
-                    // ⚠ Shrunk from the 48dp default. A touch target that size
-                    // sets the height of the whole row, which is what made this
-                    // line cost vertical space above AND below the text.
-                    modifier = Modifier.size(28.dp),
-                ) {
-                    Icon(
-                        if (st.value != null) Icons.Filled.Lock
-                        else com.abrah.nightmare.ui.LockOpenIcon,
-                        contentDescription = if (st.value != null) {
-                            stringResource(R.string.cd_unlock_seed)
-                        } else {
-                            stringResource(R.string.cd_lock_seed)
-                        },
-                        tint = if (st.value != null) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(17.dp),
-                    )
-                }
-                }
-            }
-        }
-        // ⭐ One sampler: its chip. Two or more: ONE summary chip and a list of the same chips
-        // (the user's pick, 2026-10-12), so the bar above Run never grows with the flow.
-        // ⭐ One sampler's picture and Fix seeds side by side; several samplers fold into the summary.
-        if (seeds.map { it.nodeId }.distinct().size == 1) seeds.forEach { chip(it) } else SeedsSummary(seeds, chip)
-        ram?.let { RamPill(it) } }
+        SeedChipRow(seeds, onToggleSeed, seedSweeps, onReleaseSeedSweep, ram)
         // ⚠⚠ **Only when there is a run to describe.** Closing the panel clears
         // the state, but the seed row above is a property of the CANVAS rather
         // than of a run, so the panel stays up — and this row then rendered
@@ -818,6 +722,119 @@ private fun RamPill(text: String) {
         Spacer(Modifier.width(6.dp))
         Text(text, style = MeasureTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
+}
+
+/**
+ * ⭐⭐ The seed chips (and the RAM pill) above Run: [RunLogPanel]'s first row, and the ONE row a folded run bar
+ * still shows (the user's call, 2026-10-23: the seed lock always in view, the log folds). One function, so the
+ * folded and open bars cannot draw the seed two ways.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun SeedChipRow(
+    seeds: List<SeedState>,
+    onToggleSeed: (SeedState) -> Unit,
+    seedSweeps: List<ArmedSweep>,
+    onReleaseSeedSweep: (ArmedSweep) -> Unit,
+    ram: String?,
+) {
+    if (seeds.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) { val chip: @Composable (SeedState) -> Unit = { st ->
+    val seedSweep = seedSweeps.firstOrNull { it.nodeId == st.nodeId }?.count?.takeIf { !st.isFix }
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(start = 10.dp, end = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // ⚠⚠ ONE line, and a TIGHT one. The first version of this row wrapped
+        // a sentence of explanation and took three lines of a bar that sits
+        // over the canvas, so an always-present row has to cost one line at
+        // most. The state is the number and the glyph; the meaning is
+        // learned once.
+            Text(
+                // ⚠⚠ A batch sweep outranks both other states: "random" is
+                // wrong when four specific seeds are about to run, and a
+                // lock cannot coexist with a sweep of the same knob.
+                //
+                // ⚠⚠⚠ This line was "fixed" once and silently was not: the
+                // edit targeted a `stringResource` form this file never had,
+                // so the replace missed and the script still reported
+                // success. Reported from the phone twice. ⇒ An edit that
+                // cannot find its anchor must FAIL, not carry on.
+                when {
+                    seedSweep != null -> pluralStringResource(R.plurals.log_batching_seeds, seedSweep, seedSweep)
+                    st.isFix && st.value != null -> stringResource(R.string.log_fix_seed_locked, st.value)
+                    st.isFix -> stringResource(R.string.log_fix_seed_random)
+                    st.value != null -> stringResource(R.string.log_seed_locked, st.value)
+                    else -> stringResource(R.string.log_seed_random)
+                }.let { t -> st.label?.let { stringResource(R.string.log_labeled_status, it, t) } ?: t },
+                style = MeasureTextStyle,
+                color = if (st.value != null) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                // ⚠⚠ Weighted, not fill: measured first and unweighted, a locked seed's longer
+                // text wrapped and took the whole chip, and the padlock beside it got ZERO
+                // width, so a locked seed showed no lock at all (phone screenshot, 2026-10-12).
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            // ⚠ A real glyph, not an emoji: an emoji renders in the system
+            // font at whatever weight and colour that font decides, so it
+            // cannot be tinted with the row it belongs to and lands
+            // differently on every device.
+            // ⚠⚠ A ✕ while swept, the padlock otherwise. Two different
+            // actions must not share one glyph: releasing a sweep and
+            // locking a seed are opposites, and the row has space for one.
+            if (seedSweep != null) {
+                IconButton(onClick = {
+                    seedSweeps.firstOrNull { it.nodeId == st.nodeId }?.let(onReleaseSeedSweep)
+                }, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.log_cd_release_seed_sweep),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
+            }
+            if (seedSweep == null) {
+            IconButton(
+                onClick = { onToggleSeed(st) },
+                // ⚠ Shrunk from the 48dp default. A touch target that size
+                // sets the height of the whole row, which is what made this
+                // line cost vertical space above AND below the text.
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    if (st.value != null) Icons.Filled.Lock
+                    else com.abrah.nightmare.ui.LockOpenIcon,
+                    contentDescription = if (st.value != null) {
+                        stringResource(R.string.cd_unlock_seed)
+                    } else {
+                        stringResource(R.string.cd_lock_seed)
+                    },
+                    tint = if (st.value != null) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+            }
+        }
+    }
+    // ⭐ One sampler: its chip. Two or more: ONE summary chip and a list of the same chips
+    // (the user's pick, 2026-10-12), so the bar above Run never grows with the flow.
+    // ⭐ One sampler's picture and Fix seeds side by side; several samplers fold into the summary.
+    if (seeds.map { it.nodeId }.distinct().size == 1) seeds.forEach { chip(it) } else SeedsSummary(seeds, chip)
+    ram?.let { RamPill(it) } }
 }
 
 /**

@@ -1511,6 +1511,14 @@ private fun RunBar(
             onCancelBatch = onCancelBatch,
             ram = ram,
         )
+        // ⭐ Folded, the bar still shows the seed locks ([SeedChipRow]; the user's call, 2026-10-23): a locked or
+        // random seed changes what Run does, so it is never folded away with the log.
+        else SeedChipRow(
+            seeds, onToggleSeed,
+            seedSweeps = armedSweeps.filter { it.param == "seed" },
+            onReleaseSeedSweep = onReleaseSweep,
+            ram = null,
+        )
 
         // ⭐⭐⭐ **What the relaunches will cost, BEFORE the button is pressed.**
         //

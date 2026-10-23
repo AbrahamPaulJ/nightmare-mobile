@@ -821,6 +821,7 @@
     <string name="run_detail_no_square">Исправление лиц и рук пропущено: не удалось загрузить модель в %1$dx%2$d</string>
     <string name="run_detail_faces">исправление лиц: найдено %1$d</string>
     <string name="run_detail_hands">исправление рук: найдено %1$d</string>
+    <string name="run_detail_failed">Исправление лиц и рук не удалось: %1$s. Картинка оставлена как была</string>
     <string name="run_detail_skipped">уже в полном размере: %1$d, оставлено как есть</string>
     <string name="knob_autosave">Автосохранение</string>
     <string name="knob_only_masked">Только маска</string>

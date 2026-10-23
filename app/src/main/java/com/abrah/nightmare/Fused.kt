@@ -1230,7 +1230,7 @@ class SdSampler(
      * ControlNet pack), not Iris (no VAE to mask through) or Wan (a video).
      */
     private val offersDetail: Boolean
-        get() = !inpaint && family !in setOf(Family.IRIS, Family.WAN, Family.MOSS, Family.IDEOGRAM)
+        get() = !inpaint && family !in setOf(Family.IRIS, Family.WAN, Family.IDEOGRAM)
 
     /** ⭐ True when [node] will run the detail pass: what the Run's up-front tool check asks. */
     internal fun detailWanted(node: Node): Boolean = offersDetail && effectiveParams(node).let { p ->
@@ -1344,8 +1344,17 @@ class SdSampler(
                 if (part == com.abrah.nightmare.detail.PartDetector.Part.FACE) ctx.text(R.string.run_detail_faces, "fixing faces: %1\$d found", boxes.size)
                 else ctx.text(R.string.run_detail_hands, "fixing hands: %1\$d found", boxes.size)
             )
-            if (boxes.isNotEmpty()) bmp = d.fix(bmp, boxes, pw, ph, matching(p), render, set) { n ->
-                ctx.say(ctx.text(R.string.run_detail_skipped, "%1\$d already at full size, left as it is", n))
+            // ⚠ A redraw that fails keeps the picture and warns, as the rule above says (it threw through and lost
+            // the run until 2026-10-23, when MOSS got the fix untested on a real picture).
+            if (boxes.isNotEmpty()) bmp = try {
+                d.fix(bmp, boxes, pw, ph, matching(p), render, set) { n ->
+                    ctx.say(ctx.text(R.string.run_detail_skipped, "%1\$d already at full size, left as it is", n))
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ctx.warn(ctx.text(R.string.run_detail_failed, "Fix faces and hands could not redraw: %1\$s. The picture is kept as it was", e.message ?: e.javaClass.simpleName))
+                bmp
             }
         }
         return Value.Image(ctx.images.put(bmp), bmp.width, bmp.height)
