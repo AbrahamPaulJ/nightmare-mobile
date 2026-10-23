@@ -325,35 +325,15 @@ fun HarnessScreen(
         }
     }
 
-    // ⭐⭐ Opening a flow over an unsaved one ASKS. `HarnessViewModel.ActiveFlow`
-    // has the reasoning; the short version is that this used to replace the
-    // canvas silently and rely on a 150 ms autosave debounce having fired.
+    // ⭐⭐ Opening a flow over an unsaved one ASKS ([com.abrah.nightmare.ui.OpenFlowDialog]).
     // ⚠ Mid-render is refused in the view model rather than offered here — no
     // answer to a dialog makes swapping the graph under a running graph safe.
     vm.pendingOpen?.let { p ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = vm::dismissPendingOpen,
-            title = { Text(stringResource(R.string.flow_open_unsaved_title, p.label)) },
-            text = {
-                Text(
-                    stringResource(R.string.flow_open_unsaved_body)
-                )
-            },
-            // ⭐ Three answers, one dialog everywhere a flow is opened (Use, Flows, Results — the
-            // user's call, 2026-10-10): Save (then open), Open anyway, Cancel.
-            confirmButton = {
-                androidx.compose.foundation.layout.Row {
-                    com.abrah.nightmare.ui.StudioButton(onClick = vm::dismissPendingOpen) {
-                        Text(stringResource(R.string.cancel))
-                    }
-                    com.abrah.nightmare.ui.StudioButton(onClick = vm::confirmPendingOpen) {
-                        Text(stringResource(R.string.flow_open_anyway))
-                    }
-                    com.abrah.nightmare.ui.StudioButton(onClick = vm::savePendingOpen) {
-                        Text(stringResource(R.string.save))
-                    }
-                }
-            },
+        com.abrah.nightmare.ui.OpenFlowDialog(
+            p.label,
+            onSave = vm::savePendingOpen,
+            onOpenAnyway = vm::confirmPendingOpen,
+            onCancel = vm::dismissPendingOpen,
         )
     }
 

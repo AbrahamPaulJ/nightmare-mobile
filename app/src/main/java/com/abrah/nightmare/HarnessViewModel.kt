@@ -5026,6 +5026,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     private val pendingAutoFrame = mutableMapOf<String, String?>()
 
     /**
+     * ⚠⚠ The [CanvasState.cropRequest] count, never reset. The editor remembers the last count it
+     * honoured (`InpaintEditors`), so a count restarting at 1 after a clear would be ignored.
+     */
+    private var cropSerial = 0
+
+    /**
      * ⭐ Image nodes given a BLANK PAGE ([blankPicture]), and the samplers that therefore frame
      * quietly: their size still fits the new picture, but no crop or mask window opens. ⚠ The draw
      * sheet is what the person asked for; the crop window opened over it instead (2026-10-11).
@@ -5158,7 +5164,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         canvas = next.copy(
             editing = id,
-            cropRequest = id to ((canvas.cropRequest?.second ?: 0) + 1),
+            cropRequest = id to ++cropSerial,
             cropRequestTab = 0,
         )
         saveWorkflow()
@@ -5252,12 +5258,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 quiet -> Unit
                 !autoCrop -> canvas = canvas.copy(
                     editing = sid,
-                    cropRequest = sid to ((canvas.cropRequest?.second ?: 0) + 1),
+                    cropRequest = sid to ++cropSerial,
                     cropRequestTab = 0,
                 )
                 inpaint && !autoMask -> canvas = canvas.copy(
                     editing = sid,
-                    cropRequest = sid to ((canvas.cropRequest?.second ?: 0) + 1),
+                    cropRequest = sid to ++cropSerial,
                     cropRequestTab = 1,
                 )
                 autoMask -> autoMaskCheck += sid
@@ -6354,7 +6360,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         canvas = canvas.copy(
             workflow = canvas.workflow.copy(graph = next),
             // ⭐ Open the crop on the new framing — only when there is a picture.
-            cropRequest = if (photo != null) nodeId to ((canvas.cropRequest?.second ?: 0) + 1)
+            cropRequest = if (photo != null) nodeId to ++cropSerial
             else canvas.cropRequest,
             cropRequestTab = 0,
         )
@@ -7861,7 +7867,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         toast(text(R.string.mask_objects_not_found, names.joinToString(text(R.string.word_or))))
         canvas = canvas.copy(
             editing = nodeId,
-            cropRequest = nodeId to ((canvas.cropRequest?.second ?: 0) + 1),
+            cropRequest = nodeId to ++cropSerial,
             cropRequestTab = 1,
         )
     }

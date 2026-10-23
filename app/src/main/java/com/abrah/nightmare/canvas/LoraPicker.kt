@@ -119,23 +119,26 @@ fun LoraPicker(
         text = {
             LoraPickerContent(installed, spec, onSet, onImport, notes, onSaveNote, onAddToPrompt, onReplacePrompt, onDelete, library, nodeBase, experimental, allowNegative)
         },
-        confirmButton = { StudioButton(onClick = onDismiss) { Text(stringResource(R.string.crop_done)) } },
-        // ⚠ The dismiss SLOT, so Files sits left of Done — the same
-        // "destructive-or-secondary left, primary right" order `ModelAction`
-        // and `PictureActions` keep (`docs/UI.md` §8.1, §8.3).
-        // ⭐ Search online sits beside Files: both are ways to get a LoRA in.
+        // ⭐ Search online sits beside Files: both are ways to get a LoRA in, on one row of two
+        // halves, and Done full width under them ([com.abrah.nightmare.ui.DialogButtonStack]: three
+        // contained buttons do not fit one row).
         // ⭐ FILES, not "Add" — it opens the file browser, and "Add" read as adding the
         // LoRA to the node (the user's call, 2026-10-08). The same word as `FilesButton`.
-        dismissButton = if (onImport == null && onBrowse == null) null else {
-            {
-                Row {
-                    onImport?.let { StudioTextButton(onClick = it) { Text(androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.pick_files)) } }
+        confirmButton = {
+            com.abrah.nightmare.ui.DialogButtonStack {
+                if (onImport != null || onBrowse != null) Row(horizontalArrangement = Arrangement.spacedBy(com.abrah.nightmare.ui.Space.s)) {
+                    onImport?.let {
+                        com.abrah.nightmare.ui.StudioOutlinedButton(onClick = it, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.pick_files))
+                        }
+                    }
                     onBrowse?.let {
-                        StudioTextButton(onClick = it) {
-                            Text(androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.lb_open))
+                        com.abrah.nightmare.ui.StudioOutlinedButton(onClick = it, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.lb_open))
                         }
                     }
                 }
+                StudioButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.crop_done)) }
             }
         },
     )
@@ -604,11 +607,8 @@ fun LoraNoteDialog(
         // primary right (`docs/UI.md` §8.1). It asks first ([ConfirmDeleteLora]).
         dismissButton = onDelete?.let {
             {
-                StudioTextButton(onClick = it) {
-                    Text(
-                        androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.delete),
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                com.abrah.nightmare.ui.StudioOutlinedButton(onClick = it, colors = com.abrah.nightmare.ui.dangerOutlinedColors()) {
+                    Text(androidx.compose.ui.res.stringResource(com.abrah.nightmare.R.string.delete))
                 }
             }
         },

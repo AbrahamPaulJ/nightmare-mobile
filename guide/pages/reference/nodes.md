@@ -189,14 +189,15 @@ It has no **Seconds** (the part of the video sets the length) and takes no LoRAs
 Where the result lands. It shows the picture or clip; tap it to see it full screen. Its finishing steps sit under **Post-processing** at the end of its settings, folded until you open it (closed, its header names the ones switched on). There are three cards, **Upscale**, **Colour correction** and **Adjust colours**, each with:
 
 - **After every Run**: a switch that applies the step to every new picture.
-- A button (**Upscale**, **Correct**, **Adjust**) that applies it to the last picture right now. Nothing is rendered again and no seed is locked: the flow reruns on that picture's own seeds, so only the Output works.
+- A button. **Correct** applies colour correction to the last picture right now. **Upscale** and **Adjust** open a window with that step's settings (the upscaler and scale, or the four sliders) and a button that applies it to the last picture. Nothing is rendered again and no seed is locked: the flow reruns on that picture's own seeds, so only the Output works.
+- Under the name, what Upscale and Adjust colours are set to (for example *Anime 4x · 4x*), so the settings in the window are never out of sight.
 
 | setting | what it does |
 |---|---|
 | **Autosave** | *On (default):* every Run is kept in Results with the flow that made it |
 | **Upscale** | Enlarge the result before keeping it. The node then shows what it received above what it made. Greyed out on an output wired a video: a clip cannot be upscaled |
 | **Colour correction** | Fixes a dull or tinted picture: darks darker, brights brighter, a colour cast removed, after any upscale. A warm scene stays warm |
-| **Adjust colours** | **Brightness**, **Contrast**, **Saturation** and **Warmth** sliders (each -1 to 1, 0 unchanged), after Colour correction |
-| **Upscaler** | Which upscaler to use. Install them under Models → Upscalers |
-| **Scale** | 2×, 3× or 4×. A result that would pass 4096 px gets the largest scale that fits |
+| **Adjust colours** | **Brightness**, **Contrast**, **Saturation** and **Warmth** sliders (each -1 to 1, 0 unchanged) in its window, after Colour correction |
+| **Upscaler** | In the Upscale window: which upscaler to use. Install them under Models → Upscalers |
+| **Scale** | In the Upscale window: 2×, 3× or 4×. A result that would pass 4096 px gets the largest scale that fits |
 | **Save** (video) | Also write the MP4 to `Movies/Nightmare` |

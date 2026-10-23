@@ -801,13 +801,13 @@
     <string name="more_options">更多选项</string>
     <string name="post_every_run">每次运行后</string>
     <string name="post_upscale_title">放大</string>
-    <string name="post_upscale_desc">保存前用下方的放大模型和倍数放大图片。上方的图片保持原样。</string>
+    <string name="post_upscale_desc">保存前放大图片。上方的图片保持原样。</string>
     <string name="post_upscale_now">放大</string>
     <string name="post_colour_title">色彩校正</string>
     <string name="post_colour_desc">修正发灰或偏色的图片：暗部更暗、亮部更亮、去除偏色。暖色场景仍保持温暖。</string>
     <string name="post_colour_now">校正</string>
     <string name="post_adjust_title">调整颜色</string>
-    <string name="post_adjust_desc">用下方滑块调整亮度、对比度、饱和度和色温，在色彩校正之后。</string>
+    <string name="post_adjust_desc">亮度、对比度、饱和度和色温，在色彩校正之后应用。</string>
     <string name="post_adjust_now">调整</string>
     <string name="post_processing">后期处理</string>
     <string name="more_options_on">已开启：%1$s</string>

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -918,10 +919,66 @@ internal val OUTPUT_POST = setOf(
 internal val OUTPUT_POST_CARDS = setOf(com.abrah.nightmare.MediaOutputNode.UPSCALE, com.abrah.nightmare.MediaOutputNode.AUTO_COLOR, com.abrah.nightmare.MediaOutputNode.ADJUST)
 
 /**
+ * ⭐⭐ Each card's SETTINGS, drawn in its popup and never on the page (the user's call, 2026-10-23: drawn under the cards,
+ * the upscaler and the four sliders took the whole sheet). Colour correction has none, so its button applies at once.
+ */
+internal val OUTPUT_POST_SETTINGS = mapOf(
+    com.abrah.nightmare.MediaOutputNode.UPSCALE to listOf(com.abrah.nightmare.MediaOutputNode.UPSCALER, com.abrah.nightmare.MediaOutputNode.SCALE),
+    com.abrah.nightmare.MediaOutputNode.ADJUST to listOf(
+        com.abrah.nightmare.MediaOutputNode.BRIGHTNESS, com.abrah.nightmare.MediaOutputNode.CONTRAST,
+        com.abrah.nightmare.MediaOutputNode.SATURATION, com.abrah.nightmare.MediaOutputNode.WARMTH,
+    ),
+)
+
+/** ⭐ An upscaler id in words: the catalogue's label, as the Models tab names it. */
+@Composable
+private fun upscalerName(id: String): String {
+    val spec = com.abrah.nightmare.UpscalerCatalog.ALL.firstOrNull { it.id == id } ?: return id
+    return spec.labelRes?.let { stringResource(it) } ?: spec.label
+}
+
+/**
+ * ⭐ What a card's settings are set to, one line, so nothing that changes the picture is out of sight while
+ * they sit in the popup. Null when there is nothing to say (Adjust colours with every slider at 0).
+ */
+@Composable
+private fun outputPostSummary(card: String, widgets: List<Widget>, params: Map<String, String>): String? {
+    fun value(name: String) = params[name] ?: widgets.firstOrNull { it.name == name }?.default.orEmpty()
+    return when (card) {
+        com.abrah.nightmare.MediaOutputNode.UPSCALE ->
+            upscalerName(value(com.abrah.nightmare.MediaOutputNode.UPSCALER)) + " · " + value(com.abrah.nightmare.MediaOutputNode.SCALE)
+        com.abrah.nightmare.MediaOutputNode.ADJUST -> OUTPUT_POST_SETTINGS.getValue(card).mapNotNull { name ->
+            val v = value(name).toFloatOrNull()?.takeIf { kotlin.math.abs(it) >= 0.005f } ?: return@mapNotNull null
+            name.localizedKnobLabel() + " " + "%+.2f".format(java.util.Locale.ROOT, v)
+        }.joinToString(" · ").ifEmpty { null }
+        else -> null
+    }
+}
+
+/** ⭐ One setting inside a card's popup: the SAME [Chooser] and [SliderRow] the knob list draws. */
+@Composable
+private fun OutputPostSetting(w: Widget, current: String, onSet: (String) -> Unit) {
+    val options = w.options
+    if (options != null) {
+        val upscaler = w.name == com.abrah.nightmare.MediaOutputNode.UPSCALER
+        val names = options.map { if (upscaler) upscalerName(it) else it }
+        Chooser(
+            label = w.name.localizedKnobLabel(),
+            hint = w.localizedHint(),
+            options = names,
+            current = names.getOrNull(options.indexOf(current)) ?: current,
+            onPick = { label -> onSet(options.getOrNull(names.indexOf(label)) ?: label) },
+        )
+    } else SliderRow(widget = w, current = current, onSet = onSet)
+}
+
+/**
  * ⭐⭐ One post-processing step on the Output node, as the user's mock (2026-10-23): an icon tile, the name and what it
- * does, then **After every Run** (the switch, [com.abrah.nightmare.ui.SwitchRow]) beside a button that applies the step
- * to the last picture NOW ([com.abrah.nightmare.HarnessViewModel.applyPostNow]: no render, no seed locked). Its
- * upscaler choice or sliders follow it in the knob list.
+ * is set to, then **After every Run** (the switch, [com.abrah.nightmare.ui.SwitchRow]) beside a button.
+ *
+ * ⭐ The button: with [settings], a POPUP holding them and the apply ([com.abrah.nightmare.HarnessViewModel.applyPostNow]:
+ * no render, no seed locked); without (Colour correction), it applies at once. ⚠ The settings are never drawn on the
+ * page: under the cards they took every line of the sheet (the user, 2026-10-23).
  */
 @Composable
 private fun OutputPostCard(
@@ -933,12 +990,37 @@ private fun OutputPostCard(
     onChange: (Boolean) -> Unit,
     onNow: (() -> Unit)?,
     busy: Boolean,
+    summary: String? = null,
+    settings: (@Composable () -> Unit)? = null,
 ) {
     val (icon, title, desc, button) = when (name) {
         com.abrah.nightmare.MediaOutputNode.UPSCALE -> listOf(com.abrah.nightmare.ui.UpscaleIcon, R.string.post_upscale_title, R.string.post_upscale_desc, R.string.post_upscale_now)
         com.abrah.nightmare.MediaOutputNode.AUTO_COLOR -> listOf(com.abrah.nightmare.ui.SparkleIcon, R.string.post_colour_title, R.string.post_colour_desc, R.string.post_colour_now)
         else -> listOf(com.abrah.nightmare.ui.TuneIcon, R.string.post_adjust_title, R.string.post_adjust_desc, R.string.post_adjust_now)
     }
+    var open by remember(name) { mutableStateOf(false) }
+    if (open && settings != null) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { open = false },
+        title = { Text(stringResource(title as Int)) },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(com.abrah.nightmare.ui.Space.m),
+            ) {
+                Text(stringResource(desc as Int), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                settings()
+            }
+        },
+        // ⚠ The settings are written as they move, so Done keeps them; the apply is the one primary.
+        dismissButton = if (onNow == null) null else {
+            { com.abrah.nightmare.ui.StudioOutlinedButton(onClick = { open = false }) { Text(stringResource(R.string.crop_done)) } }
+        },
+        confirmButton = {
+            if (onNow != null) com.abrah.nightmare.ui.StudioButton(onClick = { open = false; onNow() }, enabled = enabled && !busy) {
+                Text(stringResource(button as Int))
+            } else com.abrah.nightmare.ui.StudioButton(onClick = { open = false }) { Text(stringResource(R.string.crop_done)) }
+        },
+    )
     if (divider) androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -951,15 +1033,25 @@ private fun OutputPostCard(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(stringResource(title as Int), style = MaterialTheme.typography.titleMedium)
-                Text(locked ?: stringResource(desc as Int), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // ⭐ What it is set to, in the accent; what it does when there is nothing to report.
+                if (locked == null && summary != null) Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.studio.accentText)
+                else Text(locked ?: stringResource(desc as Int), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        // ⚠ SpaceBetween, the button at the end: the switch row is WEIGHTED (fill = false), so it is measured after the
+        // button and gives way first. Unweighted it took its full width and broke the button's word at 320dp ("Ups cale").
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            // ⚠ Hugging its label, so the three cards' switches line up whatever their buttons' widths.
             com.abrah.nightmare.ui.SwitchRow(
                 stringResource(R.string.post_every_run), null, checked, onChange,
-                modifier = Modifier.weight(1f), enabled = enabled,
+                modifier = Modifier.weight(1f, fill = false).padding(end = 12.dp), enabled = enabled, hug = true,
             )
-            if (onNow != null) com.abrah.nightmare.ui.StudioOutlinedButton(onClick = onNow, enabled = enabled && !busy) {
+            // ⚠ Opening the settings is allowed mid-run; only the apply inside waits for it.
+            // ⚠ ONE minimum width for the three buttons, so the switches beside them sit at one x on a narrow phone too.
+            val buttonWidth = Modifier.widthIn(min = 128.dp)
+            if (settings != null) com.abrah.nightmare.ui.StudioOutlinedButton(onClick = { open = true }, modifier = buttonWidth, enabled = enabled) {
+                Text(stringResource(button as Int))
+            } else if (onNow != null) com.abrah.nightmare.ui.StudioOutlinedButton(onClick = onNow, modifier = buttonWidth, enabled = enabled && !busy) {
                 Text(stringResource(button as Int))
             }
         }
@@ -2645,6 +2737,8 @@ internal fun NodeInspectorBody(
             if (w === padWidget) continue
             // ⚠ Drawn above, beside the resolution — or not at all when the graph fixed the size.
             if (w.name == "aspect") continue
+            // ⚠ Drawn in its card's popup ([OUTPUT_POST_SETTINGS]), never on the page.
+            if (isOutput && OUTPUT_POST_SETTINGS.values.any { w.name in it }) continue
             // ⭐⭐⭐ The CHECKPOINT is a picker, not a locked string. Every
             // installed model; picking one from another family swaps this node's
             // TYPE with it, which is safe because the four types declare the
@@ -2848,6 +2942,7 @@ internal fun NodeInspectorBody(
             if (w.name == com.abrah.nightmare.SdSampler.PICK_SELECT) continue
             // ⭐ The Output node's three post-processing switches are CARDS ([OutputPostCard], the user's mock 2026-10-23).
             if (isOutput && w.name in OUTPUT_POST_CARDS) {
+                val settingWidgets = OUTPUT_POST_SETTINGS[w.name].orEmpty().mapNotNull { s -> widgets.firstOrNull { it.name == s } }
                 OutputPostCard(
                     w.name,
                     checked = (node.params[w.name] ?: w.default).equals("true", ignoreCase = true),
@@ -2856,6 +2951,14 @@ internal fun NodeInspectorBody(
                     onChange = { v -> if (why == null) onSetParam(nodeId, w.name, v.toString()) },
                     onNow = onApplyPostNow?.let { now -> { now(w.name) } },
                     busy = busy,
+                    summary = outputPostSummary(w.name, widgets, node.params),
+                    settings = if (settingWidgets.isEmpty()) null else {
+                        {
+                            for (s in settingWidgets) OutputPostSetting(s, node.params[s.name] ?: s.default.orEmpty()) {
+                                onSetParam(nodeId, s.name, it)
+                            }
+                        }
+                    },
                 )
                 continue
             }
@@ -3755,7 +3858,18 @@ private fun InpaintEditors(
     // popup open on the node you just left, showing the new node's picture.
     var open by remember(node.id) { mutableStateOf<Int?>(inlineTab) }
     // ⚠ Keyed on the COUNT: fires once per request, not on every recomposition.
-    if (openCrop != null) LaunchedEffect(openCrop) { open = if (paints) openTab else 0 }
+    // ⚠⚠ …and once per request across the page leaving composition too. The request stays in the
+    // state after it is honoured, and the Nodes list and the pager compose a page afresh when it
+    // scrolls back in: folding the Output's Post-processing pulled the inpaint page back into view
+    // and reopened Crop/Mask (reported 2026-10-23). Saveable, so the lazy page's state holder keeps
+    // it; the count never repeats (`HarnessViewModel.cropSerial`).
+    var honoured by androidx.compose.runtime.saveable.rememberSaveable(node.id) { mutableStateOf(0) }
+    if (openCrop != null) LaunchedEffect(openCrop) {
+        if (openCrop != honoured) {
+            honoured = openCrop
+            open = if (paints) openTab else 0
+        }
+    }
     val rect = cropRectOf(node)
     val ops = com.abrah.nightmare.MaskNode.opsOf(node.type, node.params).orEmpty()
     val grow = node.params["grow"]
@@ -5146,8 +5260,17 @@ internal fun ImageActions(
             tint = tint ?: MaterialTheme.colorScheme.primary,
         )
     }
-    // ⭐ The document picker, for a picture the photo picker does not show.
-    (onPick as? ImagePick)?.let { FilesButton(it.files, tint) }
+    // ⭐ The document picker, for a picture the photo picker does not show: the folder ICON the tile row draws, not
+    // the word (the user's call, 2026-10-23: the viewer's row is icons).
+    (onPick as? ImagePick)?.let {
+        IconButton(onClick = it.files) {
+            Icon(
+                com.abrah.nightmare.ui.FolderIcon,
+                contentDescription = stringResource(R.string.pick_files),
+                tint = tint ?: MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
     // ⚠ Removes the PICTURE, not the node. Both are destructive and they sit two
     // rows apart in this sheet, which is why this one carries a label saying so
     // rather than being a second bare bin.
@@ -5196,7 +5319,7 @@ internal fun FilesButton(onClick: () -> Unit, tint: Color? = null) {
     StudioTextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp)) {
         Text(
             stringResource(R.string.pick_files),
-            color = tint ?: MaterialTheme.colorScheme.primary,
+            color = tint ?: MaterialTheme.studio.accentText,
             style = MaterialTheme.typography.labelMedium,
         )
     }

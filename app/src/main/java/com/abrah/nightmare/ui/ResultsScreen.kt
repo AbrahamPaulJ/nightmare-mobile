@@ -468,7 +468,8 @@ fun ResultsScreen(
                 // branch. The share also does the Spacer's old job of pushing
                 // the controls away from the count.
                 val small = Modifier.weight(1f).height(40.dp)
-                StudioTextButton(onClick = { onSelectAll(items.map { it.id }) }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                // ⚠ A gap from the count: contained, its edge touched "3 selected".
+                StudioTextButton(onClick = { onSelectAll(items.map { it.id }) }, modifier = Modifier.padding(start = 8.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Text(stringResource(R.string.all))
                 }
                 // ⭐ Star the selection — no confirm, a star is one tap to undo.
@@ -1437,26 +1438,26 @@ fun ResultInfoDialog(
                 }
             }
         },
-        dismissButton = {
-            StudioOutlinedButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(all)) }) {
-                Icon(CopyIcon, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.size(6.dp))
-                Text(stringResource(R.string.results_copy_all))
-            }
-        },
+        // ⚠ Up to three buttons: stacked ([DialogButtonStack]), never a Row in one slot.
         confirmButton = {
-            Row {
+            DialogButtonStack {
+                val wide = Modifier.fillMaxWidth()
                 if (selected.isNotEmpty() && transfer != null) {
                     StudioButton(onClick = {
                         val chosen = selected.sorted().mapNotNull { items[it] }
                         onClose()
                         transfer.onUse(chosen)
-                    }) { Text(stringResource(R.string.transfer_use_n, selected.size)) }
+                    }, modifier = wide) { Text(stringResource(R.string.transfer_use_n, selected.size)) }
                 }
                 if (selected.isEmpty() && onDiagnose != null) {
-                    StudioButton(onClick = { askingDiagnose = true }) { Text(stringResource(R.string.diagnose)) }
+                    StudioButton(onClick = { askingDiagnose = true }, modifier = wide) { Text(stringResource(R.string.diagnose)) }
                 }
-                StudioButton(onClick = onClose) { Text(stringResource(R.string.close)) }
+                StudioOutlinedButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(all)) }, modifier = wide) {
+                    Icon(CopyIcon, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(stringResource(R.string.results_copy_all))
+                }
+                StudioOutlinedButton(onClick = onClose, modifier = wide) { Text(stringResource(R.string.close)) }
             }
         },
     )

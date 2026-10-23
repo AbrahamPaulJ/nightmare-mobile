@@ -828,13 +828,13 @@
     <string name="more_options">More options</string>
     <string name="post_every_run">After every Run</string>
     <string name="post_upscale_title">Upscale</string>
-    <string name="post_upscale_desc">Enlarges the picture before it is kept, with the upscaler and scale below. The picture above stays as it was rendered.</string>
+    <string name="post_upscale_desc">Enlarges the picture before it is kept. The picture above stays as it was rendered.</string>
     <string name="post_upscale_now">Upscale</string>
     <string name="post_colour_title">Colour correction</string>
     <string name="post_colour_desc">Fixes a dull or tinted picture: darks darker, brights brighter, colour cast removed. A warm scene stays warm.</string>
     <string name="post_colour_now">Correct</string>
     <string name="post_adjust_title">Adjust colours</string>
-    <string name="post_adjust_desc">Brightness, contrast, saturation and warmth with the sliders below, after Colour correction.</string>
+    <string name="post_adjust_desc">Brightness, contrast, saturation and warmth, applied after Colour correction.</string>
     <string name="post_adjust_now">Adjust</string>
     <string name="post_processing">Post-processing</string>
     <string name="more_options_on">On: %1$s</string>

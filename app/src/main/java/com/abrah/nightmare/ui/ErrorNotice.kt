@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -169,18 +170,18 @@ fun ErrorDetails(
                 )
             }
         },
+        // ⚠ Three buttons: stacked ([DialogButtonStack]), never a Row in one slot.
         confirmButton = {
-            StudioButton(onClick = {
-                runCatching { com.abrah.nightmare.Share.report(ctx, text) }
-                onDismiss()
-            }) { Text(stringResource(R.string.err_share)) }
-        },
-        dismissButton = {
-            Row {
-                StudioOutlinedButton(onClick = { clipboard.setText(AnnotatedString(text)) }) {
+            DialogButtonStack {
+                val wide = Modifier.fillMaxWidth()
+                StudioButton(onClick = {
+                    runCatching { com.abrah.nightmare.Share.report(ctx, text) }
+                    onDismiss()
+                }, modifier = wide) { Text(stringResource(R.string.err_share)) }
+                StudioOutlinedButton(onClick = { clipboard.setText(AnnotatedString(text)) }, modifier = wide) {
                     Text(stringResource(R.string.err_copy))
                 }
-                StudioOutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+                StudioOutlinedButton(onClick = onDismiss, modifier = wide) { Text(stringResource(R.string.close)) }
             }
         },
     )

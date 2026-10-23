@@ -816,13 +816,13 @@
     <string name="more_options">Дополнительно</string>
     <string name="post_every_run">После каждого запуска</string>
     <string name="post_upscale_title">Увеличение</string>
-    <string name="post_upscale_desc">Увеличивает картинку перед сохранением выбранным ниже апскейлером и масштабом. Картинка выше остаётся как была.</string>
+    <string name="post_upscale_desc">Увеличивает картинку перед сохранением. Картинка выше остаётся как была.</string>
     <string name="post_upscale_now">Увеличить</string>
     <string name="post_colour_title">Коррекция цвета</string>
     <string name="post_colour_desc">Исправляет тусклую или с оттенком картинку: тёмное темнее, светлое светлее, без цветового оттенка. Тёплая сцена остаётся тёплой.</string>
     <string name="post_colour_now">Исправить</string>
     <string name="post_adjust_title">Настройка цвета</string>
-    <string name="post_adjust_desc">Яркость, контраст, насыщенность и теплота ползунками ниже, после коррекции цвета.</string>
+    <string name="post_adjust_desc">Яркость, контраст, насыщенность и теплота, после коррекции цвета.</string>
     <string name="post_adjust_now">Применить</string>
     <string name="post_processing">Постобработка</string>
     <string name="more_options_on">Включено: %1$s</string>

@@ -135,14 +135,22 @@ fun SwitchRow(
     onChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /**
+     * ⭐ The switch right after the label instead of at the row's end: for a row that shares its line with a button,
+     * where "the end" moves with the button's width (the Output cards' three switches sat at three places, the
+     * user's report 2026-10-23). The caller puts its own `Spacer(Modifier.weight(1f))` before the button.
+     */
+    hug: Boolean = false,
 ) {
     Row(
-        modifier.fillMaxWidth().heightIn(min = 48.dp)
+        (if (hug) modifier else modifier.fillMaxWidth()).heightIn(min = 48.dp)
             .clickable(enabled = enabled, role = Role.Switch) { onChange(!checked) }
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // ⚠ Hugging, the label still WRAPS when the line is short (fill = false): unweighted it kept its width and the
+        // switch was squeezed into "Run" at 320dp.
+        Column(if (hug) Modifier.weight(1f, fill = false) else Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 label, style = MaterialTheme.typography.bodyLarge,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
