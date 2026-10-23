@@ -31,6 +31,12 @@ class DetailerTest {
         assertEquals("7", Detailer.seedOf(mapOf("seed" to "7")))
         assertEquals("7", Detailer.seedOf(mapOf("seed" to "7", "fix_seed" to "0")))
         assertEquals("9", Detailer.seedOf(mapOf("seed" to "7", "fix_seed" to "9")))
+        // ⚠⚠ Every part of the pass runs on the Fix seed, not only the first set-up (1.6.222 dropped it per part).
+        val base = mapOf("seed" to "7", "fix_seed" to "9", "detail_denoise" to "0.4", "face_denoise" to "0.6")
+        for (part in listOf(null) + com.abrah.nightmare.detail.PartDetector.Part.entries) {
+            assertEquals(part.toString(), "9", SdSampler.fixParams(base, base, part)["seed"])
+        }
+        assertEquals("0.6", SdSampler.fixParams(base, base, com.abrah.nightmare.detail.PartDetector.Part.FACE)["denoise"])
     }
 
     @Test

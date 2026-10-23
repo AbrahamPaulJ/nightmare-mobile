@@ -488,6 +488,7 @@ fun HarnessScreen(
             // ⭐⭐ Enlarge what an output made — it opens the SAME upscaler
             // chooser Results uses, then edits the flow and Runs.
             onUpscaleNode = vm::offerUpscaleNode,
+            onApplyPostNow = vm::applyPostNow,
             detailsOfNode = vm::detailsOfNode,
             onDropEnlargement = vm::dropEnlargement,
             onDropReceived = vm::dropReceived,

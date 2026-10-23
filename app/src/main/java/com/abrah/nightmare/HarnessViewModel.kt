@@ -8591,6 +8591,27 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** ⭐ The seeds [applyPostNow] hands the next [runCanvas], read before that run clears the last one's status. */
+    private var runPinned: Map<String, Map<String, String>> = emptyMap()
+
+    /**
+     * ⭐⭐ **Apply now** under the Output node's Post-processing (the user's call, 2026-10-23: "user would have to lock
+     * the seed and hit Run again after turning on a post process toggle"). Runs the flow on the LAST run's seeds,
+     * pinned for this run only, so every node above the Output comes from the cache and only its upscale and
+     * colour run. ⚠ Nothing is locked: the flow keeps its random seeds. With nothing run yet it is a plain Run.
+     */
+    fun applyPostNow() {
+        val g = canvas.workflow.graph
+        runPinned = g.nodes.filter { isSampler(it.type) }.associate { n ->
+            n.id to buildMap {
+                com.abrah.nightmare.canvas.seedFor(g, n.id) { canvasStatus[it]?.detail }?.let { put("seed", it) }
+                com.abrah.nightmare.canvas.fixSeedFor(g, n.id) { canvasStatus[it]?.detail }
+                    ?.let { put(com.abrah.nightmare.detail.Detailer.FIX_SEED, it) }
+            }
+        }.filterValues { it.isNotEmpty() }
+        runCanvas()
+    }
+
     fun runCanvas() = run("canvas") {
         // ⭐⭐ **Run shows the CANVAS** — the user's call, 2026-09-23: the node
         // sheet closes so the run is watched where it happens, and its errors
@@ -8645,8 +8666,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             return@run
         }
 
+        val pinned = runPinned.also { runPinned = emptyMap() }
         val r = ops.runWorkflow(
             canvas.workflow,
+            pinned = pinned,
             // ⭐ Named before it runs, so a 24 s sampler is a node with a name
             // rather than a frozen screen.
             onStart = { id, _ ->

@@ -404,8 +404,13 @@ void editKeypoints(const Motion& m, const float* s, const float* lm68, const Mlp
   float e[N];
   std::memcpy(e, m.expression, sizeof e);
   editExpression(e, s);
-  for (int i = 0; i < N; ++i)
-    e[i] = e[i] < kExpressionMin[i] ? kExpressionMin[i] : (e[i] > kExpressionMax[i] ? kExpressionMax[i] : e[i]);
+  // nightmare: keypoint 11's x may go as far LEFT as keypoint 15's goes right (0.0247). LivePortrait's limits are
+  // lopsided (-0.0177 / +0.0145 against -0.0150 / +0.0247), so a full-left gaze was clipped back: the S25 changed
+  // 454 px at -1 against 1,450 at +1, and two testers saw the eyes "barely move left" (2026-10-23).
+  for (int i = 0; i < N; ++i) {
+    const float lo = i == 11 * 3 ? -kExpressionMax[15 * 3] : kExpressionMin[i];
+    e[i] = e[i] < lo ? lo : (e[i] > kExpressionMax[i] ? kExpressionMax[i] : e[i]);
+  }
 
   // edit_head_rotation + limit_angle (calculate_euler_limits)
   const double p = m.pitch, y = m.yaw, ro = m.roll;

@@ -184,7 +184,7 @@ It has no **Seconds** (the part of the video sets the length) and takes no LoRAs
 
 ## Output
 
-Where the result lands. It shows the picture or clip; tap it to see it full screen. Auto upscale, Auto colour and Adjust colours sit under **Post-processing** at the end of its settings, folded until you open it; while it is closed, its header names the ones switched on.
+Where the result lands. It shows the picture or clip; tap it to see it full screen. Auto upscale, Auto colour and Adjust colours sit under **Post-processing** at the end of its settings, folded until you open it; while it is closed, its header names the ones switched on. **Apply now** at its end applies them to the last picture straight away: the flow reruns on that picture's seeds, so nothing is rendered again and no seed is locked.
 
 | setting | what it does |
 |---|---|

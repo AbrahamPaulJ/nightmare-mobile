@@ -794,8 +794,8 @@
     <string name="knob_saturation">Saturation</string>
     <string name="knob_warmth">Warmth</string>
     <string name="hint_match_colours">Keeps the colours of the picture going in: image to image, inpaint and Fix faces or hands come back in its colours, with no tinted seam. Does nothing when no picture goes in and nothing is fixed.</string>
-    <string name="hint_auto_colour">Stretches the levels and balances the white of the result. A warm scene stays warm.</string>
-    <string name="hint_adjust_colours">Brightness, contrast, saturation and warmth by hand, after Auto colour. Moving a slider redoes only this node.</string>
+    <string name="hint_auto_colour">Fixes a dull or tinted picture: makes the darkest parts dark and the brightest bright, and removes a colour cast. A warm scene stays warm.</string>
+    <string name="hint_adjust_colours">Shows four sliders (brightness, contrast, saturation, warmth) to tune the picture by hand, after Auto colour. Apply now shows the change on the last picture without rendering it again.</string>
     <string name="hint_warmth">Below 0 cooler (bluer), above 0 warmer (more orange).</string>
     <string name="knob_enlarge">Enlarge ×2</string>
     <string name="knob_fix_seed">Fix seed</string>
@@ -826,6 +826,8 @@
     <string name="hint_fix_faces">After the render: find each face and redraw it close up with this prompt and model, then blend it back (ADetailer). Needs the face and hand detector from Models, Tools. Adds a render per face.</string>
     <string name="hint_fix_hands">After the render: find each hand and redraw it close up, as Fix faces does. Adds a render per hand.</string>
     <string name="more_options">More options</string>
+    <string name="post_apply_now">Apply now</string>
+    <string name="post_apply_now_hint">Applies these settings to the last picture now. The picture is not rendered again and no seed gets locked.</string>
     <string name="post_processing">Post-processing</string>
     <string name="more_options_on">On: %1$s</string>
     <string name="hint_detail_denoise">How much of each face or hand is redrawn. 0.4 keeps the pose and fixes the detail; higher changes more.</string>

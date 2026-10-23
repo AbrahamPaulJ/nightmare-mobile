@@ -146,11 +146,18 @@ object WanVideoNode : NodeType {
     ): String? = when {
         arch in 1..78 -> "2.75"
         stream -> if (pinned - DIT_BYTES + BLOCK_BYTES <= STREAM_FLOOR) "2.75" else "4"
+        // ⭐ Compute that one NPU session cannot map streams on EVERY phone (Saved #7101, a 16 GB 8 Elite, 1.6.216):
+        // 704x1280 5 s holds 3.4 GB of compute, over the ~3.1 GB a batch maps (`vmem 3311845376`), and resident it
+        // aborted at the first DiT graph (`dspqueue_read failed`) where its 2 s clips rendered.
+        pinned - DIT_BYTES > RESIDENT_COMPUTE_MAX -> "4"
         ramBytes in 1 until com.abrah.nightmare.Prefs.LOWRAM_BELOW_BYTES -> "4".takeIf { pinned > BUDGET_FROM }
         else -> null
     }
 
     private const val STREAM_FLOOR = 2_816L shl 20
+
+    /** ⚠ The most compute a clip may hold resident: under the ~3.1 GB one NPU batch maps, with room for the rest. */
+    private const val RESIDENT_COMPUTE_MAX = 2_816L shl 20
 
     private const val BUDGET_FROM = 4_608L shl 20
 

@@ -320,6 +320,7 @@ fun CanvasScreen(
      * (`HarnessViewModel.offerUpscaleNode`).
      */
     onUpscaleNode: ((String) -> Unit)? = null,
+    onApplyPostNow: (() -> Unit)? = null,
     /** ⭐⭐ What made this node's picture, for the ⓘ dialog. */
     detailsOfNode: ((String) -> List<Pair<String, String>>)? = null,
     /** ⭐⭐⭐ Drop the enlargement, keeping what the output received. */
@@ -681,6 +682,7 @@ fun CanvasScreen(
         state = state,
         types = types,
         onUpscale = onUpscaleNode,
+        onApplyPostNow = onApplyPostNow,
         detailsOf = detailsOfNode,
         onDropEnlargement = onDropEnlargement,
         onDropReceived = onDropReceived,

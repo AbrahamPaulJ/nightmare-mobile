@@ -316,6 +316,8 @@ fun NodeInspector(
     loraEpoch: Int = 0,
     /** ⭐⭐ Enlarge the node's picture by editing the flow behind it. */
     onUpscale: ((String) -> Unit)? = null,
+    /** ⭐ Re-run only the Output's post-processing on the last picture ([com.abrah.nightmare.HarnessViewModel.applyPostNow]). */
+    onApplyPostNow: (() -> Unit)? = null,
     /** ⭐⭐⭐ Drop the enlargement, keeping what the node received. */
     onDropEnlargement: ((String) -> Unit)? = null,
     /** ⭐⭐⭐ Drop what the node received, keeping the enlargement. */
@@ -765,6 +767,7 @@ fun NodeInspector(
                 ?.takeIf { previewId != null && actsOnItsPicture }
                 ?.let { up -> { up(nodeId) } },
             onDropEnlargement = onDropEnlargement?.let { d -> { d(nodeId) } },
+            onApplyPostNow = onApplyPostNow,
             // ⚠⚠ Dimmed only while an enlargement is ON the node — the user's
             // call, 2026-09-23: after the Made picture is binned, the Received
             // one must be upscalable again, even with the box still ticked.
@@ -906,6 +909,20 @@ internal val OUTPUT_POST = setOf(
     com.abrah.nightmare.MediaOutputNode.AUTO_COLOR, com.abrah.nightmare.MediaOutputNode.ADJUST,
     com.abrah.nightmare.MediaOutputNode.BRIGHTNESS, com.abrah.nightmare.MediaOutputNode.CONTRAST, com.abrah.nightmare.MediaOutputNode.SATURATION, com.abrah.nightmare.MediaOutputNode.WARMTH,
 )
+
+/**
+ * ⭐ **Apply now** (the user's call, 2026-10-23): the Output's post-processing on the picture it already has,
+ * without locking a seed — the flow reruns on its last seeds, so only this step works.
+ */
+@Composable
+private fun ApplyPostNowButton(onClick: () -> Unit, busy: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        com.abrah.nightmare.ui.StudioOutlinedButton(onClick = onClick, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.post_apply_now))
+        }
+        Text(stringResource(R.string.post_apply_now_hint), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
 
 /**
  * ⭐ The fold's header: the LoRA picker's folder row (chevron right or down, `titleSmall`), and under it,
@@ -1337,6 +1354,8 @@ internal fun NodeInspectorBody(
     onInstallControlNet: ((String) -> Unit)? = null,
     onDeleteControlNet: ((String) -> Unit)? = null,
     busy: Boolean = false,
+    /** ⭐ The Output node's Apply now ([com.abrah.nightmare.HarnessViewModel.applyPostNow]); null draws no button. */
+    onApplyPostNow: (() -> Unit)? = null,
     /** ⭐⭐ What made this picture — the rows for [com.abrah.nightmare.ui.ResultInfoDialog]. */
     onInfo: (() -> List<Pair<String, String>>)? = null,
     /** ⚠ For a golden only: draw the inpaint popup's tab INLINE, since a Dialog is a window a screenshot cannot reach. */
@@ -3096,6 +3115,8 @@ internal fun NodeInspectorBody(
                 )
             }
             }        }
+        // ⭐ Apply now, at the end of the Output node's open Post-processing fold ([ApplyPostNowButton]).
+        if (pass == 1 && isOutput && onApplyPostNow != null) ApplyPostNowButton(onApplyPostNow, busy)
         }
         }
         knobList()

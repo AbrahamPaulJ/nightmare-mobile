@@ -271,6 +271,20 @@ class SdSampler(
 
         internal fun remember(key: String, img: Value.Image) = synchronized(bases) { bases[key] = img }
 
+        /**
+         * ⭐ ONE answer for what a fix pass renders with: [p0] at [part]'s strength (the node's Fix strength for null)
+         * and the fix's own seed ([com.abrah.nightmare.detail.Detailer.seedOf]). ⚠⚠ The per-part loop rebuilt it
+         * without the seed, so a random Fix seed redrew the same face every Run, and Results, which files a picture
+         * by its pixels, kept none of the "new" ones (the user, 1.6.222).
+         */
+        internal fun fixParams(
+            p0: Map<String, String>, base: Map<String, String>, part: com.abrah.nightmare.detail.PartDetector.Part?,
+        ): Map<String, String> {
+            val d = com.abrah.nightmare.detail.Detailer
+            val strength = if (part == null) base[d.DETAIL_DENOISE] ?: d.DEFAULT_DENOISE else d.denoiseOf(base, part).toString()
+            return p0 + ("denoise" to strength) + ("seed" to d.seedOf(base))
+        }
+
         /** ⭐ The Hires fix switch ([hiresFix]); the id is the row's words ("Hires fix"). */
         const val HIRES = "hires_fix"
         /**
@@ -1293,8 +1307,7 @@ class SdSampler(
         val prompt = Value.Prompt(pos.text, neg.text)
         val p0 = withPromptLoras(ctx, node, base, pos.tags)
         // ⭐ Each part at its own strength ([com.abrah.nightmare.detail.Detailer.denoiseOf]), set per part below.
-        // ⭐ The fix's own seed when set ([com.abrah.nightmare.detail.Detailer.FIX_SEED]), else the picture's.
-        var p = p0 + ("denoise" to (base[d.DETAIL_DENOISE] ?: d.DEFAULT_DENOISE)) + ("seed" to d.seedOf(base))
+        var p = fixParams(p0, base, null)
         var bmp = ctx.images.get(img.id) ?: return img
         val spec = ModelCatalog.byId(p["model"].orEmpty()) ?: defaultSpec()
         // ⭐ The patch: a DiT renders any size, so a square at about a megapixel's edge; an SD graph only
@@ -1337,7 +1350,7 @@ class SdSampler(
         }
         for (part in parts) {
             val set = d.settings(base, part)
-            p = p0 + ("denoise" to d.denoiseOf(base, part).toString())
+            p = fixParams(p0, base, part)
             val found = com.abrah.nightmare.detail.PartDetector.detect(appCtx, bmp, part, set.conf).orEmpty()
             val boxes = d.chosen(found, bmp.width, bmp.height)
             ctx.say(

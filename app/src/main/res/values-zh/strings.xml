@@ -767,8 +767,8 @@
     <string name="knob_saturation">饱和度</string>
     <string name="knob_warmth">色温</string>
     <string name="hint_match_colours">保持输入图片的颜色：图生图、局部重绘以及修复面部或手部的结果都沿用它的颜色，不留色差接缝。没有输入图片且不修复时不起作用。</string>
-    <string name="hint_auto_colour">拉伸色阶并校正白平衡。暖色场景仍保持温暖。</string>
-    <string name="hint_adjust_colours">在自动调色之后手动调整亮度、对比度、饱和度和色温。移动滑块只重新运行此节点。</string>
+    <string name="hint_auto_colour">修正发灰或偏色的图片：让暗部够暗、亮部够亮，并去除偏色。暖色场景仍保持温暖。</string>
+    <string name="hint_adjust_colours">显示四个滑块（亮度、对比度、饱和度、色温），在自动调色之后手动微调图片。点“立即应用”即可在上一张图片上看到变化，无需重新生成。</string>
     <string name="hint_warmth">小于 0 更冷（偏蓝），大于 0 更暖（偏橙）。</string>
     <string name="knob_enlarge">放大 ×2</string>
     <string name="knob_fix_seed">修复种子</string>
@@ -799,6 +799,8 @@
     <string name="hint_fix_faces">生成后：找到每张脸，用同样的提示词和模型近距离重绘，再融合回去（ADetailer）。需要从 模型、工具 下载面部和手部检测器。每张脸多一次生成。</string>
     <string name="hint_fix_hands">生成后：找到每只手并近距离重绘，与修复面部相同。每只手多一次生成。</string>
     <string name="more_options">更多选项</string>
+    <string name="post_apply_now">立即应用</string>
+    <string name="post_apply_now_hint">立即把这些设置应用到上一张图片。不会重新生成图片，也不会锁定种子。</string>
     <string name="post_processing">后期处理</string>
     <string name="more_options_on">已开启：%1$s</string>
     <string name="hint_detail_denoise">每张脸或每只手重绘的程度。0.4 保留姿势、修复细节；越高改动越大。</string>

@@ -345,8 +345,12 @@ class VideoGraphTest {
         assertEquals("4", wan.memoryBudget(wan.pinnedBytes(704, 1280, 73), s25, 79))
         assertEquals(null, wan.memoryBudget(wan.pinnedBytes(704, 1280, 49), s25, 79))
         assertEquals(null, wan.memoryBudget(wan.pinnedBytes(832, 480, 121), s25, 79))
-        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(704, 1280, 121), gb16, 79))
-        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(704, 1280, 121), 0, 0))
+        // ⭐ Saved #7101: 704x1280 5 s holds 3.4 GB of compute, over one NPU batch's map, so it streams on a 16 GB
+        // phone too (resident it aborted at the first DiT graph); 3 s (2.1 GB) and 2 s stay resident there.
+        assertEquals("4", wan.memoryBudget(wan.pinnedBytes(704, 1280, 121), gb16, 79))
+        assertEquals("4", wan.memoryBudget(wan.pinnedBytes(704, 1280, 121), 0, 0))
+        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(704, 1280, 73), gb16, 79))
+        assertEquals(null, wan.memoryBudget(wan.pinnedBytes(832, 480, 121), gb16, 79))
         assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(480, 832, 49), s25, 75)) // every clip on v75: resident rendered noise
         assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(480, 832, 121), s25, 75))
         assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(704, 1280, 49), gb16, 75))
@@ -413,7 +417,7 @@ class VideoGraphTest {
     fun wanKeysOnItsModelNotItsSize() {
         val wan = com.abrah.nightmare.npu.WanVideoNode
         val a = wan.contextKey(wanT2v.graph.byId.getValue("video"))
-        val b = wan.contextKey(Node("video", wan.name, params = mapOf("width" to "704", "height" to "1280")))
+        val b = wan.contextKey(Node("video", wan.name, params = mapOf("width" to "704", "height" to "1280", "seconds" to "2")))
         assertEquals(a, b)
         assertEquals(com.abrah.nightmare.ModelCatalog.WAN, a.type)
         assertEquals(com.abrah.nightmare.ModelCatalog.WAN22.id, a.model)

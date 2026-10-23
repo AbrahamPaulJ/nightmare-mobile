@@ -2332,6 +2332,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onWarn: (String, String) -> Unit = { _, _ -> },
         /** ⭐ Which phase a node's progress is ([Ops.Progress.phase]). */
         onPhase: (String, String?) -> Unit = { _, _ -> },
+        /**
+         * ⭐ Seeds to use THIS run instead of rolling, by node: `seed` and `fix_seed` (the Output node's Apply now,
+         * which reruns on the last run's seeds so only the Output step works). Reported as rolled, so the run bar's
+         * locks still find them; never written into the flow.
+         */
+        pinned: Map<String, Map<String, String>> = emptyMap(),
     ): GraphRun {
         // ⭐ In use for the whole run, so an out-of-sight release waits for it
         // ([BackendIdle]) — and `finally`, so a failed run still ends the use.
@@ -2342,7 +2348,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.NonCancellable) { BackendIdle.begin() }
         RunWakeLock.begin(ctx)
         try {
-            return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn, onPhase)
+            return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn, onPhase, pinned)
         } finally {
             try { releaseBackendIfTooBig() } finally { BackendIdle.end(); RunWakeLock.end() }
         }
@@ -2424,6 +2430,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onLog: (String, String) -> Unit = { _, _ -> },
         onWarn: (String, String) -> Unit = { _, _ -> },
         onPhase: (String, String?) -> Unit = { _, _ -> },
+        pinned: Map<String, Map<String, String>> = emptyMap(),
     ): GraphRun {
         // ⚠⚠⚠ **Consumer-derived sizes are settled HERE, before anything
         // runs.** A consumer-sized node (`image.crop` until its deletion on 2026-09-17; the legacy mask nodes) carries no `out_w`/`out_h` of its own — they are
@@ -2470,9 +2477,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // each Run), only while a fix is on: rolling it with no fix would make an unchanged flow full price.
             val fixOn = isSampler(n.type) && listOf(com.abrah.nightmare.detail.Detailer.FIX_FACES, com.abrah.nightmare.detail.Detailer.FIX_HANDS)
                 .any { n.params[it].equals("true", ignoreCase = true) }
+            val pin = pinned[n.id].orEmpty()
             @Suppress("NAME_SHADOWING")
             val n = if (fixOn && (n.params[com.abrah.nightmare.detail.Detailer.FIX_SEED] ?: "0").trim().toIntOrNull() == 0) {
-                val s = java.util.Random().nextInt(Int.MAX_VALUE - 1) + 1
+                val s = pin[com.abrah.nightmare.detail.Detailer.FIX_SEED]?.toIntOrNull()?.takeIf { it > 0 }
+                    ?: (java.util.Random().nextInt(Int.MAX_VALUE - 1) + 1)
                 rolledFix[n.id] = s
                 n.copy(params = n.params + (com.abrah.nightmare.detail.Detailer.FIX_SEED to s.toString()))
             } else n
@@ -2486,7 +2495,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             if (!wantsRoll) return@map n
             // ⚠ Never 0, or the next run would read it back as "roll again" if
             // this value were ever written into a workflow.
-            val seed = java.util.Random().nextInt(Int.MAX_VALUE - 1) + 1
+            val seed = pin["seed"]?.toIntOrNull()?.takeIf { it > 0 } ?: (java.util.Random().nextInt(Int.MAX_VALUE - 1) + 1)
             rolled[n.id] = seed
             n.copy(params = n.params + ("seed" to seed.toString()))
         }
