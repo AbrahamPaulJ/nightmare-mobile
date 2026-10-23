@@ -54,6 +54,27 @@ class PackFallbackTest {
         assertEquals(DeviceProbe.PACK_FALLBACK_ARCH, DeviceProbe.packFallback)
     }
 
+    /** ⭐ A real SM8975 on the learned fallback (1.6.213): the 2.50 runtime asked for the V85 stub. */
+    @Test
+    fun theDspAskingForTheV85StubUndoesTheFallbackForGood() {
+        val v85Stub = listOf(
+            "QnnDsp <W> Failed in loading stub: dlopen failed: library \"libQnnHtpV85Stub.so\" not found",
+            "QnnDsp <E> loadRemoteSymbols failed with err 4000",
+        ) + skel1002
+        assertEquals(85, DeviceProbe.dspPackArch(v85Stub))
+        assertNull(DeviceProbe.dspPackArch(skel1002))
+        onChip("SM8975")
+        assertFalse(DeviceProbe.unlearnPackFallback(ctx, v85Stub))
+        assertTrue(DeviceProbe.learnPackFallback(ctx, skel1002))
+        assertTrue(DeviceProbe.unlearnPackFallback(ctx, v85Stub))
+        assertNull(DeviceProbe.packFallback)
+        assertEquals(85, DeviceProbe.caps().arch)
+        // ⚠ No flip-flop: a later skel failure does not bring the fallback back, across restarts too.
+        DeviceProbe.loadHmxVerdict(ctx)
+        assertFalse(DeviceProbe.learnPackFallback(ctx, skel1002))
+        assertEquals(85, DeviceProbe.caps().arch)
+    }
+
     @Test
     fun aTabledChipNeverFallsBack() {
         onChip("SM8750")

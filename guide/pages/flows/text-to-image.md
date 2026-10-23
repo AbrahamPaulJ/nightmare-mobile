@@ -48,7 +48,7 @@ Tap the **Text to image** node:
 | **CFG** | How strictly the prompt is followed | Too high burns colours; turbo/distilled models want ~1–2 |
 | **Seed** | The starting noise | `0` = a new picture every Run. Type a seed shown on a node to get that picture back |
 | **Scheduler** | The sampling method. SD 1.5 and SDXL: DPM++ 2M, DPM++ 2M SDE, DPM++ 3M, DPM++ 3M SDE, Euler, Euler A, LCM. FLUX.2, Z-Image, Qwen Image, Krea 2, Iris and Anima DiT: Euler, Euler A, Heun, DPM++ 2M, DPM++ 2M SDE, ER-SDE, Res Multistep, iPNDM, LCM | Use what the model's author recommends; turbo models usually want Euler (DiT) or LCM |
-| **Schedule** | How the noise steps are spaced: **Normal**, **Karras** or **Exponential** (SD 1.5, SDXL and the DiT models but Wan and Iris; not with LCM). Normal is each model's own. On a 4- or 8-step DiT model Karras and Exponential come out murky at those steps: give them about 12 | Many turbo and hyper SDXL models recommend Exponential |
+| **Schedule** | How the noise steps are spaced: **Normal**, **Karras** or **Exponential** (SD 1.5, SDXL and the DiT models but Wan and Iris; not with LCM), and on the DiT models also **SGM Uniform**, **Bong Tangent**, **Simple** and **Beta**. Normal is each model's own. On a 4- or 8-step DiT model Karras and Exponential come out murky at those steps: give them about 12 | Many turbo and hyper SDXL models recommend Exponential |
 | **Resolution** / **Aspect** / **Width, Height** | The picture's size | Depends on the family. Below |
 
 ### Size, per family

@@ -1169,6 +1169,8 @@
     <string name="schedule_exponential">Exponential</string>
     <string name="schedule_sgm_uniform">SGM Uniform</string>
     <string name="schedule_bong_tangent">Bong Tangent</string>
+    <string name="schedule_simple">简单</string>
+    <string name="schedule_beta">Beta</string>
     <string name="schedule_unavailable">LCM 使用自己的调度</string>
     <string name="drawer_support">支持</string>
     <string name="support_coffee">请我喝杯咖啡</string>

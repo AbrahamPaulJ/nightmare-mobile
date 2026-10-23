@@ -1426,11 +1426,14 @@ object ModelCatalog {
     /**
      * ⭐ The DiT engine's schedules: [SCHEDULES] plus SGM Uniform and Bong Tangent (testers' wishes, 2026-10-20, the
      * user's call: every DiT model). stable-diffusion.cpp already knows both names (`str_to_scheduler`); backend 039
-     * passes the suffixes through. ⚠ Not on the SD samplers: their backend has neither.
+     * passes the suffixes through. ⚠ Not on the SD samplers: their backend has neither. ⭐ Simple and Beta too
+     * (ComfyUI's names, a tester's wish for MOSS-Image, 2026-10-22): the ABI 108 engine knows both, backend 043.
      */
     val DIT_SCHEDULES: List<Pair<String, String>> = SCHEDULES + listOf(
         "_sgm_uniform" to "SGM Uniform",
         "_bong_tangent" to "Bong Tangent",
+        "_simple" to "Simple",
+        "_beta" to "Beta",
     )
 
     /**

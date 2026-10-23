@@ -1196,6 +1196,8 @@
     <string name="schedule_exponential">Exponential</string>
     <string name="schedule_sgm_uniform">SGM Uniform</string>
     <string name="schedule_bong_tangent">Bong Tangent</string>
+    <string name="schedule_simple">Простое</string>
+    <string name="schedule_beta">Beta</string>
     <string name="schedule_unavailable">У LCM своё расписание</string>
     <string name="drawer_support">Поддержка</string>
     <string name="support_coffee">Угостить кофе</string>

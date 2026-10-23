@@ -1,0 +1,15 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -71,8 +71,11 @@
+ // (ABI 108), the rest its sampler. "" = the model's own schedule.
+ // nightmare (039): SGM Uniform and Bong Tangent too, names the engine's
+ // str_to_scheduler already knows (no engine change).
++// nightmare (043): Simple and Beta, ComfyUI's names, likewise already in the
++// ABI 108 engine (a tester's wish for MOSS-Image, 2026-10-22).
+ inline std::string ditSchedule(const std::string &s) {
+-  for (const char *sfx : {"_karras", "_exponential", "_sgm_uniform", "_bong_tangent"}) {
++  for (const char *sfx : {"_karras", "_exponential", "_sgm_uniform", "_bong_tangent",
++                          "_simple", "_beta"}) {
+     const size_t n = std::strlen(sfx);
+     if (s.size() > n && s.compare(s.size() - n, n, sfx) == 0) return sfx + 1;
+   }

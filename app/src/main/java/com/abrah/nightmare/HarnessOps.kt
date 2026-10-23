@@ -5200,6 +5200,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop(); BackendProcess.forgetRuntime() }
             return launchOnce(want, upscalerOnly)
         }
+        // ⭐ ...and the reverse: on the v81 fallback the DSP asked for the V85 stub, so it IS a v85 (a real SM8975).
+        if (DeviceProbe.unlearnPackFallback(ctx, BackendProcess.tail())) {
+            say("this phone's NPU is a v${DeviceProbe.caps().arch}, not a v${DeviceProbe.PACK_FALLBACK_ARCH}. Starting again on its own runtime")
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop(); BackendProcess.forgetRuntime() }
+            return launchOnce(want, upscalerOnly)
+        }
         val modelId = want?.model ?: SelectedModel.id
         if (upscalerOnly || !SpillFill.learn(ctx, modelId)) return false
         say("this checkpoint needs ${SpillFill.describe(ctx, modelId)}. Starting again with it")

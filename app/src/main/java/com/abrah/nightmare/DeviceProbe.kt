@@ -169,6 +169,7 @@ object DeviceProbe {
         val prefs = context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE)
         hmxBad = prefs.getBoolean(HMX_BAD_KEY, false)
         packFallback = prefs.getInt(PACK_FALLBACK_KEY, 0).takeIf { it > 0 }
+        packConfirmed = prefs.getInt(PACK_CONFIRMED_KEY, 0).takeIf { it > 0 }
     }
 
     /**
@@ -184,6 +185,35 @@ object DeviceProbe {
     private const val PACK_FALLBACK_KEY = "pack_fallback_arch"
     const val PACK_FALLBACK_ARCH = 81
 
+    /**
+     * ⭐ A pack arch QNN itself named on this phone ([dspPackArch]): the fallback is never learned again. Per phone.
+     * ⚠ A real SM8975 (OnePlus PYB110, 1.6.213): stuck on the learned v81 fallback, the 2.50 runtime asked for
+     * `libQnnHtpV85Stub.so` on every launch. Only [measure] dropped the fallback, and it ran where the app crashed.
+     */
+    @Volatile
+    private var packConfirmed: Int? = null
+    private const val PACK_CONFIRMED_KEY = "pack_confirmed_arch"
+
+    /** ⚠ Pure: the pack arch whose stub a launch asked for and did not find (the DSP's real arch), or null. */
+    fun dspPackArch(tail: List<String>): Int? = tail.firstNotNullOfOrNull {
+        Regex("""libQnnHtpV(\d+)Stub\.so" not found""").find(it)?.groupValues?.get(1)?.toIntOrNull()
+    }?.takeIf { it in PACK_ARCHES }
+
+    /**
+     * ⭐ The v81 fallback was wrong: the launch asked for a pack arch's stub ([dspPackArch]). Drop it, remember the arch,
+     * and the caller relaunches once on the pack ([HarnessOps.launchBackend]). True when it changed something.
+     */
+    fun unlearnPackFallback(context: Context, tail: List<String>): Boolean {
+        if (packFallback == null) return false
+        val arch = dspPackArch(tail) ?: return false
+        packFallback = null
+        packConfirmed = arch
+        context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit()
+            .remove(PACK_FALLBACK_KEY).putInt(PACK_CONFIRMED_KEY, arch).apply()
+        Log.w(TAG, "the DSP asked for the v$arch stub on ${soc()}: the v$PACK_FALLBACK_ARCH fallback is dropped")
+        return true
+    }
+
     /** ⚠ Pure: a backend log that died loading the NPU skel (the transport, before any model). */
     fun skelLoadFailed(tail: List<String>): Boolean =
         tail.any { "Failed to load skel" in it || "Transport layer setup failed" in it }
@@ -193,7 +223,7 @@ object DeviceProbe {
      * True when NEW, so the caller relaunches once ([HarnessOps.launchBackend]). ⚠ Never on a measured or tabled chip.
      */
     fun learnPackFallback(context: Context, tail: List<String>): Boolean {
-        if (packFallback != null || measured != null || SOC_TO_ARCH[soc()] != null) return false
+        if (packFallback != null || packConfirmed != null || measured != null || SOC_TO_ARCH[soc()] != null) return false
         if (archFromPartNumber(soc()) !in PACK_ARCHES || !skelLoadFailed(tail)) return false
         packFallback = PACK_FALLBACK_ARCH
         context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit().putInt(PACK_FALLBACK_KEY, PACK_FALLBACK_ARCH).apply()
@@ -380,10 +410,15 @@ object DeviceProbe {
             // ⚠ A wedged DSP never closes the child's stdout, and `readText` would hold this IO thread (and the
             // child) for ever. The probe answers in well under a second; past [PROBE_TIMEOUT_S] it is killed, the
             // read ends, and the tables stand in as for any unprobeable phone.
+            // ⚠⚠ The interrupt below lands in `waitFor` on every clean probe: uncaught on a bare Thread it killed
+            // the WHOLE APP on opening Models or Device (1.6.212-217, testers on 8 Elite Gen 5, the S25 too).
             val watchdog = Thread {
-                if (!p.waitFor(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)) {
-                    Log.w(TAG, "device_info did not exit in $PROBE_TIMEOUT_S s; killing it")
-                    p.destroyForcibly()
+                try {
+                    if (!p.waitFor(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)) {
+                        Log.w(TAG, "device_info did not exit in $PROBE_TIMEOUT_S s; killing it")
+                        p.destroyForcibly()
+                    }
+                } catch (_: InterruptedException) {
                 }
             }.apply { isDaemon = true; name = "device-probe-watchdog"; start() }
             val out = p.inputStream.bufferedReader().use { it.readText() }

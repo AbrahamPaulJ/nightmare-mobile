@@ -7263,7 +7263,15 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             pp["prompt"]?.takeIf { it.isNotBlank() }?.let { out += "Prompt" to it }
             pp["negative"]?.takeIf { it.isNotBlank() }?.let { out += "Negative" to it }
         }
-        val skip = setOf("x", "y", "w", "h", CropNode.LOCKED)
+        // ⭐ A knob for a picture that is not wired did nothing, so it is not listed (a tester, 2026-10-22: "Denoise:
+        // 0.65" on every Text to image, "why is this fixed and unadjustable?"; its knob is hidden, rightly).
+        val unwired = buildSet {
+            if (s.inputs["image"] == null) addAll(listOf("denoise", SdSampler.AUTO_CROP, SdSampler.ALLOW_PAD, CropNode.PAD))
+            if (s.inputs["reference"] == null) addAll(
+                listOf(SdSampler.REF_X, SdSampler.REF_Y, SdSampler.REF_W, SdSampler.REF_H, SdSampler.REF_MAX),
+            )
+        }
+        val skip = setOf("x", "y", "w", "h", CropNode.LOCKED) + unwired
         for (w in type?.widgets.orEmpty()) {
             if (w.name in skip) continue
             val v = p[w.name] ?: continue

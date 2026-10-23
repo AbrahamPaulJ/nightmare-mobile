@@ -5447,6 +5447,8 @@ private fun scheduleLabel(sfx: String): String = stringResource(
         "_exponential" -> R.string.schedule_exponential
         "_sgm_uniform" -> R.string.schedule_sgm_uniform
         "_bong_tangent" -> R.string.schedule_bong_tangent
+        "_simple" -> R.string.schedule_simple
+        "_beta" -> R.string.schedule_beta
         else -> R.string.schedule_normal
     },
 )

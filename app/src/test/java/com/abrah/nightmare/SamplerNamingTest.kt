@@ -113,5 +113,9 @@ class SamplerNamingTest {
         assertEquals("dpm++2m_sde" to "_sgm_uniform", ModelCatalog.splitScheduler("dpm++2m_sde_sgm_uniform"))
         assertEquals("Euler SGM Uniform", ModelCatalog.schedulerLabel("euler_sgm_uniform"))
         assertEquals("lcm", ModelCatalog.joinScheduler("lcm", "_sgm_uniform"))
+        // ⭐ Simple and Beta (backend 043), the same way.
+        assertEquals("euler" to "_simple", ModelCatalog.splitScheduler("euler_simple"))
+        assertEquals("res_multistep" to "_beta", ModelCatalog.splitScheduler("res_multistep_beta"))
+        assertTrue(ModelCatalog.SCHEDULERS.none { it.endsWith("_simple") || it.endsWith("_beta") })
     }
 }
