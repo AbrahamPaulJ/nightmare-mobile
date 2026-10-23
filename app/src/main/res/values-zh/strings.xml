@@ -794,6 +794,7 @@
     <string name="hint_fix_faces">生成后：找到每张脸，用同样的提示词和模型近距离重绘，再融合回去（ADetailer）。需要从 模型、工具 下载面部和手部检测器。每张脸多一次生成。</string>
     <string name="hint_fix_hands">生成后：找到每只手并近距离重绘，与修复面部相同。每只手多一次生成。</string>
     <string name="more_options">更多选项</string>
+    <string name="post_processing">后期处理</string>
     <string name="more_options_on">已开启：%1$s</string>
     <string name="hint_detail_denoise">每张脸或每只手重绘的程度。0.4 保留姿势、修复细节；越高改动越大。</string>
     <string name="run_detail_no_detector">已跳过修复面部和手部：未安装面部和手部检测器。请在 模型、工具 中下载</string>

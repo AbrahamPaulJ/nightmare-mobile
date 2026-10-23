@@ -892,11 +892,21 @@ internal val MORE_OPTIONS = setOf(
 )
 
 /**
+ * ⭐ The Output node's after-render knobs, folded the same way under **Post-processing** (the user's call,
+ * 2026-10-23): Autosave stays out, it is what the node is for.
+ */
+internal val OUTPUT_POST = setOf(
+    com.abrah.nightmare.MediaOutputNode.UPSCALE, com.abrah.nightmare.MediaOutputNode.UPSCALER, com.abrah.nightmare.MediaOutputNode.SCALE,
+    com.abrah.nightmare.MediaOutputNode.AUTO_COLOR, com.abrah.nightmare.MediaOutputNode.ADJUST,
+    com.abrah.nightmare.MediaOutputNode.BRIGHTNESS, com.abrah.nightmare.MediaOutputNode.CONTRAST, com.abrah.nightmare.MediaOutputNode.SATURATION, com.abrah.nightmare.MediaOutputNode.WARMTH,
+)
+
+/**
  * ⭐ The fold's header: the LoRA picker's folder row (chevron right or down, `titleSmall`), and under it,
  * while closed, which of the knobs inside are on.
  */
 @Composable
-internal fun MoreOptionsHeader(open: Boolean, on: List<String>, onToggle: () -> Unit) {
+internal fun MoreOptionsHeader(open: Boolean, on: List<String>, onToggle: () -> Unit, title: Int = R.string.more_options) {
     Column(
         Modifier.fillMaxWidth()
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
@@ -911,7 +921,7 @@ internal fun MoreOptionsHeader(open: Boolean, on: List<String>, onToggle: () -> 
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                stringResource(R.string.more_options),
+                stringResource(title),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(start = 6.dp),
             )
@@ -2521,8 +2531,10 @@ internal fun NodeInspectorBody(
         // ([com.abrah.nightmare.Prefs.moreOptionsOpen]). ⚠ Closed, the header names every one switched on,
         // so nothing that changes the picture is out of sight. One loop draws both halves: a second copy
         // of the knob loop would stop agreeing with the first.
+        val isOutput = node.type == com.abrah.nightmare.MediaOutputNode.name
         val (moreWidgets, mainWidgets) = widgets.partition {
-            node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && it.name in MORE_OPTIONS
+            (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && it.name in MORE_OPTIONS) ||
+                (isOutput && it.name in OUTPUT_POST)
         }
         val prefsContext = LocalContext.current
         var moreOpen by remember { mutableStateOf(com.abrah.nightmare.Prefs.moreOptionsOpen) }
@@ -2538,6 +2550,7 @@ internal fun NodeInspectorBody(
                     moreOpen = !moreOpen
                     com.abrah.nightmare.Prefs.setMoreOptionsOpen(prefsContext, moreOpen)
                 },
+                title = if (isOutput) R.string.post_processing else R.string.more_options,
             )
             if (!moreOpen) break
         }

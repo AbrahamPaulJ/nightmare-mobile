@@ -182,7 +182,7 @@ It has no **Seconds** (the part of the video sets the length) and takes no LoRAs
 
 ## Output
 
-Where the result lands. It shows the picture or clip; tap it to see it full screen.
+Where the result lands. It shows the picture or clip; tap it to see it full screen. Auto upscale, Auto colour and Adjust colours sit under **Post-processing** at the end of its settings, folded until you open it; while it is closed, its header names the ones switched on.
 
 | setting | what it does |
 |---|---|

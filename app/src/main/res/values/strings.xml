@@ -821,6 +821,7 @@
     <string name="hint_fix_faces">After the render: find each face and redraw it close up with this prompt and model, then blend it back (ADetailer). Needs the face and hand detector from Models, Tools. Adds a render per face.</string>
     <string name="hint_fix_hands">After the render: find each hand and redraw it close up, as Fix faces does. Adds a render per hand.</string>
     <string name="more_options">More options</string>
+    <string name="post_processing">Post-processing</string>
     <string name="more_options_on">On: %1$s</string>
     <string name="hint_detail_denoise">How much of each face or hand is redrawn. 0.4 keeps the pose and fixes the detail; higher changes more.</string>
     <string name="run_detail_no_detector">Fix faces and hands skipped: the face and hand detector is not installed. Download it in Models, Tools</string>
