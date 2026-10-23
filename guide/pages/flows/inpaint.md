@@ -63,14 +63,14 @@ The line under the tools says how much of the picture is covered.
 
 ### Tap to select
 
-Tick **Enable tap to select** in the Inpaint sheet (the first time, it offers an 87 MB
+Switch on **Enable tap to select** in the Inpaint sheet (the first time, it offers an 87 MB
 download). In the mask editor, tap an object and the mask follows its outline. Tap it again
 to take more of it, and once more to let it go. This is Segment Anything 2.1, running on the
 phone's CPU.
 
 ### Auto mask
 
-Tick **Enable auto mask** (a 29 MB download) and chips appear in the mask editor:
+Switch on **Enable auto mask** (a 29 MB download) and chips appear in the mask editor:
 **Clothes**, **Face**, **Hair**, **Shoes**, **Bag**. Tap one and that part of the person is
 masked. The flow **remembers** the choice and masks every new photo by itself. For example a
 clothes-swap flow where you only change the photo and press Run.

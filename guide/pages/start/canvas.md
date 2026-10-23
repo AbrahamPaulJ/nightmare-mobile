@@ -180,4 +180,4 @@ text to image, keeping the prompt and settings. It asks first.
 The canvas saves itself as you go. Close the app and it reopens where you left it, zoom and
 position included. To keep a flow for later, tap 💾 and name it; it then appears under
 **Flows → Saved**. Flows can also be shared as a `.json` file and imported with
-**Import a flow** at the bottom of the Flows tab.
+the **+** at the top of the Flows tab.

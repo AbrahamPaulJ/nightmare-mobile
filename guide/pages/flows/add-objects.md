@@ -12,7 +12,7 @@ It works inside the [Inpaint](inpaint.md) flow.
 ## Steps
 
 1. Open **Flows → Inpaint** and choose the photo you want to add to on the **image** node.
-2. Tap the **Inpaint** node and tick **Enable Add Objects**.
+2. Tap the **Inpaint** node and switch on **Enable Add Objects**.
 3. Open the **Mask** window. An **Add** button appears: tap it and choose the photo that
    contains the object.
 4. **Choose the object**: paint over it in that photo (tap to select and auto mask work here

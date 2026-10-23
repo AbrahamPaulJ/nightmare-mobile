@@ -50,7 +50,7 @@ and it downloads on first use; the app shows which ones your phone can run.
   the picture going in; **Colour correction** and **Adjust colours** (brightness, contrast, saturation, warmth) on the Output node, after every Run or on the last picture at a tap, without rendering it again.
 - **LoRA library**: sort LoRAs by name, newest, most used or size, filter by base model, star favourites, set a LoRA's model by hand when its file is not recognised, and sort them into your own folders.
 - **Draw on a picture**: doodle shapes and colours over the image node's photo (or a blank page) and let image to image make them real; pinch to zoom, pick a colour from the picture or any colour from a picker.
-- **Recipes**: text to image, image to image, inpaint, upscale, edit a face, image edit, text / image to video, motion transfer and two Advanced flows, listed from least to most demanding; one your phone can't run says so.
+- **Recipes**: text to image, image to image, inpaint, upscale, edit a face, image edit, text / image to video, motion transfer and two Advanced flows, grouped as Pictures, Faces, Advanced, Edit and Video, each from least to most demanding; one your phone can't run says so. Import someone's flow from the **+** beside Models and Flows.
 - **Several checkpoints in one graph**: each generate node has its own model; the run loads each once and tells you the cost first.
 - **Variation seed**: a second seed and a strength on SD 1.5, SDXL and Anima: small changes around a picture you like, keeping its composition.
 - **Batching**: sweep seed, steps, CFG, denoise or scheduler; two at once makes a grid. Every result keeps the graph that made it.
@@ -67,8 +67,8 @@ and it downloads on first use; the app shows which ones your phone can run.
   installed it is a 3.3 GB download. Text to image.
 - **Ideogram 4** (8 steps): Ideogram's 9.3B model, the best open model at readable text in a picture (signs, posters, labels), with ostris' TurboTime speed-up applied every time. About 5.5 min at 768x768 on an 8 Elite. About 11.6 GB, 12 GB phones and up. Text to image. Non-commercial use only (Ideogram's licence).
 - **Iris 3B Turbo**: draws pixels directly, so there is no VAE and no decode step to run out of memory in. Only the sizes it was trained at, about 1 MP each (1024x1024, 896x1200, 896x1344, 752x1344 and the turned versions); smaller ones come out in blocks. About 2.5 min at 1024x1024 on an 8 Elite. Text to image.
-- **Bring your own**: one **+** on the Models page takes any of them and works out what the file is: a converted checkpoint zip, a FLUX.2 / Z-Image / Krea 2 / Anima / MOSS-Image `.safetensors` or `.gguf` fine-tune used as it is (a self-made GGUF that quantized the few tensors the engine cannot read that way is fixed on import), or an upscaler. Rename any import from its card. Or convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge).
-- **Upscalers**: RealESRGAN anime and 4x UltraSharp V2 Lite, or your own; a checkbox on the output node.
+- **Bring your own**: one **+** on the Models page takes any of them and works out what the file is: a converted checkpoint zip, a FLUX.2 / Z-Image / Krea 2 / Anima / MOSS-Image `.safetensors` or `.gguf` fine-tune used as it is (a 16-bit MOSS-Image `.safetensors` is made 8-bit on import, so it fits in memory; a self-made GGUF that quantized the few tensors the engine cannot read that way is fixed on import), or an upscaler. Rename any import from its card. Or convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge).
+- **Upscalers**: RealESRGAN anime and 4x UltraSharp V2 Lite, or your own; the Upscale card on the output node.
 - **A real inpainting model**: AbsoluteReality Inpaint sees the hole it fills.
 
 ### Editing

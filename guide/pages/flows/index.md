@@ -48,8 +48,8 @@ to switch.
 - **Save**: the 💾 button at the top of the canvas. The name is pre-filled.
 - **Open**: Flows → **Saved**, tap the card. The pencil renames it, the bin deletes it (it asks
   first).
-- **Share and import**: a flow is a small `.json` file. **Import a flow** at the bottom of the
-  Flows tab opens one someone sent you.
+- **Share and import**: a flow is a small `.json` file. The **+** beside **Models** and **Flows**
+  at the top of the Flows tab opens one someone sent you.
 - **From a result**: every picture in [Results](../reference/results.md) remembers the flow that
   made it. Open it from there to get the exact settings back.
 

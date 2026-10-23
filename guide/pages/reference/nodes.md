@@ -58,10 +58,10 @@ for anime, Tags is the accurate one. Nothing is filtered, and nothing leaves the
 
 ## Image
 
-A photo from your gallery. Tap **Choose** to pick one (**Change** once there is one). It opens
-your phone's **photo picker** (on a phone without one, your **Gallery** app, which may ask for
-the Photos and videos permission); **Files** beside it opens the file browser instead, for a
-picture that is not in your gallery. It appears on the node straight away, no Run needed. Once
+A photo from your gallery. The empty node offers **Choose from photos**, which opens your phone's
+**photo picker** (on a phone without one, your **Gallery** app, which may ask for the Photos and
+videos permission), **Choose from files**, the file browser for a picture that is not in your
+gallery, each with its **Add** button, and **Blank page** beside them to draw on. It appears on the node straight away, no Run needed. Once
 there is a picture, a row of square buttons sits above it: **Photos** (another picture from the
 picker), **Files**, **Draw** (paint over it, see Image to image) and the red bin (clear it), then
 the file's name.

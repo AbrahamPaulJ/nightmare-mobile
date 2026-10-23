@@ -3,7 +3,7 @@
 *A picture from the gallery, enlarged. No checkpoint involved. The upscaler is its own small
 model.*
 
-**Nodes:** Image → Output, with **Auto upscale** ticked on the output.
+**Nodes:** Image → Output, with **Upscale** on in the output's **Post-processing**.
 
 ## First: install an upscaler
 
@@ -21,15 +21,15 @@ You can also import your own converted upscaler (a `.bin` file) with **+** next 
 
 1. **Flows → Upscale a photo.**
 2. Tap the **image** node and choose the picture.
-3. Tap the **output** node: **Auto upscale** is ticked. Choose the **upscaler** and the
-   **scale** (2×, 3× or 4×).
+3. Tap the **output** node. Under **Post-processing**, the **Upscale** card's **After every Run**
+   is on. Its **Upscale** button opens the **upscaler** and the **scale** (2×, 3× or 4×).
 4. **Run.**
 
 The output node shows what it received **above** what it made, each with its own save and share
 buttons.
 
 <figure markdown>
-  ![The output node with Auto upscale](../img/inspector-auto-upscale.png){ .screen }
+  ![The output node with Upscale on](../img/inspector-auto-upscale.png){ .screen }
 </figure>
 
 !!! info "The 4096-pixel limit"
@@ -39,8 +39,9 @@ buttons.
 
 ## Upscaling any flow's result
 
-**Auto upscale** is a checkbox on every output node, so any flow can enlarge its own result:
-tick it on the output of a Text to image flow and each picture comes out bigger.
+The **Upscale** card is on every output node, so any flow can enlarge its own result: switch on
+**After every Run** on the output of a Text to image flow and each picture comes out bigger, or
+tap **Upscale** to enlarge only the picture you just made.
 
 ## Upscaling something you already made
 

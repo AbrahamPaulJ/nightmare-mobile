@@ -52,7 +52,7 @@ Krea 2 (scroll them sideways). Opened from a node, the sheet starts on that node
 ### Import
 
 **Settings → Models → LoRAs → Import**, and pick the `.safetensors` file. It is listed with
-its size; the bin deletes it. The **Files** button in a node's LoRA list does the same.
+its size; the bin deletes it. The folder button in a node's LoRA list does the same.
 
 ### Use
 
