@@ -422,6 +422,30 @@ class ModelCatalogTest {
         assertEquals(8, ideo.steps)
     }
 
+    /**
+     * ⭐ FLUX.3 Image Klein: Krea 2's encoder and tokenizer from the same urls (the same bytes), Klein's VAE from
+     * Ideogram's url, a `krea2` launch, 16 steps at CFG 1, the 8 Elite only until a lower chip is measured.
+     */
+    @Test
+    fun flux3KleinUsesKreaEncoderAndKleinVae() {
+        val f3 = ModelCatalog.byId("flux3_klein")!!
+        assertEquals(Family.FLUX3, f3.family)
+        assertEquals(ModelCatalog.KREA2, f3.backendType)
+        assertEquals(true, f3.ownDitParts)
+        assertEquals(null, f3.ownLora)
+        assertEquals(listOf("dit.gguf", "llm.gguf", "vae.safetensors", "tokenizer.json"), f3.requiredFiles)
+        assertEquals(ModelCatalog.DIT_MIN_ARCH, f3.builds.single().minArch)
+        assertEquals(16, f3.steps)
+        val krea = ModelCatalog.byId("krea2_turbo")!!
+        val ideo = ModelCatalog.byId("ideogram_4_turbo")!!
+        fun url(spec: ModelSpec, name: String) = spec.files.single { it.name == name }.url
+        assertEquals(url(krea, "llm.gguf"), url(f3, "llm.gguf"))
+        assertEquals(url(krea, "tokenizer.json"), url(f3, "tokenizer.json"))
+        assertEquals(url(ideo, "vae.safetensors"), url(f3, "vae.safetensors"))
+        assertEquals(true, BackendProcess.shipsThisEncoder(f3, 2_375_774_112L))
+        assertEquals("krea2_turbo", f3.partsFrom)
+    }
+
     /** ⭐ Only a chip KNOWN to be below v73 gets the CPU encoder: an unrecognised one reads as the v68 floor. */
     @Test
     fun onlyAKnownOldChipRunsTheDitOnTheCpu() {

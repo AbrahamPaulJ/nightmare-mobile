@@ -1,0 +1,34 @@
+diff --git a/src/model/diffusion/flux3.hpp b/src/model/diffusion/flux3.hpp
+index 825b64a..6b128c5 100644
+--- a/src/model/diffusion/flux3.hpp
++++ b/src/model/diffusion/flux3.hpp
+@@ -89,11 +89,24 @@ namespace Flux3 {
+             auto split = [&](ggml_tensor* v) {
+                 return ggml_reshape_4d(gc, v, x->ne[0] / heads, heads, x->ne[1], x->ne[2]);
+             };
+-            auto norm        = std::dynamic_pointer_cast<Flux::QKNorm>(blocks["norm"]);
+-            auto q           = norm->query_norm(ctx, split(linear(ctx, "q_proj", x_mod)));
+-            auto k           = norm->key_norm(ctx, split(linear(ctx, "k_proj", x_mod)));
+-            auto v           = split(linear(ctx, "v_proj", x_mod));
+-            auto attn        = Rope::attention(ctx, q, k, v, pe, nullptr);
++            auto norm = std::dynamic_pointer_cast<Flux::QKNorm>(blocks["norm"]);
++            auto v    = split(linear(ctx, "v_proj", x_mod));
++            // nightmare (dit/043): Q/K norm and rope as ONE fused op (the HTP's qknorm_rope), as FLUX.2 does
++            // (Flux::RMSNorm::forward_rope, which falls back to the composed path where the backend refuses it).
++            // FLUX.3's table is FLUX.2's interleaved [2, 2, 64, L], the kernel's own order. The composed
++            // Rope::attention is permutes, conts and REPEATs per q and k in each of 43 blocks.
++            // NM_FLUX3_COMPOSED_ROPE=1 keeps the old path (the A/B control).
++            static const bool composed = getenv("NM_FLUX3_COMPOSED_ROPE") != nullptr;
++            ggml_tensor* attn = nullptr;
++            if (composed) {
++                auto q = norm->query_norm(ctx, split(linear(ctx, "q_proj", x_mod)));
++                auto k = norm->key_norm(ctx, split(linear(ctx, "k_proj", x_mod)));
++                attn   = Rope::attention(ctx, q, k, v, pe, nullptr);
++            } else {
++                auto q = norm->query_norm_rope(ctx, split(linear(ctx, "q_proj", x_mod)), pe);
++                auto k = norm->key_norm_rope(ctx, split(linear(ctx, "k_proj", x_mod)), pe);
++                attn   = ggml_ext_attention_ext(gc, ctx->backend, q, k, v, heads, nullptr, true, ctx->flash_attn_enabled);
++            }
+             auto mlp         = ggml_ext_silu_act(gc, linear(ctx, "mlp_in", x_mod));
+             auto update      = ggml_add(gc, linear(ctx, "attn_out", attn), linear(ctx, "mlp_out", mlp));
+             ggml_tensor* out = nullptr;

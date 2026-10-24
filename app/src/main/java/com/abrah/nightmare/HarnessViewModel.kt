@@ -2706,6 +2706,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             when (n.type) {
                 com.abrah.nightmare.npu.WanVideoNode.name -> ModelCatalog.WAN22
                 com.abrah.nightmare.npu.WanFunNode.name -> ModelCatalog.WAN22_FUN
+                com.abrah.nightmare.npu.WanA14Node.name -> ModelCatalog.WAN22_A14B
                 else -> null
             }
         }.distinct()) {
@@ -4504,6 +4505,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val unsavedFlow: Boolean,
         /** ⭐ Use on Neodragon: the Video flow opens with its video node on Neodragon ([setVideoModel]). */
         val neodragon: Boolean = false,
+        /** ⭐ The flow's video node becomes this type after it opens (Wan 2.2 14B, [setVideoModel]). */
+        val videoType: String? = null,
     )
 
     var pendingUse by mutableStateOf<PendingUse?>(null)
@@ -4545,9 +4548,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         pendingUse = PendingUse(
             spec = null,
             title = text(R.string.models_use_named, spec.label),
-            offer = if (spec == ModelCatalog.WAN22_FUN) com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.MOTION)
-            else com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V),
+            offer = when (spec) {
+                ModelCatalog.WAN22_FUN -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.MOTION)
+                // ⭐ The 14B is text to video only (`npu.WanA14Node`).
+                ModelCatalog.WAN22_A14B -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V)
+                else -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V)
+            },
             unsavedFlow = unsavedFlow(),
+            videoType = com.abrah.nightmare.npu.WanA14Node.name.takeIf { spec == ModelCatalog.WAN22_A14B },
         )
     }
 
@@ -4577,11 +4585,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * (`nd.sample`), keeping its id, wires, seed and framing; the rest goes back to the new type's own
      * defaults (their sizes and lengths differ). The user's call, 2026-10-15: Wan by default.
      */
-    fun setVideoModel(nodeId: String, neodragon: Boolean) {
+    fun setVideoModel(nodeId: String, newType: String) {
         val g = canvas.workflow.graph
         val node = g.byId[nodeId] ?: return
-        val newType = if (neodragon) "nd.sample" else com.abrah.nightmare.npu.WanVideoNode.name
-        if (node.type == newType) return
+        if (newType !in com.abrah.nightmare.VIDEO_MODEL_TYPES || node.type == newType) return
         val ports = nodeTypes[newType]?.inputs?.map { it.name }?.toSet().orEmpty()
         val outs = nodeTypes[newType]?.outputs?.map { it.name }?.toSet().orEmpty()
         val keep = node.params.filterKeys { it in setOf("seed", "x", "y", "w", "h") }
@@ -4595,7 +4602,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
         )
         canvas = canvas.copy(workflow = canvas.workflow.copy(graph = next))
-        say("video model: ${if (neodragon) "Neodragon" else "Wan 2.2"}")
+        say("video model: ${nodeTypes[newType]?.paletteName ?: newType}")
     }
 
     private fun unsavedFlow(): Boolean =
@@ -4607,6 +4614,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun confirmUse(spec: ModelSpec?, recipe: com.abrah.nightmare.canvas.Recipe?) {
         val neodragon = pendingUse?.neodragon == true
+        val videoType = pendingUse?.videoType ?: "nd.sample".takeIf { neodragon }
         pendingUse = null
         if (recipe == null) {
             // ⚠ Null for an upscaler or the video models: there is no global selection to make.
@@ -4623,8 +4631,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // would lay out a flow pointed at the old checkpoint and then retarget it.
             spec?.let { selectModel(it) }
             openRecipeNow(recipe)
-            if (neodragon) canvas.workflow.graph.nodes.firstOrNull { it.type in com.abrah.nightmare.VIDEO_MODEL_TYPES }
-                ?.let { setVideoModel(it.id, neodragon = true) }
+            if (videoType != null) canvas.workflow.graph.nodes.firstOrNull { it.type in com.abrah.nightmare.VIDEO_MODEL_TYPES }
+                ?.let { setVideoModel(it.id, videoType) }
             // ⭐ …and get out of the way: choosing a flow is asking to work on it (2026-09-15).
             closeLibrary()
         }

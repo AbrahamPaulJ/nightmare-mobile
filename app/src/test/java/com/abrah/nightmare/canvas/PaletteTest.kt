@@ -56,7 +56,7 @@ class PaletteTest {
     @Test fun videoIsInGenerate() {
         val generate = sections.getValue("generate")
         // 2026-10-14: Wan 2.2 joined Neodragon as the second video sampler; 2026-10-15 Fun Control.
-        assertEquals(listOf("Image", "Video", "Wan Fun Control", "Wan video"), generate.map { it.first().paletteName })
+        assertEquals(listOf("Image", "Video", "Wan 14B video", "Wan Fun Control", "Wan video"), generate.map { it.first().paletteName })
         assertTrue(generate.any { card -> card.any { it.name == "nd.sample" } })
     }
 
@@ -78,7 +78,7 @@ class PaletteTest {
         val generate = sections.getValue("generate")
         val sd = generate.single { card -> card.any { it.name == SdSampler.SDXL.name } }
         assertEquals(
-            listOf("sd15.sample", "sd15swap.sample", "sdxl.sample", "sdxlswap.sample", "anima.sample", "flux2.sample", "zimage.sample", "qwen21.sample", "krea2.sample", "animadit.sample", "iris.sample", "moss.sample", "ideogram.sample"),
+            listOf("sd15.sample", "sd15swap.sample", "sdxl.sample", "sdxlswap.sample", "anima.sample", "flux2.sample", "zimage.sample", "qwen21.sample", "krea2.sample", "animadit.sample", "iris.sample", "moss.sample", "ideogram.sample", "flux3.sample"),
             sd.map { it.name },
         )
     }

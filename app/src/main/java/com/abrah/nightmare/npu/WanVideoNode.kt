@@ -117,9 +117,10 @@ object WanVideoNode : NodeType {
         val p = effectiveParams(node)
         val (w, h) = sizeOf(p)
         val caps = com.abrah.nightmare.DeviceProbe.caps()
+        val prof = profileOf(node.type)
         val budget = memoryBudget(
-            pinnedBytes(w, h, framesOf(node, p)),
-            caps.ramBytes, if (caps.known) caps.arch else 0,
+            pinnedBytes(w, h, framesOf(node, p), prof),
+            caps.ramBytes, if (caps.known) caps.arch else 0, prof = prof,
         )
         return ContextKey(spec.backendType, spec.id, spec.native.width, spec.native.height, budget)
     }
@@ -143,7 +144,10 @@ object WanVideoNode : NodeType {
      */
     fun memoryBudget(
         pinned: Long, ramBytes: Long, arch: Int, stream: Boolean = com.abrah.nightmare.Prefs.wanStream,
+        prof: WanProfile = TURBO,
     ): String? = when {
+        // ⭐ Wan 2.2 A14B: 8.6 GB an expert, held by no phone, so every clip streams ([WanProfile.alwaysStream]).
+        prof.alwaysStream -> A14B_BUDGET
         arch in 1..78 -> "2.75"
         stream -> if (pinned - DIT_BYTES + BLOCK_BYTES <= STREAM_FLOOR) "2.75" else "4"
         // ⭐ Compute that one NPU session cannot map streams on EVERY phone (Saved #7101, a 16 GB 8 Elite, 1.6.216):
@@ -166,9 +170,9 @@ object WanVideoNode : NodeType {
      * one block at a time, its compute plus [BLOCK_BYTES] (704x1280 5 s: 3,410 MB of compute, and the engine
      * asked for 3,705 MB). What the run-log warnings judge, so a budgeted clip is not warned about as if whole.
      */
-    fun peakBytes(w: Int, h: Int, frames: Int, budget: String?, loras: Int = 0): Long =
-        if (budget == null) pinnedBytes(w, h, frames)
-        else tokens(w, h, frames) * (BYTES_PER_TOKEN + loras * LORA_BYTES_PER_TOKEN) + BLOCK_BYTES
+    fun peakBytes(w: Int, h: Int, frames: Int, budget: String?, loras: Int = 0, prof: WanProfile = TURBO): Long =
+        if (budget == null) pinnedBytes(w, h, frames, prof)
+        else tokens(w, h, frames, prof) * (prof.bytesPerToken + loras * LORA_BYTES_PER_TOKEN) + prof.blockBytes
 
     private const val BLOCK_BYTES = 300L shl 20
 
@@ -190,13 +194,13 @@ object WanVideoNode : NodeType {
      * ⭐ Pure: the longest clip, in seconds, that fits at [w] x [h] with [loras] LoRAs on a phone with
      * [ramBytes] and [arch]; 0 when not even 1 s does. What the slider warning offers instead.
      */
-    fun secondsThatFit(w: Int, h: Int, loras: Int, ramBytes: Long, arch: Int): Int =
-        (MAX_SECONDS downTo 1).firstOrNull { s -> fitsPhone(w, h, framesFor(s), loras, ramBytes, arch) } ?: 0
+    fun secondsThatFit(w: Int, h: Int, loras: Int, ramBytes: Long, arch: Int, prof: WanProfile = TURBO): Int =
+        (MAX_SECONDS downTo 1).firstOrNull { s -> fitsPhone(w, h, framesFor(s, prof.fps), loras, ramBytes, arch, prof) } ?: 0
 
     /** ⚠ Pure: both tests the run log warns on, as one answer. */
-    fun fitsPhone(w: Int, h: Int, frames: Int, loras: Int, ramBytes: Long, arch: Int): Boolean {
-        val budget = memoryBudget(pinnedBytes(w, h, frames), ramBytes, arch)
-        val need = peakBytes(w, h, frames, budget, loras)
+    fun fitsPhone(w: Int, h: Int, frames: Int, loras: Int, ramBytes: Long, arch: Int, prof: WanProfile = TURBO): Boolean {
+        val budget = memoryBudget(pinnedBytes(w, h, frames, prof), ramBytes, arch, prof = prof)
+        val need = peakBytes(w, h, frames, budget, loras, prof)
         return fitsChip(need, arch, budget) && (ramBytes <= 0 || fits(need, ramBytes))
     }
 
@@ -212,7 +216,7 @@ object WanVideoNode : NodeType {
      */
     internal fun framesOf(node: Node, p: Map<String, String>): Int =
         if (node.type == WanFunNode.name) WanFun.windowOf(p).let { (s, e) -> WanFun.framesForGap(e - s) }
-        else framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS)
+        else framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS, profileOf(node.type).fps)
 
     /** ⚠ Pure: the frame size the params ask for, on Wan's 32 px grid. */
     fun sizeOf(p: Map<String, String>): Pair<Int, Int> =
@@ -261,7 +265,7 @@ object WanVideoNode : NodeType {
     }
 
     /** ⚠ Pure: `24·s + 1` frames for [seconds], clamped to 0..[MAX_SECONDS]: 0 is one frame, a still. */
-    fun framesFor(seconds: Int): Int = seconds.coerceIn(0, MAX_SECONDS) * FPS + 1
+    fun framesFor(seconds: Int, fps: Int = FPS): Int = seconds.coerceIn(0, MAX_SECONDS) * fps + 1
 
     /**
      * ⭐ quanhaol's Self-Forcing timesteps 1000/750/500/250 warped by shift 5, through `lcm`
@@ -270,15 +274,16 @@ object WanVideoNode : NodeType {
     val SIGMAS = listOf(1.0, 0.9375, 0.8333, 0.625, 0.0)
 
     /** ⚠ Pure: Wan 2.2's latent tokens — 32 px a side after VAE and patch, one latent frame per 4. */
-    fun tokens(w: Int, h: Int, frames: Int): Long = (w / 32L) * (h / 32L) * ((frames - 1) / 4 + 1)
+    fun tokens(w: Int, h: Int, frames: Int, prof: WanProfile = TURBO): Long =
+        (w.toLong() / prof.pxPerToken) * (h.toLong() / prof.pxPerToken) * ((frames - 1) / 4 + 1)
 
     /**
      * ⚠ Pure: what a clip PINS on the NPU — the Q4_0 DiT's 2.9 GB and ~0.125 MB of compute per
      * token (0.64 GB at 6k tokens, 3.4 GB at 27k, `docs/VIDEO-GGML.md` §4).
      * 832x480 for 5 s: 4.3 GB; 1280x704 for 5 s: 6.2 GB.
      */
-    fun pinnedBytes(w: Int, h: Int, frames: Int): Long =
-        DIT_BYTES + tokens(w, h, frames) * BYTES_PER_TOKEN
+    fun pinnedBytes(w: Int, h: Int, frames: Int, prof: WanProfile = TURBO): Long =
+        prof.ditBytes + tokens(w, h, frames, prof) * prof.bytesPerToken
 
     /**
      * ⚠ Pure: whether [pinned] fits a phone with [ramBytes]: at most [RAM_SHARE] of it (the S25: 6.3 GB of 10.9). Every size
@@ -327,6 +332,38 @@ object WanVideoNode : NodeType {
 
     private const val DIT_BYTES = 2_900L shl 20
     private const val BYTES_PER_TOKEN = 128L shl 10
+
+    /**
+     * ⭐⭐ What differs between the Wan models this node shape serves: Turbo 5B (and Fun Control, its sibling) and
+     * Wan 2.2 A14B ([WanA14Node]). [pxPerToken]: image px a side per DiT token (the 5B's VAE is 16x16 and its patch
+     * 2, so 32; the 14B's Wan 2.1 VAE is 8x8, so 16: four times the tokens at the same size). [ditBytes] and
+     * [bytesPerToken] model what a clip pins resident ([pinnedBytes]), [blockBytes] one streamed block.
+     */
+    data class WanProfile(
+        val fps: Int,
+        val sampler: String,
+        val pxPerToken: Int,
+        val ditBytes: Long,
+        val bytesPerToken: Long,
+        val blockBytes: Long,
+        val alwaysStream: Boolean,
+    )
+
+    /** ⭐ Wan 2.2 Turbo 5B (and Fun Control): `docs/VIDEO-GGML.md` §1-4. */
+    val TURBO = WanProfile(FPS, "lcm", 32, DIT_BYTES, BYTES_PER_TOKEN, 300L shl 20, alwaysStream = false)
+
+    /**
+     * ⭐ Wan 2.2 A14B with Lightning (`docs/VIDEO-GGML.md` §8): 16 fps, euler (lightx2v's workflow), Wan 2.1's
+     * 8x8 VAE, and ALWAYS streamed: an expert is 8.6 GB. ⚠ The per-token and block bytes are the 14B's widths
+     * (5120 against 3072) scaled from the 5B's measurements until the S25's run replaces them.
+     */
+    val A14B = WanProfile(16, "euler", 16, 8_160L shl 20, 192L shl 10, 420L shl 20, alwaysStream = true)
+
+    /** ⚠ The 14B's budget (GiB): one block plus its compute must fit, the weights stream. */
+    private const val A14B_BUDGET = "4"
+
+    /** ⭐ The profile a node type renders with. */
+    fun profileOf(type: String): WanProfile = if (type == WanA14Node.name) A14B else TURBO
     private const val RAM_SHARE = 0.58
 
     private fun gb(b: Long) = String.format(java.util.Locale.ROOT, "%.1f", b / (1024.0 * 1024 * 1024))
@@ -430,17 +467,19 @@ object WanVideoNode : NodeType {
         val caps = com.abrah.nightmare.DeviceProbe.caps()
         val ram = caps.ramBytes
         val arch = if (caps.known) caps.arch else 0
-        val budget = memoryBudget(pinnedBytes(w, h, frames), ram, arch)
-        val need = peakBytes(w, h, frames, budget, loras.size)
+        val prof = profileOf(node.type)
+        val fps = prof.fps
+        val budget = memoryBudget(pinnedBytes(w, h, frames, prof), ram, arch, prof = prof)
+        val need = peakBytes(w, h, frames, budget, loras.size, prof)
         if (ram > 0 && !fits(need, ram)) {
             ctx.warn(ctx.text(R.string.run_wan_ram_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB on the NPU, more than this phone's %4\$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer",
-                "${w}x$h", (frames / FPS).toString(), gb(need), gb(ram)))
+                "${w}x$h", (frames / fps).toString(), gb(need), gb(ram)))
         }
         if (!fitsChip(need, arch, budget)) {
             ctx.warn(ctx.text(R.string.run_wan_npu_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB of NPU memory at once, more than this phone's NPU takes, so it will probably fail. Trying anyway",
-                "${w}x$h", (frames / FPS).toString(), gb(need)))
+                "${w}x$h", (frames / fps).toString(), gb(need)))
         }
 
         val source = inputs["image"] as? Value.Image
@@ -532,10 +571,10 @@ object WanVideoNode : NodeType {
         val control = motion != null
         val r = try {
             ctx.host.video(
-                prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = FPS,
+                prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = fps,
                 seed = used,
                 steps = (if (control) WanFun.SIGMAS else SIGMAS).size - 1,
-                sampleMethod = if (control) "euler" else "lcm",
+                sampleMethod = if (control) "euler" else prof.sampler,
                 sigmas = if (control) WanFun.SIGMAS else SIGMAS, tilingArgs = TILING,
                 out = raw.absolutePath, startPng = startPng,
                 loras = if (control) loras + (File(spec.dir(android), ModelCatalog.FUN_LORA).absolutePath to 1.0) else loras,
@@ -560,7 +599,7 @@ object WanVideoNode : NodeType {
                 if ((r.code == -1 || "generate_video failed" in r.body) && log.any { NPU_MAP_FAILED.containsMatchIn(it) }) {
                     throw IllegalStateException(
                         "node \"${node.id}\": the NPU could not hold this clip's working memory " +
-                            "(${w}x$h, ${frames / FPS} s). " + mapAdvice(w, h, loras.isNotEmpty()) + " [${r.body}]"
+                            "(${w}x$h, ${frames / fps} s). " + mapAdvice(w, h, loras.isNotEmpty()) + " [${r.body}]"
                     )
                 }
                 throw IllegalStateException("node \"${node.id}\": ${com.abrah.nightmare.explainOpFailure(r.code, r.body)}")
@@ -587,10 +626,10 @@ object WanVideoNode : NodeType {
                 val film = File(dir, "film_" + sha1(prevFilm.name + "\u0000" + out.name) + ".mp4")
                 filmFrames = if (film.isFile) FilmJoin.frames(film) else {
                     val j = FilmJoin.join(
-                        prevFilm, out, film, FPS, { Log.i(TAG, it); ctx.say(it.trim()) },
+                        prevFilm, out, film, fps, { Log.i(TAG, it); ctx.say(it.trim()) },
                         VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]),
                     )
-                    ctx.say("  joined onto the film so far: ${j.frames} frames (${"%.1f".format(j.frames.toDouble() / FPS)} s)" +
+                    ctx.say("  joined onto the film so far: ${j.frames} frames (${"%.1f".format(j.frames.toDouble() / fps)} s)" +
                         if (j.copied) "" else ", re-encoded")
                     j.frames
                 }

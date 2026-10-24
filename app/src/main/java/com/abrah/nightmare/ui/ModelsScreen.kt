@@ -948,6 +948,8 @@ private fun familyNote(family: Family): String = stringResource(when (family) {
         Family.MOSS -> R.string.models_family_moss
         // ⚠ The same shape as MOSS: a 10.5 GB download (an 8B encoder) and minutes a picture, said up front.
         Family.IDEOGRAM -> R.string.models_family_ideogram
+        // ⚠ Krea 2's encoder beside a 3.5 GB DiT: a 6.2 GB download, measured times said up front.
+        Family.FLUX3 -> R.string.models_family_flux3
         // ⚠ The free-space figure is the one that surprises:
         // the archive and its unpacked copy are both on disk
         // at once, so a 3.5 GB download needs ~7.5 GB free.
@@ -1145,7 +1147,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.videoModelItems(
             AddonCard(
                 title = wan.spec.label,
                 detail = stringResource(
-                    if (wan.spec == com.abrah.nightmare.ModelCatalog.WAN22_FUN) R.string.wan_fun_about else R.string.wan_about,
+                    when (wan.spec) {
+                        com.abrah.nightmare.ModelCatalog.WAN22_FUN -> R.string.wan_fun_about
+                        com.abrah.nightmare.ModelCatalog.WAN22_A14B -> R.string.wan14_about
+                        else -> R.string.wan_about
+                    },
                 ),
                 installed = wan.installed,
                 sizeBytes = if (wan.installed) wan.onDisk else wan.fetchBytes.takeIf { it > 0 } ?: wan.build?.bytes,

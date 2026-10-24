@@ -257,6 +257,7 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
             val spec = when (n.type) {
                 com.abrah.nightmare.npu.WanVideoNode.name -> ModelCatalog.WAN22
                 com.abrah.nightmare.npu.WanFunNode.name -> ModelCatalog.WAN22_FUN
+                com.abrah.nightmare.npu.WanA14Node.name -> ModelCatalog.WAN22_A14B
                 else -> continue
             }
             if (!spec.installed(ctx)) return "node \"${n.id}\" needs ${spec.label} (\"${spec.id}\"), which is not installed"

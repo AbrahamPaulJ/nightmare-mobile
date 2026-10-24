@@ -144,6 +144,13 @@ enum class Family(
      */
     IDEOGRAM("Ideogram 4", GP_DIT, GP_DIT_NEG, "ideogram", dit = true),
     /**
+     * ⭐⭐ **FLUX.3 Image Klein** (Black Forest Labs) on the DiT engine (`docs/DIT.md` §FLUX.3, engine `dit/042`, a
+     * backport of upstream sd.cpp's #2143): a new 3072-wide DiT with per-mode early blocks, Krea 2's Qwen3-VL-4B text
+     * encoder and the FLUX.2 VAE. The distilled Klein: 16 steps, no CFG. ⚠ Text to image only until its edit
+     * (reference images) is measured; its own family because FLUX.2's [FLUX2] launch is Klein 4B's shared parts.
+     */
+    FLUX3("FLUX.3", GP_DIT, GP_DIT_NEG, "flux3", dit = true),
+    /**
      * ⭐⭐ **Wan 2.2 TI2V 5B video** on the DiT engine (`docs/VIDEO-GGML.md`): a prompt, or a
      * prompt and a start picture, into a clip through `/video` (backend 028, engine ABI 106).
      * ⚠⚠ NOT a checkpoint: its one model ([ModelCatalog.WAN22]) is kept out of
@@ -2623,6 +2630,26 @@ object ModelCatalog {
                 RemoteFile(HF + "OpenMOSS-Team/MOSS-Image-Base/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", 19_989_325L),
             ),
         ),
+        // ⭐⭐ FLUX.3 Image Klein (Black Forest Labs, 5.6B, FLUX Kommunity License; `NOTICE`): leejet's Q4_0 DiT (every
+        // matmul Q4_0, the NPU's), Krea 2's and Iris' Qwen3-VL-4B Q4_0 encoder and tokenizer.json (the engine reads
+        // layers 4 to 32 through Qwen3-VL's template, `dit/042`), and Klein's FLUX.2 VAE from the same url as Ideogram's
+        // (BFL's own comfy repo is gated). The distilled model: 16 steps at CFG 1, euler (upstream's docs/flux3.md).
+        // Launched as `--type krea2`, the engine reads FLUX.3 off the weights. Sizes read off the files 2026-10-25.
+        // ⭐ Krea 2's encoder and tokenizer are BORROWED when Krea 2 is installed ([ModelSpec.partsFrom], backend 040):
+        // 2.4 GB not fetched twice. The VAE is never Krea 2's (Wan's), so it is always this model's own.
+        dit(
+            "flux3_klein", "FLUX.3 Image Klein", Family.FLUX3, KREA2, steps = 16,
+            ownDitParts = true,
+            partsFrom = "krea2_turbo",
+            minArch = DIT_MIN_ARCH,
+            prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
+            files = listOf(
+                RemoteFile(HF + "leejet/flux-3-image-klein-GGUF/resolve/main/flux3-image-klein-Q4_0.gguf", "dit.gguf", 3_514_023_104L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
+                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
+                RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+            ),
+        ),
         // ⭐⭐ Ideogram 4 (Ideogram Non-Commercial Model Agreement; `NOTICE`): leejet's Q4_0 DiT, unsloth's Qwen3-VL-8B
         // Q4_0 (the engine reads 13 of its hidden layers) with Qwen3-VL's tokenizer.json (the backend loads one for a
         // `krea2` launch), Klein's FLUX.2 VAE, and ostris' TurboTime LoRA on every render ([ModelSpec.ownLora]): the
@@ -2774,8 +2801,39 @@ object ModelCatalog {
     /** ⭐ Fun Control's speed LoRA, in its own folder (applied by `npu.WanFunNode`). */
     const val FUN_LORA = "fastwan_lora.safetensors"
 
+    /** ⭐ Wan 2.2 A14B's high-noise expert, beside its low-noise `dit.gguf` ([WAN22_A14B], engine `dit/044`). */
+    const val WAN_HIGH_DIT = "dit_high.gguf"
+    /** ⭐ Lightning's two halves, one per expert, applied on every clip by the engine (`dit/044`). */
+    const val WAN_HIGH_LORA = "lightning_high.safetensors"
+    const val WAN_LOW_LORA = "lightning_low.safetensors"
+
+    /**
+     * ⭐⭐ **Wan 2.2 T2V A14B** (Wan-AI, Apache 2.0): the big Wan, two 14B experts (high noise for the first steps,
+     * low noise for the rest), QuantStack's Q4_0 GGUFs, 4 steps through lightx2v's Lightning LoRAs (Seko V1.1,
+     * rank 64, one per expert: euler, shift 5, CFG 1, two steps each, their ComfyUI workflow). The Wan 2.1 latent
+     * space, so TAEHV's `taew2_1` decodes, and 16 fps. Its umT5 is Wan 2.2 Turbo's when Turbo is installed
+     * ([ModelSpec.partsFrom]). ⚠ 8.6 GB a expert: it always STREAMS (`all=disk` + a budget, `npu.WanA14Node`), one
+     * block at a time. Text to video only. Measured on the S25: `docs/VIDEO-GGML.md` §8.
+     */
+    val WAN22_A14B: ModelSpec = dit(
+        "wan22_t2v_a14b", "Wan 2.2 14B", Family.WAN, WAN, steps = 4,
+        prompt = "",
+        ownDitParts = true,
+        partsFrom = "wan22_ti2v_turbo",
+        minArch = DIT_MIN_ARCH,
+        minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+        files = listOf(
+            RemoteFile(HF + "QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-T2V-A14B-LowNoise-Q4_0.gguf", "dit.gguf", 8_556_458_496L),
+            RemoteFile(HF + "QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q4_0.gguf", WAN_HIGH_DIT, 8_556_458_496L),
+            RemoteFile(HF + "lightx2v/Wan2.2-Lightning/resolve/main/Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V1.1/high_noise_model.safetensors", WAN_HIGH_LORA, 1_226_977_424L),
+            RemoteFile(HF + "lightx2v/Wan2.2-Lightning/resolve/main/Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V1.1/low_noise_model.safetensors", WAN_LOW_LORA, 1_226_977_424L),
+            RemoteFile(HF + "city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q4_K_M.gguf", "umt5.gguf", 3_655_145_312L),
+            RemoteFile("https://raw.githubusercontent.com/madebyollin/taehv/fa579a9a726b0a55951998d73e309bfdf0abd342/safetensors/taew2_1.safetensors", "tae.safetensors", 22_642_902L),
+        ),
+    )
+
     /** ⚠ The video models: found by [byId], never listed as checkpoints. */
-    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN)
+    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B)
 
     fun installed(context: Context): List<ModelSpec> = all.filter { it.installed(context) }
 

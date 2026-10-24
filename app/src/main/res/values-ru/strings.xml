@@ -147,6 +147,7 @@
     <string name="video">Видео</string>
     <string name="video_about">Видео из текста и изображения на NPU. Без бэкенда, без чекпойнта.</string>
     <string name="wan_about">Видео из текста и изображения с Wan 2.2: клипы по 5 секунд 832x480 или 1280x704. Медленнее Neodragon и намного лучше. 6,25 ГБ: DiT Wan 2.2 Turbo, текстовый кодировщик umT5 и небольшой декодер.</string>
+    <string name="wan14_about">Видео из текста с Wan 2.2 14B, самой большой Wan: лучшие движение и детали, но медленно. TIMES_RU 8 Elite или новее, телефоны с 12 ГБ и больше. Около 21 ГБ (две модели по 8,6 ГБ и 4-шаговое ускорение Lightning для каждой); если установлена Wan 2.2 Turbo, её текстовый кодировщик используется совместно. Используйте Wi-Fi.</string>
     <string name="video_delete_body">Освободит %1$d МБ. Чтобы вернуть их, придётся скачать %2$d МБ. Пока вы не установите их снова, ни один видеопоток не запустится.</string>
     <string name="video_delete_title">Удалить видеомодели?</string>
     <string name="video_models">Neodragon</string>
@@ -583,6 +584,7 @@
     <string name="models_family_iris">Около 5,8 ГБ. Загружает официальный файл speridlabs (6 ГБ) и конвертирует его на телефоне, поэтому при установке нужно ~10 ГБ свободного места. Около 2,5 минуты на картинку 1024x1024 на 8 Elite. Без VAE. Только размеры, на которых модель обучена (около 1 Мп). 8 Gen 2 или новее (альфа ниже 8 Elite, ещё не запускалась на настоящих 8 Gen 2 и 8 Gen 3). Только текст в картинку. Используйте Wi-Fi.</string>
     <string name="models_family_moss">Около 10 ГБ. 8 Gen 3 или новее (альфа на 8 Gen 3). Тщательная, детальная модель с 8-шаговым ускорением, которое применяется всегда. Около 50 секунд на 512x512 и меньше 3 минут на 1024x1024 на 8 Elite. Только текст в изображение. Используйте Wi-Fi.</string>
     <string name="models_family_ideogram">Около 11,6 ГБ. Телефоны с 12 ГБ и больше, 8 Elite или новее. Лучше всех пишет читаемый текст на картинке: вывески, постеры, надписи. 8-шаговое ускорение применяется всегда. Около 5,5 минуты при 768x768 на 8 Elite. Только текст в изображение. Только некоммерческое использование (лицензия Ideogram). Используйте Wi-Fi.</string>
+    <string name="models_family_flux3">Около 6,2 ГБ. 8 Elite или новее. Новейшая модель Black Forest Labs: чёткие детали и точное следование запросу, 16 шагов. Около 45 секунд на 512x512 и 2 минуты на 1024x1024 на 8 Elite. Только текст в изображение. Лицензия FLUX Kommunity License. Используйте Wi-Fi.</string>
     <string name="models_family_other">Около 3,5 ГБ каждая и ~7,5 ГБ свободного места при распаковке. Используйте Wi-Fi.</string>
     <string name="models_import_checkpoint">Импортировать чекпойнт</string>
     <string name="models_import_dit_body">Один чекпойнт .safetensors или .gguf с CivitAI либо Hugging Face используется как есть, без преобразования. Klein 4B и Z-Image заимствуют текстовый кодировщик и VAE (до 2,6 ГБ загрузки; ничего, если такая модель уже есть). Klein 9B и Krea 2 получают собственные копии (4,8 и 2,6 ГБ). Файл больше половины ОЗУ телефона, скорее всего, будет закрыт Android во время рендера.</string>
@@ -1155,7 +1157,8 @@
     <string name="video_model">Модель</string>
     <string name="video_model_wan">Wan 2.2</string>
     <string name="video_model_neodragon">Neodragon (быстро)</string>
-    <string name="hint_video_model">Wan 2.2 выглядит намного лучше и занимает минуты; Neodragon делает 2 с примерно за 30 с</string>
+    <string name="video_model_wan14">Wan 14B</string>
+    <string name="hint_video_model">Wan 2.2 выглядит намного лучше и занимает минуты; Wan 2.2 14B лучше всех и медленнее всех; Neodragon делает 2 с примерно за 30 с</string>
     <string name="flow_motion_name">Перенос движения</string>
     <string name="flow_motion_about">Ваша картинка двигается как выбранное видео: его поза, кадр за кадром, с Wan 2.2 Fun Control.</string>
     <string name="video_in_none">Видео не выбрано</string>

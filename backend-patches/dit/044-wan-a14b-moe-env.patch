@@ -1,0 +1,52 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index adb4ace..e41d8b8 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -179,6 +179,11 @@ dit_ctx *engine_create(const dit_ctx_params *params) {
+   // budget makes the graph cut split it into segments that fit.
+   const char *max_vram = std::getenv("DIT_MAX_VRAM");
+   if (max_vram && max_vram[0]) sd_params.max_vram = max_vram;
++  // nightmare (dit/044): Wan 2.2 A14B's second expert, the high-noise model, also from the environment: the
++  // ABI and the backend's `--type wan` launch stay as they are. sd.cpp loads it beside the low-noise
++  // `diffusion_model_path` and hands it the steps above the MoE boundary.
++  const char *high_noise = std::getenv("NM_WAN_HIGH_NOISE_MODEL");
++  if (high_noise && high_noise[0]) sd_params.high_noise_diffusion_model_path = high_noise;
+   // 0 is "unset": leave whatever sd_ctx_params_init chose.
+   if (params->lora_apply_mode > 0 &&
+       params->lora_apply_mode < LORA_APPLY_MODE_COUNT) {
+@@ -438,6 +443,35 @@ bool engine_generate_video(dit_ctx *ctx, const dit_video_params *params,
+     gen.lora_count = static_cast<uint32_t>(loras.size());
+   }
+ 
++  // nightmare (dit/044): Wan 2.2 A14B (NM_WAN_HIGH_NOISE_MODEL at create). The high-noise expert samples with
++  // the same sampler and CFG; its step count is left to sd.cpp (< 0: split the sigmas at the MoE boundary,
++  // NM_WAN_MOE_BOUNDARY, default 0.875 = T2V's). A 4-step distillation ships as two LoRAs, one per expert:
++  // NM_WAN_HIGH_LORA (high-noise) and NM_WAN_LOW_LORA (low-noise), applied on every clip before the caller's.
++  if (const char *hn = std::getenv("NM_WAN_HIGH_NOISE_MODEL"); hn && hn[0]) {
++    gen.high_noise_sample_params.sample_steps = -1;
++    gen.high_noise_sample_params.sample_method = gen.sample_params.sample_method;
++    gen.high_noise_sample_params.scheduler = gen.sample_params.scheduler;
++    gen.high_noise_sample_params.guidance = gen.sample_params.guidance;
++    gen.high_noise_sample_params.flow_shift = gen.sample_params.flow_shift;
++    if (const char *b = std::getenv("NM_WAN_MOE_BOUNDARY"); b && b[0]) gen.moe_boundary = std::strtof(b, nullptr);
++    std::vector<sd_lora_t> own;
++    for (const auto &[env, high] : {std::pair<const char *, bool>{"NM_WAN_HIGH_LORA", true},
++                                    std::pair<const char *, bool>{"NM_WAN_LOW_LORA", false}}) {
++      const char *path = std::getenv(env);
++      if (!path || !path[0]) continue;
++      sd_lora_t lora{};
++      lora.is_high_noise = high;
++      lora.multiplier = 1.0f;
++      lora.path = path;
++      own.push_back(lora);
++    }
++    if (!own.empty()) {
++      loras.insert(loras.begin(), own.begin(), own.end());
++      gen.loras = loras.data();
++      gen.lora_count = static_cast<uint32_t>(loras.size());
++    }
++  }
++
+   // nightmare (ABI 107): Wan 2.2 Fun Control. The frames point into the
+   // caller's buffer, valid for this call, as the start image does.
+   std::vector<sd_image_t> control;

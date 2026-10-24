@@ -1,0 +1,68 @@
+diff --git a/src/model/diffusion/flux3.hpp b/src/model/diffusion/flux3.hpp
+index 6b128c5..9f2d83a 100644
+--- a/src/model/diffusion/flux3.hpp
++++ b/src/model/diffusion/flux3.hpp
+@@ -59,6 +59,44 @@ namespace Flux3 {
+         return ggml_view_3d(ctx, x, x->ne[0], length, x->ne[2], x->nb[1], x->nb[2], start * x->nb[1]);
+     }
+ 
++    // nightmare (dit/045): on Hexagon a matmul's result passes through fp16, and FLUX.3's overflows it (the S25: noise
++    // with every matmul on the NPU, the CPU's picture with MUL_MAT filtered off). Linear::set_scale runs x * s
++    // through the matmul and the result / s, as dit/025 does for Z-Image's attention.out. Measured on the S25 (256²,
++    // 4 steps against upstream's CUDA render): txt_in OR mlp_out alone is still noise, both at 1/4 to 1/64 render
++    // right (29.4-29.6 dB; the phone's CPU 33.2), so the default is both at 1/32. Per projection name,
++    // NM_FLUX3_HTP_SCALE="name:scale,..." ("all" matches every one) replaces it.
++    static float htp_scale_for(GGMLRunnerContext* ctx, const std::string& name) {
++        if (!sd_backend_is(ctx->backend, "HTP")) {
++            return 1.f;
++        }
++        static const std::vector<std::pair<std::string, float>> table = [] {
++            std::vector<std::pair<std::string, float>> t;
++            const char* e = getenv("NM_FLUX3_HTP_SCALE");
++            std::string spec = e ? e : "txt_in:0.03125,mlp_out:0.03125";
++            size_t pos = 0;
++            while (pos < spec.size()) {
++                size_t end = spec.find(',', pos);
++                if (end == std::string::npos) end = spec.size();
++                std::string item = spec.substr(pos, end - pos);
++                size_t colon     = item.find(':');
++                if (colon != std::string::npos) {
++                    t.emplace_back(item.substr(0, colon), (float)atof(item.c_str() + colon + 1));
++                }
++                pos = end + 1;
++            }
++            return t;
++        }();
++        for (const auto& [n, v] : table) {
++            if (n == "all" || n == name) return v;
++        }
++        return 1.f;
++    }
++
++    static ggml_tensor* scaled_linear(GGMLRunnerContext* ctx, const std::shared_ptr<Linear>& l, const std::string& name, ggml_tensor* x) {
++        l->set_scale(htp_scale_for(ctx, name));
++        return l->forward(ctx, x);
++    }
++
+     struct Block : public GGMLBlock {
+         int heads;
+ 
+@@ -73,7 +111,7 @@ namespace Flux3 {
+         }
+ 
+         ggml_tensor* linear(GGMLRunnerContext* ctx, const std::string& name, ggml_tensor* x) {
+-            return std::dynamic_pointer_cast<Linear>(blocks[name])->forward(ctx, x);
++            return scaled_linear(ctx, std::dynamic_pointer_cast<Linear>(blocks[name]), name, x);
+         }
+ 
+         ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* pe, const std::vector<Flux::ModulationOut>& mods, const std::vector<int64_t>& lengths) {
+@@ -178,7 +216,8 @@ namespace Flux3 {
+                 auto early       = std::dynamic_pointer_cast<Flux::Modulation>(blocks["early_stream_modulations." + mode])->forward(ctx, vec)[0];
+                 single_mods.push_back(std::dynamic_pointer_cast<Flux::Modulation>(blocks["single_stream_modulations." + mode])->forward(ctx, vec)[0]);
+                 lengths.push_back(inputs[m]->ne[1]);
+-                auto h                 = std::dynamic_pointer_cast<Linear>(blocks[mode == "txt" ? "txt_in" : "emb_in." + mode])->forward(ctx, inputs[m]);
++                auto h                 = scaled_linear(ctx, std::dynamic_pointer_cast<Linear>(blocks[mode == "txt" ? "txt_in" : "emb_in." + mode]),
++                                                       mode == "txt" ? "txt_in" : "emb_in", inputs[m]);
+                 auto mode_pe           = ggml_view_4d(gc, pe, 2, 2, 64, lengths.back(), pe->nb[1], pe->nb[2], pe->nb[3], offset * pe->nb[3]);
+                 const std::string base = mode == "txt" ? "txt_mode_blocks." : "content_mode_blocks." + mode + ".";
+                 for (int i = 0; i < config.depth; ++i) {

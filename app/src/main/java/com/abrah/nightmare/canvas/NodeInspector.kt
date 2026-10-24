@@ -281,7 +281,7 @@ fun NodeInspector(
     /** ⭐ A white page on an empty image node, to draw on. */
     onBlankPicture: (String) -> Unit = {},
     /** ⭐ A video node's model: Wan 2.2 or Neodragon. */
-    onSetVideoModel: (String, Boolean) -> Unit = { _, _ -> },
+    onSetVideoModel: (String, String) -> Unit = { _, _ -> },
     swapFlows: List<com.abrah.nightmare.canvas.SwapFlow>? = null,
     onSwapFlow: (com.abrah.nightmare.canvas.Recipe) -> Unit = {},
     /** ⭐ The same three the fullscreen viewer offers — see the body's note. */
@@ -697,7 +697,7 @@ fun NodeInspector(
                     ?.let { img -> DrawSource(img.id, img.params["uri"].orEmpty(), img.params[com.abrah.nightmare.LoadImageNode.DRAWING].orEmpty()) },
             onSaveDrawingOn = { id, bmp -> onSaveDrawing(id, bmp) },
             onBlankPicture = { onBlankPicture(nodeId) },
-            onSetVideoModel = { neo -> onSetVideoModel(nodeId, neo) },
+            onSetVideoModel = { type -> onSetVideoModel(nodeId, type) },
             swapFlows = swapFlows,
             onSwapFlow = onSwapFlow,
             onImportLora = onImportLora,
@@ -1393,7 +1393,7 @@ internal fun NodeInspectorBody(
     onSaveDrawingOn: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
     onBlankPicture: () -> Unit = {},
     /** ⭐ This video node's model: Wan 2.2 (false) or Neodragon (true). */
-    onSetVideoModel: (Boolean) -> Unit = {},
+    onSetVideoModel: (String) -> Unit = {},
     /** ⭐ Swap flow on the sampler's page, Remove input on the picture's: Default view only. */
     swapFlows: List<com.abrah.nightmare.canvas.SwapFlow>? = null,
     onSwapFlow: (com.abrah.nightmare.canvas.Recipe) -> Unit = {},
@@ -1705,14 +1705,23 @@ internal fun NodeInspectorBody(
         // ⭐⭐ The video flows' model choice (2026-10-15): Wan 2.2 by default, Neodragon for speed.
         // ⚠ Neodragon is not offered where its canary hid it ([com.abrah.nightmare.npu.VideoGate]).
         if (node.type in com.abrah.nightmare.VIDEO_MODEL_TYPES && !com.abrah.nightmare.npu.VideoGate.hidden) {
-            val wanLabel = stringResource(R.string.video_model_wan)
-            val neoLabel = stringResource(R.string.video_model_neodragon)
+            // ⭐ Wan 2.2 14B (`npu.WanA14Node`) is text to video only: offered while no picture is wired, and
+            // only where the 8 Elite or newer (or an unknown chip) can run it ([com.abrah.nightmare.ModelCatalog.WAN22_A14B]).
+            val types = linkedMapOf(
+                com.abrah.nightmare.npu.WanVideoNode.name to stringResource(R.string.video_model_wan),
+                com.abrah.nightmare.npu.WanA14Node.name to stringResource(R.string.video_model_wan14),
+                "nd.sample" to stringResource(R.string.video_model_neodragon),
+            )
+            val caps = remember { com.abrah.nightmare.DeviceProbe.caps() }
+            val a14Ok = node.inputs["image"] == null &&
+                (!caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.WAN22_A14B.builds.minOf { it.minArch })
+            if (!a14Ok && node.type != com.abrah.nightmare.npu.WanA14Node.name) types.remove(com.abrah.nightmare.npu.WanA14Node.name)
             Chooser(
                 label = stringResource(R.string.video_model),
                 hint = stringResource(R.string.hint_video_model),
-                options = listOf(wanLabel, neoLabel),
-                current = if (node.type == "nd.sample") neoLabel else wanLabel,
-                onPick = { onSetVideoModel(it == neoLabel) },
+                options = types.values.toList(),
+                current = types[node.type] ?: types.values.first(),
+                onPick = { label -> types.entries.firstOrNull { it.value == label }?.let { onSetVideoModel(it.key) } },
             )
         }
         if (node.type in com.abrah.nightmare.WAN_TYPES) {
@@ -1889,10 +1898,11 @@ internal fun NodeInspectorBody(
                 val loras = if (node.type == com.abrah.nightmare.npu.WanFunNode.name) 0
                     else com.abrah.nightmare.LoraSpec.parse(p[com.abrah.nightmare.SdSampler.LORAS]).size
                 val size = "${shown.first}x${shown.second}"
-                if (!wan.fitsPhone(shown.first, shown.second, frames, loras, caps.ramBytes, caps.arch)) {
-                    val fit = wan.secondsThatFit(shown.first, shown.second, loras, caps.ramBytes, caps.arch)
+                val prof = wan.profileOf(node.type)
+                if (!wan.fitsPhone(shown.first, shown.second, frames, loras, caps.ramBytes, caps.arch, prof)) {
+                    val fit = wan.secondsThatFit(shown.first, shown.second, loras, caps.ramBytes, caps.arch, prof)
                     Text(
-                        if (fit > 0) stringResource(R.string.wan_too_big_seconds, size, (frames / wan.FPS).toString(), fit.toString())
+                        if (fit > 0) stringResource(R.string.wan_too_big_seconds, size, (frames / prof.fps).toString(), fit.toString())
                         else stringResource(R.string.wan_too_big_any, size),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.error,

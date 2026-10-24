@@ -569,6 +569,19 @@ object BackendProcess {
      * timings in `docs/MOSS.md` include them), and the check refused it at launch. A user's swapped-in encoder,
      * any other size, is still checked (Telegram #6290's Q4_K_M).
      */
+    /**
+     * ⭐ Pure: the engine's Wan 2.2 A14B environment (`dit/044`) for a model folder holding a high-noise expert
+     * ([ModelCatalog.WAN_HIGH_DIT]), else nothing: the 5B models launch exactly as before.
+     */
+    internal fun wanA14Env(model: File): Map<String, String> {
+        val high = File(model, ModelCatalog.WAN_HIGH_DIT).takeIf { it.isFile } ?: return emptyMap()
+        return buildMap {
+            put("NM_WAN_HIGH_NOISE_MODEL", high.absolutePath)
+            File(model, ModelCatalog.WAN_HIGH_LORA).takeIf { it.isFile }?.let { put("NM_WAN_HIGH_LORA", it.absolutePath) }
+            File(model, ModelCatalog.WAN_LOW_LORA).takeIf { it.isFile }?.let { put("NM_WAN_LOW_LORA", it.absolutePath) }
+        }
+    }
+
     internal fun shipsThisEncoder(spec: ModelSpec, teBytes: Long): Boolean =
         // ⚠⚠ An IMPORT lists no files: its encoder is a copy of its family's built-in one ([CustomModels.ditPartsPlan]),
         // so the family's catalogue encoders count too. Without this every MOSS import with its own copy of the stock
@@ -1018,6 +1031,9 @@ object BackendProcess {
                             (File(model, "tokenizer.json").takeIf { it.isFile } ?: spec.donorDir(model)?.let { File(it, "tokenizer.json") }
                                 ?: File(model, "tokenizer.json")).absolutePath,
                         )
+                        // ⭐ Wan 2.2 A14B (engine `dit/044`): its high-noise expert and Lightning's two halves, one per
+                        // expert, read by the engine from here so the `--type wan` launch stays the 5B's.
+                        putAll(wanA14Env(model))
                         // ⭐ The arch from the chip table, so a failed DSP query cannot fall back to v73 ([ditArchEnv]).
                         ditArchEnv(DeviceProbe.caps())?.let { put("GGML_HEXAGON_ARCH", it) }
                         putAll(readDitEnvOverride(context))

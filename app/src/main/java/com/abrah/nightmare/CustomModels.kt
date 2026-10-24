@@ -458,6 +458,8 @@ object CustomModels {
         Family.MOSS -> Defaults("euler", 8, 1.0)
         // Ideogram 4 with its TurboTime LoRA: 8 steps, no CFG (ostris' card, the measured run).
         Family.IDEOGRAM -> Defaults("euler", 8, 1.0)
+        // FLUX.3 Image Klein, the distilled model: 16 steps, no CFG (upstream sd.cpp's docs/flux3.md).
+        Family.FLUX3 -> Defaults("euler", 16, 1.0)
     }
 
     /**
@@ -542,6 +544,8 @@ object CustomModels {
             Family.MOSS -> ModelCatalog.KREA2
             // ⚠ Unreachable, as MOSS: only the catalogue builds Ideogram 4.
             Family.IDEOGRAM -> ModelCatalog.KREA2
+            // ⚠ Unreachable, as MOSS: only the catalogue builds FLUX.3.
+            Family.FLUX3 -> ModelCatalog.KREA2
             // ⚠ Unreachable: nothing imports a video model ([ModelCatalog.WAN22]).
             Family.WAN -> ModelCatalog.WAN
         },
@@ -551,7 +555,7 @@ object CustomModels {
                 Family.SD15, Family.SD15_SWAP -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL, Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
-                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN, Family.MOSS, Family.IDEOGRAM -> ModelCatalog.DIT_RES
+                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN, Family.MOSS, Family.IDEOGRAM, Family.FLUX3 -> ModelCatalog.DIT_RES
                 // ⚠ Unreachable, as for `backendType`; the catalogue entry carries [ModelCatalog.IRIS_SIZES].
                 Family.IRIS -> ModelCatalog.IRIS_SIZES.first()
             },
@@ -570,6 +574,7 @@ object CustomModels {
             // ⭐ No LoRA here: the speed-up's is the DONOR's file ([mossSpeedOn]), never copied.
             Family.MOSS -> listOf(weights) + DIT_PARTS
             Family.IDEOGRAM -> listOf(weights) + DIT_PARTS + ModelCatalog.IDEOGRAM_LORA
+            Family.FLUX3 -> listOf(weights) + DIT_PARTS
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
             Family.QWEN21 -> listOf(weights) + ModelCatalog.QWEN21_PARTS
             Family.WAN -> ModelCatalog.WAN22.requiredFiles
@@ -602,6 +607,8 @@ object CustomModels {
             Family.MOSS -> false
             // ⚠ The same launch as Krea 2 (all=disk), as measured.
             Family.IDEOGRAM -> false
+            // ⚠ The same launch as Krea 2 (all=disk).
+            Family.FLUX3 -> false
             Family.WAN -> false
         },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which

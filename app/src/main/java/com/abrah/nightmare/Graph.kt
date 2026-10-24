@@ -658,7 +658,7 @@ fun humanizeNodeIds(text: String, graph: Graph, types: Map<String, NodeType> = N
 val INPAINT_TYPES: Set<String> = SdSampler.ALL.filter { it.inpaint }.map { it.name }.toSet()
 
 /** ⭐ The Wan nodes: plain Wan 2.2 and Motion transfer (Fun Control). Check this set, never one name. */
-val WAN_TYPES = setOf(com.abrah.nightmare.npu.WanVideoNode.name, com.abrah.nightmare.npu.WanFunNode.name)
+val WAN_TYPES = setOf(com.abrah.nightmare.npu.WanVideoNode.name, com.abrah.nightmare.npu.WanFunNode.name, com.abrah.nightmare.npu.WanA14Node.name)
 
 val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample") + WAN_TYPES
 

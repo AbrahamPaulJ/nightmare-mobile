@@ -49,11 +49,14 @@ class ModelLabelTest {
         opened("txt2img")
         assertFalse(vm.modelLabel, vm.modelLabel.contains("Neodragon"))
         opened(T2V)
-        vm.setVideoModel("video", neodragon = true)
+        vm.setVideoModel("video", "nd.sample")
         assertTrue(vm.modelLabel, vm.modelLabel == com.abrah.nightmare.npu.NpuFiles.LABEL)
         assertTrue(vm.canvas.workflow.graph.byId["output"]?.inputs?.get("media")?.node == "video")
         // ⭐ …and back: the wires and seed stay, the node is Wan again.
-        vm.setVideoModel("video", neodragon = false)
+        vm.setVideoModel("video", com.abrah.nightmare.npu.WanVideoNode.name)
         assertTrue(vm.modelLabel, vm.modelLabel.startsWith(wan))
+        // ⭐ Wan 2.2 14B, the same node shape on the big model (2026-10-25).
+        vm.setVideoModel("video", com.abrah.nightmare.npu.WanA14Node.name)
+        assertTrue(vm.modelLabel, vm.modelLabel.startsWith(com.abrah.nightmare.ModelCatalog.WAN22_A14B.label))
     }
 }

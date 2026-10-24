@@ -2661,6 +2661,8 @@ val NODE_TYPES: Map<String, NodeType> = (
         com.abrah.nightmare.npu.WanVideoNode,
         // ⭐ Motion transfer, Wan 2.2 Fun Control (`npu.WanFunNode`), and its driving clip's node.
         com.abrah.nightmare.npu.WanFunNode,
+        // ⭐ Wan 2.2 14B (`npu.WanA14Node`), text to video on the big model.
+        com.abrah.nightmare.npu.WanA14Node,
         com.abrah.nightmare.npu.LoadVideoNode,
         // ⭐ Tap to select — wired into an inpaint node (docs/SEGMENTER.md).
         SelectObjectNode,

@@ -187,6 +187,14 @@ Iris 3B Turbo
     not included here. Its text encoder is Qwen3-VL-4B-Instruct (Apache 2.0),
     as for Krea 2 Turbo.
 
+FLUX.3 Image Klein
+    Black Forest Labs; GGUF by leejet
+    https://huggingface.co/black-forest-labs/flux-3-image-klein
+    https://huggingface.co/leejet/flux-3-image-klein-GGUF
+    FLUX Kommunity License v1.0. Downloaded by the app at the user's request,
+    unmodified; not included here. Its text encoder is Qwen3-VL-4B-Instruct
+    (Apache 2.0), as for Krea 2 Turbo; its VAE is the FLUX.2 VAE.
+
 MOSS-Image (SFT and Base)
     OpenMOSS team; GGUF by realrebelai, requantised to Q4_0 by this project
     https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT
@@ -267,6 +275,18 @@ Wan 2.2 Fun 5B Control (motion transfer)
     Wan 2.2 Fun, its GGUF and FastWan are Apache 2.0; Kijai's repackaged LoRA
     states no licence. Downloaded by the app at the user's request, unmodified;
     not included here.
+
+Wan 2.2 T2V A14B (video)
+    Wan team (Alibaba); GGUF by QuantStack
+    https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B
+    https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
+
+Wan 2.2 Lightning (Wan 2.2 14B's 4-step LoRAs)
+    lightx2v
+    https://huggingface.co/lightx2v/Wan2.2-Lightning
+    Apache 2.0. Downloaded by the app at the user's request and applied at
+    run time, unmodified; not included here.
 
 umT5-XXL encoder (Wan 2.2's text encoder)
     Google; GGUF by city96
