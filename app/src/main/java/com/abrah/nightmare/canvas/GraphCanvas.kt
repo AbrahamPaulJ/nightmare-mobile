@@ -81,9 +81,12 @@ object CanvasColors {
      */
     var light by androidx.compose.runtime.mutableStateOf(false)
 
+    /** ⭐ The Black theme ([com.abrah.nightmare.Prefs.Theme.BLACK]): the canvas behind the nodes is true black. */
+    var black by androidx.compose.runtime.mutableStateOf(false)
+
     private fun pick(dark: Long, light: Long) = Color(if (this.light) light else dark)
 
-    val background get() = pick(0xFF0B0B10, 0xFFFFFFFF)
+    val background get() = if (black && !light) Color.Black else pick(0xFF0B0B10, 0xFFFFFFFF)
     val grid get() = pick(0xFF16161F, 0xFFE8E8EE)
     val nodeBody get() = pick(0xFF1A1A24, 0xFFF6F6F9)
     val nodeStroke get() = pick(0xFF2A2A38, 0xFFD3D3DD)

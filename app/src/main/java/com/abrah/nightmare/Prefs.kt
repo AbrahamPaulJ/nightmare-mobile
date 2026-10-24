@@ -26,7 +26,8 @@ object Prefs {
      * app to whatever the phone happened to be when it was first opened, and
      * the user would have no way back to following.
      */
-    enum class Theme { SYSTEM, DARK, LIGHT }
+    /** ⭐ BLACK: dark with true-black backgrounds for OLED screens (a tester's wish, 2026-10-24). Stored by name. */
+    enum class Theme { SYSTEM, DARK, BLACK, LIGHT }
 
     /**
      * ⚠ Backing state so Compose recomposes; loaded by [load] before first draw.

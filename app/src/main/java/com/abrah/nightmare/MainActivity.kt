@@ -198,7 +198,7 @@ class MainActivity : ComponentActivity() {
             // ⭐ Ask the chip once, at first launch (the user's call, 2026-09-17).
             androidx.compose.runtime.LaunchedEffect(Unit) { vm.probeVideoSupport() }
             val dark = when (vm.theme) {
-                Prefs.Theme.DARK -> true
+                Prefs.Theme.DARK, Prefs.Theme.BLACK -> true
                 Prefs.Theme.LIGHT -> false
                 Prefs.Theme.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
             }
@@ -212,7 +212,7 @@ class MainActivity : ComponentActivity() {
                     isAppearanceLightNavigationBars = !dark
                 }
             }
-            NightmareTheme(darkTheme = dark) {
+            NightmareTheme(darkTheme = dark, black = vm.theme == Prefs.Theme.BLACK) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     // ⭐ What a reportable ErrorNotice's share icon opens.
                     androidx.compose.runtime.CompositionLocalProvider(
@@ -736,6 +736,7 @@ fun HarnessScreen(
                     ModelsScreen(
                         onRename = vm::renameModel,
                         onTestNpu = { vm.diagnoseBlank(it.id) },
+                        onToggleSpeed = vm::toggleMossSpeed,
                         rows = vm.modelRows,
                         // ⚠ The OR: this screen's buttons mean "the app is doing
                         // something long", which is what [working] is for.

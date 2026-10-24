@@ -140,6 +140,26 @@ object CustomModels {
     const val MOSS_FEW_STEP_MARK = "MOSSFAST"
 
     /**
+     * ⭐ A MOSS import with the 8-step speed-up switched OFF (the model card's ⋮). The speed-up is ON by default
+     * (the user's call, 2026-10-24, a tester asking why an import is slower than the built-in): the built-in's
+     * lodestones DMD LoRA, read from the donor's folder ([PARTS_FROM_FILE]), at 8 steps and CFG 1.
+     */
+    const val MOSS_NO_SPEED_MARK = "MOSSNOSPEED"
+
+    /** ⭐ Whether [dir] (a MOSS import) can take the speed-up: not few-step already, and its donor holds the LoRA. */
+    fun mossSpeedAvailable(dir: File): Boolean =
+        File(dir, MOSS_MARK).isFile && !File(dir, MOSS_FEW_STEP_MARK).isFile &&
+            runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull()
+                ?.let { File(File(dir.parentFile, it), ModelCatalog.MOSS_LORA).isFile } == true
+
+    fun mossSpeedOn(dir: File): Boolean = mossSpeedAvailable(dir) && !File(dir, MOSS_NO_SPEED_MARK).isFile
+
+    fun setMossSpeed(dir: File, on: Boolean) {
+        val mark = File(dir, MOSS_NO_SPEED_MARK)
+        if (on) mark.delete() else mark.writeBytes(ByteArray(0))
+    }
+
+    /**
      * ⭐ One line, a model id: an import that borrows that installed model's parts ([ModelSpec.partsFrom]) instead of
      * a copy of its own. A MOSS import beside the built-in reads its 5.6 GB of encoder, VAE and tokenizer from there.
      */
@@ -446,6 +466,8 @@ object CustomModels {
      */
     private fun dirDefaults(dir: File, family: Family): Defaults = when {
         family == Family.ANIMA_DIT && File(dir, ANIMA29_MARK).isFile -> Defaults("euler", 28, 4.0)
+        // ⭐ The speed-up on ([mossSpeedOn]): the built-in's recipe.
+        family == Family.MOSS && mossSpeedOn(dir) -> Defaults("euler", 8, 1.0)
         // ⭐ An imported MOSS runs without the built-in's LoRA: a base fine-tune unless its name says few-step
         // (25 steps at CFG 3, Moody Moss Mix's card and the DeBand quality variants').
         family == Family.MOSS && File(dir, MOSS_MARK).isFile && !File(dir, MOSS_FEW_STEP_MARK).isFile ->
@@ -472,6 +494,8 @@ object CustomModels {
             family == Family.MOSS,
         // ⭐ An import that borrows an installed model's parts ([PARTS_FROM_FILE]): MOSS beside the built-in.
         partsFrom = runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull()?.takeIf { isValidName(it) },
+        // ⭐ The donor's 8-step LoRA ([mossSpeedOn]), found through [ModelSpec.ownLoraFile].
+        ownLora = if (family == Family.MOSS && mossSpeedOn(dir)) ModelCatalog.MOSS_LORA else null,
         id = dir.name,
         label = cfg.label ?: dir.name,
         // ⭐ What the conversion kept ([ModelFeatures]) — the node dims the rest.
@@ -543,7 +567,7 @@ object CustomModels {
             Family.FLUX2, Family.ZIMAGE, Family.KREA2, Family.ANIMA_DIT -> listOf(weights) + DIT_PARTS
             // ⚠ No VAE: Iris renders pixels (backend 035).
             Family.IRIS -> listOf(weights, "llm.gguf", "tokenizer.json")
-            // ⭐ No LoRA: an import runs without the built-in's ([ModelSpec.ownLora] is the catalogue's alone).
+            // ⭐ No LoRA here: the speed-up's is the DONOR's file ([mossSpeedOn]), never copied.
             Family.MOSS -> listOf(weights) + DIT_PARTS
             Family.IDEOGRAM -> listOf(weights) + DIT_PARTS + ModelCatalog.IDEOGRAM_LORA
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
@@ -1226,6 +1250,17 @@ object CustomModels {
         runCatching { File(dir, markOf(family)).createNewFile() }
         Log.i(TAG, "adopted '${dir.name}' as $family from its tensor names")
         return family
+    }
+
+    /** ⚠ Spelled out for the log: R8 renames the classes, and `::class.simpleName` printed "is i0" in a tester's report. */
+    fun importKindName(kind: ImportKind): String = when (kind) {
+        is ImportKind.Zip -> "a converted model zip"
+        is ImportKind.Checkpoint -> "a checkpoint" + (kind.family?.let { " ($it)" } ?: "")
+        is ImportKind.Lora -> "a LoRA"
+        is ImportKind.Embedding -> "an embedding"
+        is ImportKind.Upscaler -> "an upscaler"
+        is ImportKind.NeedsConverting -> "${kind.what}, which needs converting first"
+        is ImportKind.Unknown -> "a file of an unknown kind"
     }
 
     /** ⭐ What a picked file is, for the Models "+" import ([sniffImport]). */

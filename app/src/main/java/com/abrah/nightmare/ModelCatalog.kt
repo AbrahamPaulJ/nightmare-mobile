@@ -691,6 +691,11 @@ data class ModelSpec(
     /** ⭐ [partsFrom]'s folder beside [modelDir], or null. */
     fun donorDir(modelDir: File): File? = partsFrom?.let { File(modelDir.parentFile, it) }
 
+    /** ⭐ [ownLora] on disk: this model's own copy, else its donor's (a MOSS import's speed-up). Null when neither. */
+    fun ownLoraFile(modelDir: File): File? = ownLora?.let { name ->
+        File(modelDir, name).takeIf { it.isFile } ?: donorDir(modelDir)?.let { File(it, name) }?.takeIf { it.isFile }
+    }
+
     /**
      * ⭐ Whether [f] is served by the donor ([partsFrom]) rather than [modelDir].
      *

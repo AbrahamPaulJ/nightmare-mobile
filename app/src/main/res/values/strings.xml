@@ -1300,4 +1300,12 @@
     <string name="flows_section_edit">Edit</string>
     <string name="flows_section_video">Video</string>
     <string name="search_clear">Clear the search</string>
+    <string name="mb_moss_speed">8-step speed-up</string>
+    <string name="mb_badge_8steps">8 steps</string>
+    <string name="hint_wan_fps">frames per second: 8 renders a third of the frames of 24 (about 3x faster), choppier and slower-moving</string>
+    <string name="picture_cd_save_frame">Save this frame to the gallery</string>
+    <string name="clip_frame_saved">Frame saved to the gallery</string>
+    <string name="clip_frame_failed">This frame could not be saved</string>
+    <string name="theme_black">Black (AMOLED)</string>
+    <string name="theme_black_note">Dark with true-black backgrounds: saves power on OLED screens</string>
 </resources>

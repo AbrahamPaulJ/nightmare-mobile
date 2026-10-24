@@ -36,8 +36,39 @@ import java.io.File
  * without the guard the clip jumped back to the start every time anything on
  * the screen changed (a tap, a zoom, the seed row appearing).
  */
+/**
+ * ⭐ The player behind a [ClipPlayer], for a viewer's "save this frame" (a tester's wish, 2026-10-24): where the
+ * clip is NOW. ⚠ The action lives in the viewer's own row: a button inside the player sat under the Results
+ * viewer's tap-to-close layer.
+ */
+class ClipHandle {
+    internal var view: VideoView? = null
+
+    /** The frame on screen, in ms from the start; 0 before the clip plays. */
+    val positionMs: Int get() = view?.currentPosition ?: 0
+}
+
 @Composable
-fun ClipPlayer(path: String, modifier: Modifier = Modifier) {
+fun rememberClipHandle(): ClipHandle = remember { ClipHandle() }
+
+/**
+ * ⭐ The frame at [positionMs] of the clip at [path] (a file or a `content://` URI), exactly, saved to the gallery
+ * ([com.abrah.nightmare.ImageSaver]) as a full-size PNG. ⚠ Blocking: call it off the main thread.
+ */
+fun saveClipFrame(ctx: android.content.Context, path: String, positionMs: Int): String {
+    val r = android.media.MediaMetadataRetriever()
+    try {
+        if (path.startsWith("content://")) r.setDataSource(ctx, android.net.Uri.parse(path)) else r.setDataSource(path)
+        val frame = r.getFrameAtTime(positionMs * 1000L, android.media.MediaMetadataRetriever.OPTION_CLOSEST)
+            ?: throw java.io.IOException("no frame at $positionMs ms")
+        return com.abrah.nightmare.ImageSaver.saveBitmap(ctx, frame, "frame_${System.currentTimeMillis()}.png")
+    } finally {
+        r.release()
+    }
+}
+
+@Composable
+fun ClipPlayer(path: String, modifier: Modifier = Modifier, handle: ClipHandle? = null) {
     val isUri = path.startsWith("content://")
     if (!isUri && !File(path).isFile) return
     // ⚠⚠ A clip that will not decode SAYS so, as a picture does ([UnreadablePicture]): the error listener
@@ -49,7 +80,7 @@ fun ClipPlayer(path: String, modifier: Modifier = Modifier) {
     }
     AndroidView(
         factory = { ctx ->
-            VideoView(ctx).apply {
+            VideoView(ctx).also { handle?.view = it }.apply {
                 // ⚠ Looping is set on the MediaPlayer, which does not exist
                 // until the clip is prepared. Setting it in `factory` is a null
                 // dereference; setting it here is the documented moment.
@@ -73,7 +104,7 @@ fun ClipPlayer(path: String, modifier: Modifier = Modifier) {
         // ⚠⚠ Stopped on the way out, or the SurfaceView keeps a decoder and an
         // audio track alive behind a screen that is no longer on display —
         // which on this app means holding it through a 25 s NPU render.
-        onRelease = { it.stopPlayback() },
+        onRelease = { if (handle?.view === it) handle.view = null; it.stopPlayback() },
         modifier = modifier,
     )
 }

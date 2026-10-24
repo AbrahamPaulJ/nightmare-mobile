@@ -1,5 +1,6 @@
 package com.abrah.nightmare.ui
 
+import kotlinx.coroutines.launch
 import com.abrah.nightmare.ui.StudioButton
 import com.abrah.nightmare.ui.StudioOutlinedButton
 import com.abrah.nightmare.ui.StudioTextButton
@@ -800,6 +801,9 @@ fun ResultViewer(
     onEditFace: ((Result, Map<String, String>) -> Unit)? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    // ⭐ The page in view's player, for Save this frame ([saveClipFrame]).
+    val clipHandle = rememberClipHandle()
+    val frameScope = androidx.compose.runtime.rememberCoroutineScope()
     var upscalingPick by remember { mutableStateOf<Result?>(null) }
     val pager = androidx.compose.foundation.pager.rememberPagerState(
         initialPage = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
@@ -879,6 +883,7 @@ fun ResultViewer(
             if (clip != null) {
                 com.abrah.nightmare.ui.ClipPlayer(
                     path = clip,
+                    handle = clipHandle.takeIf { page == pager.currentPage },
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(start = 8.dp, end = 8.dp, top = roomTop, bottom = roomBottom),
@@ -1067,6 +1072,22 @@ fun ResultViewer(
                     contentDescription = stringResource(R.string.picture_cd_share_picture),
                     tint = androidx.compose.ui.graphics.Color.White,
                 )
+            }
+            // ⭐ Save this frame of a clip, after share ([PictureActions]' onSaveFrame).
+            current.videoPath?.let { path ->
+                val saved = stringResource(R.string.clip_frame_saved)
+                val failed = stringResource(R.string.clip_frame_failed)
+                IconButton(onClick = {
+                    val at = clipHandle.positionMs
+                    frameScope.launch {
+                        val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            runCatching { saveClipFrame(context, path, at) }.isSuccess
+                        }
+                        onToast(if (ok) saved else failed)
+                    }
+                }, modifier = viewerIcon) {
+                    Icon(FrameIcon, contentDescription = stringResource(R.string.picture_cd_save_frame), tint = androidx.compose.ui.graphics.Color.White)
+                }
             }
             // ⭐ Send into a flow, after share — [PictureActions]' order. ⚠ Not
             // on a clip: no flow takes a video as its input.

@@ -126,6 +126,9 @@ object SafetensorsGguf {
         val headerLen = headerLength(lenBuf)
         val header = JSONObject(String(ByteArray(headerLen.toInt()).also { input.readFully(it) }, Charsets.UTF_8))
         val tensors = tensorsOf(header, rule).sortedBy { it.begin }
+        // ⚠ What the header promises, so a stream that ends sooner says HOW far it got: a tester's 10.16 GB fp16 MOSS
+        // import failed as "import failed: null", a bare EOFException from a copy still downloading (2026-10-24).
+        val total = 8 + headerLen + (tensors.maxOfOrNull { it.end } ?: 0L)
         var at = 0L
         write(tensors, dst, rule, onProgress, isCancelled, object : Src {
             override fun seek(offset: Long) {
@@ -138,7 +141,17 @@ object SafetensorsGguf {
                 }
                 at = offset
             }
-            override fun readFully(b: ByteArray) { input.readFully(b); at += b.size }
+            override fun readFully(b: ByteArray) {
+                try {
+                    input.readFully(b)
+                } catch (e: java.io.EOFException) {
+                    throw IOException(
+                        "the file ended at %.2f GB of %.2f GB. It is incomplete: if it is still downloading, wait for it to finish"
+                            .format(java.util.Locale.ROOT, (8 + headerLen + at) / 1e9, total / 1e9),
+                    )
+                }
+                at += b.size
+            }
         })
     }
 

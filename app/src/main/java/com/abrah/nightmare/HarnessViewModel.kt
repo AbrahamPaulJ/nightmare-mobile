@@ -1708,7 +1708,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 }.getOrElse { CustomModels.ImportKind.Unknown }
             }
             val n = name.ifEmpty { display }
-            say("import: ${displayNameOf(uri)} is ${kind::class.simpleName}")
+            say("import: ${displayNameOf(uri)} is ${CustomModels.importKindName(kind)}")
             when (kind) {
                 CustomModels.ImportKind.Zip -> importModel(uri, n)
                 is CustomModels.ImportKind.Checkpoint ->
@@ -4380,6 +4380,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** ⭐ An imported model's shown name ([CustomModels.Config.writeLabel]). */
+    /**
+     * ⭐ ⋮ "8-step speed-up" on a MOSS import ([CustomModels.MOSS_NO_SPEED_MARK]): the switch, then every node on that
+     * model takes its new steps, CFG and scheduler (Reset defaults' overlay), so the next Run is the recipe it shows.
+     */
+    fun toggleMossSpeed(spec: ModelSpec) {
+        val dir = spec.home?.let { java.io.File(it) } ?: return
+        val on = spec.ownLora == null
+        viewModelScope.launch {
+            withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { CustomModels.setMossSpeed(dir, on) } }
+            refreshModels(offMain = false)
+            val g = canvas.workflow.graph
+            val types = typesFor(g)
+            var next = canvas
+            for (n in g.nodes) if (n.params["model"] == spec.id) next = next.resetSamplerDefaults(n.id, types)
+            canvas = next
+            say("${spec.label}: 8-step speed-up ${if (on) "on" else "off"}")
+        }
+    }
+
     fun renameModel(spec: ModelSpec, name: String) {
         val dir = spec.home?.let { java.io.File(it) } ?: return
         if (name.isBlank()) return

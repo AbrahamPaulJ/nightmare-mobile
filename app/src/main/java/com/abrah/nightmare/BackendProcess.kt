@@ -320,7 +320,7 @@ object BackendProcess {
         val key = launchedKey ?: return null
         val ctx = appContext ?: return null
         val spec = ModelCatalog.byId(key.model) ?: return null
-        return spec.ownLora?.let { File(spec.dir(ctx), it).absolutePath }
+        return spec.ownLoraFile(spec.dir(ctx))?.absolutePath
     }
 
     /**
@@ -846,7 +846,7 @@ object BackendProcess {
                         "every way of running it there gives noise"
                 )
                 if (!upscalerOnly) spec?.ownLora?.let { name ->
-                    if (!File(model, name).isFile) return@withContext Start.Failed(
+                    if (spec.ownLoraFile(model) == null) return@withContext Start.Failed(
                         "${spec.label} is missing $name. Download it again in Models"
                     )
                 }

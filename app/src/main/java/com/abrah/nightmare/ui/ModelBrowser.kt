@@ -403,6 +403,8 @@ internal fun ModelCardV2(
     /** ⭐ Rename an imported model (its shown name only), from ⋮. */
     onRename: (ModelSpec) -> Unit = {},
     onTestNpu: (ModelSpec) -> Unit = {},
+    /** ⭐ A MOSS import's 8-step speed-up on or off, from ⋮ ([com.abrah.nightmare.CustomModels.MOSS_NO_SPEED_MARK]). */
+    onToggleSpeed: (ModelSpec) -> Unit = {},
 ) {
     val spec = row.spec
     val dim = row.unsupported()
@@ -438,12 +440,14 @@ internal fun ModelCardV2(
                             if (ModelFeatures.IP_ADAPTER in spec.featureSet) Badge(stringResource(R.string.ip_label))
                         }
                         if (spec.isCustom && !row.fromLocalDream) Badge(stringResource(R.string.mb_sub_imported))
+                        // ⭐ An import running the built-in's 8-step LoRA ([com.abrah.nightmare.CustomModels.mossSpeedOn]).
+                        if (spec.isCustom && spec.ownLora != null) Badge(stringResource(R.string.mb_badge_8steps), MaterialTheme.colorScheme.primary)
                         // ⭐ Converted by a community member, hosted on their page ([ModelCatalog.communityModels]).
                         if (spec.community) Badge(stringResource(R.string.mb_sub_community), MaterialTheme.colorScheme.tertiary)
                         if (row.fromLocalDream) Badge(stringResource(R.string.mb_local_dream), MaterialTheme.colorScheme.tertiary)
                     }
                 }
-                ModelMenu(row, busy, onInstall, onDelete, onRename, onTestNpu)
+                ModelMenu(row, busy, onInstall, onDelete, onRename, onTestNpu, onToggleSpeed)
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -577,6 +581,7 @@ private fun ModelMenu(
     onDelete: (ModelSpec) -> Unit,
     onRename: (ModelSpec) -> Unit,
     onTestNpu: (ModelSpec) -> Unit,
+    onToggleSpeed: (ModelSpec) -> Unit,
 ) {
     // ⚠ Never Local Dream's files — it keeps them, and deletes them itself. Shown greyed with why, as on the model
     // in use: with no ⋮ at all, one of them read as an import that cannot be deleted (GitHub #56).
@@ -586,7 +591,10 @@ private fun ModelMenu(
     val canRename = row.spec.isCustom && row.installed && row.spec.home != null && row.progress == null && !row.fromLocalDream
     // ⭐ Diagnose on demand on these chips: no grey error or static ever offers it.
     val canTestNpu = row.npuTest && row.installed && row.progress == null
-    if (!canDelete && !canRepair && !canRename && !canTestNpu) {
+    // ⭐ A MOSS import whose donor holds the LoRA; its state is whether the spec carries it.
+    val speedHome = row.spec.home?.takeIf { row.spec.isCustom && row.spec.family == Family.MOSS && row.installed }
+    val canSpeed = remember(speedHome) { speedHome != null && com.abrah.nightmare.CustomModels.mossSpeedAvailable(java.io.File(speedHome)) }
+    if (!canDelete && !canRepair && !canRename && !canTestNpu && !canSpeed) {
         Spacer(Modifier.size(40.dp))
         return
     }
@@ -601,6 +609,14 @@ private fun ModelMenu(
                     text = { Text(stringResource(R.string.flows_rename)) },
                     enabled = !busy,
                     onClick = { open = false; onRename(row.spec) },
+                )
+            }
+            if (canSpeed) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.mb_moss_speed)) },
+                    trailingIcon = { androidx.compose.material3.Switch(checked = row.spec.ownLora != null, onCheckedChange = null) },
+                    enabled = !busy,
+                    onClick = { open = false; onToggleSpeed(row.spec) },
                 )
             }
             if (canTestNpu) {

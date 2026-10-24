@@ -114,6 +114,11 @@ fun PictureActions(
      */
     onUpscale: (() -> Unit)? = null,
     /**
+     * ⭐ SAVE THIS FRAME of the clip on screen to the gallery (a tester's wish, 2026-10-24). ⚠ Clips only, in
+     * Upscale's place (a clip has no upscale), so the row's first actions never move.
+     */
+    onSaveFrame: (() -> Unit)? = null,
+    /**
      * ⭐⭐ ⓘ — the same dialog Results opens
      * ([com.abrah.nightmare.ui.ResultInfoDialog]), over the live graph.
      *
@@ -278,6 +283,11 @@ fun PictureActions(
                 // ⚠ Dimmed rather than hidden — see [upscaleDisabledReason].
                 tint = if (upscaleDisabledReason != null) tint.copy(alpha = 0.38f) else tint,
             )
+        }
+    }
+    onSaveFrame?.takeIf { isClip }?.let { save ->
+        IconButton(onClick = save, modifier = small) {
+            Icon(com.abrah.nightmare.ui.FrameIcon, contentDescription = stringResource(R.string.picture_cd_save_frame), tint = tint)
         }
     }
     onInfo?.let { info ->

@@ -192,6 +192,8 @@ fun ModelsScreen(
     onRename: (ModelSpec, String) -> Unit = { _, _ -> },
     /** ⭐ ⋮ "Test the NPU" ([com.abrah.nightmare.HarnessViewModel.diagnoseBlank]), on a [ModelRow.noHmx] row. */
     onTestNpu: (ModelSpec) -> Unit = {},
+    /** ⭐ ⋮ "8-step speed-up" on a MOSS import ([com.abrah.nightmare.HarnessViewModel.toggleMossSpeed]). */
+    onToggleSpeed: (ModelSpec) -> Unit = {},
     /**
      * ⭐⭐ A Use waiting on a flow choice — see
      * [com.abrah.nightmare.HarnessViewModel.PendingUse]. Null when nothing is
@@ -664,7 +666,7 @@ fun ModelsScreen(
                         }
                     }
                     val card: @Composable (ModelRow) -> Unit = { row ->
-                        ModelCardV2(row, busy, onInstall, onCancel, { deleting = it }, onSelect, onRename = { renaming = it }, onTestNpu = onTestNpu)
+                        ModelCardV2(row, busy, onInstall, onCancel, { deleting = it }, onSelect, onRename = { renaming = it }, onTestNpu = onTestNpu, onToggleSpeed = onToggleSpeed)
                     }
                     if (sec.installed.isNotEmpty()) {
                         item { SectionHeader(stringResource(R.string.mb_section_installed, sec.installed.size)) }

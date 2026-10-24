@@ -417,6 +417,31 @@ class DitImportTest {
         )
     }
 
+    /**
+     * ⭐ A MOSS import takes the built-in's 8-step speed-up by default (the user, 2026-10-24): the DONOR's LoRA, 8 steps,
+     * CFG 1. ⋮ switches it off (25 steps, CFG 3, no LoRA); a few-step import never takes it (it would distil twice).
+     */
+    @Test
+    fun aMossImportTakesTheDonorsSpeedUpUntilSwitchedOff() {
+        val donor = File(ModelCatalog.root(ctx), "moss_image").apply { mkdirs() }
+        File(donor, ModelCatalog.MOSS_LORA).writeBytes(ByteArray(16))
+        val dir = File(ModelCatalog.root(ctx), "mossimport").apply { mkdirs() }
+        File(dir, CustomModels.DIT_GGUF).writeBytes(ByteArray(16))
+        File(dir, CustomModels.MOSS_MARK).writeBytes(ByteArray(0))
+        File(dir, CustomModels.PARTS_FROM_FILE).writeText("moss_image")
+        fun spec() = CustomModels.scan(ctx).single { it.id == "mossimport" }
+        assertEquals(ModelCatalog.MOSS_LORA, spec().ownLora)
+        assertEquals(8, spec().steps)
+        assertEquals(1.0, spec().cfg, 0.0)
+        assertEquals(File(donor, ModelCatalog.MOSS_LORA), spec().ownLoraFile(dir))
+        CustomModels.setMossSpeed(dir, false)
+        assertEquals(null, spec().ownLora)
+        assertEquals(25, spec().steps)
+        CustomModels.setMossSpeed(dir, true)
+        File(dir, CustomModels.MOSS_FEW_STEP_MARK).writeBytes(ByteArray(0))
+        assertEquals(null, spec().ownLora)
+    }
+
     /** ⚠ …and the same folder holding Klein weights reads as FLUX.2. */
     @Test
     fun aMarkerlessKleinFolderReadsAsFlux2() {

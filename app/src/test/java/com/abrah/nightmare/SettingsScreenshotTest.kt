@@ -25,14 +25,14 @@ open class SettingsScreenshotTest {
         PromptTranslate.Source.ZH to ToolRow("Chinese → English", PromptTranslate.Source.ZH.bytes, installed = false),
     )
 
-    private fun shoot(name: String, page: Int, downloadFolder: Boolean = false) =
+    private fun shoot(name: String, page: Int, downloadFolder: Boolean = false, black: Boolean = false) =
         captureRoboImage(filePath = goldenPath(this, name)) {
-            NightmareTheme(darkTheme = true) {
+            NightmareTheme(darkTheme = true, black = black) {
                 // ⚠ The sheet supplies the content colour in the app; without a
                 // Surface every heading here draws black on black.
                 androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
                 SettingsScreen(
-                    theme = Prefs.Theme.SYSTEM,
+                    theme = if (black) Prefs.Theme.BLACK else Prefs.Theme.SYSTEM,
                     onTheme = {},
                     loras = emptyList(),
                     onImportLora = {},
@@ -59,6 +59,8 @@ open class SettingsScreenshotTest {
     // ⭐ The five groups (2026-10-10). ⚠ No Performance tab here: no memory switches are passed and
     // the battery is unrestricted, so it is hidden — Advanced is page 3.
     @Test fun appearance() = shoot("settings-appearance", 0)
+    /** ⭐ The Black theme (2026-10-24): true-black page, near-black cards, the violet unchanged. */
+    @Test fun appearanceBlack() = shoot("settings-appearance-black", 0, black = true)
     @Test fun prompts() = shoot("settings-prompts", 1)
     @Test fun models() = shoot("settings-models", 2, downloadFolder = true)
     @Test fun advanced() = shoot("settings-advanced", 3)

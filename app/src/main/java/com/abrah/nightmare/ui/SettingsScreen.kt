@@ -243,7 +243,8 @@ fun SettingsScreen(
         Page.APPEARANCE -> Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StudioCard {
                     SectionHeading(stringResource(R.string.theme_title))
-                    // ⚠⚠ THREE choices, not a dark-mode switch: "follow the system" is not on/off.
+                    // ⚠⚠ Choices, not a dark-mode switch: "follow the system" is not on/off. Black (2026-10-24) is dark
+                    // with true-black backgrounds.
                     for (t in Prefs.Theme.entries) {
                         Row(
                             Modifier.fillMaxWidth().clickable { onTheme(t) },
@@ -256,11 +257,15 @@ fun SettingsScreen(
                                         when (t) {
                                             Prefs.Theme.SYSTEM -> R.string.theme_system
                                             Prefs.Theme.DARK -> R.string.theme_dark
+                                            Prefs.Theme.BLACK -> R.string.theme_black
                                             Prefs.Theme.LIGHT -> R.string.theme_light
                                         },
                                     ),
                                     style = MaterialTheme.typography.bodyLarge,
                                 )
+                                if (t == Prefs.Theme.BLACK) {
+                                    Text(stringResource(R.string.theme_black_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                                 if (t == Prefs.Theme.LIGHT) {
                                     Text(stringResource(R.string.theme_canvas_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }

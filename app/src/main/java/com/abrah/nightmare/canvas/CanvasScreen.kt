@@ -1967,6 +1967,12 @@ private fun FullscreenImage(
     pageIndex: Int = 0,
     onPage: (Int) -> Unit = {},
 ) {
+    // ⭐ The player behind a clip, for ⋯ Save this frame ([com.abrah.nightmare.ui.saveClipFrame]).
+    val clipHandle = com.abrah.nightmare.ui.rememberClipHandle()
+    val frameScope = rememberCoroutineScope()
+    val frameCtx = androidx.compose.ui.platform.LocalContext.current
+    val frameSaved = androidx.compose.ui.res.stringResource(R.string.clip_frame_saved)
+    val frameFailed = androidx.compose.ui.res.stringResource(R.string.clip_frame_failed)
     // ⚠⚠ BACK CLOSES THE VIEWER. Without this the system back went to the
     // activity, which has no back stack -- so the one gesture every Android user
     // makes to leave a fullscreen picture QUIT THE APP, losing the canvas
@@ -2025,6 +2031,7 @@ private fun FullscreenImage(
         if (videoPath != null) {
             com.abrah.nightmare.ui.ClipPlayer(
                 path = videoPath,
+                handle = clipHandle,
                 modifier = Modifier.fillMaxSize().padding(
                     start = 12.dp, end = 12.dp,
                     top = if (chromeless) 12.dp else roomTop,
@@ -2148,6 +2155,17 @@ private fun FullscreenImage(
                 starIdleTint = com.abrah.nightmare.ui.StarIdle,
                 onUpscale = onUpscale,
                 upscaleDisabledReason = upscaleDisabledReason,
+                onSaveFrame = videoPath?.let { path ->
+                    {
+                        val at = clipHandle.positionMs
+                        frameScope.launch {
+                            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                runCatching { com.abrah.nightmare.ui.saveClipFrame(frameCtx, path, at) }.isSuccess
+                            }
+                            android.widget.Toast.makeText(frameCtx, if (ok) frameSaved else frameFailed, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
                 onInfo = onInfo,
             )
         }

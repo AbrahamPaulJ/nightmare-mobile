@@ -45,6 +45,24 @@ val Success = Color(0xFF6FE3AE)
 /** ⭐ Unsaved changes, caution. */
 val Warning = Color(0xFFF4C16C)
 
+/**
+ * ⭐ The Black theme (a tester's wish, 2026-10-24: "an AMOLED black theme"): [NightmareDark] with true-black
+ * background and surfaces, so an OLED screen's unlit pixels stay off. Cards and sheets step up in near-black
+ * neutrals so they still read as layers; the violet accents are unchanged.
+ */
+private val NightmareBlack by lazy {
+    NightmareDark.copy(
+        background = Color.Black,
+        surface = Color.Black,
+        surfaceContainerLowest = Color.Black,
+        surfaceContainerLow = Color(0xFF0A080E),
+        surfaceContainer = Color(0xFF131018),
+        surfaceVariant = Color(0xFF131018),
+        surfaceContainerHigh = Color(0xFF1C1724),
+        surfaceContainerHighest = Color(0xFF26202F),
+    )
+}
+
 private val NightmareDark = darkColorScheme(
     primary = Ember,
     onPrimary = Color.White,
@@ -215,13 +233,16 @@ val MeasureTextStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 1
 @Composable
 fun NightmareTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    /** ⭐ The Black theme ([NightmareBlack]); only with [darkTheme]. */
+    black: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     // ⚠ Before the content composes, so the canvas's first frame is already
     // the right one. A state write: flipping the theme redraws the canvas.
     com.abrah.nightmare.canvas.CanvasColors.light = !darkTheme
+    com.abrah.nightmare.canvas.CanvasColors.black = black && darkTheme
     MaterialTheme(
-        colorScheme = if (darkTheme) NightmareDark else NightmareLight,
+        colorScheme = if (!darkTheme) NightmareLight else if (black) NightmareBlack else NightmareDark,
         typography = InterTypography,
         shapes = StudioShapes,
     ) {

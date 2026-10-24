@@ -213,6 +213,26 @@ class SafetensorsGgufTest {
         assertEquals(SafetensorsGguf.F32, by.getValue("layers.0.norm1.weight").type)
     }
 
+    /**
+     * ⚠ A stream that ends before its header's data says how far it got, not "import failed: null" (a tester's
+     * 10.16 GB fp16 MOSS import, 2026-10-24: a bare EOFException, most likely a copy still downloading).
+     */
+    @Test
+    fun aCutStreamSaysItIsIncomplete() {
+        val src = safetensors(listOf(
+            t("video_embedder.weight", 64, 32),
+            t("layers.0.proj.qkv.weight", 96, 64),
+            t("shared_block_modulation.weight", 64, 64),
+            t("layers.0.norm1.weight", 64),
+            t("time_embedding.0.weight", 64, 32),
+        ))
+        val cut = src.readBytes().let { it.copyOf(it.size - 100) }
+        val e = runCatching {
+            SafetensorsGguf.convertStream({ cut.inputStream() }, tmp.newFile("cut.gguf"), MossGguf.rule, { _, _ -> }, { false })
+        }.exceptionOrNull()
+        assertTrue("$e", e is java.io.IOException && "incomplete" in e.message.orEmpty() && "GB of" in e.message.orEmpty())
+    }
+
     /** ⭐ Only 16- or 32-bit block weights convert: fp8 is already MOSS-sized, int8 is refused before this. */
     @Test
     fun onlySixteenBitMossConverts() {

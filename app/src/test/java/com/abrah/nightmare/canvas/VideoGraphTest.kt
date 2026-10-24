@@ -301,6 +301,12 @@ class VideoGraphTest {
         assertEquals(1, wan.framesFor(0))
         assertEquals(121, wan.framesFor(9))
         for (s in 1..5) assertEquals(1, wan.framesFor(s) % 4)
+        // ⭐ The fps choice (a tester's wish, 2026-10-24): fewer frames for the same seconds, still 4n+1.
+        assertEquals(41, wan.framesFor(5, 8))
+        for (f in wan.FPS_CHOICES) for (s in 0..5) assertEquals(1, wan.framesFor(s, f) % 4)
+        assertEquals(12, wan.fpsOf(mapOf("fps" to "12")))
+        assertEquals(wan.FPS, wan.fpsOf(mapOf("fps" to "7")))
+        assertEquals(wan.FPS, wan.fpsOf(emptyMap()))
     }
 
     /**

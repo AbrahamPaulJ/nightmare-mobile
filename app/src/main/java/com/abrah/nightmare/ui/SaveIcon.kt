@@ -86,6 +86,29 @@ val DownloadIcon: ImageVector by lazy {
 }
 
 /**
+ * ⭐ SAVE THIS FRAME of a playing clip (a tester's wish, 2026-10-24) — Material's `photo_camera`: a still taken
+ * from the video, which is what the action does.
+ */
+val FrameIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Frame",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).run {
+        addPath(
+            pathData = PathParser().parsePathString(
+                "M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 " +
+                    "0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8.2a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 1 0 0-6.4z"
+            ).toNodes(),
+            fill = SolidColor(Color.White),
+        )
+        build()
+    }
+}
+
+/**
  * ⭐ SEND TO a flow — Material's `input`: an arrow going INTO a frame, which
  * is what happens to the picture (asked for 2026-09-17). ⚠ Not the share arrow:
  * share hands it to another APP, this puts it into one of ours.
