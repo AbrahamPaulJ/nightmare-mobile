@@ -1889,11 +1889,10 @@ internal fun NodeInspectorBody(
                 val loras = if (node.type == com.abrah.nightmare.npu.WanFunNode.name) 0
                     else com.abrah.nightmare.LoraSpec.parse(p[com.abrah.nightmare.SdSampler.LORAS]).size
                 val size = "${shown.first}x${shown.second}"
-                val fps = if (node.type == com.abrah.nightmare.npu.WanFunNode.name) wan.FPS else wan.fpsOf(p)
                 if (!wan.fitsPhone(shown.first, shown.second, frames, loras, caps.ramBytes, caps.arch)) {
-                    val fit = wan.secondsThatFit(shown.first, shown.second, loras, caps.ramBytes, caps.arch, fps)
+                    val fit = wan.secondsThatFit(shown.first, shown.second, loras, caps.ramBytes, caps.arch)
                     Text(
-                        if (fit > 0) stringResource(R.string.wan_too_big_seconds, size, (frames / fps).toString(), fit.toString())
+                        if (fit > 0) stringResource(R.string.wan_too_big_seconds, size, (frames / wan.FPS).toString(), fit.toString())
                         else stringResource(R.string.wan_too_big_any, size),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.error,

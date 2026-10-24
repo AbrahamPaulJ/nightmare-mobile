@@ -1298,7 +1298,6 @@
     <string name="search_clear">Очистить поиск</string>
     <string name="mb_moss_speed">Ускорение до 8 шагов</string>
     <string name="mb_badge_8steps">8 шагов</string>
-    <string name="hint_wan_fps">кадров в секунду: при 8 кадров втрое меньше, чем при 24 (примерно в 3 раза быстрее), движение рывками и медленнее</string>
     <string name="picture_cd_save_frame">Сохранить этот кадр в галерею</string>
     <string name="clip_frame_saved">Кадр сохранён в галерею</string>
     <string name="clip_frame_failed">Не удалось сохранить этот кадр</string>

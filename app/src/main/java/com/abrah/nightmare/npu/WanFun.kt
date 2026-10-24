@@ -244,7 +244,7 @@ object WanFunNode : NodeType {
     // ⚠ No `loras` widget, so no picker (the user's call, 2026-10-15; [WanVideoNode.runClip] skips tags).
     // ⚠ No `seconds` either: the Video tab's window sets the clip's length (the user's call, 2026-10-15).
     override val widgets get() = WanVideoNode.widgets.filterNot {
-        it.name == com.abrah.nightmare.SdSampler.LORAS || it.name == "seconds" || it.name == "fps"
+        it.name == com.abrah.nightmare.SdSampler.LORAS || it.name == "seconds"
     } + listOf(
         Widget(
             WanVideoNode.MOTION_MODE, "string", WanFun.Mode.POSE.id,

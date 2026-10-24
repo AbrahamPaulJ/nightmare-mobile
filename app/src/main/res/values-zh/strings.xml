@@ -1271,7 +1271,6 @@
     <string name="search_clear">清除搜索</string>
     <string name="mb_moss_speed">8 步加速</string>
     <string name="mb_badge_8steps">8 步</string>
-    <string name="hint_wan_fps">每秒帧数：8 只渲染 24 的三分之一帧（约快 3 倍），画面更卡顿、动作更慢</string>
     <string name="picture_cd_save_frame">将此帧保存到相册</string>
     <string name="clip_frame_saved">已将该帧保存到相册</string>
     <string name="clip_frame_failed">无法保存此帧</string>

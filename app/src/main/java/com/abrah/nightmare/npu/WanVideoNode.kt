@@ -83,17 +83,6 @@ object WanVideoNode : NodeType {
     const val MAX_SECONDS = 5
 
     /**
-     * ⭐ The frame rates a clip may be rendered at (a tester's wish, 2026-10-24: "custom fps to boost speed"). Fewer
-     * frames for the SAME seconds (the user's call): 8 fps is a third of 24's frames, about 3x faster, and choppier.
-     * ⚠ Wan moves at its trained pace PER FRAME, so a low rate also plays the motion slower. Every choice is a
-     * multiple of 4, so `fps·s + 1` stays 4n+1.
-     */
-    val FPS_CHOICES = listOf(8, 12, 16, 24)
-
-    /** ⚠ Pure: the node's frame rate, [FPS] when unset or not one of [FPS_CHOICES]. */
-    fun fpsOf(p: Map<String, String>): Int = p["fps"]?.toIntOrNull()?.takeIf { it in FPS_CHOICES } ?: FPS
-
-    /**
      * ⭐ `width` and `height` are drawn as one pair at the top of the sheet (`NodeInspector`'s size
      * panel, committed when the finger lifts); the rest in this order UNDER the crop.
      */
@@ -107,7 +96,6 @@ object WanVideoNode : NodeType {
         Widget("seed", "int", "0", hintRes = R.string.hint_seed_clip),
         // ⭐ 0 = ONE frame, a still picture (a tester's wish, 2026-10-19: "1 frame Wan 2.2, basically a txt to img").
         Widget("seconds", "int", "5", 0.0, MAX_SECONDS.toDouble(), hintRes = R.string.hint_wan_seconds),
-        Widget("fps", "int", FPS.toString(), options = FPS_CHOICES.map { it.toString() }, hintRes = R.string.hint_wan_fps),
         // ⭐ The framing, exactly as [VideoSampleNode] carries it.
         Widget("x", "float", "0.0", 0.0, 1.0, hintRes = R.string.hint_drag_frame),
         Widget("y", "float", "0.0", 0.0, 1.0),
@@ -202,8 +190,8 @@ object WanVideoNode : NodeType {
      * ⭐ Pure: the longest clip, in seconds, that fits at [w] x [h] with [loras] LoRAs on a phone with
      * [ramBytes] and [arch]; 0 when not even 1 s does. What the slider warning offers instead.
      */
-    fun secondsThatFit(w: Int, h: Int, loras: Int, ramBytes: Long, arch: Int, fps: Int = FPS): Int =
-        (MAX_SECONDS downTo 1).firstOrNull { s -> fitsPhone(w, h, framesFor(s, fps), loras, ramBytes, arch) } ?: 0
+    fun secondsThatFit(w: Int, h: Int, loras: Int, ramBytes: Long, arch: Int): Int =
+        (MAX_SECONDS downTo 1).firstOrNull { s -> fitsPhone(w, h, framesFor(s), loras, ramBytes, arch) } ?: 0
 
     /** ⚠ Pure: both tests the run log warns on, as one answer. */
     fun fitsPhone(w: Int, h: Int, frames: Int, loras: Int, ramBytes: Long, arch: Int): Boolean {
@@ -224,7 +212,7 @@ object WanVideoNode : NodeType {
      */
     internal fun framesOf(node: Node, p: Map<String, String>): Int =
         if (node.type == WanFunNode.name) WanFun.windowOf(p).let { (s, e) -> WanFun.framesForGap(e - s) }
-        else framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS, fpsOf(p))
+        else framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS)
 
     /** ⚠ Pure: the frame size the params ask for, on Wan's 32 px grid. */
     fun sizeOf(p: Map<String, String>): Pair<Int, Int> =
@@ -272,8 +260,8 @@ object WanVideoNode : NodeType {
         return if (p["shape"] == "portrait") h to w else w to h
     }
 
-    /** ⚠ Pure: `fps·s + 1` frames for [seconds], clamped to 0..[MAX_SECONDS]: 0 is one frame, a still. */
-    fun framesFor(seconds: Int, fps: Int = FPS): Int = seconds.coerceIn(0, MAX_SECONDS) * fps + 1
+    /** ⚠ Pure: `24·s + 1` frames for [seconds], clamped to 0..[MAX_SECONDS]: 0 is one frame, a still. */
+    fun framesFor(seconds: Int): Int = seconds.coerceIn(0, MAX_SECONDS) * FPS + 1
 
     /**
      * ⭐ quanhaol's Self-Forcing timesteps 1000/750/500/250 warped by shift 5, through `lcm`
@@ -430,8 +418,6 @@ object WanVideoNode : NodeType {
             )
         }
         val frames = framesOf(node, p)
-        // ⭐ The clip's rate ([fpsOf]): Motion transfer follows its driving video at 24.
-        val fps = if (node.type == WanFunNode.name) FPS else fpsOf(p)
         val seed = p["seed"]?.toLongOrNull() ?: 0L
         // ⚠ A fallback, not the roll: `HarnessOps.runRolled` rolls a 0 before the graph runs
         // ([com.abrah.nightmare.SAMPLER_TYPES]), for the reason [VideoSampleNode] gives.
@@ -449,12 +435,12 @@ object WanVideoNode : NodeType {
         if (ram > 0 && !fits(need, ram)) {
             ctx.warn(ctx.text(R.string.run_wan_ram_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB on the NPU, more than this phone's %4\$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer",
-                "${w}x$h", (frames / fps).toString(), gb(need), gb(ram)))
+                "${w}x$h", (frames / FPS).toString(), gb(need), gb(ram)))
         }
         if (!fitsChip(need, arch, budget)) {
             ctx.warn(ctx.text(R.string.run_wan_npu_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB of NPU memory at once, more than this phone's NPU takes, so it will probably fail. Trying anyway",
-                "${w}x$h", (frames / fps).toString(), gb(need)))
+                "${w}x$h", (frames / FPS).toString(), gb(need)))
         }
 
         val source = inputs["image"] as? Value.Image
@@ -546,7 +532,7 @@ object WanVideoNode : NodeType {
         val control = motion != null
         val r = try {
             ctx.host.video(
-                prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = fps,
+                prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = FPS,
                 seed = used,
                 steps = (if (control) WanFun.SIGMAS else SIGMAS).size - 1,
                 sampleMethod = if (control) "euler" else "lcm",
@@ -574,7 +560,7 @@ object WanVideoNode : NodeType {
                 if ((r.code == -1 || "generate_video failed" in r.body) && log.any { NPU_MAP_FAILED.containsMatchIn(it) }) {
                     throw IllegalStateException(
                         "node \"${node.id}\": the NPU could not hold this clip's working memory " +
-                            "(${w}x$h, ${frames / fps} s). " + mapAdvice(w, h, loras.isNotEmpty()) + " [${r.body}]"
+                            "(${w}x$h, ${frames / FPS} s). " + mapAdvice(w, h, loras.isNotEmpty()) + " [${r.body}]"
                     )
                 }
                 throw IllegalStateException("node \"${node.id}\": ${com.abrah.nightmare.explainOpFailure(r.code, r.body)}")
@@ -601,10 +587,10 @@ object WanVideoNode : NodeType {
                 val film = File(dir, "film_" + sha1(prevFilm.name + "\u0000" + out.name) + ".mp4")
                 filmFrames = if (film.isFile) FilmJoin.frames(film) else {
                     val j = FilmJoin.join(
-                        prevFilm, out, film, fps, { Log.i(TAG, it); ctx.say(it.trim()) },
+                        prevFilm, out, film, FPS, { Log.i(TAG, it); ctx.say(it.trim()) },
                         VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]),
                     )
-                    ctx.say("  joined onto the film so far: ${j.frames} frames (${"%.1f".format(j.frames.toDouble() / fps)} s)" +
+                    ctx.say("  joined onto the film so far: ${j.frames} frames (${"%.1f".format(j.frames.toDouble() / FPS)} s)" +
                         if (j.copied) "" else ", re-encoded")
                     j.frames
                 }
