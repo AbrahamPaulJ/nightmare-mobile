@@ -50,6 +50,8 @@ class WanA14Test {
         assertEquals(java.io.File(dir, ModelCatalog.WAN_HIGH_DIT).absolutePath, env["NM_WAN_HIGH_NOISE_MODEL"])
         assertEquals(java.io.File(dir, ModelCatalog.WAN_HIGH_LORA).absolutePath, env["NM_WAN_HIGH_LORA"])
         assertEquals(java.io.File(dir, ModelCatalog.WAN_LOW_LORA).absolutePath, env["NM_WAN_LOW_LORA"])
+        // ⭐ The decode stays on the NPU (direct conv): no backend override.
+        assertEquals(null, env["NM_DIT_BACKEND"])
     }
 
     @Test

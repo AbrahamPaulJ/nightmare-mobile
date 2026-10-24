@@ -253,6 +253,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480x832|loras"`,
             // every field optional. `wan_i2v` animates the newest saved picture.
             "wan_video" -> wanVideo(arg, i2v = false)
+            // ⭐ The same on Wan 2.2 14B (`npu.WanA14Node`, text to video only), same arg.
+            "wan14_video" -> wanVideo(arg, i2v = false, a14 = true)
             "wan_i2v" -> wanVideo(arg, i2v = true)
             // ⭐ GitHub #23's chaining: clip A's `last_frame` is clip B's first frame. `--es arg "WxH|seconds"`.
             "wan_chain" -> wanChain(arg)
@@ -1771,7 +1773,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * [runWorkflow] like [npuVideo]. `arg` = `prompt|seed|seconds|size|shape`, each optional; an
      * empty seed rolls. The clip is saved to the gallery when it works, so it can be watched.
      */
-    private suspend fun wanVideo(arg: String?, i2v: Boolean) {
+    private suspend fun wanVideo(arg: String?, i2v: Boolean, a14: Boolean = false) {
         val f = arg.orEmpty().split('|')
         fun at(i: Int) = f.getOrNull(i)?.trim().orEmpty()
         val uri = if (i2v) newestSavedImage() ?: run {
@@ -1787,6 +1789,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                         n.type == "core.prompt" && at(0).isNotEmpty() -> n.copy(params = n.params + ("prompt" to at(0)))
                         n.type == "core.image" && uri != null -> n.copy(params = n.params + ("uri" to uri))
                         n.type == wan.name -> n.copy(
+                            type = if (a14) com.abrah.nightmare.npu.WanA14Node.name else n.type,
                             params = n.params + listOfNotNull(
                                 at(1).takeIf { it.isNotEmpty() }?.let { "seed" to it },
                                 at(2).takeIf { it.isNotEmpty() }?.let { "seconds" to it },
@@ -1809,9 +1812,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val benchDir = java.io.File(ctx.getExternalFilesDir(null), "bench").apply { mkdirs() }
         fun benchDone(error: String?, extra: org.json.JSONObject.() -> Unit = {}) {
             if (tag.isEmpty()) return
-            val j = org.json.JSONObject().put("tag", tag).put("model", ModelCatalog.WAN22.id).put("app", BuildConfig.VERSION_NAME)
+            val j = org.json.JSONObject().put("tag", tag).put("model", (if (a14) ModelCatalog.WAN22_A14B else ModelCatalog.WAN22).id).put("app", BuildConfig.VERSION_NAME)
                 .put("prompt", at(0)).put("error", error ?: org.json.JSONObject.NULL)
-            wf.graph.nodes.firstOrNull { it.type == wan.name }?.let { n -> j.put("params", org.json.JSONObject(n.params)) }
+            wf.graph.nodes.firstOrNull { it.type in com.abrah.nightmare.WAN_TYPES }?.let { n -> j.put("params", org.json.JSONObject(n.params)) }
             j.extra()
             java.io.File(benchDir, "$tag.json").writeText(j.toString(2))
             java.io.File(benchDir, "$tag.done").writeText(if (error == null) "ok" else "error")
@@ -1823,7 +1826,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             return
         }
         val backendMs = System.currentTimeMillis() - tb
-        val spec = ModelCatalog.WAN22
+        val spec = if (a14) ModelCatalog.WAN22_A14B else ModelCatalog.WAN22
         say("wan: ${spec.label} ${if (spec.installed(ctx)) "installed" else "MISSING: ${spec.missing(ctx).joinToString()}"}, " +
             "engine ${if (DitEngine.isInstalled(ctx)) "installed" else "MISSING"}")
         val t0 = System.currentTimeMillis()

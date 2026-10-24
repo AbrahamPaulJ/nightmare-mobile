@@ -2810,7 +2810,9 @@ object ModelCatalog {
     /**
      * ⭐⭐ **Wan 2.2 T2V A14B** (Wan-AI, Apache 2.0): the big Wan, two 14B experts (high noise for the first steps,
      * low noise for the rest), QuantStack's Q4_0 GGUFs, 4 steps through lightx2v's Lightning LoRAs (Seko V1.1,
-     * rank 64, one per expert: euler, shift 5, CFG 1, two steps each, their ComfyUI workflow). The Wan 2.1 latent
+     * rank 64, one per expert: euler, shift 5, CFG 1, two steps each, their ComfyUI workflow). ⚠ The LoRAs are OUR
+     * FP16 copies (AbrahamPJ/nightmare-wan22-a14b-lightning): the originals store `alpha` as I64, which the engine
+     * aborts on ("type i32 unsupported"), and their F32 weights are twice the bytes to stream. The Wan 2.1 latent
      * space, so TAEHV's `taew2_1` decodes, and 16 fps. Its umT5 is Wan 2.2 Turbo's when Turbo is installed
      * ([ModelSpec.partsFrom]). ⚠ 8.6 GB a expert: it always STREAMS (`all=disk` + a budget, `npu.WanA14Node`), one
      * block at a time. Text to video only. Measured on the S25: `docs/VIDEO-GGML.md` §8.
@@ -2825,8 +2827,8 @@ object ModelCatalog {
         files = listOf(
             RemoteFile(HF + "QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-T2V-A14B-LowNoise-Q4_0.gguf", "dit.gguf", 8_556_458_496L),
             RemoteFile(HF + "QuantStack/Wan2.2-T2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-T2V-A14B-HighNoise-Q4_0.gguf", WAN_HIGH_DIT, 8_556_458_496L),
-            RemoteFile(HF + "lightx2v/Wan2.2-Lightning/resolve/main/Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V1.1/high_noise_model.safetensors", WAN_HIGH_LORA, 1_226_977_424L),
-            RemoteFile(HF + "lightx2v/Wan2.2-Lightning/resolve/main/Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V1.1/low_noise_model.safetensors", WAN_LOW_LORA, 1_226_977_424L),
+            RemoteFile(HF + "AbrahamPJ/nightmare-wan22-a14b-lightning/resolve/main/wan22_t2v_a14b_lightning_high_fp16.safetensors", WAN_HIGH_LORA, 613_558_320L),
+            RemoteFile(HF + "AbrahamPJ/nightmare-wan22-a14b-lightning/resolve/main/wan22_t2v_a14b_lightning_low_fp16.safetensors", WAN_LOW_LORA, 613_558_320L),
             RemoteFile(HF + "city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q4_K_M.gguf", "umt5.gguf", 3_655_145_312L),
             RemoteFile("https://raw.githubusercontent.com/madebyollin/taehv/fa579a9a726b0a55951998d73e309bfdf0abd342/safetensors/taew2_1.safetensors", "tae.safetensors", 22_642_902L),
         ),

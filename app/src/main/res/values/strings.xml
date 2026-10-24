@@ -119,7 +119,7 @@
     <string name="video_models_note">One download of %1$s GB, in 21 parts. It resumes, so a dropped connection costs only the file it was on.</string>
     <string name="video_about">Text and image to video on the NPU. No backend, no checkpoint.</string>
     <string name="wan_about">Text and image to video with Wan 2.2: 5 second clips at 832x480 or 1280x704. Slower than Neodragon and much better. 6.25 GB: the Wan 2.2 Turbo DiT, its umT5 text encoder and a small decoder.</string>
-    <string name="wan14_about">Text to video with Wan 2.2 14B, the biggest Wan: the best motion and detail, and slow. TIMES_EN 8 Elite or newer, 12 GB phones and up. About 21 GB (two 8.6 GB models, the 4-step Lightning speed-up for each); with Wan 2.2 Turbo installed its text encoder is shared. Use Wi-Fi.</string>
+    <string name="wan14_about">Text to video with Wan 2.2 14B, the biggest Wan: the best motion and detail, and slow. About 3 minutes for 1 second at 480x320 and 12 minutes for 2 seconds at 832x480 on an 8 Elite. 8 Elite or newer, 12 GB phones and up. About 18.5 GB (two 8.6 GB models, the 4-step Lightning speed-up for each); with Wan 2.2 Turbo installed its text encoder is shared. Use Wi-Fi.</string>
     <string name="mb_of_total">%1$d of %2$d MB</string>
     <string name="video_delete_title">Delete the video models?</string>
     <string name="video_delete_body">Frees %1$d MB. Getting them back is a %2$d MB download. Every video flow will refuse to run until you install them again.</string>

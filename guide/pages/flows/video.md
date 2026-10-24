@@ -2,11 +2,12 @@
 
 *A prompt, or a prompt and a photo, into a clip. Or your photo moving like a video you choose.*
 
-There are two video models. Install either, or both:
+There are three video models. Install any of them:
 
 | model | makes | needs |
 |---|---|---|
 | **Wan 2.2 Turbo** (6.25 GB) | up to 5 seconds, any shape up to 1280 × 704. The better clips; minutes per clip | Snapdragon 8 Elite or newer (alpha on 8 Gen 3: tell us if it runs) |
+| **Wan 2.2 14B** (about 18.5 GB; 3.7 GB less beside Wan 2.2 Turbo) | text to video only, up to 5 seconds. The best motion and detail, and slow: about 3 minutes for 1 second at 480 × 320, 12 minutes for 2 seconds at 832 × 480 | Snapdragon 8 Elite or newer, 12 GB of RAM |
 | **Neodragon** (about 8.6 GB) | 2 seconds at 1024 × 640 in about 25 seconds | Snapdragon 8 Elite or 8 Elite Gen 5 |
 
 Neither uses your picture model; video has its own. **Models → Video** lists both, and **Wan**
@@ -22,7 +23,7 @@ in the family menu has Wan's models on their own page.
 3. **Run.** With Wan 2.2, 5 seconds at 832 × 480 takes under **3 minutes** (about 2:45) on an 8 Elite; the
    bar moves once per step, four steps, then the clip is decoded and encoded.
 
-The video node's **Model** switches between **Wan 2.2** (the default) and **Neodragon (fast)**.
+The video node's **Model** switches between **Wan 2.2** (the default), **Wan 14B** (text to video only, offered while no picture is wired) and **Neodragon (fast)**.
 **Use** on Neodragon in Models opens the flow on Neodragon.
 
 The clip **loops on the node** that made it; tap it to play it full screen. With **Save** on

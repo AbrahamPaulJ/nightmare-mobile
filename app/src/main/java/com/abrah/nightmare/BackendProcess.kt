@@ -572,6 +572,8 @@ object BackendProcess {
     /**
      * ⭐ Pure: the engine's Wan 2.2 A14B environment (`dit/044`) for a model folder holding a high-noise expert
      * ([ModelCatalog.WAN_HIGH_DIT]), else nothing: the 5B models launch exactly as before.
+     * ⭐ The decode stays on the NPU: TAEHV's `taew2_1` there is 1.4 s for 17 frames at 480x272 and 49 dB from the CPU's
+     * 34 s, with the direct convolution the pipeline uses (`docs/VIDEO-GGML.md` §8; without it, purple mush).
      */
     internal fun wanA14Env(model: File): Map<String, String> {
         val high = File(model, ModelCatalog.WAN_HIGH_DIT).takeIf { it.isFile } ?: return emptyMap()

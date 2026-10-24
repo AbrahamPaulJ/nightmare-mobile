@@ -285,8 +285,10 @@ Wan 2.2 T2V A14B (video)
 Wan 2.2 Lightning (Wan 2.2 14B's 4-step LoRAs)
     lightx2v
     https://huggingface.co/lightx2v/Wan2.2-Lightning
-    Apache 2.0. Downloaded by the app at the user's request and applied at
-    run time, unmodified; not included here.
+    https://huggingface.co/AbrahamPJ/nightmare-wan22-a14b-lightning (re-hosted
+    with the weights stored as F16 and the alpha scalars as F32, values otherwise
+    unchanged). Apache 2.0. Downloaded by the app at the user's request and
+    applied at run time; not included here.
 
 umT5-XXL encoder (Wan 2.2's text encoder)
     Google; GGUF by city96

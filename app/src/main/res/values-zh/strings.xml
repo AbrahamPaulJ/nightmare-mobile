@@ -144,7 +144,7 @@
     <string name="video">视频</string>
     <string name="video_about">在 NPU 上由文字和图片生成视频。无需后端，无需检查点。</string>
     <string name="wan_about">使用 Wan 2.2 由文字和图片生成视频：5 秒视频，832x480 或 1280x704。比 Neodragon 慢，但效果好得多。共 6.25 GB：Wan 2.2 Turbo DiT、umT5 文本编码器和一个小型解码器。</string>
-    <string name="wan14_about">使用 Wan 2.2 14B（最大的 Wan）由文字生成视频：动作和细节最好，但速度慢。TIMES_ZH需要 8 Elite 或更新芯片、12 GB 及以上内存。约 21 GB（两个 8.6 GB 模型，各带 4 步 Lightning 加速）；如已安装 Wan 2.2 Turbo，则共用它的文本编码器。请使用 Wi-Fi。</string>
+    <string name="wan14_about">使用 Wan 2.2 14B（最大的 Wan）由文字生成视频：动作和细节最好，但速度慢。8 Elite 上 480x320 的 1 秒约 3 分钟，832x480 的 2 秒约 12 分钟。需要 8 Elite 或更新芯片、12 GB 及以上内存。约 18.5 GB（两个 8.6 GB 模型，各带 4 步 Lightning 加速）；如已安装 Wan 2.2 Turbo，则共用它的文本编码器。请使用 Wi-Fi。</string>
     <string name="video_delete_body">将释放 %1$d MB。要找回它们需要下载 %2$d MB。在重新安装之前，所有视频工作流都无法运行。</string>
     <string name="video_delete_title">删除视频模型？</string>
     <string name="video_models">Neodragon</string>
