@@ -47,7 +47,6 @@
     <string name="theme_system">Как в системе</string>
     <string name="theme_dark">Тёмная</string>
     <string name="theme_light">Светлая</string>
-    <string name="theme_canvas_note">холст в любом случае рисуется тёмным: у него своя палитра</string>
 
     <string name="flows_import">Импорт схемы</string>
     <string name="flows_import_note">Схема (.json), которую вам прислали. Она откроется на холсте.</string>
@@ -1303,4 +1302,12 @@
     <string name="clip_frame_failed">Не удалось сохранить этот кадр</string>
     <string name="theme_black">Чёрная (AMOLED)</string>
     <string name="theme_black_note">Тёмная с настоящим чёрным фоном: экономит заряд на OLED-экранах</string>
+    <string name="accent_title">Цвет акцента</string>
+    <string name="accent_note">Кнопки, выделение и выбранный узел. Цвета узлов и моделей не меняются.</string>
+    <string name="accent_violet">Фиолетовый</string>
+    <string name="accent_wallpaper">Из обоев</string>
+    <string name="accent_blue">Синий</string>
+    <string name="accent_teal">Бирюзовый</string>
+    <string name="accent_orange">Оранжевый</string>
+    <string name="accent_pink">Розовый</string>
 </resources>

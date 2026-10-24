@@ -38,6 +38,14 @@ import com.abrah.nightmare.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
@@ -79,6 +87,9 @@ import com.abrah.nightmare.Prefs
 fun SettingsScreen(
     theme: Prefs.Theme,
     onTheme: (Prefs.Theme) -> Unit,
+    /** ⭐ The accent colour, apart from the theme (`ui/Accents.kt`). */
+    accent: Prefs.Accent = Prefs.Accent.VIOLET,
+    onAccent: (Prefs.Accent) -> Unit = {},
     /**
      * ⭐ Whether this app is currently exempt from Doze/App Standby battery
      * optimisation. Read fresh from `PowerManager` by the caller — this
@@ -266,12 +277,13 @@ fun SettingsScreen(
                                 if (t == Prefs.Theme.BLACK) {
                                     Text(stringResource(R.string.theme_black_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                if (t == Prefs.Theme.LIGHT) {
-                                    Text(stringResource(R.string.theme_canvas_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
                             }
                         }
                     }
+                }
+                StudioCard {
+                    SectionHeading(stringResource(R.string.accent_title), stringResource(R.string.accent_note))
+                    AccentSwatches(accent, onAccent)
                 }
                 // ⭐ The views (2026-10-08): which one opens, and Nodes side to side or top to bottom.
                 // ⚠ Agent is not offered as the default — it needs a key first.
@@ -958,4 +970,65 @@ private fun TagDictionaryCard(
             }
         }
     }
+}
+
+/**
+ * ⭐ The accent colours as swatches, one tap each (a tester's wish, 2026-10-24). A swatch is the colour itself, so
+ * this is a row of circles rather than [SettingsScreen]'s radio rows; the selected one carries a ring and a tick, and
+ * its NAME is written under the row, so colour is never the only signal. Wallpaper only on Android 12+.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun AccentSwatches(accent: Prefs.Accent, onAccent: (Prefs.Accent) -> Unit) {
+    val context = LocalContext.current
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val choices = Prefs.Accent.entries.filter {
+        it != Prefs.Accent.WALLPAPER || android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+    }
+    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth()) {
+        for (a in choices) {
+            // ⭐ The wallpaper swatch is its three colours swept round the circle, so it reads as "from the
+            // wallpaper" rather than as one more colour.
+            val fill = if (a == Prefs.Accent.WALLPAPER && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                (if (dark) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context))
+                    .let { androidx.compose.ui.graphics.Brush.sweepGradient(listOf(it.primary, it.secondary, it.tertiary, it.primary)) }
+            } else androidx.compose.ui.graphics.SolidColor(paletteOf(a).let { if (dark) it.fill else it.lightFill })
+            val name = stringResource(accentName(a))
+            androidx.compose.foundation.layout.Box(
+                Modifier.size(48.dp)
+                    .selectable(selected = accent == a, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = { onAccent(a) })
+                    .semantics { contentDescription = name },
+                contentAlignment = Alignment.Center,
+            ) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.size(36.dp)
+                        .then(
+                            if (accent == a) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, androidx.compose.foundation.shape.CircleShape)
+                            else Modifier,
+                        )
+                        .padding(if (accent == a) 4.dp else 0.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(fill, androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (accent == a) {
+                        androidx.compose.material3.Icon(
+                            androidx.compose.material.icons.Icons.Filled.Check, contentDescription = null,
+                            tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+    Text(stringResource(accentName(accent)), style = MaterialTheme.typography.bodyLarge)
+}
+
+private fun accentName(a: Prefs.Accent): Int = when (a) {
+    Prefs.Accent.VIOLET -> R.string.accent_violet
+    Prefs.Accent.WALLPAPER -> R.string.accent_wallpaper
+    Prefs.Accent.BLUE -> R.string.accent_blue
+    Prefs.Accent.TEAL -> R.string.accent_teal
+    Prefs.Accent.ORANGE -> R.string.accent_orange
+    Prefs.Accent.PINK -> R.string.accent_pink
 }

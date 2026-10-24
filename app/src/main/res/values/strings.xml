@@ -60,7 +60,6 @@
     <string name="theme_system">Follow the system</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
-    <string name="theme_canvas_note">the canvas is drawn dark either way. Its palette is its own</string>
     <string name="battery_title">Keep rendering in the background</string>
     <string name="battery_body">This phone\'s battery manager may stop the app while it is not on screen, which can end a render in progress or drop the model that was loaded. Allowing it to run unrestricted keeps that from happening.</string>
     <string name="battery_allow">Allow in background</string>
@@ -1307,4 +1306,12 @@
     <string name="clip_frame_failed">This frame could not be saved</string>
     <string name="theme_black">Black (AMOLED)</string>
     <string name="theme_black_note">Dark with true-black backgrounds: saves power on OLED screens</string>
+    <string name="accent_title">Accent colour</string>
+    <string name="accent_note">Buttons, highlights and the selected node. Node and model colours stay the same.</string>
+    <string name="accent_violet">Violet</string>
+    <string name="accent_wallpaper">From your wallpaper</string>
+    <string name="accent_blue">Blue</string>
+    <string name="accent_teal">Teal</string>
+    <string name="accent_orange">Orange</string>
+    <string name="accent_pink">Pink</string>
 </resources>

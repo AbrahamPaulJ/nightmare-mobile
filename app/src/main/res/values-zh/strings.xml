@@ -47,7 +47,6 @@
     <string name="theme_system">跟随系统</string>
     <string name="theme_dark">深色</string>
     <string name="theme_light">浅色</string>
-    <string name="theme_canvas_note">画布始终以深色绘制，它有自己的配色</string>
 
     <string name="flows_import">导入流程</string>
     <string name="flows_import_note">别人发给你的流程（.json）。它会在画布上打开。</string>
@@ -1276,4 +1275,12 @@
     <string name="clip_frame_failed">无法保存此帧</string>
     <string name="theme_black">纯黑 (AMOLED)</string>
     <string name="theme_black_note">纯黑背景的深色主题：在 OLED 屏幕上更省电</string>
+    <string name="accent_title">强调色</string>
+    <string name="accent_note">按钮、高亮和选中的节点。节点和模型的颜色保持不变。</string>
+    <string name="accent_violet">紫色</string>
+    <string name="accent_wallpaper">跟随壁纸</string>
+    <string name="accent_blue">蓝色</string>
+    <string name="accent_teal">青色</string>
+    <string name="accent_orange">橙色</string>
+    <string name="accent_pink">粉色</string>
 </resources>

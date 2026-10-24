@@ -25,15 +25,19 @@ open class SettingsScreenshotTest {
         PromptTranslate.Source.ZH to ToolRow("Chinese → English", PromptTranslate.Source.ZH.bytes, installed = false),
     )
 
-    private fun shoot(name: String, page: Int, downloadFolder: Boolean = false, black: Boolean = false) =
+    private fun shoot(
+        name: String, page: Int, downloadFolder: Boolean = false, black: Boolean = false,
+        accent: Prefs.Accent = Prefs.Accent.VIOLET, dark: Boolean = true,
+    ) =
         captureRoboImage(filePath = goldenPath(this, name)) {
-            NightmareTheme(darkTheme = true, black = black) {
+            NightmareTheme(darkTheme = dark, black = black, accent = accent) {
                 // ⚠ The sheet supplies the content colour in the app; without a
                 // Surface every heading here draws black on black.
                 androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
                 SettingsScreen(
                     theme = if (black) Prefs.Theme.BLACK else Prefs.Theme.SYSTEM,
                     onTheme = {},
+                    accent = accent,
                     loras = emptyList(),
                     onImportLora = {},
                     embeddings = emptyList(),
@@ -61,6 +65,9 @@ open class SettingsScreenshotTest {
     @Test fun appearance() = shoot("settings-appearance", 0)
     /** ⭐ The Black theme (2026-10-24): true-black page, near-black cards, the violet unchanged. */
     @Test fun appearanceBlack() = shoot("settings-appearance-black", 0, black = true)
+    /** ⭐ The accents (2026-10-24): blue on dark, pink on light; every surface and control follows, nothing else. */
+    @Test fun appearanceBlue() = shoot("settings-appearance-blue", 0, accent = Prefs.Accent.BLUE)
+    @Test fun appearancePinkLight() = shoot("settings-appearance-pink-light", 0, accent = Prefs.Accent.PINK, dark = false)
     @Test fun prompts() = shoot("settings-prompts", 1)
     @Test fun models() = shoot("settings-models", 2, downloadFolder = true)
     @Test fun advanced() = shoot("settings-advanced", 3)

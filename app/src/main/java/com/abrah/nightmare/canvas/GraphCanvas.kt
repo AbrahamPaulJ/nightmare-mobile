@@ -90,7 +90,13 @@ object CanvasColors {
     val grid get() = pick(0xFF16161F, 0xFFE8E8EE)
     val nodeBody get() = pick(0xFF1A1A24, 0xFFF6F6F9)
     val nodeStroke get() = pick(0xFF2A2A38, 0xFFD3D3DD)
-    val selectedStroke get() = pick(0xFF9B6BFF, 0xFF7C4DFF)
+    /**
+     * ⭐ The selection hue and a selected node's raised body, in the accent the theme picked (`NightmareTheme`,
+     * `ui/Accents.kt`), already for this light or dark. Violet's are the original (dark, light) pairs.
+     */
+    var selection by androidx.compose.runtime.mutableStateOf(Color(0xFF9B6BFF) to Color(0xFF26263A))
+
+    val selectedStroke get() = selection.first
 
     /**
      * ⭐ A selected node is drawn RAISED, and these are the two halves of it: a
@@ -101,15 +107,15 @@ object CanvasColors {
      * halo is the SAME purple as the selection stroke it surrounds, so the
      * canvas still spends exactly one colour on state and one on category.
      */
-    val selectedBody get() = pick(0xFF26263A, 0xFFF1ECFF)
-    val selectedGlow get() = pick(0xFF9B6BFF, 0xFF7C4DFF)
+    val selectedBody get() = selection.second
+    val selectedGlow get() = selection.first
 
     /** ⚠ Under a raised node. Only ever drawn against [background]; a grey on white. */
     val shadow get() = pick(0xFF000000, 0xFF9A9AAA)
     val title get() = pick(0xFFEDEDF2, 0xFF16161D)
     val label get() = pick(0xFF9A9AA8, 0xFF5E5E6E)
     val edge get() = pick(0xFF4A4A5C, 0xFFB4B4C2)
-    val edgeLive get() = pick(0xFF9B6BFF, 0xFF7C4DFF)
+    val edgeLive get() = selection.first
     val ran get() = pick(0xFF6BFF9B, 0xFF1C9E55)
     val cached get() = pick(0xFF6BA8FF, 0xFF2F74D6)
     val failed get() = pick(0xFFFF6B6B, 0xFFD93838)

@@ -212,7 +212,7 @@ class MainActivity : ComponentActivity() {
                     isAppearanceLightNavigationBars = !dark
                 }
             }
-            NightmareTheme(darkTheme = dark, black = vm.theme == Prefs.Theme.BLACK) {
+            NightmareTheme(darkTheme = dark, black = vm.theme == Prefs.Theme.BLACK, accent = vm.accent) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     // ⭐ What a reportable ErrorNotice's share icon opens.
                     androidx.compose.runtime.CompositionLocalProvider(
@@ -987,6 +987,8 @@ fun HarnessScreen(
         com.abrah.nightmare.ui.SettingsScreen(
             theme = vm.theme,
             onTheme = vm::chooseTheme,
+            accent = vm.accent,
+            onAccent = vm::chooseAccent,
             batteryUnrestricted = batteryUnrestricted,
             onRequestBatteryUnrestricted = {
                 // ⚠⚠ The DIRECT request, not just a link to the settings list —

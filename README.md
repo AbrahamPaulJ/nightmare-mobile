@@ -98,7 +98,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 
 ### Your phone, your files
 - **English, Chinese and Russian**: the app follows your phone's language.
-- **Themes**: follow the system, Dark, Black (AMOLED, true-black backgrounds) or Light.
+- **Themes**: follow the system, Dark, Black (AMOLED, true-black backgrounds) or Light, with a violet, blue, teal, orange or pink accent, or your wallpaper's colours on Android 12 and up.
 - **Models where you can see them**: optionally in `Download/Nightmare`, surviving an uninstall.
 - **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches and the DiT engine (which falls back from GitHub to Hugging Face by itself); large files come over four connections at once. Tap Download on a second model while one downloads and it waits its turn.
 - **Your RAM back**: the model is released when you leave, and right after a run that leaves the phone short of memory (so the screen stays responsive); low-RAM switches for SDXL and Anima, and one that streams the video model for phones whose clips come out as a coloured grid.

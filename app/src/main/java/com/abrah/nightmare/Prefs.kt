@@ -18,6 +18,7 @@ object Prefs {
 
     private const val FILE = "nightmare.prefs"
     private const val KEY_THEME = "theme"
+    private const val KEY_ACCENT = "accent"
     private const val KEY_MIRROR = "download_base"
 
     /**
@@ -28,6 +29,15 @@ object Prefs {
      */
     /** ⭐ BLACK: dark with true-black backgrounds for OLED screens (a tester's wish, 2026-10-24). Stored by name. */
     enum class Theme { SYSTEM, DARK, BLACK, LIGHT }
+
+    /**
+     * ⭐ The accent colour, apart from light or dark (a tester's wish, 2026-10-24: "too monotonous"). VIOLET is the
+     * default look; WALLPAPER is Android 12+'s Material You, offered only there. Stored by name. `ui/Accents.kt`.
+     */
+    enum class Accent { VIOLET, WALLPAPER, BLUE, TEAL, ORANGE, PINK }
+
+    @Volatile var accent: Accent = Accent.VIOLET
+        private set
 
     /**
      * ⚠ Backing state so Compose recomposes; loaded by [load] before first draw.
@@ -43,6 +53,9 @@ object Prefs {
         // file survives a downgrade, and a theme nobody recognises must not
         // stop the app opening.
         theme = Theme.entries.firstOrNull { it.name == raw } ?: Theme.SYSTEM
+        accent = Accent.entries.firstOrNull {
+            it.name == context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_ACCENT, null)
+        } ?: Accent.VIOLET
         downloadBase = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
             .getString(KEY_MIRROR, null)?.takeIf { it.isNotBlank() } ?: HF_ORIGIN
         civitaiKey = loadCivitaiKey(context)
@@ -164,6 +177,12 @@ object Prefs {
         matureContent = value
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_MATURE, value).apply()
+    }
+
+    fun setAccent(context: Context, value: Accent) {
+        accent = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString(KEY_ACCENT, value.name).apply()
     }
 
     fun setTheme(context: Context, value: Theme) {

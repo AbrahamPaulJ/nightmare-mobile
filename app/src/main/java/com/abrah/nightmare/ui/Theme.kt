@@ -1,6 +1,11 @@
 package com.abrah.nightmare.ui
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import com.abrah.nightmare.Prefs
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -14,10 +19,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * ⚠ Dynamic color is deliberately absent, not forgotten (docs/UI.md section 1).
- * A wallpaper-derived palette makes every install look like a different app, and
- * node-category colors must be stable across devices or a shared screenshot
- * stops meaning anything.
+ * ⭐ Wallpaper colours (Material You) are an OPTION, not the look (`Prefs.Accent.WALLPAPER`, a tester's wish,
+ * 2026-10-24): the default stays violet, and node-category and family colours never follow the wallpaper, so a
+ * shared screenshot still means the same thing (docs/UI.md section 1).
  */
 /**
  * ⭐⭐ The 2026-10-05 look — the user's concept art: a deep violet-black ground,
@@ -27,17 +31,9 @@ import androidx.compose.ui.unit.sp
  */
 val NightSurface = Color(0xFF0D0914)   // keep in step with res/values/colors.xml
 
-// ⭐⭐ Violet Studio (the user's design pack, 2026-10-08) — its exact tokens. Plum cards a step
-// over a near-black ground, one violet for filled actions (#8B4DEE: white on it is 4.78:1;
-// the brighter #985CFF is the ACCENT — focus, accent text — never a button fill).
-private val NightCard = Color(0xFF1B1428)        // surface: cards, fields, navigation
-private val NightRaised = Color(0xFF251B36)      // surfaceRaised: sheets, selected secondary
-private val NightBorder = Color(0xFF3A2B50)
-private val NightOn = Color(0xFFF4EFFA)
-private val NightOnMuted = Color(0xFFB6A6C8)     // 7.88:1 on a card
-
-/** The one accent. Node *category* and model *family* are the only other hues. */
-private val Ember = Color(0xFF8B4DEE)
+// ⭐⭐ Violet Studio (the user's design pack, 2026-10-08): plum cards a step over a near-black ground, one violet
+// for filled actions (#8B4DEE: white on it is 4.78:1; the brighter #985CFF is the ACCENT, focus and accent text,
+// never a button fill). Its exact tokens are [VioletPalette]; the other accents turn its hue (`Accents.kt`).
 /** ⭐ Focus outlines and accent text on dark — not a fill. */
 val Accent = Color(0xFF985CFF)
 /** ⭐ Ready / succeeded. ⚠ Readiness only — never unsaved work. */
@@ -46,53 +42,52 @@ val Success = Color(0xFF6FE3AE)
 val Warning = Color(0xFFF4C16C)
 
 /**
- * ⭐ The Black theme (a tester's wish, 2026-10-24: "an AMOLED black theme"): [NightmareDark] with true-black
+ * ⭐ The Black theme (a tester's wish, 2026-10-24: "an AMOLED black theme"): [darkScheme] with true-black
  * background and surfaces, so an OLED screen's unlit pixels stay off. Cards and sheets step up in near-black
- * neutrals so they still read as layers; the violet accents are unchanged.
+ * neutrals so they still read as layers; the accents are unchanged.
  */
-private val NightmareBlack by lazy {
-    NightmareDark.copy(
-        background = Color.Black,
-        surface = Color.Black,
-        surfaceContainerLowest = Color.Black,
-        surfaceContainerLow = Color(0xFF0A080E),
-        surfaceContainer = Color(0xFF131018),
-        surfaceVariant = Color(0xFF131018),
-        surfaceContainerHigh = Color(0xFF1C1724),
-        surfaceContainerHighest = Color(0xFF26202F),
-    )
-}
+private fun ColorScheme.blacked(p: AccentPalette) = copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = p.bLow,
+    surfaceContainer = p.bCont,
+    surfaceVariant = p.bCont,
+    surfaceContainerHigh = p.bHigh,
+    surfaceContainerHighest = p.bHighest,
+)
 
-private val NightmareDark = darkColorScheme(
-    primary = Ember,
+/** ⭐ The dark scheme in [p]'s accent; [VioletPalette] is Violet Studio's exact tokens (above). */
+private fun darkScheme(p: AccentPalette) = darkColorScheme(
+    primary = p.fill,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFF35204F),
-    onPrimaryContainer = NightOn,
-    secondary = Accent,
-    secondaryContainer = Color(0xFF35204F),
-    onSecondaryContainer = NightOn,
-    surface = NightSurface,
-    onSurface = NightOn,
-    surfaceVariant = NightCard,
-    onSurfaceVariant = NightOnMuted,
-    surfaceTint = Ember,
-    surfaceContainerLowest = Color(0xFF09060F),
-    surfaceContainerLow = Color(0xFF140F1F),
-    surfaceContainer = NightCard,
-    surfaceContainerHigh = NightRaised,
-    surfaceContainerHighest = Color(0xFF2E2242),
-    background = NightSurface,
-    onBackground = NightOn,
-    outline = NightBorder,
-    outlineVariant = Color(0xFF2C2140),
+    primaryContainer = p.container,
+    onPrimaryContainer = p.on,
+    secondary = p.accent,
+    secondaryContainer = p.container,
+    onSecondaryContainer = p.on,
+    surface = p.surface,
+    onSurface = p.on,
+    surfaceVariant = p.card,
+    onSurfaceVariant = p.onMuted,
+    surfaceTint = p.fill,
+    surfaceContainerLowest = p.lowest,
+    surfaceContainerLow = p.low,
+    surfaceContainer = p.card,
+    surfaceContainerHigh = p.raised,
+    surfaceContainerHighest = p.highest,
+    background = p.surface,
+    onBackground = p.on,
+    outline = p.border,
+    outlineVariant = p.outlineVar,
     // ⚠⚠ Every remaining role SET (the review, 2026-10-22): an unset `tertiary` fell back
     // to Material's baseline PINK on the LoRA picker and Models, and the default `onError`
     // is WHITE, which on #FF7B92 is 2.47:1, the label of every confirmed delete.
-    tertiary = Accent,
-    onTertiary = NightSurface,
-    tertiaryContainer = Color(0xFF35204F),
-    onTertiaryContainer = NightOn,
-    onSecondary = NightSurface,
+    tertiary = p.accent,
+    onTertiary = p.surface,
+    tertiaryContainer = p.container,
+    onTertiaryContainer = p.on,
+    onSecondary = p.surface,
     error = Color(0xFFFF7B92),
     onError = Color(0xFF3B0A14),
     errorContainer = Color(0xFF4A1622),
@@ -105,24 +100,24 @@ private val NightmareDark = darkColorScheme(
  * lavender tint, under a graph canvas that stayed dark. Now the surfaces are
  * white and the containers neutral greys, and the canvas turns white with them
  * ([com.abrah.nightmare.canvas.CanvasColors.light]). Dark is untouched.
- * ⚠ The accent is still [Ember], deepened a step so it holds contrast on white.
+ * ⚠ The accent is [AccentPalette.lightFill], deepened a step so it holds contrast on white.
  */
 private val LightOn = Color(0xFF16161D)
 private val LightOnMuted = Color(0xFF5E5E6E)
 
-private val NightmareLight = lightColorScheme(
-    primary = Color(0xFF7C4DFF),
+private fun lightScheme(p: AccentPalette) = lightColorScheme(
+    primary = p.lightFill,
     // ⚠ The containers SET too: left out, Material's lavender came back in a selected card.
-    primaryContainer = Color(0xFFEDE5FF),
-    onPrimaryContainer = Color(0xFF21143F),
-    secondary = Color(0xFF6E3BD8),
+    primaryContainer = p.lightContainer,
+    onPrimaryContainer = p.lightOnContainer,
+    secondary = p.lightText,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFEDE5FF),
-    onSecondaryContainer = Color(0xFF21143F),
-    tertiary = Color(0xFF6E3BD8),
+    secondaryContainer = p.lightContainer,
+    onSecondaryContainer = p.lightOnContainer,
+    tertiary = p.lightText,
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFEDE5FF),
-    onTertiaryContainer = Color(0xFF21143F),
+    tertiaryContainer = p.lightContainer,
+    onTertiaryContainer = p.lightOnContainer,
     onPrimary = Color.White,
     background = Color.White,
     onBackground = LightOn,
@@ -161,19 +156,21 @@ data class StudioColors(
     val warning: Color,
 )
 
-private val DarkStudio = StudioColors(
-    accentText = Color(0xFFB08AFF),
-    controlBorder = Color(0xFF74609A),
+private fun darkStudio(p: AccentPalette) = StudioColors(
+    accentText = p.text,
+    controlBorder = p.controlBorder,
     success = Success,
     warning = Warning,
 )
 
-private val LightStudio = StudioColors(
-    accentText = Color(0xFF6E3BD8),
+private fun lightStudio(p: AccentPalette) = StudioColors(
+    accentText = p.lightText,
     controlBorder = Color(0xFF85859A),
     success = Color(0xFF1B7F52),
     warning = Color(0xFF8A5A00),
 )
+
+private val DarkStudio = darkStudio(VioletPalette)
 
 val LocalStudioColors = androidx.compose.runtime.staticCompositionLocalOf { DarkStudio }
 
@@ -233,24 +230,67 @@ val MeasureTextStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 1
 @Composable
 fun NightmareTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    /** ⭐ The Black theme ([NightmareBlack]); only with [darkTheme]. */
+    /** ⭐ The Black theme ([blacked]); only with [darkTheme]. */
     black: Boolean = false,
+    /** ⭐ The accent colour (`Accents.kt`); [Prefs.Accent.WALLPAPER] is Android 12+'s, violet before it. */
+    accent: Prefs.Accent = Prefs.Accent.VIOLET,
     content: @Composable () -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val wallpaper = accent == Prefs.Accent.WALLPAPER && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val p = paletteOf(accent)
+    val scheme = when {
+        wallpaper && !darkTheme -> dynamicLightColorScheme(context)
+        wallpaper -> dynamicDarkColorScheme(context).let { if (black) it.blacked(NeutralBlack) else it }
+        !darkTheme -> lightScheme(p)
+        black -> darkScheme(p).blacked(p)
+        else -> darkScheme(p)
+    }
+    // ⚠ The wallpaper's own roles stand in for the ones Material has no slot for: `primary` is its text-strength
+    // tone on a surface (80 dark, 40 light) and `outline` its 3:1 control edge.
+    val studio = when {
+        wallpaper -> (if (darkTheme) darkStudio(p) else lightStudio(p)).copy(accentText = scheme.primary, controlBorder = scheme.outline)
+        darkTheme -> darkStudio(p)
+        else -> lightStudio(p)
+    }
     // ⚠ Before the content composes, so the canvas's first frame is already
     // the right one. A state write: flipping the theme redraws the canvas.
     com.abrah.nightmare.canvas.CanvasColors.light = !darkTheme
     com.abrah.nightmare.canvas.CanvasColors.black = black && darkTheme
+    com.abrah.nightmare.canvas.CanvasColors.selection = when {
+        wallpaper -> scheme.primary to if (darkTheme) p.canvasSel else scheme.secondaryContainer
+        darkTheme -> p.canvasStroke to p.canvasSel
+        else -> p.lightCanvasStroke to p.lightCanvasSel
+    }
     MaterialTheme(
-        colorScheme = if (!darkTheme) NightmareLight else if (black) NightmareBlack else NightmareDark,
+        colorScheme = scheme,
         typography = InterTypography,
         shapes = StudioShapes,
     ) {
         androidx.compose.runtime.CompositionLocalProvider(
-            LocalStudioColors provides if (darkTheme) DarkStudio else LightStudio,
+            LocalStudioColors provides studio,
             content = content,
         )
     }
+}
+
+internal fun paletteOf(a: Prefs.Accent): AccentPalette = when (a) {
+    Prefs.Accent.BLUE -> BluePalette
+    Prefs.Accent.TEAL -> TealPalette
+    Prefs.Accent.ORANGE -> OrangePalette
+    Prefs.Accent.PINK -> PinkPalette
+    Prefs.Accent.VIOLET, Prefs.Accent.WALLPAPER -> VioletPalette
+}
+
+/** ⚠ The wallpaper's Black layers: plain near-black greys, since its hue is not known here. */
+private val NeutralBlack = VioletPalette.let {
+    AccentPalette(
+        it.fill, it.accent, it.text, it.lightFill, it.lightText, it.surface, it.card, it.raised, it.lowest, it.low,
+        it.highest, it.container, it.border, it.outlineVar, it.onMuted, it.on, it.controlBorder,
+        bLow = Color(0xFF0A0A0A), bCont = Color(0xFF121212), bHigh = Color(0xFF1B1B1B), bHighest = Color(0xFF252525),
+        canvasSel = it.canvasSel, lightContainer = it.lightContainer, lightOnContainer = it.lightOnContainer,
+        canvasStroke = it.canvasStroke, lightCanvasStroke = it.lightCanvasStroke, lightCanvasSel = it.lightCanvasSel,
+    )
 }
 
 /**

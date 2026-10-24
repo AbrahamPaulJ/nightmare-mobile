@@ -127,6 +127,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     var theme by mutableStateOf(Prefs.theme)
 
+    /** ⭐ The accent colour, mirrored like [theme]. */
+    var accent by mutableStateOf(Prefs.accent)
+
     /**
      * ⭐⭐ Where model files are fetched from — **an observable copy of
      * [Prefs.downloadBase]**, for the same reason [theme] is one.
@@ -280,6 +283,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun chooseTheme(value: Prefs.Theme) {
         Prefs.setTheme(getApplication(), value)
         theme = value
+    }
+
+    fun chooseAccent(value: Prefs.Accent) {
+        Prefs.setAccent(getApplication(), value)
+        accent = value
     }
 
     /**

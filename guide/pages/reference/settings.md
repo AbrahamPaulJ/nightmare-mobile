@@ -12,8 +12,15 @@ Open Settings from the sidebar (☰ at the top left). It has five tabs: **Appear
 ### Theme
 
 **Follow the system**, **Dark**, **Black (AMOLED)** or **Light**. Black is Dark with true-black
-backgrounds, which saves power on an OLED screen. The canvas itself is always drawn dark (true black
-under Black); the theme changes everything around it.
+backgrounds, which saves power on an OLED screen. The canvas follows it: white under Light, true black
+under Black.
+
+### Accent colour
+
+The colour of buttons, highlights and the selected node: **Violet** (the default), **Blue**, **Teal**,
+**Orange** or **Pink**, or on Android 12 and up **From your wallpaper** (Material You). It works with any
+theme. The colours of node types and model families stay the same whatever you pick, so a screenshot
+reads the same on every phone.
 
 ### Views
 
