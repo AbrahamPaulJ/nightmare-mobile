@@ -24,7 +24,7 @@ The list is ordered by **what the flow asks of your phone**, lightest first:
 | [Image edit](image-edit.md) | A photo changed to follow an instruction | FLUX.2 or Qwen Image, 8 Gen 3 |
 | [Text to video](video.md) | A prompt in, a 2-second clip out | the video models, 8 Elite |
 | [Image to video](video.md#image-to-video) | A photo brought to life | the video models, 8 Elite |
-| [Text to video, Wan 2.2](video.md#wan-22-better-clips-slower) | Up to 5 seconds, much better, about 3 minutes | Wan 2.2, 8 Elite (alpha on 8 Gen 3) |
+| [Text to video, Wan 2.2](video.md#wan-22-better-clips-slower) | Up to 5 seconds, much better, under 3 minutes | Wan 2.2, 8 Elite (alpha on 8 Gen 3) |
 | [Image to video, Wan 2.2](video.md#wan-22-better-clips-slower) | A photo as the first frame of a 5 second clip | Wan 2.2, 8 Elite (alpha on 8 Gen 3) |
 
 A flow your phone cannot run is **shown dimmed** and says why, including the chip it has and the

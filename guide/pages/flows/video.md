@@ -19,7 +19,7 @@ in the family menu has Wan's models on their own page.
 1. **Flows → Text to video.**
 2. Write the prompt: describe the scene *and the motion*. `waves rolling onto a beach at
    sunset, camera slowly panning right`.
-3. **Run.** With Wan 2.2, 5 seconds at 832 × 480 takes about **3 minutes** on an 8 Elite; the
+3. **Run.** With Wan 2.2, 5 seconds at 832 × 480 takes under **3 minutes** (about 2:45) on an 8 Elite; the
    bar moves once per step, four steps, then the clip is decoded and encoded.
 
 The video node's **Model** switches between **Wan 2.2** (the default) and **Neodragon (fast)**.
