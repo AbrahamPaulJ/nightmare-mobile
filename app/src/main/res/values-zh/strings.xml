@@ -1001,6 +1001,8 @@
     <string name="inspector_seed_label">种子</string>
     <string name="inspector_seed_random_short">随机</string>
     <string name="results_meta_seed">种子 %1$s</string>
+    <string name="language_title">语言</string>
+    <string name="language_system">跟随手机语言</string>
     <string name="theme_title">主题</string>
     <string name="views_note">应用打开时显示哪个视图，以及默认视图如何排列步骤。</string>
     <string name="api_reveal">显示</string>

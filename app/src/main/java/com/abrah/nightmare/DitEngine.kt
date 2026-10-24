@@ -68,7 +68,13 @@ object DitEngine {
      * decode's seam flicker, `docs/VIDEO-GGML.md` §3). Still ABI 106: an engine without 018 ignores
      * the key, so the backend did not move. CI run 38509077877; skels unchanged.
      *
-     * ⭐⭐ The engine current since 1.6.233: `dit-engine-abi108-flux3wan`, CI 40107042364: the wanfa engine + `dit/042`
+     * ⭐⭐ The engine current since 1.6.235: `dit-engine-abi108-a14fast`, CI 40137515324: flux3wan + `dit/046` (a Wan
+     * 2.2 14B block in token chunks: 832x480 5 s fits 4.5 GiB, byte-identical), `dit/047`/`048` (MOSS-Image edit
+     * references and a per-model reference preset, unused until the backend's `NM_DIT_NATIVE_EDIT`), `dit/049` (the
+     * 14B's high-noise Lightning LoRA reaches the high-noise expert: before it every tensor was filtered out and the
+     * first two steps ran undistilled) and `dit/050` (streamed weights load while the previous segment computes:
+     * 320x480 1 s 182 to 106 s, 480x832 1 s 372 to 273 s, byte-identical). Still ABI 108; skels unchanged.
+     * The TWENTIETH engine: `dit-engine-abi108-flux3wan`, CI 40107042364: the wanfa engine + `dit/042`
      * (FLUX.3 Image Klein, a backport of upstream #2143), `dit/043` (its fused Q/K norm + rope), `dit/044` (Wan 2.2
      * A14B's high-noise expert and per-expert LoRAs from the environment) and `dit/045` (FLUX.3's txt_in and mlp_out
      * scaled through the NPU's fp16 matmul, which they overflowed: noise without it). Still ABI 108; skels unchanged.
@@ -151,7 +157,7 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108-flux3wan/dit-engine-abi108-flux3wan.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108-a14fast/dit-engine-abi108-a14fast.zip"
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -161,7 +167,7 @@ object DitEngine {
      * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
      */
     const val HF_URL =
-        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108-flux3wan.zip"
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108-a14fast.zip"
 
     /**
      * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
@@ -172,11 +178,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_219_146L
+    const val BYTES = 23_229_469L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 56_006_736L
+    const val FILE_BYTES = 56_024_736L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -186,7 +192,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "be888b09df5cfa9f0350855e055c9d5bf7c6b92c8b5c2cbb9cd1080af137dc93"
+    private const val SHA256 = "26c54366aabdc0f2228cb51b0073cc1d4e6f11c1728a2e30c8899db55ce7d941"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

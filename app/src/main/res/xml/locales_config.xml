@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's languages, so Android 13+ lists Nightmare under Settings > System > App languages (a tester's
+     ask, Saved #7158). Keep in step with the values-* folders. -->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="ru" />
+    <locale android:name="zh" />
+</locale-config>

@@ -657,6 +657,8 @@ fun NodeInspector(
                 ?.takeIf { nodeId in clipNodes(state.workflow.graph, state.videos) }
                 ?.let(com.abrah.nightmare.ClipStore::get),
             hasClip = nodeId in clipNodes(state.workflow.graph, state.videos),
+            // ⭐ An Output fed by a video node draws no picture post-processing (the user's call, Saved #7156).
+            videoSource = node.inputs.values.any { s -> state.workflow.graph.byId[s.node]?.type in com.abrah.nightmare.VIDEO_SAMPLER_TYPES },
             // ⭐⭐⭐ **The LAST-node rule**, the other half: an output node owns
             // save / star / download only when no other output is downstream of
             // it (`isLastOfKind`). In `sample → output → … → output` the first
@@ -1355,6 +1357,11 @@ internal fun NodeInspectorBody(
      * and shares a video is the bug this pair was reported for.
      */
     hasClip: Boolean = clip != null,
+    /**
+     * ⭐ This node is an Output fed by a video node ([com.abrah.nightmare.VIDEO_SAMPLER_TYPES]): its Post-processing
+     * (Upscale, Fix faces and the rest) acts on pictures only, so it is not drawn (the user's call, Saved #7156).
+     */
+    videoSource: Boolean = false,
     /** ⭐ The STAR: keep it AND flag it. [PictureActions]. */
     onStarImage: (() -> Unit)? = null,
     favourite: Boolean = false,
@@ -2702,7 +2709,9 @@ internal fun NodeInspectorBody(
         // so nothing that changes the picture is out of sight. One loop draws both halves: a second copy
         // of the knob loop would stop agreeing with the first.
         val isOutput = node.type == com.abrah.nightmare.MediaOutputNode.name
-        val (moreUnsorted, mainWidgets) = widgets.partition {
+        val (moreUnsorted, mainWidgets) = widgets.filterNot {
+            isOutput && videoSource && (it.name in OUTPUT_POST || OUTPUT_POST_SETTINGS.values.any { s -> it.name in s })
+        }.partition {
             (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && it.name in MORE_OPTIONS) ||
                 (isOutput && it.name in OUTPUT_POST)
         }

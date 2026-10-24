@@ -1,0 +1,14 @@
+diff --git a/src/name_conversion.cpp b/src/name_conversion.cpp
+index 5ecacaa..1a79c3c 100644
+--- a/src/name_conversion.cpp
++++ b/src/name_conversion.cpp
+@@ -1263,6 +1263,9 @@ std::vector<std::string> cond_stage_model_prefix_vec = {
+ 
+ std::vector<std::string> diffuison_model_prefix_vec = {
+     "model.diffusion_model.",
++    // nightmare (dit/049): Wan 2.2 A14B's second expert. Without it a |high_noise| LoRA ("lora.model.high_noise_...")
++    // fails is_diffusion_model_name, every tensor is filtered out and the LoRA is silently skipped.
++    "model.high_noise_diffusion_model.",
+ };
+ 
+ std::vector<std::string> first_stage_model_prefix_vec = {

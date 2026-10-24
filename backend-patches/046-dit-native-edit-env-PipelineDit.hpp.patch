@@ -1,0 +1,21 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -610,8 +610,17 @@
+   static constexpr int kMaxFullFrameSideQwen = 1152;
+ 
+   bool isNativeEditModel() const {
++    // nightmare (046): an own-files (krea2-type) model the app launched as an
++    // edit model -- MOSS-Image with an edit LoRA, whose references the engine
++    // takes through its per-model preset (dit/047, dit/048) -- edits like
++    // Klein: the base picture is reference 1, and the schedule runs whole.
++    static const bool env_edit = [] {
++      const char *e = std::getenv("NM_DIT_NATIVE_EDIT");
++      return e != nullptr && e[0] == '1';
++    }();
+     return kind_ == DIT_MODEL_FLUX2_KLEIN ||
+-           kind_ == DIT_MODEL_QWEN_IMAGE_2_1;
++           kind_ == DIT_MODEL_QWEN_IMAGE_2_1 ||
++           (env_edit && kind_ == DIT_MODEL_Z_IMAGE);
+   }
+ 
+   struct Callbacks {

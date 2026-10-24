@@ -1031,6 +1031,8 @@
     <string name="inspector_seed_label">seed</string>
     <string name="inspector_seed_random_short">random</string>
     <string name="results_meta_seed">seed %1$s</string>
+    <string name="language_title">Language</string>
+    <string name="language_system">Same as the phone</string>
     <string name="theme_title">Theme</string>
     <string name="views_note">What the app opens on, and how the Default view lays out the steps.</string>
     <string name="api_reveal">Reveal</string>

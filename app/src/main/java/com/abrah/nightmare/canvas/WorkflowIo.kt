@@ -842,7 +842,9 @@ class WorkflowStore(private val dir: File) {
         return when {
             n.isEmpty() -> "give it a name"
             n == CURRENT -> "\"$CURRENT\" is reserved for the canvas autosave"
-            !n.matches(Regex("[A-Za-z0-9 _-]{1,40}")) ->
+            // ⭐ Letters and digits of ANY script (a tester's ask, Saved #7154: Chinese and Russian names); still no
+            // `/`, `.` or anything else a path is made of.
+            !n.matches(Regex("""[\p{L}\p{N} _-]{1,40}""")) ->
                 "letters, digits, spaces, - and _ only"
             else -> null
         }

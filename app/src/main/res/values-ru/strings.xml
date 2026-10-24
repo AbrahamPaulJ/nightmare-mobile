@@ -1025,6 +1025,8 @@
     <string name="inspector_seed_label">сид</string>
     <string name="inspector_seed_random_short">случайный</string>
     <string name="results_meta_seed">сид %1$s</string>
+    <string name="language_title">Язык</string>
+    <string name="language_system">Язык телефона</string>
     <string name="theme_title">Тема</string>
     <string name="views_note">С чего открывается приложение и как вид «Обычный» показывает шаги.</string>
     <string name="api_reveal">Показать</string>

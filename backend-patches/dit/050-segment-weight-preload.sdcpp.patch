@@ -1,0 +1,148 @@
+diff --git a/src/core/ggml_runner.cpp b/src/core/ggml_runner.cpp
+index 3737dc7..87eab87 100644
+--- a/src/core/ggml_runner.cpp
++++ b/src/core/ggml_runner.cpp
+@@ -1,5 +1,6 @@
+ #include <algorithm>
+ #include <map>
++#include <thread>
+ #include <utility>
+ 
+ #include "core/ggml_extend_backend.h"
+@@ -920,7 +921,19 @@ std::optional<Tensor<float>> GGMLRunner::execute_graph(ggml_cgraph* graph, int n
+         }
+         LOG_DEBUG("%s executing segment %zu/%zu: %s", get_desc().c_str(),
+                   index + 1, plan.segments.size(), segment.group_name.c_str());
+-        if (!execute_segment(segment_graph, n_threads) ||
++        // nightmare (dit/050): with weights streamed from disk the NPU waited for every segment's load (Wan 2.2
++        // A14B: 18-26 s a step against 52-61 s of compute at 480x832). The segment now executes on a worker
++        // thread while this one loads and pins the next segment's weights (repacking into shared memory is CPU
++        // work; the running segment's weights are protected from eviction).
++        bool executed = false;
++        if (!last && !prefetch_requests.empty() && weights.can_preload_next(index)) {
++            std::thread worker([&] { executed = execute_segment(segment_graph, n_threads); });
++            weights.preload_next(index, prefetch_requests.front());
++            worker.join();
++        } else {
++            executed = execute_segment(segment_graph, n_threads);
++        }
++        if (!executed ||
+             !cache_.capture(segment_graph) ||
+             !cut_cache_.capture(graph, segment, get_desc().c_str())) {
+             return fail_segment("execution or output caching");
+diff --git a/src/core/segment_weight_pipeline.cpp b/src/core/segment_weight_pipeline.cpp
+index f769794..34807bf 100644
+--- a/src/core/segment_weight_pipeline.cpp
++++ b/src/core/segment_weight_pipeline.cpp
+@@ -1,5 +1,6 @@
+ #include "core/segment_weight_pipeline.h"
+ 
++#include <cstdlib>
+ #include <utility>
+ 
+ #include "core/ggml_graph_cut.h"
+@@ -29,6 +30,12 @@ namespace sd {
+           compute_backend_(compute_backend),
+           owner_id_(owner_id),
+           enabled_(enabled && residency_manager != nullptr) {
++        // nightmare (dit/050): NM_SEG_PRELOAD=0 turns the overlapped weight load off.
++        static const bool preload_env = [] {
++            const char* e = std::getenv("NM_SEG_PRELOAD");
++            return !(e && e[0] == '0');
++        }();
++        preload_enabled_ = enabled_ && preload_env;
+         segment_params_.resize(plan.segments.size());
+         for (size_t segment_index = 0; segment_index < plan.segments.size(); ++segment_index) {
+             std::unordered_set<ggml_tensor*> seen;
+@@ -44,9 +51,55 @@ namespace sd {
+ 
+     SegmentWeightPipeline::~SegmentWeightPipeline() {
+         segment_end();
++        release_preloaded();
+         clear();
+     }
+ 
++    void SegmentWeightPipeline::release_preloaded() {
++        if (preloaded_params_.empty()) {
++            return;
++        }
++        if (auto manager = residency_manager_.lock()) {
++            manager->release_compute_backend_params(preloaded_params_);
++        }
++        preloaded_params_.clear();
++    }
++
++    bool SegmentWeightPipeline::can_preload_next(size_t segment_index) {
++        if (!preload_enabled_ || !preloaded_params_.empty() || segment_index >= segment_params_.size()) {
++            return false;
++        }
++        const size_t next = next_parameter_segment(segment_index);
++        auto manager      = residency_manager_.lock();
++        if (next == SIZE_MAX || manager == nullptr) {
++            return false;
++        }
++        return manager->inspect_compute_backend_params(segment_params_[next]).missing_bytes > 0;
++    }
++
++    bool SegmentWeightPipeline::preload_next(size_t segment_index, const DeviceMemoryRequest& request) {
++        const size_t next = next_parameter_segment(segment_index);
++        auto manager      = residency_manager_.lock();
++        if (next == SIZE_MAX || manager == nullptr) {
++            return false;
++        }
++        const std::vector<ggml_tensor*>& params = segment_params_[next];
++        DeviceMemoryRequest backend_request     = request;
++        backend_request.compute_backend         = compute_backend_;
++        backend_request.owner_id                = owner_id_;
++        std::vector<ggml_tensor*> protected_params = segment_params_[segment_index];
++        protected_params.insert(protected_params.end(), params.begin(), params.end());
++        if (!manager->ensure_compute_backend_capacity(backend_request, params, preferred_eviction_order(),
++                                                      protected_params)) {
++            return false;
++        }
++        if (!manager->prepare_params(params)) {
++            return false;
++        }
++        preloaded_params_ = params;
++        return true;
++    }
++
+     size_t SegmentWeightPipeline::next_parameter_segment(size_t segment_index) const {
+         for (size_t next = segment_index + 1; next < segment_params_.size(); ++next) {
+             if (!segment_params_[next].empty()) {
+@@ -115,6 +168,7 @@ namespace sd {
+             return false;
+         }
+         pinned_params_ = segment_params_[segment_index];
++        release_preloaded();  // dit/050: segment_start pinned them again
+         return true;
+     }
+ 
+diff --git a/src/core/segment_weight_pipeline.h b/src/core/segment_weight_pipeline.h
+index 598bf9f..74183c4 100644
+--- a/src/core/segment_weight_pipeline.h
++++ b/src/core/segment_weight_pipeline.h
+@@ -30,6 +30,9 @@ namespace sd {
+         std::vector<ggml_tensor*> pinned_params_;
+         size_t queued_segment_ = SIZE_MAX;
+         bool enabled_          = true;
++        // nightmare (dit/050): the next segment's weights, loaded and pinned while this one computes.
++        std::vector<ggml_tensor*> preloaded_params_;
++        bool preload_enabled_ = true;
+ 
+         size_t next_parameter_segment(size_t segment_index) const;
+         std::vector<std::vector<ggml_tensor*>> preferred_eviction_order() const;
+@@ -56,6 +59,13 @@ namespace sd {
+         // Prefetch is best effort; segment_start falls back to synchronous loading.
+         void enqueue_next(size_t segment_index,
+                           const DeviceMemoryRequest& request);
++        // nightmare (dit/050): true when the next segment has weights that are not on the compute backend yet,
++        // and preload_next may load them while this segment executes on another thread.
++        bool can_preload_next(size_t segment_index);
++        // Loads and pins the next segment's missing weights (synchronously, on the calling thread). Best effort:
++        // false leaves segment_start to load them as before.
++        bool preload_next(size_t segment_index, const DeviceMemoryRequest& request);
++        void release_preloaded();
+     };
+ }
+ 

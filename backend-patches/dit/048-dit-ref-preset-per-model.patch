@@ -1,0 +1,30 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index e41d8b8..3ddd71a 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -227,6 +227,10 @@ bool engine_generate(dit_ctx *ctx, const dit_gen_params *params, dit_progress_cb
+   gen.sample_params.sample_steps = params->steps;
+   gen.sample_params.guidance.txt_cfg = params->cfg_scale;
+   gen.sample_params.guidance.distilled_guidance = params->guidance;
++  // nightmare (dit/048): a flow shift for every picture of this launch, from the environment (the ABI's image
++  // params have none): MOSS-Image's edit LoRA samples at shift 5 (its author's inference config).
++  if (const char *fs = std::getenv("NM_DIT_FLOW_SHIFT"); fs && fs[0] && std::strtof(fs, nullptr) > 0.0f)
++    gen.sample_params.flow_shift = std::strtof(fs, nullptr);
+   if (params->sample_method && params->sample_method[0])
+     gen.sample_params.sample_method = str_to_sample_method(params->sample_method);
+   // ABI 108: an unknown name is SCHEDULER_COUNT, the model's own schedule.
+@@ -280,8 +284,12 @@ bool engine_generate(dit_ctx *ctx, const dit_gen_params *params, dit_progress_cb
+     }
+     gen.ref_images = reference_images.data();
+     gen.ref_images_count = static_cast<int>(reference_images.size());
+-    ref_image_args =
+-        ctx->kind == DIT_MODEL_QWEN_IMAGE_2_1 ? "preset=qwen" : "preset=flux2";
++    // nightmare (dit/048): the "own files" kind (krea2-type launches: MOSS-Image edit, `NM_DIT_NATIVE_EDIT` in the
++    // backend) takes stable-diffusion.cpp's preset for the model it loaded ("moss_edit" for MOSS-Image) instead of
++    // FLUX.2's; "default" leaves the engine's per-model choice in place.
++    ref_image_args = ctx->kind == DIT_MODEL_QWEN_IMAGE_2_1 ? "preset=qwen"
++                     : ctx->kind == DIT_MODEL_Z_IMAGE      ? "preset=default"
++                                                           : "preset=flux2";
+     // nightmare: a cap on the pixels a reference is VAE-encoded at, from the
+     // environment so the ABI does not move. The engine encodes a reference at
+     // the CANVAS area (Qwen) or up to 1 MP (FLUX.2), and every one of its tokens

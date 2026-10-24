@@ -662,6 +662,9 @@ val WAN_TYPES = setOf(com.abrah.nightmare.npu.WanVideoNode.name, com.abrah.night
 
 val SAMPLER_TYPES = IMAGE_SAMPLER_TYPES + setOf("nd.sample") + WAN_TYPES
 
+/** ⭐ The nodes that make a CLIP: the Output's picture post-processing never applies after them (Saved #7156). */
+val VIDEO_SAMPLER_TYPES = setOf("nd.sample") + WAN_TYPES
+
 /**
  * ⭐ Every node that FRAMES a picture it was given — every image sampler and
  * the video one.

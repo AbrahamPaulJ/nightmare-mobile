@@ -20,7 +20,7 @@ object LoraLibrary {
 
     enum class Base(val label: String) {
         SD15("SD 1.5"), SDXL("SDXL"), FLUX("FLUX"), ZIMAGE("Z-Image"), QWEN("Qwen"), ANIMA("Anima"),
-        KREA2("Krea 2"), WAN("Wan"), OTHER("Other");
+        KREA2("Krea 2"), WAN("Wan"), MOSS("MOSS"), OTHER("Other");
 
         companion object {
             /** ⭐ The base a node's family takes LoRAs for — the filter a picker can offer first. */
@@ -33,6 +33,7 @@ object LoraLibrary {
                 Family.ANIMA_DIT -> ANIMA
                 Family.KREA2 -> KREA2
                 Family.WAN -> WAN
+                Family.MOSS -> MOSS
                 else -> null
             }
         }
@@ -79,6 +80,9 @@ object LoraLibrary {
             "flux" in meta -> return Base.FLUX
         }
         return when {
+            // ⭐ MOSS-Image (a tester's ask, Saved #7155): its fused `proj.ffn_up_gate` / `proj.ffn_down`, which no
+            // other family has (lodestones' DMD LoRA, read 2026-10-25); kohya writes them with underscores.
+            "ffn_up_gate" in h -> Base.MOSS
             "single_blocks" in h || "single_transformer_blocks" in h -> Base.FLUX
             "noise_refiner" in h || "context_refiner" in h -> Base.ZIMAGE
             "img_mlp" in h || "txt_mlp" in h -> Base.QWEN

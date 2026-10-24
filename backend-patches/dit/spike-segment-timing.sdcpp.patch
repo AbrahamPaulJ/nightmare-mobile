@@ -1,0 +1,86 @@
+diff --git a/src/core/ggml_runner.cpp b/src/core/ggml_runner.cpp
+index 3737dc7..05c59e7 100644
+--- a/src/core/ggml_runner.cpp
++++ b/src/core/ggml_runner.cpp
+@@ -843,6 +843,10 @@ std::optional<Tensor<float>> GGMLRunner::execute_graph(ggml_cgraph* graph, int n
+         }
+     };
+     std::optional<Tensor<float>> output = Tensor<float>();
++    // nightmare spike: where a segmented compute spends its host time
++    int64_t tp[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
++    int64_t tq    = ggml_time_us();
++    auto lap      = [&](int i) { int64_t n = ggml_time_us(); tp[i] += n - tq; tq = n; };
+     for (size_t index = 0; index < plan.segments.size(); ++index) {
+         const auto& segment = plan.segments[index];
+         const bool last     = index + 1 == plan.segments.size();
+@@ -851,6 +855,7 @@ std::optional<Tensor<float>> GGMLRunner::execute_graph(ggml_cgraph* graph, int n
+                         index + 1, plan.segments.size(), segment.group_name.c_str(), phase);
+             return std::nullopt;
+         };
++        lap(8);
+         cut_cache_.prune(segment.live_cut_names);
+         bindings.reset(segment);
+         if (!bindings.bind_cached_inputs(segment, get_desc().c_str())) {
+@@ -874,6 +879,7 @@ std::optional<Tensor<float>> GGMLRunner::execute_graph(ggml_cgraph* graph, int n
+             }
+         } segment_cleanup{*this, weights, bindings, segment_context};
+ 
++        lap(0);
+         auto measurement = segmented ? measure(segment_graph, segment.compute_buffer_size) : full_measurement;
+         if (!workspace_.prepare(measurement)) {
+             return fail_segment("workspace preparation");
+@@ -889,9 +895,11 @@ std::optional<Tensor<float>> GGMLRunner::execute_graph(ggml_cgraph* graph, int n
+             }
+             return weights.ensure_segment_capacity(index, requests);
+         };
++        lap(1);
+         if (!weights.segment_start(index, ensure_capacity)) {
+             return fail_segment("weight preparation");
+         }
++        lap(2);
+         // Preparing weights can execute LoRA graphs and reclaim an idle workspace.
+         if (!workspace_.measurement_matches(segment_graph, measurement)) {
+             measurement = measure(segment_graph, segment.compute_buffer_size);
+@@ -913,18 +921,25 @@ std::optional<Tensor<float>> GGMLRunner::execute_graph(ggml_cgraph* graph, int n
+         if (!ensure_capacity()) {
+             return fail_segment("allocated capacity check");
+         }
++        lap(3);
+         copy_data_to_backend_tensor(segment_graph, false);
++        lap(4);
+         auto prefetch_requests = memory_requests(measurement.buffers, new_cache_bytes);
+         if (!prefetch_requests.empty()) {
+             weights.enqueue_next(index, prefetch_requests.front());
+         }
+         LOG_DEBUG("%s executing segment %zu/%zu: %s", get_desc().c_str(),
+                   index + 1, plan.segments.size(), segment.group_name.c_str());
+-        if (!execute_segment(segment_graph, n_threads) ||
+-            !cache_.capture(segment_graph) ||
++        lap(4);
++        if (!execute_segment(segment_graph, n_threads)) {
++            return fail_segment("execution");
++        }
++        lap(5);
++        if (!cache_.capture(segment_graph) ||
+             !cut_cache_.capture(graph, segment, get_desc().c_str())) {
+-            return fail_segment("execution or output caching");
++            return fail_segment("output caching");
+         }
++        lap(6);
+         sync_runtime_residency();
+         if (last) {
+             if (read_outputs && !read_outputs()) {
+@@ -940,6 +955,13 @@ std::optional<Tensor<float>> GGMLRunner::execute_graph(ggml_cgraph* graph, int n
+         }
+         // Final outputs and their callbacks may still be views of consumed cuts.
+         cut_cache_.prune(segment.future_cut_names);
++        lap(7);
++    }
++    lap(8);
++    if (plan.segments.size() > 1) {
++        LOG_INFO("%s segtime ms: bind %.0f measure+ws %.0f weights %.0f alloc %.0f copyin %.0f exec %.0f capture %.0f tail %.0f cleanup %.0f",
++                 get_desc().c_str(), tp[0] / 1e3, tp[1] / 1e3, tp[2] / 1e3, tp[3] / 1e3, tp[4] / 1e3, tp[5] / 1e3,
++                 tp[6] / 1e3, tp[7] / 1e3, tp[8] / 1e3);
+     }
+     if (segments_changed || peak_compute_bytes != logged_compute_bytes_) {
+         for (const auto& entry : peak_compute_bytes) {

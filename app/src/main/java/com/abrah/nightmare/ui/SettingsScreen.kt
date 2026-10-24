@@ -281,6 +281,8 @@ fun SettingsScreen(
                         }
                     }
                 }
+                // ⭐ The app's language apart from the phone's (a tester on a Russian phone wanted English, Saved #7158).
+                AppLanguageCard()
                 StudioCard {
                     SectionHeading(stringResource(R.string.accent_title), stringResource(R.string.accent_note))
                     AccentSwatches(accent, onAccent)
@@ -977,6 +979,35 @@ private fun TagDictionaryCard(
  * this is a row of circles rather than [SettingsScreen]'s radio rows; the selected one carries a ring and a tick, and
  * its NAME is written under the row, so colour is never the only signal. Wallpaper only on Android 12+.
  */
+/**
+ * ⭐ The app's own language (Android 13+, `LocaleManager`, which keeps it across launches and recreates the screen):
+ * the phone's, or one of the three the app is written in, each named in itself. Hidden below Android 13, where there
+ * is no per-app language to set. `res/xml/locales_config.xml` lists the same three for the system's App languages.
+ */
+@Composable
+private fun AppLanguageCard() {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return
+    val context = LocalContext.current
+    val manager = remember { context.getSystemService(android.app.LocaleManager::class.java) } ?: return
+    val current = remember { manager.applicationLocales.toLanguageTags().substringBefore('-') }
+    StudioCard {
+        SectionHeading(stringResource(R.string.language_title))
+        for ((tag, name) in APP_LANGUAGES) {
+            val pick = {
+                manager.applicationLocales =
+                    if (tag.isEmpty()) android.os.LocaleList.getEmptyLocaleList() else android.os.LocaleList.forLanguageTags(tag)
+            }
+            Row(Modifier.fillMaxWidth().clickable(onClick = pick), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = current == tag, onClick = pick)
+                Text(name ?: stringResource(R.string.language_system), style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+    }
+}
+
+/** ⚠ Each language named in itself, never translated; null = the phone's ([R.string.language_system]). */
+private val APP_LANGUAGES = listOf("" to null, "en" to "English", "ru" to "Русский", "zh" to "中文")
+
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun AccentSwatches(accent: Prefs.Accent, onAccent: (Prefs.Accent) -> Unit) {

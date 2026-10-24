@@ -81,6 +81,10 @@ class WorkflowStoreTest {
         assertNotNull(s.validName(""))
         assertNotNull(s.validName("current"))
         assertNull(s.validName("my flow 2"))
+        // ⭐ Any script (Saved #7154), still never a path.
+        assertNull(s.validName("我的流程 2"))
+        assertNull(s.validName("Мой поток"))
+        assertNotNull(s.validName("流程/../x"))
     }
 
     /** ⭐ Every recommended workflow must actually open. */

@@ -147,7 +147,7 @@ object WanVideoNode : NodeType {
         prof: WanProfile = TURBO,
     ): String? = when {
         // ⭐ Wan 2.2 A14B: 8.6 GB an expert, held by no phone, so every clip streams ([WanProfile.alwaysStream]).
-        prof.alwaysStream -> A14B_BUDGET
+        prof.alwaysStream -> if (pinned - prof.ditBytes > A14B_SMALL_COMPUTE) A14B_BIG_BUDGET else A14B_BUDGET
         arch in 1..78 -> "2.75"
         stream -> if (pinned - DIT_BYTES + BLOCK_BYTES <= STREAM_FLOOR) "2.75" else "4"
         // ⭐ Compute that one NPU session cannot map streams on EVERY phone (Saved #7101, a 16 GB 8 Elite, 1.6.216):
@@ -354,13 +354,19 @@ object WanVideoNode : NodeType {
 
     /**
      * ⭐ Wan 2.2 A14B with Lightning (`docs/VIDEO-GGML.md` §8): 16 fps, euler (lightx2v's workflow), Wan 2.1's
-     * 8x8 VAE, and ALWAYS streamed: an expert is 8.6 GB. ⚠ The per-token and block bytes are the 14B's widths
-     * (5120 against 3072) scaled from the 5B's measurements until the S25's run replaces them.
+     * 8x8 VAE, and ALWAYS streamed: an expert is 8.6 GB. The engine runs its blocks in 4096-token chunks (`dit/046`):
+     * measured on the S25, 2.27 GB of compute peak at 832x480 5 s (32,760 tokens, ~70 KB a token), 305 MB at 480x272 1 s.
      */
-    val A14B = WanProfile(16, "euler", 16, 8_160L shl 20, 192L shl 10, 420L shl 20, alwaysStream = true)
+    val A14B = WanProfile(16, "euler", 16, 8_160L shl 20, 72L shl 10, 420L shl 20, alwaysStream = true)
 
-    /** ⚠ The 14B's budget (GiB): one block plus its compute must fit, the weights stream. */
+    /**
+     * ⚠ The 14B's budget (GiB): one block's chunked compute plus its weights must fit, the weights stream. 832x480 5 s
+     * needs 4.19 GB with the engine's own reserve (S25, `dit/046`), over 4 GiB, so long clips get 4.5 ([A14B_BIG_BUDGET])
+     * from [A14B_SMALL_COMPUTE] of compute (~20k tokens; 832x480 2 s is 14k and ran at 4).
+     */
     private const val A14B_BUDGET = "4"
+    private const val A14B_BIG_BUDGET = "4.5"
+    private const val A14B_SMALL_COMPUTE = 1_400L shl 20
 
     /** ⭐ The profile a node type renders with. */
     fun profileOf(type: String): WanProfile = if (type == WanA14Node.name) A14B else TURBO

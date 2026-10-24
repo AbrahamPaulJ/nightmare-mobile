@@ -1,0 +1,40 @@
+diff --git a/src/ggml-hexagon/ggml-hexagon.cpp b/src/ggml-hexagon/ggml-hexagon.cpp
+index 1413fa1..d6687b8 100644
+--- a/src/ggml-hexagon/ggml-hexagon.cpp
++++ b/src/ggml-hexagon/ggml-hexagon.cpp
+@@ -1684,15 +1684,29 @@ static void ggml_backend_hexagon_buffer_get_tensor(ggml_backend_buffer_t buffer,
+     }
+ }
+ 
++static bool ggml_backend_buffer_is_hexagon(const struct ggml_backend_buffer * b);
++
++// nightmare (dit/051): a plain tensor (not a repacked or conv weight) from one Hexagon buffer to another is one
++// memcpy: both live in host-mapped shared memory, and get/set_tensor are plain memcpys for them. The fallback
++// malloc'd a host copy of the whole tensor and copied twice; the graph-cut cache copies every segment's output
++// that way (Wan 2.2 A14B at 480x832: 160 MB a segment, 42 segments a step).
+ static bool ggml_backend_hexagon_buffer_cpy_tensor(ggml_backend_buffer_t      buffer,
+                                                    const struct ggml_tensor * src,
+                                                    struct ggml_tensor *       dst) {
+-    // we might optimize this later, for now take the slow path (ie get/set_tensor)
+-    return false;
+-
+-    GGML_UNUSED(buffer);
+-    GGML_UNUSED(src);
+-    GGML_UNUSED(dst);
++    if (src->buffer == nullptr || !ggml_backend_buffer_is_hexagon(src->buffer) ||
++        ggml_backend_buffer_get_usage(src->buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS ||
++        ggml_backend_buffer_get_usage(buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS) {
++        return false;
++    }
++    const uint32_t special = GGML_HEXAGON_TENSOR_REPACK | GGML_HEXAGON_TENSOR_CONV2D | GGML_HEXAGON_TENSOR_WEIGHT;
++    auto src_extra         = (const ggml_hexagon_tensor_extra *) src->extra;
++    auto dst_extra         = (const ggml_hexagon_tensor_extra *) dst->extra;
++    if ((src_extra && (src_extra->flags & special)) || (dst_extra && (dst_extra->flags & special)) ||
++        src->data == nullptr || dst->data == nullptr) {
++        return false;
++    }
++    memcpy(dst->data, src->data, ggml_nbytes(src));
++    return true;
+ }
+ 
+ static void ggml_backend_hexagon_buffer_set_tensor_2d(ggml_backend_buffer_t buffer,

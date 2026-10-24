@@ -25,6 +25,10 @@ class LoraLibraryTest {
         assertEquals(Base.QWEN, LoraLibrary.classify("""{"transformer_blocks.0.img_mlp.net":1}"""))
         assertEquals(Base.ANIMA, LoraLibrary.classify("""{"diffusion_model.blocks.0.adaln_modulation_cross_attn.1.lora_A.weight":1}"""))
         assertEquals(Base.ANIMA, LoraLibrary.classify("""{"lora_unet_blocks_0_cross_attn_k_proj.lora_down.weight":1}"""))
+        // ⭐ MOSS-Image (Saved #7155): lodestones' DMD LoRA's own names, and kohya's.
+        assertEquals(Base.MOSS, LoraLibrary.classify("""{"diffusion_model.layers.0.proj.ffn_up_gate.lora_down.weight":1,"diffusion_model.layers.0.proj.k.alpha":2}"""))
+        assertEquals(Base.MOSS, LoraLibrary.classify("""{"lora_unet_layers_0_proj_ffn_up_gate.lora_down.weight":1}"""))
+        assertEquals(Base.MOSS, LoraLibrary.Base.of(com.abrah.nightmare.Family.MOSS))
         assertEquals(Base.OTHER, LoraLibrary.classify("""{"something":1}"""))
     }
 

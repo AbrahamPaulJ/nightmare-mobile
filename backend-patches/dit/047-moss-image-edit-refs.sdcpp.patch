@@ -1,0 +1,177 @@
+diff --git a/src/model/diffusion/model.hpp b/src/model/diffusion/model.hpp
+index dd27e09..e3c5a0c 100644
+--- a/src/model/diffusion/model.hpp
++++ b/src/model/diffusion/model.hpp
+@@ -40,6 +40,8 @@ const std::unordered_map<std::string, RefImageParams> REF_IMAGE_PRESETS = {
+     {"krea2_ostris_edit", {true, true, Rope::RefIndexMode::INCREASE, true, true, -1, RefImageResizeMode::AREA, -1, -1}},
+     {"krea2_edit", {true, true, Rope::RefIndexMode::INCREASE, false, true, -1, RefImageResizeMode::LONGEST_SIDE, 768, 768}},
+     {"cosmos_reference", {false, true, Rope::RefIndexMode::INCREASE, false, false, -1, RefImageResizeMode::NONE, -1, -1}},
++    // nightmare (dit/047): MOSS-Image edit LoRAs (chinoll/Moss-Image-Edit): references to the DiT only, at t = 0.
++    {"moss_edit", {false, true, Rope::RefIndexMode::FIXED, true, true, -1, RefImageResizeMode::NONE, -1, -1}},
+ };
+ 
+ struct UNetDiffusionExtra {
+diff --git a/src/model/diffusion/moss_image.hpp b/src/model/diffusion/moss_image.hpp
+index b374ea1..9c8c78f 100644
+--- a/src/model/diffusion/moss_image.hpp
++++ b/src/model/diffusion/moss_image.hpp
+@@ -103,15 +103,28 @@ namespace MOSSImage {
+     };
+ 
+     // q, k, v: [d, H, L, 1] straight off the projection; q/k normed and roped, then attended (as Rope::attention does).
++    // nightmare (dit/047): out_k/out_v receive this attention's roped keys [d, L, H] and values [d, H, L, 1] (the
++    // edit references' stream hands them to the image's), and ref_k/ref_v are appended to the keys and values.
+     inline ggml_tensor* attend(GGMLRunnerContext* ctx, const std::shared_ptr<MOSSQKNorm>& norm_q, const std::shared_ptr<MOSSQKNorm>& norm_k,
+-                               ggml_tensor* q, ggml_tensor* k, ggml_tensor* v, ggml_tensor* pe) {
++                               ggml_tensor* q, ggml_tensor* k, ggml_tensor* v, ggml_tensor* pe,
++                               ggml_tensor* ref_k = nullptr, ggml_tensor* ref_v = nullptr,
++                               ggml_tensor** out_k = nullptr, ggml_tensor** out_v = nullptr) {
++        auto c              = ctx->ggml_ctx;
+         ggml_tensor* q_rope = norm_q->forward_rope(ctx, q, pe);
+         ggml_tensor* k_rope = q_rope != nullptr ? norm_k->forward_rope(ctx, k, pe) : nullptr;
+-        if (q_rope != nullptr && k_rope != nullptr) {
+-            return ggml_ext_attention_ext(ctx->ggml_ctx, ctx->backend, q_rope, k_rope, v, q->ne[1], nullptr, true,
+-                                          ctx->flash_attn_enabled, 1.f);
++        if (q_rope == nullptr || k_rope == nullptr) {
++            q_rope = Rope::apply_rope(c, norm_q->forward(ctx, q), pe, false);  // [d, L, H]
++            k_rope = Rope::apply_rope(c, norm_k->forward(ctx, k), pe, false);
+         }
+-        return Rope::attention(ctx, norm_q->forward(ctx, q), norm_k->forward(ctx, k), v, pe, nullptr, 1.f, false);
++        if (out_k != nullptr) {
++            *out_k = k_rope;
++            *out_v = v;
++        }
++        if (ref_k != nullptr) {
++            k_rope = ggml_concat(c, k_rope, ref_k, 1);
++            v      = ggml_concat(c, v, ref_v, 2);
++        }
++        return ggml_ext_attention_ext(c, ctx->backend, q_rope, k_rope, v, q->ne[1], nullptr, true, ctx->flash_attn_enabled, 1.f);
+     }
+ 
+     struct TextBlock : public GGMLBlock {
+@@ -171,7 +184,9 @@ namespace MOSSImage {
+             blocks["proj.ffn_down"]    = std::make_shared<Linear>(config.ffn_dim, config.dim, false);
+         }
+ 
+-        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* pe, ggml_tensor* mod) {
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* pe, ggml_tensor* mod,
++                             ggml_tensor* ref_k = nullptr, ggml_tensor* ref_v = nullptr,
++                             ggml_tensor** out_k = nullptr, ggml_tensor** out_v = nullptr) {
+             auto c      = ctx->ggml_ctx;
+             auto linear = [&](const char* name, ggml_tensor* h) { return std::dynamic_pointer_cast<Linear>(blocks[name])->forward(ctx, h); };
+             auto norm   = [&](const char* name, ggml_tensor* h) { return std::dynamic_pointer_cast<RMSNorm>(blocks[name])->forward(ctx, h); };
+@@ -188,7 +203,8 @@ namespace MOSSImage {
+                 return heads(ggml_ext_slice(c, qkv, 0, i * config.dim, (i + 1) * config.dim));
+             };
+             y            = attend(ctx, std::dynamic_pointer_cast<MOSSQKNorm>(blocks["q_norm"]),
+-                                  std::dynamic_pointer_cast<MOSSQKNorm>(blocks["k_norm"]), split(0), split(1), split(2), pe);
++                                  std::dynamic_pointer_cast<MOSSQKNorm>(blocks["k_norm"]), split(0), split(1), split(2), pe,
++                                  ref_k, ref_v, out_k, out_v);
+             y            = linear("proj.o", y);
+             y            = ggml_mul(c, y, part(2));
+             x            = ggml_add(c, x, y);
+@@ -223,7 +239,8 @@ namespace MOSSImage {
+             blocks["final_linear_video"] = std::make_shared<Linear>(config.dim, config.channels, false);
+         }
+ 
+-        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* image, ggml_tensor* time, ggml_tensor* text, ggml_tensor* pe, const std::vector<int>& skip) {
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* image, ggml_tensor* time, ggml_tensor* text, ggml_tensor* pe, const std::vector<int>& skip,
++                             const std::vector<ggml_tensor*>& refs = {}, ggml_tensor* ref_pe = nullptr, ggml_tensor* time0 = nullptr) {
+             auto c            = ctx->ggml_ctx;
+             auto linear       = [&](const char* name, ggml_tensor* h) { return std::dynamic_pointer_cast<Linear>(blocks[name])->forward(ctx, h); };
+             int64_t image_len = image->ne[0] * image->ne[1];
+@@ -237,10 +254,31 @@ namespace MOSSImage {
+             auto mod  = linear("shared_block_modulation", time);
+             auto head = linear("video_head_modulation", time);
+             x         = ggml_concat(c, x, text, 1);
++            // nightmare (dit/047): MOSS-Image edit (chinoll/Moss-Image-Edit's contract "ref-prefix-only-t0", ComfyUI
++            // #17296's isolated layout): the references are their own token stream at t = 0, attending only to each
++            // other, and every block's image + text attention also sees the references' keys and values from the
++            // same block. Recomputed each step (ComfyUI caches them; 42 blocks of keys and values do not fit here).
++            ggml_tensor* xr   = nullptr;
++            ggml_tensor* mod0 = nullptr;
++            if (!refs.empty() && ref_pe != nullptr && time0 != nullptr) {
++                for (auto ref : refs) {
++                    auto r = linear("video_embedder", DiT::patchify(c, ref, 1, 1));
++                    xr     = xr ? ggml_concat(c, xr, r, 1) : r;
++                }
++                mod0 = linear("shared_block_modulation", linear("time_embedding.2", ggml_silu(c, linear("time_embedding.0", time0))));
++            }
+             for (int64_t i = 0; i < config.depth; ++i) {
+                 if (std::find(skip.begin(), skip.end(), i) == skip.end()) {
+-                    x = std::dynamic_pointer_cast<Block>(blocks["layers." + std::to_string(i)])->forward(ctx, x, pe, mod);
++                    auto block       = std::dynamic_pointer_cast<Block>(blocks["layers." + std::to_string(i)]);
++                    ggml_tensor *rk = nullptr, *rv = nullptr;
++                    if (xr != nullptr) {
++                        xr = block->forward(ctx, xr, ref_pe, mod0, nullptr, nullptr, &rk, &rv);
++                    }
++                    x = block->forward(ctx, x, pe, mod, rk, rv);
+                     sd::ggml_graph_cut::mark_graph_cut(x, "moss_image.layers." + std::to_string(i), "x");
++                    if (xr != nullptr) {
++                        sd::ggml_graph_cut::mark_graph_cut(xr, "moss_image.layers." + std::to_string(i), "x_ref");
++                    }
+                 }
+             }
+             x          = ggml_ext_slice(c, x, 1, 0, image_len);
+@@ -256,7 +294,7 @@ namespace MOSSImage {
+     struct MOSSImageRunner : public DiffusionModelRunner {
+         MOSSImageConfig config;
+         Model model;
+-        std::vector<float> pe_data, time_data;
++        std::vector<float> pe_data, time_data, ref_pe_data, time0_data;
+ 
+         MOSSImageRunner(ggml_backend_t backend, const String2TensorStorage& weights, const std::string& prefix, std::shared_ptr<RunnerWeightManager> weight_manager = nullptr)
+             : DiffusionModelRunner(backend, prefix, weight_manager), config(MOSSImageConfig::detect_from_weights(weights, prefix)), model(config) {
+@@ -308,8 +346,38 @@ namespace MOSSImage {
+                 auto time = ggml_new_tensor_3d(compute_ctx, GGML_TYPE_F32, config.freq_dim, 1, 1);
+                 set_backend_tensor_data(pe, pe_data.data());
+                 set_backend_tensor_data(time, time_data.data());
++                // nightmare (dit/047): edit references (the "moss_edit" preset passes them to the DiT): their own rope
++                // positions (axis 0 = reference index + 1, axis 1 = 0, rows/columns centred) and t = 0.
++                std::vector<ggml_tensor*> refs;
++                ggml_tensor *ref_pe = nullptr, *time0 = nullptr;
++                if (inputs.ref_latents != nullptr && inputs.ref_image_params.pass_to_dit && !inputs.ref_latents->empty()) {
++                    std::vector<std::vector<float>> rids;
++                    for (size_t r = 0; r < inputs.ref_latents->size(); ++r) {
++                        auto t = make_input((*inputs.ref_latents)[r]);
++                        if (t->ne[2] != config.channels) {
++                            LOG_WARN("MOSS-Image: reference %zu has %" PRId64 " channels, not %" PRId64 "; skipped", r, t->ne[2], config.channels);
++                            continue;
++                        }
++                        refs.push_back(t);
++                        const int64_t rh = t->ne[1], rw = t->ne[0];
++                        for (int64_t token = 0; token < rh * rw; ++token) {
++                            rids.push_back({float(refs.size()), 0.f, float(token / rw) - float(rh - 1) / 2.f, float(token % rw) - float(rw - 1) / 2.f});
++                        }
++                    }
++                    if (!refs.empty()) {
++                        ref_pe_data = Rope::embed_nd(rids, 1, 10000.f, std::vector<int>(4, static_cast<int>(config.head_dim / 4)));
++                        ref_pe      = ggml_new_tensor_4d(compute_ctx, GGML_TYPE_F32, 2, 2, config.head_dim / 2, (int64_t)rids.size());
++                        set_backend_tensor_data(ref_pe, ref_pe_data.data());
++                        time0_data.assign(config.freq_dim, 0.f);
++                        for (int64_t i = 0; i < config.freq_dim / 2; ++i) {
++                            time0_data[i] = 1.f;  // cos(0); the sin half stays 0
++                        }
++                        time0 = ggml_new_tensor_3d(compute_ctx, GGML_TYPE_F32, config.freq_dim, 1, 1);
++                        set_backend_tensor_data(time0, time0_data.data());
++                    }
++                }
+                 auto ctx = get_context();
+-                ggml_build_forward_expand(gf, model.forward(&ctx, x, time, text, pe, skip));
++                ggml_build_forward_expand(gf, model.forward(&ctx, x, time, text, pe, skip, refs, ref_pe, time0));
+                 return gf;
+             };
+             return restore_trailing_singleton_dims(GGMLRunner::compute(graph, n_threads, false), inputs.x->dim());
+diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
+index 58d85ed..324a192 100644
+--- a/src/pipeline/diffusion_engine.cpp
++++ b/src/pipeline/diffusion_engine.cpp
+@@ -2746,6 +2746,8 @@ std::string StableDiffusionGGML::get_default_ref_image_preset(SDVersion version)
+         return "krea2_ostris_edit";
+     } else if (sd_version_is_anima(version)) {
+         return "cosmos_reference";
++    } else if (version == VERSION_MOSS_IMAGE) {
++        return "moss_edit";
+     }
+     return "default";
+ }

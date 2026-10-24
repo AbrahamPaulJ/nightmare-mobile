@@ -33,6 +33,8 @@ class WanA14Test {
         val pinned = WanVideoNode.pinnedBytes(832, 480, 33, prof)
         // ⚠ Even a 16 GB phone with the switch off: two 8.6 GB experts are held by no phone.
         assertEquals("4", WanVideoNode.memoryBudget(pinned, 16L shl 30, 79, stream = false, prof = prof))
+        // ⭐ 832x480 5 s (32,760 tokens) needs 4.19 GB a segment (S25, dit/046): 4.5 GiB.
+        assertEquals("4.5", WanVideoNode.memoryBudget(WanVideoNode.pinnedBytes(832, 480, 81, prof), 12L shl 30, 79, stream = false, prof = prof))
         // Turbo at the same small clip stays resident there.
         assertEquals(null, WanVideoNode.memoryBudget(WanVideoNode.pinnedBytes(832, 480, 49), 16L shl 30, 79, stream = false))
         assertEquals("euler", prof.sampler)
