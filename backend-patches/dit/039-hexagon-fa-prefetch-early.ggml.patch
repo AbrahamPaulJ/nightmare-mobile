@@ -1,0 +1,33 @@
+diff --git a/src/ggml-hexagon/htp/flash-attn-ops.c b/src/ggml-hexagon/htp/flash-attn-ops.c
+index fd22bdc..ba02aa5 100644
+--- a/src/ggml-hexagon/htp/flash-attn-ops.c
++++ b/src/ggml-hexagon/htp/flash-attn-ops.c
+@@ -2149,6 +2149,17 @@ int hmx_flash_attn_ext(struct htp_ops_context * octx) {
+                         void * curr_v = dma_queue_pop(dma).dst;
+                         fa_phase_v_interleave(&factx, kv_rows, v_src_stride, curr_v, factx.vtcm_v_tiles[buf_idx], n_tiles_per_bc, kv_start);
+ 
++                        // dit/039: block kv_blk + 2's K and V the moment their staging buffers are free (K(kv_blk)
++                        // was rearranged last iteration, V(kv_blk) just now), not after softmax: from there K
++                        // arrived one V-prep before K-prep popped it, so its DMA overlapped nothing. FIFO order is
++                        // kept (every earlier push is popped first). ⚠ With a mask the old place stays: softmax
++                        // still reads block kv_blk's mask lines from the DMA cache.
++                        const bool early_prefetch = (mask == NULL) && (kv_blk + 2 < factx.n_kv_blocks);
++                        if (early_prefetch) {
++                            fa_prefetch_block(dma, k, v, mask, kv_blk + 2, Bc, size_k_row_padded, size_k_row, size_v_row_padded, size_v_row,
++                                              ik2, ik3, iv2, iv3, q_start, im3, kv_head, G, m_line_bytes, n_rows_q, nek1, buf_idx, &factx);
++                        }
++
+                         // ---- 2. Pop and run mask-prep for current block ----
+                         __fp16 * current_mask_vtcm = NULL;
+                         if (mask) {
+@@ -2238,8 +2249,8 @@ int hmx_flash_attn_ext(struct htp_ops_context * octx) {
+                             hex_swap_ptr((void **) &o_tile_curr, (void **) &o_tile_prev);
+                         }
+ 
+-                        // Prefetch block kv_blk + 2
+-                        if (kv_blk + 2 < factx.n_kv_blocks) {
++                        // Prefetch block kv_blk + 2 (with a mask; without one it went right after V-prep)
++                        if (!early_prefetch && kv_blk + 2 < factx.n_kv_blocks) {
+                             fa_prefetch_block(dma, k, v, mask, kv_blk + 2, Bc, size_k_row_padded, size_k_row, size_v_row_padded, size_v_row,
+                                               ik2, ik3, iv2, iv3, q_start, im3, kv_head, G, m_line_bytes, n_rows_q, nek1, buf_idx, &factx);
+                         }

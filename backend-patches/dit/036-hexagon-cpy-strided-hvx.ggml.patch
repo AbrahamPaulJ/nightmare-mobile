@@ -1,0 +1,17 @@
+diff --git a/src/ggml-hexagon/htp/cpy-ops.c b/src/ggml-hexagon/htp/cpy-ops.c
+index 6dc4123..8517ce3 100644
+--- a/src/ggml-hexagon/htp/cpy-ops.c
++++ b/src/ggml-hexagon/htp/cpy-ops.c
+@@ -477,7 +477,11 @@ static int exec_cpy(struct htp_ops_context * octx, bool * use_dma) {
+         ct.nrows     = nrows;
+         ct.src0_nrows_per_thread = fastdiv(nrows + n_threads - 1, &octx->n_threads_div);
+ 
+-        if (sametype && octx->ctx->mdev.count <= 1) {
++        // nightmare (dit/036): the DMA only when each (i02, i03) slab of the source is packed rows. A
++        // permuted view (attention's V, 128:L:heads with a row stride of 3 x hidden) went one 512-byte
++        // row a time down ONE queue: 4.6 GB/s, against ~26 GB/s for the threaded HVX copy below.
++        const bool src_rows_packed = (nb01 == ne00 * ct.src0_type_size);
++        if (sametype && octx->ctx->mdev.count <= 1 && src_rows_packed) {
+             *use_dma = true;
+             cpy_dma_sametype_sameshape(octx, dst, src0, ct.src0_type_size, ne00, ne01, ne02, ne03, nb01, nb02, nb03, nb1, nb2, nb3);
+         } else {
