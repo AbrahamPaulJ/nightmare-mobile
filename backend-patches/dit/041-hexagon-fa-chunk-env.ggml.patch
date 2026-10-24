@@ -1,0 +1,34 @@
+diff --git a/src/ggml-hexagon/ggml-hexagon.cpp b/src/ggml-hexagon/ggml-hexagon.cpp
+index 811fc7e..1413fa1 100644
+--- a/src/ggml-hexagon/ggml-hexagon.cpp
++++ b/src/ggml-hexagon/ggml-hexagon.cpp
+@@ -4124,6 +4124,29 @@ static bool ggml_hexagon_precompute_flash_attn_params(
+         const uint32_t DV_pad = hex_round_up(DV, 64);
+         size_t Br = 0, Bc = 0;
+         int ret = hmx_fa_find_chunk_size(&Br, &Bc, G, DK_pad, DV_pad, neq1, nek1, sess->vtcm_size, sess->n_threads, kparams->is_q_fp32 != 0);
++        // dit/041: GGML_HEXAGON_FA_BRBC="Br,Bc" overrides the chunk search for an A/B (the cost model has no term for
++        // the K/V tile rearrangement, which reruns once per Q block). Taken only when aligned (Br to the 32-row tile
++        // over G, Bc to 64) and inside the session's VTCM; otherwise the search's choice stands. Logged once.
++        if (ret == 0) {
++            static const char * brbc = getenv("GGML_HEXAGON_FA_BRBC");
++            static bool         said = false;
++            size_t              oBr = 0, oBc = 0;
++            if (brbc && sscanf(brbc, "%zu,%zu", &oBr, &oBc) == 2 && oBr > 0 && oBc > 0) {
++                const size_t br_unit = (32 + G - 1) / G;
++                const bool   pipe    = ((nek1 + oBc - 1) / oBc >= 3 && sess->n_threads >= 2);
++                const size_t need    = hmx_fa_compute_vtcm_usage(G, DK_pad, DV_pad, oBr, oBc, sess->n_threads, pipe, kparams->is_q_fp32 != 0);
++                const bool   ok      = oBr % br_unit == 0 && oBc % 64 == 0 && need <= sess->vtcm_size;
++                if (!said) {
++                    GGML_LOG_INFO("ggml-hex: FA chunk %zux%zu (search %zux%zu, %zu bytes of %zu VTCM) %s\n", oBr, oBc, Br, Bc,
++                                  need, (size_t) sess->vtcm_size, ok ? "OVERRIDE" : "rejected");
++                    said = true;
++                }
++                if (ok) {
++                    Br = oBr;
++                    Bc = oBc;
++                }
++            }
++        }
+         if (ret == 0) {
+             kparams->kernel_type = HTP_FA_KERNEL_HMX;
+             kparams->Br = Br;
