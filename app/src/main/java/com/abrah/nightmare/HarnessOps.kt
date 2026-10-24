@@ -261,6 +261,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "wan_motion" -> wanMotion(arg)
             "inpaint" -> inpaint(arg)
             "t2i" -> t2i()
+            "bench" -> bench()
+            "engine_sideload" -> engineSideload(arg)
             // ⭐ Prompt translation, timed (`docs/TRANSLATE.md`). `--es arg "ru|красная шляпа, 8k"`;
             // no arg runs a fixed Russian and Chinese set.
             "translate" -> translateProbe(arg)
@@ -1505,6 +1507,114 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         say("t2i: $model done. Pictures in ${dir.absolutePath}")
     }
 
+    /**
+     * ⭐ One timed Text to image render as a person gets it (the demo video's speed table, 2026-10-24): the selected
+     * model's own flow, steps, cfg, scheduler, size and negative, with the prompt and seed from `bench/job.txt`
+     * (line 1 the tag, line 2 the seed, the rest the prompt; a file, so no shell quoting). Writes `<tag>.png` at full
+     * size and `<tag>.json` (the params as rendered, the backend start and the render timed apart), then `<tag>.done`
+     * last, which is what a PC script waits on: logcat drops lines.
+     */
+    /**
+     * ⭐ Install a DiT engine archive pushed to the app's external files (`--es arg <name>`, default
+     * `dit-engine-test.zip`), checked against this build's size and SHA-256 ([DitEngine.installFrom]): a new engine is
+     * A/B'd on the phone before its release exists.
+     */
+    private fun engineSideload(arg: String?) {
+        val f = java.io.File(ctx.getExternalFilesDir(null), arg?.takeIf { it.isNotBlank() } ?: "dit-engine-test.zip")
+        if (!f.isFile) return say("engine_sideload: no ${f.absolutePath}", bad = true)
+        try {
+            BackendProcess.stop()
+            DitEngine.installFrom(ctx, f)
+            say("engine_sideload: installed ${DitEngine.bytesOnDisk(ctx)} bytes from ${f.name}, installed=${DitEngine.isInstalled(ctx)}")
+        } catch (e: Exception) {
+            say("engine_sideload FAILED. ${e.message}", bad = true)
+        }
+    }
+
+    private suspend fun bench() {
+        val dir = java.io.File(ctx.getExternalFilesDir(null), "bench").apply { mkdirs() }
+        val job = java.io.File(dir, "job.txt").takeIf { it.isFile }?.readLines()
+            ?: return say("bench: no ${dir.absolutePath}/job.txt", bad = true)
+        val tag = job.getOrNull(0)?.trim().orEmpty().ifEmpty { "run" }
+        val seed = job.getOrNull(1)?.trim()?.toLongOrNull() ?: 12345L
+        val prompt = job.drop(2).joinToString("\n").trim()
+        val spec = SelectedModel.spec
+        val types = nodeTypes()
+        val json = org.json.JSONObject()
+        fun finish(error: String?) {
+            json.put("error", error ?: org.json.JSONObject.NULL)
+            java.io.File(dir, "$tag.json").writeText(json.toString(2))
+            java.io.File(dir, "$tag.done").writeText(if (error == null) "ok" else "error")
+            say("bench $tag: " + (error ?: "${json.optLong("render_ms")} ms render, ${json.optLong("backend_ms")} ms backend"), bad = error != null)
+        }
+        val w0 = com.abrah.nightmare.canvas.defaultWorkflow()
+        val g = deriveSizes(
+            w0.graph.copy(
+                nodes = w0.graph.nodes.map {
+                    when {
+                        it.type == "core.prompt" -> it.copy(params = it.params + ("prompt" to prompt))
+                        it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES -> it.copy(
+                            params = it.params + mapOf(
+                                "seed" to seed.toString(),
+                                "steps" to spec.steps.toString(),
+                                "cfg" to spec.cfg.toString(),
+                                "scheduler" to spec.scheduler,
+                                // ⚠ Where a NEW node starts for this model ([ModelSpec.bornAt]), not the size the harness
+                                // last used with it (Anima rendered at 512x512 from a stale selection, 2026-10-24).
+                                "width" to spec.bornAt.width.toString(),
+                                "height" to spec.bornAt.height.toString(),
+                            ),
+                        )
+                        else -> it
+                    }
+                }
+            ),
+            types,
+        )
+        val sampler = g.nodes.first { it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES }
+        val live = runCatching { applyDefaults(types[sampler.type]?.widgets.orEmpty(), sampler) }.getOrDefault(sampler.params)
+        val promptNode = g.nodes.firstOrNull { it.type == "core.prompt" }
+        json.put("tag", tag).put("model", spec.id).put("label", spec.label).put("family", spec.family.name)
+            .put("app", BuildConfig.VERSION_NAME).put("prompt", prompt)
+            .put("negative", promptNode?.params?.get("negative").orEmpty())
+            .put("sampler_node", sampler.type).put("params", org.json.JSONObject(live.filterKeys { it != "lora" }))
+            .put("width", live["width"]?.toIntOrNull() ?: 0).put("height", live["height"]?.toIntOrNull() ?: 0)
+        val key = contextKeyModels(g, types).singleOrNull()?.let { m ->
+            contextKeyResolutions(g, types).singleOrNull()?.let { res ->
+                ContextKey(ModelCatalog.backendTypeOf(m), m, res.width, res.height)
+            }
+        }
+        val tb = System.currentTimeMillis()
+        if (!ensureBackend(key)) return finish("no backend")
+        val backendMs = System.currentTimeMillis() - tb
+        json.put("backend_ms", backendMs)
+        // ⭐ A `__warm` leg times the model RESIDENT: when the backend had to start (the app releases an idle one), an
+        // untimed 1-step render loads the weights first, so the number never includes a load the cold leg already paid.
+        if (tag.endsWith("__warm") && backendMs > 500) {
+            val tw = System.currentTimeMillis()
+            val one = g.copy(nodes = g.nodes.map {
+                if (it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) it.copy(params = it.params + ("steps" to "1")) else it
+            })
+            runWorkflow(com.abrah.nightmare.canvas.Workflow(one, emptyMap()))
+            json.put("warmup_ms", System.currentTimeMillis() - tw)
+            // ⚠ A model the app releases after EVERY render (Klein 9B, Krea 2: `Residency`) is gone again: start it, and
+            // the timed render then includes its load, as every real run of it does (`released_after_render`).
+            val ta = System.currentTimeMillis()
+            if (!ensureBackend(key)) return finish("no backend after the warm-up")
+            val again = System.currentTimeMillis() - ta
+            json.put("backend_after_warmup_ms", again).put("released_after_render", again > 500)
+        }
+        val t0 = System.currentTimeMillis()
+        json.put("started_at", t0)
+        val r = runWorkflow(com.abrah.nightmare.canvas.Workflow(g, emptyMap()))
+        json.put("render_ms", System.currentTimeMillis() - t0)
+        if (r.error != null) return finish("refused: ${r.error}")
+        val img = r.outputs.values.filterIsInstance<Value.Image>().lastOrNull() ?: return finish("no picture")
+        val png = images.png(img.id) ?: return finish("evicted")
+        java.io.File(dir, "$tag.png").writeBytes(png)
+        finish(null)
+    }
+
     private fun videoModels() {
         val vi = com.abrah.nightmare.npu.VideoInstaller
         val have = vi.installedBytes(ctx)
@@ -1694,10 +1804,25 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             ),
             w0.positions,
         ).let { fitWanFrame(it, uri) }
+        // ⭐ A sixth part names a `bench` record (the speed table): `bench/<tag>.mp4`, `.json`, then `.done`.
+        val tag = at(5)
+        val benchDir = java.io.File(ctx.getExternalFilesDir(null), "bench").apply { mkdirs() }
+        fun benchDone(error: String?, extra: org.json.JSONObject.() -> Unit = {}) {
+            if (tag.isEmpty()) return
+            val j = org.json.JSONObject().put("tag", tag).put("model", ModelCatalog.WAN22.id).put("app", BuildConfig.VERSION_NAME)
+                .put("prompt", at(0)).put("error", error ?: org.json.JSONObject.NULL)
+            wf.graph.nodes.firstOrNull { it.type == wan.name }?.let { n -> j.put("params", org.json.JSONObject(n.params)) }
+            j.extra()
+            java.io.File(benchDir, "$tag.json").writeText(j.toString(2))
+            java.io.File(benchDir, "$tag.done").writeText(if (error == null) "ok" else "error")
+        }
+        val tb = System.currentTimeMillis()
         if (!ensureBackendFor(wf.graph)) {
             say("wan: the backend did not start", bad = true)
+            benchDone("no backend")
             return
         }
+        val backendMs = System.currentTimeMillis() - tb
         val spec = ModelCatalog.WAN22
         say("wan: ${spec.label} ${if (spec.installed(ctx)) "installed" else "MISSING: ${spec.missing(ctx).joinToString()}"}, " +
             "engine ${if (DitEngine.isInstalled(ctx)) "installed" else "MISSING"}")
@@ -1706,16 +1831,26 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             say("  ${n.id.padEnd(8)} ${n.outcome.name.lowercase().padEnd(7)} " +
                 "${n.ms} ms  ${n.detail}", bad = n.outcome == Outcome.FAILED)
         })
+        val renderMs = System.currentTimeMillis() - t0
         if (r.error != null) {
             say("wan: refused. ${r.error}", bad = true)
+            benchDone("refused: ${r.error}")
             return
         }
         val clip = r.outputs["video"] as? Value.Video
         if (clip == null) {
             say("wan: the graph produced no clip", bad = true)
+            benchDone("no clip")
             return
         }
         say("wan: ${clip.frames} frames ${clip.w}x${clip.h} in ${(System.currentTimeMillis() - t0) / 1000} s")
+        if (tag.isNotEmpty()) {
+            java.io.File(clip.path).copyTo(java.io.File(benchDir, "$tag.mp4"), overwrite = true)
+            benchDone(null) {
+                put("frames", clip.frames).put("width", clip.w).put("height", clip.h)
+                    .put("backend_ms", backendMs).put("render_ms", renderMs).put("started_at", t0)
+            }
+        }
         say("  ${clip.path} (${java.io.File(clip.path).length() / 1024} KB)")
         com.abrah.nightmare.npu.VideoWriter.publish(ctx, java.io.File(clip.path), "wan_${System.currentTimeMillis()}.mp4") {
             say("  $it")

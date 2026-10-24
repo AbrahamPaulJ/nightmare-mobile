@@ -1,0 +1,151 @@
+diff --git a/src/model/diffusion/iris.hpp b/src/model/diffusion/iris.hpp
+index c3c64dd..940baa3 100644
+--- a/src/model/diffusion/iris.hpp
++++ b/src/model/diffusion/iris.hpp
+@@ -74,6 +74,46 @@ namespace Iris {
+         }
+     };
+ 
++    // nightmare (dit/037): Q/K norm and rope as ONE fused op (the HTP's qknorm_rope), as FLUX.2, Krea 2, Z-Image and
++    // Qwen already do and dit/029 / dit/035 added for Ideogram 4 and MOSS. Iris's rope table is FLUX-style interleaved
++    // pairs (image_rope, Pid::make_rope_1d), the kernel's own order, so no channel permutation is needed. The composed
++    // Rope::apply_rope is permutes, conts and REPEATs per q and k in each of 24 trunk and 4 pixel blocks.
++    // NM_IRIS_COMPOSED_ROPE=1 keeps the old path (the A/B control).
++    class IrisQKNorm : public RMSNorm {
++    public:
++        using RMSNorm::RMSNorm;
++
++        // x: [d, H, L, 1] straight off the projection, NOT normed. Returns [d, L, H] normed and roped, or nullptr.
++        ggml_tensor* forward_rope(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* pe) {
++            static const bool composed = getenv("NM_IRIS_COMPOSED_ROPE") != nullptr;
++            if (composed || ctx->backend == nullptr || x->ne[3] != 1 || x->type != GGML_TYPE_F32) {
++                return nullptr;
++            }
++            ggml_tensor* w = params["weight"];
++            if (ctx->weight_adapter) {
++                w = ctx->weight_adapter->patch_weight(ctx->ggml_ctx, ctx->backend, w, prefix + "weight");
++            }
++            ggml_tensor* out = ggml_qknorm_rope(ctx->ggml_ctx, x, w, pe, eps);
++            return ggml_backend_supports_op(ctx->backend, out) ? out : nullptr;
++        }
++    };
++
++    // Rows [from, from + n) of a rope table [2, 2, d/2, L] (the text part, then the image part, of a joint table).
++    inline ggml_tensor* rope_rows(ggml_context* c, ggml_tensor* pe, int64_t from, int64_t n) {
++        return ggml_view_4d(c, pe, pe->ne[0], pe->ne[1], pe->ne[2], n, pe->nb[1], pe->nb[2], pe->nb[3], from * pe->nb[3]);
++    }
++
++    // q, k, v: [d, H, L, 1] off the projection, q and k NOT normed. Fused norm + rope, else the composed path.
++    inline ggml_tensor* attend(GGMLRunnerContext* ctx, IrisQKNorm* nq, IrisQKNorm* nk, ggml_tensor* q, ggml_tensor* k,
++                               ggml_tensor* v, ggml_tensor* pe, ggml_tensor* mask) {
++        ggml_tensor* qr = nq->forward_rope(ctx, q, pe);
++        ggml_tensor* kr = qr != nullptr ? nk->forward_rope(ctx, k, pe) : nullptr;
++        if (qr != nullptr && kr != nullptr) {
++            return ggml_ext_attention_ext(ctx->ggml_ctx, ctx->backend, qr, kr, v, q->ne[1], mask, true, ctx->flash_attn_enabled);
++        }
++        return Rope::attention(ctx, nq->forward(ctx, q), nk->forward(ctx, k), v, pe, mask);
++    }
++
+     struct SelfAttention : public GGMLBlock {
+         int64_t dim;
+         int64_t heads;
+@@ -84,8 +124,8 @@ namespace Iris {
+             blocks["qkv"]  = std::make_shared<Linear>(dim, 3 * dim, false);
+             blocks["proj"] = std::make_shared<Linear>(dim, dim, true);
+             if (qk_norm) {
+-                blocks["q_norm"] = std::make_shared<RMSNorm>(dim / heads, 1e-6f);
+-                blocks["k_norm"] = std::make_shared<RMSNorm>(dim / heads, 1e-6f);
++                blocks["q_norm"] = std::make_shared<IrisQKNorm>(dim / heads, 1e-6f);
++                blocks["k_norm"] = std::make_shared<IrisQKNorm>(dim / heads, 1e-6f);
+             }
+         }
+ 
+@@ -95,6 +135,11 @@ namespace Iris {
+             auto q   = ggml_reshape_4d(c, qkv[0], dim / heads, heads, x->ne[1], x->ne[2]);
+             auto k   = ggml_reshape_4d(c, qkv[1], dim / heads, heads, x->ne[1], x->ne[2]);
+             auto v   = ggml_reshape_4d(c, qkv[2], dim / heads, heads, x->ne[1], x->ne[2]);
++            if (qk_norm && pe) {
++                x = attend(ctx, std::dynamic_pointer_cast<IrisQKNorm>(blocks["q_norm"]).get(),
++                           std::dynamic_pointer_cast<IrisQKNorm>(blocks["k_norm"]).get(), q, k, v, pe, mask);
++                return std::dynamic_pointer_cast<Linear>(blocks["proj"])->forward(ctx, x);
++            }
+             if (qk_norm) {
+                 q = std::dynamic_pointer_cast<RMSNorm>(blocks["q_norm"])->forward(ctx, q);
+                 k = std::dynamic_pointer_cast<RMSNorm>(blocks["k_norm"])->forward(ctx, k);
+@@ -190,8 +235,8 @@ namespace Iris {
+                 blocks[attn + "q_proj" + suffix]                  = std::make_shared<Linear>(d, d, false);
+                 blocks[attn + "k_proj" + suffix]                  = std::make_shared<Linear>(d, config.kv_heads * config.head_dim, false);
+                 blocks[attn + "v_proj" + suffix]                  = std::make_shared<Linear>(d, config.kv_heads * config.head_dim, false);
+-                blocks[attn + "q_norm" + suffix]                  = std::make_shared<RMSNorm>(config.head_dim, 1e-6f);
+-                blocks[attn + "k_norm" + suffix]                  = std::make_shared<RMSNorm>(config.head_dim, 1e-6f);
++                blocks[attn + "q_norm" + suffix]                  = std::make_shared<IrisQKNorm>(config.head_dim, 1e-6f);
++                blocks[attn + "k_norm" + suffix]                  = std::make_shared<IrisQKNorm>(config.head_dim, 1e-6f);
+                 blocks[dual ? "attn.proj" + suffix : "attn_proj"] = std::make_shared<Linear>(d, d, true);
+                 blocks["attn_gate" + suffix]                      = std::make_shared<Linear>(d, d, false);
+                 blocks["norm" + suffix + "1"]                     = std::make_shared<RMSNorm>(d, 1e-6f);
+@@ -231,6 +276,20 @@ namespace Iris {
+             return {norm(ctx, a + "q_norm" + suffix, q), norm(ctx, a + "k_norm" + suffix, k), v};
+         }
+ 
++        // project() without the q/k norms, for the fused path, which norms and ropes in one op.
++        std::array<ggml_tensor*, 3> project_raw(GGMLRunnerContext* ctx, ggml_tensor* h, const std::string& suffix) {
++            auto c        = ctx->ggml_ctx;
++            std::string a = dual ? "attn." : "";
++            auto q        = ggml_reshape_4d(c, linear(ctx, a + "q_proj" + suffix, h), config.head_dim, config.num_heads, h->ne[1], h->ne[2]);
++            auto k        = ggml_reshape_4d(c, linear(ctx, a + "k_proj" + suffix, h), config.head_dim, config.kv_heads, h->ne[1], h->ne[2]);
++            auto v        = ggml_reshape_4d(c, linear(ctx, a + "v_proj" + suffix, h), config.head_dim, config.kv_heads, h->ne[1], h->ne[2]);
++            return {q, k, v};
++        }
++
++        IrisQKNorm* qk(const std::string& which, const std::string& suffix) {
++            return std::dynamic_pointer_cast<IrisQKNorm>(blocks[(dual ? "attn." : "") + which + suffix]).get();
++        }
++
+         ggml_tensor* finish(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* h, ggml_tensor* out, const std::vector<ggml_tensor*>& mods, const std::string& suffix) {
+             auto c = ctx->ggml_ctx;
+             out    = ggml_mul(c, out, ggml_sigmoid(c, linear(ctx, "attn_gate" + suffix, h)));
+@@ -250,18 +309,38 @@ namespace Iris {
+             if (!dual) {
+                 auto tokens = ggml_concat(c, y, x, 1);
+                 auto h      = Pid::apply_adaln(c, norm(ctx, "norm1", tokens), mx[0], mx[1]);
+-                auto qkv    = project(ctx, h, "");
+-                auto out    = Rope::attention(ctx, qkv[0], qkv[1], qkv[2], pe, nullptr);
++                auto qkv    = project_raw(ctx, h, "");
++                auto out    = attend(ctx, qk("q_norm", ""), qk("k_norm", ""), qkv[0], qkv[1], qkv[2], pe, nullptr);
+                 tokens      = finish(ctx, tokens, h, out, mx, "");
+                 return {ggml_ext_slice(c, tokens, 1, nt, tokens->ne[1]), ggml_ext_slice(c, tokens, 1, 0, nt)};
+             }
+             auto my  = ggml_ext_chunk(c, ggml_add(c, txt_mod, params["adaln_txt.bias"]), 6, 0);
+             auto hx  = Pid::apply_adaln(c, norm(ctx, "norm_x1", x), mx[0], mx[1]);
+             auto hy  = Pid::apply_adaln(c, norm(ctx, "norm_y1", y), my[0], my[1]);
+-            auto qx  = project(ctx, hx, "_x");
+-            auto qy  = project(ctx, hy, "_y");
+-            auto out = Rope::attention(ctx, ggml_concat(c, qy[0], qx[0], 2), ggml_concat(c, qy[1], qx[1], 2),
+-                                       ggml_concat(c, qy[2], qx[2], 2), pe, nullptr);
++            ggml_tensor* out = nullptr;
++            {
++                // Text and image have their own q/k norms, so each stream is normed and roped on its own rows of
++                // the joint table (text first, as the concat below orders them), then joined along L ([d, L, H]).
++                auto rx            = project_raw(ctx, hx, "_x");
++                auto ry            = project_raw(ctx, hy, "_y");
++                ggml_tensor* pe_y  = rope_rows(c, pe, 0, nt);
++                ggml_tensor* pe_x  = rope_rows(c, pe, nt, pe->ne[3] - nt);
++                ggml_tensor* qry   = qk("q_norm", "_y")->forward_rope(ctx, ry[0], pe_y);
++                ggml_tensor* qrx   = qry != nullptr ? qk("q_norm", "_x")->forward_rope(ctx, rx[0], pe_x) : nullptr;
++                ggml_tensor* kry   = qrx != nullptr ? qk("k_norm", "_y")->forward_rope(ctx, ry[1], pe_y) : nullptr;
++                ggml_tensor* krx   = kry != nullptr ? qk("k_norm", "_x")->forward_rope(ctx, rx[1], pe_x) : nullptr;
++                if (krx != nullptr) {
++                    out = ggml_ext_attention_ext(c, ctx->backend, ggml_concat(c, qry, qrx, 1), ggml_concat(c, kry, krx, 1),
++                                                 ggml_concat(c, ry[2], rx[2], 2), config.num_heads, nullptr, true,
++                                                 ctx->flash_attn_enabled);
++                }
++            }
++            if (out == nullptr) {
++                auto qx = project(ctx, hx, "_x");
++                auto qy = project(ctx, hy, "_y");
++                out     = Rope::attention(ctx, ggml_concat(c, qy[0], qx[0], 2), ggml_concat(c, qy[1], qx[1], 2),
++                                          ggml_concat(c, qy[2], qx[2], 2), pe, nullptr);
++            }
+             x        = finish(ctx, x, hx, ggml_ext_slice(c, out, 1, nt, out->ne[1]), mx, "_x");
+             y        = finish(ctx, y, hy, ggml_ext_slice(c, out, 1, 0, nt), my, "_y");
+             return {x, y};

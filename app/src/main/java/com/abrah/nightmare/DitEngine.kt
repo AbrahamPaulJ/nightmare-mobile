@@ -147,7 +147,7 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108-mossrope/dit-engine-abi108-mossrope.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108-irisrope/dit-engine-abi108-irisrope.zip"
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -157,7 +157,7 @@ object DitEngine {
      * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
      */
     const val HF_URL =
-        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108-mossrope.zip"
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108-irisrope.zip"
 
     /**
      * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
@@ -168,11 +168,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_194_267L
+    const val BYTES = 23_198_798L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 55_954_064L
+    const val FILE_BYTES = 55_963_872L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -182,7 +182,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "cd6202ae546c1de52f3fbc0e2edd3372396bc9b14043e9ea698c2eb528b6c945"
+    private const val SHA256 = "97f17b34cf6a2a02f8d208f9e7a5593b81e523e636302541e7d8234a0cbb797c"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 
@@ -268,6 +268,30 @@ object DitEngine {
             }
         }
         if (failures.isNotEmpty()) throw IOException("$LABEL: no source answered. ${failures.joinToString("; ")}")
+        unpack(context, zip, onProgress, isCancelled)
+    }
+
+    /**
+     * ⭐ An engine archive pushed by hand (the harness's `engine_sideload`), checked against THIS build's [BYTES] and
+     * [SHA256] exactly as a download is: a new engine is A/B'd on the phone before its release exists, and publishing
+     * the same bytes under [URL] afterwards changes nothing on a phone that sideloaded them.
+     */
+    fun installFrom(context: Context, archive: File) = synchronized(installLock) {
+        val zip = File(dir(context).apply { mkdirs() }, "dit-engine.zip.part")
+        archive.copyTo(zip, overwrite = true)
+        if (zip.length() != BYTES || sha256(zip) != SHA256) {
+            zip.delete()
+            throw IOException("$LABEL: ${archive.name} is not this build's engine (${archive.length()} bytes)")
+        }
+        unpack(context, zip, {}, { false })
+    }
+
+    private fun unpack(
+        context: Context,
+        zip: File,
+        onProgress: (ModelInstaller.Progress) -> Unit,
+        isCancelled: () -> Boolean,
+    ) {
         onProgress(ModelInstaller.Progress("extracting", 0, 0))
         // ⚠⚠⚠ `.part` then RENAME, never a write in place — and here that is
         // not only about an interrupted unpack leaving a truncated file.
@@ -279,7 +303,7 @@ object DitEngine {
         // [BackendProcess.prepareRuntime]). A re-install while a backend has
         // the engine `dlopen`'d is the same hazard; a rename swaps the
         // directory entry and leaves the old inode intact for that process.
-        val tmp = File(dir, "$FILE.part")
+        val tmp = File(dir(context), "$FILE.part")
         var extracted = false
         ZipInputStream(zip.inputStream().buffered(1 shl 16)).use { z ->
             while (true) {
