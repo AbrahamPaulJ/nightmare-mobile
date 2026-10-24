@@ -45,7 +45,8 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 |---|---|
 | **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. **Match picture** sets the photo's shape |
 | **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
-| **Seconds** | 0 to 5, at 24 frames a second; 0 makes one still picture (about 15 s at 832 × 480 on an 8 Elite; wire **last frame** to the output). On a 12 GB phone, 1280 × 704 for 3 seconds or more renders in parts so it fits: slower, about 12 minutes for 5 seconds. On an 8 Gen 3 a new flow opens on 2 seconds, the longest that has worked there so far; longer clips and 1280 × 704 still run, with a warning in the run log |
+| **Seconds** | 0 to 5, at the **FPS** below (24 by default); 0 makes one still picture (about 15 s at 832 × 480 on an 8 Elite; wire **last frame** to the output). On a 12 GB phone, 1280 × 704 for 3 seconds or more renders in parts so it fits: slower, about 12 minutes for 5 seconds. On an 8 Gen 3 a new flow opens on 2 seconds, the longest that has worked there so far; longer clips and 1280 × 704 still run, with a warning in the run log |
+| **FPS** | 8, 12, 16 or 24 frames a second (24 by default). Fewer frames for the same seconds: 8 renders a third of the frames, about 3x faster, but plays choppier and the motion slower, since Wan moves at its own pace per frame |
 | **LoRAs** | Wan 2.2 TI2V-5B LoRAs only (a 14B one does not fit). See [LoRAs](../models/loras.md) |
 
 Neodragon has **Seed** and **Upscale** (on: 2× to 1024 × 640; off: 512 × 320, a little faster).
@@ -66,7 +67,8 @@ Output the complete film. **Results** keeps every part on its own as well, each 
 it started from, grouped together beside the film.
 
 On the canvas, a film longer than about 5 seconds loops faster than real time; full screen plays
-it at its own speed.
+it at its own speed. The **camera** button beside share (full screen, on the canvas and in
+Results) saves the frame on screen to the gallery as a picture.
 
 ## Motion transfer
 

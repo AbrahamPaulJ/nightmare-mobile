@@ -50,17 +50,20 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
   imported `.safetensors` runs as it is: about 20% slower than the built-in, which the app
   converts to Q8_0. A Q8_0 `.gguf` runs at the built-in's speed.
 - **MOSS-Image** uses the text encoder, VAE and tokenizer of the MOSS-Image you have installed, so
-  an import costs only its own weights (without one, it downloads its own 5.6 GB). An import runs
-  without the built-in's 8-step speed-up: a "Turbo" or "8 step" file has it built in and starts at
-  8 steps and CFG 1 (the app reads that from the file's name); any other starts at 25 steps and
-  CFG 3, as MOSS fine-tunes ask. A Q4_0 `.gguf` such as molbal's *MOSS Image Turbo GGUF* is the
+  an import costs only its own weights (without one, it downloads its own 5.6 GB). An import gets
+  the built-in's **8-step speed-up** too (the same LoRA, read from the installed MOSS-Image, 8 steps
+  and CFG 1), shown as an **8 steps** badge on its card. Switch it off with **⋮ → 8-step speed-up**
+  for a fine-tune that wants its own steps: it then starts at 25 steps and CFG 3. A "Turbo" or
+  "8 step" file has the speed-up built in, so it never takes it twice (the app reads that from the
+  file's name) and starts at 8 steps and CFG 1. A 16-bit file that stops importing part way says
+  how much of it arrived: it is usually still downloading. A Q4_0 `.gguf` such as molbal's *MOSS Image Turbo GGUF* is the
   fastest MOSS-Image: about 40 s at 512x512 and 2.5 min at 1024x1024 on an 8 Elite (it is also in the
   catalogue as **MOSS-Image Turbo**).
 
 !!! example "Example: Moody Moss Mix (25 steps)"
     On its CivitAI page pick the **fp8** file (*V1.0 25 STEPS CFG3*, about 4.8 GB), not the int8 one.
-    Install MOSS-Image SFT first, then import the file with **+**. It starts at 25 steps and CFG 3,
-    which is what it needs: fewer steps leave it unfinished. About 3 min at 512x512 and 16 min at
+    Install MOSS-Image SFT first, then import the file with **+**, and switch **⋮ → 8-step speed-up**
+    off: it then starts at 25 steps and CFG 3, which is what it needs. About 3 min at 512x512 and 16 min at
     1024x1024 on an 8 Elite.
 
 !!! warning "Size and memory"

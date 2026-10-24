@@ -11,8 +11,9 @@ Open Settings from the sidebar (☰ at the top left). It has five tabs: **Appear
 
 ### Theme
 
-**Follow the system**, **Dark** or **Light**. The canvas itself is always drawn dark; the theme
-changes everything around it.
+**Follow the system**, **Dark**, **Black (AMOLED)** or **Light**. Black is Dark with true-black
+backgrounds, which saves power on an OLED screen. The canvas itself is always drawn dark (true black
+under Black); the theme changes everything around it.
 
 ### Views
 
