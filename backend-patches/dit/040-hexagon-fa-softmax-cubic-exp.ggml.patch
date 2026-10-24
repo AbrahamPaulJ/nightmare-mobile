@@ -1,0 +1,134 @@
+diff --git a/src/ggml-hexagon/htp/flash-attn-ops.c b/src/ggml-hexagon/htp/flash-attn-ops.c
+index ba02aa5..7ce00d0 100644
+--- a/src/ggml-hexagon/htp/flash-attn-ops.c
++++ b/src/ggml-hexagon/htp/flash-attn-ops.c
+@@ -1371,6 +1371,14 @@ static inline void fa_softmax_impl(
+             const HVX_Vector v_zero      = Q6_V_vzero();
+             HVX_Vector       v_p_rowsum0 = v_zero;
+             HVX_Vector       v_p_rowsum1 = v_zero;
++            // dit/040: the cubic exp2, and on v79+ the row sum as ONE widening multiply-accumulate per vector
++            // (P x 1.0 into an f32 pair) in place of convert + two adds.
++            const HVX_Vector v_c3q       = hvx_exp2_f16_c3_qf16();
++#if __HVX_ARCH__ >= 79
++            const HVX_Vector v_one_hf    = hvx_vec_splat_f16(1.0f);
++            HVX_VectorPair   w_p_rowsum0 = Q6_W_vcombine_VV(v_zero, v_zero);
++            HVX_VectorPair   w_p_rowsum1 = Q6_W_vcombine_VV(v_zero, v_zero);
++#endif
+ 
+             size_t c = 0;
+             for (; c + 128 <= kv_rows; c += 128) {
+@@ -1382,10 +1390,10 @@ static inline void fa_softmax_impl(
+                 HVX_Vector v_s_minus_m0_1 = Q6_Vqf16_vsub_VhfVhf(my_row_buf0[ci1], v_dup_m0);
+                 HVX_Vector v_s_minus_m1_1 = Q6_Vqf16_vsub_VhfVhf(my_row_buf1[ci1], v_dup_m1);
+ 
+-                HVX_Vector v_p_row0_hf_0  = hvx_vec_exp2_f16(Q6_Vhf_equals_Vqf16(v_s_minus_m0_0));
+-                HVX_Vector v_p_row1_hf_0  = hvx_vec_exp2_f16(Q6_Vhf_equals_Vqf16(v_s_minus_m1_0));
+-                HVX_Vector v_p_row0_hf_1  = hvx_vec_exp2_f16(Q6_Vhf_equals_Vqf16(v_s_minus_m0_1));
+-                HVX_Vector v_p_row1_hf_1  = hvx_vec_exp2_f16(Q6_Vhf_equals_Vqf16(v_s_minus_m1_1));
++                HVX_Vector v_p_row0_hf_0  = hvx_vec_exp2_f16_c3(Q6_Vhf_equals_Vqf16(v_s_minus_m0_0), v_c3q);
++                HVX_Vector v_p_row1_hf_0  = hvx_vec_exp2_f16_c3(Q6_Vhf_equals_Vqf16(v_s_minus_m1_0), v_c3q);
++                HVX_Vector v_p_row0_hf_1  = hvx_vec_exp2_f16_c3(Q6_Vhf_equals_Vqf16(v_s_minus_m0_1), v_c3q);
++                HVX_Vector v_p_row1_hf_1  = hvx_vec_exp2_f16_c3(Q6_Vhf_equals_Vqf16(v_s_minus_m1_1), v_c3q);
+ 
+                 __fp16 *     out_dtile0  = p_st_base + ci0 * HMX_FP16_TILE_N_ELMS * 2;
+                 __fp16 *     out_dtile1  = p_st_base + ci1 * HMX_FP16_TILE_N_ELMS * 2;
+@@ -1402,6 +1410,12 @@ static inline void fa_softmax_impl(
+                 *pv_p_out0_1               = Q6_V_lo_W(vp_p_dual1);
+                 *pv_p_out1_1               = Q6_V_hi_W(vp_p_dual1);
+ 
++#if __HVX_ARCH__ >= 79
++                w_p_rowsum0 = Q6_Wsf_vmpyacc_WsfVhfVhf(w_p_rowsum0, v_p_row0_hf_0, v_one_hf);
++                w_p_rowsum0 = Q6_Wsf_vmpyacc_WsfVhfVhf(w_p_rowsum0, v_p_row0_hf_1, v_one_hf);
++                w_p_rowsum1 = Q6_Wsf_vmpyacc_WsfVhfVhf(w_p_rowsum1, v_p_row1_hf_0, v_one_hf);
++                w_p_rowsum1 = Q6_Wsf_vmpyacc_WsfVhfVhf(w_p_rowsum1, v_p_row1_hf_1, v_one_hf);
++#else
+                 HVX_VectorPair vp_p0_0 = hvx_vec_f16_to_f32_shuff(v_p_row0_hf_0);
+                 HVX_VectorPair vp_p1_0 = hvx_vec_f16_to_f32_shuff(v_p_row1_hf_0);
+                 HVX_VectorPair vp_p0_1 = hvx_vec_f16_to_f32_shuff(v_p_row0_hf_1);
+@@ -1411,6 +1425,7 @@ static inline void fa_softmax_impl(
+                 v_p_rowsum0 = Q6_Vqf32_vadd_Vqf32Vqf32(v_p_rowsum0, Q6_Vqf32_vadd_VsfVsf(Q6_V_lo_W(vp_p0_1), Q6_V_hi_W(vp_p0_1)));
+                 v_p_rowsum1 = Q6_Vqf32_vadd_Vqf32Vqf32(v_p_rowsum1, Q6_Vqf32_vadd_VsfVsf(Q6_V_lo_W(vp_p1_0), Q6_V_hi_W(vp_p1_0)));
+                 v_p_rowsum1 = Q6_Vqf32_vadd_Vqf32Vqf32(v_p_rowsum1, Q6_Vqf32_vadd_VsfVsf(Q6_V_lo_W(vp_p1_1), Q6_V_hi_W(vp_p1_1)));
++#endif
+             }
+             for (size_t c_rem = c; c_rem < kv_rows; c_rem += 64) {
+                 size_t     ci           = c_rem / 64;
+@@ -1419,8 +1434,8 @@ static inline void fa_softmax_impl(
+                 HVX_Vector v_s_minus_m0 = Q6_Vqf16_vsub_VhfVhf(my_row_buf0[ci], v_dup_m0);
+                 HVX_Vector v_s_minus_m1 = Q6_Vqf16_vsub_VhfVhf(my_row_buf1[ci], v_dup_m1);
+ 
+-                HVX_Vector v_p_row0_hf  = hvx_vec_exp2_f16(Q6_Vhf_equals_Vqf16(v_s_minus_m0));
+-                HVX_Vector v_p_row1_hf  = hvx_vec_exp2_f16(Q6_Vhf_equals_Vqf16(v_s_minus_m1));
++                HVX_Vector v_p_row0_hf  = hvx_vec_exp2_f16_c3(Q6_Vhf_equals_Vqf16(v_s_minus_m0), v_c3q);
++                HVX_Vector v_p_row1_hf  = hvx_vec_exp2_f16_c3(Q6_Vhf_equals_Vqf16(v_s_minus_m1), v_c3q);
+                 if (ne < 64) {
+                     v_p_row0_hf = Q6_V_vmux_QVV(q_tail_keep, v_p_row0_hf, v_zero);
+                     v_p_row1_hf = Q6_V_vmux_QVV(q_tail_keep, v_p_row1_hf, v_zero);
+@@ -1433,12 +1448,21 @@ static inline void fa_softmax_impl(
+                 *pv_p_out0               = Q6_V_lo_W(vp_p_dual);
+                 *pv_p_out1               = Q6_V_hi_W(vp_p_dual);
+ 
++#if __HVX_ARCH__ >= 79
++                w_p_rowsum0 = Q6_Wsf_vmpyacc_WsfVhfVhf(w_p_rowsum0, v_p_row0_hf, v_one_hf);
++                w_p_rowsum1 = Q6_Wsf_vmpyacc_WsfVhfVhf(w_p_rowsum1, v_p_row1_hf, v_one_hf);
++#else
+                 HVX_VectorPair vp_p0 = hvx_vec_f16_to_f32_shuff(v_p_row0_hf);
+                 HVX_VectorPair vp_p1 = hvx_vec_f16_to_f32_shuff(v_p_row1_hf);
+ 
+                 v_p_rowsum0 = Q6_Vqf32_vadd_Vqf32Vqf32(v_p_rowsum0, Q6_Vqf32_vadd_VsfVsf(Q6_V_lo_W(vp_p0), Q6_V_hi_W(vp_p0)));
+                 v_p_rowsum1 = Q6_Vqf32_vadd_Vqf32Vqf32(v_p_rowsum1, Q6_Vqf32_vadd_VsfVsf(Q6_V_lo_W(vp_p1), Q6_V_hi_W(vp_p1)));
++#endif
+             }
++#if __HVX_ARCH__ >= 79
++            v_p_rowsum0 = Q6_Vqf32_vadd_VsfVsf(Q6_V_lo_W(w_p_rowsum0), Q6_V_hi_W(w_p_rowsum0));
++            v_p_rowsum1 = Q6_Vqf32_vadd_VsfVsf(Q6_V_lo_W(w_p_rowsum1), Q6_V_hi_W(w_p_rowsum1));
++#endif
+ 
+             HVX_Vector rowsum0_sf = hvx_vec_reduce_sum_f32(Q6_Vsf_equals_Vqf32(v_p_rowsum0));
+             HVX_Vector rowsum1_sf = hvx_vec_reduce_sum_f32(Q6_Vsf_equals_Vqf32(v_p_rowsum1));
+diff --git a/src/ggml-hexagon/htp/hvx-exp.h b/src/ggml-hexagon/htp/hvx-exp.h
+index bcd3d2d..7c652be 100644
+--- a/src/ggml-hexagon/htp/hvx-exp.h
++++ b/src/ggml-hexagon/htp/hvx-exp.h
+@@ -252,4 +252,41 @@ static inline HVX_Vector hvx_vec_exp2_f16(HVX_Vector x_v) {
+     return Q6_V_vmux_QVV(q_underflow, zero_v, y);
+ }
+ 
++// dit/040: exp2 for the flash-attention softmax with a DEGREE-3 minimax polynomial in place of degree 6, six HVX
++// ops fewer per 64 values. The truncating hf->h conversion puts frac in (-0.5, 0.5]; fitted there and tuned on the
++// fp16 grid (0x398c, 0x33c1, 0x2b06): max relative error 1.24e-4, a quarter of an fp16 step, and 5.5 % of the fp16
++// results 1 ulp from correctly rounded (the degree-6 Taylor: 6.2 %). c3_qf16 is hvx_exp2_f16_c3_qf16(), made once
++// by the caller rather than per call.
++static inline HVX_Vector hvx_exp2_f16_c3_qf16(void) {
++    return Q6_Vqf16_vadd_VhfVhf(Q6_Vh_vsplat_R(0x2b06), Q6_V_vzero());
++}
++
++static inline HVX_Vector hvx_vec_exp2_f16_c3(HVX_Vector x_v, HVX_Vector c3_qf16) {
++    const HVX_Vector zero_v    = Q6_V_vzero();
++    const HVX_Vector half_hf_v = Q6_Vh_vsplat_R(0x3800);  // fp16 0.5
++
++    const HVX_Vector v_clamp_min = hvx_vec_splat_f16(-24.0f);
++    x_v = Q6_Vhf_vmax_VhfVhf(v_clamp_min, x_v);
++
++    HVX_Vector x_minus_half = Q6_Vhf_equals_Vqf16(Q6_Vqf16_vsub_VhfVhf(x_v, half_hf_v));
++    HVX_Vector k_v          = Q6_Vh_equals_Vhf(x_minus_half);  // toward zero
++    HVX_Vector f_v          = Q6_Vhf_equals_Vh(k_v);
++
++    HVX_Vector x_qf16 = Q6_Vqf16_vsub_VhfVhf(x_v, f_v);        // frac in (-0.5, 0.5]
++
++    HVX_Vector y = Q6_Vqf16_vmpy_Vqf16Vqf16(c3_qf16, x_qf16);
++    y            = Q6_Vqf16_vadd_Vqf16Vhf(y, Q6_Vh_vsplat_R(0x33c1));
++    y            = Q6_Vqf16_vmpy_Vqf16Vqf16(y, x_qf16);
++    y            = Q6_Vqf16_vadd_Vqf16Vhf(y, Q6_Vh_vsplat_R(0x398c));
++    y            = Q6_Vqf16_vmpy_Vqf16Vqf16(y, x_qf16);
++    y            = Q6_Vqf16_vadd_Vqf16Vhf(y, Q6_Vh_vsplat_R(0x3c00));
++
++    y                          = Q6_Vhf_equals_Vqf16(y);
++    HVX_Vector y_exp           = Q6_Vuh_vlsr_VuhR(Q6_Vh_vasl_VhR(y, 1), 11);
++    y_exp                      = Q6_Vh_vadd_VhVh(k_v, y_exp);
++    HVX_VectorPred q_underflow = Q6_Q_vcmp_gt_VhVh(zero_v, y_exp);
++    y                          = Q6_Vh_vaslacc_VhVhR(y, k_v, 10);
++    return Q6_V_vmux_QVV(q_underflow, zero_v, y);
++}
++
+ #endif /* HVX_EXP_H */
