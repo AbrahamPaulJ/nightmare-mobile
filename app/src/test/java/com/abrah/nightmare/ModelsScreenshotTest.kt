@@ -262,6 +262,33 @@ open class ModelsScreenshotTest {
         )
     }
 
+    /**
+     * ⭐ All lists the video models too, inside Installed and Available after the checkpoints (the user, 2026-10-24:
+     * "video models should show in All"): Wan Turbo installed, Fun Control and Neodragon (canary passed) available.
+     */
+    @Test
+    fun allTabWithVideo() = shoot("models-all-video") {
+        ModelsScreen(
+            // ⚠ Two checkpoints, so the golden reaches the video cards in BOTH sections.
+            rows = rows(installed = setOf(V1_MODEL), selected = V1_MODEL).take(2),
+            busy = false, error = null,
+            onInstall = {}, onCancel = {}, onDelete = {}, onSelect = {},
+            video = com.abrah.nightmare.ui.VideoRow(
+                installedBytes = 0L,
+                totalBytes = 8_596_825_402L,
+                missing = listOf("neodragon"),
+                weightsMissing = emptyList(),
+                supported = true,
+            ),
+            wans = listOf(ModelCatalog.WAN22, ModelCatalog.WAN22_FUN).map { spec ->
+                com.abrah.nightmare.ui.ModelRow(
+                    spec = spec, build = spec.best, installed = spec == ModelCatalog.WAN22, selected = false,
+                    fetchBytes = spec.best!!.bytes, onDisk = if (spec == ModelCatalog.WAN22) spec.best!!.bytes else 0L,
+                )
+            },
+        )
+    }
+
     /** A failed install has to say why — "size mismatch" is the common one. */
     @Test
     fun withAnError() = shoot("models-error") {

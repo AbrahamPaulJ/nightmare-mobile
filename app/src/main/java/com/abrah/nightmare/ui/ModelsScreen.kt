@@ -249,7 +249,8 @@ fun ModelsScreen(
     /**
      * ⭐ The Wan models ([com.abrah.nightmare.ModelCatalog.video]: Wan 2.2 Turbo and Fun Control), drawn on
      * the Video tab and on their own Wan page in the family menu (the user, 2026-10-15: "show WAN in the
-     * family filter"), never among the checkpoints. Install and Delete are the checkpoints' own.
+     * family filter"), and in their own Video section at the end of All (2026-10-24). Install and Delete are the
+     * checkpoints' own.
      */
     wans: List<ModelRow> = emptyList(),
     onUseWan: (ModelSpec) -> Unit = {},
@@ -668,22 +669,50 @@ fun ModelsScreen(
                     val card: @Composable (ModelRow) -> Unit = { row ->
                         ModelCardV2(row, busy, onInstall, onCancel, { deleting = it }, onSelect, onRename = { renaming = it }, onTestNpu = onTestNpu, onToggleSpeed = onToggleSpeed)
                     }
-                    if (sec.installed.isNotEmpty()) {
-                        item { SectionHeader(stringResource(R.string.mb_section_installed, sec.installed.size)) }
+                    // ⭐ All lists the video models too, inside the same three sections as the checkpoints (the user,
+                    // 2026-10-24: "video models should show in All"): an installed Wan sits with the installed models,
+                    // not 46 cards down. Drawn with the Video tab's own cards ([videoModelItems]), after the
+                    // checkpoints of each section. ⚠ Neodragon only once installed or passed by the canary: the canary
+                    // brings the QNN backend up, so it stays on the Video tab, the place 8 GB is about to be spent.
+                    val allVideo = fp == null && kind == ModelKind.ALL && query.isBlank() && gi == 0
+                    val neo = video?.takeIf { allVideo && (it.complete || it.supported == true) }
+                    val neoIn = neo?.takeIf { it.complete }
+                    val neoOut = neo?.takeIf { !it.complete }
+                    val wansIn = if (allVideo) wans.filter { it.installed } else emptyList()
+                    val wansOut = if (allVideo) wans.filter { !it.installed && it.build != null } else emptyList()
+                    val wansNo = if (allVideo) wans.filter { !it.installed && it.build == null } else emptyList()
+                    fun androidx.compose.foundation.lazy.LazyListScope.videoPart(n: VideoRow?, w: List<ModelRow>) {
+                        if (n != null || w.isNotEmpty()) videoModelItems(
+                            n, busy, onInstallVideo, onCancel,
+                            onConfirmDelete = { deletingVideo = true }, onUse = onUseVideo,
+                            wans = w, onInstallWan = onInstall, onDeleteWan = { deleting = it }, onUseWan = onUseWan,
+                            showNote = false,
+                        )
+                    }
+                    val nIn = sec.installed.size + wansIn.size + (if (neoIn != null) 1 else 0)
+                    val nOut = sec.available.size + wansOut.size + (if (neoOut != null) 1 else 0)
+                    val nNo = sec.unsupported.size + wansNo.size
+                    if (nIn > 0) {
+                        item { SectionHeader(stringResource(R.string.mb_section_installed, nIn)) }
                         items(sec.installed, key = { "i_" + it.spec.id }) { card(it) }
+                        videoPart(neoIn, wansIn)
                     }
-                    if (sec.available.isNotEmpty()) {
-                        item { SectionHeader(stringResource(R.string.mb_section_available, sec.available.size)) }
+                    if (nOut > 0) {
+                        item { SectionHeader(stringResource(R.string.mb_section_available, nOut)) }
                         items(sec.available, key = { "a_" + it.spec.id }) { card(it) }
+                        videoPart(neoOut, wansOut)
                     }
-                    if (sec.unsupported.isNotEmpty()) {
+                    if (nNo > 0) {
                         item {
                             SectionHeader(
-                                stringResource(R.string.mb_section_unsupported, sec.unsupported.size),
+                                stringResource(R.string.mb_section_unsupported, nNo),
                                 collapsed = !showUnsupported,
                             ) { showUnsupported = !showUnsupported }
                         }
-                        if (showUnsupported) items(sec.unsupported, key = { "u_" + it.spec.id }) { card(it) }
+                        if (showUnsupported) {
+                            items(sec.unsupported, key = { "u_" + it.spec.id }) { card(it) }
+                            videoPart(null, wansNo)
+                        }
                     }
                     if (sec.isEmpty && groups.size == 1 && !otherHits) {
                         item {

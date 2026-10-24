@@ -1,11 +1,18 @@
 package com.abrah.nightmare.ui
 
-import android.widget.VideoView
+import android.graphics.SurfaceTexture
+import android.media.MediaPlayer
+import android.view.Surface
+import android.view.TextureView
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
@@ -26,15 +33,16 @@ import java.io.File
  * 1024-wide clip playing at half its frames. This plays the file, at its own
  * resolution and rate, and works for a result kept three launches ago.
  *
- * ⚠ [VideoView] is the platform's own player and carries no dependency. It
- * measures itself to the clip's aspect inside the constraints it is given, so
- * `fillMaxSize()` letterboxes rather than stretches — the same contract
- * `ContentScale.Fit` gives the [androidx.compose.foundation.Image] it replaces.
+ * ⭐⭐ **A [TextureView], not a `VideoView`** (GitHub #66, 2026-10-24: "zoom in on videos in results, just like
+ * we can for images"). A `VideoView` is a `SurfaceView`, its own layer that `graphicsLayer` cannot scale, so the
+ * viewers turned zoom off for clips. A `TextureView` draws inside the view tree, so the SAME [viewerZoom] /
+ * [viewerPicture] the pictures use scales and pans a playing clip. The platform [MediaPlayer] stays: no dependency.
  *
- * ⚠⚠ `update` is keyed on the PATH, not called blind: `AndroidView` runs it on
- * every recomposition, and `setVideoPath` restarts playback from frame 0 — so
- * without the guard the clip jumped back to the start every time anything on
- * the screen changed (a tap, a zoom, the seed row appearing).
+ * ⚠ Letterboxed, not stretched: a `TextureView` fills its bounds, so the view is given the clip's aspect once
+ * the player reports the size; until then it draws nothing and the poster behind it shows.
+ *
+ * ⚠⚠ The source is keyed on the PATH: `AndroidView` runs `update` on every recomposition, and restarting the
+ * player there jumped the clip back to frame 0 every time anything on screen changed.
  */
 /**
  * ⭐ The player behind a [ClipPlayer], for a viewer's "save this frame" (a tester's wish, 2026-10-24): where the
@@ -42,10 +50,10 @@ import java.io.File
  * viewer's tap-to-close layer.
  */
 class ClipHandle {
-    internal var view: VideoView? = null
+    internal var view: LoopingClipView? = null
 
     /** The frame on screen, in ms from the start; 0 before the clip plays. */
-    val positionMs: Int get() = view?.currentPosition ?: 0
+    val positionMs: Int get() = view?.positionMs ?: 0
 }
 
 @Composable
@@ -67,6 +75,70 @@ fun saveClipFrame(ctx: android.content.Context, path: String, positionMs: Int): 
     }
 }
 
+/**
+ * ⭐ A [TextureView] that loops one clip with a [MediaPlayer]. The player is made when the texture exists and
+ * released when it goes (scrolled away, viewer closed), so no decoder outlives the screen showing it: on this
+ * app that would hold one through a 25 s NPU render.
+ */
+class LoopingClipView(
+    ctx: android.content.Context,
+    private val onSize: (Int, Int) -> Unit,
+    private val onFailed: () -> Unit,
+) : TextureView(ctx), TextureView.SurfaceTextureListener {
+    private var player: MediaPlayer? = null
+    private var surface: Surface? = null
+    private var source: String? = null
+
+    init {
+        surfaceTextureListener = this
+    }
+
+    val positionMs: Int get() = runCatching { player?.currentPosition }.getOrNull() ?: 0
+
+    fun play(path: String) {
+        if (path == source) return
+        source = path
+        start()
+    }
+
+    private fun start() {
+        val st = surfaceTexture ?: return
+        val src = source ?: return
+        release()
+        val s = Surface(st).also { surface = it }
+        player = try {
+            MediaPlayer().apply {
+                if (src.startsWith("content://")) setDataSource(context, android.net.Uri.parse(src)) else setDataSource(src)
+                setSurface(s)
+                isLooping = true
+                setOnPreparedListener { it.start() }
+                setOnVideoSizeChangedListener { _, w, h -> if (w > 0 && h > 0) onSize(w, h) }
+                // ⚠ True = handled: no platform "Can't play this video" dialog over ours.
+                setOnErrorListener { _, _, _ -> onFailed(); true }
+                prepareAsync()
+            }
+        } catch (e: Exception) {
+            onFailed()
+            null
+        }
+    }
+
+    fun release() {
+        player?.let { runCatching { it.stop() }; it.release() }
+        player = null
+        surface?.release()
+        surface = null
+    }
+
+    override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) = start()
+    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) = Unit
+    override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+        release()
+        return true
+    }
+    override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
+}
+
 @Composable
 fun ClipPlayer(path: String, modifier: Modifier = Modifier, handle: ClipHandle? = null) {
     val isUri = path.startsWith("content://")
@@ -78,33 +150,19 @@ fun ClipPlayer(path: String, modifier: Modifier = Modifier, handle: ClipHandle? 
         UnreadablePicture(modifier, text = com.abrah.nightmare.R.string.clip_unreadable)
         return
     }
-    AndroidView(
-        factory = { ctx ->
-            VideoView(ctx).also { handle?.view = it }.apply {
-                // ⚠ Looping is set on the MediaPlayer, which does not exist
-                // until the clip is prepared. Setting it in `factory` is a null
-                // dereference; setting it here is the documented moment.
-                setOnPreparedListener { mp ->
-                    mp.isLooping = true
-                    start()
-                }
-                // ⚠ A clip that will not decode must not leave a black
-                // rectangle the user can only close by guessing. Returning true
-                // says it is handled, which stops the platform's own
-                // "Can't play this video" dialog from appearing over ours.
-                setOnErrorListener { _, _, _ -> failed = true; true }
-            }
-        },
-        update = { v ->
-            if (v.tag != path) {
-                v.tag = path
-                if (isUri) v.setVideoURI(android.net.Uri.parse(path)) else v.setVideoPath(path)
-            }
-        },
-        // ⚠⚠ Stopped on the way out, or the SurfaceView keeps a decoder and an
-        // audio track alive behind a screen that is no longer on display —
-        // which on this app means holding it through a 25 s NPU render.
-        onRelease = { if (handle?.view === it) handle.view = null; it.stopPlayback() },
-        modifier = modifier,
-    )
+    var aspect by remember(path) { mutableStateOf<Float?>(null) }
+    Box(modifier, contentAlignment = Alignment.Center) {
+        AndroidView(
+            factory = { ctx ->
+                LoopingClipView(ctx, onSize = { w, h -> aspect = w.toFloat() / h }, onFailed = { failed = true })
+                    .also { handle?.view = it }
+            },
+            update = { v ->
+                handle?.view = v
+                v.play(path)
+            },
+            onRelease = { if (handle?.view === it) handle.view = null; it.release() },
+            modifier = aspect?.let { Modifier.aspectRatio(it) } ?: Modifier.fillMaxSize(),
+        )
+    }
 }

@@ -869,12 +869,10 @@ fun ResultViewer(
             userScrollEnabled = scale <= 1.01f,
         ) { page ->
             val item = items[page]
-            // ⭐⭐ A kept CLIP plays, exactly as it does in the canvas viewer.
-            //
-            // ⚠⚠ No zoom and no pinch on this page: the player is a
-            // `SurfaceView` and `graphicsLayer` moves its frame without moving
-            // the surface. The pager still swipes, because a clip page never
-            // zooms and the pager is only disabled while zoomed.
+            // ⭐⭐ A kept CLIP plays, exactly as it does in the canvas viewer, and ZOOMS like a picture (GitHub #66):
+            // the player is a `TextureView` now ([com.abrah.nightmare.ui.ClipPlayer]), so [viewerPicture] scales it.
+            // ⚠ The gesture sits on a transparent box ABOVE the player, the same [viewerZoom] the pictures use
+            // (pinch, double tap, pan, tap to close at 1x); touches never have to pass through the Android view.
             //
             // ⚠ `videoPath` is the COPY in the results directory
             // ([Result.videoPath]), so a clip starred three launches ago still
@@ -886,16 +884,19 @@ fun ResultViewer(
                     handle = clipHandle.takeIf { page == pager.currentPage },
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(start = 8.dp, end = 8.dp, top = roomTop, bottom = roomBottom),
+                        .viewerPicture(scale, offset, top = roomTop, bottom = roomBottom),
                 )
-                // ⚠ Tap to close still works over the player: the pointer input
-                // sits on a transparent box above it rather than on the surface.
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .pointerInput(page) {
-                            detectTapGestures(onTap = { onDismiss() })
-                        }
+                        .onSizeChanged { box = it }
+                        .viewerZoom(
+                            key = page,
+                            scale = scaleState,
+                            offset = offsetState,
+                            bounds = { box },
+                            onDismiss = onDismiss,
+                        )
                 )
                 return@HorizontalPager
             }

@@ -756,8 +756,18 @@ fun CanvasScreen(
         imageFor = imageFor,
         // ⚠ `s.editing` IS the node whose inspector is open, so the viewer
         // opened from it knows its node too — same reason the canvas tap does.
+        // ⚠⚠ The Default view keeps its page open UNDER the viewer (GitHub #66): `editing = null` there made the
+        // pages fall back to the FIRST node, so closing the viewer landed on the prompt, and the `focusField` a
+        // prompt tap had left behind brought the keyboard up on it. The canvas still closes its sheet.
         onViewFullscreen = { id ->
-            onEdit { s -> s.copy(editing = null, viewing = id, viewingNode = s.editing) }
+            onEdit { s ->
+                s.copy(
+                    editing = s.editing.takeIf { mainView == com.abrah.nightmare.MainView.NODES },
+                    focusField = null,
+                    viewing = id,
+                    viewingNode = s.editing,
+                )
+            }
         },
         // ⭐ Through [swapWired]: a Swap node's ControlNet / IP-Adapter pictures
         // are wired image nodes, kept in step with the tiles (`SwapWiring.kt`).
@@ -1979,6 +1989,14 @@ private fun FullscreenImage(
     // underneath it. Reported from the phone, 2026-09-09. ⚠ The viewer is a Box
     // in the same window, not a Dialog, so nothing handles it for us.
     BackHandler(onBack = onDismiss)
+    // ⚠⚠ Nothing keeps keyboard focus under a picture (GitHub #66): a text field focused before the viewer opened
+    // drew its cursor handle OVER it (the handle is a popup, above this Box) and kept the keyboard up.
+    val viewerFocus = androidx.compose.ui.platform.LocalFocusManager.current
+    val viewerKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        viewerFocus.clearFocus(force = true)
+        viewerKeyboard?.hide()
+    }
 
     // ⚠⚠ Zoom lives HERE, not in the canvas viewport: this is a picture being
     // looked at, and a 512-square render on a 1080-wide screen is drawn at 2x
@@ -2000,11 +2018,7 @@ private fun FullscreenImage(
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.94f))
             .onSizeChanged { box = it }
-            // ⚠⚠ **No pinch-zoom on a clip.** The player is a `SurfaceView`;
-            // scaling one through `graphicsLayer` moves the frame and leaves
-            // the video surface where it was, which draws the clip in the wrong
-            // place at the wrong size with nothing on screen explaining it. The
-            // picture keeps every gesture it had.
+            // ⚠ A clip's gesture is on its own box ABOVE the player (below), so it is not set here.
             //
             // ⚠⚠⚠ [viewerZoom], not `detectTransformGestures`: the latter
             // consumes every pointer event it sees, so the pager below never got
@@ -2029,13 +2043,21 @@ private fun FullscreenImage(
         // second fullscreen built for video would be a second place for them
         // to drift.
         if (videoPath != null) {
+            // ⭐ A clip zooms like a picture (GitHub #66): the player is a `TextureView`, so [viewerPicture] scales
+            // it, and the gesture rides a transparent box above it, the same [viewerZoom] as a picture's.
             com.abrah.nightmare.ui.ClipPlayer(
                 path = videoPath,
                 handle = clipHandle,
-                modifier = Modifier.fillMaxSize().padding(
-                    start = 12.dp, end = 12.dp,
-                    top = if (chromeless) 12.dp else roomTop,
-                    bottom = if (chromeless) 12.dp else roomBottom,
+                modifier = Modifier.fillMaxSize()
+                    .viewerPicture(scale, offset, chromeless = chromeless, top = roomTop, bottom = roomBottom),
+            )
+            Box(
+                Modifier.fillMaxSize().viewerZoom(
+                    key = videoPath,
+                    scale = scaleState,
+                    offset = offsetState,
+                    bounds = { box },
+                    onDismiss = onDismiss,
                 ),
             )
         } else if (pages.size > 1) {
