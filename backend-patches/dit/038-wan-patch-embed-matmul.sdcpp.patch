@@ -1,0 +1,88 @@
+diff --git a/src/model/common/ggml_block.hpp b/src/model/common/ggml_block.hpp
+index 6b0234b..a7c48c0 100644
+--- a/src/model/common/ggml_block.hpp
++++ b/src/model/common/ggml_block.hpp
+@@ -769,6 +769,55 @@ public:
+                                 std::get<2>(dilation), std::get<1>(dilation), std::get<0>(dilation),
+                                 force_prec_f32);
+     }
++
++    // dit/038: a PATCH embedding (kernel == stride, no padding, depth 1, N == 1) as one matmul whose output is
++    // already [out_channels, tokens], tokens w fastest, then h, then t: what the conv's [w, h, t, out] output became
++    // only after a transpose. On Wan that transpose was 3072 x 5070 f32 a step with a strided inner dim, 0.7 s on the
++    // NPU's element-wise copy. Here only the input (48 channels) is rearranged into patches; the weight is read as
++    // the conv's own f32 path reads it, [kw*kh*kd*IC, OC]. Null when it does not apply: call forward() then.
++    ggml_tensor* forward_patch_tokens(GGMLRunnerContext* ctx, ggml_tensor* x) {
++        const int kt = std::get<0>(kernel_size), kh = std::get<1>(kernel_size), kw = std::get<2>(kernel_size);
++        if (kt != 1 || stride != kernel_size || padding != std::make_tuple(0, 0, 0) ||
++            dilation != std::make_tuple(1, 1, 1) || x->ne[3] != in_channels ||
++            x->ne[0] % kw != 0 || x->ne[1] % kh != 0) {
++            return nullptr;
++        }
++        ggml_context* c = ctx->ggml_ctx;
++        ggml_tensor* w  = params["weight"];
++        ggml_tensor* b  = nullptr;
++        if (ctx->weight_adapter) {
++            w = ctx->weight_adapter->patch_weight(c, ctx->backend, w, prefix + "weight");
++            if (w->type != GGML_TYPE_F16) {
++                w = ggml_cast(c, w, GGML_TYPE_F16);
++            }
++        }
++        if (bias) {
++            b = params["bias"];
++            if (ctx->weight_adapter) {
++                b = ctx->weight_adapter->patch_weight(c, ctx->backend, b, prefix + "bias");
++            }
++        }
++        const int64_t wl = x->ne[0] / kw, hl = x->ne[1] / kh, tl = x->ne[2], ic = in_channels;
++        if (!ggml_is_contiguous(x)) {
++            x = ggml_cont(c, x);
++        }
++        // [kw, w, kh, h*t*IC] -> [kw, kh, w, h*t*IC]
++        ggml_tensor* p = ggml_reshape_4d(c, x, kw, wl, kh, hl * tl * ic);
++        p              = ggml_cont(c, ggml_permute(c, p, 0, 2, 1, 3));
++        // [kw*kh, w*h*t, IC] -> [kw*kh, IC, w*h*t]: one patch per column, in the weight's K order
++        p = ggml_reshape_3d(c, p, kw * kh, wl * hl * tl, ic);
++        p = ggml_cont(c, ggml_permute(c, p, 0, 2, 1, 3));
++        p = ggml_reshape_2d(c, p, kw * kh * ic, wl * hl * tl);
++        if (!ggml_is_contiguous(w)) {
++            w = ggml_cont(c, w);
++        }
++        w              = ggml_reshape_2d(c, w, kw * kh * ic, out_channels);
++        ggml_tensor* y = ggml_mul_mat(c, w, p);  // [out_channels, w*h*t]
++        if (b != nullptr) {
++            y = ggml_add(c, y, b);
++        }
++        return y;
++    }
+ };
+ 
+ class LayerNorm : public UnaryBlock {
+diff --git a/src/model/diffusion/wan.hpp b/src/model/diffusion/wan.hpp
+index e823860..484b74a 100644
+--- a/src/model/diffusion/wan.hpp
++++ b/src/model/diffusion/wan.hpp
+@@ -784,10 +784,19 @@ namespace WAN {
+             auto head = std::dynamic_pointer_cast<Head>(blocks["head"]);
+ 
+             // patch_embedding
+-            x = patch_embedding->forward(ctx, x);                                                    // [N*dim, t_len, h_len, w_len]
+-            int64_t frame_tokens = x->ne[0] * x->ne[1];                                              // h_len*w_len: one latent frame
+-            x = ggml_reshape_3d(ctx->ggml_ctx, x, x->ne[0] * x->ne[1] * x->ne[2], x->ne[3] / N, N);  // [N, dim, t_len*h_len*w_len]
+-            x = ggml_ext_cont(ctx->ggml_ctx, ggml_ext_torch_permute(ctx->ggml_ctx, x, 1, 0, 2, 3));  // [N, t_len*h_len*w_len, dim]
++            // dit/038: as one matmul straight to [N, t_len*h_len*w_len, dim], without the conv path's transpose
++            // (0.7 s a step at 832x480 2 s on the NPU); the conv path stays for any shape it does not cover, and
++            // NM_WAN_CONV_PATCH=1 forces it for an A/B.
++            int64_t frame_tokens = (x->ne[0] / std::get<2>(config.patch_size)) * (x->ne[1] / std::get<1>(config.patch_size));
++            ggml_tensor* tokens  = (N == 1 && getenv("NM_WAN_CONV_PATCH") == nullptr) ? patch_embedding->forward_patch_tokens(ctx, x) : nullptr;
++            if (tokens != nullptr) {
++                x = ggml_reshape_3d(ctx->ggml_ctx, tokens, tokens->ne[0], tokens->ne[1], N);  // [N, t_len*h_len*w_len, dim]
++            } else {
++                x            = patch_embedding->forward(ctx, x);                                                    // [N*dim, t_len, h_len, w_len]
++                frame_tokens = x->ne[0] * x->ne[1];                                                                 // h_len*w_len: one latent frame
++                x            = ggml_reshape_3d(ctx->ggml_ctx, x, x->ne[0] * x->ne[1] * x->ne[2], x->ne[3] / N, N);  // [N, dim, t_len*h_len*w_len]
++                x            = ggml_ext_cont(ctx->ggml_ctx, ggml_ext_torch_permute(ctx->ggml_ctx, x, 1, 0, 2, 3));  // [N, t_len*h_len*w_len, dim]
++            }
+ 
+             // time_embedding + time_projection. Two timesteps on a backend mean "frame 0, then
+             // every other frame" (Wan 2.2 TI2V image to video, process_timesteps): two single-row
