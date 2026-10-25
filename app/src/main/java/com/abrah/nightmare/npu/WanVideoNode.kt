@@ -129,7 +129,7 @@ object WanVideoNode : NodeType {
     /** ⭐ The launch key for [spec] (Wan 2.2 Turbo here, Fun Control for [WanFunNode]). */
     internal fun keyFor(node: Node, spec: com.abrah.nightmare.ModelSpec): ContextKey {
         val p = effectiveParams(node)
-        val prof = profileOf(node.type)
+        val prof = profileOf(node.type, deviceArch())
         val (w, h) = sizeOf(p, prof)
         val caps = com.abrah.nightmare.DeviceProbe.caps()
         val budget = memoryBudget(
@@ -161,7 +161,9 @@ object WanVideoNode : NodeType {
         prof: WanProfile = TURBO,
     ): String? = when {
         // ⭐ Wan 2.2 A14B: 8.6 GB an expert, held by no phone, so every clip streams ([WanProfile.alwaysStream]).
-        prof.alwaysStream -> if (pinned - prof.ditBytes > A14B_SMALL_COMPUTE) A14B_BIG_BUDGET else A14B_BUDGET
+        // ⭐ Below v79 one FastRPC session maps ~3.1 GB, so the 14B streams there at 2.75 like everything else (the S25
+        // forced to v75, 480x832 1 s, `docs/DEVICES.md` §3e).
+        prof.alwaysStream -> if (arch in 1..78) "2.75" else if (pinned - prof.ditBytes > A14B_SMALL_COMPUTE) A14B_BIG_BUDGET else A14B_BUDGET
         arch in 1..78 -> "2.75"
         stream -> if (pinned - DIT_BYTES + BLOCK_BYTES <= STREAM_FLOOR) "2.75" else "4"
         // ⭐ Compute that one NPU session cannot map streams on EVERY phone (Saved #7101, a 16 GB 8 Elite, 1.6.216):
@@ -222,7 +224,7 @@ object WanVideoNode : NodeType {
     @Volatile private var servedBy: Int? = null
 
     /** ⭐ The clip's size, which a picture wired into `image` is framed to. */
-    override fun framesTo(node: Node): Pair<Int, Int> = sizeOf(effectiveParams(node), profileOf(node.type))
+    override fun framesTo(node: Node): Pair<Int, Int> = sizeOf(effectiveParams(node), profileOf(node.type, deviceArch()))
 
     /**
      * ⭐ A clip's frame count: its Seconds, or on Motion transfer the Video tab's window, which IS
@@ -434,8 +436,19 @@ object WanVideoNode : NodeType {
     private const val A14B_BIG_BUDGET = "4.5"
     private const val A14B_SMALL_COMPUTE = 1_400L shl 20
 
-    /** ⭐ The profile a node type renders with. */
-    fun profileOf(type: String): WanProfile = if (type == WanA14Node.name) A14B else TURBO
+    /**
+     * ⭐ The 14B below v79 (an 8 Gen 3, v75): the S25 forced to the v75 skel rendered 480x832 1 s at 2.75 GiB in 282 s,
+     * 35.3-40.8 dB from v79's 259 s (2026-10-26, `docs/DEVICES.md` §3e), so it is offered up to that area. ⚠ 720p there
+     * is not measured: the forced-v75 run sampled but its untiled decode failed (sd-cli, no `vae_tile`).
+     */
+    val A14B_LOW_ARCH = A14B.copy(maxArea = 832 * 480)
+
+    /** ⭐ The profile a node type renders with on a chip of [arch] (0 = unknown, the full profile; pure for tests). */
+    fun profileOf(type: String, arch: Int = 0): WanProfile =
+        if (type == WanA14Node.name) (if (arch in 1 until com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH) A14B_LOW_ARCH else A14B) else TURBO
+
+    /** ⭐ This phone's arch for [profileOf] and [memoryBudget], 0 when the chip table does not know it. */
+    fun deviceArch(): Int = com.abrah.nightmare.DeviceProbe.caps().let { if (it.known) it.arch else 0 }
     private const val RAM_SHARE = 0.58
 
     private fun gb(b: Long) = String.format(java.util.Locale.ROOT, "%.1f", b / (1024.0 * 1024 * 1024))
@@ -493,7 +506,7 @@ object WanVideoNode : NodeType {
         // ⭐⭐ Motion transfer takes NO LoRAs (the user's call, 2026-10-15): it has no picker, and its
         // prompt's tags are skipped out loud rather than reaching Fun by the back door. Its FastWan
         // speed LoRA is part of the model ([ModelCatalog.FUN_LORA]), not this list.
-        val takesLoras = driving == null && profileOf(node.type) != A14B
+        val takesLoras = driving == null && node.type != WanA14Node.name
         if (!takesLoras) {
             (pos.tags + neg.tags).forEach { t ->
                 // ⭐ The 14B takes none either: Wan 2.2 Turbo LoRAs do not fit its layers, and its speed-up is built in.
@@ -521,7 +534,7 @@ object WanVideoNode : NodeType {
             ctx.say("  LoRAs: " + loras.joinToString { (f, s) -> "${File(f).nameWithoutExtension} $s" })
         }
         val p = effectiveParams(node)
-        val sizeProf = profileOf(node.type)
+        val sizeProf = profileOf(node.type, deviceArch())
         // ⭐⭐ [FOLLOW_PICTURE] (Text to video (14B)): the clip takes the wired picture's SHAPE at the pixel count the size
         // asks for, uncropped. A picture model makes its own shape (AbsoluteReality 512x768), and cropping it to the
         // default 832x480 kept a strip (the user, 2026-10-25). 512x768 at 832x480 worth is 512x768; at 720p, 768x1168.
@@ -550,7 +563,7 @@ object WanVideoNode : NodeType {
         val caps = com.abrah.nightmare.DeviceProbe.caps()
         val ram = caps.ramBytes
         val arch = if (caps.known) caps.arch else 0
-        val prof = profileOf(node.type)
+        val prof = profileOf(node.type, arch)
         val fps = prof.fps
         val budget = memoryBudget(pinnedBytes(w, h, frames, prof), ram, arch, prof = prof)
         val need = peakBytes(w, h, frames, budget, loras.size, prof)

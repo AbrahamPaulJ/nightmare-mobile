@@ -42,6 +42,31 @@ class WanA14Test {
         assertEquals(WanVideoNode.TURBO, WanVideoNode.profileOf(WanVideoNode.name))
     }
 
+    /**
+     * ⭐ An 8 Gen 3 (v75): the S25 forced to the v75 skel rendered 480x832 1 s at 2.75 GiB, 35-41 dB from v79
+     * (`docs/DEVICES.md` §3e). It gets the 14B up to that area, the low-arch budget and smaller encode chunks; 720p
+     * there is not measured.
+     */
+    @Test
+    fun anEightGenThreeGetsTheFourteenBUpTo480p() {
+        assertEquals(75, ModelCatalog.WAN22_A14B_I2V.builds.minOf { it.minArch })
+        val low = WanVideoNode.profileOf(WanA14Node.name, 75)
+        assertEquals(832 * 480, low.maxArea)
+        assertEquals(WanVideoNode.A14B, WanVideoNode.profileOf(WanA14Node.name, 79))
+        assertEquals(WanVideoNode.A14B, WanVideoNode.profileOf(WanA14Node.name, 0))  // unknown chip: everything
+        assertTrue(low.alwaysStream)
+        // ⚠ Every 14B clip streams at 2.75 there, even one that gets 4.5 on v79.
+        val big = WanVideoNode.pinnedBytes(832, 480, 49, low)
+        assertEquals("2.75", WanVideoNode.memoryBudget(big, 12L shl 30, 75, stream = false, prof = low))
+        assertEquals("4.5", WanVideoNode.memoryBudget(WanVideoNode.pinnedBytes(832, 480, 81, WanVideoNode.A14B), 12L shl 30, 79, stream = false, prof = WanVideoNode.A14B))
+        val dir = tmp.newFolder(ModelCatalog.WAN22_A14B_I2V.id)
+        java.io.File(dir, ModelCatalog.WAN_HIGH_DIT).writeText("x")
+        assertEquals("3", BackendProcess.wanA14Env(dir, 75)["SD_TAEHV_ENCODE_CHUNK_MPX"])
+        assertEquals(BackendProcess.I2V_ENCODE_MPX, BackendProcess.wanA14Env(dir, 79)["SD_TAEHV_ENCODE_CHUNK_MPX"])
+        // Below v75 the 14B is still not offered.
+        assertTrue(ModelCatalog.WAN22_A14B_I2V.builds.none { it.minArch < 75 })
+    }
+
     @Test
     fun theEngineIsToldTheHighNoiseExpertAndBothLoras() {
         val dir = tmp.newFolder("wan22_t2v_a14b")
@@ -140,7 +165,7 @@ class WanA14Test {
         // ⚠ Q4_0, the NPU's: the newer 2026-04 experts are Q4_K only.
         assertTrue(i2v.files.filter { it.name.endsWith(".gguf") && it.name != "umt5.gguf" }.all { it.url.endsWith("-Q4_0.gguf") })
         assertTrue(i2v.files.single { it.name == "tae.safetensors" }.url.endsWith("taew2_1.safetensors"))
-        assertEquals(ModelCatalog.DIT_MIN_ARCH, i2v.builds.single().minArch)
+        assertEquals(ModelCatalog.DIT_GGML_MIN_ARCH, i2v.builds.single().minArch)  // 8 Gen 3 since 2026-10-26
     }
     /** ⭐ The 14B sizes on its own 16 px grid up to its native 1280x720; the 5B keeps 32 px and 1280x704. */
     @Test

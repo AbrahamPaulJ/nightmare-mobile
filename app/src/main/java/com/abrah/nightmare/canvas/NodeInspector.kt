@@ -1913,7 +1913,7 @@ internal fun NodeInspectorBody(
             val widthW = type?.widgets?.firstOrNull { it.name == "width" } ?: return@wanPanel
             val heightW = type?.widgets?.firstOrNull { it.name == "height" } ?: return@wanPanel
             // ⭐ This node's own grid and area (the 14B: 16 px, 1280x720; the 5B's: 32 px, 1280x704).
-            val sizeProf = wan.profileOf(node.type)
+            val sizeProf = wan.profileOf(node.type, wan.deviceArch())
             val cur = type?.framesTo(node) ?: wan.framesTo(node)
             var draft by remember(nodeId, cur) { mutableStateOf<Pair<Int, Int>?>(null) }
             val shown = draft ?: cur
@@ -1941,7 +1941,7 @@ internal fun NodeInspectorBody(
                 val loras = if (node.type == com.abrah.nightmare.npu.WanFunNode.name) 0
                     else com.abrah.nightmare.LoraSpec.parse(p[com.abrah.nightmare.SdSampler.LORAS]).size
                 val size = "${shown.first}x${shown.second}"
-                val prof = wan.profileOf(node.type)
+                val prof = wan.profileOf(node.type, if (caps.known) caps.arch else 0)
                 if (!wan.fitsPhone(shown.first, shown.second, frames, loras, caps.ramBytes, caps.arch, prof)) {
                     val fit = wan.secondsThatFit(shown.first, shown.second, loras, caps.ramBytes, caps.arch, prof)
                     Text(

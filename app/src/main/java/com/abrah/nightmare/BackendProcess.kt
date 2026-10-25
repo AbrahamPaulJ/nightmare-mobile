@@ -575,7 +575,7 @@ object BackendProcess {
      * ⭐ The decode stays on the NPU: TAEHV's `taew2_1` there is 1.4 s for 17 frames at 480x272 and 49 dB from the CPU's
      * 34 s, with the direct convolution the pipeline uses (`docs/VIDEO-GGML.md` §8; without it, purple mush).
      */
-    internal fun wanA14Env(model: File): Map<String, String> {
+    internal fun wanA14Env(model: File, arch: Int = 0): Map<String, String> {
         val high = File(model, ModelCatalog.WAN_HIGH_DIT).takeIf { it.isFile } ?: return emptyMap()
         return buildMap {
             put("NM_WAN_HIGH_NOISE_MODEL", high.absolutePath)
@@ -588,7 +588,9 @@ object BackendProcess {
             // [I2V_ENCODE_CHUNK] is for an engine before `dit/052` (it ignores the MPX key; 480x832 is its limit).
             if (model.name == ModelCatalog.WAN22_A14B_I2V.id) {
                 put("NM_WAN_MOE_BOUNDARY", I2V_MOE_BOUNDARY)
-                put("SD_TAEHV_ENCODE_CHUNK_MPX", I2V_ENCODE_MPX)
+                // ⭐ Below v79, smaller chunks for the 2.75 GiB budget: 480x832 x17 asked 2,928 MB in one (the S25 forced
+                // to v75), 3 fit it (`docs/DEVICES.md` §3e).
+                put("SD_TAEHV_ENCODE_CHUNK_MPX", if (arch in 1 until ModelCatalog.DIT_MIN_ARCH) I2V_ENCODE_MPX_LOW_ARCH else I2V_ENCODE_MPX)
                 put("SD_TAEHV_ENCODE_CHUNK", I2V_ENCODE_CHUNK.toString())
             }
         }
@@ -600,6 +602,9 @@ object BackendProcess {
 
     /** ⭐ Million pixel-frames in one TAEHV encode chunk (engine `dit/052`): 8 frames at 720x1280, 18 at 480x832. */
     internal const val I2V_ENCODE_MPX = "7.4"
+
+    /** ⭐ [I2V_ENCODE_MPX] below v79 (2.75 GiB): ~1.3 GB of encode a chunk. */
+    internal const val I2V_ENCODE_MPX_LOW_ARCH = "3"
 
     internal fun shipsThisEncoder(spec: ModelSpec, teBytes: Long): Boolean =
         // ⚠⚠ An IMPORT lists no files: its encoder is a copy of its family's built-in one ([CustomModels.ditPartsPlan]),
@@ -1067,7 +1072,7 @@ object BackendProcess {
                         )
                         // ⭐ Wan 2.2 A14B (engine `dit/044`): its high-noise expert and Lightning's two halves, one per
                         // expert, read by the engine from here so the `--type wan` launch stays the 5B's.
-                        putAll(wanA14Env(model))
+                        putAll(wanA14Env(model, DeviceProbe.caps().let { if (it.known) it.arch else 0 }))
                         // ⭐ The arch from the chip table, so a failed DSP query cannot fall back to v73 ([ditArchEnv]).
                         ditArchEnv(DeviceProbe.caps())?.let { put("GGML_HEXAGON_ARCH", it) }
                         putAll(readDitEnvOverride(context))

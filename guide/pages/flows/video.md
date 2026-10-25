@@ -7,7 +7,7 @@ There are three video models. Install any of them:
 | model | makes | needs |
 |---|---|---|
 | **Wan 2.2 Turbo** (6.25 GB) | up to 5 seconds, any shape up to 1280 × 704. The better clips; minutes per clip | Snapdragon 8 Elite or newer (alpha on 8 Gen 3: tell us if it runs) |
-| **Wan 2.2 14B** (about 21 GB; 3.7 GB less beside Wan 2.2 Turbo) | your picture moving, or text to video through a picture first (**Text to video (14B)** below). The best motion and detail, and slow: about 9 minutes for 2 seconds at 480 × 832, 12 minutes for 1 second at 720 × 1280 (faces come out much sharper at the larger size) | Snapdragon 8 Elite or newer, 12 GB of RAM |
+| **Wan 2.2 14B** (about 21 GB; 3.7 GB less beside Wan 2.2 Turbo) | your picture moving, or text to video through a picture first (**Text to video (14B)** below). The best motion and detail, and slow: about 9 minutes for 2 seconds at 480 × 832, 12 minutes for 1 second at 720 × 1280 (faces come out much sharper at the larger size) | Snapdragon 8 Gen 3 or newer, 12 GB of RAM (on an 8 Gen 3, up to 832 × 480) |
 | **Neodragon** (about 8.6 GB) | 2 seconds at 1024 × 640 in about 25 seconds | Snapdragon 8 Elite or 8 Elite Gen 5 |
 
 Video has its own models; only **Text to video (14B)** also uses your picture model, for its first frame. **Models → Video** lists them all, and **Wan**
@@ -28,7 +28,7 @@ The video node's **Model** dropdown switches between **Wan 2.2 Turbo** (the defa
 
 ## Text to video (14B)
 
-**Nodes:** Prompt → Image (your picture model) → Video (Wan 2.2 14B) → Output. Needs Wan 2.2 14B and an 8 Elite or newer with 12 GB.
+**Nodes:** Prompt → Image (your picture model) → Video (Wan 2.2 14B) → Output. Needs Wan 2.2 14B and an 8 Gen 3 or newer with 12 GB (an 8 Gen 3 goes up to 832 × 480).
 
 1. **Flows → Text to video (14B)**. The picture is made by the model in the top bar, in its own shape: the clip takes
    that shape (a 512 × 768 picture makes a portrait clip), and the video node's size sets how many pixels, 832 × 480
@@ -54,7 +54,7 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 
 | setting | does |
 |---|---|
-| **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. On **Wan 2.2 14B** (its own 16 px steps, up to 1280 × 720 worth of pixels), 1280 × 720 is the size for faces and fine detail (about 12 minutes for 1 second); 832 × 480 is for trying an idea first (about 5 minutes), with soft faces. **Match picture** sets the photo's shape |
+| **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. On **Wan 2.2 14B** (its own 16 px steps, up to 1280 × 720 worth of pixels), 1280 × 720 is the size for faces and fine detail (about 12 minutes for 1 second); 832 × 480 is for trying an idea first (about 5 minutes), with soft faces. On an 8 Gen 3 the 14B goes up to 832 × 480 worth of pixels (720p there is untested). **Match picture** sets the photo's shape |
 | **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
 | **Seconds** | 0 to 5, at 24 frames a second (Wan 2.2 14B: 1 to 3 at 16 frames a second; 1 second at 720p is about 12 minutes, 3 can take an hour); 0 makes one still picture (about 15 s at 832 × 480 on an 8 Elite; wire **last frame** to the output). On a 12 GB phone, 1280 × 704 for 3 seconds or more renders in parts so it fits: slower, about 12 minutes for 5 seconds. On an 8 Gen 3 a new flow opens on 2 seconds, the longest that has worked there so far; longer clips and 1280 × 704 still run, with a warning in the run log |
 | **LoRAs** | Wan 2.2 Turbo (TI2V-5B) LoRAs only; Wan 2.2 14B takes none (its speed-up is built in). See [LoRAs](../models/loras.md) |

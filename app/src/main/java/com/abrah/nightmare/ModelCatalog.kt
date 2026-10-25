@@ -2847,7 +2847,7 @@ object ModelCatalog {
         prompt = "",
         ownDitParts = true,
         partsFrom = "wan22_ti2v_turbo",
-        minArch = DIT_MIN_ARCH,
+        minArch = DIT_GGML_MIN_ARCH,  // ⭐ 8 Gen 3 (v75) since 2026-10-26, up to 832x480 there (`WanVideoNode.A14B_LOW_ARCH`)
         minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
         files = listOf(
             RemoteFile("https://huggingface.co/jayn7/WAN2.2-I2V_A14B-DISTILL-LIGHTX2V-4STEP-GGUF/resolve/main/low_noise/wan2.2_i2v_A14b_low_noise_lightx2v_4step-Q4_0.gguf", "dit.gguf", 8_567_937_664L),
