@@ -1291,4 +1291,9 @@
     <string name="accent_teal">青色</string>
     <string name="accent_orange">橙色</string>
     <string name="accent_pink">粉色</string>
+    <string name="compare_handle_cd">与输入图片对比：向左拖动即可显示</string>
+    <string name="compare_handle_state">已显示 %1$d%% 的输入图片</string>
+    <string name="sampling_fold">采样器、种子和 CFG</string>
+    <string name="sampling_seed_value">种子 %1$s</string>
+    <string name="sampling_cfg_value">CFG %1$s</string>
 </resources>

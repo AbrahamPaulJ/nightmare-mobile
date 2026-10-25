@@ -611,6 +611,14 @@ fun NodeInspector(
             // 1.4.54 with no way to paint a mask by hand — the storage and the
             // interface are one change, not two.
             cropSource = if (node.type in FRAMES) sourceId?.let(imageFor) else null,
+            // ⭐ The output's before/after ([ComparePicture]): the picture wired into the node that feeds it, and that
+            // node's framing, so both sides show one region. Null on a flow with no input picture (text to image).
+            compareSource = if (node.type == "core.output") {
+                node.inputs["media"]?.node?.let { state.pictureInto(it, types) }?.let(imageFor)
+            } else null,
+            compareRect = if (node.type == "core.output") {
+                node.inputs["media"]?.node?.let { state.workflow.graph.byId[it] }?.let(::cropRectOf)
+            } else null,
             // ⭐⭐ FLUX.2's reference, resolved through the SAME `pictureInto`
             // the base uses — it takes the port as an argument precisely so a
             // second picture into one node does not need a second rule.
@@ -898,6 +906,12 @@ fun NodeInspector(
  * surface honoured the rule, the others did not, and the ones that did not are
  * where the finger went.
  */
+/**
+ * ⭐ An image sampler's Scheduler, seed and CFG, folded under one header ABOVE More options, closed by default (the
+ * user's call, 2026-10-25); closed, the header shows their values. The seed's padlock above Run stays where it is.
+ */
+internal val SAMPLING_KNOBS = setOf("scheduler", "seed", "cfg")
+
 /** ⭐ A sampler's after-render knobs, drawn under [MoreOptionsHeader]. */
 internal val MORE_OPTIONS = setOf(
     com.abrah.nightmare.detail.Detailer.FIX_FACES, com.abrah.nightmare.detail.Detailer.FIX_HANDS,
@@ -1065,7 +1079,14 @@ private fun OutputPostCard(
  * while closed, which of the knobs inside are on.
  */
 @Composable
-internal fun MoreOptionsHeader(open: Boolean, on: List<String>, onToggle: () -> Unit, title: Int = R.string.more_options) {
+internal fun MoreOptionsHeader(
+    open: Boolean,
+    on: List<String>,
+    onToggle: () -> Unit,
+    title: Int = R.string.more_options,
+    /** ⭐ Shown under a CLOSED header instead of [on]: what the knobs inside are set to. */
+    summary: String? = null,
+) {
     Column(
         Modifier.fillMaxWidth()
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
@@ -1085,7 +1106,12 @@ internal fun MoreOptionsHeader(open: Boolean, on: List<String>, onToggle: () -> 
                 modifier = Modifier.padding(start = 6.dp),
             )
         }
-        if (!open && on.isNotEmpty()) Text(
+        if (!open && summary != null) Text(
+            summary,
+            style = NoteTextStyle,
+            color = MaterialTheme.studio.accentText,
+            modifier = Modifier.padding(start = 30.dp),
+        ) else if (!open && on.isNotEmpty()) Text(
             stringResource(R.string.more_options_on, on.joinToString(", ")),
             style = NoteTextStyle,
             color = MaterialTheme.colorScheme.primary,
@@ -1319,6 +1345,9 @@ internal fun NodeInspectorBody(
     onViewBeforeFullscreen: () -> Unit = {},
     /** The picture a `crop` node is framing — its upstream image. */
     cropSource: ImageBitmap? = null,
+    /** ⭐ The output's "before": the picture its renderer started from, and the renderer's framing of it. */
+    compareSource: ImageBitmap? = null,
+    compareRect: CropRect? = null,
     /** ⭐ The picture wired into `reference`, if any. FLUX.2 samplers only. */
     refSource: ImageBitmap? = null,
     /** ⭐ The picture wired into `control`, if any. SD 1.5 Swap samplers only. */
@@ -2617,6 +2646,7 @@ internal fun NodeInspectorBody(
             onClearOutput = onClearOutput, onDropEnlargement = onDropEnlargement,
             onUpscale = onUpscale, upscaleDisabledReason = upscaleDisabledReason,
             onShowInfo = onInfo?.let { { showingInfo = true } },
+            compareSource = compareSource, compareRect = compareRect,
         )
         // ⭐ Face edit's page: the picture (above, once it has run), what is changed, Edit face ([FaceEditControls]).
         if (faceNode) {
@@ -2714,20 +2744,51 @@ internal fun NodeInspectorBody(
         // so nothing that changes the picture is out of sight. One loop draws both halves: a second copy
         // of the knob loop would stop agreeing with the first.
         val isOutput = node.type == com.abrah.nightmare.MediaOutputNode.name
-        val (moreUnsorted, mainWidgets) = widgets.filterNot {
+        val (moreUnsorted, notMore) = widgets.filterNot {
             isOutput && videoSource && (it.name in OUTPUT_POST || OUTPUT_POST_SETTINGS.values.any { s -> it.name in s })
         }.partition {
             (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && it.name in MORE_OPTIONS) ||
                 (isOutput && it.name in OUTPUT_POST)
         }
+        // ⭐ Scheduler, seed and CFG: their own fold on an image sampler ([SAMPLING_KNOBS]).
+        val (samplingUnsorted, mainWidgets) = notMore.partition {
+            node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && it.name in SAMPLING_KNOBS
+        }
+        // ⚠ In the title's order (Scheduler, seed and CFG), inside and in the closed summary.
+        val samplingWidgets = samplingUnsorted.sortedBy { SAMPLING_KNOBS.indexOf(it.name) }
+        var samplingOpen by remember { mutableStateOf(com.abrah.nightmare.Prefs.samplingOpen) }
+        val samplingSummary = samplingWidgets.filterNot { hiddenKnob(node, it.name) }.mapNotNull { w ->
+            val v = (node.params[w.name] ?: w.default).orEmpty()
+            when (w.name) {
+                "seed" -> if (v.isBlank() || v == "0") stringResource(R.string.inspector_seed_random)
+                    else stringResource(R.string.sampling_seed_value, v)
+                "cfg" -> stringResource(R.string.sampling_cfg_value, v)
+                // ⚠ The scheduler as its dropdown names it ("Euler A"), never the id ("euler_a").
+                else -> v.takeIf { it.isNotBlank() }?.let { com.abrah.nightmare.ModelCatalog.schedulerLabel(it) }
+            }
+        }.joinToString(" · ")
         // ⭐ The variation seed LAST in the fold (the user, 2026-10-23); a stable sort keeps the rest in the knob order.
         val moreWidgets = moreUnsorted.sortedBy {
             it.name == com.abrah.nightmare.SdSampler.SUBSEED || it.name == com.abrah.nightmare.SdSampler.SUBSEED_STRENGTH
         }
         val prefsContext = LocalContext.current
         var moreOpen by remember { mutableStateOf(com.abrah.nightmare.Prefs.moreOptionsOpen) }
-        for (pass in 0..1) {
+        for (pass in 0..2) {
         if (pass == 1) {
+            if (samplingWidgets.none { !hiddenKnob(node, it.name) }) continue
+            MoreOptionsHeader(
+                open = samplingOpen,
+                on = emptyList(),
+                onToggle = {
+                    samplingOpen = !samplingOpen
+                    com.abrah.nightmare.Prefs.setSamplingOpen(prefsContext, samplingOpen)
+                },
+                title = R.string.sampling_fold,
+                summary = samplingSummary,
+            )
+            if (!samplingOpen) continue
+        }
+        if (pass == 2) {
             val shownMore = moreWidgets.filterNot { hiddenKnob(node, it.name) }
             if (shownMore.isEmpty()) break
             MoreOptionsHeader(
@@ -2742,7 +2803,7 @@ internal fun NodeInspectorBody(
             )
             if (!moreOpen) break
         }
-        for (w in if (pass == 0) mainWidgets else moreWidgets) {
+        for (w in when (pass) { 0 -> mainWidgets; 1 -> samplingWidgets; else -> moreWidgets }) {
             if (w.name == picked) continue
             // ⭐ Detection settings (GitHub #46): above Fix strength, under the same rule ([DetectSettingsRow]).
             if (w.name == com.abrah.nightmare.detail.Detailer.DETAIL_DENOISE && !hiddenKnob(node, w.name)) {

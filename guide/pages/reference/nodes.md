@@ -89,6 +89,10 @@ The node that makes the picture. Its **title follows what is wired into it**:
 The palette card is **Image** with a chip per family: **SD 1.5**, **SD 1.5 Swap**, **SDXL**,
 **SDXL Swap**, **Anima**, **FLUX.2**, **Z-Image**, **Qwen Image**. The family decides which settings appear.
 
+**Scheduler** (with its Schedule), **Seed** and **CFG** sit under **Scheduler, seed and CFG**, closed until you
+open it; closed, it shows what they are set to (`Euler A · seed random · CFG 1.5`). The seed's padlock above Run
+still locks the seed without opening it.
+
 Hires fix (or Enlarge ×2), Match colours, Fix faces, Fix hands and Fix strength sit under **More options** at the end of
 the node's settings. It opens and closes with a tap and remembers which; closed, it lists the ones that are on.
 

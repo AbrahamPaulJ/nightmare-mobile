@@ -1322,4 +1322,9 @@
     <string name="accent_teal">Teal</string>
     <string name="accent_orange">Orange</string>
     <string name="accent_pink">Pink</string>
+    <string name="compare_handle_cd">Compare with the input picture: drag left to show it</string>
+    <string name="compare_handle_state">%1$d%% of the input shown</string>
+    <string name="sampling_fold">Scheduler, seed and CFG</string>
+    <string name="sampling_seed_value">seed %1$s</string>
+    <string name="sampling_cfg_value">CFG %1$s</string>
 </resources>

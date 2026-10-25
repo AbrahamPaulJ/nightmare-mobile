@@ -72,6 +72,7 @@ object Prefs {
         nodesVertical = p.getBoolean(KEY_NODES_VERTICAL, false)
         hideChat = p.getBoolean(KEY_HIDE_CHAT, false)
         moreOptionsOpen = p.getBoolean(KEY_MORE_OPTIONS, false)
+        samplingOpen = p.getBoolean(KEY_SAMPLING_OPEN, false)
         wanStream = p.getBoolean(KEY_WAN_STREAM, false)
     }
 
@@ -84,12 +85,22 @@ object Prefs {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_MORE_OPTIONS, value).apply()
     }
 
+    /** ⭐ The image samplers' Scheduler, seed and CFG fold: closed by default, open or closed remembered. */
+    @Volatile var samplingOpen: Boolean = false
+        private set
+
+    fun setSamplingOpen(context: Context, value: Boolean) {
+        samplingOpen = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_SAMPLING_OPEN, value).apply()
+    }
+
     // ---- the three views (the user's design, 2026-10-08) ----------------------
 
     private const val KEY_VIEW = "default_view"
     private const val KEY_NODES_VERTICAL = "nodes_vertical"
     private const val KEY_HIDE_CHAT = "hide_chat"
     private const val KEY_MORE_OPTIONS = "more_options_open"
+    private const val KEY_SAMPLING_OPEN = "sampling_open"
 
     /**
      * ⭐ What the app opens on. NULL until the person has been asked (first launch: Nodes for

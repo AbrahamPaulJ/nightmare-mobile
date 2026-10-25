@@ -70,6 +70,8 @@ internal fun NodeResultPreview(
     onUpscale: (() -> Unit)?,
     upscaleDisabledReason: String?,
     onShowInfo: (() -> Unit)?,
+    compareSource: ImageBitmap? = null,
+    compareRect: CropRect? = null,
 ) {
     // ⭐⭐ While a Default view run goes, the output page shows the run where its picture will
     // be — the frame at the render's shape, log inside, no popup ([RunFrame], 2026-10-10).
@@ -159,7 +161,19 @@ internal fun NodeResultPreview(
         // ⭐⭐ Image and Output nodes get the FRAME (the user's call,
         // 2026-09-23: a 1dp outline, 12dp corners, hugging the picture —
         // node view only). ⚠ Every other node keeps the plain picture.
-        if (node.type == "core.image" || node.type == "core.output") {
+        // ⭐ The output with an input picture behind it: before and after on one divider ([ComparePicture]).
+        if (node.type == "core.output" && clip == null && compareSource != null) {
+            ComparePicture(
+                after = shown,
+                before = compareSource,
+                beforeRect = compareRect ?: CropRect(0f, 0f, 1f, 1f),
+                contentDescription = stringResource(R.string.inspector_cd_node_image),
+                box = if (beforeImage != null) {
+                    Modifier.height(pictureCap(pair = true)).bringIntoViewRequester(upscaledFocus)
+                } else Modifier.heightIn(max = pictureCap()),
+                onClick = onViewFullscreen,
+            )
+        } else if (node.type == "core.image" || node.type == "core.output") {
             FramedPicture(
                 bitmap = shown,
                 contentDescription = stringResource(R.string.inspector_cd_node_image),

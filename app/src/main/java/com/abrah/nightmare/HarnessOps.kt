@@ -233,6 +233,16 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ Diagnose one kept picture headless (`--es arg <result id>`): its flow per leg, pictures to
             // `files/diagnose_picture/<n>.png`, the report to the log. What a picture's ⓘ → Diagnose runs.
             "diagnose_picture" -> diagnosePictureOp(arg)
+            // ⭐ The newest kept results (`--es arg N`, default 12): each flow's node types, its clip (kept or not, bytes)
+            // and picture size. What a Results viewer gets per item, read from the store, no screen needed.
+            "results_list" -> {
+                val store = com.abrah.nightmare.canvas.ResultsStore(java.io.File(ctx.filesDir, "results"))
+                store.all().take(arg?.toIntOrNull() ?: 12).forEach { r ->
+                    val types = store.flow(r.id)?.workflow?.graph?.nodes.orEmpty().joinToString(",") { it.type }
+                    val clip = r.videoPath?.let { java.io.File(it) }
+                    say("result ${r.id} clip=${clip?.let { if (it.isFile) "${it.length()}B" else "missing" } ?: "none"} types=$types")
+                }
+            }
             "lora_node" -> loraNode(arg)
             "swap" -> swapOp(arg)
             "ultrafix" -> ultrafixOp(arg)

@@ -1318,4 +1318,9 @@
     <string name="accent_teal">Бирюзовый</string>
     <string name="accent_orange">Оранжевый</string>
     <string name="accent_pink">Розовый</string>
+    <string name="compare_handle_cd">Сравнить с исходной картинкой: потяните влево, чтобы её показать</string>
+    <string name="compare_handle_state">Исходная картинка показана на %1$d%%</string>
+    <string name="sampling_fold">Сэмплер, зерно и CFG</string>
+    <string name="sampling_seed_value">зерно %1$s</string>
+    <string name="sampling_cfg_value">CFG %1$s</string>
 </resources>
