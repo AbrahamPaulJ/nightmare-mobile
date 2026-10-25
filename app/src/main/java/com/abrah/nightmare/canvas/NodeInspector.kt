@@ -1712,16 +1712,15 @@ internal fun NodeInspectorBody(
         // ⭐⭐ The video flows' model choice (2026-10-15): Wan 2.2 by default, Neodragon for speed.
         // ⚠ Neodragon is not offered where its canary hid it ([com.abrah.nightmare.npu.VideoGate]).
         if (node.type in com.abrah.nightmare.VIDEO_MODEL_TYPES && !com.abrah.nightmare.npu.VideoGate.hidden) {
-            // ⭐ Wan 2.2 14B (`npu.WanA14Node`) is text to video only: offered while no picture is wired, and
-            // only where the 8 Elite or newer (or an unknown chip) can run it ([com.abrah.nightmare.ModelCatalog.WAN22_A14B]).
+            // ⭐ Wan 2.2 14B (`npu.WanA14Node`): text to video, or image to video with a picture wired (its I2V
+            // experts); only where the 8 Elite or newer (or an unknown chip) can run it ([com.abrah.nightmare.ModelCatalog.WAN22_A14B]).
             val types = linkedMapOf(
                 com.abrah.nightmare.npu.WanVideoNode.name to stringResource(R.string.video_model_wan),
                 com.abrah.nightmare.npu.WanA14Node.name to stringResource(R.string.video_model_wan14),
                 "nd.sample" to stringResource(R.string.video_model_neodragon),
             )
             val caps = remember { com.abrah.nightmare.DeviceProbe.caps() }
-            val a14Ok = node.inputs["image"] == null &&
-                (!caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.WAN22_A14B.builds.minOf { it.minArch })
+            val a14Ok = !caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.WAN22_A14B.builds.minOf { it.minArch }
             if (!a14Ok && node.type != com.abrah.nightmare.npu.WanA14Node.name) types.remove(com.abrah.nightmare.npu.WanA14Node.name)
             Chooser(
                 label = stringResource(R.string.video_model),

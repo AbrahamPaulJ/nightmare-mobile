@@ -253,8 +253,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480x832|loras"`,
             // every field optional. `wan_i2v` animates the newest saved picture.
             "wan_video" -> wanVideo(arg, i2v = false)
-            // ⭐ The same on Wan 2.2 14B (`npu.WanA14Node`, text to video only), same arg.
+            // ⭐ The same on Wan 2.2 14B (`npu.WanA14Node`), same arg; `wan14_i2v` on its I2V experts.
             "wan14_video" -> wanVideo(arg, i2v = false, a14 = true)
+            "wan14_i2v" -> wanVideo(arg, i2v = true, a14 = true)
             "wan_i2v" -> wanVideo(arg, i2v = true)
             // ⭐ GitHub #23's chaining: clip A's `last_frame` is clip B's first frame. `--es arg "WxH|seconds"`.
             "wan_chain" -> wanChain(arg)
@@ -1809,10 +1810,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         ).let { fitWanFrame(it, uri) }
         // ⭐ A sixth part names a `bench` record (the speed table): `bench/<tag>.mp4`, `.json`, then `.done`.
         val tag = at(5)
+        val spec = wf.graph.nodes.firstNotNullOfOrNull { com.abrah.nightmare.npu.WanVideoNode.specOf(it) } ?: ModelCatalog.WAN22
         val benchDir = java.io.File(ctx.getExternalFilesDir(null), "bench").apply { mkdirs() }
         fun benchDone(error: String?, extra: org.json.JSONObject.() -> Unit = {}) {
             if (tag.isEmpty()) return
-            val j = org.json.JSONObject().put("tag", tag).put("model", (if (a14) ModelCatalog.WAN22_A14B else ModelCatalog.WAN22).id).put("app", BuildConfig.VERSION_NAME)
+            val j = org.json.JSONObject().put("tag", tag).put("model", spec.id).put("app", BuildConfig.VERSION_NAME)
                 .put("prompt", at(0)).put("error", error ?: org.json.JSONObject.NULL)
             wf.graph.nodes.firstOrNull { it.type in com.abrah.nightmare.WAN_TYPES }?.let { n -> j.put("params", org.json.JSONObject(n.params)) }
             j.extra()
@@ -1826,7 +1828,6 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             return
         }
         val backendMs = System.currentTimeMillis() - tb
-        val spec = if (a14) ModelCatalog.WAN22_A14B else ModelCatalog.WAN22
         say("wan: ${spec.label} ${if (spec.installed(ctx)) "installed" else "MISSING: ${spec.missing(ctx).joinToString()}"}, " +
             "engine ${if (DitEngine.isInstalled(ctx)) "installed" else "MISSING"}")
         val t0 = System.currentTimeMillis()

@@ -2702,14 +2702,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         // ⭐ Wan video names no `model` param: its one model is [ModelCatalog.WAN22], and the
         // same popup offers it — then the engine, which ABI 106 brings for every DiT model.
-        for (wan in graph.nodes.mapNotNull { n ->
-            when (n.type) {
-                com.abrah.nightmare.npu.WanVideoNode.name -> ModelCatalog.WAN22
-                com.abrah.nightmare.npu.WanFunNode.name -> ModelCatalog.WAN22_FUN
-                com.abrah.nightmare.npu.WanA14Node.name -> ModelCatalog.WAN22_A14B
-                else -> null
-            }
-        }.distinct()) {
+        for (wan in graph.nodes.mapNotNull { com.abrah.nightmare.npu.WanVideoNode.specOf(it) }.distinct()) {
             if (!wan.installed(ctx)) {
                 if (wan.buildFor(caps) == null) {
                     runError = text(R.string.models_needs_arch, wan.label, wan.builds.minOf { it.minArch }, caps.arch)
@@ -4550,12 +4543,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             title = text(R.string.models_use_named, spec.label),
             offer = when (spec) {
                 ModelCatalog.WAN22_FUN -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.MOTION)
-                // ⭐ The 14B is text to video only (`npu.WanA14Node`).
+                // ⭐ The 14B's two pairs of experts: text to video, and image to video (`npu.WanA14Node`).
                 ModelCatalog.WAN22_A14B -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V)
+                ModelCatalog.WAN22_A14B_I2V -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.I2V)
                 else -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V)
             },
             unsavedFlow = unsavedFlow(),
-            videoType = com.abrah.nightmare.npu.WanA14Node.name.takeIf { spec == ModelCatalog.WAN22_A14B },
+            videoType = com.abrah.nightmare.npu.WanA14Node.name.takeIf { spec == ModelCatalog.WAN22_A14B || spec == ModelCatalog.WAN22_A14B_I2V },
         )
     }
 

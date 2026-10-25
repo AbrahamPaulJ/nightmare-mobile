@@ -254,12 +254,7 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
         }
         // ⭐ Wan names no `model` param: its node is its model, as in `modelsPresentOrAsk`.
         for (n in graph.nodes) {
-            val spec = when (n.type) {
-                com.abrah.nightmare.npu.WanVideoNode.name -> ModelCatalog.WAN22
-                com.abrah.nightmare.npu.WanFunNode.name -> ModelCatalog.WAN22_FUN
-                com.abrah.nightmare.npu.WanA14Node.name -> ModelCatalog.WAN22_A14B
-                else -> continue
-            }
+            val spec = com.abrah.nightmare.npu.WanVideoNode.specOf(n) ?: continue
             if (!spec.installed(ctx)) return "node \"${n.id}\" needs ${spec.label} (\"${spec.id}\"), which is not installed"
             if (!DitEngine.isInstalled(ctx)) return "${spec.label} needs the DiT engine. Download it in the app first"
             val pose = com.abrah.nightmare.npu.WanFun.Mode.of(

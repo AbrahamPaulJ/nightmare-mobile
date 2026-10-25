@@ -68,4 +68,54 @@ class WanA14Test {
         assertTrue(url(a14, "tae.safetensors").endsWith("taew2_1.safetensors"))
         assertEquals(ModelCatalog.DIT_MIN_ARCH, a14.builds.single().minArch)
     }
+
+    @Test
+    fun aWiredPictureRunsTheI2VExperts() {
+        val t2v = Node("v", WanA14Node.name)
+        val i2v = Node("v", WanA14Node.name, inputs = mapOf("image" to com.abrah.nightmare.Source("pic")))
+        assertEquals(ModelCatalog.WAN22_A14B, WanVideoNode.specOf(t2v))
+        assertEquals(ModelCatalog.WAN22_A14B_I2V, WanVideoNode.specOf(i2v))
+        assertEquals("Image to video (14B)", WanA14Node.titleFor(i2v))
+        // ⭐ The 5B's and Fun's nodes are their models, picture or not.
+        assertEquals(ModelCatalog.WAN22, WanVideoNode.specOf(Node("w", WanVideoNode.name, inputs = i2v.inputs)))
+        assertEquals(ModelCatalog.WAN22_FUN, WanVideoNode.specOf(Node("f", WanFunNode.name)))
+        assertEquals(null, WanVideoNode.specOf(Node("p", "core.prompt")))
+        // ⚠ The two pairs of experts are two backends: switching must relaunch.
+        assertTrue(WanA14Node.contextKey(t2v) != WanA14Node.contextKey(i2v))
+    }
+
+    @Test
+    fun theI2VExpertsLaunchWithTheirBoundaryAndAChunkedEncode() {
+        val dir = tmp.newFolder(ModelCatalog.WAN22_A14B_I2V.id)
+        java.io.File(dir, ModelCatalog.WAN_HIGH_DIT).writeText("x")
+        val env = BackendProcess.wanA14Env(dir)
+        assertEquals(java.io.File(dir, ModelCatalog.WAN_HIGH_DIT).absolutePath, env["NM_WAN_HIGH_NOISE_MODEL"])
+        assertEquals("0.9", env["NM_WAN_MOE_BOUNDARY"])
+        // ⚠ Distilled: no Lightning LoRAs.
+        assertEquals(null, env["NM_WAN_HIGH_LORA"])
+        assertEquals(null, env["NM_WAN_LOW_LORA"])
+        // ⚠ A chunk's content (chunk - 8 of overlap) under 8 aborts the engine's slicing (12 did on the S25).
+        val chunk = env.getValue("SD_TAEHV_ENCODE_CHUNK").toInt()
+        assertTrue("chunk $chunk", chunk >= 16 && chunk < 33)
+        // The T2V folder gets neither.
+        val t2v = tmp.newFolder(ModelCatalog.WAN22_A14B.id)
+        java.io.File(t2v, ModelCatalog.WAN_HIGH_DIT).writeText("x")
+        assertEquals(null, BackendProcess.wanA14Env(t2v)["SD_TAEHV_ENCODE_CHUNK"])
+        assertEquals(null, BackendProcess.wanA14Env(t2v)["NM_WAN_MOE_BOUNDARY"])
+    }
+
+    @Test
+    fun theI2VCatalogueEntryIsTheDistilledPairWithTurbosEncoder() {
+        val i2v = ModelCatalog.WAN22_A14B_I2V
+        assertTrue(i2v in ModelCatalog.video)
+        assertEquals("wan22_ti2v_turbo", i2v.partsFrom)
+        assertEquals(ModelCatalog.WAN, i2v.backendType)
+        val names = i2v.files.map { it.name }
+        assertTrue(names.containsAll(listOf("dit.gguf", ModelCatalog.WAN_HIGH_DIT, "umt5.gguf", "tae.safetensors")))
+        assertTrue(ModelCatalog.WAN_HIGH_LORA !in names && ModelCatalog.WAN_LOW_LORA !in names)
+        // ⚠ Q4_0, the NPU's: the newer 2026-04 experts are Q4_K only.
+        assertTrue(i2v.files.filter { it.name.endsWith(".gguf") && it.name != "umt5.gguf" }.all { it.url.endsWith("-Q4_0.gguf") })
+        assertTrue(i2v.files.single { it.name == "tae.safetensors" }.url.endsWith("taew2_1.safetensors"))
+        assertEquals(ModelCatalog.DIT_MIN_ARCH, i2v.builds.single().minArch)
+    }
 }

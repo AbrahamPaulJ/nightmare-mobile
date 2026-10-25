@@ -2815,7 +2815,7 @@ object ModelCatalog {
      * aborts on ("type i32 unsupported"), and their F32 weights are twice the bytes to stream. The Wan 2.1 latent
      * space, so TAEHV's `taew2_1` decodes, and 16 fps. Its umT5 is Wan 2.2 Turbo's when Turbo is installed
      * ([ModelSpec.partsFrom]). ⚠ 8.6 GB a expert: it always STREAMS (`all=disk` + a budget, `npu.WanA14Node`), one
-     * block at a time. Text to video only. Measured on the S25: `docs/VIDEO-GGML.md` §8.
+     * block at a time. Text to video; a wired picture runs [WAN22_A14B_I2V]. Measured on the S25: `docs/VIDEO-GGML.md` §8.
      */
     val WAN22_A14B: ModelSpec = dit(
         "wan22_t2v_a14b", "Wan 2.2 14B", Family.WAN, WAN, steps = 4,
@@ -2834,8 +2834,31 @@ object ModelCatalog {
         ),
     )
 
+    /**
+     * ⭐⭐ **Wan 2.2 I2V A14B, 4-step distilled** (Wan-AI, lightx2v's Wan2.2-Distill-Models; jayn7's Q4_0 GGUFs): a
+     * picture into a clip on the big Wan. lightx2v trained the 4 steps INTO both experts (no Lightning LoRA, so no
+     * run-time LoRA cost); `high_noise_1030` (2025-10-30) and `low_noise`, the newest with a Q4_0 (the 2026-04 pair
+     * is Q4_K only, which the NPU does not run). Same schedule, fps and decoder as [WAN22_A14B], MoE boundary 0.9.
+     * ⚠ The start picture is encoded through TAEHV in time chunks (`BackendProcess.wanA14Env`): whole, 480x832 x33
+     * asked 6 GB. Measured on the S25 (sd-cli): 480x832 2 s in 538 s. `docs/VIDEO-GGML.md` §8.
+     */
+    val WAN22_A14B_I2V: ModelSpec = dit(
+        "wan22_i2v_a14b", "Wan 2.2 14B image to video", Family.WAN, WAN, steps = 4,
+        prompt = "",
+        ownDitParts = true,
+        partsFrom = "wan22_ti2v_turbo",
+        minArch = DIT_MIN_ARCH,
+        minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+        files = listOf(
+            RemoteFile("https://huggingface.co/jayn7/WAN2.2-I2V_A14B-DISTILL-LIGHTX2V-4STEP-GGUF/resolve/main/low_noise/wan2.2_i2v_A14b_low_noise_lightx2v_4step-Q4_0.gguf", "dit.gguf", 8_567_937_664L),
+            RemoteFile("https://huggingface.co/jayn7/WAN2.2-I2V_A14B-DISTILL-LIGHTX2V-4STEP-GGUF/resolve/main/high_noise_1030/wan2.2_i2v_A14b_high_noise_lightx2v_4step_1030-Q4_0.gguf", WAN_HIGH_DIT, 8_567_937_664L),
+            RemoteFile(HF + "city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q4_K_M.gguf", "umt5.gguf", 3_655_145_312L),
+            RemoteFile("https://raw.githubusercontent.com/madebyollin/taehv/fa579a9a726b0a55951998d73e309bfdf0abd342/safetensors/taew2_1.safetensors", "tae.safetensors", 22_642_902L),
+        ),
+    )
+
     /** ⚠ The video models: found by [byId], never listed as checkpoints. */
-    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B)
+    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B, WAN22_A14B_I2V)
 
     fun installed(context: Context): List<ModelSpec> = all.filter { it.installed(context) }
 

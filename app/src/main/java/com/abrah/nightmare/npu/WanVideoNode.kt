@@ -112,6 +112,17 @@ object WanVideoNode : NodeType {
      */
     override fun contextKey(node: Node): ContextKey = keyFor(node, ModelCatalog.WAN22)
 
+    /**
+     * ⭐⭐ The model a Wan node runs: its node IS its model (no `model` param), except the 14B's, whose wired picture
+     * picks the I2V experts. THE table: the pre-run download check, the API's and the harness's all read it.
+     */
+    fun specOf(node: Node): com.abrah.nightmare.ModelSpec? = when (node.type) {
+        name -> ModelCatalog.WAN22
+        WanFunNode.name -> ModelCatalog.WAN22_FUN
+        WanA14Node.name -> WanA14Node.specFor(node)
+        else -> null
+    }
+
     /** ⭐ The launch key for [spec] (Wan 2.2 Turbo here, Fun Control for [WanFunNode]). */
     internal fun keyFor(node: Node, spec: com.abrah.nightmare.ModelSpec): ContextKey {
         val p = effectiveParams(node)
@@ -513,6 +524,9 @@ object WanVideoNode : NodeType {
                 pos.text, neg.text, used.toString(), "${w}x$h", frames.toString(), source?.address().orEmpty(),
                 loras.joinToString(";") { (f, s) -> "$f@$s" },
             ) + listOfNotNull(
+                // ⚠ The MODEL, for the 14B: a 5B 2 s clip and a 14B 3 s clip are both 49 frames, so the same prompt,
+                // seed and size named one file. Turbo's and Fun's keys stay as they were (their cached clips).
+                spec.id.takeIf { profileOf(node.type) != TURBO }?.let { "model=$it" },
                 vaeTile.takeIf { it > 0 }?.let { "vae_tile=$it" },
                 // ⚠⚠ The FRAMING too: `source.address()` is the unframed photo, so dragging the crop at
                 // the same seed wrote the old clip's name (GitHub #27 again), and a chain served the old

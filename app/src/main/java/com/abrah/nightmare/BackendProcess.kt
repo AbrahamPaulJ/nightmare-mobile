@@ -581,8 +581,20 @@ object BackendProcess {
             put("NM_WAN_HIGH_NOISE_MODEL", high.absolutePath)
             File(model, ModelCatalog.WAN_HIGH_LORA).takeIf { it.isFile }?.let { put("NM_WAN_HIGH_LORA", it.absolutePath) }
             File(model, ModelCatalog.WAN_LOW_LORA).takeIf { it.isFile }?.let { put("NM_WAN_LOW_LORA", it.absolutePath) }
+            // ⭐ The I2V experts ([ModelCatalog.WAN22_A14B_I2V], distilled: no LoRAs): their trained MoE boundary,
+            // and the start picture's clip encoded through TAEHV in time chunks. ⚠ Whole, 480x832 x33 asked 6 GB of
+            // the 4 GiB budget and failed; 24 frames a chunk (16 + the encoder's 8 of overlap). ⚠ Never under 16:
+            // a chunk's content must exceed that overlap or the engine's slicing aborts (12 did, S25 2026-10-25).
+            if (model.name == ModelCatalog.WAN22_A14B_I2V.id) {
+                put("NM_WAN_MOE_BOUNDARY", I2V_MOE_BOUNDARY)
+                put("SD_TAEHV_ENCODE_CHUNK", I2V_ENCODE_CHUNK.toString())
+            }
         }
     }
+
+    /** ⭐ Wan 2.2 I2V A14B's switch from the high-noise to the low-noise expert (Wan-AI's config; T2V's is 0.875). */
+    internal const val I2V_MOE_BOUNDARY = "0.9"
+    internal const val I2V_ENCODE_CHUNK = 24
 
     internal fun shipsThisEncoder(spec: ModelSpec, teBytes: Long): Boolean =
         // ⚠⚠ An IMPORT lists no files: its encoder is a copy of its family's built-in one ([CustomModels.ditPartsPlan]),
