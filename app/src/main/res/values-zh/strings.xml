@@ -144,7 +144,6 @@
     <string name="video">视频</string>
     <string name="video_about">在 NPU 上由文字和图片生成视频。无需后端，无需检查点。</string>
     <string name="wan_about">使用 Wan 2.2 由文字和图片生成视频：5 秒视频，832x480 或 1280x704。比 Neodragon 慢，但效果好得多。共 6.25 GB：Wan 2.2 Turbo DiT、umT5 文本编码器和一个小型解码器。</string>
-    <string name="wan14_about">使用 Wan 2.2 14B（最大的 Wan）由文字生成视频：动作和细节最好，但速度慢。8 Elite 上 1 秒视频：480x320 约 2 分钟，832x480 约 5 分钟，1280x720 约 13 分钟。需要 8 Elite 或更新芯片、12 GB 及以上内存。约 18.5 GB（两个 8.6 GB 模型，各带 4 步 Lightning 加速）；如已安装 Wan 2.2 Turbo，则共用它的文本编码器。请使用 Wi-Fi。</string>
     <string name="wan14_i2v_about">使用 Wan 2.2 14B 由图片生成视频：让你的图片动起来，具有 14B 的动作和细节。把图片连接到 Wan 14B 视频节点。8 Elite 上 480x832 的 2 秒约 9 分钟，720x1280 的 1 秒约 12 分钟；尺寸越大，人脸越清晰。需要 8 Elite 或更新芯片、12 GB 及以上内存。约 21 GB（两个 8.6 GB 模型，内置 4 步加速）；如已安装 Wan 2.2 Turbo，则共用它的文本编码器。请使用 Wi-Fi。</string>
     <string name="video_delete_body">将释放 %1$d MB。要找回它们需要下载 %2$d MB。在重新安装之前，所有视频工作流都无法运行。</string>
     <string name="video_delete_title">删除视频模型？</string>
@@ -722,6 +721,8 @@
     <string name="flow_t2v_name">文生视频</string>
     <string name="flow_t2v_about">提示词生成视频。默认使用 Wan 2.2（需要几分钟，效果好得多）；将视频节点切换为 Neodragon 约 30 秒生成 2 秒。</string>
     <string name="flow_i2v_name">图生视频</string>
+    <string name="flow_t2v14_name">文本生成视频（14B）</string>
+    <string name="flow_t2v14_about">先用你的图片模型按提示词生成第一帧，再由 Wan 2.2 14B 让它动起来：动作和细节最好，但较慢。先检查图片：重新生成图片只需几秒，重新生成视频要几分钟。</string>
     <string name="flow_i2v_about">以图片为第一帧，按提示词运动。默认使用 Wan 2.2；为了速度可在视频节点选择 Neodragon。</string>
     <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧；0 生成一张静止图片。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
     <string name="hint_wan_size">推荐：1280x704 或 704x1280，Wan 2.2 的设计尺寸。832x480 或 480x832 约快三倍，但可能模糊或变形。任意比例，像素总数不超过 1280x704；超出时另一边会自动缩小。</string>
@@ -1135,7 +1136,7 @@
     <string name="video_model_wan">Wan 2.2</string>
     <string name="video_model_neodragon">Neodragon（快速）</string>
     <string name="video_model_wan14">Wan 14B</string>
-    <string name="hint_video_model">Wan 2.2 效果好得多，需要几分钟；Wan 2.2 14B 效果最好也最慢；Neodragon 约 30 秒生成 2 秒</string>
+    <string name="hint_video_model">Wan 2.2 效果好得多，需要几分钟；Wan 2.2 14B（需连接图片）效果最好也最慢；Neodragon 约 30 秒生成 2 秒</string>
     <string name="flow_motion_name">动作迁移</string>
     <string name="flow_motion_about">让你的图片像所选视频一样运动：逐帧跟随其姿势，使用 Wan 2.2 Fun Control。</string>
     <string name="video_in_none">未选择视频</string>

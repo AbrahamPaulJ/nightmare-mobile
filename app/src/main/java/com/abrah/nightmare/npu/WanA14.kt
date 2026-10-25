@@ -14,8 +14,9 @@ import com.abrah.nightmare.Value
  * the 14B ([WanVideoNode.specOf]); what differs in the run is [WanVideoNode.A14B] (16 fps, euler, 4x the tokens of
  * the 5B at a size, always streamed). The engine loads the high-noise expert and Lightning's two halves from the
  * launch environment (`BackendProcess.wanA14Env`, engine `dit/044`). `docs/VIDEO-GGML.md` §8.
- * ⭐ A wired picture runs the I2V experts instead ([ModelCatalog.WAN22_A14B_I2V], a separate download: the T2V
- * pair cannot start from a picture), as Wan 2.2's node turns to image to video.
+ * ⭐⭐ Since 1.6.240 it runs ONLY the I2V experts ([ModelCatalog.WAN22_A14B_I2V]) and needs a picture: one 14B
+ * download, not two (the user's call, 2026-10-25). Text to video is the `canvas.T2V14` flow, a picture model making
+ * the first frame. [ModelCatalog.WAN22_A14B] stays defined (the engine's T2V path) but is not offered.
  */
 object WanA14Node : NodeType {
 
@@ -26,10 +27,9 @@ object WanA14Node : NodeType {
     override val outputs get() = WanVideoNode.outputs
     override val category = "generate"
     override val paletteName = "Wan 14B video"
-    override fun titleFor(node: Node): String =
-        if (node.inputs["image"] != null) "Image to video (14B)" else "Text to video (14B)"
+    override fun titleFor(node: Node): String = "Image to video (14B)"
     override val defaultId = "video"
-    override val about = "a prompt, or a prompt and a photo, into a clip with Wan 2.2 14B, the bigger and slower Wan"
+    override val about = "a picture and a prompt into a clip with Wan 2.2 14B, the bigger and slower Wan"
     override val showsResult = false
 
     // ⭐ Its own size advice under the picker: the 5B's (made for 1280x704, 832x480 "three times faster") is wrong here.
@@ -50,12 +50,19 @@ object WanA14Node : NodeType {
 
     override fun contextKey(node: Node) = WanVideoNode.keyFor(node, specFor(node))
 
-    /** ⭐ T2V experts, or the I2V ones when a picture is wired ([ModelCatalog.WAN22_A14B_I2V]). */
-    fun specFor(node: Node) = if (node.inputs["image"] != null) ModelCatalog.WAN22_A14B_I2V else ModelCatalog.WAN22_A14B
+    /** ⭐ Always the I2V experts ([ModelCatalog.WAN22_A14B_I2V]): the one 14B download. */
+    @Suppress("UNUSED_PARAMETER")
+    fun specFor(node: Node) = ModelCatalog.WAN22_A14B_I2V
+
+    /** ⚠ Said when no picture is wired: the 14B animates a picture, it does not start from text alone. */
+    const val NEEDS_PICTURE = "Wan 14B animates a picture. Wire one in, or open the Text to video (14B) flow: it " +
+        "makes the first frame with your picture model"
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
         runPorts(ctx, node, inputs).getValue("video")
 
-    override suspend fun runPorts(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Map<String, Value> =
-        WanVideoNode.runClip(ctx, node, inputs, specFor(node), null)
+    override suspend fun runPorts(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Map<String, Value> {
+        require(node.inputs["image"] != null) { "node \"${node.id}\": $NEEDS_PICTURE" }
+        return WanVideoNode.runClip(ctx, node, inputs, specFor(node), null)
+    }
 }

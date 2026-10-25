@@ -335,6 +335,14 @@ class ModelCatalogTest {
         assertEquals(null, BackendProcess.kreaBudget(krea, sixteen, 1_000_000_000L))
         assertEquals(null, BackendProcess.kreaBudget(krea, 0L, 0L))
         assertEquals(null, BackendProcess.kreaBudget(klein9, twelve, 0L))
+        // ⭐ Z-Image Turbo too (a 12 GB realme reaped at 1024², Saved #7193), on `all=disk` so the budget evicts;
+        // never on a 16 GB phone, and never another family.
+        val zimage = ModelCatalog.byId("z_image_turbo")!!
+        assertEquals("4", BackendProcess.kreaBudget(zimage, twelve, 4_627_000_000L))
+        assertEquals(null, BackendProcess.kreaBudget(zimage, sixteen, 1_000_000_000L))
+        assertTrue(BackendProcess.streamsLikeKrea(zimage, twelve))
+        assertEquals(false, BackendProcess.streamsLikeKrea(zimage, sixteen))
+        assertEquals(false, BackendProcess.streamsLikeKrea(klein9, twelve))
         // ⭐ Ideogram 4 streams the same way (the app was reaped loading it whole on the S25, 2026-10-18).
         val ideo = ModelCatalog.byId("ideogram_4_turbo")!!
         assertEquals("4", BackendProcess.kreaBudget(ideo, twelve, 6_000_000_000L))

@@ -1149,7 +1149,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.videoModelItems(
                 detail = stringResource(
                     when (wan.spec) {
                         com.abrah.nightmare.ModelCatalog.WAN22_FUN -> R.string.wan_fun_about
-                        com.abrah.nightmare.ModelCatalog.WAN22_A14B -> R.string.wan14_about
                         com.abrah.nightmare.ModelCatalog.WAN22_A14B_I2V -> R.string.wan14_i2v_about
                         else -> R.string.wan_about
                     },

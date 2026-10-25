@@ -2858,7 +2858,9 @@ object ModelCatalog {
     )
 
     /** ⚠ The video models: found by [byId], never listed as checkpoints. */
-    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B, WAN22_A14B_I2V)
+    // ⚠ Not [WAN22_A14B]: one 14B download, its image to video experts; text to video on the 14B makes the first
+    // frame with a picture model (`canvas.T2V14`, the user's call 2026-10-25: two 17 GB downloads was too much).
+    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B_I2V)
 
     fun installed(context: Context): List<ModelSpec> = all.filter { it.installed(context) }
 

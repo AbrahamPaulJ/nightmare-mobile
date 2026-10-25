@@ -2,16 +2,15 @@
 
 *A prompt, or a prompt and a photo, into a clip. Or your photo moving like a video you choose.*
 
-There are four video models. Install any of them:
+There are three video models. Install any of them:
 
 | model | makes | needs |
 |---|---|---|
 | **Wan 2.2 Turbo** (6.25 GB) | up to 5 seconds, any shape up to 1280 × 704. The better clips; minutes per clip | Snapdragon 8 Elite or newer (alpha on 8 Gen 3: tell us if it runs) |
-| **Wan 2.2 14B** (about 18.5 GB; 3.7 GB less beside Wan 2.2 Turbo) | text to video, up to 5 seconds. The best motion and detail, and slow: about 2 minutes for 1 second at 480 × 320, 5 minutes at 832 × 480, 13 minutes at 1280 × 720 | Snapdragon 8 Elite or newer, 12 GB of RAM |
-| **Wan 2.2 14B image to video** (about 21 GB; 3.7 GB less beside Wan 2.2 Turbo) | your picture moving on the 14B: about 9 minutes for 2 seconds at 480 × 832, 12 minutes for 1 second at 720 × 1280 (faces come out much sharper at the larger size) | Snapdragon 8 Elite or newer, 12 GB of RAM |
+| **Wan 2.2 14B** (about 21 GB; 3.7 GB less beside Wan 2.2 Turbo) | your picture moving, or text to video through a picture first (**Text to video (14B)** below). The best motion and detail, and slow: about 9 minutes for 2 seconds at 480 × 832, 12 minutes for 1 second at 720 × 1280 (faces come out much sharper at the larger size) | Snapdragon 8 Elite or newer, 12 GB of RAM |
 | **Neodragon** (about 8.6 GB) | 2 seconds at 1024 × 640 in about 25 seconds | Snapdragon 8 Elite or 8 Elite Gen 5 |
 
-None of them uses your picture model; video has its own. **Models → Video** lists them all, and **Wan**
+Video has its own models; only **Text to video (14B)** also uses your picture model, for its first frame. **Models → Video** lists them all, and **Wan**
 in the family menu has Wan's models on their own page.
 
 ## Text to video
@@ -24,8 +23,16 @@ in the family menu has Wan's models on their own page.
 3. **Run.** With Wan 2.2, 5 seconds at 832 × 480 takes under **3 minutes** (about 2:45) on an 8 Elite; the
    bar moves once per step, four steps, then the clip is decoded and encoded.
 
-The video node's **Model** switches between **Wan 2.2** (the default), **Wan 14B** and **Neodragon (fast)**. With a picture wired, Wan 14B runs its image to video models (a separate download).
+The video node's **Model** switches between **Wan 2.2** (the default) and **Neodragon (fast)**, and **Wan 14B** with a picture wired: the 14B animates a picture. For text to video on the 14B, use the next flow.
 **Use** on Neodragon in Models opens the flow on Neodragon.
+
+## Text to video (14B)
+
+**Nodes:** Prompt → Image (your picture model) → Video (Wan 14B) → Output. Needs Wan 2.2 14B and an 8 Elite or newer with 12 GB.
+
+1. **Flows → Text to video (14B)**. The picture is made by the model in the top bar.
+2. Write one prompt for the scene and its motion: it makes the picture and drives the clip.
+3. **Run.** The picture appears on its node first, in seconds, then the clip takes minutes. Not the picture you wanted? Stop the run and Run again. Happy with it? Lock its seed (the seed chip lists each node's seed): the next Run keeps that picture and only makes a new clip.
 
 The clip **loops on the node** that made it; tap it to play it full screen. With **Save** on
 (the default), an MP4 is also written to `Movies/Nightmare`.

@@ -276,26 +276,12 @@ Wan 2.2 Fun 5B Control (motion transfer)
     states no licence. Downloaded by the app at the user's request, unmodified;
     not included here.
 
-Wan 2.2 T2V A14B (video)
-    Wan team (Alibaba); GGUF by QuantStack
-    https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B
-    https://huggingface.co/QuantStack/Wan2.2-T2V-A14B-GGUF
-    Apache 2.0. Downloaded by the app at the user's request; not included here.
-
 Wan 2.2 I2V A14B, 4-step distilled (video)
     Wan team (Alibaba); distilled by lightx2v; GGUF by jayn7
     https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B
     https://huggingface.co/lightx2v/Wan2.2-Distill-Models
     https://huggingface.co/jayn7/WAN2.2-I2V_A14B-DISTILL-LIGHTX2V-4STEP-GGUF
     Apache 2.0. Downloaded by the app at the user's request; not included here.
-
-Wan 2.2 Lightning (Wan 2.2 14B's 4-step LoRAs)
-    lightx2v
-    https://huggingface.co/lightx2v/Wan2.2-Lightning
-    https://huggingface.co/AbrahamPJ/nightmare-wan22-a14b-lightning (re-hosted
-    with the weights stored as F16 and the alpha scalars as F32, values otherwise
-    unchanged). Apache 2.0. Downloaded by the app at the user's request and
-    applied at run time; not included here.
 
 umT5-XXL encoder (Wan 2.2's text encoder)
     Google; GGUF by city96

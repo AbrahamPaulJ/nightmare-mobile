@@ -253,8 +253,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480x832|loras"`,
             // every field optional. `wan_i2v` animates the newest saved picture.
             "wan_video" -> wanVideo(arg, i2v = false)
-            // ⭐ The same on Wan 2.2 14B (`npu.WanA14Node`), same arg; `wan14_i2v` on its I2V experts.
-            "wan14_video" -> wanVideo(arg, i2v = false, a14 = true)
+            // ⭐ Wan 2.2 14B (`npu.WanA14Node`) is image to video only since 1.6.240: `wan14_i2v`, same arg.
+            "wan14_video" -> say("wan14_video: the 14B is image to video only now; run wan14_i2v", bad = true)
             "wan14_i2v" -> wanVideo(arg, i2v = true, a14 = true)
             "wan_i2v" -> wanVideo(arg, i2v = true)
             // ⭐ GitHub #23's chaining: clip A's `last_frame` is clip B's first frame. `--es arg "WxH|seconds"`.

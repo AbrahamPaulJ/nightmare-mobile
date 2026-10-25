@@ -58,8 +58,8 @@ class WanA14Test {
 
     @Test
     fun theCatalogueEntryBorrowsTurbosEncoderButNotItsDecoder() {
+        // ⚠ Not offered since 1.6.240 (one 14B download: its I2V experts), but still the engine's T2V entry.
         val a14 = ModelCatalog.WAN22_A14B
-        assertTrue(a14 in ModelCatalog.video)
         assertEquals("wan22_ti2v_turbo", a14.partsFrom)
         assertEquals(ModelCatalog.WAN, a14.backendType)
         fun url(spec: com.abrah.nightmare.ModelSpec, name: String) = spec.files.single { it.name == name }.url
@@ -69,19 +69,37 @@ class WanA14Test {
         assertEquals(ModelCatalog.DIT_MIN_ARCH, a14.builds.single().minArch)
     }
 
+    /** ⭐ One 14B download (1.6.240): the node is its image to video experts, picture or not; text to video is a flow. */
     @Test
-    fun aWiredPictureRunsTheI2VExperts() {
-        val t2v = Node("v", WanA14Node.name)
+    fun theFourteenBIsItsImageToVideoExpertsOnly() {
+        val bare = Node("v", WanA14Node.name)
         val i2v = Node("v", WanA14Node.name, inputs = mapOf("image" to com.abrah.nightmare.Source("pic")))
-        assertEquals(ModelCatalog.WAN22_A14B, WanVideoNode.specOf(t2v))
+        assertEquals(ModelCatalog.WAN22_A14B_I2V, WanVideoNode.specOf(bare))
         assertEquals(ModelCatalog.WAN22_A14B_I2V, WanVideoNode.specOf(i2v))
         assertEquals("Image to video (14B)", WanA14Node.titleFor(i2v))
+        // ⚠ The text to video pair is not offered: the catalogue lists one 14B.
+        assertTrue(ModelCatalog.WAN22_A14B_I2V in ModelCatalog.video)
+        assertTrue(ModelCatalog.WAN22_A14B !in ModelCatalog.video)
         // ⭐ The 5B's and Fun's nodes are their models, picture or not.
         assertEquals(ModelCatalog.WAN22, WanVideoNode.specOf(Node("w", WanVideoNode.name, inputs = i2v.inputs)))
         assertEquals(ModelCatalog.WAN22_FUN, WanVideoNode.specOf(Node("f", WanFunNode.name)))
         assertEquals(null, WanVideoNode.specOf(Node("p", "core.prompt")))
-        // ⚠ The two pairs of experts are two backends: switching must relaunch.
-        assertTrue(WanA14Node.contextKey(t2v) != WanA14Node.contextKey(i2v))
+    }
+
+    /** ⭐ Text to video on the 14B: the prompt makes a picture with the top bar's model, the 14B animates it. */
+    @Test
+    fun theFourteenBTextToVideoFlowMakesAPictureFirst() {
+        val recipe = com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V14).single()
+        val g = recipe.build().graph
+        val video = g.nodes.single { it.type == WanA14Node.name }
+        val pic = g.byId.getValue(video.inputs.getValue("image").node)
+        assertEquals("generate", pic.id)
+        assertEquals("prompt", pic.inputs.getValue("prompt").node)
+        assertEquals("prompt", video.inputs.getValue("prompt").node)
+        assertEquals(ModelCatalog.WAN22_A14B_I2V, WanVideoNode.specOf(video))
+        // ⚠ Its first frame uses the checkpoint, so the flow is a checkpoint flow, and it needs what the 14B needs.
+        assertTrue(recipe.usesCheckpoint)
+        assertEquals(ModelCatalog.WAN22_A14B_I2V.builds.minOf { it.minArch }, recipe.minArch)
     }
 
     @Test

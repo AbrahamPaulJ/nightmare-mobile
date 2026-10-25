@@ -624,15 +624,26 @@ object BackendProcess {
      * ⭐ Ideogram 4 too: its DiT and TurboTime LoRA are 6.2 GB on the NPU, Krea's size. ⚠ Unbudgeted on the S25
      * (2026-10-18, 6.0 GB free) the engine mapped all 6,192 MB as one segment and lmkd reclaimed the APP mid-step
      * ("min watermark is breached and swap is low"); sd-cli at 2.5 GiB rendered. Krea's thresholds, unmeasured whole.
+     * ⭐ Z-Image Turbo too: its fp8 DiT is 5.9 GB, Krea's size, and unbudgeted lmkd reclaimed the app at 1024²: on a
+     * 12 GB realme (8 Elite, 4.6 GB free, lowest 802 MB 24 s in; a tester, Saved #7193) and twice on the S25 at step
+     * 6-7 (`docs/ENGINE-PERF.md` §2e). Krea and MOSS never were ("never happen on krea, moss"). Krea's thresholds.
      */
     internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long, availBytes: Long): String? {
-        if (spec?.family !in setOf(Family.KREA2, Family.IDEOGRAM) || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
+        if (spec?.family !in setOf(Family.KREA2, Family.IDEOGRAM, Family.ZIMAGE) || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
         return when {
             availBytes >= KREA_WHOLE_FREE -> null
             availBytes >= KREA_5_FREE -> "5"
             else -> "4"
         }
     }
+
+    /**
+     * ⚠ Pure: a family the BACKEND does not put on `all=disk` itself (Krea 2 and Qwen are its `own_only`) but whose
+     * [kreaBudget] needs it to evict: Z-Image below the 16 GB class. Keyed to the phone's RAM, never to what is free,
+     * so the launch flag and the budget cannot disagree at a threshold.
+     */
+    internal fun streamsLikeKrea(spec: ModelSpec?, ramBytes: Long): Boolean =
+        spec?.family == Family.ZIMAGE && ramBytes in 1 until Prefs.LOWRAM_BELOW_BYTES
 
     private const val KREA_WHOLE_FREE = 7_300_000_000L
     private const val KREA_5_FREE = 6_100_000_000L
@@ -936,7 +947,11 @@ object BackendProcess {
                     if (!upscalerOnly && spec?.family?.dit == true) {
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
                         // ⭐ A memory budget only evicts with `all=disk`: without it the segments stay resident.
-                        (readDitParamsOverride(context) ?: "all=disk".takeIf { belowV79 || budget != null })
+                        // ⭐ Z-Image below the 16 GB class runs like Krea 2 ([streamsLikeKrea]): its free-RAM budget
+                        // ([kreaBudget]) needs this, and the backend gives Z-Image only `te=disk` of its own.
+                        (readDitParamsOverride(context) ?: "all=disk".takeIf {
+                            belowV79 || budget != null || streamsLikeKrea(spec, DeviceProbe.caps().ramBytes)
+                        })
                             ?.let { add("--dit_params_backend"); add(it) }
                     }
                     // ⭐ Only meaningful WITH --lowram, as upstream passes it.

@@ -579,6 +579,19 @@ val RECIPES: List<Recipe> = listOf(
         labelRes = R.string.flow_i2v_name,
         aboutRes = R.string.flow_i2v_about,
     ),
+    // ⭐⭐ Text to video on Wan 2.2 14B: the picture model in the top bar makes the first frame, the 14B animates it
+    // (the user's call, 2026-10-25: one 14B download, its image to video experts, not two 17 GB pairs). After the
+    // 5B's two flows: an 8 Elite and the 12 GB class.
+    Recipe(
+        T2V14, "Text to video (14B)",
+        "Your picture model makes the first frame from the prompt, then Wan 2.2 14B animates it: the best motion " +
+            "and detail, and slow. Check the picture first: a new one takes seconds, a new clip minutes.",
+        ::wan14TextToVideoWorkflow,
+        minArch = com.abrah.nightmare.ModelCatalog.WAN22_A14B_I2V.builds.minOf { it.minArch },
+        section = VIDEO,
+        labelRes = R.string.flow_t2v14_name,
+        aboutRes = R.string.flow_t2v14_about,
+    ),
     // ⭐⭐ Motion transfer, LAST: the most demanding flow in the list.
     Recipe(
         MOTION, "Motion transfer",
@@ -598,6 +611,7 @@ const val T2V = "t2v"
 const val FACE_EDIT = "face_edit"
 const val ANIMATE = "animate_portrait"
 const val I2V = "i2v"
+const val T2V14 = "t2v14"
 const val MOTION = "motion"
 
 /**
@@ -930,6 +944,39 @@ fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
         )
     ),
     if (i2v) flowLayout("prompt", "image", "video", "output") else flowLayout("prompt", "video", "output"),
+)
+
+/**
+ * ⭐⭐ **Text to video on Wan 2.2 14B** ([T2V14]): the prompt makes a picture with the checkpoint in the top bar, and
+ * the 14B (image to video only, `npu.WanA14Node`) animates it. One prompt feeds both: a scene description reads as
+ * both the picture and its motion. The node crops the picture to the clip's shape, as any wired picture.
+ */
+fun wan14TextToVideoWorkflow(): Workflow = Workflow(
+    Graph(
+        listOf(
+            Node("prompt", "core.prompt", params = promptParams()),
+            Node("generate", samplerType(), params = ctxKeyParams() + mapOf("seed" to "0"), inputs = sources("prompt" to "prompt")),
+            Node(
+                "video", com.abrah.nightmare.npu.WanA14Node.name,
+                params = mapOf("seed" to "0"),
+                inputs = sources("prompt" to "prompt", "image" to "generate"),
+            ),
+            Node("output", "core.output", inputs = sources("media" to "video:video")),
+        )
+    ),
+    chainLayout("prompt", "generate", "video", "output"),
+)
+
+/**
+ * ⭐ Two renderers in a row (a picture, then a clip from it): one column each, every wire forward. [flowLayout]
+ * puts all feeders in one column, so a feeder that feeds another feeder (prompt into the picture) ran backwards.
+ * The prompt also wires straight to the second renderer, past the first: a long wire, still forward.
+ */
+private fun chainLayout(prompt: String, first: String, second: String, output: String): Map<String, Pt> = mapOf(
+    prompt to Pt(LEFT, TOP),
+    first to Pt(WORKER_X, TOP + WORKER_DROP),
+    second to Pt(OUTPUT_X, TOP + WORKER_DROP + OUTPUT_DROP / 2),
+    output to Pt(OUTPUT_X + (OUTPUT_X - WORKER_X), TOP + WORKER_DROP + OUTPUT_DROP),
 )
 
 /**

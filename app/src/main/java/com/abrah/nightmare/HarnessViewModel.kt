@@ -4543,13 +4543,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             title = text(R.string.models_use_named, spec.label),
             offer = when (spec) {
                 ModelCatalog.WAN22_FUN -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.MOTION)
-                // ⭐ The 14B's two pairs of experts: text to video, and image to video (`npu.WanA14Node`).
-                ModelCatalog.WAN22_A14B -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V)
-                ModelCatalog.WAN22_A14B_I2V -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.I2V)
+                // ⭐ The one 14B download: image to video, and text to video through a picture first (`canvas.T2V14`).
+                ModelCatalog.WAN22_A14B_I2V -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.I2V, com.abrah.nightmare.canvas.T2V14)
                 else -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V)
             },
             unsavedFlow = unsavedFlow(),
-            videoType = com.abrah.nightmare.npu.WanA14Node.name.takeIf { spec == ModelCatalog.WAN22_A14B || spec == ModelCatalog.WAN22_A14B_I2V },
+            videoType = com.abrah.nightmare.npu.WanA14Node.name.takeIf { spec == ModelCatalog.WAN22_A14B_I2V },
         )
     }
 
