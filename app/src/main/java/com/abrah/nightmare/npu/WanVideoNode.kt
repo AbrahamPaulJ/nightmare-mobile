@@ -272,6 +272,31 @@ object WanVideoNode : NodeType {
         kotlin.math.abs(kotlin.math.ln((srcW.toDouble() / srcH) / (w.toDouble() / h))) > 0.04
 
     /**
+     * ⭐ Pure: the largest clip of EXACTLY the picture's shape on [prof]'s grid within [area], or null when that shape
+     * has no grid size near [area] (an odd shape: then [matchShape] and [centredFrame] trim a few edge pixels). 512x768
+     * is 512x768 at 832x480 worth and 768x1152 at 1280x720 worth, so nothing is stretched or trimmed.
+     */
+    fun exactShape(srcW: Int, srcH: Int, prof: WanProfile, area: Int): Pair<Int, Int>? {
+        fun gcd(a: Int, b: Int): Int = if (b == 0) a else gcd(b, a % b)
+        if (srcW <= 0 || srcH <= 0) return null
+        val g = gcd(srcW, srcH)
+        val a = srcW / g
+        val b = srcH / g
+        val ma = prof.grid / gcd(a, prof.grid)
+        val mb = prof.grid / gcd(b, prof.grid)
+        val m = ma / gcd(ma, mb) * mb
+        val ua = a.toLong() * m
+        val ub = b.toLong() * m
+        val k = kotlin.math.sqrt(area.coerceAtMost(prof.maxArea).toDouble() / (ua * ub)).toLong()
+        if (k < 1) return null
+        val w = (ua * k).toInt()
+        val h = (ub * k).toInt()
+        // ⚠ Only when it is close to the asked pixels: a shape whose grid step is coarse would drop far below them.
+        if (w < MIN_SIDE || h < MIN_SIDE || w > MAX_SIDE || h > MAX_SIDE || w.toLong() * h < area * 85L / 100) return null
+        return w to h
+    }
+
+    /**
      * ⚠ Pure: the largest centred frame of a [srcW] x [srcH] picture in the shape of a [w] x [h] clip, as normalised
      * `x, y, w, h`: what is trimmed is the sliver the grid's rounding left, so nothing is ever stretched.
      */
@@ -503,7 +528,8 @@ object WanVideoNode : NodeType {
         val follow = p[FOLLOW_PICTURE] == "true" && inputs["image"] != null
         val followSrc = if (follow) (inputs["image"] as? Value.Image)?.let { ctx.images.get(it.id) } else null
         val (w, h) = sizeOf(p, sizeProf).let { (sw, sh) ->
-            followSrc?.let { matchShape(it.width, it.height, sizeProf, area = sw * sh) } ?: (sw to sh)
+            followSrc?.let { exactShape(it.width, it.height, sizeProf, area = sw * sh) ?: matchShape(it.width, it.height, sizeProf, area = sw * sh) }
+                ?: (sw to sh)
         }
         // ⚠ The sliders cannot get here ([fitArea]); a hand-edited or plugin-written graph can.
         if (w.toLong() * h > sizeProf.maxArea) {
@@ -547,9 +573,9 @@ object WanVideoNode : NodeType {
             val src = ctx.images.get(img.id)
                 ?: throw IllegalStateException("node \"${node.id}\": image ${img.id} is no longer in the store")
             fun f(k: String, d: Float) = p[k]?.toFloatOrNull() ?: d
-            // ⚠ Following the picture: all of it, centred, framed to the clip's EXACT shape. [CropNode.render] scales
-            // x and y apart, so the whole picture into a clip the 16 px grid rounded (512x768 into 768x1168, 1.4%)
-            // would stretch it; the rounding's sliver is trimmed instead (the user: "I dont want that").
+            // ⚠ Following the picture: never stretched (the user: "I dont want that"). The clip is the picture's exact
+            // shape ([exactShape]), so this frame is the whole picture; only an odd shape no grid size matches loses a
+            // few edge pixels, cut equally from both sides ([centredFrame]). [CropNode.render] scales x and y apart.
             val (fx, fy, fw, fh) = if (follow) centredFrame(src.width, src.height, w, h)
                 else listOf(f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f))
             val framed = com.abrah.nightmare.CropNode.render(

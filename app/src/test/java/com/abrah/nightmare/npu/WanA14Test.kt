@@ -184,6 +184,11 @@ class WanA14Test {
         val a14 = WanVideoNode.A14B
         assertEquals(512 to 768, WanVideoNode.matchShape(512, 768, a14, area = 832 * 480))
         assertEquals(768 to 1168, WanVideoNode.matchShape(512, 768, a14, area = 1280 * 720))
+        // ⭐ Exactly the picture's shape when the grid has it: nothing stretched, nothing trimmed.
+        assertEquals(512 to 768, WanVideoNode.exactShape(512, 768, a14, area = 832 * 480))
+        assertEquals(768 to 1152, WanVideoNode.exactShape(512, 768, a14, area = 1280 * 720))
+        assertEquals(960 to 960, WanVideoNode.exactShape(1024, 1024, a14, area = 1280 * 720))
+        assertEquals(720 to 1280, WanVideoNode.exactShape(1080, 1920, a14, area = 1280 * 720))
         assertEquals(832 to 480, WanVideoNode.matchShape(1664, 960, a14, area = 832 * 480))
         // Never past the model's own cap.
         val (w, h) = WanVideoNode.matchShape(1024, 1024, a14, area = 4096 * 4096)
