@@ -1327,7 +1327,7 @@
     <string name="sampling_fold">Scheduler, seed and CFG</string>
     <string name="sampling_seed_value">seed %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
-    <string name="hint_wan14_seconds">Clip length in seconds, 16 frames each. 1 s at 720x1280 takes about 12 minutes on an 8 Elite; every second more takes longer than the last.</string>
+    <string name="hint_wan14_seconds">Clip length in seconds, 16 frames each. 1 to 3. 1 s at 720x1280 takes about 12 minutes on an 8 Elite, and each second more takes longer than the last: 3 s at 720p can take an hour.</string>
     <string name="run_lora_14b_skipped">Wan 2.2 14B takes no LoRAs: "%1$s" from the prompt was skipped</string>
     <string name="wan_follow_picture">The clip takes your picture\'s shape; these set how many pixels (832x480 worth for a quick try, 1280x720 worth for sharp faces).</string>
 </resources>

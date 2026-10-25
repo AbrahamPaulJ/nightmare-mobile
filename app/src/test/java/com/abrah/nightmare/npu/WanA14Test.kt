@@ -189,4 +189,25 @@ class WanA14Test {
         val (w, h) = WanVideoNode.matchShape(1024, 1024, a14, area = 4096 * 4096)
         assertTrue("${w}x$h", w.toLong() * h <= a14.maxArea)
     }
+    /** ⭐ 3 s at most on the 14B (an hour at 720p already); the 5B keeps 5. */
+    @Test
+    fun theFourteenBStopsAtThreeSeconds() {
+        assertEquals(3.0, WanA14Node.widgets.first { it.name == "seconds" }.max!!, 0.0)
+        val asked = com.abrah.nightmare.Node("v", WanA14Node.name, params = mapOf("seconds" to "5"))
+        assertEquals(3 * 16 + 1, WanVideoNode.framesOf(asked, WanA14Node.effectiveParams(asked)))
+        val turbo = com.abrah.nightmare.Node("w", WanVideoNode.name, params = mapOf("seconds" to "5"))
+        assertEquals(5 * 24 + 1, WanVideoNode.framesOf(turbo, WanVideoNode.effectiveParams(turbo)))
+    }
+
+    /** ⭐ A followed picture is never stretched: its frame has the clip's exact shape (the grid's sliver trimmed). */
+    @Test
+    fun aFollowedPictureIsFramedNotStretched() {
+        for ((src, clip) in listOf((512 to 768) to (768 to 1168), (1024 to 1024) to (848 to 848), (1920 to 1080) to (1280 to 720))) {
+            val (x, y, w, h) = WanVideoNode.centredFrame(src.first, src.second, clip.first, clip.second)
+            val framed = (w * src.first) / (h * src.second)
+            assertEquals("$src into $clip", clip.first.toFloat() / clip.second, framed, 0.001f)
+            assertTrue("centred", kotlin.math.abs(x - (1f - w) / 2f) < 1e-6f && kotlin.math.abs(y - (1f - h) / 2f) < 1e-6f)
+            assertTrue("trims only a sliver", w > 0.98f && h > 0.98f || src.first.toFloat() / src.second != clip.first.toFloat() / clip.second)
+        }
+    }
 }

@@ -209,7 +209,7 @@ object WanVideoNode : NodeType {
      * [ramBytes] and [arch]; 0 when not even 1 s does. What the slider warning offers instead.
      */
     fun secondsThatFit(w: Int, h: Int, loras: Int, ramBytes: Long, arch: Int, prof: WanProfile = TURBO): Int =
-        (MAX_SECONDS downTo 1).firstOrNull { s -> fitsPhone(w, h, framesFor(s, prof.fps), loras, ramBytes, arch, prof) } ?: 0
+        (prof.maxSeconds downTo 1).firstOrNull { s -> fitsPhone(w, h, framesFor(s, prof.fps), loras, ramBytes, arch, prof) } ?: 0
 
     /** ⚠ Pure: both tests the run log warns on, as one answer. */
     fun fitsPhone(w: Int, h: Int, frames: Int, loras: Int, ramBytes: Long, arch: Int, prof: WanProfile = TURBO): Boolean {
@@ -230,7 +230,9 @@ object WanVideoNode : NodeType {
      */
     internal fun framesOf(node: Node, p: Map<String, String>): Int =
         if (node.type == WanFunNode.name) WanFun.windowOf(p).let { (s, e) -> WanFun.framesForGap(e - s) }
-        else framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS, profileOf(node.type).fps)
+        else profileOf(node.type).let { prof ->
+            framesFor((p["seconds"]?.toIntOrNull() ?: prof.maxSeconds).coerceAtMost(prof.maxSeconds), prof.fps)
+        }
 
     /** ⚠ Pure: the frame size the params ask for, on [prof]'s grid (32 px; the 14B's 16). */
     fun sizeOf(p: Map<String, String>, prof: WanProfile = TURBO): Pair<Int, Int> =
@@ -268,6 +270,17 @@ object WanVideoNode : NodeType {
     /** ⚠ Pure: whether a picture's shape is more than ~4% off the clip's (a 32 px grid step is ~4% at 832). */
     fun shapeDiffers(srcW: Int, srcH: Int, w: Int, h: Int): Boolean =
         kotlin.math.abs(kotlin.math.ln((srcW.toDouble() / srcH) / (w.toDouble() / h))) > 0.04
+
+    /**
+     * ⚠ Pure: the largest centred frame of a [srcW] x [srcH] picture in the shape of a [w] x [h] clip, as normalised
+     * `x, y, w, h`: what is trimmed is the sliver the grid's rounding left, so nothing is ever stretched.
+     */
+    fun centredFrame(srcW: Int, srcH: Int, w: Int, h: Int): List<Float> {
+        val pa = srcW.toFloat() / srcH.coerceAtLeast(1)
+        val ca = w.toFloat() / h.coerceAtLeast(1)
+        return if (pa > ca) (ca / pa).let { fw -> listOf((1f - fw) / 2f, 0f, fw, 1f) }
+        else (pa / ca).let { fh -> listOf(0f, (1f - fh) / 2f, 1f, fh) }
+    }
 
     /** The largest grid side that keeps `other x it` within [prof]'s area. */
     private fun fitSide(other: Int, prof: WanProfile): Int =
@@ -366,6 +379,8 @@ object WanVideoNode : NodeType {
         /** ⭐ The size grid (px) and the most pixels a clip may have: the size picker, Match picture and the run. */
         val grid: Int = GRID,
         val maxArea: Int = MAX_AREA,
+        /** ⭐ The longest clip it offers, in seconds. */
+        val maxSeconds: Int = MAX_SECONDS,
     )
 
     /** ⭐ Wan 2.2 Turbo 5B (and Fun Control): `docs/VIDEO-GGML.md` §1-4. */
@@ -380,6 +395,9 @@ object WanVideoNode : NodeType {
         16, "euler", 16, 8_160L shl 20, 72L shl 10, 420L shl 20, alwaysStream = true,
         // ⭐ Its native 720p on its own 16 px tokens: 1280x720 (the 5B's 32 px grid stopped at 704, the user's call).
         grid = 16, maxArea = 1280 * 720,
+        // ⚠ 3 s at most (the user, 2026-10-25: "isnt that hours"): 1 s at 720p is ~12 min measured, and attention grows
+        // with the square of the length, so ~30 min for 2 s, ~1 h for 3 s and ~2 h for 5 s (estimates from the profile).
+        maxSeconds = 3,
     )
 
     /**
@@ -528,10 +546,14 @@ object WanVideoNode : NodeType {
         val framedPng: ByteArray? = source?.let { img ->
             val src = ctx.images.get(img.id)
                 ?: throw IllegalStateException("node \"${node.id}\": image ${img.id} is no longer in the store")
-            // ⚠ Following the picture: the whole of it, never the node's last framing.
-            fun f(k: String, d: Float) = if (follow) d else p[k]?.toFloatOrNull() ?: d
+            fun f(k: String, d: Float) = p[k]?.toFloatOrNull() ?: d
+            // ⚠ Following the picture: all of it, centred, framed to the clip's EXACT shape. [CropNode.render] scales
+            // x and y apart, so the whole picture into a clip the 16 px grid rounded (512x768 into 768x1168, 1.4%)
+            // would stretch it; the rounding's sliver is trimmed instead (the user: "I dont want that").
+            val (fx, fy, fw, fh) = if (follow) centredFrame(src.width, src.height, w, h)
+                else listOf(f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f))
             val framed = com.abrah.nightmare.CropNode.render(
-                src, f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f), w, h,
+                src, fx, fy, fw, fh, w, h,
                 com.abrah.nightmare.CropNode.PAD_BLACK,
             ).first
             ByteArrayOutputStream().also { framed.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()

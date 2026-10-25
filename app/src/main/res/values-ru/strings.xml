@@ -1323,7 +1323,7 @@
     <string name="sampling_fold">Сэмплер, зерно и CFG</string>
     <string name="sampling_seed_value">зерно %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
-    <string name="hint_wan14_seconds">Длина клипа в секундах, 16 кадров в секунду. 1 с при 720x1280 занимает около 12 минут на 8 Elite; каждая следующая секунда дольше предыдущей.</string>
+    <string name="hint_wan14_seconds">Длина клипа в секундах, 16 кадров в секунду. От 1 до 3. 1 с при 720x1280 занимает около 12 минут на 8 Elite, и каждая следующая секунда дольше предыдущей: 3 с при 720p может занять час.</string>
     <string name="run_lora_14b_skipped">Wan 2.2 14B не принимает LoRA: «%1$s» из промпта пропущена</string>
     <string name="wan_follow_picture">Клип принимает форму вашей картинки; эти ползунки задают число пикселей (832x480 для быстрой пробы, 1280x720 для чётких лиц).</string>
 </resources>
