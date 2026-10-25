@@ -106,6 +106,9 @@ object WanVideoNode : NodeType {
     /** ⭐ [WanFunNode]'s: how its driving video's frames become the control video. */
     const val MOTION_MODE = "motion_mode"
 
+    /** ⭐ The clip takes the wired picture's shape (Text to video (14B), `WanA14Node`): a hidden knob the flow sets. */
+    const val FOLLOW_PICTURE = "follow_picture"
+
     /**
      * ⭐ One backend process serves every size and length: like every DiT model, the size is a
      * REQUEST field, so the key is the model's own ([com.abrah.nightmare.backendContextKey]'s rule).
@@ -252,9 +255,9 @@ object WanVideoNode : NodeType {
      * [MAX_AREA] (GitHub #25: a picture of another shape is cropped to the clip's, and the error that came
      * with it). Rounded DOWN, so the pair never asks for more than Wan's limit.
      */
-    fun matchShape(srcW: Int, srcH: Int, prof: WanProfile = TURBO): Pair<Int, Int> {
+    fun matchShape(srcW: Int, srcH: Int, prof: WanProfile = TURBO, area: Int = prof.maxArea): Pair<Int, Int> {
         val a = srcW.toDouble() / srcH.coerceAtLeast(1)
-        var h = kotlin.math.sqrt(prof.maxArea / a)
+        var h = kotlin.math.sqrt(area.coerceAtMost(prof.maxArea) / a)
         var w = h * a
         if (w > MAX_SIDE) { w = MAX_SIDE.toDouble(); h = w / a }
         if (h > MAX_SIDE) { h = MAX_SIDE.toDouble(); w = h * a }
@@ -447,10 +450,12 @@ object WanVideoNode : NodeType {
         // ⭐⭐ Motion transfer takes NO LoRAs (the user's call, 2026-10-15): it has no picker, and its
         // prompt's tags are skipped out loud rather than reaching Fun by the back door. Its FastWan
         // speed LoRA is part of the model ([ModelCatalog.FUN_LORA]), not this list.
-        val takesLoras = driving == null
+        val takesLoras = driving == null && profileOf(node.type) != A14B
         if (!takesLoras) {
             (pos.tags + neg.tags).forEach { t ->
-                ctx.warn(ctx.text(R.string.run_lora_motion_skipped, "Motion transfer takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
+                // ⭐ The 14B takes none either: Wan 2.2 Turbo LoRAs do not fit its layers, and its speed-up is built in.
+                if (driving == null) ctx.warn(ctx.text(R.string.run_lora_14b_skipped, "Wan 2.2 14B takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
+                else ctx.warn(ctx.text(R.string.run_lora_motion_skipped, "Motion transfer takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
             }
         }
         // ⭐ The picker's LoRAs first. ⚠⚠ A picked file that is missing is REFUSED by name, the image
@@ -474,7 +479,14 @@ object WanVideoNode : NodeType {
         }
         val p = effectiveParams(node)
         val sizeProf = profileOf(node.type)
-        val (w, h) = sizeOf(p, sizeProf)
+        // ⭐⭐ [FOLLOW_PICTURE] (Text to video (14B)): the clip takes the wired picture's SHAPE at the pixel count the size
+        // asks for, uncropped. A picture model makes its own shape (AbsoluteReality 512x768), and cropping it to the
+        // default 832x480 kept a strip (the user, 2026-10-25). 512x768 at 832x480 worth is 512x768; at 720p, 768x1168.
+        val follow = p[FOLLOW_PICTURE] == "true" && inputs["image"] != null
+        val followSrc = if (follow) (inputs["image"] as? Value.Image)?.let { ctx.images.get(it.id) } else null
+        val (w, h) = sizeOf(p, sizeProf).let { (sw, sh) ->
+            followSrc?.let { matchShape(it.width, it.height, sizeProf, area = sw * sh) } ?: (sw to sh)
+        }
         // ⚠ The sliders cannot get here ([fitArea]); a hand-edited or plugin-written graph can.
         if (w.toLong() * h > sizeProf.maxArea) {
             throw IllegalArgumentException(
@@ -516,7 +528,8 @@ object WanVideoNode : NodeType {
         val framedPng: ByteArray? = source?.let { img ->
             val src = ctx.images.get(img.id)
                 ?: throw IllegalStateException("node \"${node.id}\": image ${img.id} is no longer in the store")
-            fun f(k: String, d: Float) = p[k]?.toFloatOrNull() ?: d
+            // ⚠ Following the picture: the whole of it, never the node's last framing.
+            fun f(k: String, d: Float) = if (follow) d else p[k]?.toFloatOrNull() ?: d
             val framed = com.abrah.nightmare.CropNode.render(
                 src, f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f), w, h,
                 com.abrah.nightmare.CropNode.PAD_BLACK,

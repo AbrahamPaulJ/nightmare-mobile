@@ -753,7 +753,7 @@
     <string name="flow_i2v_about">A picture as the first frame of a clip, moving the way the prompt says. Wan 2.2 Turbo by default; Neodragon on the video node for speed.</string>
     <string name="hint_wan_seconds">Clip length in seconds, 24 frames each; 0 makes one still picture. 5 s at 480p takes about 3 minutes on an 8 Elite.</string>
     <string name="hint_wan_size">Recommended: 1280x704 or 704x1280, the size Wan 2.2 is made for. 832x480 or 480x832 is about three times faster but can look soft or distorted. Any shape up to 1280x704 worth of pixels; the other side shrinks when you pass it.</string>
-    <string name="hint_wan14_size">Recommended: 1280x720 or 720x1280 for faces and fine detail (on an 8 Elite about 13 minutes for 1 second, 12 with a picture). 832x480 or 480x832 to try an idea first (about 5 minutes for 1 second), but faces come out soft. Any shape up to 1280x720 worth of pixels; the other side shrinks when you pass it.</string>
+    <string name="hint_wan14_size">Recommended: 1280x720 or 720x1280 for faces and fine detail (about 12 minutes for 1 second on an 8 Elite). 832x480 or 480x832 to try an idea first (about 5 minutes for 1 second), but faces come out soft. Any shape up to 1280x720 worth of pixels; the other side shrinks when you pass it.</string>
     <string name="wan_too_big_seconds">%1$s for %2$s s is probably too much for this phone\'s NPU. About %3$s s fits at this size</string>
     <string name="wan_too_big_any">%1$s is probably too much for this phone\'s NPU at any length. Try a smaller size</string>
     <string name="wan_shape_differs">The picture is %1$s, a different shape from the clip\'s %2$s: it will be cropped to fit.</string>
@@ -1327,4 +1327,7 @@
     <string name="sampling_fold">Scheduler, seed and CFG</string>
     <string name="sampling_seed_value">seed %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
+    <string name="hint_wan14_seconds">Clip length in seconds, 16 frames each. 1 s at 720x1280 takes about 12 minutes on an 8 Elite; every second more takes longer than the last.</string>
+    <string name="run_lora_14b_skipped">Wan 2.2 14B takes no LoRAs: "%1$s" from the prompt was skipped</string>
+    <string name="wan_follow_picture">The clip takes your picture\'s shape; these set how many pixels (832x480 worth for a quick try, 1280x720 worth for sharp faces).</string>
 </resources>

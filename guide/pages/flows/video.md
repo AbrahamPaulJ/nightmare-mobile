@@ -30,7 +30,9 @@ The video node's **Model** dropdown switches between **Wan 2.2 Turbo** (the defa
 
 **Nodes:** Prompt → Image (your picture model) → Video (Wan 2.2 14B) → Output. Needs Wan 2.2 14B and an 8 Elite or newer with 12 GB.
 
-1. **Flows → Text to video (14B)**. The picture is made by the model in the top bar.
+1. **Flows → Text to video (14B)**. The picture is made by the model in the top bar, in its own shape: the clip takes
+   that shape (a 512 × 768 picture makes a portrait clip), and the video node's size sets how many pixels, 832 × 480
+   worth for a quick try or 1280 × 720 worth for sharp faces. 1 second by default.
 2. Write one prompt for the scene and its motion: it makes the picture and drives the clip.
 3. **Run.** The picture appears on its node first, in seconds, then the clip takes minutes. Not the picture you wanted? Stop the run and Run again. Happy with it? Lock its seed (the seed chip lists each node's seed): the next Run keeps that picture and only makes a new clip.
 
@@ -52,10 +54,10 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 
 | setting | does |
 |---|---|
-| **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. On **Wan 2.2 14B** (its own 16 px steps, up to 1280 × 720 worth of pixels), 1280 × 720 is the size for faces and fine detail (about 13 minutes for 1 second, 12 with a picture); 832 × 480 is for trying an idea first (about 5 minutes), with soft faces. **Match picture** sets the photo's shape |
+| **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. On **Wan 2.2 14B** (its own 16 px steps, up to 1280 × 720 worth of pixels), 1280 × 720 is the size for faces and fine detail (about 12 minutes for 1 second); 832 × 480 is for trying an idea first (about 5 minutes), with soft faces. **Match picture** sets the photo's shape |
 | **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
-| **Seconds** | 0 to 5, at 24 frames a second; 0 makes one still picture (about 15 s at 832 × 480 on an 8 Elite; wire **last frame** to the output). On a 12 GB phone, 1280 × 704 for 3 seconds or more renders in parts so it fits: slower, about 12 minutes for 5 seconds. On an 8 Gen 3 a new flow opens on 2 seconds, the longest that has worked there so far; longer clips and 1280 × 704 still run, with a warning in the run log |
-| **LoRAs** | Wan 2.2 TI2V-5B LoRAs only (a 14B one does not fit). See [LoRAs](../models/loras.md) |
+| **Seconds** | 0 to 5, at 24 frames a second (Wan 2.2 14B: 1 to 5 at 16 frames a second); 0 makes one still picture (about 15 s at 832 × 480 on an 8 Elite; wire **last frame** to the output). On a 12 GB phone, 1280 × 704 for 3 seconds or more renders in parts so it fits: slower, about 12 minutes for 5 seconds. On an 8 Gen 3 a new flow opens on 2 seconds, the longest that has worked there so far; longer clips and 1280 × 704 still run, with a warning in the run log |
+| **LoRAs** | Wan 2.2 Turbo (TI2V-5B) LoRAs only; Wan 2.2 14B takes none (its speed-up is built in). See [LoRAs](../models/loras.md) |
 
 Neodragon has **Seed** and **Upscale** (on: 2× to 1024 × 640; off: 512 × 320, a little faster).
 

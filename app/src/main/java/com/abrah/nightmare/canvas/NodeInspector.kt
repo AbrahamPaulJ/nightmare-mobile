@@ -1143,6 +1143,8 @@ private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     if (node.type == com.abrah.nightmare.portrait.FaceEditNode.name && name in com.abrah.nightmare.portrait.LivePortrait.SLIDERS) return true
     // ⭐ Motion transfer's window and video crop belong to its Video tab ([DrivingVideoPanel]).
     if (node.type == com.abrah.nightmare.npu.WanFunNode.name && name in com.abrah.nightmare.npu.WanFun.VIDEO_PARAMS) return true
+    // ⭐ Set by the Text to video (14B) flow, never a switch on the page ([com.abrah.nightmare.npu.WanVideoNode.FOLLOW_PICTURE]).
+    if (name == com.abrah.nightmare.npu.WanVideoNode.FOLLOW_PICTURE) return true
     // ⭐ SD 1.5 Swap's ControlNet knobs live in its ControlNet TILE ([ControlNetPanel]),
     // its IP-Adapter knobs in the IP-Adapter tile ([IpAdapterPanel]).
     if (name in setOf(
@@ -1950,9 +1952,16 @@ internal fun NodeInspectorBody(
                     )
                 }
             }
+            // ⭐ Following its picture (Text to video (14B)): the sliders set how many pixels, the picture the shape.
+            val follows = node.params[com.abrah.nightmare.npu.WanVideoNode.FOLLOW_PICTURE] == "true"
+            if (follows) Text(
+                stringResource(R.string.wan_follow_picture),
+                style = NoteTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             // ⭐ A picture of another shape is cropped to the clip's: say so, and offer its shape in one tap
             // (GitHub #25, the user's pick 2026-10-15). Gone once they match.
-            cropSource?.takeIf { wan.shapeDiffers(it.width, it.height, shown.first, shown.second) }?.let { src ->
+            cropSource?.takeIf { !follows && wan.shapeDiffers(it.width, it.height, shown.first, shown.second) }?.let { src ->
                 val (mw, mh) = wan.matchShape(src.width, src.height, sizeProf)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(

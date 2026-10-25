@@ -159,4 +159,34 @@ class WanA14Test {
         assertEquals(16, WanA14Node.widgets.first { it.name == "width" }.step)
         assertEquals(16, WanA14Node.widgets.first { it.name == "height" }.step)
     }
+    /** ⭐ The 14B's own knobs (the user, 2026-10-25): 1 s by default, 16 fps, no LoRAs, the picture's shape in its flow. */
+    @Test
+    fun theFourteenBSheetIsItsOwn() {
+        val w = WanA14Node.widgets.associateBy { it.name }
+        assertTrue("no LoRA row on the 14B", com.abrah.nightmare.SdSampler.LORAS !in w)
+        assertEquals("1", w.getValue("seconds").default)
+        assertEquals(1.0, w.getValue("seconds").min!!, 0.0)
+        assertEquals(com.abrah.nightmare.R.string.hint_wan14_seconds, w.getValue("seconds").hintRes)
+        assertEquals("false", w.getValue(WanVideoNode.FOLLOW_PICTURE).default)
+        // The 5B keeps its LoRAs and its own seconds hint.
+        val turbo = WanVideoNode.widgets.associateBy { it.name }
+        assertTrue(com.abrah.nightmare.SdSampler.LORAS in turbo)
+        assertEquals(com.abrah.nightmare.R.string.hint_wan_seconds, turbo.getValue("seconds").hintRes)
+        // ⭐ Text to video (14B) follows its picture's shape.
+        val video = com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V14).single().build().graph.nodes
+            .single { it.type == WanA14Node.name }
+        assertEquals("true", video.params[WanVideoNode.FOLLOW_PICTURE])
+    }
+
+    /** ⭐ A picture's shape at the size's pixel count: AbsoluteReality's 512x768 stays itself at 480p, 768x1168 at 720p. */
+    @Test
+    fun aFollowedPictureKeepsItsShapeAtTheAskedPixels() {
+        val a14 = WanVideoNode.A14B
+        assertEquals(512 to 768, WanVideoNode.matchShape(512, 768, a14, area = 832 * 480))
+        assertEquals(768 to 1168, WanVideoNode.matchShape(512, 768, a14, area = 1280 * 720))
+        assertEquals(832 to 480, WanVideoNode.matchShape(1664, 960, a14, area = 832 * 480))
+        // Never past the model's own cap.
+        val (w, h) = WanVideoNode.matchShape(1024, 1024, a14, area = 4096 * 4096)
+        assertTrue("${w}x$h", w.toLong() * h <= a14.maxArea)
+    }
 }

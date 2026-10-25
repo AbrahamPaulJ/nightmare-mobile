@@ -726,7 +726,7 @@
     <string name="flow_i2v_about">以图片为第一帧，按提示词运动。默认使用 Wan 2.2 Turbo；为了速度可在视频节点选择 Neodragon。</string>
     <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧；0 生成一张静止图片。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
     <string name="hint_wan_size">推荐：1280x704 或 704x1280，Wan 2.2 的设计尺寸。832x480 或 480x832 约快三倍，但可能模糊或变形。任意比例，像素总数不超过 1280x704；超出时另一边会自动缩小。</string>
-    <string name="hint_wan14_size">推荐：1280x720 或 720x1280，人脸和细节最清晰（8 Elite 上 1 秒约 13 分钟，带图片约 12 分钟）。可先用 832x480 或 480x832 试想法（1 秒约 5 分钟），但人脸会偏模糊。任意比例，像素总数不超过 1280x720；超出时另一边会自动缩小。</string>
+    <string name="hint_wan14_size">推荐：1280x720 或 720x1280，人脸和细节最清晰（8 Elite 上 1 秒约 12 分钟）。可先用 832x480 或 480x832 试想法（1 秒约 5 分钟），但人脸会偏模糊。任意比例，像素总数不超过 1280x720；超出时另一边会自动缩小。</string>
     <string name="wan_too_big_seconds">%1$s、%2$s 秒可能超出这台手机 NPU 的承受范围。这个尺寸下大约 %3$s 秒可行</string>
     <string name="wan_too_big_any">%1$s 在任何时长下都可能超出这台手机 NPU 的承受范围。请换小一点的尺寸</string>
     <string name="wan_shape_differs">图片为 %1$s，与视频的 %2$s 比例不同：将被裁剪以适应。</string>
@@ -1296,4 +1296,7 @@
     <string name="sampling_fold">采样器、种子和 CFG</string>
     <string name="sampling_seed_value">种子 %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
+    <string name="hint_wan14_seconds">视频时长（秒），每秒 16 帧。8 Elite 上 720x1280 的 1 秒约 12 分钟；每多一秒都比上一秒更久。</string>
+    <string name="run_lora_14b_skipped">Wan 2.2 14B 不使用 LoRA：已跳过提示词中的“%1$s”</string>
+    <string name="wan_follow_picture">视频采用你的图片的比例；这里设置像素数量（832x480 用于快速尝试，1280x720 让人脸更清晰）。</string>
 </resources>

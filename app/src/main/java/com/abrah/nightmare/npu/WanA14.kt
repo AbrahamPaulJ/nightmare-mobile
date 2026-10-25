@@ -33,20 +33,22 @@ object WanA14Node : NodeType {
     override val showsResult = false
 
     // ⭐ Its own size advice under the picker: the 5B's (made for 1280x704, 832x480 "three times faster") is wrong here.
-    override val widgets get() = WanVideoNode.widgets.map {
+    // ⚠ No LoRA row: Wan 2.2 Turbo LoRAs do not fit the 14B, and its 4-step speed-up is built in. Seconds 1 to 5 at 16
+    // fps (one frame of image to video is the picture back). [WanVideoNode.FOLLOW_PICTURE] is set by its flow, never drawn.
+    override val widgets get() = WanVideoNode.widgets.filterNot { it.name == com.abrah.nightmare.SdSampler.LORAS }.map {
         when (it.name) {
-            "seconds" -> it.copy(default = DEFAULT_SECONDS.toString())
+            "seconds" -> it.copy(default = DEFAULT_SECONDS.toString(), min = 1.0, hintRes = R.string.hint_wan14_seconds)
             "width" -> it.copy(hintRes = R.string.hint_wan14_size, step = WanVideoNode.A14B.grid)
             "height" -> it.copy(step = WanVideoNode.A14B.grid)
             else -> it
         }
-    }
+    } + com.abrah.nightmare.Widget(WanVideoNode.FOLLOW_PICTURE, "bool", "false")
 
     /** ⭐ Its frame size on its own grid and area (`WanVideoNode.A14B`): the crop editor reads it. */
     override fun framesTo(node: Node): Pair<Int, Int> = WanVideoNode.sizeOf(effectiveParams(node), WanVideoNode.A14B)
 
-    /** ⚠ A short clip first: the 14B costs minutes a second (`docs/VIDEO-GGML.md` §8). */
-    const val DEFAULT_SECONDS = 2
+    /** ⚠ One second first: the 14B costs minutes a second (`docs/VIDEO-GGML.md` §8; the user, 2026-10-25). */
+    const val DEFAULT_SECONDS = 1
 
     override fun contextKey(node: Node) = WanVideoNode.keyFor(node, specFor(node))
 

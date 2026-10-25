@@ -958,7 +958,8 @@ fun wan14TextToVideoWorkflow(): Workflow = Workflow(
             Node("generate", samplerType(), params = ctxKeyParams() + mapOf("seed" to "0"), inputs = sources("prompt" to "prompt")),
             Node(
                 "video", com.abrah.nightmare.npu.WanA14Node.name,
-                params = mapOf("seed" to "0"),
+                // ⭐ The clip takes the picture's shape, whatever the picture model makes ([WanVideoNode.FOLLOW_PICTURE]).
+                params = mapOf("seed" to "0", com.abrah.nightmare.npu.WanVideoNode.FOLLOW_PICTURE to "true"),
                 inputs = sources("prompt" to "prompt", "image" to "generate"),
             ),
             Node("output", "core.output", inputs = sources("media" to "video:video")),
