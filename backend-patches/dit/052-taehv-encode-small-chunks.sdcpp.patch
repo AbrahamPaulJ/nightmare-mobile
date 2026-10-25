@@ -1,6 +1,22 @@
 --- a/src/model/vae/tae.hpp
 +++ b/src/model/vae/tae.hpp
-@@ -921,8 +921,11 @@
+@@ -909,7 +909,14 @@
+     // nightmare: input frames per first-part chunk, overlap included; 0 = never chunk. A 121-frame
+     // control video at 1088x800 asked for 6,705 MB in one graph against a 4,096 MB budget and Wan Fun
+     // Control failed (GitHub #40); ~46 MB a frame at a 656 px tile, so 56 frames is ~2.6 GB.
+-    static int encode_chunk_frames() {
++    // nightmare 052: SD_TAEHV_ENCODE_CHUNK_MPX (million pixel-frames a chunk, e.g. "7.4") sizes the chunk by
++    // the clip's area instead, and wins over SD_TAEHV_ENCODE_CHUNK: a fixed 24 fit 480x832 and asked 3x the
++    // memory at 720x1280. Never under 8 frames (the 6 of overlap + 2 new).
++    static int encode_chunk_frames(int64_t width, int64_t height) {
++        const char* mpx = std::getenv("SD_TAEHV_ENCODE_CHUNK_MPX");
++        if (mpx != nullptr && *mpx != 0 && std::atof(mpx) > 0 && width * height > 0) {
++            return std::max(8, (int)(std::atof(mpx) * 1e6 / (double)(width * height)));
++        }
+         const char* env = std::getenv("SD_TAEHV_ENCODE_CHUNK");
+         if (env != nullptr && *env != 0) {
+             return std::max(0, std::atoi(env));
+@@ -921,8 +928,11 @@
      // reads input frames [2j - 6, 2j + 1], so a chunk starting OVERLAP frames early leaves every kept
      // output untouched by the chunk's zero "past". Part 2 then runs on the whole (1/4 the area, half
      // the frames).
@@ -13,7 +29,7 @@
          const int t_down    = 4;  // TAEHV's {true, true, false}
          const int stride0   = 2;  // the first layer's TPool
          sd::Tensor<float> x = input;
-@@ -935,12 +938,12 @@
+@@ -935,12 +945,12 @@
              }
              frames = x.shape()[2];
          }
@@ -28,3 +44,12 @@
              const int64_t end  = std::min<int64_t>(frames, start + content);
              auto part          = run_graph(n_threads, sd::ops::slice(x, 2, from, end), false);
              if (part.empty()) {
+@@ -963,7 +973,7 @@
+                                bool decode_graph) override {
+         if (!decode_graph && !decode_only && z_tensor.dim() == 5 &&
+             (sd_version_is_wan(version) || sd_version_is_hunyuan_video(version))) {
+-            const int chunk = encode_chunk_frames();
++            const int chunk = encode_chunk_frames(z_tensor.shape()[0], z_tensor.shape()[1]);
+             if (chunk > 0 && z_tensor.shape()[2] > chunk) {
+                 return encode_chunked(n_threads, z_tensor, chunk);
+             }
