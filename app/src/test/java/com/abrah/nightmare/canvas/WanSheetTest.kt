@@ -43,11 +43,31 @@ class WanSheetTest {
         }
         rule.onAllNodesWithText("Width", substring = true).assertCountEquals(1)
         rule.onAllNodesWithText("Height", substring = true).assertCountEquals(1)
-        rule.onAllNodesWithText("made for 1280x704", substring = true).assertCountEquals(1)
+        rule.onAllNodesWithText("the size Wan 2.2 is made for", substring = true).assertCountEquals(1)
         // ⭐ The LoRA row, as on the image nodes (1.6.162; 1.6.160 shipped Wan LoRAs as prompt tags only).
         org.junit.Assert.assertTrue(
             "no LoRA row on the Wan sheet",
             rule.onAllNodesWithText("LoRA", substring = true).fetchSemanticsNodes().isNotEmpty(),
         )
+    }
+
+    /** ⭐ The 14B's own size advice under the picker (its timings), never the 5B's "three times faster". */
+    @Test
+    fun theWan14ShowsItsOwnSizeAdvice() {
+        val a14 = com.abrah.nightmare.npu.WanA14Node
+        rule.setContent {
+            MaterialTheme {
+                NodeInspectorBody(
+                    nodeId = "video",
+                    node = Node("video", a14.name, params = mapOf("seed" to "0")),
+                    type = a14,
+                    onSetParam = { _, _, _ -> },
+                    onDelete = {},
+                    onReset = {},
+                )
+            }
+        }
+        rule.onAllNodesWithText("for faces and fine detail", substring = true).assertCountEquals(1)
+        rule.onAllNodesWithText("the size Wan 2.2 is made for", substring = true).assertCountEquals(0)
     }
 }

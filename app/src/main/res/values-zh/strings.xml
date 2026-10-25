@@ -144,8 +144,8 @@
     <string name="video">视频</string>
     <string name="video_about">在 NPU 上由文字和图片生成视频。无需后端，无需检查点。</string>
     <string name="wan_about">使用 Wan 2.2 由文字和图片生成视频：5 秒视频，832x480 或 1280x704。比 Neodragon 慢，但效果好得多。共 6.25 GB：Wan 2.2 Turbo DiT、umT5 文本编码器和一个小型解码器。</string>
-    <string name="wan14_about">使用 Wan 2.2 14B（最大的 Wan）由文字生成视频：动作和细节最好，但速度慢。8 Elite 上 480x320 的 1 秒约 2 分钟，832x480 的 1 秒约 5 分钟。需要 8 Elite 或更新芯片、12 GB 及以上内存。约 18.5 GB（两个 8.6 GB 模型，各带 4 步 Lightning 加速）；如已安装 Wan 2.2 Turbo，则共用它的文本编码器。请使用 Wi-Fi。</string>
-    <string name="wan14_i2v_about">使用 Wan 2.2 14B 由图片生成视频：让你的图片动起来，具有 14B 的动作和细节。把图片连接到 Wan 14B 视频节点。8 Elite 上 480x832 的 2 秒约 9 分钟。需要 8 Elite 或更新芯片、12 GB 及以上内存。约 21 GB（两个 8.6 GB 模型，内置 4 步加速）；如已安装 Wan 2.2 Turbo，则共用它的文本编码器。请使用 Wi-Fi。</string>
+    <string name="wan14_about">使用 Wan 2.2 14B（最大的 Wan）由文字生成视频：动作和细节最好，但速度慢。8 Elite 上 1 秒视频：480x320 约 2 分钟，832x480 约 5 分钟，1280x704 约 13 分钟。需要 8 Elite 或更新芯片、12 GB 及以上内存。约 18.5 GB（两个 8.6 GB 模型，各带 4 步 Lightning 加速）；如已安装 Wan 2.2 Turbo，则共用它的文本编码器。请使用 Wi-Fi。</string>
+    <string name="wan14_i2v_about">使用 Wan 2.2 14B 由图片生成视频：让你的图片动起来，具有 14B 的动作和细节。把图片连接到 Wan 14B 视频节点。8 Elite 上 480x832 的 2 秒约 9 分钟，704x1280 的 1 秒约 16 分钟；尺寸越大，人脸越清晰。需要 8 Elite 或更新芯片、12 GB 及以上内存。约 21 GB（两个 8.6 GB 模型，内置 4 步加速）；如已安装 Wan 2.2 Turbo，则共用它的文本编码器。请使用 Wi-Fi。</string>
     <string name="video_delete_body">将释放 %1$d MB。要找回它们需要下载 %2$d MB。在重新安装之前，所有视频工作流都无法运行。</string>
     <string name="video_delete_title">删除视频模型？</string>
     <string name="video_models">Neodragon</string>
@@ -724,7 +724,8 @@
     <string name="flow_i2v_name">图生视频</string>
     <string name="flow_i2v_about">以图片为第一帧，按提示词运动。默认使用 Wan 2.2；为了速度可在视频节点选择 Neodragon。</string>
     <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧；0 生成一张静止图片。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
-    <string name="hint_wan_size">Wan 2.2 为 1280x704 设计：更小的尺寸（包括 832x480）可能模糊或变形。任意比例，像素总数不超过 1280x704；超出时另一边会自动缩小。1280x704 耗时约为 832x480 的三倍。</string>
+    <string name="hint_wan_size">推荐：1280x704 或 704x1280，Wan 2.2 的设计尺寸。832x480 或 480x832 约快三倍，但可能模糊或变形。任意比例，像素总数不超过 1280x704；超出时另一边会自动缩小。</string>
+    <string name="hint_wan14_size">推荐：1280x704 或 704x1280，人脸和细节最清晰（8 Elite 上 1 秒约 13 分钟，带图片约 16 分钟）。可先用 832x480 或 480x832 试想法（1 秒约 5 分钟），但人脸会偏模糊。任意比例，像素总数不超过 1280x704；超出时另一边会自动缩小。</string>
     <string name="wan_too_big_seconds">%1$s、%2$s 秒可能超出这台手机 NPU 的承受范围。这个尺寸下大约 %3$s 秒可行</string>
     <string name="wan_too_big_any">%1$s 在任何时长下都可能超出这台手机 NPU 的承受范围。请换小一点的尺寸</string>
     <string name="wan_shape_differs">图片为 %1$s，与视频的 %2$s 比例不同：将被裁剪以适应。</string>

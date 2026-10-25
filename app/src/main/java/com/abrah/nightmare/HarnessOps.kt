@@ -1777,7 +1777,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     private suspend fun wanVideo(arg: String?, i2v: Boolean, a14: Boolean = false) {
         val f = arg.orEmpty().split('|')
         fun at(i: Int) = f.getOrNull(i)?.trim().orEmpty()
-        val uri = if (i2v) newestSavedImage() ?: run {
+        // ⭐ A seventh part names a picture in the app's external files (a test image pushed there), so a run never
+        // reaches into the user's own gallery; without it, the newest picture the app saved.
+        val pushed = at(6).takeIf { it.isNotEmpty() }?.let { java.io.File(ctx.getExternalFilesDir(null), it) }
+        if (i2v && pushed != null && !pushed.isFile) return say("wan: no ${pushed.absolutePath}", bad = true)
+        // ⚠ A plain path, as the image node takes anything not `content://` (a `file://` uri read as a path: ENOENT).
+        val uri = if (i2v) pushed?.absolutePath ?: newestSavedImage() ?: run {
             say("wan: nothing in Pictures/${ImageSaver.FOLDER} yet. Run `save_image` first", bad = true)
             return
         } else null
@@ -1963,13 +1968,15 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     private fun fitWanFrame(wf: com.abrah.nightmare.canvas.Workflow, uri: String?): com.abrah.nightmare.canvas.Workflow {
         uri ?: return wf
         val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        ctx.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use {
+        (if (uri.startsWith("content://")) ctx.contentResolver.openInputStream(android.net.Uri.parse(uri))
+        else java.io.FileInputStream(uri))?.use {
             android.graphics.BitmapFactory.decodeStream(it, null, o)
         }
         if (o.outWidth <= 0 || o.outHeight <= 0) return wf
         val wan = com.abrah.nightmare.npu.WanVideoNode
         return wf.copy(graph = wf.graph.copy(nodes = wf.graph.nodes.map { n ->
-            if (n.type != wan.name) return@map n
+            // ⚠ Every Wan type: the 14B's node (`WanA14Node`, renamed above) was skipped and kept the default crop.
+            if (n.type !in com.abrah.nightmare.WAN_TYPES) return@map n
             val (w, h) = wan.sizeOf(com.abrah.nightmare.applyDefaults(wan.widgets, n))
             val r = com.abrah.nightmare.canvas.refitToAspect(
                 com.abrah.nightmare.canvas.cropRectOf(n), o.outWidth, o.outHeight, w.toFloat() / h,

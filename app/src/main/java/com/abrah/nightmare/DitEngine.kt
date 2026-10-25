@@ -68,7 +68,12 @@ object DitEngine {
      * decode's seam flicker, `docs/VIDEO-GGML.md` §3). Still ABI 106: an engine without 018 ignores
      * the key, so the backend did not move. CI run 38509077877; skels unchanged.
      *
-     * ⭐⭐ The engine current since 1.6.235: `dit-engine-abi108-a14fast`, CI 40137515324: flux3wan + `dit/046` (a Wan
+     * ⭐⭐ The engine current since 1.6.237: `dit-engine-abi108-i2v720`, CI 40169137127: a14fast + `dit/052` (TAEHV
+     * encodes in chunks sized by the clip's area, `SD_TAEHV_ENCODE_CHUNK_MPX`, overlap 6 not 8: Wan 2.2 14B image to
+     * video at 720x1280 asked 5.7 GB in one chunk and failed; byte-identical at 320x544) and `dit/053` (two VAE tiles
+     * that barely overlap become three: the out-of-memory decode retry split 720 px into two halves meeting at a hard
+     * seam). Still ABI 108; skels unchanged.
+     * Before it, since 1.6.235: `dit-engine-abi108-a14fast`, CI 40137515324: flux3wan + `dit/046` (a Wan
      * 2.2 14B block in token chunks: 832x480 5 s fits 4.5 GiB, byte-identical), `dit/047`/`048` (MOSS-Image edit
      * references and a per-model reference preset, unused until the backend's `NM_DIT_NATIVE_EDIT`), `dit/049` (the
      * 14B's high-noise Lightning LoRA reaches the high-noise expert: before it every tensor was filtered out and the
@@ -157,7 +162,7 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108-a14fast/dit-engine-abi108-a14fast.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108-i2v720/dit-engine-abi108-i2v720.zip"
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -167,7 +172,7 @@ object DitEngine {
      * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
      */
     const val HF_URL =
-        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108-a14fast.zip"
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108-i2v720.zip"
 
     /**
      * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
@@ -178,11 +183,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_229_469L
+    const val BYTES = 23_229_606L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 56_024_736L
+    const val FILE_BYTES = 56_025_008L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -192,7 +197,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "26c54366aabdc0f2228cb51b0073cc1d4e6f11c1728a2e30c8899db55ce7d941"
+    private const val SHA256 = "063a90f1945e767d7c6fa3728816a417fb5780348491e9469bf25a0e65637593"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

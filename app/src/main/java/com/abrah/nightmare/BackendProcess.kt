@@ -582,11 +582,13 @@ object BackendProcess {
             File(model, ModelCatalog.WAN_HIGH_LORA).takeIf { it.isFile }?.let { put("NM_WAN_HIGH_LORA", it.absolutePath) }
             File(model, ModelCatalog.WAN_LOW_LORA).takeIf { it.isFile }?.let { put("NM_WAN_LOW_LORA", it.absolutePath) }
             // ⭐ The I2V experts ([ModelCatalog.WAN22_A14B_I2V], distilled: no LoRAs): their trained MoE boundary,
-            // and the start picture's clip encoded through TAEHV in time chunks. ⚠ Whole, 480x832 x33 asked 6 GB of
-            // the 4 GiB budget and failed; 24 frames a chunk (16 + the encoder's 8 of overlap). ⚠ Never under 16:
-            // a chunk's content must exceed that overlap or the engine's slicing aborts (12 did, S25 2026-10-25).
+            // and the start picture's clip encoded through TAEHV in time chunks sized by the clip's area (engine
+            // `dit/052`): ~340 MB of NPU memory a frame at 720x1280, so [I2V_ENCODE_MPX] gives 8 frames there (2.7 GB)
+            // and 18 at 480x832. ⚠ Whole, 480x832 x33 asked 6 GB; a fixed 24 asked 5.7 GB at 720x1280 and failed.
+            // [I2V_ENCODE_CHUNK] is for an engine before `dit/052` (it ignores the MPX key; 480x832 is its limit).
             if (model.name == ModelCatalog.WAN22_A14B_I2V.id) {
                 put("NM_WAN_MOE_BOUNDARY", I2V_MOE_BOUNDARY)
+                put("SD_TAEHV_ENCODE_CHUNK_MPX", I2V_ENCODE_MPX)
                 put("SD_TAEHV_ENCODE_CHUNK", I2V_ENCODE_CHUNK.toString())
             }
         }
@@ -595,6 +597,9 @@ object BackendProcess {
     /** ⭐ Wan 2.2 I2V A14B's switch from the high-noise to the low-noise expert (Wan-AI's config; T2V's is 0.875). */
     internal const val I2V_MOE_BOUNDARY = "0.9"
     internal const val I2V_ENCODE_CHUNK = 24
+
+    /** ⭐ Million pixel-frames in one TAEHV encode chunk (engine `dit/052`): 8 frames at 720x1280, 18 at 480x832. */
+    internal const val I2V_ENCODE_MPX = "7.4"
 
     internal fun shipsThisEncoder(spec: ModelSpec, teBytes: Long): Boolean =
         // ⚠⚠ An IMPORT lists no files: its encoder is a copy of its family's built-in one ([CustomModels.ditPartsPlan]),

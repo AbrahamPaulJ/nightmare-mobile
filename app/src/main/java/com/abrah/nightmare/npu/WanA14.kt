@@ -5,6 +5,7 @@ import com.abrah.nightmare.Node
 import com.abrah.nightmare.NodeCtx
 import com.abrah.nightmare.NodeType
 import com.abrah.nightmare.Port
+import com.abrah.nightmare.R
 import com.abrah.nightmare.Value
 
 /**
@@ -31,8 +32,13 @@ object WanA14Node : NodeType {
     override val about = "a prompt, or a prompt and a photo, into a clip with Wan 2.2 14B, the bigger and slower Wan"
     override val showsResult = false
 
+    // ⭐ Its own size advice under the picker: the 5B's (made for 1280x704, 832x480 "three times faster") is wrong here.
     override val widgets get() = WanVideoNode.widgets.map {
-        if (it.name == "seconds") it.copy(default = DEFAULT_SECONDS.toString()) else it
+        when (it.name) {
+            "seconds" -> it.copy(default = DEFAULT_SECONDS.toString())
+            "width" -> it.copy(hintRes = R.string.hint_wan14_size)
+            else -> it
+        }
     }
 
     /** ⚠ A short clip first: the 14B costs minutes a second (`docs/VIDEO-GGML.md` §8). */

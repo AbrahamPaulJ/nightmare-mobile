@@ -1,0 +1,17 @@
+--- a/src/runtime/tiling.cpp
++++ b/src/runtime/tiling.cpp
+@@ -54,6 +54,14 @@
+         } else {
+             num_tiles_dim           = 2;
+             tile_overlap_factor_dim = (2 * tile_size - small_dim) / (float)tile_size;
++            // nightmare 053: two tiles that barely overlap meet at a visible seam. The VAE decode's
++            // out-of-memory retry asks for tiles of half the latent (backend_fit), so 2 tiles of 45 on
++            // Wan 14B's 90 at 720 px overlapped by 0: a hard brightness step down the middle of every
++            // frame. Below half the asked overlap, three tiles.
++            if (tile_overlap_factor_dim < tile_overlap_factor / 2 && 3 * tile_size >= small_dim) {
++                num_tiles_dim           = 3;
++                tile_overlap_factor_dim = (3 * tile_size - small_dim) / (float)(2 * tile_size);
++            }
+         }
+     }
+ }

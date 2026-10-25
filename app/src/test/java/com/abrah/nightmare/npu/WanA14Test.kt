@@ -94,13 +94,19 @@ class WanA14Test {
         // ⚠ Distilled: no Lightning LoRAs.
         assertEquals(null, env["NM_WAN_HIGH_LORA"])
         assertEquals(null, env["NM_WAN_LOW_LORA"])
-        // ⚠ A chunk's content (chunk - 8 of overlap) under 8 aborts the engine's slicing (12 did on the S25).
+        // ⚠ An engine before dit/052: a chunk's content (chunk - 8 of overlap) under 8 aborts its slicing.
         val chunk = env.getValue("SD_TAEHV_ENCODE_CHUNK").toInt()
         assertTrue("chunk $chunk", chunk >= 16 && chunk < 33)
+        // ⭐ dit/052 sizes chunks by area: at the largest Wan clip (1280x704) 8 frames (2.7 GB of NPU memory measured
+        // at 720x1280), never 9 or more (a 16-frame chunk asked 5.7 GB and failed).
+        val mpx = env.getValue("SD_TAEHV_ENCODE_CHUNK_MPX").toDouble()
+        val atMax = (mpx * 1e6 / (1280.0 * 704)).toInt()
+        assertTrue("frames at 1280x704: $atMax", atMax in 8..8)
         // The T2V folder gets neither.
         val t2v = tmp.newFolder(ModelCatalog.WAN22_A14B.id)
         java.io.File(t2v, ModelCatalog.WAN_HIGH_DIT).writeText("x")
         assertEquals(null, BackendProcess.wanA14Env(t2v)["SD_TAEHV_ENCODE_CHUNK"])
+        assertEquals(null, BackendProcess.wanA14Env(t2v)["SD_TAEHV_ENCODE_CHUNK_MPX"])
         assertEquals(null, BackendProcess.wanA14Env(t2v)["NM_WAN_MOE_BOUNDARY"])
     }
 
