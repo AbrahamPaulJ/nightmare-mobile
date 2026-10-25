@@ -163,7 +163,7 @@ Wan 2.2: text or a photo to a clip of up to 5 seconds. Needs Wan 2.2 (Models →
 | **LoRAs** | Wan 2.2 5B LoRAs (not 14B), chosen like on the image nodes; `<lora:name>` tags in the prompt work too |
 | **Width**, **Height** | Any shape in 32 px steps, up to 1280 × 704 worth of pixels (832 × 480 by default; 1280 × 704 takes about three times as long) |
 | **Crop** | With a photo wired in: tap the preview, then drag the frame to choose which part becomes the first frame |
-| **Model** | Wan 2.2, or Neodragon (fast): the node becomes a Video generator and back |
+| **Model** | A dropdown: Wan 2.2 Turbo, Neodragon (the fastest), or Wan 2.2 14B with a picture wired; the node becomes that model's node and back |
 
 Its **last frame** output is the clip's final frame as a picture: wire it into another Wan video
 node's **image** to continue the clip with a new prompt. That node's **video** is then the whole

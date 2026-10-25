@@ -23,12 +23,12 @@ in the family menu has Wan's models on their own page.
 3. **Run.** With Wan 2.2, 5 seconds at 832 × 480 takes under **3 minutes** (about 2:45) on an 8 Elite; the
    bar moves once per step, four steps, then the clip is decoded and encoded.
 
-The video node's **Model** switches between **Wan 2.2** (the default) and **Neodragon (fast)**, and **Wan 14B** with a picture wired: the 14B animates a picture. For text to video on the 14B, use the next flow.
+The video node's **Model** dropdown switches between **Wan 2.2 Turbo** (the default) and **Neodragon** (the fastest), and **Wan 2.2 14B** with a picture wired: the 14B animates a picture. For text to video on the 14B, use the next flow.
 **Use** on Neodragon in Models opens the flow on Neodragon.
 
 ## Text to video (14B)
 
-**Nodes:** Prompt → Image (your picture model) → Video (Wan 14B) → Output. Needs Wan 2.2 14B and an 8 Elite or newer with 12 GB.
+**Nodes:** Prompt → Image (your picture model) → Video (Wan 2.2 14B) → Output. Needs Wan 2.2 14B and an 8 Elite or newer with 12 GB.
 
 1. **Flows → Text to video (14B)**. The picture is made by the model in the top bar.
 2. Write one prompt for the scene and its motion: it makes the picture and drives the clip.

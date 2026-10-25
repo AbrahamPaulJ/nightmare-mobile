@@ -2843,7 +2843,7 @@ object ModelCatalog {
      * asked 6 GB. Measured on the S25 (sd-cli): 480x832 2 s in 538 s. `docs/VIDEO-GGML.md` §8.
      */
     val WAN22_A14B_I2V: ModelSpec = dit(
-        "wan22_i2v_a14b", "Wan 2.2 14B image to video", Family.WAN, WAN, steps = 4,
+        "wan22_i2v_a14b", "Wan 2.2 14B", Family.WAN, WAN, steps = 4,
         prompt = "",
         ownDitParts = true,
         partsFrom = "wan22_ti2v_turbo",

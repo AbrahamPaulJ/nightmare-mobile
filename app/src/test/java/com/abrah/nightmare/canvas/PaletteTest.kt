@@ -56,7 +56,7 @@ class PaletteTest {
     @Test fun videoIsInGenerate() {
         val generate = sections.getValue("generate")
         // 2026-10-14: Wan 2.2 joined Neodragon as the second video sampler; 2026-10-15 Fun Control.
-        assertEquals(listOf("Image", "Video", "Wan 14B video", "Wan Fun Control", "Wan video"), generate.map { it.first().paletteName })
+        assertEquals(listOf("Image", "Neodragon", "Wan 2.2 14B", "Wan 2.2 Fun Control", "Wan 2.2 Turbo"), generate.map { it.first().paletteName })
         assertTrue(generate.any { card -> card.any { it.name == "nd.sample" } })
     }
 

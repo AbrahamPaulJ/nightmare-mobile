@@ -559,7 +559,7 @@ val RECIPES: List<Recipe> = listOf(
     // 2026-10-15: "merge them, default to Wan 2.2 5B"), the model a choice on the video node.
     Recipe(
         T2V, "Text to video",
-        "A prompt into a clip. Wan 2.2 by default (minutes, much better); switch the video node to " +
+        "A prompt into a clip. Wan 2.2 Turbo by default (minutes, much better); switch the video node to " +
             "Neodragon for 2 s in about 30 s.",
         { wanVideoWorkflow(i2v = false) },
         usesCheckpoint = false,
@@ -570,7 +570,7 @@ val RECIPES: List<Recipe> = listOf(
     ),
     Recipe(
         I2V, "Image to video",
-        "A picture as the first frame of a clip, moving the way the prompt says. Wan 2.2 by default; " +
+        "A picture as the first frame of a clip, moving the way the prompt says. Wan 2.2 Turbo by default; " +
             "Neodragon on the video node for speed.",
         { wanVideoWorkflow(i2v = true) },
         usesCheckpoint = false,

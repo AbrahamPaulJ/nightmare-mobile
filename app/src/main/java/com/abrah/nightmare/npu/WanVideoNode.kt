@@ -52,13 +52,13 @@ object WanVideoNode : NodeType {
     override val outputs = listOf(Port("video", "VIDEO"), Port(LAST_FRAME, "IMAGE"))
     const val LAST_FRAME = "last_frame"
     override val category = "generate"
-    override val paletteName = "Wan video"
+    override val paletteName = "Wan 2.2 Turbo"
 
     override fun titleFor(node: Node): String =
         if (node.inputs["image"] != null) "Image to video" else "Text to video"
 
     override val defaultId = "video"
-    override val about = "a prompt, or a prompt and a photo, into a clip with Wan 2.2"
+    override val about = "a prompt, or a prompt and a photo, into a clip with Wan 2.2 Turbo"
 
     /** ⚠ The clip belongs to `core.output`, like every other result. */
     override val showsResult = false

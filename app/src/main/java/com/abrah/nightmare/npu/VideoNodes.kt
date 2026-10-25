@@ -83,7 +83,7 @@ object VideoSampleNode : NodeType {
     override val category = "generate"
 
     /** ⚠ Beside the SD card's `Image` in the Generate tab — [com.abrah.nightmare.SdSampler.paletteName]. */
-    override val paletteName = "Video"
+    override val paletteName = "Neodragon"
 
     /** ⭐ Named by what it is doing — the same rule as the SD nodes' [titleFor]. */
     override fun titleFor(node: com.abrah.nightmare.Node): String =

@@ -235,7 +235,7 @@ object WanFunNode : NodeType {
     override val inputs = listOf(Port("prompt", "PROMPT"), Port("image", "IMAGE"), Port(CONTROL, "VIDEO"))
     override val outputs get() = WanVideoNode.outputs
     override val category = "generate"
-    override val paletteName = "Wan Fun Control"
+    override val paletteName = "Wan 2.2 Fun Control"
     override fun titleFor(node: Node): String = "Motion transfer"
     override val defaultId = "motion"
     override val about = "a picture moving like a driving video, with Wan 2.2 Fun Control"

@@ -26,7 +26,7 @@ object WanA14Node : NodeType {
     override val inputs = listOf(Port("prompt", "PROMPT"), Port("image", "IMAGE"))
     override val outputs get() = WanVideoNode.outputs
     override val category = "generate"
-    override val paletteName = "Wan 14B video"
+    override val paletteName = "Wan 2.2 14B"
     override fun titleFor(node: Node): String = "Image to video (14B)"
     override val defaultId = "video"
     override val about = "a picture and a prompt into a clip with Wan 2.2 14B, the bigger and slower Wan"
@@ -55,7 +55,7 @@ object WanA14Node : NodeType {
     fun specFor(node: Node) = ModelCatalog.WAN22_A14B_I2V
 
     /** ⚠ Said when no picture is wired: the 14B animates a picture, it does not start from text alone. */
-    const val NEEDS_PICTURE = "Wan 14B animates a picture. Wire one in, or open the Text to video (14B) flow: it " +
+    const val NEEDS_PICTURE = "Wan 2.2 14B animates a picture. Wire one in, or open the Text to video (14B) flow: it " +
         "makes the first frame with your picture model"
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =

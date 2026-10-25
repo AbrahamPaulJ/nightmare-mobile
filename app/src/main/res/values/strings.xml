@@ -119,7 +119,7 @@
     <string name="video_models_note">One download of %1$s GB, in 21 parts. It resumes, so a dropped connection costs only the file it was on.</string>
     <string name="video_about">Text and image to video on the NPU. No backend, no checkpoint.</string>
     <string name="wan_about">Text and image to video with Wan 2.2: 5 second clips at 832x480 or 1280x704. Slower than Neodragon and much better. 6.25 GB: the Wan 2.2 Turbo DiT, its umT5 text encoder and a small decoder.</string>
-    <string name="wan14_i2v_about">Image to video with Wan 2.2 14B: your picture moving, with the motion and detail of the 14B. Wire a picture into a Wan 14B video node. About 9 minutes for 2 seconds at 480x832 and 12 minutes for 1 second at 720x1280 on an 8 Elite; faces come out much sharper at the larger size. 8 Elite or newer, 12 GB phones and up. About 21 GB (two 8.6 GB models with the 4-step speed-up built in); with Wan 2.2 Turbo installed its text encoder is shared. Use Wi-Fi.</string>
+    <string name="wan14_i2v_about">Image to video with Wan 2.2 14B: your picture moving, with the motion and detail of the 14B. Wire a picture into a Wan 2.2 14B node, or use the Text to video (14B) flow. About 9 minutes for 2 seconds at 480x832 and 12 minutes for 1 second at 720x1280 on an 8 Elite; faces come out much sharper at the larger size. 8 Elite or newer, 12 GB phones and up. About 21 GB (two 8.6 GB models with the 4-step speed-up built in); with Wan 2.2 Turbo installed its text encoder is shared. Use Wi-Fi.</string>
     <string name="mb_of_total">%1$d of %2$d MB</string>
     <string name="video_delete_title">Delete the video models?</string>
     <string name="video_delete_body">Frees %1$d MB. Getting them back is a %2$d MB download. Every video flow will refuse to run until you install them again.</string>
@@ -746,11 +746,11 @@
     <string name="flow_flux_edit_name">Image edit</string>
     <string name="flow_flux_edit_about">FLUX.2 Klein or Qwen Image 2.1, on an 8 Gen 3 or newer (alpha on 8 Gen 3). A photo and a prompt: the whole picture is re-rendered to follow it, rather than nudged. Wire a second picture into the reference port and name them as image 1 and image 2 in the prompt.</string>
     <string name="flow_t2v_name">Text to video</string>
-    <string name="flow_t2v_about">A prompt into a clip. Wan 2.2 by default (minutes, much better); switch the video node to Neodragon for 2 s in about 30 s.</string>
+    <string name="flow_t2v_about">A prompt into a clip. Wan 2.2 Turbo by default (minutes, much better); switch the video node to Neodragon for 2 s in about 30 s.</string>
     <string name="flow_i2v_name">Image to video</string>
     <string name="flow_t2v14_name">Text to video (14B)</string>
     <string name="flow_t2v14_about">Your picture model makes the first frame from the prompt, then Wan 2.2 14B animates it: the best motion and detail, and slow. Check the picture first: a new one takes seconds, a new clip minutes.</string>
-    <string name="flow_i2v_about">A picture as the first frame of a clip, moving the way the prompt says. Wan 2.2 by default; Neodragon on the video node for speed.</string>
+    <string name="flow_i2v_about">A picture as the first frame of a clip, moving the way the prompt says. Wan 2.2 Turbo by default; Neodragon on the video node for speed.</string>
     <string name="hint_wan_seconds">Clip length in seconds, 24 frames each; 0 makes one still picture. 5 s at 480p takes about 3 minutes on an 8 Elite.</string>
     <string name="hint_wan_size">Recommended: 1280x704 or 704x1280, the size Wan 2.2 is made for. 832x480 or 480x832 is about three times faster but can look soft or distorted. Any shape up to 1280x704 worth of pixels; the other side shrinks when you pass it.</string>
     <string name="hint_wan14_size">Recommended: 1280x720 or 720x1280 for faces and fine detail (on an 8 Elite about 13 minutes for 1 second, 12 with a picture). 832x480 or 480x832 to try an idea first (about 5 minutes for 1 second), but faces come out soft. Any shape up to 1280x720 worth of pixels; the other side shrinks when you pass it.</string>
@@ -1164,10 +1164,10 @@
     <string name="cd_fold_bar">Fold the bar</string>
     <string name="wan_fun_about">Motion transfer: your picture moving like a video you choose (its pose). Uses Wan 2.2 Turbo\'s text encoder and decoder when Turbo is installed (about 3.7 GB, otherwise 7.3 GB).</string>
     <string name="video_model">Model</string>
-    <string name="video_model_wan">Wan 2.2</string>
-    <string name="video_model_neodragon">Neodragon (fast)</string>
-    <string name="video_model_wan14">Wan 14B</string>
-    <string name="hint_video_model">Wan 2.2 looks much better and takes minutes; Wan 2.2 14B (with a picture wired) is the best and slowest; Neodragon makes 2 s in about 30 s</string>
+    <string name="video_model_wan">Wan 2.2 Turbo</string>
+    <string name="video_model_neodragon">Neodragon</string>
+    <string name="video_model_wan14">Wan 2.2 14B</string>
+    <string name="hint_video_model">Wan 2.2 Turbo looks much better and takes minutes; Wan 2.2 14B (with a picture wired) is the best and slowest; Neodragon is the fastest, 2 s in about 30 s</string>
     <string name="flow_motion_name">Motion transfer</string>
     <string name="flow_motion_about">Your picture moving like a video you choose: its pose, frame by frame, with Wan 2.2 Fun Control.</string>
     <string name="video_in_none">No video chosen</string>
