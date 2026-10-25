@@ -97,11 +97,11 @@ class WanA14Test {
         // ⚠ An engine before dit/052: a chunk's content (chunk - 8 of overlap) under 8 aborts its slicing.
         val chunk = env.getValue("SD_TAEHV_ENCODE_CHUNK").toInt()
         assertTrue("chunk $chunk", chunk >= 16 && chunk < 33)
-        // ⭐ dit/052 sizes chunks by area: at the largest Wan clip (1280x704) 8 frames (2.7 GB of NPU memory measured
+        // ⭐ dit/052 sizes chunks by area: at the 14B's largest clip (1280x720) 8 frames (2.7 GB of NPU memory measured
         // at 720x1280), never 9 or more (a 16-frame chunk asked 5.7 GB and failed).
         val mpx = env.getValue("SD_TAEHV_ENCODE_CHUNK_MPX").toDouble()
-        val atMax = (mpx * 1e6 / (1280.0 * 704)).toInt()
-        assertTrue("frames at 1280x704: $atMax", atMax in 8..8)
+        val atMax = (mpx * 1e6 / WanVideoNode.A14B.maxArea).toInt()
+        assertTrue("frames at 1280x720: $atMax", atMax in 8..8)
         // The T2V folder gets neither.
         val t2v = tmp.newFolder(ModelCatalog.WAN22_A14B.id)
         java.io.File(t2v, ModelCatalog.WAN_HIGH_DIT).writeText("x")
@@ -123,5 +123,22 @@ class WanA14Test {
         assertTrue(i2v.files.filter { it.name.endsWith(".gguf") && it.name != "umt5.gguf" }.all { it.url.endsWith("-Q4_0.gguf") })
         assertTrue(i2v.files.single { it.name == "tae.safetensors" }.url.endsWith("taew2_1.safetensors"))
         assertEquals(ModelCatalog.DIT_MIN_ARCH, i2v.builds.single().minArch)
+    }
+    /** ⭐ The 14B sizes on its own 16 px grid up to its native 1280x720; the 5B keeps 32 px and 1280x704. */
+    @Test
+    fun theFourteenBHasItsOwnNativeSizeGrid() {
+        val wan = WanVideoNode
+        val a14 = WanVideoNode.A14B
+        assertEquals(720 to 1280, wan.sizeOf(mapOf("width" to "720", "height" to "1280"), a14))
+        assertEquals(1280 to 720, wan.fitArea(1280, 1280, widthMoved = true, a14))
+        assertEquals(720 to 1280, wan.matchShape(1080, 1920, a14))
+        // The 5B is unchanged: 720 is off its grid, and its area stops at 704.
+        assertEquals(736 to 1280, wan.sizeOf(mapOf("width" to "720", "height" to "1280")))
+        assertEquals(1280 to 704, wan.fitArea(1280, 1280, widthMoved = true))
+        // The 14B node's picker and crop read the same grid.
+        val node = com.abrah.nightmare.Node("v", WanA14Node.name, params = mapOf("width" to "720", "height" to "1280"))
+        assertEquals(720 to 1280, WanA14Node.framesTo(node))
+        assertEquals(16, WanA14Node.widgets.first { it.name == "width" }.step)
+        assertEquals(16, WanA14Node.widgets.first { it.name == "height" }.step)
     }
 }

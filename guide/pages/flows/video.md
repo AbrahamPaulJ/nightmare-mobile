@@ -7,8 +7,8 @@ There are four video models. Install any of them:
 | model | makes | needs |
 |---|---|---|
 | **Wan 2.2 Turbo** (6.25 GB) | up to 5 seconds, any shape up to 1280 × 704. The better clips; minutes per clip | Snapdragon 8 Elite or newer (alpha on 8 Gen 3: tell us if it runs) |
-| **Wan 2.2 14B** (about 18.5 GB; 3.7 GB less beside Wan 2.2 Turbo) | text to video, up to 5 seconds. The best motion and detail, and slow: about 2 minutes for 1 second at 480 × 320, 5 minutes at 832 × 480, 13 minutes at 1280 × 704 | Snapdragon 8 Elite or newer, 12 GB of RAM |
-| **Wan 2.2 14B image to video** (about 21 GB; 3.7 GB less beside Wan 2.2 Turbo) | your picture moving on the 14B: about 9 minutes for 2 seconds at 480 × 832, 16 minutes for 1 second at 704 × 1280 (faces come out much sharper at the larger size) | Snapdragon 8 Elite or newer, 12 GB of RAM |
+| **Wan 2.2 14B** (about 18.5 GB; 3.7 GB less beside Wan 2.2 Turbo) | text to video, up to 5 seconds. The best motion and detail, and slow: about 2 minutes for 1 second at 480 × 320, 5 minutes at 832 × 480, 13 minutes at 1280 × 720 | Snapdragon 8 Elite or newer, 12 GB of RAM |
+| **Wan 2.2 14B image to video** (about 21 GB; 3.7 GB less beside Wan 2.2 Turbo) | your picture moving on the 14B: about 9 minutes for 2 seconds at 480 × 832, 12 minutes for 1 second at 720 × 1280 (faces come out much sharper at the larger size) | Snapdragon 8 Elite or newer, 12 GB of RAM |
 | **Neodragon** (about 8.6 GB) | 2 seconds at 1024 × 640 in about 25 seconds | Snapdragon 8 Elite or 8 Elite Gen 5 |
 
 None of them uses your picture model; video has its own. **Models → Video** lists them all, and **Wan**
@@ -45,7 +45,7 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 
 | setting | does |
 |---|---|
-| **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. On **Wan 2.2 14B**, 1280 × 704 is the size for faces and fine detail (about 13 minutes for 1 second, 16 with a picture); 832 × 480 is for trying an idea first (about 5 minutes), with soft faces. **Match picture** sets the photo's shape |
+| **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. On **Wan 2.2 14B** (its own 16 px steps, up to 1280 × 720 worth of pixels), 1280 × 720 is the size for faces and fine detail (about 13 minutes for 1 second, 12 with a picture); 832 × 480 is for trying an idea first (about 5 minutes), with soft faces. **Match picture** sets the photo's shape |
 | **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
 | **Seconds** | 0 to 5, at 24 frames a second; 0 makes one still picture (about 15 s at 832 × 480 on an 8 Elite; wire **last frame** to the output). On a 12 GB phone, 1280 × 704 for 3 seconds or more renders in parts so it fits: slower, about 12 minutes for 5 seconds. On an 8 Gen 3 a new flow opens on 2 seconds, the longest that has worked there so far; longer clips and 1280 × 704 still run, with a warning in the run log |
 | **LoRAs** | Wan 2.2 TI2V-5B LoRAs only (a 14B one does not fit). See [LoRAs](../models/loras.md) |

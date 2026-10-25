@@ -36,10 +36,14 @@ object WanA14Node : NodeType {
     override val widgets get() = WanVideoNode.widgets.map {
         when (it.name) {
             "seconds" -> it.copy(default = DEFAULT_SECONDS.toString())
-            "width" -> it.copy(hintRes = R.string.hint_wan14_size)
+            "width" -> it.copy(hintRes = R.string.hint_wan14_size, step = WanVideoNode.A14B.grid)
+            "height" -> it.copy(step = WanVideoNode.A14B.grid)
             else -> it
         }
     }
+
+    /** ⭐ Its frame size on its own grid and area (`WanVideoNode.A14B`): the crop editor reads it. */
+    override fun framesTo(node: Node): Pair<Int, Int> = WanVideoNode.sizeOf(effectiveParams(node), WanVideoNode.A14B)
 
     /** ⚠ A short clip first: the 14B costs minutes a second (`docs/VIDEO-GGML.md` §8). */
     const val DEFAULT_SECONDS = 2

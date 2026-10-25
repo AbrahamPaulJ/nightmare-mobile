@@ -1977,7 +1977,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         return wf.copy(graph = wf.graph.copy(nodes = wf.graph.nodes.map { n ->
             // ⚠ Every Wan type: the 14B's node (`WanA14Node`, renamed above) was skipped and kept the default crop.
             if (n.type !in com.abrah.nightmare.WAN_TYPES) return@map n
-            val (w, h) = wan.sizeOf(com.abrah.nightmare.applyDefaults(wan.widgets, n))
+            val (w, h) = wan.sizeOf(com.abrah.nightmare.applyDefaults(wan.widgets, n), wan.profileOf(n.type))
             val r = com.abrah.nightmare.canvas.refitToAspect(
                 com.abrah.nightmare.canvas.cropRectOf(n), o.outWidth, o.outHeight, w.toFloat() / h,
             )

@@ -126,9 +126,9 @@ object WanVideoNode : NodeType {
     /** ⭐ The launch key for [spec] (Wan 2.2 Turbo here, Fun Control for [WanFunNode]). */
     internal fun keyFor(node: Node, spec: com.abrah.nightmare.ModelSpec): ContextKey {
         val p = effectiveParams(node)
-        val (w, h) = sizeOf(p)
-        val caps = com.abrah.nightmare.DeviceProbe.caps()
         val prof = profileOf(node.type)
+        val (w, h) = sizeOf(p, prof)
+        val caps = com.abrah.nightmare.DeviceProbe.caps()
         val budget = memoryBudget(
             pinnedBytes(w, h, framesOf(node, p), prof),
             caps.ramBytes, if (caps.known) caps.arch else 0, prof = prof,
@@ -219,7 +219,7 @@ object WanVideoNode : NodeType {
     @Volatile private var servedBy: Int? = null
 
     /** ⭐ The clip's size, which a picture wired into `image` is framed to. */
-    override fun framesTo(node: Node): Pair<Int, Int> = sizeOf(effectiveParams(node))
+    override fun framesTo(node: Node): Pair<Int, Int> = sizeOf(effectiveParams(node), profileOf(node.type))
 
     /**
      * ⭐ A clip's frame count: its Seconds, or on Motion transfer the Video tab's window, which IS
@@ -229,21 +229,22 @@ object WanVideoNode : NodeType {
         if (node.type == WanFunNode.name) WanFun.windowOf(p).let { (s, e) -> WanFun.framesForGap(e - s) }
         else framesFor(p["seconds"]?.toIntOrNull() ?: MAX_SECONDS, profileOf(node.type).fps)
 
-    /** ⚠ Pure: the frame size the params ask for, on Wan's 32 px grid. */
-    fun sizeOf(p: Map<String, String>): Pair<Int, Int> =
-        snap(p["width"]?.toIntOrNull() ?: DEFAULT_W) to snap(p["height"]?.toIntOrNull() ?: DEFAULT_H)
+    /** ⚠ Pure: the frame size the params ask for, on [prof]'s grid (32 px; the 14B's 16). */
+    fun sizeOf(p: Map<String, String>, prof: WanProfile = TURBO): Pair<Int, Int> =
+        snap(p["width"]?.toIntOrNull() ?: DEFAULT_W, prof) to snap(p["height"]?.toIntOrNull() ?: DEFAULT_H, prof)
 
-    private fun snap(v: Int): Int = (Math.round(v / GRID.toDouble()) * GRID).toInt().coerceIn(MIN_SIDE, MAX_SIDE)
+    private fun snap(v: Int, prof: WanProfile): Int =
+        (Math.round(v / prof.grid.toDouble()) * prof.grid).toInt().coerceIn(MIN_SIDE, MAX_SIDE)
 
     /**
      * ⚠ Pure: [w] x [h] with the side that did NOT move ([widthMoved] says which did) shrunk until
-     * the pair is within [MAX_AREA]. Dragging width to 1280 at a height of 1280 gives 1280x704.
+     * the pair is within [prof]'s area. Dragging width to 1280 at a height of 1280 gives 1280x704 (the 14B: 1280x720).
      */
-    fun fitArea(w: Int, h: Int, widthMoved: Boolean): Pair<Int, Int> {
-        val sw = snap(w)
-        val sh = snap(h)
-        if (sw.toLong() * sh <= MAX_AREA) return sw to sh
-        return if (widthMoved) sw to fitSide(sw) else fitSide(sh) to sh
+    fun fitArea(w: Int, h: Int, widthMoved: Boolean, prof: WanProfile = TURBO): Pair<Int, Int> {
+        val sw = snap(w, prof)
+        val sh = snap(h, prof)
+        if (sw.toLong() * sh <= prof.maxArea) return sw to sh
+        return if (widthMoved) sw to fitSide(sw, prof) else fitSide(sh, prof) to sh
     }
 
     /**
@@ -251,13 +252,13 @@ object WanVideoNode : NodeType {
      * [MAX_AREA] (GitHub #25: a picture of another shape is cropped to the clip's, and the error that came
      * with it). Rounded DOWN, so the pair never asks for more than Wan's limit.
      */
-    fun matchShape(srcW: Int, srcH: Int): Pair<Int, Int> {
+    fun matchShape(srcW: Int, srcH: Int, prof: WanProfile = TURBO): Pair<Int, Int> {
         val a = srcW.toDouble() / srcH.coerceAtLeast(1)
-        var h = kotlin.math.sqrt(MAX_AREA / a)
+        var h = kotlin.math.sqrt(prof.maxArea / a)
         var w = h * a
         if (w > MAX_SIDE) { w = MAX_SIDE.toDouble(); h = w / a }
         if (h > MAX_SIDE) { h = MAX_SIDE.toDouble(); w = h * a }
-        fun down(v: Double) = ((v / GRID).toInt() * GRID).coerceIn(MIN_SIDE, MAX_SIDE)
+        fun down(v: Double) = ((v / prof.grid).toInt() * prof.grid).coerceIn(MIN_SIDE, MAX_SIDE)
         return down(w) to down(h)
     }
 
@@ -265,8 +266,9 @@ object WanVideoNode : NodeType {
     fun shapeDiffers(srcW: Int, srcH: Int, w: Int, h: Int): Boolean =
         kotlin.math.abs(kotlin.math.ln((srcW.toDouble() / srcH) / (w.toDouble() / h))) > 0.04
 
-    /** The largest grid side that keeps `other x it` within [MAX_AREA]. */
-    private fun fitSide(other: Int): Int = (MAX_AREA / other / GRID * GRID).coerceIn(MIN_SIDE, MAX_SIDE)
+    /** The largest grid side that keeps `other x it` within [prof]'s area. */
+    private fun fitSide(other: Int, prof: WanProfile): Int =
+        (prof.maxArea / other / prof.grid * prof.grid).coerceIn(MIN_SIDE, MAX_SIDE)
 
     /** ⚠ Pure: the `width`/`height` a flow saved with the old `size`/`shape` choosers meant, or null. */
     fun fromLegacy(p: Map<String, String>): Pair<Int, Int>? {
@@ -358,6 +360,9 @@ object WanVideoNode : NodeType {
         val bytesPerToken: Long,
         val blockBytes: Long,
         val alwaysStream: Boolean,
+        /** ⭐ The size grid (px) and the most pixels a clip may have: the size picker, Match picture and the run. */
+        val grid: Int = GRID,
+        val maxArea: Int = MAX_AREA,
     )
 
     /** ⭐ Wan 2.2 Turbo 5B (and Fun Control): `docs/VIDEO-GGML.md` §1-4. */
@@ -368,7 +373,11 @@ object WanVideoNode : NodeType {
      * 8x8 VAE, and ALWAYS streamed: an expert is 8.6 GB. The engine runs its blocks in 4096-token chunks (`dit/046`):
      * measured on the S25, 2.27 GB of compute peak at 832x480 5 s (32,760 tokens, ~70 KB a token), 305 MB at 480x272 1 s.
      */
-    val A14B = WanProfile(16, "euler", 16, 8_160L shl 20, 72L shl 10, 420L shl 20, alwaysStream = true)
+    val A14B = WanProfile(
+        16, "euler", 16, 8_160L shl 20, 72L shl 10, 420L shl 20, alwaysStream = true,
+        // ⭐ Its native 720p on its own 16 px tokens: 1280x720 (the 5B's 32 px grid stopped at 704, the user's call).
+        grid = 16, maxArea = 1280 * 720,
+    )
 
     /**
      * ⚠ The 14B's budget (GiB): one block's chunked compute plus its weights must fit, the weights stream. 832x480 5 s
@@ -464,11 +473,12 @@ object WanVideoNode : NodeType {
             ctx.say("  LoRAs: " + loras.joinToString { (f, s) -> "${File(f).nameWithoutExtension} $s" })
         }
         val p = effectiveParams(node)
-        val (w, h) = sizeOf(p)
+        val sizeProf = profileOf(node.type)
+        val (w, h) = sizeOf(p, sizeProf)
         // ⚠ The sliders cannot get here ([fitArea]); a hand-edited or plugin-written graph can.
-        if (w.toLong() * h > MAX_AREA) {
+        if (w.toLong() * h > sizeProf.maxArea) {
             throw IllegalArgumentException(
-                "node \"${node.id}\": ${w}x$h is larger than Wan's limit of 1280x704 worth of pixels. Make it smaller"
+                "node \"${node.id}\": ${w}x$h is larger than this Wan's limit of 1280x${sizeProf.maxArea / 1280} worth of pixels. Make it smaller"
             )
         }
         val frames = framesOf(node, p)

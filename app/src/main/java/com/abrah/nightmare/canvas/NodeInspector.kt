@@ -1877,7 +1877,9 @@ internal fun NodeInspectorBody(
             if (node.type !in com.abrah.nightmare.WAN_TYPES) return@wanPanel
             val widthW = type?.widgets?.firstOrNull { it.name == "width" } ?: return@wanPanel
             val heightW = type?.widgets?.firstOrNull { it.name == "height" } ?: return@wanPanel
-            val cur = wan.framesTo(node)
+            // ⭐ This node's own grid and area (the 14B: 16 px, 1280x720; the 5B's: 32 px, 1280x704).
+            val sizeProf = wan.profileOf(node.type)
+            val cur = type?.framesTo(node) ?: wan.framesTo(node)
             var draft by remember(nodeId, cur) { mutableStateOf<Pair<Int, Int>?>(null) }
             val shown = draft ?: cur
             val commit = {
@@ -1886,12 +1888,12 @@ internal fun NodeInspectorBody(
             }
             SliderRow(
                 widthW, shown.first.toString(),
-                onSet = { v -> v.toIntOrNull()?.let { draft = wan.fitArea(it, shown.second, widthMoved = true) } },
+                onSet = { v -> v.toIntOrNull()?.let { draft = wan.fitArea(it, shown.second, widthMoved = true, sizeProf) } },
                 onCommit = commit,
             )
             SliderRow(
                 heightW, shown.second.toString(),
-                onSet = { v -> v.toIntOrNull()?.let { draft = wan.fitArea(shown.first, it, widthMoved = false) } },
+                onSet = { v -> v.toIntOrNull()?.let { draft = wan.fitArea(shown.first, it, widthMoved = false, sizeProf) } },
                 onCommit = commit,
             )
             // ⭐ A size x length the phone probably cannot hold, said BEFORE the run, with the length that fits
@@ -1918,7 +1920,7 @@ internal fun NodeInspectorBody(
             // ⭐ A picture of another shape is cropped to the clip's: say so, and offer its shape in one tap
             // (GitHub #25, the user's pick 2026-10-15). Gone once they match.
             cropSource?.takeIf { wan.shapeDiffers(it.width, it.height, shown.first, shown.second) }?.let { src ->
-                val (mw, mh) = wan.matchShape(src.width, src.height)
+                val (mw, mh) = wan.matchShape(src.width, src.height, sizeProf)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         stringResource(R.string.wan_shape_differs, "${src.width}x${src.height}", "${shown.first}x${shown.second}"),
