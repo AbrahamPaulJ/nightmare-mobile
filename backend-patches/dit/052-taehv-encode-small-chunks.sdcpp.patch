@@ -1,0 +1,30 @@
+--- a/src/model/vae/tae.hpp
++++ b/src/model/vae/tae.hpp
+@@ -921,8 +921,11 @@
+     // reads input frames [2j - 6, 2j + 1], so a chunk starting OVERLAP frames early leaves every kept
+     // output untouched by the chunk's zero "past". Part 2 then runs on the whole (1/4 the area, half
+     // the frames).
++    // nightmare 052: OVERLAP is that 6 (was 8), a chunk's new frames a multiple of the TPool stride (was
++    // of t_down), and the first overlap clamped at frame 0: a chunk under 12 frames sliced from a negative
++    // frame and aborted. 720x1280 needs ~340 MB of HTP compute a frame, so 8 frames (2 new + 6) fit.
+     sd::Tensor<float> encode_chunked(const int n_threads, const sd::Tensor<float>& input, int chunk) {
+-        const int OVERLAP   = 8;
++        const int OVERLAP   = 6;
+         const int t_down    = 4;  // TAEHV's {true, true, false}
+         const int stride0   = 2;  // the first layer's TPool
+         sd::Tensor<float> x = input;
+@@ -935,12 +938,12 @@
+             }
+             frames = x.shape()[2];
+         }
+-        const int content = std::max(t_down, (chunk - OVERLAP) / t_down * t_down);
++        const int content = std::max(stride0, (chunk - OVERLAP) / stride0 * stride0);
+         LOG_INFO("taehv encode: %lld frames in chunks of %d (+%d overlap)", (long long)frames, content, OVERLAP);
+         sd::Tensor<float> mid;
+         encode_part = 1;
+         for (int64_t start = 0; start < frames; start += content) {
+-            const int64_t from = start == 0 ? 0 : start - OVERLAP;
++            const int64_t from = std::max<int64_t>(0, start - OVERLAP);
+             const int64_t end  = std::min<int64_t>(frames, start + content);
+             auto part          = run_graph(n_threads, sd::ops::slice(x, 2, from, end), false);
+             if (part.empty()) {
