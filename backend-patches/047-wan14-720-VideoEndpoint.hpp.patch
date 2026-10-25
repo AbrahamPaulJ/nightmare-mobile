@@ -1,0 +1,17 @@
+--- a/src/VideoEndpoint.hpp
++++ b/src/VideoEndpoint.hpp
+@@ -59,9 +59,11 @@
+       if (out.empty()) throw std::invalid_argument("'out' is required");
+       // Wan 2.2's VAE downsamples 16x and its DiT patches 2x2.
+       // nightmare (041): and at most 4096, and steps at least 1 (a negative reached the engine).
+-      if (req->width < 256 || req->height < 256 || req->width % 32 != 0 ||
+-          req->height % 32 != 0 || req->width > 4096 || req->height > 4096)
+-        throw std::invalid_argument("width and height must be multiples of 32, 256 to 4096");
++      // nightmare (047): multiples of 16, the 14B's token (Wan 2.1's 8x VAE, 2x2 patches): its native
++      // 720p is 1280x720, which 32 refused. The 5B's 32 px grid is the app's (WanVideoNode.TURBO).
++      if (req->width < 256 || req->height < 256 || req->width % 16 != 0 ||
++          req->height % 16 != 0 || req->width > 4096 || req->height > 4096)
++        throw std::invalid_argument("width and height must be multiples of 16, 256 to 4096");
+       if (req->steps < 1 || req->steps > 1000)
+         throw std::invalid_argument("steps must be between 1 and 1000");
+       if (req->frames < 1 || (req->frames - 1) % 4 != 0)
