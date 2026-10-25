@@ -34,7 +34,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Local Dream's models, no second download**: models Local Dream keeps in `Download/LocalDream` are listed and run in place, never changed or deleted.
 - **SDXL without the NPU**: Local Dream's SDXL CPU/GPU zips (`_mnn`) import from **+** and render on the GPU, about 17 s a step at 1024² on an 8 Elite (the CPU is about 4 times slower), for phones whose NPU cannot run SDXL.
 - **UltraFix**: Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
-- **More options** on the Image node holds the after-render switches below, folded away; closed, it names the ones that are on.
+- **More options** on the Image node holds the after-render switches below, folded away; closed, it names the ones that are on. **Scheduler, seed and CFG** fold the same way, closed until you open them, showing what they are set to.
   Switching one on that needs a download (the upscaler, the face and hand detector) offers it there and then.
 - **Hires fix**: one switch on the Image node: render, enlarge ×2, then UltraFix, in one Run (SD 1.5 / SDXL).
   Every other model has **Enlarge ×2** instead, so its picture can be enlarged and passed on to an inpaint that fixes faces.
@@ -54,6 +54,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Several checkpoints in one graph**: each generate node has its own model; the run loads each once and tells you the cost first.
 - **Variation seed**: a second seed and a strength on SD 1.5, SDXL and Anima: small changes around a picture you like, keeping its composition.
 - **Batching**: sweep seed, steps, CFG, denoise or scheduler; two at once makes a grid. Every result keeps the graph that made it.
+- **Before and after**: on a flow that starts from a picture (image to image, an edit, a style change), drag the line on the output's picture to the left to see the picture you started from under it.
 - **Results**: star, save, share, reopen any picture as the flow that made it; each keeps how long it took. Fold the big preview away and the grid fills the screen. In a picture's info, long-press its prompt, negative, seed or the picture itself and **Use** them on the open flow, each matched to the node you pick. A DiT picture that came out wrong on your phone (blown colours, grain, stripes) can be **Diagnosed** from the same info: it is rendered again once per part of the NPU moved to the CPU, every try kept in Results as one labelled group with a report, so the one that comes out right names what to fix on your chip.
 
 ### Models
@@ -99,7 +100,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Translate**: a Russian or Chinese prompt to English, offline (Firefox Translations), keeping weights like `(long hair:1.2)`.
 
 ### Your phone, your files
-- **English, Chinese and Russian**: the app follows your phone's language.
+- **English, Chinese and Russian**: the app follows your phone's language, or pick one in **Settings → Language**.
 - **Themes**: follow the system, Dark, Black (AMOLED, true-black backgrounds) or Light, with a violet, blue, teal, orange or pink accent, or your wallpaper's colours on Android 12 and up.
 - **Models where you can see them**: optionally in `Download/Nightmare`, surviving an uninstall.
 - **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches and the DiT engine (which falls back from GitHub to Hugging Face by itself); large files come over four connections at once. Tap Download on a second model while one downloads and it waits its turn.
