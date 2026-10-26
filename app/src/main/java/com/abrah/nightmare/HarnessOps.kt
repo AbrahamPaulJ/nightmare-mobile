@@ -260,7 +260,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "video_install" -> videoInstall()
             // ⭐ Image to video: animate the newest saved picture.
             "npu_i2v" -> npuI2v(arg)
-            // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480x832|loras"`,
+            // ⭐ Wan 2.2 video (`docs/VIDEO-GGML.md`): `--es arg "prompt|seed|seconds|480x832|loras|tag|picture|smooth"`,
             // every field optional. `wan_i2v` animates the newest saved picture.
             "wan_video" -> wanVideo(arg, i2v = false)
             // ⭐ Wan 2.2 14B (`npu.WanA14Node`) is image to video only since 1.6.240: `wan14_i2v`, same arg.
@@ -288,6 +288,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // `--es arg "0.5,0.5"` or `--es arg "0.5,0.5,/sdcard/Download/x.jpg"`.
             "segmenter_install" -> segmenterInstall()
             "pose_install" -> poseInstall()
+            "interp_install" -> interpInstall()
             "detailer_install" -> detailerInstall()
             "detail_run" -> detailRun(arg)
             "depth_install" -> depthInstall()
@@ -1815,6 +1816,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                                 }.orEmpty(),
                                 // ⭐ The LoRA picker's value (`name.safetensors@0.8`, `LoraSpec`), as the node stores it.
                                 at(4).takeIf { it.isNotEmpty() }?.let { com.abrah.nightmare.SdSampler.LORAS to it },
+                                // ⭐ An eighth part `smooth`: Smooth motion on ([com.abrah.nightmare.npu.FrameInterp]).
+                                ("true").takeIf { at(7) == wan.SMOOTH }?.let { wan.SMOOTH to it },
                             ),
                         )
                         else -> n
@@ -3903,6 +3906,20 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 pose.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
             }
             say("  ok   ${pose.bytesOnDisk(ctx)} B at ${pose.dir(ctx).absolutePath}")
+        } catch (e: Throwable) {
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    /** ⭐ Smooth motion's IFRNet set ([com.abrah.nightmare.npu.FrameInterp]), fetched as the Tools row does. */
+    private suspend fun interpInstall() {
+        val fi = com.abrah.nightmare.npu.FrameInterp
+        say("interp_install: ${fi.LABEL}, tier ${fi.tierFor()}, ${fi.BYTES} B")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                fi.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+            }
+            say("  ok   ${fi.bytesOnDisk(ctx)} B at ${fi.dir(ctx).absolutePath}, installed=${fi.isInstalled(ctx)}")
         } catch (e: Throwable) {
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
         }

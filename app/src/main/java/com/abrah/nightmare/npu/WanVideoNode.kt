@@ -96,6 +96,8 @@ object WanVideoNode : NodeType {
         Widget("seed", "int", "0", hintRes = R.string.hint_seed_clip),
         // ⭐ 0 = ONE frame, a still picture (a tester's wish, 2026-10-19: "1 frame Wan 2.2, basically a txt to img").
         Widget("seconds", "int", "5", 0.0, MAX_SECONDS.toDouble(), hintRes = R.string.hint_wan_seconds),
+        // ⭐ Twice the frames, a new one between every pair ([FrameInterp], the user's call 2026-10-26). Every Wan node.
+        Widget(SMOOTH, "bool", "false", hintRes = R.string.hint_wan_smooth),
         // ⭐ The framing, exactly as [VideoSampleNode] carries it.
         Widget("x", "float", "0.0", 0.0, 1.0, hintRes = R.string.hint_drag_frame),
         Widget("y", "float", "0.0", 0.0, 1.0),
@@ -105,6 +107,9 @@ object WanVideoNode : NodeType {
 
     /** ⭐ [WanFunNode]'s: how its driving video's frames become the control video. */
     const val MOTION_MODE = "motion_mode"
+
+    /** ⭐ Smooth motion: the clip at twice its frame rate, IFRNet's frames between the model's ([FrameInterp]). */
+    const val SMOOTH = "smooth"
 
     /** ⭐ The clip takes the wired picture's shape (Text to video (14B), `WanA14Node`): a hidden knob the flow sets. */
     const val FOLLOW_PICTURE = "follow_picture"
@@ -600,6 +605,30 @@ object WanVideoNode : NodeType {
         val startPng = framedPng.takeIf { motion == null }
         val refPng = framedPng.takeIf { motion != null }
 
+        // ⭐⭐ Smooth motion ([SMOOTH]). ⚠ A clip CONTINUING a film takes the film's rate, whatever its switch says:
+        // [FilmJoin] times both pieces at one fps, so a 32 fps part on a 16 fps film played the film at double speed.
+        val prevFilm = source?.film?.let { File(it) }?.takeIf { it.isFile && motion == null }
+        val asked = p[SMOOTH] == "true"
+        var smooth = prevFilm?.let { (FilmJoin.fpsOf(it) ?: fps) > fps } ?: asked
+        if (prevFilm != null && smooth != asked) {
+            ctx.say(if (smooth) "  smooth motion on: the film this clip continues is smoothed"
+                else "  smooth motion off: the film this clip continues is not smoothed")
+        }
+        if (smooth && FrameInterp.tierFor() == null) {
+            ctx.warn(ctx.text(R.string.run_smooth_chip, "Smooth motion needs a Snapdragon 8 Gen 3 or newer. The clip stays at %1\$s fps", fps.toString()))
+            smooth = false
+        }
+        if (smooth && FrameInterp.pick(w, h) == null) {
+            ctx.warn(ctx.text(R.string.run_smooth_size, "Smooth motion works up to 1280x736 or 736x1280; %1\$s is larger. The clip stays at %2\$s fps", "${w}x$h", fps.toString()))
+            smooth = false
+        }
+        // ⚠ Asked before the render, not after it: minutes of NPU for a clip that then could not be smoothed.
+        if (smooth && !FrameInterp.isInstalled(android)) {
+            throw com.abrah.nightmare.NeedsDownload(
+                com.abrah.nightmare.NeedsDownload.INTERP, "node \"${node.id}\": ${FrameInterp.LABEL} is not installed (Models, Tools)",
+            )
+        }
+
         // ⚠ The decode's spatial tile changes the frames (a little), so it is part of the clip's key.
         val vaeTile = com.abrah.nightmare.BackendProcess.readWanVaeTileOverride(android) ?: vaeTileFor(w, h)
         // ⚠ A content address of everything the clip is made from, as [VideoSampleNode] does.
@@ -612,6 +641,7 @@ object WanVideoNode : NodeType {
                 // seed and size named one file. Turbo's and Fun's keys stay as they were (their cached clips).
                 spec.id.takeIf { profileOf(node.type) != TURBO }?.let { "model=$it" },
                 vaeTile.takeIf { it > 0 }?.let { "vae_tile=$it" },
+                "smooth=2x".takeIf { smooth },
                 // ⚠⚠ The FRAMING too: `source.address()` is the unframed photo, so dragging the crop at
                 // the same seed wrote the old clip's name (GitHub #27 again), and a chain served the old
                 // film ([FilmJoin], keyed on this file's name).
@@ -710,10 +740,20 @@ object WanVideoNode : NodeType {
             }
         }
         ctx.say("${clip.frames} frames in ${"%.1f".format(clip.serverMs / 1000.0)} s. Encoding")
+        // ⚠ Opened only now: ~25 MB on the NPU, beside a backend that has finished its clip.
+        val session = try {
+            if (smooth && clip.frames > 1) FrameInterp.Session(android, w, h).also {
+                ctx.say("  smooth motion: ${clip.frames - 1} new frames (IFRNet ${it.size})")
+            } else null
+        } catch (e: Exception) {
+            raw.delete()
+            throw IllegalStateException("node \"${node.id}\": ${e.message ?: e.javaClass.simpleName}")
+        }
+        val outFps = if (session != null) fps * 2 else fps
         try {
             // ⭐ The encoder's lines go to the run log too: GitHub #26 sat at "Encoding" with nothing
             // saying how far it got.
-            val (poster, last) = encodeClip(raw, out, VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job])) {
+            val (poster, last) = encodeClip(raw, out, VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]), smooth = session) {
                 Log.i(TAG, it)
                 ctx.say(it.trim())
             }
@@ -721,19 +761,18 @@ object WanVideoNode : NodeType {
             // ⭐⭐ A CHAIN (GitHub #29, the user's call 2026-10-15): started from a video node's last
             // frame, this clip CONTINUES that node's film, so `video` is the film so far and the last
             // node of a chain hands the output all of it. ⚠ Not Motion transfer: its picture is a
-            // reference, not a start frame.
-            val prevFilm = source?.film?.let { File(it) }?.takeIf { it.isFile && motion == null }
+            // reference, not a start frame. [prevFilm] is read above, where it sets the clip's rate.
             var filmFile = out
-            var filmFrames = clip.frames
+            var filmFrames = if (session != null) FrameInterp.doubled(clip.frames) else clip.frames
             var filmPoster = posterId
             if (prevFilm != null) {
                 val film = File(dir, "film_" + sha1(prevFilm.name + "\u0000" + out.name) + ".mp4")
                 filmFrames = if (film.isFile) FilmJoin.frames(film) else {
                     val j = FilmJoin.join(
-                        prevFilm, out, film, fps, { Log.i(TAG, it); ctx.say(it.trim()) },
+                        prevFilm, out, film, outFps, { Log.i(TAG, it); ctx.say(it.trim()) },
                         VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]),
                     )
-                    ctx.say("  joined onto the film so far: ${j.frames} frames (${"%.1f".format(j.frames.toDouble() / fps)} s)" +
+                    ctx.say("  joined onto the film so far: ${j.frames} frames (${"%.1f".format(j.frames.toDouble() / outFps)} s)" +
                         if (j.copied) "" else ", re-encoded")
                     j.frames
                 }
@@ -750,6 +789,7 @@ object WanVideoNode : NodeType {
                 LAST_FRAME to Value.Image(ctx.images.put(last), last.width, last.height, film = filmFile.absolutePath),
             )
         } finally {
+            session?.close()
             raw.delete()
         }
     }
@@ -757,11 +797,13 @@ object WanVideoNode : NodeType {
     /**
      * ⭐ The backend's frame file ([Ops.video]) into [out] as MP4, a frame at a time, with the
      * node's loop ([com.abrah.nightmare.ClipStore]) built on the way. Returns the first and last frames.
+     * ⭐ With [smooth], twice the rate: frame 2k is the model's frame k, 2k + 1 IFRNet's midpoint of k and k + 1.
      */
     internal fun encodeClip(
         raw: File,
         out: File,
         isCancelled: () -> Boolean = { false },
+        smooth: FrameInterp.Session? = null,
         log: (String) -> Unit = { Log.i(TAG, it) },
     ): Pair<Bitmap, Bitmap> {
         RandomAccessFile(raw, "r").use { f ->
@@ -778,24 +820,43 @@ object WanVideoNode : NodeType {
             var poster: Bitmap? = null
             var last: Bitmap? = null
             val thumbs = ArrayList<Bitmap>()
-            VideoWriter.encode(count, w, h, fps, out, log, isCancelled) { i ->
+            fun read(k: Int, into: ByteArray) {
+                f.seek(HEADER_BYTES + k.toLong() * into.size)
+                f.readFully(into)
+            }
+            val doubling = smooth != null && count > 1
+            val outCount = if (doubling) FrameInterp.doubled(count) else count
+            val mid = if (doubling) ByteArray(rgb.size) else rgb
+            var midMs = 0L
+            VideoWriter.encode(outCount, w, h, if (doubling) fps * 2 else fps, out, log, isCancelled) { i ->
                 // ⚠ Frame 0 again = [VideoWriter.encode] retrying on the software encoder: start over.
                 if (i == 0) thumbs.clear()
-                f.seek(HEADER_BYTES + i.toLong() * rgb.size)
-                f.readFully(rgb)
+                val (k, between) = if (doubling) FrameInterp.sourceOf(i) else i to false
+                val src = if (between) {
+                    val t0 = System.currentTimeMillis()
+                    smooth!!.midpoint(k, ::read, mid)
+                    midMs += System.currentTimeMillis() - t0
+                    mid
+                } else {
+                    read(k, rgb)
+                    rgb
+                }
                 rgba.clear()
                 var s = 0
-                while (s < rgb.size) {
-                    rgba.put(rgb[s]).put(rgb[s + 1]).put(rgb[s + 2]).put(0xFF.toByte())
+                while (s < src.size) {
+                    rgba.put(src[s]).put(src[s + 1]).put(src[s + 2]).put(0xFF.toByte())
                     s += 3
                 }
                 rgba.flip()
                 frame.copyPixelsFromBuffer(rgba)
                 if (i == 0) poster = frame.copy(Bitmap.Config.ARGB_8888, false)
-                if (i == count - 1) last = frame.copy(Bitmap.Config.ARGB_8888, false)
-                if (i % com.abrah.nightmare.ClipStore.EVERY == 0) thumbs.add(com.abrah.nightmare.ClipStore.thumb(frame))
+                if (i == outCount - 1) last = frame.copy(Bitmap.Config.ARGB_8888, false)
+                // ⚠ The loop from the model's frames only: [com.abrah.nightmare.ClipStore.FPS] is paired with its
+                // thinning, so a smoothed clip's loop runs at the same speed as an unsmoothed one.
+                if (!between && k % com.abrah.nightmare.ClipStore.EVERY == 0) thumbs.add(com.abrah.nightmare.ClipStore.thumb(frame))
                 frame
             }
+            if (doubling) log("  smooth motion: ${count - 1} frames in ${"%.1f".format(midMs / 1000.0)} s")
             com.abrah.nightmare.ClipStore.putThinned(out.absolutePath, thumbs)
             return (poster ?: error("no frames in ${raw.name}")) to (last ?: error("no last frame in ${raw.name}"))
         }

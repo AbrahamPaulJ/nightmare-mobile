@@ -49,6 +49,8 @@ class WanSheetTest {
             "no LoRA row on the Wan sheet",
             rule.onAllNodesWithText("LoRA", substring = true).fetchSemanticsNodes().isNotEmpty(),
         )
+        // ⭐ Smooth motion's switch, once ([com.abrah.nightmare.npu.FrameInterp], 2026-10-26).
+        rule.onAllNodesWithText("Smooth motion").assertCountEquals(1)
     }
 
     /** ⭐ The 14B's own size advice under the picker (its timings), never the 5B's "three times faster". */
@@ -69,5 +71,6 @@ class WanSheetTest {
         }
         rule.onAllNodesWithText("for faces and fine detail", substring = true).assertCountEquals(1)
         rule.onAllNodesWithText("the size Wan 2.2 is made for", substring = true).assertCountEquals(0)
+        rule.onAllNodesWithText("Smooth motion").assertCountEquals(1)
     }
 }

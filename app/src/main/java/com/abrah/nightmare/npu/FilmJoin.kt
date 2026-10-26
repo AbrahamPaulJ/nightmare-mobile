@@ -41,6 +41,23 @@ object FilmJoin {
         }
     }
 
+    /**
+     * ⭐ A film's frame rate, rounded, or null if it cannot be read: a chain continues at its film's rate (a smoothed
+     * film is twice the model's, [WanVideoNode.SMOOTH]).
+     */
+    fun fpsOf(f: File): Int? = MediaMetadataRetriever().let { r ->
+        try {
+            r.setDataSource(f.absolutePath)
+            val n = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull()
+            val ms = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            if (n == null || ms == null || n <= 0 || ms <= 0) null else Math.round(n * 1000.0 / ms).toInt()
+        } catch (e: Exception) {
+            null
+        } finally {
+            runCatching { r.release() }
+        }
+    }
+
     /** ⭐ A film's first frame: its poster. */
     fun firstFrame(f: File): Bitmap? = MediaMetadataRetriever().let { r ->
         try {

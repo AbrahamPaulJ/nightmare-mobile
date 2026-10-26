@@ -1328,6 +1328,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             id == SEGMENTER_INSTALL_ID -> segmenterRow = segmenterRow?.copy(progress = p)
             id == PARSER_INSTALL_ID -> parserRow = parserRow?.copy(progress = p)
             id == POSE_INSTALL_ID -> poseRow = poseRow?.copy(progress = p)
+            id == INTERP_INSTALL_ID -> interpRow = interpRow?.copy(progress = p)
             id == DEPTH_INSTALL_ID -> depthRow = depthRow?.copy(progress = p)
             describeRows.keys.any { it.installId == id } ->
                 describeRows = describeRows.mapValues { (m, row) -> if (m.installId == id) row.copy(progress = p) else row }
@@ -1496,6 +1497,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         lap("parser")
         refreshPose()
         lap("pose")
+        refreshInterp()
+        lap("interp")
         refreshDetailer()
         lap("detailer")
         refreshLivePortrait()
@@ -2515,6 +2518,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.DEPTH -> "depth-tool"
                 com.abrah.nightmare.NeedsDownload.DETAILER -> "detailer-tool"
                 com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> "liveportrait-tool"
+                com.abrah.nightmare.NeedsDownload.INTERP -> "interp-tool"
                 else -> "cn-tool-$key"
             }
         }
@@ -2528,6 +2532,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             com.abrah.nightmare.NeedsDownload.DEPTH -> com.abrah.nightmare.pose.DepthEstimator.LABEL
             com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.LABEL
             com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> com.abrah.nightmare.portrait.LivePortrait.LABEL
+            com.abrah.nightmare.NeedsDownload.INTERP -> com.abrah.nightmare.npu.FrameInterp.LABEL
             else -> cnRows[key]?.label ?: key
         },
     )
@@ -2593,6 +2598,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     com.abrah.nightmare.npu.WanFun.Mode.of(n.params[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE]) == com.abrah.nightmare.npu.WanFun.Mode.POSE &&
                     !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx) ->
                     label(com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE) to toolMissing(com.abrah.nightmare.NeedsDownload.POSE)
+                n.type in com.abrah.nightmare.WAN_TYPES && on(com.abrah.nightmare.npu.WanVideoNode.SMOOTH) &&
+                    com.abrah.nightmare.npu.FrameInterp.tierFor() != null && !com.abrah.nightmare.npu.FrameInterp.isInstalled(ctx) ->
+                    label(com.abrah.nightmare.npu.WanVideoNode.SMOOTH) to toolMissing(com.abrah.nightmare.NeedsDownload.INTERP)
                 else -> null
             }
             if (ask != null) {
@@ -2623,6 +2631,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             com.abrah.nightmare.NeedsDownload.DEPTH -> com.abrah.nightmare.pose.DepthEstimator.BYTES
             com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.BYTES
             com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> com.abrah.nightmare.portrait.LivePortrait.BYTES
+            com.abrah.nightmare.NeedsDownload.INTERP -> com.abrah.nightmare.npu.FrameInterp.BYTES
             else -> cnRows[m.key]?.bytes ?: 0L
         }
     }
@@ -2658,6 +2667,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.DEPTH -> depthRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.DETAILER -> detailerRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> livePortraitRow?.installed == true
+                com.abrah.nightmare.NeedsDownload.INTERP -> interpRow?.installed == true
                 else -> cnRows[m.key]?.installed == true
             }
         }
@@ -2726,6 +2736,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (posing && !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx)) {
             missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.POSE)
+            return false
+        }
+        // ⭐ Smooth motion's IFRNet: asked here, as Pose is, so a clip is never rendered and then left unsmoothed.
+        // ⚠ Not on a chip with no build: the run says so and keeps the clip's own rate.
+        val smoothing = graph.nodes.any { n ->
+            n.type in com.abrah.nightmare.WAN_TYPES && n.params[com.abrah.nightmare.npu.WanVideoNode.SMOOTH] == "true"
+        }
+        if (smoothing && com.abrah.nightmare.npu.FrameInterp.tierFor() != null &&
+            !com.abrah.nightmare.npu.FrameInterp.isInstalled(ctx)
+        ) {
+            missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.INTERP)
             return false
         }
         // ⭐ Fix faces / Fix hands read the render with the detector: asked here, as Pose is, so a Run
@@ -2819,6 +2840,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.DEPTH -> installDepth()
                 com.abrah.nightmare.NeedsDownload.DETAILER -> installDetailer()
                 com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> installLivePortrait()
+                com.abrah.nightmare.NeedsDownload.INTERP -> installInterp()
                 else -> installControlNet(m.key)
             }
         }
@@ -3037,6 +3059,71 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         com.abrah.nightmare.pose.PoseDetector.delete(getApplication())
         say("deleted ${com.abrah.nightmare.pose.PoseDetector.LABEL}")
         refreshPose()
+    }
+
+    // ---- Smooth motion, the Wan nodes' 2x frames ([com.abrah.nightmare.npu.FrameInterp]) ------------------
+
+    /** ⭐ The Tools row for IFRNet: the pose detector's shape exactly (above). Null on a chip with no build. */
+    var interpRow by mutableStateOf<com.abrah.nightmare.ui.ToolRow?>(null)
+        private set
+
+    private val INTERP_INSTALL_ID = "interp-tool"
+
+    fun refreshInterp() {
+        val ctx = getApplication<Application>()
+        val fi = com.abrah.nightmare.npu.FrameInterp
+        fi.refresh(ctx)
+        interpRow = if (fi.tierFor() == null) null else com.abrah.nightmare.ui.ToolRow(
+            label = fi.LABEL,
+            bytes = fi.BYTES,
+            installed = fi.installed,
+            onDisk = if (fi.installed) fi.bytesOnDisk(ctx) else 0L,
+            progress = if (installing == INTERP_INSTALL_ID) installProgress else null,
+        )
+    }
+
+    fun installInterp() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        val fi = com.abrah.nightmare.npu.FrameInterp
+        installing = INTERP_INSTALL_ID
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, fi.BYTES)
+        refreshInterp()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                fi.install(ctx, onProgress = { p -> viewModelScope.launch { tickProgress(p) } }, isCancelled = { cancelInstall })
+                viewModelScope.launch {
+                    say("installed ${fi.LABEL}")
+                    downloadSucceeded(fi.LABEL)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    ErrorReport.record(e)
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(fi.LABEL, modelError!!)
+                    say("install failed. $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshInterp()
+                }
+            }
+        }
+    }
+
+    fun deleteInterp() {
+        com.abrah.nightmare.npu.FrameInterp.delete(getApplication())
+        say("deleted ${com.abrah.nightmare.npu.FrameInterp.LABEL}")
+        refreshInterp()
     }
 
     // ---- LivePortrait, Face edit's models ([com.abrah.nightmare.portrait.LivePortrait]) ----------------

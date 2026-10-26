@@ -1298,5 +1298,11 @@
     <string name="sampling_cfg_value">CFG %1$s</string>
     <string name="hint_wan14_seconds">视频时长（秒），每秒 16 帧。1 到 3 秒。8 Elite 上 720x1280 的 1 秒约 12 分钟，每多一秒都比上一秒更久：720p 的 3 秒可能要一小时。</string>
     <string name="run_lora_14b_skipped">Wan 2.2 14B 不使用 LoRA：已跳过提示词中的“%1$s”</string>
+    <string name="knob_smooth">平滑运动</string>
+    <string name="hint_wan_smooth">帧数翻倍：在每两帧之间插入一帧，在 NPU 上生成（IFRNet），16 fps 变为 32，24 变为 48。只多几秒，而不是几分钟。最大 1280x736 或 736x1280。需要模型、工具中的“平滑运动”。</string>
+    <string name="run_smooth_chip">平滑运动需要骁龙 8 Gen 3 或更新的芯片。视频保持 %1$s fps</string>
+    <string name="run_smooth_size">平滑运动最大支持 1280x736 或 736x1280；%1$s 超出。视频保持 %2$s fps</string>
+    <string name="interp_about">在每两帧之间插入一帧，使 Wan 视频的帧率翻倍，供视频节点上的“平滑运动”开关使用（IFRNet，MIT）。</string>
+    <string name="models_delete_interp_body">释放 %1$d MB。重新获取需要下载 %2$d MB。开启平滑运动的视频节点会再次请求它。</string>
     <string name="wan_follow_picture">视频采用你的图片的比例；这里设置像素数量（832x480 用于快速尝试，1280x720 让人脸更清晰）。</string>
 </resources>

@@ -57,6 +57,7 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 | **Width**, **Height** | Any shape, in 32 px steps, up to 1280 × 704 worth of pixels: square, 4:3, 21:9, a phone screen. Past that, the other side shrinks to fit. Wan 2.2 is made for 1280 × 704: smaller sizes, 832 × 480 included, can look soft or distorted. 832 × 480 is quickest; 1280 × 704 takes about three times as long. On **Wan 2.2 14B** (its own 16 px steps, up to 1280 × 720 worth of pixels), 1280 × 720 is the size for faces and fine detail (about 12 minutes for 1 second); 832 × 480 is for trying an idea first (about 5 minutes), with soft faces. On an 8 Gen 3 the 14B goes up to 832 × 480 worth of pixels (720p there is untested). **Match picture** sets the photo's shape |
 | **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
 | **Seconds** | 0 to 5, at 24 frames a second (Wan 2.2 14B: 1 to 3 at 16 frames a second; 1 second at 720p is about 12 minutes, 3 can take an hour); 0 makes one still picture (about 15 s at 832 × 480 on an 8 Elite; wire **last frame** to the output). On a 12 GB phone, 1280 × 704 for 3 seconds or more renders in parts so it fits: slower, about 12 minutes for 5 seconds. On an 8 Gen 3 a new flow opens on 2 seconds, the longest that has worked there so far; longer clips and 1280 × 704 still run, with a warning in the run log |
+| **Smooth motion** | Twice the frames: a new one between every pair, made on the NPU by IFRNet, so 16 frames a second become 32 and 24 become 48. Fast and smooth motion stops stuttering. It adds seconds, not minutes: about 0.2 s a new frame at 832 × 480 and 0.5 s at 720p on an 8 Elite. Up to 1280 × 736 or 736 × 1280; a larger clip stays at its own rate. Needs **Smooth motion** from Models → Tools (about 75 MB, Snapdragon 8 Gen 3 or newer); switching it on offers the download |
 | **LoRAs** | Wan 2.2 Turbo (TI2V-5B) LoRAs only; Wan 2.2 14B takes none (its speed-up is built in). See [LoRAs](../models/loras.md) |
 
 Neodragon has **Seed** and **Upscale** (on: 2× to 1024 × 640; off: 512 × 320, a little faster).
@@ -73,7 +74,8 @@ it carries on from where the first clip ended.
 
 The second node's **video** is then the **whole film so far**, the first clip and its own joined
 into one (the frame they share appears once). Chain as many as you like: the last node hands the
-Output the complete film. **Results** keeps every part on its own as well, each with the picture
+Output the complete film. A clip that carries on a film takes the film's frame rate: smoothed if
+the film is, whatever its own **Smooth motion** switch says. **Results** keeps every part on its own as well, each with the picture
 it started from, grouped together beside the film.
 
 On the canvas, a film longer than about 5 seconds loops faster than real time; full screen plays

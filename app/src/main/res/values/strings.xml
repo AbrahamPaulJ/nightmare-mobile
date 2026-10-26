@@ -1329,5 +1329,11 @@
     <string name="sampling_cfg_value">CFG %1$s</string>
     <string name="hint_wan14_seconds">Clip length in seconds, 16 frames each. 1 to 3. 1 s at 720x1280 takes about 12 minutes on an 8 Elite, and each second more takes longer than the last: 3 s at 720p can take an hour.</string>
     <string name="run_lora_14b_skipped">Wan 2.2 14B takes no LoRAs: "%1$s" from the prompt was skipped</string>
+    <string name="knob_smooth">Smooth motion</string>
+    <string name="hint_wan_smooth">Twice the frames: a new one between every pair, made on the NPU (IFRNet), so 16 fps becomes 32 and 24 becomes 48. Adds seconds, not minutes. Up to 1280x736 or 736x1280. Needs Smooth motion from Models, Tools.</string>
+    <string name="run_smooth_chip">Smooth motion needs a Snapdragon 8 Gen 3 or newer. The clip stays at %1$s fps</string>
+    <string name="run_smooth_size">Smooth motion works up to 1280x736 or 736x1280; %1$s is larger. The clip stays at %2$s fps</string>
+    <string name="interp_about">Doubles a Wan clip\'s frame rate with a new frame between every pair, for the Smooth motion switch on the video nodes (IFRNet, MIT).</string>
+    <string name="models_delete_interp_body">Frees %1$d MB. Getting it back is a %2$d MB download. A video node with Smooth motion on will ask for it again.</string>
     <string name="wan_follow_picture">The clip takes your picture\'s shape; these set how many pixels (832x480 worth for a quick try, 1280x720 worth for sharp faces).</string>
 </resources>

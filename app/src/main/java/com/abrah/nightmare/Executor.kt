@@ -56,6 +56,8 @@ class NeedsDownload(val tool: String, message: String) : Exception(message) {
         const val DETAILER = "adetailer"
         /** ⭐ Face edit's LivePortrait set ([com.abrah.nightmare.portrait.LivePortrait]). */
         const val LIVEPORTRAIT = "liveportrait"
+        /** ⭐ Smooth motion's IFRNet set ([com.abrah.nightmare.npu.FrameInterp]). */
+        const val INTERP = "ifrnet"
     }
 }
 

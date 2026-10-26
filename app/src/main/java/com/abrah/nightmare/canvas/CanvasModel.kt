@@ -1195,6 +1195,7 @@ private val KNOB_RESOURCES = mapOf(
     "subseed" to com.abrah.nightmare.R.string.knob_subseed,
     "subseed_strength" to com.abrah.nightmare.R.string.knob_subseed_strength,
     "fix_faces" to com.abrah.nightmare.R.string.knob_fix_faces,
+    "smooth" to com.abrah.nightmare.R.string.knob_smooth,
     "fix_hands" to com.abrah.nightmare.R.string.knob_fix_hands,
     "detail_denoise" to com.abrah.nightmare.R.string.knob_detail_denoise,
     "fix_seed" to com.abrah.nightmare.R.string.knob_fix_seed,
