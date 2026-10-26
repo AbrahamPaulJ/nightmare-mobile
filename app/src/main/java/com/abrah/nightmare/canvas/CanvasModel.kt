@@ -1150,7 +1150,7 @@ private val KNOB_OVERRIDES = mapOf(
     "enlarge" to "Enlarge ×2",
 )
 
-private val KNOB_RESOURCES = mapOf(
+internal val KNOB_RESOURCES = mapOf(
     "cfg" to com.abrah.nightmare.R.string.knob_cfg,
     "loras" to com.abrah.nightmare.R.string.knob_loras,
     "out_w" to com.abrah.nightmare.R.string.knob_output_width,
@@ -1231,6 +1231,14 @@ private val KNOB_RESOURCES = mapOf(
     "head_yaw" to com.abrah.nightmare.R.string.knob_lp_head_yaw,
     "head_roll" to com.abrah.nightmare.R.string.knob_lp_head_roll,
     "largest_only" to com.abrah.nightmare.R.string.knob_lp_largest_only,
+    // ⭐ #7225: these fell back to English on every locale; [KnobLabelTest] keeps the list whole.
+    "aspect" to com.abrah.nightmare.R.string.knob_aspect,
+    "seconds" to com.abrah.nightmare.R.string.knob_seconds,
+    "motion_mode" to com.abrah.nightmare.R.string.knob_motion_mode,
+    "hires_fix" to com.abrah.nightmare.R.string.knob_hires_fix,
+    "upscale" to com.abrah.nightmare.R.string.knob_upscale,
+    "add_objects" to com.abrah.nightmare.R.string.knob_add_objects,
+    "drawing" to com.abrah.nightmare.R.string.knob_drawing,
 )
 
 /**
@@ -1254,6 +1262,44 @@ val String.knobWord: String
 
 fun String.knobLabel(context: android.content.Context): String =
     KNOB_RESOURCES[this]?.let(context::getString) ?: knobLabel
+
+/**
+ * ⭐ #7225: the JOB a node's title names ([com.abrah.nightmare.NodeType.titleFor], `SdSampler.jobFor`), in the
+ * person's language; a family's name in front of it (`SDXL`, `FLUX.2`) stays. ⚠ Longest first, so
+ * `Image to video (14B)` is never read as `Image to video`. The flow names are the same words, so they are reused.
+ */
+private val TITLE_RESOURCES = listOf(
+    "Image to video (14B)" to com.abrah.nightmare.R.string.title_i2v14,
+    "Motion transfer" to com.abrah.nightmare.R.string.flow_motion_name,
+    "Image to image" to com.abrah.nightmare.R.string.flow_img2img_name,
+    "Text to image" to com.abrah.nightmare.R.string.flow_txt2img_name,
+    "Image to video" to com.abrah.nightmare.R.string.flow_i2v_name,
+    "Text to video" to com.abrah.nightmare.R.string.flow_t2v_name,
+    "Image edit" to com.abrah.nightmare.R.string.flow_flux_edit_name,
+    "Inpaint" to com.abrah.nightmare.R.string.palette_node_inpaint,
+)
+
+fun String.localizedTitle(context: android.content.Context): String {
+    for ((en, res) in TITLE_RESOURCES) {
+        if (this == en || endsWith(" $en")) return dropLast(en.length) + context.getString(res)
+    }
+    return this
+}
+
+/**
+ * ⭐ [com.abrah.nightmare.nodeNameOf] as drawn: the job words translated ([localizedTitle]). ⚠ A name the person
+ * gave the node is theirs and is never translated, so a primary that IS the node's id is left alone.
+ */
+fun localizedNodeName(
+    node: com.abrah.nightmare.Node,
+    types: Map<String, com.abrah.nightmare.NodeType>,
+    context: android.content.Context,
+): com.abrah.nightmare.NodeName = com.abrah.nightmare.nodeNameOf(node, types).let { n ->
+    com.abrah.nightmare.NodeName(
+        if (n.primary == node.id) n.primary else n.primary.localizedTitle(context),
+        n.secondary?.localizedTitle(context),
+    )
+}
 
 fun String.knobWord(context: android.content.Context): String = knobLabel(context).let {
     if (it == it.uppercase()) it else it.lowercase()

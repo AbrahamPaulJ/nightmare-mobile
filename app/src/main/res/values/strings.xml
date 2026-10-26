@@ -93,6 +93,10 @@
     <string name="rename_node">Node name</string>
     <string name="run_starting">starting…</string>
     <string name="cancel_run">Cancel</string>
+    <string name="stop_run_title">Stop this run?</string>
+    <string name="stop_run_body">It has been running for %1$s. Nodes that already finished keep their results, so Run again carries on from them.</string>
+    <string name="stop_run_confirm">Stop</string>
+    <string name="stop_run_keep">Keep running</string>
     <string name="importing_model">Importing %1$s…</string>
     <string name="importing_working">reading the archive</string>
     <!-- The output shape controls on the model in use. -->
@@ -749,6 +753,7 @@
     <string name="flow_t2v_about">A prompt into a clip. Wan 2.2 Turbo by default (minutes, much better); switch the video node to Neodragon for 2 s in about 30 s.</string>
     <string name="flow_i2v_name">Image to video</string>
     <string name="flow_t2v14_name">Text to video (14B)</string>
+    <string name="title_i2v14">Image to video (14B)</string>
     <string name="flow_t2v14_about">Your picture model makes the first frame from the prompt, then Wan 2.2 14B animates it: the best motion and detail, and slow. Check the picture first: a new one takes seconds, a new clip minutes.</string>
     <string name="flow_i2v_about">A picture as the first frame of a clip, moving the way the prompt says. Wan 2.2 Turbo by default; Neodragon on the video node for speed.</string>
     <string name="hint_wan_seconds">Clip length in seconds, 24 frames each; 0 makes one still picture. 5 s at 480p takes about 3 minutes on an 8 Elite.</string>
@@ -1339,6 +1344,13 @@
     <string name="knob_align">Line up my picture</string>
     <string name="hint_motion_align">Crops your picture so its person stands where the dancer starts, at the dancer\'s size, so the clip does not open on two people.</string>
     <string name="knob_keep_audio">Keep audio</string>
+    <string name="knob_aspect">Aspect</string>
+    <string name="knob_seconds">Seconds</string>
+    <string name="knob_motion_mode">Motion mode</string>
+    <string name="knob_hires_fix">Hires fix</string>
+    <string name="knob_upscale">Upscale</string>
+    <string name="knob_add_objects">Add objects</string>
+    <string name="knob_drawing">Drawing</string>
     <string name="hint_motion_audio">Copies the driving video\'s sound over the same part into the clip.</string>
     <string name="run_motion_nobody">No person was found in the driving video, so the crop stays still</string>
     <string name="run_motion_align_none">No person was found in your picture, so it is used as framed</string>

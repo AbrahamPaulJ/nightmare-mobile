@@ -452,6 +452,12 @@ fun HarnessScreen(
         // arrive from the headless ops too, and a preview that was only correct
         // when a screen happened to be composed would be a second answer to
         // "what does this node hold".
+        // ⚠ `busy` too: a run that ends while the question is up leaves nothing to stop.
+        if (vm.confirmCancel && vm.busy) {
+            com.abrah.nightmare.canvas.StopRunDialog(
+                elapsedMs = vm.runElapsedMs(), onStop = vm::cancelRun, onKeep = vm::dismissCancel,
+            )
+        }
         CanvasScreen(
             state = vm.canvas,
             types = vm.nodeTypes,
@@ -586,7 +592,7 @@ fun HarnessScreen(
             onPickMask = vm::pickMask,
             onTranslate = vm::translatePrompt,
             onDescribe = vm::describePicture,
-            onCancelRun = vm::cancelRun,
+            onCancelRun = vm::requestCancelRun,
             onSetResolution = vm::setNodeResolution,
             onSetAspect = vm::selectAspect,
             validateWorkflowName = vm::workflowNameError,

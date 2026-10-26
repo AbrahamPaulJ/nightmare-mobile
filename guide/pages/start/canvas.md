@@ -143,7 +143,7 @@ Advanced view the **run log** above the button shows, as it runs:
 - the total time once it is done.
 
 The ✕ hides the log (it does not stop the run). The copy button copies the whole log. Paste it
-into a bug report. To **stop** a render, tap **Cancel** on the Run button.
+into a bug report. To **stop** a render, tap **Cancel** on the Run button. After a minute it asks first, so a stray tap cannot throw the work away; nodes that already finished keep their results.
 
 The small arrow at the top of the run bar **folds** it to one row: **+ Node**, Run, the run's
 time and the padlocks, for more canvas. Tap it again to unfold. A failed run unfolds it by

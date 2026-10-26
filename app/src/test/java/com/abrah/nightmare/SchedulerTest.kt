@@ -147,5 +147,29 @@ class SchedulerTest {
         assertEquals(a, launchKeyFor(g, types, loaded = a))
         assertEquals(null, launchKeyFor(Graph(listOf(n("p"))), types, loaded = null))
     }
+
+    private fun out(id: String, from: String) =
+        Node(id, MediaOutputNode.name, emptyMap(), sources("media" to from))
+
+    /**
+     * ⭐ #7221: picture, then a video from it, with the picture's Output declared LAST. The Output
+     * runs straight after the picture, so it shows before the minutes of video, not after.
+     */
+    @Test
+    fun anOutputRunsRightAfterItsInput() {
+        val order = listOf(n("pic"), n("video", "pic"), out("o_vid", "video"), out("o_pic", "pic"))
+        val early = outputsEarly(order)
+        assertTopological(early)
+        assertEquals(listOf("pic", "o_pic", "video", "o_vid"), early.map { it.id })
+    }
+
+    /** ⚠ Two Outputs on one input keep the user's order, and a graph with none is untouched. */
+    @Test
+    fun outputsOnOneInputKeepTheirOrder() {
+        val order = listOf(n("pic"), n("video", "pic"), out("o1", "pic"), out("o2", "pic"))
+        assertEquals(listOf("pic", "o1", "o2", "video"), outputsEarly(order).map { it.id })
+        val plain = listOf(n("a"), n("b", "a"))
+        assertEquals(plain, outputsEarly(plain))
+    }
 }
 

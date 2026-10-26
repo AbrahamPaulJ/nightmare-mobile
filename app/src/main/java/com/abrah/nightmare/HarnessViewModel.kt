@@ -8493,6 +8493,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearRunLog() { runLog = com.abrah.nightmare.canvas.RunLogState() }
 
+    /**
+     * ⭐ Node [id]'s canvas preview from its value: the picture's id and aspect, so the node is laid
+     * out around the picture's own shape. ⚠⚠ Null for a RENDERER, which does not draw its own result
+     * (`core.output` does, [NodeType.showsResult]); without that the picture appears twice and the
+     * first one reads as the end of the flow.
+     */
+    private fun shownPreview(id: String, v: Value): Pair<String, Pair<String, Float>>? {
+        val t = canvas.workflow.graph.byId[id]?.type
+        if (nodeTypes[t]?.showsResult == false) return null
+        return v.previewImage()?.let { img -> id to (img.id to (img.w.toFloat() / img.h.coerceAtLeast(1))) }
+    }
+
     // ---- batching ---------------------------------------------------------
 
     /**
@@ -8899,6 +8911,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 CrashReport.stage(getApplication(), id)
             },
             onNode = ::noteNodeRun,
+            // ⭐ An Output's picture as soon as it lands (#7221), not after the video behind it.
+            // ⚠ Outputs only: a sampler's own preview is still drawn once, after the run.
+            onValue = { id, v ->
+                if (canvas.workflow.graph.byId[id]?.type == MediaOutputNode.name) {
+                    shownPreview(id, v)?.let { canvas = canvas.copy(previews = canvas.previews + it) }
+                }
+            },
             onProgress = { id, step, total ->
                 canvasStatus[id] = NodeStatus(progress = step to total)
                 runLog = runLog.copy(now = logName(id), step = step to total)
@@ -8943,13 +8962,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ([NodeType.showsResult]). Without this filter the picture appears
         // twice, on the node that made it and on the node that says where it
         // goes, and the first one reads as the end of the flow.
-        val shown = r.outputs.mapNotNull { (id, v) ->
-            val t = canvas.workflow.graph.byId[id]?.type
-            if (nodeTypes[t]?.showsResult == false) return@mapNotNull null
-            (v.previewImage())?.let { img ->
-                id to (img.id to (img.w.toFloat() / img.h.coerceAtLeast(1)))
-            }
-        }.toMap()
+        val shown = r.outputs.mapNotNull { (id, v) -> shownPreview(id, v) }.toMap()
         if (shown.isNotEmpty()) canvas = canvas.copy(previews = canvas.previews + shown)
         // ⭐⭐ …and what EVERY node rendered, shown or not ([CanvasState.rendered]).
         canvas = canvas.copy(rendered = canvas.rendered + renderedBy(r))
@@ -9259,6 +9272,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         /** ⚠ The shade's own tick — see [tickProgress]. */
         const val NOTICE_TICK_MS = 1000L
+        /** ⭐ Cancel asks first past this ([requestCancelRun]); the tester's number, #7218. */
+        const val CONFIRM_CANCEL_MS = 60_000L
         /** ⭐ The model-swap dialog's last answers ([confirmSwap]). */
         const val SWAP_TAKE_PROMPT = "swap_take_prompt"
 
@@ -9322,7 +9337,29 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         say("cancelling…")
         Backend.abortInFlight()
         runJob?.cancel()
+        confirmCancel = false
     }
+
+    /**
+     * ⭐ The Cancel button's tap (#7218): a run past [CONFIRM_CANCEL_MS] asks first, since
+     * one stray tap would throw away minutes of NPU work. A shorter run stops at once.
+     * ⚠ Only the button comes here: Chat's Stop and the API's `/cancel` call [cancelRun].
+     */
+    var confirmCancel by mutableStateOf(false)
+        private set
+
+    fun requestCancelRun() {
+        val started = runLog.startedAtMs
+        if (busy && started > 0L &&
+            android.os.SystemClock.elapsedRealtime() - started > CONFIRM_CANCEL_MS) confirmCancel = true
+        else cancelRun()
+    }
+
+    fun dismissCancel() { confirmCancel = false }
+
+    /** How long the run has gone, for the confirm's body. */
+    fun runElapsedMs(): Long =
+        runLog.startedAtMs.takeIf { it > 0L }?.let { android.os.SystemClock.elapsedRealtime() - it } ?: 0L
 
     /**
      * ⚠ Returns WHY it did not start, or null when it did. The canvas shows

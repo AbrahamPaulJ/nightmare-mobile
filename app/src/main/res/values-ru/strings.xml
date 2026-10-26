@@ -74,6 +74,10 @@
     <string name="rename_node">Имя узла</string>
     <string name="run_starting">запуск…</string>
     <string name="cancel_run">Отмена</string>
+    <string name="stop_run_title">Остановить запуск?</string>
+    <string name="stop_run_body">Он идёт уже %1$s. Готовые узлы сохраняют результаты, и новый запуск продолжит с них.</string>
+    <string name="stop_run_confirm">Остановить</string>
+    <string name="stop_run_keep">Продолжить</string>
     <string name="importing_model">Импорт %1$s…</string>
     <string name="importing_working">чтение архива</string>
     <string name="resolution">Разрешение</string>
@@ -737,6 +741,7 @@
     <string name="flow_t2v_about">Описание в ролик. По умолчанию Wan 2.2 Turbo (минуты, намного лучше); переключите узел видео на Neodragon для 2 с примерно за 30 с.</string>
     <string name="flow_i2v_name">Изображение в видео</string>
     <string name="flow_t2v14_name">Видео из текста (14B)</string>
+    <string name="title_i2v14">Изображение в видео (14B)</string>
     <string name="flow_t2v14_about">Ваша модель картинок делает первый кадр по запросу, затем Wan 2.2 14B его оживляет: лучшее движение и детали, но медленно. Сначала проверьте картинку: новая занимает секунды, новый клип минуты.</string>
     <string name="flow_i2v_about">Картинка как первый кадр ролика, движущегося по описанию. По умолчанию Wan 2.2 Turbo; Neodragon на узле видео для скорости.</string>
     <string name="hint_wan_seconds">Длина клипа в секундах, 24 кадра в секунду; 0 даёт одну неподвижную картинку. 5 с при 480p занимают около 3 мин на 8 Elite.</string>
@@ -1335,6 +1340,13 @@
     <string name="knob_align">Выровнять мою картинку</string>
     <string name="hint_motion_align">Обрезает вашу картинку так, чтобы её человек стоял там, где начинает танцор, и в его размере, чтобы клип не начинался с двух людей.</string>
     <string name="knob_keep_audio">Сохранить звук</string>
+    <string name="knob_aspect">Соотношение сторон</string>
+    <string name="knob_seconds">Секунды</string>
+    <string name="knob_motion_mode">Режим движения</string>
+    <string name="knob_hires_fix">Hires fix</string>
+    <string name="knob_upscale">Увеличение</string>
+    <string name="knob_add_objects">Добавить объекты</string>
+    <string name="knob_drawing">Рисунок</string>
     <string name="hint_motion_audio">Переносит в клип звук ведущего видео за ту же часть.</string>
     <string name="run_motion_nobody">В ведущем видео не найден человек, поэтому кадрирование остаётся неподвижным</string>
     <string name="run_motion_align_none">На вашей картинке не найден человек, поэтому она используется как обрезана</string>

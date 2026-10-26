@@ -532,7 +532,7 @@ private fun DrawScope.drawNode(
     // line is what the node DOES while its id is still the generated one, and
     // the user's name the moment they give it one — the inspector's tabs call
     // the same function, so the two cannot drift apart again.
-    val naming = com.abrah.nightmare.nodeNameOf(box.node, types)
+    val naming = localizedNodeName(box.node, types, context)
     val title = measurer.measure(
         naming.primary, titleStyle,
         overflow = TextOverflow.Ellipsis,

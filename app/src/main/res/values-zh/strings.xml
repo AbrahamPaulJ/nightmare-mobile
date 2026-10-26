@@ -74,6 +74,10 @@
     <string name="rename_node">节点名称</string>
     <string name="run_starting">正在启动…</string>
     <string name="cancel_run">取消</string>
+    <string name="stop_run_title">停止本次运行？</string>
+    <string name="stop_run_body">已运行 %1$s。已完成的节点会保留结果，再次运行会从那里继续。</string>
+    <string name="stop_run_confirm">停止</string>
+    <string name="stop_run_keep">继续运行</string>
     <string name="importing_model">正在导入 %1$s…</string>
     <string name="importing_working">正在读取压缩包</string>
     <string name="resolution">分辨率</string>
@@ -722,6 +726,7 @@
     <string name="flow_t2v_about">提示词生成视频。默认使用 Wan 2.2 Turbo（需要几分钟，效果好得多）；将视频节点切换为 Neodragon 约 30 秒生成 2 秒。</string>
     <string name="flow_i2v_name">图生视频</string>
     <string name="flow_t2v14_name">文本生成视频（14B）</string>
+    <string name="title_i2v14">图生视频（14B）</string>
     <string name="flow_t2v14_about">先用你的图片模型按提示词生成第一帧，再由 Wan 2.2 14B 让它动起来：动作和细节最好，但较慢。先检查图片：重新生成图片只需几秒，重新生成视频要几分钟。</string>
     <string name="flow_i2v_about">以图片为第一帧，按提示词运动。默认使用 Wan 2.2 Turbo；为了速度可在视频节点选择 Neodragon。</string>
     <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧；0 生成一张静止图片。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
@@ -1308,6 +1313,13 @@
     <string name="knob_align">对齐我的图片</string>
     <string name="hint_motion_align">裁剪你的图片，让其中的人站在舞者开始的位置、与舞者同样大小，这样视频开头不会出现两个人。</string>
     <string name="knob_keep_audio">保留音频</string>
+    <string name="knob_aspect">宽高比</string>
+    <string name="knob_seconds">秒数</string>
+    <string name="knob_motion_mode">运动模式</string>
+    <string name="knob_hires_fix">高清修复</string>
+    <string name="knob_upscale">放大</string>
+    <string name="knob_add_objects">添加物体</string>
+    <string name="knob_drawing">涂鸦</string>
     <string name="hint_motion_audio">把驱动视频同一段的声音复制到视频里。</string>
     <string name="run_motion_nobody">驱动视频中没有找到人物，所以裁剪保持不动</string>
     <string name="run_motion_align_none">你的图片中没有找到人物，所以按原裁剪使用</string>

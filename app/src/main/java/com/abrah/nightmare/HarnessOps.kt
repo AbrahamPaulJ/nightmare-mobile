@@ -2496,6 +2496,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onWarn: (String, String) -> Unit = { _, _ -> },
         /** ⭐ Which phase a node's progress is ([Ops.Progress.phase]). */
         onPhase: (String, String?) -> Unit = { _, _ -> },
+        /** ⭐ A node's value as it lands ([Executor.run]'s `onValue`): an Output's early preview. */
+        onValue: (String, Value) -> Unit = { _, _ -> },
         /**
          * ⭐ Seeds to use THIS run instead of rolling, by node: `seed` and `fix_seed` (the Output node's Apply now,
          * which reruns on the last run's seeds so only the Output step works). Reported as rolled, so the run bar's
@@ -2512,7 +2514,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.NonCancellable) { BackendIdle.begin() }
         RunWakeLock.begin(ctx)
         try {
-            return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn, onPhase, pinned)
+            return runRolled(workflow, onNode, onProgress, onStart, onLog, onWarn, onPhase, pinned, onValue)
         } finally {
             try { releaseBackendIfTooBig() } finally { BackendIdle.end(); RunWakeLock.end() }
         }
@@ -2595,6 +2597,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         onWarn: (String, String) -> Unit = { _, _ -> },
         onPhase: (String, String?) -> Unit = { _, _ -> },
         pinned: Map<String, Map<String, String>> = emptyMap(),
+        onValue: (String, Value) -> Unit = { _, _ -> },
     ): GraphRun {
         // ⚠⚠⚠ **Consumer-derived sizes are settled HERE, before anything
         // runs.** A consumer-sized node (`image.crop` until its deletion on 2026-09-17; the legacy mask nodes) carries no `out_w`/`out_h` of its own — they are
@@ -2670,6 +2673,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             Graph(nodes),
             onStart = onStart,
             onPhase = onPhase,
+            onValue = onValue,
             onProgress = { id, step, total ->
                 sink.progress(step to total)
                 onProgress(id, step, total)

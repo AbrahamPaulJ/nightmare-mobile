@@ -824,7 +824,7 @@ fun NodeInspector(
             // frozen at creation — a node added as SD 1.5 and switched to
             // FLUX.2 kept announcing itself as `sd15_generate` here while the
             // box beside it already said "FLUX.2 Image edit".
-            labels = ordered.map { com.abrah.nightmare.nodeNameOf(it, types).primary },
+            labels = ordered.map { localizedNodeName(it, types, LocalContext.current).primary },
             // ⭐⭐ Where the main flow ends and the loose nodes begin
             // ([looseNodes]). Null when every node is in the flow, which is the
             // ordinary case and draws no rule at all.
@@ -1120,7 +1120,7 @@ internal fun MoreOptionsHeader(
     }
 }
 
-private fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
+internal fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     // ⚠ The framing rectangle and the mask ops belong to their EDITOR, on every
     // node that draws one — asked first, because the checks below are about the
     // sampler's own conditional knobs.

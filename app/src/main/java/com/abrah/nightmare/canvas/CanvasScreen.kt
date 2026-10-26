@@ -2331,6 +2331,7 @@ internal fun Modifier.viewerZoom(
         .pointerInput(key) {
             awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false)
+                val before = scale.value
                 do {
                     val event = awaitPointerEvent()
                     val fingers = event.changes.count { it.pressed }
@@ -2361,6 +2362,9 @@ internal fun Modifier.viewerZoom(
                         event.changes.forEach { if (it.positionChanged()) it.consume() }
                     }
                 } while (event.changes.any { it.pressed })
+                // ⭐ GitHub #66 (a Results clip will not zoom, the canvas one does): once per gesture,
+                // so the phone tells "the pinch never arrived" from "it arrived and the clip did not scale".
+                if (scale.value != before) android.util.Log.i("NmViewer", "zoom $before -> ${scale.value} on $key")
             }
         }
         .pointerInput(key) {
@@ -2369,6 +2373,7 @@ internal fun Modifier.viewerZoom(
                 // on a phone held one-handed is awkward, and this is the gesture
                 // every photo viewer already answers to.
                 onDoubleTap = { at ->
+                    android.util.Log.i("NmViewer", "double tap at ${scale.value} on $key")
                     if (scale.value > 1.01f) {
                         scale.value = 1f
                         offset.value = Offset.Zero
@@ -2516,6 +2521,24 @@ private fun ModelSwapDialog(
             StudioButton(onClick = { onConfirm(swap, takeRecipe, takePrompt) }) { Text(stringResource(R.string.canvas_switch)) }
         },
         dismissButton = { StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+/**
+ * ⭐ "Stop this run?" (#7218), for a run past a minute ([com.abrah.nightmare.HarnessViewModel.requestCancelRun]).
+ * ⚠ Not [com.abrah.nightmare.ui.ConfirmDelete]: its confirm verb is Delete by rule, and this one is Stop.
+ * The same drawing otherwise: red confirm on the right, Keep running on the left.
+ */
+@Composable
+internal fun StopRunDialog(elapsedMs: Long, onStop: () -> Unit, onKeep: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onKeep,
+        title = { Text(stringResource(R.string.stop_run_title)) },
+        text = { Text(stringResource(R.string.stop_run_body, formatMs(elapsedMs)), style = NoteTextStyle) },
+        confirmButton = {
+            com.abrah.nightmare.ui.StudioDangerButton(onClick = onStop) { Text(stringResource(R.string.stop_run_confirm)) }
+        },
+        dismissButton = { StudioOutlinedButton(onClick = onKeep) { Text(stringResource(R.string.stop_run_keep)) } },
     )
 }
 

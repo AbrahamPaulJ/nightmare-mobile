@@ -1071,6 +1071,29 @@ fun scheduleByKey(
 }
 
 /**
+ * ⭐ Each `core.output` moved up to just after its last input (#7221).
+ *
+ * ⚠ The topological order is declaration order, so an Output written after a video node waited
+ * for the whole video before it saved or showed the picture it was handed. It costs nothing and
+ * feeds nothing ([MediaOutputNode] has no outputs), so running it early changes no other node's
+ * order and never forces a checkpoint switch. Two Outputs on one input keep their order.
+ *
+ * @param order a valid topological order; the result is a permutation of it.
+ */
+fun outputsEarly(order: List<Node>): List<Node> {
+    val isOutput = { n: Node -> n.type == MediaOutputNode.name }
+    if (order.none(isOutput)) return order
+    val out = order.filterNot(isOutput).toMutableList()
+    for (n in order.filter(isOutput)) {
+        val deps = n.inputs.values.map { it.node }.toSet()
+        var at = out.indexOfLast { it.id in deps } + 1
+        while (at < out.size && isOutput(out[at])) at++
+        out.add(at, n)
+    }
+    return out
+}
+
+/**
  * ⭐⭐ The context key a Run must LAUNCH with: the first one [scheduleByKey]
  * will reach. Null when the graph names none, or cannot be ordered.
  *
@@ -2801,6 +2824,12 @@ class Executor(
         onWarn: (nodeId: String, text: String) -> Unit = { _, _ -> },
         /** ⭐ The phase a node's progress belongs to ([Ops.Progress.phase]), null for its main work. */
         onPhase: (nodeId: String, phase: String?) -> Unit = { _, _ -> },
+        /**
+         * ⭐ A node's value (its first output) the moment it lands, so the canvas draws an Output's
+         * picture then rather than when the whole graph is done (#7221: the picture appeared only
+         * after the video that followed it).
+         */
+        onValue: (nodeId: String, value: Value) -> Unit = { _, _ -> },
     ): GraphRun {
         val t0 = wallNanos()
         fun sinceMs() = (wallNanos() - t0) / 1_000_000
@@ -2873,7 +2902,7 @@ class Executor(
         // (`scheduleByKey` returns its input), so there is one path rather than
         // a fast one and a scheduled one that could diverge.
         val scheduled = try {
-            scheduleByKey(order, { nodeTypes.getValue(it.id).contextKey(it) }, loadedKey())
+            outputsEarly(scheduleByKey(order, { nodeTypes.getValue(it.id).contextKey(it) }, loadedKey()))
         } catch (e: IllegalArgumentException) {
             return GraphRun(emptyList(), emptyMap(), sinceMs(), e.message ?: "bad params")
         }
@@ -3027,7 +3056,7 @@ class Executor(
                     values[node.id] = hits.toMutableMap()
                     val shown = hits[outName(node.id)] ?: hits.values.first()
                     val r = NodeRun(node.id, node.type, Outcome.CACHED, 0, shown.describe())
-                    runs += r; onNode(r)
+                    runs += r; onNode(r); onValue(node.id, shown)
                     continue
                 }
 
@@ -3108,6 +3137,7 @@ class Executor(
                         e.message ?: e.javaClass.simpleName)
                 }
                 runs += r; onNode(r)
+                if (r.outcome == Outcome.RAN) values[node.id]?.get(outName(node.id))?.let { onValue(node.id, it) }
             }
         } finally {
             // ⚠⚠⚠ **The video runner is released HERE, once, when the graph is
