@@ -1,0 +1,1044 @@
+diff --git a/src/conditioning/conditioner.hpp b/src/conditioning/conditioner.hpp
+index ace5b43..2649b1a 100644
+--- a/src/conditioning/conditioner.hpp
++++ b/src/conditioning/conditioner.hpp
+@@ -1822,7 +1822,8 @@ struct LLMEmbedder : public Conditioner {
+             arch = LLM::LLMArch::GPT_OSS_20B;
+         } else if (sd_version_is_pid(version)) {
+             arch = LLM::LLMArch::GEMMA2_2B;
+-        } else if (version == VERSION_QWEN_IMAGE_2_1 ||
++        } else if (version == VERSION_FIBO2 ||
++                   version == VERSION_QWEN_IMAGE_2_1 ||
+                    sd_version_is_flux3(version) ||
+                    sd_version_is_lingbot_video(version) ||
+                    sd_version_is_ideogram4(version) ||
+@@ -2162,6 +2163,51 @@ struct LLMEmbedder : public Conditioner {
+         }
+     }
+ 
++    bool expand_vision_marker(std::string& prompt,
++                              size_t& marker_start,
++                              std::vector<sd::Tensor<float>> outputs,
++                              int grid_h,
++                              int grid_w,
++                              std::vector<std::pair<int, sd::Tensor<float>>>& image_embeds,
++                              LLM::DeepStackImageEmbeds& deepstack_image_embeds,
++                              std::vector<LLM::ImageGrid>& image_grids,
++                              int max_length = std::numeric_limits<int>::max()) {
++        if (outputs.empty()) {
++            return false;
++        }
++        const std::string placeholder = "<|image_pad|>";
++        size_t position               = prompt.find(placeholder, marker_start);
++        if (position == std::string::npos) {
++            LOG_ERROR("Reference image marker is missing");
++            return false;
++        }
++        // nightmare: this fork's tokenizer returns the ids (upstream's newer one fills a vector and returns ok).
++        std::vector<int> prefix_tokens = tokenizer->encode(prompt.substr(0, position), nullptr);
++        int index                      = static_cast<int>(prefix_tokens.size());
++        int count = static_cast<int>(outputs[0].shape()[1]);
++        if (index > max_length || count > max_length - index) {
++            LOG_ERROR("Reference images exceed the %d-token context", max_length);
++            return false;
++        }
++        if (deepstack_image_embeds.empty()) {
++            deepstack_image_embeds.resize(outputs.size() - 1);
++        }
++        GGML_ASSERT(deepstack_image_embeds.size() == outputs.size() - 1);
++        image_embeds.emplace_back(index, std::move(outputs[0]));
++        for (size_t layer = 1; layer < outputs.size(); ++layer) {
++            deepstack_image_embeds[layer - 1].emplace_back(index, std::move(outputs[layer]));
++        }
++        image_grids.push_back({index, count, grid_h, grid_w});
++        std::string markers;
++        markers.reserve(static_cast<size_t>(count) * placeholder.size());
++        for (int i = 0; i < count; ++i) {
++            markers += placeholder;
++        }
++        prompt.replace(position, placeholder.size(), markers);
++        marker_start = position + markers.size();
++        return true;
++    }
++
+     SDCondition get_learned_condition(int n_threads,
+                                       const ConditionerParams& conditioner_params) override {
+         std::string prompt;
+diff --git a/src/conditioning/fibo2.hpp b/src/conditioning/fibo2.hpp
+new file mode 100644
+index 0000000..9f13d15
+--- /dev/null
++++ b/src/conditioning/fibo2.hpp
+@@ -0,0 +1,183 @@
++#ifndef __SD_CONDITIONING_FIBO2_HPP__
++#define __SD_CONDITIONING_FIBO2_HPP__
++
++#include "conditioning/conditioner.hpp"
++
++struct Fibo2Conditioner : public LLMEmbedder {
++    using JSON = nlohmann::ordered_json;
++
++    // nightmare: our LLMEmbedder takes no TokenizerConfig (upstream's newer API); Qwen3-VL's tokenizer is built in.
++    Fibo2Conditioner(ggml_backend_t backend, const String2TensorStorage& weights, std::shared_ptr<RunnerWeightManager> weight_manager)
++        : LLMEmbedder(backend, weights, VERSION_FIBO2, "", true, weight_manager) {
++        if (llm->config.hidden_size != 2560 || llm->config.num_layers != 36) {
++            throw std::runtime_error("Fibo 2.0 requires its Qwen3-VL-4B text encoder");
++        }
++    }
++
++    static bool empty_value(const JSON& value) {
++        return value.is_null() ||
++               (value.is_string() && value.get_ref<const std::string&>().empty()) ||
++               ((value.is_array() || value.is_object()) && value.empty());
++    }
++
++    static JSON clean_caption(const JSON& value) {
++        if (value.is_object()) {
++            auto result = JSON::object();
++            for (auto it = value.begin(); it != value.end(); ++it) {
++                auto cleaned = clean_caption(it.value());
++                if (!empty_value(cleaned)) {
++                    result[it.key()] = std::move(cleaned);
++                }
++            }
++            return result;
++        }
++        if (value.is_array()) {
++            auto result = JSON::array();
++            for (const auto& item : value) {
++                auto cleaned = clean_caption(item);
++                if (!empty_value(cleaned)) {
++                    result.push_back(std::move(cleaned));
++                }
++            }
++            return result;
++        }
++        return value;
++    }
++
++    static std::pair<JSON, JSON> parse_prompt(const std::string& prompt) {
++        auto caption = JSON::parse(prompt, nullptr, false);
++        if (!caption.is_object()) {
++            return {prompt, nullptr};
++        }
++        JSON instruction;
++        if (caption.contains("edit_instruction")) {
++            instruction = caption["edit_instruction"];
++            caption.erase("edit_instruction");
++        }
++        if (caption.contains("structured_caption")) {
++            caption = JSON(caption["structured_caption"]);
++            if (!caption.is_object()) {
++                return {caption, instruction};
++            }
++        }
++        bool short_form = caption.size() == 2 && caption.contains("short_description") && caption.contains("text_render");
++        caption         = clean_caption(caption);
++        for (const char* score : {"aesthetic_score", "preference_score"}) {
++            caption.erase(score);
++            for (auto& value : caption) {
++                if (value.is_object()) {
++                    value.erase(score);
++                }
++            }
++        }
++        caption = clean_caption(caption);
++        if (short_form) {
++            caption = JSON{{"short_description", caption.value("short_description", JSON(""))},
++                           {"text_render", caption.value("text_render", JSON::array())}};
++        }
++        return {caption, instruction};
++    }
++
++    static std::string format_prompt(const std::string& text, int num_images) {
++        auto [caption, instruction] = parse_prompt(text);
++        if (num_images > 0) {
++            if (instruction.is_null()) {
++                caption     = nullptr;
++                instruction = text;
++            }
++            auto edit = JSON::object();
++            for (int i = 0; i < num_images; ++i) {
++                edit[num_images == 1 ? "image" : "image_" + std::to_string(i + 1)] = "<|vision_start|><|image_pad|><|vision_end|>";
++            }
++            if (!empty_value(caption)) {
++                edit["structured_caption"] = caption;
++            }
++            edit["edit_instruction"] = instruction;
++            return edit.dump();
++        }
++        if (text.empty()) {
++            return R"({"short_description":"","objects":[],"background_setting":"","lighting":{},"aesthetics":{},"photographic_characteristics":{},"style_medium":"","context":"","artistic_style":""})";
++        }
++        if (caption.is_string()) {
++            return caption.get<std::string>();
++        }
++        return empty_value(caption) ? "{}" : caption.dump();
++    }
++
++    static sd::Tensor<float> make_bundles(sd::Tensor<float> states, const std::set<int>& layers) {
++        constexpr int width         = 2560;
++        constexpr int bundles[6][3] = {{9, 20, 31}, {5, 16, 27}, {7, 18, 29}, {9, 20, 31}, {11, 22, 33}, {13, 24, 35}};
++        for (int64_t token = 0; token < states.shape()[1]; ++token) {
++            for (size_t layer = 0; layer < layers.size(); ++layer) {
++                float sum      = 0.f;
++                int64_t offset = token * states.shape()[0] + layer * width;
++                for (int i = 0; i < width; ++i) {
++                    sum += states[offset + i] * states[offset + i];
++                }
++                float scale = 1.f / std::sqrt(sum / width + 1e-6f);
++                for (int i = 0; i < width; ++i) {
++                    states[offset + i] *= scale;
++                }
++            }
++        }
++        sd::Tensor<float> result({6 * 3 * width, states.shape()[1]});
++        for (int b = 0; b < 6; ++b) {
++            for (int j = 0; j < 3; ++j) {
++                int index = static_cast<int>(std::distance(layers.begin(), layers.find(bundles[b][j])));
++                for (int64_t token = 0; token < states.shape()[1]; ++token) {
++                    std::copy_n(states.data() + token * states.shape()[0] + index * width, width,
++                                result.data() + token * result.shape()[0] + (b * 3 + j) * width);
++                }
++            }
++        }
++        return result;
++    }
++
++    SDCondition get_learned_condition(int n_threads, const ConditionerParams& p) override {
++        int image_count = p.ref_images ? static_cast<int>(p.ref_images->size()) : 0;
++        if (image_count && !llm->enable_vision) {
++            LOG_ERROR("Fibo 2.0 editing requires vision weights");
++            return {};
++        }
++        std::string prompt = "<|im_start|>user\n" + format_prompt(p.text, image_count) + "<|im_end|>\n<|im_start|>assistant\n";
++        std::vector<std::pair<int, sd::Tensor<float>>> images;
++        LLM::DeepStackImageEmbeds deepstack;
++        std::vector<LLM::ImageGrid> grids;
++        size_t marker_start = 0;
++        for (int i = 0; i < image_count; ++i) {
++            const auto& image = (*p.ref_images)[i];
++            int factor        = llm->config.vision.patch_size * llm->config.vision.spatial_merge_size;
++            int height = static_cast<int>(image.shape()[1]), width = static_cast<int>(image.shape()[0]);
++            int h = std::max(factor, static_cast<int>(std::round(static_cast<double>(height) / factor)) * factor);
++            int w = std::max(factor, static_cast<int>(std::round(static_cast<double>(width) / factor)) * factor);
++            resize_image_dims(height, width, h, w, factor,
++                              p.ref_image_params.vlm_min_size,
++                              p.ref_image_params.vlm_max_size,
++                              p.ref_image_params.vlm_resize_mode);
++            auto pixels = sd::ops::interpolate(image, {w, h, image.shape()[2], image.shape()[3]}, sd::ops::InterpolateMode::Bicubic, false, true);
++            auto rgb    = sd::Tensor<float>({w, h, 3, 1});
++            for (int64_t pixel = 0; pixel < int64_t(w) * h; ++pixel) {
++                float alpha = pixels.shape()[2] == 4 ? pixels[pixel + 3 * w * h] : 1.f;
++                for (int channel = 0; channel < 3; ++channel) {
++                    rgb[pixel + channel * w * h] = 2.f * std::clamp(pixels[pixel + channel * w * h] * alpha + 1.f - alpha, 0.f, 1.f) - 1.f;
++                }
++            }
++            auto outputs = llm->encode_image_outputs(n_threads, rgb, false);
++            if (!expand_vision_marker(prompt, marker_start, std::move(outputs),
++                                      h / llm->config.vision.patch_size, w / llm->config.vision.patch_size,
++                                      images, deepstack, grids, 4096)) {
++                return {};
++            }
++        }
++        const std::set<int> layers = {5, 7, 9, 11, 13, 16, 18, 20, 22, 24, 27, 29, 31, 33, 35};
++        auto states                = encode_prompt(n_threads, prompt, {0, 0}, 0, 0, images, layers, 0, false, 4096, deepstack, grids);
++        if (states.empty()) {
++            return {};
++        }
++        SDCondition result;
++        result.c_crossattn = make_bundles(std::move(states), layers);
++        return result;
++    }
++};
++
++#endif  // __SD_CONDITIONING_FIBO2_HPP__
+diff --git a/src/model.h b/src/model.h
+index dbbab27..c45794a 100644
+--- a/src/model.h
++++ b/src/model.h
+@@ -62,6 +62,7 @@ enum SDVersion {
+     VERSION_IRIS,
+     VERSION_MOSS_IMAGE,
+     VERSION_FLUX3,
++    VERSION_FIBO2,
+     VERSION_COUNT,
+ };
+ 
+@@ -254,7 +255,7 @@ static inline bool sd_version_uses_flux_vae(SDVersion version) {
+ 
+ static inline bool sd_version_uses_flux2_vae(SDVersion version) {
+     if (sd_version_is_flux2(version) || sd_version_is_flux3(version) || sd_version_is_ernie_image(version) || sd_version_is_lens(version) || sd_version_is_ideogram4(version) || sd_version_is_sefi_image(version) ||
+-        version == VERSION_MOSS_IMAGE) {
++        version == VERSION_MOSS_IMAGE || version == VERSION_FIBO2) {
+         return true;
+     }
+     return false;
+@@ -307,7 +308,8 @@ static inline bool sd_version_is_dit(SDVersion version) {
+         sd_version_is_krea2(version) ||
+         sd_version_is_mage_flow(version) ||
+         version == VERSION_IRIS ||
+-        version == VERSION_MOSS_IMAGE) {
++        version == VERSION_MOSS_IMAGE ||
++        version == VERSION_FIBO2) {
+         return true;
+     }
+     return false;
+diff --git a/src/model/diffusion/fibo2.hpp b/src/model/diffusion/fibo2.hpp
+new file mode 100644
+index 0000000..30af30f
+--- /dev/null
++++ b/src/model/diffusion/fibo2.hpp
+@@ -0,0 +1,404 @@
++#ifndef __SD_MODEL_DIFFUSION_FIBO2_HPP__
++#define __SD_MODEL_DIFFUSION_FIBO2_HPP__
++
++#include "model/diffusion/z_image.hpp"
++
++// https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/transformers/transformer_bria_fibo2.py
++namespace Fibo2 {
++    // nightmare: upstream's plain ZImage::modulate. This fork's is the fused ggml_modulate and always reshapes the
++    // scale to one row a batch, but Fibo modulates PER TOKEN (noisy and clean image tokens differ).
++    __STATIC_INLINE__ ggml_tensor* modulate(ggml_context* ctx, ggml_tensor* x, ggml_tensor* scale) {
++        if (scale->ne[1] != x->ne[1]) {
++            scale = ggml_reshape_3d(ctx, scale, scale->ne[0], 1, scale->ne[1]);
++        }
++        return ggml_add(ctx, x, ggml_mul(ctx, x, scale));
++    }
++
++    struct Fibo2Config {
++        int64_t dim                       = 3584;
++        int64_t channels                  = 128;
++        int64_t text_dim                  = 7680;
++        int64_t head_dim                  = 128;
++        int64_t depth                     = 44;
++        int64_t refiner_depth             = 2;
++        int64_t perceiver_depth           = 2;
++        int64_t max_gist                  = 512;
++        int64_t ffn_dim                   = 9536;
++        bool fused_qkv                    = false;
++        bool fused_kv                     = false;
++        bool fused_ffn                    = false;
++        std::vector<int> injection_layers = {6, 14, 22, 30, 38};
++
++        static Fibo2Config detect_from_weights(const String2TensorStorage& weights, const std::string& prefix) {
++            Fibo2Config config;
++            int64_t depth = 0, refiner_depth = 0, perceiver_depth = 0;
++            std::set<int> injection_layers;
++            for (const auto& [name, tensor] : weights) {
++                if (!starts_with(name, prefix + ".")) {
++                    continue;
++                }
++                auto key = name.substr(prefix.size() + 1);
++                if (key == "x_embedder.weight") {
++                    config.channels = tensor.ne[0];
++                    config.dim      = tensor.ne[1];
++                } else if (key == "perceiver.latent_queries") {
++                    config.max_gist = tensor.ne[1];
++                } else if (key == "perceiver.layers.0.cross_attention.to_k.weight" || key == "perceiver.layers.0.cross_attention.to_kv.weight") {
++                    config.text_dim = tensor.ne[0];
++                    config.fused_kv = key == "perceiver.layers.0.cross_attention.to_kv.weight";
++                } else if (key == "layers.0.attention.norm_q.weight") {
++                    config.head_dim = tensor.ne[0];
++                } else if (key == "layers.0.attention.qkv.weight") {
++                    config.fused_qkv = true;
++                } else if (key == "layers.0.feed_forward.w1.weight") {
++                    config.ffn_dim = tensor.ne[1];
++                } else if (key == "layers.0.feed_forward.w13.weight") {
++                    config.ffn_dim   = tensor.ne[1] / 2;
++                    config.fused_ffn = true;
++                }
++                if (starts_with(key, "layers.")) {
++                    int index = std::stoi(key.substr(7));
++                    depth     = std::max<int64_t>(depth, index + 1);
++                    if (ends_with(key, ".cross_attn_gate")) {
++                        injection_layers.insert(index);
++                    }
++                } else if (starts_with(key, "noise_refiner.")) {
++                    refiner_depth = std::max<int64_t>(refiner_depth, std::stoi(key.substr(14)) + 1);
++                } else if (starts_with(key, "perceiver.layers.")) {
++                    perceiver_depth = std::max<int64_t>(perceiver_depth, std::stoi(key.substr(17)) + 1);
++                }
++            }
++            if (depth) {
++                config.depth           = depth;
++                config.refiner_depth   = refiner_depth;
++                config.perceiver_depth = perceiver_depth;
++                config.injection_layers.assign(injection_layers.begin(), injection_layers.end());
++                LOG_VERBOSE("fibo2: dim = %" PRId64 ", depth = %" PRId64 ", head_dim = %" PRId64 ", text_dim = %" PRId64,
++                            config.dim, config.depth, config.head_dim, config.text_dim);
++            }
++            return config;
++        }
++
++        int gist_count(int text_length) const {
++            double ratio = std::clamp((text_length - 256.0) / (2048.0 - 256.0), 0.0, 1.0);
++            return std::min(static_cast<int>(max_gist), static_cast<int>(std::ceil((256 + ratio * (max_gist - 256)) / 64)) * 64);
++        }
++    };
++
++    struct Attention : public GGMLBlock {
++        int64_t head_dim;
++        int64_t heads;
++        bool fused_qkv;
++        bool fused_kv;
++
++        Attention(const Fibo2Config& config, int64_t kv_dim, bool joint = false)
++            : head_dim(config.head_dim), heads(config.dim / config.head_dim), fused_qkv(joint && config.fused_qkv), fused_kv(!joint && config.fused_kv) {
++            if (fused_qkv) {
++                blocks["qkv"] = std::make_shared<Linear>(config.dim, 3 * config.dim, false);
++            } else {
++                blocks["to_q"] = std::make_shared<Linear>(config.dim, config.dim, false);
++                if (fused_kv) {
++                    blocks["to_kv"] = std::make_shared<Linear>(kv_dim, 2 * config.dim, false);
++                } else {
++                    blocks["to_k"] = std::make_shared<Linear>(kv_dim, config.dim, false);
++                    blocks["to_v"] = std::make_shared<Linear>(kv_dim, config.dim, false);
++                }
++            }
++            blocks["to_out.0"] = std::make_shared<Linear>(config.dim, config.dim, false);
++            blocks["norm_q"]   = std::make_shared<RMSNorm>(head_dim, 1e-5f);
++            blocks["norm_k"]   = std::make_shared<RMSNorm>(head_dim, 1e-5f);
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* kv, ggml_tensor* pe = nullptr) {
++            auto c       = ctx->ggml_ctx;
++            auto project = [&](const char* name, ggml_tensor* h) {
++                return std::dynamic_pointer_cast<Linear>(blocks[name])->forward(ctx, h);
++            };
++            ggml_tensor *q, *k, *v;
++            if (fused_qkv) {
++                auto parts = ggml_ext_chunk(c, project("qkv", x), 3, 0);
++                q          = parts[0];
++                k          = parts[1];
++                v          = parts[2];
++            } else {
++                q = project("to_q", x);
++                if (fused_kv) {
++                    auto parts = ggml_ext_chunk(c, project("to_kv", kv), 2, 0);
++                    k          = parts[0];
++                    v          = parts[1];
++                } else {
++                    k = project("to_k", kv);
++                    v = project("to_v", kv);
++                }
++            }
++            auto reshape = [&](ggml_tensor* h) {
++                return ggml_reshape_4d(c, h, head_dim, heads, h->ne[1], h->ne[2]);
++            };
++            q            = std::dynamic_pointer_cast<RMSNorm>(blocks["norm_q"])->forward(ctx, reshape(q));
++            k            = std::dynamic_pointer_cast<RMSNorm>(blocks["norm_k"])->forward(ctx, reshape(k));
++            v            = reshape(v);
++            auto prepare = [&](ggml_tensor* h) {
++                if (pe) {
++                    return Rope::apply_rope(c, h, pe);
++                }
++                h = ggml_cont(c, ggml_permute(c, h, 0, 2, 1, 3));
++                return ggml_reshape_3d(c, h, head_dim, h->ne[1], heads * h->ne[3]);
++            };
++            auto y = ggml_ext_attention_ext(c, ctx->backend, prepare(q), prepare(k), v, heads, nullptr, true, ctx->flash_attn_enabled);
++            return std::dynamic_pointer_cast<Linear>(blocks["to_out.0"])->forward(ctx, y);
++        }
++    };
++
++    struct FeedForward : public ZImage::FeedForward {
++        bool fused;
++
++        FeedForward(const Fibo2Config& config)
++            : ZImage::FeedForward(config.dim, config.ffn_dim, 1), fused(config.fused_ffn) {
++            if (fused) {
++                blocks.erase("w1");
++                blocks.erase("w3");
++                blocks["w13"] = std::make_shared<Linear>(config.dim, 2 * config.ffn_dim, false);
++            }
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) {
++            if (!fused) {
++                return ZImage::FeedForward::forward(ctx, x);
++            }
++            auto w2 = std::dynamic_pointer_cast<Linear>(blocks["w2"]);
++            if (sd_backend_is(ctx->backend, "Vulkan") || sd_backend_is(ctx->backend, "ROCm")) {
++                w2->set_force_prec_f32(true);
++            }
++            x = std::dynamic_pointer_cast<Linear>(blocks["w13"])->forward(ctx, x);
++            return w2->forward(ctx, ggml_swiglu(ctx->ggml_ctx, x));
++        }
++    };
++
++    struct PerceiverLayer : public GGMLBlock {
++        PerceiverLayer(const Fibo2Config& config) {
++            for (const char* name : {"cross_attn_norm", "self_attn_norm", "ffn_norm"}) {
++                blocks[name] = std::make_shared<RMSNorm>(config.dim, 1e-5f);
++            }
++            blocks["cross_attention"] = std::make_shared<Attention>(config, config.text_dim);
++            blocks["self_attention"]  = std::make_shared<Attention>(config, config.dim);
++            blocks["ffn"]             = std::make_shared<FeedForward>(config);
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* text) {
++            auto norm = [&](const char* name, ggml_tensor* h) {
++                return std::dynamic_pointer_cast<RMSNorm>(blocks[name])->forward(ctx, h);
++            };
++            auto h = std::dynamic_pointer_cast<Attention>(blocks["cross_attention"])->forward(ctx, norm("cross_attn_norm", x), text);
++            x      = ggml_add(ctx->ggml_ctx, x, h);
++            h      = norm("self_attn_norm", x);
++            h      = std::dynamic_pointer_cast<Attention>(blocks["self_attention"])->forward(ctx, h, h);
++            x      = ggml_add(ctx->ggml_ctx, x, h);
++            h      = std::dynamic_pointer_cast<FeedForward>(blocks["ffn"])->forward(ctx, norm("ffn_norm", x));
++            return ggml_add(ctx->ggml_ctx, x, h);
++        }
++    };
++
++    struct Perceiver : public GGMLBlock {
++        Fibo2Config config;
++
++        Perceiver(const Fibo2Config& config)
++            : config(config) {
++            for (int i = 0; i < config.perceiver_depth; ++i) {
++                blocks["layers." + std::to_string(i)] = std::make_shared<PerceiverLayer>(config);
++            }
++            blocks["norm_out"] = std::make_shared<RMSNorm>(config.dim, 1e-5f);
++        }
++
++        void init_params(ggml_context* ctx, const String2TensorStorage& weights = {}, const std::string prefix = "") override {
++            params["latent_queries"] = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, config.dim, config.max_gist);
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* text, int gist_count) {
++            auto x = ggml_ext_slice(ctx->ggml_ctx, params["latent_queries"], 1, 0, gist_count);
++            for (int i = 0; i < config.perceiver_depth; ++i) {
++                x = std::dynamic_pointer_cast<PerceiverLayer>(blocks["layers." + std::to_string(i)])->forward(ctx, x, text);
++            }
++            return std::dynamic_pointer_cast<RMSNorm>(blocks["norm_out"])->forward(ctx, x);
++        }
++    };
++
++    struct TransformerBlock : public GGMLBlock {
++        bool injection;
++
++        TransformerBlock(const Fibo2Config& config, bool injection)
++            : injection(injection) {
++            blocks["attention"]    = std::make_shared<Attention>(config, config.dim, true);
++            blocks["feed_forward"] = std::make_shared<FeedForward>(config);
++            for (const char* name : {"attention_norm1", "attention_norm2", "ffn_norm1", "ffn_norm2"}) {
++                blocks[name] = std::make_shared<RMSNorm>(config.dim, 1e-5f);
++            }
++            blocks["adaLN_modulation.0"] = std::make_shared<Linear>(std::min<int64_t>(config.dim, 256), 4 * config.dim);
++            if (injection) {
++                blocks["cross_attention"]  = std::make_shared<Attention>(config, config.text_dim);
++                blocks["cross_attn_norm1"] = std::make_shared<RMSNorm>(config.dim, 1e-5f);
++                blocks["cross_attn_norm2"] = std::make_shared<RMSNorm>(config.dim, 1e-5f);
++            }
++        }
++
++        void init_params(ggml_context* ctx, const String2TensorStorage& weights = {}, const std::string prefix = "") override {
++            if (injection) {
++                params["cross_attn_gate"] = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
++            }
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* pe, ggml_tensor* noisy, ggml_tensor* clean, int image_start, int image_count, ggml_tensor* text = nullptr) {
++            auto c    = ctx->ggml_ctx;
++            auto norm = [&](const char* name, ggml_tensor* h) {
++                return std::dynamic_pointer_cast<RMSNorm>(blocks[name])->forward(ctx, h);
++            };
++            auto modulation = std::dynamic_pointer_cast<Linear>(blocks["adaLN_modulation.0"]);
++            auto mn         = ggml_ext_chunk(c, modulation->forward(ctx, noisy), 4, 0);
++            auto mc         = ggml_ext_chunk(c, modulation->forward(ctx, clean), 4, 0);
++            auto select     = [&](int index, bool gate) {
++                auto n      = gate ? ggml_tanh(c, mn[index]) : mn[index];
++                auto k      = gate ? ggml_tanh(c, mc[index]) : mc[index];
++                auto repeat = [&](ggml_tensor* h, int64_t count) {
++                    return ggml_repeat(c, h, ggml_new_tensor_2d(c, GGML_TYPE_F32, h->ne[0], count));
++                };
++                auto m = repeat(n, image_count);
++                if (image_start) {
++                    m = ggml_concat(c, repeat(k, image_start), m, 1);
++                }
++                int64_t tail = x->ne[1] - image_start - image_count;
++                if (tail) {
++                    m = ggml_concat(c, m, repeat(k, tail), 1);
++                }
++                return m;
++            };
++            auto h = modulate(c, norm("attention_norm1", x), select(0, false));
++            h      = std::dynamic_pointer_cast<Attention>(blocks["attention"])->forward(ctx, h, h, pe);
++            x      = ggml_add(c, x, ggml_mul(c, norm("attention_norm2", h), select(1, true)));
++            if (injection) {
++                h = std::dynamic_pointer_cast<Attention>(blocks["cross_attention"])->forward(ctx, norm("cross_attn_norm1", x), text);
++                h = ggml_mul(c, norm("cross_attn_norm2", h), ggml_tanh(c, params["cross_attn_gate"]));
++                x = ggml_add(c, x, h);
++            }
++            h = modulate(c, norm("ffn_norm1", x), select(2, false));
++            h = std::dynamic_pointer_cast<FeedForward>(blocks["feed_forward"])->forward(ctx, h);
++            return ggml_add(c, x, ggml_mul(c, norm("ffn_norm2", h), select(3, true)));
++        }
++    };
++
++    struct Fibo2Model : public GGMLBlock {
++        Fibo2Config config;
++
++        Fibo2Model(const Fibo2Config& config)
++            : config(config) {
++            blocks["x_embedder"] = std::make_shared<Linear>(config.channels, config.dim);
++            blocks["t_embedder"] = std::make_shared<TimestepEmbedder>(1024, 256, std::min<int64_t>(config.dim, 256));
++            blocks["perceiver"]  = std::make_shared<Perceiver>(config);
++            for (int i = 0; i < config.refiner_depth; ++i) {
++                blocks["noise_refiner." + std::to_string(i)] = std::make_shared<TransformerBlock>(config, false);
++            }
++            for (int i = 0; i < config.depth; ++i) {
++                bool injection                        = std::find(config.injection_layers.begin(), config.injection_layers.end(), i) != config.injection_layers.end();
++                blocks["layers." + std::to_string(i)] = std::make_shared<TransformerBlock>(config, injection);
++            }
++            blocks["final_layer"] = std::make_shared<ZImage::FinalLayer>(config.dim, 1, config.channels);
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* t, ggml_tensor* text, ggml_tensor* pe, int gist_count, const std::vector<ggml_tensor*>& refs) {
++            auto c        = ctx->ggml_ctx;
++            int64_t width = x->ne[0], height = x->ne[1];
++            int image_count = static_cast<int>(width * height);
++            // The shared FLUX.2 VAE already packs (channel, dy, dx) into 128 channels.
++            auto tokens = [&](ggml_tensor* h) {
++                h = ggml_reshape_3d(c, h, h->ne[0] * h->ne[1], config.channels, 1);
++                return ggml_cont(c, ggml_permute(c, h, 1, 0, 2, 3));
++            };
++            x = tokens(x);
++            for (auto ref : refs) {
++                x = ggml_concat(c, x, tokens(ref), 1);
++            }
++            x             = std::dynamic_pointer_cast<Linear>(blocks["x_embedder"])->forward(ctx, x);
++            auto embedder = std::dynamic_pointer_cast<TimestepEmbedder>(blocks["t_embedder"]);
++            auto noisy    = embedder->forward(ctx, t);
++            auto clean    = embedder->forward(ctx, ggml_scale(c, t, 0.f));
++            auto image_pe = ggml_ext_slice(c, pe, 3, gist_count, pe->ne[3]);
++            for (int i = 0; i < config.refiner_depth; ++i) {
++                x = std::dynamic_pointer_cast<TransformerBlock>(blocks["noise_refiner." + std::to_string(i)])->forward(ctx, x, image_pe, noisy, clean, 0, image_count);
++                sd::ggml_graph_cut::mark_graph_cut(x, "fibo2.noise_refiner." + std::to_string(i), "x");
++            }
++            auto bundle      = [&](int i) { return ggml_ext_slice(c, text, 0, i * config.text_dim, (i + 1) * config.text_dim); };
++            auto gist        = std::dynamic_pointer_cast<Perceiver>(blocks["perceiver"])->forward(ctx, bundle(0), gist_count);
++            x                = ggml_concat(c, gist, x, 1);
++            int bundle_index = 1;
++            for (int i = 0; i < config.depth; ++i) {
++                auto block   = std::dynamic_pointer_cast<TransformerBlock>(blocks["layers." + std::to_string(i)]);
++                auto context = block->injection ? bundle(bundle_index++) : nullptr;
++                x            = block->forward(ctx, x, pe, noisy, clean, gist_count, image_count, context);
++                sd::ggml_graph_cut::mark_graph_cut(x, "fibo2.layers." + std::to_string(i), "x");
++            }
++            x = ggml_ext_slice(c, x, 1, gist_count, gist_count + image_count);
++            x = std::dynamic_pointer_cast<ZImage::FinalLayer>(blocks["final_layer"])->forward(ctx, x, noisy, nullptr);
++            x = ggml_cont(c, ggml_permute(c, x, 1, 0, 2, 3));
++            return ggml_reshape_4d(c, x, width, height, config.channels, 1);
++        }
++    };
++
++    struct Fibo2Runner : public DiffusionModelRunner {
++        Fibo2Config config;
++        Fibo2Model model;
++        std::vector<float> pe_values;
++
++        Fibo2Runner(ggml_backend_t backend, const String2TensorStorage& weights, const std::string& prefix, std::shared_ptr<RunnerWeightManager> weight_manager = nullptr)
++            : DiffusionModelRunner(backend, prefix, weight_manager),
++              config(Fibo2Config::detect_from_weights(weights, prefix)),
++              model(config) {
++            model.init(params_ctx, weights, prefix);
++        }
++
++        std::string get_desc() override { return "fibo2"; }
++
++        void get_param_tensors(std::map<std::string, ggml_tensor*>& tensors, const std::string& prefix) override {
++            model.get_param_tensors(tensors, prefix);
++        }
++
++        sd::Tensor<float> compute(int n_threads, const DiffusionParams& p) override {
++            if (!p.x || !p.timesteps || !p.context || p.context->shape()[0] != config.text_dim * 6) {
++                LOG_ERROR("Fibo 2.0 requires six text feature bundles");
++                return {};
++            }
++            auto build = [&]() {
++                auto graph = new_graph_custom(65536);
++                auto x     = make_input(*p.x);
++                GGML_ASSERT(x->ne[3] == 1 && x->ne[2] == config.channels);
++                int count = config.gist_count(static_cast<int>(p.context->shape()[1]));
++                // nightmare: upstream's Rope::Embedding is ids + values here (its positions and frequencies serve
++                // circular padding only, which Fibo does not use), so embed_nd's table is the same.
++                std::vector<std::vector<float>> rope_ids;
++                for (int i = 0; i < count; ++i) {
++                    rope_ids.push_back({static_cast<float>(i + 1), 0.f, 0.f});
++                }
++                auto append_image = [&](ggml_tensor* image, int plane) {
++                    auto ids = Rope::gen_flux_img_ids(static_cast<int>(image->ne[1]), static_cast<int>(image->ne[0]),
++                                                      1, 1, 3, plane, 0, 0, false);
++                    rope_ids.insert(rope_ids.end(), ids.begin(), ids.end());
++                };
++                append_image(x, static_cast<int>(config.max_gist + 1));
++                std::vector<ggml_tensor*> refs;
++                if (p.ref_latents && p.ref_image_params.pass_to_dit) {
++                    for (const auto& ref : *p.ref_latents) {
++                        refs.push_back(make_input(ref));
++                        append_image(refs.back(), static_cast<int>(config.max_gist + 1 + refs.size()));
++                    }
++                }
++                pe_values = Rope::embed_nd(rope_ids, 1, 256.f, {32, 48, 48});
++                auto pe          = ggml_new_tensor_4d(compute_ctx, GGML_TYPE_F32, 2, 2, 64, static_cast<int64_t>(pe_values.size() / 256));
++                set_backend_tensor_data(pe, pe_values.data());
++                auto ctx = get_context();
++                auto out = model.forward(&ctx, x, make_input(*p.timesteps), make_input(*p.context), pe, count, refs);
++                ggml_build_forward_expand(graph, out);
++                return graph;
++            };
++            return restore_trailing_singleton_dims(GGMLRunner::compute(build, n_threads, false), p.x->dim());
++        }
++    };
++}
++
++#endif  // __SD_MODEL_DIFFUSION_FIBO2_HPP__
+diff --git a/src/model/diffusion/model.hpp b/src/model/diffusion/model.hpp
+index e3c5a0c..aea480c 100644
+--- a/src/model/diffusion/model.hpp
++++ b/src/model/diffusion/model.hpp
+@@ -27,9 +27,25 @@ struct RefImageParams {
+     int vlm_min_size                   = -1;
+     int vlm_max_size                   = -1;
+     bool resize_vae_to_target          = false;
++    bool resize_single_ref_to_target   = false;
++    bool vae_size_buckets              = false;
++    bool vae_center_crop               = false;
++    bool vlm_use_vae_input             = false;
+ };
+ 
+ const std::unordered_map<std::string, RefImageParams> REF_IMAGE_PRESETS = {
++    {"fibo2", [] {
++         RefImageParams params;
++         params.pass_to_vlm                 = true;
++         params.ref_index_mode              = Rope::RefIndexMode::INCREASE;
++         params.vlm_resize_mode             = RefImageResizeMode::LONGEST_SIDE;
++         params.vlm_max_size                = 768;
++         params.resize_single_ref_to_target = true;
++         params.vae_size_buckets            = true;
++         params.vae_center_crop             = true;
++         params.vlm_use_vae_input           = true;
++         return params;
++     }()},
+     {"flux_kontext", {false, true, Rope::RefIndexMode::FIXED, false, true, -1, RefImageResizeMode::NONE, -1, -1}},
+     {"longcat", {true, true, Rope::RefIndexMode::FIXED, false, true, -1, RefImageResizeMode::AREA, -1, -1}},
+     {"flux2", {false, true, Rope::RefIndexMode::INCREASE, false, true, -1, RefImageResizeMode::NONE, -1, -1}},
+diff --git a/src/model_loader.cpp b/src/model_loader.cpp
+index 0c85d12..05e8fdc 100644
+--- a/src/model_loader.cpp
++++ b/src/model_loader.cpp
+@@ -416,6 +416,10 @@ bool ModelLoader::init_from_diffusers_file(const std::string& file_path, const s
+ SDVersion ModelLoader::get_sd_version() const {
+     TensorStorage token_embedding_weight, input_block_weight, context_ebedding_weight;
+ 
++    if (tensor_storage_map.count("model.diffusion_model.perceiver.latent_queries")) {
++        return VERSION_FIBO2;
++    }
++
+     if (tensor_storage_map.find("model.diffusion_model.emb_in.image.weight") != tensor_storage_map.end() &&
+         tensor_storage_map.find("model.diffusion_model.txt_mode_blocks.0.q_proj.weight") != tensor_storage_map.end()) {
+         return VERSION_FLUX3;
+diff --git a/src/name_conversion.cpp b/src/name_conversion.cpp
+index 1a79c3c..761d26a 100644
+--- a/src/name_conversion.cpp
++++ b/src/name_conversion.cpp
+@@ -177,6 +177,11 @@ std::string convert_cond_stage_model_name(std::string name, std::string prefix)
+             replace_with_name_map(name, llm_vision_name_map);
+         } else {
+             replace_with_name_map(name, llm_name_map);
++            // FIBO 2 (upstream #2180): a Qwen3-VL text tower saved under language_model.
++            const std::string language_prefix = "llm.model.language_model.";
++            if (starts_with(name, language_prefix)) {
++                name = "llm.model." + name.substr(language_prefix.size());
++            }
+         }
+     } else {
+         name = convert_open_clip_to_hf_clip_name(name);
+@@ -883,7 +888,22 @@ static bool is_diffusers_controlnet_name(const std::string& name) {
+     return false;
+ }
+ 
++static std::string convert_fibo2_dit_name(std::string name) {
++    static const std::vector<std::pair<std::string, std::string>> name_map = {
++        {".attention.q_norm.", ".attention.norm_q."},
++        {".attention.k_norm.", ".attention.norm_k."},
++        {".attention.out.", ".attention.to_out.0."},
++        {".cross_attention.to_out.weight", ".cross_attention.to_out.0.weight"},
++        {".self_attention.to_out.weight", ".self_attention.to_out.0.weight"},
++    };
++    replace_with_name_map(name, name_map);
++    return name;
++}
++
+ std::string convert_diffusion_model_name(std::string name, std::string prefix, SDVersion version) {
++    if (version == VERSION_FIBO2) {
++        return convert_fibo2_dit_name(name);
++    }
+     if (sd_version_is_sd1(version) || sd_version_is_sd2(version)) {
+         name = convert_diffusers_unet_to_original_sd1(name);
+     } else if (sd_version_is_sdxl(version)) {
+@@ -1539,7 +1559,7 @@ std::string convert_tensor_name(std::string name, SDVersion version) {
+         }
+     }
+ 
+-    if (version == VERSION_QWEN_IMAGE_2_1 || sd_version_is_boogu_image(version) || sd_version_is_krea2(version) || sd_version_is_mage_flow(version) || sd_version_is_minimax_h3(version)) {
++    if (version == VERSION_FIBO2 || version == VERSION_QWEN_IMAGE_2_1 || sd_version_is_boogu_image(version) || sd_version_is_krea2(version) || sd_version_is_mage_flow(version) || sd_version_is_minimax_h3(version)) {
+         const std::string hf_vision_prefix = "text_encoders.llm.model.visual.";
+         if (starts_with(name, hf_vision_prefix)) {
+             name = "text_encoders.llm.visual." + name.substr(hf_vision_prefix.size());
+diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
+index 324a192..125f554 100644
+--- a/src/pipeline/diffusion_engine.cpp
++++ b/src/pipeline/diffusion_engine.cpp
+@@ -101,6 +101,7 @@ const char* model_version_to_str[] = {
+     "Iris-3B",
+     "MOSS-Image",
+     "Flux.3 Image Klein",
++    "Fibo-2.0",
+ };
+ 
+ static_assert(VERSION_COUNT == sizeof(model_version_to_str) / sizeof(model_version_to_str[0]),
+@@ -1266,7 +1267,8 @@ bool StableDiffusionGGML::build_denoiser() {
+                    sd_version_is_pid(version) ||
+                    sd_version_is_ideogram4(version) ||
+                    version == VERSION_IRIS ||
+-                   version == VERSION_MOSS_IMAGE) {
++                   version == VERSION_MOSS_IMAGE ||
++                   version == VERSION_FIBO2) {
+             pred_type = FLOW_PRED;
+             if (sd_version_is_wan(version) || version == VERSION_MOSS_IMAGE) {
+                 default_flow_shift = 5.f;
+@@ -2723,7 +2725,9 @@ bool StableDiffusionGGML::is_flow_denoiser() {
+ }
+ 
+ std::string StableDiffusionGGML::get_default_ref_image_preset(SDVersion version) const {
+-    if (sd_version_is_longcat(version)) {
++    if (version == VERSION_FIBO2) {
++        return "fibo2";
++    } else if (sd_version_is_longcat(version)) {
+         return "longcat";
+     } else if (sd_version_is_flux(version)) {
+         return "flux_kontext";
+@@ -2775,6 +2779,9 @@ RefImageParams StableDiffusionGGML::resolve_ref_image_params(const char* ref_ima
+         LOG_INFO("Using '%s' preset for reference images", preset_name.c_str());
+         params = REF_IMAGE_PRESETS.at(preset_name);
+     }
++    if (version == VERSION_QWEN_IMAGE_2_1) {
++        params.vlm_use_vae_input = true;
++    }
+ 
+     for (const auto& [key, value] : parse_key_value_args(ref_image_args, "reference image args")) {
+         if (key == "pass_to_vlm") {
+@@ -2803,6 +2810,26 @@ RefImageParams StableDiffusionGGML::resolve_ref_image_params(const char* ref_ima
+             if (!parse_strict_bool(value, params.resize_before_vae)) {
+                 LOG_WARN("ignoring invalid reference image arg '%s=%s'", key.c_str(), value.c_str());
+             }
++        } else if (key == "resize_vae_to_target") {
++            if (!parse_strict_bool(value, params.resize_vae_to_target)) {
++                LOG_WARN("ignoring invalid reference image arg '%s=%s'", key.c_str(), value.c_str());
++            }
++        } else if (key == "resize_single_ref_to_target") {
++            if (!parse_strict_bool(value, params.resize_single_ref_to_target)) {
++                LOG_WARN("ignoring invalid reference image arg '%s=%s'", key.c_str(), value.c_str());
++            }
++        } else if (key == "vae_size_buckets") {
++            if (!parse_strict_bool(value, params.vae_size_buckets)) {
++                LOG_WARN("ignoring invalid reference image arg '%s=%s'", key.c_str(), value.c_str());
++            }
++        } else if (key == "vae_center_crop") {
++            if (!parse_strict_bool(value, params.vae_center_crop)) {
++                LOG_WARN("ignoring invalid reference image arg '%s=%s'", key.c_str(), value.c_str());
++            }
++        } else if (key == "vlm_use_vae_input") {
++            if (!parse_strict_bool(value, params.vlm_use_vae_input)) {
++                LOG_WARN("ignoring invalid reference image arg '%s=%s'", key.c_str(), value.c_str());
++            }
+         } else if (key == "vae_input_max_pixels") {
+             if (!parse_strict_int(value, params.vae_input_max_pixels)) {
+                 LOG_WARN("ignoring invalid reference image arg '%s=%s'", key.c_str(), value.c_str());
+diff --git a/src/pipeline/image.cpp b/src/pipeline/image.cpp
+index c9e1ff1..a0b36b5 100644
+--- a/src/pipeline/image.cpp
++++ b/src/pipeline/image.cpp
+@@ -10,6 +10,7 @@
+ #include "model/vae/vae.hpp"
+ #include "request.h"
+ #include "runtime/denoiser.hpp"
++#include "runtime/image_buckets.hpp"
+ #include "upscaler.h"
+ 
+ namespace sd::pipeline {
+@@ -281,26 +282,34 @@ namespace sd::pipeline {
+                 LOG_VERBOSE("auto resize ref images");
+                 double vae_width;
+                 double vae_height;
+-                if (ref_image_params.resize_vae_to_target) {
++                int factor = sd_version_is_qwen_image(sd->version) ? 32 : 16;
++                if (ref_image_params.resize_vae_to_target || (ref_image_params.resize_single_ref_to_target && ref_images.size() == 1)) {
+                     vae_width  = request->width;
+                     vae_height = request->height;
+                 } else {
+                     int default_pixels = sd->version == VERSION_QWEN_IMAGE_2_1 ? request->width * request->height : 1024 * 1024;
+                     int target_pixels  = ref_image_params.vae_input_max_pixels > 0 ? ref_image_params.vae_input_max_pixels : default_pixels;
+-                    int vae_image_size = std::min(target_pixels, request->width * request->height);
+-                    vae_width          = sqrt(vae_image_size * ref_images[i].shape()[0] / ref_images[i].shape()[1]);
+-                    vae_height         = vae_width * ref_images[i].shape()[1] / ref_images[i].shape()[0];
++                    if (ref_image_params.vae_size_buckets) {
++                        auto size  = sd::select_image_size_bucket(static_cast<int>(ref_images[i].shape()[0]), static_cast<int>(ref_images[i].shape()[1]), target_pixels, factor, request->width, request->height);
++                        vae_width  = size.first;
++                        vae_height = size.second;
++                    } else {
++                        int vae_image_size = std::min(target_pixels, request->width * request->height);
++                        vae_width          = sqrt(vae_image_size * ref_images[i].shape()[0] / ref_images[i].shape()[1]);
++                        vae_height         = vae_width * ref_images[i].shape()[1] / ref_images[i].shape()[0];
++                    }
+                 }
+ 
+-                int factor = sd_version_is_qwen_image(sd->version) ? 32 : 16;
+                 vae_height = round(vae_height / factor) * factor;
+                 vae_width  = round(vae_width / factor) * factor;
+ 
+-                auto resized_ref_img = sd::ops::interpolate(ref_images[i],
+-                                                            {static_cast<int>(vae_width),
+-                                                             static_cast<int>(vae_height),
+-                                                             ref_images[i].shape()[2],
+-                                                             ref_images[i].shape()[3]});
++                auto resized_ref_img = ref_image_params.vae_center_crop
++                                           ? sd::resize_and_center_crop(ref_images[i], static_cast<int>(vae_width), static_cast<int>(vae_height))
++                                           : sd::ops::interpolate(ref_images[i],
++                                                                  {static_cast<int>(vae_width),
++                                                                   static_cast<int>(vae_height),
++                                                                   ref_images[i].shape()[2],
++                                                                   ref_images[i].shape()[3]});
+ 
+                 LOG_VERBOSE("resize vae ref image %d from %" PRId64 "x%" PRId64 " to %" PRId64 "x%" PRId64,
+                             static_cast<int>(i),
+@@ -310,7 +319,7 @@ namespace sd::pipeline {
+                             resized_ref_img.shape()[0]);
+ 
+                 ref_latent = sd->encode_first_stage(resized_ref_img);
+-                if (sd->version == VERSION_QWEN_IMAGE_2_1) {
++                if (ref_image_params.vlm_use_vae_input) {
+                     ref_images[i] = std::move(resized_ref_img);
+                 }
+             } else {
+@@ -468,6 +477,10 @@ namespace sd::pipeline {
+                 }
+                 condition_params.text            = request->negative_prompt;
+                 condition_params.zero_out_masked = zero_out_masked;
++                if (sd->version == VERSION_FIBO2) {
++                    // Fibo 2.0 (upstream #2180): keep source latents in CFG, but omit source images from the text encoder.
++                    condition_params.ref_images = nullptr;
++                }
+                 uncond                           = sd->cond_stage_model->get_learned_condition(sd->n_threads,
+                                                                                                condition_params);
+             }
+diff --git a/src/pipeline/model_builders.cpp b/src/pipeline/model_builders.cpp
+index 01f371a..143c980 100644
+--- a/src/pipeline/model_builders.cpp
++++ b/src/pipeline/model_builders.cpp
+@@ -4,6 +4,7 @@
+ #include <utility>
+ 
+ #include "conditioning/conditioner.hpp"
++#include "conditioning/fibo2.hpp"
+ #include "core/ggml_extend_backend.h"
+ #include "core/util.h"
+ #include "extensions/generation_extension.h"
+@@ -12,6 +13,7 @@
+ #include "model/diffusion/boogu.hpp"
+ #include "model/diffusion/control.hpp"
+ #include "model/diffusion/ernie_image.hpp"
++#include "model/diffusion/fibo2.hpp"
+ #include "model/diffusion/flux.hpp"
+ #include "model/diffusion/flux3.hpp"
+ #include "model/diffusion/hidream_o1.hpp"
+@@ -86,7 +88,12 @@ namespace sd::model_builders {
+             return false;
+         }
+ 
+-        if (sd_version_is_sd3(version)) {
++        if (version == VERSION_FIBO2) {
++            result.conditioner = std::make_shared<Fibo2Conditioner>(ctx.backends.runtime_backend(SDBackendModule::TE),
++                                                                    tensor_storage_map, weight_manager);
++            result.diffusion   = std::make_shared<Fibo2::Fibo2Runner>(ctx.backends.runtime_backend(SDBackendModule::DIFFUSION),
++                                                                    tensor_storage_map, "model.diffusion_model", weight_manager);
++        } else if (sd_version_is_sd3(version)) {
+             result.conditioner = std::make_shared<SD3CLIPEmbedder>(ctx.backends.runtime_backend(SDBackendModule::TE),
+                                                                    tensor_storage_map,
+                                                                    weight_manager);
+diff --git a/src/pipeline/request.cpp b/src/pipeline/request.cpp
+index fffab3b..0a4473e 100644
+--- a/src/pipeline/request.cpp
++++ b/src/pipeline/request.cpp
+@@ -65,7 +65,7 @@ namespace sd::pipeline {
+             return LCM_SCHEDULER;
+         } else if (sample_method == DDIM_TRAILING_SAMPLE_METHOD) {
+             return SIMPLE_SCHEDULER;
+-        } else if (sd != nullptr && (sd_version_is_flux(sd->version) || sd->version == VERSION_QWEN_IMAGE_2_1)) {
++        } else if (sd != nullptr && (sd_version_is_flux(sd->version) || sd->version == VERSION_QWEN_IMAGE_2_1 || sd->version == VERSION_FIBO2)) {
+             return FLUX_SCHEDULER;
+         } else if (sd != nullptr && sd_version_is_flux2(sd->version)) {
+             return FLUX2_SCHEDULER;
+diff --git a/src/runtime/image_buckets.hpp b/src/runtime/image_buckets.hpp
+new file mode 100644
+index 0000000..257d206
+--- /dev/null
++++ b/src/runtime/image_buckets.hpp
+@@ -0,0 +1,55 @@
++#ifndef __SD_RUNTIME_IMAGE_BUCKETS_HPP__
++#define __SD_RUNTIME_IMAGE_BUCKETS_HPP__
++
++// nightmare: upstream #2180 (Fibo 2.0) adds these to runtime/image_preprocess.cpp, a file this
++// fork does not have yet. Same code, kept header-only.
++
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <cstdlib>
++#include <utility>
++
++#include "core/tensor.hpp"
++
++namespace sd {
++
++    inline std::pair<int, int> select_image_size_bucket(int source_width, int source_height, int area, int factor, int fallback_width, int fallback_height) {
++        int width               = fallback_width;
++        int height              = fallback_height;
++        double ratio            = static_cast<double>(source_width) / source_height;
++        double best_crop        = INFINITY;
++        int64_t best_area_error = INT64_MAX;
++        int min_size            = 4 * factor;
++        for (int w = min_size; w < 2LL * area / min_size; w += factor) {
++            for (int h = min_size; h < 2LL * area / w; h += factor) {
++                int64_t pixels = int64_t(w) * h;
++                if (pixels < 0.9 * area || pixels > 1.1 * area) {
++                    continue;
++                }
++                double candidate_ratio = static_cast<double>(w) / h;
++                double crop            = std::round((1.0 - std::min(candidate_ratio / ratio, ratio / candidate_ratio)) * 1e9);
++                int64_t area_error     = std::llabs(pixels - area);
++                if (crop < best_crop || (crop == best_crop && (area_error < best_area_error || (area_error == best_area_error && w > width)))) {
++                    width           = w;
++                    height          = h;
++                    best_crop       = crop;
++                    best_area_error = area_error;
++                }
++            }
++        }
++        return {width, height};
++    }
++
++    inline Tensor<float> resize_and_center_crop(const Tensor<float>& image, int width, int height, ops::InterpolateMode filter = ops::InterpolateMode::Lanczos) {
++        double scale = std::max(static_cast<double>(width) / image.shape()[0], static_cast<double>(height) / image.shape()[1]);
++        int w        = static_cast<int>(std::ceil(image.shape()[0] * scale));
++        int h        = static_cast<int>(std::ceil(image.shape()[1] * scale));
++        auto resized = ops::interpolate(image, {w, h, image.shape()[2], image.shape()[3]}, filter);
++        resized      = ops::slice(resized, 0, (w - width) / 2, (w - width) / 2 + width);
++        return ops::slice(resized, 1, (h - height) / 2, (h - height) / 2 + height);
++    }
++
++}  // namespace sd
++
++#endif  // __SD_RUNTIME_IMAGE_BUCKETS_HPP__
