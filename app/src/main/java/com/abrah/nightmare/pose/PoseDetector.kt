@@ -144,6 +144,19 @@ object PoseDetector {
     }
 
     /**
+     * ⭐ The largest person's box in [frame] (x0, y0, x1, y1 px), or null when nobody is found or the detector is
+     * not installed ([PoseModel.mainBox]). ⚠ Blocking (~50-100 ms).
+     */
+    fun mainBox(context: Context, frame: Bitmap): FloatArray? {
+        idle.begin()
+        try {
+            return model(context)?.mainBox(frame)
+        } finally {
+            idle.end()
+        }
+    }
+
+    /**
      * ⭐ Is [source] ALREADY a pose hint? A skeleton is drawn on black in
      * saturated colours: DreamUI's test (at least half the samples dark) plus a
      * second one of ours — most of what is NOT dark must be strongly coloured,

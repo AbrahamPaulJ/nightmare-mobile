@@ -1937,7 +1937,8 @@ internal fun NodeInspectorBody(
             val caps = remember { com.abrah.nightmare.DeviceProbe.caps() }
             if (caps.known && type != null) {
                 val p = type.effectiveParams(node)
-                val frames = wan.framesOf(node, p)
+                // ⚠ One PASS: Motion transfer makes a long window as parts ([com.abrah.nightmare.npu.WanVideoNode.passFrames]).
+                val frames = wan.passFrames(node, p)
                 val loras = if (node.type == com.abrah.nightmare.npu.WanFunNode.name) 0
                     else com.abrah.nightmare.LoraSpec.parse(p[com.abrah.nightmare.SdSampler.LORAS]).size
                 val size = "${shown.first}x${shown.second}"

@@ -1,0 +1,954 @@
+diff --git a/examples/cli/main.cpp b/examples/cli/main.cpp
+index 22b26da..25f4968 100644
+--- a/examples/cli/main.cpp
++++ b/examples/cli/main.cpp
+@@ -892,6 +892,25 @@ int main(int argc, const char* argv[]) {
+         }
+     }
+ 
++    // nightmare (dit/054): Wan Animate's frame directories (face crops at 512x512, the rest at the clip size)
++    struct AnimateDir {
++        const std::string& path;
++        std::vector<SDImageOwner>& frames;
++        int w, h, max;
++    };
++    const int clip_w = gen_params.get_resolved_width(), clip_h = gen_params.get_resolved_height();
++    for (const AnimateDir& d : {AnimateDir{gen_params.face_video_path, gen_params.face_frames, 512, 512, gen_params.video_frames},
++                                AnimateDir{gen_params.motion_frames_path, gen_params.motion_frames, clip_w, clip_h, 5},
++                                AnimateDir{gen_params.bg_video_path, gen_params.bg_frames, clip_w, clip_h, gen_params.video_frames},
++                                AnimateDir{gen_params.mask_video_path, gen_params.mask_frames, clip_w, clip_h, gen_params.video_frames}}) {
++        if (!d.path.empty()) {
++            d.frames.clear();
++            if (!load_images_from_dir(d.path, d.frames, d.w, d.h, d.max)) {
++                return 1;
++            }
++        }
++    }
++
+     if (!gen_params.pm_id_images_dir.empty()) {
+         gen_params.pm_id_images.clear();
+         if (!load_images_from_dir(gen_params.pm_id_images_dir,
+diff --git a/examples/common/common.cpp b/examples/common/common.cpp
+index dee151b..630d580 100644
+--- a/examples/common/common.cpp
++++ b/examples/common/common.cpp
+@@ -1036,6 +1036,26 @@ ArgOptions SDGenerationParams::get_options() {
+          "such as 00.png, 01.png, ... etc.",
+          0,
+          &control_video_path},
++        {"",
++         "--face-video",
++         "Wan Animate: directory of 512x512 face crops of the driving video, one per frame",
++         0,
++         &face_video_path},
++        {"",
++         "--motion-frames",
++         "Wan Animate: directory of the previous segment's last 1 or 5 frames (continuation)",
++         0,
++         &motion_frames_path},
++        {"",
++         "--bg-video",
++         "Wan Animate replacement: directory of background frames",
++         0,
++         &bg_video_path},
++        {"",
++         "--mask-video",
++         "Wan Animate replacement: directory of person masks (white = person)",
++         0,
++         &mask_video_path},
+         {"",
+          "--pm-id-images-dir",
+          "path to PHOTOMAKER input id images dir",
+@@ -2663,6 +2683,18 @@ sd_vid_gen_params_t SDGenerationParams::to_sd_vid_gen_params_t() {
+         lora_vec.push_back({true, kv.second, kv.first.c_str()});
+     }
+ 
++    auto views_of = [](std::vector<SDImageOwner>& frames, std::vector<sd_image_t>& views) {
++        views.clear();
++        views.reserve(frames.size());
++        for (auto& frame : frames) {
++            views.push_back(frame.get());
++        }
++    };
++    views_of(face_frames, face_frame_views);
++    views_of(motion_frames, motion_frame_views);
++    views_of(bg_frames, bg_frame_views);
++    views_of(mask_frames, mask_frame_views);
++
+     control_frame_views.clear();
+     control_frame_views.reserve(control_frames.size());
+     for (auto& frame : control_frames) {
+@@ -2724,6 +2756,14 @@ sd_vid_gen_params_t SDGenerationParams::to_sd_vid_gen_params_t() {
+     params.ref_audios_count          = static_cast<int>(ref_audio_views.size());
+     params.control_frames            = control_frame_views.empty() ? nullptr : control_frame_views.data();
+     params.control_frames_size       = static_cast<int>(control_frame_views.size());
++    params.face_frames               = face_frame_views.empty() ? nullptr : face_frame_views.data();
++    params.face_frames_count         = static_cast<int>(face_frame_views.size());
++    params.motion_frames             = motion_frame_views.empty() ? nullptr : motion_frame_views.data();
++    params.motion_frames_count       = static_cast<int>(motion_frame_views.size());
++    params.bg_frames                 = bg_frame_views.empty() ? nullptr : bg_frame_views.data();
++    params.bg_frames_count           = static_cast<int>(bg_frame_views.size());
++    params.mask_frames               = mask_frame_views.empty() ? nullptr : mask_frame_views.data();
++    params.mask_frames_count         = static_cast<int>(mask_frame_views.size());
+     params.width                     = get_resolved_width();
+     params.height                    = get_resolved_height();
+     params.sample_params             = sample_params;
+diff --git a/examples/common/common.h b/examples/common/common.h
+index ef084df..704629f 100644
+--- a/examples/common/common.h
++++ b/examples/common/common.h
+@@ -218,6 +218,11 @@ struct SDGenerationParams {
+     std::vector<std::string> ref_video_audio_paths;
+     std::vector<std::string> ref_audio_paths;
+     std::string control_video_path;
++    // nightmare (dit/054): Wan 2.2 Animate inputs, each a directory of frames like --control-video.
++    std::string face_video_path;
++    std::string motion_frames_path;
++    std::string bg_video_path;
++    std::string mask_video_path;
+ 
+     sd_sample_params_t sample_params;
+     sd_sample_params_t high_noise_sample_params;
+@@ -288,6 +293,10 @@ struct SDGenerationParams {
+     SDImageOwner ip_adapter_image;
+     std::vector<SDImageOwner> pm_id_images;
+     std::vector<SDImageOwner> control_frames;
++    std::vector<SDImageOwner> face_frames;
++    std::vector<SDImageOwner> motion_frames;
++    std::vector<SDImageOwner> bg_frames;
++    std::vector<SDImageOwner> mask_frames;
+ 
+     // Backing storage for sd_img_gen_params_t view fields.
+     std::vector<sd_image_t> ref_image_views;
+@@ -296,6 +305,10 @@ struct SDGenerationParams {
+     std::vector<sd_audio_t> ref_audio_views;
+     std::vector<sd_image_t> pm_id_image_views;
+     std::vector<sd_image_t> control_frame_views;
++    std::vector<sd_image_t> face_frame_views;
++    std::vector<sd_image_t> motion_frame_views;
++    std::vector<sd_image_t> bg_frame_views;
++    std::vector<sd_image_t> mask_frame_views;
+ 
+     SDGenerationParams();
+     SDGenerationParams(const SDGenerationParams& other)                = default;
+diff --git a/include/stable-diffusion.h b/include/stable-diffusion.h
+index e24b84d..2e10381 100644
+--- a/include/stable-diffusion.h
++++ b/include/stable-diffusion.h
+@@ -436,6 +436,15 @@ typedef struct {
+     sd_hires_params_t hires;
+     bool circular_x;
+     bool circular_y;
++    // nightmare (dit/054): Wan 2.2 Animate. control_frames is the pose video, ref_images[0] the character.
++    sd_image_t* face_frames;  // 512x512 face crops of the driving video, one per output frame
++    int face_frames_count;
++    sd_image_t* motion_frames;  // the previous segment's last 1 or 5 frames (refert_num); none on the first
++    int motion_frames_count;
++    sd_image_t* bg_frames;  // replacement: the driving video with the person cut out
++    int bg_frames_count;
++    sd_image_t* mask_frames;  // replacement: the person's mask (white = person), one per frame
++    int mask_frames_count;
+ } sd_vid_gen_params_t;
+ 
+ typedef struct sd_ctx_t sd_ctx_t;
+diff --git a/src/model/common/ggml_block.hpp b/src/model/common/ggml_block.hpp
+index a7c48c0..a5ef454 100644
+--- a/src/model/common/ggml_block.hpp
++++ b/src/model/common/ggml_block.hpp
+@@ -59,6 +59,15 @@ public:
+         init_blocks(ctx, tensor_storage_map, prefix);
+     }
+ 
++    // nightmare (dit/054): every sub-block, depth first, with its dotted name.
++    template <typename F>
++    void for_each_block(F&& f, const std::string& prefix = "") {
++        for (auto& pair : blocks) {
++            f(prefix + pair.first, pair.second.get());
++            pair.second->for_each_block(f, prefix + pair.first + ".");
++        }
++    }
++
+     size_t get_params_num() {
+         size_t num_tensors = params.size();
+         for (auto& pair : blocks) {
+diff --git a/src/model/diffusion/model.hpp b/src/model/diffusion/model.hpp
+index e3c5a0c..cc32fdd 100644
+--- a/src/model/diffusion/model.hpp
++++ b/src/model/diffusion/model.hpp
+@@ -192,6 +192,16 @@ public:
+ 
+     // Wan 2.2 Fun 5B Control: takes 100 conditioning channels (c_concat) and a reference latent.
+     virtual bool wan_fun_control() const { return false; }
++
++    // Wan 2.2 Animate (dit/054): pose latents ride in vace_context; the face tokens of the segment are
++    // made once (wan_animate_face_tokens) and held by the runner for every step (set_wan_animate_face).
++    virtual bool wan_animate() const { return false; }
++    virtual void set_wan_animate_face(sd::Tensor<float> face_tokens) { (void)face_tokens; }
++    virtual sd::Tensor<float> wan_animate_face_tokens(int n_threads, const sd::Tensor<float>& faces) {
++        (void)n_threads;
++        (void)faces;
++        return {};
++    }
+ };
+ 
+ #endif  // __SD_MODEL_DIFFUSION_MODEL_HPP__
+diff --git a/src/model/diffusion/wan.hpp b/src/model/diffusion/wan.hpp
+index 7eeb3a9..4378eb6 100644
+--- a/src/model/diffusion/wan.hpp
++++ b/src/model/diffusion/wan.hpp
+@@ -43,6 +43,7 @@ namespace WAN {
+         int64_t patch_embedding_ne3            = 0;      // in_dim * dim, as the loader folds it
+         bool add_ref_conv                      = false;  // Wan 2.2 Fun Control's reference image conv
+         int64_t in_dim_ref_conv                = 48;
++        bool animate                           = false;  // Wan 2.2 Animate 14B (dit/054)
+         int theta                              = 10000;
+         // wan2.1 1.3B: 1536/12, wan2.1/2.2 14B: 5120/40, wan2.2 5B: 3074/24
+         std::vector<int> axes_dim = {44, 42, 42};
+@@ -55,6 +56,17 @@ namespace WAN {
+                 if (!starts_with(name, prefix)) {
+                     continue;
+                 }
++                // Wan 2.2 Animate (dit/054): its own modules hold "blocks." names (face_adapter.fuser_blocks)
++                // and a second patch embedding, so they are flagged and skipped before the checks below.
++                if (name.find(".pose_patch_embedding.") != std::string::npos) {
++                    config.animate = true;
++                    continue;
++                }
++                if (name.find(".face_adapter.") != std::string::npos ||
++                    name.find(".face_encoder.") != std::string::npos ||
++                    name.find(".motion_encoder.") != std::string::npos) {
++                    continue;
++                }
+                 if (ends_with(name, "patch_embedding.weight")) {
+                     config.patch_embedding_ne3 = storage.ne[3];
+                 }
+@@ -363,7 +375,10 @@ namespace WAN {
+             auto img_x = ggml_ext_attention_ext(ctx->ggml_ctx, ctx->backend, q, k_img, v_img, num_heads, nullptr, false, ctx->flash_attn_enabled);  // [N, n_token, dim]
+             x          = ggml_ext_attention_ext(ctx->ggml_ctx, ctx->backend, q, k, v, num_heads, nullptr, false, ctx->flash_attn_enabled);          // [N, n_token, dim]
+ 
+-            x = ggml_add(ctx->ggml_ctx, x, img_x);
++            static const bool no_img = getenv("NM_WAN_I2V_NO_IMG") != nullptr;  // dit/054 diagnostic
++            if (!no_img) {
++                x = ggml_add(ctx->ggml_ctx, x, img_x);
++            }
+ 
+             x = o_proj->forward(ctx, x);  // [N, n_token, dim]
+             return x;
+@@ -763,11 +778,273 @@ namespace WAN {
+         }
+     };
+ 
++    // nightmare (dit/054): Wan 2.2 Animate 14B (Wan2.2 wan/modules/animate). Wan 2.1 I2V 14B plus a pose
++    // patch embedding (added to every latent frame but the reference's, slot 0), a face path run ONCE a
++    // segment (WanRunner::animate_face_tokens: LIA motion encoder on 512x512 face crops, then a causal
++    // conv1d face encoder, 5 tokens a latent frame) and 8 face adapter blocks after blocks 0, 5, ..., 35.
++
++    // LIA's EqualConv2d: the weight scaled by 1/sqrt(fan_in) at run time, bias after the scale.
++    class AnimateEqualConv2d : public GGMLBlock {
++    protected:
++        int64_t in_channels, out_channels;
++        int kernel;
++        bool bias;
++        void init_params(ggml_context* ctx, const String2TensorStorage& tensor_storage_map = {}, const std::string prefix = "") override {
++            params["weight"] = ggml_new_tensor_4d(ctx, get_type(prefix + "weight", tensor_storage_map, GGML_TYPE_F32),
++                                                  kernel, kernel, in_channels, out_channels);
++            if (bias) {
++                params["bias"] = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_channels);
++            }
++        }
++
++    public:
++        AnimateEqualConv2d(int64_t in_channels, int64_t out_channels, int kernel, bool bias)
++            : in_channels(in_channels), out_channels(out_channels), kernel(kernel), bias(bias) {}
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, int stride, int pad) {
++            auto y = ggml_ext_conv_2d(ctx->ggml_ctx, x, params["weight"], nullptr, stride, stride, pad, pad, 1, 1,
++                                      ctx->conv2d_direct_enabled);
++            y      = ggml_scale(ctx->ggml_ctx, y, 1.f / std::sqrt((float)(in_channels * kernel * kernel)));
++            if (bias) {
++                y = ggml_add(ctx->ggml_ctx, y, ggml_reshape_4d(ctx->ggml_ctx, params["bias"], 1, 1, out_channels, 1));
++            }
++            return y;
++        }
++    };
++
++    // FusedLeakyReLU: leaky_relu(x + bias, 0.2) * sqrt(2); the bias is stored [1, C, 1, 1].
++    class AnimateFusedBias : public GGMLBlock {
++    protected:
++        int64_t channels;
++        void init_params(ggml_context* ctx, const String2TensorStorage& tensor_storage_map = {}, const std::string prefix = "") override {
++            params["bias"] = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 1, 1, channels, 1);
++        }
++
++    public:
++        AnimateFusedBias(int64_t channels)
++            : channels(channels) {}
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) {
++            x = ggml_leaky_relu(ctx->ggml_ctx, ggml_add(ctx->ggml_ctx, x, params["bias"]), 0.2f, false);
++            return ggml_scale(ctx->ggml_ctx, x, std::sqrt(2.f));
++        }
++    };
++
++    // upfirdn2d with up = down = 1: the stored 4x4 kernel (outer([1,3,3,1]) / 64, symmetric) on every channel.
++    class AnimateBlur : public GGMLBlock {
++    protected:
++        void init_params(ggml_context* ctx, const String2TensorStorage& tensor_storage_map = {}, const std::string prefix = "") override {
++            params["kernel"] = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 4, 4);
++        }
++
++    public:
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, int pad) {
++            auto k = ggml_reshape_4d(ctx->ggml_ctx, params["kernel"], 4, 4, 1, 1);
++            k      = ggml_repeat_4d(ctx->ggml_ctx, k, 4, 4, 1, x->ne[2]);
++            return ggml_conv_2d_dw_direct(ctx->ggml_ctx, k, x, 1, 1, pad, pad, 1, 1);
++        }
++    };
++
++    class AnimateResBlock : public GGMLBlock {
++    public:
++        AnimateResBlock(int64_t in_channels, int64_t out_channels) {
++            blocks["conv1.0"] = std::make_shared<AnimateEqualConv2d>(in_channels, in_channels, 3, false);
++            blocks["conv1.1"] = std::make_shared<AnimateFusedBias>(in_channels);
++            blocks["conv2.0"] = std::make_shared<AnimateBlur>();
++            blocks["conv2.1"] = std::make_shared<AnimateEqualConv2d>(in_channels, out_channels, 3, false);
++            blocks["conv2.2"] = std::make_shared<AnimateFusedBias>(out_channels);
++            blocks["skip.0"]  = std::make_shared<AnimateBlur>();
++            blocks["skip.1"]  = std::make_shared<AnimateEqualConv2d>(in_channels, out_channels, 1, false);
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) {
++            auto conv  = [&](const char* n) { return std::dynamic_pointer_cast<AnimateEqualConv2d>(blocks[n]); };
++            auto act   = [&](const char* n) { return std::dynamic_pointer_cast<AnimateFusedBias>(blocks[n]); };
++            auto blur  = [&](const char* n) { return std::dynamic_pointer_cast<AnimateBlur>(blocks[n]); };
++            auto out   = act("conv1.1")->forward(ctx, conv("conv1.0")->forward(ctx, x, 1, 1));
++            out        = act("conv2.2")->forward(ctx, conv("conv2.1")->forward(ctx, blur("conv2.0")->forward(ctx, out, 2), 2, 0));
++            auto skip  = conv("skip.1")->forward(ctx, blur("skip.0")->forward(ctx, x, 1), 2, 0);
++            return ggml_scale(ctx->ggml_ctx, ggml_add(ctx->ggml_ctx, out, skip), 1.f / std::sqrt(2.f));
++        }
++    };
++
++    // LIA EqualLinear without activation (the motion fc): (x @ W^T) / sqrt(in) + b.
++    class AnimateEqualLinear : public GGMLBlock {
++    protected:
++        int64_t in_features, out_features;
++        void init_params(ggml_context* ctx, const String2TensorStorage& tensor_storage_map = {}, const std::string prefix = "") override {
++            params["weight"] = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, in_features, out_features);
++            params["bias"]   = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_features);
++        }
++
++    public:
++        AnimateEqualLinear(int64_t in_features, int64_t out_features)
++            : in_features(in_features), out_features(out_features) {}
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) {
++            x = ggml_mul_mat(ctx->ggml_ctx, params["weight"], x);
++            x = ggml_scale(ctx->ggml_ctx, x, 1.f / std::sqrt((float)in_features));
++            return ggml_add(ctx->ggml_ctx, x, params["bias"]);
++        }
++    };
++
++    // Generator(size=512, style_dim=512, motion_dim=20).get_motion up to the 20 alphas; the direction
++    // (QR of dec.direction.weight) is applied on the host, WanRunner::animate_face_tokens.
++    class AnimateMotionEncoder : public GGMLBlock {
++    protected:
++        void init_params(ggml_context* ctx, const String2TensorStorage& tensor_storage_map = {}, const std::string prefix = "") override {
++            params["dec.direction.weight"] = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 20, 512);
++        }
++
++    public:
++        AnimateMotionEncoder() {
++            // EncoderApp(512): 1x1 conv to 32, ResBlocks down to 4x4 (32, 64, 128, 256, 512, 512, 512, 512), a 4x4 conv.
++            const int64_t ch[] = {32, 64, 128, 256, 512, 512, 512, 512};
++            blocks["enc.net_app.convs.0.0"] = std::make_shared<AnimateEqualConv2d>(3, 32, 1, false);
++            blocks["enc.net_app.convs.0.1"] = std::make_shared<AnimateFusedBias>(32);
++            for (int i = 1; i <= 7; i++) {
++                blocks["enc.net_app.convs." + std::to_string(i)] = std::make_shared<AnimateResBlock>(ch[i - 1], ch[i]);
++            }
++            blocks["enc.net_app.convs.8"] = std::make_shared<AnimateEqualConv2d>(512, 512, 4, false);
++            for (int i = 0; i < 5; i++) {
++                blocks["enc.fc." + std::to_string(i)] = std::make_shared<AnimateEqualLinear>(512, i == 4 ? 20 : 512);
++            }
++        }
++
++        // faces: [512, 512, 3, B] in [-1, 1]. Returns [20, B + 512]: the alphas, then the direction weight
++        // (torch [512, 20], row-major) so the host reads both from one output.
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* faces) {
++            auto h = std::dynamic_pointer_cast<AnimateEqualConv2d>(blocks["enc.net_app.convs.0.0"])->forward(ctx, faces, 1, 0);
++            h      = std::dynamic_pointer_cast<AnimateFusedBias>(blocks["enc.net_app.convs.0.1"])->forward(ctx, h);
++            for (int i = 1; i <= 7; i++) {
++                h = std::dynamic_pointer_cast<AnimateResBlock>(blocks["enc.net_app.convs." + std::to_string(i)])->forward(ctx, h);
++            }
++            h = std::dynamic_pointer_cast<AnimateEqualConv2d>(blocks["enc.net_app.convs.8"])->forward(ctx, h, 1, 0);  // [1, 1, 512, B]
++            h = ggml_reshape_2d(ctx->ggml_ctx, h, 512, h->ne[3]);
++            for (int i = 0; i < 5; i++) {
++                h = std::dynamic_pointer_cast<AnimateEqualLinear>(blocks["enc.fc." + std::to_string(i)])->forward(ctx, h);
++            }
++            return ggml_concat(ctx->ggml_ctx, h, params["dec.direction.weight"], 1);
++        }
++    };
++
++    // FaceEncoder(512, 5120, num_heads=4): causal conv1d (replicate pad) 512 -> 4 x 1024, then two stride-2
++    // causal convs, LayerNorm + SiLU after each, out_proj to 5120, a learned padding token as the 5th.
++    class AnimateFaceEncoder : public GGMLBlock {
++    protected:
++        void init_params(ggml_context* ctx, const String2TensorStorage& tensor_storage_map = {}, const std::string prefix = "") override {
++            params["conv1_local.conv.weight"] = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 3, 512, 4096);
++            params["conv1_local.conv.bias"]   = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4096);
++            params["conv2.conv.weight"]       = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 3, 1024, 1024);
++            params["conv2.conv.bias"]         = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1024);
++            params["conv3.conv.weight"]       = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 3, 1024, 1024);
++            params["conv3.conv.bias"]         = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1024);
++            params["padding_tokens"]          = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 5120, 1, 1, 1);
++        }
++
++        // x: [C, T, N] (channels fastest). Replicate-pad 2 frames in front, a k=3 conv at the stride;
++        // returns [OC, OL, N]. ⚠ Not ggml_conv_1d: its output reshape is only right for N == 1.
++        static ggml_tensor* causal_conv(ggml_context* c, ggml_tensor* x, ggml_tensor* w, ggml_tensor* b, int stride) {
++            x          = ggml_cont(c, ggml_permute(c, x, 1, 0, 2, 3));  // [T, C, N]
++            auto first = ggml_cont(c, ggml_view_3d(c, x, 1, x->ne[1], x->ne[2], x->nb[1], x->nb[2], 0));
++            x          = ggml_concat(c, ggml_concat(c, first, first, 0), x, 0);
++            auto cols  = ggml_im2col(c, w, x, stride, 0, 0, 0, 1, 0, false, GGML_TYPE_F32);  // [IC*K, OL, N]
++            auto y     = ggml_mul_mat(c, ggml_reshape_2d(c, w, w->ne[0] * w->ne[1], w->ne[2]),
++                                      ggml_reshape_2d(c, cols, cols->ne[0], cols->ne[1] * cols->ne[2]));  // [OC, OL*N]
++            y          = ggml_reshape_3d(c, y, w->ne[2], cols->ne[1], cols->ne[2]);
++            return ggml_add(c, y, b);
++        }
++
++        // LayerNorm over C (no affine) + SiLU, on [C, T, N]
++        static ggml_tensor* norm_silu(ggml_context* c, ggml_tensor* x) {
++            return ggml_silu(c, ggml_norm(c, x, 1e-6f));
++        }
++
++    public:
++        AnimateFaceEncoder() {
++            blocks["out_proj"] = std::make_shared<Linear>(1024, 5120);
++        }
++
++        // motion: [512, T] -> [5120, 5, T''] with T'' = (T - 1) / 4 + 1 for T = 4k + 1.
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* motion) {
++            ggml_context* c = ctx->ggml_ctx;
++            auto x          = ggml_reshape_3d(c, motion, motion->ne[0], motion->ne[1], 1);                              // [512, T, 1]
++            x               = causal_conv(c, x, params["conv1_local.conv.weight"], params["conv1_local.conv.bias"], 1);  // [4096, T, 1]
++            x               = ggml_reshape_3d(c, x, 1024, 4, x->ne[1]);                                                  // channel = n*1024 + c
++            x               = ggml_cont(c, ggml_permute(c, x, 0, 2, 1, 3));                                                 // [1024, T, 4]: "(b n) t c"
++            x               = norm_silu(c, x);
++            x               = norm_silu(c, causal_conv(c, x, params["conv2.conv.weight"], params["conv2.conv.bias"], 2));
++            x               = norm_silu(c, causal_conv(c, x, params["conv3.conv.weight"], params["conv3.conv.bias"], 2));  // [1024, T'', 4]
++            x               = std::dynamic_pointer_cast<Linear>(blocks["out_proj"])->forward(ctx, x);                    // [5120, T'', 4]
++            x               = ggml_cont(c, ggml_permute(c, x, 0, 2, 1, 3));                                                 // [5120, 4, T'']
++            auto pad        = ggml_repeat_4d(c, params["padding_tokens"], 5120, 1, x->ne[2], 1);
++            return ggml_concat(c, x, pad, 1);                                                                             // [5120, 5, T'']
++        }
++    };
++
++    // FaceBlock: each latent frame's tokens attend to that frame's 5 face tokens; returns the residual.
++    class AnimateFaceBlock : public GGMLBlock {
++    protected:
++        int64_t dim, num_heads;
++
++    public:
++        AnimateFaceBlock(int64_t dim, int64_t num_heads)
++            : dim(dim), num_heads(num_heads) {
++            blocks["linear1_kv"]      = std::make_shared<Linear>(dim, dim * 2);
++            blocks["linear1_q"]       = std::make_shared<Linear>(dim, dim);
++            blocks["linear2"]         = std::make_shared<Linear>(dim, dim);
++            blocks["q_norm"]          = std::make_shared<RMSNorm>(dim / num_heads, 1e-6f);
++            blocks["k_norm"]          = std::make_shared<RMSNorm>(dim / num_heads, 1e-6f);
++            blocks["pre_norm_feat"]   = std::make_shared<LayerNorm>(dim, 1e-6f, false);
++            blocks["pre_norm_motion"] = std::make_shared<LayerNorm>(dim, 1e-6f, false);
++        }
++
++        // x: [dim, S, 1] with S = T * frame_tokens; face: [dim, 5, T].
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* face, int64_t frame_tokens, int64_t chunk_tokens) {
++            ggml_context* c   = ctx->ggml_ctx;
++            const int64_t D   = dim / num_heads;
++            const int64_t T   = face->ne[2];
++            const int64_t nf  = face->ne[1];
++            GGML_ASSERT(frame_tokens > 0 && x->ne[1] == T * frame_tokens);
++            auto lin = [&](const char* n) { return std::dynamic_pointer_cast<Linear>(blocks[n]); };
++
++            auto kv = lin("linear1_kv")->forward(ctx, std::dynamic_pointer_cast<LayerNorm>(blocks["pre_norm_motion"])->forward(ctx, face));  // [2*dim, 5, T]
++            auto k  = ggml_cont(c, ggml_view_3d(c, kv, dim, nf, T, kv->nb[1], kv->nb[2], 0));
++            auto v  = ggml_cont(c, ggml_view_3d(c, kv, dim, nf, T, kv->nb[1], kv->nb[2], dim * ggml_element_size(kv)));
++            k       = std::dynamic_pointer_cast<RMSNorm>(blocks["k_norm"])->forward(ctx, ggml_reshape_4d(c, k, D, num_heads, nf, T));
++            k       = ggml_cont(c, ggml_permute(c, k, 0, 2, 1, 3));                                // [D, 5, H, T]
++            v       = ggml_cont(c, ggml_permute(c, ggml_reshape_4d(c, v, D, num_heads, nf, T), 1, 2, 0, 3));  // [5, D, H, T]
++
++            int64_t frames_per_chunk = chunk_tokens > 0 ? std::max<int64_t>(1, chunk_tokens / frame_tokens) : T;
++            ggml_tensor* out         = nullptr;
++            for (int64_t f0 = 0; f0 < T; f0 += frames_per_chunk) {
++                const int64_t tc = std::min(frames_per_chunk, T - f0);
++                auto xc          = wan_token_rows(c, x, f0 * frame_tokens, tc * frame_tokens);
++                auto q           = lin("linear1_q")->forward(ctx, std::dynamic_pointer_cast<LayerNorm>(blocks["pre_norm_feat"])->forward(ctx, xc));
++                q                = std::dynamic_pointer_cast<RMSNorm>(blocks["q_norm"])->forward(ctx, ggml_reshape_4d(c, q, D, num_heads, frame_tokens, tc));
++                q                = ggml_cont(c, ggml_permute(c, q, 0, 2, 1, 3));  // [D, ftok, H, tc]
++                auto kc          = ggml_view_4d(c, k, D, nf, num_heads, tc, k->nb[1], k->nb[2], k->nb[3], f0 * k->nb[3]);
++                auto vc          = ggml_view_4d(c, v, nf, D, num_heads, tc, v->nb[1], v->nb[2], v->nb[3], f0 * v->nb[3]);
++                auto s           = ggml_mul_mat(c, kc, q);                                            // [5, ftok, H, tc]
++                s                = ggml_soft_max_ext(c, s, nullptr, 1.f / std::sqrt((float)D), 0.f);
++                auto o           = ggml_mul_mat(c, vc, s);                                            // [D, ftok, H, tc]
++                o                = ggml_cont(c, ggml_permute(c, o, 0, 2, 1, 3));                      // [D, H, ftok, tc]
++                o                = lin("linear2")->forward(ctx, ggml_reshape_3d(c, o, dim, tc * frame_tokens, 1));
++                out              = out == nullptr ? o : ggml_concat(c, out, o, 1);
++            }
++            return out;
++        }
++    };
++
+     class Wan : public GGMLBlock {
+     protected:
+         WanConfig config;
+ 
+     public:
++        std::shared_ptr<GGMLBlock> block(const std::string& name) {
++            return blocks[name];
++        }
++
+         Wan() {}
+         Wan(WanConfig config)
+             : config(config) {
+@@ -807,6 +1084,15 @@ namespace WAN {
+                 blocks["img_emb"] = std::shared_ptr<GGMLBlock>(new MLPProj(1280, config.dim, config.flf_pos_embed_token_number));
+             }
+ 
++            if (config.animate) {
++                blocks["pose_patch_embedding"] = std::shared_ptr<GGMLBlock>(new Conv3d(16, config.dim, config.patch_size, config.patch_size));
++                blocks["motion_encoder"]       = std::make_shared<AnimateMotionEncoder>();
++                blocks["face_encoder"]         = std::make_shared<AnimateFaceEncoder>();
++                for (int i = 0; i < config.num_layers / 5; i++) {
++                    blocks["face_adapter.fuser_blocks." + std::to_string(i)] = std::make_shared<AnimateFaceBlock>(config.dim, config.num_heads);
++                }
++            }
++
+             if (config.add_ref_conv) {
+                 blocks["ref_conv"] = std::shared_ptr<GGMLBlock>(new Conv2d(config.in_dim_ref_conv,
+                                                                            config.dim,
+@@ -887,9 +1173,11 @@ namespace WAN {
+                                   ggml_tensor* clip_fea     = nullptr,
+                                   ggml_tensor* vace_context = nullptr,
+                                   float vace_strength       = 1.f,
+-                                  int64_t N                 = 1) {
++                                  int64_t N                 = 1,
++                                  ggml_tensor* animate_face = nullptr) {
+             // x: [N*C, T, H, W], C => in_dim
+-            // vace_context: [N*vace_in_dim, T, H, W]
++            // vace_context: [N*vace_in_dim, T, H, W]; Animate: the pose latents [N*16, T-1, H, W]
++            // animate_face: [dim, 5, t_len], the face tokens of every latent frame (slot 0's zero)
+             // timestep: [N,] or [T]
+             // context: [N, L, text_dim]
+             // return: [N, t_len*h_len*w_len, out_dim*pt*ph*pw]
+@@ -922,6 +1210,23 @@ namespace WAN {
+                 x            = ggml_ext_cont(ctx->ggml_ctx, ggml_ext_torch_permute(ctx->ggml_ctx, x, 1, 0, 2, 3));  // [N, t_len*h_len*w_len, dim]
+             }
+ 
++            // Wan 2.2 Animate: the pose latents through their own patch embedding, added to every latent
++            // frame but slot 0 (the reference), after_patch_embedding's `x_[:, :, 1:] += pose`.
++            const int64_t animate_frame_tokens = frame_tokens;
++            if (config.animate && vace_context != nullptr && getenv("NM_WAN_ANIMATE_NO_POSE") == nullptr) {
++                auto pose_embedding = std::dynamic_pointer_cast<Conv3d>(blocks["pose_patch_embedding"]);
++                ggml_tensor* pose   = pose_embedding->forward_patch_tokens(ctx, vace_context);  // [dim, (t_len-1)*h_len*w_len]
++                if (pose == nullptr) {
++                    pose = pose_embedding->forward(ctx, vace_context);
++                    pose = ggml_reshape_2d(ctx->ggml_ctx, pose, pose->ne[0] * pose->ne[1] * pose->ne[2], pose->ne[3]);
++                    pose = ggml_cont(ctx->ggml_ctx, ggml_transpose(ctx->ggml_ctx, pose));
++                }
++                GGML_ASSERT(pose->ne[1] == x->ne[1] - animate_frame_tokens);
++                auto rest = ggml_add(ctx->ggml_ctx, wan_token_rows(ctx->ggml_ctx, x, animate_frame_tokens, pose->ne[1]),
++                                     ggml_reshape_3d(ctx->ggml_ctx, pose, pose->ne[0], pose->ne[1], 1));
++                x         = ggml_concat(ctx->ggml_ctx, wan_token_rows(ctx->ggml_ctx, x, 0, animate_frame_tokens), rest, 1);
++            }
++
+             // time_embedding + time_projection. Two timesteps on a backend mean "frame 0, then
+             // every other frame" (Wan 2.2 TI2V image to video, process_timesteps): two single-row
+             // embeddings, and the blocks modulate two token ranges split at frame 0. The
+@@ -1016,6 +1321,11 @@ namespace WAN {
+                     c_skip      = ggml_ext_scale(ctx->ggml_ctx, c_skip, vace_strength);
+                     x           = ggml_add(ctx->ggml_ctx, x, c_skip);
+                 }
++                // Wan 2.2 Animate: after_transformer_block, a face adapter after every 5th block.
++                if (config.animate && animate_face != nullptr && i % 5 == 0 && getenv("NM_WAN_ANIMATE_NO_FACE") == nullptr) {
++                    auto face_block = std::dynamic_pointer_cast<AnimateFaceBlock>(blocks["face_adapter.fuser_blocks." + std::to_string(i / 5)]);
++                    x               = ggml_add(ctx->ggml_ctx, x, face_block->forward(ctx, x, animate_face, animate_frame_tokens, wan_token_chunk(config.dim)));
++                }
+                 sd::ggml_graph_cut::mark_graph_cut(x, "wan.blocks." + std::to_string(i), "x");
+                 if (c != nullptr) {
+                     sd::ggml_graph_cut::mark_graph_cut(c, "wan.blocks." + std::to_string(i), "c");
+@@ -1040,7 +1350,8 @@ namespace WAN {
+                              ggml_tensor* time_dim_concat = nullptr,
+                              ggml_tensor* vace_context    = nullptr,
+                              float vace_strength          = 1.f,
+-                             int64_t N                    = 1) {
++                             int64_t N                    = 1,
++                             ggml_tensor* animate_face    = nullptr) {
+             // Forward pass of DiT.
+             // x: [N*C, T, H, W]
+             // timestep: [N,]
+@@ -1068,7 +1379,7 @@ namespace WAN {
+                 t_len           = ((x->ne[2] + (std::get<0>(config.patch_size) / 2)) / std::get<0>(config.patch_size));
+             }
+ 
+-            auto out = forward_orig(ctx, x, timestep, context, pe, clip_fea, vace_context, vace_strength, N);  // [N, t_len*h_len*w_len, pt*ph*pw*C]
++            auto out = forward_orig(ctx, x, timestep, context, pe, clip_fea, vace_context, vace_strength, N, animate_face);  // [N, t_len*h_len*w_len, pt*ph*pw*C]
+ 
+             out = unpatchify(ctx->ggml_ctx, out, t_len, h_len, w_len);  // [N*C, (T+pad_t) + (T2+pad_t2), H + pad_h, W + pad_w]
+ 
+@@ -1157,6 +1468,10 @@ namespace WAN {
+                     } else {
+                         desc = "Wan2.1-I2V-14B";
+                     }
++                    // Wan 2.2 Animate keeps the I2V desc: its CLIP vision runner and img_emb are I2V's.
++                    if (config.animate) {
++                        LOG_INFO("Wan2.2 Animate: pose embedding, face encoder, %d face adapters", config.num_layers / 5);
++                    }
+                 }
+                 config.dim       = 5120;
+                 config.eps       = 1e-06f;
+@@ -1173,6 +1488,23 @@ namespace WAN {
+ 
+             wan = Wan(config);
+             wan.init(params_ctx, tensor_storage_map, prefix);
++
++            // nightmare (dit/054): Animate's block matmuls overflow the NPU's fp16 result (NaN probe, S25: block 3
++            // cross_attn.k at 65504 from inputs <= 0.78, block 29 self_attn.q), as Z-Image (dit/025) and FLUX.3
++            // (dit/045) did. Every Linear under blocks.* runs x * s through the matmul and the result / s (exact
++            // in f32, harmless on the CPU). NM_WAN_HTP_SCALE replaces the default 1/32; 1 turns it off.
++            if (config.animate) {
++                const char* e     = getenv("NM_WAN_HTP_SCALE");
++                const float scale = e ? (float)atof(e) : 1.f / 32.f;
++                int n             = 0;
++                wan.for_each_block([&](const std::string& name, GGMLBlock* b) {
++                    if (auto* l = dynamic_cast<Linear*>(b); l != nullptr && starts_with(name, "blocks.")) {
++                        l->set_scale(scale);
++                        n++;
++                    }
++                });
++                LOG_INFO("Wan2.2 Animate: %d block linears at scale %g", n, scale);
++            }
+         }
+ 
+         std::string get_desc() override {
+@@ -1183,6 +1515,149 @@ namespace WAN {
+             return config.in_dim == 148;
+         }
+ 
++        // Wan 2.2 Animate: the face tokens of the segment being sampled, [dim, 5, t_len] (slot 0's zero).
++        sd::Tensor<float> animate_face_;
++
++        bool wan_animate() const override {
++            return config.animate;
++        }
++
++        void set_wan_animate_face(sd::Tensor<float> face_tokens) override {
++            animate_face_ = std::move(face_tokens);
++        }
++
++        // faces: [512, 512, 3, F] in [-1, 1], F = 4k + 1 face crops. Returns [dim, 5, k + 2]: a zero
++        // frame for the reference slot, then one per latent frame. The motion encoder runs in batches;
++        // its direction (torch.linalg.qr of dec.direction.weight) is a Householder QR here, LAPACK's signs.
++        sd::Tensor<float> wan_animate_face_tokens(int n_threads, const sd::Tensor<float>& faces) override {
++            if (!config.animate || faces.dim() != 4 || faces.shape()[0] != 512 || faces.shape()[1] != 512) {
++                LOG_ERROR("Wan Animate: face crops must be [512, 512, 3, F]");
++                return {};
++            }
++            const int64_t F = faces.shape()[3];
++            int64_t batch   = 4;
++            if (const char* e = getenv("NM_WAN_ANIMATE_FACE_BATCH")) {
++                batch = std::max<int64_t>(1, atoll(e));
++            }
++            auto motion_encoder = std::dynamic_pointer_cast<AnimateMotionEncoder>(wan.block("motion_encoder"));
++            auto face_encoder   = std::dynamic_pointer_cast<AnimateFaceEncoder>(wan.block("face_encoder"));
++            std::vector<double> Q;  // [512, 20] row-major
++            std::vector<float> motion(static_cast<size_t>(512 * F));
++            for (int64_t b0 = 0; b0 < F; b0 += batch) {
++                const int64_t nb = std::min(batch, F - b0);
++                auto chunk       = sd::ops::slice(faces, 3, b0, b0 + nb);
++                auto get_graph   = [&]() -> ggml_cgraph* {
++                    ggml_cgraph* gf = new_graph_custom(WAN_GRAPH_SIZE);
++                    auto runner_ctx = get_context();
++                    auto out        = motion_encoder->forward(&runner_ctx, make_input(chunk));
++                    ggml_build_forward_expand(gf, out);
++                    return gf;
++                };
++                auto out = take_or_empty(GGMLRunner::compute(get_graph, n_threads, false));
++                if (out.numel() != 20 * (nb + 512)) {
++                    LOG_ERROR("Wan Animate: motion encoder failed");
++                    return {};
++                }
++                const float* o = out.data();
++                if (Q.empty()) {
++                    Q.assign(o + 20 * nb, o + 20 * (nb + 512));
++                    for (auto& q : Q) {
++                        q += 1e-8;
++                    }
++                    householder_q(Q, 512, 20);
++                }
++                for (int64_t f = 0; f < nb; f++) {
++                    for (int64_t r = 0; r < 512; r++) {
++                        double s = 0.0;
++                        for (int k = 0; k < 20; k++) {
++                            s += Q[r * 20 + k] * o[f * 20 + k];
++                        }
++                        motion[static_cast<size_t>((b0 + f) * 512 + r)] = static_cast<float>(s);
++                    }
++                }
++            }
++            sd::Tensor<float> motion_vec({512, F}, std::move(motion));
++            auto get_graph = [&]() -> ggml_cgraph* {
++                ggml_cgraph* gf = new_graph_custom(WAN_GRAPH_SIZE);
++                auto runner_ctx = get_context();
++                auto out        = face_encoder->forward(&runner_ctx, make_input(motion_vec));
++                ggml_build_forward_expand(gf, out);
++                return gf;
++            };
++            auto tokens = take_or_empty(GGMLRunner::compute(get_graph, n_threads, false));  // [dim, 5, T'']
++            if (tokens.dim() < 3) {
++                tokens.unsqueeze_(tokens.dim());
++            }
++            if (tokens.empty() || tokens.shape()[0] != config.dim || tokens.shape()[1] != 5) {
++                LOG_ERROR("Wan Animate: face encoder failed");
++                return {};
++            }
++            return sd::ops::concat(sd::zeros<float>({config.dim, 5, 1}), tokens, 2);
++        }
++
++        // In place: A [m, n] row-major (m >= n) -> the reduced Q of A = QR, Householder reflections with
++        // LAPACK's sign convention (R's diagonal = -sign(a_kk) * |x|), so Q matches torch.linalg.qr.
++        static void householder_q(std::vector<double>& A, int m, int n) {
++            std::vector<std::vector<double>> vs;
++            for (int k = 0; k < n; k++) {
++                double norm = 0.0;
++                for (int i = k; i < m; i++) {
++                    norm += A[i * n + k] * A[i * n + k];
++                }
++                norm         = std::sqrt(norm);
++                double alpha = A[k * n + k];
++                double beta  = alpha >= 0 ? -norm : norm;
++                std::vector<double> v(m, 0.0);
++                v[k] = alpha - beta;
++                for (int i = k + 1; i < m; i++) {
++                    v[i] = A[i * n + k];
++                }
++                double vv = 0.0;
++                for (int i = k; i < m; i++) {
++                    vv += v[i] * v[i];
++                }
++                if (vv > 0) {
++                    for (int j = k; j < n; j++) {
++                        double d = 0.0;
++                        for (int i = k; i < m; i++) {
++                            d += v[i] * A[i * n + j];
++                        }
++                        d *= 2.0 / vv;
++                        for (int i = k; i < m; i++) {
++                            A[i * n + j] -= d * v[i];
++                        }
++                    }
++                }
++                vs.push_back(std::move(v));
++            }
++            // Q = H_0 H_1 ... H_{n-1} applied to the first n columns of the identity.
++            std::vector<double> Qm(static_cast<size_t>(m) * n, 0.0);
++            for (int j = 0; j < n; j++) {
++                Qm[j * n + j] = 1.0;
++            }
++            for (int k = n - 1; k >= 0; k--) {
++                const auto& v = vs[k];
++                double vv     = 0.0;
++                for (int i = k; i < m; i++) {
++                    vv += v[i] * v[i];
++                }
++                if (vv <= 0) {
++                    continue;
++                }
++                for (int j = 0; j < n; j++) {
++                    double d = 0.0;
++                    for (int i = k; i < m; i++) {
++                        d += v[i] * Qm[i * n + j];
++                    }
++                    d *= 2.0 / vv;
++                    for (int i = k; i < m; i++) {
++                        Qm[i * n + j] -= d * v[i];
++                    }
++                }
++            }
++            A = std::move(Qm);
++        }
++
+         void get_param_tensors(std::map<std::string, ggml_tensor*>& tensors, const std::string& prefix) override {
+             wan.get_param_tensors(tensors, prefix);
+         }
+@@ -1242,7 +1717,9 @@ namespace WAN {
+                                            clip_fea,
+                                            time_dim_concat,
+                                            vace_context,
+-                                           vace_strength);
++                                           vace_strength,
++                                           1,
++                                           config.animate ? make_optional_input(animate_face_) : nullptr);
+ 
+             ggml_build_forward_expand(gf, out);
+ 
+diff --git a/src/pipeline/video.cpp b/src/pipeline/video.cpp
+index 22dd759..810a77d 100644
+--- a/src/pipeline/video.cpp
++++ b/src/pipeline/video.cpp
+@@ -420,6 +420,23 @@ namespace sd::pipeline {
+         return audio;
+     }
+ 
++    // dit/054 diagnostics: min / max / mean / non-finite count of a tensor, one log line.
++    static void log_tensor_stats(const char* what, const sd::Tensor<float>& t) {
++        double mn = 1e30, mx = -1e30, sum = 0;
++        int64_t bad = 0, n = t.numel();
++        for (int64_t i = 0; i < n; ++i) {
++            float v = t.data()[i];
++            if (!std::isfinite(v)) {
++                bad++;
++                continue;
++            }
++            mn = std::min(mn, (double)v);
++            mx = std::max(mx, (double)v);
++            sum += v;
++        }
++        LOG_INFO("stats %s: n=%" PRId64 " min=%.4f max=%.4f mean=%.5f nonfinite=%" PRId64, what, n, mn, mx, n > bad ? sum / (n - bad) : 0.0, bad);
++    }
++
+     static std::optional<ImageGenerationLatents> prepare_video_generation_latents(StableDiffusionGGML* sd,
+                                                                                   const sd_vid_gen_params_t* sd_vid_gen_params,
+                                                                                   GenerationRequest* request) {
+@@ -837,7 +854,120 @@ namespace sd::pipeline {
+             LOG_INFO("encode_first_stage completed, taking %" PRId64 " ms", t2 - t1);
+         }
+ 
+-        if (sd->diffusion_model->get_desc() == "Wan2.1-I2V-14B" ||
++        if (sd->diffusion_model->wan_animate()) {
++            // Wan 2.2 Animate (dit/054, Wan2.2 wan/animate.py): y = [slot 0: mask 1 + the reference's latent]
++            // ++ [the previous segment's last frames (motion_frames, refert_num), then grey, or the
++            // background when replacing; mask 1 where kept]. CLIP of the reference, the pose video's latent
++            // in vace_context, the face tokens on the runner. The latent is one frame longer than the clip
++            // (slot 0); decode_video_outputs drops it.
++            const int64_t F = request->frames;
++            const int W     = request->width;
++            const int H     = request->height;
++            if (sd_vid_gen_params->ref_images_count < 1 || sd_vid_gen_params->face_frames_count < 1 ||
++                sd_vid_gen_params->control_frames_size < 1) {
++                LOG_ERROR("Wan Animate needs a reference image, a pose video and face crops");
++                return std::nullopt;
++            }
++            const bool replace = sd_vid_gen_params->bg_frames_count > 0 && sd_vid_gen_params->mask_frames_count > 0;
++            const int64_t m    = std::min<int64_t>(F, std::max(0, sd_vid_gen_params->motion_frames_count));
++            LOG_INFO("Wan2.2 Animate: %" PRId64 " frames, %d pose, %d face, %" PRId64 " motion frames, %s",
++                     F, sd_vid_gen_params->control_frames_size, sd_vid_gen_params->face_frames_count, m,
++                     replace ? "replace" : "animate");
++            int64_t t1 = ggml_time_ms();
++
++            auto frame_at = [](const sd_image_t* frames, int count, int64_t i) {
++                return frames[std::min<int64_t>(i, count - 1)];
++            };
++
++            auto ref_image             = sd_image_to_tensor(sd_vid_gen_params->ref_images[0], W, H);  // [w, h, 3, 1]
++            latents.clip_vision_output = sd->get_clip_vision_output(ref_image, false, -2);
++            auto ref_latent            = sd->encode_first_stage(ref_image.unsqueeze(2));  // [w', h', 1, c, 1]
++            if (latents.clip_vision_output.empty() || ref_latent.empty()) {
++                LOG_ERROR("Wan Animate: failed to encode the reference image");
++                return std::nullopt;
++            }
++
++            sd::Tensor<float> cond = sd::full<float>({W, H, F, 3, 1}, 0.5f);
++            for (int64_t i = 0; i < F; ++i) {
++                const sd_image_t* src = nullptr;
++                if (i < m) {
++                    src = &sd_vid_gen_params->motion_frames[sd_vid_gen_params->motion_frames_count - m + i];
++                } else if (replace) {
++                    src = &sd_vid_gen_params->bg_frames[std::min<int64_t>(i, sd_vid_gen_params->bg_frames_count - 1)];
++                }
++                if (src != nullptr) {
++                    sd::ops::slice_assign(&cond, 2, i, i + 1, sd_image_to_tensor(*src, W, H).unsqueeze(2));
++                }
++            }
++            auto cond_latent = sd->encode_first_stage(cond);  // [w', h', t', c, 1]
++            sd::Tensor<float> pose = sd::full<float>({W, H, F, 3, 1}, 0.5f);
++            for (int64_t i = 0; i < F; ++i) {
++                auto frame = frame_at(sd_vid_gen_params->control_frames, sd_vid_gen_params->control_frames_size, i);
++                sd::ops::slice_assign(&pose, 2, i, i + 1, sd_image_to_tensor(frame, W, H).unsqueeze(2));
++            }
++            auto pose_latent = sd->encode_first_stage(pose);
++            if (cond_latent.empty() || pose_latent.empty()) {
++                LOG_ERROR("Wan Animate: failed to encode the conditioning video");
++                return std::nullopt;
++            }
++            const int64_t lw = cond_latent.shape()[0], lh = cond_latent.shape()[1], lt = cond_latent.shape()[2];
++
++            // get_i2v_mask: pixel frame 0 four times, then frames 1.. in fours; 1 = kept, 0 = generated.
++            std::vector<sd::Tensor<float>> person(replace ? F : 0);
++            for (int64_t p = 0; replace && p < F; ++p) {
++                person[p] = sd_image_to_tensor(frame_at(sd_vid_gen_params->mask_frames, sd_vid_gen_params->mask_frames_count, p), W, H);
++            }
++            sd::Tensor<float> mask = sd::zeros<float>({lw, lh, lt, 4, 1});
++            float* md              = mask.data();
++            const int scale        = request->vae_scale_factor;
++            for (int64_t k = 0; k < lt; ++k) {
++                for (int64_t j = 0; j < 4; ++j) {
++                    const int64_t p = k == 0 ? 0 : 4 * (k - 1) + 1 + j;
++                    for (int64_t y = 0; y < lh; ++y) {
++                        for (int64_t x = 0; x < lw; ++x) {
++                            float v = 0.f;
++                            if (p < m) {
++                                v = 1.f;
++                            } else if (replace && p < F) {
++                                const auto& pm = person[p];
++                                v              = pm.data()[x * scale + W * (y * scale)] > 0.5f ? 0.f : 1.f;  // nearest, channel 0
++                            }
++                            md[x + lw * (y + lh * (k + lt * j))] = v;
++                        }
++                    }
++                }
++            }
++            auto y_ref            = sd::ops::concat(sd::full<float>({lw, lh, 1, 4, 1}, 1.f), ref_latent, 3);
++            auto y_reft           = sd::ops::concat(mask, cond_latent, 3);
++            latents.concat_latent = sd::ops::concat(y_ref, y_reft, 2);  // [w', h', t'+1, 4+c, 1]
++            latents.vace_context  = std::move(pose_latent);              // [w', h', t', c, 1]
++
++            sd::Tensor<float> faces({512, 512, 3, F});
++            const int64_t face_floats = 512 * 512 * 3;
++            for (int64_t i = 0; i < F; ++i) {
++                auto face = sd_image_to_tensor(frame_at(sd_vid_gen_params->face_frames, sd_vid_gen_params->face_frames_count, i), 512, 512);
++                for (int64_t e = 0; e < face_floats; ++e) {
++                    faces.data()[i * face_floats + e] = face.data()[e] * 2.f - 1.f;
++                }
++            }
++            int64_t t2  = ggml_time_ms();
++            log_tensor_stats("animate clip vision", latents.clip_vision_output);
++            // NM_WAN_ANIMATE_NO_FACE (diagnostic): zeros in place of the face net, which the adapters then skip
++            auto tokens = getenv("NM_WAN_ANIMATE_NO_FACE") ? sd::zeros<float>({5120, 5, lt + 1})
++                                                            : sd->diffusion_model->wan_animate_face_tokens(sd->n_threads, faces);
++            if (tokens.empty() || tokens.shape()[2] != lt + 1) {
++                LOG_ERROR("Wan Animate: face tokens failed (%" PRId64 " latent frames)", lt);
++                return std::nullopt;
++            }
++            log_tensor_stats("animate face tokens", tokens);
++            log_tensor_stats("animate y (concat)", latents.concat_latent);
++            log_tensor_stats("animate pose latent", latents.vace_context);
++            log_tensor_stats("animate ref latent", ref_latent);
++            sd->diffusion_model->set_wan_animate_face(std::move(tokens));
++            latents.init_latent = sd->generate_init_latent(W, H, static_cast<int>(F + 4), true);  // lt + 1 frames
++            LOG_INFO("Wan2.2 Animate: conditioning %" PRId64 " ms, face tokens %" PRId64 " ms",
++                     t2 - t1, ggml_time_ms() - t2);
++        } else if (sd->diffusion_model->get_desc() == "Wan2.1-I2V-14B" ||
+             sd->diffusion_model->get_desc() == "Wan2.2-I2V-14B" ||
+             sd->diffusion_model->get_desc() == "Wan2.1-I2V-1.3B" ||
+             sd->diffusion_model->get_desc() == "Wan2.1-FLF2V-14B") {
+@@ -1174,6 +1304,12 @@ namespace sd::pipeline {
+             return nullptr;
+         }
+         sd::Tensor<float> video_latent = final_latent;
++        if (sd->diffusion_model->wan_animate()) {
++            log_tensor_stats("animate final latent", video_latent);
++        }
++        if (sd->diffusion_model->wan_animate() && video_latent.shape()[2] > 1) {
++            video_latent = sd::ops::slice(video_latent, 2, 1, video_latent.shape()[2]);  // Animate: drop slot 0, the reference
++        }
+         if ((sd_version_is_ltxav(sd->version) || sd_version_is_minimax_h3(sd->version)) &&
+             video_latent.shape()[3] > sd->get_latent_channel()) {
+             video_latent = sd::ops::slice(video_latent, 3, 0, sd->get_latent_channel());

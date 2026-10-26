@@ -47,18 +47,26 @@ class WanFunTest {
         assertArrayEquals(floatArrayOf(-0.135625f, -0.1f, 0.37125f, 1.2f), off, 1e-5f)
     }
 
-    /** ⭐ The window's length IS the clip, on Wan's 4-frame step, 5 frames to 5 s. */
+    /** ⭐ The window's length IS the clip, on Wan's 4-frame step, 5 frames to 30 s, at the sampling rate. */
     @Test
     fun theWindowSetsTheClipsLength() {
         assertEquals(49, WanFun.framesForGap(2.0))
         assertEquals(57, WanFun.framesForGap(2.3))
         assertEquals(5, WanFun.framesForGap(0.01))
-        assertEquals(121, WanFun.framesForGap(9.0))
+        assertEquals(217, WanFun.framesForGap(9.0))
+        assertEquals(30 * 24 + 1, WanFun.framesForGap(45.0))
+        // ⭐ 12 fps: half the frames for the same seconds; 8 fps, a third.
+        assertEquals(121, WanFun.framesForGap(10.0, 12))
+        assertEquals(81, WanFun.framesForGap(10.0, 8))
         val p = mapOf(WanFun.START to "1.5", WanFun.END to "3.5")
         assertEquals(1.5 to 3.5, WanFun.windowOf(p))
         assertEquals(49, WanVideoNode.framesOf(Node("m", WanFunNode.name, p), p))
-        // ⚠ An end more than 5 s after the start is held to 5 s; an end before it, to the start.
-        assertEquals(1.0 to 6.0, WanFun.windowOf(mapOf(WanFun.START to "1", WanFun.END to "20")))
+        assertEquals(25, WanVideoNode.framesOf(Node("m", WanFunNode.name, p + (WanFun.MOTION_FPS to "12")), p + (WanFun.MOTION_FPS to "12")))
+        // ⚠ An end more than 30 s after the start is held to 30 s; an end before it, to the start.
+        assertEquals(1.0 to 20.0, WanFun.windowOf(mapOf(WanFun.START to "1", WanFun.END to "20")))
+        assertEquals(1.0 to 31.0, WanFun.windowOf(mapOf(WanFun.START to "1", WanFun.END to "40")))
+        // ⚠ An unknown rate reads as 24.
+        assertEquals(24, WanFun.fpsOf(mapOf(WanFun.MOTION_FPS to "30")))
         assertEquals(null, WanFun.rectOf(mapOf(WanFun.VX to "", WanFun.VY to "0")))
         // ⚠ Wan Turbo still reads its Seconds.
         assertEquals(49, WanVideoNode.framesOf(Node("v", WanVideoNode.name, mapOf("seconds" to "2")), mapOf("seconds" to "2")))
@@ -66,17 +74,17 @@ class WanFunTest {
 
     /** ⭐ The handle that moved gives way; the other never jumps under the finger. */
     @Test
-    fun theSeekerKeepsTheWindowBetweenFiveFramesAndFiveSeconds() {
-        // The end dragged 7 s past the start: stops at 5 s, the start stays.
-        assertEquals(1.0 to 6.0, WanFun.constrainWindow(1.0, 8.0, 1.0, 3.0, 12.0))
+    fun theSeekerKeepsTheWindowBetweenFiveFramesAndThirtySeconds() {
+        // The end dragged 37 s past the start: stops at 30 s, the start stays.
+        assertEquals(1.0 to 31.0, WanFun.constrainWindow(1.0, 38.0, 1.0, 3.0, 60.0))
         // The start dragged onto the end: stops 4 frames short of it, the end stays.
         val (s, e) = WanFun.constrainWindow(3.0, 3.0, 1.0, 3.0, 12.0)
         assertEquals(3.0 - 4.0 / 24, s, 1e-9)
         assertEquals(3.0, e, 1e-9)
         // The end dragged past the video's end: held at it.
         assertEquals(10.0 to 12.0, WanFun.constrainWindow(10.0, 14.0, 10.0, 11.0, 12.0))
-        // The start dragged more than 5 s before the end: held 5 s before it.
-        assertEquals(4.0 to 9.0, WanFun.constrainWindow(1.0, 9.0, 6.0, 9.0, 12.0))
+        // The start dragged more than 30 s before the end: held 30 s before it.
+        assertEquals(10.0 to 40.0, WanFun.constrainWindow(1.0, 40.0, 20.0, 40.0, 60.0))
     }
 
     /** ⭐ Motion transfer is its own model: its key names Fun Control, Wan's names Turbo. */

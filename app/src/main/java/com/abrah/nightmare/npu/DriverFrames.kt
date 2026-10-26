@@ -6,7 +6,7 @@ import android.media.MediaMetadataRetriever
 /**
  * ⭐ A driving video's frame at a time, decoded IN ORDER a batch at a time (`getFramesAtIndex`), each
  * source frame read once. Animate a portrait's reader, shared with Motion transfer's control video
- * ([WanFun.buildControl]) so the two cannot drift.
+ * ([MotionTrack.read], [MotionTrack.writeAsIs]) so the two cannot drift.
  *
  * ⚠⚠ Never one exact seek per frame: on the S25 (2026-10-21) `getFrameAtTime` CLOSEST failed at
  * frame 14 of a 2 s 1080x1920 clip, and the keyframe fallback left 2 or 3 moves in the whole clip.

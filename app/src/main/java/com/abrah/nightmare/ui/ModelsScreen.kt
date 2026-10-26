@@ -270,6 +270,10 @@ fun ModelsScreen(
     interp: ToolRow? = null,
     onInstallInterp: () -> Unit = {},
     onDeleteInterp: () -> Unit = {},
+    /** ⭐ Motion transfer's whole-body pose ([com.abrah.nightmare.pose.WholeBodyPose]). */
+    wholeBody: ToolRow? = null,
+    onInstallWholeBody: () -> Unit = {},
+    onDeleteWholeBody: () -> Unit = {},
     /** ⭐ Fix faces / Fix hands' detector ([com.abrah.nightmare.detail.PartDetector]). */
     detailer: ToolRow? = null,
     onInstallDetailer: () -> Unit = {},
@@ -374,6 +378,7 @@ fun ModelsScreen(
     var deletingParser by remember { mutableStateOf(false) }
     var deletingPose by remember { mutableStateOf(false) }
     var deletingInterp by remember { mutableStateOf(false) }
+    var deletingWholeBody by remember { mutableStateOf(false) }
     var deletingDetailer by remember { mutableStateOf(false) }
     var deletingLivePortrait by remember { mutableStateOf(false) }
     val livePortraitWords = livePortrait?.let { it.label + " liveportrait face edit smile expression head portrait animate" }
@@ -381,6 +386,8 @@ fun ModelsScreen(
     val detailerWords = detailer?.let { it.label + " adetailer face hand fix" }
     // ⚠ The same: the Tools card and the All search match Smooth motion by these words.
     val interpWords = "ifrnet smooth motion frames fps interpolation video wan"
+    // ⚠ The same for the whole-body pose.
+    val wholeBodyWords = "dwpose whole body pose hands face skeleton motion transfer dance"
     var deletingDepth by remember { mutableStateOf(false) }
     var deletingDescribe by remember { mutableStateOf<com.abrah.nightmare.DescribeModel?>(null) }
     var deletingControlNet by remember { mutableStateOf<String?>(null) }
@@ -497,6 +504,14 @@ fun ModelsScreen(
                                 interp, busy, onInstallInterp, onCancel,
                                 detail = stringResource(R.string.interp_about),
                             ) { deletingInterp = true }
+                        }
+                    }
+                    if (wholeBody != null && match(wholeBody.label + " " + wholeBodyWords)) {
+                        item {
+                            ToolCard(
+                                wholeBody, busy, onInstallWholeBody, onCancel,
+                                detail = stringResource(R.string.whole_body_about),
+                            ) { deletingWholeBody = true }
                         }
                     }
                     if (detailer != null && match(detailerWords.orEmpty())) {
@@ -660,7 +675,8 @@ fun ModelsScreen(
                         else upscalers.filter { matchesWords(it.spec.label + " upscale upscaler", query) }
                     val tools = searchAll && (listOfNotNull(segmenter, parser, pose, depth) + controlnets.values + describe.values)
                         .any { matchesWords(it.label, query) } || (searchAll && detailerWords != null && matchesWords(detailerWords, query)) ||
-                        (searchAll && interp != null && matchesWords(interp.label + " " + interpWords, query))
+                        (searchAll && interp != null && matchesWords(interp.label + " " + interpWords, query)) ||
+                        (searchAll && wholeBody != null && matchesWords(wholeBody.label + " " + wholeBodyWords, query))
                     val faces = searchAll && livePortraitWords != null && matchesWords(livePortraitWords, query)
                     val otherHits = neoHit || wanHits.isNotEmpty() || ups.isNotEmpty() || faces || tools
                     for ((gi, group) in groups.withIndex()) {
@@ -871,6 +887,15 @@ fun ModelsScreen(
             body = stringResource(R.string.models_delete_interp_body, mb(interp.onDisk), mb(interp.bytes)),
             onConfirm = onDeleteInterp,
             onDismiss = { deletingInterp = false },
+        )
+    }
+
+    if (deletingWholeBody && wholeBody != null) {
+        ConfirmDelete(
+            title = stringResource(R.string.models_delete_title, wholeBody.label),
+            body = stringResource(R.string.models_delete_whole_body_body, mb(wholeBody.onDisk), mb(wholeBody.bytes)),
+            onConfirm = onDeleteWholeBody,
+            onDismiss = { deletingWholeBody = false },
         )
     }
 

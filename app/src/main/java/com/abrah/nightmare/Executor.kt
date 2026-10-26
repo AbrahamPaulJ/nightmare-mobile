@@ -58,6 +58,8 @@ class NeedsDownload(val tool: String, message: String) : Exception(message) {
         const val LIVEPORTRAIT = "liveportrait"
         /** ⭐ Smooth motion's IFRNet set ([com.abrah.nightmare.npu.FrameInterp]). */
         const val INTERP = "ifrnet"
+        /** ⭐ Motion transfer's whole-body pose, DWPose ([com.abrah.nightmare.pose.WholeBodyPose]). */
+        const val WHOLE_BODY = "dwpose"
     }
 }
 

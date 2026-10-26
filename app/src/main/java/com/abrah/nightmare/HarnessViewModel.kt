@@ -1329,6 +1329,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             id == PARSER_INSTALL_ID -> parserRow = parserRow?.copy(progress = p)
             id == POSE_INSTALL_ID -> poseRow = poseRow?.copy(progress = p)
             id == INTERP_INSTALL_ID -> interpRow = interpRow?.copy(progress = p)
+            id == WHOLE_BODY_INSTALL_ID -> wholeBodyRow = wholeBodyRow?.copy(progress = p)
             id == DEPTH_INSTALL_ID -> depthRow = depthRow?.copy(progress = p)
             describeRows.keys.any { it.installId == id } ->
                 describeRows = describeRows.mapValues { (m, row) -> if (m.installId == id) row.copy(progress = p) else row }
@@ -1499,6 +1500,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         lap("pose")
         refreshInterp()
         lap("interp")
+        refreshWholeBody()
+        lap("whole body")
         refreshDetailer()
         lap("detailer")
         refreshLivePortrait()
@@ -2519,6 +2522,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.DETAILER -> "detailer-tool"
                 com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> "liveportrait-tool"
                 com.abrah.nightmare.NeedsDownload.INTERP -> "interp-tool"
+                com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> "wholebody-tool"
                 else -> "cn-tool-$key"
             }
         }
@@ -2533,6 +2537,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.LABEL
             com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> com.abrah.nightmare.portrait.LivePortrait.LABEL
             com.abrah.nightmare.NeedsDownload.INTERP -> com.abrah.nightmare.npu.FrameInterp.LABEL
+            com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> com.abrah.nightmare.pose.WholeBodyPose.LABEL
             else -> cnRows[key]?.label ?: key
         },
     )
@@ -2598,6 +2603,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     com.abrah.nightmare.npu.WanFun.Mode.of(n.params[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE]) == com.abrah.nightmare.npu.WanFun.Mode.POSE &&
                     !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx) ->
                     label(com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE) to toolMissing(com.abrah.nightmare.NeedsDownload.POSE)
+                // ⭐ Pose draws the whole body (DWPose): offered the moment Pose is chosen, as MoveNet is.
+                n.type == com.abrah.nightmare.npu.WanFunNode.name &&
+                    n.params[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE] != o.params[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE] &&
+                    com.abrah.nightmare.npu.WanFun.Mode.of(n.params[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE]) == com.abrah.nightmare.npu.WanFun.Mode.POSE &&
+                    !com.abrah.nightmare.pose.WholeBodyPose.isInstalled(ctx) ->
+                    label(com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE) to toolMissing(com.abrah.nightmare.NeedsDownload.WHOLE_BODY)
                 n.type in com.abrah.nightmare.WAN_TYPES && on(com.abrah.nightmare.npu.WanVideoNode.SMOOTH) &&
                     com.abrah.nightmare.npu.FrameInterp.tierFor() != null && !com.abrah.nightmare.npu.FrameInterp.isInstalled(ctx) ->
                     label(com.abrah.nightmare.npu.WanVideoNode.SMOOTH) to toolMissing(com.abrah.nightmare.NeedsDownload.INTERP)
@@ -2632,6 +2643,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.BYTES
             com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> com.abrah.nightmare.portrait.LivePortrait.BYTES
             com.abrah.nightmare.NeedsDownload.INTERP -> com.abrah.nightmare.npu.FrameInterp.BYTES
+            com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> com.abrah.nightmare.pose.WholeBodyPose.BYTES
             else -> cnRows[m.key]?.bytes ?: 0L
         }
     }
@@ -2668,6 +2680,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.DETAILER -> detailerRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> livePortraitRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.INTERP -> interpRow?.installed == true
+                com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> wholeBodyRow?.installed == true
                 else -> cnRows[m.key]?.installed == true
             }
         }
@@ -2734,8 +2747,20 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     com.abrah.nightmare.npu.WanFunNode.effectiveParams(n)[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE]
                 ) == com.abrah.nightmare.npu.WanFun.Mode.POSE
         }
-        if (posing && !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx)) {
+        // ⭐ MoveNet also finds the person for the follow crop and the lined-up picture, in As is too.
+        val tracking = posing || graph.nodes.any { n ->
+            n.type == com.abrah.nightmare.npu.WanFunNode.name &&
+                com.abrah.nightmare.npu.WanFunNode.effectiveParams(n).let { p ->
+                    p[com.abrah.nightmare.npu.WanFun.FOLLOW] != "false" || p[com.abrah.nightmare.npu.WanFun.ALIGN] != "false"
+                }
+        }
+        if (tracking && !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx)) {
             missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.POSE)
+            return false
+        }
+        // ⭐ Pose draws the whole body (DWPose, the user's "B", 2026-10-27).
+        if (posing && !com.abrah.nightmare.pose.WholeBodyPose.isInstalled(ctx)) {
+            missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.WHOLE_BODY)
             return false
         }
         // ⭐ Smooth motion's IFRNet: asked here, as Pose is, so a clip is never rendered and then left unsmoothed.
@@ -2841,6 +2866,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.DETAILER -> installDetailer()
                 com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> installLivePortrait()
                 com.abrah.nightmare.NeedsDownload.INTERP -> installInterp()
+                com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> installWholeBody()
                 else -> installControlNet(m.key)
             }
         }
@@ -3124,6 +3150,71 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         com.abrah.nightmare.npu.FrameInterp.delete(getApplication())
         say("deleted ${com.abrah.nightmare.npu.FrameInterp.LABEL}")
         refreshInterp()
+    }
+
+    // ---- Whole-body pose, Motion transfer's skeletons ([com.abrah.nightmare.pose.WholeBodyPose]) ------------
+
+    /** ⭐ The Tools row for DWPose: the pose detector's shape exactly (above). */
+    var wholeBodyRow by mutableStateOf<com.abrah.nightmare.ui.ToolRow?>(null)
+        private set
+
+    private val WHOLE_BODY_INSTALL_ID = "wholebody-tool"
+
+    fun refreshWholeBody() {
+        val ctx = getApplication<Application>()
+        val wb = com.abrah.nightmare.pose.WholeBodyPose
+        wb.refresh(ctx)
+        wholeBodyRow = com.abrah.nightmare.ui.ToolRow(
+            label = wb.LABEL,
+            bytes = wb.BYTES,
+            installed = wb.installed,
+            onDisk = if (wb.installed) wb.bytesOnDisk(ctx) else 0L,
+            progress = if (installing == WHOLE_BODY_INSTALL_ID) installProgress else null,
+        )
+    }
+
+    fun installWholeBody() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        val wb = com.abrah.nightmare.pose.WholeBodyPose
+        installing = WHOLE_BODY_INSTALL_ID
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, wb.BYTES)
+        refreshWholeBody()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                wb.install(ctx, onProgress = { p -> viewModelScope.launch { tickProgress(p) } }, isCancelled = { cancelInstall })
+                viewModelScope.launch {
+                    say("installed ${wb.LABEL}")
+                    downloadSucceeded(wb.LABEL)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    ErrorReport.record(e)
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(wb.LABEL, modelError!!)
+                    say("install failed. $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshWholeBody()
+                }
+            }
+        }
+    }
+
+    fun deleteWholeBody() {
+        com.abrah.nightmare.pose.WholeBodyPose.delete(getApplication())
+        say("deleted ${com.abrah.nightmare.pose.WholeBodyPose.LABEL}")
+        refreshWholeBody()
     }
 
     // ---- LivePortrait, Face edit's models ([com.abrah.nightmare.portrait.LivePortrait]) ----------------

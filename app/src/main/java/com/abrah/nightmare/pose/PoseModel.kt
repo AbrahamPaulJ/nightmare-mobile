@@ -115,6 +115,38 @@ class PoseModel private constructor(
         return people
     }
 
+    /**
+     * ⭐ The LARGEST person's box in [image], (x0, y0, x1, y1) in its pixels, or null when nobody is found:
+     * Motion transfer's follow crop and its picture alignment ([com.abrah.nightmare.npu.MotionTrack]). The
+     * same pass as [detect]: MoveNet's own box per slot (ymin, xmin, ymax, xmax, score after the keypoints).
+     */
+    fun mainBox(image: Bitmap, instThreshold: Float = INST_THRESHOLD): FloatArray? {
+        val (tensorBuf, box) = letterbox(image)
+        val shape = longArrayOf(1, DIM.toLong(), DIM.toLong(), 3)
+        val raw = OnnxTensor.createTensor(env, tensorBuf, shape).use { input ->
+            session.run(mapOf(session.inputNames.first() to input)).use { result ->
+                FloatArray(SLOTS * STRIDE).also { (result.get(0) as OnnxTensor).floatBuffer.get(it) }
+            }
+        }
+        var best: FloatArray? = null
+        var bestArea = 0f
+        for (slot in 0 until SLOTS) {
+            val base = slot * STRIDE
+            if (raw[base + STRIDE - 1] < instThreshold) continue
+            fun px(v: Float, d: Float) = (v * DIM - d) / box.scale
+            val y0 = px(raw[base + BOX], box.dy).coerceIn(0f, image.height.toFloat())
+            val x0 = px(raw[base + BOX + 1], box.dx).coerceIn(0f, image.width.toFloat())
+            val y1 = px(raw[base + BOX + 2], box.dy).coerceIn(0f, image.height.toFloat())
+            val x1 = px(raw[base + BOX + 3], box.dx).coerceIn(0f, image.width.toFloat())
+            val area = (x1 - x0) * (y1 - y0)
+            if (area > bestArea) {
+                bestArea = area
+                best = floatArrayOf(x0, y0, x1, y1)
+            }
+        }
+        return best
+    }
+
     /** Where a letterboxed image sits inside the square frame. */
     private class Box(val scale: Float, val dx: Float, val dy: Float)
 
@@ -181,6 +213,9 @@ class PoseModel private constructor(
         private const val STRIDE = 56
 
         private const val COCO17 = 17
+
+        /** ⚠ A slot's box starts after its 17 x 3 keypoints. */
+        private const val BOX = COCO17 * 3
 
         private const val KP_THRESHOLD = 0.2f
         private const val INST_THRESHOLD = 0.2f

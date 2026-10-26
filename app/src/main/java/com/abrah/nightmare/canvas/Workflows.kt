@@ -908,9 +908,11 @@ fun motionTransferWorkflow(): Workflow = Workflow(
             Node("clip", com.abrah.nightmare.npu.LoadVideoNode.name, params = mapOf("uri" to "")),
             Node(
                 "motion", com.abrah.nightmare.npu.WanFunNode.name,
+                // ⭐ 480x832 for 5 s (2026-10-27): with the crop following the person, 480p reads face and hands at
+                // a third of 704p's time, and one pass of 704p holds only 2 s (`docs/VIDEO-GGML.md` §7).
                 params = mapOf(
-                    "seed" to "0", "width" to "704", "height" to "1280",
-                    com.abrah.nightmare.npu.WanFun.START to "0.0", com.abrah.nightmare.npu.WanFun.END to "2.0",
+                    "seed" to "0", "width" to "480", "height" to "832",
+                    com.abrah.nightmare.npu.WanFun.START to "0.0", com.abrah.nightmare.npu.WanFun.END to "5.0",
                 ),
                 inputs = sources("prompt" to "prompt", "image" to "image", com.abrah.nightmare.npu.WanFunNode.CONTROL to "clip"),
             ),

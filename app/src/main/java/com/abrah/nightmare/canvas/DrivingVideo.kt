@@ -107,9 +107,12 @@ internal fun rememberDrivingFrame(nodeId: String, uri: String?, startS: Double):
     }
 }
 
-/** ⚠ Pure: the box a node's params hold on the frame, else the frame's centre at the clip's shape. */
+/**
+ * ⚠ Pure: the box a node's params hold on the frame, else the frame's centre at the clip's shape. ⚠ With Follow the
+ * person on ([WanFun.FOLLOW]) the box is not used, so the tile and the loop show the centre, not a stale box.
+ */
 internal fun drivingRectOf(params: Map<String, String>, frameW: Int, frameH: Int, clipW: Int, clipH: Int): CropRect =
-    WanFun.rectOf(params)?.let { CropRect(it[0], it[1], it[2], it[3]) }
+    WanFun.rectOf(params)?.takeIf { params[WanFun.FOLLOW] == "false" }?.let { CropRect(it[0], it[1], it[2], it[3]) }
         ?: wholePhotoFraming(frameW, frameH, clipW.toFloat() / clipH.coerceAtLeast(1), com.abrah.nightmare.PadRule.NEVER)
 
 /**
@@ -177,12 +180,17 @@ internal fun DrivingVideoPanel(
         val stored = WanFun.constrainWindow(s0, e0, s0, -1.0, durS)
         var draft by remember(node.id, stored) { mutableStateOf<Pair<Double, Double>?>(null) }
         val (s, e) = draft ?: stored
-        val frames = WanFun.framesForGap(e - s)
+        val fps = WanFun.fpsOf(params)
+        val frames = WanFun.framesForGap(e - s, fps)
         Text(stringResource(R.string.driving_window), style = MaterialTheme.typography.bodyMedium)
         Text(
-            stringResource(R.string.driving_window_value, s, e, (frames - 1).toDouble() / WanVideoNode.FPS, frames),
+            stringResource(R.string.driving_window_value, s, e, (frames - 1).toDouble() / fps, frames),
             style = MaterialTheme.typography.bodySmall,
         )
+        // ⭐ A window longer than one pass is made in chained parts ([WanFun.partsOf]): said where its length is chosen.
+        WanFun.partsOf(frames, WanFun.partFramesFor(clipW, clipH)).size.takeIf { it > 1 }?.let { n ->
+            Text(stringResource(R.string.driving_parts, n), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         RangeSlider(
             value = s.toFloat()..e.toFloat(),
             onValueChange = { r ->
@@ -198,6 +206,11 @@ internal fun DrivingVideoPanel(
             },
         )
         Text(stringResource(R.string.driving_window_hint), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // ⭐ Follow the person ([WanFun.FOLLOW], on by default): the crop is worked out per frame, so no box to draw.
+        if (params[WanFun.FOLLOW] != "false") {
+            Text(stringResource(R.string.driving_follow_note), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@Column
+        }
         read.frame?.let { frame ->
             CropEditor(
                 source = frame,

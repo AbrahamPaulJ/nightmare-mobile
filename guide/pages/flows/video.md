@@ -92,19 +92,29 @@ encoder and decoder), 7.3 GB without. **Models → Video → Wan 2.2 Fun Control
 **Nodes:** Prompt, Image (who moves) and **Video** (the moving clip) → Motion transfer → Output.
 
 1. **Flows → Motion transfer.**
-2. Choose your picture on the **image** node: it is who the clip shows (face, clothes, setting).
-3. Choose a video on the **Video** node: a person dancing, walking, waving.
-4. On the Motion transfer node, tap the **Video** preview:
-    - **Part of the video**: drag either end. The part you choose is the clip's length, up to
-      5 seconds, shown as seconds and frames.
-    - **The box**: drawn on that part's first frame, at the clip's shape. Every frame is cut the
-      same way, so keep the person inside it.
+2. Choose your picture on the **image** node: it is who the clip shows (face, clothes, setting), and
+   the clip starts on it. A full-body photo works best.
+3. Choose a video on the **Video** node: a person dancing, walking, waving. Its sound can come along.
+4. On the Motion transfer node, tap the **Video** preview and drag either end of **Part of the
+   video**: the part you choose is the clip's length, up to 30 seconds. A long part is made in
+   pieces, each starting a few frames before the one before ends and joined where the two match best.
 5. Pick a **Mode** (the ⓘ beside it says which to use) and **Run**.
 
 | Mode | for |
 |---|---|
-| **Pose** | a real video of a person. The pose is read from every frame and your picture copies it. Body only: hands and face are not followed. Needs the Pose Detector (Models, Tools) |
+| **Pose** | a real video of a person. The body, hands and face are read from every frame and your picture copies them. Needs the Pose Detector and Whole-body pose (Models, Tools) |
 | **As is** | a video that already is a control video: a pose skeleton or a depth map made elsewhere. An ordinary video here will not work well |
 
+| Setting | what it does |
+|---|---|
+| **Frame rate** | how often the video is read: **24** (Wan's own rate, best), **12** or **8** (fewer frames, so faster, but the motion moves in bigger jumps; turn on **Smooth motion** to fill them in) |
+| **Follow the person** | on: the crop moves with the person on every frame, so a dancer who crosses the room stays large. Off: draw a box in the **Video** tab that cuts every frame the same way |
+| **Line up my picture** | on: your picture is cropped so its person stands where the dancer starts, at the dancer's size, so the clip does not open on two people |
+| **Keep audio** | on: the video's sound over the same part is copied into the clip |
+| **Smooth motion** | twice the frames, as on every Wan node |
+
 Motion transfer takes no LoRAs: `<lora:…>` tags in its prompt are skipped, and the run log says
-so. 480p is quickest; at 704 × 1280 faces hold better and a clip takes about three times as long.
+so. It opens at 480 × 832, where the crop that follows the person keeps faces and hands readable.
+On an 8 Elite 10 seconds at 24 fps take about 10 minutes, in three pieces; at 12 fps with Smooth motion about 5 minutes,
+in one piece (up to 10 seconds). If the app is closed mid-way (other apps need the memory), Run again with the same
+seed and it carries on from the last finished piece.

@@ -20,6 +20,7 @@ import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
+import kotlinx.coroutines.ensureActive
 
 /**
  * ⭐⭐ **Wan 2.2 video** — a prompt, or a prompt and a photo, into a clip, on the DiT engine
@@ -138,7 +139,7 @@ object WanVideoNode : NodeType {
         val (w, h) = sizeOf(p, prof)
         val caps = com.abrah.nightmare.DeviceProbe.caps()
         val budget = memoryBudget(
-            pinnedBytes(w, h, framesOf(node, p), prof),
+            pinnedBytes(w, h, passFrames(node, p), prof),
             caps.ramBytes, if (caps.known) caps.arch else 0, prof = prof,
         )
         return ContextKey(spec.backendType, spec.id, spec.native.width, spec.native.height, budget)
@@ -236,9 +237,18 @@ object WanVideoNode : NodeType {
      * the length ([WanFun.framesForGap]). The launch key and the run both read this.
      */
     internal fun framesOf(node: Node, p: Map<String, String>): Int =
-        if (node.type == WanFunNode.name) WanFun.windowOf(p).let { (s, e) -> WanFun.framesForGap(e - s) }
+        if (node.type == WanFunNode.name) WanFun.windowOf(p).let { (s, e) -> WanFun.framesForGap(e - s, WanFun.fpsOf(p)) }
         else profileOf(node.type).let { prof ->
             framesFor((p["seconds"]?.toIntOrNull() ?: prof.maxSeconds).coerceAtMost(prof.maxSeconds), prof.fps)
+        }
+
+    /**
+     * ⭐ The frames ONE pass of the engine holds: the clip's, or for Motion transfer its longest part
+     * ([WanFun.partsOf]). What the memory budget and the size warnings judge: a 30 s clip is six 5 s passes.
+     */
+    internal fun passFrames(node: Node, p: Map<String, String>): Int =
+        framesOf(node, p).let { f ->
+            if (node.type == WanFunNode.name) sizeOf(p).let { (w, h) -> minOf(f, WanFun.partFramesFor(w, h)) } else f
         }
 
     /** ⚠ Pure: the frame size the params ask for, on [prof]'s grid (32 px; the 14B's 16). */
@@ -569,40 +579,51 @@ object WanVideoNode : NodeType {
         val ram = caps.ramBytes
         val arch = if (caps.known) caps.arch else 0
         val prof = profileOf(node.type, arch)
-        val fps = prof.fps
-        val budget = memoryBudget(pinnedBytes(w, h, frames, prof), ram, arch, prof = prof)
-        val need = peakBytes(w, h, frames, budget, loras.size, prof)
+        // ⭐ Motion transfer samples its driving video at the rate it asks for ([WanFun.MOTION_FPS]); the model has none.
+        val fps = driving?.fps ?: prof.fps
+        // ⚠ One PASS is what the NPU holds at once: Motion transfer runs a long clip as parts ([passFrames]).
+        val pass = if (driving != null) minOf(frames, WanFun.partFramesFor(w, h)) else frames
+        val budget = memoryBudget(pinnedBytes(w, h, pass, prof), ram, arch, prof = prof)
+        val need = peakBytes(w, h, pass, budget, loras.size, prof)
         if (ram > 0 && !fits(need, ram)) {
             ctx.warn(ctx.text(R.string.run_wan_ram_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB on the NPU, more than this phone's %4\$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer",
-                "${w}x$h", (frames / fps).toString(), gb(need), gb(ram)))
+                "${w}x$h", (pass / fps).toString(), gb(need), gb(ram)))
         }
         if (!fitsChip(need, arch, budget)) {
             ctx.warn(ctx.text(R.string.run_wan_npu_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB of NPU memory at once, more than this phone's NPU takes, so it will probably fail. Trying anyway",
-                "${w}x$h", (frames / fps).toString(), gb(need)))
+                "${w}x$h", (pass / fps).toString(), gb(need)))
         }
 
         val source = inputs["image"] as? Value.Image
-        // ⭐⭐ Motion transfer: the wired picture is the REFERENCE, not the start frame (the model's
-        // `ref_conv`, VideoX-Fun's 5B example), and the driving video gives the motion.
         val motion = driving
+        val cancelled = VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job])
+        // ⭐⭐ Motion transfer reads its driving window FIRST ([MotionTrack]): the crop follows the person, and the
+        // picture is lined up with where they start.
+        val plan = motion?.let { m -> readMotion(ctx, node, android, m, w, h, frames, cancelled) }
         val framedPng: ByteArray? = source?.let { img ->
             val src = ctx.images.get(img.id)
                 ?: throw IllegalStateException("node \"${node.id}\": image ${img.id} is no longer in the store")
             fun f(k: String, d: Float) = p[k]?.toFloatOrNull() ?: d
+            val aligned = if (motion?.align == true && plan != null) alignedFrame(ctx, android, src, plan, w, h) else null
             // ⚠ Following the picture: never stretched (the user: "I dont want that"). The clip is the picture's exact
             // shape ([exactShape]), so this frame is the whole picture; only an odd shape no grid size matches loses a
             // few edge pixels, cut equally from both sides ([centredFrame]). [CropNode.render] scales x and y apart.
-            val (fx, fy, fw, fh) = if (follow) centredFrame(src.width, src.height, w, h)
-                else listOf(f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f))
+            val (fx, fy, fw, fh) = when {
+                aligned != null -> aligned.toList()
+                follow -> centredFrame(src.width, src.height, w, h)
+                else -> listOf(f("x", 0f), f("y", 0f), f("w", 1f), f("h", 1f))
+            }
             val framed = com.abrah.nightmare.CropNode.render(
                 src, fx, fy, fw, fh, w, h,
                 com.abrah.nightmare.CropNode.PAD_BLACK,
             ).first
             ByteArrayOutputStream().also { framed.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
         }
-        val startPng = framedPng.takeIf { motion == null }
+        // ⭐⭐ The picture starts the clip. On Motion transfer it is ALSO the reference (identity, the model's `ref_conv`):
+        // as the first frame too it kept the strap and brooch the reference alone lost (the user's "A", 2026-10-27).
+        val startPng = framedPng
         val refPng = framedPng.takeIf { motion != null }
 
         // ⭐⭐ Smooth motion ([SMOOTH]). ⚠ A clip CONTINUING a film takes the film's rate, whatever its switch says:
@@ -647,39 +668,15 @@ object WanVideoNode : NodeType {
                 // film ([FilmJoin], keyed on this file's name).
                 source?.let { "frame=" + listOf("x", "y", "w", "h").joinToString(",") { k -> p[k].orEmpty() } },
                 motion?.let { m -> "motion=${m.uri}/${m.mode.id}/${m.startMs}/${m.rect?.joinToString(",").orEmpty()}" },
+                // ⚠ The long-video knobs change the frames (rate, crop, start picture) or the file (sound).
+                motion?.let { m -> "motion2=${m.fps}/${m.follow}/${m.align}/${m.keepAudio}" },
             ))
                 .joinToString("\u0000")
         )
         val dir = File(android.cacheDir, "video").apply { mkdirs() }
         val raw = File(dir, "wan_$key.nmv")
         val out = File(dir, "clip_wan_$key.mp4")
-        // ⭐ The control video, made on the phone from the driving one (pose: MoveNet).
-        val controlFile = File(dir, "control_$key.nmv")
-        var clipFrames = frames
-        if (motion != null) {
-            ctx.say("  motion: ${motion.mode.id} from the driving video")
-            clipFrames = try {
-                WanFun.buildControl(
-                    android, motion.uri, motion.mode, w, h, frames, controlFile,
-                    startMs = motion.startMs, rect = motion.rect,
-                    // ⭐ Its own bar in the run log (the user's ask, 2026-10-16: pose is a good
-                    // share of the run): "pose 12/49", until the sampler's own steps take over.
-                    onFrame = { i, n ->
-                        ctx.onProgress(Ops.Progress(i, n, 0L, phase = motion.mode.id.replace('_', ' ')))
-                        if (i == n) ctx.say("  control: $n frames")
-                    },
-                    isCancelled = { coroutineContext[kotlinx.coroutines.Job]?.isActive == false },
-                )
-            } catch (e: com.abrah.nightmare.NeedsDownload) {
-                controlFile.delete()
-                throw com.abrah.nightmare.NeedsDownload(e.tool, "node \"${node.id}\": ${e.message}")
-            } catch (e: Exception) {
-                controlFile.delete()
-                throw IllegalStateException("node \"${node.id}\": ${e.message ?: e.javaClass.simpleName}")
-            }
-            // ⚠ The control bar ends here: no count until the sampler reports its first step.
-            ctx.onProgress(Ops.Progress(0, 0, 0L))
-        }
+        val clipFrames = plan?.frames ?: frames
         ctx.say("seed $used, ${w}x$h, $clipFrames frames" + when {
             motion != null -> ", your picture moving like the driving video"
             startPng != null -> ", animating your picture"
@@ -700,30 +697,10 @@ object WanVideoNode : NodeType {
             }
         }
         servedBy = com.abrah.nightmare.BackendProcess.processId
-        // ⭐ Fun Control: FastWan's LoRA (it stands in for the base model's 50 steps + CFG) and its 3-step
-        // schedule, measured (`docs/VIDEO-GGML.md` §7). Turbo keeps its own 4.
-        val control = motion != null
-        val r = try {
-            ctx.host.video(
-                prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = fps,
-                seed = used,
-                steps = (if (control) WanFun.SIGMAS else SIGMAS).size - 1,
-                sampleMethod = if (control) "euler" else prof.sampler,
-                sigmas = if (control) WanFun.SIGMAS else SIGMAS, tilingArgs = TILING,
-                out = raw.absolutePath, startPng = startPng,
-                loras = if (control) loras + (File(spec.dir(android), ModelCatalog.FUN_LORA).absolutePath to 1.0) else loras,
-                onProgress = { pr -> ctx.onProgress(pr) },
-                vaeTileSize = vaeTile,
-                controlVideo = controlFile.absolutePath.takeIf { control },
-                refPng = refPng,
-            )
-        } finally {
-            controlFile.delete()
-        }
-        val clip = when (r) {
+        fun unwrap(r: Ops.Result<Ops.Clip>, file: File): Ops.Clip = when (r) {
             is Ops.Result.Ok -> r.value
             is Ops.Result.Err -> {
-                raw.delete()
+                file.delete()
                 // ⭐ An NPU that could not map the clip's working buffer, said as such: the engine
                 // crashes right after (SIGSEGV), and testers saw only "EOFException" (GitHub #20).
                 val log = com.abrah.nightmare.BackendProcess.newestLaunch()
@@ -733,11 +710,143 @@ object WanVideoNode : NodeType {
                 if ((r.code == -1 || "generate_video failed" in r.body) && log.any { NPU_MAP_FAILED.containsMatchIn(it) }) {
                     throw IllegalStateException(
                         "node \"${node.id}\": the NPU could not hold this clip's working memory " +
-                            "(${w}x$h, ${frames / fps} s). " + mapAdvice(w, h, loras.isNotEmpty()) + " [${r.body}]"
+                            "(${w}x$h, ${pass / fps} s). " + mapAdvice(w, h, loras.isNotEmpty()) + " [${r.body}]"
                     )
                 }
                 throw IllegalStateException("node \"${node.id}\": ${com.abrah.nightmare.explainOpFailure(r.code, r.body)}")
             }
+        }
+        val clip = if (motion == null || plan == null) unwrap(
+            ctx.host.video(
+                prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = fps,
+                seed = used, steps = SIGMAS.size - 1, sampleMethod = prof.sampler, sigmas = SIGMAS, tilingArgs = TILING,
+                out = raw.absolutePath, startPng = startPng, loras = loras,
+                onProgress = { pr -> ctx.onProgress(pr) },
+                vaeTileSize = vaeTile,
+            ),
+            raw,
+        ) else {
+            // ⭐⭐ Motion transfer in PARTS ([WanFun.partsOf], the user's ask 2026-10-27: 30 s dance videos): each part
+            // starts on a frame near the end of the one before, its poses continuing from there, the picture still the
+            // reference, joined at the shared frame where the two match best ([WanFun.OVERLAP], `docs/VIDEO-GGML.md` §7).
+            // ⭐ Fun Control: FastWan's LoRA (it stands in for the base model's 50 steps + CFG) and its 3-step
+            // schedule, measured (`docs/VIDEO-GGML.md` §7). Turbo keeps its own 4.
+            val funLoras = loras + (File(spec.dir(android), ModelCatalog.FUN_LORA).absolutePath to 1.0)
+            val parts = WanFun.partsOf(plan.frames, WanFun.partFramesFor(w, h))
+            if (parts.size > 1) ctx.say("  ${parts.size} parts, each starting on the last frame of the one before")
+            var start = startPng
+            var total = 0
+            var ms = 0L
+            var ranPart = false
+            // ⭐⭐ RESUMABLE (2026-10-27: the S25's low-memory killer took the app in part 3 of a 10 s clip while
+            // other apps were open): after each part the clip so far is kept with a marker, so running the same
+            // node again (same seed, picture, video and knobs: [key]) carries on from the next part.
+            val marker = File(dir, "wan_$key.parts")
+            val resume = WanFun.resumeFrom(marker.takeIf { raw.isFile }?.let { runCatching { it.readText() }.getOrNull() }, parts.size)
+            RandomAccessFile(raw, "rw").use { all ->
+                if (resume == null) {
+                    all.setLength(0)
+                    all.write(ByteArray(HEADER_BYTES))
+                } else {
+                    total = resume.second
+                    ctx.say("  resuming: parts 1 to ${resume.first} were made by an earlier run")
+                }
+                for ((pi, part) in parts.withIndex()) {
+                    val (first, count) = part
+                    if (resume != null && pi < resume.first) continue
+                    coroutineContext.ensureActive()
+                    val bytes = w * h * 3
+                    // ⭐ A later part starts ON a frame the clip already has (the overlap's start, [WanFun.partsOf]).
+                    if (pi > 0) {
+                        val b = ByteArray(bytes)
+                        all.seek(HEADER_BYTES + first.toLong() * bytes)
+                        all.readFully(b)
+                        start = pngOfRgb(b, w, h)
+                    }
+                    if (parts.size > 1) ctx.say("  part ${pi + 1} of ${parts.size}: frames ${first + 1} to ${first + count}")
+                    val controlFile = File(dir, "control_${key}_$pi.nmv")
+                    val partRaw = File(dir, "wan_${key}_$pi.nmv")
+                    // ⭐⭐ Every part after the one that started this backend gets a FRESH backend. A warm one still holds
+                    // the DiT (2.9 GB) while it encodes the next part's control video, and that stack (5.2 to 5.6 GB of
+                    // DMA-BUF) is where the S25's low-memory killer took the app three times out of three, ~30 s into
+                    // part 2 or 3 with other apps open (2026-10-27). A fresh one encodes first and loads the DiT after,
+                    // as part 1 did. The 8 Gen 3 rule above, for the same reason in another form.
+                    if (ranPart) {
+                        ctx.say("  a fresh backend for part ${pi + 1}")
+                        com.abrah.nightmare.BackendProcess.stop()
+                        if (ctx.switchKey?.invoke(keyFor(node, spec)) != true) {
+                            throw IllegalStateException("node \"${node.id}\": the backend did not restart for part ${pi + 1}")
+                        }
+                        servedBy = com.abrah.nightmare.BackendProcess.processId
+                    }
+                    try {
+                        writeControl(android, motion, plan, first, count, w, h, controlFile, cancelled) { i, n ->
+                            ctx.onProgress(Ops.Progress(i, n, 0L, phase = motion.mode.id.replace('_', ' ')))
+                        }
+                        ctx.onProgress(Ops.Progress(0, 0, 0L))
+                        val c = unwrap(
+                            ctx.host.video(
+                                prompt = pos.text, negative = neg.text, width = w, height = h, frames = count, fps = fps,
+                                seed = used, steps = WanFun.SIGMAS.size - 1, sampleMethod = "euler",
+                                sigmas = WanFun.SIGMAS, tilingArgs = TILING,
+                                out = partRaw.absolutePath, startPng = start, loras = funLoras,
+                                onProgress = { pr -> ctx.onProgress(pr) },
+                                vaeTileSize = vaeTile,
+                                controlVideo = controlFile.absolutePath,
+                                // ⚠ The PHOTO for every part, never the part's start frame: tried (2026-10-27), the joins
+                                // were ~10% smaller (11.4 vs 12.7) and the face drifted further by 10 s.
+                                refPng = refPng,
+                            ),
+                            // ⚠ The PART's file, not the clip so far: a failed part leaves the finished ones to resume.
+                            partRaw,
+                        )
+                        ms += c.serverMs
+                        check(c.width == w && c.height == h) { "part ${pi + 1} came back ${c.width}x${c.height}, not ${w}x$h" }
+                        val buf = ByteArray(bytes)
+                        val old = ByteArray(bytes)
+                        RandomAccessFile(partRaw, "r").use { f ->
+                            // ⚠ A later part's frame 0 IS its start picture, a frame the clip has. Its next
+                            // [WanFun.OVERLAP] frames the clip has too: the new part takes over at the frame k whose
+                            // STEP from the clip's frame k - 1 is smallest ([seamDiff]), a cut, not a blend. ⚠ The step,
+                            // not new k against old k: that picked k = 1 every time, the model's first frame after a
+                            // start picture, the largest step in the clip (13.2, median 6.2). A blend ghosted: the parts
+                            // put an arm a few pixels apart (S25, 2026-10-27).
+                            var from = if (pi == 0) 0 else 1
+                            if (pi > 0) {
+                                var best = Double.MAX_VALUE
+                                for (k in 1..minOf(WanFun.OVERLAP, c.frames - 1)) {
+                                    if (first + k >= total) break
+                                    f.seek(HEADER_BYTES + k.toLong() * bytes)
+                                    f.readFully(buf)
+                                    all.seek(HEADER_BYTES + (first + k - 1).toLong() * bytes)
+                                    all.readFully(old)
+                                    val d = seamDiff(old, buf)
+                                    if (d < best) { best = d; from = k }
+                                }
+                                ctx.say("  joined at frame ${first + from + 1}")
+                            }
+                            for (k in from until c.frames) {
+                                f.seek(HEADER_BYTES + k.toLong() * bytes)
+                                f.readFully(buf)
+                                val g = first + k
+                                all.seek(HEADER_BYTES + g.toLong() * bytes)
+                                all.write(buf)
+                                total = maxOf(total, g + 1)
+                            }
+                        }
+                        all.fd.sync()
+                        marker.writeText("${pi + 1} $total")
+                        ranPart = true
+                    } finally {
+                        controlFile.delete()
+                        partRaw.delete()
+                    }
+                }
+                all.seek(0)
+                all.write(nmvHeader(w, h, total, fps))
+            }
+            marker.delete()
+            Ops.Clip(raw.absolutePath, total, w, h, fps, ms)
         }
         ctx.say("${clip.frames} frames in ${"%.1f".format(clip.serverMs / 1000.0)} s. Encoding")
         // ⚠ Opened only now: ~25 MB on the NPU, beside a backend that has finished its clip.
@@ -754,6 +863,11 @@ object WanVideoNode : NodeType {
             // ⭐ The encoder's lines go to the run log too: GitHub #26 sat at "Encoding" with nothing
             // saying how far it got.
             val (poster, last) = encodeClip(raw, out, VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]), smooth = session) {
+                Log.i(TAG, it)
+                ctx.say(it.trim())
+            }
+            // ⭐ Keep audio: the driving video's sound over exactly the span the clip shows ([AudioMux]).
+            if (motion?.keepAudio == true) AudioMux.mux(android, out, motion.uri, motion.startMs * 1000L) {
                 Log.i(TAG, it)
                 ctx.say(it.trim())
             }
@@ -793,6 +907,134 @@ object WanVideoNode : NodeType {
             raw.delete()
         }
     }
+
+    /**
+     * ⭐ Motion transfer's driving window, read and planned ([MotionTrack]): its [frames] (the window, shortened to
+     * the video), the [track] (null when nothing needs the person: As is with a still crop and no lining up), each
+     * frame's crop ([windowAt]: index, source width, height), and where the person starts and how tall they
+     * usually are in the clip's pixels ([startBox], [personH]: what the picture is lined up with).
+     */
+    private class MotionPlan(
+        val frames: Int,
+        val track: MotionTrack.Track?,
+        val windowAt: (Int, Int, Int) -> MotionTrack.Window,
+        val startBox: FloatArray?,
+        val personH: Float,
+    )
+
+    private fun readMotion(
+        ctx: NodeCtx, node: Node, app: android.content.Context, m: WanFun.Driving, w: Int, h: Int, wanted: Int,
+        cancelled: () -> Boolean,
+    ): MotionPlan {
+        val durationMs = android.media.MediaMetadataRetriever().let { r ->
+            try {
+                r.setDataSource(app, m.uri)
+                r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } catch (e: Exception) {
+                throw IllegalStateException("node \"${node.id}\": cannot read the driving video (${e.message ?: e.javaClass.simpleName})")
+            } finally {
+                runCatching { r.release() }
+            }
+        }
+        val count = WanFun.framesFrom(wanted, durationMs - m.startMs.coerceIn(0L, durationMs), m.fps)
+        if (count == 0) throw IllegalStateException("node \"${node.id}\": the driving video is too short: it needs at least a quarter of a second")
+        ctx.say("  motion: ${m.mode.id} from the driving video at ${m.fps} fps" +
+            (if (m.follow) ", the crop following the person" else "") + (if (m.align) ", your picture lined up" else ""))
+        val pose = m.mode == WanFun.Mode.POSE
+        if (!pose && !m.follow && !m.align) {
+            return MotionPlan(count, null, { _, sw, sh -> MotionTrack.fixedWindow(m.rect, sw, sh, w, h) }, null, 0f)
+        }
+        if (!com.abrah.nightmare.pose.PoseDetector.isInstalled(app)) {
+            throw com.abrah.nightmare.NeedsDownload(
+                com.abrah.nightmare.NeedsDownload.POSE, "node \"${node.id}\": the Pose Detector is not installed (Models, Tools)",
+            )
+        }
+        if (pose && !com.abrah.nightmare.pose.WholeBodyPose.isInstalled(app)) {
+            throw com.abrah.nightmare.NeedsDownload(
+                com.abrah.nightmare.NeedsDownload.WHOLE_BODY,
+                "node \"${node.id}\": ${com.abrah.nightmare.pose.WholeBodyPose.LABEL} is not installed (Models, Tools)",
+            )
+        }
+        val t0 = System.currentTimeMillis()
+        val track = try {
+            // ⭐ Its own bar in the run log (the user's ask, 2026-10-16: pose is a good share of the run).
+            MotionTrack.read(
+                app, m.uri, m.startMs, count, m.fps, wholeBody = pose,
+                onFrame = { i, n -> ctx.onProgress(Ops.Progress(i, n, 0L, phase = "pose")) },
+                isCancelled = cancelled,
+            )
+        } catch (e: Exception) {
+            throw IllegalStateException("node \"${node.id}\": ${e.message ?: e.javaClass.simpleName}")
+        }
+        ctx.onProgress(Ops.Progress(0, 0, 0L))
+        val found = track.boxes.count { it != null }
+        ctx.say("  read the person in $found of $count frames in ${"%.1f".format((System.currentTimeMillis() - t0) / 1000.0)} s")
+        val followed = if (m.follow) MotionTrack.followWindows(track.boxes, w, h) else null
+        if (m.follow && followed == null) {
+            ctx.warn(ctx.text(R.string.run_motion_nobody, "No person was found in the driving video, so the crop stays still"))
+        }
+        val fixed = MotionTrack.fixedWindow(m.rect, track.srcW, track.srcH, w, h)
+        val windows = followed ?: List(track.size) { fixed }
+        val first = track.boxes.indexOfFirst { it != null }
+        val startBox = if (first >= 0) MotionTrack.boxInWindow(track.boxes[first]!!, windows[first], w, h) else null
+        val heights = track.boxes.mapIndexedNotNull { i, b -> b?.let { (it[3] - it[1]) * h / windows[i].h } }
+        return MotionPlan(count, track, { i, _, _ -> windows[i] }, startBox, MotionTrack.quantile(heights, 0.95f))
+    }
+
+    /**
+     * ⭐ Line up my picture ([WanFun.ALIGN]): the crop of [src] that puts its person where the dancer starts, as
+     * fractions for [com.abrah.nightmare.CropNode.render], or null (said in the run log) when either has nobody.
+     */
+    private fun alignedFrame(ctx: NodeCtx, app: android.content.Context, src: Bitmap, plan: MotionPlan, w: Int, h: Int): FloatArray? {
+        val start = plan.startBox ?: return null
+        val box = com.abrah.nightmare.pose.PoseDetector.mainBox(app, src)
+        if (box == null) {
+            ctx.warn(ctx.text(R.string.run_motion_align_none, "No person was found in your picture, so it is used as framed"))
+            return null
+        }
+        return MotionTrack.alignRect(src.width, src.height, box, start, plan.personH, w, h)
+    }
+
+    /** ⭐ One part's control video: whole-body skeletons (Pose) or the frames as they are (As is), in their crops. */
+    private fun writeControl(
+        app: android.content.Context, m: WanFun.Driving, plan: MotionPlan, first: Int, count: Int, w: Int, h: Int,
+        out: File, cancelled: () -> Boolean, onFrame: (Int, Int) -> Unit,
+    ) {
+        val track = plan.track
+        if (m.mode == WanFun.Mode.POSE && track != null) {
+            MotionTrack.writePose(track, { i -> plan.windowAt(i, track.srcW, track.srcH) }, first, count, w, h, m.fps, out)
+        } else {
+            MotionTrack.writeAsIs(app, m.uri, m.startMs, m.fps, plan.windowAt, first, count, w, h, out, cancelled, onFrame)
+        }
+    }
+
+    /** ⚠ Pure: the mean absolute difference of two RGB8 frames of one size, every 7th byte (a cut's cost). */
+    internal fun seamDiff(a: ByteArray, b: ByteArray): Double {
+        var s = 0L
+        var n = 0
+        var i = 0
+        while (i < a.size) {
+            s += kotlin.math.abs((a[i].toInt() and 0xFF) - (b[i].toInt() and 0xFF))
+            n++
+            i += 7
+        }
+        return if (n == 0) 0.0 else s.toDouble() / n
+    }
+
+    /** ⚠ RGB8 frame bytes as a PNG: a frame of the clip, the next part's start picture. */
+    private fun pngOfRgb(rgb: ByteArray, w: Int, h: Int): ByteArray {
+        val px = IntArray(w * h) { i ->
+            0xFF000000.toInt() or ((rgb[i * 3].toInt() and 0xFF) shl 16) or
+                ((rgb[i * 3 + 1].toInt() and 0xFF) shl 8) or (rgb[i * 3 + 2].toInt() and 0xFF)
+        }
+        val b = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+        return ByteArrayOutputStream().also { b.compress(Bitmap.CompressFormat.PNG, 100, it); b.recycle() }.toByteArray()
+    }
+
+    /** ⚠ [MAGIC]'s 20-byte header. */
+    private fun nmvHeader(w: Int, h: Int, count: Int, fps: Int): ByteArray =
+        MAGIC.toByteArray(Charsets.US_ASCII) +
+            ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).putInt(w).putInt(h).putInt(count).putInt(fps).array()
 
     /**
      * ⭐ The backend's frame file ([Ops.video]) into [out] as MP4, a frame at a time, with the

@@ -142,6 +142,97 @@ object OpenPoseRender {
 
     const val TRANSPARENT = 0
 
+    /** ⭐ DWPose's draw threshold on its raw SimCC score (`controlnet_aux`'s `draw_pose`: 0.3). */
+    const val WHOLE_BODY_THRESHOLD = 0.3f
+
+    /** ⚠ COCO-WholeBody 133 -> OpenPose 18 (DWPose's `mmpose_to_openpose`); -1 is the neck, the shoulders' midpoint. */
+    private val OPENPOSE_FROM_WHOLE = intArrayOf(0, -1, 6, 8, 10, 5, 7, 9, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3)
+
+    /** `draw_handpose`'s 20 edges over a hand's 21 points. */
+    private val HAND_EDGES = arrayOf(
+        intArrayOf(0, 1), intArrayOf(1, 2), intArrayOf(2, 3), intArrayOf(3, 4), intArrayOf(0, 5), intArrayOf(5, 6),
+        intArrayOf(6, 7), intArrayOf(7, 8), intArrayOf(0, 9), intArrayOf(9, 10), intArrayOf(10, 11), intArrayOf(11, 12),
+        intArrayOf(0, 13), intArrayOf(13, 14), intArrayOf(14, 15), intArrayOf(15, 16), intArrayOf(0, 17), intArrayOf(17, 18),
+        intArrayOf(18, 19), intArrayOf(19, 20),
+    )
+
+    /** ⚠ Where the hands and face sit in COCO-WholeBody's 133. */
+    private const val LEFT_HAND = 91
+    private const val RIGHT_HAND = 112
+    private const val FACE = 23
+    private const val FACE_END = 91
+
+    /**
+     * ⭐⭐ DWPose's skeleton (`controlnet_aux`'s `draw_pose`): what Wan 2.2 Fun Control was trained on. Each person
+     * is 133 x (x, y, score) in the CANVAS's pixels. The body exactly as [render] draws it (the same 18 joints and
+     * limbs), then the hands (20 lines in hue order, 2 px, and blue dots), then the face (68 white dots, radius 3).
+     * A point under [threshold] is not drawn.
+     */
+    fun renderWholeBody(people: List<FloatArray>, width: Int, height: Int, threshold: Float = WHOLE_BODY_THRESHOLD): Bitmap {
+        val px = IntArray(width * height) { BLACK }
+        for (p in people) {
+            fun ok(i: Int) = p[i * 3 + 2] >= threshold
+            val body = Pose()
+            for (op in 0 until JOINTS) {
+                val k = OPENPOSE_FROM_WHOLE[op]
+                if (k < 0) {
+                    if (ok(5) && ok(6)) body.set(op, (p[15] + p[18]) / 2f / width, (p[16] + p[19]) / 2f / height)
+                } else if (ok(k)) {
+                    body.set(op, p[k * 3] / width, p[k * 3 + 1] / height)
+                }
+            }
+            draw(px, width, height, body)
+            for (base in intArrayOf(LEFT_HAND, RIGHT_HAND)) {
+                for ((e, edge) in HAND_EDGES.withIndex()) {
+                    val a = base + edge[0]
+                    val b = base + edge[1]
+                    if (!ok(a) || !ok(b)) continue
+                    thickLine(px, width, height, p[a * 3], p[a * 3 + 1], p[b * 3], p[b * 3 + 1], hue(e.toFloat() / HAND_EDGES.size))
+                }
+                for (k in base until base + 21) {
+                    if (ok(k)) fillCircle(px, width, height, p[k * 3].toInt(), p[k * 3 + 1].toInt(), JOINT_RADIUS, BLACK or 0x0000FF)
+                }
+            }
+            for (k in FACE until FACE_END) {
+                if (ok(k)) fillCircle(px, width, height, p[k * 3].toInt(), p[k * 3 + 1].toInt(), FACE_RADIUS, BLACK or 0xFFFFFF)
+            }
+        }
+        return Bitmap.createBitmap(px, width, height, Bitmap.Config.ARGB_8888)
+    }
+
+    private const val FACE_RADIUS = 3
+
+    /** ⚠ `matplotlib`'s `hsv_to_rgb([h, 1, 1]) * 255`, truncated as `controlnet_aux` casts it. */
+    internal fun hue(h: Float): Int {
+        val i = (h * 6f).toInt()
+        val f = h * 6f - i
+        val q = ((1f - f) * 255f).toInt()
+        val t = (f * 255f).toInt()
+        val (r, g, b) = when (i % 6) {
+            0 -> Triple(255, t, 0)
+            1 -> Triple(q, 255, 0)
+            2 -> Triple(0, 255, t)
+            3 -> Triple(0, q, 255)
+            4 -> Triple(t, 0, 255)
+            else -> Triple(255, 0, q)
+        }
+        return BLACK or (r shl 16) or (g shl 8) or b
+    }
+
+    /** ⚠ A ~2 px line (cv2 `thickness=2`): radius-1 dots stepped along it. */
+    private fun thickLine(px: IntArray, w: Int, h: Int, x0: Float, y0: Float, x1: Float, y1: Float, color: Int) {
+        val n = maxOf(1, kotlin.math.ceil(hypot((x1 - x0).toDouble(), (y1 - y0).toDouble())).toInt())
+        for (s in 0..n) {
+            val x = (x0 + (x1 - x0) * s / n).toInt()
+            val y = (y0 + (y1 - y0) * s / n).toInt()
+            for (dy in 0..1) for (dx in 0..1) {
+                val xx = x + dx
+                val yy = y + dy
+                if (xx in 0 until w && yy in 0 until h) px[yy * w + xx] = color
+            }
+        }
+    }
+
     private fun draw(px: IntArray, w: Int, h: Int, pose: Pose) {
         for (i in LIMBS.indices) {
             val (j1, j2) = LIMBS[i].let { it[0] to it[1] }

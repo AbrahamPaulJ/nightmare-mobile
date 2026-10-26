@@ -257,11 +257,16 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
             val spec = com.abrah.nightmare.npu.WanVideoNode.specOf(n) ?: continue
             if (!spec.installed(ctx)) return "node \"${n.id}\" needs ${spec.label} (\"${spec.id}\"), which is not installed"
             if (!DitEngine.isInstalled(ctx)) return "${spec.label} needs the DiT engine. Download it in the app first"
-            val pose = com.abrah.nightmare.npu.WanFun.Mode.of(
-                com.abrah.nightmare.npu.WanFunNode.effectiveParams(n)[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE]
-            ) == com.abrah.nightmare.npu.WanFun.Mode.POSE
-            if (n.type == com.abrah.nightmare.npu.WanFunNode.name && pose && !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx)) {
-                return "node \"${n.id}\" reads poses with the Pose Detector, which is not installed. Download it in the app (Models, Tools) or set motion_mode to as_is"
+            if (n.type != com.abrah.nightmare.npu.WanFunNode.name) continue
+            val p = com.abrah.nightmare.npu.WanFunNode.effectiveParams(n)
+            val pose = com.abrah.nightmare.npu.WanFun.Mode.of(p[com.abrah.nightmare.npu.WanVideoNode.MOTION_MODE]) == com.abrah.nightmare.npu.WanFun.Mode.POSE
+            // ⭐ MoveNet finds the person for Pose, the follow crop and the lined-up picture; DWPose draws Pose.
+            val tracking = pose || p[com.abrah.nightmare.npu.WanFun.FOLLOW] != "false" || p[com.abrah.nightmare.npu.WanFun.ALIGN] != "false"
+            if (tracking && !com.abrah.nightmare.pose.PoseDetector.isInstalled(ctx)) {
+                return "node \"${n.id}\" finds the person with the Pose Detector, which is not installed. Download it in the app (Models, Tools), or set motion_mode to as_is and follow and align to false"
+            }
+            if (pose && !com.abrah.nightmare.pose.WholeBodyPose.isInstalled(ctx)) {
+                return "node \"${n.id}\" draws poses with ${com.abrah.nightmare.pose.WholeBodyPose.LABEL}, which is not installed. Download it in the app (Models, Tools) or set motion_mode to as_is"
             }
         }
         // ⭐ Fix faces / Fix hands: the app asks for the detector with a popup; a caller is told ([PartDetector]).

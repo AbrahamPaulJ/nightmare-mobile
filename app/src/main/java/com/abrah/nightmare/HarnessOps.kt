@@ -289,6 +289,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "segmenter_install" -> segmenterInstall()
             "pose_install" -> poseInstall()
             "interp_install" -> interpInstall()
+            "wholebody_install" -> wholeBodyInstall()
             "detailer_install" -> detailerInstall()
             "detail_run" -> detailRun(arg)
             "depth_install" -> depthInstall()
@@ -1955,6 +1956,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                                     arrayOf(com.abrah.nightmare.npu.WanFun.START to s.trim(), com.abrah.nightmare.npu.WanFun.END to e.trim())
                                 }.orEmpty(),
                                 at(4).takeIf { it.isNotEmpty() }?.let { "seed" to it },
+                                // ⭐ Any other knob: "motion_fps=12;follow=false;smooth=true".
+                                *at(5).split(';').mapNotNull { kv ->
+                                    kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { (k, v) -> k.trim() to v.trim() }
+                                }.toTypedArray(),
                             ),
                         )
                         else -> n
@@ -3920,6 +3925,19 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 fi.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
             }
             say("  ok   ${fi.bytesOnDisk(ctx)} B at ${fi.dir(ctx).absolutePath}, installed=${fi.isInstalled(ctx)}")
+        } catch (e: Throwable) {
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    private suspend fun wholeBodyInstall() {
+        val wb = com.abrah.nightmare.pose.WholeBodyPose
+        say("wholebody_install: ${wb.LABEL}, ${wb.BYTES} B")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                wb.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+            }
+            say("  ok   ${wb.bytesOnDisk(ctx)} B at ${wb.dir(ctx).absolutePath}, installed=${wb.isInstalled(ctx)}")
         } catch (e: Throwable) {
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
         }

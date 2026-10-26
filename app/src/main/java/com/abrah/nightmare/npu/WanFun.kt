@@ -1,15 +1,8 @@
 package com.abrah.nightmare.npu
 
-import android.content.Context
-import android.graphics.Bitmap
-import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.util.Log
 import com.abrah.nightmare.ModelCatalog
-import java.io.BufferedOutputStream
 import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
 import com.abrah.nightmare.Node
 import com.abrah.nightmare.NodeCtx
 import com.abrah.nightmare.NodeType
@@ -17,8 +10,6 @@ import com.abrah.nightmare.Port
 import com.abrah.nightmare.R
 import com.abrah.nightmare.Value
 import com.abrah.nightmare.Widget
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 /**
  * ⭐⭐ **Wan 2.2 Fun 5B Control: motion transfer.** A driving video's motion (its pose or depth, frame by
@@ -41,8 +32,88 @@ object WanFun {
     /**
      * ⭐ A driving video and how its frames become the control video: the window [startMs] on, and
      * [rect] (the Video tab's crop, fractions of the frame; null = the centre at the clip's shape).
+     * ⭐ [fps] samples it ([FPS_CHOICES]); [follow] crops each frame around the person instead of [rect];
+     * [align] fits the wired picture's person to the first pose; [keepAudio] muxes the window's sound back in.
      */
-    data class Driving(val uri: Uri, val mode: Mode, val startMs: Long = 0L, val rect: FloatArray? = null)
+    data class Driving(
+        val uri: Uri, val mode: Mode, val startMs: Long = 0L, val rect: FloatArray? = null,
+        val fps: Int = WanVideoNode.FPS, val follow: Boolean = false, val align: Boolean = false,
+        val keepAudio: Boolean = false,
+    )
+
+    // ⭐⭐ The long-video knobs (the user's calls, 2026-10-27; measured in `docs/VIDEO-GGML.md` §7).
+    /** ⭐ How often the driving video is sampled: 24 (Wan's own rate) or sparser and faster. */
+    const val MOTION_FPS = "motion_fps"
+    val FPS_CHOICES = listOf("24", "12", "8")
+
+    /** ⭐ The crop follows the person (a dancer who crosses the room stays large), else the Video tab's box. */
+    const val FOLLOW = "follow"
+
+    /** ⭐ The wired picture's person is scaled and placed where the dancer starts (no second figure at the start). */
+    const val ALIGN = "align"
+
+    /** ⭐ The driving video's sound over the same span, muxed into the clip. */
+    const val KEEP_AUDIO = "keep_audio"
+
+    /**
+     * ⭐ The longest window: 30 s (the user's ask: "converting a 30 sec dance video"), made as chained parts of at
+     * most [PART_FRAMES] frames, each started from the last frame of the one before ([partsOf]).
+     */
+    const val MAX_SECONDS = 30
+
+    /** ⭐ One part: at most 121 frames (5 s at 24 fps), what one pass holds at 480x832 on the S25. */
+    const val PART_FRAMES = 121
+
+    /**
+     * ⚠ The tokens one pass may hold: 480x832 x 121 frames (15 x 26 x 31), which ran (219 s). 704x1280 x 121
+     * asked 5.1 GB for one block against a 3.8 GB budget and failed; 704x1280 x 49 (13,200 tokens) ran in 327 s.
+     */
+    const val PASS_TOKENS = 15 * 26 * 31
+
+    /** ⚠ Pure: the longest part (4n+1, at most [PART_FRAMES]) whose tokens stay within [PASS_TOKENS] at [w] x [h]. */
+    fun partFramesFor(w: Int, h: Int): Int {
+        val perLatent = ((w / 32) * (h / 32)).coerceAtLeast(1)
+        val latents = (PASS_TOKENS / perLatent).coerceAtLeast(2)
+        return ((latents - 1) * FRAME_STEP + 1).coerceIn(MIN_FRAMES, PART_FRAMES)
+    }
+
+    /** ⚠ Pure: the sampling rate a node's params ask for, one of [FPS_CHOICES]. */
+    fun fpsOf(p: Map<String, String>): Int =
+        p[MOTION_FPS]?.takeIf { it in FPS_CHOICES }?.toInt() ?: WanVideoNode.FPS
+
+    /**
+     * ⭐ Frames two parts share past the start picture; the new part takes over at the one where the two look most
+     * alike. On the S25 (1.6.247): a part joined right at its start picture made the clip's largest frame step (12.6
+     * against a median 5.9, the model's first frame after a start picture changes the texture at once); a cross-fade
+     * over the shared frames ghosted (the parts put an arm a few pixels apart). A multiple of 4: every part stays 4n+1.
+     */
+    const val OVERLAP = 8
+
+    /**
+     * ⚠ Pure: the parts a clip of [frames] (4n+1) is made of, as (first frame, count), each at most [part]
+     * long. A part after the first starts [overlap] + 1 frames before the previous one ends: on a frame of it (its
+     * start picture), the next [overlap] shared. As few parts as cover the clip, of even length (the last may be
+     * shorter); the joined clip is exactly [frames] long and every count is 4n+1.
+     */
+    fun partsOf(frames: Int, part: Int = PART_FRAMES, overlap: Int = OVERLAP): List<Pair<Int, Int>> {
+        if (frames <= part) return listOf(0 to frames)
+        val span = frames - 1 - overlap
+        val n = (span + (part - 2 - overlap)) / (part - 1 - overlap)
+        val len = (1 + ((overlap + (span + n - 1) / n + 3) / 4) * 4).coerceAtMost(part)
+        val step = len - 1 - overlap
+        return (0 until n).map { i -> i * step to minOf(len, frames - i * step) }.filter { it.second > 1 + overlap || it.first == 0 }
+    }
+
+    /**
+     * ⚠ Pure: where a run picks up from a kept marker ("parts done, frames written"): (next part, frames), or null
+     * to start over (no marker, unreadable, or nothing left to do: a finished clip is not resumed into).
+     */
+    fun resumeFrom(marker: String?, parts: Int): Pair<Int, Int>? {
+        val v = marker?.trim()?.split(" ")?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 2 } ?: return null
+        val done = v[0]
+        val made = v[1]
+        return if (done in 1 until parts && made > 0) done to made else null
+    }
 
     // ⭐⭐ The Video tab's params (the user's calls, 2026-10-15): the window on the driving video,
     // two handles whose gap IS the clip, and the crop drawn on the window's first frame.
@@ -66,14 +137,14 @@ object WanFun {
      */
     fun framesForGap(gapS: Double, fps: Int = WanVideoNode.FPS): Int {
         val steps = Math.round(gapS * fps / FRAME_STEP).toInt()
-        return (steps * FRAME_STEP + 1).coerceIn(MIN_FRAMES, WanVideoNode.framesFor(WanVideoNode.MAX_SECONDS))
+        return (steps * FRAME_STEP + 1).coerceIn(MIN_FRAMES, MAX_SECONDS * fps + 1)
     }
 
     /** ⚠ Pure: the window a node's params ask for, in seconds: (start, end), end after start. */
     fun windowOf(p: Map<String, String>): Pair<Double, Double> {
         val start = (p[START]?.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
         val end = p[END]?.toDoubleOrNull() ?: (start + WanVideoNode.MAX_SECONDS)
-        return start to end.coerceIn(start, start + WanVideoNode.MAX_SECONDS)
+        return start to end.coerceIn(start, start + MAX_SECONDS)
     }
 
     /**
@@ -83,7 +154,7 @@ object WanFun {
      */
     fun constrainWindow(s: Double, e: Double, prevS: Double, prevE: Double, durS: Double, fps: Int = WanVideoNode.FPS): Pair<Double, Double> {
         val minGap = (MIN_FRAMES - 1).toDouble() / fps
-        val maxGap = WanVideoNode.MAX_SECONDS.toDouble()
+        val maxGap = MAX_SECONDS.toDouble()
         val dur = durS.coerceAtLeast(minGap)
         return if (s != prevS) {
             val end = e.coerceIn(minGap, dur)
@@ -149,82 +220,12 @@ object WanFun {
         val cx = rect[0] + rect[2] / 2f
         return floatArrayOf(cx - rw / 2f, rect[1], rw, rect[3])
     }
-
-    /**
-     * ⭐⭐ The control video for a clip: [uri]'s frames at 24 fps, centre-cropped to [w]x[h], each made a
-     * pose skeleton or kept as it is ([mode]), written to [out] in the NMV1 layout the
-     * backend reads (`"NMV1"`, int32 LE w, h, count, fps, then RGB8 frames). Returns the frame count.
-     * ⚠ Blocking: ~100 ms a frame for pose (121 frames in 12 s on an SM8750, GitHub #40); [onFrame] reports it.
-     */
-    fun buildControl(
-        context: Context,
-        uri: Uri,
-        mode: Mode,
-        w: Int,
-        h: Int,
-        wanted: Int,
-        out: File,
-        startMs: Long = 0L,
-        rect: FloatArray? = null,
-        onFrame: (Int, Int) -> Unit = { _, _ -> },
-        isCancelled: () -> Boolean = { false },
-    ): Int {
-        val r = MediaMetadataRetriever()
-        try {
-            r.setDataSource(context, uri)
-            val duration = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            val count = framesFrom(wanted, duration - startMs.coerceIn(0L, duration))
-            if (count == 0) throw IOException("the driving video is too short: it needs at least a quarter of a second")
-            val rgb = ByteArray(w * h * 3)
-            val px = IntArray(w * h)
-            // ⚠⚠ In order, a batch at a time ([DriverFrames], Animate a portrait's reader): one exact
-            // seek per frame failed partway on the S25 ("could not read frame 15") and decoded from
-            // the previous keyframe every time.
-            val driver = DriverFrames(r, duration)
-            BufferedOutputStream(FileOutputStream(out), 1 shl 20).use { os ->
-                os.write("NMV1".toByteArray(Charsets.US_ASCII))
-                os.write(ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
-                    .putInt(w).putInt(h).putInt(count).putInt(WanVideoNode.FPS).array())
-                for (i in 0 until count) {
-                    if (isCancelled()) throw IOException("cancelled")
-                    val ms = startMs + i * 1000L / WanVideoNode.FPS
-                    val src = driver.at(ms)
-                        ?: throw IOException("could not read frame ${i + 1} of the driving video")
-                    // ⭐ The Video tab's box, black past the frame (it may zoom out √2); else the centre.
-                    val framed = if (rect != null) {
-                        val r = fitRect(rect, src.width, src.height, w, h)
-                        com.abrah.nightmare.CropNode.render(src, r[0], r[1], r[2], r[3], w, h, com.abrah.nightmare.CropNode.PAD_BLACK).first
-                    } else {
-                        val c = cropFor(src.width, src.height, w, h)
-                        Bitmap.createScaledBitmap(Bitmap.createBitmap(src, c[0], c[1], c[2], c[3]), w, h, true)
-                    }
-                    val control = when (mode) {
-                        Mode.POSE -> com.abrah.nightmare.pose.PoseDetector.skeleton(context, framed)
-                            ?: throw com.abrah.nightmare.NeedsDownload(
-                                com.abrah.nightmare.NeedsDownload.POSE, "the Pose Detector is not installed (Models, Tools)",
-                            )
-                        Mode.AS_IS -> framed
-                    }.let { if (it.width != w || it.height != h) Bitmap.createScaledBitmap(it, w, h, true) else it }
-                    control.getPixels(px, 0, w, 0, 0, w, h)
-                    var o = 0
-                    for (p in px) {
-                        rgb[o++] = (p shr 16).toByte(); rgb[o++] = (p shr 8).toByte(); rgb[o++] = p.toByte()
-                    }
-                    os.write(rgb)
-                    onFrame(i + 1, count)
-                }
-            }
-            return count
-        } finally {
-            runCatching { r.release() }
-        }
-    }
 }
 
 /**
  * ⭐⭐ **Motion transfer** on [ModelCatalog.WAN22_FUN]: Wan's node ([WanVideoNode], same size, LoRAs, seed
  * and seconds) with a `control` input taking the driving clip from a Video node ([LoadVideoNode], the user's
- * call 2026-10-15). The wired `image` is the reference: who the clip shows.
+ * call 2026-10-15). The wired `image` is the reference (who the clip shows) and, since 2026-10-27, its first frame.
  */
 object WanFunNode : NodeType {
 
@@ -250,6 +251,11 @@ object WanFunNode : NodeType {
             WanVideoNode.MOTION_MODE, "string", WanFun.Mode.POSE.id,
             options = WanFun.Mode.entries.map { it.id }, hintRes = R.string.hint_motion_mode,
         ),
+        // ⭐⭐ The long-video knobs (the user's calls, 2026-10-27; `docs/VIDEO-GGML.md` §7).
+        Widget(WanFun.MOTION_FPS, "string", WanFun.FPS_CHOICES.first(), options = WanFun.FPS_CHOICES, hintRes = R.string.hint_motion_fps),
+        Widget(WanFun.FOLLOW, "bool", "true", hintRes = R.string.hint_motion_follow),
+        Widget(WanFun.ALIGN, "bool", "true", hintRes = R.string.hint_motion_align),
+        Widget(WanFun.KEEP_AUDIO, "bool", "true", hintRes = R.string.hint_motion_audio),
         // ⭐ Drawn by the Video tab ([com.abrah.nightmare.canvas.DrivingVideoPanel]), never as knobs.
         Widget(WanFun.START, "float", "0.0", 0.0),
         Widget(WanFun.END, "float", WanVideoNode.MAX_SECONDS.toDouble().toString(), 0.0),
@@ -277,7 +283,13 @@ object WanFunNode : NodeType {
         val (start, _) = WanFun.windowOf(p)
         return WanVideoNode.runClip(
             ctx, node, inputs, ModelCatalog.WAN22_FUN,
-            WanFun.Driving(Uri.fromFile(File(control.path)), mode, (start * 1000).toLong(), WanFun.rectOf(p)),
+            WanFun.Driving(
+                Uri.fromFile(File(control.path)), mode, (start * 1000).toLong(), WanFun.rectOf(p),
+                fps = WanFun.fpsOf(p),
+                follow = p[WanFun.FOLLOW] != "false",
+                align = p[WanFun.ALIGN] != "false",
+                keepAudio = p[WanFun.KEEP_AUDIO] != "false",
+            ),
         )
     }
 }
