@@ -1,0 +1,57 @@
+diff --git a/src/model/diffusion/fibo2.hpp b/src/model/diffusion/fibo2.hpp
+index 30af30f..3d0bcb2 100644
+--- a/src/model/diffusion/fibo2.hpp
++++ b/src/model/diffusion/fibo2.hpp
+@@ -111,6 +111,17 @@ namespace Fibo2 {
+ 
+         ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* kv, ggml_tensor* pe = nullptr) {
+             auto c       = ctx->ggml_ctx;
++            // nightmare (dit/056): dit/025's Z-Image fix on Fibo, the same DiT layout. On Hexagon a matmul result
++            // passes through fp16, and Z-Image's attention.out reached 138k (inf -> NaN); pre-scaled by 1/16.
++            // SD_FIBO2_OUT_SCALE overrides; fp8 weights are left alone, as there.
++            auto out_proj = std::dynamic_pointer_cast<Linear>(blocks["to_out.0"]);
++            if (sd_backend_is(ctx->backend, "HTP") && out_proj->weight_type() != GGML_TYPE_F8_E4M3) {
++                static const float htp_out_scale = [] {
++                    const char* e = getenv("SD_FIBO2_OUT_SCALE");
++                    return e ? (float)atof(e) : 1.f / 16.f;
++                }();
++                out_proj->set_scale(htp_out_scale);
++            }
+             auto project = [&](const char* name, ggml_tensor* h) {
+                 return std::dynamic_pointer_cast<Linear>(blocks[name])->forward(ctx, h);
+             };
+@@ -134,8 +145,23 @@ namespace Fibo2 {
+             auto reshape = [&](ggml_tensor* h) {
+                 return ggml_reshape_4d(c, h, head_dim, heads, h->ne[1], h->ne[2]);
+             };
+-            q            = std::dynamic_pointer_cast<RMSNorm>(blocks["norm_q"])->forward(ctx, reshape(q));
+-            k            = std::dynamic_pointer_cast<RMSNorm>(blocks["norm_k"])->forward(ctx, reshape(k));
++            auto norm_q = std::dynamic_pointer_cast<RMSNorm>(blocks["norm_q"]);
++            auto norm_k = std::dynamic_pointer_cast<RMSNorm>(blocks["norm_k"]);
++            // nightmare (dit/056): self-attention takes Z-Image's fused path where the backend has it (the HTP's
++            // ggml_qknorm_rope, one op for RMSNorm + rope; MOSS's composed rope was 85% of its NPU time, dit/035),
++            // and Z-Image's 1/128 value scale against fp16 overflow. Cross-attention (no rope) and a backend without
++            // the op keep upstream's path below.
++            if (pe) {
++                auto q_rope = norm_q->try_forward_rope(ctx, reshape(q), pe);
++                auto k_rope = norm_k->try_forward_rope(ctx, reshape(k), pe);
++                if (q_rope != nullptr && k_rope != nullptr) {
++                    auto y = ggml_ext_attention_ext(c, ctx->backend, q_rope, k_rope, reshape(v), heads, nullptr, true,
++                                                    ctx->flash_attn_enabled, 1.f / 128.f);
++                    return out_proj->forward(ctx, y);
++                }
++            }
++            q            = norm_q->forward(ctx, reshape(q));
++            k            = norm_k->forward(ctx, reshape(k));
+             v            = reshape(v);
+             auto prepare = [&](ggml_tensor* h) {
+                 if (pe) {
+@@ -145,7 +171,7 @@ namespace Fibo2 {
+                 return ggml_reshape_3d(c, h, head_dim, h->ne[1], heads * h->ne[3]);
+             };
+             auto y = ggml_ext_attention_ext(c, ctx->backend, prepare(q), prepare(k), v, heads, nullptr, true, ctx->flash_attn_enabled);
+-            return std::dynamic_pointer_cast<Linear>(blocks["to_out.0"])->forward(ctx, y);
++            return out_proj->forward(ctx, y);
+         }
+     };
+ 
