@@ -1,0 +1,34 @@
+diff --git a/src/core/ggml_graph_cut.cpp b/src/core/ggml_graph_cut.cpp
+index 7971005..e43c821 100644
+--- a/src/core/ggml_graph_cut.cpp
++++ b/src/core/ggml_graph_cut.cpp
+@@ -684,6 +684,29 @@ namespace sd::ggml_graph_cut {
+         for (int node_idx : segment.internal_node_indices) {
+             ggml_graph_add_node(segment_graph, ggml_graph_node(gf, node_idx));
+         }
++        // nightmare (dit/060): ggml_graph_add_node fills neither the hash set nor the use counts, so every node of a cut
++        // graph read as used 0 times and a backend fused nothing in it (ggml-hexagon: MUL_MAT+MUL,
++        // RMS_NORM+MUL, MUL_MAT+ADD). Count the uses inside the segment as ggml_visit_parents does;
++        // a node a later segment reads is an output above, which still blocks its fusion.
++        ggml_hash_set* seen = &segment_graph->visited_hash_set;
++        for (ggml_tensor* leaf : leaves) {
++            segment_graph->use_counts[ggml_hash_find_or_insert(seen, leaf)] = 0;
++        }
++        for (int i = 0; i < segment_graph->n_nodes; ++i) {
++            segment_graph->use_counts[ggml_hash_find_or_insert(seen, segment_graph->nodes[i])] = 0;
++        }
++        for (int i = 0; i < segment_graph->n_nodes; ++i) {
++            for (int src_idx = 0; src_idx < GGML_MAX_SRC; ++src_idx) {
++                ggml_tensor* src = segment_graph->nodes[i]->src[src_idx];
++                if (src == nullptr) {
++                    continue;
++                }
++                const size_t pos = ggml_hash_find(seen, src);
++                if (ggml_bitset_get(seen->used, pos)) {
++                    segment_graph->use_counts[pos]++;
++                }
++            }
++        }
+         *graph_ctx_out = graph_ctx;
+         return segment_graph;
+     }
