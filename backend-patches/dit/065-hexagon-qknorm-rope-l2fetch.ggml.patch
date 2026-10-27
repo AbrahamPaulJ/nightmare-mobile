@@ -1,0 +1,29 @@
+diff --git a/src/ggml-hexagon/htp/qknorm-rope-ops.c b/src/ggml-hexagon/htp/qknorm-rope-ops.c
+index bcf7099..42c3e6c 100644
+--- a/src/ggml-hexagon/htp/qknorm-rope-ops.c
++++ b/src/ggml-hexagon/htp/qknorm-rope-ops.c
+@@ -71,9 +71,24 @@ static void qknorm_rope_worker(unsigned int n, unsigned int i, void * data) {
+     float theta_packed[QKR_BLOCK][256] __attribute__((aligned(128)));
+     float normalized[256] __attribute__((aligned(128)));
+ 
++    // nightmare (dit/065): 063 left the op at ~10.8 ms a call (12.5 GB/s), so the cost is the DDR reads, not the
++    // writes. Each block now asks L2 for the NEXT block's source rows (all heads of QKR_BLOCK tokens) and thetas.
++    const uint32_t src_row_bytes = c->n_heads * c->src_head_stride * sizeof(float);
++    const uint32_t theta_bytes = 2 * c->head_dim * sizeof(float);
++    const int src_fetch = src_row_bytes < 65536 && c->src_token_stride * sizeof(float) < 65536;
++
+     htp_trace_event_start(tr, HTP_TRACE_EVT_HVX_COMP, token_first);
+     for (uint32_t block = token_first; block < token_last; block += QKR_BLOCK) {
+         const uint32_t block_end = block + QKR_BLOCK < token_last ? block + QKR_BLOCK : token_last;
++        if (block_end < token_last) {
++            const uint32_t next_n = block_end + QKR_BLOCK < token_last ? QKR_BLOCK : token_last - block_end;
++            for (uint32_t batch = 0; src_fetch && batch < c->n_batches; ++batch) {
++                hex_l2fetch(c->src + (size_t) batch * c->src_batch_stride + (size_t) block_end * c->src_token_stride,
++                            src_row_bytes, c->src_token_stride * sizeof(float), next_n);
++            }
++            hex_l2fetch(c->theta + (size_t) block_end * 2 * c->head_dim, theta_bytes * next_n,
++                        theta_bytes * next_n, 1);
++        }
+         for (uint32_t token = block; token < block_end; ++token) {
+             qknorm_rope_pack_theta(theta_packed[token - block], c->theta + (size_t) token * 2 * c->head_dim,
+                                    c->head_dim);
