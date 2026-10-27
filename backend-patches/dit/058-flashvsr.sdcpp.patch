@@ -127,10 +127,10 @@ index 0000000..ef9f181
 +    return 0;
 +}
 diff --git a/include/stable-diffusion.h b/include/stable-diffusion.h
-index e24b84d..531efac 100644
+index e24b84d..4e9410d 100644
 --- a/include/stable-diffusion.h
 +++ b/include/stable-diffusion.h
-@@ -542,6 +542,24 @@ SD_API bool upscale(upscaler_ctx_t* upscaler_ctx,
+@@ -542,6 +542,26 @@ SD_API bool upscale(upscaler_ctx_t* upscaler_ctx,
  
  SD_API int get_upscale_factor(upscaler_ctx_t* upscaler_ctx);
  
@@ -151,22 +151,25 @@ index e24b84d..531efac 100644
 +                             int tile_overlap,
 +                             int64_t seed,
 +                             sd_image_t** frames_out);
++// Stops a running flashvsr_upscale at its next graph (it then returns false); safe from the progress callback.
++SD_API void flashvsr_cancel(flashvsr_ctx_t* flashvsr_ctx);
 +
  typedef struct adetailer_ctx_t adetailer_ctx_t;
  
  typedef struct {
 diff --git a/src/flashvsr.cpp b/src/flashvsr.cpp
 new file mode 100644
-index 0000000..2891254
+index 0000000..8fe8397
 --- /dev/null
 +++ b/src/flashvsr.cpp
-@@ -0,0 +1,418 @@
+@@ -0,0 +1,441 @@
 +// nightmare (dit/058): FlashVSR v1.1 tiny, 2x video upscaling (model: src/model/upscaler/flashvsr.hpp). The host side
 +// of lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast `4820b3f` (nodes.py flashvsr(), pipelines/flashvsr_tiny.py) for one scale, 2:
 +// spatial tiles of the INPUT (each its own clip, as the reference's tiled_dit), the frame count padded to 8n + 5, the
 +// tile upscaled bicubic to the LQ video, DiT chunks of 6 then 2 latent frames, TCDecoder, AdaIN colour fix per frame,
 +// tiles feathered together. Env: FLASHVSR_DUMP=<dir> writes each stage as raw f32 (torch layouts), FLASHVSR_NOISE=<file>
-+// reads the noise ([16, L, h, w] f32), FLASHVSR_DEC_CHUNK = latent frames a decoder call (default 2).
++// reads the noise ([16, L, h, w] f32), FLASHVSR_DEC_CHUNK = latent frames a decoder call (default 2),
++// FLASHVSR_CONV_DIRECT=0 turns the decoder's direct convs off.
 +#include <array>
 +
 +#include "core/ggml_extend_backend.h"
@@ -178,6 +181,7 @@ index 0000000..2891254
 +#include "stable-diffusion.h"
 +
 +#include <algorithm>
++#include <atomic>
 +#include <cmath>
 +#include <cstdio>
 +#include <cstdlib>
@@ -285,6 +289,7 @@ index 0000000..2891254
 +    std::shared_ptr<FlashVSR::DecoderRunner> dec;
 +    int n_threads = 4;
 +    std::string backend_spec, params_backend_spec;
++    std::atomic<bool> cancelled{false};  // flashvsr_cancel: checked between graphs
 +
 +    ~FlashVSRGGML() {
 +        model_manager.reset();
@@ -317,6 +322,10 @@ index 0000000..2891254
 +        dit           = std::make_shared<FlashVSR::DiTRunner>(backend, storage, model_manager);
 +        dec           = std::make_shared<FlashVSR::DecoderRunner>(backend, storage, model_manager);
 +        dit->set_flash_attention_enabled(true);
++        // Required on HTP, not just faster: its backend repacks F16 3x3 conv weights for the HMX direct kernel, and
++        // im2col over a repacked weight is wrong (PipelineDit's vae_conv_direct). FLASHVSR_CONV_DIRECT=0 for an A/B.
++        const char* cd = getenv("FLASHVSR_CONV_DIRECT");
++        dec->set_conv2d_direct_enabled(cd == nullptr || atoi(cd) != 0);
 +        const auto residency = backend_manager.params_backend_is_disk(SDBackendModule::UPSCALER) ? ModelManager::ResidencyMode::Disk
 +                                                                                                 : ModelManager::ResidencyMode::ParamBackend;
 +        if (!model_manager->set_loader(loader) ||
@@ -356,6 +365,9 @@ index 0000000..2891254
 +        dit->free_cache_ctx_and_buffer();
 +        std::vector<float> latents(noise.size());
 +        for (int c = 0; c < ptn; c++) {
++            if (cancelled) {
++                return false;
++            }
 +            const int a = c == 0 ? 0 : 4 + 2 * c, n = c == 0 ? 6 : 2;
 +            sd::Tensor<float> x({w8, h8, n, 16});
 +            for (int ch = 0; ch < 16; ch++) {
@@ -400,6 +412,9 @@ index 0000000..2891254
 +        dec->free_cache_ctx_and_buffer();
 +        int written = 0;
 +        for (int a = 0; a < L; a += dchunk) {
++            if (cancelled) {
++                return false;
++            }
 +            const int n = std::min(dchunk, L - a);
 +            sd::Tensor<float> z({w8, h8, FlashVSR::DEC_CHANNELS + 16, n});
 +            float* zp = z.data();
@@ -502,6 +517,9 @@ index 0000000..2891254
 +                            }
 +                }
 +                if (!run_tile(lq, F, H, W, seed, ti, tiles, res, step, steps, t0)) {
++                    dit->free_cache_ctx_and_buffer();
++                    dec->free_cache_ctx_and_buffer();
++                    LOG_INFO("flashvsr: %s at tile %d/%d", cancelled ? "cancelled" : "failed", ti + 1, tiles);
 +                    return false;
 +                }
 +                // feather the tile in: a linear ramp over the overlap on each side that has a neighbour
@@ -568,6 +586,7 @@ index 0000000..2891254
 +    if (ctx == nullptr || ctx->vsr == nullptr || frames == nullptr || num_frames <= 0) {
 +        return false;
 +    }
++    ctx->vsr->cancelled = false;
 +    auto* out = (sd_image_t*)calloc(num_frames, sizeof(sd_image_t));
 +    if (out == nullptr) {
 +        return false;
@@ -578,6 +597,12 @@ index 0000000..2891254
 +    }
 +    *frames_out = out;
 +    return true;
++}
++
++void flashvsr_cancel(flashvsr_ctx_t* ctx) {
++    if (ctx != nullptr && ctx->vsr != nullptr) {
++        ctx->vsr->cancelled = true;
++    }
 +}
 diff --git a/src/model/diffusion/wan.hpp b/src/model/diffusion/wan.hpp
 index 7eeb3a9..74ef015 100644
