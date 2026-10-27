@@ -19,6 +19,7 @@ import java.nio.ByteOrder
  */
 object SafetensorsGguf {
     const val F32 = 0
+    const val F16 = 1
     const val Q8_0 = 8
     const val BF16 = 30
 
@@ -43,8 +44,13 @@ object SafetensorsGguf {
         fun check(names: List<String>)
         /** The output shape (torch order) — [shape] unless the model pads it. */
         fun outShape(name: String, shape: LongArray): LongArray = shape
-        /** [F32], [BF16] or [Q8_0]; [Q8_0] only for a row (last dim) that is a multiple of 32. */
+        /** [F32], [F16], [BF16] or [Q8_0]; [Q8_0] only for a row (last dim) that is a multiple of 32. */
         fun type(name: String, outShape: LongArray, dtype: String): Int
+        /**
+         * ⭐ The decoded values of [rows] source rows of [name] (rows [firstRow]..), each [rowLen] long at a stride of
+         * [stride] in [x], before [F32] or [Q8_0] encodes them: [Int8Gguf] scales its I8 rows and undoes ConvRot here.
+         */
+        fun decoded(name: String, firstRow: Long, x: FloatArray, rows: Int, rowLen: Int, stride: Int) {}
     }
 
     internal class Tensor(val name: String, val shape: LongArray, val outShape: LongArray, val dtype: String, val begin: Long, val end: Long, val type: Int) {
@@ -52,7 +58,7 @@ object SafetensorsGguf {
         val outElements: Long = outShape.fold(1L) { a, b -> a * b }
         val outBytes: Long = when (type) {
             F32 -> outElements * 4
-            BF16 -> outElements * 2
+            BF16, F16 -> outElements * 2
             else -> outElements / 32 * 34
         }
     }
@@ -86,6 +92,7 @@ object SafetensorsGguf {
             val type = rule.type(name, out, dtype)
             if (type == Q8_0 && (out.size < 2 || out.last() % 32 != 0L)) throw IOException("$name: Q8_0 needs rows of 32")
             if (type == BF16 && dtype != "BF16") throw IOException("$name: BF16 out needs a BF16 source")
+            if (type == F16 && dtype != "F16") throw IOException("$name: F16 out needs an F16 source")
             Tensor(name, shape, out, dtype, off.getLong(0), off.getLong(1), type)
         }.toList()
         rule.check(tensors.map { it.name })
@@ -182,7 +189,7 @@ object SafetensorsGguf {
 
             var done = 0L
             for (t in tensors) {
-                val width = when (t.dtype) { "F32" -> 4; "BF16", "F16" -> 2; else -> throw IOException("unsupported dtype ${t.dtype}") }
+                val width = when (t.dtype) { "F32" -> 4; "BF16", "F16" -> 2; "I8" -> 1; else -> throw IOException("unsupported dtype ${t.dtype}") }
                 if (t.end - t.begin != t.elements * width) throw IOException("${t.name}: size does not match its shape")
                 src.seek(t.begin)
                 // ⚠ Row by row, in groups of whole rows: a row is where padding goes and where a Q8_0
@@ -199,7 +206,7 @@ object SafetensorsGguf {
                     val n = minOf(group.toLong(), rowsOut - r).toInt()
                     val real = minOf(n.toLong(), maxOf(0L, rowsIn - r)).toInt()
                     val raw = ByteArray(real * rowIn * width).also { if (real > 0) src.readFully(it) }
-                    val data = encode(t, raw, real, n, rowIn, rowOut, width)
+                    val data = encode(t, rule, r, raw, real, n, rowIn, rowOut, width)
                     out.write(data)
                     written += data.size
                     r += n
@@ -215,8 +222,8 @@ object SafetensorsGguf {
     }
 
     /** [n] output rows of [rowOut] values: the first [real] from [raw] (rows of [rowIn]), the rest and every row's tail zero. */
-    private fun encode(t: Tensor, raw: ByteArray, real: Int, n: Int, rowIn: Int, rowOut: Int, width: Int): ByteArray {
-        if (t.type == BF16) {
+    private fun encode(t: Tensor, rule: Rule, firstRow: Long, raw: ByteArray, real: Int, n: Int, rowIn: Int, rowOut: Int, width: Int): ByteArray {
+        if (t.type == BF16 || t.type == F16) {
             val outB = ByteArray(n * rowOut * 2)
             for (i in 0 until real) System.arraycopy(raw, i * rowIn * 2, outB, i * rowOut * 2, rowIn * 2)
             return outB
@@ -228,9 +235,11 @@ object SafetensorsGguf {
             x[i * rowOut + j] = when (t.dtype) {
                 "BF16" -> java.lang.Float.intBitsToFloat((bb.getShort(k * 2).toInt() and 0xFFFF) shl 16)
                 "F16" -> Half.toFloat(bb.getShort(k * 2))
+                "I8" -> raw[k].toFloat()
                 else -> bb.getFloat(k * width)
             }
         }
+        rule.decoded(t.name, firstRow, x, real, rowIn, rowOut)
         return if (t.type == F32) f32Bytes(x) else q8_0(x)
     }
 

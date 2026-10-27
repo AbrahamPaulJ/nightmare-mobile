@@ -662,6 +662,8 @@ object BackendProcess {
      * 10 s of its first render (Saved #7118, 1.6.218). ⚠ Imports only, and only over [IMPORT_STREAM_FROM]: a
      * built-in's memory is measured per family, and a 3-5 GB GGUF or fp8 import renders whole. Whole whenever what is
      * free holds the DiT plus Krea's measured ~2.2 GB of headroom.
+     * ⭐ [ditBytes] counts the model's own run-time LoRA too ([ownLoraBytesOf]): an int8 MOSS SFT import (5.71 GB as Q8_0,
+     * [Int8Gguf]) plus the 1.19 GB 8-step LoRA was reaped by lmkd as its DiT loaded on the S25 (2026-10-27, 1.6.252 dev).
      */
     internal fun importBudget(spec: ModelSpec?, ditBytes: Long, ramBytes: Long, availBytes: Long): String? {
         if (spec?.isCustom != true || !spec.isDit || ditBytes <= IMPORT_STREAM_FROM) return null
@@ -671,6 +673,11 @@ object BackendProcess {
 
     private const val IMPORT_STREAM_FROM = 6_000_000_000L
     private const val IMPORT_HEADROOM = 2_200_000_000L
+
+    /** ⚠ The size of [spec]'s own LoRA ([ModelSpec.ownLora], MOSS's 8-step one), applied at run time on the NPU, or 0. */
+    private fun ownLoraBytesOf(context: Context, spec: ModelSpec?): Long = runCatching {
+        spec?.ownLoraFile(spec.dir(context))?.length() ?: 0L
+    }.getOrDefault(0L)
 
     /** ⚠ The DiT file's size in [spec]'s folder (`dit.safetensors` / `dit.gguf`), or 0. */
     private fun ditBytesOf(context: Context, spec: ModelSpec?): Long = runCatching {
@@ -1030,7 +1037,7 @@ object BackendProcess {
                         val belowV79 = DeviceProbe.caps().let { it.known && it.arch < ModelCatalog.DIT_MIN_ARCH }
                         (readDitMaxVramOverride(context) ?: budget ?: lowArchDitBudget(spec, DeviceProbe.caps().arch).takeIf { belowV79 && spec?.family != Family.WAN }
                             ?: kreaBudget(spec, DeviceProbe.caps().ramBytes, ErrorReport.availableRamBytes())
-                            ?: importBudget(spec, ditBytesOf(context, spec), DeviceProbe.caps().ramBytes, ErrorReport.availableRamBytes()))
+                            ?: importBudget(spec, ditBytesOf(context, spec) + ownLoraBytesOf(context, spec), DeviceProbe.caps().ramBytes, ErrorReport.availableRamBytes()))
                             ?.let { put("DIT_MAX_VRAM", it) }
                         // ⭐⭐ The v75 skel's fused upsample+conv (`CONV_2D_UPSCALE`, the VAE decoder's
                         // up blocks) computes garbage: 1.6.131's 8 Gen 3 renders came back solid red /

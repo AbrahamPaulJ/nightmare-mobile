@@ -136,8 +136,12 @@ def main():
     fmt = {m.lower() for m in re.findall(r'format\\*"\s*:\s*\\*"([A-Za-z0-9_]+)', blob)}
     if fmt & PACKED:
         problems.append("a 4-bit ComfyUI format (%s): refused" % ", ".join(sorted(fmt & PACKED)))
+    # CustomModels.int8Problem / Int8Gguf.converts: a safetensors' int8 becomes Q8_0 at import, a GGUF's is refused
     if any(ty == "I8" and k.endswith("weight") for k, (ty, _, _) in t.items()):
-        problems.append("int8 weights (ComfyUI int8_tensorwise, ConvRot or int4_cr): refused, the engine aborts on them")
+        if kind == "gguf":
+            problems.append("int8 weights in a GGUF (ComfyUI int8_tensorwise or int4_cr): refused, the engine aborts on them")
+        else:
+            print("  int8 weights (ComfyUI int8_tensorwise / int8_rowwise, ConvRot or not): converted to Q8_0 at import (Int8Gguf)")
     other = sorted({ty for ty, _, _ in t.values()} - NPU_OK - {"I8", "U8", "I32", "I64", "F64"})
     if other:
         problems.append("types not known to run on the NPU: " + ", ".join(other) + " (unmeasured)")

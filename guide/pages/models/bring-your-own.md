@@ -66,7 +66,7 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
   built-in if you have it. An original Qwen-Image or Qwen-Image-Edit file is a different model and is refused.
 
 !!! example "Example: Moody Moss Mix (25 steps)"
-    On its CivitAI page pick the **fp8** file (*V1.0 25 STEPS CFG3*, about 4.8 GB), not the int8 one.
+    On its CivitAI page pick the **fp8** file (*V1.0 25 STEPS CFG3*, about 4.8 GB); the int8 one imports too.
     Install MOSS-Image SFT first, then import the file with **+**, and switch **⋮ → 8-step speed-up**
     off: it then starts at 25 steps and CFG 3, which is what it needs. About 3 min at 512x512 and 16 min at
     1024x1024 on an 8 Elite.
@@ -77,14 +77,14 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
     (Q4_0, Q8_0 or fp8) of the same model is the fix. Q4_0, Q8_0, MXFP4 and fp8 are the formats
     known to run on the NPU; others (Q4_K, Q6_K…) are untested.
 
-!!! warning "int8 and 4-bit files"
-    Files made for NVIDIA cards in ComfyUI's int8 or 4-bit formats (int8, ConvRot, int4, nf4,
-    nvfp4) are refused on import with a message: the engine cannot run them yet. Pick the `.gguf`
-    (Q4_0 or Q8_0) or fp8 version of the same model.
+!!! note "int8 and ConvRot files"
+    A `.safetensors` in ComfyUI's int8 format (int8, ConvRot) is converted to Q8_0 while it imports,
+    which the NPU runs. The result is about the same size and needs the same free space.
 
-!!! note "Qwen Image"
-    Qwen Image fine-tunes cannot be imported from the phone yet. A Qwen folder made by
-    LocalDream (see below) is recognised.
+!!! warning "4-bit files"
+    Files made for NVIDIA cards in ComfyUI's 4-bit formats (int4, nf4, nvfp4) and int8 `.gguf` files
+    are refused on import with a message: the engine cannot run them. Pick the `.gguf` (Q4_0 or Q8_0),
+    fp8 or int8 `.safetensors` version of the same model.
 
 ## A folder copied onto the phone
 

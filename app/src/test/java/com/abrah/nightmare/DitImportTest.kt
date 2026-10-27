@@ -495,7 +495,7 @@ class DitImportTest {
     }
 
     /** ⭐ MOSS-Image imports (2026-10-22): read off molbal's Turbo GGUF and Moody Moss Mix's fp8 / int8 headers. */
-    @Test fun mossIsReadOffItsNamesAndInt8IsRefused() {
+    @Test fun mossIsReadOffItsNamesAndInt8Converts() {
         val moss = """{"video_embedder.weight":{"dtype":"BF16","shape":[3072,128],"data_offsets":[0,1]},""" +
             """"shared_block_modulation.weight":{"dtype":"BF16","shape":[18432,3072],"data_offsets":[1,2]},""" +
             """"layers.0.proj.qkv.weight":{"dtype":"F8_E4M3","shape":[9216,3072],"data_offsets":[2,3]}}"""
@@ -503,11 +503,13 @@ class DitImportTest {
         val fp8 = CustomModels.DitHead(moss, false, emptySet())
         assertEquals(CustomModels.DitVariant.MOSS, CustomModels.checkDit(fp8, null))
         assertEquals(null, CustomModels.int8Problem(fp8))
-        // ⚠ ComfyUI int8: the I8 weight is refused, its `weight_scale` and `comfy_quant` tensors are not what decides.
+        // ⭐ ComfyUI int8 in a safetensors is converted at import ([Int8Gguf]), so not refused; the I8 weight decides.
         val int8 = moss.replace("\"F8_E4M3\"", "\"I8\"")
-        assertTrue(CustomModels.int8Problem(CustomModels.DitHead(int8, false, emptySet()))!!.contains("int8"))
+        assertEquals(null, CustomModels.int8Problem(CustomModels.DitHead(int8, false, emptySet())))
+        assertTrue(Int8Gguf.converts(CustomModels.DitHead(int8, false, emptySet())))
         val scaleOnly = moss.replace("\"layers.0.proj.qkv.weight\"", "\"layers.0.proj.qkv.comfy_quant\"").replace("\"F8_E4M3\"", "\"U8\"")
-        assertEquals(null, CustomModels.int8Problem(CustomModels.DitHead(scaleOnly, false, emptySet())))
+        assertEquals(false, Int8Gguf.converts(CustomModels.DitHead(scaleOnly, false, emptySet())))
+        assertEquals(false, Int8Gguf.converts(fp8))
         assertTrue(CustomModels.int8Problem(CustomModels.DitHead(moss, true, setOf("BF16", "I8"))) != null)
         assertEquals(null, CustomModels.int8Problem(CustomModels.DitHead(moss, true, setOf("BF16", "Q4_0"))))
     }

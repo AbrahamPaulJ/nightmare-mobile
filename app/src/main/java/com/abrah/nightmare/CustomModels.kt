@@ -840,14 +840,23 @@ object CustomModels {
             else ensureDitParts(context, variant, dir, onProgress, isCancelled)
             // ⭐⭐ A 16-bit MOSS safetensors becomes a Q8_0 GGUF AS it is read ([MossGguf]): a 9.5 GB fp16 one was reaped at
             // its first render on a 12 GB phone and needs that much free to copy; ~5 GB as Q8_0, read once, no copy.
-            val toQ8 = variant == DitVariant.MOSS && !head.gguf && MossGguf.converts(head.json)
+            // ⭐⭐ An int8 (ComfyUI `int8_tensorwise`, ConvRot) safetensors becomes a Q8_0 GGUF the same way ([Int8Gguf]):
+            // the engine cannot run int8 here (GitHub #71).
+            val int8 = Int8Gguf.converts(head)
+            val toQ8 = !int8 && variant == DitVariant.MOSS && !head.gguf && MossGguf.converts(head.json)
             // ⭐ A `.gguf` keeps its format: the engine picks the loader by name.
-            val dest = File(dir, if (head.gguf || toQ8) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
+            val dest = File(dir, if (head.gguf || toQ8 || int8) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
             // ⚠⚠ Into `.part`, renamed when whole: a process killed mid-copy left a truncated `dit.safetensors` whose
             // header [detectDit] read on the next scan and marked, so a custom spec (no sizes to check) listed it
             // installed and Run failed inside the engine. The `catch` below cannot run when the process dies.
             val part = File(dir, dest.name + ".part")
-            if (toQ8) {
+            if (int8) {
+                val bytes = Int8Gguf.convertStream(
+                    open, part, variant.family,
+                    { what, done, total -> onProgress(ModelInstaller.Progress(what, done, total)) }, isCancelled,
+                )
+                Log.i(TAG, "converted int8 '$name' to a Q8_0 GGUF: $bytes bytes")
+            } else if (toQ8) {
                 val bytes = SafetensorsGguf.convertStream(
                     open, part, MossGguf.rule,
                     { done, total -> onProgress(ModelInstaller.Progress("converting to Q8_0", done, total)) }, isCancelled,
@@ -1533,17 +1542,14 @@ object CustomModels {
      *
      * ⚠⚠ Why (2026-10-22, MOSS uploads on CivitAI): ComfyUI's `int8_tensorwise` (often with ConvRot) is read by the
      * loader but every int8 matmul in our engine's ggml aborts (`ggml_ext_linear_i8_tensorwise`: "not available in
-     * this ggml revision"), so the import would copy 5 GB and die at the first step. Safetensors say it in their
-     * dtype (`I8`); a ComfyUI GGUF stores I8 tensors with `comfy.gguf.quant.*` metadata.
+     * this ggml revision"). ⭐ A safetensors is converted to Q8_0 at import ([Int8Gguf], GitHub #71); a ComfyUI GGUF
+     * (I8 tensors with `comfy.gguf.quant.*` metadata) is still refused.
      */
     internal fun int8Problem(head: DitHead): String? {
-        val int8 = if (head.gguf) "I8" in head.types else INT8_WEIGHT.containsMatchIn(head.json)
-        if (!int8) return null
-        return "this file stores its weights as int8 (ComfyUI's int8 or ConvRot format), which the engine cannot " +
-            "run yet. Import the GGUF (Q4_0 or Q8_0) or fp8 version of this model instead"
+        if (!head.gguf || "I8" !in head.types) return null
+        return "this GGUF stores its weights as int8 (ComfyUI's int8 or ConvRot format), which the engine cannot " +
+            "run. Import the int8 .safetensors instead (the app converts it), or a Q4_0, Q8_0 or fp8 version"
     }
-
-    private val INT8_WEIGHT = Regex("\"[^\"]*weight\"\\s*:\\s*\\{\\s*\"dtype\"\\s*:\\s*\"I8\"")
 
     /**
      * ⭐ The installed built-in of [family] whose encoder, VAE and tokenizer an import can read instead of copying them
