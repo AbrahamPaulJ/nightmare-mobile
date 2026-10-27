@@ -1083,6 +1083,40 @@ object Ops {
     }
 
     /**
+     * ⭐⭐ A finished clip at twice its size through `/upscale_video` (backend 050, engine ABI 109): FlashVSR from the
+     * GGUF at [model], the NMV1 file [input] in, [out] written in the same layout. The backend frees the Wan model for
+     * it and loads it again for the next `/video`. Progress is FlashVSR's own steps (DiT chunks and decoder calls).
+     */
+    suspend fun upscaleVideo(
+        model: String,
+        input: String,
+        out: String,
+        onProgress: (Progress) -> Unit = {},
+    ): Result<Clip> {
+        val body = JSONObject().put("model", model).put("in", input).put("out", out).toString()
+        var complete: JSONObject? = null
+        var streamError: String? = null
+        val r = Backend.postSse("/upscale_video", body, readTimeoutMs = Backend.DIT_SSE_READ_TIMEOUT_MS) { ev ->
+            val j = try { JSONObject(ev.data) } catch (e: Exception) { null }
+            when (j?.optString("type")) {
+                "progress" -> onProgress(Progress(j.optInt("step"), j.optInt("total_steps"), ev.atMs, null, null))
+                "complete" -> complete = j
+                "error" -> streamError = j.optString("message")
+                else -> streamError = streamError ?: "unrecognised frame \"${ev.name}\": ${ev.data.take(120)}"
+            }
+        }
+        if (r.code != 200) return Result.Err(r.code, r.body)
+        streamError?.let { return Result.Err(200, it) }
+        val j = complete ?: return Result.Err(200, "stream ended with no complete event")
+        return Result.Ok(
+            Clip(
+                j.optString("path", out), j.optInt("frames"), j.optInt("width"), j.optInt("height"),
+                j.optInt("fps"), j.optLong("generation_time_ms"),
+            )
+        )
+    }
+
+    /**
      * What the backend still holds -- conditionings AND latents, as ids.
      *
      * ⭐ The executor's residency check (Executor.kt). A remembered handle is

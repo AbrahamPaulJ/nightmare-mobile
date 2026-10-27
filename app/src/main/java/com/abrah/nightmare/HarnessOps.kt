@@ -289,6 +289,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "segmenter_install" -> segmenterInstall()
             "pose_install" -> poseInstall()
             "interp_install" -> interpInstall()
+            "vsr_install" -> vsrInstall()
             "wholebody_install" -> wholeBodyInstall()
             "detailer_install" -> detailerInstall()
             "detail_run" -> detailRun(arg)
@@ -1817,8 +1818,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                                 }.orEmpty(),
                                 // ⭐ The LoRA picker's value (`name.safetensors@0.8`, `LoraSpec`), as the node stores it.
                                 at(4).takeIf { it.isNotEmpty() }?.let { com.abrah.nightmare.SdSampler.LORAS to it },
-                                // ⭐ An eighth part `smooth`: Smooth motion on ([com.abrah.nightmare.npu.FrameInterp]).
-                                ("true").takeIf { at(7) == wan.SMOOTH }?.let { wan.SMOOTH to it },
+                                // ⭐ An eighth part `smooth`: Smooth motion on ([com.abrah.nightmare.npu.FrameInterp]); `vsr`:
+                                // Upscale 2x ([com.abrah.nightmare.npu.VideoUpscaler]); `smooth+vsr` both.
+                                ("true").takeIf { wan.SMOOTH in at(7).split('+') }?.let { wan.SMOOTH to it },
+                                ("true").takeIf { wan.VSR in at(7).split('+') }?.let { wan.VSR to it },
                                 // ⭐ Parts ([com.abrah.nightmare.npu.WanParts]): a ninth part the count, a tenth `0` for Keep
                                 // colours off, an eleventh the part prompts with `~` between lines.
                                 at(8).takeIf { it.isNotEmpty() }?.let { com.abrah.nightmare.npu.WanParts.PARTS to it },
@@ -3948,6 +3951,20 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 fi.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
             }
             say("  ok   ${fi.bytesOnDisk(ctx)} B at ${fi.dir(ctx).absolutePath}, installed=${fi.isInstalled(ctx)}")
+        } catch (e: Throwable) {
+            say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
+        }
+    }
+
+    /** ⭐ Upscale 2x's FlashVSR GGUF ([com.abrah.nightmare.npu.VideoUpscaler]), fetched as the Tools row does. */
+    private suspend fun vsrInstall() {
+        val vu = com.abrah.nightmare.npu.VideoUpscaler
+        say("vsr_install: ${vu.LABEL}, supported ${vu.supported()}, ${vu.BYTES} B")
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                vu.install(ctx, onProgress = { p -> if (p.total <= 0) say("  ${p.phase}") })
+            }
+            say("  ok   ${vu.bytesOnDisk(ctx)} B at ${vu.dir(ctx).absolutePath}, installed=${vu.isInstalled(ctx)}")
         } catch (e: Throwable) {
             say("  FAIL ${e.javaClass.simpleName}: ${e.message}", bad = true)
         }

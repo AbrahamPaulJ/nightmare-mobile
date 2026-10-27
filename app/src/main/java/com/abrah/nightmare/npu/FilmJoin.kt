@@ -58,6 +58,18 @@ object FilmJoin {
         }
     }
 
+    /** ⭐ A film's width from its metadata (no decode): whether the film so far was upscaled ([VideoUpscaler]). */
+    fun widthOf(f: File): Int? = MediaMetadataRetriever().let { r ->
+        try {
+            r.setDataSource(f.absolutePath)
+            r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+        } catch (e: Exception) {
+            null
+        } finally {
+            runCatching { r.release() }
+        }
+    }
+
     /** ⭐ A film's first frame: its poster. */
     fun firstFrame(f: File): Bitmap? = MediaMetadataRetriever().let { r ->
         try {

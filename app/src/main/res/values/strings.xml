@@ -1367,6 +1367,12 @@
     <string name="run_smooth_size">Smooth motion works up to 1280x736 or 736x1280; %1$s is larger. The clip stays at %2$s fps</string>
     <string name="interp_about">Doubles a Wan clip\'s frame rate with a new frame between every pair, for the Smooth motion switch on the video nodes (IFRNet, MIT).</string>
     <string name="models_delete_interp_body">Frees %1$d MB. Getting it back is a %2$d MB download. A video node with Smooth motion on will ask for it again.</string>
+    <string name="knob_vsr">Upscale 2x</string>
+    <string name="hint_wan_vsr">Twice the width and height (832x480 becomes 1664x960) with frames that stay consistent with each other, made by FlashVSR on the NPU once the whole clip is done. Takes longer than the clip itself. Up to 832x480 or 480x832; with it on, Smooth motion is skipped above 1280x736. Needs Upscale 2x from Models, Tools.</string>
+    <string name="run_vsr_chip">Upscale 2x needs a Snapdragon 8 Elite or newer. The clip stays at %1$s</string>
+    <string name="run_vsr_size">Upscale 2x works on clips up to 832x480 or 480x832; %1$s is larger. The clip stays at its size</string>
+    <string name="vsr_about">Doubles a Wan clip\'s width and height with frames that agree over time, for the Upscale 2x switch on the video nodes (FlashVSR, Apache 2.0).</string>
+    <string name="models_delete_vsr_body">Frees %1$d MB. Getting it back is a %2$d MB download. A video node with Upscale 2x on will ask for it again.</string>
     <string name="whole_body_about">Reads a person\'s body, hands and face from every frame for Motion transfer\'s Pose mode (DWPose, Apache 2.0).</string>
     <string name="models_delete_whole_body_body">Frees %1$d MB. Getting it back is a %2$d MB download. Motion transfer in Pose mode will ask for it again.</string>
     <string name="wan_follow_picture">The clip takes your picture\'s shape; these set how many pixels (832x480 worth for a quick try, 1280x720 worth for sharp faces).</string>

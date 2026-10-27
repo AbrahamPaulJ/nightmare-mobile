@@ -769,10 +769,10 @@ index 7eeb3a9..74ef015 100644
      struct WanRunner : public DiffusionModelRunner {
 diff --git a/src/model/upscaler/flashvsr.hpp b/src/model/upscaler/flashvsr.hpp
 new file mode 100644
-index 0000000..3920cb2
+index 0000000..79b6047
 --- /dev/null
 +++ b/src/model/upscaler/flashvsr.hpp
-@@ -0,0 +1,304 @@
+@@ -0,0 +1,308 @@
 +#ifndef __SD_MODEL_UPSCALER_FLASHVSR_HPP__
 +#define __SD_MODEL_UPSCALER_FLASHVSR_HPP__
 +
@@ -810,22 +810,25 @@ index 0000000..3920cb2
 +    // strided conv over a continuous stream S (S[i] = LQ frame max(0, i - 5): the first frame six times, then the rest),
 +    // so latent frame k depends on S[4k, 4k + 10) and a chunk of n latent frames takes 4n + 6 stream frames, no state.
 +    // Each (4, 3, 3) conv with time stride 2 is four 3x3 conv2ds, one a temporal tap, summed: the NPU has no 3-D conv
-+    // (CONV_3D ran on the CPU, ~20 of 25 s a chunk at a 512 px tile) and its direct 2-D kernel is the VAE's.
++    // (CONV_3D ran on the CPU, ~20 of 25 s a chunk at a 512 px tile) and its direct 2-D kernel is the VAE's. That
++    // kernel takes only "same" padding, so a tap convolves the replicate-padded frame with padding 1 too and the
++    // border is cropped after: the outputs kept never reach the zeros.
 +    class LQProj : public GGMLBlock {
 +        static constexpr int taps = 4;
 +
 +    public:
 +        LQProj() {
 +            for (int t = 0; t < taps; t++) {
-+                blocks["conv1.k" + std::to_string(t)] = std::shared_ptr<GGMLBlock>(new Conv2d(LQ_CHANNELS, 2048, {3, 3}));
-+                blocks["conv2.k" + std::to_string(t)] = std::shared_ptr<GGMLBlock>(new Conv2d(2048, 3072, {3, 3}));
++                blocks["conv1.k" + std::to_string(t)] = std::shared_ptr<GGMLBlock>(new Conv2d(LQ_CHANNELS, 2048, {3, 3}, {1, 1}, {1, 1}));
++                blocks["conv2.k" + std::to_string(t)] = std::shared_ptr<GGMLBlock>(new Conv2d(2048, 3072, {3, 3}, {1, 1}, {1, 1}));
 +            }
 +            blocks["norm1"]           = std::shared_ptr<GGMLBlock>(new WAN::RMS_norm(2048));
 +            blocks["norm2"]           = std::shared_ptr<GGMLBlock>(new WAN::RMS_norm(3072));
 +            blocks["linear_layers.0"] = std::shared_ptr<GGMLBlock>(new Linear(3072, 1536));
 +        }
 +
-+        // [W, H, C, T] -> [W - 2, H - 2, OC, (T - 4) / 2 + 1]: the sum over taps of conv2d(frames kt, kt + 2, ...)
++        // [W, H, C, T] (replicate-padded) -> [W - 2, H - 2, OC, (T - 4) / 2 + 1]: the sum over taps of conv2d(frames
++        // kt, kt + 2, ...), its border cropped
 +        ggml_tensor* conv_taps(GGMLRunnerContext* ctx, const std::string& name, ggml_tensor* x) {
 +            auto gc          = ctx->ggml_ctx;
 +            const int64_t To = (x->ne[3] - taps) / 2 + 1;
@@ -835,7 +838,8 @@ index 0000000..3920cb2
 +                auto o      = std::dynamic_pointer_cast<Conv2d>(blocks[name + ".k" + std::to_string(t)])->forward(ctx, frames);
 +                y           = y ? ggml_add(gc, y, o) : o;
 +            }
-+            return y;
++            return ggml_view_4d(gc, y, y->ne[0] - 2, y->ne[1] - 2, y->ne[2], y->ne[3], y->nb[1], y->nb[2], y->nb[3],
++                                y->nb[1] + y->nb[0]);
 +        }
 +
 +        // RMS over channels then SiLU, in the [W, H, T, C] layout WAN::RMS_norm (and the NPU's fused op) wants

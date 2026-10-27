@@ -270,6 +270,10 @@ fun ModelsScreen(
     interp: ToolRow? = null,
     onInstallInterp: () -> Unit = {},
     onDeleteInterp: () -> Unit = {},
+    /** ⭐ Upscale 2x's FlashVSR ([com.abrah.nightmare.npu.VideoUpscaler]); null on a chip it is not offered on. */
+    vsr: ToolRow? = null,
+    onInstallVsr: () -> Unit = {},
+    onDeleteVsr: () -> Unit = {},
     /** ⭐ Motion transfer's whole-body pose ([com.abrah.nightmare.pose.WholeBodyPose]). */
     wholeBody: ToolRow? = null,
     onInstallWholeBody: () -> Unit = {},
@@ -378,6 +382,7 @@ fun ModelsScreen(
     var deletingParser by remember { mutableStateOf(false) }
     var deletingPose by remember { mutableStateOf(false) }
     var deletingInterp by remember { mutableStateOf(false) }
+    var deletingVsr by remember { mutableStateOf(false) }
     var deletingWholeBody by remember { mutableStateOf(false) }
     var deletingDetailer by remember { mutableStateOf(false) }
     var deletingLivePortrait by remember { mutableStateOf(false) }
@@ -386,6 +391,7 @@ fun ModelsScreen(
     val detailerWords = detailer?.let { it.label + " adetailer face hand fix" }
     // ⚠ The same: the Tools card and the All search match Smooth motion by these words.
     val interpWords = "ifrnet smooth motion frames fps interpolation video wan"
+    val vsrWords = "flashvsr upscale upscaler 2x resolution sharper video wan"
     // ⚠ The same for the whole-body pose.
     val wholeBodyWords = "dwpose whole body pose hands face skeleton motion transfer dance"
     var deletingDepth by remember { mutableStateOf(false) }
@@ -504,6 +510,14 @@ fun ModelsScreen(
                                 interp, busy, onInstallInterp, onCancel,
                                 detail = stringResource(R.string.interp_about),
                             ) { deletingInterp = true }
+                        }
+                    }
+                    if (vsr != null && match(vsr.label + " " + vsrWords)) {
+                        item {
+                            ToolCard(
+                                vsr, busy, onInstallVsr, onCancel,
+                                detail = stringResource(R.string.vsr_about),
+                            ) { deletingVsr = true }
                         }
                     }
                     if (wholeBody != null && match(wholeBody.label + " " + wholeBodyWords)) {
@@ -676,6 +690,7 @@ fun ModelsScreen(
                     val tools = searchAll && (listOfNotNull(segmenter, parser, pose, depth) + controlnets.values + describe.values)
                         .any { matchesWords(it.label, query) } || (searchAll && detailerWords != null && matchesWords(detailerWords, query)) ||
                         (searchAll && interp != null && matchesWords(interp.label + " " + interpWords, query)) ||
+                        (searchAll && vsr != null && matchesWords(vsr.label + " " + vsrWords, query)) ||
                         (searchAll && wholeBody != null && matchesWords(wholeBody.label + " " + wholeBodyWords, query))
                     val faces = searchAll && livePortraitWords != null && matchesWords(livePortraitWords, query)
                     val otherHits = neoHit || wanHits.isNotEmpty() || ups.isNotEmpty() || faces || tools
@@ -887,6 +902,15 @@ fun ModelsScreen(
             body = stringResource(R.string.models_delete_interp_body, mb(interp.onDisk), mb(interp.bytes)),
             onConfirm = onDeleteInterp,
             onDismiss = { deletingInterp = false },
+        )
+    }
+
+    if (deletingVsr && vsr != null) {
+        ConfirmDelete(
+            title = stringResource(R.string.models_delete_title, vsr.label),
+            body = stringResource(R.string.models_delete_vsr_body, mb(vsr.onDisk), mb(vsr.bytes)),
+            onConfirm = onDeleteVsr,
+            onDismiss = { deletingVsr = false },
         )
     }
 

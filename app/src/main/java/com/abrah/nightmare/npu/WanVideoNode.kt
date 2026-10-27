@@ -99,6 +99,8 @@ object WanVideoNode : NodeType {
         Widget("seconds", "int", "5", 0.0, MAX_SECONDS.toDouble(), hintRes = R.string.hint_wan_seconds),
         // ⭐ Twice the frames, a new one between every pair ([FrameInterp], the user's call 2026-10-26). Every Wan node.
         Widget(SMOOTH, "bool", "false", hintRes = R.string.hint_wan_smooth),
+        // ⭐ Twice the width and height, frames consistent over time ([VideoUpscaler], the user's call 2026-10-27).
+        Widget(VSR, "bool", "false", hintRes = R.string.hint_wan_vsr),
         // ⭐ Up to 10 parts, each starting on the last frame of the one before ([WanParts], the user's call 2026-10-27).
         Widget(WanParts.PARTS, "int", "1", 1.0, WanParts.MAX.toDouble(), hintRes = R.string.hint_wan_parts),
         Widget(WanParts.PART_PROMPTS, "string", "", hintRes = R.string.hint_wan_part_prompts),
@@ -115,6 +117,9 @@ object WanVideoNode : NodeType {
 
     /** ⭐ Smooth motion: the clip at twice its frame rate, IFRNet's frames between the model's ([FrameInterp]). */
     const val SMOOTH = "smooth"
+
+    /** ⭐ Upscale 2x: the joined clip at twice its size, by FlashVSR on the DiT engine ([VideoUpscaler]). */
+    const val VSR = "vsr"
 
     /** ⭐ The clip takes the wired picture's shape (Text to video (14B), `WanA14Node`): a hidden knob the flow sets. */
     const val FOLLOW_PICTURE = "follow_picture"
@@ -633,6 +638,32 @@ object WanVideoNode : NodeType {
         // ⭐⭐ Smooth motion ([SMOOTH]). ⚠ A clip CONTINUING a film takes the film's rate, whatever its switch says:
         // [FilmJoin] times both pieces at one fps, so a 32 fps part on a 16 fps film played the film at double speed.
         val prevFilm = source?.film?.let { File(it) }?.takeIf { it.isFile && motion == null }
+
+        // ⭐⭐ Upscale 2x ([VSR], [VideoUpscaler]): once, on the joined clip, BEFORE Smooth motion. Not on a one-frame
+        // still. ⚠ A clip CONTINUING a film takes the film's size, as it takes its rate below: [FilmJoin] joins one size.
+        val askedVsr = p[VSR] == "true"
+        var vsr = frames > 1 && (prevFilm?.let { f -> (FilmJoin.widthOf(f) ?: w) > w } ?: askedVsr)
+        if (prevFilm != null && frames > 1 && vsr != askedVsr) {
+            ctx.say(if (vsr) "  upscale 2x on: the film this clip continues is upscaled"
+                else "  upscale 2x off: the film this clip continues is not upscaled")
+        }
+        if (vsr && !VideoUpscaler.supported()) {
+            ctx.warn(ctx.text(R.string.run_vsr_chip, "Upscale 2x needs a Snapdragon 8 Elite or newer. The clip stays at %1\$s", "${w}x$h"))
+            vsr = false
+        }
+        if (vsr && !VideoUpscaler.fits(w, h)) {
+            ctx.warn(ctx.text(R.string.run_vsr_size, "Upscale 2x works on clips up to 832x480 or 480x832; %1\$s is larger. The clip stays at its size", "${w}x$h"))
+            vsr = false
+        }
+        // ⚠ Asked before the render, as Smooth motion's IFRNet is.
+        if (vsr && !VideoUpscaler.isInstalled(android)) {
+            throw com.abrah.nightmare.NeedsDownload(
+                com.abrah.nightmare.NeedsDownload.VSR, "node \"${node.id}\": ${VideoUpscaler.LABEL} is not installed (Models, Tools)",
+            )
+        }
+        // The size Smooth motion and the encoder see.
+        val (ow, oh) = if (vsr) VideoUpscaler.outSize(w, h) else w to h
+
         val asked = p[SMOOTH] == "true"
         var smooth = prevFilm?.let { (FilmJoin.fpsOf(it) ?: fps) > fps } ?: asked
         if (prevFilm != null && smooth != asked) {
@@ -643,8 +674,9 @@ object WanVideoNode : NodeType {
             ctx.warn(ctx.text(R.string.run_smooth_chip, "Smooth motion needs a Snapdragon 8 Gen 3 or newer. The clip stays at %1\$s fps", fps.toString()))
             smooth = false
         }
-        if (smooth && FrameInterp.pick(w, h) == null) {
-            ctx.warn(ctx.text(R.string.run_smooth_size, "Smooth motion works up to 1280x736 or 736x1280; %1\$s is larger. The clip stays at %2\$s fps", "${w}x$h", fps.toString()))
+        // ⚠ At the size it is encoded at: an upscaled 832x480 clip is 1664x960, past IFRNet's largest graph.
+        if (smooth && FrameInterp.pick(ow, oh) == null) {
+            ctx.warn(ctx.text(R.string.run_smooth_size, "Smooth motion works up to 1280x736 or 736x1280; %1\$s is larger. The clip stays at %2\$s fps", "${ow}x$oh", fps.toString()))
             smooth = false
         }
         // ⚠ Asked before the render, not after it: minutes of NPU for a clip that then could not be smoothed.
@@ -673,6 +705,7 @@ object WanVideoNode : NodeType {
                 spec.id.takeIf { profileOf(node.type) != TURBO }?.let { "model=$it" },
                 vaeTile.takeIf { it > 0 }?.let { "vae_tile=$it" },
                 "smooth=2x".takeIf { smooth },
+                "vsr=2x".takeIf { vsr },
                 // ⭐ Parts: their count, prompts and colour lock make different frames.
                 partCount.takeIf { it > 1 }?.let { "parts=$it/${partPrompts.joinToString("\u0001")}/lock=$keepColours" },
                 // ⚠⚠ The FRAMING too: `source.address()` is the unframed photo, so dragging the crop at
@@ -730,7 +763,7 @@ object WanVideoNode : NodeType {
                 throw IllegalStateException("node \"${node.id}\": ${com.abrah.nightmare.explainOpFailure(r.code, r.body)}")
             }
         }
-        val clip = if ((motion == null || plan == null) && partCount > 1) runParts(
+        val joined = if ((motion == null || plan == null) && partCount > 1) runParts(
             ctx, node, spec, arch, partCount, partPrompts, keepColours, neg.text, used, w, h, clipFrames, fps, prof,
             startPng, loras, vaeTile, dir, key, raw, ::unwrap,
         ) else if (motion == null || plan == null) unwrap(
@@ -865,21 +898,37 @@ object WanVideoNode : NodeType {
             marker.delete()
             Ops.Clip(raw.absolutePath, total, w, h, fps, ms)
         }
-        ctx.say("${clip.frames} frames in ${"%.1f".format(clip.serverMs / 1000.0)} s. Encoding")
+        ctx.say("${joined.frames} frames in ${"%.1f".format(joined.serverMs / 1000.0)} s" + if (vsr) "" else ". Encoding")
+        // ⭐⭐ Upscale 2x: the joined clip through FlashVSR on the same backend (it frees the Wan model for it), into a
+        // second NMV1 file that the encoder and Smooth motion read instead. ⚠ The 1x frames go once it succeeded (a
+        // failed upscale leaves a parts render resumable, its marker beside them).
+        val upRaw = File(dir, "wan_${key}_x2.nmv")
+        val clip = if (!vsr) joined else {
+            ctx.say("  upscale 2x: FlashVSR, ${w}x$h to ${ow}x$oh")
+            val r = ctx.host.upscaleVideo(
+                VideoUpscaler.file(android).absolutePath, raw.absolutePath, upRaw.absolutePath,
+                onProgress = { pr -> ctx.onProgress(pr) },
+            )
+            unwrap(r, upRaw).also {
+                raw.delete()
+                ctx.say("  upscaled in ${"%.1f".format(it.serverMs / 1000.0)} s. Encoding")
+            }
+        }
+        val encRaw = if (vsr) upRaw else raw
         // ⚠ Opened only now: ~25 MB on the NPU, beside a backend that has finished its clip.
         val session = try {
-            if (smooth && clip.frames > 1) FrameInterp.Session(android, w, h).also {
+            if (smooth && clip.frames > 1) FrameInterp.Session(android, clip.width, clip.height).also {
                 ctx.say("  smooth motion: ${clip.frames - 1} new frames (IFRNet ${it.size})")
             } else null
         } catch (e: Exception) {
-            raw.delete()
+            encRaw.delete()
             throw IllegalStateException("node \"${node.id}\": ${e.message ?: e.javaClass.simpleName}")
         }
         val outFps = if (session != null) fps * 2 else fps
         try {
             // ⭐ The encoder's lines go to the run log too: GitHub #26 sat at "Encoding" with nothing
             // saying how far it got.
-            val (poster, last) = encodeClip(raw, out, VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]), smooth = session) {
+            val (poster, last) = encodeClip(encRaw, out, VideoWriter.cancelledWith(coroutineContext[kotlinx.coroutines.Job]), smooth = session) {
                 Log.i(TAG, it)
                 ctx.say(it.trim())
             }
@@ -922,6 +971,7 @@ object WanVideoNode : NodeType {
         } finally {
             session?.close()
             raw.delete()
+            upRaw.delete()
         }
     }
 

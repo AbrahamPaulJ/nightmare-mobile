@@ -1196,6 +1196,7 @@ internal val KNOB_RESOURCES = mapOf(
     "subseed_strength" to com.abrah.nightmare.R.string.knob_subseed_strength,
     "fix_faces" to com.abrah.nightmare.R.string.knob_fix_faces,
     "smooth" to com.abrah.nightmare.R.string.knob_smooth,
+    "vsr" to com.abrah.nightmare.R.string.knob_vsr,
     // ⭐ Wan's parts ([com.abrah.nightmare.npu.WanParts]).
     "parts" to com.abrah.nightmare.R.string.knob_parts,
     "part_prompts" to com.abrah.nightmare.R.string.knob_part_prompts,

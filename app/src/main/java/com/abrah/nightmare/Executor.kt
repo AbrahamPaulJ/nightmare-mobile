@@ -58,6 +58,8 @@ class NeedsDownload(val tool: String, message: String) : Exception(message) {
         const val LIVEPORTRAIT = "liveportrait"
         /** ⭐ Smooth motion's IFRNet set ([com.abrah.nightmare.npu.FrameInterp]). */
         const val INTERP = "ifrnet"
+        /** ⭐ Upscale 2x's FlashVSR GGUF ([com.abrah.nightmare.npu.VideoUpscaler]). */
+        const val VSR = "flashvsr"
         /** ⭐ Motion transfer's whole-body pose, DWPose ([com.abrah.nightmare.pose.WholeBodyPose]). */
         const val WHOLE_BODY = "dwpose"
     }
@@ -192,6 +194,11 @@ interface OpHost {
         controlVideo: String? = null, refPng: ByteArray? = null,
     ): Ops.Result<Ops.Clip> = Ops.Result.Err(501, "this host cannot run a video model")
 
+    /** ⭐ Upscale 2x (FlashVSR) of a finished clip — see `Ops.upscaleVideo`. Refused by default, as [video] is. */
+    suspend fun upscaleVideo(
+        model: String, input: String, out: String, onProgress: (Ops.Progress) -> Unit,
+    ): Ops.Result<Ops.Clip> = Ops.Result.Err(501, "this host cannot upscale a video")
+
     /**
      * ⚠ **mask = 1 takes [b]**, matching `/generate`'s own per-step blend where
      * the mask means "repaint". Blending the other way round produces a
@@ -236,6 +243,9 @@ object BackendHost : OpHost {
         tilingArgs = tilingArgs, out = out, startPng = startPng, loras = loras,
         onProgress = onProgress, vaeTileSize = vaeTileSize, controlVideo = controlVideo, refPng = refPng,
     )
+
+    override suspend fun upscaleVideo(model: String, input: String, out: String, onProgress: (Ops.Progress) -> Unit) =
+        Ops.upscaleVideo(model = model, input = input, out = out, onProgress = onProgress)
 
     override suspend fun upscale(rgb: ByteArray, width: Int, height: Int, upscalerPath: String) =
         Ops.upscale(rgb, width, height, upscalerPath)

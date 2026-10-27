@@ -1336,6 +1336,12 @@
     <string name="run_smooth_size">平滑运动最大支持 1280x736 或 736x1280；%1$s 超出。视频保持 %2$s fps</string>
     <string name="interp_about">在每两帧之间插入一帧，使 Wan 视频的帧率翻倍，供视频节点上的“平滑运动”开关使用（IFRNet，MIT）。</string>
     <string name="models_delete_interp_body">释放 %1$d MB。重新获取需要下载 %2$d MB。开启平滑运动的视频节点会再次请求它。</string>
+    <string name="knob_vsr">放大 2 倍</string>
+    <string name="hint_wan_vsr">宽高翻倍（832x480 变为 1664x960），各帧之间保持一致：整段视频完成后由 FlashVSR 在 NPU 上生成。耗时比视频本身更长。最大 832x480 或 480x832；开启后，超过 1280x736 时跳过平滑运动。需要模型、工具中的“放大 2 倍”。</string>
+    <string name="run_vsr_chip">放大 2 倍需要骁龙 8 至尊版或更新的芯片。视频保持 %1$s</string>
+    <string name="run_vsr_size">放大 2 倍最大支持 832x480 或 480x832 的视频；%1$s 超出。视频保持原尺寸</string>
+    <string name="vsr_about">将 Wan 视频的宽高翻倍，且各帧在时间上保持一致，供视频节点上的“放大 2 倍”开关使用（FlashVSR，Apache 2.0）。</string>
+    <string name="models_delete_vsr_body">释放 %1$d MB。重新获取需要下载 %2$d MB。开启放大 2 倍的视频节点会再次请求它。</string>
     <string name="whole_body_about">为动作迁移的姿势模式从每一帧读取人物的身体、手和脸（DWPose，Apache 2.0）。</string>
     <string name="models_delete_whole_body_body">释放 %1$d MB。重新获取需要下载 %2$d MB。姿势模式的动作迁移会再次请求它。</string>
     <string name="wan_follow_picture">视频采用你的图片的比例；这里设置像素数量（832x480 用于快速尝试，1280x720 让人脸更清晰）。</string>

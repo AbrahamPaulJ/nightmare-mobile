@@ -1332,6 +1332,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             id == PARSER_INSTALL_ID -> parserRow = parserRow?.copy(progress = p)
             id == POSE_INSTALL_ID -> poseRow = poseRow?.copy(progress = p)
             id == INTERP_INSTALL_ID -> interpRow = interpRow?.copy(progress = p)
+            id == VSR_INSTALL_ID -> vsrRow = vsrRow?.copy(progress = p)
             id == WHOLE_BODY_INSTALL_ID -> wholeBodyRow = wholeBodyRow?.copy(progress = p)
             id == DEPTH_INSTALL_ID -> depthRow = depthRow?.copy(progress = p)
             describeRows.keys.any { it.installId == id } ->
@@ -1503,6 +1504,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         lap("pose")
         refreshInterp()
         lap("interp")
+        refreshVsr()
+        lap("vsr")
         refreshWholeBody()
         lap("whole body")
         refreshDetailer()
@@ -2525,6 +2528,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.DETAILER -> "detailer-tool"
                 com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> "liveportrait-tool"
                 com.abrah.nightmare.NeedsDownload.INTERP -> "interp-tool"
+                com.abrah.nightmare.NeedsDownload.VSR -> "vsr-tool"
                 com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> "wholebody-tool"
                 else -> "cn-tool-$key"
             }
@@ -2540,6 +2544,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.LABEL
             com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> com.abrah.nightmare.portrait.LivePortrait.LABEL
             com.abrah.nightmare.NeedsDownload.INTERP -> com.abrah.nightmare.npu.FrameInterp.LABEL
+            com.abrah.nightmare.NeedsDownload.VSR -> com.abrah.nightmare.npu.VideoUpscaler.LABEL
             com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> com.abrah.nightmare.pose.WholeBodyPose.LABEL
             else -> cnRows[key]?.label ?: key
         },
@@ -2615,6 +2620,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 n.type in com.abrah.nightmare.WAN_TYPES && on(com.abrah.nightmare.npu.WanVideoNode.SMOOTH) &&
                     com.abrah.nightmare.npu.FrameInterp.tierFor() != null && !com.abrah.nightmare.npu.FrameInterp.isInstalled(ctx) ->
                     label(com.abrah.nightmare.npu.WanVideoNode.SMOOTH) to toolMissing(com.abrah.nightmare.NeedsDownload.INTERP)
+                n.type in com.abrah.nightmare.WAN_TYPES && on(com.abrah.nightmare.npu.WanVideoNode.VSR) &&
+                    com.abrah.nightmare.npu.VideoUpscaler.supported() && !com.abrah.nightmare.npu.VideoUpscaler.isInstalled(ctx) ->
+                    label(com.abrah.nightmare.npu.WanVideoNode.VSR) to toolMissing(com.abrah.nightmare.NeedsDownload.VSR)
                 else -> null
             }
             if (ask != null) {
@@ -2646,6 +2654,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             com.abrah.nightmare.NeedsDownload.DETAILER -> com.abrah.nightmare.detail.PartDetector.BYTES
             com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> com.abrah.nightmare.portrait.LivePortrait.BYTES
             com.abrah.nightmare.NeedsDownload.INTERP -> com.abrah.nightmare.npu.FrameInterp.BYTES
+            com.abrah.nightmare.NeedsDownload.VSR -> com.abrah.nightmare.npu.VideoUpscaler.BYTES
             com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> com.abrah.nightmare.pose.WholeBodyPose.BYTES
             else -> cnRows[m.key]?.bytes ?: 0L
         }
@@ -2683,6 +2692,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.DETAILER -> detailerRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> livePortraitRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.INTERP -> interpRow?.installed == true
+                com.abrah.nightmare.NeedsDownload.VSR -> vsrRow?.installed == true
                 com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> wholeBodyRow?.installed == true
                 else -> cnRows[m.key]?.installed == true
             }
@@ -2789,6 +2799,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.INTERP)
             return false
         }
+        // ⭐ Upscale 2x's FlashVSR, asked here for the same reason. ⚠ Not on a chip it is not offered on: the run says so.
+        val upscaling = graph.nodes.any { n ->
+            n.type in com.abrah.nightmare.WAN_TYPES && n.params[com.abrah.nightmare.npu.WanVideoNode.VSR] == "true"
+        }
+        if (upscaling && com.abrah.nightmare.npu.VideoUpscaler.supported() &&
+            !com.abrah.nightmare.npu.VideoUpscaler.isInstalled(ctx)
+        ) {
+            missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.VSR)
+            return false
+        }
         // ⭐ Fix faces / Fix hands read the render with the detector: asked here, as Pose is, so a Run
         // never spends a render and then skips the fix.
         val detailing = graph.nodes.any { n -> (nodeTypes[n.type] as? com.abrah.nightmare.SdSampler)?.detailWanted(n) == true }
@@ -2881,6 +2901,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 com.abrah.nightmare.NeedsDownload.DETAILER -> installDetailer()
                 com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT -> installLivePortrait()
                 com.abrah.nightmare.NeedsDownload.INTERP -> installInterp()
+                com.abrah.nightmare.NeedsDownload.VSR -> installVsr()
                 com.abrah.nightmare.NeedsDownload.WHOLE_BODY -> installWholeBody()
                 else -> installControlNet(m.key)
             }
@@ -3165,6 +3186,71 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         com.abrah.nightmare.npu.FrameInterp.delete(getApplication())
         say("deleted ${com.abrah.nightmare.npu.FrameInterp.LABEL}")
         refreshInterp()
+    }
+
+    // ---- Upscale 2x, the Wan nodes' FlashVSR ([com.abrah.nightmare.npu.VideoUpscaler]) ------------------------
+
+    /** ⭐ The Tools row for FlashVSR: IFRNet's shape exactly (above). Null on a chip it is not offered on. */
+    var vsrRow by mutableStateOf<com.abrah.nightmare.ui.ToolRow?>(null)
+        private set
+
+    private val VSR_INSTALL_ID = "vsr-tool"
+
+    fun refreshVsr() {
+        val ctx = getApplication<Application>()
+        val vu = com.abrah.nightmare.npu.VideoUpscaler
+        vu.refresh(ctx)
+        vsrRow = if (!vu.supported()) null else com.abrah.nightmare.ui.ToolRow(
+            label = vu.LABEL,
+            bytes = vu.BYTES,
+            installed = vu.installed,
+            onDisk = if (vu.installed) vu.bytesOnDisk(ctx) else 0L,
+            progress = if (installing == VSR_INSTALL_ID) installProgress else null,
+        )
+    }
+
+    fun installVsr() {
+        if (installing != null) return
+        val ctx = getApplication<Application>()
+        val vu = com.abrah.nightmare.npu.VideoUpscaler
+        installing = VSR_INSTALL_ID
+        cancelInstall = false
+        modelError = null
+        installProgress = ModelInstaller.Progress("starting", 0, vu.BYTES)
+        refreshVsr()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                vu.install(ctx, onProgress = { p -> viewModelScope.launch { tickProgress(p) } }, isCancelled = { cancelInstall })
+                viewModelScope.launch {
+                    say("installed ${vu.LABEL}")
+                    downloadSucceeded(vu.LABEL)
+                }
+            } catch (e: ModelInstaller.Cancelled) {
+                viewModelScope.launch {
+                    downloadCancelled()
+                    say("download cancelled", bad = true)
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch {
+                    ErrorReport.record(e)
+                    modelError = e.message ?: e.javaClass.simpleName
+                    downloadFailed(vu.LABEL, modelError!!)
+                    say("install failed. $modelError", bad = true)
+                }
+            } finally {
+                viewModelScope.launch {
+                    installing = null
+                    installProgress = null
+                    refreshVsr()
+                }
+            }
+        }
+    }
+
+    fun deleteVsr() {
+        com.abrah.nightmare.npu.VideoUpscaler.delete(getApplication())
+        say("deleted ${com.abrah.nightmare.npu.VideoUpscaler.LABEL}")
+        refreshVsr()
     }
 
     // ---- Whole-body pose, Motion transfer's skeletons ([com.abrah.nightmare.pose.WholeBodyPose]) ------------
