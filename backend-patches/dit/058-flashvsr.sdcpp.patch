@@ -22,11 +22,11 @@ index 0000000..7b52f41
 +target_compile_features(${TARGET} PUBLIC cxx_std_17)
 diff --git a/examples/flashvsr/main.cpp b/examples/flashvsr/main.cpp
 new file mode 100644
-index 0000000..ef9f181
+index 0000000..6d5d012
 --- /dev/null
 +++ b/examples/flashvsr/main.cpp
-@@ -0,0 +1,100 @@
-+// nightmare (dit/058): flashvsr-cli MODEL.gguf IN_DIR OUT_DIR [-t threads] [--tile N] [--overlap N] [--seed N]
+@@ -0,0 +1,109 @@
++// nightmare (dit/058): flashvsr-cli MODEL.gguf IN_DIR OUT_DIR [-v] [-t threads] [--tile N] [--overlap N] [--seed N]
 +//   [--frames N] [--crop x,y,w,h] [--backend SPEC] [--params-backend SPEC]
 +// Upscales the PNG frames of IN_DIR (sorted by name) 2x with FlashVSR into OUT_DIR/out_000.png ... Env as in
 +// src/flashvsr.cpp (FLASHVSR_DUMP, FLASHVSR_NOISE, FLASHVSR_DEC_CHUNK).
@@ -49,8 +49,10 @@ index 0000000..ef9f181
 +
 +namespace fs = std::filesystem;
 +
++static bool g_verbose = false;
++
 +static void on_log(enum sd_log_level_t level, const char* text, void*) {
-+    if (level >= SD_LOG_INFO) {
++    if (g_verbose || level >= SD_LOG_INFO) {
 +        fputs(text, stderr);
 +    }
 +}
@@ -68,8 +70,15 @@ index 0000000..ef9f181
 +    int64_t seed       = 42;
 +    const char* backend = nullptr;
 +    const char* pbackend = nullptr;
++    for (int i = 4; i < argc; i++) {
++        if (std::string(argv[i]) == "-v") g_verbose = true;  // every log level (GGML_HEXAGON_PROFILE's lines are DEBUG)
++    }
 +    for (int i = 4; i + 1 < argc; i += 2) {
 +        std::string a = argv[i];
++        if (a == "-v") {
++            i--;
++            continue;
++        }
 +        if (a == "-t") threads = atoi(argv[i + 1]);
 +        else if (a == "--tile") tile = atoi(argv[i + 1]);
 +        else if (a == "--overlap") overlap = atoi(argv[i + 1]);
