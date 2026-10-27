@@ -2696,6 +2696,18 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * directory fails seconds later naming a path.
      */
     private fun modelsPresentOrAsk(): Boolean {
+        if (firstMissingOrAsk()) return true
+        // ⭐ What is missing is DOWNLOADING (a run beside a download, GitHub #68): say so, never offer it again.
+        val m = missingModel
+        if (m != null && m.installId == installing) {
+            missingModel = null
+            runError = "${m.label} is downloading. Run once it has finished"
+        }
+        return false
+    }
+
+    /** The checks behind [modelsPresentOrAsk]: sets [missingModel] for the first model not here. */
+    private fun firstMissingOrAsk(): Boolean {
         val ctx = getApplication<Application>()
         val graph = canvas.workflow.graph
         val types = typesFor(graph)
@@ -9331,22 +9343,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * run while Klein 9B downloads; the user's call, 2026-10-27). Safe because a download lands as a
      * `.part` renamed only at its full size ([ModelInstaller]), and a file already whole is skipped,
      * so nothing a running model reads is ever half-written.
-     * ⚠ Still refused: a move (every model path changes), the video and tool downloads (no catalogue
-     * id to compare), and any run whose caller cannot say what it loads ([uses] null).
+     * ⭐ The video and tool downloads too (the user, 2026-10-27: "when i repairing neodragon, i cant use abs
+     * reality"): [canvasModels] names the Neodragon download when the canvas has its node, and a tool the run needs
+     * is caught before the backend by [modelsPresentOrAsk], which says it is downloading rather than offering it.
+     * ⚠ Still refused: a move (every model path changes), and any run whose caller cannot say what it loads ([uses]
+     * null).
      */
-    private fun runsBesideDownload(downloading: String?, uses: (() -> List<String>)?): Boolean {
-        if (downloading == null || downloading == MOVE_ID || downloading == VIDEO_INSTALL_ID) return false
-        val spec = ModelCatalog.byId(downloading) ?: return false
+    internal fun runsBesideDownload(downloading: String?, uses: (() -> List<String>)?): Boolean {
+        if (downloading == null || downloading == MOVE_ID) return false
         if (uses == null) return false
         // ⚠ A DiT download fetches the shared engine first when it is missing or old ([ModelInstaller]), and
         // every DiT run needs that engine: wait for it.
-        if (spec.isDit && !DitEngine.isInstalled(getApplication())) return false
+        val spec = ModelCatalog.byId(downloading)
+        if (spec?.isDit == true && !DitEngine.isInstalled(getApplication())) return false
         return runCatching { downloading !in uses() }.getOrDefault(false)
     }
 
-    /** ⭐ What a canvas or batch run loads, for [runsBesideDownload]. */
-    private fun canvasModels(): List<String> =
-        contextKeyModels(canvas.workflow.graph, typesFor(canvas.workflow.graph))
+    /** ⭐ What a canvas or batch run loads, for [runsBesideDownload]: its checkpoints, and Neodragon's download. */
+    internal fun canvasModels(): List<String> =
+        contextKeyModels(canvas.workflow.graph, typesFor(canvas.workflow.graph)) +
+            listOfNotNull(VIDEO_INSTALL_ID.takeIf { canvas.workflow.graph.nodes.any { it.type == "nd.sample" } })
 
     /**
      * ⭐⭐ Stop the run in progress. **Completed nodes keep their outputs**, so

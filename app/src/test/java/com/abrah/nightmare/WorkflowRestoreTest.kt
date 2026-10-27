@@ -206,14 +206,14 @@ class WorkflowRestoreTest {
     }
 
     /**
-     * ⚠⚠ And Run is still refused during one — with a sentence that names the
-     * download. "already running" was true and useless: nothing was running that
-     * the user had started or could see from the canvas.
+     * ⚠⚠ And Run is still refused during one OF A MODEL IT LOADS (since GitHub #68 every other run goes ahead,
+     * `RunBesideDownloadTest`) — with a sentence that names the download. "already running" was true and
+     * useless: nothing was running that the user had started or could see from the canvas.
      */
     @Test
     fun runDuringADownloadSaysWhatIsDownloading() {
         val vm = HarnessViewModel(app)
-        vm.importModel(android.net.Uri.parse("content://nothing/here"), "made_up")
+        vm.importModel(android.net.Uri.parse("content://nothing/here"), vm.canvasModels().first())
         vm.runCanvas()
         assertTrue(
             "the refusal must name the download: ${vm.runError}",
