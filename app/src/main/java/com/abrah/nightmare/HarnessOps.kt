@@ -1819,6 +1819,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                                 at(4).takeIf { it.isNotEmpty() }?.let { com.abrah.nightmare.SdSampler.LORAS to it },
                                 // ⭐ An eighth part `smooth`: Smooth motion on ([com.abrah.nightmare.npu.FrameInterp]).
                                 ("true").takeIf { at(7) == wan.SMOOTH }?.let { wan.SMOOTH to it },
+                                // ⭐ Parts ([com.abrah.nightmare.npu.WanParts]): a ninth part the count, a tenth `0` for Keep
+                                // colours off, an eleventh the part prompts with `~` between lines.
+                                at(8).takeIf { it.isNotEmpty() }?.let { com.abrah.nightmare.npu.WanParts.PARTS to it },
+                                ("false").takeIf { at(9) == "0" }?.let { com.abrah.nightmare.npu.WanParts.KEEP_COLOURS to it },
+                                at(10).takeIf { it.isNotEmpty() }?.let { com.abrah.nightmare.npu.WanParts.PART_PROMPTS to it.replace('~', '\n') },
                             ),
                         )
                         else -> n

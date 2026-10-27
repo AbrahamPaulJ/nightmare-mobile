@@ -11,10 +11,10 @@ makes each render about a third slower),
 **SDXL Swap** (an SDXL checkpoint converted in npuforge 1.0.10 or newer as *SDXL Swap*, with
 LoRA ticked; 1.0.11 offers LoRA as SDXL Swap's only feature).
 
-!!! warning "Experimental on FLUX.2, Z-Image, Qwen Image and Krea 2"
-    These models take LoRAs too, but only some work: some take several minutes or much longer
-    a picture, and some give broken pictures. The LoRA list says so on these models. A LoRA made
-    for FLUX.2 Klein 9B does not work on Klein 4B, and the other way round.
+!!! note "FLUX.2, Z-Image, Qwen Image and Krea 2"
+    These models take LoRAs too. A LoRA on them can make a render noticeably slower, and the LoRA
+    list says so on these models. A LoRA made for FLUX.2 Klein 9B does not work on Klein 4B, and the
+    other way round.
 
 ### Download from CivitAI or Hugging Face
 

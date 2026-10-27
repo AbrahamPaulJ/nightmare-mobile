@@ -142,9 +142,9 @@ fun LoraPicker(
 }
 
 /**
- * ⭐ "LoRAs are experimental on this model" — FLUX.2, Z-Image, Qwen 2.1 and Krea 2 (the user's
- * call, 2026-10-13: some work, some take minutes to hours, some come out corrupt). ONE line for
- * the node's picker and the Get LoRAs browser. ⚠ Not [com.abrah.nightmare.ui.ErrorNotice]:
+ * ⭐ "A LoRA on this model can make a render noticeably slower" — FLUX.2, Z-Image, Qwen 2.1 and Krea 2.
+ * Was "experimental" (2026-10-13); softened 2026-10-27, the user: DiT LoRAs confirmed working. ONE line
+ * for the node's picker and the Get LoRAs browser. ⚠ Not [com.abrah.nightmare.ui.ErrorNotice]:
  * nothing failed; a caution is information.
  */
 @Composable

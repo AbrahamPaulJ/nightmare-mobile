@@ -1196,6 +1196,10 @@ internal val KNOB_RESOURCES = mapOf(
     "subseed_strength" to com.abrah.nightmare.R.string.knob_subseed_strength,
     "fix_faces" to com.abrah.nightmare.R.string.knob_fix_faces,
     "smooth" to com.abrah.nightmare.R.string.knob_smooth,
+    // ⭐ Wan's parts ([com.abrah.nightmare.npu.WanParts]).
+    "parts" to com.abrah.nightmare.R.string.knob_parts,
+    "part_prompts" to com.abrah.nightmare.R.string.knob_part_prompts,
+    "keep_colours" to com.abrah.nightmare.R.string.knob_keep_colours,
     // ⭐ Motion transfer's long-video knobs ([com.abrah.nightmare.npu.WanFun]).
     "motion_fps" to com.abrah.nightmare.R.string.knob_motion_fps,
     "follow" to com.abrah.nightmare.R.string.knob_follow,

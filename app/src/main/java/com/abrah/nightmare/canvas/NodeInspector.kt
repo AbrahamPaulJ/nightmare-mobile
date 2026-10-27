@@ -1145,6 +1145,9 @@ internal fun hiddenKnob(node: com.abrah.nightmare.Node, name: String): Boolean {
     if (node.type == com.abrah.nightmare.npu.WanFunNode.name && name in com.abrah.nightmare.npu.WanFun.VIDEO_PARAMS) return true
     // ⭐ Set by the Text to video (14B) flow, never a switch on the page ([com.abrah.nightmare.npu.WanVideoNode.FOLLOW_PICTURE]).
     if (name == com.abrah.nightmare.npu.WanVideoNode.FOLLOW_PICTURE) return true
+    // ⭐ Part prompts and Keep colours mean nothing for a one-part clip ([com.abrah.nightmare.npu.WanParts]).
+    if (name in com.abrah.nightmare.npu.WanParts.FOLLOWERS &&
+        com.abrah.nightmare.npu.WanParts.countOf(node.params) <= 1) return true
     // ⭐ SD 1.5 Swap's ControlNet knobs live in its ControlNet TILE ([ControlNetPanel]),
     // its IP-Adapter knobs in the IP-Adapter tile ([IpAdapterPanel]).
     if (name in setOf(
@@ -3130,7 +3133,7 @@ internal fun NodeInspectorBody(
             Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
             // ⚠ The two fields that hold sentences rather than a value.
-            val isProse = w.name == "prompt" || w.name == "negative"
+            val isProse = w.name == "prompt" || w.name == "negative" || w.name == com.abrah.nightmare.npu.WanParts.PART_PROMPTS
             // ⭐⭐ The field a canvas tap asked for. Focus is requested ONCE per
             // open (keyed on the node and name), so scrolling the sheet or
             // editing another knob does not drag the keyboard back up.

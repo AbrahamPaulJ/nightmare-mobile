@@ -99,6 +99,10 @@ object WanVideoNode : NodeType {
         Widget("seconds", "int", "5", 0.0, MAX_SECONDS.toDouble(), hintRes = R.string.hint_wan_seconds),
         // ⭐ Twice the frames, a new one between every pair ([FrameInterp], the user's call 2026-10-26). Every Wan node.
         Widget(SMOOTH, "bool", "false", hintRes = R.string.hint_wan_smooth),
+        // ⭐ Up to 10 parts, each starting on the last frame of the one before ([WanParts], the user's call 2026-10-27).
+        Widget(WanParts.PARTS, "int", "1", 1.0, WanParts.MAX.toDouble(), hintRes = R.string.hint_wan_parts),
+        Widget(WanParts.PART_PROMPTS, "string", "", hintRes = R.string.hint_wan_part_prompts),
+        Widget(WanParts.KEEP_COLOURS, "bool", "true", hintRes = R.string.hint_wan_keep_colours),
         // ⭐ The framing, exactly as [VideoSampleNode] carries it.
         Widget("x", "float", "0.0", 0.0, 1.0, hintRes = R.string.hint_drag_frame),
         Widget("y", "float", "0.0", 0.0, 1.0),
@@ -650,6 +654,12 @@ object WanVideoNode : NodeType {
             )
         }
 
+        // ⭐⭐ Parts ([WanParts]): not Motion transfer (its own parts), not a one-frame still.
+        val partCount = if (driving == null && frames > 1) WanParts.countOf(p) else 1
+        val partPrompts = WanParts.promptsFor(
+            pos.text, p[WanParts.PART_PROMPTS]?.lines()?.joinToString("\n") { PromptLoras.extract(it).text }, partCount,
+        )
+        val keepColours = p[WanParts.KEEP_COLOURS] != "false"
         // ⚠ The decode's spatial tile changes the frames (a little), so it is part of the clip's key.
         val vaeTile = com.abrah.nightmare.BackendProcess.readWanVaeTileOverride(android) ?: vaeTileFor(w, h)
         // ⚠ A content address of everything the clip is made from, as [VideoSampleNode] does.
@@ -663,6 +673,8 @@ object WanVideoNode : NodeType {
                 spec.id.takeIf { profileOf(node.type) != TURBO }?.let { "model=$it" },
                 vaeTile.takeIf { it > 0 }?.let { "vae_tile=$it" },
                 "smooth=2x".takeIf { smooth },
+                // ⭐ Parts: their count, prompts and colour lock make different frames.
+                partCount.takeIf { it > 1 }?.let { "parts=$it/${partPrompts.joinToString("\u0001")}/lock=$keepColours" },
                 // ⚠⚠ The FRAMING too: `source.address()` is the unframed photo, so dragging the crop at
                 // the same seed wrote the old clip's name (GitHub #27 again), and a chain served the old
                 // film ([FilmJoin], keyed on this file's name).
@@ -677,6 +689,8 @@ object WanVideoNode : NodeType {
         val raw = File(dir, "wan_$key.nmv")
         val out = File(dir, "clip_wan_$key.mp4")
         val clipFrames = plan?.frames ?: frames
+        if (partCount > 1) ctx.say("$partCount parts of $clipFrames frames, each starting on the last frame of the one before" +
+            if (keepColours) ", colours held to the first frame" else "")
         ctx.say("seed $used, ${w}x$h, $clipFrames frames" + when {
             motion != null -> ", your picture moving like the driving video"
             startPng != null -> ", animating your picture"
@@ -716,7 +730,10 @@ object WanVideoNode : NodeType {
                 throw IllegalStateException("node \"${node.id}\": ${com.abrah.nightmare.explainOpFailure(r.code, r.body)}")
             }
         }
-        val clip = if (motion == null || plan == null) unwrap(
+        val clip = if ((motion == null || plan == null) && partCount > 1) runParts(
+            ctx, node, spec, arch, partCount, partPrompts, keepColours, neg.text, used, w, h, clipFrames, fps, prof,
+            startPng, loras, vaeTile, dir, key, raw, ::unwrap,
+        ) else if (motion == null || plan == null) unwrap(
             ctx.host.video(
                 prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = fps,
                 seed = used, steps = SIGMAS.size - 1, sampleMethod = prof.sampler, sigmas = SIGMAS, tilingArgs = TILING,
@@ -906,6 +923,102 @@ object WanVideoNode : NodeType {
             session?.close()
             raw.delete()
         }
+    }
+
+    /**
+     * ⭐⭐ A clip in [n] parts ([WanParts]): part k on [prompts]'s k-th line, seed [used] + k, starting on the last frame
+     * of part k - 1 (whose duplicate first frame is dropped), all written into [raw]. With [keepColours] every frame is
+     * held to the first frame's colours ([WanParts.Lock]) BEFORE the next part starts from it, so the drift cannot
+     * compound. Resumable as Motion transfer's parts are: a marker after each part, the same node run again carries on.
+     */
+    private suspend fun runParts(
+        ctx: NodeCtx, node: Node, spec: com.abrah.nightmare.ModelSpec, arch: Int, n: Int, prompts: List<String>,
+        keepColours: Boolean, negative: String, used: Long, w: Int, h: Int, frames: Int, fps: Int, prof: WanProfile,
+        startPng: ByteArray?, loras: List<Pair<String, Double>>, vaeTile: Int, dir: File, key: String, raw: File,
+        unwrap: (Ops.Result<Ops.Clip>, File) -> Ops.Clip,
+    ): Ops.Clip {
+        val bytes = w * h * 3
+        val marker = File(dir, "wan_$key.parts")
+        val resume = WanFun.resumeFrom(marker.takeIf { raw.isFile }?.let { runCatching { it.readText() }.getOrNull() }, n)
+        var total = 0
+        var ms = 0L
+        var start = startPng
+        var lock: WanParts.Lock? = null
+        val buf = ByteArray(bytes)
+        RandomAccessFile(raw, "rw").use { all ->
+            if (resume == null) {
+                all.setLength(0)
+                all.write(ByteArray(HEADER_BYTES))
+            } else {
+                total = resume.second
+                ctx.say("  resuming: parts 1 to ${resume.first} were made by an earlier run")
+                // ⚠ The anchor is frame 0, and the smoothing restarts from the last frame the clip has.
+                if (keepColours) {
+                    all.seek(HEADER_BYTES.toLong()); all.readFully(buf)
+                    lock = WanParts.Lock(WanParts.stats(buf))
+                    all.seek(HEADER_BYTES + (total - 1).toLong() * bytes); all.readFully(buf)
+                    lock.apply(buf.copyOf())
+                }
+            }
+            for (pi in 0 until n) {
+                if (resume != null && pi < resume.first) continue
+                kotlin.coroutines.coroutineContext.ensureActive()
+                if (pi > 0) {
+                    all.seek(HEADER_BYTES + (total - 1).toLong() * bytes)
+                    all.readFully(buf)
+                    start = pngOfRgb(buf, w, h)
+                    // ⭐ 8 Gen 3: every clip from a fresh backend, and a part is a clip (the rule in [runClip]).
+                    if (arch in 1..78) {
+                        ctx.say("  a fresh backend for part ${pi + 1} (8 Gen 3)")
+                        com.abrah.nightmare.BackendProcess.stop()
+                        if (ctx.switchKey?.invoke(keyFor(node, spec)) != true) {
+                            throw IllegalStateException("node \"${node.id}\": the backend did not restart for part ${pi + 1}")
+                        }
+                        servedBy = com.abrah.nightmare.BackendProcess.processId
+                    }
+                }
+                ctx.say("  part ${pi + 1} of $n" + if (pi > 0 && prompts[pi] != prompts[pi - 1]) ": ${prompts[pi].take(60)}" else "")
+                val partRaw = File(dir, "wan_${key}_p$pi.nmv")
+                try {
+                    val c = unwrap(
+                        ctx.host.video(
+                            prompt = prompts[pi], negative = negative, width = w, height = h, frames = frames, fps = fps,
+                            seed = used + pi, steps = SIGMAS.size - 1, sampleMethod = prof.sampler, sigmas = SIGMAS,
+                            tilingArgs = TILING, out = partRaw.absolutePath, startPng = start, loras = loras,
+                            onProgress = { pr -> ctx.onProgress(pr) },
+                            vaeTileSize = vaeTile,
+                        ),
+                        partRaw,
+                    )
+                    ms += c.serverMs
+                    check(c.width == w && c.height == h) { "part ${pi + 1} came back ${c.width}x${c.height}, not ${w}x$h" }
+                    // ⭐ No smoothing across the join ([WanParts.Lock.restart]).
+                    if (pi > 0) lock?.restart()
+                    RandomAccessFile(partRaw, "r").use { f ->
+                        // ⚠ A later part's frame 0 IS its start picture, the clip's last frame: dropped, not shown twice.
+                        for (k in (if (pi == 0) 0 else 1) until c.frames) {
+                            f.seek(HEADER_BYTES + k.toLong() * bytes)
+                            f.readFully(buf)
+                            if (keepColours) {
+                                val l = lock ?: WanParts.Lock(WanParts.stats(buf)).also { lock = it }
+                                l.apply(buf)
+                            }
+                            all.seek(HEADER_BYTES + total.toLong() * bytes)
+                            all.write(buf)
+                            total++
+                        }
+                    }
+                    all.fd.sync()
+                    marker.writeText("${pi + 1} $total")
+                } finally {
+                    partRaw.delete()
+                }
+            }
+            all.seek(0)
+            all.write(nmvHeader(w, h, total, fps))
+        }
+        marker.delete()
+        return Ops.Clip(raw.absolutePath, total, w, h, fps, ms)
     }
 
     /**

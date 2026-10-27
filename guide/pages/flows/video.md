@@ -58,6 +58,9 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 | **Seed** | `0` = a new clip every Run; type a seed shown on the node to get that clip back |
 | **Seconds** | 0 to 5, at 24 frames a second (Wan 2.2 14B: 1 to 3 at 16 frames a second; 1 second at 720p is about 12 minutes, 3 can take an hour); 0 makes one still picture (about 15 s at 832 × 480 on an 8 Elite; wire **last frame** to the output). On a 12 GB phone, 1280 × 704 for 3 seconds or more renders in parts so it fits: slower, about 12 minutes for 5 seconds. On an 8 Gen 3 a new flow opens on 2 seconds, the longest that has worked there so far; longer clips and 1280 × 704 still run, with a warning in the run log |
 | **Smooth motion** | Twice the frames: a new one between every pair, made on the NPU by IFRNet, so 16 frames a second become 32 and 24 become 48. Fast and smooth motion stops stuttering. It adds seconds, not minutes: about 0.2 s a new frame at 832 × 480 and 0.5 s at 720p on an 8 Elite. Up to 1280 × 736 or 736 × 1280; a larger clip stays at its own rate. Needs **Smooth motion** from Models → Tools (about 75 MB, Snapdragon 8 Gen 3 or newer); switching it on offers the download |
+| **Parts** | 1 to 10. More than 1 makes a longer clip in parts, each as long as **Seconds** and starting on the last frame of the part before, joined into one video. Each part takes as long as one clip |
+| **Part prompts** | With 2 or more parts: what happens in part 2 onwards, one line each. A blank or missing line repeats the part before; part 1 uses the Prompt node |
+| **Keep colours** | With 2 or more parts, on by default: holds every part to the first frame's colours. Without it a long clip tends to turn darker and redder part by part (the model drifts a little each part and the next starts from there). Turn it off for a clip meant to change its light |
 | **LoRAs** | Wan 2.2 Turbo (TI2V-5B) LoRAs only; Wan 2.2 14B takes none (its speed-up is built in). See [LoRAs](../models/loras.md) |
 
 Neodragon has **Seed** and **Upscale** (on: 2× to 1024 × 640; off: 512 × 320, a little faster).
@@ -68,7 +71,9 @@ Neodragon has **Seed** and **Upscale** (on: 2× to 1024 × 640; off: 512 × 320,
 
 ## Longer clips: one film
 
-The Wan video node has a second output, **last frame**: the clip's final frame as a picture. In
+The simplest way is **Parts** on the video node (above): up to 10 parts, a prompt for each, one video.
+
+The Wan video node also has a second output, **last frame**: the clip's final frame as a picture. In
 advanced view, wire it into another Wan video node's **image** and give that one its own prompt:
 it carries on from where the first clip ended.
 

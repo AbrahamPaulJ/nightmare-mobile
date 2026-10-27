@@ -2,7 +2,7 @@
 
 *A photo and a prompt: the whole picture is re-rendered to follow it, rather than nudged.*
 
-**Nodes:** Prompt and Image → Image edit → Output. **Needs a Snapdragon 8 Gen 3 or newer** (alpha on 8 Gen 3) and
+**Nodes:** Prompt and Image → Image edit → Output. **Needs a Snapdragon 8 Gen 3 or newer** and
 one of the edit models: **FLUX.2 Klein** (4B or 9B) or **Qwen Image 2.1**.
 
 Where [Image to image](image-to-image.md) repaints a photo loosely, an edit model reads the
