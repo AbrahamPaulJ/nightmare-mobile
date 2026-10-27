@@ -30,9 +30,9 @@ and it downloads on first use; the app shows which ones your phone can run.
 ## Features
 
 ### The canvas
-- **Built for a phone**: big ports, snap to connect, pinch to zoom (out to 0.15x to see a big flow whole); the picture appears on the node that made it. The run bar folds to one row (+ Node, Run, the time, the locks) for more canvas.
+- **Built for a phone**: big ports, snap to connect, pinch to zoom (out to 0.15x to see a big flow whole); the picture appears on the node that made it. The run bar folds to one row (+ Node, Run, the time, the locks) for more canvas. Cancel on a run over a minute old asks first, and an Output shows its picture as soon as it is ready.
 - **Local Dream's models, no second download**: models Local Dream keeps in `Download/LocalDream` are listed and run in place, never changed or deleted.
-- **SDXL without the NPU**: Local Dream's SDXL CPU/GPU zips (`_mnn`) import from **+** and render on the GPU, about 17 s a step at 1024² on an 8 Elite (the CPU is about 4 times slower), for phones whose NPU cannot run SDXL.
+- **SDXL without the NPU**: Local Dream's SDXL CPU/GPU zips (`_mnn`) import from **+** and render on the GPU, about 17 s a step at 1024² on an 8 Elite (the CPU is about 4 times slower), for phones whose NPU cannot run SDXL. Prompts up to 231 tokens.
 - **UltraFix**: Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
 - **More options** on the Image node holds the after-render switches below, folded away; closed, it names the ones that are on. **Scheduler, seed and CFG** fold the same way, closed until you open them, showing what they are set to.
   Switching one on that needs a download (the upscaler, the face and hand detector) offers it there and then.
@@ -58,7 +58,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Results**: star, save, share, reopen any picture as the flow that made it; each keeps how long it took. Fold the big preview away and the grid fills the screen. In a picture's info, long-press its prompt, negative, seed or the picture itself and **Use** them on the open flow, each matched to the node you pick. A DiT picture that came out wrong on your phone (blown colours, grain, stripes) can be **Diagnosed** from the same info: it is rendered again once per part of the NPU moved to the CPU, every try kept in Results as one labelled group with a report, so the one that comes out right names what to fix on your chip.
 
 ### Models
-- **47 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand. A **Community** tab under SDXL and SDXL Swap lists models converted by community members on an 8 Gen 3, so they run on the 8 Gen 3 and newer; they are hosted on their converters' own pages.
+- **49 checkpoints in the catalogue**: SD 1.5, SD 1.5 Swap, SDXL, SDXL Swap, Anima and the DiT family, each downloaded on demand. A **Community** tab under SDXL and SDXL Swap lists models converted by community members on an 8 Gen 3, so they run on the 8 Gen 3 and newer; they are hosted on their converters' own pages.
 - **FLUX.2 Klein 4B / 9B, Z-Image Turbo, Qwen Image 2.1 (and its 8-step Turbo), Krea 2 Turbo, Anima Turbo 1.1, Anima 2.9B (preview)**: any size from 512 to 2048 in 64 px steps, no reload to change it.
 - **MOSS-Image SFT** (8 steps): OpenMOSS's 5B model (the SFT release) with a 9B text encoder (Qwen3.5) and lodestones' 8-step speed-up applied every time. Careful, detailed pictures: about 50 s at 512x512 and under 3 min at 1024x1024 on an 8 Elite. About 10 GB. Text to image.
 - **MOSS-Image Base** (8 steps): the same model before its SFT training, with lodestones' 8-step speed-up for it. It shares
@@ -71,6 +71,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 - **Ideogram 4** (8 steps): Ideogram's 9.3B model, the best open model at readable text in a picture (signs, posters, labels), with ostris' TurboTime speed-up applied every time. About 5.5 min at 768x768 on an 8 Elite. About 11.6 GB, 12 GB phones and up. Text to image. Non-commercial use only (Ideogram's licence).
 - **Iris 3B Turbo**: draws pixels directly, so there is no VAE and no decode step to run out of memory in. Only the sizes it was trained at, about 1 MP each (1024x1024, 896x1200, 896x1344, 752x1344 and the turned versions); smaller ones come out in blocks. About 2.5 min at 1024x1024 on an 8 Elite. Text to image.
 - **Bring your own**: one **+** on the Models page takes any of them and works out what the file is: a converted checkpoint zip, a FLUX.2 / FLUX.3 / Z-Image / Qwen Image 2.1 / Krea 2 / Anima / MOSS-Image `.safetensors` or `.gguf` fine-tune used as it is (a 16-bit MOSS-Image `.safetensors` is made 8-bit on import, so it fits in memory, and a MOSS-Image import gets the built-in's 8-step speed-up, switchable from its card; a self-made GGUF that quantized the few tensors the engine cannot read that way is fixed on import), or an upscaler. Rename any import from its card. Or convert one on the phone with [npuforge](https://github.com/AbrahamPaulJ/npuforge).
+- **Keep working while it downloads**: queue several downloads; meanwhile any flow that does not need the thing downloading runs, and **Use** works on the other models.
 - **Upscalers**: RealESRGAN anime and 4x UltraSharp V2 Lite, or your own; the Upscale card on the output node.
 - **A real inpainting model**: AbsoluteReality Inpaint sees the hole it fills.
 
