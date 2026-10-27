@@ -1,0 +1,21 @@
+diff --git a/src/ggml-hexagon/ggml-hexagon.cpp b/src/ggml-hexagon/ggml-hexagon.cpp
+index 83ba19c..ba72632 100644
+--- a/src/ggml-hexagon/ggml-hexagon.cpp
++++ b/src/ggml-hexagon/ggml-hexagon.cpp
+@@ -1780,7 +1780,15 @@ static bool ggml_backend_hexagon_buffer_cpy_tensor(ggml_backend_buffer_t      bu
+         src->data == nullptr || dst->data == nullptr) {
+         return false;
+     }
+-    memcpy(dst->data, src->data, ggml_nbytes(src));
++    // nightmare (dit/066): one core copies ~3.7 GB/s, 17 ms for Z-Image's 63 MB segment output, 36 a step
++    // (0.6 s, the segtime spike's "capture"). Split into 1 MiB-aligned pieces over the cores.
++    const size_t bytes = ggml_nbytes(src);
++    const size_t piece = 1u << 20;
++    const int    n     = (int) ((bytes + piece - 1) / piece);
++    hex_repack_parallel(n, bytes, [&](int i) {
++        const size_t off = (size_t) i * piece;
++        memcpy((char *) dst->data + off, (const char *) src->data + off, std::min(piece, bytes - off));
++    });
+     return true;
+ }
+ 
