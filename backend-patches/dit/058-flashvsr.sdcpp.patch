@@ -168,10 +168,10 @@ index e24b84d..4e9410d 100644
  typedef struct {
 diff --git a/src/flashvsr.cpp b/src/flashvsr.cpp
 new file mode 100644
-index 0000000..8fe8397
+index 0000000..1f01dce
 --- /dev/null
 +++ b/src/flashvsr.cpp
-@@ -0,0 +1,441 @@
+@@ -0,0 +1,442 @@
 +// nightmare (dit/058): FlashVSR v1.1 tiny, 2x video upscaling (model: src/model/upscaler/flashvsr.hpp). The host side
 +// of lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast `4820b3f` (nodes.py flashvsr(), pipelines/flashvsr_tiny.py) for one scale, 2:
 +// spatial tiles of the INPUT (each its own clip, as the reference's tiled_dit), the frame count padded to 8n + 5, the
@@ -335,6 +335,7 @@ index 0000000..8fe8397
 +        // im2col over a repacked weight is wrong (PipelineDit's vae_conv_direct). FLASHVSR_CONV_DIRECT=0 for an A/B.
 +        const char* cd = getenv("FLASHVSR_CONV_DIRECT");
 +        dec->set_conv2d_direct_enabled(cd == nullptr || atoi(cd) != 0);
++        dit->set_conv2d_direct_enabled(cd == nullptr || atoi(cd) != 0);  // the LQ projector's taps
 +        const auto residency = backend_manager.params_backend_is_disk(SDBackendModule::UPSCALER) ? ModelManager::ResidencyMode::Disk
 +                                                                                                 : ModelManager::ResidencyMode::ParamBackend;
 +        if (!model_manager->set_loader(loader) ||
@@ -382,9 +383,9 @@ index 0000000..8fe8397
 +            for (int ch = 0; ch < 16; ch++) {
 +                memcpy(x.data() + (size_t)ch * n * h8 * w8, noise.data() + ((size_t)ch * L + a) * h8 * w8, sizeof(float) * n * h8 * w8);
 +            }
-+            // the LQ stream S[i] = frame max(0, i - 5), PixelShuffle3d(1, 16, 16): [768][len][h16][w16]
++            // the LQ stream S[i] = frame max(0, i - 5), PixelShuffle3d(1, 16, 16): [len][768][h16][w16]
 +            const int len = 4 * n + FlashVSR::LQ_LEAD;
-+            sd::Tensor<float> s({w16, h16, len, FlashVSR::LQ_CHANNELS});
++            sd::Tensor<float> s({w16, h16, FlashVSR::LQ_CHANNELS, len});
 +            float* sp = s.data();
 +            for (int c3 = 0; c3 < 3; c3++)
 +                for (int hi = 0; hi < 16; hi++)
@@ -394,7 +395,7 @@ index 0000000..8fe8397
 +                            const int f = std::max(0, 4 * a + t - 5);
 +                            for (int y = 0; y < h16; y++)
 +                                for (int xx = 0; xx < w16; xx++) {
-+                                    sp[(((size_t)ch * len + t) * h16 + y) * w16 + xx] = px(c3, f, y * 16 + hi, xx * 16 + wi);
++                                    sp[(((size_t)t * FlashVSR::LQ_CHANNELS + ch) * h16 + y) * w16 + xx] = px(c3, f, y * 16 + hi, xx * 16 + wi);
 +                                }
 +                        }
 +                    }
@@ -412,8 +413,8 @@ index 0000000..8fe8397
 +        dit->runner_end();
 +        dump("latents", latents.data(), latents.size());
 +
-+        // decoder: [W8, H8, 784, n] per chunk, channels = PixelShuffle3d(4, 8, 8) of LQ frames 4j-3..4j (frame 0 before
-+        // the start), then the latent
++        // decoder: [W8, H8, DEC_INPUT, n] per chunk, channels = PixelShuffle3d(4, 8, 8) of LQ frames 4j-3..4j (frame 0
++        // before the start), then the latent, then 16 zeros
 +        const char* dc   = getenv("FLASHVSR_DEC_CHUNK");
 +        const int dchunk = std::max(1, dc ? atoi(dc) : 2);
 +        const int Fo     = 4 * L - 3;
@@ -425,11 +426,11 @@ index 0000000..8fe8397
 +                return false;
 +            }
 +            const int n = std::min(dchunk, L - a);
-+            sd::Tensor<float> z({w8, h8, FlashVSR::DEC_CHANNELS + 16, n});
++            sd::Tensor<float> z({w8, h8, FlashVSR::DEC_INPUT, n});  // zeros: the 16 pad channels stay 0
 +            float* zp = z.data();
 +            for (int j = 0; j < n; j++) {
 +                const int lj = a + j;
-+                float* zj    = zp + (size_t)j * (FlashVSR::DEC_CHANNELS + 16) * h8 * w8;
++                float* zj    = zp + (size_t)j * FlashVSR::DEC_INPUT * h8 * w8;
 +                for (int c3 = 0; c3 < 3; c3++)
 +                    for (int fi = 0; fi < 4; fi++) {
 +                        const int f = std::max(0, 4 * lj - 3 + fi);
@@ -768,10 +769,10 @@ index 7eeb3a9..74ef015 100644
      struct WanRunner : public DiffusionModelRunner {
 diff --git a/src/model/upscaler/flashvsr.hpp b/src/model/upscaler/flashvsr.hpp
 new file mode 100644
-index 0000000..3fd273f
+index 0000000..3920cb2
 --- /dev/null
 +++ b/src/model/upscaler/flashvsr.hpp
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,304 @@
 +#ifndef __SD_MODEL_UPSCALER_FLASHVSR_HPP__
 +#define __SD_MODEL_UPSCALER_FLASHVSR_HPP__
 +
@@ -789,11 +790,12 @@ index 0000000..3fd273f
 +
 +    constexpr int LQ_CHANNELS  = 3 * 16 * 16;  // PixelShuffle3d(1, 16, 16) of the LQ video, the DiT's token grid
 +    constexpr int DEC_CHANNELS = 3 * 4 * 8 * 8;  // PixelShuffle3d(4, 8, 8), the decoder's latent grid
++    constexpr int DEC_INPUT    = DEC_CHANNELS + 16 + 16;  // then the latent, then 16 zero channels (a multiple of 32)
 +    constexpr int LQ_LEAD      = 6;            // LQ stream frames before a chunk's first latent frame (two stride-2 convs)
 +
 +    // FlashVSR's CausalConv3d pads h and w by REPLICATING the edge (F.pad mode='replicate'), not with zeros.
 +    static ggml_tensor* replicate_pad_hw(ggml_context* c, ggml_tensor* x) {
-+        // x: [W, H, T, C]
++        // x: [W, H, C, T] (any two outer dims)
 +        auto col = [&](ggml_tensor* t, int64_t i) {
 +            return ggml_cont(c, ggml_view_4d(c, t, 1, t->ne[1], t->ne[2], t->ne[3], t->nb[1], t->nb[2], t->nb[3], i * t->nb[0]));
 +        };
@@ -807,33 +809,57 @@ index 0000000..3fd273f
 +    // Causal_LQ4x_Proj (layer_num 1). Its stream_forward over 4-frame clips with two cached frames per conv is one
 +    // strided conv over a continuous stream S (S[i] = LQ frame max(0, i - 5): the first frame six times, then the rest),
 +    // so latent frame k depends on S[4k, 4k + 10) and a chunk of n latent frames takes 4n + 6 stream frames, no state.
++    // Each (4, 3, 3) conv with time stride 2 is four 3x3 conv2ds, one a temporal tap, summed: the NPU has no 3-D conv
++    // (CONV_3D ran on the CPU, ~20 of 25 s a chunk at a 512 px tile) and its direct 2-D kernel is the VAE's.
 +    class LQProj : public GGMLBlock {
++        static constexpr int taps = 4;
++
 +    public:
 +        LQProj() {
-+            blocks["conv1"]           = std::shared_ptr<GGMLBlock>(new WAN::CausalConv3d(LQ_CHANNELS, 2048, {4, 3, 3}, {2, 1, 1}));
++            for (int t = 0; t < taps; t++) {
++                blocks["conv1.k" + std::to_string(t)] = std::shared_ptr<GGMLBlock>(new Conv2d(LQ_CHANNELS, 2048, {3, 3}));
++                blocks["conv2.k" + std::to_string(t)] = std::shared_ptr<GGMLBlock>(new Conv2d(2048, 3072, {3, 3}));
++            }
 +            blocks["norm1"]           = std::shared_ptr<GGMLBlock>(new WAN::RMS_norm(2048));
-+            blocks["conv2"]           = std::shared_ptr<GGMLBlock>(new WAN::CausalConv3d(2048, 3072, {4, 3, 3}, {2, 1, 1}));
 +            blocks["norm2"]           = std::shared_ptr<GGMLBlock>(new WAN::RMS_norm(3072));
 +            blocks["linear_layers.0"] = std::shared_ptr<GGMLBlock>(new Linear(3072, 1536));
 +        }
 +
++        // [W, H, C, T] -> [W - 2, H - 2, OC, (T - 4) / 2 + 1]: the sum over taps of conv2d(frames kt, kt + 2, ...)
++        ggml_tensor* conv_taps(GGMLRunnerContext* ctx, const std::string& name, ggml_tensor* x) {
++            auto gc          = ctx->ggml_ctx;
++            const int64_t To = (x->ne[3] - taps) / 2 + 1;
++            ggml_tensor* y   = nullptr;
++            for (int t = 0; t < taps; t++) {
++                auto frames = ggml_cont(gc, ggml_view_4d(gc, x, x->ne[0], x->ne[1], x->ne[2], To, x->nb[1], x->nb[2], 2 * x->nb[3], t * x->nb[3]));
++                auto o      = std::dynamic_pointer_cast<Conv2d>(blocks[name + ".k" + std::to_string(t)])->forward(ctx, frames);
++                y           = y ? ggml_add(gc, y, o) : o;
++            }
++            return y;
++        }
++
++        // RMS over channels then SiLU, in the [W, H, T, C] layout WAN::RMS_norm (and the NPU's fused op) wants
++        ggml_tensor* norm_silu(GGMLRunnerContext* ctx, const std::string& name, ggml_tensor* x) {
++            x = ggml_cont(ctx->ggml_ctx, ggml_permute(ctx->ggml_ctx, x, 0, 1, 3, 2));
++            return std::dynamic_pointer_cast<WAN::RMS_norm>(blocks[name])->forward_silu(ctx, x);
++        }
++
 +        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* s) {
-+            // s: [w, h, 4n + 6, LQ_CHANNELS]; return [1536, n*h*w], tokens w fastest, then h, then t
++            // s: [w, h, LQ_CHANNELS, 4n + 6]; return [1536, n*h*w], tokens w fastest, then h, then t
 +            auto gc     = ctx->ggml_ctx;
-+            auto conv1  = std::dynamic_pointer_cast<WAN::CausalConv3d>(blocks["conv1"]);
-+            auto conv2  = std::dynamic_pointer_cast<WAN::CausalConv3d>(blocks["conv2"]);
-+            auto norm1  = std::dynamic_pointer_cast<WAN::RMS_norm>(blocks["norm1"]);
-+            auto norm2  = std::dynamic_pointer_cast<WAN::RMS_norm>(blocks["norm2"]);
 +            auto linear = std::dynamic_pointer_cast<Linear>(blocks["linear_layers.0"]);
-+            auto h      = norm1->forward_silu(ctx, conv1->forward(ctx, replicate_pad_hw(gc, s)));  // [w, h, 2n + 2, 2048]
-+            h           = norm2->forward_silu(ctx, conv2->forward(ctx, replicate_pad_hw(gc, h)));  // [w, h, n, 3072]
++            auto h      = norm_silu(ctx, "norm1", conv_taps(ctx, "conv1", replicate_pad_hw(gc, s)));  // [w, h, 2n + 2, 2048]
++            h           = ggml_cont(gc, ggml_permute(gc, h, 0, 1, 3, 2));                               // [w, h, 2048, 2n + 2]
++            h           = norm_silu(ctx, "norm2", conv_taps(ctx, "conv2", replicate_pad_hw(gc, h)));  // [w, h, n, 3072]
 +            h           = ggml_reshape_2d(gc, h, h->ne[0] * h->ne[1] * h->ne[2], h->ne[3]);
 +            return linear->forward(ctx, ggml_cont(gc, ggml_transpose(gc, h)));
 +        }
 +    };
 +
 +    // TCDecoder: TAEHV's decoder at channels 512/256/128/128 with 784 input channels (the pixel-shuffled LQ video, then
-+    // the latent) and an extra 3x3 conv + ReLU after the two top-level ReLUs (indices 3 and 24). Runs a chunk of latent
++    // the latent; the file pads its first conv to DEC_INPUT) and an extra 3x3 conv + ReLU after the two top-level ReLUs
++    // (indices 3 and 24). Each level's TGrow (a 1x1 conv) runs BEFORE the 2x nearest upsample, which it commutes with,
++    // and the upsample folds into the next 3x3 conv (Conv2d::forward_upscale, the NPU's CONV_2D_UPSCALE). Runs a chunk of latent
 +    // frames at a time: each MemBlock's "past" frame comes in from the previous chunk (null = zeros, the first chunk),
 +    // the same as the reference's sequential decode.
 +    class TCDecoder : public GGMLBlock {
@@ -843,7 +869,7 @@ index 0000000..3fd273f
 +        static constexpr int num_mem = 9;
 +
 +        TCDecoder() {
-+            blocks["1"]  = std::shared_ptr<GGMLBlock>(new Conv2d(DEC_CHANNELS + 16, channels[0], {3, 3}, {1, 1}, {1, 1}));
++            blocks["1"]  = std::shared_ptr<GGMLBlock>(new Conv2d(DEC_INPUT, channels[0], {3, 3}, {1, 1}, {1, 1}));
 +            blocks["3"]  = std::shared_ptr<GGMLBlock>(new Conv2d(channels[0], channels[0], {3, 3}, {1, 1}, {1, 1}, {1, 1}, false));
 +            int index    = 5;
 +            const int st[3] = {1, 2, 2};
@@ -861,7 +887,7 @@ index 0000000..3fd273f
 +
 +        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* z, bool first,
 +                             const std::vector<ggml_tensor*>& mem_in, std::vector<ggml_tensor*>& mem_out) {
-+            // z: [W, H, 784, T] (frames as the batch); return [W*8, H*8, 3, 4T] (4T - 3 on the first chunk), in ~[0, 1]
++            // z: [W, H, DEC_INPUT, T] (frames as the batch); return [W*8, H*8, 3, 4T] (4T - 3 on the first chunk), ~[0, 1]
 +            auto gc   = ctx->ggml_ctx;
 +            auto conv = [&](const char* name, ggml_tensor* x) {
 +                return std::dynamic_pointer_cast<Conv2d>(blocks[name])->forward(ctx, x);
@@ -886,10 +912,9 @@ index 0000000..3fd273f
 +                    mem_out[m] = ggml_cont(gc, ggml_view_4d(gc, h, h->ne[0], h->ne[1], h->ne[2], 1, h->nb[1], h->nb[2], h->nb[3], (T - 1) * h->nb[3]));
 +                    h          = std::dynamic_pointer_cast<MemBlock>(blocks[std::to_string(index++)])->forward(ctx, h, past);
 +                }
-+                index++;
-+                h = ggml_upscale(gc, h, 2, GGML_SCALE_MODE_NEAREST);
++                index++;  // nn.Upsample, folded into the conv below
 +                h = std::dynamic_pointer_cast<UnaryBlock>(blocks[std::to_string(index++)])->forward(ctx, h);  // TGrow
-+                h = conv(std::to_string(index++).c_str(), h);
++                h = std::dynamic_pointer_cast<Conv2d>(blocks[std::to_string(index++)])->forward_upscale(ctx, h, 2);
 +            }
 +            h = ggml_relu_inplace(gc, h);
 +            h = ggml_relu_inplace(gc, conv("24", h));
@@ -954,7 +979,7 @@ index 0000000..3fd273f
 +        }
 +
 +        ggml_cgraph* build_graph(const sd::Tensor<float>& noise, const sd::Tensor<float>& stream, int64_t t_offset) {
-+            // noise: [W, H, n, 16], n = 6 (the first chunk) or 2; stream: [W/2, H/2, 4n + 6, LQ_CHANNELS]
++            // noise: [W, H, n, 16], n = 6 (the first chunk) or 2; stream: [W/2, H/2, LQ_CHANNELS, 4n + 6]
 +            ggml_cgraph* gf = new_graph_custom(WAN::WAN_GRAPH_SIZE);
 +            ggml_tensor* x  = make_input(noise);
 +            ggml_tensor* s  = make_input(stream);
