@@ -123,8 +123,10 @@ class VideoGraphTest {
         // 2026-10-25: `flux3.sample`, FLUX.3 Image Klein (`docs/DIT.md`).
         assertTrue(isSampler("flux3.sample"))
         assertTrue(isSampler("flux2.inpaint"))
-        assertEquals(28, SAMPLER_TYPES.size)
-        assertEquals(24, IMAGE_SAMPLER_TYPES.size)
+        // 2026-10-27: `fibo2.sample`, Fibo 2.0 Edit Turbo (`docs/FIBO2.md`).
+        assertTrue(isSampler("fibo2.sample"))
+        assertEquals(29, SAMPLER_TYPES.size)
+        assertEquals(25, IMAGE_SAMPLER_TYPES.size)
         assertEquals(10, INPAINT_TYPES.size)
     }
 

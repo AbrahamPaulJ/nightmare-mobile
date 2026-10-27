@@ -526,4 +526,40 @@ class DitImportTest {
         assertEquals(false, CustomModels.mossFewStep("moodyMossMixFreeDownload_v1025STEPSCFG3_3307707"))
         assertEquals(false, CustomModels.mossFewStep("moss-image-sft-q8_0"))
     }
+
+    /**
+     * ⭐ FLUX.3 and Qwen Image 2.1 import (1.6.249). Both carry FLUX.2's names too: leejet's FLUX.3 GGUF read as
+     * Klein 4B and unsloth's Qwen 2.1 FP8 as Klein 9B (`tools/dit_header.py`, 2026-10-27). Their own names win.
+     */
+    @Test fun flux3AndQwen21AreNotReadAsKlein() {
+        val flux3 = """{"content_mode_blocks.image.0.q_proj.weight":{},"txt_mode_blocks.0.q_proj.weight":{},""" +
+            """"single_blocks.0.linear1.weight":{},"txt_in.weight":{},"emb_in.image.weight":{}}"""
+        assertEquals(Family.FLUX3, CustomModels.ditFamilyOf(flux3))
+        assertEquals(CustomModels.DitVariant.FLUX3, CustomModels.checkDit(CustomModels.DitHead(flux3, true, setOf("Q8_0", "BF16")), null))
+        val qwen21 = """{"img_in.weight":{"dtype":"F8_E4M3","shape":[4096,64]},"txt_in.text_norm.weight":{},""" +
+            """"transformer_blocks.0.attn.norm_q.weight":{},"transformer_blocks.0.img_mlp.gate_up.weight":{},"modulation.1.weight":{}}"""
+        assertEquals(Family.QWEN21, CustomModels.ditFamilyOf(qwen21))
+        assertEquals(CustomModels.DitVariant.QWEN21, CustomModels.checkDit(CustomModels.DitHead(qwen21, false, emptySet()), null))
+        // ⚠ FLUX.2 itself is untouched.
+        val klein = """{"double_blocks.0.img_attn.qkv.weight":{},"single_blocks.0.linear1.weight":{},"img_in.weight":{},"txt_in.weight":{}}"""
+        assertEquals(Family.FLUX2, CustomModels.ditFamilyOf(klein))
+    }
+
+    /** ⭐ Fibo 2.0 (1.6.249): a Z-Image DiT with a perceiver, so Z-Image's two hits must not win. */
+    @Test fun fiboIsNotReadAsZImage() {
+        val fibo = """{"noise_refiner.0.attention.qkv.weight":{},"layers.0.attention.qkv.weight":{},"x_embedder.weight":{},""" +
+            """"perceiver.latent_queries":{},"perceiver.layers.0.cross_attention.to_kv.weight":{},"layers.6.cross_attn_gate":{}}"""
+        assertEquals(Family.FIBO2, CustomModels.ditFamilyOf(fibo))
+        assertEquals(CustomModels.DitVariant.FIBO2, CustomModels.checkDit(CustomModels.DitHead(fibo, true, setOf("Q4_0", "BF16")), null))
+        val zimage = """{"cap_embedder.0.weight":{},"noise_refiner.0.attention.qkv.weight":{},"context_refiner.0.attention.qkv.weight":{}}"""
+        assertEquals(Family.ZIMAGE, CustomModels.ditFamilyOf(zimage))
+    }
+
+    /** ⚠ The original Qwen-Image layout is refused at the header, not copied and failed at Run. */
+    @Test fun originalQwenImageIsRefused() {
+        val old = """{"img_in.weight":{},"txt_in.weight":{},"transformer_blocks.0.img_mod.1.weight":{},""" +
+            """"transformer_blocks.0.txt_mlp.net.0.proj.weight":{},"txt_norm.weight":{}}"""
+        val e = runCatching { CustomModels.checkDit(CustomModels.DitHead(old, false, emptySet()), null) }.exceptionOrNull()
+        assertTrue(e?.message.orEmpty().contains("Qwen Image 2.1"))
+    }
 }

@@ -23,7 +23,12 @@ SIGNATURES = {
     "Krea 2": ["txtfusion.", "tproj.", "tmlp.", "qknorm."],
     "Anima DiT": ["llm_adapter.", "t_embedder.", "x_embedder.", "adaln_modulation_self_attn"],
     "MOSS-Image": ["video_embedder.", "shared_block_modulation.", "final_linear_video.", "video_head_modulation."],
+    "FLUX.3": ["content_mode_blocks.", "txt_mode_blocks.", "emb_in.", "single_stream_modulations."],
+    "Qwen Image 2.1": ["transformer_blocks.", "img_mlp.gate_up", "txt_in.text_norm", "attn.norm_q"],
+    "Fibo 2.0": ["perceiver.", "latent_queries", "cross_attention.", "cross_attn_gate"],
 }
+# CustomModels.OUTRANKS: a family that also carries another's names wins over it
+OUTRANKS = {"FLUX.3": {"FLUX.2"}, "Qwen Image 2.1": {"FLUX.2"}, "Fibo 2.0": {"Z-Image"}}
 PACKED = {"convrot_w4a4", "asym_w4a8_int8", "nvfp4", "mxfp4", "nf4", "fp4", "int4"}
 NPU_OK = {"F32", "F16", "BF16", "Q4_0", "Q8_0", "MXFP4", "F8_E4M3", "F8_E5M2", "type40"}
 
@@ -116,12 +121,17 @@ def main():
     # Anima only with llm_adapter. (Z-Image's t_embedder./x_embedder. are two Anima hits)
     hits = [f for f, keys in SIGNATURES.items()
             if sum(k in names for k in keys) >= 2 and (f != "Anima DiT" or "llm_adapter." in names)]
+    beaten = {o for f in hits for o in OUTRANKS.get(f, ())}
+    hits = [f for f in hits if f not in beaten]
     family = hits[0] if len(hits) == 1 else None
     print("family:", family or ("ambiguous: " + ", ".join(hits) if hits else "none named (the app asks)"))
     if family == "FLUX.2":
         w = next((v[1] for k, v in t.items() if k.endswith("img_in.weight")), None)
         print("  img_in.weight", w, "-> Klein 9B" if w and w[0] == 4096 else "-> Klein 4B (or a FLUX.1 look-alike: 64 in)")
     problems = []
+    # CustomModels.oldQwenProblem: the original Qwen-Image layout is refused before the family is read
+    if "transformer_blocks." in names and ("txt_mlp." in names or "img_mod." in names):
+        problems.append("an original Qwen-Image (or Edit) layout: refused, the app runs Qwen Image 2.1 only")
     blob = json.dumps(meta)
     fmt = {m.lower() for m in re.findall(r'format\\*"\s*:\s*\\*"([A-Za-z0-9_]+)', blob)}
     if fmt & PACKED:

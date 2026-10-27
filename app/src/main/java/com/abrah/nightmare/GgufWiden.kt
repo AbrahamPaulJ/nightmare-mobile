@@ -41,12 +41,14 @@ object GgufWiden {
 
     /**
      * ⭐ Whether a [type] tensor becomes BF16: a quantized 1-D one in any family (a norm scale is never a matmul), and,
-     * in FLUX.2, a quantized one outside the transformer blocks. [ne] is ggml's order, innermost first.
+     * in FLUX.2 and FLUX.3, a quantized one outside the transformer blocks. [ne] is ggml's order, innermost first.
+     * ⚠ FLUX.3 is the same shape of file: leejet's Q4_0 keeps all 15 of its 2-D tensors outside the blocks BF16
+     * (`emb_in`, `txt_in`, `time_in`, `ref_time_in`, the stream modulations, `final_layer`), read 2026-10-27.
      */
     internal fun widens(family: Family?, name: String, type: String, ne: LongArray): Boolean {
         if (type in FLOATS) return false
         if (ne.size < 2) return true
-        return family == Family.FLUX2 && !IN_BLOCKS.containsMatchIn(name)
+        return (family == Family.FLUX2 || family == Family.FLUX3) && !IN_BLOCKS.containsMatchIn(name)
     }
 
     /**
@@ -55,7 +57,7 @@ object GgufWiden {
      * called all 115 block matmuls "outside the blocks": a 5.25 GB Q4_0 imported as 18 GB of BF16. The engine strips
      * those prefixes itself.
      */
-    private val IN_BLOCKS = Regex("""(^|\.)(double|single)_blocks\.""")
+    private val IN_BLOCKS = Regex("""(^|\.)(double|single|content_mode|txt_mode)_blocks\.""")
 
     private class Info(val name: String, val dims: LongArray, val type: Int, val offset: Long) {
         val elements: Long get() = dims.fold(1L) { a, d -> a * d }

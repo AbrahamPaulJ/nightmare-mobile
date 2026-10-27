@@ -1,0 +1,14 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -618,9 +618,10 @@
+       const char *e = std::getenv("NM_DIT_NATIVE_EDIT");
+       return e != nullptr && e[0] == '1';
+     }();
++    // nightmare (049): an own-files model with a vision tower is Fibo 2.0 Edit (dit/056), an editor.
+     return kind_ == DIT_MODEL_FLUX2_KLEIN ||
+            kind_ == DIT_MODEL_QWEN_IMAGE_2_1 ||
+-           (env_edit && kind_ == DIT_MODEL_Z_IMAGE);
++           ((env_edit || !llm_vision_path_.empty()) && kind_ == DIT_MODEL_Z_IMAGE);
+   }
+ 
+   struct Callbacks {

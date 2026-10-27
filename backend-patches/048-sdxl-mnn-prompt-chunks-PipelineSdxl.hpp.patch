@@ -1,0 +1,17 @@
+--- a/src/PipelineSdxl.hpp
++++ b/src/PipelineSdxl.hpp
+@@ -737,6 +737,14 @@
+   const std::string vae_encoder_path_;
+   const bool lowram_;
+ 
++  // nightmare (048): one 77-token chunk through both CLIPs, for a subclass that
++  // lays its own chunks out (SDXL MNN). [runDualClip] stays private.
++  void encodeChunk77(const std::vector<float> &emb1,
++                     const std::vector<float> &emb2, const int *ids77,
++                     float *out_hidden_concat, float *out_pooled) {
++    runDualClip(emb1, emb2, ids77, out_hidden_concat, out_pooled);
++  }
++
+  private:
+   const int long_seq_;
+   const bool tpl_inpaint_;

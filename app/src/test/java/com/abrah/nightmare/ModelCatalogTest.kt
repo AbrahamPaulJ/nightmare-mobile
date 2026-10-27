@@ -347,6 +347,10 @@ class ModelCatalogTest {
         val ideo = ModelCatalog.byId("ideogram_4_turbo")!!
         assertEquals("4", BackendProcess.kreaBudget(ideo, twelve, 6_000_000_000L))
         assertEquals(null, BackendProcess.kreaBudget(ideo, sixteen, 6_000_000_000L))
+        // ⭐ Fibo 2.0 Edit too (reaped loading its 6.3 GB whole on the S25, 2026-10-27).
+        val fibo = ModelCatalog.byId("fibo2_edit_turbo")!!
+        assertEquals("4", BackendProcess.kreaBudget(fibo, twelve, 6_000_000_000L))
+        assertEquals(null, BackendProcess.kreaBudget(fibo, sixteen, 6_000_000_000L))
         assertEquals(null, ideo.buildFor(caps(79, 8, eight)))
         // ⭐ GitHub #30: Klein 9B gets the smaller 8 Gen 3 budget; every other DiT keeps 2.75.
         assertEquals("2.25", BackendProcess.lowArchDitBudget(klein9, 75))
@@ -442,7 +446,8 @@ class ModelCatalogTest {
         assertEquals(true, f3.ownDitParts)
         assertEquals(null, f3.ownLora)
         assertEquals(listOf("dit.gguf", "llm.gguf", "vae.safetensors", "tokenizer.json"), f3.requiredFiles)
-        assertEquals(ModelCatalog.DIT_MIN_ARCH, f3.builds.single().minArch)
+        // ⭐ v75 since 1.6.249: the engine carries `dit/055`'s cut points, so the 8 Gen 3's 2.75 GiB streams it.
+        assertEquals(ModelCatalog.DIT_GGML_MIN_ARCH, f3.builds.single().minArch)
         assertEquals(16, f3.steps)
         val krea = ModelCatalog.byId("krea2_turbo")!!
         val ideo = ModelCatalog.byId("ideogram_4_turbo")!!

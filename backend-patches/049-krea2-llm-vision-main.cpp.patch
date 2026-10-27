@@ -1,0 +1,16 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -517,7 +517,12 @@
+     };
+     std::string llm_path =
+         own_only ? own("llm.gguf") : ditFile(dir, "llm.gguf");
+-    std::string llm_vision_path = qwen ? own("llm_vision.gguf") : "";
++    // nightmare (049): a krea2 launch whose folder holds a vision tower passes it too: Fibo 2.0 Edit
++    // reads its reference picture through Qwen3-VL's vision (dit/056). No other krea2 package has one.
++    std::string llm_vision_path =
++        qwen ? own("llm_vision.gguf")
++        : (krea2 && std::filesystem::exists(own("llm_vision.gguf"))) ? own("llm_vision.gguf")
++                                                                      : "";
+     std::string vae_path = iris       ? ""
+                            : own_only ? own("vae.safetensors")
+                                       : ditFile(dir, "vae.safetensors");

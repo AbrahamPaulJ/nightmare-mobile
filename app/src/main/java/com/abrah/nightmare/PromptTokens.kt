@@ -229,7 +229,7 @@ object PromptTokens {
         // what Anima was trained on, so the counter warns there (the user's call, 2026-10-13).
         Family.ANIMA, Family.ANIMA_DIT -> Budget.ANIMA
         // ⚠ Wan: umT5, whose tokenizer this counter does not have.
-        Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.IRIS, Family.WAN, Family.MOSS, Family.IDEOGRAM, Family.FLUX3 -> null
+        Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.IRIS, Family.WAN, Family.MOSS, Family.IDEOGRAM, Family.FLUX3, Family.FIBO2 -> null
     }
 }
 

@@ -150,6 +150,8 @@ enum class Family(
      * (reference images) is measured; its own family because FLUX.2's [FLUX2] launch is Klein 4B's shared parts.
      */
     FLUX3("FLUX.3", GP_DIT, GP_DIT_NEG, "flux3", dit = true),
+    /** ⭐ Bria's Fibo 2.0 Edit Turbo (GH #69, `dit/056`): an 8B editor on Z-Image's DiT, Qwen3-VL-4B with its vision. */
+    FIBO2("Fibo 2.0", GP_DIT, GP_DIT_NEG, "fibo2", dit = true, edit = true),
     /**
      * ⭐⭐ **Wan 2.2 TI2V 5B video** on the DiT engine (`docs/VIDEO-GGML.md`): a prompt, or a
      * prompt and a start picture, into a clip through `/video` (backend 028, engine ABI 106).
@@ -2641,11 +2643,39 @@ object ModelCatalog {
             "flux3_klein", "FLUX.3 Image Klein", Family.FLUX3, KREA2, steps = 16,
             ownDitParts = true,
             partsFrom = "krea2_turbo",
-            minArch = DIT_MIN_ARCH,
+            // ⭐ v75 (8 Gen 3, alpha) since 1.6.249: engine `dit-engine-abi108-fibo` carries `dit/055`'s block cut
+            // points, so the 2.75 GiB budget streams it (S25 forced to v75: 512² 129 s, 58 dB from v79; DEVICES §3e).
+            minArch = DIT_GGML_MIN_ARCH,
             prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
             files = listOf(
                 RemoteFile(HF + "leejet/flux-3-image-klein-GGUF/resolve/main/flux3-image-klein-Q4_0.gguf", "dit.gguf", 3_514_023_104L),
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
+                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
+                RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+            ),
+        ),
+        // ⭐⭐ Fibo 2.0 Edit Turbo (Bria, 8B, non-commercial, GH #69; `NOTICE`): realrebelai's Q4_0 GGUF, FLUX.3's Qwen3-VL-4B
+        // Q4_0 encoder and tokenizer with bartowski's f16 vision tower (`llm_vision.gguf`: Fibo reads the picture through
+        // it, backend 049 passes it), the FLUX.2 VAE. 4 steps at CFG 1, euler (upstream's fibo2-edit-turbo recipe).
+        // Launched as `--type krea2`; the engine reads Fibo off the weights (`dit/056`). An editor: the picture is the
+        // reference (backend 049 makes a launch with a vision tower a native editor). ⭐ S25 (sd-cli, engine 056+057,
+        // `all=disk` 2.5 GiB, 512² 4 steps): 72 s, 15 s a step, the CPU's edit within 32 dB; without 057's fused rope
+        // 53 s a step. ⭐ v75 (the S25 forced to the 8 Gen 3 skel, the app's below-v79 op filter, 2.75 GiB): 82 s, the
+        // v79 picture within 56.6 dB (`docs/FIBO2.md` §2). ⭐ Krea 2's encoder and tokenizer are borrowed when Krea 2
+        // is installed ([ModelSpec.partsFrom]), as FLUX.3's are. Sizes read off the files 2026-10-27.
+        dit(
+            "fibo2_edit_turbo", "Fibo 2.0 Edit Turbo", Family.FIBO2, KREA2, steps = 4,
+            ownDitParts = true,
+            partsFrom = "krea2_turbo",
+            minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+            minArch = DIT_GGML_MIN_ARCH,
+            prompt = "Make the sky a warm sunset and keep everything else the same",
+            files = listOf(
+                // ⭐ Ours: realrebelai's Q4_0 with its BF16 cross-attention, perceiver and noise refiner also Q4_0 (4.87 GB, not
+                // 6.59): the same edit within 29 dB, and 11.4 s a step on the S25 against 15 (`docs/FIBO2.md` §2).
+                RemoteFile(HF + "AbrahamPJ/fibo2-edit-turbo-q4_0-gguf/resolve/main/fibo2_edit_turbo-q4_0.gguf", "dit.gguf", 4_870_390_432L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-4B-Instruct-f16.gguf", "llm_vision.gguf", 836_180_256L),
                 RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
                 RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
             ),

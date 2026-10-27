@@ -197,4 +197,16 @@ class GgufImportTest {
         assertTrue(CustomModels.isKlein9b(k9))
         assertFalse(CustomModels.isKlein9b(k4))
     }
+
+    /** ⭐ FLUX.3 (1.6.249): its three block kinds keep their quant; a quantized `txt_in` or modulation becomes BF16. */
+    @Test
+    fun flux3WidensOutsideItsBlocks() {
+        assertFalse(GgufWiden.widens(Family.FLUX3, "content_mode_blocks.image.0.q_proj.weight", "Q8_0", longArrayOf(3072, 3072)))
+        assertFalse(GgufWiden.widens(Family.FLUX3, "txt_mode_blocks.0.mlp_in.weight", "Q8_0", longArrayOf(3072, 18432)))
+        assertFalse(GgufWiden.widens(Family.FLUX3, "single_blocks.0.linear1.weight", "Q8_0", longArrayOf(3072, 27648)))
+        assertTrue(GgufWiden.widens(Family.FLUX3, "txt_in.weight", "Q8_0", longArrayOf(20480, 3072)))
+        assertTrue(GgufWiden.widens(Family.FLUX3, "single_stream_modulations.txt.lin.weight", "Q8_0", longArrayOf(3072, 9216)))
+        // ⚠ Not Z-Image's or Qwen's: their files are not shaped this way.
+        assertFalse(GgufWiden.widens(Family.QWEN21, "txt_in.in_layer.weight", "Q4_0", longArrayOf(3584, 3072)))
+    }
 }

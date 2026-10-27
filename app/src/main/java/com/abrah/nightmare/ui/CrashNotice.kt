@@ -36,7 +36,12 @@ import com.abrah.nightmare.R
  * is evidence to copy out, not prose to read.
  */
 @Composable
-fun CrashNotice(report: CrashReport.Report, onDismiss: () -> Unit) {
+fun CrashNotice(
+    report: CrashReport.Report,
+    onDismiss: () -> Unit,
+    /** ⭐ A killed Motion transfer left its seeds ([com.abrah.nightmare.npu.RunResume]): say Run carries on. */
+    resumable: Boolean = false,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.crash_title)) },
@@ -54,6 +59,11 @@ fun CrashNotice(report: CrashReport.Report, onDismiss: () -> Unit) {
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
+                if (resumable) Text(
+                    stringResource(R.string.crash_resume),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
                 report.trace?.let {
                     Text(
                         stringResource(R.string.crash_details),

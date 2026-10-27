@@ -1216,6 +1216,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /** ⚠ The user has read it. [CrashReport] has already recorded that it was shown. */
     fun dismissCrashReport() { crashReport = null }
 
+    /** ⭐ The crash notice's "Run carries on" line ([com.abrah.nightmare.npu.RunResume]). Read when it is drawn. */
+    val resumePending: Boolean get() = com.abrah.nightmare.npu.RunResume.pending(getApplication())
+
     /**
      * Non-null while an install is running; the id being fetched.
      *
@@ -8566,7 +8569,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * nodes whose params actually moved are re-run, so a 4-seed batch pays for
      * four samplers and one of everything upstream.
      */
-    fun runBatch(spec: BatchSpec) = run("batch") {
+    fun runBatch(spec: BatchSpec) = run("batch", ::canvasModels) {
         fitChainedImageToImage()
         // ⭐⭐ **Seeds are rolled HERE, once per sweep**, and written into the
         // axis before anything expands. ⚠ Once, and at the start: expanding a
@@ -8842,7 +8845,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         runCanvas()
     }
 
-    fun runCanvas() = run("canvas") {
+    fun runCanvas() = run("canvas", ::canvasModels) {
         // ⭐⭐ **Run shows the CANVAS** — the user's call, 2026-09-23: the node
         // sheet closes so the run is watched where it happens, and its errors
         // land where they are already shown. ⚠ `editing` is then the signal
@@ -9317,6 +9320,28 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     val canCancel: Boolean get() = busy
 
     /**
+     * ⭐ GitHub #68: a run goes ahead during a MODEL download when it loads none of that model (a Qwen
+     * run while Klein 9B downloads; the user's call, 2026-10-27). Safe because a download lands as a
+     * `.part` renamed only at its full size ([ModelInstaller]), and a file already whole is skipped,
+     * so nothing a running model reads is ever half-written.
+     * ⚠ Still refused: a move (every model path changes), the video and tool downloads (no catalogue
+     * id to compare), and any run whose caller cannot say what it loads ([uses] null).
+     */
+    private fun runsBesideDownload(downloading: String?, uses: (() -> List<String>)?): Boolean {
+        if (downloading == null || downloading == MOVE_ID || downloading == VIDEO_INSTALL_ID) return false
+        val spec = ModelCatalog.byId(downloading) ?: return false
+        if (uses == null) return false
+        // ⚠ A DiT download fetches the shared engine first when it is missing or old ([ModelInstaller]), and
+        // every DiT run needs that engine: wait for it.
+        if (spec.isDit && !DitEngine.isInstalled(getApplication())) return false
+        return runCatching { downloading !in uses() }.getOrDefault(false)
+    }
+
+    /** ⭐ What a canvas or batch run loads, for [runsBesideDownload]. */
+    private fun canvasModels(): List<String> =
+        contextKeyModels(canvas.workflow.graph, typesFor(canvas.workflow.graph))
+
+    /**
      * ⭐⭐ Stop the run in progress. **Completed nodes keep their outputs**, so
      * pressing Run again resumes from the cache rather than redoing them — the
      * executor's cache is untouched by this, exactly as it is by a node that
@@ -9367,11 +9392,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * no run bar in view and must toast this instead, or its button does
      * nothing visible.
      */
-    private fun run(label: String, block: suspend () -> Unit): String? {
+    private fun run(
+        label: String,
+        /** ⭐ The catalogue models this run loads, when the caller knows them ([runsBesideDownload]). */
+        uses: (() -> List<String>)? = null,
+        block: suspend () -> Unit,
+    ): String? {
         // ⚠⚠ The DOWNLOAD is named, because it is the one a user cannot see
         // from the canvas. "already running" was true and useless: nothing was
         // running that they had started or could find.
-        if (installing != null) {
+        if (installing != null && !runsBesideDownload(installing, uses)) {
             val what = if (installing == VIDEO_INSTALL_ID) "the video models"
                 else ModelCatalog.byId(installing.orEmpty())?.label ?: "a model"
             val why = if (installing == MOVE_ID) "models are moving. Run once they have"

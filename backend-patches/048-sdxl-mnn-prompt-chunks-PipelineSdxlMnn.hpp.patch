@@ -1,0 +1,101 @@
+--- a/src/PipelineSdxlMnn.hpp
++++ b/src/PipelineSdxlMnn.hpp
+@@ -8,9 +8,13 @@
+ // nightmare (036): upstream local-dream's PipelineSdxlMnn (v3.0.0-alpha.2,
+ // 903284c), `--type sdxlmnn`. FancyAi SDXL MNN package: dual CLIP, and fixed
+ // 640px (default) or 1024px VAEs. The shared Pipeline owns tiling/scheduling.
+-// ⚠ Unlike upstream the UNet's context is PINNED at textSeqLen() (77): our
+-// TextEncoder has no per-request contextLength (prompt chunking), and 77 is
+-// what the SDXL NPU path feeds. Chunking can follow.
++// ⭐ nightmare (048): the UNet's context FOLLOWS THE PROMPT, as upstream's: 77
++// tokens per chunk, up to kMaxChunks (231, the app's counter), each chunk its
++// own BOS..EOS through both CLIPs. A tester's ask (TG #7227/#7229, 2026-10-26):
++// before 048 it was pinned at 77 and a longer prompt was cut. ⚠ A chunk one
++// side does not reach is an EMPTY prompt's encoding, never zeros: this UNet
++// has no attention mask (npuforge's 231_masked_v1 does), so zero rows would
++// still take attention.
+ class PipelineSdxlMnn : public PipelineSdxl {
+  public:
+   using PipelineSdxl::PipelineSdxl;
+@@ -29,6 +33,18 @@
+ 
+   bool supportsImg2Img() const override { return !vae_encoder_path_.empty(); }
+ 
++  int textSeqLen() const override { return seq_; }
++
++  void chooseSeqLen(const GenerationRequest &req) override {
++    seq_ = 77 * std::max(chunksOf(req.prompt), chunksOf(req.negative_prompt));
++  }
++
++  bool acceptSeqLen(int seq) override {
++    if (seq < 77 || seq > 77 * kMaxChunks || seq % 77 != 0) return false;
++    seq_ = seq;
++    return true;
++  }
++
+  protected:
+   int vaeTilePixelSize() const override { return tile_pixels_; }
+   // A per-step preview would run this VAE decoder (CPU) every step.
+@@ -44,7 +60,51 @@
+       // The base loads the CLIPs only in lowram; beginDenoise releases them.
+       loadClipsIfNeeded();
+     }
+-    PipelineSdxl::encodeText(prompts, need_negative, need_positive, cond);
++    if (seq_ == 77) {
++      PipelineSdxl::encodeText(prompts, need_negative, need_positive, cond);
++      return;
++    }
++    loadClipsIfNeeded();
++    const int chunks = seq_ / 77;
++    const size_t hid = text_embedding_size + text_embedding_size_2;
++    QNN_INFO("SDXL MNN: %d-token context (%d chunks)", seq_, chunks);
++    const auto empty = text_encoder_.processWeightedPrompt("", 77);
++    auto side = [&](const std::vector<float> &e1, const std::vector<float> &e2,
++                    const int *ids, float *out_hidden, float *out_pooled) {
++      std::vector<float> pooled(text_embedding_size_2);
++      for (int c = 0; c < chunks; ++c) {
++        const bool used = ids[77 * c] == 49406;
++        std::vector<float> c1, c2;
++        if (used) {
++          c1.assign(e1.begin() + (size_t)77 * c * text_embedding_size,
++                    e1.begin() + (size_t)77 * (c + 1) * text_embedding_size);
++          c2.assign(e2.begin() + (size_t)77 * c * text_embedding_size_2,
++                    e2.begin() + (size_t)77 * (c + 1) * text_embedding_size_2);
++        }
++        encodeChunk77(used ? c1 : empty.weighted_embeddings,
++                      used ? c2 : empty.weighted_embeddings_2,
++                      used ? ids + 77 * c : empty.ids.data(),
++                      out_hidden + (size_t)77 * c * hid, pooled.data());
++        // Upstream's rule: the pooled vector of the LAST chunk holding prompt.
++        if (used) std::copy(pooled.begin(), pooled.end(), out_pooled);
++      }
++    };
++    if (need_negative)
++      side(prompts.negative_embeddings, prompts.negative_embeddings_2,
++           prompts.ids.data(), cond.negHidden(), cond.negPooled());
++    if (need_positive)
++      side(prompts.positive_embeddings, prompts.positive_embeddings_2,
++           prompts.ids.data() + seq_, cond.posHidden(), cond.posPooled());
++    if (lowram_) releaseClips();
++  }
++
++  // Chunks of 77 the prompt fills (1..kMaxChunks), read as the encode lays them.
++  int chunksOf(const std::string &text) {
++    const auto p = text_encoder_.processWeightedPrompt(text, 77 * kMaxChunks);
++    int used = 1;
++    for (int c = 1; c < kMaxChunks; ++c)
++      if (p.ids[77 * c] == 49406) used = c + 1;
++    return used;
+   }
+ 
+   void beginDenoise(const GenerationRequest &req) override {
+@@ -103,6 +163,9 @@
+     }
+   }
+ 
++  static constexpr int kMaxChunks = 3;
++  int seq_ = 77;
++
+   void endDenoise() override {
+     if (lowram_) nets_[0].reset();
+   }

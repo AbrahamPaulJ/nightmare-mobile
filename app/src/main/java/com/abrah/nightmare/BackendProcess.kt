@@ -632,9 +632,12 @@ object BackendProcess {
      * ⭐ Z-Image Turbo too: its fp8 DiT is 5.9 GB, Krea's size, and unbudgeted lmkd reclaimed the app at 1024²: on a
      * 12 GB realme (8 Elite, 4.6 GB free, lowest 802 MB 24 s in; a tester, Saved #7193) and twice on the S25 at step
      * 6-7 (`docs/ENGINE-PERF.md` §2e). Krea and MOSS never were ("never happen on krea, moss"). Krea's thresholds.
+     * ⭐ Fibo 2.0 Edit too: its DiT is 6.59 GB (2.6 of it BF16), launched as `krea2`. Unbudgeted on the S25 (2026-10-27,
+     * 1.6.249 dev) the engine mapped all 6,290 MB as one segment and lmkd reclaimed the app before the first step; sd-cli
+     * at 2.5 GiB `all=disk` edits in 72 s at 512². Krea's thresholds, unmeasured whole.
      */
     internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long, availBytes: Long): String? {
-        if (spec?.family !in setOf(Family.KREA2, Family.IDEOGRAM, Family.ZIMAGE) || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
+        if (spec?.family !in setOf(Family.KREA2, Family.IDEOGRAM, Family.ZIMAGE, Family.FIBO2) || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
         return when {
             availBytes >= KREA_WHOLE_FREE -> null
             availBytes >= KREA_5_FREE -> "5"

@@ -392,7 +392,7 @@ fun HarnessScreen(
         // FIRST screen, because the person who needs it is the one who just
         // watched the app vanish.
         vm.crashReport?.let { r ->
-            com.abrah.nightmare.ui.CrashNotice(r, onDismiss = vm::dismissCrashReport)
+            com.abrah.nightmare.ui.CrashNotice(r, onDismiss = vm::dismissCrashReport, resumable = vm.resumePending)
         }
         vm.missingModel?.let { m -> MissingModelDialog(m, vm) }
         vm.diagnosis?.let { d ->

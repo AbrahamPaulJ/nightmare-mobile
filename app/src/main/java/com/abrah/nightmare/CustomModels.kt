@@ -132,6 +132,12 @@ object CustomModels {
     /** ⭐ Ours: an imported MOSS-Image checkpoint ([Family.MOSS]), which upstream has no import for. */
     const val MOSS_MARK = "MOSS"
 
+    /** ⭐ Ours: an imported FLUX.3 Image Klein checkpoint ([Family.FLUX3]), the tester's ask (TG #7254, 2026-10-27). */
+    const val FLUX3_MARK = "FLUX3"
+
+    /** ⭐ Ours: an imported Fibo 2.0 checkpoint ([Family.FIBO2]); a Fibo GGUF read as Z-Image before 1.6.249. */
+    const val FIBO2_MARK = "FIBO2"
+
     /**
      * ⭐ A MOSS import whose NAME says it is few-step (a DMD LoRA baked in: molbal's "Turbo GGUF (8 step)"): 8 steps at
      * CFG 1. Without it a MOSS import is taken for a base fine-tune (Moody Moss Mix: 25 steps, CFG 3), since nothing in
@@ -356,6 +362,8 @@ object CustomModels {
             Family.KREA2.takeIf { File(dir, KREA2_MARK).isFile },
             Family.ANIMA_DIT.takeIf { File(dir, ANIMA_DIT_MARK).isFile },
             Family.MOSS.takeIf { File(dir, MOSS_MARK).isFile },
+            Family.FLUX3.takeIf { File(dir, FLUX3_MARK).isFile },
+            Family.FIBO2.takeIf { File(dir, FIBO2_MARK).isFile },
         )
         // ⭐⭐⭐ **A DiT folder pushed over adb has no marker, and is a model
         // anyway** — [detectDit] reads the family out of `dit.safetensors`.
@@ -389,11 +397,16 @@ object CustomModels {
      */
     private fun longIf(dir: File, spec: ModelSpec): ModelSpec {
         if (spec.family != Family.SDXL && spec.family != Family.SDXL_SWAP) return spec
+        // ⭐ SDXL MNN: up to three chunks of 77, the context following the prompt (`backend-patches/048`, TG #7227).
+        if (isSdxlMnn(dir)) return spec.copy(promptTokens = SDXL_MNN_TOKENS)
         val n = runCatching {
             LONG_CONTEXT.find(File(dir, LONG_CONTEXT_FILE).readText())?.groupValues?.get(1)?.toInt()
         }.getOrNull() ?: return spec
         return if (n > 77 && n % 77 == 0) spec.copy(promptTokens = n) else spec
     }
+
+    /** ⚠ The backend's `kMaxChunks` x 77 (`backend-patches/048`): change both together. */
+    internal const val SDXL_MNN_TOKENS = 231
 
     private fun swapIf(dir: File, family: Family): Family = when {
         !File(dir, TemplateLora.TARGETS_FILE).isFile -> family
@@ -460,6 +473,8 @@ object CustomModels {
         Family.IDEOGRAM -> Defaults("euler", 8, 1.0)
         // FLUX.3 Image Klein, the distilled model: 16 steps, no CFG (upstream sd.cpp's docs/flux3.md).
         Family.FLUX3 -> Defaults("euler", 16, 1.0)
+        // Fibo 2.0 Edit Turbo: 4 steps, CFG 1 (its recipe in upstream sd.cpp, `fibo2-edit-turbo.json`).
+        Family.FIBO2 -> Defaults("euler", 4, 1.0)
     }
 
     /**
@@ -493,7 +508,7 @@ object CustomModels {
         // ⚠ Qwen and Krea 2 read their own directory only (backend 013/014);
         // a 9B's encoder is not the family's shared one.
         ownDitParts = klein9b || family == Family.QWEN21 || family == Family.KREA2 || family == Family.ANIMA_DIT ||
-            family == Family.MOSS,
+            family == Family.MOSS || family == Family.FLUX3 || family == Family.FIBO2,
         // ⭐ An import that borrows an installed model's parts ([PARTS_FROM_FILE]): MOSS beside the built-in.
         partsFrom = runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull()?.takeIf { isValidName(it) },
         // ⭐ The donor's 8-step LoRA ([mossSpeedOn]), found through [ModelSpec.ownLoraFile].
@@ -530,9 +545,7 @@ object CustomModels {
             // and [ZIMAGE_MARK], so these two are reached by a real import.
             Family.FLUX2 -> ModelCatalog.KLEIN
             Family.ZIMAGE -> ModelCatalog.ZIMAGE
-            // ⚠ Reached only by a folder carrying upstream's QWEN_IMAGE_2_1
-            // marker (a LocalDream download in the shared models folder):
-            // there is no .gguf import.
+            // ⭐ A folder with upstream's QWEN_IMAGE_2_1 marker: a LocalDream download, or an import (since 1.6.249).
             Family.QWEN21 -> ModelCatalog.QWEN21
             // ⭐ An imported Krea 2 ([KREA2_MARK], since 1.6.069).
             Family.KREA2 -> ModelCatalog.KREA2
@@ -544,8 +557,10 @@ object CustomModels {
             Family.MOSS -> ModelCatalog.KREA2
             // ⚠ Unreachable, as MOSS: only the catalogue builds Ideogram 4.
             Family.IDEOGRAM -> ModelCatalog.KREA2
-            // ⚠ Unreachable, as MOSS: only the catalogue builds FLUX.3.
+            // ⭐ An imported FLUX.3 ([FLUX3_MARK]): the built-in's launch (the engine reads FLUX.3 off the weights).
             Family.FLUX3 -> ModelCatalog.KREA2
+            // ⭐ An imported Fibo 2.0 ([FIBO2_MARK]): Krea 2's launch; backend 049 adds the vision tower.
+            Family.FIBO2 -> ModelCatalog.KREA2
             // ⚠ Unreachable: nothing imports a video model ([ModelCatalog.WAN22]).
             Family.WAN -> ModelCatalog.WAN
         },
@@ -555,7 +570,7 @@ object CustomModels {
                 Family.SD15, Family.SD15_SWAP -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL, Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
-                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN, Family.MOSS, Family.IDEOGRAM, Family.FLUX3 -> ModelCatalog.DIT_RES
+                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN, Family.MOSS, Family.IDEOGRAM, Family.FLUX3, Family.FIBO2 -> ModelCatalog.DIT_RES
                 // ⚠ Unreachable, as for `backendType`; the catalogue entry carries [ModelCatalog.IRIS_SIZES].
                 Family.IRIS -> ModelCatalog.IRIS_SIZES.first()
             },
@@ -575,6 +590,8 @@ object CustomModels {
             Family.MOSS -> listOf(weights) + DIT_PARTS
             Family.IDEOGRAM -> listOf(weights) + DIT_PARTS + ModelCatalog.IDEOGRAM_LORA
             Family.FLUX3 -> listOf(weights) + DIT_PARTS
+            // ⭐ Its vision tower too: Fibo reads the picture through it (backend 049).
+            Family.FIBO2 -> listOf(weights) + DIT_PARTS + "llm_vision.gguf"
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
             Family.QWEN21 -> listOf(weights) + ModelCatalog.QWEN21_PARTS
             Family.WAN -> ModelCatalog.WAN22.requiredFiles
@@ -609,6 +626,8 @@ object CustomModels {
             Family.IDEOGRAM -> false
             // ⚠ The same launch as Krea 2 (all=disk).
             Family.FLUX3 -> false
+            // ⚠ The same launch as Krea 2 (all=disk).
+            Family.FIBO2 -> false
             Family.WAN -> false
         },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which
@@ -815,8 +834,8 @@ object CustomModels {
             // checkpoint is 4-9 GB, so a failure to produce them should not cost
             // the bigger copy. ⚠ `dir` exists already because the VAE lands in
             // it ([ensureDitParts]).
-            // ⭐ A MOSS import borrows an installed MOSS-Image's 5.6 GB of parts rather than copying them.
-            val lender = if (variant == DitVariant.MOSS) mossLender(context, dir) else null
+            // ⭐ A MOSS or FLUX.3 import borrows an installed built-in's parts rather than copying them ([partsLender]).
+            val lender = if (variant.lends) partsLender(context, dir, variant.family) else null
             if (lender != null) File(dir, PARTS_FROM_FILE).writeText(lender.id)
             else ensureDitParts(context, variant, dir, onProgress, isCancelled)
             // ⭐⭐ A 16-bit MOSS safetensors becomes a Q8_0 GGUF AS it is read ([MossGguf]): a 9.5 GB fp16 one was reaped at
@@ -1118,6 +1137,9 @@ object CustomModels {
         Family.KREA2 -> KREA2_MARK
         Family.ANIMA_DIT -> ANIMA_DIT_MARK
         Family.MOSS -> MOSS_MARK
+        Family.FLUX3 -> FLUX3_MARK
+        Family.FIBO2 -> FIBO2_MARK
+        Family.QWEN21 -> "QWEN_IMAGE_2_1"
         else -> throw IllegalArgumentException("$family does not import a single weights file")
     }
 
@@ -1202,13 +1224,43 @@ object CustomModels {
             // ⭐ MOSS-Image's own names (molbal's Turbo GGUF and a ComfyUI fp8, read 2026-10-22; the engine detects it by
             // the first two, `dit/028`). ⚠ `proj.qkv` fused or `proj.q/k/v` apart: the engine reads both.
             Family.MOSS to listOf("video_embedder.", "shared_block_modulation.", "final_linear_video.", "video_head_modulation."),
+            // ⭐ FLUX.3 Image Klein (leejet's GGUF, read 2026-10-27; the engine detects it by `emb_in.image` +
+            // `txt_mode_blocks.`, `dit/042`). ⚠ It ALSO has FLUX.2's `single_blocks.` and `txt_in.`: see [OUTRANKS].
+            Family.FLUX3 to listOf("content_mode_blocks.", "txt_mode_blocks.", "emb_in.", "single_stream_modulations."),
+            // ⭐ Qwen Image 2.1 (leejet's GGUF and unsloth's FP8, read 2026-10-27): shared `modulation.N`, no `txt_mlp`.
+            // ⚠ It ALSO has FLUX's `img_in.` and `txt_in.`, and read as Klein 9B until 1.6.249 ([OUTRANKS]).
+            Family.QWEN21 to listOf("transformer_blocks.", "img_mlp.gate_up", "txt_in.text_norm", "attn.norm_q"),
+            // ⭐ Fibo 2.0: the perceiver and the gated cross-attention (realrebelai's GGUF, read 2026-10-27). ⚠ Its DiT is
+            // Z-Image's, so `noise_refiner.` and `attention.qkv.` are two Z-Image hits ([OUTRANKS]).
+            Family.FIBO2 to listOf("perceiver.", "latent_queries", "cross_attention.", "cross_attn_gate"),
         )
         // ⚠ Anima only with `llm_adapter.`: Z-Image's own `t_embedder.` and `x_embedder.` are two Anima hits, and a KJ
         // Z-Image read as Z-Image AND Anima, so as nothing (2026-10-22, `docs/IMPORTS.md` §4).
         val hits = signatures.filter { (family, keys) ->
             keys.count(header::contains) >= 2 && (family != Family.ANIMA_DIT || "llm_adapter." in header)
         }.keys
-        return hits.singleOrNull()
+        return (hits - hits.flatMap { OUTRANKS[it].orEmpty() }.toSet()).singleOrNull()
+    }
+
+    /**
+     * ⚠ A family whose files carry another's names too, and wins over it: FLUX.3 and Qwen 2.1 both hold FLUX.2's
+     * `img_in.`/`txt_in.`/`single_blocks.`, and two hits read as FLUX.2. Their own four names never appear in FLUX.2.
+     */
+    private val OUTRANKS = mapOf(
+        Family.FLUX3 to setOf(Family.FLUX2),
+        Family.QWEN21 to setOf(Family.FLUX2),
+        Family.FIBO2 to setOf(Family.ZIMAGE),
+    )
+
+    /**
+     * ⭐ Why the ORIGINAL Qwen-Image layout (and Qwen-Image-Edit, 2509, 2512) cannot import, or null: per-stream
+     * `img_mod`/`txt_mod`/`txt_mlp` blocks. The app runs Qwen Image 2.1, whose encoder and blocks differ, so the file
+     * would copy gigabytes and fail at the first step. ⚠ Checked before [ditFamilyOf]: its FLUX names read as Klein.
+     */
+    internal fun oldQwenProblem(header: String): String? {
+        val old = "transformer_blocks." in header && ("txt_mlp." in header || "img_mod." in header)
+        return if (!old) null else "that is an original Qwen-Image (or Qwen-Image-Edit) checkpoint. The app runs " +
+            "Qwen Image 2.1 only, which is a different model. Import a Qwen Image 2.1 fine-tune instead"
     }
 
     /**
@@ -1357,7 +1409,16 @@ object CustomModels {
         KREA2(Family.KREA2, "krea2_turbo", true),
         ANIMA(Family.ANIMA_DIT, "anima_turbo_1_1", true),
         /** ⭐ Borrows an installed MOSS-Image's parts when one has them whole ([mossLender]), else its own copy. */
-        MOSS(Family.MOSS, "moss_image", true);
+        MOSS(Family.MOSS, "moss_image", true),
+        /** ⭐ Borrows an installed FLUX.3's parts when it holds them whole ([partsLender]), else its own copy. */
+        FLUX3(Family.FLUX3, "flux3_klein", true),
+        /** ⚠ Its OWN copy of Qwen's 6.6 GB of parts, always: Qwen's backend reads the model's folder only (013). */
+        QWEN21(Family.QWEN21, "qwen_image_2_1_turbo", true),
+        /** ⭐ Borrows an installed Fibo 2.0's encoder, vision tower, VAE and tokenizer, else its own copy (3.6 GB). */
+        FIBO2(Family.FIBO2, "fibo2_edit_turbo", true);
+
+        /** ⭐ Launched as `krea2`, whose backend reads a donor's folder ([ModelSpec.partsFrom], backend 040). */
+        val lends: Boolean get() = this == MOSS || this == FLUX3 || this == FIBO2
 
         companion object {
             /** When the file's names say nothing, the tab's family decides. */
@@ -1366,6 +1427,9 @@ object CustomModels {
                 Family.KREA2 -> KREA2
                 Family.ANIMA_DIT -> ANIMA
                 Family.MOSS -> MOSS
+                Family.FLUX3 -> FLUX3
+                Family.QWEN21 -> QWEN21
+                Family.FIBO2 -> FIBO2
                 else -> KLEIN_4B
             }
         }
@@ -1398,6 +1462,7 @@ object CustomModels {
         // file on the WRONG family's tab. Only a confident disagreement is an
         // error — [ditFamilyOf] returning null means the file says nothing
         // either way, and the engine is the one that decides that properly.
+        oldQwenProblem(json)?.let { throw IOException(it) }
         val actual = ditFamilyOf(json)
         if (expect != null && actual != null && actual != expect) {
             throw java.io.IOException(
@@ -1481,16 +1546,18 @@ object CustomModels {
     private val INT8_WEIGHT = Regex("\"[^\"]*weight\"\\s*:\\s*\\{\\s*\"dtype\"\\s*:\\s*\"I8\"")
 
     /**
-     * ⭐ The installed MOSS-Image whose encoder, VAE and tokenizer a MOSS import can read instead of copying 5.6 GB,
-     * or null: a built-in MOSS folder beside [modelDir] holding all three at their exact published sizes. ⚠ The
-     * donor is read as a sibling folder ([ModelSpec.donorDir]), so it must share [modelDir]'s parent.
+     * ⭐ The installed built-in of [family] whose encoder, VAE and tokenizer an import can read instead of copying them
+     * (MOSS-Image's 5.6 GB, FLUX.3's 2.7 GB), or null: its folder beside [modelDir] holding all three at their exact
+     * published sizes. ⚠ The donor is read as a sibling folder ([ModelSpec.donorDir]), so it must share [modelDir]'s
+     * parent; and ONE level only, so a FLUX.3 built-in that borrows Krea 2's encoder lends nothing (the import copies).
      */
-    private fun mossLender(context: Context, modelDir: File): ModelSpec? =
-        ModelCatalog.builtIn.filter { it.family == Family.MOSS }.firstOrNull { spec ->
+    private fun partsLender(context: Context, modelDir: File, family: Family): ModelSpec? =
+        ModelCatalog.builtIn.filter { it.family == family }.firstOrNull { spec ->
             val d = File(modelDir.parentFile, spec.id)
-            d.isDirectory && spec.files.filter { it.name in DIT_PARTS }.let { parts ->
-                parts.size == DIT_PARTS.size && parts.all { File(d, it.name).length() == it.bytes }
-            }
+            // ⚠ EVERY part the entry lists (not the weights, not its speed-up LoRA): Fibo's vision tower too, or an
+            // import would launch without one. For MOSS and FLUX.3 this is the encoder, VAE and tokenizer, as before.
+            val parts = spec.files.filter { it.name != ModelSpec.DIT_WEIGHTS && it.name != DIT_GGUF && it.name != spec.ownLora }
+            d.isDirectory && parts.isNotEmpty() && parts.all { File(d, it.name).length() == it.bytes }
         }
 
     /** ⚠ Pure: whether a MOSS import's name says few-step ([MOSS_FEW_STEP_MARK]). */
@@ -1682,6 +1749,9 @@ object CustomModels {
         "krea2" to Family.KREA2,
         "anima" to Family.ANIMA_DIT,
         "moss" to Family.MOSS,
+        "flux3" to Family.FLUX3,
+        "qwen21" to Family.QWEN21,
+        "fibo2" to Family.FIBO2,
     )
 
     // ---- config.json -----------------------------------------------------

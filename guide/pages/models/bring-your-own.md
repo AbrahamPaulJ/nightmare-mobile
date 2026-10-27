@@ -36,7 +36,7 @@ These build their model at load time from ordinary weights, so **a fine-tune fro
 Hugging Face imports as-is**. No conversion, no PC. Both `.safetensors` and `.gguf` work.
 
 Import the file with **+** (above). The app reads the file's tensor names to tell Anima, FLUX.2
-Klein (4B or 9B), Z-Image, Krea 2 and MOSS-Image apart, so an Anima file from CivitAI lands on the **Anima**
+Klein (4B or 9B), FLUX.3 Klein, Z-Image, Qwen Image 2.1, Krea 2 and MOSS-Image apart, so an Anima file from CivitAI lands on the **Anima**
 page without you choosing anything.
 
 On **Family ▾ → Anima**, both kinds of Anima are listed: first the ones on the DiT engine (any
@@ -59,6 +59,11 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
   how much of it arrived: it is usually still downloading. A Q4_0 `.gguf` such as molbal's *MOSS Image Turbo GGUF* is the
   fastest MOSS-Image: about 40 s at 512x512 and 2.5 min at 1024x1024 on an 8 Elite (it is also in the
   catalogue as **MOSS-Image Turbo**).
+- **FLUX.3 Klein** uses the text encoder, VAE and tokenizer of the FLUX.3 Klein you have installed when it holds
+  all three; otherwise it copies them from your other models or downloads them (2.7 GB). It starts at 16 steps
+  and CFG 1, as the distilled Klein does.
+- **Qwen Image 2.1** gets its own copy of Qwen's text encoder, vision encoder and VAE (6.6 GB), copied from the
+  built-in if you have it. An original Qwen-Image or Qwen-Image-Edit file is a different model and is refused.
 
 !!! example "Example: Moody Moss Mix (25 steps)"
     On its CivitAI page pick the **fp8** file (*V1.0 25 STEPS CFG3*, about 4.8 GB), not the int8 one.

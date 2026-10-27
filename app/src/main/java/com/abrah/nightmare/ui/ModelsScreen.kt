@@ -1000,6 +1000,8 @@ private fun familyNote(family: Family): String = stringResource(when (family) {
         Family.IDEOGRAM -> R.string.models_family_ideogram
         // ⚠ Krea 2's encoder beside a 3.5 GB DiT: a 6.2 GB download, measured times said up front.
         Family.FLUX3 -> R.string.models_family_flux3
+        // ⚠ An editor: it needs a picture wired in, said up front.
+        Family.FIBO2 -> R.string.models_family_fibo2
         // ⚠ The free-space figure is the one that surprises:
         // the archive and its unpacked copy are both on disk
         // at once, so a 3.5 GB download needs ~7.5 GB free.

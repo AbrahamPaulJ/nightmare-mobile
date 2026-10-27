@@ -397,6 +397,8 @@ class CustomModelsTest {
         assertEquals(Runtime.CPU, spec.runtime)
         assertEquals(ModelCatalog.SDXL_MNN_REQUIRED, spec.requiredFiles)
         assertTrue(spec.fixedCanvas)
+        // ⭐ TG #7227: prompts past 77 tokens, three chunks (`backend-patches/048`), so the counter reads /231.
+        assertEquals(CustomModels.SDXL_MNN_TOKENS, spec.promptTokens)
     }
 
     /**

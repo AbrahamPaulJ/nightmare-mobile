@@ -356,6 +356,7 @@
     <string name="cd_close_screen">关闭%1$s，返回画布</string>
     <string name="crash_title">上次运行时发生了错误</string>
     <string name="crash_during">错误发生在%1$s时。</string>
+    <string name="crash_resume">动作迁移已完成的片段已保留。打开同一个流程并点击运行：将从最后完成的片段继续。</string>
     <string name="crash_details">详细信息</string>
     <string name="crash_reboot">生成过程中手机重启了。Android 不会记录原因，下面列出了当时正在运行的内容和剩余内存。请复制到错误报告中。</string>
     <string name="device_title">本机设备</string>
@@ -573,7 +574,8 @@
     <string name="models_family_iris">约 5.8 GB。下载 speridlabs 官方的 6 GB 文件并在手机上转换，因此安装时需要约 10 GB 可用空间。在 8 Elite 上 1024x1024 每张约 2.5 分钟。无 VAE。仅支持训练时的尺寸（每张约 100 万像素）。8 Gen 2 或更新（8 Elite 以下为 alpha，尚未在真实的 8 Gen 2 或 8 Gen 3 上运行）。仅文生图。请使用 Wi-Fi。</string>
     <string name="models_family_moss">约 10 GB。8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。细致、细节丰富的图像模型，每次都会应用 8 步加速。8 Elite 上 512x512 约 50 秒，1024x1024 不到 3 分钟。仅文生图。请使用 Wi-Fi。</string>
     <string name="models_family_ideogram">约 11.6 GB。12 GB 及以上内存的手机，8 Elite 或更新芯片。最擅长在图中写出清晰可读的文字：招牌、海报、标签。每次都会应用 8 步加速。8 Elite 上 768x768 约 5.5 分钟。仅文生图。仅限非商业用途（Ideogram 许可）。请使用 Wi-Fi。</string>
-    <string name="models_family_flux3">约 6.2 GB。8 Elite 或更新芯片。Black Forest Labs 最新的图像模型：细节清晰，紧跟提示词，16 步。8 Elite 上 512x512 约 45 秒，1024x1024 约 2 分钟。仅文生图。采用 FLUX Kommunity License 许可。请使用 Wi-Fi。</string>
+    <string name="models_family_flux3">约 6.2 GB。8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）。Black Forest Labs 最新的图像模型：细节清晰，紧跟提示词，16 步。8 Elite 上 512x512 约 45 秒，1024x1024 约 2 分钟。仅文生图。采用 FLUX Kommunity License 许可。请使用 Wi-Fi。</string>
+    <string name="models_family_fibo2">约 8.4 GB。8 Gen 3 或更新芯片（8 Gen 3 上为 alpha），12 GB 内存。Bria 的 Fibo 2.0 Edit：连入一张图片并写下要修改的内容，4 步完成。图片其余部分保持不变，也能在牌子上写字。仅限编辑。非商业许可（Bria）。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>
     <string name="models_import_dit_body">一个 .safetensors 或 .gguf 检查点，可来自 CivitAI 或 Hugging Face，直接使用，无需转换。Klein 4B 和 Z-Image 会借用文本编码器和 VAE（最多需下载 2.6 GB；已有该模型则无需下载）。Klein 9B 和 Krea 2 会获取自己的副本（分别为 4.8 GB 和 2.6 GB）。大于手机约一半内存的文件在渲染时很可能被 Android 关闭。</string>
@@ -721,7 +723,7 @@
     <string name="flow_swap_i2i_name">图生图：LoRA、ControlNet、IP-Adapter</string>
     <string name="flow_swap_i2i_about">用 Swap 模型重新演绎照片，并支持相同的三项功能。除非提供其他图片，否则 ControlNet 会读取照片本身。</string>
     <string name="flow_flux_edit_name">图像编辑</string>
-    <string name="flow_flux_edit_about">适用于配备 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）的 FLUX.2 Klein 或 Qwen Image 2.1。输入照片和提示词：整张图片会根据提示词重新渲染，而不是轻微调整。可将第二张图片连接到 reference 端口，并在提示词中称它们为 image 1 和 image 2。</string>
+    <string name="flow_flux_edit_about">适用于配备 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）的 FLUX.2 Klein、Qwen Image 2.1 或 Fibo 2.0 Edit。输入照片和提示词：整张图片会根据提示词重新渲染，而不是轻微调整。可将第二张图片连接到 reference 端口，并在提示词中称它们为 image 1 和 image 2。</string>
     <string name="flow_t2v_name">文生视频</string>
     <string name="flow_t2v_about">提示词生成视频。默认使用 Wan 2.2 Turbo（需要几分钟，效果好得多）；将视频节点切换为 Neodragon 约 30 秒生成 2 秒。</string>
     <string name="flow_i2v_name">图生视频</string>

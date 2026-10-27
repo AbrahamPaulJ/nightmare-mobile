@@ -2639,6 +2639,14 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         val rolled = mutableMapOf<String, Int>()
         val rolledFix = mutableMapOf<String, Int>()
+        // ⭐ A Motion transfer run Android killed: the same flow, Run again, takes its seeds back so its kept parts
+        // are found ([com.abrah.nightmare.npu.RunResume]). ⚠ Only when nothing else pinned this run's seeds.
+        val resumable = com.abrah.nightmare.npu.RunResume.resumable(runnable.nodes)
+        val resumeKey = if (resumable) com.abrah.nightmare.npu.RunResume.keyOf(runnable.nodes) else ""
+        @Suppress("NAME_SHADOWING")
+        val pinned = if (!resumable || pinned.isNotEmpty()) pinned
+            else com.abrah.nightmare.npu.RunResume.pinsFor(ctx, resumeKey)
+                ?.also { say("carrying on the run that was stopped, with its seeds") } ?: pinned
         val nodes = runnable.nodes.map { n ->
             // ⭐ The Fix seed rolls like the picture's ([com.abrah.nightmare.detail.Detailer.FIX_SEED], 0 = a new face
             // each Run), only while a fix is on: rolling it with no fix would make an unchanged flow full price.
@@ -2669,6 +2677,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         if (rolled.isNotEmpty()) {
             say("rolled seed: " + rolled.entries.joinToString { "${it.key}=${it.value}" })
         }
+        if (resumable) com.abrah.nightmare.npu.RunResume.save(ctx, resumeKey, rolled)
+        try {
         return executor.run(
             Graph(nodes),
             onStart = onStart,
@@ -2745,6 +2755,10 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             val out = r.runs.asReversed()
                 .firstNotNullOfOrNull { r.outputs[it.id] as? Value.Image }
             out?.let { img -> images.get(img.id)?.let { sink.image(it) } }
+        }
+        } finally {
+            // ⚠ However it ended (done, failed, cancelled): only a killed process keeps the seeds.
+            if (resumable) com.abrah.nightmare.npu.RunResume.clear(ctx)
         }
     }
 

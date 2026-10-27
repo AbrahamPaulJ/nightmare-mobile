@@ -379,6 +379,7 @@
     <string name="cd_close_screen">close %1$s. Back to the canvas</string>
     <string name="crash_title">Last time, something went wrong</string>
     <string name="crash_during">It happened while %1$s.</string>
+    <string name="crash_resume">The finished parts of the Motion transfer are kept. Open the same flow and tap Run: it carries on from the last finished part.</string>
     <string name="crash_details">Details</string>
     <string name="crash_reboot">The phone restarted during a run. Android keeps no record of why, so the details below show what was running and how much memory was free. Copy them into a bug report.</string>
     <string name="device_title">This device</string>
@@ -600,7 +601,8 @@
     <string name="models_family_iris">About 5.8 GB. Downloads the official 6 GB file from speridlabs and converts it on the phone, so it needs ~10 GB free while it installs. About 2.5 minutes a picture at 1024x1024 on an 8 Elite. No VAE. Only the sizes it was trained at (about 1 MP each). 8 Gen 2 or newer (alpha below the 8 Elite, not yet run on a real 8 Gen 2 or 8 Gen 3). Text to image only. Use Wi-Fi.</string>
     <string name="models_family_moss">About 10 GB. 8 Gen 3 or newer (alpha on 8 Gen 3). A careful, detailed picture model with an 8-step speed-up applied every time. About 50 seconds at 512x512 and under 3 minutes at 1024x1024 on an 8 Elite. Text to image only. Use Wi-Fi.</string>
     <string name="models_family_ideogram">About 11.6 GB. 12 GB phones and up, 8 Elite or newer. Best at readable text in a picture: signs, posters, labels. An 8-step speed-up applied every time. About 5.5 minutes at 768x768 on an 8 Elite. Text to image only. Non-commercial use only (Ideogram\'s licence). Use Wi-Fi.</string>
-    <string name="models_family_flux3">About 6.2 GB. 8 Elite or newer. The newest picture model from Black Forest Labs: sharp detail and good prompt following, 16 steps. About 45 seconds at 512x512 and 2 minutes at 1024x1024 on an 8 Elite. Text to image only. Under the FLUX Kommunity License. Use Wi-Fi.</string>
+    <string name="models_family_flux3">About 6.2 GB. 8 Gen 3 or newer (alpha on 8 Gen 3). The newest picture model from Black Forest Labs: sharp detail and good prompt following, 16 steps. About 45 seconds at 512x512 and 2 minutes at 1024x1024 on an 8 Elite. Text to image only. Under the FLUX Kommunity License. Use Wi-Fi.</string>
+    <string name="models_family_fibo2">About 8.4 GB. 8 Gen 3 or newer (alpha on 8 Gen 3), 12 GB of RAM. Bria\'s Fibo 2.0 Edit: wire a picture in and say what to change, in 4 steps. It keeps the rest of the picture, and writes text on signs. Edits only. Non-commercial licence (Bria). Use Wi-Fi.</string>
     <string name="models_family_other">About 3.5 GB each, and ~7.5 GB free while it unpacks. Use Wi-Fi.</string>
     <string name="models_import_checkpoint">Import a checkpoint</string>
     <string name="models_import_dit_body">One .safetensors or .gguf. A checkpoint from CivitAI or Hugging Face, used as it is. No conversion. Klein 4B and Z-Image ones borrow a text encoder and VAE (up to 2.6 GB to fetch, nothing if you have that model). Klein 9B and Krea 2 ones get their own copy (4.8 GB and 2.6 GB). A file bigger than about half your phone\'s RAM will likely be closed by Android while it renders.</string>
@@ -748,7 +750,7 @@
     <string name="flow_swap_i2i_name">Image to image: LoRA, ControlNet, IP-Adapter</string>
     <string name="flow_swap_i2i_about">A photo re-imagined by a Swap model, with the same three. ControlNet reads the photo itself unless you give it another picture.</string>
     <string name="flow_flux_edit_name">Image edit</string>
-    <string name="flow_flux_edit_about">FLUX.2 Klein or Qwen Image 2.1, on an 8 Gen 3 or newer (alpha on 8 Gen 3). A photo and a prompt: the whole picture is re-rendered to follow it, rather than nudged. Wire a second picture into the reference port and name them as image 1 and image 2 in the prompt.</string>
+    <string name="flow_flux_edit_about">FLUX.2 Klein or Qwen Image 2.1, or Fibo 2.0 Edit, on an 8 Gen 3 or newer (alpha on 8 Gen 3). A photo and a prompt: the whole picture is re-rendered to follow it, rather than nudged. Wire a second picture into the reference port and name them as image 1 and image 2 in the prompt.</string>
     <string name="flow_t2v_name">Text to video</string>
     <string name="flow_t2v_about">A prompt into a clip. Wan 2.2 Turbo by default (minutes, much better); switch the video node to Neodragon for 2 s in about 30 s.</string>
     <string name="flow_i2v_name">Image to video</string>

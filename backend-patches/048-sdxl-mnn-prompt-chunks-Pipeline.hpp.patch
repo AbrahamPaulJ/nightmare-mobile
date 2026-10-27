@@ -1,0 +1,34 @@
+--- a/src/Pipeline.hpp
++++ b/src/Pipeline.hpp
+@@ -584,6 +584,14 @@
+   // --- text-conditioning generalization hooks ----------------------------
+   // Context sequence length fed to the UNet: CLIP = 77, Anima (T5/Qwen) = 512.
+   virtual int textSeqLen() const { return 77; }
++  // nightmare (048): a pipeline whose context length follows the PROMPT (SDXL
++  // MNN, chunks of 77 as upstream's MNN UNet takes them) picks it here, before
++  // encodePrompts sizes anything from textSeqLen().
++  virtual void chooseSeqLen(const GenerationRequest &) {}
++  // ...and a conditioning handed in by the graph (/sample with an
++  // /encode_text handle) keeps the length it was encoded at, when the pipeline
++  // can serve it. The default is the fixed-length rule this replaced.
++  virtual bool acceptSeqLen(int seq) { return seq == textSeqLen(); }
+   // encoder_hidden_states feature dim: SD = 768, SDXL = 768+1280, Anima = 1024.
+   virtual int textHiddenDim() const {
+     return sdxl_ ? text_embedding_size + text_embedding_size_2
+@@ -783,6 +791,7 @@
+ inline Conditioning Pipeline::encodePrompts(const GenerationRequest &req) {
+   const int batch_size = 2;
+   Conditioning cond;
++  chooseSeqLen(req);
+   cond.hidden_dim = textHiddenDim();
+   cond.pooled_dim = textPooledDim();
+   cond.seq_len = textSeqLen();
+@@ -1414,7 +1423,7 @@
+       const size_t want =
+           (size_t)2 * req.init_cond_seq * req.init_cond_dim;
+       if (req.init_cond_hidden.size() != want ||
+-          req.init_cond_seq != textSeqLen() ||
++          !acceptSeqLen(req.init_cond_seq) ||
+           req.init_cond_dim != textHiddenDim())
+         throw std::invalid_argument(
+             "conditioning is " + std::to_string(req.init_cond_seq) + "x" +

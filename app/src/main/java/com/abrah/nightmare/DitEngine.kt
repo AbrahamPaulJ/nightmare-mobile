@@ -68,7 +68,11 @@ object DitEngine {
      * decode's seam flicker, `docs/VIDEO-GGML.md` §3). Still ABI 106: an engine without 018 ignores
      * the key, so the backend did not move. CI run 38509077877; skels unchanged.
      *
-     * ⭐⭐ The engine current since 1.6.237: `dit-engine-abi108-i2v720`, CI 40169137127: a14fast + `dit/052` (TAEHV
+     * ⭐⭐ The engine current since 1.6.249: `dit-engine-abi108-fibo`, CI 40386764103 (branch `dit-056`): i2v720 +
+     * `dit/055` (FLUX.3 cut points, so an 8 Gen 3's 2.75 GiB streams it), `dit/056` (Fibo 2.0 Edit, upstream #2180) and
+     * `dit/057` (Fibo's self-attention through the fused qk-norm + rope: S25 512² 53 to 15 s a step; `docs/FIBO2.md`).
+     * Z-Image Turbo byte-identical to i2v720 on the S25. Still ABI 108; skels unchanged.
+     * Before it, since 1.6.237: `dit-engine-abi108-i2v720`, CI 40169137127: a14fast + `dit/052` (TAEHV
      * encodes in chunks sized by the clip's area, `SD_TAEHV_ENCODE_CHUNK_MPX`, overlap 6 not 8: Wan 2.2 14B image to
      * video at 720x1280 asked 5.7 GB in one chunk and failed; byte-identical at 320x544) and `dit/053` (two VAE tiles
      * that barely overlap become three: the out-of-memory decode retry split 720 px into two halves meeting at a hard
@@ -162,7 +166,7 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108-i2v720/dit-engine-abi108-i2v720.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi108-fibo/dit-engine-abi108-fibo.zip"
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -172,7 +176,7 @@ object DitEngine {
      * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
      */
     const val HF_URL =
-        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108-i2v720.zip"
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi108-fibo.zip"
 
     /**
      * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
@@ -183,11 +187,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_229_606L
+    const val BYTES = 23_296_155L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 56_025_008L
+    const val FILE_BYTES = 56_188_432L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -197,7 +201,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "063a90f1945e767d7c6fa3728816a417fb5780348491e9469bf25a0e65637593"
+    private const val SHA256 = "ca0dfba3e00a068f5b61b68ad0843786331d7189dd92614570d5f6bb3b7a1af2"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

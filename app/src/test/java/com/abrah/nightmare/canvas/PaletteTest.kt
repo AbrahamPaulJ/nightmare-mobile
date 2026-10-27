@@ -78,7 +78,7 @@ class PaletteTest {
         val generate = sections.getValue("generate")
         val sd = generate.single { card -> card.any { it.name == SdSampler.SDXL.name } }
         assertEquals(
-            listOf("sd15.sample", "sd15swap.sample", "sdxl.sample", "sdxlswap.sample", "anima.sample", "flux2.sample", "zimage.sample", "qwen21.sample", "krea2.sample", "animadit.sample", "iris.sample", "moss.sample", "ideogram.sample", "flux3.sample"),
+            listOf("sd15.sample", "sd15swap.sample", "sdxl.sample", "sdxlswap.sample", "anima.sample", "flux2.sample", "zimage.sample", "qwen21.sample", "krea2.sample", "animadit.sample", "iris.sample", "moss.sample", "ideogram.sample", "flux3.sample", "fibo2.sample"),
             sd.map { it.name },
         )
     }

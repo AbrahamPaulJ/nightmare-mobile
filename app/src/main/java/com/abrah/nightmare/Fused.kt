@@ -738,6 +738,8 @@ class SdSampler(
         val IDEOGRAM = SdSampler("ideogram.sample", Family.IDEOGRAM, inpaint = false)
         /** ⭐ FLUX.3 Image Klein (`docs/DIT.md`) — text to image only, as Ideogram, until its edit is measured. */
         val FLUX3 = SdSampler("flux3.sample", Family.FLUX3, inpaint = false)
+        /** ⭐ Fibo 2.0 Edit Turbo (GH #69, `dit/056`): an editor, its picture the reference ([Family.edit]); no inpaint. */
+        val FIBO2 = SdSampler("fibo2.sample", Family.FIBO2, inpaint = false)
         /**
          * ⭐⭐ **DiT inpaint = masked img2img of the cut + the feathered paste
          * back** — Z-Image, Qwen Image 2.1 and Krea 2 (the user's call,
@@ -773,7 +775,7 @@ class SdSampler(
         val FLUX2_INPAINT = SdSampler("flux2.inpaint", Family.FLUX2, inpaint = true)
 
         val ALL = listOf(
-            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT, IRIS, MOSS, IDEOGRAM, FLUX3,
+            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT, IRIS, MOSS, IDEOGRAM, FLUX3, FIBO2,
             SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, SDXL_SWAP_INPAINT, ANIMA_INPAINT,
             ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT, ANIMA_DIT_INPAINT, FLUX2_INPAINT,
         )
@@ -1279,7 +1281,7 @@ class SdSampler(
      * ControlNet pack), not Iris (no VAE to mask through) or Wan (a video).
      */
     private val offersDetail: Boolean
-        get() = !inpaint && family !in setOf(Family.IRIS, Family.WAN, Family.IDEOGRAM, Family.FLUX3)
+        get() = !inpaint && family !in setOf(Family.IRIS, Family.WAN, Family.IDEOGRAM, Family.FLUX3, Family.FIBO2)
 
     /** ⭐ True when [node] will run the detail pass: what the Run's up-front tool check asks. */
     internal fun detailWanted(node: Node): Boolean = offersDetail && effectiveParams(node).let { p ->
@@ -1306,7 +1308,7 @@ class SdSampler(
     private fun detailWidgets(): List<Widget> = listOfNotNull(
         // ⭐ On every sampler but Wan and Iris: it acts on image to image, inpaint and Fix faces / hands.
         Widget(MATCH_COLORS, "bool", "false", hintRes = R.string.hint_match_colours)
-            .takeIf { family != Family.WAN && family != Family.IRIS && family != Family.MOSS && family != Family.IDEOGRAM && family != Family.FLUX3 },
+            .takeIf { family != Family.WAN && family != Family.IRIS && family != Family.MOSS && family != Family.IDEOGRAM && family != Family.FLUX3 && family != Family.FIBO2 },
     ) + if (!offersDetail) emptyList() else listOf(
         Widget(com.abrah.nightmare.detail.Detailer.FIX_FACES, "bool", "false", hintRes = R.string.hint_fix_faces),
         Widget(com.abrah.nightmare.detail.Detailer.FIX_HANDS, "bool", "false", hintRes = R.string.hint_fix_hands),
