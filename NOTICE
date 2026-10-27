@@ -422,6 +422,18 @@ Anima 2.9B Turbo LoRA (built into Anima 2.9B)
     https://huggingface.co/AbrahamPJ/nightmare-anima-turbo-lora; downloaded
     with Anima 2.9B at the user's request.
 
+DWPose (RTMPose-L wholebody, Motion transfer's whole-body pose)
+    IDEA Research (Yang et al.)
+    https://huggingface.co/yzd-v/DWPose
+    Apache 2.0. Downloaded from its own repository at the user's request, unmodified.
+
+IFRNet-S (Smooth motion)
+    Lingtong Kong et al.
+    https://github.com/ltkong218/IFRNet
+    https://huggingface.co/AbrahamPJ/nightmare-ifrnet
+    MIT. Its GoPro weights, converted by this project to NPU context binaries;
+    downloaded at the user's request, not included here.
+
 MoveNet MultiPose Lightning (the openpose detector)
     Google; ONNX export by Xenova
     https://huggingface.co/Xenova/movenet-multipose-lightning
