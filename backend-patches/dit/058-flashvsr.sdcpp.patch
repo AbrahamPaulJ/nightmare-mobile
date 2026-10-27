@@ -1,0 +1,1042 @@
+diff --git a/examples/CMakeLists.txt b/examples/CMakeLists.txt
+index dc8150a..6c0a2bd 100644
+--- a/examples/CMakeLists.txt
++++ b/examples/CMakeLists.txt
+@@ -2,3 +2,4 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+ 
+ add_subdirectory(cli)
+ add_subdirectory(server)
++add_subdirectory(flashvsr)
+diff --git a/examples/flashvsr/CMakeLists.txt b/examples/flashvsr/CMakeLists.txt
+new file mode 100644
+index 0000000..7b52f41
+--- /dev/null
++++ b/examples/flashvsr/CMakeLists.txt
+@@ -0,0 +1,7 @@
++set(TARGET flashvsr-cli)
++
++add_executable(${TARGET} main.cpp)
++target_include_directories(${TARGET} PRIVATE "${PROJECT_SOURCE_DIR}/thirdparty")
++install(TARGETS ${TARGET} RUNTIME)
++target_link_libraries(${TARGET} PRIVATE stable-diffusion ${CMAKE_THREAD_LIBS_INIT})
++target_compile_features(${TARGET} PUBLIC cxx_std_17)
+diff --git a/examples/flashvsr/main.cpp b/examples/flashvsr/main.cpp
+new file mode 100644
+index 0000000..ef9f181
+--- /dev/null
++++ b/examples/flashvsr/main.cpp
+@@ -0,0 +1,100 @@
++// nightmare (dit/058): flashvsr-cli MODEL.gguf IN_DIR OUT_DIR [-t threads] [--tile N] [--overlap N] [--seed N]
++//   [--frames N] [--crop x,y,w,h] [--backend SPEC] [--params-backend SPEC]
++// Upscales the PNG frames of IN_DIR (sorted by name) 2x with FlashVSR into OUT_DIR/out_000.png ... Env as in
++// src/flashvsr.cpp (FLASHVSR_DUMP, FLASHVSR_NOISE, FLASHVSR_DEC_CHUNK).
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <filesystem>
++#include <string>
++#include <vector>
++
++#include "stable-diffusion.h"
++
++#define STB_IMAGE_IMPLEMENTATION
++#define STB_IMAGE_STATIC
++#include "stb_image.h"
++#define STB_IMAGE_WRITE_IMPLEMENTATION
++#define STB_IMAGE_WRITE_STATIC
++#include "stb_image_write.h"
++
++namespace fs = std::filesystem;
++
++static void on_log(enum sd_log_level_t level, const char* text, void*) {
++    if (level >= SD_LOG_INFO) {
++        fputs(text, stderr);
++    }
++}
++
++static void on_progress(int step, int steps, float time, void*) {
++    fprintf(stderr, "progress %d/%d %.1f s\n", step, steps, time);
++}
++
++int main(int argc, char** argv) {
++    if (argc < 4) {
++        fprintf(stderr, "usage: %s MODEL.gguf IN_DIR OUT_DIR [-t N] [--tile N] [--overlap N] [--seed N] [--frames N] [--crop x,y,w,h]\n", argv[0]);
++        return 1;
++    }
++    int threads = 4, tile = 256, overlap = 24, max_frames = 0, cx = 0, cy = 0, cw = 0, ch = 0;
++    int64_t seed       = 42;
++    const char* backend = nullptr;
++    const char* pbackend = nullptr;
++    for (int i = 4; i + 1 < argc; i += 2) {
++        std::string a = argv[i];
++        if (a == "-t") threads = atoi(argv[i + 1]);
++        else if (a == "--tile") tile = atoi(argv[i + 1]);
++        else if (a == "--overlap") overlap = atoi(argv[i + 1]);
++        else if (a == "--seed") seed = atoll(argv[i + 1]);
++        else if (a == "--frames") max_frames = atoi(argv[i + 1]);
++        else if (a == "--crop") sscanf(argv[i + 1], "%d,%d,%d,%d", &cx, &cy, &cw, &ch);
++        else if (a == "--backend") backend = argv[i + 1];
++        else if (a == "--params-backend") pbackend = argv[i + 1];
++    }
++    sd_set_log_callback(on_log, nullptr);
++    sd_set_progress_callback(on_progress, nullptr);
++
++    std::vector<std::string> names;
++    for (auto& e : fs::directory_iterator(argv[2])) {
++        if (e.path().extension() == ".png") names.push_back(e.path().string());
++    }
++    std::sort(names.begin(), names.end());
++    if (max_frames > 0 && (int)names.size() > max_frames) names.resize(max_frames);
++    std::vector<sd_image_t> frames;
++    for (auto& n : names) {
++        int w, h, c;
++        uint8_t* d = stbi_load(n.c_str(), &w, &h, &c, 3);
++        if (d == nullptr) {
++            fprintf(stderr, "cannot read %s\n", n.c_str());
++            return 1;
++        }
++        if (cw > 0 && ch > 0) {
++            uint8_t* t = (uint8_t*)malloc((size_t)cw * ch * 3);
++            for (int y = 0; y < ch; y++) memcpy(t + (size_t)y * cw * 3, d + ((size_t)(cy + y) * w + cx) * 3, (size_t)cw * 3);
++            stbi_image_free(d);
++            d = t, w = cw, h = ch;
++        }
++        frames.push_back({(uint32_t)w, (uint32_t)h, 3, d});
++    }
++    fprintf(stderr, "%zu frames %ux%u\n", frames.size(), frames.empty() ? 0 : frames[0].width, frames.empty() ? 0 : frames[0].height);
++    flashvsr_ctx_t* ctx = new_flashvsr_ctx(argv[1], threads, backend, pbackend);
++    if (ctx == nullptr) {
++        fprintf(stderr, "load failed\n");
++        return 2;
++    }
++    sd_image_t* out = nullptr;
++    if (!flashvsr_upscale(ctx, frames.data(), (int)frames.size(), tile, overlap, seed, &out)) {
++        fprintf(stderr, "upscale failed\n");
++        return 3;
++    }
++    fs::create_directories(argv[3]);
++    for (size_t i = 0; i < frames.size(); i++) {
++        char p[4096];
++        snprintf(p, sizeof(p), "%s/out_%03zu.png", argv[3], i);
++        stbi_write_png(p, out[i].width, out[i].height, 3, out[i].data, out[i].width * 3);
++    }
++    free_sd_images(out, (int)frames.size());
++    free_flashvsr_ctx(ctx);
++    fprintf(stderr, "wrote %zu frames\n", frames.size());
++    return 0;
++}
+diff --git a/include/stable-diffusion.h b/include/stable-diffusion.h
+index e24b84d..531efac 100644
+--- a/include/stable-diffusion.h
++++ b/include/stable-diffusion.h
+@@ -542,6 +542,24 @@ SD_API bool upscale(upscaler_ctx_t* upscaler_ctx,
+ 
+ SD_API int get_upscale_factor(upscaler_ctx_t* upscaler_ctx);
+ 
++// nightmare (dit/058): FlashVSR v1.1 tiny, temporally consistent 2x video upscaling from one GGUF (dit.*, lq.*,
++// dec.decoder.*, context). tile_size / tile_overlap in input pixels (<= 0 / < 0: 256 / 24). frames_out: num_frames
++// frames at twice the size, freed with free_sd_images. Progress goes to the sd progress callback.
++typedef struct flashvsr_ctx_t flashvsr_ctx_t;
++
++SD_API flashvsr_ctx_t* new_flashvsr_ctx(const char* model_path,
++                                        int n_threads,
++                                        const char* backend,
++                                        const char* params_backend);
++SD_API void free_flashvsr_ctx(flashvsr_ctx_t* flashvsr_ctx);
++SD_API bool flashvsr_upscale(flashvsr_ctx_t* flashvsr_ctx,
++                             const sd_image_t* frames,
++                             int num_frames,
++                             int tile_size,
++                             int tile_overlap,
++                             int64_t seed,
++                             sd_image_t** frames_out);
++
+ typedef struct adetailer_ctx_t adetailer_ctx_t;
+ 
+ typedef struct {
+diff --git a/src/flashvsr.cpp b/src/flashvsr.cpp
+new file mode 100644
+index 0000000..2891254
+--- /dev/null
++++ b/src/flashvsr.cpp
+@@ -0,0 +1,418 @@
++// nightmare (dit/058): FlashVSR v1.1 tiny, 2x video upscaling (model: src/model/upscaler/flashvsr.hpp). The host side
++// of lihaoyun6/ComfyUI-FlashVSR_Ultra_Fast `4820b3f` (nodes.py flashvsr(), pipelines/flashvsr_tiny.py) for one scale, 2:
++// spatial tiles of the INPUT (each its own clip, as the reference's tiled_dit), the frame count padded to 8n + 5, the
++// tile upscaled bicubic to the LQ video, DiT chunks of 6 then 2 latent frames, TCDecoder, AdaIN colour fix per frame,
++// tiles feathered together. Env: FLASHVSR_DUMP=<dir> writes each stage as raw f32 (torch layouts), FLASHVSR_NOISE=<file>
++// reads the noise ([16, L, h, w] f32), FLASHVSR_DEC_CHUNK = latent frames a decoder call (default 2).
++#include <array>
++
++#include "core/ggml_extend_backend.h"
++#include "core/rng_mt19937.hpp"
++#include "core/util.h"
++#include "model/upscaler/flashvsr.hpp"
++#include "model_loader.h"
++#include "model_manager.h"
++#include "stable-diffusion.h"
++
++#include <algorithm>
++#include <cmath>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++
++namespace {
++
++    constexpr int SCALE = 2;
++
++    void dump(const char* name, const float* data, size_t n) {
++        const char* dir = getenv("FLASHVSR_DUMP");
++        if (dir == nullptr) {
++            return;
++        }
++        std::string path = std::string(dir) + "/" + name + ".bin";
++        if (FILE* f = fopen(path.c_str(), "wb")) {
++            fwrite(data, sizeof(float), n, f);
++            fclose(f);
++        }
++    }
++
++    // torch F.interpolate(mode='bicubic', align_corners=False): A = -0.75, edge indices clamped, no antialias.
++    float cubic(float x) {
++        const float A = -0.75f;
++        x             = std::fabs(x);
++        if (x <= 1.f) {
++            return ((A + 2.f) * x - (A + 3.f)) * x * x + 1.f;
++        }
++        if (x < 2.f) {
++            return ((A * x - 5.f * A) * x + 8.f * A) * x - 4.f * A;
++        }
++        return 0.f;
++    }
++
++    // One RGB u8 region (x0, y0, w, h) of a frame, bicubic to (w*2, h*2), in [-1, 1], planar [3][H][W] into out.
++    void bicubic_tile(const sd_image_t& im, int x0, int y0, int w, int h, float* out) {
++        const int W = w * SCALE, H = h * SCALE;
++        std::vector<int> ix(W * 4), iy(H * 4);
++        std::vector<float> wx(W * 4), wy(H * 4);
++        auto taps = [](int n_out, int n_in, std::vector<int>& idx, std::vector<float>& wt) {
++            for (int o = 0; o < n_out; o++) {
++                float s  = (o + 0.5f) / SCALE - 0.5f;
++                int f    = (int)std::floor(s);
++                float t  = s - f;
++                for (int k = 0; k < 4; k++) {
++                    idx[o * 4 + k] = std::min(std::max(f - 1 + k, 0), n_in - 1);
++                    wt[o * 4 + k]  = cubic(t - (k - 1));
++                }
++            }
++        };
++        taps(W, w, ix, wx);
++        taps(H, h, iy, wy);
++        std::vector<float> rows((size_t)h * W * 3);
++        for (int y = 0; y < h; y++) {
++            const uint8_t* src = im.data + ((size_t)(y0 + y) * im.width + x0) * im.channel;
++            for (int o = 0; o < W; o++) {
++                for (int c = 0; c < 3; c++) {
++                    float v = 0.f;
++                    for (int k = 0; k < 4; k++) {
++                        v += wx[o * 4 + k] * (src[ix[o * 4 + k] * im.channel + c] / 255.f);
++                    }
++                    rows[((size_t)y * W + o) * 3 + c] = v;
++                }
++            }
++        }
++        for (int o = 0; o < H; o++) {
++            for (int x = 0; x < W; x++) {
++                for (int c = 0; c < 3; c++) {
++                    float v = 0.f;
++                    for (int k = 0; k < 4; k++) {
++                        v += wy[o * 4 + k] * rows[((size_t)iy[o * 4 + k] * W + x) * 3 + c];
++                    }
++                    out[((size_t)c * H + o) * W + x] = v * 2.f - 1.f;
++                }
++            }
++        }
++    }
++
++    std::vector<int> tile_starts(int size, int tile, int overlap) {
++        // nodes.py calculate_tile_coords along one axis: stride tile - overlap, the last tile pulled back to fit.
++        std::vector<int> starts;
++        if (size <= tile) {
++            return {0};
++        }
++        const int stride = tile - overlap;
++        const int n      = (int)std::ceil((size - overlap) / (double)stride);
++        for (int i = 0; i < n; i++) {
++            int s = i * stride;
++            if (s + tile > size) {
++                s = size - tile;
++            }
++            if (starts.empty() || starts.back() != s) {
++                starts.push_back(s);
++            }
++        }
++        return starts;
++    }
++
++}  // namespace
++
++struct FlashVSRGGML {
++    SDBackendManager backend_manager;
++    std::shared_ptr<ModelManager> model_manager;
++    std::shared_ptr<FlashVSR::DiTRunner> dit;
++    std::shared_ptr<FlashVSR::DecoderRunner> dec;
++    int n_threads = 4;
++    std::string backend_spec, params_backend_spec;
++
++    ~FlashVSRGGML() {
++        model_manager.reset();
++        dit.reset();
++        dec.reset();
++    }
++
++    bool load(const std::string& path) {
++        ggml_log_set(sd_ggml_log_callback, nullptr);
++        std::string error;
++        if (!backend_manager.init(backend_spec.c_str(), params_backend_spec.c_str(), nullptr, &error)) {
++            LOG_ERROR("flashvsr backend config failed: %s", error.c_str());
++            return false;
++        }
++        ggml_backend_t backend        = backend_manager.runtime_backend(SDBackendModule::UPSCALER);
++        ggml_backend_t params_backend = backend_manager.params_backend(SDBackendModule::UPSCALER);
++        if (backend == nullptr || params_backend == nullptr) {
++            LOG_ERROR("flashvsr: no backend");
++            return false;
++        }
++        model_manager = std::make_shared<ModelManager>();
++        model_manager->set_n_threads(n_threads);
++        model_manager->set_enable_mmap(false);
++        ModelLoader loader;
++        if (!loader.init_from_file(path)) {
++            LOG_ERROR("flashvsr: cannot read '%s'", path.c_str());
++            return false;
++        }
++        auto& storage = loader.get_tensor_storage_map();
++        dit           = std::make_shared<FlashVSR::DiTRunner>(backend, storage, model_manager);
++        dec           = std::make_shared<FlashVSR::DecoderRunner>(backend, storage, model_manager);
++        dit->set_flash_attention_enabled(true);
++        const auto residency = backend_manager.params_backend_is_disk(SDBackendModule::UPSCALER) ? ModelManager::ResidencyMode::Disk
++                                                                                                 : ModelManager::ResidencyMode::ParamBackend;
++        if (!model_manager->set_loader(loader) ||
++            !model_manager->register_runner_params(ModelComponent::Diffusion, *dit, residency, backend, params_backend) ||
++            !model_manager->register_runner_params(ModelComponent::VAE, *dec, residency, backend, params_backend) ||
++            !model_manager->validate_registered_tensors()) {
++            LOG_ERROR("flashvsr: registering tensors failed");
++            return false;
++        }
++        return true;
++    }
++
++    // One tile of every frame: lq [3][F][H][W] in [-1, 1] (F = 8k + 9); returns [F'][3][H][W] in [-1, 1], colour fixed,
++    // F' = F - 4 (the reference's output count before its crop to the input's frames).
++    bool run_tile(const std::vector<float>& lq, int F, int H, int W, int64_t seed, int tile_index, int tiles,
++                  std::vector<float>& out, int& step, int steps, int64_t t_start) {
++        const int L = (F - 1) / 4, ptn = L / 2 - 2, h8 = H / 8, w8 = W / 8, h16 = H / 16, w16 = W / 16;
++        const size_t plane = (size_t)H * W;
++        auto px            = [&](int c, int f, int y, int x) { return lq[((size_t)c * F + f) * plane + (size_t)y * W + x]; };
++        dump("lq", lq.data(), lq.size());
++
++        // noise [16][L][h8][w8], one draw a tile from the same seed (the reference re-seeds every tile)
++        std::vector<float> noise((size_t)16 * L * h8 * w8);
++        if (const char* nf = getenv("FLASHVSR_NOISE")) {
++            FILE* f = fopen(nf, "rb");
++            if (f == nullptr || fread(noise.data(), sizeof(float), noise.size(), f) != noise.size()) {
++                LOG_ERROR("flashvsr: cannot read %zu floats from FLASHVSR_NOISE '%s'", noise.size(), nf);
++                if (f) fclose(f);
++                return false;
++            }
++            fclose(f);
++        } else {
++            MT19937RNG rng((uint64_t)seed);
++            noise = rng.randn((uint32_t)noise.size());
++        }
++
++        dit->free_cache_ctx_and_buffer();
++        std::vector<float> latents(noise.size());
++        for (int c = 0; c < ptn; c++) {
++            const int a = c == 0 ? 0 : 4 + 2 * c, n = c == 0 ? 6 : 2;
++            sd::Tensor<float> x({w8, h8, n, 16});
++            for (int ch = 0; ch < 16; ch++) {
++                memcpy(x.data() + (size_t)ch * n * h8 * w8, noise.data() + ((size_t)ch * L + a) * h8 * w8, sizeof(float) * n * h8 * w8);
++            }
++            // the LQ stream S[i] = frame max(0, i - 5), PixelShuffle3d(1, 16, 16): [768][len][h16][w16]
++            const int len = 4 * n + FlashVSR::LQ_LEAD;
++            sd::Tensor<float> s({w16, h16, len, FlashVSR::LQ_CHANNELS});
++            float* sp = s.data();
++            for (int c3 = 0; c3 < 3; c3++)
++                for (int hi = 0; hi < 16; hi++)
++                    for (int wi = 0; wi < 16; wi++) {
++                        const int ch = (c3 * 16 + hi) * 16 + wi;
++                        for (int t = 0; t < len; t++) {
++                            const int f = std::max(0, 4 * a + t - 5);
++                            for (int y = 0; y < h16; y++)
++                                for (int xx = 0; xx < w16; xx++) {
++                                    sp[(((size_t)ch * len + t) * h16 + y) * w16 + xx] = px(c3, f, y * 16 + hi, xx * 16 + wi);
++                                }
++                        }
++                    }
++            auto r = dit->compute(n_threads, x, s, a);
++            if (r.empty()) {
++                LOG_ERROR("flashvsr: DiT chunk %d failed", c);
++                return false;
++            }
++            for (int ch = 0; ch < 16; ch++) {
++                memcpy(latents.data() + ((size_t)ch * L + a) * h8 * w8, r.data() + (size_t)ch * n * h8 * w8, sizeof(float) * n * h8 * w8);
++            }
++            pretty_progress(++step, steps, (ggml_time_ms() - t_start) / 1000.f);
++        }
++        dit->free_cache_ctx_and_buffer();
++        dit->runner_end();
++        dump("latents", latents.data(), latents.size());
++
++        // decoder: [W8, H8, 784, n] per chunk, channels = PixelShuffle3d(4, 8, 8) of LQ frames 4j-3..4j (frame 0 before
++        // the start), then the latent
++        const char* dc   = getenv("FLASHVSR_DEC_CHUNK");
++        const int dchunk = std::max(1, dc ? atoi(dc) : 2);
++        const int Fo     = 4 * L - 3;
++        out.assign((size_t)Fo * 3 * plane, 0.f);
++        dec->free_cache_ctx_and_buffer();
++        int written = 0;
++        for (int a = 0; a < L; a += dchunk) {
++            const int n = std::min(dchunk, L - a);
++            sd::Tensor<float> z({w8, h8, FlashVSR::DEC_CHANNELS + 16, n});
++            float* zp = z.data();
++            for (int j = 0; j < n; j++) {
++                const int lj = a + j;
++                float* zj    = zp + (size_t)j * (FlashVSR::DEC_CHANNELS + 16) * h8 * w8;
++                for (int c3 = 0; c3 < 3; c3++)
++                    for (int fi = 0; fi < 4; fi++) {
++                        const int f = std::max(0, 4 * lj - 3 + fi);
++                        for (int hi = 0; hi < 8; hi++)
++                            for (int wi = 0; wi < 8; wi++) {
++                                const int ch = ((c3 * 4 + fi) * 8 + hi) * 8 + wi;
++                                for (int y = 0; y < h8; y++)
++                                    for (int xx = 0; xx < w8; xx++) {
++                                        zj[((size_t)ch * h8 + y) * w8 + xx] = px(c3, f, y * 8 + hi, xx * 8 + wi);
++                                    }
++                            }
++                    }
++                for (int ch = 0; ch < 16; ch++) {
++                    memcpy(zj + (size_t)(FlashVSR::DEC_CHANNELS + ch) * h8 * w8, latents.data() + ((size_t)ch * L + lj) * h8 * w8, sizeof(float) * h8 * w8);
++                }
++            }
++            auto r = dec->compute(n_threads, z, a == 0);
++            if (r.empty()) {
++                LOG_ERROR("flashvsr: decoder chunk at %d failed", a);
++                return false;
++            }
++            const int frames = (int)r.shape()[3];
++            for (int k = 0; k < frames && written < Fo; k++, written++) {
++                float* o       = out.data() + (size_t)written * 3 * plane;
++                const float* d = r.data() + (size_t)k * 3 * plane;
++                for (size_t i = 0; i < 3 * plane; i++) {
++                    o[i] = d[i] * 2.f - 1.f;
++                }
++            }
++            pretty_progress(++step, steps, (ggml_time_ms() - t_start) / 1000.f);
++        }
++        dec->free_cache_ctx_and_buffer();
++        dec->runner_end();
++        dump("dec_out", out.data(), out.size());
++
++        // AdaIN to the LQ frame, per frame and channel (flashvsr_tiny.py ColorCorrector, method 'adain'), clamp [-1, 1]
++        for (int f = 0; f < Fo; f++) {
++            for (int c = 0; c < 3; c++) {
++                float* o        = out.data() + ((size_t)f * 3 + c) * plane;
++                const float* l  = lq.data() + ((size_t)c * F + f) * plane;
++                double so = 0, so2 = 0, sl = 0, sl2 = 0;
++                for (size_t i = 0; i < plane; i++) {
++                    so += o[i], so2 += (double)o[i] * o[i], sl += l[i], sl2 += (double)l[i] * l[i];
++                }
++                const double mo = so / plane, ml = sl / plane;
++                const double vo = std::max(0.0, so2 / plane - mo * mo) + 1e-5, vl = std::max(0.0, sl2 / plane - ml * ml) + 1e-5;
++                const float k = (float)std::sqrt(vl / vo), b = (float)(ml - mo * std::sqrt(vl / vo));
++                for (size_t i = 0; i < plane; i++) {
++                    o[i] = std::min(1.f, std::max(-1.f, o[i] * k + b));
++                }
++            }
++        }
++        dump("final", out.data(), out.size());
++        LOG_INFO("flashvsr: tile %d/%d done", tile_index + 1, tiles);
++        return true;
++    }
++
++    // frames: N RGB frames, all the same size; out: N frames at 2x. tile/overlap in INPUT pixels (the reference: 256, 24).
++    bool upscale(const sd_image_t* frames, int N, int tile, int overlap, int64_t seed, sd_image_t* out) {
++        if (N <= 0 || frames[0].channel < 3) {
++            return false;
++        }
++        const int iw = (int)frames[0].width, ih = (int)frames[0].height, ow = iw * SCALE, oh = ih * SCALE;
++        // nodes.py: pad the clip with its last frame to 8n + 5 (at least 21), then 4 more to 8k + 9 for the pipeline
++        const int Np = N < 21 ? 21 : ((N - 5 + 7) / 8) * 8 + 5, F = Np + 4;
++        const auto xs = tile_starts(iw, tile, overlap), ys = tile_starts(ih, tile, overlap);
++        const int tiles = (int)(xs.size() * ys.size());
++        const int L = (F - 1) / 4, dc = std::max(1, getenv("FLASHVSR_DEC_CHUNK") ? atoi(getenv("FLASHVSR_DEC_CHUNK")) : 2);
++        const int steps = tiles * (L / 2 - 2 + (L + dc - 1) / dc);
++        int step        = 0;
++        const int64_t t0 = ggml_time_ms();
++        for (int i = 0; i < N; i++) {
++            out[i] = {(uint32_t)ow, (uint32_t)oh, 3, (uint8_t*)calloc((size_t)ow * oh * 3, 1)};
++            if (out[i].data == nullptr) {
++                return false;
++            }
++        }
++        std::vector<float> acc((size_t)ow * oh, 0.f), lq, res;
++        int ti = 0;
++        for (int ty : ys) {
++            for (int tx : xs) {
++                const int tw = std::min(tile, iw), th = std::min(tile, ih);
++                // the tile's LQ size, padded up to a multiple of 16 (edge replicated) where the frame is smaller than a tile
++                const int W = (tw * SCALE + 15) / 16 * 16, H = (th * SCALE + 15) / 16 * 16, w2 = tw * SCALE, h2 = th * SCALE;
++                const size_t plane = (size_t)H * W;
++                lq.assign((size_t)3 * F * plane, 0.f);
++                std::vector<float> one((size_t)3 * w2 * h2);
++                for (int f = 0; f < F; f++) {
++                    bicubic_tile(frames[std::min(f, N - 1)], tx, ty, tw, th, one.data());  // padding repeats the last frame
++                    for (int c = 0; c < 3; c++)
++                        for (int y = 0; y < H; y++)
++                            for (int x = 0; x < W; x++) {
++                                lq[((size_t)c * F + f) * plane + (size_t)y * W + x] = one[((size_t)c * h2 + std::min(y, h2 - 1)) * w2 + std::min(x, w2 - 1)];
++                            }
++                }
++                if (!run_tile(lq, F, H, W, seed, ti, tiles, res, step, steps, t0)) {
++                    return false;
++                }
++                // feather the tile in: a linear ramp over the overlap on each side that has a neighbour
++                const int ox = tx * SCALE, oy = ty * SCALE, R = overlap * SCALE;
++                for (int y = 0; y < h2; y++) {
++                    for (int x = 0; x < w2; x++) {
++                        float wgt = 1.f;
++                        if (tx > 0 && x < R) wgt = std::min(wgt, (x + 1.f) / (R + 1.f));
++                        if (tx + tw < iw && x >= w2 - R) wgt = std::min(wgt, (w2 - x) / (R + 1.f));
++                        if (ty > 0 && y < R) wgt = std::min(wgt, (y + 1.f) / (R + 1.f));
++                        if (ty + th < ih && y >= h2 - R) wgt = std::min(wgt, (h2 - y) / (R + 1.f));
++                        const size_t p = (size_t)(oy + y) * ow + ox + x;
++                        const float a0 = acc[p], a1 = a0 + wgt;
++                        for (int f = 0; f < N; f++) {
++                            uint8_t* d = out[f].data + p * 3;
++                            for (int c = 0; c < 3; c++) {
++                                const float v = (res[((size_t)f * 3 + c) * plane + (size_t)y * W + x] + 1.f) * 127.5f;
++                                d[c]          = (uint8_t)std::lround(std::min(255.f, std::max(0.f, (d[c] * a0 + v * wgt) / a1)));
++                            }
++                        }
++                        acc[p] = a1;
++                    }
++                }
++                ti++;
++            }
++        }
++        LOG_INFO("flashvsr: %d frames %dx%d -> %dx%d, %d tiles, %.1f s", N, iw, ih, ow, oh, tiles, (ggml_time_ms() - t0) / 1000.f);
++        return true;
++    }
++};
++
++struct flashvsr_ctx_t {
++    FlashVSRGGML* vsr = nullptr;
++};
++
++flashvsr_ctx_t* new_flashvsr_ctx(const char* model_path, int n_threads, const char* backend, const char* params_backend) {
++    auto* vsr                = new FlashVSRGGML();
++    vsr->n_threads           = n_threads;
++    vsr->backend_spec        = SAFE_STR(backend);
++    vsr->params_backend_spec = SAFE_STR(params_backend);
++    if (!vsr->load(SAFE_STR(model_path))) {
++        delete vsr;
++        return nullptr;
++    }
++    auto* ctx = (flashvsr_ctx_t*)malloc(sizeof(flashvsr_ctx_t));
++    ctx->vsr  = vsr;
++    return ctx;
++}
++
++void free_flashvsr_ctx(flashvsr_ctx_t* ctx) {
++    if (ctx == nullptr) {
++        return;
++    }
++    delete ctx->vsr;
++    free(ctx);
++}
++
++bool flashvsr_upscale(flashvsr_ctx_t* ctx, const sd_image_t* frames, int num_frames, int tile_size, int tile_overlap,
++                      int64_t seed, sd_image_t** frames_out) {
++    if (frames_out == nullptr) {
++        return false;
++    }
++    *frames_out = nullptr;
++    if (ctx == nullptr || ctx->vsr == nullptr || frames == nullptr || num_frames <= 0) {
++        return false;
++    }
++    auto* out = (sd_image_t*)calloc(num_frames, sizeof(sd_image_t));
++    if (out == nullptr) {
++        return false;
++    }
++    if (!ctx->vsr->upscale(frames, num_frames, tile_size > 0 ? tile_size : 256, tile_overlap >= 0 ? tile_overlap : 24, seed, out)) {
++        free_sd_images(out, num_frames);
++        return false;
++    }
++    *frames_out = out;
++    return true;
++}
+diff --git a/src/model/diffusion/wan.hpp b/src/model/diffusion/wan.hpp
+index 7eeb3a9..74ef015 100644
+--- a/src/model/diffusion/wan.hpp
++++ b/src/model/diffusion/wan.hpp
+@@ -199,8 +199,8 @@ namespace WAN {
+         }
+ 
+         // nightmare (dit/046): one chunk's keys and values, roped and f16: [d, len, H] each. Null pair where the
+-        // fused rope is not on the backend.
+-        std::pair<ggml_tensor*, ggml_tensor*> kv_chunk(GGMLRunnerContext* ctx, ggml_tensor* y, ggml_tensor* pc) {
++        // fused rope is not on the backend, unless composed_rope (dit/058) asks for Rope::apply_rope there.
++        std::pair<ggml_tensor*, ggml_tensor*> kv_chunk(GGMLRunnerContext* ctx, ggml_tensor* y, ggml_tensor* pc, bool composed_rope = false) {
+             auto gc     = ctx->ggml_ctx;
+             int64_t len = y->ne[1];
+             auto k_proj = std::dynamic_pointer_cast<Linear>(blocks["k"]);
+@@ -209,6 +209,9 @@ namespace WAN {
+             auto k      = ggml_reshape_4d(gc, norm_k->forward(ctx, k_proj->forward(ctx, y)), head_dim, num_heads, len, 1);
+             auto v      = ggml_reshape_4d(gc, v_proj->forward(ctx, y), head_dim, num_heads, len, 1);
+             auto kr     = try_rope_only(ctx, k, pc);
++            if (kr == nullptr && composed_rope) {
++                kr = Rope::apply_rope(gc, k, pc, true);  // the same [d, len, H]
++            }
+             if (kr == nullptr) {
+                 return {nullptr, nullptr};
+             }
+@@ -218,7 +221,8 @@ namespace WAN {
+ 
+         // nightmare (dit/046): one chunk's queries against every key and value (from kv_chunk), then the output
+         // projection: [C, len, 1]. Null where the fused rope or flash attention is not on the backend.
+-        ggml_tensor* attend_chunk(GGMLRunnerContext* ctx, ggml_tensor* y, ggml_tensor* pc, ggml_tensor* K, ggml_tensor* V) {
++        ggml_tensor* attend_chunk(GGMLRunnerContext* ctx, ggml_tensor* y, ggml_tensor* pc, ggml_tensor* K, ggml_tensor* V,
++                                  bool composed_rope = false) {
+             auto gc     = ctx->ggml_ctx;
+             int64_t len = y->ne[1];
+             auto q_proj = std::dynamic_pointer_cast<Linear>(blocks["q"]);
+@@ -226,6 +230,9 @@ namespace WAN {
+             auto norm_q = std::dynamic_pointer_cast<UnaryBlock>(blocks["norm_q"]);
+             auto q      = ggml_reshape_4d(gc, norm_q->forward(ctx, q_proj->forward(ctx, y)), head_dim, num_heads, len, 1);
+             auto qr     = try_rope_only(ctx, q, pc);
++            if (qr == nullptr && composed_rope) {
++                qr = Rope::apply_rope(gc, q, pc, true);
++            }
+             if (qr == nullptr) {
+                 return nullptr;
+             }
+@@ -500,6 +507,13 @@ namespace WAN {
+         ggml_tensor* forward_chunked(GGMLRunnerContext* ctx, ggml_tensor* x, const std::vector<ggml_tensor*>& es, ggml_tensor* pe,
+                                      ggml_tensor* context, int64_t context_img_len, int64_t chunk);
+ 
++        // nightmare (dit/058): FlashVSR's streaming block. This chunk's queries attend to the keys and values of the
++        // earlier chunks still in the cache (k_past/v_past, roped f16 [d, len, H], null for the first chunk) and to its
++        // own, which come back in k_out/v_out for the cache. Dense attention: FlashVSR's block-sparse mask is 99 %
++        // full at a 256 px tile (`docs/VIDEO-UPSCALE.md`). Null where the fused rope or flash attention is missing.
++        ggml_tensor* forward_stream(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* e, ggml_tensor* pe, ggml_tensor* context,
++                                    ggml_tensor* k_past, ggml_tensor* v_past, ggml_tensor** k_out, ggml_tensor** v_out);
++
+         virtual ggml_tensor* forward(GGMLRunnerContext* ctx,
+                                      ggml_tensor* x,
+                                      ggml_tensor* e,
+@@ -609,6 +623,38 @@ namespace WAN {
+         return out;
+     }
+ 
++    inline ggml_tensor* WanAttentionBlock::forward_stream(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* e, ggml_tensor* pe,
++                                                          ggml_tensor* context, ggml_tensor* k_past, ggml_tensor* v_past,
++                                                          ggml_tensor** k_out, ggml_tensor** v_out) {
++        auto gc         = ctx->ggml_ctx;
++        auto es         = ggml_ext_chunk(gc, ggml_add(gc, e, params["modulation"]), 6, 1);
++        auto norm1      = std::dynamic_pointer_cast<LayerNorm>(blocks["norm1"]);
++        auto self_attn  = std::dynamic_pointer_cast<WanSelfAttention>(blocks["self_attn"]);
++        auto norm3      = std::dynamic_pointer_cast<UnaryBlock>(blocks["norm3"]);
++        auto cross_attn = std::dynamic_pointer_cast<WanCrossAttention>(blocks["cross_attn"]);
++        auto norm2      = std::dynamic_pointer_cast<LayerNorm>(blocks["norm2"]);
++        auto ffn_0      = std::dynamic_pointer_cast<Linear>(blocks["ffn.0"]);
++        auto ffn_2      = std::dynamic_pointer_cast<Linear>(blocks["ffn.2"]);
++        auto y          = modulate_fused(ctx, norm1->forward(ctx, x), es[0], es[1]);
++        auto kv         = self_attn->kv_chunk(ctx, y, pe, true);
++        if (kv.first == nullptr) {
++            return nullptr;
++        }
++        *k_out = kv.first;
++        *v_out = kv.second;
++        auto K = k_past ? ggml_concat(gc, k_past, kv.first, 1) : kv.first;
++        auto V = v_past ? ggml_concat(gc, v_past, kv.second, 1) : kv.second;
++        y      = self_attn->attend_chunk(ctx, y, pe, K, V, true);
++        if (y == nullptr) {
++            return nullptr;
++        }
++        x = gated_residual_fused(ctx, x, y, es[2]);
++        x = ggml_add(gc, x, cross_attn->forward(ctx, norm3->forward(ctx, x), context, 0));
++        y = modulate_fused(ctx, norm2->forward(ctx, x), es[3], es[4]);
++        y = ffn_2->forward(ctx, ggml_ext_gelu(gc, ffn_0->forward(ctx, y), true));
++        return gated_residual_fused(ctx, x, y, es[5]);
++    }
++
+     class VaceWanAttentionBlock : public WanAttentionBlock {
+     protected:
+         int block_id;
+@@ -1080,6 +1126,54 @@ namespace WAN {
+ 
+             return out;
+         }
++
++        // nightmare (dit/058): one FlashVSR chunk, its model_fn_wan_video (tiny pipeline). x: the chunk's noise latent
++        // [W, H, T, C] (W, H even); lq: the LQ projector's tokens [dim, T*h*w], added before block 0 only (layer_num 1);
++        // context: the fixed prompt [text_dim, L]; k_past/v_past: per block, null on the first chunk. Returns the
++        // velocity [W, H, T, C]; k_out/v_out get this chunk's keys and values per block. Null where a block cannot stream.
++        ggml_tensor* forward_flashvsr(GGMLRunnerContext* ctx, ggml_tensor* x, ggml_tensor* timestep, ggml_tensor* context,
++                                      ggml_tensor* pe, ggml_tensor* lq,
++                                      const std::vector<ggml_tensor*>& k_past, const std::vector<ggml_tensor*>& v_past,
++                                      std::vector<ggml_tensor*>& k_out, std::vector<ggml_tensor*>& v_out) {
++            auto gc                = ctx->ggml_ctx;
++            auto patch_embedding   = std::dynamic_pointer_cast<Conv3d>(blocks["patch_embedding"]);
++            auto text_embedding_0  = std::dynamic_pointer_cast<Linear>(blocks["text_embedding.0"]);
++            auto text_embedding_2  = std::dynamic_pointer_cast<Linear>(blocks["text_embedding.2"]);
++            auto time_embedding_0  = std::dynamic_pointer_cast<Linear>(blocks["time_embedding.0"]);
++            auto time_embedding_2  = std::dynamic_pointer_cast<Linear>(blocks["time_embedding.2"]);
++            auto time_projection_1 = std::dynamic_pointer_cast<Linear>(blocks["time_projection.1"]);
++            auto head              = std::dynamic_pointer_cast<Head>(blocks["head"]);
++            const int64_t t_len = x->ne[2], h_len = x->ne[1] / 2, w_len = x->ne[0] / 2;
++
++            ggml_tensor* tokens = patch_embedding->forward_patch_tokens(ctx, x);
++            if (tokens == nullptr) {
++                tokens = patch_embedding->forward(ctx, x);                                                     // [dim, t, h, w]
++                tokens = ggml_reshape_3d(gc, tokens, tokens->ne[0] * tokens->ne[1] * tokens->ne[2], tokens->ne[3], 1);
++                tokens = ggml_ext_cont(gc, ggml_ext_torch_permute(gc, tokens, 1, 0, 2, 3));                    // [N, t*h*w, dim]
++            }
++            x = ggml_add(gc, ggml_reshape_3d(gc, tokens, tokens->ne[0], tokens->ne[1], 1), lq);
++
++            auto e  = ggml_ext_timestep_embedding(gc, timestep, config.freq_dim);
++            e       = time_embedding_2->forward(ctx, ggml_silu_inplace(gc, time_embedding_0->forward(ctx, e)));  // [N, dim]
++            auto e0 = time_projection_1->forward(ctx, ggml_silu(gc, e));
++            e0      = ggml_reshape_4d(gc, e0, e0->ne[0] / 6, 6, e0->ne[1], e0->ne[2]);  // [N, 6, dim]
++
++            context = text_embedding_2->forward(ctx, ggml_ext_gelu(gc, text_embedding_0->forward(ctx, context)));
++
++            k_out.assign(config.num_layers, nullptr);
++            v_out.assign(config.num_layers, nullptr);
++            for (int i = 0; i < config.num_layers; i++) {
++                auto block = std::dynamic_pointer_cast<WanAttentionBlock>(blocks["blocks." + std::to_string(i)]);
++                x          = block->forward_stream(ctx, x, e0, pe, context,
++                                                   k_past.empty() ? nullptr : k_past[i], v_past.empty() ? nullptr : v_past[i],
++                                                   &k_out[i], &v_out[i]);
++                if (x == nullptr) {
++                    return nullptr;
++                }
++            }
++            x = head->forward(ctx, x, e);                       // [N, t*h*w, pt*ph*pw*C]
++            return unpatchify(gc, x, t_len, h_len, w_len);  // [N*C, t, h*ph, w*pw]
++        }
+     };
+ 
+     struct WanRunner : public DiffusionModelRunner {
+diff --git a/src/model/upscaler/flashvsr.hpp b/src/model/upscaler/flashvsr.hpp
+new file mode 100644
+index 0000000..3fd273f
+--- /dev/null
++++ b/src/model/upscaler/flashvsr.hpp
+@@ -0,0 +1,280 @@
++#ifndef __SD_MODEL_UPSCALER_FLASHVSR_HPP__
++#define __SD_MODEL_UPSCALER_FLASHVSR_HPP__
++
++// nightmare (dit/058): FlashVSR v1.1 "tiny" (JunhaoZhuang/FlashVSR-v1.1, Apache 2.0), a one-step video upscaler: a Wan 2.1
++// 1.3B DiT that streams in time chunks with a key/value cache, fed by a causal LQ projector, decoded by TCDecoder (a
++// wider TAEHV conditioned on the pixel-shuffled LQ video). Checked against the PyTorch pipeline
++// (`../LocalDream/vsr/dump_ref.py`). One GGUF holds it all: dit.* (Wan names), lq.*, dec.decoder.*, context.
++
++#include "model/diffusion/wan.hpp"
++#include "model/vae/vae.hpp"
++#include "model/vae/tae.hpp"
++#include "model/vae/wan_vae.hpp"
++
++namespace FlashVSR {
++
++    constexpr int LQ_CHANNELS  = 3 * 16 * 16;  // PixelShuffle3d(1, 16, 16) of the LQ video, the DiT's token grid
++    constexpr int DEC_CHANNELS = 3 * 4 * 8 * 8;  // PixelShuffle3d(4, 8, 8), the decoder's latent grid
++    constexpr int LQ_LEAD      = 6;            // LQ stream frames before a chunk's first latent frame (two stride-2 convs)
++
++    // FlashVSR's CausalConv3d pads h and w by REPLICATING the edge (F.pad mode='replicate'), not with zeros.
++    static ggml_tensor* replicate_pad_hw(ggml_context* c, ggml_tensor* x) {
++        // x: [W, H, T, C]
++        auto col = [&](ggml_tensor* t, int64_t i) {
++            return ggml_cont(c, ggml_view_4d(c, t, 1, t->ne[1], t->ne[2], t->ne[3], t->nb[1], t->nb[2], t->nb[3], i * t->nb[0]));
++        };
++        auto row = [&](ggml_tensor* t, int64_t j) {
++            return ggml_cont(c, ggml_view_4d(c, t, t->ne[0], 1, t->ne[2], t->ne[3], t->nb[1], t->nb[2], t->nb[3], j * t->nb[1]));
++        };
++        x = ggml_concat(c, ggml_concat(c, col(x, 0), x, 0), col(x, x->ne[0] - 1), 0);
++        return ggml_concat(c, ggml_concat(c, row(x, 0), x, 1), row(x, x->ne[1] - 1), 1);
++    }
++
++    // Causal_LQ4x_Proj (layer_num 1). Its stream_forward over 4-frame clips with two cached frames per conv is one
++    // strided conv over a continuous stream S (S[i] = LQ frame max(0, i - 5): the first frame six times, then the rest),
++    // so latent frame k depends on S[4k, 4k + 10) and a chunk of n latent frames takes 4n + 6 stream frames, no state.
++    class LQProj : public GGMLBlock {
++    public:
++        LQProj() {
++            blocks["conv1"]           = std::shared_ptr<GGMLBlock>(new WAN::CausalConv3d(LQ_CHANNELS, 2048, {4, 3, 3}, {2, 1, 1}));
++            blocks["norm1"]           = std::shared_ptr<GGMLBlock>(new WAN::RMS_norm(2048));
++            blocks["conv2"]           = std::shared_ptr<GGMLBlock>(new WAN::CausalConv3d(2048, 3072, {4, 3, 3}, {2, 1, 1}));
++            blocks["norm2"]           = std::shared_ptr<GGMLBlock>(new WAN::RMS_norm(3072));
++            blocks["linear_layers.0"] = std::shared_ptr<GGMLBlock>(new Linear(3072, 1536));
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* s) {
++            // s: [w, h, 4n + 6, LQ_CHANNELS]; return [1536, n*h*w], tokens w fastest, then h, then t
++            auto gc     = ctx->ggml_ctx;
++            auto conv1  = std::dynamic_pointer_cast<WAN::CausalConv3d>(blocks["conv1"]);
++            auto conv2  = std::dynamic_pointer_cast<WAN::CausalConv3d>(blocks["conv2"]);
++            auto norm1  = std::dynamic_pointer_cast<WAN::RMS_norm>(blocks["norm1"]);
++            auto norm2  = std::dynamic_pointer_cast<WAN::RMS_norm>(blocks["norm2"]);
++            auto linear = std::dynamic_pointer_cast<Linear>(blocks["linear_layers.0"]);
++            auto h      = norm1->forward_silu(ctx, conv1->forward(ctx, replicate_pad_hw(gc, s)));  // [w, h, 2n + 2, 2048]
++            h           = norm2->forward_silu(ctx, conv2->forward(ctx, replicate_pad_hw(gc, h)));  // [w, h, n, 3072]
++            h           = ggml_reshape_2d(gc, h, h->ne[0] * h->ne[1] * h->ne[2], h->ne[3]);
++            return linear->forward(ctx, ggml_cont(gc, ggml_transpose(gc, h)));
++        }
++    };
++
++    // TCDecoder: TAEHV's decoder at channels 512/256/128/128 with 784 input channels (the pixel-shuffled LQ video, then
++    // the latent) and an extra 3x3 conv + ReLU after the two top-level ReLUs (indices 3 and 24). Runs a chunk of latent
++    // frames at a time: each MemBlock's "past" frame comes in from the previous chunk (null = zeros, the first chunk),
++    // the same as the reference's sequential decode.
++    class TCDecoder : public GGMLBlock {
++        static constexpr int channels[4] = {512, 256, 128, 128};
++
++    public:
++        static constexpr int num_mem = 9;
++
++        TCDecoder() {
++            blocks["1"]  = std::shared_ptr<GGMLBlock>(new Conv2d(DEC_CHANNELS + 16, channels[0], {3, 3}, {1, 1}, {1, 1}));
++            blocks["3"]  = std::shared_ptr<GGMLBlock>(new Conv2d(channels[0], channels[0], {3, 3}, {1, 1}, {1, 1}, {1, 1}, false));
++            int index    = 5;
++            const int st[3] = {1, 2, 2};
++            for (int i = 0; i < 3; i++) {
++                for (int j = 0; j < 3; j++) {
++                    blocks[std::to_string(index++)] = std::shared_ptr<GGMLBlock>(new MemBlock(channels[i], channels[i]));
++                }
++                index++;  // nn.Upsample
++                blocks[std::to_string(index++)] = std::shared_ptr<GGMLBlock>(new TGrow(channels[i], st[i]));
++                blocks[std::to_string(index++)] = std::shared_ptr<GGMLBlock>(new Conv2d(channels[i], channels[i + 1], {3, 3}, {1, 1}, {1, 1}, {1, 1}, false));
++            }
++            blocks["24"] = std::shared_ptr<GGMLBlock>(new Conv2d(channels[3], channels[3], {3, 3}, {1, 1}, {1, 1}, {1, 1}, false));
++            blocks["26"] = std::shared_ptr<GGMLBlock>(new Conv2d(channels[3], 3, {3, 3}, {1, 1}, {1, 1}));
++        }
++
++        ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* z, bool first,
++                             const std::vector<ggml_tensor*>& mem_in, std::vector<ggml_tensor*>& mem_out) {
++            // z: [W, H, 784, T] (frames as the batch); return [W*8, H*8, 3, 4T] (4T - 3 on the first chunk), in ~[0, 1]
++            auto gc   = ctx->ggml_ctx;
++            auto conv = [&](const char* name, ggml_tensor* x) {
++                return std::dynamic_pointer_cast<Conv2d>(blocks[name])->forward(ctx, x);
++            };
++            auto h = ggml_ext_scale(gc, ggml_tanh_inplace(gc, ggml_ext_scale(gc, z, 1.0f / 3.0f)), 3.0f, true);  // Clamp()
++            h      = ggml_relu_inplace(gc, conv("1", h));
++            h      = ggml_relu_inplace(gc, conv("3", h));
++            mem_out.assign(num_mem, nullptr);
++            int index = 5, m = 0;
++            for (int i = 0; i < 3; i++) {
++                for (int j = 0; j < 3; j++, m++) {
++                    const int64_t T = h->ne[3];
++                    ggml_tensor* past;
++                    if (mem_in.empty() || mem_in[m] == nullptr) {
++                        past = ggml_ext_pad_ext(gc, ctx->backend, h, 0, 0, 0, 0, 0, 0, 1, 0);
++                        past = ggml_view_4d(gc, past, h->ne[0], h->ne[1], h->ne[2], T, h->nb[1], h->nb[2], h->nb[3], 0);
++                    } else if (T == 1) {
++                        past = mem_in[m];
++                    } else {
++                        past = ggml_concat(gc, mem_in[m], ggml_view_4d(gc, h, h->ne[0], h->ne[1], h->ne[2], T - 1, h->nb[1], h->nb[2], h->nb[3], 0), 3);
++                    }
++                    mem_out[m] = ggml_cont(gc, ggml_view_4d(gc, h, h->ne[0], h->ne[1], h->ne[2], 1, h->nb[1], h->nb[2], h->nb[3], (T - 1) * h->nb[3]));
++                    h          = std::dynamic_pointer_cast<MemBlock>(blocks[std::to_string(index++)])->forward(ctx, h, past);
++                }
++                index++;
++                h = ggml_upscale(gc, h, 2, GGML_SCALE_MODE_NEAREST);
++                h = std::dynamic_pointer_cast<UnaryBlock>(blocks[std::to_string(index++)])->forward(ctx, h);  // TGrow
++                h = conv(std::to_string(index++).c_str(), h);
++            }
++            h = ggml_relu_inplace(gc, h);
++            h = ggml_relu_inplace(gc, conv("24", h));
++            h = conv("26", h);
++            if (first) {
++                h = ggml_view_4d(gc, h, h->ne[0], h->ne[1], h->ne[2], h->ne[3] - 3, h->nb[1], h->nb[2], h->nb[3], 3 * h->nb[3]);
++            }
++            return h;
++        }
++    };
++
++    // The fixed prompt (FlashVSR's posi_prompt.pth: umT5 states, [4096, 512]) as a weight of the file.
++    class Prompt : public GGMLBlock {
++    protected:
++        void init_params(ggml_context* ctx, const String2TensorStorage& tensor_storage_map = {}, const std::string prefix = "") override {
++            params["context"] = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 4096, 512);
++        }
++
++    public:
++        ggml_tensor* context() { return params["context"]; }
++    };
++
++    // The DiT, the LQ projector and the prompt: one chunk of latent frames a call. Keys and values live in the runner
++    // cache a SLICE (two latent frames, the reference's window) at a time, in four slots: a chunk attends to the three
++    // slices before it and its own.
++    struct DiTRunner : public GGMLRunner {
++        WAN::WanConfig config;
++        WAN::Wan wan;
++        LQProj lq;
++        Prompt prompt;
++        std::vector<float> pe_vec;
++        sd::Tensor<float> timestep = sd::Tensor<float>({1}, std::vector<float>{1000.f});
++
++        DiTRunner(ggml_backend_t backend,
++                  const String2TensorStorage& tensor_storage_map      = {},
++                  std::shared_ptr<RunnerWeightManager> weight_manager = nullptr)
++            : GGMLRunner(backend, weight_manager),
++              config(WAN::WanConfig::detect_from_weights(tensor_storage_map, "dit.")) {
++            config.model_type = "t2v";
++            config.in_dim     = 16;
++            config.dim        = 1536;
++            config.ffn_dim    = 8960;
++            config.num_heads  = 12;
++            config.out_dim    = 16;
++            config.eps        = 1e-6f;
++            wan               = WAN::Wan(config);
++            wan.init(params_ctx, tensor_storage_map, "dit");
++            lq.init(params_ctx, tensor_storage_map, "lq");
++            prompt.init(params_ctx, tensor_storage_map, "");
++        }
++
++        std::string get_desc() override { return "flashvsr-dit"; }
++
++        void get_param_tensors(std::map<std::string, ggml_tensor*>& tensors) {
++            wan.get_param_tensors(tensors, "dit");
++            lq.get_param_tensors(tensors, "lq");
++            prompt.get_param_tensors(tensors, "");
++        }
++
++        static std::string kv_name(const char* kv, int layer, int64_t slice) {
++            return std::string("fvsr.") + kv + std::to_string(layer) + "." + std::to_string(slice % 4);
++        }
++
++        ggml_cgraph* build_graph(const sd::Tensor<float>& noise, const sd::Tensor<float>& stream, int64_t t_offset) {
++            // noise: [W, H, n, 16], n = 6 (the first chunk) or 2; stream: [W/2, H/2, 4n + 6, LQ_CHANNELS]
++            ggml_cgraph* gf = new_graph_custom(WAN::WAN_GRAPH_SIZE);
++            ggml_tensor* x  = make_input(noise);
++            ggml_tensor* s  = make_input(stream);
++            ggml_tensor* ts = make_input(timestep);
++            const int64_t n = noise.shape()[2];
++            pe_vec          = Rope::embed_nd(Rope::gen_vid_ids((int)n, (int)noise.shape()[1], (int)noise.shape()[0], 1, 2, 2, 1, (int)t_offset),
++                                             1, (float)config.theta, config.axes_dim);
++            auto pe         = ggml_new_tensor_4d(compute_ctx, GGML_TYPE_F32, 2, 2, config.axes_dim_sum / 2, pe_vec.size() / config.axes_dim_sum / 2);
++            set_backend_tensor_data(pe, pe_vec.data());
++
++            const int64_t slice0 = t_offset / 2, slices = n / 2;
++            std::vector<ggml_tensor*> k_past, v_past;
++            if (slice0 > 0) {
++                for (int i = 0; i < config.num_layers; i++) {
++                    ggml_tensor *k = nullptr, *v = nullptr;
++                    for (int64_t sl = std::max<int64_t>(0, slice0 - 3); sl < slice0; sl++) {
++                        auto kc = get_cache_tensor_by_name(kv_name("k", i, sl));
++                        auto vc = get_cache_tensor_by_name(kv_name("v", i, sl));
++                        GGML_ASSERT(kc != nullptr && vc != nullptr);
++                        k = k ? ggml_concat(compute_ctx, k, kc, 1) : kc;
++                        v = v ? ggml_concat(compute_ctx, v, vc, 1) : vc;
++                    }
++                    k_past.push_back(k);
++                    v_past.push_back(v);
++                }
++            }
++
++            auto runner_ctx = get_context();
++            auto tokens     = lq.forward(&runner_ctx, s);
++            std::vector<ggml_tensor*> k_out, v_out;
++            auto v_pred = wan.forward_flashvsr(&runner_ctx, x, ts, prompt.context(), pe, tokens, k_past, v_past, k_out, v_out);
++            GGML_ASSERT(v_pred != nullptr && "FlashVSR needs the fused rope and flash attention on this backend");
++            for (int i = 0; i < config.num_layers; i++) {
++                for (int kv = 0; kv < 2; kv++) {
++                    ggml_tensor* t   = kv == 0 ? k_out[i] : v_out[i];
++                    const int64_t sl = t->ne[1] / slices;
++                    for (int64_t j = 0; j < slices; j++) {
++                        ggml_tensor* part = slices == 1 ? t : ggml_cont(compute_ctx, ggml_view_3d(compute_ctx, t, t->ne[0], sl, t->ne[2], t->nb[1], t->nb[2], j * sl * t->nb[1]));
++                        cache(kv_name(kv == 0 ? "k" : "v", i, slice0 + j), part);
++                        ggml_build_forward_expand(gf, part);
++                    }
++                }
++            }
++            ggml_build_forward_expand(gf, ggml_sub(compute_ctx, x, v_pred));  // one step from t = 1000: x - v
++            return gf;
++        }
++
++        sd::Tensor<float> compute(int n_threads, const sd::Tensor<float>& noise, const sd::Tensor<float>& stream, int64_t t_offset) {
++            auto get_graph = [&]() -> ggml_cgraph* { return build_graph(noise, stream, t_offset); };
++            return restore_trailing_singleton_dims(GGMLRunner::compute(get_graph, n_threads, false), noise.dim());
++        }
++    };
++
++    struct DecoderRunner : public GGMLRunner {
++        TCDecoder dec;
++
++        DecoderRunner(ggml_backend_t backend,
++                      const String2TensorStorage& tensor_storage_map      = {},
++                      std::shared_ptr<RunnerWeightManager> weight_manager = nullptr)
++            : GGMLRunner(backend, weight_manager) {
++            dec.init(params_ctx, tensor_storage_map, "dec.decoder");
++        }
++
++        std::string get_desc() override { return "flashvsr-decoder"; }
++
++        void get_param_tensors(std::map<std::string, ggml_tensor*>& tensors) {
++            dec.get_param_tensors(tensors, "dec.decoder");
++        }
++
++        ggml_cgraph* build_graph(const sd::Tensor<float>& z_tensor, bool first) {
++            ggml_cgraph* gf = new_graph_custom(20480);
++            ggml_tensor* z  = make_input(z_tensor);
++            std::vector<ggml_tensor*> mem_in, mem_out;
++            if (!first) {
++                for (int m = 0; m < TCDecoder::num_mem; m++) {
++                    mem_in.push_back(get_cache_tensor_by_name("fvsr.mem." + std::to_string(m)));
++                }
++            }
++            auto runner_ctx = get_context();
++            auto out        = dec.forward(&runner_ctx, z, first, mem_in, mem_out);
++            for (int m = 0; m < TCDecoder::num_mem; m++) {
++                cache("fvsr.mem." + std::to_string(m), mem_out[m]);
++                ggml_build_forward_expand(gf, mem_out[m]);
++            }
++            ggml_build_forward_expand(gf, ggml_cont(compute_ctx, out));
++            return gf;
++        }
++
++        sd::Tensor<float> compute(int n_threads, const sd::Tensor<float>& z, bool first) {
++            auto get_graph = [&]() -> ggml_cgraph* { return build_graph(z, first); };
++            return restore_trailing_singleton_dims(GGMLRunner::compute(get_graph, n_threads, false), 4);
++        }
++    };
++
++}  // namespace FlashVSR
++
++#endif  // __SD_MODEL_UPSCALER_FLASHVSR_HPP__
+diff --git a/src/model/vae/tae.hpp b/src/model/vae/tae.hpp
+index eeb51c5..ec826a1 100644
+--- a/src/model/vae/tae.hpp
++++ b/src/model/vae/tae.hpp
+@@ -306,7 +306,7 @@ public:
+     }
+ };
+ 
+-ggml_tensor*
++inline ggml_tensor*
+ patchify(ggml_context* ctx,
+          ggml_tensor* x,
+          int64_t patch_size,
+@@ -336,7 +336,7 @@ patchify(ggml_context* ctx,
+     return x;
+ }
+ 
+-ggml_tensor* unpatchify(ggml_context* ctx,
++inline ggml_tensor* unpatchify(ggml_context* ctx,
+                         ggml_tensor* x,
+                         int64_t patch_size,
+                         int64_t b = 1) {
