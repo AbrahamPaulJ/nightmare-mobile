@@ -1,0 +1,139 @@
+diff --git a/src/core/runner_cache.cpp b/src/core/runner_cache.cpp
+index 0956210..46a639d 100644
+--- a/src/core/runner_cache.cpp
++++ b/src/core/runner_cache.cpp
+@@ -43,14 +43,30 @@ namespace sd {
+         if (entry->buffer == nullptr) {
+             return nullptr;
+         }
++        entry->fill(source);
++        return entry;
++    }
++
++    bool CachedTensor::fits(const ggml_tensor* source) const {
++        if (tensor == nullptr || buffer == nullptr || tensor->type != source->type) {
++            return false;
++        }
++        for (int i = 0; i < GGML_MAX_DIMS; ++i) {
++            if (tensor->ne[i] != source->ne[i] || tensor->nb[i] != source->nb[i]) {
++                return false;
++            }
++        }
++        return true;
++    }
++
++    void CachedTensor::fill(ggml_tensor* source) {
+         if (source->view_src != nullptr || !ggml_is_contiguous(source) || source->buffer == nullptr) {
+             std::vector<uint8_t> data(ggml_nbytes(source));
+             ggml_backend_tensor_get(source, data.data(), 0, data.size());
+-            ggml_backend_tensor_set(entry->tensor, data.data(), 0, data.size());
++            ggml_backend_tensor_set(tensor, data.data(), 0, data.size());
+         } else {
+-            ggml_backend_tensor_copy(source, entry->tensor);
++            ggml_backend_tensor_copy(source, tensor);
+         }
+-        return entry;
+     }
+ 
+     static ggml_tensor* cached_tensor(const CachedTensors& tensors, const std::string& name) {
+@@ -147,7 +163,15 @@ namespace sd {
+     }
+ 
+     size_t GraphCutTensorCache::resident_bytes(ggml_backend_dev_t device) const {
+-        return sd::resident_bytes(tensors_, device);
++        size_t bytes = sd::resident_bytes(tensors_, device);
++        for (const auto& spare : spare_) {
++            auto buffer = spare->buffer;
++            if (!ggml_backend_buffer_is_host(buffer) &&
++                ggml_backend_buft_get_device(ggml_backend_buffer_get_type(buffer)) == device) {
++                bytes += ggml_backend_buffer_get_size(buffer);
++            }
++        }
++        return bytes;
+     }
+ 
+     size_t GraphCutTensorCache::estimate_output_bytes(
+@@ -176,7 +200,14 @@ namespace sd {
+ 
+     void GraphCutTensorCache::prune(const std::unordered_set<std::string>& keep_names) {
+         for (auto it = tensors_.begin(); it != tensors_.end();) {
+-            it = keep_names.count(it->first) ? std::next(it) : tensors_.erase(it);
++            if (keep_names.count(it->first)) {
++                ++it;
++                continue;
++            }
++            if (spare_.size() < 4) {
++                spare_.push_back(std::move(it->second));
++            }
++            it = tensors_.erase(it);
+         }
+     }
+ 
+@@ -191,7 +222,21 @@ namespace sd {
+                 !segment.future_cut_names.count(output->name)) {
+                 continue;
+             }
+-            auto entry = CachedTensor::copy(backend_, output->name, ggml_graph_cut::cache_source_tensor(output));
++            ggml_tensor* source = ggml_graph_cut::cache_source_tensor(output);
++            std::unique_ptr<CachedTensor> entry;
++            ggml_backend_buffer_type_t buffer_type = ggml_backend_get_default_buffer_type(backend_);
++            for (auto spare = spare_.begin(); spare != spare_.end(); ++spare) {
++                if ((*spare)->fits(source) && ggml_backend_buffer_get_type((*spare)->buffer) == buffer_type) {
++                    entry = std::move(*spare);
++                    spare_.erase(spare);
++                    ggml_set_name(entry->tensor, output->name);
++                    entry->fill(source);
++                    break;
++                }
++            }
++            if (entry == nullptr) {
++                entry = CachedTensor::copy(backend_, output->name, source);
++            }
+             if (entry == nullptr) {
+                 LOG_ERROR("%s failed to capture graph cut tensor: %s", log_desc, output->name);
+                 return false;
+diff --git a/src/core/runner_cache.h b/src/core/runner_cache.h
+index bd331a4..cabe157 100644
+--- a/src/core/runner_cache.h
++++ b/src/core/runner_cache.h
+@@ -5,6 +5,7 @@
+ #include <memory>
+ #include <string>
+ #include <unordered_set>
++#include <vector>
+ 
+ #include "ggml-backend.h"
+ 
+@@ -21,6 +22,9 @@ namespace sd {
+         static std::unique_ptr<CachedTensor> copy(ggml_backend_t backend,
+                                                   const std::string& name,
+                                                   ggml_tensor* source);
++        // nightmare (dit/064): true when this entry can take `source` in place (same type, shape, strides).
++        bool fits(const ggml_tensor* source) const;
++        void fill(ggml_tensor* source);
+     };
+     using CachedTensors = std::map<std::string, std::unique_ptr<CachedTensor>>;
+ 
+@@ -49,6 +53,10 @@ namespace sd {
+     class GraphCutTensorCache {
+         ggml_backend_t backend_;
+         CachedTensors tensors_;
++        // nightmare (dit/064): pruned entries kept for the next capture of the same shape. A streamed DiT captures
++        // every segment's output, the same shape each time; a fresh entry was a new backend buffer (on Hexagon an
++        // rpcmem allocation and a DSP mapping) and the pruned one was freed.
++        std::vector<std::unique_ptr<CachedTensor>> spare_;
+ 
+     public:
+         explicit GraphCutTensorCache(ggml_backend_t backend)
+@@ -59,7 +67,10 @@ namespace sd {
+                                      const ggml_graph_cut::Segment& segment) const;
+         bool capture(ggml_cgraph* graph, const ggml_graph_cut::Segment& segment, const char* log_desc);
+         void prune(const std::unordered_set<std::string>& keep_names);
+-        void clear() { tensors_.clear(); }
++        void clear() {
++            tensors_.clear();
++            spare_.clear();
++        }
+     };
+ }
+ 
