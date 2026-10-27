@@ -34,12 +34,12 @@ class DialogGoldenTest {
     @org.junit.After
     fun closeTheFold() {
         val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
-        Prefs.setMoreOptionsOpen(ctx, false)
+        Prefs.setPostOpen(ctx, false)
     }
 
     private fun show(content: @androidx.compose.runtime.Composable () -> Unit) {
         val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
-        Prefs.setMoreOptionsOpen(ctx, true)
+        Prefs.setPostOpen(ctx, true)
         rule.setContent {
             NightmareTheme(darkTheme = true) {
                 androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) { content() }

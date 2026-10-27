@@ -30,7 +30,7 @@ The video node's **Model** dropdown switches between **Wan 2.2 Turbo** (the defa
 
 **Nodes:** Prompt → Image (your picture model) → Video (Wan 2.2 14B) → Output. Needs Wan 2.2 14B and an 8 Gen 3 or newer with 12 GB (an 8 Gen 3 goes up to 832 × 480).
 
-1. **Flows → Text to video (14B)**. The picture is made by the model in the top bar, in its own shape: the clip takes
+1. **Flows → Text to video (14B)**, or **Use** on Wan 2.2 14B in Models (a picture model's **Use** does not offer it). The picture is made by the model in the top bar, in its own shape: the clip takes
    that shape (a 512 × 768 picture makes a portrait clip), and the video node's size sets how many pixels, 832 × 480
    worth for a quick try or 1280 × 720 worth for sharp faces. 1 second by default.
 2. Write one prompt for the scene and its motion: it makes the picture and drives the clip.

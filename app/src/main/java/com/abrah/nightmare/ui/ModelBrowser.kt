@@ -391,6 +391,13 @@ internal fun SectionHeader(text: String, collapsed: Boolean? = null, onToggle: (
  * ⚠ Delete lives in ⋮. On the model in use it stops the backend first and selects another
  * ([com.abrah.nightmare.ModelInstaller.delete], GitHub #56).
  */
+/**
+ * ⭐ Whether a Use button is live, provided by `MainActivity` from [com.abrah.nightmare.HarnessViewModel.canUse].
+ * ⚠ Not `busy`: that includes a download, and a run goes ahead beside a download since GitHub #68, so Use must too
+ * (the user, 2026-10-27: "I cant click Use btn for a model during download"). Null (a golden) follows `busy`.
+ */
+val LocalUseEnabled = androidx.compose.runtime.compositionLocalOf<Boolean?> { null }
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ModelCardV2(
@@ -548,7 +555,7 @@ private fun ModelAction(
 ) {
     when {
         row.progress != null -> StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-        row.installed -> StudioButton(onClick = { onUse(row.spec) }, enabled = !busy) {
+        row.installed -> StudioButton(onClick = { onUse(row.spec) }, enabled = LocalUseEnabled.current ?: !busy) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(4.dp))
             Text(stringResource(R.string.use))
@@ -744,7 +751,7 @@ internal fun AddonCard(
                 }
                 when {
                     progress != null -> StudioOutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-                    installed && onUse != null -> StudioButton(onClick = onUse, enabled = !busy) {
+                    installed && onUse != null -> StudioButton(onClick = onUse, enabled = LocalUseEnabled.current ?: !busy) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(R.string.use))

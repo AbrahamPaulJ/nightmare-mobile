@@ -372,6 +372,12 @@ data class Recipe(
     val section: String? = null,
     @androidx.annotation.StringRes val labelRes: Int? = null,
     @androidx.annotation.StringRes val aboutRes: Int? = null,
+    /**
+     * ⭐ Offered by a picture model's Use and the flow swap ([runsOn]). False for [T2V14]: every picture model can
+     * make its first frame, but offering a 17 GB video flow on each was "a bit of a stretch" (the user, 2026-10-27).
+     * It stays in Flows and on the Wan 14B's own Use.
+     */
+    val offeredPerModel: Boolean = true,
 ) {
 
     /**
@@ -431,7 +437,7 @@ data class Recipe(
 data class SwapFlow(val recipe: Recipe, val takesPicture: Boolean, val current: Boolean)
 
 fun Recipe.runsOn(spec: com.abrah.nightmare.ModelSpec): Boolean {
-    if (!usesCheckpoint) return false
+    if (!usesCheckpoint || !offeredPerModel) return false
     if (!servesFamily(spec.family)) return false
     val wantsMask = build().graph.nodes.any {
         (com.abrah.nightmare.NODE_TYPES[it.type] as? com.abrah.nightmare.SdSampler)?.inpaint == true
@@ -592,6 +598,7 @@ val RECIPES: List<Recipe> = listOf(
         section = VIDEO,
         labelRes = R.string.flow_t2v14_name,
         aboutRes = R.string.flow_t2v14_about,
+        offeredPerModel = false,
     ),
     // ⭐⭐ Motion transfer, LAST: the most demanding flow in the list.
     Recipe(

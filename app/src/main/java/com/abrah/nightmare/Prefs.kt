@@ -73,6 +73,7 @@ object Prefs {
         hideChat = p.getBoolean(KEY_HIDE_CHAT, false)
         moreOptionsOpen = p.getBoolean(KEY_MORE_OPTIONS, false)
         samplingOpen = p.getBoolean(KEY_SAMPLING_OPEN, false)
+        postOpen = p.getBoolean(KEY_POST_OPEN, false)
         wanStream = p.getBoolean(KEY_WAN_STREAM, false)
     }
 
@@ -94,6 +95,18 @@ object Prefs {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_SAMPLING_OPEN, value).apply()
     }
 
+    /**
+     * ⭐ The Output node's Post-processing fold: closed by default, remembered (the user, 2026-10-27). ⚠ Its own key:
+     * it shared [moreOptionsOpen], so opening a sampler's More options opened Post-processing too.
+     */
+    @Volatile var postOpen: Boolean = false
+        private set
+
+    fun setPostOpen(context: Context, value: Boolean) {
+        postOpen = value
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_POST_OPEN, value).apply()
+    }
+
     // ---- the three views (the user's design, 2026-10-08) ----------------------
 
     private const val KEY_VIEW = "default_view"
@@ -101,6 +114,7 @@ object Prefs {
     private const val KEY_HIDE_CHAT = "hide_chat"
     private const val KEY_MORE_OPTIONS = "more_options_open"
     private const val KEY_SAMPLING_OPEN = "sampling_open"
+    private const val KEY_POST_OPEN = "post_processing_open"
 
     /**
      * ⭐ What the app opens on. NULL until the person has been asked (first launch: Nodes for

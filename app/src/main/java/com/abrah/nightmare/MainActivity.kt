@@ -218,6 +218,7 @@ class MainActivity : ComponentActivity() {
                     androidx.compose.runtime.CompositionLocalProvider(
                         com.abrah.nightmare.ui.LocalErrorReport provides vm::errorReport,
                         com.abrah.nightmare.ui.LocalBlankDiagnose provides vm::diagnoseBlank,
+                        com.abrah.nightmare.ui.LocalUseEnabled provides vm.canUse,
                     ) {
                         HarnessScreen(op = pending, nonce = pendingNonce, vm = vm)
                     }

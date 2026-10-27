@@ -2782,7 +2782,10 @@ internal fun NodeInspectorBody(
             it.name == com.abrah.nightmare.SdSampler.SUBSEED || it.name == com.abrah.nightmare.SdSampler.SUBSEED_STRENGTH
         }
         val prefsContext = LocalContext.current
-        var moreOpen by remember { mutableStateOf(com.abrah.nightmare.Prefs.moreOptionsOpen) }
+        // ⚠ The Output's Post-processing keeps its own open state ([com.abrah.nightmare.Prefs.postOpen]).
+        var moreOpen by remember(isOutput) {
+            mutableStateOf(if (isOutput) com.abrah.nightmare.Prefs.postOpen else com.abrah.nightmare.Prefs.moreOptionsOpen)
+        }
         for (pass in 0..2) {
         if (pass == 1) {
             if (samplingWidgets.none { !hiddenKnob(node, it.name) }) continue
@@ -2807,7 +2810,8 @@ internal fun NodeInspectorBody(
                     .map { it.name.localizedKnobLabel() },
                 onToggle = {
                     moreOpen = !moreOpen
-                    com.abrah.nightmare.Prefs.setMoreOptionsOpen(prefsContext, moreOpen)
+                    if (isOutput) com.abrah.nightmare.Prefs.setPostOpen(prefsContext, moreOpen)
+                    else com.abrah.nightmare.Prefs.setMoreOptionsOpen(prefsContext, moreOpen)
                 },
                 title = if (isOutput) R.string.post_processing else R.string.more_options,
             )

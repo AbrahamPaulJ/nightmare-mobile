@@ -328,6 +328,16 @@ class RecipeModelTest {
         assertTrue("SD 1.5 was offered the FLUX edit", "flux_edit" !in sdOffered)
     }
 
+    /** ⭐ No picture model's Use offers the 14B text to video (the user, 2026-10-27); Flows and the 14B's Use still do. */
+    @Test
+    fun wan14TextToVideoIsNotOfferedOnPictureModels() {
+        for (spec in ModelCatalog.builtIn.filter { it !in ModelCatalog.video }) {
+            assertTrue("${spec.id} offered the 14B flow",
+                com.abrah.nightmare.canvas.T2V14 !in com.abrah.nightmare.canvas.RECIPES.filter { it.runsOn(spec) }.map { it.id })
+        }
+        assertTrue(com.abrah.nightmare.canvas.RECIPES.any { it.id == com.abrah.nightmare.canvas.T2V14 })
+    }
+
     /**
      * ⭐⭐⭐ **The edit flow builds FLUX nodes whatever is selected**, and
      * its node is called `edit`.

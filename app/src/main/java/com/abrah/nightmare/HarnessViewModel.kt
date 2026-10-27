@@ -6393,6 +6393,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     val working: Boolean get() = busy || installing != null
 
     /**
+     * ⭐ A model's Use button ([com.abrah.nightmare.ui.LocalUseEnabled]): live during a download, as a run is since
+     * GitHub #68 (the run itself still checks what it loads, [runsBesideDownload]). ⚠ Not while models MOVE: every
+     * path changes under the selection.
+     */
+    val canUse: Boolean get() = !busy && installing != MOVE_ID
+
+    /**
      * ⭐⭐⭐ Point one sampler at a different checkpoint.
      *
      * ⚠⚠ When the FAMILY changes the node's TYPE changes with it — `sd15.sample`

@@ -195,7 +195,7 @@ It has no **Seconds** (the part of the video sets the length) and takes no LoRAs
 
 ## Output
 
-Where the result lands. It shows the picture or clip; tap it to see it full screen. Its finishing steps sit under **Post-processing** at the end of its settings, folded until you open it (closed, its header names the ones switched on). There are three cards, **Upscale**, **Colour correction** and **Adjust colours**, each with:
+Where the result lands. It shows the picture or clip; tap it to see it full screen. Its finishing steps sit under **Post-processing** at the end of its settings, folded until you open it (closed, its header names the ones switched on). It remembers whether you left it open, apart from a sampler's **More options**. There are three cards, **Upscale**, **Colour correction** and **Adjust colours**, each with:
 
 - **After every Run**: a switch that applies the step to every new picture.
 - A button. **Correct** applies colour correction to the last picture right now. **Upscale** and **Adjust** open a window with that step's settings (the upscaler and scale, or the four sliders) and a button that applies it to the last picture. Nothing is rendered again and no seed is locked: the flow reruns on that picture's own seeds, so only the Output works.

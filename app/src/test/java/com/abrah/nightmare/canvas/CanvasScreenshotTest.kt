@@ -551,8 +551,8 @@ open class CanvasScreenshotTest {
     fun theOutputsPostProcessingCards() {
         val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
         // ⚠ The fold's open state is an app pref: put back after, or every later sheet golden draws its fold open.
-        com.abrah.nightmare.Prefs.setMoreOptionsOpen(ctx, true)
-        try { outputPost() } finally { com.abrah.nightmare.Prefs.setMoreOptionsOpen(ctx, false) }
+        com.abrah.nightmare.Prefs.setPostOpen(ctx, true)
+        try { outputPost() } finally { com.abrah.nightmare.Prefs.setPostOpen(ctx, false) }
     }
 
     private fun outputPost() = shoot("inspector-output-post") {

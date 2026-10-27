@@ -21,7 +21,7 @@ You can also import your own converted upscaler (a `.bin` file) with **+** next 
 
 1. **Flows → Upscale a photo.**
 2. Tap the **image** node and choose the picture.
-3. Tap the **output** node. Under **Post-processing**, the **Upscale** card's **After every Run**
+3. Tap the **output** node and open **Post-processing**: the **Upscale** card's **After every Run**
    is on. Its **Upscale** button opens the **upscaler** and the **scale** (2×, 3× or 4×).
 4. **Run.**
 

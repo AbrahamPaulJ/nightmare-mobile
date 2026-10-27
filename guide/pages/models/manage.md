@@ -28,7 +28,8 @@ word, and the size.
 Tap **Download**. The row shows the size, a progress bar and **Cancel**. Models are large.
 Tap **Download** on another model while one is downloading and it says **Queued**: it starts by
 itself when the first one ends. Tap **Queued** to take it out of the queue.
-You can keep making pictures while a model downloads, with any model but the one downloading.
+You can keep making pictures while a model downloads, with any model but the one downloading, and **Use** stays
+available on the others.
 A run that needs the downloading model, a tool or the video models waits until the download ends.
 Use Wi-Fi. If Hugging Face is slow or blocked where you are, change the download source in
 [Settings → Models](../reference/settings.md#download-source).
