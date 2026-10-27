@@ -48,6 +48,9 @@ on:
       skels:
         description: "Extra Hexagon skels to build beside v79/v81, space-separated, e.g. 'v73 v75' (blank = none). The skel depends only on ggml, never on a *.sdcpp.patch"
         default: ""
+      opencl:
+        description: "Also build ggml's OpenCL backend with the Adreno kernels (DiT on the GPU, docs/GPU-ROUTES.md)"
+        default: "false"
 
 permissions:
   contents: read
@@ -225,10 +228,29 @@ jobs:
           echo "ABI_VERSION=$V" >> "$GITHUB_ENV"
           echo "DIT_ENGINE_ABI_VERSION=$V"
 
+      # The Adreno GPU path (docs/GPU-ROUTES.md). The NDK has no OpenCL and ggml-opencl is
+      # `find_package(OpenCL REQUIRED)`, so the Khronos headers + ICD loader are built here to
+      # LINK against; on the phone `/vendor/lib64/libOpenCL.so` answers that soname.
+      - name: OpenCL headers and ICD loader for Android
+        if: inputs.opencl == 'true'
+        run: |
+          set -euo pipefail
+          CL="$RUNNER_TEMP/opencl"
+          git clone --depth 1 https://github.com/KhronosGroup/OpenCL-Headers "$RUNNER_TEMP/ocl-h"
+          git clone --depth 1 https://github.com/KhronosGroup/OpenCL-ICD-Loader "$RUNNER_TEMP/ocl-icd"
+          cmake -S "$RUNNER_TEMP/ocl-h" -B "$RUNNER_TEMP/ocl-h/b" -DCMAKE_INSTALL_PREFIX="$CL"
+          cmake --install "$RUNNER_TEMP/ocl-h/b"
+          cmake -S "$RUNNER_TEMP/ocl-icd" -B "$RUNNER_TEMP/ocl-icd/b" -G Ninja             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 -DCMAKE_BUILD_TYPE=Release             -DOPENCL_ICD_LOADER_HEADERS_DIR="$CL/include" -DBUILD_TESTING=OFF
+          cmake --build "$RUNNER_TEMP/ocl-icd/b"
+          mkdir -p "$CL/lib" && cp "$RUNNER_TEMP/ocl-icd/b/libOpenCL.so" "$CL/lib/"
+          echo "OPENCL_ARGS=-DGGML_OPENCL=ON -DGGML_OPENCL_USE_ADRENO_KERNELS=ON -DGGML_OPENCL_EMBED_KERNELS=ON -DOpenCL_INCLUDE_DIR=$CL/include -DOpenCL_LIBRARY=$CL/lib/libOpenCL.so" >> "$GITHUB_ENV"
+
       - name: Build
         run: |
           cd local-dream/app/src/main/cpp
-          bash dit/build.sh ${{ inputs.cmake_args }}
+          bash dit/build.sh ${{ inputs.cmake_args }} ${OPENCL_ARGS:-}
+          # ⚠ An OpenCL build NEEDS libOpenCL.so: a phone without it cannot load the engine at all.
+          "$ANDROID_NDK_ROOT"/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf -d dit/build/android/lib/arm64-v8a/libdit_engine.so 2>/dev/null | grep NEEDED || true
           if [ -n "${{ inputs.extra_target }}" ]; then
             cmake --build dit/build/android --target "${{ inputs.extra_target }}" -j "$(nproc)"
             BIN=$(find dit/build/android -type f -name "${{ inputs.extra_target }}" | head -1)
