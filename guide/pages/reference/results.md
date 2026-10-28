@@ -15,7 +15,9 @@ always get back to exactly how it was made.
 - A [batch](../flows/batch.md) is kept as one group: its pictures are shown together under one
   card.
 - Tap a picture to show it large; tap the large one to see it full screen (pinch or double-tap
-  to zoom; a video clip zooms the same way while it plays).
+  to zoom; a video clip zooms the same way while it plays). Full screen, swipe or tap the left
+  or right edge for the previous or next picture: a tap switches at once, and both carry on past
+  the end of a batch into the rest of Results.
 - The arrow above the grid **folds** the large picture away so the grid fills the screen (or
   drag it up; drag down to bring it back). Folded, a tap on a picture opens it full screen.
 

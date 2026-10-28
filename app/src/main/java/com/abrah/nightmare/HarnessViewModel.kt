@@ -59,6 +59,9 @@ data class LogLine(val stamp: String, val text: String, val bad: Boolean = false
  */
 private const val TOTAL_MS_KEY = "@@total"
 
+/** ⭐ Which flow the canvas holds, for its draft ([HarnessViewModel.keepDraft]); survives a cold start. */
+private const val DRAFT_KEY_PREF = "flow_draft_key"
+
 /** ⭐⭐ What the Results filter reads — see `HarnessViewModel.resultTags`. */
 data class ResultTags(val models: Set<String>, val text: String)
 
@@ -468,6 +471,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val why = store.rename(from, to)
         if (why != null) { workflowError = why; return }
         if (currentWorkflowName == from) currentWorkflowName = to.trim()
+        loadDraft("saved:$from")?.let { d ->
+            runCatching { drafts.save(draftName("saved:${to.trim()}"), d.workflow, nodeTypes, d.view) }
+            dropDraft("saved:$from")
+        }
+        if (draftKey == "saved:$from") draftKey = "saved:${to.trim()}"
         workflowError = null
         say("renamed \"$from\" to \"${to.trim()}\"")
         refreshWorkflows()
@@ -490,6 +498,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         store.validName(name)?.let { workflowError = it; return }
         try {
             store.save(name.trim(), canvas.workflow, nodeTypes, canvas.savedView)
+            // ⚠ Saved means the draft has nothing left to hold: the flow's own and the one the canvas came from.
+            dropDraft(draftKey)
+            dropDraft("saved:${name.trim()}")
+            draftKey = "saved:${name.trim()}"
             currentWorkflowName = name.trim()
             // ⚠ Saving is the other thing that makes the canvas clean.
             savedBaseline = canvas.workflow
@@ -539,19 +551,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         )
 
     /**
-     * A flow the user asked to open while another was active and unsaved.
-     *
-     * ⚠ Held rather than opened, so the DIALOG decides. The alternative — open
-     * and offer an undo — means the replaced graph has to be kept somewhere
-     * anyway, and an undo nobody notices is not a safety net.
-     */
-    var pendingOpen by mutableStateOf<PendingOpen?>(null)
-        private set
-
-    data class PendingOpen(val label: String, val open: () -> Unit)
-
-    /**
-     * ⭐⭐ Open [what], unless the canvas has unsaved work or is mid-render.
+     * ⭐⭐ Open [what], keeping unsaved work as a draft, unless the canvas is mid-render.
      *
      * ⚠⚠ **Mid-render is a REFUSAL, not a prompt.** A run holds node results
      * keyed to the graph that started it; swapping the graph underneath leaves
@@ -561,11 +561,43 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun guardedOpen(label: String, open: () -> Unit) {
         if (refuseWhileRendering(label)) return
-        if (activeFlow.dirty) {
-            pendingOpen = PendingOpen(label, open)
-            return
-        }
+        // ⭐ No question any more (testers, Saved #7281-7284: "unnecessary", one tap more to open a model): unsaved
+        // work is kept as that flow's DRAFT and comes back when the flow is opened again, Local Dream's way.
+        if (activeFlow.dirty) keepDraft()
         open()
+    }
+
+    /**
+     * ⭐⭐ **Per-flow autosave** (the user's call, 2026-10-29). Each flow on the canvas has a key: a saved flow's
+     * name, or a recipe plus the checkpoint it was opened on (a recipe's knobs are that model's, so Text to image on
+     * SDXL and on Z-Image are two drafts). Leaving a flow with edits writes its draft; opening it reads it back. A
+     * canvas from a result, an import or a hand-built graph has no key and no draft (the result keeps its flow).
+     * ⚠ Persisted, so the canvas restored at a cold start still knows which flow it is.
+     */
+    private var draftKey: String?
+        get() = swapPrefs.getString(DRAFT_KEY_PREF, null)
+        set(v) { swapPrefs.edit().putString(DRAFT_KEY_PREF, v).apply() }
+
+    private val drafts by lazy {
+        WorkflowStore(java.io.File(getApplication<Application>().filesDir, "drafts"))
+    }
+
+    /** ⚠ A file name from any key: model ids carry `:` and `/`; the hash keeps two cleaned keys apart. */
+    private fun draftName(key: String) =
+        key.replace(Regex("[^A-Za-z0-9._-]"), "_").take(80) + "_" + Integer.toHexString(key.hashCode())
+
+    /** ⚠ On the caller's thread, once per switch (a few KB): reopening the SAME flow reads it straight back. */
+    private fun keepDraft() {
+        val key = draftKey ?: return
+        runCatching { drafts.save(draftName(key), canvas.workflow, nodeTypes, canvas.savedView) }
+            .onFailure { say("could not keep this flow's edits. ${it.message}", bad = true) }
+    }
+
+    private fun loadDraft(key: String): com.abrah.nightmare.canvas.LoadedWorkflow? =
+        runCatching { drafts.load(draftName(key)) }.getOrNull()
+
+    private fun dropDraft(key: String?) {
+        if (key != null) runCatching { drafts.delete(draftName(key)) }
     }
 
     /** ⭐ The ONE "still rendering" refusal every path that replaces or retargets the canvas calls. */
@@ -576,35 +608,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
-    fun confirmPendingOpen() {
-        val p = pendingOpen ?: return
-        pendingOpen = null
-        p.open()
-    }
-
-    fun dismissPendingOpen() { pendingOpen = null }
-
-    /**
-     * ⭐ The third answer to [pendingOpen]: SAVE, then open. A flow with a name is saved over
-     * itself at once; an unnamed one gets the save dialog ([saveAsk]), and the open waits for
-     * [saveWorkflowAs] — or is dropped if the dialog is dismissed ([cancelOpenAfterSave]).
-     */
-    fun savePendingOpen() {
-        val p = pendingOpen ?: return
-        pendingOpen = null
-        val name = currentWorkflowName
-        if (name != null) {
-            saveWorkflowAs(name)
-            if (!activeFlow.dirty) p.open()
-            return
-        }
-        openAfterSave = p.open
-        closeLibrary()
-        setCanvasVisible(true)
-        saveAsk++
-    }
-
-    /** ⭐ Bumped to raise the canvas's save dialog from the view model ([savePendingOpen]). */
+    /** ⭐ Bumped to raise the canvas's save dialog from the view model. */
     var saveAsk by mutableStateOf(0)
         private set
 
@@ -939,6 +943,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // must not offer a name that belongs to a different file. [openSaved]
         // sets it again immediately after calling this.
         currentWorkflowName = null
+        // ⚠ A result's flow or an import has no draft; [openRecipeNow] and [openSaved] set theirs right after.
+        draftKey = null
         // ⚠ The canvas is now what the user chose, and this has just written it
         // to the autosave. A restore afterwards could only put back what was
         // there before they chose.
@@ -971,7 +977,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 say("\"$name\" wants ${missing.joinToString { it.pluginId }}", bad = true)
             }
             guardedOpen(name) {
-                openWorkflow(loaded.workflow, loaded.view)
+                val key = "saved:$name"
+                val kept = loadDraft(key)
+                openWorkflow(kept?.workflow ?: loaded.workflow, kept?.view ?: loaded.view)
+                // ⚠ Against the SAVED file, so edits kept since the last Save still show as unsaved.
+                if (kept != null) savedBaseline = loaded.workflow
+                draftKey = key
                 currentWorkflowName = name
                 say("opened \"$name\"")
                 sayNotes(loaded)
@@ -1053,6 +1064,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteSaved(name: String) {
         store.delete(name)
+        dropDraft("saved:$name")
+        if (draftKey == "saved:$name") draftKey = null
         // ⚠ Save must stop offering the name of a file that no longer exists.
         if (currentWorkflowName == name) currentWorkflowName = null
         refreshWorkflows()
@@ -3990,7 +4003,24 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * DEPENDENCY of a model rather than a thing to choose, it installs with the
      * weights, and a Delete button beside it would invite stranding 6.7 GB.
      */
-    fun installDitEngine() {
+    /**
+     * ⭐ After an app update that changed the engine, fetch it at once, with no tap and no toast (a tester, Saved
+     * #7286: "why after every update do I need to download the Flux.2/Z-Image engine"; the user's call 2026-10-29).
+     * Only where a DiT model (Wan, Anima on CPU included) is already on the phone: someone on SD alone never pays
+     * 23 MB for it. A Run before it lands shows the engine popup with this download's progress, which then turns
+     * into Run ([missingInstalled]). A failure is logged only: that popup is still the way to retry.
+     */
+    private fun updateDitEngineQuietly() {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val need = runCatching {
+                !com.abrah.nightmare.DitEngine.isInstalled(ctx) && ModelCatalog.all.any { it.isDit && it.installed(ctx) }
+            }.getOrDefault(false)
+            if (need) withContext(kotlinx.coroutines.Dispatchers.Main) { installDitEngine(quiet = true) }
+        }
+    }
+
+    fun installDitEngine(quiet: Boolean = false) {
         if (installing != null) return
         val ctx = getApplication<Application>()
         installing = MissingModel.Engine.installId
@@ -4001,12 +4031,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 com.abrah.nightmare.DitEngine.install(
                     ctx,
-                    onProgress = { p -> viewModelScope.launch { tickProgress(p) } },
+                    // ⚠ Quiet: the progress feeds the engine popup, never a notification.
+                    onProgress = { p -> viewModelScope.launch { if (quiet) installProgress = p else tickProgress(p) } },
                     isCancelled = { cancelInstall },
                 )
                 viewModelScope.launch {
-                    say("installed ${com.abrah.nightmare.DitEngine.LABEL}")
-                    downloadSucceeded(com.abrah.nightmare.DitEngine.LABEL)
+                    say("installed ${com.abrah.nightmare.DitEngine.LABEL}" + if (quiet) " (after an update)" else "")
+                    if (!quiet) downloadSucceeded(com.abrah.nightmare.DitEngine.LABEL)
                 }
             } catch (e: ModelInstaller.Cancelled) {
                 viewModelScope.launch {
@@ -4016,9 +4047,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 viewModelScope.launch {
                     ErrorReport.record(e)
-                    modelError = e.message ?: e.javaClass.simpleName
-                    downloadFailed(com.abrah.nightmare.DitEngine.LABEL, modelError!!)
-                    say("install failed. $modelError", bad = true)
+                    val why = e.message ?: e.javaClass.simpleName
+                    if (!quiet) {
+                        modelError = why
+                        downloadFailed(com.abrah.nightmare.DitEngine.LABEL, why)
+                    }
+                    say("install failed. $why", bad = true)
                 }
             } finally {
                 viewModelScope.launch {
@@ -4808,9 +4842,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             spec?.let { selectModel(it) }
             return
         }
-        // ⚠ GUARDED since 2026-10-10: the Use dialog no longer warns, so an unsaved canvas is
-        // asked about here — Save / Open anyway / Cancel ([pendingOpen]) — and nothing, the
-        // model included, changes until it is answered.
+        // ⚠ GUARDED: an unsaved canvas is kept as its flow's draft ([guardedOpen]) before the model changes.
         val label = recipe.labelRes?.let { r -> text(r) } ?: recipe.label
         guardedOpen(label) {
             // ⚠ The model FIRST: a recipe reads [SelectedModel] as it builds, so building first
@@ -6694,7 +6726,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val oldImage = oldSampler.inputs["image"]?.node?.let { old.byId[it] }?.takeIf { it.type == "core.image" }
         val spec = ModelCatalog.byId(oldSampler.params["model"].orEmpty()) ?: return
         selectModel(spec)
-        openRecipeNow(recipe)
+        openRecipeNow(recipe, draft = false)
         val g = canvas.workflow.graph
         val sampler = g.nodes.singleOrNull { it.type in SAMPLER_TYPES } ?: return
         val declared = nodeTypes[sampler.type]?.widgets?.map { it.name }?.toSet().orEmpty()
@@ -6720,9 +6752,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         say("swapped to ${recipe.labelRes?.let { text(it) } ?: recipe.label}, settings carried over")
     }
 
-    private fun openRecipeNow(r: com.abrah.nightmare.canvas.Recipe) {
+    /** @param draft false for [swapFlow], which carries the old flow's settings onto a FRESH build. */
+    private fun openRecipeNow(r: com.abrah.nightmare.canvas.Recipe, draft: Boolean = true) {
         openedRecipeId = r.id
-        openWorkflow(r.build())
+        val key = "recipe:" + r.id + if (r.usesCheckpoint) ":" + SelectedModel.id else ""
+        val fresh = r.build()
+        val kept = if (draft) loadDraft(key) else null
+        openWorkflow(kept?.workflow ?: fresh, kept?.view)
+        // ⚠ The baseline stays the FRESH build, so a restored draft still reads as edited and is kept again on leaving.
+        if (kept != null) { savedBaseline = fresh; sayNotes(kept) }
+        draftKey = key
     }
 
     /**
@@ -7188,9 +7227,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * ⭐⭐ The SET the viewer swipes through, and where in it to start.
      *
-     * ⚠ The batch when the picture belongs to one, the whole tab otherwise —
-     * so swiping compares what a user would think of as "these", not an
-     * arbitrary neighbourhood.
+     * ⚠ Every kept picture in the grid's order, a series in its own order (Saved #7304; it was the series alone
+     * until 1.6.257, which stopped the swipe at its end).
      */
     var viewingSet by mutableStateOf<List<com.abrah.nightmare.canvas.Result>>(emptyList())
         private set
@@ -7461,6 +7499,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
          * tapped is often the node that did the work.
          */
         fun appendTimes() {
+            // ⭐ Each sampler's MODEL beside its time when the chain has several (a tester, Saved #7288: a Wan clip's
+            // info named no model; one sampler's Model is listed with its knobs below).
+            if (samplers.size > 1) for (sampler in samplers) {
+                modelOf(sampler, types)?.let { out += ("Model · " + com.abrah.nightmare.logNameOf(sampler.id, g, nodeTypes)) to it }
+            }
             if (times == null) return
             // ⚠ Per SAMPLER as well as the whole flow: on a chain the total says
             // nothing about which step was expensive. ⚠⚠ A sampler that came
@@ -7510,7 +7553,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             if (w.name in skip) continue
             val v = p[w.name] ?: continue
             when (w.name) {
-                "model" -> out += "Model" to (ModelCatalog.byId(v)?.label ?: v)
+                "model" -> if (samplers.size == 1) out += "Model" to (ModelCatalog.byId(v)?.label ?: v)
                 // ⚠ The ROLLED seed: the param is 0 ("new every Run") on most flows.
                 "seed" -> out += "Seed" to (if (v == "0") rolled(s.id) ?: v else v)
                 MaskNode.OPS -> {
@@ -7523,10 +7566,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 else -> if (v.isNotBlank()) out += w.name.knobLabel(getApplication()) to v
             }
         }
+        // ⚠ A video node has no `model` knob (the node IS the model), so the loop above never named it.
+        if (samplers.size == 1 && type?.widgets.orEmpty().none { it.name == "model" }) modelOf(s, types)?.let { out += "Model" to it }
         if (width > 0) out += "Output" to "${width}x$height"
         appendTimes()
         if (samplers.size > 1) out += "Samplers in the chain" to samplers.size.toString()
         return out
+    }
+
+    /** ⭐ The model a sampler runs: its `model` knob, or for a video node the node type itself (Saved #7288). */
+    private fun modelOf(n: Node, types: Map<String, NodeType>): String? {
+        val type = types[n.type]
+        applyDefaults(type?.widgets.orEmpty(), n)["model"]?.takeIf { it.isNotBlank() }?.let { return ModelCatalog.byId(it)?.label ?: it }
+        val app = getApplication<Application>()
+        return when (n.type) {
+            com.abrah.nightmare.npu.WanVideoNode.name -> app.getString(R.string.video_model_wan)
+            com.abrah.nightmare.npu.WanA14Node.name -> app.getString(R.string.video_model_wan14)
+            "nd.sample" -> app.getString(R.string.video_model_neodragon)
+            else -> type?.paletteName?.takeIf { n.type in VIDEO_SAMPLER_TYPES }
+        }
     }
 
     /** ⭐ Star the selection, or un-star it when every one already is. */
@@ -7578,12 +7636,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         viewingResult = r
         viewingResultImage = null
         viewingResultDetails = emptyList()
-        // ⚠ The batch, in its own order, or every kept picture.
-        val set = if (r.batchId != null) {
-            keptGroups.firstOrNull { it.batchId == r.batchId }?.items ?: listOf(r)
-        } else {
-            kept
-        }
+        // ⭐ EVERY kept picture, in the grid's order (a series in its own order, where its tile sits), so a swipe
+        // runs on past the end of a series (a tester, Saved #7304: it stopped there and sent him back to the grid).
+        val set = keptGroups.flatMap { it.items }.ifEmpty { listOf(r) }
         viewingSet = set
         viewingIndex = set.indexOfFirst { it.id == r.id }.coerceAtLeast(0)
         // ⚠⚠ Off the main thread: `full()` decodes a PNG and `details()` reads
@@ -9543,6 +9598,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         refreshModels()
         // ⭐ …and a models move the last process died in the middle of.
         resumeMove()
+        updateDitEngineQuietly()
     }
 }
 

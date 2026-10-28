@@ -51,7 +51,7 @@ another one from the sidebar replaces the sheet.
 | **Models** | Download, switch and delete models. [Models](../models/index.md) |
 | **Flows** | Ready-made flows (**Recommended**) and your own (**Saved**). [Flows](../flows/index.md) |
 | **Results** | Every picture and clip you have made, with the flow that made it. [Results](../reference/results.md) |
-| **Current flow** | The flow's name, **Unsaved** when it has changes that are not saved, and **Save flow** |
+| **Current flow** | The flow's name, **Unsaved** when it has changes that are not saved, and **Save flow**. Opening another flow or model never loses them: each flow keeps your last changes and brings them back the next time you open it |
 | **Model** | The model this flow uses and its state. **Idle**, **Loading** or **Loaded**: and the free memory |
 | **Settings** | [Settings](../reference/settings.md) |
 | **Device** | This phone's chip and NPU. [Install](install.md#check-what-your-phone-can-run) |

@@ -841,6 +841,12 @@ fun ResultViewer(
         offset = androidx.compose.ui.geometry.Offset.Zero
     }
     val current = items.getOrNull(pager.currentPage) ?: items.first()
+    // ⭐ A JUMP, not `animateScrollToPage`: the tester asked for no animation (Saved #7314), and a jump cannot be
+    // cancelled half way by the next quick tap (the Results grid's lesson, 2026-10-10).
+    val edgeTap: (Int) -> Unit = { side ->
+        val to = pager.currentPage + side
+        if (to in items.indices) frameScope.launch { pager.scrollToPage(to) }
+    }
 
     Box(
         Modifier
@@ -896,6 +902,7 @@ fun ResultViewer(
                             offset = offsetState,
                             bounds = { box },
                             onDismiss = onDismiss,
+                            onEdgeTap = edgeTap,
                         )
                 )
                 return@HorizontalPager
@@ -930,6 +937,7 @@ fun ResultViewer(
                             offset = offsetState,
                             bounds = { box },
                             onDismiss = onDismiss,
+                            onEdgeTap = edgeTap,
                         ),
                 )
             } ?: run {

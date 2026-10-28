@@ -225,66 +225,49 @@ class WorkflowRestoreTest {
     // ---- what may replace the canvas ---------------------------------------
 
     /**
-     * ⭐⭐⭐ **Every route that replaces the canvas asks first** — and the
-     * recommended flows did not.
+     * ⭐⭐⭐ **Leaving a flow keeps its edits; opening it again brings them back** (per-flow autosave, the user's
+     * call 2026-10-29, after testers called the "unsaved edits" popup unnecessary, Saved #7281-7284).
      *
-     * ⚠⚠⚠ Three routes replace the graph on the canvas: a RECIPE from the
-     * Flows tab, a SAVED flow from the row below it, and the open-flow button in
-     * Results. Two went through `guardedOpen` and the recipe did not, so tapping
-     * "Text to image" threw away unsaved work with nothing said. Reported from
-     * the phone, 2026-09-15: *"in Flows tab when i click flow it needs same
-     * confirm popup as open flow icon from results tab"*.
-     *
-     * ⚠⚠ The N−1-of-N rule again, and the missed one is the row tapped most
-     * often.
+     * ⚠ The control is the OTHER flow: img2img opens as its own fresh build, not with this prompt, so the test
+     * fails for a draft keyed on nothing (every flow restoring the last canvas).
      */
     @Test
-    fun openingARecipeOverUnsavedWorkAsksFirst() {
+    fun leavingAFlowKeepsItsEditsAndReopeningRestoresThem() {
         val vm = HarnessViewModel(app)
+        vm.openRecipe(com.abrah.nightmare.canvas.RECIPES.first { it.id == "txt2img" })
         settle()
-        // ⚠ An edit the user would mind losing, made the way the canvas makes
-        // one — so `activeFlow.dirty` is set by the production path.
         vm.updateCanvas(vm.canvas.setParam("prompt", "prompt", "mine, typed by hand"))
         settle()
         assertTrue("the canvas must be dirty for this to mean anything", vm.activeFlow.dirty)
 
         vm.openRecipe(com.abrah.nightmare.canvas.RECIPES.first { it.id == "img2img" })
-        assertNotNull("it replaced the canvas without asking", vm.pendingOpen)
+        settle()
+        assertTrue("it opens at once, no question", vm.canvas.workflow.graph.nodes.any { it.id == "image" })
         assertTrue(
-            "the graph must NOT have changed yet: " + vm.canvas.workflow.graph.nodes.map { it.id },
-            vm.canvas.workflow.graph.nodes.none { it.id == "image" },
+            "another flow must not get this flow's prompt",
+            vm.canvas.workflow.graph.byId["prompt"]?.params?.get("prompt") != "mine, typed by hand",
         )
 
-        // ⚠ …and confirming is what opens it, which is the control: without
-        // this the test passes for a recipe that is simply broken.
-        vm.confirmPendingOpen()
+        vm.openRecipe(com.abrah.nightmare.canvas.RECIPES.first { it.id == "txt2img" })
         settle()
-        assertTrue(
-            "confirming must open it",
-            vm.canvas.workflow.graph.nodes.any { it.id == "image" },
-        )
+        assertEquals("mine, typed by hand", vm.canvas.workflow.graph.byId["prompt"]?.params?.get("prompt"))
+        assertTrue("a restored draft still reads as edited", vm.activeFlow.dirty)
     }
 
-    /**
-     * ⚠ A CLEAN canvas is replaced straight away — nothing to lose, nothing to
-     * ask. This is the control: without it the test above passes for a guard
-     * that asks about everything, which would be its own bug.
-     *
-     * ⚠⚠ `savedBaseline` is null on a bare view model, which reads as dirty —
-     * so the canvas is made clean the way the app makes it clean, by OPENING
-     * something. In the app that is `restoreWorkflow` at startup.
-     */
+    /** ⚠ A CLEAN canvas leaves no draft: reopening an unedited flow is its fresh build. */
     @Test
-    fun openingARecipeOverACleanCanvasDoesNotAsk() {
+    fun anUneditedFlowLeavesNoDraft() {
         val vm = HarnessViewModel(app)
         vm.openRecipe(com.abrah.nightmare.canvas.RECIPES.first { it.id == "txt2img" })
-        vm.pendingOpen?.let { vm.confirmPendingOpen() }
         settle()
         assertTrue("an opened flow is its own baseline", !vm.activeFlow.dirty)
 
         vm.openRecipe(com.abrah.nightmare.canvas.RECIPES.first { it.id == "img2img" })
-        assertTrue("an unedited flow is not worth a dialog", vm.pendingOpen == null)
+        settle()
         assertTrue(vm.canvas.workflow.graph.nodes.any { it.id == "image" })
+        vm.openRecipe(com.abrah.nightmare.canvas.RECIPES.first { it.id == "txt2img" })
+        settle()
+        assertTrue("nothing was edited, so nothing was kept", !vm.activeFlow.dirty)
     }
 
     /**

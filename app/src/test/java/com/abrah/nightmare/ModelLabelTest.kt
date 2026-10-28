@@ -22,7 +22,7 @@ class ModelLabelTest {
     private val vm = HarnessViewModel(app)
     private val wan = ModelCatalog.WAN22.label
 
-    private fun opened(id: String) { vm.openRecipe(RECIPES.first { it.id == id }); vm.confirmPendingOpen() }
+    private fun opened(id: String) { vm.openRecipe(RECIPES.first { it.id == id }) }
 
     @Test
     fun aWanFlowShowsWanAndAnImageFlowShowsItsCheckpointAgain() {

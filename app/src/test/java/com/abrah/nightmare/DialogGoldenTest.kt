@@ -7,7 +7,6 @@ import androidx.compose.ui.test.performClick
 import com.abrah.nightmare.canvas.LoraPicker
 import com.abrah.nightmare.canvas.NodeInspectorBody
 import com.abrah.nightmare.ui.NightmareTheme
-import com.abrah.nightmare.ui.OpenFlowDialog
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -50,13 +49,6 @@ class DialogGoldenTest {
 
     @OptIn(com.github.takahirom.roborazzi.ExperimentalRoborazziApi::class)
     private fun capture(name: String) = com.github.takahirom.roborazzi.captureScreenRoboImage(goldenPath(this, name))
-
-    /** ⭐ Save, Open anyway (red), Cancel: stacked full width, every one readable. */
-    @Test
-    fun openFlowStacksItsThreeButtons() {
-        show { OpenFlowDialog("Text to image", onSave = {}, onOpenAnyway = {}, onCancel = {}) }
-        capture("dialog-open-flow")
-    }
 
     /** ⭐ Files and Search online as two contained halves, Done under them. */
     @Test

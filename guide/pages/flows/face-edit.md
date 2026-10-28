@@ -23,7 +23,7 @@ not there yet. It runs on the NPU of every Snapdragon the app supports. Once it 
 
    Every setting is kept when you pick another in the menu, so you can set a smile, switch to
    lips open and set that too. Each slider runs from -1 to 1, and 0 leaves that part alone. The
-   picture stays in view and updates as you move them; **hold the picture** to see the original.
+   picture stays in view and updates as you move them; **hold the picture** to see the original. Pinch or double-tap it to zoom in on the face.
    The node page shows the same three rows. **Biggest face only** edits one face when there
    are several. **Reset** puts every slider back to 0.
 4. **Done**, then **Run**.

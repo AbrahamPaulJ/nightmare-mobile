@@ -21,7 +21,7 @@ class SwapFlowTest {
     private val app = ApplicationProvider.getApplicationContext<android.app.Application>()
     private val vm = HarnessViewModel(app)
 
-    private fun opened(id: String) { vm.openRecipe(RECIPES.first { it.id == id }); vm.confirmPendingOpen() }
+    private fun opened(id: String) { vm.openRecipe(RECIPES.first { it.id == id }) }
     private fun g() = vm.canvas.workflow.graph
     private fun sampler() = g().nodes.single { it.type in IMAGE_SAMPLER_TYPES }
     private fun prompt() = g().nodes.first { it.type == "core.prompt" }

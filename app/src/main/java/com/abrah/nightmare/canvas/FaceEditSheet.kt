@@ -39,6 +39,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -160,16 +163,39 @@ internal fun FaceEditSheet(
                 stringResource(R.string.face_edit_title),
                 if (installed) stringResource(R.string.face_edit_hold_hint) else stringResource(R.string.face_edit_not_installed),
             )
+            // ⭐ Pinch to zoom, double tap in and out, drag to pan once zoomed: the fullscreen viewers' gesture
+            // ([viewerZoom]); a tester, Saved #7316: "make the photo zoomable, everything is very small".
+            val zoom = remember { mutableStateOf(1f) }
+            val pan = remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+            var box by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
             Box(
-                Modifier.weight(1f).fillMaxWidth()
-                    .pointerInput(Unit) { detectTapGestures(onPress = { holding = true; tryAwaitRelease(); holding = false }) },
+                Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .onSizeChanged { box = it }
+                    .viewerZoom(key = Unit, scale = zoom, offset = pan, bounds = { box }, onDismiss = {})
+                    // ⚠ Hold shows the original only after a beat, so the first finger of a pinch does not flash it;
+                    // the pinch consumes the press, which ends the hold.
+                    .pointerInput(Unit) {
+                        detectTapGestures(onPress = {
+                            kotlinx.coroutines.coroutineScope {
+                                val show = launch { kotlinx.coroutines.delay(150); holding = true }
+                                tryAwaitRelease()
+                                show.cancel()
+                                holding = false
+                            }
+                        })
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Image(
                     if (holding) source else preview ?: source,
                     contentDescription = null,
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        scaleX = zoom.value
+                        scaleY = zoom.value
+                        translationX = pan.value.x
+                        translationY = pan.value.y
+                    },
                 )
                 // ⚠ CENTRED, small, on a scrim: the picture is letterboxed (Fit) inside this box, so the box's
                 // corner sat outside the picture, in the empty band (the user, 2026-10-22).

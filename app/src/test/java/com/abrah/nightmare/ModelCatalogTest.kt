@@ -515,6 +515,8 @@ class ModelCatalogTest {
         // ([ModelCatalog.DIT_V73_MIN_ARCH], `docs/DEVICES.md` §3b). The quantised build, never FP8.
         val v73 = caps(73, 8, sixteen)
         assertTrue(zimage.buildFor(v73)!!.files.any { it.name == "dit.gguf" })
+        // ⭐ Klein 4B's Q4_0 since 1.6.257: a tester's Q4_0 import rendered on a real 8s Gen 4 (Saved #7439).
+        assertEquals("flux-2-klein-4b-Q4_0.gguf", ModelCatalog.byId("flux2_klein_4b")!!.buildFor(v73)!!.files.first { it.name == "dit.gguf" }.url.substringAfterLast('/'))
         for (id in listOf("flux2_klein_9b", "anima_turbo_1_1", "iris_3b_turbo")) {
             assertTrue("$id on v73", ModelCatalog.byId(id)!!.buildFor(v73) != null)
         }
@@ -522,8 +524,8 @@ class ModelCatalogTest {
         val v69 = caps(69, 8, sixteen)
         val onV69 = ModelCatalog.all.filter { it.isDit && it.buildFor(v69) != null }.map { it.id }.toSet()
         assertEquals(setOf("anima_turbo_1_1", "anima_29b_preview"), onV69)
-        // ⚠ Not run right at v73 (or, Klein 4B, the user's call): they keep the v75 floor.
-        for (id in listOf("flux2_klein_4b", "qwen_image_2_1", "qwen_image_2_1_turbo", "krea2_turbo", "wan22_ti2v_turbo")) {
+        // ⚠ Not run right at v73: they keep the v75 floor.
+        for (id in listOf("qwen_image_2_1", "qwen_image_2_1_turbo", "krea2_turbo", "wan22_ti2v_turbo")) {
             assertEquals("$id must not open on v73", null, ModelCatalog.byId(id)!!.buildFor(v73))
         }
         assertEquals(75, ModelCatalog.DIT_GGML_MIN_ARCH)

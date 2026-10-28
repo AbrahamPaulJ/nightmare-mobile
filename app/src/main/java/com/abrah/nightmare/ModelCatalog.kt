@@ -2341,9 +2341,9 @@ object ModelCatalog {
      * ⭐ v73 (8 Gen 2, 8s Gen 4, and the 8s Gen 3 under [DIT_V73_MIN_VTCM_MB]), ALPHA, for the
      * models that rendered right on the S25 forced to the v73 skel (`GGML_HEXAGON_ARCH=73`, the app's
      * below-v79 env plus `SWIGLU` on the CPU, `docs/DEVICES.md` §3b): Z-Image Turbo's Q4_0 build,
-     * FLUX.2 Klein 9B, Anima Turbo 1.1, Iris 3B Turbo. ⚠ NOT Krea 2 (the v73 skel faults in a matmul whose
-     * activation rows pass 64 KB), Qwen Image 2.1 (its 1024² decode came back in bands), Klein 4B (the
-     * user's call: not run at v73), Wan, imports or the edit flow (not run). A real v73 phone is owed.
+     * FLUX.2 Klein 9B, Anima Turbo 1.1, Iris 3B Turbo (and Klein 4B's Q4_0, below). ⚠ NOT Krea 2 (the v73 skel faults in a matmul whose
+     * activation rows pass 64 KB), Qwen Image 2.1 (its 1024² decode came back in bands), Wan, imports or the
+     * edit flow (not run). Klein 4B's Q4_0 since 1.6.257: a tester's import of one rendered on a real 8s Gen 4.
      */
     const val DIT_V73_MIN_ARCH = 73
 
@@ -2378,6 +2378,11 @@ object ModelCatalog {
     /** ⭐ The 8 Gen 3 build: leejet's Q8_0 (the 9B's author), `dit.gguf` — backend 014 loads it first. */
     private val KLEIN4B_Q8 = listOf(
         RemoteFile(HF + "leejet/FLUX.2-klein-4B-GGUF/resolve/main/flux-2-klein-4b-Q8_0.gguf", "dit.gguf", 4_300_629_440L),
+    ) + KLEIN4B_PARTS
+
+    /** ⭐ v73 (8 Gen 2, 8s Gen 4): a Q4_0 Klein 4B import ran on a real 8s Gen 4 (a tester, 1.6.251, Saved #7439). */
+    private val KLEIN4B_Q4 = listOf(
+        RemoteFile(HF + "leejet/FLUX.2-klein-4B-GGUF/resolve/main/flux-2-klein-4b-Q4_0.gguf", "dit.gguf", 2_460_378_560L),
     ) + KLEIN4B_PARTS
 
     /** ⚠ Z-Image's shared parts — the text encoder, VAE and tokenizer both its builds load. */
@@ -2434,6 +2439,8 @@ object ModelCatalog {
             builds = listOf(
                 Build(TIER_DIT, "", KLEIN4B_FP8.sumOf { it.bytes }, DIT_MIN_ARCH, 8, files = KLEIN4B_FP8),
                 Build(TIER_DIT, "", KLEIN4B_Q8.sumOf { it.bytes }, DIT_GGML_MIN_ARCH, 8, files = KLEIN4B_Q8),
+                // ⭐ The user's call, 2026-10-29: offered at v73 with the slow note ([noHmxOn]), as Z-Image is.
+                Build(TIER_DIT, "", KLEIN4B_Q4.sumOf { it.bytes }, DIT_V73_MIN_ARCH, ditVtcmFloor(DIT_V73_MIN_ARCH), files = KLEIN4B_Q4),
             ),
         ),
         // ⭐⭐⭐ **`lowram` because it does not FIT, measured 2026-09-19.** This

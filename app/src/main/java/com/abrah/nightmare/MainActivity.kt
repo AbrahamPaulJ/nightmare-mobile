@@ -326,18 +326,6 @@ fun HarnessScreen(
         }
     }
 
-    // ⭐⭐ Opening a flow over an unsaved one ASKS ([com.abrah.nightmare.ui.OpenFlowDialog]).
-    // ⚠ Mid-render is refused in the view model rather than offered here — no
-    // answer to a dialog makes swapping the graph under a running graph safe.
-    vm.pendingOpen?.let { p ->
-        com.abrah.nightmare.ui.OpenFlowDialog(
-            p.label,
-            onSave = vm::savePendingOpen,
-            onOpenAnyway = vm::confirmPendingOpen,
-            onCancel = vm::dismissPendingOpen,
-        )
-    }
-
     // ⭐ Send a picture into a flow — from the canvas viewer or Results, so drawn
     // here, above both. ⚠ Before the unsaved-flow confirm in the view model's
     // order of events: choosing a flow here may raise that one next.

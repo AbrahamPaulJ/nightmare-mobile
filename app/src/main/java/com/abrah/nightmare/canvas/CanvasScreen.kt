@@ -118,6 +118,7 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 
 /**
  * The canvas, with the run bar over it.
@@ -2318,6 +2319,12 @@ internal fun Modifier.viewerZoom(
     offset: androidx.compose.runtime.MutableState<Offset>,
     bounds: () -> IntSize,
     onDismiss: () -> Unit,
+    /**
+     * ⭐ A tap on the left or right [EDGE_TAP] of the viewer at 1x: -1 or +1, at once, with no slide (a tester,
+     * Saved #7314: "switch with one press on the left/right side without an animation, like in Telegram").
+     * Null: the whole picture is the tap that closes.
+     */
+    onEdgeTap: ((Int) -> Unit)? = null,
 ): Modifier {
     fun clampOffset(o: Offset, sc: Float): Offset {
         val b = bounds()
@@ -2391,7 +2398,30 @@ internal fun Modifier.viewerZoom(
                 onTap = { if (scale.value <= 1.01f) onDismiss() },
             )
         }
+        // ⚠⚠ AFTER the tap detector, so it sees the Main pass first: it consumes the up of an edge tap, which
+        // cancels the detector's close, and fires on the up instead of after the double-tap wait. A drag is
+        // consumed by the pager, so `waitForUpOrCancellation` gives null and the swipe stays a swipe.
+        .then(
+            if (onEdgeTap == null) Modifier else Modifier.pointerInput(key) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (scale.value > 1.01f) return@awaitEachGesture
+                    val side = when {
+                        down.position.x < size.width * EDGE_TAP -> -1
+                        down.position.x > size.width * (1f - EDGE_TAP) -> 1
+                        else -> return@awaitEachGesture
+                    }
+                    val up = waitForUpOrCancellation() ?: return@awaitEachGesture
+                    if ((up.position - down.position).getDistance() > viewConfiguration.touchSlop) return@awaitEachGesture
+                    up.consume()
+                    onEdgeTap(side)
+                }
+            },
+        )
 }
+
+/** ⭐ How much of the viewer's width, on each side, is a tap to the previous or next picture ([viewerZoom]). */
+internal const val EDGE_TAP = 0.3f
 
 internal fun Modifier.viewerPicture(
     scale: Float,
