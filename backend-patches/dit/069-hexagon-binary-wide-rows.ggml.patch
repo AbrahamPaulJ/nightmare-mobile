@@ -1,0 +1,29 @@
+diff --git a/src/ggml-hexagon/ggml-hexagon.cpp b/src/ggml-hexagon/ggml-hexagon.cpp
+index 83ba19c..393335d 100644
+--- a/src/ggml-hexagon/ggml-hexagon.cpp
++++ b/src/ggml-hexagon/ggml-hexagon.cpp
+@@ -5285,9 +5285,22 @@ static bool ggml_hexagon_supported_binary(const struct ggml_hexagon_session * se
+         return false;
+     }
+ 
+-    return true;
++    // nightmare (dit/069): the kernel double-buffers at least ONE row of src0, src1 and dst per thread in VTCM
++    // (binary-ops.c `spad_row_total`), so a row too wide for that aborts the graph with VTCM-TOO-SMALL. MiniMax-H3's
++    // AdaLN curve rows are 96768 floats (387 KB): 2 x 3 rows x 6 threads overflows 8 MB. Such an op stays on the CPU
++    // (one row a block there); every narrower add (the residuals, 5376 wide) stays here.
++    if (sess && sess->vtcm_size > 0) {
++        auto aligned = [](size_t x) { return (x + 127) & ~(size_t) 127; };
++        const size_t r0 = aligned((size_t) src0->ne[0] * ggml_type_size(src0->type));
++        const size_t r1 = aligned((size_t) src1->ne[0] * ggml_type_size(src1->type));
++        const size_t rd = aligned((size_t) dst->ne[0] * ggml_type_size(dst->type));
++        const size_t nt = sess->n_threads > 0 ? sess->n_threads : 1;
++        if (2 * (r0 + r1 + rd) * nt + r1 > sess->vtcm_size) {
++            return false;
++        }
++    }
+ 
+-    GGML_UNUSED(sess);
++    return true;
+ }
+ 
+ static bool ggml_hexagon_supported_add_id(const struct ggml_hexagon_session * sess, const struct ggml_tensor * op) {
