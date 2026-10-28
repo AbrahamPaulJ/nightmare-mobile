@@ -3,7 +3,9 @@
 *A photo and a prompt: the whole picture is re-rendered to follow it, rather than nudged.*
 
 **Nodes:** Prompt and Image → Image edit → Output. **Needs a Snapdragon 8 Gen 3 or newer** and
-one of the edit models: **FLUX.2 Klein** (4B or 9B) or **Qwen Image 2.1**.
+one of the edit models: **FLUX.2 Klein** (4B or 9B), **FLUX.3 Klein**, **Qwen Image 2.1** or **Fibo 2.0 Edit**.
+FLUX.3 Klein follows direct changes best ("Change the text on the sign to say Fibo, and make the scarf blue");
+for a change to the whole scene ("make it winter"), use Fibo 2.0 Edit.
 
 Where [Image to image](image-to-image.md) repaints a photo loosely, an edit model reads the
 photo as a reference and follows an **instruction**: the composition survives, the content
@@ -11,7 +13,7 @@ changes. *Make it winter*, *turn the car red*, *put a hat on the dog*.
 
 ## Steps
 
-1. Install **FLUX.2 Klein** or **Qwen Image 2.1** under Models (see below for which).
+1. Install **FLUX.2 Klein**, **FLUX.3 Klein**, **Qwen Image 2.1** or **Fibo 2.0 Edit** under Models (see below for which).
 2. **Flows → Image edit.** With Qwen selected in Models, it opens as a Qwen edit; otherwise as
    FLUX.2.
 3. Tap the **image** node and choose the photo.

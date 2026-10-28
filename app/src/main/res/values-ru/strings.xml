@@ -738,7 +738,7 @@
     <string name="flow_swap_i2i_name">Изображение в изображение: LoRA, ControlNet, IP-Adapter</string>
     <string name="flow_swap_i2i_about">Фотография переосмысливается моделью Swap с теми же тремя возможностями. ControlNet читает саму фотографию, если не дать ему другое изображение.</string>
     <string name="flow_flux_edit_name">Редактирование изображения</string>
-    <string name="flow_flux_edit_about">FLUX.2 Klein, Qwen Image 2.1 или Fibo 2.0 Edit на 8 Gen 3 или новее (альфа на 8 Gen 3). Фотография и промпт: всё изображение перерисовывается по нему, а не слегка изменяется. Подключите второе изображение к порту reference и назовите их image 1 и image 2 в промпте.</string>
+    <string name="flow_flux_edit_about">FLUX.2 Klein, FLUX.3 Klein, Qwen Image 2.1 или Fibo 2.0 Edit на 8 Gen 3 или новее (альфа на 8 Gen 3). Фотография и промпт: всё изображение перерисовывается по нему, а не слегка изменяется. Подключите второе изображение к порту reference и назовите их image 1 и image 2 в промпте.</string>
     <string name="flow_t2v_name">Текст в видео</string>
     <string name="flow_t2v_about">Описание в ролик. По умолчанию Wan 2.2 Turbo (минуты, намного лучше); переключите узел видео на Neodragon для 2 с примерно за 30 с.</string>
     <string name="flow_i2v_name">Изображение в видео</string>

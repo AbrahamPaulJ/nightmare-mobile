@@ -146,10 +146,11 @@ enum class Family(
     /**
      * ⭐⭐ **FLUX.3 Image Klein** (Black Forest Labs) on the DiT engine (`docs/DIT.md` §FLUX.3, engine `dit/042`, a
      * backport of upstream sd.cpp's #2143): a new 3072-wide DiT with per-mode early blocks, Krea 2's Qwen3-VL-4B text
-     * encoder and the FLUX.2 VAE. The distilled Klein: 16 steps, no CFG. ⚠ Text to image only until its edit
-     * (reference images) is measured; its own family because FLUX.2's [FLUX2] launch is Klein 4B's shared parts.
+     * encoder and the FLUX.2 VAE. The distilled Klein: 16 steps, no CFG. ⭐ An editor too since 1.6.258 (GitHub #72;
+     * the engine's edit matched upstream at 51 dB, `docs/FLUX3.md` §3); its own family because FLUX.2's [FLUX2] launch is
+     * Klein 4B's shared parts.
      */
-    FLUX3("FLUX.3", GP_DIT, GP_DIT_NEG, "flux3", dit = true),
+    FLUX3("FLUX.3", GP_DIT, GP_DIT_NEG, "flux3", dit = true, edit = true),
     /** ⭐ Bria's Fibo 2.0 Edit Turbo (GH #69, `dit/056`): an 8B editor on Z-Image's DiT, Qwen3-VL-4B with its vision. */
     FIBO2("Fibo 2.0", GP_DIT, GP_DIT_NEG, "fibo2", dit = true, edit = true),
     /**

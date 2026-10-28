@@ -196,6 +196,28 @@ class Int8GgufTest {
         assertTrue("error ${rel(got, int8)}", rel(got, int8) < 0.01)
     }
 
+    /**
+     * ⭐ Weights under `model.diffusion_model.`, their `comfy_quant` WITHOUT it, settings in the header as well (Star
+     * Ultimate Model Converter: Jib Mix Moss Realistic's int8 file, Saved #7442). The bare U8 settings must go too.
+     */
+    @Test fun unprefixedComfyQuantBesidePrefixedWeights() {
+        val t = tensors(256, perRow = true)
+        val p = "model.diffusion_model."
+        val cq = """{"format": "int8_tensorwise", "convrot": true, "convrot_groupsize": 256}""".toByteArray()
+        val meta = JSONObject().put("_quantization_metadata",
+            """{"format_version": "1.0", "layers": {"blocks.0.attn.wq": {"format": "int8_tensorwise", "convrot": true, "convrot_groupsize": 256}}}""")
+        val src = safetensors(listOf(
+            t.getValue("blocks.0.attn.wq.weight").let { T(p + it.name, it.dtype, it.shape, it.data) },
+            t.getValue("blocks.0.attn.wq.weight_scale").let { T(p + it.name, it.dtype, it.shape, it.data) },
+            t.getValue("blocks.0.norm.weight").let { T(p + it.name, it.dtype, it.shape, it.data) },
+            T("blocks.0.attn.wq.comfy_quant", "U8", listOf(cq.size.toLong()), cq)), meta)
+        val dst = convert(src)
+        val tab = table(dst)
+        assertEquals(setOf(p + "blocks.0.attn.wq.weight", p + "blocks.0.norm.weight"), tab.keys)
+        val got = readQ8(dst.readBytes(), rows * cols, tab.getValue(p + "blocks.0.attn.wq.weight").second)
+        assertTrue("error ${rel(got, w)}", rel(got, w) < 0.02)
+    }
+
     /** ⚠ Unrotating a file that was not rotated would scramble it: the settings decide, so they must be read. */
     @Test fun aMissingScaleOrAWrongGroupIsRefused() {
         val t = tensors(256, perRow = true)

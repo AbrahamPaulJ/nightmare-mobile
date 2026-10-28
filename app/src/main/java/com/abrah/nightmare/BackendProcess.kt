@@ -635,8 +635,13 @@ object BackendProcess {
      * ⭐ Fibo 2.0 Edit too: its DiT is 6.59 GB (2.6 of it BF16), launched as `krea2`. Unbudgeted on the S25 (2026-10-27,
      * 1.6.249 dev) the engine mapped all 6,290 MB as one segment and lmkd reclaimed the app before the first step; sd-cli
      * at 2.5 GiB `all=disk` edits in 72 s at 512². Krea's thresholds, unmeasured whole.
+     * ⭐⭐ Fibo on EVERY RAM class since 1.6.258 ([FIBO_WHOLE_FREE]): a 16 GB phone ran it whole and went from 7.0 GB free
+     * to 0.9 (0.5 on text to image), lagging (a tester, Saved #7440/#7445). Measured on the S25 2026-10-29, the edit at
+     * 896x1600, 4 steps: 5 GiB 251 s, 7.07 GB free falling to 1.6-2.0 (low 1.35); 4 GiB 251 s, 6.84 to 2.1-2.4 (low
+     * 1.99): the same time, so 4. Whole costs ~6.1 GB (the tester's), so it runs whole only with 2 GB left after.
      */
     internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long, availBytes: Long): String? {
+        if (spec?.family == Family.FIBO2 && ramBytes > 0) return if (availBytes >= FIBO_WHOLE_FREE) null else "4"
         if (spec?.family !in setOf(Family.KREA2, Family.IDEOGRAM, Family.ZIMAGE, Family.FIBO2) || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
         return when {
             availBytes >= KREA_WHOLE_FREE -> null
@@ -655,6 +660,8 @@ object BackendProcess {
 
     private const val KREA_WHOLE_FREE = 7_300_000_000L
     private const val KREA_5_FREE = 6_100_000_000L
+    /** ⭐ Fibo whole: its ~6.1 GB (the tester's 16 GB phone, Saved #7440) plus a 2 GB floor ([kreaBudget]). */
+    private const val FIBO_WHOLE_FREE = 8_100_000_000L
 
     /**
      * ⭐⭐ An IMPORTED DiT too big to hold whole streams under 4 GiB below the 16 GB class, as Krea 2 does
@@ -1059,6 +1066,11 @@ object BackendProcess {
                         // at 1 MP (GitHub #35). Backend 034 applies it only to requests with a
                         // reference; engine `dit/021` does the encode. An older engine ignores it.
                         if (belowV79) put("NM_REF_CAP_PIXELS", REF_CAP_PIXELS.toString())
+                        // ⭐ FLUX.3 Klein edits (GitHub #72): a `krea2` launch is an editor to the backend only with a
+                        // vision tower (Fibo) or this, so without it the Image edit flow's picture went in as img2img at
+                        // 1.0 and came back a new picture. With it the engine takes sd.cpp's own reference preset for
+                        // FLUX.3 (`dit/048` "default"), the path its sd-cli edit matched upstream on (`docs/FLUX3.md` §3).
+                        if (spec?.family == Family.FLUX3) put("NM_DIT_NATIVE_EDIT", "1")
                         // ⭐⭐ Anima, on ANY chip: every fusion but `MUL_MAT_ADD` (ggml-hexagon's bit 8;
                         // 246 = the other six). That fusion computes Anima's adds wrong and the picture
                         // comes back black. ⚠ It replaced `OPFILTER=ADD` (1.6.141–145), which was right

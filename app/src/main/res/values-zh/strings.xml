@@ -723,7 +723,7 @@
     <string name="flow_swap_i2i_name">图生图：LoRA、ControlNet、IP-Adapter</string>
     <string name="flow_swap_i2i_about">用 Swap 模型重新演绎照片，并支持相同的三项功能。除非提供其他图片，否则 ControlNet 会读取照片本身。</string>
     <string name="flow_flux_edit_name">图像编辑</string>
-    <string name="flow_flux_edit_about">适用于配备 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）的 FLUX.2 Klein、Qwen Image 2.1 或 Fibo 2.0 Edit。输入照片和提示词：整张图片会根据提示词重新渲染，而不是轻微调整。可将第二张图片连接到 reference 端口，并在提示词中称它们为 image 1 和 image 2。</string>
+    <string name="flow_flux_edit_about">适用于配备 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）的 FLUX.2 Klein、FLUX.3 Klein、Qwen Image 2.1 或 Fibo 2.0 Edit。输入照片和提示词：整张图片会根据提示词重新渲染，而不是轻微调整。可将第二张图片连接到 reference 端口，并在提示词中称它们为 image 1 和 image 2。</string>
     <string name="flow_t2v_name">文生视频</string>
     <string name="flow_t2v_about">提示词生成视频。默认使用 Wan 2.2 Turbo（需要几分钟，效果好得多）；将视频节点切换为 Neodragon 约 30 秒生成 2 秒。</string>
     <string name="flow_i2v_name">图生视频</string>

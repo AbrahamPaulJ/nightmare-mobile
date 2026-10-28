@@ -127,7 +127,7 @@ object Int8Gguf {
     internal fun rule(modules: Map<String, Module>, family: Family?) = object : SafetensorsGguf.Rule {
         override val kvU32 = listOf("general.quantization_version" to 2, "general.file_type" to 7)
         override fun check(names: List<String>) {}
-        override fun keep(name: String): Boolean = DROPPED.none { name.endsWith(it) && name.removeSuffix(it) in modules }
+        override fun keep(name: String): Boolean = DROPPED.none { d -> name.endsWith(d) && owned(name.removeSuffix(d), modules) }
         override fun type(name: String, outShape: LongArray, dtype: String): Int = when (dtype) {
             "I8" -> {
                 if (name.removeSuffix(".weight") !in modules) throw IOException("$name is int8 with no scale")
@@ -152,6 +152,13 @@ object Int8Gguf {
     }
 
     private val DROPPED = listOf(".weight_scale", ".comfy_quant", ".input_scale")
+
+    /**
+     * ⚠ A scale or settings tensor belongs to a module under its own name OR without the weights' prefix: Star Ultimate
+     * Model Converter writes `layers.0.proj.qkv.comfy_quant` beside `model.diffusion_model.layers.0.proj.qkv.weight`
+     * (Jib Mix Moss Realistic's int8 file, a tester, Saved #7442: "unsupported dtype U8"), and a kept one was refused.
+     */
+    private fun owned(m: String, modules: Map<String, Module>): Boolean = m in modules || PREFIXES.any { (it + m) in modules }
 
     /**
      * ⭐ In place: [x] from [off], [g] long (a power of four), times the normalized Kronecker power of

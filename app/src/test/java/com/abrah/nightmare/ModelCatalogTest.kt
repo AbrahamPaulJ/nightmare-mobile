@@ -347,10 +347,13 @@ class ModelCatalogTest {
         val ideo = ModelCatalog.byId("ideogram_4_turbo")!!
         assertEquals("4", BackendProcess.kreaBudget(ideo, twelve, 6_000_000_000L))
         assertEquals(null, BackendProcess.kreaBudget(ideo, sixteen, 6_000_000_000L))
-        // ⭐ Fibo 2.0 Edit too (reaped loading its 6.3 GB whole on the S25, 2026-10-27).
+        // ⭐ Fibo 2.0 Edit (reaped loading its 6.3 GB whole on the S25, 2026-10-27), on EVERY RAM class since 1.6.258:
+        // 4 GiB unless 8.1 GB is free (Saved #7440: whole on a 16 GB phone left 0.9 GB).
         val fibo = ModelCatalog.byId("fibo2_edit_turbo")!!
         assertEquals("4", BackendProcess.kreaBudget(fibo, twelve, 6_000_000_000L))
-        assertEquals(null, BackendProcess.kreaBudget(fibo, sixteen, 6_000_000_000L))
+        assertEquals("4", BackendProcess.kreaBudget(fibo, sixteen, 7_000_000_000L))
+        assertEquals("4", BackendProcess.kreaBudget(fibo, twelve, 7_500_000_000L))
+        assertEquals(null, BackendProcess.kreaBudget(fibo, sixteen, 9_000_000_000L))
         assertEquals(null, ideo.buildFor(caps(79, 8, eight)))
         // ⭐ GitHub #30: Klein 9B gets the smaller 8 Gen 3 budget; every other DiT keeps 2.75.
         assertEquals("2.25", BackendProcess.lowArchDitBudget(klein9, 75))

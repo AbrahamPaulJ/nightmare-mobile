@@ -550,7 +550,7 @@ val RECIPES: List<Recipe> = listOf(
         // ⚠ The requirement is IN the copy, the way the video flows state
         // theirs. This list is not filtered by device or by checkpoint, so a
         // card that cannot run here has to say so itself.
-        "FLUX.2 Klein or Qwen Image 2.1, on an 8 Gen 3 or newer (alpha on 8 Gen 3), or Fibo 2.0 Edit on an 8 Elite. " +
+        "FLUX.2 Klein, FLUX.3 Klein, Qwen Image 2.1 or Fibo 2.0 Edit, on an 8 Gen 3 or newer (alpha on 8 Gen 3). " +
             "A photo and a prompt: the " +
             "whole picture is re-rendered to follow it, rather than nudged. " +
             "Wire a second picture into the reference port and name them as " +
