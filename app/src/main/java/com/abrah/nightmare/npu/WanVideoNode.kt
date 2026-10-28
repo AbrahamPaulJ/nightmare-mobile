@@ -210,6 +210,22 @@ object WanVideoNode : NodeType {
     private const val LORA_BYTES_PER_TOKEN = 32L shl 10
 
     /**
+     * ⭐ Which of Wan 2.2 A14B's experts a LoRA file is for, from its name, as engine `dit/068` reads the path: a Wan 2.2
+     * pair names its halves ("..._high_noise", "HighNoise", "..._H.safetensors"), and anything else is a Wan 2.1 14B
+     * LoRA, one file for both experts (Joachim's, TG #7454, is one).
+     */
+    enum class Expert(val prefix: String) { HIGH("high:"), LOW(""), BOTH("both:") }
+
+    fun expertOf(fileName: String): Expert {
+        val n = fileName.substringBeforeLast('.').lowercase()
+        return when {
+            Regex("high[ _-]?noise|(^|[^a-z])high([^a-z]|$)|_h$|-h$").containsMatchIn(n) -> Expert.HIGH
+            Regex("low[ _-]?noise|(^|[^a-z])low([^a-z]|$)|_l$|-l$").containsMatchIn(n) -> Expert.LOW
+            else -> Expert.BOTH
+        }
+    }
+
+    /**
      * ⭐ Pure: whether [need] fits the chip. Under a [budget] the DiT streams, so ONE block must fit
      * the budget (the tester above: `need 4847.66 MB device / 2816 MB budget`); resident, the v75 map.
      */
@@ -516,8 +532,8 @@ object WanVideoNode : NodeType {
                     "drag a Prompt node out of the palette and connect it"
             )
         // ⭐ `<lora:name:0.8>` tags become Wan LoRAs (a tester's ask, 2026-10-14): the image nodes'
-        // lookup ([PromptLoras.resolve] in the LoRA folder), sent with the request. ⚠ Wan 2.2 TI2V-5B
-        // LoRAs only; a 14B one does not fit this model's layers (the engine logs what it bound).
+        // lookup ([PromptLoras.resolve] in the LoRA folder), sent with the request. ⚠ A LoRA fits its own model: a 5B
+        // one on the 5B, a 14B one (Wan 2.1 or 2.2) on the 14B (the engine logs what it bound).
         val pos = PromptLoras.extract(wired.positive)
         val neg = PromptLoras.extract(wired.negative)
         val loraDir = com.abrah.nightmare.BackendProcess.lorasDir(android)
@@ -525,12 +541,11 @@ object WanVideoNode : NodeType {
         // ⭐⭐ Motion transfer takes NO LoRAs (the user's call, 2026-10-15): it has no picker, and its
         // prompt's tags are skipped out loud rather than reaching Fun by the back door. Its FastWan
         // speed LoRA is part of the model ([ModelCatalog.FUN_LORA]), not this list.
-        val takesLoras = driving == null && node.type != WanA14Node.name
+        // ⭐ The 14B takes them since 1.6.259 (Joachim, TG #7454): engine `dit/068` binds each to its expert ([expertOf]).
+        val takesLoras = driving == null
         if (!takesLoras) {
             (pos.tags + neg.tags).forEach { t ->
-                // ⭐ The 14B takes none either: Wan 2.2 Turbo LoRAs do not fit its layers, and its speed-up is built in.
-                if (driving == null) ctx.warn(ctx.text(R.string.run_lora_14b_skipped, "Wan 2.2 14B takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
-                else ctx.warn(ctx.text(R.string.run_lora_motion_skipped, "Motion transfer takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
+                ctx.warn(ctx.text(R.string.run_lora_motion_skipped, "Motion transfer takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
             }
         }
         // ⭐ The picker's LoRAs first. ⚠⚠ A picked file that is missing is REFUSED by name, the image
@@ -548,7 +563,9 @@ object WanVideoNode : NodeType {
                 }
         }
         // ⚠ A tag naming a file the picker already has replaces the picker's strength, as on the image nodes.
-        val loras = picked.filter { (f, _) -> tagged.none { it.first == f } } + tagged
+        // ⭐ On the 14B each path carries its expert ([expertOf]); the cache key below includes it.
+        val loras = (picked.filter { (f, _) -> tagged.none { it.first == f } } + tagged)
+            .map { (f, s) -> if (node.type == WanA14Node.name) expertOf(File(f).name).prefix + f to s else f to s }
         if (loras.isNotEmpty()) {
             ctx.say("  LoRAs: " + loras.joinToString { (f, s) -> "${File(f).nameWithoutExtension} $s" })
         }

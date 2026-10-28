@@ -1,0 +1,30 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index 3ddd71a..70d1cee 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -440,12 +440,23 @@ bool engine_generate_video(dit_ctx *ctx, const dit_video_params *params,
+         ctx->last_error = "empty lora path";
+         return false;
+       }
++      // nightmare (dit/068): Wan 2.2 A14B's experts from the path, the ABI having no field for it: "high:" binds the
++      // LoRA to the high-noise expert, "both:" to both (a Wan 2.1 14B LoRA is one file for the two), no prefix to the
++      // low-noise model as before (every other model, and the 5B).
++      const char *path = params->lora_paths[i];
++      bool high = false, both = false;
++      if (std::strncmp(path, "high:", 5) == 0) { high = true; path += 5; }
++      else if (std::strncmp(path, "both:", 5) == 0) { both = true; path += 5; }
+       sd_lora_t lora{};
+-      lora.is_high_noise = false;
++      lora.is_high_noise = high;
+       lora.multiplier =
+           params->lora_multipliers ? params->lora_multipliers[i] : 1.0f;
+-      lora.path = params->lora_paths[i];
++      lora.path = path;
+       loras.push_back(lora);
++      if (both) {
++        lora.is_high_noise = true;
++        loras.push_back(lora);
++      }
+     }
+     gen.loras = loras.data();
+     gen.lora_count = static_cast<uint32_t>(loras.size());

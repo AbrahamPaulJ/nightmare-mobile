@@ -1337,7 +1337,6 @@
     <string name="sampling_seed_value">seed %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
     <string name="hint_wan14_seconds">Clip length in seconds, 16 frames each. 1 to 3. 1 s at 720x1280 takes about 12 minutes on an 8 Elite, and each second more takes longer than the last: 3 s at 720p can take an hour.</string>
-    <string name="run_lora_14b_skipped">Wan 2.2 14B takes no LoRAs: "%1$s" from the prompt was skipped</string>
     <string name="knob_smooth">Smooth motion</string>
     <string name="knob_motion_fps">Frame rate</string>
     <string name="hint_motion_fps">How often the driving video is read. 24 is Wan\'s own rate and looks best. 12 and 8 are faster but move in bigger jumps: Smooth motion fills them in.</string>

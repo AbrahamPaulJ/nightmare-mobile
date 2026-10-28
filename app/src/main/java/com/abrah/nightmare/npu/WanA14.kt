@@ -33,9 +33,10 @@ object WanA14Node : NodeType {
     override val showsResult = false
 
     // ⭐ Its own size advice under the picker: the 5B's (made for 1280x704, 832x480 "three times faster") is wrong here.
-    // ⚠ No LoRA row: Wan 2.2 Turbo LoRAs do not fit the 14B, and its 4-step speed-up is built in. Seconds 1 to 3 at 16
-    // fps (one frame of image to video is the picture back). [WanVideoNode.FOLLOW_PICTURE] is set by its flow, never drawn.
-    override val widgets get() = WanVideoNode.widgets.filterNot { it.name == com.abrah.nightmare.SdSampler.LORAS }.map {
+    // ⭐ The LoRA row since 1.6.259 (Joachim, TG #7454): 14B LoRAs, Wan 2.1 (both experts) or a Wan 2.2 high/low pair
+    // ([WanVideoNode.expertOf], engine `dit/068`). Seconds 1 to 3 at 16 fps (one frame of image to video is the picture
+    // back). [WanVideoNode.FOLLOW_PICTURE] is set by its flow, never drawn.
+    override val widgets get() = WanVideoNode.widgets.map {
         when (it.name) {
             "seconds" -> it.copy(
                 default = DEFAULT_SECONDS.toString(), min = 1.0, max = WanVideoNode.A14B.maxSeconds.toDouble(),

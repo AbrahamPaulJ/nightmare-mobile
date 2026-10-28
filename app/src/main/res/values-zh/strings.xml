@@ -1306,7 +1306,6 @@
     <string name="sampling_seed_value">种子 %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
     <string name="hint_wan14_seconds">视频时长（秒），每秒 16 帧。1 到 3 秒。8 Elite 上 720x1280 的 1 秒约 12 分钟，每多一秒都比上一秒更久：720p 的 3 秒可能要一小时。</string>
-    <string name="run_lora_14b_skipped">Wan 2.2 14B 不使用 LoRA：已跳过提示词中的“%1$s”</string>
     <string name="knob_smooth">平滑运动</string>
     <string name="knob_motion_fps">帧率</string>
     <string name="hint_motion_fps">读取驱动视频的频率。24 是 Wan 自己的帧率，效果最好。12 和 8 更快，但动作跳跃更大：平滑运动可以补上。</string>

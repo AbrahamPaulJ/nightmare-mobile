@@ -61,7 +61,7 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 | **Parts** | 1 to 10. More than 1 makes a longer clip in parts, each as long as **Seconds** and starting on the last frame of the part before, joined into one video. Each part takes as long as one clip |
 | **Part prompts** | With 2 or more parts: what happens in part 2 onwards, one line each. A blank or missing line repeats the part before; part 1 uses the Prompt node |
 | **Keep colours** | With 2 or more parts, on by default: holds every part to the first frame's colours. Without it a long clip tends to turn darker and redder part by part (the model drifts a little each part and the next starts from there). Turn it off for a clip meant to change its light |
-| **LoRAs** | Wan 2.2 Turbo (TI2V-5B) LoRAs only; Wan 2.2 14B takes none (its speed-up is built in). See [LoRAs](../models/loras.md) |
+| **LoRAs** | A LoRA made for the model you use: Wan 2.2 Turbo (TI2V-5B) LoRAs on Turbo; Wan 14B LoRAs on Wan 2.2 14B. A single-file Wan 2.1 14B LoRA works on both of its halves; a Wan 2.2 high/low pair is told apart by its file names (`high_noise`, `low_noise`). See [LoRAs](../models/loras.md) |
 
 Neodragon has **Seed** and **Upscale** (on: 2× to 1024 × 640; off: 512 × 320, a little faster).
 

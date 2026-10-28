@@ -184,11 +184,31 @@ class WanA14Test {
         assertEquals(16, WanA14Node.widgets.first { it.name == "width" }.step)
         assertEquals(16, WanA14Node.widgets.first { it.name == "height" }.step)
     }
-    /** ⭐ The 14B's own knobs (the user, 2026-10-25): 1 s by default, 16 fps, no LoRAs, the picture's shape in its flow. */
+    /**
+     * ⭐ A 14B LoRA's expert from its file name (engine `dit/068`): a Wan 2.2 pair's halves by name, everything else (a
+     * Wan 2.1 14B LoRA, Joachim's TG #7454) on both. ⚠ "highlights" or "below" are not halves.
+     */
+    @Test
+    fun aFourteenBLoraFindsItsExpertByName() {
+        val e = WanVideoNode::expertOf
+        assertEquals(WanVideoNode.Expert.HIGH, e("wan22_i2v_lightx2v_high_noise.safetensors"))
+        assertEquals(WanVideoNode.Expert.HIGH, e("Wan2.2-I2V-A14B-HighNoise-myLora.safetensors"))
+        assertEquals(WanVideoNode.Expert.HIGH, e("motion_H.safetensors"))
+        assertEquals(WanVideoNode.Expert.LOW, e("wan22_i2v_lightx2v_low_noise.safetensors"))
+        assertEquals(WanVideoNode.Expert.LOW, e("Wan2.2-I2V-A14B-LowNoise-myLora.safetensors"))
+        assertEquals(WanVideoNode.Expert.BOTH, e("genitals_helper_v1.0_e219.safetensors"))
+        assertEquals(WanVideoNode.Expert.BOTH, e("hair_highlights_v2.safetensors"))
+        assertEquals(WanVideoNode.Expert.BOTH, e("below_the_waves.safetensors"))
+        assertEquals("both:", WanVideoNode.Expert.BOTH.prefix)
+        assertEquals("high:", WanVideoNode.Expert.HIGH.prefix)
+        assertEquals("", WanVideoNode.Expert.LOW.prefix)
+    }
+
+    /** ⭐ The 14B's own knobs (the user, 2026-10-25): 1 s by default, 16 fps, LoRAs (1.6.259), the picture's shape in its flow. */
     @Test
     fun theFourteenBSheetIsItsOwn() {
         val w = WanA14Node.widgets.associateBy { it.name }
-        assertTrue("no LoRA row on the 14B", com.abrah.nightmare.SdSampler.LORAS !in w)
+        assertTrue("the 14B has a LoRA row since 1.6.259", com.abrah.nightmare.SdSampler.LORAS in w)
         assertEquals("1", w.getValue("seconds").default)
         assertEquals(1.0, w.getValue("seconds").min!!, 0.0)
         assertEquals(com.abrah.nightmare.R.string.hint_wan14_seconds, w.getValue("seconds").hintRes)

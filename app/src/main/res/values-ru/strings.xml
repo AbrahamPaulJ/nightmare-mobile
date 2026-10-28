@@ -1333,7 +1333,6 @@
     <string name="sampling_seed_value">зерно %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
     <string name="hint_wan14_seconds">Длина клипа в секундах, 16 кадров в секунду. От 1 до 3. 1 с при 720x1280 занимает около 12 минут на 8 Elite, и каждая следующая секунда дольше предыдущей: 3 с при 720p может занять час.</string>
-    <string name="run_lora_14b_skipped">Wan 2.2 14B не принимает LoRA: «%1$s» из промпта пропущена</string>
     <string name="knob_smooth">Плавное движение</string>
     <string name="knob_motion_fps">Частота кадров</string>
     <string name="hint_motion_fps">Как часто считывается ведущее видео. 24 это родная частота Wan, так лучше всего. 12 и 8 быстрее, но движение идёт большими скачками: плавное движение их заполняет.</string>
