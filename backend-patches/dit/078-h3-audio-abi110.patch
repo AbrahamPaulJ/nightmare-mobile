@@ -25,7 +25,7 @@ index 70d1cee..d378e47 100644
  
    if (!ok || frame_count < 1 || !frames) {
 diff --git a/include/DitEngine.h b/include/DitEngine.h
-index caa3f71..13e8e95 100644
+index caa3f71..7092c32 100644
 --- a/include/DitEngine.h
 +++ b/include/DitEngine.h
 @@ -36,7 +36,11 @@ extern "C" {
@@ -52,7 +52,20 @@ index caa3f71..13e8e95 100644
  } dit_ctx_params;
  
  typedef struct {
-@@ -188,6 +196,10 @@ typedef struct {
+@@ -143,6 +151,12 @@ typedef void (*dit_preview_cb)(int step, const uint8_t *rgb, int width,
+ 
+ typedef void (*dit_log_cb)(int level, const char *text, void *user_data);
+ 
++// ABI 110: the generated soundtrack, float samples in [-1, 1], interleaved by
++// channel, valid only during the call. Called once, before the frames, when the
++// model made audio and dit_video_params.on_audio is set.
++typedef void (*dit_audio_cb)(const float *samples, uint64_t sample_count,
++                             int channels, int sample_rate, void *user_data);
++
+ // --- ABI 106: video ---
+ typedef struct {
+   const char *prompt;
+@@ -188,6 +202,10 @@ typedef struct {
    const uint8_t *ref_image_rgb;
    int ref_width;
    int ref_height;
@@ -63,16 +76,3 @@ index caa3f71..13e8e95 100644
  } dit_video_params;
  
  // One decoded frame, RGB8, valid only during the call. Frames arrive in order
-@@ -196,6 +208,12 @@ typedef struct {
- typedef bool (*dit_frame_cb)(int index, int count, const uint8_t *rgb,
-                              int width, int height, void *user_data);
- 
-+// ABI 110: the generated soundtrack, float samples in [-1, 1], interleaved by
-+// channel, valid only during the call. Called once, before the frames, when the
-+// model made audio and dit_video_params.on_audio is set.
-+typedef void (*dit_audio_cb)(const float *samples, uint64_t sample_count,
-+                             int channels, int sample_rate, void *user_data);
-+
- typedef struct {
-   int abi_version;
- 
