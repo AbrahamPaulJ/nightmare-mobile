@@ -1399,6 +1399,4 @@
     <string name="part_readout_line">Part %1$d: %2$s</string>
     <string name="part_readout_same">Part %1$d: the same as part %2$d</string>
     <string name="part_readout_unused">%1$d line(s) come after the last part and will not be used. Set Parts to %2$d to use them</string>
-    <string name="flow_h3_edit_name">Edit with MiniMax H3</string>
-    <string name="flow_h3_edit_about">Your picture as the first frame of a short MiniMax H3 clip that makes the change you describe; its last frame is the edited picture. Say in the prompt what changes and what stays. About 6 minutes; MiniMax H3, 8 Gen 3 or newer, 12 GB of RAM.</string>
 </resources>

@@ -68,7 +68,10 @@ object DitEngine {
      * decode's seam flicker, `docs/VIDEO-GGML.md` §3). Still ABI 106: an engine without 018 ignores
      * the key, so the backend did not move. CI run 38509077877; skels unchanged.
      *
-     * ⭐⭐ The engine current since 1.6.261: `dit-engine-abi110`, CI 40876155848 (branch `dit-068`): lora14 + `dit/069`-`076`
+     * ⭐⭐ The engine current since 1.6.266: `dit-engine-abi110-h3enc`, CI 40950650774 (branch `dit-068`): abi110 +
+     * `dit/079` (MiniMax H3's start picture encoded on the NPU's CONV_3D_CAUSAL, not a CPU 3D conv: 94 to 8 s of a
+     * 384x672 clip on the S25, `docs/MINIMAX-H3.md` §5e). Still ABI 110; the wrapper only, skels are abi110's.
+     * Before it, since 1.6.261: `dit-engine-abi110`, CI 40876155848 (branch `dit-068`): lora14 + `dit/069`-`076`
      * and `dit/078` (MiniMax H3, video with sound). ⚠ **ABI 110**, a two-binary change: `audio_vae_path` and `on_audio`
      * (backend 050); an ABI 108 backend refuses this engine and the other way round. The wrapper only: skels are lora14's.
      * Before it, since 1.6.259: `dit-engine-abi108-lora14`, CI 40741059307 (branch `dit-068`): stream +
@@ -178,7 +181,7 @@ object DitEngine {
      * revision, never an upload over the old one".)
      */
     const val URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi110/dit-engine-abi110.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi110-h3enc/dit-engine-abi110-h3enc.zip"
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -188,7 +191,7 @@ object DitEngine {
      * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
      */
     const val HF_URL =
-        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi110.zip"
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi110-h3enc.zip"
 
     /**
      * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
@@ -199,11 +202,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_313_012L
+    const val BYTES = 23_313_128L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 56_224_712L
+    const val FILE_BYTES = 56_225_464L
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -213,7 +216,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "402092160003c7393b8758e801974aa335df1499bd07f8f678837effb050a9d0"
+    private const val SHA256 = "1d47358c1477a1aa74b4d84688d9a50a5c8efa5646f891b4037fea2cb9824353"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

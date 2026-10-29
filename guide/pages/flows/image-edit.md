@@ -74,14 +74,3 @@ this picture*.
   reference. Lower values start from the photo itself and change less.
 - **Allow padding** in the crop window lets the frame zoom out past the photo; the empty part
   is filled with the **Pad** choice (black, blur, or green for an outpaint LoRA) and generated.
-
-## Edit with MiniMax H3
-
-**Flows → Edit with MiniMax H3** edits a picture a different way: your picture becomes the first frame of a short
-MiniMax H3 clip whose prompt makes the change happen, and the Output takes the clip's **last frame**, the edited
-picture. The prompt opens on an example (the clothes turning into a red silk dress). Say what changes in the
-`detailed_description`, and what must stay in `retention_analysis`.
-
-- Needs MiniMax H3 (Models → Video), an 8 Gen 3 or newer and 12 GB of RAM. About 6 minutes on an 8 Elite.
-- It keeps the face, pose and background well, but it is not pixel-exact like the edit models above: the framing can
-  ease back a little over the clip. The whole clip, with its sound, is in the node if you want it.

@@ -40,17 +40,4 @@ class VideoPromptsTest {
         assertEquals(VideoPrompts.MOTION, prompt(com.abrah.nightmare.canvas.motionTransferWorkflow()))
         assertEquals(VideoPrompts.NEODRAGON, prompt(com.abrah.nightmare.canvas.textToVideoWorkflow()))
     }
-
-    @Test
-    fun theH3EditFlowOutputsTheClipsLastFrame() {
-        val g = com.abrah.nightmare.canvas.h3EditWorkflow().graph
-        val edit = g.nodes.first { it.type == H3Node.name }
-        assertEquals("image", edit.inputs["image"]?.node)
-        assertEquals("true", edit.params[WanVideoNode.FOLLOW_PICTURE])
-        assertEquals(WanVideoNode.LAST_FRAME, g.nodes.first { it.type == "core.output" }.inputs["media"]?.port)
-        assertEquals(VideoPrompts.H3_EDIT, g.nodes.first { it.type == "core.prompt" }.params["prompt"])
-        // ⭐ Inside the 8 Gen 3's measured ceiling at its opening size and length.
-        assertTrue(WanVideoNode.fitsTokens(544, 960, H3Node.framesFor(1.6), 75, WanVideoNode.H3))
-        assertTrue(com.abrah.nightmare.canvas.RECIPES.any { it.id == com.abrah.nightmare.canvas.H3_EDIT })
-    }
 }

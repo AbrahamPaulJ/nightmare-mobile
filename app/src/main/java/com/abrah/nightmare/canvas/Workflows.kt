@@ -562,18 +562,6 @@ val RECIPES: List<Recipe> = listOf(
         labelRes = R.string.flow_flux_edit_name,
         aboutRes = R.string.flow_flux_edit_about,
     ),
-    // ⭐⭐ Edit with MiniMax H3: an edit as a short clip's last frame (`docs/MINIMAX-H3.md` §5f). After the DiT edits: minutes,
-    // a 17.5 GB model and 12 GB of RAM.
-    Recipe(
-        H3_EDIT, "Edit with MiniMax H3",
-        "Your picture as the first frame of a short MiniMax H3 clip that makes the change you describe; the last frame is the edit.",
-        ::h3EditWorkflow,
-        usesCheckpoint = false,
-        minArch = com.abrah.nightmare.ModelCatalog.MINIMAX_H3.builds.minOf { it.minArch },
-        section = EDIT,
-        labelRes = R.string.flow_h3_edit_name,
-        aboutRes = R.string.flow_h3_edit_about,
-    ),
     // ⭐⭐ Text to video and Image to video: ONE flow each for Wan 2.2 and Neodragon (the user's call,
     // 2026-10-15: "merge them, default to Wan 2.2 5B"), the model a choice on the video node.
     Recipe(
@@ -632,7 +620,6 @@ const val FACE_EDIT = "face_edit"
 const val ANIMATE = "animate_portrait"
 const val I2V = "i2v"
 const val T2V14 = "t2v14"
-const val H3_EDIT = "h3_edit"
 const val MOTION = "motion"
 
 /**
@@ -967,30 +954,6 @@ fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
         )
     ),
     if (i2v) flowLayout("prompt", "image", "video", "output") else flowLayout("prompt", "video", "output"),
-)
-
-/**
- * ⭐⭐ **Edit with MiniMax H3** ([H3_EDIT], `docs/MINIMAX-H3.md` §5f): the picture is the first frame of a short H3 clip
- * whose prompt makes one change happen, and the Output takes the clip's LAST frame, the edited picture. The clip
- * follows the picture's shape at 544x960 worth of pixels for 1.6 s, inside the 8 Gen 3's measured ceiling too.
- */
-fun h3EditWorkflow(): Workflow = Workflow(
-    Graph(
-        listOf(
-            Node("prompt", "core.prompt", params = mapOf("prompt" to com.abrah.nightmare.npu.VideoPrompts.H3_EDIT, "negative" to "")),
-            Node("image", "core.image", params = mapOf("uri" to "")),
-            Node(
-                "edit", com.abrah.nightmare.npu.H3Node.name,
-                params = mapOf(
-                    "seed" to "0", "seconds" to "1.6", "width" to "544", "height" to "960",
-                    com.abrah.nightmare.npu.WanVideoNode.FOLLOW_PICTURE to "true",
-                ),
-                inputs = sources("prompt" to "prompt", "image" to "image"),
-            ),
-            Node("output", "core.output", inputs = sources("media" to "edit:" + com.abrah.nightmare.npu.WanVideoNode.LAST_FRAME)),
-        )
-    ),
-    flowLayout("prompt", "image", "edit", "output"),
 )
 
 /**
