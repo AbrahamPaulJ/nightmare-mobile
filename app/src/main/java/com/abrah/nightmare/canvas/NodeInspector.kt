@@ -1773,9 +1773,8 @@ internal fun NodeInspectorBody(
             val nsfw13Ok = node.inputs["image"] == null && com.abrah.nightmare.Prefs.matureContent &&
                 (!caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.WAN21_NSFW13.builds.minOf { it.minArch })
             if (!nsfw13Ok && node.type != com.abrah.nightmare.npu.WanNsfw13Node.name) types.remove(com.abrah.nightmare.npu.WanNsfw13Node.name)
-            // ⭐ MiniMax H3 (`npu.H3Node`): text to video with sound, so offered with NO picture wired, on the 8 Gen 3 and up.
-            val h3Ok = node.inputs["image"] == null &&
-                (!caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.MINIMAX_H3.builds.minOf { it.minArch })
+            // ⭐ MiniMax H3 (`npu.H3Node`): text or image to video with sound, on the 8 Gen 3 and up.
+            val h3Ok = !caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.MINIMAX_H3.builds.minOf { it.minArch }
             if (!h3Ok && node.type != com.abrah.nightmare.npu.H3Node.name) types.remove(com.abrah.nightmare.npu.H3Node.name)
             // ⭐ A DROPDOWN, as the image nodes' model picker (the user, 2026-10-25: "why are we using cards when all
             // the image samplers use dropdowns"): its length depends on the picture and the chip, so it is always one.

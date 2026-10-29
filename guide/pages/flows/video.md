@@ -55,7 +55,7 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 
 **Nodes:** Prompt → Video (MiniMax H3) → Output. Needs MiniMax H3 and an 8 Gen 3 or newer with 12 GB of RAM.
 
-1. **Flows → Text to video**, then set the video node's **Model** to **MiniMax H3 (with sound)**, or **Use** on MiniMax H3 in Models.
+1. **Flows → Text to video** (or **Image to video**, to start the clip from your photo), then set the video node's **Model** to **MiniMax H3 (with sound)**, or **Use** on MiniMax H3 in Models. With a photo wired the clip starts on it: describe what the person in it does and says.
 2. **Prompt:** it opens on a worked example (a barista speaking one line in a café) in the sections H3 was trained on. Edit it section by section; the hint under the box says what each one is for:
 
     | section | what to write |
@@ -76,6 +76,7 @@ MiniMax H3 was trained on prompts in this shape, so the sections matter: one lin
 | **Width**, **Height** | 384 to 1344 in 32 px steps, up to 768 × 1344 worth of pixels. 384 × 384 is the quickest. Nothing under 384: smaller clips lose their colours |
 | **Seconds** | H3's own lengths: 0.9, 1.6, 2.3, 3.0, 3.8, 4.5 or 5.2, at 24 frames a second. A larger size fits fewer: on an 8 Elite about 5.2 s at 384 × 384, 3.0 s at 832 × 480 or 640 × 640, 2.3 s at 960 × 544, 1.6 s at 1152 × 640, 0.9 s at 768 × 1344; on an 8 Gen 3, 5.2 s at 384 × 384, 2.3 s at 832 × 480, 1.6 s at 640 × 640 or 544 × 960, 0.9 s at 768 × 1344. A new node opens on 832 × 480 for 2.3 s, which fits both. The node says when a size and length are too much |
 | **Smooth motion** | twice the frames, as on the Wan nodes; the sound stays in sync |
+| **Parts** | up to 10 parts, each starting on the last frame of the one before, as on the Wan nodes; the sound of each part joins with it. A plain line in **Part prompts** replaces only the scene, so the speaker's voice, the sounds and the music carry through |
 | **Seed** | 0 picks a new one each run |
 
 Long renders heat the phone: see [Heat](../reference/settings.md#heat). MiniMax H3 takes no LoRAs. **Powered by MiniMax H3.** Its licence (the MiniMax H3 Community License) does not cover the European Union, the United Kingdom, South Korea or the United States; anything you make with it and share publicly must say it was made by AI; and its clips may not be used to improve other AI models. The app shows these terms before the download and asks you to accept them.

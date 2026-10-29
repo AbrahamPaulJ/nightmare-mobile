@@ -218,4 +218,48 @@ object AudioMux {
     }
 
     private const val AAC_BITRATE = 192_000
+    /**
+     * ⭐ A PART's soundtrack ([pcm], backend 050's NMA1) appended to the film's ([into], float32 interleaved), its first
+     * [dropFrames] video frames' worth of samples left out: a later part's frame 0 repeats the clip's last frame and is
+     * dropped ([WanVideoNode]'s parts), so its sound goes too and the joins stay in sync. [fmt] holds "rate channels
+     * frames" of what [into] holds, rewritten after each part, so a resumed run trims [into] back to it first.
+     */
+    fun appendPart(pcm: File, into: File, fmt: File, dropFrames: Int, fps: Int) {
+        val bytes = pcm.readBytes()
+        if (bytes.size < 20 || String(bytes, 0, 4, Charsets.US_ASCII) != "NMA1") return
+        val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        b.position(4)
+        val rate = b.int
+        val channels = b.int
+        val frames = b.long
+        val have = ((bytes.size - 20) / 4 / channels.coerceAtLeast(1)).toLong()
+        val drop = (rate.toLong() * dropFrames / fps.coerceAtLeast(1)).coerceAtMost(minOf(frames, have))
+        val keep = minOf(frames, have) - drop
+        val held = partFrames(fmt)
+        java.io.RandomAccessFile(into, "rw").use { f ->
+            f.setLength(held * channels * 4)
+            f.seek(f.length())
+            f.write(bytes, 20 + (drop * channels * 4).toInt(), (keep * channels * 4).toInt())
+        }
+        fmt.writeText("$rate $channels ${held + keep}")
+    }
+
+    private fun partFrames(fmt: File): Long =
+        runCatching { fmt.readText().trim().split(' ')[2].toLong() }.getOrDefault(0L)
+
+    /** ⭐ The joined parts' soundtrack ([appendPart]) as one NMA1 file at [out], or null when no part had sound. */
+    fun finishParts(into: File, fmt: File, out: File): File? {
+        val f = runCatching { fmt.readText().trim().split(' ').map { it.toLong() } }.getOrNull() ?: return null
+        if (f.size < 3 || !into.isFile) return null
+        val (rate, channels, frames) = f
+        val head = ByteBuffer.allocate(20).order(ByteOrder.LITTLE_ENDIAN)
+        head.put("NMA1".toByteArray(Charsets.US_ASCII)).putInt(rate.toInt()).putInt(channels.toInt()).putLong(frames)
+        out.outputStream().use { o ->
+            o.write(head.array())
+            into.inputStream().use { i -> i.copyTo(o) }
+        }
+        into.delete()
+        fmt.delete()
+        return out
+    }
 }

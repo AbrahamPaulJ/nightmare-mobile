@@ -12,7 +12,7 @@ There are five kinds of node. Every flow, ready-made or yours, is built from the
 | [Video generator](#video-generator) | Generate | prompt, image | video |
 | [Wan video](#wan-video) | Generate | prompt, image | video, last frame |
 | [Motion transfer](#motion-transfer) (Wan Fun Control) | Generate | prompt, image, control | video |
-| [Video with sound](#video-with-sound) (MiniMax H3) | Generate | prompt | video, last frame |
+| [Video with sound](#video-with-sound) (MiniMax H3) | Generate | prompt, image | video, last frame |
 | [Output](#output) | Common | media | - |
 
 Every node's sheet ends with **Reset node** (all settings back to default, and any batch sweep on

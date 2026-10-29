@@ -15,20 +15,24 @@ import com.abrah.nightmare.Widget
  * the prompt. H3 is trained on a STRUCTURED prompt (who is in it and how they sound, what is said, the soundscape, the
  * music), so the Prompt node opens on one ([VideoPrompts.H3]) and its hint names the sections. ⚠ ONE prompt box, the
  * Prompt node's (the user, 2026-10-30): four fields on this node left the Prompt node holding half the prompt. A plain
- * prompt still works: [H3Prompt] wraps it. ⚠ Text to video only: no picture port.
+ * prompt still works: [H3Prompt] wraps it.
+ * ⭐ A wired picture is the clip's FIRST FRAME (H3's I2VA keyframe, sd.cpp's `init_image`; framed like Wan's image to
+ * video, [WanVideoNode.runClip]). ⚠ FastH3 is distilled for text to video only; the first frame is held by the base
+ * model's keyframe conditioning at 4 steps (`docs/MINIMAX-H3.md` §5e).
  */
 object H3Node : NodeType {
 
     override val appSide = false
     override val name = "h3.sample"
     override val version = "1"
-    override val inputs = listOf(Port("prompt", "PROMPT"))
+    override val inputs = listOf(Port("prompt", "PROMPT"), Port("image", "IMAGE"))
     override val outputs get() = WanVideoNode.outputs
     override val category = "generate"
     override val paletteName = "MiniMax H3"
-    override fun titleFor(node: Node): String = "Text to video with sound"
+    override fun titleFor(node: Node): String =
+        if (node.inputs["image"] != null) "Image to video with sound" else "Text to video with sound"
     override val defaultId = "video"
-    override val about = "a prompt into a clip with sound (speech, effects, music) with MiniMax H3"
+    override val about = "a prompt, or a prompt and a photo, into a clip with sound (speech, effects, music) with MiniMax H3"
     override val showsResult = false
 
     /**
@@ -60,7 +64,11 @@ object H3Node : NodeType {
         Widget("seconds", "string", label(framesFor(DEFAULT_SECONDS)), options = LENGTH_LABELS, hintRes = R.string.hint_h3_seconds),
         // ⭐ Every video node's (the user, 2026-10-29): the soundtrack keeps its length, so it stays in sync.
         Widget(WanVideoNode.SMOOTH, "bool", "false", hintRes = R.string.hint_wan_smooth),
-    )
+        // ⭐ Parts (the user, 2026-10-30): each part starts on the last frame of the one before, as Wan's, now that a
+        // wired picture works as H3's first frame; the soundtracks join with the frames. Then the framing of a wired picture.
+    ) + WanVideoNode.widgets.filter { it.name in WanParts.KNOBS || it.name in FRAMING }
+
+    private val FRAMING = setOf("x", "y", "w", "h")
 
     override fun framesTo(node: Node): Pair<Int, Int> = WanVideoNode.sizeOf(effectiveParams(node), WanVideoNode.H3)
 
@@ -117,6 +125,19 @@ object H3Prompt {
             "overall_soundscape:\nDiegetic sound only: the natural sound of the scene.",
             "non_diegetic_music:\nN/A - no score, no soundtrack, no musical arrangement at any point.",
         ).joinToString("\n\n")
+    }
+
+    private val SHOT = Regex("""\[Shot 1\][^\n]*""")
+
+    /**
+     * ⚠ Pure: a later PART's prompt ([WanParts]): a structured line is its own prompt; a plain line takes the place of
+     * the main prompt's `[Shot 1]` scene, so who speaks and how they sound, the soundscape and the music carry through
+     * every part. A plain main prompt has nothing to carry: the line is wrapped on its own.
+     */
+    fun forPart(main: String, line: String, frames: Int, fps: Int = 24): String {
+        val l = line.trim()
+        if ("subject_definitions:" in l || "subject_definitions:" !in main || !SHOT.containsMatchIn(main)) return build(l, frames, fps)
+        return build(main.trim().replaceFirst(SHOT, Regex.escapeReplacement("[Shot 1] " + sentence(l))), frames, fps)
     }
 
     /** A plain prompt as one sentence: trimmed, a full stop added when it has no end mark. */

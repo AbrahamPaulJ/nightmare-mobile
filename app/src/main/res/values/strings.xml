@@ -1177,7 +1177,7 @@
     <string name="video_model_neodragon">Neodragon</string>
     <string name="video_model_wan14">Wan 2.2 14B</string>
     <string name="video_model_nsfw13">NSFW Wan 1.3B</string>
-    <string name="hint_video_model">Wan 2.2 Turbo looks much better and takes minutes; Wan 2.2 14B (with a picture wired) is the best and slowest; NSFW Wan 1.3B (no picture wired) is a community model for adult content; MiniMax H3 (no picture wired) makes the clip with its sound, speech and music; Neodragon is the fastest, 2 s in about 30 s</string>
+    <string name="hint_video_model">Wan 2.2 Turbo looks much better and takes minutes; Wan 2.2 14B (with a picture wired) is the best and slowest; NSFW Wan 1.3B (no picture wired) is a community model for adult content; MiniMax H3 makes the clip with its sound, speech and music, from a prompt or from your picture; Neodragon is the fastest, 2 s in about 30 s</string>
     <string name="flow_motion_name">Motion transfer</string>
     <string name="flow_motion_about">Your picture moving like a video you choose: its pose, frame by frame, with Wan 2.2 Fun Control.</string>
     <string name="video_in_none">No video chosen</string>
@@ -1375,7 +1375,7 @@
     <string name="wan_follow_picture">The clip takes your picture\'s shape; these set how many pixels (832x480 worth for a quick try, 1280x720 worth for sharp faces).</string>
     <!-- MiniMax H3 (npu/H3Node.kt), video with sound -->
     <string name="video_model_h3">MiniMax H3 (with sound)</string>
-    <string name="h3_about">Text to video with sound: speech, sound effects and music, made together with the picture by MiniMax H3 (FastH3, 4 steps). Text only, no picture in. About 6 minutes for 3 seconds at 384x384 on an 8 Elite, 13 minutes at 832x480. 8 Gen 3 or newer, 12 GB of RAM. A 17.5 GB download; with Krea 2 installed its 2.4 GB text encoder is shared. MiniMax H3 Community License: not for use in the European Union, the United Kingdom, South Korea or the United States. Use Wi-Fi.</string>
+    <string name="h3_about">Video with sound: speech, sound effects and music, made together with the picture by MiniMax H3 (FastH3, 4 steps). From a prompt, or from your photo as the first frame. About 6 minutes for 3 seconds at 384x384 on an 8 Elite, 13 minutes at 832x480. 8 Gen 3 or newer, 12 GB of RAM. A 17.5 GB download; with Krea 2 installed its 2.4 GB text encoder is shared. MiniMax H3 Community License: not for use in the European Union, the United Kingdom, South Korea or the United States. Use Wi-Fi.</string>
     <string name="mb_powered_h3">Powered by MiniMax H3</string>
     <string name="licence_h3_title">MiniMax H3 Community License</string>
     <string name="licence_h3_terms">MiniMax H3 is made by MiniMax and shared under the MiniMax H3 Community License. Downloading it means you accept that licence. In short:\n\n• It does not cover use in the European Union, the United Kingdom, South Korea or the United States. Do not download or use it there.\n• Anything you make with it and share publicly must say clearly that it was made by AI.\n• Its clips may not be used to train or improve other AI models.\n• Its acceptable use policy applies: nothing unlawful or harmful.\n\nNightmare shows \"Powered by MiniMax H3\" where it uses the model.</string>

@@ -119,11 +119,15 @@ class H3NodeTest {
     }
 
     @Test
-    fun theNodeIsTextOnlyWithOnePromptBox() {
-        assertEquals(listOf("prompt"), H3Node.inputs.map { it.name })
+    fun theNodeHasOnePromptBoxAndAnOptionalPicture() {
+        // ⭐ A wired picture is the first frame (H3's keyframe); nothing wired is text to video.
+        assertEquals(listOf("prompt", "image"), H3Node.inputs.map { it.name })
+        assertEquals("Text to video with sound", H3Node.titleFor(Node("v", H3Node.name)))
+        assertEquals("Image to video with sound", H3Node.titleFor(Node("v", H3Node.name, inputs = mapOf("image" to com.abrah.nightmare.Source("img")))))
         val knobs = H3Node.widgets.associateBy { it.name }
-        // ⚠ ONE prompt box, the Prompt node's (the user, 2026-10-30): no sentence fields on this node.
-        assertEquals(setOf("width", "height", "seed", "seconds", WanVideoNode.SMOOTH), knobs.keys)
+        // ⚠ ONE prompt box, the Prompt node's (the user, 2026-10-30): no sentence fields on this node; the framing as Wan's.
+        assertEquals(setOf("width", "height", "seed", "seconds", WanVideoNode.SMOOTH, "x", "y", "w", "h") + WanParts.KNOBS, knobs.keys)
+        assertEquals(VideoPrompts.H3_I2V, VideoPrompts.forType(H3Node.name, i2v = true))
         assertTrue(com.abrah.nightmare.SdSampler.LORAS !in knobs)
         assertEquals(ModelCatalog.MINIMAX_H3, WanVideoNode.specOf(Node("v", H3Node.name)))
         assertEquals(WanVideoNode.H3, WanVideoNode.profileOf(H3Node.name))
@@ -163,6 +167,47 @@ class H3NodeTest {
         assertTrue(p, "overall_soundscape:\nDiegetic sound only: the natural sound of the scene." in p)
         assertTrue(p, "non_diegetic_music:\nN/A - no score" in p)
         assertFalse("<d>" in p)
+    }
+
+    @Test
+    fun aLaterPartKeepsTheSpeakerAndSoundOfTheMainPrompt() {
+        // ⭐ A plain part line takes the place of [Shot 1]; who speaks, the soundscape and the music carry through.
+        val part = H3Prompt.forPart(VideoPrompts.H3, "She waves goodbye and walks out of the café.", frames = 56)
+        assertTrue(part, "[Shot 1] She waves goodbye and walks out of the café." in part)
+        assertTrue(part, "S1 is a barista in her twenties" in part)
+        assertTrue(part, "The hiss of the espresso machine" in part)
+        assertFalse(part, "Your flat white" in part)
+        // A structured line is its own prompt; a plain main prompt has nothing to carry.
+        val own = "subject_definitions:\nS1 is a dog.\n\nsummary:\nA dog barks."
+        assertEquals(own, H3Prompt.forPart(VideoPrompts.H3, own, 22))
+        assertTrue(H3Prompt.forPart("a beach", "the tide comes in", 22).startsWith("subject_definitions:\nN/A"))
+    }
+
+    @Test
+    fun partSoundtracksJoinInSync() {
+        val dir = java.nio.file.Files.createTempDirectory("h3parts").toFile()
+        fun nma1(rate: Int, ch: Int, vararg v: Float): java.io.File {
+            val b = ByteBuffer.allocate(20 + v.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+            b.put("NMA1".toByteArray()).putInt(rate).putInt(ch).putLong((v.size / ch).toLong())
+            v.forEach { b.putFloat(it) }
+            return java.io.File(dir, "p${System.nanoTime()}.pcm").apply { writeBytes(b.array()) }
+        }
+        val into = java.io.File(dir, "all.audio")
+        val fmt = java.io.File(dir, "all.fmt")
+        // 4 Hz mono at 2 fps: one video frame is 2 samples. Part 2's first frame is dropped, and its sound with it.
+        AudioMux.appendPart(nma1(4, 1, 1f, 2f, 3f, 4f), into, fmt, dropFrames = 0, fps = 2)
+        AudioMux.appendPart(nma1(4, 1, 9f, 9f, 5f, 6f), into, fmt, dropFrames = 1, fps = 2)
+        val out = AudioMux.finishParts(into, fmt, java.io.File(dir, "film.pcm"))!!
+        val pcm = AudioMux.readNma1(out.readBytes())!!
+        assertEquals(4, pcm.rate)
+        assertEquals(listOf(1f, 2f, 3f, 4f, 5f, 6f).map { (it.coerceIn(-1f, 1f) * 32767f).toInt().toShort() }, pcm.samples.toList())
+        // A resumed run trims back to the parts it finished: re-appending part 2 does not double it.
+        AudioMux.appendPart(nma1(4, 1, 1f, 2f), into, fmt, 0, 2)
+        java.io.File(dir, "x").writeText("")
+        fmt.writeText("4 1 2")
+        AudioMux.appendPart(nma1(4, 1, 9f, 9f, 5f, 6f), into, fmt, 1, 2)
+        assertEquals("4 1 4", fmt.readText())
+        dir.deleteRecursively()
     }
 
     @Test

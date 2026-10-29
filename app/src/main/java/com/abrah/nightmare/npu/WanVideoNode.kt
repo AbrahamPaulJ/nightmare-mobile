@@ -775,7 +775,10 @@ object WanVideoNode : NodeType {
         val partCount = if (driving == null && frames > 1) WanParts.countOf(p) else 1
         val partPrompts = WanParts.promptsFor(
             pos.text, p[WanParts.PART_PROMPTS]?.lines()?.joinToString("\n") { PromptLoras.extract(it).text }, partCount,
-        )
+        ).let { ps ->
+            // ⭐ MiniMax H3: part 1 is the structured prompt; a later part's plain line takes its scene ([H3Prompt.forPart]).
+            if (!sound) ps else ps.mapIndexed { k, pr -> if (k == 0) promptText else H3Prompt.forPart(pos.text, pr, frames, H3.fps) }
+        }
         val keepColours = p[WanParts.KEEP_COLOURS] != "false"
         // ⚠ The decode's spatial tile changes the frames (a little), so it is part of the clip's key.
         val vaeTile = com.abrah.nightmare.BackendProcess.readWanVaeTileOverride(android) ?: vaeTileFor(w, h, prof)
@@ -1074,6 +1077,10 @@ object WanVideoNode : NodeType {
         val bytes = w * h * 3
         val marker = File(dir, "wan_$key.parts")
         val resume = WanFun.resumeFrom(marker.takeIf { raw.isFile }?.let { runCatching { it.readText() }.getOrNull() }, n)
+        // ⭐ MiniMax H3's parts each have a soundtrack: joined beside the frames ([AudioMux.appendPart]).
+        val audioRaw = File(dir, "wan_$key.audio")
+        val audioFmt = File(dir, "wan_$key.audio.fmt")
+        if (resume == null) { audioRaw.delete(); audioFmt.delete() }
         var total = 0
         var ms = 0L
         var start = startPng
@@ -1118,7 +1125,7 @@ object WanVideoNode : NodeType {
                         ctx.host.video(
                             prompt = prompts[pi], negative = negative, width = w, height = h, frames = frames, fps = fps,
                             seed = used + pi, steps = prof.steps, sampleMethod = prof.sampler, sigmas = prof.sigmas,
-                            tilingArgs = TILING, out = partRaw.absolutePath, startPng = start, loras = loras,
+                            tilingArgs = if (prof.sound) "" else TILING, out = partRaw.absolutePath, startPng = start, loras = loras,
                             onProgress = { pr -> ctx.onProgress(pr) },
                             vaeTileSize = vaeTile,
                         ),
@@ -1143,16 +1150,22 @@ object WanVideoNode : NodeType {
                         }
                     }
                     all.fd.sync()
+                    c.audioPath?.let { File(it) }?.let { pcm ->
+                        AudioMux.appendPart(pcm, audioRaw, audioFmt, dropFrames = if (pi == 0) 0 else 1, fps = fps)
+                        pcm.delete()
+                    }
                     marker.writeText("${pi + 1} $total")
                 } finally {
                     partRaw.delete()
+                    File(partRaw.path + ".pcm").delete()
                 }
             }
             all.seek(0)
             all.write(nmvHeader(w, h, total, fps))
         }
         marker.delete()
-        return Ops.Clip(raw.absolutePath, total, w, h, fps, ms)
+        val sound = AudioMux.finishParts(audioRaw, audioFmt, File(raw.path + ".pcm"))
+        return Ops.Clip(raw.absolutePath, total, w, h, fps, ms, audioPath = sound?.absolutePath)
     }
 
     /**
