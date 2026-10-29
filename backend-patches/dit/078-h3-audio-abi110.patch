@@ -1,0 +1,78 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index 70d1cee..d378e47 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -160,6 +160,7 @@ dit_ctx *engine_create(const dit_ctx_params *params) {
+   sd_params.vae_path = params->vae_path;
+   sd_params.t5xxl_path = params->t5xxl_path;
+   sd_params.taesd_path = params->taesd_path;
++  sd_params.audio_vae_path = params->audio_vae_path;  // ABI 110
+   sd_params.enable_mmap = params->enable_mmap;
+   sd_params.n_threads = params->n_threads > 0 ? params->n_threads : 4;
+   sd_params.flash_attn = params->flash_attn;
+@@ -552,6 +553,13 @@ bool engine_generate_video(dit_ctx *ctx, const dit_video_params *params,
+   const bool cancelled = g_active.cancelled;
+   g_active = ActiveGeneration{};
+   if (cancelled) sd_cancel_generation(ctx->sd, SD_CANCEL_RESET);
++  // ABI 110: the soundtrack goes out before the frames, then is freed.
++  if (audio && ok && !cancelled && params->on_audio && audio->data &&
++      audio->sample_count > 0 && audio->channels > 0) {
++    params->on_audio(audio->data, audio->sample_count,
++                     static_cast<int>(audio->channels),
++                     static_cast<int>(audio->sample_rate), user_data);
++  }
+   if (audio) free_sd_audio(audio);
+ 
+   if (!ok || frame_count < 1 || !frames) {
+diff --git a/include/DitEngine.h b/include/DitEngine.h
+index caa3f71..13e8e95 100644
+--- a/include/DitEngine.h
++++ b/include/DitEngine.h
+@@ -36,7 +36,11 @@ extern "C" {
+ //
+ // 108: dit_gen_params.scheduler (Karras, Exponential, ...) appended (107's
+ // layout is a prefix of 108's).
+-#define DIT_ENGINE_ABI_VERSION 108
++//
++// 110: MiniMax-H3 video with audio -- dit_ctx_params.audio_vae_path and
++// dit_video_params.on_audio appended (108's layout is a prefix of 110's). 109
++// is skipped: the shelved FlashVSR branch used it.
++#define DIT_ENGINE_ABI_VERSION 110
+ 
+ // Name of the single symbol the core resolves after dlopen.
+ #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
+@@ -83,6 +87,10 @@ typedef struct {
+   bool enable_mmap;
+   // Flash attention in the DiT only (flash_attn above sets every module).
+   bool diffusion_flash_attn;
++  // --- ABI 110 ---
++  // An audio VAE for models that generate sound with the picture (MiniMax-H3);
++  // NULL for none.
++  const char *audio_vae_path;
+ } dit_ctx_params;
+ 
+ typedef struct {
+@@ -188,6 +196,10 @@ typedef struct {
+   const uint8_t *ref_image_rgb;
+   int ref_width;
+   int ref_height;
++  // --- ABI 110 ---
++  // Receives the soundtrack of a model that makes one (MiniMax-H3); NULL drops
++  // it. Gets generate_video's user_data.
++  dit_audio_cb on_audio;
+ } dit_video_params;
+ 
+ // One decoded frame, RGB8, valid only during the call. Frames arrive in order
+@@ -196,6 +208,12 @@ typedef struct {
+ typedef bool (*dit_frame_cb)(int index, int count, const uint8_t *rgb,
+                              int width, int height, void *user_data);
+ 
++// ABI 110: the generated soundtrack, float samples in [-1, 1], interleaved by
++// channel, valid only during the call. Called once, before the frames, when the
++// model made audio and dit_video_params.on_audio is set.
++typedef void (*dit_audio_cb)(const float *samples, uint64_t sample_count,
++                             int channels, int sample_rate, void *user_data);
++
+ typedef struct {
+   int abi_version;
+ 
