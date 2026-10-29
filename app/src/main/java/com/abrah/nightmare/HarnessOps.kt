@@ -265,7 +265,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "wan_video" -> wanVideo(arg, i2v = false)
             // ⭐ Wan 2.2 14B (`npu.WanA14Node`) is image to video only since 1.6.240: `wan14_i2v`, same arg.
             "wan14_video" -> say("wan14_video: the 14B is image to video only now; run wan14_i2v", bad = true)
-            "wan14_i2v" -> wanVideo(arg, i2v = true, a14 = true)
+            "wan14_i2v" -> wanVideo(arg, i2v = true, type = com.abrah.nightmare.npu.WanA14Node.name)
+            // ⭐ NSFW Wan 1.3B (`npu.WanNsfw13Node`), text to video only: `wan13_video`, same arg (no picture).
+            "wan13_video" -> wanVideo(arg, i2v = false, type = com.abrah.nightmare.npu.WanNsfw13Node.name)
             "wan_i2v" -> wanVideo(arg, i2v = true)
             // ⭐ GitHub #23's chaining: clip A's `last_frame` is clip B's first frame. `--es arg "WxH|seconds"`.
             "wan_chain" -> wanChain(arg)
@@ -1786,7 +1788,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * [runWorkflow] like [npuVideo]. `arg` = `prompt|seed|seconds|size|shape`, each optional; an
      * empty seed rolls. The clip is saved to the gallery when it works, so it can be watched.
      */
-    private suspend fun wanVideo(arg: String?, i2v: Boolean, a14: Boolean = false) {
+    private suspend fun wanVideo(arg: String?, i2v: Boolean, type: String? = null) {
         val f = arg.orEmpty().split('|')
         fun at(i: Int) = f.getOrNull(i)?.trim().orEmpty()
         // ⭐ A seventh part names a picture in the app's external files (a test image pushed there), so a run never
@@ -1807,7 +1809,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                         n.type == "core.prompt" && at(0).isNotEmpty() -> n.copy(params = n.params + ("prompt" to at(0)))
                         n.type == "core.image" && uri != null -> n.copy(params = n.params + ("uri" to uri))
                         n.type == wan.name -> n.copy(
-                            type = if (a14) com.abrah.nightmare.npu.WanA14Node.name else n.type,
+                            type = type ?: n.type,
                             params = n.params + listOfNotNull(
                                 at(1).takeIf { it.isNotEmpty() }?.let { "seed" to it },
                                 at(2).takeIf { it.isNotEmpty() }?.let { "seconds" to it },

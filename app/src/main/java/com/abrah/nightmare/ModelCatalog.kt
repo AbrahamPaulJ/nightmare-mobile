@@ -2895,10 +2895,39 @@ object ModelCatalog {
         ),
     )
 
+    /** ⭐ The NSFW 1.3B's speed LoRA, in its own folder (applied on every clip by `npu.WanVideoNode`). */
+    const val CAUSVID_LORA = "causvid_lora.safetensors"
+
+    /**
+     * ⭐⭐ **NSFW Wan 1.3B** (NSFW-API's NSFW_Wan_1.3b, `exp_e14`, their recommended checkpoint): a Wan 2.1 T2V 1.3B
+     * fine-tune, text to video only, trained by a community member, so [ModelSpec.community] (the user, 2026-10-29).
+     * Nothing re-hosted: their BF16 file is converted to Q8_0 on the phone ([WanGguf]). Kijai's CausVid 1.3B LoRA
+     * ([CAUSVID_LORA]) gives it 6 steps at cfg 1; Wan 2.1's latent space, so TAEHV's `taew2_1` and 16 fps, as the 14B.
+     * Its umT5 is Wan 2.2 Turbo's when Turbo is installed ([ModelSpec.partsFrom]). ⚠ Wan 2.1's 8x VAE: four times the
+     * 5B's tokens a frame, so slower than Turbo a second of clip (`docs/ROADMAP.md`, the stock 1.3B measured).
+     */
+    val WAN21_NSFW13: ModelSpec = dit(
+        "wan21_nsfw_1_3b", "NSFW Wan 1.3B", Family.WAN, WAN, steps = 6,
+        prompt = "",
+        ownDitParts = true,
+        partsFrom = "wan22_ti2v_turbo",
+        minArch = DIT_MIN_ARCH,
+        files = listOf(
+            RemoteFile(
+                HF + "NSFW-API/NSFW_Wan_1.3b/resolve/main/wan_1.3B_exp_e14.safetensors",
+                "dit.gguf", WanGguf.NSFW13_BYTES,
+                sourceBytes = 2_838_077_328L, convert = WanGguf.converter,
+            ),
+            RemoteFile(HF + "Kijai/WanVideo_comfy/resolve/main/Wan21_CausVid_bidirect2_T2V_1_3B_lora_rank32.safetensors", CAUSVID_LORA, 91_233_416L),
+            RemoteFile(HF + "city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q4_K_M.gguf", "umt5.gguf", 3_655_145_312L),
+            RemoteFile("https://raw.githubusercontent.com/madebyollin/taehv/fa579a9a726b0a55951998d73e309bfdf0abd342/safetensors/taew2_1.safetensors", "tae.safetensors", 22_642_902L),
+        ),
+    ).copy(community = true)
+
     /** ⚠ The video models: found by [byId], never listed as checkpoints. */
     // ⚠ Not [WAN22_A14B]: one 14B download, its image to video experts; text to video on the 14B makes the first
     // frame with a picture model (`canvas.T2V14`, the user's call 2026-10-25: two 17 GB downloads was too much).
-    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B_I2V)
+    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B_I2V, WAN21_NSFW13)
 
     fun installed(context: Context): List<ModelSpec> = all.filter { it.installed(context) }
 

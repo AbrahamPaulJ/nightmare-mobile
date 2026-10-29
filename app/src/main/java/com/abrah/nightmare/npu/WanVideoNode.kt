@@ -133,6 +133,7 @@ object WanVideoNode : NodeType {
         name -> ModelCatalog.WAN22
         WanFunNode.name -> ModelCatalog.WAN22_FUN
         WanA14Node.name -> WanA14Node.specFor(node)
+        WanNsfw13Node.name -> ModelCatalog.WAN21_NSFW13
         else -> null
     }
 
@@ -175,11 +176,11 @@ object WanVideoNode : NodeType {
         // forced to v75, 480x832 1 s, `docs/DEVICES.md` §3e).
         prof.alwaysStream -> if (arch in 1..78) "2.75" else if (pinned - prof.ditBytes > A14B_SMALL_COMPUTE) A14B_BIG_BUDGET else A14B_BUDGET
         arch in 1..78 -> "2.75"
-        stream -> if (pinned - DIT_BYTES + BLOCK_BYTES <= STREAM_FLOOR) "2.75" else "4"
+        stream -> if (pinned - prof.ditBytes + BLOCK_BYTES <= STREAM_FLOOR) "2.75" else "4"
         // ⭐ Compute that one NPU session cannot map streams on EVERY phone (Saved #7101, a 16 GB 8 Elite, 1.6.216):
         // 704x1280 5 s holds 3.4 GB of compute, over the ~3.1 GB a batch maps (`vmem 3311845376`), and resident it
         // aborted at the first DiT graph (`dspqueue_read failed`) where its 2 s clips rendered.
-        pinned - DIT_BYTES > RESIDENT_COMPUTE_MAX -> "4"
+        pinned - prof.ditBytes > RESIDENT_COMPUTE_MAX -> "4"
         ramBytes in 1 until com.abrah.nightmare.Prefs.LOWRAM_BELOW_BYTES -> "4".takeIf { pinned > BUDGET_FROM }
         else -> null
     }
@@ -443,6 +444,10 @@ object WanVideoNode : NodeType {
         val maxArea: Int = MAX_AREA,
         /** ⭐ The longest clip it offers, in seconds. */
         val maxSeconds: Int = MAX_SECONDS,
+        /** ⭐ Its sampling schedule ([SIGMAS] is Turbo's and the 14B's 4 steps). */
+        val sigmas: List<Double> = SIGMAS,
+        /** ⚠ The most pixels a frame decodes WHOLE; above it [vaeTileFor] tiles. Its decoder's cost decides it. */
+        val decodeWholeArea: Long = SPATIAL_FROM,
     )
 
     /** ⭐ Wan 2.2 Turbo 5B (and Fun Control): `docs/VIDEO-GGML.md` §1-4. */
@@ -478,9 +483,25 @@ object WanVideoNode : NodeType {
      */
     val A14B_LOW_ARCH = A14B.copy(maxArea = 832 * 480)
 
+    /**
+     * ⭐ The NSFW 1.3B ([WanNsfw13Node]): Wan 2.1's 8x8 VAE (16 px tokens, as the 14B), 16 fps, euler, its native 480p
+     * at most. CausVid's 6 steps at shift 5 as sd.cpp schedules them, minus their last: sd.cpp's discrete list ends
+     * 0, 0, a step from 0 to 0 that runs the DiT (~20 s at 832x480 2 s on the S25) and changes nothing. 1.5 GB Q8_0
+     * DiT held resident; ~96 KB of compute a token (1,316 MB at 832x480 x33, 14,040 tokens: the S25, sd-cli).
+     */
+    val NSFW13 = WanProfile(
+        16, "euler", 16, 1_442L shl 20, 96L shl 10, 60L shl 20, alwaysStream = false,
+        grid = 16, maxArea = 832 * 480,
+        sigmas = listOf(1.0, 0.9522, 0.8821, 0.7689, 0.5552, 0.0),
+        decodeWholeArea = NSFW13_WHOLE_AREA,
+    )
+
     /** ⭐ The profile a node type renders with on a chip of [arch] (0 = unknown, the full profile; pure for tests). */
-    fun profileOf(type: String, arch: Int = 0): WanProfile =
-        if (type == WanA14Node.name) (if (arch in 1 until com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH) A14B_LOW_ARCH else A14B) else TURBO
+    fun profileOf(type: String, arch: Int = 0): WanProfile = when (type) {
+        WanA14Node.name -> if (arch in 1 until com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH) A14B_LOW_ARCH else A14B
+        WanNsfw13Node.name -> NSFW13
+        else -> TURBO
+    }
 
     /** ⭐ This phone's arch for [profileOf] and [memoryBudget], 0 when the chip table does not know it. */
     fun deviceArch(): Int = com.abrah.nightmare.DeviceProbe.caps().let { if (it.known) it.arch else 0 }
@@ -502,9 +523,17 @@ object WanVideoNode : NodeType {
      * not shrink with the frame, ~1.1 to 1.5 GB each at 1280x704 (`docs/VIDEO-GGML.md` §4). Spatial
      * tiles (backend 031) cut that; frames up to [SPATIAL_FROM] decode whole, as before.
      */
-    fun vaeTileFor(w: Int, h: Int): Int = if (w.toLong() * h > SPATIAL_FROM) VAE_TILE else 0
+    fun vaeTileFor(w: Int, h: Int, prof: WanProfile = TURBO): Int = if (w.toLong() * h > prof.decodeWholeArea) VAE_TILE else 0
 
     private const val SPATIAL_FROM = 832L * 480
+
+    /**
+     * ⚠ The NSFW 1.3B never decodes whole: at 832x480 x33 its `taew2_1` decode took MemAvailable from 4.9 GB to 0.84 GB
+     * in 3 s and lmkd killed the app (S25, 3 of 3 runs, sd-cli too). Tile 32: 9.3 s, never under 3.85 GB free, no seam
+     * (2026-10-29). ⚠ The 14B shares the decoder but keeps [SPATIAL_FROM]: it decoded 480x832 whole in 18 s on the S25
+     * and its process streams, so nothing measured says it needs this.
+     */
+    private const val NSFW13_WHOLE_AREA = 0L
     private const val VAE_TILE = 32
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
@@ -569,6 +598,11 @@ object WanVideoNode : NodeType {
         if (loras.isNotEmpty()) {
             ctx.say("  LoRAs: " + loras.joinToString { (f, s) -> "${File(f).nameWithoutExtension} $s" })
         }
+        // ⭐ The NSFW 1.3B's CausVid LoRA rides on every clip ([ModelCatalog.CAUSVID_LORA]): part of the model, as Fun's
+        // FastWan is, so it is sent and counted but never shown or advised against as the user's.
+        val clipLoras = loras + listOfNotNull(
+            (File(spec.dir(android), ModelCatalog.CAUSVID_LORA).absolutePath to 1.0).takeIf { node.type == WanNsfw13Node.name },
+        )
         val p = effectiveParams(node)
         val sizeProf = profileOf(node.type, deviceArch())
         // ⭐⭐ [FOLLOW_PICTURE] (Text to video (14B)): the clip takes the wired picture's SHAPE at the pixel count the size
@@ -605,7 +639,7 @@ object WanVideoNode : NodeType {
         // ⚠ One PASS is what the NPU holds at once: Motion transfer runs a long clip as parts ([passFrames]).
         val pass = if (driving != null) minOf(frames, WanFun.partFramesFor(w, h)) else frames
         val budget = memoryBudget(pinnedBytes(w, h, pass, prof), ram, arch, prof = prof)
-        val need = peakBytes(w, h, pass, budget, loras.size, prof)
+        val need = peakBytes(w, h, pass, budget, clipLoras.size, prof)
         if (ram > 0 && !fits(need, ram)) {
             ctx.warn(ctx.text(R.string.run_wan_ram_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB on the NPU, more than this phone's %4\$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer",
@@ -678,7 +712,7 @@ object WanVideoNode : NodeType {
         )
         val keepColours = p[WanParts.KEEP_COLOURS] != "false"
         // ⚠ The decode's spatial tile changes the frames (a little), so it is part of the clip's key.
-        val vaeTile = com.abrah.nightmare.BackendProcess.readWanVaeTileOverride(android) ?: vaeTileFor(w, h)
+        val vaeTile = com.abrah.nightmare.BackendProcess.readWanVaeTileOverride(android) ?: vaeTileFor(w, h, prof)
         // ⚠ A content address of everything the clip is made from, as [VideoSampleNode] does.
         val key = sha1(
             (listOf(
@@ -749,12 +783,12 @@ object WanVideoNode : NodeType {
         }
         val clip = if ((motion == null || plan == null) && partCount > 1) runParts(
             ctx, node, spec, arch, partCount, partPrompts, keepColours, neg.text, used, w, h, clipFrames, fps, prof,
-            startPng, loras, vaeTile, dir, key, raw, ::unwrap,
+            startPng, clipLoras, vaeTile, dir, key, raw, ::unwrap,
         ) else if (motion == null || plan == null) unwrap(
             ctx.host.video(
                 prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = fps,
-                seed = used, steps = SIGMAS.size - 1, sampleMethod = prof.sampler, sigmas = SIGMAS, tilingArgs = TILING,
-                out = raw.absolutePath, startPng = startPng, loras = loras,
+                seed = used, steps = prof.sigmas.size - 1, sampleMethod = prof.sampler, sigmas = prof.sigmas, tilingArgs = TILING,
+                out = raw.absolutePath, startPng = startPng, loras = clipLoras,
                 onProgress = { pr -> ctx.onProgress(pr) },
                 vaeTileSize = vaeTile,
             ),
@@ -1000,7 +1034,7 @@ object WanVideoNode : NodeType {
                     val c = unwrap(
                         ctx.host.video(
                             prompt = prompts[pi], negative = negative, width = w, height = h, frames = frames, fps = fps,
-                            seed = used + pi, steps = SIGMAS.size - 1, sampleMethod = prof.sampler, sigmas = SIGMAS,
+                            seed = used + pi, steps = prof.sigmas.size - 1, sampleMethod = prof.sampler, sigmas = prof.sigmas,
                             tilingArgs = TILING, out = partRaw.absolutePath, startPng = start, loras = loras,
                             onProgress = { pr -> ctx.onProgress(pr) },
                             vaeTileSize = vaeTile,

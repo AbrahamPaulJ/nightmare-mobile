@@ -149,6 +149,7 @@
     <string name="video_about">在 NPU 上由文字和图片生成视频。无需后端，无需检查点。</string>
     <string name="wan_about">使用 Wan 2.2 由文字和图片生成视频：5 秒视频，832x480 或 1280x704。比 Neodragon 慢，但效果好得多。共 6.25 GB：Wan 2.2 Turbo DiT、umT5 文本编码器和一个小型解码器。</string>
     <string name="wan14_i2v_about">使用 Wan 2.2 14B 由图片生成视频：让你的图片动起来，具有 14B 的动作和细节。把图片连接到 Wan 2.2 14B 节点，或使用“文本生成视频（14B）”流程。8 Elite 上 480x832 的 2 秒约 9 分钟，720x1280 的 1 秒约 12 分钟；尺寸越大，人脸越清晰。需要 8 Elite 或更新芯片、12 GB 及以上内存。约 21 GB（两个 8.6 GB 模型，内置 4 步加速）；如已安装 Wan 2.2 Turbo，则共用它的文本编码器。请使用 Wi-Fi。</string>
+    <string name="wan13_nsfw_about">使用 NSFW Wan 1.3B 由文字生成成人内容视频，这是社区（NSFW-API）基于 Wan 2.1 微调的模型。仅文字输入，不接受图片。相同时长下比 Wan 2.2 Turbo 慢：8 Elite 上 832x480 的 2 秒约 2 分钟。需要 8 Elite 或更新芯片。下载 2.8 GB，在手机上转换为 1.5 GB，另加 91 MB 加速模型；如已安装 Wan 2.2 Turbo，则共用它 3.7 GB 的文本编码器。请使用 Wi-Fi。</string>
     <string name="video_delete_body">将释放 %1$d MB。要找回它们需要下载 %2$d MB。在重新安装之前，所有视频工作流都无法运行。</string>
     <string name="video_delete_title">删除视频模型？</string>
     <string name="video_models">Neodragon</string>
@@ -734,6 +735,7 @@
     <string name="hint_wan_seconds">视频时长（秒），每秒 24 帧；0 生成一张静止图片。在 8 Elite 上，480p 5 秒约需 3 分钟。</string>
     <string name="hint_wan_size">推荐：1280x704 或 704x1280，Wan 2.2 的设计尺寸。832x480 或 480x832 约快三倍，但可能模糊或变形。任意比例，像素总数不超过 1280x704；超出时另一边会自动缩小。</string>
     <string name="hint_wan14_size">推荐：1280x720 或 720x1280，人脸和细节最清晰（8 Elite 上 1 秒约 12 分钟）。可先用 832x480 或 480x832 试想法（1 秒约 5 分钟），但人脸会偏模糊。任意比例，像素总数不超过 1280x720；超出时另一边会自动缩小。</string>
+    <string name="hint_wan13_size">832x480 或 480x832 是它的原生尺寸，也是最大尺寸。尺寸越小越快。任意比例，像素总数不超过 832x480；超出时另一边会自动缩小。</string>
     <string name="wan_too_big_seconds">%1$s、%2$s 秒可能超出这台手机 NPU 的承受范围。这个尺寸下大约 %3$s 秒可行</string>
     <string name="wan_too_big_any">%1$s 在任何时长下都可能超出这台手机 NPU 的承受范围。请换小一点的尺寸</string>
     <string name="wan_shape_differs">图片为 %1$s，与视频的 %2$s 比例不同：将被裁剪以适应。</string>
@@ -1143,7 +1145,8 @@
     <string name="video_model_wan">Wan 2.2 Turbo</string>
     <string name="video_model_neodragon">Neodragon</string>
     <string name="video_model_wan14">Wan 2.2 14B</string>
-    <string name="hint_video_model">Wan 2.2 Turbo 效果好得多，需要几分钟；Wan 2.2 14B（需连接图片）效果最好也最慢；Neodragon 最快，约 30 秒生成 2 秒</string>
+    <string name="video_model_nsfw13">NSFW Wan 1.3B</string>
+    <string name="hint_video_model">Wan 2.2 Turbo 效果好得多，需要几分钟；Wan 2.2 14B（需连接图片）效果最好也最慢；NSFW Wan 1.3B（不连接图片）是社区的成人内容模型；Neodragon 最快，约 30 秒生成 2 秒</string>
     <string name="flow_motion_name">动作迁移</string>
     <string name="flow_motion_about">让你的图片像所选视频一样运动：逐帧跟随其姿势，使用 Wan 2.2 Fun Control。</string>
     <string name="video_in_none">未选择视频</string>
@@ -1306,6 +1309,7 @@
     <string name="sampling_seed_value">种子 %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
     <string name="hint_wan14_seconds">视频时长（秒），每秒 16 帧。1 到 3 秒。8 Elite 上 720x1280 的 1 秒约 12 分钟，每多一秒都比上一秒更久：720p 的 3 秒可能要一小时。</string>
+    <string name="hint_wan13_seconds">视频时长（秒），每秒 16 帧。0 到 5 秒，0 为单帧。8 Elite 上 832x480 的 2 秒约 2 分钟，每多一秒都比上一秒更久。</string>
     <string name="knob_smooth">平滑运动</string>
     <string name="knob_motion_fps">帧率</string>
     <string name="hint_motion_fps">读取驱动视频的频率。24 是 Wan 自己的帧率，效果最好。12 和 8 更快，但动作跳跃更大：平滑运动可以补上。</string>

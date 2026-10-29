@@ -4772,10 +4772,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 ModelCatalog.WAN22_FUN -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.MOTION)
                 // ⭐ The one 14B download: image to video, and text to video through a picture first (`canvas.T2V14`).
                 ModelCatalog.WAN22_A14B_I2V -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.I2V, com.abrah.nightmare.canvas.T2V14)
+                // ⭐ Text to video only: the Text to video flow with its node swapped to the 1.3B.
+                ModelCatalog.WAN21_NSFW13 -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V)
                 else -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V)
             },
             unsavedFlow = unsavedFlow(),
-            videoType = com.abrah.nightmare.npu.WanA14Node.name.takeIf { spec == ModelCatalog.WAN22_A14B_I2V },
+            videoType = when (spec) {
+                ModelCatalog.WAN22_A14B_I2V -> com.abrah.nightmare.npu.WanA14Node.name
+                ModelCatalog.WAN21_NSFW13 -> com.abrah.nightmare.npu.WanNsfw13Node.name
+                else -> null
+            },
         )
     }
 
@@ -7582,6 +7588,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         return when (n.type) {
             com.abrah.nightmare.npu.WanVideoNode.name -> app.getString(R.string.video_model_wan)
             com.abrah.nightmare.npu.WanA14Node.name -> app.getString(R.string.video_model_wan14)
+            com.abrah.nightmare.npu.WanNsfw13Node.name -> app.getString(R.string.video_model_nsfw13)
             "nd.sample" -> app.getString(R.string.video_model_neodragon)
             else -> type?.paletteName?.takeIf { n.type in VIDEO_SAMPLER_TYPES }
         }

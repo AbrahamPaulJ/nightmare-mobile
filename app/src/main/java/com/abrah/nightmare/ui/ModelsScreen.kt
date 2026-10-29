@@ -1202,9 +1202,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.videoModelItems(
                     when (wan.spec) {
                         com.abrah.nightmare.ModelCatalog.WAN22_FUN -> R.string.wan_fun_about
                         com.abrah.nightmare.ModelCatalog.WAN22_A14B_I2V -> R.string.wan14_i2v_about
+                        com.abrah.nightmare.ModelCatalog.WAN21_NSFW13 -> R.string.wan13_nsfw_about
                         else -> R.string.wan_about
                     },
                 ),
+                // ⭐ The checkpoint rows' "Community" badge ([ModelSpec.community]): who made it, on a video card too.
+                badges = listOfNotNull(stringResource(R.string.mb_sub_community).takeIf { wan.spec.community }),
                 installed = wan.installed,
                 sizeBytes = if (wan.installed) wan.onDisk else wan.fetchBytes.takeIf { it > 0 } ?: wan.build?.bytes,
                 busy = busy,

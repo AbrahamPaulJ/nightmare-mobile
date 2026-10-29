@@ -1751,12 +1751,17 @@ internal fun NodeInspectorBody(
             val types = linkedMapOf(
                 com.abrah.nightmare.npu.WanVideoNode.name to stringResource(R.string.video_model_wan),
                 com.abrah.nightmare.npu.WanA14Node.name to stringResource(R.string.video_model_wan14),
+                com.abrah.nightmare.npu.WanNsfw13Node.name to stringResource(R.string.video_model_nsfw13),
                 "nd.sample" to stringResource(R.string.video_model_neodragon),
             )
             val caps = remember { com.abrah.nightmare.DeviceProbe.caps() }
             val a14Ok = node.inputs["image"] != null &&
                 (!caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.WAN22_A14B_I2V.builds.minOf { it.minArch })
             if (!a14Ok && node.type != com.abrah.nightmare.npu.WanA14Node.name) types.remove(com.abrah.nightmare.npu.WanA14Node.name)
+            // ⭐ NSFW Wan 1.3B (`npu.WanNsfw13Node`): text to video only, so offered with NO picture wired.
+            val nsfw13Ok = node.inputs["image"] == null &&
+                (!caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.WAN21_NSFW13.builds.minOf { it.minArch })
+            if (!nsfw13Ok && node.type != com.abrah.nightmare.npu.WanNsfw13Node.name) types.remove(com.abrah.nightmare.npu.WanNsfw13Node.name)
             // ⭐ A DROPDOWN, as the image nodes' model picker (the user, 2026-10-25: "why are we using cards when all
             // the image samplers use dropdowns"): its length depends on the picture and the chip, so it is always one.
             Chooser(
