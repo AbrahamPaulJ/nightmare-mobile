@@ -536,7 +536,9 @@ fun NodeInspector(
             // ⚠ Read HERE for the same reason: what a prompt is measured
             // against depends on what it is WIRED into.
             promptBudget = com.abrah.nightmare.PromptTokens.budgetFor(state.workflow.graph, nodeId),
-            // ⭐ …and so is its hint: a prompt into MiniMax H3 is read in sections ([com.abrah.nightmare.npu.H3Prompt]).
+            // ⭐ The Prompt node a Wan node's parts start from: part 1 of the Part prompts readout ([PartPromptsNote]).
+            partMainPrompt = node.inputs["prompt"]?.node?.let { state.workflow.graph.byId[it]?.params?.get("prompt") }.orEmpty(),
+            // ⭐ …and so is a prompt's hint: a prompt into MiniMax H3 is read in sections ([com.abrah.nightmare.npu.H3Prompt]).
             promptHint = R.string.hint_prompt_h3.takeIf {
                 state.workflow.graph.nodes.any { n -> n.type == com.abrah.nightmare.npu.H3Node.name && n.inputs.values.any { it.node == nodeId } }
             },
@@ -1326,6 +1328,8 @@ internal fun NodeInspectorBody(
     promptBudget: com.abrah.nightmare.PromptTokens.Budget? = null,
     /** ⭐ The prompt box's hint when what it feeds reads prompts its own way (MiniMax H3's sections), else the widget's. */
     promptHint: Int? = null,
+    /** ⭐ The wired Prompt node's text, part 1 in [PartPromptsNote]. */
+    partMainPrompt: String = "",
     /** ⭐ What `<lora:` autocomplete offers first ([LoraSuggestions]). */
     loraHint: com.abrah.nightmare.PromptLoras.Hint? = null,
     /** ⭐ The canvas's pictures the describe button offers — [describePictures]. */
@@ -3215,7 +3219,10 @@ internal fun NodeInspectorBody(
                     supportingText = {
                         // ⭐⭐ The tag toolbar takes the hint's line while the box is
                         // being edited — attached to the box, above the keyboard.
-                        if (isProse && proseFocused && why == null) {
+                        // ⚠ Not on Part prompts: tags mean nothing to umT5, and the readout below must stay in view.
+                        if (w.name == com.abrah.nightmare.npu.WanParts.PART_PROMPTS && why == null) {
+                            PartPromptsNote(partMainPrompt, if (wanted || isProse) seeded.value.text else current, com.abrah.nightmare.npu.WanParts.countOf(node.params))
+                        } else if (isProse && proseFocused && why == null) {
                             val apply: ((String, Int) -> Pair<String, Int>?) -> Unit = { edit ->
                                 val v = seeded.value
                                 edit(v.text, v.selection.start)?.let { (text, caret) ->
@@ -3273,6 +3280,10 @@ internal fun NodeInspectorBody(
                     singleLine = !isProse,
                     minLines = if (isProse) 3 else 1,
                     maxLines = if (isProse) 8 else 1,
+                    // ⭐ The format, shown while the box is empty (the user, 2026-10-30).
+                    placeholder = if (w.name == com.abrah.nightmare.npu.WanParts.PART_PROMPTS) {
+                        { Text(stringResource(R.string.part_prompts_placeholder), style = NoteTextStyle) }
+                    } else null,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = if (w.numeric) KeyboardType.Number else KeyboardType.Text,
                     ),

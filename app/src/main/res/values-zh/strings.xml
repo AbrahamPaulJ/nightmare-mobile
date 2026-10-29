@@ -1362,4 +1362,10 @@
     <string name="run_heat_start">开始这段视频前电池已达 %1$s °C。长时间生成视频会让手机发热，而发热会损耗电池：不要边充电边生成，避免阳光直射，烫手时请停止。设置，性能中可以在电池过热时暂停生成</string>
     <string name="run_heat_paused">已暂停：电池温度 %1$s °C。降到 %2$s °C 后继续生成</string>
     <string name="run_heat_end">这段视频让电池达到了 %1$s °C。请让手机冷却后再生成下一段</string>
+    <!-- Wan Part prompts readout (canvas/PartPromptsNote.kt) -->
+    <string name="part_prompts_placeholder">第一段之后每段一行，例如：\n她转身走向镜头\n她停下来微笑\n空行表示沿用上一段。</string>
+    <string name="part_readout_main">第 %1$d 段：%2$s（提示词节点）</string>
+    <string name="part_readout_line">第 %1$d 段：%2$s</string>
+    <string name="part_readout_same">第 %1$d 段：与第 %2$d 段相同</string>
+    <string name="part_readout_unused">有 %1$d 行在最后一段之后，不会被使用。把段数设为 %2$d 即可使用</string>
 </resources>

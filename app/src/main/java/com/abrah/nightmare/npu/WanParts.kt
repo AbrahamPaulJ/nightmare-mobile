@@ -40,6 +40,32 @@ object WanParts {
         return out
     }
 
+    enum class Source { MAIN, LINE, REPEAT }
+
+    class Row(val part: Int, val source: Source, val text: String)
+
+    /** [rows] one per part; [unused] the non-blank lines past the last part, which no part reads; [needed] the Parts that reads them all. */
+    class Readout(val rows: List<Row>, val unused: Int, val needed: Int)
+
+    /**
+     * ⚠ Pure: what each of [n] parts runs with and where it came from, the rule [promptsFor] applies, for the box's
+     * live readout (`canvas.PartPromptsNote`). Texts are shortened to a line's worth.
+     */
+    fun readout(main: String, lines: String?, n: Int): Readout {
+        val ls = lines.orEmpty().lines().map { it.trim() }
+        fun short(s: String) = s.trim().replace(Regex("\\s+"), " ").let { if (it.length > 60) it.take(57).trimEnd() + "..." else it }
+        val rows = (1..n).map { k ->
+            when {
+                k == 1 -> Row(1, Source.MAIN, short(main))
+                ls.getOrNull(k - 2).isNullOrEmpty() -> Row(k, Source.REPEAT, "")
+                else -> Row(k, Source.LINE, short(ls[k - 2]))
+            }
+        }
+        val unused = ls.drop((n - 1).coerceAtLeast(0)).count { it.isNotEmpty() }
+        val needed = (ls.indexOfLast { it.isNotEmpty() } + 2).coerceIn(n, MAX)
+        return Readout(rows, unused, needed)
+    }
+
     /** Per-channel mean and standard deviation of an RGB frame, 0..255. */
     class Stats(val mean: FloatArray, val sd: FloatArray)
 

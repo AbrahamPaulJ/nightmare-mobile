@@ -1393,4 +1393,10 @@
     <string name="run_heat_start">The battery is at %1$s °C before this clip. Long video renders heat the phone, and heat wears the battery: keep it off the charger and out of the sun, and stop if it gets hot to hold. Settings, Performance can pause a render while the battery is hot</string>
     <string name="run_heat_paused">Paused: the battery is at %1$s °C. The clip carries on when it cools to %2$s °C</string>
     <string name="run_heat_end">The battery reached %1$s °C during this clip. Let the phone cool before the next one</string>
+    <!-- Wan Part prompts readout (canvas/PartPromptsNote.kt) -->
+    <string name="part_prompts_placeholder">One line for each part after the first, for example:\nshe turns and walks towards the camera\nshe stops and smiles\nAn empty line repeats the part before.</string>
+    <string name="part_readout_main">Part %1$d: %2$s (the Prompt node)</string>
+    <string name="part_readout_line">Part %1$d: %2$s</string>
+    <string name="part_readout_same">Part %1$d: the same as part %2$d</string>
+    <string name="part_readout_unused">%1$d line(s) come after the last part and will not be used. Set Parts to %2$d to use them</string>
 </resources>
