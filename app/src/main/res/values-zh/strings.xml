@@ -576,7 +576,7 @@
     <string name="models_family_moss">约 10 GB。8 Gen 3 或更新芯片。细致、细节丰富的图像模型，每次都会应用 8 步加速。8 Elite 上 512x512 约 50 秒，1024x1024 不到 3 分钟。仅文生图。请使用 Wi-Fi。</string>
     <string name="models_family_ideogram">约 11.6 GB。12 GB 及以上内存的手机，8 Elite 或更新芯片。最擅长在图中写出清晰可读的文字：招牌、海报、标签。每次都会应用 8 步加速。8 Elite 上 768x768 约 5.5 分钟。仅文生图。仅限非商业用途（Ideogram 许可）。请使用 Wi-Fi。</string>
     <string name="models_family_flux3">约 6.2 GB。8 Gen 3 或更新芯片。Black Forest Labs 最新的图像模型：细节清晰，紧跟提示词，16 步。8 Elite 上 512x512 约 45 秒，1024x1024 约 2 分钟。仅文生图。采用 FLUX Kommunity License 许可。请使用 Wi-Fi。</string>
-    <string name="models_family_fibo2">约 8.4 GB。8 Gen 3 或更新芯片，12 GB 内存。Bria 的 Fibo 2.0 Edit：连入一张图片并写下要修改的内容，4 步完成。图片其余部分保持不变，也能在牌子上写字。仅限编辑。非商业许可（Bria）。请使用 Wi-Fi。</string>
+    <string name="models_family_fibo2">约 8.4 GB。8 Gen 3 或更新芯片，12 GB 内存。Bria 的 Fibo 2.0 Edit：连入一张图片并写下要修改的内容，4 步完成。图片其余部分保持不变，也能在牌子上写字。不连图片时也能直接用提示词生成图片：在 8 Elite 上 896x1600 约一分钟。非商业许可（Bria）。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>
     <string name="models_import_dit_body">一个 .safetensors 或 .gguf 检查点，可来自 CivitAI 或 Hugging Face，直接使用，无需转换。Klein 4B 和 Z-Image 会借用文本编码器和 VAE（最多需下载 2.6 GB；已有该模型则无需下载）。Klein 9B 和 Krea 2 会获取自己的副本（分别为 4.8 GB 和 2.6 GB）。大于手机约一半内存的文件在渲染时很可能被 Android 关闭。</string>
