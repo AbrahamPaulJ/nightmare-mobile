@@ -1368,4 +1368,6 @@
     <string name="part_readout_line">第 %1$d 段：%2$s</string>
     <string name="part_readout_same">第 %1$d 段：与第 %2$d 段相同</string>
     <string name="part_readout_unused">有 %1$d 行在最后一段之后，不会被使用。把段数设为 %2$d 即可使用</string>
+    <string name="flow_h3_edit_name">用 MiniMax H3 编辑</string>
+    <string name="flow_h3_edit_about">你的图片作为 MiniMax H3 短视频的第一帧，视频中发生你描述的变化；最后一帧就是编辑后的图片。在提示词中说明哪些改变、哪些保留。约 6 分钟；需要 MiniMax H3、8 Gen 3 或更新的芯片和 12 GB 内存。</string>
 </resources>

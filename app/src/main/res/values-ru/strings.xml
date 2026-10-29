@@ -1395,4 +1395,6 @@
     <string name="part_readout_line">Часть %1$d: %2$s</string>
     <string name="part_readout_same">Часть %1$d: как часть %2$d</string>
     <string name="part_readout_unused">Строк после последней части: %1$d, они не будут использованы. Поставьте Части на %2$d, чтобы их использовать</string>
+    <string name="flow_h3_edit_name">Правка в MiniMax H3</string>
+    <string name="flow_h3_edit_about">Ваша картинка становится первым кадром короткого ролика MiniMax H3, в котором происходит описанное изменение; последний кадр и есть результат. Скажите в промпте, что меняется и что остаётся. Около 6 минут; MiniMax H3, 8 Gen 3 или новее, 12 ГБ ОЗУ.</string>
 </resources>

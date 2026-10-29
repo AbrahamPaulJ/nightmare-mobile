@@ -100,6 +100,29 @@ Diegetic sound only. The quiet ambience of the place in the picture, their voice
 non_diegetic_music:
 N/A - no score, no soundtrack, no musical arrangement at any point."""
 
+    /**
+     * ⭐ MiniMax H3 as an EDITOR ([canvas.h3EditWorkflow], `docs/MINIMAX-H3.md` §5f): the picture is the first frame, the
+     * prompt makes ONE change happen over a short clip, and the last frame is the edit. Keep says what must not move.
+     */
+    const val H3_EDIT = """subject_definitions:
+S1 is the person in the first frame, exactly as they appear there.
+
+summary:
+Image to video with audio. One continuous shot, no cut. The person from the first frame stands still while their clothes change into an elegant red silk dress.
+
+retention_analysis:
+The first frame is supplied: keep the face, hair, pose, the background and everything else exactly as they are in it. Only the clothes change.
+
+detailed_description:
+Live action footage, the light and colours of the first frame, static camera. The target video lasts 1.62 seconds.
+[Shot 1] The person (S1) stays still and looks into the camera. Their clothes smoothly transform into a deep red silk dress with thin straps; by the end of the shot they are clearly wearing the red silk dress. Their face, pose and the background do not change.
+
+overall_soundscape:
+Diegetic sound only. A quiet room, the soft rustle of silk.
+
+non_diegetic_music:
+N/A - no score, no soundtrack, no musical arrangement at any point."""
+
     /** ⭐ A video node type's opening prompt; [i2v] when a picture is wired (the Wan nodes animate it). */
     fun forType(type: String, i2v: Boolean): String = when (type) {
         H3Node.name -> if (i2v) H3_I2V else H3
@@ -110,7 +133,7 @@ N/A - no score, no soundtrack, no musical arrangement at any point."""
         else -> if (i2v) WAN_I2V else WAN_T2V
     }
 
-    private val ALL = listOf(WAN_T2V, WAN_I2V, WAN14_I2V, WAN14_T2V, NSFW13, NEODRAGON, MOTION, H3, H3_I2V)
+    private val ALL = listOf(WAN_T2V, WAN_I2V, WAN14_I2V, WAN14_T2V, NSFW13, NEODRAGON, MOTION, H3, H3_I2V, H3_EDIT)
 
     /**
      * ⚠ Pure: whether [prompt] is still an opening prompt (or empty), so a model switch may replace it. The fox prompts
