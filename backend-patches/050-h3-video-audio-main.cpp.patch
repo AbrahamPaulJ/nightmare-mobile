@@ -1,0 +1,107 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -89,7 +89,9 @@
+     kQwenImage21,
+     kKrea2,
+     kWan,
+-    kIris
++    kIris,
++    // nightmare (050): MiniMax-H3 / FastH3, video with audio (engine ABI 110).
++    kH3
+   };
+ 
+   int port = 8081;
+@@ -134,10 +136,13 @@
+   bool isDit() const {
+     return type == ModelType::kZImage || type == ModelType::kFlux2Klein ||
+            type == ModelType::kQwenImage21 || type == ModelType::kKrea2 ||
+-           type == ModelType::kWan || type == ModelType::kIris;
++           type == ModelType::kWan || type == ModelType::kIris || type == ModelType::kH3;
+   }
+   // Wan 2.2 TI2V: text/image to video through /video (backend 028).
+   bool isWan() const { return type == ModelType::kWan; }
++  // nightmare (050): MiniMax-H3, and every type /video serves (its tokenizer is inside the engine).
++  bool isH3() const { return type == ModelType::kH3; }
++  bool isVideo() const { return isWan() || isH3(); }
+ };
+ 
+ static void showHelp() {
+@@ -363,6 +368,8 @@
+     opts.type = ServerOptions::ModelType::kWan;
+   else if (typeStr == "iris")
+     opts.type = ServerOptions::ModelType::kIris;
++  else if (typeStr == "h3")
++    opts.type = ServerOptions::ModelType::kH3;
+   else
+     showHelpAndExit(typeStr.empty() ? "Missing --type"
+                                     : "Invalid --type: " + typeStr);
+@@ -453,6 +460,43 @@
+   // text encoder runs on the CPU from a memory map, as measured with sd-cli
+   // (docs/VIDEO-GGML.md): ~5 s for a short prompt, and its pages stay
+   // reclaimable instead of pinned beside the DiT.
++  // nightmare (050): MiniMax-H3 / FastH3 (engine ABI 110): dit.gguf, the video VAE vae.gguf, the audio VAE
++  // audio_vae.safetensors and the ClipProj projection clipproj.safetensors in the model's own directory; the
++  // Qwen3-VL-4B encoder llm.gguf there or in --wan_parts (Krea 2's). The projection reaches the engine as
++  // NM_H3_CLIPPROJ (dit/076), set before the engine loads.
++  if (opts.isH3()) {
++    auto h3Part = [&](const char *name) {
++      const auto own = dir / name;
++      if (std::filesystem::exists(own) || opts.wan_parts.empty()) return own.string();
++      return (std::filesystem::path(opts.wan_parts) / name).string();
++    };
++    const std::string dit_path = (dir / "dit.gguf").string();
++    const std::string llm_path = h3Part("llm.gguf");
++    const std::string vae_path = (dir / "vae.gguf").string();
++    const std::string audio_vae_path = (dir / "audio_vae.safetensors").string();
++    const std::string clipproj_path = (dir / "clipproj.safetensors").string();
++    for (const auto &p : {dit_path, llm_path, vae_path, audio_vae_path, clipproj_path}) {
++      if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
++    }
++    setenv("NM_H3_CLIPPROJ", clipproj_path.c_str(), 1);
++    if (opts.lib_dir.empty()) showHelpAndExit("Missing --lib_dir for DiT");
++    const std::string engine_path =
++        (std::filesystem::path(opts.lib_dir) / "libdit_engine.so").string();
++    if (!std::filesystem::exists(engine_path))
++      showHelpAndExit("DiT engine not installed: " + engine_path);
++    std::string backend = "diffusion=HTP0,te=CPU,vae=HTP0";
++    if (const char *env_backend = std::getenv("NM_DIT_BACKEND");
++        env_backend != nullptr && *env_backend != '\0') {
++      backend = env_backend;
++      std::cout << "NM_DIT_BACKEND override: " << backend << std::endl;
++    }
++    return std::make_unique<PipelineDit>(
++        text_encoder, opts.model_dir, engine_path, dit_path, llm_path, "", vae_path,
++        DIT_MODEL_WAN, backend, opts.dit_params_backend, opts.dit_threads,
++        /*vae_tile_size=*/0, /*img2img_enabled=*/false, /*lora_apply_mode=*/0,
++        /*t5xxl_path=*/"", /*taesd_path=*/"", audio_vae_path);
++  }
++
+   if (opts.isWan()) {
+     // The DiT is always the model's own; the encoder and decoder may be another
+     // Wan package's (--wan_parts), and the model's own copy wins when it has one.
+@@ -1955,7 +1999,7 @@
+       // Qwen Image 2.1's and Krea 2's tokenizers are Qwen3-VL's, not the
+       // shared Qwen3-4B one.
+       // Wan's umT5 tokenizer lives inside the engine; the core has none.
+-      if (!opts.isWan())
++      if (!opts.isVideo())
+       text_encoder->loadTokenizer(
+           opts.isDit() && opts.type != ServerOptions::ModelType::kQwenImage21 &&
+                   opts.type != ServerOptions::ModelType::kKrea2 &&
+@@ -2082,13 +2126,13 @@
+   if (pipeline) registerGenerateEndpoint(svr, pipeline.get());
+   // Nightmare op endpoints, beside /generate rather than instead of it.
+   if (pipeline) registerOpEndpoints(svr, pipeline.get());
+-  // createPipeline builds a PipelineDit for --type wan (no RTTI here).
+-  if (pipeline && opts.isWan())
++  // createPipeline builds a PipelineDit for --type wan and h3 (no RTTI here).
++  if (pipeline && opts.isVideo())
+     registerVideoEndpoint(svr, static_cast<PipelineDit *>(pipeline.get()),
+                           g_generation_mutex);
+   registerUpscaleEndpoint(svr);
+   // Wan has no tokenizer in the core (its umT5 one is inside the engine).
+-  if (text_encoder && !opts.isWan())
++  if (text_encoder && !opts.isVideo())
+     registerTokenizeEndpoint(svr, text_encoder.get());
+ 
+   std::cout << "Server listening on " << opts.listen_address << ":" << opts.port

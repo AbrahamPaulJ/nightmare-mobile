@@ -106,11 +106,11 @@ Write-Output ("qnnlibs {0,9:N0} bytes across {1} files ({2} arches)" -f $total, 
 # It was left pointing at alpha.2 after the ABI 105 engine shipped (1.6.046),
 # and a plain run on 2026-09-28 put alpha.2 skels beside the ABI 105 engine:
 # FLUX.2 Klein 9B's first DiT graph died `dsp-rsp INVAL-PARAMS` + SIGABRT.
-# ../LocalDream/dit-engine-abi108-lora14 (CI 40741059307: stream + dit/068, wrapper only; skels are stream's: v69-v81 from CI 40591974445, v85 from fibo) is the CI build's layout: the
+# ../LocalDream/dit-engine-abi110 (CI 40876155848: lora14 + dit/069-076 + 078, MiniMax H3, ABI 110, wrapper only; skels are lora14's) is the CI build's layout: the
 # engine, its release zip and the v73-v81 skels built with it. ⚠ Until 1.6.202 this was dit-engine-abi105-a4, whose
 # skels were patched by hand as engines moved; dit/031 changes the skel side, so the folder moves with each engine now.
 $dit = if ($env:NM_DIT_ENGINE) { $env:NM_DIT_ENGINE } else {
-    Join-Path (Split-Path -Parent $root) "LocalDream\dit-engine-abi108-lora14"
+    Join-Path (Split-Path -Parent $root) "LocalDream\dit-engine-abi110"
 }
 $ditAssets = Join-Path $root "app\src\main\assets\ditlibs"
 $ditSo = Join-Path $dit "lib\arm64-v8a\libdit_engine.so"

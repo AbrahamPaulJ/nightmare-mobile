@@ -324,7 +324,7 @@
     <string name="lb_civitai_title">CivitAI</string>
     <string name="lb_civitai_note">Для кнопки «Искать онлайн» в списке LoRA узла. Ключ хранится на телефоне и отправляется только в CivitAI.</string>
     <string name="lb_mature">Показывать контент для взрослых</string>
-    <string name="lb_mature_hint">Искать на civitai.red, где есть NSFW LoRA и превью.</string>
+    <string name="lb_mature_hint">Искать на civitai.red, где есть NSFW LoRA и превью, и показывать в Моделях модели для взрослых (NSFW Wan 1.3B, конверсии Lustify).</string>
     <string name="lb_files">Файлы</string>
     <string name="describe_action">Описать картинку</string>
     <string name="describe_length">Писать</string>
@@ -1173,7 +1173,7 @@
     <string name="video_model_neodragon">Neodragon</string>
     <string name="video_model_wan14">Wan 2.2 14B</string>
     <string name="video_model_nsfw13">NSFW Wan 1.3B</string>
-    <string name="hint_video_model">Wan 2.2 Turbo выглядит намного лучше и занимает минуты; Wan 2.2 14B (с подключённой картинкой) лучше всех и медленнее всех; NSFW Wan 1.3B (без картинки) это модель сообщества для взрослого контента; Neodragon быстрее всех, 2 с примерно за 30 с</string>
+    <string name="hint_video_model">Wan 2.2 Turbo выглядит намного лучше и занимает минуты; Wan 2.2 14B (с подключённой картинкой) лучше всех и медленнее всех; NSFW Wan 1.3B (без картинки) это модель сообщества для взрослого контента; MiniMax H3 (без картинки) создаёт ролик сразу со звуком, речью и музыкой; Neodragon быстрее всех, 2 с примерно за 30 с</string>
     <string name="flow_motion_name">Перенос движения</string>
     <string name="flow_motion_about">Ваша картинка двигается как выбранное видео: его поза, кадр за кадром, с Wan 2.2 Fun Control.</string>
     <string name="video_in_none">Видео не выбрано</string>
@@ -1369,4 +1369,24 @@
     <string name="whole_body_about">Считывает тело, руки и лицо человека с каждого кадра для режима Поза в Переносе движения (DWPose, Apache 2.0).</string>
     <string name="models_delete_whole_body_body">Освободится %1$d МБ. Повторная загрузка займёт %2$d МБ. Перенос движения в режиме Поза снова попросит её.</string>
     <string name="wan_follow_picture">Клип принимает форму вашей картинки; эти ползунки задают число пикселей (832x480 для быстрой пробы, 1280x720 для чётких лиц).</string>
+    <!-- MiniMax H3 (npu/H3Node.kt), video with sound -->
+    <string name="video_model_h3">MiniMax H3 (со звуком)</string>
+    <string name="h3_about">Видео из текста со звуком: речь, звуковые эффекты и музыка создаются вместе с изображением моделью MiniMax H3 (FastH3, 4 шага). Только текст, без картинки на входе. Около 6 минут на 3 секунды в 384x384 на 8 Elite, 13 минут в 832x480. 8 Gen 3 или новее, 12 ГБ ОЗУ. Загрузка 17,5 ГБ; если установлена Krea 2, её текстовый кодировщик (2,4 ГБ) используется совместно. Лицензия MiniMax H3 Community License: не для использования в Европейском союзе, Великобритании, Южной Корее и США. Используйте Wi-Fi.</string>
+    <string name="mb_powered_h3">Powered by MiniMax H3</string>
+    <string name="licence_h3_title">Лицензия MiniMax H3 Community License</string>
+    <string name="licence_h3_terms">MiniMax H3 создана компанией MiniMax и распространяется по лицензии MiniMax H3 Community License. Загружая модель, вы принимаете эту лицензию. Кратко:\n\n• Лицензия не распространяется на Европейский союз, Великобританию, Южную Корею и США. Не загружайте и не используйте модель там.\n• Всё, что вы создаёте с её помощью и публикуете, должно быть ясно помечено как созданное ИИ.\n• Её ролики нельзя использовать для обучения или улучшения других моделей ИИ.\n• Действуют её правила допустимого использования: ничего незаконного или вредного.\n\nNightmare показывает «Powered by MiniMax H3» там, где использует эту модель.</string>
+    <string name="licence_read">Прочитать лицензию полностью</string>
+    <string name="licence_accept">Принимаю, загрузить</string>
+    <string name="hint_h3_size">384x384 быстрее всего. До 768x1344 пикселей по площади; чем больше размер, тем меньше секунд помещается (об этом скажет заметка ниже). Не меньше 384: в меньших роликах портятся цвета.</string>
+    <string name="hint_h3_seconds">Длина ролика в секундах, шагами самой H3: от 0,9 до 5,2 (от 22 до 124 кадров при 24 к/с). 3,0 в 384x384 занимают около 6 минут на 8 Elite; чем больше размер, тем короче самый длинный ролик.</string>
+    <string name="hint_prompt_h3">MiniMax H3 читает промпт по разделам, как в примере: subject_definitions (кто в кадре и как звучит голос: S1 is a woman in her thirties with a calm, low voice), detailed_description (сцена, камера, длина и слова, сказанные вслух, как &lt;d&gt;[Russian] Привет.&lt;/d&gt;, на любом языке), overall_soundscape (звуки: дождь по стеклу) и non_diegetic_music (фоновая музыка или N/A, если не нужна). Напишите N/A в разделе, чтобы его пропустить. Обычный однострочный промпт тоже работает, без речи и музыки.</string>
+    <string name="run_lora_h3_skipped">MiniMax H3 не принимает LoRA: «%1$s» из промпта пропущена</string>
+    <!-- Heat on a video render (BatteryHeat.kt) -->
+    <string name="heat_title">Нагрев</string>
+    <string name="heat_note">Видео загружает процессоры телефона на минуты, и телефон нагревается. Чип защищает себя сам, аккумулятор нет: нагрев выше примерно 45 °C изнашивает его быстрее. Журнал запуска предупреждает, когда аккумулятор тёплый.</string>
+    <string name="heat_pause">Пауза видео при горячем аккумуляторе</string>
+    <string name="heat_pause_hint">Видео ждёт между шагами, когда аккумулятор нагревается до 45 °C, и продолжает, когда он остывает до 40 °C. В тёплой комнате дольше, зато бережнее к аккумулятору. Не для Neodragon: его ролики занимают секунды.</string>
+    <string name="run_heat_start">Аккумулятор нагрет до %1$s °C ещё до этого ролика. Долгие видео нагревают телефон, а нагрев изнашивает аккумулятор: не держите его на зарядке и на солнце и остановитесь, если его горячо держать. В Настройках, Производительность, можно ставить видео на паузу, пока аккумулятор горячий</string>
+    <string name="run_heat_paused">Пауза: аккумулятор нагрет до %1$s °C. Ролик продолжится, когда он остынет до %2$s °C</string>
+    <string name="run_heat_end">Аккумулятор нагрелся до %1$s °C за этот ролик. Дайте телефону остыть перед следующим</string>
 </resources>

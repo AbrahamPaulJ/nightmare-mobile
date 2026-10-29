@@ -192,6 +192,9 @@ object VideoSampleNode : NodeType {
                 "node \"${node.id}\": the video path needs a platform context and this " +
                     "executor has none"
             )
+        // ⭐ Every video model warns when the battery is already warm ([com.abrah.nightmare.BatteryHeat]); Neodragon's
+        // ~25 s render runs in this process, so it has no pause.
+        com.abrah.nightmare.BatteryHeat.warnIfWarm(android, ctx)
 
         // ⚠⚠ Checked BEFORE anything expensive, and by NAME. A missing binary
         // otherwise surfaces 20 s in as "Create From Binary failure", which

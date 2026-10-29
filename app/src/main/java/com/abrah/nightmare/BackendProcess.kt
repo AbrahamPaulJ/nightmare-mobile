@@ -678,7 +678,13 @@ object BackendProcess {
         return "4".takeIf { availBytes < ditBytes + IMPORT_HEADROOM }
     }
 
-    private const val IMPORT_STREAM_FROM = 6_000_000_000L
+    /**
+     * ⚠ 4 GB, not 6 (1.6.261): the tester's fp16 MOSS, converted to a ~5 GB Q8_0 on import ([MossGguf]), fell under 6 GB and
+     * ran whole on a 12 GB S25 Ultra with 4.5 GB free at 768x1280; the phone went to 471 MB free and restarted, twice
+     * (Saved #7338-7339, 1.6.251). Reasoned from that log, not re-measured: streaming only happens when what is free
+     * cannot hold the DiT plus [IMPORT_HEADROOM], so a phone with room still renders whole.
+     */
+    private const val IMPORT_STREAM_FROM = 4_000_000_000L
     private const val IMPORT_HEADROOM = 2_200_000_000L
 
     /** ⚠ The size of [spec]'s own LoRA ([ModelSpec.ownLora], MOSS's 8-step one), applied at run time on the NPU, or 0. */

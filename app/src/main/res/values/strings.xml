@@ -344,7 +344,7 @@
     <string name="lb_civitai_title">CivitAI</string>
     <string name="lb_civitai_note">For Search online in a node\'s LoRA list. The key is kept on this phone and sent only to CivitAI.</string>
     <string name="lb_mature">Show mature content</string>
-    <string name="lb_mature_hint">Search civitai.red, which includes NSFW LoRAs and previews.</string>
+    <string name="lb_mature_hint">Search civitai.red, which includes NSFW LoRAs and previews, and list the adult models in Models (NSFW Wan 1.3B, the Lustify conversions).</string>
     <string name="lb_files">Files</string>
     <string name="describe_action">Describe a picture</string>
     <string name="describe_length">Write</string>
@@ -1177,7 +1177,7 @@
     <string name="video_model_neodragon">Neodragon</string>
     <string name="video_model_wan14">Wan 2.2 14B</string>
     <string name="video_model_nsfw13">NSFW Wan 1.3B</string>
-    <string name="hint_video_model">Wan 2.2 Turbo looks much better and takes minutes; Wan 2.2 14B (with a picture wired) is the best and slowest; NSFW Wan 1.3B (no picture wired) is a community model for adult content; Neodragon is the fastest, 2 s in about 30 s</string>
+    <string name="hint_video_model">Wan 2.2 Turbo looks much better and takes minutes; Wan 2.2 14B (with a picture wired) is the best and slowest; NSFW Wan 1.3B (no picture wired) is a community model for adult content; MiniMax H3 (no picture wired) makes the clip with its sound, speech and music; Neodragon is the fastest, 2 s in about 30 s</string>
     <string name="flow_motion_name">Motion transfer</string>
     <string name="flow_motion_about">Your picture moving like a video you choose: its pose, frame by frame, with Wan 2.2 Fun Control.</string>
     <string name="video_in_none">No video chosen</string>
@@ -1373,4 +1373,24 @@
     <string name="whole_body_about">Reads a person\'s body, hands and face from every frame for Motion transfer\'s Pose mode (DWPose, Apache 2.0).</string>
     <string name="models_delete_whole_body_body">Frees %1$d MB. Getting it back is a %2$d MB download. Motion transfer in Pose mode will ask for it again.</string>
     <string name="wan_follow_picture">The clip takes your picture\'s shape; these set how many pixels (832x480 worth for a quick try, 1280x720 worth for sharp faces).</string>
+    <!-- MiniMax H3 (npu/H3Node.kt), video with sound -->
+    <string name="video_model_h3">MiniMax H3 (with sound)</string>
+    <string name="h3_about">Text to video with sound: speech, sound effects and music, made together with the picture by MiniMax H3 (FastH3, 4 steps). Text only, no picture in. About 6 minutes for 3 seconds at 384x384 on an 8 Elite, 13 minutes at 832x480. 8 Gen 3 or newer, 12 GB of RAM. A 17.5 GB download; with Krea 2 installed its 2.4 GB text encoder is shared. MiniMax H3 Community License: not for use in the European Union, the United Kingdom, South Korea or the United States. Use Wi-Fi.</string>
+    <string name="mb_powered_h3">Powered by MiniMax H3</string>
+    <string name="licence_h3_title">MiniMax H3 Community License</string>
+    <string name="licence_h3_terms">MiniMax H3 is made by MiniMax and shared under the MiniMax H3 Community License. Downloading it means you accept that licence. In short:\n\n• It does not cover use in the European Union, the United Kingdom, South Korea or the United States. Do not download or use it there.\n• Anything you make with it and share publicly must say clearly that it was made by AI.\n• Its clips may not be used to train or improve other AI models.\n• Its acceptable use policy applies: nothing unlawful or harmful.\n\nNightmare shows \"Powered by MiniMax H3\" where it uses the model.</string>
+    <string name="licence_read">Read the full licence</string>
+    <string name="licence_accept">I accept, download</string>
+    <string name="hint_h3_size">384x384 is the quickest. Up to 768x1344 worth of pixels; a larger size fits fewer seconds (the note below says when). Nothing under 384: smaller clips lose their colours.</string>
+    <string name="hint_h3_seconds">Clip length in seconds, in H3\'s own steps: 0.9 to 5.2 (22 to 124 frames at 24 fps). 3.0 at 384x384 takes about 6 minutes on an 8 Elite; the larger the size, the shorter the longest clip.</string>
+    <string name="hint_prompt_h3">MiniMax H3 reads its prompt in sections, as in the example: subject_definitions (who is on camera and how they sound: S1 is a woman in her thirties with a calm, low voice), detailed_description (the scene, the camera, the length, and the words said out loud as &lt;d&gt;[English] Hello there.&lt;/d&gt;, any language), overall_soundscape (the sounds: rain on the window) and non_diegetic_music (background music, or N/A for none). Write N/A in a section to leave it out. A plain one-line prompt works too, with no speech and no music.</string>
+    <string name="run_lora_h3_skipped">MiniMax H3 takes no LoRAs: \"%1$s\" from the prompt was skipped</string>
+    <!-- Heat on a video render (BatteryHeat.kt) -->
+    <string name="heat_title">Heat</string>
+    <string name="heat_note">A video render keeps the phone\'s processors busy for minutes and the phone gets hot. The chip protects itself; the battery does not, and heat above about 45 °C wears it out faster. The run log warns when the battery is warm.</string>
+    <string name="heat_pause">Pause video when the battery is hot</string>
+    <string name="heat_pause_hint">A video render waits between steps when the battery reaches 45 °C and carries on when it cools to 40 °C. Slower in a warm room, easier on the battery. Not for Neodragon, whose clips take seconds.</string>
+    <string name="run_heat_start">The battery is at %1$s °C before this clip. Long video renders heat the phone, and heat wears the battery: keep it off the charger and out of the sun, and stop if it gets hot to hold. Settings, Performance can pause a render while the battery is hot</string>
+    <string name="run_heat_paused">Paused: the battery is at %1$s °C. The clip carries on when it cools to %2$s °C</string>
+    <string name="run_heat_end">The battery reached %1$s °C during this clip. Let the phone cool before the next one</string>
 </resources>

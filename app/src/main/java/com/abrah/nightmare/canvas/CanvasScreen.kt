@@ -2045,13 +2045,8 @@ private fun FullscreenImage(
         // to drift.
         if (videoPath != null) {
             // ⭐ A clip zooms like a picture (GitHub #66): the player is a `TextureView`, so [viewerPicture] scales
-            // it, and the gesture rides a transparent box above it, the same [viewerZoom] as a picture's.
-            com.abrah.nightmare.ui.ClipPlayer(
-                path = videoPath,
-                handle = clipHandle,
-                modifier = Modifier.fillMaxSize()
-                    .viewerPicture(scale, offset, chromeless = chromeless, top = roomTop, bottom = roomBottom),
-            )
+            // it, and the gesture, the same [viewerZoom] as a picture's, is on the player's PARENT: in the Results
+            // pager a box layered above it as a sibling never saw a touch (the player's view won the hit test).
             Box(
                 Modifier.fillMaxSize().viewerZoom(
                     key = videoPath,
@@ -2060,7 +2055,14 @@ private fun FullscreenImage(
                     bounds = { box },
                     onDismiss = onDismiss,
                 ),
-            )
+            ) {
+                com.abrah.nightmare.ui.ClipPlayer(
+                    path = videoPath,
+                    handle = clipHandle,
+                    modifier = Modifier.fillMaxSize()
+                        .viewerPicture(scale, offset, chromeless = chromeless, top = roomTop, bottom = roomBottom),
+                )
+            }
         } else if (pages.size > 1) {
             // ⭐⭐⭐ **Swipe between this node's pictures** — Received ⇄ Made,
             // the user's call 2026-09-22: *"in fullscreen i want to swipe to

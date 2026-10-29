@@ -2,12 +2,13 @@
 
 *A prompt, or a prompt and a photo, into a clip. Or your photo moving like a video you choose.*
 
-There are three video models. Install any of them:
+There are four video models. Install any of them:
 
 | model | makes | needs |
 |---|---|---|
 | **Wan 2.2 Turbo** (6.25 GB) | up to 5 seconds, any shape up to 1280 × 704. The better clips; minutes per clip | Snapdragon 8 Elite or newer (alpha on 8 Gen 3: tell us if it runs) |
 | **Wan 2.2 14B** (about 21 GB; 3.7 GB less beside Wan 2.2 Turbo) | your picture moving, or text to video through a picture first (**Text to video (14B)** below). The best motion and detail, and slow: about 9 minutes for 2 seconds at 480 × 832, 12 minutes for 1 second at 720 × 1280 (faces come out much sharper at the larger size) | Snapdragon 8 Gen 3 or newer, 12 GB of RAM (on an 8 Gen 3, up to 832 × 480) |
+| **MiniMax H3** (17.5 GB; 2.4 GB less beside Krea 2) | a clip **with sound**: speech, sound effects and music made with the picture. Up to 5.2 seconds at 384 × 384, 3 seconds at 832 × 480. About 6 minutes for 3 seconds at 384 × 384 (**Text to video with sound** below) | Snapdragon 8 Gen 3 or newer, 12 GB of RAM. Not licensed for the EU, the UK, South Korea or the US |
 | **Neodragon** (about 8.6 GB) | 2 seconds at 1024 × 640 in about 25 seconds | Snapdragon 8 Elite or 8 Elite Gen 5 |
 
 Video has its own models; only **Text to video (14B)** also uses your picture model, for its first frame. **Models → Video** lists them all, and **Wan**
@@ -49,6 +50,35 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
    clip's **first frame**.
 3. Describe what moves: `the camera slowly pushes in, the woman turns her head and smiles`.
    **Run.**
+
+## Text to video with sound (MiniMax H3)
+
+**Nodes:** Prompt → Video (MiniMax H3) → Output. Needs MiniMax H3 and an 8 Gen 3 or newer with 12 GB of RAM.
+
+1. **Flows → Text to video**, then set the video node's **Model** to **MiniMax H3 (with sound)**, or **Use** on MiniMax H3 in Models.
+2. **Prompt:** it opens on a worked example (a barista speaking one line in a café) in the sections H3 was trained on. Edit it section by section; the hint under the box says what each one is for:
+
+    | section | what to write |
+    |---|---|
+    | **subject_definitions** | who is on camera and how they sound: *S1 is a man in his late twenties with short brown hair. He has a clear, warm voice.* Or N/A for nobody |
+    | **summary** | the clip in one or two sentences |
+    | **detailed_description** | the look and camera, then the shot: where it is, what happens, and the words said out loud as `<d>[English] Hello! This was made on a phone.</d>` (any language; about 3 words a second) |
+    | **overall_soundscape** | the sounds: *rain on the window and distant thunder* |
+    | **non_diegetic_music** | background music: *soft piano*, or N/A for none |
+
+    Write N/A in a section to leave it out. The length sentence ("The target video lasts ... seconds.") is set to the **Seconds** you pick. A plain one-line prompt works too: it becomes the scene, with no speech and no music.
+3. **Run.** 3 seconds at 384 × 384 takes about 6 minutes on an 8 Elite; 832 × 480 about 13. The clip plays with its sound in the Output and in Results, and saves with it.
+
+MiniMax H3 was trained on prompts in this shape, so the sections matter: one line leaves the sound to chance (music you did not ask for, a robotic voice). A prompt from ComfyUI's H3 prompt rewriter works as it is.
+
+| setting | what it does |
+|---|---|
+| **Width**, **Height** | 384 to 1344 in 32 px steps, up to 768 × 1344 worth of pixels. 384 × 384 is the quickest. Nothing under 384: smaller clips lose their colours |
+| **Seconds** | H3's own lengths: 0.9, 1.6, 2.3, 3.0, 3.8, 4.5 or 5.2, at 24 frames a second. A larger size fits fewer: on an 8 Elite about 5.2 s at 384 × 384, 3.0 s at 832 × 480 or 640 × 640, 2.3 s at 960 × 544, 1.6 s at 1152 × 640, 0.9 s at 768 × 1344; on an 8 Gen 3, 5.2 s at 384 × 384, 2.3 s at 832 × 480, 1.6 s at 640 × 640 or 544 × 960, 0.9 s at 768 × 1344. A new node opens on 832 × 480 for 2.3 s, which fits both. The node says when a size and length are too much |
+| **Smooth motion** | twice the frames, as on the Wan nodes; the sound stays in sync |
+| **Seed** | 0 picks a new one each run |
+
+Long renders heat the phone: see [Heat](../reference/settings.md#heat). MiniMax H3 takes no LoRAs. **Powered by MiniMax H3.** Its licence (the MiniMax H3 Community License) does not cover the European Union, the United Kingdom, South Korea or the United States; anything you make with it and share publicly must say it was made by AI; and its clips may not be used to improve other AI models. The app shows these terms before the download and asks you to accept them.
 
 ## Wan 2.2 settings
 

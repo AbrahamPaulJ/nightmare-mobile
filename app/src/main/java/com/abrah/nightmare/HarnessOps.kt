@@ -268,6 +268,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "wan14_i2v" -> wanVideo(arg, i2v = true, type = com.abrah.nightmare.npu.WanA14Node.name)
             // ⭐ NSFW Wan 1.3B (`npu.WanNsfw13Node`), text to video only: `wan13_video`, same arg (no picture).
             "wan13_video" -> wanVideo(arg, i2v = false, type = com.abrah.nightmare.npu.WanNsfw13Node.name)
+            // ⭐ MiniMax H3 (`npu.H3Node`), text to video with sound: `h3_video`, same arg (no picture).
+            "h3_video" -> wanVideo(arg, i2v = false, type = com.abrah.nightmare.npu.H3Node.name)
             "wan_i2v" -> wanVideo(arg, i2v = true)
             // ⭐ GitHub #23's chaining: clip A's `last_frame` is clip B's first frame. `--es arg "WxH|seconds"`.
             "wan_chain" -> wanChain(arg)

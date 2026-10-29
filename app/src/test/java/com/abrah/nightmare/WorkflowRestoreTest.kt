@@ -298,6 +298,7 @@ class WorkflowRestoreTest {
             "nothing was opened, so nothing filled it: " + vm.modelRows.size,
             vm.modelRows.isNotEmpty(),
         )
-        assertEquals(ModelCatalog.all.map { it.id }, vm.modelRows.map { it.spec.id })
+        // ⭐ The adult models only with Show mature content on (off here), [ModelSpec.mature].
+        assertEquals(ModelCatalog.all.filterNot { it.mature }.map { it.id }, vm.modelRows.map { it.spec.id })
     }
 }

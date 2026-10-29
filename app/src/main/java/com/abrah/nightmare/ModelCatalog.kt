@@ -387,6 +387,12 @@ data class Build(
 }
 
 /**
+ * ⭐ A licence the person accepts before a model downloads ([ModelSpec.licence]): the dialog's title and terms, and
+ * the full text's address. Accepted once a model, remembered in [Prefs.licenceAccepted].
+ */
+data class ModelLicence(val titleRes: Int, val termsRes: Int, val url: String)
+
+/**
  * Which checkpoints exist, where they come from, and whether one is installed.
  *
  * ⚠ This file is DATA plus disk state; fetching lives in [ModelInstaller] and
@@ -536,6 +542,16 @@ data class ModelSpec(
      * on its family page and a badge on its row.
      */
     val community: Boolean = false,
+    /**
+     * ⭐ A licence the person must accept before the download starts ([HarnessViewModel.installModel] asks, once a
+     * model): MiniMax H3's territory and output terms. Null for every model whose licence the README covers.
+     */
+    val licence: ModelLicence? = null,
+    /**
+     * ⭐ Made for adult content: listed (Models, the video dropdown, the palette) only with Settings' Show mature
+     * content on ([Prefs.matureContent]), with the CivitAI NSFW search (the user, 2026-10-30). Installed, it still runs.
+     */
+    val mature: Boolean = false,
     /**
      * ⭐ An absolute folder this model lives in, outside the models root — Local Dream's imports
      * ([LocalDreamModels]). Null for everything else: [dir] is then root + [id].
@@ -1990,7 +2006,7 @@ object ModelCatalog {
             "community_lustify_apex_v8_swap", "Lustify Apex V8 Swap", "JIONing/apexV8",
             "lustifyNSFWCheckpoint_apexV8_npuforge_swap_ControlNet_IP-Adapt.zip", 3_816_006_388L,
             prompt = P_SDXL, negative = NEG_GENERAL,
-        ),
+        ).copy(mature = true),
         communitySwap(
             "community_rinflanime_v50_swap", "rinFlanime Illustrious v5 Swap", "JIONing/rinFlanimeIllustrious_v50",
             "rinFlanimeIllustrious_v50_npuforge_swap.zip", 3_907_307_857L,
@@ -2000,7 +2016,7 @@ object ModelCatalog {
             "community_lustify_apex_v8_dmd2", "Lustify Apex V8 DMD2", "JIONing/apexV8",
             "lustifyNSFWCheckpoint_apexV8+dmd2_8gen3.zip", 3_859_554_287L,
             prompt = P_SDXL, negative = NEG_GENERAL,
-        ),
+        ).copy(mature = true),
         communityDmd(
             "community_rinflanime_v50_wicked_city_dmd2", "rinFlanime v5 Wicked City DMD2", "JIONing/rinFlanimeIllustrious_v50",
             "rinFlanimeIllustrious_v50+Wicked_City_Illustrious_0.1@0.8+dm.zip", 3_859_554_609L,
@@ -2922,12 +2938,44 @@ object ModelCatalog {
             RemoteFile(HF + "city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q4_K_M.gguf", "umt5.gguf", 3_655_145_312L),
             RemoteFile("https://raw.githubusercontent.com/madebyollin/taehv/fa579a9a726b0a55951998d73e309bfdf0abd342/safetensors/taew2_1.safetensors", "tae.safetensors", 22_642_902L),
         ),
-    ).copy(community = true)
+    ).copy(community = true, mature = true)
+
+    /** ⭐ MiniMax-H3's backend `--type` (backend 050): `/video` with a soundtrack beside the frames. */
+    const val H3 = "h3"
+
+    /**
+     * ⭐⭐ **MiniMax H3** (MiniMax, MiniMax H3 Community License; `NOTICE`), as FastVideo's FastH3 4-step Preview v1 Dense:
+     * a video WITH SOUND (speech, effects, music) from text, one DiT over video and stereo audio tokens
+     * (`docs/MINIMAX-H3.md`). Our Q4_0 of Gestura's FastH3 GGUF (the NPU runs Q4_0, not their Q4_K), Gestura's Q8_0 video VAE,
+     * Comfy's fp32 audio VAE, and Qwen3-VL-4B as the text encoder through NicoLab28's ClipProj v3.1 (MIT) in place of
+     * H3's own 32B (the user's call, 2026-10-29: 2.4 GB against 13 GB, the same scene). The 4B is Krea 2's when Krea 2
+     * is installed ([ModelSpec.partsFrom]). 4 steps, euler, CFG 1, 24 fps on a 17k+5 frame grid ([npu.H3Node]).
+     * ⚠ [ModelSpec.licence]: the person accepts its territory and output terms before the download.
+     * ⭐ v79 and v75 (8 Gen 3: the S25 forced to v75 at 2.75 GiB, `docs/MINIMAX-H3.md` §5d). 12 GB class: one block
+     * streams at 4.5 GiB and the 1152x640 clip left 1.69 GB free on the S25.
+     */
+    val MINIMAX_H3: ModelSpec = dit(
+        "minimax_h3_fast", "MiniMax H3", Family.WAN, H3, steps = 4,
+        prompt = "",
+        ownDitParts = true,
+        partsFrom = "krea2_turbo",
+        minArch = DIT_GGML_MIN_ARCH,
+        minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+        files = listOf(
+            RemoteFile(HF + "AbrahamPJ/fasth3-dense-v1-q4_0-gguf/resolve/main/fasth3_dense_v1_euler4_q4_0.gguf", "dit.gguf", 11_583_540_608L),
+            RemoteFile(HF + "ZawShiShawn/Gestura-MiniMax-H3-VAE-GGUF/resolve/main/split/vae/minimax_h3_video_vae_Q8_0.gguf", "vae.gguf", 2_936_962_688L),
+            RemoteFile(HF + "Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors", "audio_vae.safetensors", 605_254_808L),
+            RemoteFile(HF + "NicoLab28/ClipProj-MiniMax-H3/resolve/main/mmh3-4b-ClipProj-v3.1.safetensors", "clipproj.safetensors", 26_256_128L),
+            RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
+        ),
+    ).copy(
+        licence = ModelLicence(R.string.licence_h3_title, R.string.licence_h3_terms, "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE"),
+    )
 
     /** ⚠ The video models: found by [byId], never listed as checkpoints. */
     // ⚠ Not [WAN22_A14B]: one 14B download, its image to video experts; text to video on the 14B makes the first
     // frame with a picture model (`canvas.T2V14`, the user's call 2026-10-25: two 17 GB downloads was too much).
-    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B_I2V, WAN21_NSFW13)
+    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B_I2V, WAN21_NSFW13, MINIMAX_H3)
 
     fun installed(context: Context): List<ModelSpec> = all.filter { it.installed(context) }
 

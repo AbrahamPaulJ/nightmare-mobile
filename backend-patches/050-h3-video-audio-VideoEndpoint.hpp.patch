@@ -1,0 +1,53 @@
+--- a/src/VideoEndpoint.hpp
++++ b/src/VideoEndpoint.hpp
+@@ -66,7 +66,13 @@
+         throw std::invalid_argument("width and height must be multiples of 16, 256 to 4096");
+       if (req->steps < 1 || req->steps > 1000)
+         throw std::invalid_argument("steps must be between 1 and 1000");
+-      if (req->frames < 1 || (req->frames - 1) % 4 != 0)
++      // nightmare (050): MiniMax-H3 takes 17k+5 frames and sides in multiples of 32.
++      if (pipeline->isH3()) {
++        if (req->frames < 5 || (req->frames - 5) % 17 != 0)
++          throw std::invalid_argument("frames must be 17k+5");
++        if (req->width % 32 != 0 || req->height % 32 != 0)
++          throw std::invalid_argument("width and height must be multiples of 32");
++      } else if (req->frames < 1 || (req->frames - 1) % 4 != 0)
+         throw std::invalid_argument("frames must be 4n+1");
+       if (json.contains("image")) {
+         const std::string dec_str =
+@@ -173,6 +179,23 @@
+                   });
+               file.close();
+               if (!file) throw std::runtime_error("cannot finish " + out);
++              // nightmare (050): a soundtrack goes to "<out>.pcm": "NMA1", int32 little-endian sample rate,
++              // channels, then int64 sample frames, then the float32 samples interleaved by channel.
++              std::string audio_path;
++              if (!result.audio.empty() && result.audio_channels > 0) {
++                audio_path = out + ".pcm";
++                std::ofstream af(audio_path, std::ios::binary | std::ios::trunc);
++                const int32_t ah[2] = {result.audio_sample_rate, result.audio_channels};
++                const int64_t frames_n =
++                    static_cast<int64_t>(result.audio.size() / static_cast<size_t>(result.audio_channels));
++                af.write("NMA1", 4);
++                af.write(reinterpret_cast<const char *>(ah), sizeof(ah));
++                af.write(reinterpret_cast<const char *>(&frames_n), sizeof(frames_n));
++                af.write(reinterpret_cast<const char *>(result.audio.data()),
++                         static_cast<std::streamsize>(result.audio.size() * sizeof(float)));
++                af.close();
++                if (!af) throw std::runtime_error("cannot write " + audio_path);
++              }
+               nlohmann::json c = {
+                   {"type", "complete"},
+                   {"path", out},
+@@ -183,6 +206,11 @@
+                   {"seed", req->seed},
+                   {"generation_time_ms", result.generation_time_ms},
+                   {"first_step_time_ms", result.first_step_time_ms}};
++              if (!audio_path.empty()) {
++                c["audio_path"] = audio_path;
++                c["audio_sample_rate"] = result.audio_sample_rate;
++                c["audio_channels"] = result.audio_channels;
++              }
+               std::string ev = "event: complete\ndata: " + c.dump() + "\n\n";
+               sink.write(ev.c_str(), ev.size());
+               sink.done();

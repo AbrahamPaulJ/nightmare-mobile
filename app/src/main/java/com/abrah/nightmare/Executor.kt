@@ -2692,6 +2692,8 @@ val NODE_TYPES: Map<String, NodeType> = (
         com.abrah.nightmare.npu.WanA14Node,
         // ⭐ NSFW Wan 1.3B (`npu.WanNsfw13Node`), a community fine-tune, text to video only.
         com.abrah.nightmare.npu.WanNsfw13Node,
+        // ⭐ MiniMax H3 (`npu.H3Node`), text to video with sound.
+        com.abrah.nightmare.npu.H3Node,
         com.abrah.nightmare.npu.LoadVideoNode,
         // ⭐ Tap to select — wired into an inpaint node (docs/SEGMENTER.md).
         SelectObjectNode,

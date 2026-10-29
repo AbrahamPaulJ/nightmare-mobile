@@ -104,7 +104,7 @@ Used by **Search online** in a node's LoRA list ([LoRAs](../models/loras.md)):
 - **CivitAI API key**: most CivitAI LoRAs download only with your own free key (civitai.com →
   Account settings → API Keys). It is kept on this phone and sent only to CivitAI.
 - **Show mature content**: off by default. When on, searches go to civitai.red, which
-  includes NSFW LoRAs and previews.
+  includes NSFW LoRAs and previews, and Models lists the models made for adult content.
 
 ### LoRAs
 
@@ -126,6 +126,17 @@ Three switches the same as LocalDream's, whose defaults are set **from your phon
 
 Changing a switch takes effect on the next Run (a loaded model of that family is let go). More
 in [Memory and speed](memory.md).
+
+### Heat
+
+A video render keeps the phone's processors busy for minutes, and the phone gets hot. The chip
+protects itself; the battery does not, and heat above about 45 °C wears it out faster. The run
+log warns when the battery is already warm (40 °C) before a clip, and again when a clip took it
+to 45 °C. Keep the phone off the charger and out of the sun while it renders.
+
+| switch | default | what it does |
+|---|---|---|
+| **Pause video when the battery is hot** | off | A video render waits between steps when the battery reaches 45 °C and carries on when it cools to 40 °C. Slower in a warm room, easier on the battery. Not for Neodragon, whose clips take seconds |
 
 ### Keep rendering in the background
 

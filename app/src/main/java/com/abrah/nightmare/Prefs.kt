@@ -75,6 +75,7 @@ object Prefs {
         samplingOpen = p.getBoolean(KEY_SAMPLING_OPEN, false)
         postOpen = p.getBoolean(KEY_POST_OPEN, false)
         wanStream = p.getBoolean(KEY_WAN_STREAM, false)
+        heatPause = p.getBoolean(KEY_HEAT_PAUSE, false)
     }
 
     /** ⭐ A sampler's "More options" fold open (the user, 2026-10-17: closed by default, remembered). */
@@ -85,6 +86,16 @@ object Prefs {
         moreOptionsOpen = value
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_MORE_OPTIONS, value).apply()
     }
+
+    /** ⭐ Whether the person accepted [modelId]'s licence ([ModelSpec.licence]); asked before its first download. */
+    fun licenceAccepted(context: Context, modelId: String): Boolean =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(KEY_LICENCE + modelId, false)
+
+    fun acceptLicence(context: Context, modelId: String) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(KEY_LICENCE + modelId, true).apply()
+    }
+
+    private const val KEY_LICENCE = "licence_accepted_"
 
     /** ⭐ The image samplers' Scheduler, seed and CFG fold: closed by default, open or closed remembered. */
     @Volatile var samplingOpen: Boolean = false
@@ -318,6 +329,13 @@ object Prefs {
     @Volatile var wanStream: Boolean = false
         private set
 
+    /** ⭐ Pause a video render while the battery is hot ([BatteryHeat], Saved #7354, the user 2026-10-30): opt-in. */
+    const val KEY_HEAT_PAUSE = "heat_pause"
+
+    /** ⚠ [KEY_HEAT_PAUSE] held in memory: a node's run reads it with no Context. Loaded by [load], set by [setLowRam]. */
+    @Volatile var heatPause: Boolean = false
+        private set
+
     /**
      * ⚠ 13 GiB, between the classes rather than at "16": a 12 GB phone reports
      * ~10.9–11.4 GiB of `totalMem` and a 16 GB one ~14.5–15 GiB, the rest being
@@ -334,7 +352,7 @@ object Prefs {
     /** ⚠ The phone class a [minRamBytes] gate names to a person: 16 at [LOWRAM_BELOW_BYTES], else 12. */
     fun ramClassGb(minRamBytes: Long): Int = if (minRamBytes >= LOWRAM_BELOW_BYTES) 16 else 12
 
-    data class LowRam(val sdxl: Boolean, val anima: Boolean, val animaSeqDit: Boolean, val wanStream: Boolean = false)
+    data class LowRam(val sdxl: Boolean, val anima: Boolean, val animaSeqDit: Boolean, val wanStream: Boolean = false, val heatPause: Boolean = false)
 
     /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */
     fun lowRamDefault(totalRamBytes: Long): Boolean =
@@ -356,11 +374,13 @@ object Prefs {
             anima = read(KEY_ANIMA_LOWRAM, def),
             animaSeqDit = read(KEY_ANIMA_SEQ_DIT, false),
             wanStream = read(KEY_WAN_STREAM, false),
+            heatPause = read(KEY_HEAT_PAUSE, false),
         )
     }
 
     fun setLowRam(context: Context, key: String, on: Boolean) {
         if (key == KEY_WAN_STREAM) wanStream = on
+        if (key == KEY_HEAT_PAUSE) heatPause = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()
     }
 

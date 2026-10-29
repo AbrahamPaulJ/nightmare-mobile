@@ -879,7 +879,7 @@ fun imageToVideoWorkflow(): Workflow = Workflow(
                 // photo. "a cat walking" against a picture of a harbour is the
                 // instruction fighting the image it was given.
                 params = mapOf(
-                    "prompt" to "gentle camera push in, subtle motion",
+                    "prompt" to com.abrah.nightmare.npu.VideoPrompts.forType("nd.sample", i2v = true),
                     "negative" to "",
                 ),
             ),
@@ -910,7 +910,7 @@ fun motionTransferWorkflow(): Workflow = Workflow(
         listOf(
             Node(
                 "prompt", "core.prompt",
-                params = mapOf("prompt" to "a person dancing, natural light, detailed face", "negative" to ""),
+                params = mapOf("prompt" to com.abrah.nightmare.npu.VideoPrompts.MOTION, "negative" to ""),
             ),
             Node("image", "core.image", params = mapOf("uri" to "")),
             Node("clip", com.abrah.nightmare.npu.LoadVideoNode.name, params = mapOf("uri" to "")),
@@ -936,8 +936,8 @@ fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
             Node(
                 "prompt", "core.prompt",
                 params = mapOf(
-                    "prompt" to if (i2v) "the camera slowly pushes in, gentle natural motion"
-                    else "a red fox trotting through a snowy pine forest, soft morning light, cinematic",
+                    // ⭐ Each video model's own opening prompt ([com.abrah.nightmare.npu.VideoPrompts]).
+                    "prompt" to com.abrah.nightmare.npu.VideoPrompts.forType(com.abrah.nightmare.npu.WanVideoNode.name, i2v),
                     "negative" to "",
                 ),
             ),
@@ -964,7 +964,8 @@ fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
 fun wan14TextToVideoWorkflow(): Workflow = Workflow(
     Graph(
         listOf(
-            Node("prompt", "core.prompt", params = promptParams()),
+            // ⭐ One prompt read twice, a picture and then its motion ([com.abrah.nightmare.npu.VideoPrompts.WAN14_T2V]).
+            Node("prompt", "core.prompt", params = promptParams() + ("prompt" to com.abrah.nightmare.npu.VideoPrompts.WAN14_T2V)),
             Node("generate", samplerType(), params = ctxKeyParams() + mapOf("seed" to "0"), inputs = sources("prompt" to "prompt")),
             Node(
                 "video", com.abrah.nightmare.npu.WanA14Node.name,
@@ -1008,7 +1009,7 @@ fun textToVideoWorkflow(): Workflow = Workflow(
             Node(
                 "prompt", "core.prompt",
                 params = mapOf(
-                    "prompt" to "a cat walking through tall grass, cinematic",
+                    "prompt" to com.abrah.nightmare.npu.VideoPrompts.forType("nd.sample", i2v = false),
                     "negative" to "",
                 ),
             ),

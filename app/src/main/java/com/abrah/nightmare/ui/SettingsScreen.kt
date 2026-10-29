@@ -636,6 +636,14 @@ fun SettingsScreen(
                             lowRam.wanStream, { onLowRam(Prefs.KEY_WAN_STREAM, it) },
                         )
                     }
+                    // ⭐ Heat on a video render ([com.abrah.nightmare.BatteryHeat]): the battery's sake, opt-in.
+                    StudioCard {
+                        SectionHeading(stringResource(R.string.heat_title), stringResource(R.string.heat_note))
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.heat_pause), stringResource(R.string.heat_pause_hint),
+                            lowRam.heatPause, { onLowRam(Prefs.KEY_HEAT_PAUSE, it) },
+                        )
+                    }
                 }
                 // ⭐ Shown only while the battery manager may stop the app — see BackendKeepAliveService.
                 if (!batteryUnrestricted) {

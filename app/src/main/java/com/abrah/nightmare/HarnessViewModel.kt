@@ -1600,8 +1600,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     (if (it.spec.id == installing) it.copy(progress = installProgress) else it)
                         .copy(queued = it.spec.id in downloadQueue, queueable = installing != null && installing != it.spec.id)
                 }
-                modelRows = withProgress.filter { it.spec !in ModelCatalog.video }
-                wanRows = withProgress.filter { it.spec in ModelCatalog.video }
+                // ⭐ Adult models only with Show mature content on ([ModelSpec.mature]).
+                val shown = withProgress.filter { !it.spec.mature || Prefs.matureContent }
+                modelRows = shown.filter { it.spec !in ModelCatalog.video }
+                wanRows = shown.filter { it.spec in ModelCatalog.video }
                 ModelCatalog.installedIds = ids
                 // ⚠ …and the video models, for the same reason. ⚠⚠
                 // `probeVideoSupport` is NOT called here: it starts the QNN
@@ -1826,7 +1828,29 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** ⭐ A model whose licence is waiting for the person's answer ([ModelSpec.licence], the dialog in `MainActivity`). */
+    var pendingLicence by mutableStateOf<ModelSpec?>(null)
+        private set
+
+    /** ⭐ The licence accepted: remembered, and the download it held back starts. */
+    fun acceptLicence() {
+        val spec = pendingLicence ?: return
+        pendingLicence = null
+        Prefs.acceptLicence(getApplication(), spec.id)
+        installModel(spec)
+    }
+
+    fun declineLicence() {
+        pendingLicence = null
+    }
+
     fun installModel(spec: ModelSpec) {
+        // ⭐⭐ A model with terms the person must accept (MiniMax H3's territories) asks first, here, where every
+        // download the screen starts passes: the Models tab, the queue, a flow's missing-model offer.
+        if (spec.licence != null && !Prefs.licenceAccepted(getApplication(), spec.id)) {
+            pendingLicence = spec
+            return
+        }
         if (installing != null) {
             // ⭐ Queued behind the download in flight ([downloadQueue]); a second tap takes it out.
             if (installing == spec.id) return
@@ -4288,6 +4312,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun chooseMatureContent(value: Boolean) {
         Prefs.setMatureContent(getApplication(), value)
         matureContent = value
+        // ⭐ It shows or hides the adult models too ([ModelSpec.mature]).
+        refreshModels()
     }
 
     /**
@@ -4774,12 +4800,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 ModelCatalog.WAN22_A14B_I2V -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.I2V, com.abrah.nightmare.canvas.T2V14)
                 // ⭐ Text to video only: the Text to video flow with its node swapped to the 1.3B.
                 ModelCatalog.WAN21_NSFW13 -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V)
+                ModelCatalog.MINIMAX_H3 -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V)
                 else -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V)
             },
             unsavedFlow = unsavedFlow(),
             videoType = when (spec) {
                 ModelCatalog.WAN22_A14B_I2V -> com.abrah.nightmare.npu.WanA14Node.name
                 ModelCatalog.WAN21_NSFW13 -> com.abrah.nightmare.npu.WanNsfw13Node.name
+                ModelCatalog.MINIMAX_H3 -> com.abrah.nightmare.npu.H3Node.name
+                // ⚠ Named, not null: a flow reopens from its own autosave (1.6.257), so "keep the node" kept whatever
+                // model it was last switched to, and Use on Wan 2.2 Turbo opened MiniMax H3 (the user, 2026-10-30).
+                ModelCatalog.WAN22 -> com.abrah.nightmare.npu.WanVideoNode.name
                 else -> null
             },
         )
@@ -4818,9 +4849,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val ports = nodeTypes[newType]?.inputs?.map { it.name }?.toSet().orEmpty()
         val outs = nodeTypes[newType]?.outputs?.map { it.name }?.toSet().orEmpty()
         val keep = node.params.filterKeys { it in setOf("seed", "x", "y", "w", "h") }
+        // ⭐ The wired prompt becomes the new model's opening prompt ([com.abrah.nightmare.npu.VideoPrompts]) while it is
+        // still an opening prompt or empty, never over the person's own text: MiniMax H3 opens on its structured prompt.
+        val promptId = node.inputs["prompt"]?.node
+        val swapPrompt = g.byId[promptId]?.takeIf { p ->
+            p.type == com.abrah.nightmare.PromptNode.name && com.abrah.nightmare.npu.VideoPrompts.isDefault(p.params["prompt"].orEmpty())
+        }
+        val newPrompt = com.abrah.nightmare.npu.VideoPrompts.forType(newType, i2v = "image" in ports && node.inputs["image"] != null)
         val next = Graph(
             g.nodes.map { n ->
                 when {
+                    n.id == swapPrompt?.id -> n.copy(params = n.params + ("prompt" to newPrompt))
                     n.id == nodeId -> n.copy(type = newType, params = keep, inputs = n.inputs.filterKeys { it in ports })
                     // ⚠ A wire from a port the new type lacks (Wan's `last_frame`) is dropped.
                     else -> n.copy(inputs = n.inputs.filterValues { s -> s.node != nodeId || s.port == null || s.port in outs })
@@ -7589,6 +7628,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             com.abrah.nightmare.npu.WanVideoNode.name -> app.getString(R.string.video_model_wan)
             com.abrah.nightmare.npu.WanA14Node.name -> app.getString(R.string.video_model_wan14)
             com.abrah.nightmare.npu.WanNsfw13Node.name -> app.getString(R.string.video_model_nsfw13)
+            com.abrah.nightmare.npu.H3Node.name -> app.getString(R.string.video_model_h3)
             "nd.sample" -> app.getString(R.string.video_model_neodragon)
             else -> type?.paletteName?.takeIf { n.type in VIDEO_SAMPLER_TYPES }
         }

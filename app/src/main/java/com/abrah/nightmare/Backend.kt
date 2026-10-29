@@ -987,6 +987,8 @@ object Ops {
         val height: Int,
         val fps: Int,
         val serverMs: Long,
+        /** ⭐ MiniMax H3's soundtrack beside the frames (backend 050): "NMA1", int32 LE rate and channels, int64 frames, f32. */
+        val audioPath: String? = null,
     )
 
     /**
@@ -1030,8 +1032,10 @@ object Ops {
             .put("steps", steps)
             .put("cfg", 1.0)
             .put("sample_method", sampleMethod)
-            .put("sigmas", org.json.JSONArray(sigmas))
-            .put("temporal_tiling", true)
+            // ⭐ None = the engine's own schedule (MiniMax H3's FastH3 knots, `dit/072`).
+            .apply { if (sigmas.isNotEmpty()) put("sigmas", org.json.JSONArray(sigmas)) }
+            // ⭐ No tiling args = whole-clip decode in the VAE's own chunks (MiniMax H3's).
+            .put("temporal_tiling", tilingArgs.isNotEmpty())
             .put("tiling_args", tilingArgs)
             // ⚠ Backend 031: an older backend ignores the key and decodes the whole frame.
             .apply { if (vaeTileSize > 0) put("vae_tile_size", vaeTileSize) }
@@ -1078,9 +1082,14 @@ object Ops {
             Clip(
                 j.optString("path", out), j.optInt("frames"), j.optInt("width"), j.optInt("height"),
                 j.optInt("fps", fps), j.optLong("generation_time_ms"),
+                audioPath = j.optString("audio_path").takeIf { it.isNotEmpty() },
             )
         )
     }
+
+    /** ⭐ Backend 051: hold a running `/video` between its steps (the battery-heat pause, [BatteryHeat]). */
+    suspend fun pauseVideo(paused: Boolean): Boolean =
+        Backend.post("/pause", JSONObject().put("paused", paused).toString()).code == 200
 
     /**
      * What the backend still holds -- conditionings AND latents, as ids.

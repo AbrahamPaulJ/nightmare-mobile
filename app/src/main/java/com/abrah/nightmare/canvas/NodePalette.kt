@@ -130,8 +130,14 @@ fun NodePaletteContent(
  * ⚠ `hidden` types still RUN — they are the set §5.7 replaces, kept alive for
  * one build to compare against. They must not be offered.
  */
-fun paletteTabs(types: Map<String, NodeType>): List<Pair<String, List<List<NodeType>>>> {
-    val shown = types.values.filterNot { it.hidden }
+fun paletteTabs(
+    types: Map<String, NodeType>,
+    mature: Boolean = com.abrah.nightmare.Prefs.matureContent,
+): List<Pair<String, List<List<NodeType>>>> {
+    // ⭐ An adult model's node only with Show mature content on ([com.abrah.nightmare.ModelSpec.mature]).
+    val shown = types.values.filterNot {
+        it.hidden || (!mature && com.abrah.nightmare.npu.WanVideoNode.specOf(com.abrah.nightmare.Node("_", it.name))?.mature == true)
+    }
     val byTab = shown.groupBy { tabFor(it.category) }
     return TAB_ORDER.filter { it in byTab }.map { tab ->
         tab to byTab.getValue(tab)

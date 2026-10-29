@@ -1,0 +1,105 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -58,6 +58,11 @@
+   int height = 0;
+   int generation_time_ms = 0;
+   int first_step_time_ms = 0;
++  // nightmare (050): MiniMax-H3's soundtrack (engine ABI 110), float samples interleaved by channel; empty for a
++  // silent model.
++  std::vector<float> audio;
++  int audio_channels = 0;
++  int audio_sample_rate = 0;
+ };
+ 
+ // (index, count, rgb, width, height); throwing stops the generation.
+@@ -112,7 +117,8 @@
+               std::string vae_path, dit_model_kind kind,
+               std::string backend, std::string params_backend, int n_threads,
+               int vae_tile_size, bool img2img_enabled, int lora_apply_mode,
+-              std::string t5xxl_path = "", std::string taesd_path = "")
++              std::string t5xxl_path = "", std::string taesd_path = "",
++              std::string audio_vae_path = "")
+       : Pipeline(text_encoder, model_dir, /*sdxl=*/false, /*use_v_pred=*/false),
+         engine_path_(std::move(engine_path)),
+         diffusion_model_path_(std::move(diffusion_model_path)),
+@@ -127,7 +133,8 @@
+         vae_tile_size_(vae_tile_size),
+         img2img_enabled_(img2img_enabled),
+         t5xxl_path_(std::move(t5xxl_path)),
+-        taesd_path_(std::move(taesd_path)) {}
++        taesd_path_(std::move(taesd_path)),
++        audio_vae_path_(std::move(audio_vae_path)) {}
+ 
+   ~PipelineDit() override {
+     if (ctx_ && api_) api_->destroy(ctx_);
+@@ -183,8 +190,11 @@
+     // in the DiT only -- the configuration measured with sd-cli
+     // (docs/VIDEO-GGML.md in nightmare-mobile).
+     if (kind_ == DIT_MODEL_WAN) {
+-      params.t5xxl_path = t5xxl_path_.c_str();
++      // nightmare (050): MiniMax-H3 rides this video path with an LLM encoder and a full VAE instead, so an empty
++      // umT5 path is null, not "".
++      params.t5xxl_path = t5xxl_path_.empty() ? nullptr : t5xxl_path_.c_str();
+       params.taesd_path = taesd_path_.empty() ? nullptr : taesd_path_.c_str();
++      params.audio_vae_path = audio_vae_path_.empty() ? nullptr : audio_vae_path_.c_str();
+       params.enable_mmap = true;
+       params.flash_attn = false;
+       params.diffusion_flash_attn = true;
+@@ -205,6 +215,9 @@
+   }
+   bool supportsUltrafix() const override { return false; }
+   bool supportsVideo() const { return kind_ == DIT_MODEL_WAN; }
++  // nightmare (050): MiniMax-H3 (the launch with an audio VAE): frames on its 17k+5 grid, sides multiples of 32
++  // (its VAE downsamples 16x, its DiT patches 2x2), and a soundtrack.
++  bool isH3() const { return !audio_vae_path_.empty(); }
+ 
+   VideoResult generateVideo(const VideoRequest &req,
+                             const ProgressCallback &progress_callback,
+@@ -268,6 +281,7 @@
+       params.lora_count = static_cast<int>(lora_paths.size());
+     }
+ 
++    params.on_audio = &PipelineDit::forwardVideoAudio;  // engine ABI 110
+     VideoCallbacks callbacks;
+     callbacks.progress = &progress_callback;
+     callbacks.sink = &sink;
+@@ -298,6 +312,9 @@
+             std::chrono::high_resolution_clock::now() - start)
+             .count());
+     result.first_step_time_ms = callbacks.first_step_ms;
++    result.audio = std::move(callbacks.audio);
++    result.audio_channels = callbacks.audio_channels;
++    result.audio_sample_rate = callbacks.audio_sample_rate;
+     return result;
+   }
+ 
+@@ -652,8 +669,21 @@
+     int frames = 0;
+     int width = 0;
+     int height = 0;
++    std::vector<float> audio;
++    int audio_channels = 0;
++    int audio_sample_rate = 0;
+   };
+ 
++  // nightmare (050): the engine hands the soundtrack over once, before the frames (ABI 110); kept for the endpoint.
++  static void forwardVideoAudio(const float *samples, uint64_t sample_count,
++                                int channels, int sample_rate, void *user_data) {
++    auto *cb = static_cast<VideoCallbacks *>(user_data);
++    if (!samples || channels <= 0 || sample_count == 0) return;
++    cb->audio.assign(samples, samples + sample_count * static_cast<uint64_t>(channels));
++    cb->audio_channels = channels;
++    cb->audio_sample_rate = sample_rate;
++  }
++
+   // Sampling steps, then one slot for the decode, which finishes when the
+   // first frame arrives.
+   static bool forwardVideoProgress(int step, int total_steps,
+@@ -873,6 +903,7 @@
+   const bool img2img_enabled_;
+   const std::string t5xxl_path_;
+   const std::string taesd_path_;
++  const std::string audio_vae_path_;
+ 
+   void *handle_ = nullptr;
+   const dit_engine_api *api_ = nullptr;

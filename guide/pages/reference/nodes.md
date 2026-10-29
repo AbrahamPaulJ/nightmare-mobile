@@ -12,6 +12,7 @@ There are five kinds of node. Every flow, ready-made or yours, is built from the
 | [Video generator](#video-generator) | Generate | prompt, image | video |
 | [Wan video](#wan-video) | Generate | prompt, image | video, last frame |
 | [Motion transfer](#motion-transfer) (Wan Fun Control) | Generate | prompt, image, control | video |
+| [Video with sound](#video-with-sound) (MiniMax H3) | Generate | prompt | video, last frame |
 | [Output](#output) | Common | media | - |
 
 Every node's sheet ends with **Reset node** (all settings back to default, and any batch sweep on
@@ -167,11 +168,25 @@ Wan 2.2: text or a photo to a clip of up to 5 seconds. Needs Wan 2.2 (Models →
 | **LoRAs** | Wan 2.2 Turbo (5B) LoRAs, chosen like on the image nodes (Wan 2.2 14B takes none); `<lora:name>` tags in the prompt work too |
 | **Width**, **Height** | Any shape in 32 px steps, up to 1280 × 704 worth of pixels (832 × 480 by default; 1280 × 704 takes about three times as long) |
 | **Crop** | With a photo wired in: tap the preview, then drag the frame to choose which part becomes the first frame |
-| **Model** | A dropdown: Wan 2.2 Turbo, Neodragon (the fastest), or Wan 2.2 14B with a picture wired; the node becomes that model's node and back |
+| **Model** | A dropdown: Wan 2.2 Turbo, Neodragon (the fastest), Wan 2.2 14B with a picture wired, or MiniMax H3 (with sound) with none; the node becomes that model's node and back |
 
 Its **last frame** output is the clip's final frame as a picture: wire it into another Wan video
 node's **image** to continue the clip with a new prompt. That node's **video** is then the whole
 film so far, both clips joined ([longer clips](../flows/video.md#longer-clips-one-film)).
+
+## Video with sound
+
+MiniMax H3: a prompt into a clip with its sound (speech, sound effects, music), up to 5.2 seconds. Needs MiniMax H3
+(Models → Video). Its prompt is written in H3's sections, who speaks, the scene and the line, the sounds, the music ([how](../flows/video.md#text-to-video-with-sound-minimax-h3)).
+
+| setting | what it does |
+|---|---|
+| **Width**, **Height** | 384 to 1344 in 32 px steps, up to 768 × 1344 worth of pixels (832 × 480 by default; 384 × 384 is the quickest) |
+| **Seconds** | 0.9, 1.6, 2.3 (default), 3.0, 3.8, 4.5 or 5.2, 24 frames a second; a larger size fits fewer |
+| **Smooth motion** | Twice the frames, as on the Wan nodes |
+| **Seed** | `0` = a new clip every Run |
+
+Powered by MiniMax H3 (MiniMax H3 Community License: not for the EU, the UK, South Korea or the US).
 
 ## Motion transfer
 

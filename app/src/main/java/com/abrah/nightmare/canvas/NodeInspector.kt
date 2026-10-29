@@ -536,6 +536,10 @@ fun NodeInspector(
             // ⚠ Read HERE for the same reason: what a prompt is measured
             // against depends on what it is WIRED into.
             promptBudget = com.abrah.nightmare.PromptTokens.budgetFor(state.workflow.graph, nodeId),
+            // ⭐ …and so is its hint: a prompt into MiniMax H3 is read in sections ([com.abrah.nightmare.npu.H3Prompt]).
+            promptHint = R.string.hint_prompt_h3.takeIf {
+                state.workflow.graph.nodes.any { n -> n.type == com.abrah.nightmare.npu.H3Node.name && n.inputs.values.any { it.node == nodeId } }
+            },
             // ⭐ …and so are the LoRAs its chips offer first ([com.abrah.nightmare.PromptLoras.hintFor]).
             loraHint = com.abrah.nightmare.PromptLoras.hintFor(state.workflow.graph, nodeId),
             describePictures = if (onDescribe != null && node.type == com.abrah.nightmare.PromptNode.name) {
@@ -1320,6 +1324,8 @@ internal fun NodeInspectorBody(
     canSweep: Boolean = true,
     /** ⭐ What this node's prose is counted against — [com.abrah.nightmare.PromptTokens.budgetFor]. */
     promptBudget: com.abrah.nightmare.PromptTokens.Budget? = null,
+    /** ⭐ The prompt box's hint when what it feeds reads prompts its own way (MiniMax H3's sections), else the widget's. */
+    promptHint: Int? = null,
     /** ⭐ What `<lora:` autocomplete offers first ([LoraSuggestions]). */
     loraHint: com.abrah.nightmare.PromptLoras.Hint? = null,
     /** ⭐ The canvas's pictures the describe button offers — [describePictures]. */
@@ -1752,6 +1758,7 @@ internal fun NodeInspectorBody(
                 com.abrah.nightmare.npu.WanVideoNode.name to stringResource(R.string.video_model_wan),
                 com.abrah.nightmare.npu.WanA14Node.name to stringResource(R.string.video_model_wan14),
                 com.abrah.nightmare.npu.WanNsfw13Node.name to stringResource(R.string.video_model_nsfw13),
+                com.abrah.nightmare.npu.H3Node.name to stringResource(R.string.video_model_h3),
                 "nd.sample" to stringResource(R.string.video_model_neodragon),
             )
             val caps = remember { com.abrah.nightmare.DeviceProbe.caps() }
@@ -1759,9 +1766,13 @@ internal fun NodeInspectorBody(
                 (!caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.WAN22_A14B_I2V.builds.minOf { it.minArch })
             if (!a14Ok && node.type != com.abrah.nightmare.npu.WanA14Node.name) types.remove(com.abrah.nightmare.npu.WanA14Node.name)
             // ⭐ NSFW Wan 1.3B (`npu.WanNsfw13Node`): text to video only, so offered with NO picture wired.
-            val nsfw13Ok = node.inputs["image"] == null &&
+            val nsfw13Ok = node.inputs["image"] == null && com.abrah.nightmare.Prefs.matureContent &&
                 (!caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.WAN21_NSFW13.builds.minOf { it.minArch })
             if (!nsfw13Ok && node.type != com.abrah.nightmare.npu.WanNsfw13Node.name) types.remove(com.abrah.nightmare.npu.WanNsfw13Node.name)
+            // ⭐ MiniMax H3 (`npu.H3Node`): text to video with sound, so offered with NO picture wired, on the 8 Gen 3 and up.
+            val h3Ok = node.inputs["image"] == null &&
+                (!caps.known || caps.arch >= com.abrah.nightmare.ModelCatalog.MINIMAX_H3.builds.minOf { it.minArch })
+            if (!h3Ok && node.type != com.abrah.nightmare.npu.H3Node.name) types.remove(com.abrah.nightmare.npu.H3Node.name)
             // ⭐ A DROPDOWN, as the image nodes' model picker (the user, 2026-10-25: "why are we using cards when all
             // the image samplers use dropdowns"): its length depends on the picture and the chip, so it is always one.
             Chooser(
@@ -1952,9 +1963,13 @@ internal fun NodeInspectorBody(
                 val size = "${shown.first}x${shown.second}"
                 val prof = wan.profileOf(node.type, if (caps.known) caps.arch else 0)
                 if (!wan.fitsPhone(shown.first, shown.second, frames, loras, caps.ramBytes, caps.arch, prof)) {
-                    val fit = wan.secondsThatFit(shown.first, shown.second, loras, caps.ramBytes, caps.arch, prof)
+                    // ⭐ MiniMax H3 in its own lengths ([com.abrah.nightmare.npu.H3Node.LENGTHS]), Wan in whole seconds.
+                    val h3 = com.abrah.nightmare.npu.H3Node
+                    val fit = if (prof.sound) h3.lengthThatFits(shown.first, shown.second, caps.ramBytes, caps.arch)
+                        else wan.secondsThatFit(shown.first, shown.second, loras, caps.ramBytes, caps.arch, prof).takeIf { it > 0 }?.toString()
+                    val now = if (prof.sound) h3.label(frames) else (frames / prof.fps).toString()
                     Text(
-                        if (fit > 0) stringResource(R.string.wan_too_big_seconds, size, (frames / prof.fps).toString(), fit.toString())
+                        if (fit != null) stringResource(R.string.wan_too_big_seconds, size, now, fit)
                         else stringResource(R.string.wan_too_big_any, size),
                         style = NoteTextStyle,
                         color = MaterialTheme.colorScheme.error,
@@ -3248,7 +3263,7 @@ internal fun NodeInspectorBody(
                             }
                         } else {
                             Text(
-                                why ?: w.localizedHint().orEmpty(),
+                                why ?: promptHint?.takeIf { w.name == "prompt" }?.let { stringResource(it) } ?: w.localizedHint().orEmpty(),
                                 style = NoteTextStyle,
                                 // ⚠ Not error red: a LOCKED knob is information, not a failure (`docs/UI.md` §8.5).
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

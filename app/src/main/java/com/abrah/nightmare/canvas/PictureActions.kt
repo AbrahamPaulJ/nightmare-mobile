@@ -197,40 +197,6 @@ fun PictureActions(
             )
         }
     }
-    // ⭐ ⬇ Download — the export, and the only thing that touches the gallery.
-    //
-    // ⚠⚠ **It does NOT turn into a tick.** The user's call, 2026-09-15: a
-    // download is repeatable, and a button that becomes a tick reads as done —
-    // so a second copy, or a copy after deleting the first from the gallery,
-    // looked impossible. ⇒ The glyph never changes and the toast is the
-    // feedback. ⚠ The KEEP button still ticks, because being in Results is a
-    // STATE with two values, not an action you can repeat.
-    onDownload?.let { download ->
-        IconButton(
-            onClick = {
-                // ⚠⚠ A COOLDOWN, not a one-shot. The glyph never becomes a tick
-                // — a download is repeatable — but an unresponsive moment makes
-                // people tap twice, and two taps must not mean two files in the
-                // gallery. ⇒ Repeats are allowed; repeats WITHIN a second are
-                // the same tap. The user's call, 2026-09-15.
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastDownload > DOWNLOAD_COOLDOWN_MS) {
-                    lastDownload = now
-                    downloaded = true
-                    download()
-                }
-            },
-            modifier = small,
-        ) {
-            Icon(
-                com.abrah.nightmare.ui.DownloadIcon,
-                contentDescription = stringResource(
-                    if (isClip) R.string.picture_cd_save_clip else R.string.picture_cd_save_picture,
-                ),
-                tint = tint,
-            )
-        }
-    }
     onShare?.let { share ->
         IconButton(onClick = share, modifier = small) {
             Icon(
@@ -266,6 +232,43 @@ fun PictureActions(
         }
     }
 
+    // ⭐ GitHub #73 (a tester with big hands, the user's pick 2026-10-30): Download sits away from Keep, after the
+    // star. Beside Keep it took taps meant for Keep and wrote to the gallery with no confirmation; Keep's neighbours
+    // now are Clear (it asks) and Share (a sheet you can back out of).
+    // ⭐ ⬇ Download — the export, and the only thing that touches the gallery.
+    //
+    // ⚠⚠ **It does NOT turn into a tick.** The user's call, 2026-09-15: a
+    // download is repeatable, and a button that becomes a tick reads as done —
+    // so a second copy, or a copy after deleting the first from the gallery,
+    // looked impossible. ⇒ The glyph never changes and the toast is the
+    // feedback. ⚠ The KEEP button still ticks, because being in Results is a
+    // STATE with two values, not an action you can repeat.
+    onDownload?.let { download ->
+        IconButton(
+            onClick = {
+                // ⚠⚠ A COOLDOWN, not a one-shot. The glyph never becomes a tick
+                // — a download is repeatable — but an unresponsive moment makes
+                // people tap twice, and two taps must not mean two files in the
+                // gallery. ⇒ Repeats are allowed; repeats WITHIN a second are
+                // the same tap. The user's call, 2026-09-15.
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastDownload > DOWNLOAD_COOLDOWN_MS) {
+                    lastDownload = now
+                    downloaded = true
+                    download()
+                }
+            },
+            modifier = small,
+        ) {
+            Icon(
+                com.abrah.nightmare.ui.DownloadIcon,
+                contentDescription = stringResource(
+                    if (isClip) R.string.picture_cd_save_clip else R.string.picture_cd_save_picture,
+                ),
+                tint = tint,
+            )
+        }
+    }
     // ⚠ Upscale then info — the same tail the Results row ends with
     // (`docs/UI.md` §8.11), so the two surfaces read the same way at the end
     // even though they order the first few differently.

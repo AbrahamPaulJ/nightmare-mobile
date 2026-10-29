@@ -104,9 +104,10 @@ class PictureActionsTest {
                 // the two glyphs swapped jobs because the floppy was doing an
                 // export. [PictureActions] has the table.
                 "keep this picture in Results",
-                "save this picture to the gallery",
+                // ⭐ GitHub #73 (2026-10-30): Download moved away from Keep, after the star.
                 "share this picture",
                 "keep and favourite",
+                "save this picture to the gallery",
             ),
             labels,
         )

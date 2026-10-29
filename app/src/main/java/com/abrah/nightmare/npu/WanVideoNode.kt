@@ -134,6 +134,7 @@ object WanVideoNode : NodeType {
         WanFunNode.name -> ModelCatalog.WAN22_FUN
         WanA14Node.name -> WanA14Node.specFor(node)
         WanNsfw13Node.name -> ModelCatalog.WAN21_NSFW13
+        H3Node.name -> ModelCatalog.MINIMAX_H3
         else -> null
     }
 
@@ -171,6 +172,9 @@ object WanVideoNode : NodeType {
         pinned: Long, ramBytes: Long, arch: Int, stream: Boolean = com.abrah.nightmare.Prefs.wanStream,
         prof: WanProfile = TURBO,
     ): String? = when {
+        // ⭐ MiniMax H3 ([H3]): 11.6 GB of DiT, so every clip streams; 4.5 GiB holds one block of every size it offers on
+        // v79 (832x480 3 s: block 0 needs 4,416 MB with a structured prompt), 2.75 below (`docs/MINIMAX-H3.md` §5d).
+        prof.sound -> if (arch in 1..78) "2.75" else H3_BUDGET
         // ⭐ Wan 2.2 A14B: 8.6 GB an expert, held by no phone, so every clip streams ([WanProfile.alwaysStream]).
         // ⭐ Below v79 one FastRPC session maps ~3.1 GB, so the 14B streams there at 2.75 like everything else (the S25
         // forced to v75, 480x832 1 s, `docs/DEVICES.md` §3e).
@@ -184,6 +188,8 @@ object WanVideoNode : NodeType {
         ramBytes in 1 until com.abrah.nightmare.Prefs.LOWRAM_BELOW_BYTES -> "4".takeIf { pinned > BUDGET_FROM }
         else -> null
     }
+
+    private const val H3_BUDGET = "4.5"
 
     private const val STREAM_FLOOR = 2_816L shl 20
 
@@ -238,14 +244,29 @@ object WanVideoNode : NodeType {
      * [ramBytes] and [arch]; 0 when not even 1 s does. What the slider warning offers instead.
      */
     fun secondsThatFit(w: Int, h: Int, loras: Int, ramBytes: Long, arch: Int, prof: WanProfile = TURBO): Int =
-        (prof.maxSeconds downTo 1).firstOrNull { s -> fitsPhone(w, h, framesFor(s, prof.fps), loras, ramBytes, arch, prof) } ?: 0
+        (prof.maxSeconds downTo 1).firstOrNull { s -> fitsPhone(w, h, framesFor(s, prof), loras, ramBytes, arch, prof) } ?: 0
 
     /** ⚠ Pure: both tests the run log warns on, as one answer. */
     fun fitsPhone(w: Int, h: Int, frames: Int, loras: Int, ramBytes: Long, arch: Int, prof: WanProfile = TURBO): Boolean {
         val budget = memoryBudget(pinnedBytes(w, h, frames, prof), ramBytes, arch, prof = prof)
         val need = peakBytes(w, h, frames, budget, loras, prof)
-        return fitsChip(need, arch, budget) && (ramBytes <= 0 || fits(need, ramBytes))
+        return fitsNpu(w, h, frames, need, arch, budget, prof) && (ramBytes <= 0 || fits(need, ramBytes))
     }
+
+    /**
+     * ⚠ Pure: a profile with a measured token ceiling ([WanProfile.maxTokens], MiniMax H3) holds the clip. H3's
+     * ceilings are where its runs stopped fitting, not a model: v79 ran 8,640 tokens (1152x640 1.6 s, 1.69 GB left)
+     * and refused nothing under it; the S25 forced to v75 ran 7,056 (768x1344 0.9 s) and failed at 8,580 and 8,670.
+     */
+    fun fitsTokens(w: Int, h: Int, frames: Int, arch: Int, prof: WanProfile = TURBO): Boolean =
+        prof.maxTokens <= 0 || tokens(w, h, frames, prof) <= if (arch in 1..78) prof.lowArchMaxTokens else prof.maxTokens
+
+    /**
+     * ⚠ Pure: the NPU holds the clip: by the measured token ceiling where a profile has one ([fitsTokens]; the byte model
+     * would refuse H3's 768x1344 0.9 s at v75, which rendered), else by [fitsChip].
+     */
+    fun fitsNpu(w: Int, h: Int, frames: Int, need: Long, arch: Int, budget: String?, prof: WanProfile = TURBO): Boolean =
+        if (prof.maxTokens > 0) fitsTokens(w, h, frames, arch, prof) else fitsChip(need, arch, budget)
 
     /** ⚠ The backend launch that served the last Wan clip ([com.abrah.nightmare.BackendProcess.processId]). */
     @Volatile private var servedBy: Int? = null
@@ -259,8 +280,10 @@ object WanVideoNode : NodeType {
      */
     internal fun framesOf(node: Node, p: Map<String, String>): Int =
         if (node.type == WanFunNode.name) WanFun.windowOf(p).let { (s, e) -> WanFun.framesForGap(e - s, WanFun.fpsOf(p)) }
+        // ⭐ MiniMax H3: its length chips ([H3Node.LENGTHS]), not whole seconds.
+        else if (node.type == H3Node.name) H3Node.framesOf(p)
         else profileOf(node.type).let { prof ->
-            framesFor((p["seconds"]?.toIntOrNull() ?: prof.maxSeconds).coerceAtMost(prof.maxSeconds), prof.fps)
+            framesFor((p["seconds"]?.toIntOrNull() ?: prof.maxSeconds).coerceAtMost(prof.maxSeconds), prof)
         }
 
     /**
@@ -277,7 +300,7 @@ object WanVideoNode : NodeType {
         snap(p["width"]?.toIntOrNull() ?: DEFAULT_W, prof) to snap(p["height"]?.toIntOrNull() ?: DEFAULT_H, prof)
 
     private fun snap(v: Int, prof: WanProfile): Int =
-        (Math.round(v / prof.grid.toDouble()) * prof.grid).toInt().coerceIn(MIN_SIDE, MAX_SIDE)
+        (Math.round(v / prof.grid.toDouble()) * prof.grid).toInt().coerceIn(prof.minSide, prof.maxSide)
 
     /**
      * ⚠ Pure: [w] x [h] with the side that did NOT move ([widthMoved] says which did) shrunk until
@@ -347,7 +370,7 @@ object WanVideoNode : NodeType {
 
     /** The largest grid side that keeps `other x it` within [prof]'s area. */
     private fun fitSide(other: Int, prof: WanProfile): Int =
-        (prof.maxArea / other / prof.grid * prof.grid).coerceIn(MIN_SIDE, MAX_SIDE)
+        (prof.maxArea / other / prof.grid * prof.grid).coerceIn(prof.minSide, prof.maxSide)
 
     /** ⚠ Pure: the `width`/`height` a flow saved with the old `size`/`shape` choosers meant, or null. */
     fun fromLegacy(p: Map<String, String>): Pair<Int, Int>? {
@@ -359,6 +382,9 @@ object WanVideoNode : NodeType {
     /** ⚠ Pure: `24·s + 1` frames for [seconds], clamped to 0..[MAX_SECONDS]: 0 is one frame, a still. */
     fun framesFor(seconds: Int, fps: Int = FPS): Int = seconds.coerceIn(0, MAX_SECONDS) * fps + 1
 
+    /** ⚠ Pure: [framesFor] on [prof]'s own grid: Wan's `fps·s + 1`, MiniMax H3's 17k+5 ([H3Node.framesFor]). */
+    fun framesFor(seconds: Int, prof: WanProfile): Int = if (prof.sound) H3Node.framesFor(seconds) else framesFor(seconds, prof.fps)
+
     /**
      * ⭐ quanhaol's Self-Forcing timesteps 1000/750/500/250 warped by shift 5, through `lcm`
      * (`docs/VIDEO-GGML.md` §3). ⚠ Turbo's schedule: a different Wan model needs its own.
@@ -367,7 +393,8 @@ object WanVideoNode : NodeType {
 
     /** ⚠ Pure: Wan 2.2's latent tokens — 32 px a side after VAE and patch, one latent frame per 4. */
     fun tokens(w: Int, h: Int, frames: Int, prof: WanProfile = TURBO): Long =
-        (w.toLong() / prof.pxPerToken) * (h.toLong() / prof.pxPerToken) * ((frames - 1) / 4 + 1)
+        (w.toLong() / prof.pxPerToken) * (h.toLong() / prof.pxPerToken) *
+            (if (prof.sound) H3Node.latentFrames(frames) else (frames - 1) / 4 + 1)
 
     /**
      * ⚠ Pure: what a clip PINS on the NPU — the Q4_0 DiT's 2.9 GB and ~0.125 MB of compute per
@@ -448,6 +475,19 @@ object WanVideoNode : NodeType {
         val sigmas: List<Double> = SIGMAS,
         /** ⚠ The most pixels a frame decodes WHOLE; above it [vaeTileFor] tiles. Its decoder's cost decides it. */
         val decodeWholeArea: Long = SPATIAL_FROM,
+        /** ⭐ Its steps: [sigmas]' count, or the engine's own schedule's when it sends none (MiniMax H3). */
+        val steps: Int = sigmas.size - 1,
+        /** ⭐ The size sliders' range. */
+        val minSide: Int = MIN_SIDE,
+        val maxSide: Int = MAX_SIDE,
+        /** ⚠ A measured token ceiling ([fitsTokens]) on v79 and below it, or 0 for none. */
+        val maxTokens: Long = 0L,
+        val lowArchMaxTokens: Long = 0L,
+        /**
+         * ⭐ MiniMax H3: the clip has a SOUNDTRACK (muxed into the MP4), 17k+5 frames ([H3Node.framesFor]), its own
+         * latent frames ([H3Node.latentFrames]), a structured prompt ([H3Prompt]), no LoRAs and no temporal tiling.
+         */
+        val sound: Boolean = false,
     )
 
     /** ⭐ Wan 2.2 Turbo 5B (and Fun Control): `docs/VIDEO-GGML.md` §1-4. */
@@ -496,10 +536,28 @@ object WanVideoNode : NodeType {
         decodeWholeArea = NSFW13_WHOLE_AREA,
     )
 
+    /**
+     * ⭐ MiniMax H3 ([H3Node], `docs/MINIMAX-H3.md` §5b and §5d): 24 fps, euler on the engine's own FastH3 schedule
+     * (`dit/072`'s knots: no sigmas sent), 32 px tokens (16x VAE, patch 2), 384 to 1344 a side within ComfyUI's
+     * 768x1344 cap, 5 s at most (124 frames, 384x384 measured at 716 s). Always streamed at a budget ([memoryBudget]).
+     * ~300 KB of compute a token: 2,482 MB at 1152x640 1.6 s (8,640 tokens), 1,811 MB at 768x1344 0.9 s (7,056).
+     * Its video VAE decodes whole frames in its own temporal chunks (`#2103`), so no spatial tile.
+     */
+    val H3 = WanProfile(
+        24, "euler", 32, 11_583_540_608L, 300L shl 10, 1_200L shl 20, alwaysStream = true,
+        grid = 32, maxArea = 768 * 1344, maxSeconds = 5,
+        sigmas = emptyList(), steps = 4,
+        decodeWholeArea = Long.MAX_VALUE,
+        minSide = 384, maxSide = 1344,
+        maxTokens = 8_800L, lowArchMaxTokens = 7_100L,
+        sound = true,
+    )
+
     /** ⭐ The profile a node type renders with on a chip of [arch] (0 = unknown, the full profile; pure for tests). */
     fun profileOf(type: String, arch: Int = 0): WanProfile = when (type) {
         WanA14Node.name -> if (arch in 1 until com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH) A14B_LOW_ARCH else A14B
         WanNsfw13Node.name -> NSFW13
+        H3Node.name -> H3
         else -> TURBO
     }
 
@@ -571,8 +629,14 @@ object WanVideoNode : NodeType {
         // prompt's tags are skipped out loud rather than reaching Fun by the back door. Its FastWan
         // speed LoRA is part of the model ([ModelCatalog.FUN_LORA]), not this list.
         // ⭐ The 14B takes them since 1.6.259 (Joachim, TG #7454): engine `dit/068` binds each to its expert ([expertOf]).
-        val takesLoras = driving == null
-        if (!takesLoras) {
+        // ⭐ MiniMax H3 takes none either: nothing is trained for it, and its tags are skipped out loud the same way.
+        val sound = profileOf(node.type).sound
+        val takesLoras = driving == null && !sound
+        if (sound) {
+            (pos.tags + neg.tags).forEach { t ->
+                ctx.warn(ctx.text(R.string.run_lora_h3_skipped, "MiniMax H3 takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
+            }
+        } else if (!takesLoras) {
             (pos.tags + neg.tags).forEach { t ->
                 ctx.warn(ctx.text(R.string.run_lora_motion_skipped, "Motion transfer takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
             }
@@ -621,6 +685,8 @@ object WanVideoNode : NodeType {
             )
         }
         val frames = framesOf(node, p)
+        // ⭐ MiniMax H3 reads a STRUCTURED prompt: its stated length set to the clip's, a plain one wrapped ([H3Prompt]).
+        val promptText = if (!sound) pos.text else H3Prompt.build(pos.text, frames, H3.fps)
         val seed = p["seed"]?.toLongOrNull() ?: 0L
         // ⚠ A fallback, not the roll: `HarnessOps.runRolled` rolls a 0 before the graph runs
         // ([com.abrah.nightmare.SAMPLER_TYPES]), for the reason [VideoSampleNode] gives.
@@ -643,12 +709,12 @@ object WanVideoNode : NodeType {
         if (ram > 0 && !fits(need, ram)) {
             ctx.warn(ctx.text(R.string.run_wan_ram_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB on the NPU, more than this phone's %4\$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer",
-                "${w}x$h", (pass / fps).toString(), gb(need), gb(ram)))
+                "${w}x$h", if (sound) H3Node.label(pass) else (pass / fps).toString(), gb(need), gb(ram)))
         }
-        if (!fitsChip(need, arch, budget)) {
+        if (!fitsNpu(w, h, pass, need, arch, budget, prof)) {
             ctx.warn(ctx.text(R.string.run_wan_npu_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB of NPU memory at once, more than this phone's NPU takes, so it will probably fail. Trying anyway",
-                "${w}x$h", (pass / fps).toString(), gb(need)))
+                "${w}x$h", if (sound) H3Node.label(pass) else (pass / fps).toString(), gb(need)))
         }
 
         val source = inputs["image"] as? Value.Image
@@ -716,7 +782,7 @@ object WanVideoNode : NodeType {
         // ⚠ A content address of everything the clip is made from, as [VideoSampleNode] does.
         val key = sha1(
             (listOf(
-                pos.text, neg.text, used.toString(), "${w}x$h", frames.toString(), source?.address().orEmpty(),
+                promptText, neg.text, used.toString(), "${w}x$h", frames.toString(), source?.address().orEmpty(),
                 loras.joinToString(";") { (f, s) -> "$f@$s" },
             ) + listOfNotNull(
                 // ⚠ The MODEL, for the 14B: a 5B 2 s clip and a 14B 3 s clip are both 49 frames, so the same prompt,
@@ -745,6 +811,7 @@ object WanVideoNode : NodeType {
         ctx.say("seed $used, ${w}x$h, $clipFrames frames" + when {
             motion != null -> ", your picture moving like the driving video"
             startPng != null -> ", animating your picture"
+            sound -> ", with sound"
             else -> ""
         })
         Log.i(TAG, "wan: seed $used ${w}x$h x$clipFrames i2v=${startPng != null} motion=${motion != null}")
@@ -781,13 +848,17 @@ object WanVideoNode : NodeType {
                 throw IllegalStateException("node \"${node.id}\": ${com.abrah.nightmare.explainOpFailure(r.code, r.body)}")
             }
         }
-        val clip = if ((motion == null || plan == null) && partCount > 1) runParts(
+        // ⭐ The battery's heat around the whole clip, every part ([com.abrah.nightmare.BatteryHeat]): a warning when it is
+        // warm, and with Settings' pause on, the render waits between steps while it is hot.
+        val clip = com.abrah.nightmare.BatteryHeat.watch(android, com.abrah.nightmare.Prefs.heatPause, ctx, { Ops.pauseVideo(it) }) {
+        if ((motion == null || plan == null) && partCount > 1) runParts(
             ctx, node, spec, arch, partCount, partPrompts, keepColours, neg.text, used, w, h, clipFrames, fps, prof,
             startPng, clipLoras, vaeTile, dir, key, raw, ::unwrap,
         ) else if (motion == null || plan == null) unwrap(
             ctx.host.video(
-                prompt = pos.text, negative = neg.text, width = w, height = h, frames = clipFrames, fps = fps,
-                seed = used, steps = prof.sigmas.size - 1, sampleMethod = prof.sampler, sigmas = prof.sigmas, tilingArgs = TILING,
+                prompt = promptText, negative = neg.text, width = w, height = h, frames = clipFrames, fps = fps,
+                // ⚠ No tiling args = no temporal tiling: H3's VAE decodes in its own chunks ([WanProfile.sound]).
+                seed = used, steps = prof.steps, sampleMethod = prof.sampler, sigmas = prof.sigmas, tilingArgs = if (sound) "" else TILING,
                 out = raw.absolutePath, startPng = startPng, loras = clipLoras,
                 onProgress = { pr -> ctx.onProgress(pr) },
                 vaeTileSize = vaeTile,
@@ -916,6 +987,7 @@ object WanVideoNode : NodeType {
             marker.delete()
             Ops.Clip(raw.absolutePath, total, w, h, fps, ms)
         }
+        }
         ctx.say("${clip.frames} frames in ${"%.1f".format(clip.serverMs / 1000.0)} s. Encoding")
         // ⚠ Opened only now: ~25 MB on the NPU, beside a backend that has finished its clip.
         val session = try {
@@ -924,6 +996,7 @@ object WanVideoNode : NodeType {
             } else null
         } catch (e: Exception) {
             raw.delete()
+            clip.audioPath?.let { File(it).delete() }
             throw IllegalStateException("node \"${node.id}\": ${e.message ?: e.javaClass.simpleName}")
         }
         val outFps = if (session != null) fps * 2 else fps
@@ -938,6 +1011,15 @@ object WanVideoNode : NodeType {
             if (motion?.keepAudio == true) AudioMux.mux(android, out, motion.uri, motion.startMs * 1000L) {
                 Log.i(TAG, it)
                 ctx.say(it.trim())
+            }
+            // ⭐ MiniMax H3's own soundtrack (backend 050's `<out>.pcm`), encoded to AAC beside the frames ([AudioMux.muxPcm]).
+            // ⚠ Smooth motion doubles the frames at double the rate: the same length, so the sound stays in sync.
+            clip.audioPath?.let { File(it) }?.let { pcm ->
+                AudioMux.muxPcm(out, pcm) {
+                    Log.i(TAG, it)
+                    ctx.say(it.trim())
+                }
+                pcm.delete()
             }
             val posterId = ctx.images.put(poster, id = VideoWriter.posterIdFor(out))
             // ⭐⭐ A CHAIN (GitHub #29, the user's call 2026-10-15): started from a video node's last
@@ -973,6 +1055,7 @@ object WanVideoNode : NodeType {
         } finally {
             session?.close()
             raw.delete()
+            clip.audioPath?.let { File(it).delete() }
         }
     }
 
@@ -1034,7 +1117,7 @@ object WanVideoNode : NodeType {
                     val c = unwrap(
                         ctx.host.video(
                             prompt = prompts[pi], negative = negative, width = w, height = h, frames = frames, fps = fps,
-                            seed = used + pi, steps = prof.sigmas.size - 1, sampleMethod = prof.sampler, sigmas = prof.sigmas,
+                            seed = used + pi, steps = prof.steps, sampleMethod = prof.sampler, sigmas = prof.sigmas,
                             tilingArgs = TILING, out = partRaw.absolutePath, startPng = start, loras = loras,
                             onProgress = { pr -> ctx.onProgress(pr) },
                             vaeTileSize = vaeTile,

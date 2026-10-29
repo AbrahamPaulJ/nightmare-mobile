@@ -321,7 +321,7 @@
     <string name="lb_civitai_title">CivitAI</string>
     <string name="lb_civitai_note">用于节点 LoRA 列表中的“在线搜索”。密钥仅保存在本机，只发送给 CivitAI。</string>
     <string name="lb_mature">显示成人内容</string>
-    <string name="lb_mature_hint">改为搜索 civitai.red，其中包含 NSFW 的 LoRA 和预览图。</string>
+    <string name="lb_mature_hint">改为搜索 civitai.red，其中包含 NSFW 的 LoRA 和预览图，并在模型中显示成人模型（NSFW Wan 1.3B、Lustify 转换版）。</string>
     <string name="lb_files">文件</string>
     <string name="describe_action">描述图片</string>
     <string name="describe_length">生成</string>
@@ -1146,7 +1146,7 @@
     <string name="video_model_neodragon">Neodragon</string>
     <string name="video_model_wan14">Wan 2.2 14B</string>
     <string name="video_model_nsfw13">NSFW Wan 1.3B</string>
-    <string name="hint_video_model">Wan 2.2 Turbo 效果好得多，需要几分钟；Wan 2.2 14B（需连接图片）效果最好也最慢；NSFW Wan 1.3B（不连接图片）是社区的成人内容模型；Neodragon 最快，约 30 秒生成 2 秒</string>
+    <string name="hint_video_model">Wan 2.2 Turbo 效果好得多，需要几分钟；Wan 2.2 14B（需连接图片）效果最好也最慢；NSFW Wan 1.3B（不连接图片）是社区的成人内容模型；MiniMax H3（不连接图片）生成带声音、语音和音乐的视频；Neodragon 最快，约 30 秒生成 2 秒</string>
     <string name="flow_motion_name">动作迁移</string>
     <string name="flow_motion_about">让你的图片像所选视频一样运动：逐帧跟随其姿势，使用 Wan 2.2 Fun Control。</string>
     <string name="video_in_none">未选择视频</string>
@@ -1342,4 +1342,24 @@
     <string name="whole_body_about">为动作迁移的姿势模式从每一帧读取人物的身体、手和脸（DWPose，Apache 2.0）。</string>
     <string name="models_delete_whole_body_body">释放 %1$d MB。重新获取需要下载 %2$d MB。姿势模式的动作迁移会再次请求它。</string>
     <string name="wan_follow_picture">视频采用你的图片的比例；这里设置像素数量（832x480 用于快速尝试，1280x720 让人脸更清晰）。</string>
+    <!-- MiniMax H3 (npu/H3Node.kt), video with sound -->
+    <string name="video_model_h3">MiniMax H3（带声音）</string>
+    <string name="h3_about">带声音的文字生成视频：语音、音效和音乐由 MiniMax H3（FastH3，4 步）与画面一起生成。只用文字，不输入图片。在 8 Elite 上，384x384 的 3 秒约 6 分钟，832x480 约 13 分钟。需要 8 Gen 3 或更新的芯片和 12 GB 内存。下载 17.5 GB；已安装 Krea 2 时共用其 2.4 GB 文本编码器。MiniMax H3 Community License：不得在欧盟、英国、韩国或美国使用。请使用 Wi-Fi。</string>
+    <string name="mb_powered_h3">Powered by MiniMax H3</string>
+    <string name="licence_h3_title">MiniMax H3 Community License 许可</string>
+    <string name="licence_h3_terms">MiniMax H3 由 MiniMax 制作，按 MiniMax H3 Community License 发布。下载即表示你接受该许可。简要来说：\n\n• 许可不适用于欧盟、英国、韩国和美国。请勿在这些地区下载或使用。\n• 用它制作并公开分享的内容必须清楚标明由 AI 生成。\n• 它生成的视频不得用于训练或改进其他 AI 模型。\n• 须遵守其可接受使用政策：不得用于违法或有害用途。\n\nNightmare 在使用该模型的地方显示“Powered by MiniMax H3”。</string>
+    <string name="licence_read">阅读完整许可</string>
+    <string name="licence_accept">接受并下载</string>
+    <string name="hint_h3_size">384x384 最快。面积最多相当于 768x1344；尺寸越大，能容纳的秒数越少（下方提示会说明）。不要小于 384：更小的视频会失去颜色。</string>
+    <string name="hint_h3_seconds">视频长度（秒），按 H3 自己的步长：0.9 到 5.2（24 帧每秒，22 到 124 帧）。在 8 Elite 上 384x384 的 3.0 秒约需 6 分钟；尺寸越大，最长的视频越短。</string>
+    <string name="hint_prompt_h3">MiniMax H3 按段落读取提示词，如示例所示：subject_definitions（画面中是谁、声音如何：S1 is a woman in her thirties with a calm, low voice）、detailed_description（场景、镜头、时长，以及说出的台词，写成 &lt;d&gt;[Chinese] 你好。&lt;/d&gt;，任何语言）、overall_soundscape（声音：雨打在窗上）和 non_diegetic_music（背景音乐，不要就写 N/A）。在某段写 N/A 即可省略。普通的一行提示词也可以，只是没有对白和音乐。</string>
+    <string name="run_lora_h3_skipped">MiniMax H3 不使用 LoRA：已跳过提示词中的“%1$s”</string>
+    <!-- Heat on a video render (BatteryHeat.kt) -->
+    <string name="heat_title">发热</string>
+    <string name="heat_note">生成视频会让手机处理器满载数分钟，手机会发热。芯片会自我保护，电池不会：超过约 45 °C 会加快电池老化。电池温度偏高时，运行日志会提醒。</string>
+    <string name="heat_pause">电池过热时暂停视频</string>
+    <string name="heat_pause_hint">电池达到 45 °C 时，视频在步骤之间等待，降到 40 °C 后继续。在温暖的房间里会更慢，但更爱护电池。不适用于 Neodragon，它的视频只需几秒。</string>
+    <string name="run_heat_start">开始这段视频前电池已达 %1$s °C。长时间生成视频会让手机发热，而发热会损耗电池：不要边充电边生成，避免阳光直射，烫手时请停止。设置，性能中可以在电池过热时暂停生成</string>
+    <string name="run_heat_paused">已暂停：电池温度 %1$s °C。降到 %2$s °C 后继续生成</string>
+    <string name="run_heat_end">这段视频让电池达到了 %1$s °C。请让手机冷却后再生成下一段</string>
 </resources>

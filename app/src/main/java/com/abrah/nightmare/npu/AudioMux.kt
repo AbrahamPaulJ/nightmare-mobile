@@ -2,12 +2,14 @@ package com.abrah.nightmare.npu
 
 import android.content.Context
 import android.media.MediaCodec
+import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
 import java.io.File
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * ⭐⭐ **Keep audio** on Motion transfer (the user's ask, 2026-10-27: "keep original clip's audio, you can match by
@@ -89,4 +91,131 @@ object AudioMux {
             video.release()
         }
     }
+    /** ⭐ A soundtrack as 16-bit PCM: [samples] interleaved by channel. */
+    class Pcm(val rate: Int, val channels: Int, val samples: ShortArray) {
+        val seconds: Double get() = samples.size.toDouble() / channels.coerceAtLeast(1) / rate.coerceAtLeast(1)
+    }
+
+    /**
+     * ⚠ Pure: backend 050's soundtrack file ("NMA1", int32 LE sample rate and channels, int64 sample frames, then
+     * float32 samples interleaved by channel) as 16-bit PCM, clipped to full scale. Null when it is not one.
+     */
+    fun readNma1(bytes: ByteArray): Pcm? {
+        if (bytes.size < 20 || String(bytes, 0, 4, Charsets.US_ASCII) != "NMA1") return null
+        val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        b.position(4)
+        val rate = b.int
+        val channels = b.int
+        val frames = b.long
+        if (rate <= 0 || channels !in 1..8 || frames < 0) return null
+        val n = minOf(frames * channels, ((bytes.size - 20) / 4).toLong()).toInt()
+        val out = ShortArray(n)
+        for (i in 0 until n) out[i] = (b.float.coerceIn(-1f, 1f) * 32767f).toInt().toShort()
+        return Pcm(rate, channels, out)
+    }
+
+    /**
+     * ⭐⭐ MiniMax H3's soundtrack into [clip]: [pcm] (backend 050's NMA1) encoded to AAC-LC by the phone's encoder and
+     * muxed beside the clip's video samples, which are copied as they are, written over [clip]. False (and [clip]
+     * untouched) when anything fails: a clip without sound beats no clip, and the log says so.
+     */
+    fun muxPcm(clip: File, pcm: File, log: (String) -> Unit): Boolean {
+        val tmp = File(clip.parentFile, clip.name + ".audio")
+        val video = MediaExtractor()
+        var codec: MediaCodec? = null
+        return try {
+            val sound = readNma1(pcm.readBytes()) ?: run { log("  sound: the soundtrack file is not one"); return false }
+            video.setDataSource(clip.absolutePath)
+            val vt = (0 until video.trackCount).first {
+                video.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            }
+            video.selectTrack(vt)
+            val vf = video.getTrackFormat(vt)
+            val fmt = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sound.rate, sound.channels).apply {
+                setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                setInteger(MediaFormat.KEY_BIT_RATE, AAC_BITRATE)
+                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16 shl 10)
+            }
+            val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).also { codec = it }
+            c.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            c.start()
+            // ⚠ All of it encoded before the muxer starts: the muxer needs the encoder's output format first.
+            val packets = ArrayList<Pair<ByteArray, Long>>()
+            var outFormat: MediaFormat? = null
+            val info = MediaCodec.BufferInfo()
+            var fed = 0
+            var inputDone = false
+            while (true) {
+                if (!inputDone) {
+                    val ii = c.dequeueInputBuffer(10_000)
+                    if (ii >= 0) {
+                        val buf = c.getInputBuffer(ii)!!
+                        buf.clear()
+                        val n = minOf(buf.capacity() / 2 / sound.channels * sound.channels, sound.samples.size - fed)
+                        val pts = (fed / sound.channels).toLong() * 1_000_000L / sound.rate
+                        if (n <= 0) {
+                            c.queueInputBuffer(ii, 0, 0, pts, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputDone = true
+                        } else {
+                            buf.order(ByteOrder.nativeOrder()).asShortBuffer().put(sound.samples, fed, n)
+                            c.queueInputBuffer(ii, 0, n * 2, pts, 0)
+                            fed += n
+                        }
+                    }
+                }
+                val oi = c.dequeueOutputBuffer(info, 10_000)
+                if (oi == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) outFormat = c.outputFormat
+                else if (oi >= 0) {
+                    if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && info.size > 0) {
+                        val ob = c.getOutputBuffer(oi)!!
+                        ob.position(info.offset)
+                        ob.limit(info.offset + info.size)
+                        packets += ByteArray(info.size).also { ob.get(it) } to info.presentationTimeUs
+                    }
+                    c.releaseOutputBuffer(oi, false)
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+                }
+            }
+            val af = checkNotNull(outFormat) { "the AAC encoder gave no format" }
+            val muxer = MediaMuxer(tmp.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            try {
+                val v = muxer.addTrack(vf)
+                val a = muxer.addTrack(af)
+                muxer.start()
+                val buf = ByteBuffer.allocate(4 shl 20)
+                val vi = MediaCodec.BufferInfo()
+                while (true) {
+                    val len = video.readSampleData(buf, 0)
+                    if (len < 0) break
+                    val key = video.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
+                    vi.set(0, len, video.sampleTime, if (key) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+                    muxer.writeSampleData(v, buf, vi)
+                    video.advance()
+                }
+                for ((bytes, us) in packets) {
+                    buf.clear()
+                    buf.put(bytes)
+                    buf.flip()
+                    vi.set(0, bytes.size, us, MediaCodec.BUFFER_FLAG_KEY_FRAME)
+                    muxer.writeSampleData(a, buf, vi)
+                }
+                muxer.stop()
+            } finally {
+                runCatching { muxer.release() }
+            }
+            check(tmp.renameTo(clip) || (tmp.copyTo(clip, overwrite = true).exists() && tmp.delete())) { "could not write ${clip.name}" }
+            log("  sound: ${"%.1f".format(sound.seconds)} s at ${sound.rate / 1000} kHz, ${if (sound.channels == 2) "stereo" else "${sound.channels} channels"}")
+            true
+        } catch (e: Exception) {
+            tmp.delete()
+            log("  sound failed (${e.message ?: e.javaClass.simpleName}); the clip has no sound")
+            false
+        } finally {
+            runCatching { codec?.stop() }
+            runCatching { codec?.release() }
+            video.release()
+        }
+    }
+
+    private const val AAC_BITRATE = 192_000
 }

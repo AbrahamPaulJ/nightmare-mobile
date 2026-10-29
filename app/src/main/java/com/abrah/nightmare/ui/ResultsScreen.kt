@@ -877,21 +877,17 @@ fun ResultViewer(
             val item = items[page]
             // ⭐⭐ A kept CLIP plays, exactly as it does in the canvas viewer, and ZOOMS like a picture (GitHub #66):
             // the player is a `TextureView` now ([com.abrah.nightmare.ui.ClipPlayer]), so [viewerPicture] scales it.
-            // ⚠ The gesture sits on a transparent box ABOVE the player, the same [viewerZoom] the pictures use
-            // (pinch, double tap, pan, tap to close at 1x); touches never have to pass through the Android view.
+            // ⚠ The gesture is the same [viewerZoom] the pictures use (pinch, double tap, pan, tap to close at 1x), on
+            // the player's PARENT (below).
             //
             // ⚠ `videoPath` is the COPY in the results directory
             // ([Result.videoPath]), so a clip starred three launches ago still
             // plays -- the one the graph produced is in `cacheDir`.
             val clip = item.videoPath
             if (clip != null) {
-                com.abrah.nightmare.ui.ClipPlayer(
-                    path = clip,
-                    handle = clipHandle.takeIf { page == pager.currentPage },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .viewerPicture(scale, offset, top = roomTop, bottom = roomBottom),
-                )
+                // ⚠⚠ GitHub #66: the gesture box sat ABOVE the player as a sibling, and on the phone it saw no touch at
+                // all (a probe at the Initial pass logged nothing while the window got every pinch): in the pager the
+                // player's Android view won the hit test. A PARENT gets every touch on its child, whichever wins.
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -903,8 +899,16 @@ fun ResultViewer(
                             bounds = { box },
                             onDismiss = onDismiss,
                             onEdgeTap = edgeTap,
-                        )
-                )
+                        ),
+                ) {
+                    com.abrah.nightmare.ui.ClipPlayer(
+                        path = clip,
+                        handle = clipHandle.takeIf { page == pager.currentPage },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .viewerPicture(scale, offset, top = roomTop, bottom = roomBottom),
+                    )
+                }
                 return@HorizontalPager
             }
             (imageFor(item.id) ?: thumbnailFor(item.id))?.let { bmp ->

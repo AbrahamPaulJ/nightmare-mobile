@@ -14,6 +14,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -355,6 +357,30 @@ fun HarnessScreen(
             onRecipe = vm::sendToRecipe,
             onSaved = vm::sendToSaved,
             onDismiss = vm::cancelSend,
+        )
+    }
+    // ⭐⭐ A model's licence, asked before its download starts ([HarnessViewModel.installModel]): MiniMax H3's
+    // territories and terms, the full text one tap away. Over every screen, as the download can start from any.
+    vm.pendingLicence?.let { spec ->
+        val licence = spec.licence ?: return@let
+        val uri = androidx.compose.ui.platform.LocalUriHandler.current
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = vm::declineLicence,
+            title = { Text(stringResource(licence.titleRes)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(stringResource(licence.termsRes))
+                    com.abrah.nightmare.ui.StudioTextButton(onClick = { uri.openUri(licence.url) }) {
+                        Text(stringResource(R.string.licence_read))
+                    }
+                }
+            },
+            confirmButton = {
+                com.abrah.nightmare.ui.StudioButton(onClick = vm::acceptLicence) { Text(stringResource(R.string.licence_accept)) }
+            },
+            dismissButton = {
+                com.abrah.nightmare.ui.StudioOutlinedButton(onClick = vm::declineLicence) { Text(stringResource(R.string.cancel)) }
+            },
         )
     }
 

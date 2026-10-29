@@ -1,0 +1,61 @@
+--- a/src/VideoEndpoint.hpp
++++ b/src/VideoEndpoint.hpp
+@@ -1,8 +1,11 @@
+ #ifndef VIDEOENDPOINT_HPP
+ #define VIDEOENDPOINT_HPP
+ 
++#include <atomic>
++#include <chrono>
+ #include <cstdio>
+ #include <fstream>
++#include <thread>
+ #include <memory>
+ #include <mutex>
+ #include <random>
+@@ -19,8 +22,23 @@
+ // (raw RGB, written as they are decoded) rather than through the socket:
+ // 121 frames at 832x480 are 145 MB. Layout: "NMV1", then int32 little-endian
+ // width, height, frame count, fps, then each frame's RGB8 bytes in order.
++// nightmare (051): a render waits between steps while this is set, for the app's battery-heat pause. POST /pause
++// {"paused": true|false} sets it; the step callback below sleeps on it and sends a "paused" progress event every
++// few seconds, so the client's read timeout never fires on a long wait. A client gone ends the wait (and the render).
++static std::atomic<bool> g_video_paused{false};
++
+ static void registerVideoEndpoint(httplib::Server &svr, PipelineDit *pipeline,
+                                   std::mutex &generation_mutex) {
++  svr.Post("/pause", [](const httplib::Request &request, httplib::Response &res) {
++    try {
++      const auto json = nlohmann::json::parse(request.body);
++      g_video_paused.store(json.value("paused", false));
++      res.set_content(nlohmann::json{{"paused", g_video_paused.load()}}.dump(), "application/json");
++    } catch (const std::exception &e) {
++      res.status = 400;
++      res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
++    }
++  });
+   svr.Post("/video", [pipeline, &generation_mutex](const httplib::Request &request,
+                                 httplib::Response &res) {
+     try {
+@@ -145,10 +163,22 @@
+             bool opened = false;
+             try {
+               std::lock_guard<std::mutex> generation_lock(generation_mutex);
++              // nightmare (051): a pause left set by a client that went away never holds the next clip.
++              g_video_paused.store(false);
+               std::ofstream file;
+               auto result = pipeline->generateVideo(
+                   *req,
+                   [&sink, &req](int s, int t, const std::string &img) {
++                    // nightmare (051): the battery-heat pause, between steps.
++                    for (int waited = 0; g_video_paused.load(); ++waited) {
++                      if (waited % 10 == 0) {
++                        const std::string hb = "event: progress\ndata: " +
++                            nlohmann::json{{"type", "progress"}, {"step", s}, {"total_steps", t}, {"paused", true}}.dump() + "\n\n";
++                        if (!sink.is_writable() || !sink.write(hb.c_str(), hb.size()))
++                          throw std::runtime_error("Client disconnected, generation aborted");
++                      }
++                      std::this_thread::sleep_for(std::chrono::milliseconds(500));
++                    }
+                     nlohmann::json p = {
+                         {"type", "progress"}, {"step", s}, {"total_steps", t}};
+                     if (!img.empty()) {

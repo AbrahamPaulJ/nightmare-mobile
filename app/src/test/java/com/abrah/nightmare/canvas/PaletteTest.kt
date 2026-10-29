@@ -57,7 +57,13 @@ class PaletteTest {
         val generate = sections.getValue("generate")
         // 2026-10-14: Wan 2.2 joined Neodragon as the second video sampler; 2026-10-15 Fun Control.
         // 2026-10-29: NSFW Wan 1.3B, a community fine-tune.
-        assertEquals(listOf("Image", "Neodragon", "NSFW Wan 1.3B", "Wan 2.2 14B", "Wan 2.2 Fun Control", "Wan 2.2 Turbo"), generate.map { it.first().paletteName })
+        // 2026-10-29: MiniMax H3, video with sound.
+        assertEquals(listOf("Image", "MiniMax H3", "Neodragon", "Wan 2.2 14B", "Wan 2.2 Fun Control", "Wan 2.2 Turbo"), generate.map { it.first().paletteName })
+        // ⭐ The adult model's node only with Show mature content on (the user, 2026-10-30).
+        assertEquals(
+            listOf("Image", "MiniMax H3", "Neodragon", "NSFW Wan 1.3B", "Wan 2.2 14B", "Wan 2.2 Fun Control", "Wan 2.2 Turbo"),
+            paletteTabs(NODE_TYPES, mature = true).toMap().getValue("generate").map { it.first().paletteName },
+        )
         assertTrue(generate.any { card -> card.any { it.name == "nd.sample" } })
     }
 
