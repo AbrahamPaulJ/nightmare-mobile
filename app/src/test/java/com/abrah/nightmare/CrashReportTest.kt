@@ -116,7 +116,10 @@ class CrashReportTest {
     fun aRestartMidJobIsReportedWithItsStages() {
         CrashReport.mark(ctx, "rendering SDXL")
         CrashReport.stage(ctx, "generate")
-        crumb.setLastModified(System.currentTimeMillis() - 10 * 60_000L)
+        // ⚠ A minute before BOOT, not ten minutes before now: `pending` compares with now - elapsedRealtime, and
+        // Robolectric's elapsedRealtime is a fake clock that a long test JVM can carry past ten minutes (it failed so).
+        val bootAt = System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime()
+        crumb.setLastModified(bootAt - 60_000L)
         val r = CrashReport.pending(ctx)
         assertEquals("rendering SDXL", r?.doing)
         assertTrue("the stage line should be in the details", r?.trace.orEmpty().contains("generate"))

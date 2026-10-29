@@ -1656,7 +1656,10 @@ internal fun NodeInspectorBody(
             // (the user, 2026-10-20: a line of its own under a short name was wasted height).
             if (!nodeActions && swapFlows != null) {
                 Spacer(Modifier.weight(1f))
-                if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES && swapFlows.size > 1) {
+                // ⭐ …and the video node of Text to video / Image to video (the user, 2026-10-30), the model kept.
+                if ((node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES || node.type in com.abrah.nightmare.VIDEO_MODEL_TYPES) &&
+                    swapFlows.size > 1
+                ) {
                     var choosing by remember(nodeId) { mutableStateOf(false) }
                     // ⭐ An icon only, at the name's end (the user's mock, 2026-10-23).
                     IconButton(onClick = { choosing = true }) {
@@ -2488,7 +2491,9 @@ internal fun NodeInspectorBody(
             // picture wired is self-evident — the input port above it is visibly
             // unconnected — and the sentence explaining it was instructions for
             // a thing the user had not tried to do yet.
-            if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES) Unit else
+            // ⚠ Nor for the video models (the user, 2026-10-30: "why does it say to wire an image in default view"):
+            // Text to video has no picture by design, and the way to one is Swap flow to Image to video.
+            if (node.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES || node.type in com.abrah.nightmare.VIDEO_MODEL_TYPES) Unit else
             // ⚠ Says WHY there is no framing view. It no longer says "press Run
             // once": the input is resolved on demand when it can be
             // (`HarnessViewModel.resolveInputPreview`), so the only cases left

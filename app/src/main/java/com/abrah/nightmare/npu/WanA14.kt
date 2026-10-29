@@ -61,8 +61,8 @@ object WanA14Node : NodeType {
     fun specFor(node: Node) = ModelCatalog.WAN22_A14B_I2V
 
     /** ⚠ Said when no picture is wired: the 14B animates a picture, it does not start from text alone. */
-    const val NEEDS_PICTURE = "Wan 2.2 14B animates a picture. Wire one in, or open the Text to video (14B) flow: it " +
-        "makes the first frame with your picture model"
+    const val NEEDS_PICTURE = "Wan 2.2 14B animates a picture. Open Image to video and choose one, or open the Text to " +
+        "video (14B) flow: it makes the first frame with your picture model"
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
         runPorts(ctx, node, inputs).getValue("video")

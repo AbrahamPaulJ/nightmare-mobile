@@ -6742,6 +6742,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun swapFlows(): List<com.abrah.nightmare.canvas.SwapFlow>? {
         val samplers = canvas.workflow.graph.nodes.filter { it.type in SAMPLER_TYPES }
+        videoPairNode()?.let { return videoSwapFlows(it) }
         val sampler = samplers.singleOrNull()?.takeIf { it.type in com.abrah.nightmare.IMAGE_SAMPLER_TYPES } ?: return null
         val spec = ModelCatalog.byId(sampler.params["model"].orEmpty()) ?: return null
         return com.abrah.nightmare.canvas.RECIPES.filter { it.usesCheckpoint && it.runsOn(spec) }.map { r ->
@@ -6765,6 +6766,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠ The same refusal as [guardedOpen]: swapping under a render let the finished
         // run write its pictures onto the NEW graph's node ids.
         if (refuseWhileRendering(recipe.label)) return
+        videoPairNode()?.let { return swapVideoFlow(recipe, it) }
         val old = canvas.workflow.graph
         val oldSampler = old.nodes.singleOrNull { it.type in SAMPLER_TYPES } ?: return
         val oldPrompt = old.nodes.firstOrNull { it.type == "core.prompt" }
@@ -6788,6 +6790,78 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val uri = oldImage?.params?.get("uri").orEmpty()
         if (image != null && uri.isNotBlank()) {
             blankImages += image.id
+            next = next.setParams(
+                image.id,
+                mapOf("uri" to uri, LoadImageNode.DRAWING to oldImage?.params?.get(LoadImageNode.DRAWING).orEmpty()),
+            )
+        }
+        editCanvas { next }
+        say("swapped to ${recipe.labelRes?.let { text(it) } ?: recipe.label}, settings carried over")
+    }
+
+    /**
+     * ⭐⭐ The video node of a Text to video or Image to video flow ([com.abrah.nightmare.canvas.wanVideoWorkflow]'s
+     * shape: a prompt, maybe a picture, one video node, an output), or null. The user, 2026-10-30: H3 from a photo "should
+     * be treated as a flow we can swap similar to how t2i goes to i2i", not a picture to wire.
+     */
+    private fun videoPairNode(): Node? {
+        val g = canvas.workflow.graph
+        val video = g.nodes.singleOrNull { it.type in SAMPLER_TYPES }?.takeIf { it.type in com.abrah.nightmare.VIDEO_MODEL_TYPES }
+            ?: return null
+        return video.takeIf { g.nodes.all { it === video || it.type in setOf("core.prompt", "core.image", "core.output") } }
+    }
+
+    /**
+     * ⭐ The video pair as [swapFlows] offers it: Text to video and Image to video, the node's model kept. Wan 2.2 14B
+     * animates a picture only and NSFW Wan 1.3B takes none, so for them the pair is one flow: no Swap, no Remove input.
+     */
+    private fun videoSwapFlows(video: Node): List<com.abrah.nightmare.canvas.SwapFlow> {
+        val pictured = video.inputs["image"] != null
+        return com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V)
+            .filter { r ->
+                when (video.type) {
+                    com.abrah.nightmare.npu.WanA14Node.name -> r.id == com.abrah.nightmare.canvas.I2V
+                    com.abrah.nightmare.npu.WanNsfw13Node.name -> r.id == com.abrah.nightmare.canvas.T2V
+                    else -> true
+                }
+            }
+            .map { r ->
+                val i2v = r.id == com.abrah.nightmare.canvas.I2V
+                com.abrah.nightmare.canvas.SwapFlow(r, takesPicture = i2v, current = i2v == pictured)
+            }
+    }
+
+    /**
+     * ⭐ [swapFlow] for the video pair: the new flow's node becomes the old one's model ([setVideoModel], which also
+     * swaps in that model's opening prompt for a picture or none), then the node's own settings, the person's prompt
+     * (an opening prompt is left to the swap) and the picture come along, as on the image flows.
+     */
+    private fun swapVideoFlow(recipe: com.abrah.nightmare.canvas.Recipe, oldVideo: Node) {
+        val old = canvas.workflow.graph
+        val oldPrompt = old.nodes.firstOrNull { it.type == "core.prompt" }
+        val oldImage = oldVideo.inputs["image"]?.node?.let { old.byId[it] }?.takeIf { it.type == "core.image" }
+        openRecipeNow(recipe, draft = false)
+        val built = canvas.workflow.graph.nodes.singleOrNull { it.type in com.abrah.nightmare.VIDEO_MODEL_TYPES } ?: return
+        setVideoModel(built.id, oldVideo.type)
+        val g = canvas.workflow.graph
+        val video = g.byId[built.id] ?: return
+        val image = video.inputs["image"]?.node?.let { g.byId[it] }?.takeIf { it.type == "core.image" }
+        val uri = oldImage?.params?.get("uri").orEmpty()
+        val carryPicture = image != null && uri.isNotBlank()
+        val declared = nodeTypes[video.type]?.widgets?.map { it.name }?.toSet().orEmpty()
+        val framing = setOf("x", "y", "w", "h")
+        var next = canvas.setParams(
+            video.id,
+            oldVideo.params.filterKeys { (it in declared && it !in framing) || (carryPicture && it in framing) },
+        )
+        val prompt = g.nodes.firstOrNull { it.type == "core.prompt" }
+        if (prompt != null && oldPrompt != null &&
+            !com.abrah.nightmare.npu.VideoPrompts.isDefault(oldPrompt.params["prompt"].orEmpty())
+        ) {
+            next = next.setParams(prompt.id, oldPrompt.params.filterKeys { it == "prompt" || it == "negative" })
+        }
+        if (carryPicture) {
+            blankImages += image!!.id
             next = next.setParams(
                 image.id,
                 mapOf("uri" to uri, LoadImageNode.DRAWING to oldImage?.params?.get(LoadImageNode.DRAWING).orEmpty()),

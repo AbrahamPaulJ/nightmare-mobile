@@ -175,6 +175,11 @@ size, LoRAs and the picture come with you; a mask does not.
 On the picture's page, the **✕** at the end of its name (**Remove input**) takes the flow back to
 text to image, keeping the prompt and settings. It asks first.
 
+The video node of **Text to video** and **Image to video** has the same two: Swap flow goes between the two flows and
+keeps the video model you chose (MiniMax H3, Wan 2.2 Turbo, Neodragon), its size, length, seed and your prompt; the
+picture's ✕ goes back to Text to video. A prompt you have not changed becomes the other flow's opening prompt. Wan
+2.2 14B only animates a picture and NSFW Wan 1.3B takes none, so those two have no swap.
+
 ## Saving your work
 
 The canvas saves itself as you go. Close the app and it reopens where you left it, zoom and

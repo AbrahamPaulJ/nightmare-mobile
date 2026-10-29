@@ -123,7 +123,7 @@
     <string name="video_models_note">One download of %1$s GB, in 21 parts. It resumes, so a dropped connection costs only the file it was on.</string>
     <string name="video_about">Text and image to video on the NPU. No backend, no checkpoint.</string>
     <string name="wan_about">Text and image to video with Wan 2.2: 5 second clips at 832x480 or 1280x704. Slower than Neodragon and much better. 6.25 GB: the Wan 2.2 Turbo DiT, its umT5 text encoder and a small decoder.</string>
-    <string name="wan14_i2v_about">Image to video with Wan 2.2 14B: your picture moving, with the motion and detail of the 14B. Wire a picture into a Wan 2.2 14B node, or use the Text to video (14B) flow. About 9 minutes for 2 seconds at 480x832 and 12 minutes for 1 second at 720x1280 on an 8 Elite; faces come out much sharper at the larger size. 8 Elite or newer, 12 GB phones and up. About 21 GB (two 8.6 GB models with the 4-step speed-up built in); with Wan 2.2 Turbo installed its text encoder is shared. Use Wi-Fi.</string>
+    <string name="wan14_i2v_about">Image to video with Wan 2.2 14B: your picture moving, with the motion and detail of the 14B. Open Image to video and choose Wan 2.2 14B as its model, or use the Text to video (14B) flow. About 9 minutes for 2 seconds at 480x832 and 12 minutes for 1 second at 720x1280 on an 8 Elite; faces come out much sharper at the larger size. 8 Elite or newer, 12 GB phones and up. About 21 GB (two 8.6 GB models with the 4-step speed-up built in); with Wan 2.2 Turbo installed its text encoder is shared. Use Wi-Fi.</string>
     <string name="wan13_nsfw_about">Text to video for adult content with NSFW Wan 1.3B, a Wan 2.1 fine-tune made by the community (NSFW-API). Text only, no picture in. Slower than Wan 2.2 Turbo for the same length: about 2 minutes for 2 seconds at 832x480 on an 8 Elite. 8 Elite or newer. A 2.8 GB download, converted to 1.5 GB on the phone, plus a 91 MB speed-up; with Wan 2.2 Turbo installed its 3.7 GB text encoder is shared. Use Wi-Fi.</string>
     <string name="mb_of_total">%1$d of %2$d MB</string>
     <string name="video_delete_title">Delete the video models?</string>
@@ -1177,7 +1177,7 @@
     <string name="video_model_neodragon">Neodragon</string>
     <string name="video_model_wan14">Wan 2.2 14B</string>
     <string name="video_model_nsfw13">NSFW Wan 1.3B</string>
-    <string name="hint_video_model">Wan 2.2 Turbo looks much better and takes minutes; Wan 2.2 14B (with a picture wired) is the best and slowest; NSFW Wan 1.3B (no picture wired) is a community model for adult content; MiniMax H3 makes the clip with its sound, speech and music, from a prompt or from your picture; Neodragon is the fastest, 2 s in about 30 s</string>
+    <string name="hint_video_model">Wan 2.2 Turbo looks much better and takes minutes; Wan 2.2 14B (Image to video) is the best and slowest; NSFW Wan 1.3B (Text to video) is a community model for adult content; MiniMax H3 makes the clip with its sound, speech and music, in Text to video or Image to video; Neodragon is the fastest, 2 s in about 30 s</string>
     <string name="flow_motion_name">Motion transfer</string>
     <string name="flow_motion_about">Your picture moving like a video you choose: its pose, frame by frame, with Wan 2.2 Fun Control.</string>
     <string name="video_in_none">No video chosen</string>

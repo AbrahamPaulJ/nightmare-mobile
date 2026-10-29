@@ -168,7 +168,7 @@ Wan 2.2: text or a photo to a clip of up to 5 seconds. Needs Wan 2.2 (Models →
 | **LoRAs** | Wan 2.2 Turbo (5B) LoRAs, chosen like on the image nodes (Wan 2.2 14B takes none); `<lora:name>` tags in the prompt work too |
 | **Width**, **Height** | Any shape in 32 px steps, up to 1280 × 704 worth of pixels (832 × 480 by default; 1280 × 704 takes about three times as long) |
 | **Crop** | With a photo wired in: tap the preview, then drag the frame to choose which part becomes the first frame |
-| **Model** | A dropdown: Wan 2.2 Turbo, Neodragon (the fastest), Wan 2.2 14B with a picture wired, or MiniMax H3 (with sound) with none; the node becomes that model's node and back |
+| **Model** | A dropdown: Wan 2.2 Turbo, Neodragon (the fastest), MiniMax H3 (with sound), Wan 2.2 14B in Image to video only, NSFW Wan 1.3B in Text to video only; the node becomes that model's node and back. **Swap flow** on the node goes between Text to video and Image to video with the model kept ([how](../start/canvas.md#swap-flow-and-remove-input-default-view)) |
 
 Its **last frame** output is the clip's final frame as a picture: wire it into another Wan video
 node's **image** to continue the clip with a new prompt. That node's **video** is then the whole
