@@ -1,0 +1,29 @@
+diff --git a/src/model/vae/minimax_h3_vae.hpp b/src/model/vae/minimax_h3_vae.hpp
+index 078edd9..2326af6 100644
+--- a/src/model/vae/minimax_h3_vae.hpp
++++ b/src/model/vae/minimax_h3_vae.hpp
+@@ -53,6 +53,24 @@ namespace MiniMaxH3VAE {
+             x                = reflect_pad(x, 0, std::get<2>(temporal_padding));
+             x                = reflect_pad(x, 1, std::get<1>(temporal_padding));
+             int temporal_pad = std::get<0>(temporal_padding) * 2;
++            // nightmare (dit/079): ONE frame (I2VA's start picture, an edit's) behind KD - 1 causal zero frames: every
++            // kernel position but the last time slice reads zeros, so the 3D conv IS a 2D conv with that slice, exactly.
++            // The NPU has no IM2COL_3D, so the 3D form fell back to a direct CPU conv: the start picture's encode took
++            // 94-97 s of a 384x672 clip on the S25 (2.0 s of it on the NPU). The 2D form is the VAE's Conv2d path.
++            const int kd = std::get<0>(kernel_size);
++            if (x->ne[2] == 1 && temporal_pad == kd - 1 && x->ne[3] == in_channels && ctx->weight_adapter == nullptr &&
++                std::get<0>(dilation) == 1 && std::get<1>(dilation) == 1 && std::get<2>(dilation) == 1) {
++                ggml_tensor* w  = params["weight"];  // [KW, KH, KD, IC * OC]
++                ggml_tensor* ws = ggml_view_4d(ctx->ggml_ctx, w, w->ne[0], w->ne[1], 1, w->ne[3],
++                                               w->nb[1], w->nb[2], w->nb[3], (size_t)(kd - 1) * w->nb[2]);
++                ws              = ggml_reshape_4d(ctx->ggml_ctx, ggml_cont(ctx->ggml_ctx, ws),
++                                                  w->ne[0], w->ne[1], in_channels, out_channels);
++                ggml_tensor* x2 = ggml_reshape_4d(ctx->ggml_ctx, x, x->ne[0], x->ne[1], in_channels, 1);
++                ggml_tensor* y  = ggml_ext_conv_2d(ctx->ggml_ctx, x2, ws, bias ? params["bias"] : nullptr,
++                                                   std::get<2>(stride), std::get<1>(stride), 0, 0, 1, 1,
++                                                   ctx->conv2d_direct_enabled);
++                return ggml_reshape_4d(ctx->ggml_ctx, y, y->ne[0], y->ne[1], 1, out_channels);
++            }
+             if (temporal_pad > 0) {
+                 x = ggml_ext_pad_ext(ctx->ggml_ctx,
+                                      ctx->backend,
