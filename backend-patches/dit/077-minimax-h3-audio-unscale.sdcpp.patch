@@ -1,0 +1,26 @@
+diff --git a/src/pipeline/video.cpp b/src/pipeline/video.cpp
+index 22dd759..9a32aeb 100644
+--- a/src/pipeline/video.cpp
++++ b/src/pipeline/video.cpp
+@@ -1798,6 +1798,21 @@ namespace sd::pipeline {
+                                     : unpack_ltxav_audio_latent(final_latent,
+                                                                 latents.audio_length,
+                                                                 sd->get_latent_channel());
++            // nightmare (dit/077): the sampler carries MiniMax-H3's audio as (sigma_v / sigma_a) * x_a on the video's
++            // schedule, and as sigma goes to 0 that ratio goes to video_shift / audio_shift (12 / 3): the packed audio
++            // ends at 4x its latent. ComfyUI's MiniMaxH3.process_latent_out divides it back before the audio VAE; this
++            // pipeline decoded it as is. NM_H3_AUDIO_RAW=1 keeps the old behaviour (the A/B control).
++            if (sd_version_is_minimax_h3(sd->version) && !audio_latent.empty()) {
++                const char* raw = getenv("NM_H3_AUDIO_RAW");
++                if (raw == nullptr || *raw == '\0' || *raw == '0') {
++                    const MiniMaxH3DiffusionExtra shifts;
++                    const float unscale = shifts.audio_sigma_shift / shifts.video_sigma_shift;
++                    for (int64_t i = 0; i < audio_latent.numel(); ++i) {
++                        audio_latent[i] *= unscale;
++                    }
++                    LOG_INFO("minimax_h3: audio latent unscaled by %.4f (audio shift / video shift)", unscale);
++                }
++            }
+             if (!audio_latent.empty()) {
+                 LOG_VERBOSE("decode audio latent %dx%dx%dx%d",
+                             (int)audio_latent.shape()[0],
