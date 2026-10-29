@@ -1,8 +1,8 @@
 diff --git a/src/model/vae/minimax_h3_vae.hpp b/src/model/vae/minimax_h3_vae.hpp
-index 078edd9..2326af6 100644
+index 078edd9..ec77454 100644
 --- a/src/model/vae/minimax_h3_vae.hpp
 +++ b/src/model/vae/minimax_h3_vae.hpp
-@@ -53,6 +53,24 @@ namespace MiniMaxH3VAE {
+@@ -53,6 +53,35 @@ namespace MiniMaxH3VAE {
              x                = reflect_pad(x, 0, std::get<2>(temporal_padding));
              x                = reflect_pad(x, 1, std::get<1>(temporal_padding));
              int temporal_pad = std::get<0>(temporal_padding) * 2;
@@ -19,9 +19,20 @@ index 078edd9..2326af6 100644
 +                ws              = ggml_reshape_4d(ctx->ggml_ctx, ggml_cont(ctx->ggml_ctx, ws),
 +                                                  w->ne[0], w->ne[1], in_channels, out_channels);
 +                ggml_tensor* x2 = ggml_reshape_4d(ctx->ggml_ctx, x, x->ne[0], x->ne[1], in_channels, 1);
-+                ggml_tensor* y  = ggml_ext_conv_2d(ctx->ggml_ctx, x2, ws, bias ? params["bias"] : nullptr,
-+                                                   std::get<2>(stride), std::get<1>(stride), 0, 0, 1, 1,
-+                                                   ctx->conv2d_direct_enabled);
++                ggml_tensor* b2 = bias ? params["bias"] : nullptr;
++                ggml_tensor* y  = nullptr;
++                // The NPU's CONV_2D takes stride 1 with "same" zero padding only (p = (k - 1) / 2). A 3x3 stride-1 conv
++                // here is already reflect-padded by 1, so run it at p = 1 and crop the 1 px border: the kept outputs
++                // never read the zero pad, so they ARE the p = 0 conv. The stride-2 downsamplers stay as they are.
++                if (std::get<1>(stride) == 1 && std::get<2>(stride) == 1 && std::get<1>(kernel_size) == 3 &&
++                    std::get<2>(kernel_size) == 3 && std::get<1>(temporal_padding) == 1 && std::get<2>(temporal_padding) == 1) {
++                    y = ggml_ext_conv_2d(ctx->ggml_ctx, x2, ws, b2, 1, 1, 1, 1, 1, 1, true);
++                    y = ggml_cont(ctx->ggml_ctx, ggml_view_4d(ctx->ggml_ctx, y, y->ne[0] - 2, y->ne[1] - 2, y->ne[2], y->ne[3],
++                                                              y->nb[1], y->nb[2], y->nb[3], y->nb[1] + y->nb[0]));
++                } else {
++                    y = ggml_ext_conv_2d(ctx->ggml_ctx, x2, ws, b2, std::get<2>(stride), std::get<1>(stride), 0, 0, 1, 1,
++                                         ctx->conv2d_direct_enabled);
++                }
 +                return ggml_reshape_4d(ctx->ggml_ctx, y, y->ne[0], y->ne[1], 1, out_channels);
 +            }
              if (temporal_pad > 0) {
