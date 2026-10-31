@@ -1,12 +1,12 @@
-dit/083: ggml-opencl's Adreno xmem attention keeps its scores in fp32. It summed Q.K in fp16 and stored the scores,
-the row max and 1/sum in fp16: at logits in the hundreds an fp16 score is +-0.5 and the softmax goes wrong. Z-Image's
-attention is that sharp and rendered as stripes (Klein's is not). nm-fa-check (dit/082), 1280 tokens, 30 heads, q and k
-std 30: 10% error with fp16 scores, 2e-5 on the generic path. Now: fp32 accumulators in the QK gemm, fp32 score and
-probability buffers and images, fp32 softmax stats; the PV gemm still reads the probabilities as half (they are in
-[0, 1]). Applies after 080 and 081.
+dit/083: ggml-opencl's Adreno xmem attention in fp32 where fp16 broke Z-Image (stripes and noise on the GPU, Klein
+right). It summed Q.K in fp16, stored the scores, the row max and 1/sum in fp16 (at logits in the hundreds an fp16
+score is +-0.5), and stored Q PRE-SCALED in fp16: with sd.cpp's kv_scale (1/128, Z-Image) the softmax scale is ~11 and
+Q times it overflows. Now: Q unscaled into fp16, fp32 QK sums with the scale applied on store, fp32 score and
+probability buffers and images, fp32 softmax stats; the PV gemm still reads the probabilities as half ([0, 1]).
+nm-fa-check (dit/082) measures each case against the CPU. Applies after 080 and 081.
 
 diff --git a/src/ggml-opencl/ggml-opencl.cpp b/src/ggml-opencl/ggml-opencl.cpp
-index 4c21247..bf698cf 100644
+index 4c21247..cfff516 100644
 --- a/src/ggml-opencl/ggml-opencl.cpp
 +++ b/src/ggml-opencl/ggml-opencl.cpp
 @@ -16970,6 +16970,31 @@ static cl_mem ggml_cl_make_image1d_buffer_half4(cl_context context, cl_mem_flags
@@ -61,11 +61,34 @@ index 4c21247..bf698cf 100644
      s.xmem_qk = clCreateBuffer(backend_ctx->context, CL_MEM_READ_ONLY, 6144, nullptr, nullptr);
      s.xmem_pv = clCreateBuffer(backend_ctx->context, CL_MEM_READ_ONLY, 6144, nullptr, nullptr);
      GGML_ASSERT(s.softmax_stats_img2d != nullptr && s.xmem_qk != nullptr && s.xmem_pv != nullptr);
+@@ -17272,10 +17297,13 @@ static void ggml_cl_adreno_xmem_attn_run(
+         size_t gws[3] = {ggml_cl_round_up((size_t) n_q, 8), (size_t) heads_total, (size_t) qpack};
+         size_t lws[3] = {8, 1, (size_t) ((qpack <= 32) ? qpack : 1)};
+         cl_kernel kernel = xstate.kernel_q_f32_to_img_scaled;
++        // nightmare dit/083: Q unscaled into fp16, the scale on the QK gemm's fp32 sums. With sd.cpp's kv_scale
++        // (1/128, Z-Image) the softmax scale is ~11, and Q times it overflowed fp16.
++        const float q_img_scale = 1.0f;
+         CL_CHECK(clSetKernelArg(kernel, 0, sizeof(cl_mem),   &extra_q->data_device));
+         CL_CHECK(clSetKernelArg(kernel, 1, sizeof(cl_ulong), &offset_q));
+         CL_CHECK(clSetKernelArg(kernel, 2, sizeof(cl_mem),   &s.q_img));
+-        CL_CHECK(clSetKernelArg(kernel, 3, sizeof(float),    &scale));
++        CL_CHECK(clSetKernelArg(kernel, 3, sizeof(float),    &q_img_scale));
+         CL_CHECK(clSetKernelArg(kernel, 4, sizeof(int),      &d_head_q));
+         CL_CHECK(clSetKernelArg(kernel, 5, sizeof(int),      &n_q));
+         CL_CHECK(clSetKernelArg(kernel, 6, sizeof(int),      &n_head));
+@@ -17372,6 +17400,7 @@ static void ggml_cl_adreno_xmem_attn_run(
+         ggml_cl_set_arg_int4(kernel, 4, kv_heads_total, npack, q_width, 32);
+         ggml_cl_set_arg_int4(kernel, 5, qpack, 0, 0, kv_heads_total);
+         ggml_cl_set_arg_int4(kernel, 6, qpack, 1, 1, 0);
++        CL_CHECK(clSetKernelArg(kernel, 7, sizeof(float), &scale));  // nightmare dit/083
+         backend_ctx->enqueue_ndrange_kernel(kernel, 3, gws, lws, dst);
+     }
+     cl_mem softmax_input_img = s.score_img1d;
 diff --git a/src/ggml-opencl/kernels/sdpa_xmem_f32_f16_os8.cl b/src/ggml-opencl/kernels/sdpa_xmem_f32_f16_os8.cl
-index 26f0fbd..2137002 100644
+index 26f0fbd..17d8b33 100644
 --- a/src/ggml-opencl/kernels/sdpa_xmem_f32_f16_os8.cl
 +++ b/src/ggml-opencl/kernels/sdpa_xmem_f32_f16_os8.cl
-@@ -291,7 +291,7 @@ __kernel void adreno_xmem_attn_pack_k(global half4 *             dst_tensor_buff
+@@ -291,13 +291,14 @@ __kernel void adreno_xmem_attn_pack_k(global half4 *             dst_tensor_buff
  }
  
  __attribute__((qcom_max_concurrent_subgroups(12))) __kernel void adreno_xmem_attn_qk_gemm(
@@ -74,7 +97,15 @@ index 26f0fbd..2137002 100644
      constant half8 *    weights_buffer __attribute__((sub_group_uniform)),
      constant half8 *    xmem_buffer __attribute__((max_constant_size((6144)))),
      read_only image2d_t src_tensor_image2d,
-@@ -308,14 +308,14 @@ __attribute__((qcom_max_concurrent_subgroups(12))) __kernel void adreno_xmem_att
+     const int4          shared_int4_0,
+     const int4          shared_int4_1,
+-    const int4          shared_int4_2) {
++    const int4          shared_int4_2,
++    const float         qk_scale) {  // nightmare dit/083: applied to the fp32 sums
+     int X = get_group_id(1) * get_local_size(0) + get_local_id(0);
+     int Y = get_group_id(2) * get_local_size(1) + get_local_id(1);
+     int Z = get_group_id(0) * get_local_size(2) + get_local_id(2);
+@@ -308,14 +309,14 @@ __attribute__((qcom_max_concurrent_subgroups(12))) __kernel void adreno_xmem_att
          return;
      }
  
@@ -97,7 +128,7 @@ index 26f0fbd..2137002 100644
      int   x_coord = mad24(X, shared_int4_2.y, shared_int4_1.y);
      int   y_coord = mad24(Y, shared_int4_2.z, shared_int4_1.z);
      int   coord_x, coord_y, coord_s;
-@@ -338,135 +338,135 @@ __attribute__((qcom_max_concurrent_subgroups(12))) __kernel void adreno_xmem_att
+@@ -338,135 +339,135 @@ __attribute__((qcom_max_concurrent_subgroups(12))) __kernel void adreno_xmem_att
          qcom_sub_group_constant_load8(xmem_buffer, weights_buffer, c_offset, f_offset >> 1, 32);
          f_offset += 64;
          qcom_sub_group_sync(QCOM_CLK_CONST_LOAD_SYNC);
@@ -236,7 +267,7 @@ index 26f0fbd..2137002 100644
      coord_y = Y;
      if (coord_s < shared_int4_0.y) {
 -        half4 res = convert_half4(r0);
-+        float4 res = r0;
++        float4 res = r0 * qk_scale;
          if (coord_s < 0) {
 -            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
 +            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
@@ -246,7 +277,7 @@ index 26f0fbd..2137002 100644
      }
      if (coord_s < shared_int4_0.y) {
 -        half4 res = convert_half4(r1);
-+        float4 res = r1;
++        float4 res = r1 * qk_scale;
          if (coord_s < 0) {
 -            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
 +            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
@@ -256,7 +287,7 @@ index 26f0fbd..2137002 100644
      }
      if (coord_s < shared_int4_0.y) {
 -        half4 res = convert_half4(r2);
-+        float4 res = r2;
++        float4 res = r2 * qk_scale;
          if (coord_s < 0) {
 -            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
 +            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
@@ -266,7 +297,7 @@ index 26f0fbd..2137002 100644
      }
      if (coord_s < shared_int4_0.y) {
 -        half4 res = convert_half4(r3);
-+        float4 res = r3;
++        float4 res = r3 * qk_scale;
          if (coord_s < 0) {
 -            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
 +            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
@@ -276,7 +307,7 @@ index 26f0fbd..2137002 100644
      }
      if (coord_s < shared_int4_0.y) {
 -        half4 res = convert_half4(r4);
-+        float4 res = r4;
++        float4 res = r4 * qk_scale;
          if (coord_s < 0) {
 -            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
 +            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
@@ -286,7 +317,7 @@ index 26f0fbd..2137002 100644
      }
      if (coord_s < shared_int4_0.y) {
 -        half4 res = convert_half4(r5);
-+        float4 res = r5;
++        float4 res = r5 * qk_scale;
          if (coord_s < 0) {
 -            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
 +            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
@@ -296,7 +327,7 @@ index 26f0fbd..2137002 100644
      }
      if (coord_s < shared_int4_0.y) {
 -        half4 res = convert_half4(r6);
-+        float4 res = r6;
++        float4 res = r6 * qk_scale;
          if (coord_s < 0) {
 -            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
 +            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
@@ -306,14 +337,14 @@ index 26f0fbd..2137002 100644
      }
      if (coord_s < shared_int4_0.y) {
 -        half4 res = convert_half4(r7);
-+        float4 res = r7;
++        float4 res = r7 * qk_scale;
          if (coord_s < 0) {
 -            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
 +            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
          }
          dst_tensor_buffer[(((coord_s) *shared_int4_0.x + (coord_y)) * shared_int4_0.z + (coord_x))] = res;
          coord_s++;
-@@ -493,13 +493,13 @@ __kernel void adreno_xmem_attn_softmax_reduce_basic(read_only image1d_buffer_t s
+@@ -493,13 +494,13 @@ __kernel void adreno_xmem_attn_softmax_reduce_basic(read_only image1d_buffer_t s
          int    slice_coord_TMP  = (start_channel) / 4;
          int    sub_ch_coord_TMP = (start_channel) % 4;
          float4 src_TMP          = convert_float4(
@@ -329,7 +360,7 @@ index 26f0fbd..2137002 100644
          if (need_per_channels_check && (d == start_slice || d == end_slice - 1)) {
              if (d * 4 + 0 < start_channel || d * 4 + 0 >= end_channel) {
                  mask_dot.x = 0.f;
-@@ -529,14 +529,14 @@ __kernel void adreno_xmem_attn_softmax_reduce_basic(read_only image1d_buffer_t s
+@@ -529,14 +530,14 @@ __kernel void adreno_xmem_attn_softmax_reduce_basic(read_only image1d_buffer_t s
          sum += dot(mask_dot, exp_res);
      }
      if (!isfinite(maximum) || sum == 0.0f) {
@@ -348,7 +379,7 @@ index 26f0fbd..2137002 100644
                                                     read_only image1d_buffer_t src_tensor_image_buffer,
                                                     read_only image2d_t        src_tensor_1_image2d,
                                                     const int4                 shared_int4_0,
-@@ -547,26 +547,26 @@ __kernel void adreno_xmem_attn_softmax_apply_basic(global half4 *             ds
+@@ -547,26 +548,26 @@ __kernel void adreno_xmem_attn_softmax_apply_basic(global half4 *             ds
      if (X >= shared_int4_0.z || Y >= shared_int4_0.x || Z >= shared_int4_0.y) {
          return;
      }
@@ -382,7 +413,7 @@ index 26f0fbd..2137002 100644
                  }
              }
          }
-@@ -574,7 +574,7 @@ __kernel void adreno_xmem_attn_softmax_apply_basic(global half4 *             ds
+@@ -574,7 +575,7 @@ __kernel void adreno_xmem_attn_softmax_apply_basic(global half4 *             ds
      };
  }
  
@@ -391,7 +422,7 @@ index 26f0fbd..2137002 100644
                                             read_only image1d_buffer_t src_score_image_buffer,
                                             const global half *        mask,
                                             const ulong                mask_offset,
-@@ -610,7 +610,7 @@ __kernel void adreno_xmem_attn_mask_scores(global half4 *             dst_score_
+@@ -610,7 +611,7 @@ __kernel void adreno_xmem_attn_mask_scores(global half4 *             dst_score_
      const global half *  mask_row       = (const global half *) (mask_base + mask_batch_idx * mask_nb3 +
                                                                   mask_head_idx * mask_nb2 + q * mask_nb1);
  
@@ -400,7 +431,7 @@ index 26f0fbd..2137002 100644
      float       vals[4] = {
          convert_float(score.x),
          convert_float(score.y),
-@@ -628,7 +628,7 @@ __kernel void adreno_xmem_attn_mask_scores(global half4 *             dst_score_
+@@ -628,7 +629,7 @@ __kernel void adreno_xmem_attn_mask_scores(global half4 *             dst_score_
      }
  
      dst_score_tensor_buffer[((Z * kv_heads_total + Y) * q_width + X)] =
