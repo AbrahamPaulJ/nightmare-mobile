@@ -29,6 +29,21 @@ class DitGpuTest {
     }
 
     @Test
+    fun theBuildThisPhoneDoesNotRunHasItsDitReclaimedButAGpuModelKeepsItsFp8() {
+        DitGpu.openClForTest = true
+        // ⚠ Off the route on an 8 Elite: FP8 runs, and a Q4_0 left by the GPU switch would shadow it (backend 014).
+        val off = ModelCatalog.obsoleteDits(klein, caps(79)).map { it.name }
+        assertEquals(listOf("dit.gguf"), off.distinct())
+        // ⚠ On the route: Q4_0 runs and FP8 stays, so the switch turned off again needs no 4 GB download.
+        Prefs.setLowRam(ctx, Prefs.KEY_DIT_GPU, true)
+        assertTrue("the FP8 under the route's Q4_0 is kept", ModelCatalog.obsoleteDits(klein, caps(79)).isEmpty())
+        // Qwen (no GPU route) reclaims both ways, as it did.
+        val qwen = ModelCatalog.byId("qwen_image_2_1")!!
+        assertTrue(ModelCatalog.obsoleteDits(qwen, caps(79)).all { it.name.startsWith("dit.") })
+        assertTrue(ModelCatalog.obsoleteDits(qwen, caps(79)).isNotEmpty())
+    }
+
+    @Test
     fun belowV73ItTakesTheGpuOnItsOwnAndOnlyWithAnOpenClDriver() {
         DitGpu.openClForTest = true
         assertTrue("an 8 Gen 1 (v69) went to the CPU; the GPU takes it", DitGpu.wanted(caps(69)))

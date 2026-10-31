@@ -1313,24 +1313,39 @@ object ModelCatalog {
     val QWEN21_PARTS = QWEN21_REQUIRED.drop(1)
 
     /**
-     * ⭐⭐ Qwen Image 2.1's two builds share a directory, and backend 014 loads a
-     * `dit.gguf` in preference to `dit.safetensors` — so the build this phone
-     * does NOT run has its DiT deleted, or a stray Q4_0 would shadow FP8 on a
-     * 16 GB phone and a stray FP8 would cost a 12 GB one 7 GB for nothing.
-     * ⚠ Only at the EXACT size this catalogue shipped: a user's own weights in
-     * that dir are theirs. ⚠ Built-in dir only: an import's DiT is its weights.
+     * ⭐⭐ A built-in DiT model's builds share a directory, and backend 014 loads a `dit.gguf` in preference to
+     * `dit.safetensors`, so the build this phone does NOT run has its DiT deleted: a stray Q4_0 would shadow FP8 (Qwen
+     * on a 16 GB phone; Klein 4B after the GPU switch is turned off, [DitGpu]) and a stray FP8 costs 4-7 GB for nothing.
+     * ⚠ Only once this phone's build is whole: the switch flipped must not take the working build before its
+     * replacement is down. ⚠ Only at the EXACT size this catalogue shipped: a user's own weights in that dir are
+     * theirs. ⚠ Built-in dir only: an import's DiT is its weights.
      */
     fun reclaimObsolete(context: Context) {
-        val spec = byId("qwen_image_2_1") ?: return
-        val want = spec.active.firstOrNull { it.name.startsWith("dit.") } ?: return
-        for (other in listOf(QWEN21_FP8, QWEN21_Q4)) {
-            if (other.name == want.name) continue
-            val f = File(spec.ownDir(context), other.name)
-            if (f.isFile && f.length() == other.bytes && f.delete()) {
-                android.util.Log.i("ModelCatalog", "reclaimed Qwen Image 2.1 ${other.name}. This phone's build is ${want.name}")
+        for (id in SHARED_DIR_BUILDS) {
+            val spec = byId(id) ?: continue
+            if (spec.dir(context) != spec.ownDir(context) || spec.missing(context).isNotEmpty()) continue
+            for (other in obsoleteDits(spec)) {
+                val f = File(spec.ownDir(context), other.name)
+                if (f.isFile && f.length() == other.bytes && f.delete()) {
+                    android.util.Log.i("ModelCatalog", "reclaimed ${spec.label} ${other.name}. This phone's build is not it")
+                }
             }
         }
     }
+
+    /** ⭐ The DiT files of [spec]'s other builds that [reclaimObsolete] deletes once this phone's build is whole. */
+    internal fun obsoleteDits(spec: ModelSpec, caps: DeviceProbe.Caps = DeviceProbe.caps()): List<RemoteFile> {
+        val active = spec.buildFor(caps)?.files?.takeIf { it.isNotEmpty() } ?: spec.files
+        val want = active.firstOrNull { it.name.startsWith("dit.") } ?: return emptyList()
+        // ⚠ A GPU-route model keeps its FP8 under the Q4_0 the route runs: the GGUF is loaded first, so it shadows
+        // nothing, and the switch turned off again runs FP8 at once instead of a 4 GB download.
+        return spec.builds.flatMap { it.files }.filter {
+            it.name.startsWith("dit.") && it.name != want.name && !(spec.gpu && it.name == ModelSpec.DIT_WEIGHTS)
+        }.distinctBy { it.name to it.bytes }
+    }
+
+    /** The built-in models whose builds hold their DiT under different names in one folder ([reclaimObsolete]). */
+    private val SHARED_DIR_BUILDS = listOf("qwen_image_2_1", "flux2_klein_4b", "z_image_turbo")
 
     /** ⭐ Krea 2 Turbo's package — a GGUF DiT, no vision tower (`main.cpp`, 014). */
     val KREA2_REQUIRED = listOf("dit.gguf", "llm.gguf", "vae.safetensors", "tokenizer.json")
