@@ -1,0 +1,411 @@
+dit/083: ggml-opencl's Adreno xmem attention keeps its scores in fp32. It summed Q.K in fp16 and stored the scores,
+the row max and 1/sum in fp16: at logits in the hundreds an fp16 score is +-0.5 and the softmax goes wrong. Z-Image's
+attention is that sharp and rendered as stripes (Klein's is not). nm-fa-check (dit/082), 1280 tokens, 30 heads, q and k
+std 30: 10% error with fp16 scores, 2e-5 on the generic path. Now: fp32 accumulators in the QK gemm, fp32 score and
+probability buffers and images, fp32 softmax stats; the PV gemm still reads the probabilities as half (they are in
+[0, 1]). Applies after 080 and 081.
+
+diff --git a/src/ggml-opencl/ggml-opencl.cpp b/src/ggml-opencl/ggml-opencl.cpp
+index 4c21247..bf698cf 100644
+--- a/src/ggml-opencl/ggml-opencl.cpp
++++ b/src/ggml-opencl/ggml-opencl.cpp
+@@ -16970,6 +16970,31 @@ static cl_mem ggml_cl_make_image1d_buffer_half4(cl_context context, cl_mem_flags
+     return image;
+ }
+ 
++// nightmare dit/083: the xmem attention's scores, probabilities and softmax stats in fp32 images.
++static cl_mem ggml_cl_make_image2d_float4(cl_context context, cl_mem_flags flags, size_t width, size_t height) {
++    cl_int err = CL_SUCCESS;
++    cl_image_format format = { CL_RGBA, CL_FLOAT };
++    cl_image_desc desc = {};
++    desc.image_type = CL_MEM_OBJECT_IMAGE2D;
++    desc.image_width = width;
++    desc.image_height = height;
++    cl_mem image = clCreateImage(context, flags, &format, &desc, nullptr, &err);
++    CL_CHECK(err);
++    return image;
++}
++
++static cl_mem ggml_cl_make_image1d_buffer_float4(cl_context context, cl_mem_flags flags, size_t width, cl_mem backing_buffer) {
++    cl_int err = CL_SUCCESS;
++    cl_image_format format = { CL_RGBA, CL_FLOAT };
++    cl_image_desc desc = {};
++    desc.image_type = CL_MEM_OBJECT_IMAGE1D_BUFFER;
++    desc.image_width = width;
++    desc.buffer = backing_buffer;
++    cl_mem image = clCreateImage(context, flags, &format, &desc, nullptr, &err);
++    CL_CHECK(err);
++    return image;
++}
++
+ static void ggml_cl_release_mem(cl_mem & mem) {
+     if (mem != nullptr) {
+         CL_CHECK(clReleaseMemObject(mem));
+@@ -17101,14 +17126,14 @@ static bool ggml_cl_adreno_xmem_attn_prepare(
+     GGML_ASSERT(s.k_packed_buf != nullptr && s.v_packed_buf != nullptr);
+ 
+     const size_t score_half4_elems = (size_t) npack * kv_heads_total * q_width;
+-    const size_t score_bytes = score_half4_elems * sizeof(uint16_t) * 4;
++    const size_t score_bytes = score_half4_elems * sizeof(float) * 4;  // nightmare dit/083: fp32
+     s.score_buf = clCreateBuffer(backend_ctx->context, CL_MEM_READ_WRITE, score_bytes, nullptr, nullptr);
+     s.prob_buf = clCreateBuffer(backend_ctx->context, CL_MEM_READ_WRITE, score_bytes, nullptr, nullptr);
+     GGML_ASSERT(s.score_buf != nullptr && s.prob_buf != nullptr);
+-    s.score_img1d = ggml_cl_make_image1d_buffer_half4(backend_ctx->context, CL_MEM_READ_ONLY, score_half4_elems, s.score_buf);
+-    s.prob_img1d = ggml_cl_make_image1d_buffer_half4(backend_ctx->context, CL_MEM_READ_ONLY, score_half4_elems, s.prob_buf);
+-    s.softmax_stats_img2d = ggml_cl_make_image2d_half4(backend_ctx->context, CL_MEM_READ_WRITE,
+-                                                       (size_t) q_width, (size_t) kv_heads_total);
++    s.score_img1d = ggml_cl_make_image1d_buffer_float4(backend_ctx->context, CL_MEM_READ_ONLY, score_half4_elems, s.score_buf);
++    s.prob_img1d = ggml_cl_make_image1d_buffer_float4(backend_ctx->context, CL_MEM_READ_ONLY, score_half4_elems, s.prob_buf);
++    s.softmax_stats_img2d = ggml_cl_make_image2d_float4(backend_ctx->context, CL_MEM_READ_WRITE,
++                                                        (size_t) q_width, (size_t) kv_heads_total);
+     s.xmem_qk = clCreateBuffer(backend_ctx->context, CL_MEM_READ_ONLY, 6144, nullptr, nullptr);
+     s.xmem_pv = clCreateBuffer(backend_ctx->context, CL_MEM_READ_ONLY, 6144, nullptr, nullptr);
+     GGML_ASSERT(s.softmax_stats_img2d != nullptr && s.xmem_qk != nullptr && s.xmem_pv != nullptr);
+diff --git a/src/ggml-opencl/kernels/sdpa_xmem_f32_f16_os8.cl b/src/ggml-opencl/kernels/sdpa_xmem_f32_f16_os8.cl
+index 26f0fbd..2137002 100644
+--- a/src/ggml-opencl/kernels/sdpa_xmem_f32_f16_os8.cl
++++ b/src/ggml-opencl/kernels/sdpa_xmem_f32_f16_os8.cl
+@@ -291,7 +291,7 @@ __kernel void adreno_xmem_attn_pack_k(global half4 *             dst_tensor_buff
+ }
+ 
+ __attribute__((qcom_max_concurrent_subgroups(12))) __kernel void adreno_xmem_attn_qk_gemm(
+-    global half4 *      dst_tensor_buffer,
++    global float4 *     dst_tensor_buffer,
+     constant half8 *    weights_buffer __attribute__((sub_group_uniform)),
+     constant half8 *    xmem_buffer __attribute__((max_constant_size((6144)))),
+     read_only image2d_t src_tensor_image2d,
+@@ -308,14 +308,14 @@ __attribute__((qcom_max_concurrent_subgroups(12))) __kernel void adreno_xmem_att
+         return;
+     }
+ 
+-    half4 r0      = (half4) (0.f);
+-    half4 r1      = (half4) (0.f);
+-    half4 r2      = (half4) (0.f);
+-    half4 r3      = (half4) (0.f);
+-    half4 r4      = (half4) (0.f);
+-    half4 r5      = (half4) (0.f);
+-    half4 r6      = (half4) (0.f);
+-    half4 r7      = (half4) (0.f);
++    float4 r0 = (float4) (0.f);
++    float4 r1 = (float4) (0.f);
++    float4 r2 = (float4) (0.f);
++    float4 r3 = (float4) (0.f);
++    float4 r4 = (float4) (0.f);
++    float4 r5 = (float4) (0.f);
++    float4 r6 = (float4) (0.f);
++    float4 r7 = (float4) (0.f);
+     int   x_coord = mad24(X, shared_int4_2.y, shared_int4_1.y);
+     int   y_coord = mad24(Y, shared_int4_2.z, shared_int4_1.z);
+     int   coord_x, coord_y, coord_s;
+@@ -338,135 +338,135 @@ __attribute__((qcom_max_concurrent_subgroups(12))) __kernel void adreno_xmem_att
+         qcom_sub_group_constant_load8(xmem_buffer, weights_buffer, c_offset, f_offset >> 1, 32);
+         f_offset += 64;
+         qcom_sub_group_sync(QCOM_CLK_CONST_LOAD_SYNC);
+-        r0 += src0.x * weights_cache[0].s0123;
+-        r0 += src0.y * weights_cache[0].s4567;
+-        r0 += src0.z * weights_cache[0].s89ab;
+-        r0 += src0.w * weights_cache[0].scdef;
+-        r1 += src0.x * weights_cache[1].s0123;
+-        r1 += src0.y * weights_cache[1].s4567;
+-        r1 += src0.z * weights_cache[1].s89ab;
+-        r1 += src0.w * weights_cache[1].scdef;
+-        r2 += src0.x * weights_cache[2].s0123;
+-        r2 += src0.y * weights_cache[2].s4567;
+-        r2 += src0.z * weights_cache[2].s89ab;
+-        r2 += src0.w * weights_cache[2].scdef;
+-        r3 += src0.x * weights_cache[3].s0123;
+-        r3 += src0.y * weights_cache[3].s4567;
+-        r3 += src0.z * weights_cache[3].s89ab;
+-        r3 += src0.w * weights_cache[3].scdef;
+-        r4 += src0.x * weights_cache[4].s0123;
+-        r4 += src0.y * weights_cache[4].s4567;
+-        r4 += src0.z * weights_cache[4].s89ab;
+-        r4 += src0.w * weights_cache[4].scdef;
+-        r5 += src0.x * weights_cache[5].s0123;
+-        r5 += src0.y * weights_cache[5].s4567;
+-        r5 += src0.z * weights_cache[5].s89ab;
+-        r5 += src0.w * weights_cache[5].scdef;
+-        r6 += src0.x * weights_cache[6].s0123;
+-        r6 += src0.y * weights_cache[6].s4567;
+-        r6 += src0.z * weights_cache[6].s89ab;
+-        r6 += src0.w * weights_cache[6].scdef;
+-        r7 += src0.x * weights_cache[7].s0123;
+-        r7 += src0.y * weights_cache[7].s4567;
+-        r7 += src0.z * weights_cache[7].s89ab;
+-        r7 += src0.w * weights_cache[7].scdef;
+-        r0 += src1.x * weights_cache[8].s0123;
+-        r0 += src1.y * weights_cache[8].s4567;
+-        r0 += src1.z * weights_cache[8].s89ab;
+-        r0 += src1.w * weights_cache[8].scdef;
+-        r1 += src1.x * weights_cache[9].s0123;
+-        r1 += src1.y * weights_cache[9].s4567;
+-        r1 += src1.z * weights_cache[9].s89ab;
+-        r1 += src1.w * weights_cache[9].scdef;
+-        r2 += src1.x * weights_cache[10].s0123;
+-        r2 += src1.y * weights_cache[10].s4567;
+-        r2 += src1.z * weights_cache[10].s89ab;
+-        r2 += src1.w * weights_cache[10].scdef;
+-        r3 += src1.x * weights_cache[11].s0123;
+-        r3 += src1.y * weights_cache[11].s4567;
+-        r3 += src1.z * weights_cache[11].s89ab;
+-        r3 += src1.w * weights_cache[11].scdef;
+-        r4 += src1.x * weights_cache[12].s0123;
+-        r4 += src1.y * weights_cache[12].s4567;
+-        r4 += src1.z * weights_cache[12].s89ab;
+-        r4 += src1.w * weights_cache[12].scdef;
+-        r5 += src1.x * weights_cache[13].s0123;
+-        r5 += src1.y * weights_cache[13].s4567;
+-        r5 += src1.z * weights_cache[13].s89ab;
+-        r5 += src1.w * weights_cache[13].scdef;
+-        r6 += src1.x * weights_cache[14].s0123;
+-        r6 += src1.y * weights_cache[14].s4567;
+-        r6 += src1.z * weights_cache[14].s89ab;
+-        r6 += src1.w * weights_cache[14].scdef;
+-        r7 += src1.x * weights_cache[15].s0123;
+-        r7 += src1.y * weights_cache[15].s4567;
+-        r7 += src1.z * weights_cache[15].s89ab;
+-        r7 += src1.w * weights_cache[15].scdef;
++        r0 += convert_float4(src0.x * weights_cache[0].s0123);
++        r0 += convert_float4(src0.y * weights_cache[0].s4567);
++        r0 += convert_float4(src0.z * weights_cache[0].s89ab);
++        r0 += convert_float4(src0.w * weights_cache[0].scdef);
++        r1 += convert_float4(src0.x * weights_cache[1].s0123);
++        r1 += convert_float4(src0.y * weights_cache[1].s4567);
++        r1 += convert_float4(src0.z * weights_cache[1].s89ab);
++        r1 += convert_float4(src0.w * weights_cache[1].scdef);
++        r2 += convert_float4(src0.x * weights_cache[2].s0123);
++        r2 += convert_float4(src0.y * weights_cache[2].s4567);
++        r2 += convert_float4(src0.z * weights_cache[2].s89ab);
++        r2 += convert_float4(src0.w * weights_cache[2].scdef);
++        r3 += convert_float4(src0.x * weights_cache[3].s0123);
++        r3 += convert_float4(src0.y * weights_cache[3].s4567);
++        r3 += convert_float4(src0.z * weights_cache[3].s89ab);
++        r3 += convert_float4(src0.w * weights_cache[3].scdef);
++        r4 += convert_float4(src0.x * weights_cache[4].s0123);
++        r4 += convert_float4(src0.y * weights_cache[4].s4567);
++        r4 += convert_float4(src0.z * weights_cache[4].s89ab);
++        r4 += convert_float4(src0.w * weights_cache[4].scdef);
++        r5 += convert_float4(src0.x * weights_cache[5].s0123);
++        r5 += convert_float4(src0.y * weights_cache[5].s4567);
++        r5 += convert_float4(src0.z * weights_cache[5].s89ab);
++        r5 += convert_float4(src0.w * weights_cache[5].scdef);
++        r6 += convert_float4(src0.x * weights_cache[6].s0123);
++        r6 += convert_float4(src0.y * weights_cache[6].s4567);
++        r6 += convert_float4(src0.z * weights_cache[6].s89ab);
++        r6 += convert_float4(src0.w * weights_cache[6].scdef);
++        r7 += convert_float4(src0.x * weights_cache[7].s0123);
++        r7 += convert_float4(src0.y * weights_cache[7].s4567);
++        r7 += convert_float4(src0.z * weights_cache[7].s89ab);
++        r7 += convert_float4(src0.w * weights_cache[7].scdef);
++        r0 += convert_float4(src1.x * weights_cache[8].s0123);
++        r0 += convert_float4(src1.y * weights_cache[8].s4567);
++        r0 += convert_float4(src1.z * weights_cache[8].s89ab);
++        r0 += convert_float4(src1.w * weights_cache[8].scdef);
++        r1 += convert_float4(src1.x * weights_cache[9].s0123);
++        r1 += convert_float4(src1.y * weights_cache[9].s4567);
++        r1 += convert_float4(src1.z * weights_cache[9].s89ab);
++        r1 += convert_float4(src1.w * weights_cache[9].scdef);
++        r2 += convert_float4(src1.x * weights_cache[10].s0123);
++        r2 += convert_float4(src1.y * weights_cache[10].s4567);
++        r2 += convert_float4(src1.z * weights_cache[10].s89ab);
++        r2 += convert_float4(src1.w * weights_cache[10].scdef);
++        r3 += convert_float4(src1.x * weights_cache[11].s0123);
++        r3 += convert_float4(src1.y * weights_cache[11].s4567);
++        r3 += convert_float4(src1.z * weights_cache[11].s89ab);
++        r3 += convert_float4(src1.w * weights_cache[11].scdef);
++        r4 += convert_float4(src1.x * weights_cache[12].s0123);
++        r4 += convert_float4(src1.y * weights_cache[12].s4567);
++        r4 += convert_float4(src1.z * weights_cache[12].s89ab);
++        r4 += convert_float4(src1.w * weights_cache[12].scdef);
++        r5 += convert_float4(src1.x * weights_cache[13].s0123);
++        r5 += convert_float4(src1.y * weights_cache[13].s4567);
++        r5 += convert_float4(src1.z * weights_cache[13].s89ab);
++        r5 += convert_float4(src1.w * weights_cache[13].scdef);
++        r6 += convert_float4(src1.x * weights_cache[14].s0123);
++        r6 += convert_float4(src1.y * weights_cache[14].s4567);
++        r6 += convert_float4(src1.z * weights_cache[14].s89ab);
++        r6 += convert_float4(src1.w * weights_cache[14].scdef);
++        r7 += convert_float4(src1.x * weights_cache[15].s0123);
++        r7 += convert_float4(src1.y * weights_cache[15].s4567);
++        r7 += convert_float4(src1.z * weights_cache[15].s89ab);
++        r7 += convert_float4(src1.w * weights_cache[15].scdef);
+     } while (coord_s < shared_int4_2.x);
+ 
+     coord_s = mul24(Z, 8);
+     coord_x = X;
+     coord_y = Y;
+     if (coord_s < shared_int4_0.y) {
+-        half4 res = convert_half4(r0);
++        float4 res = r0;
+         if (coord_s < 0) {
+-            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
++            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
+         }
+         dst_tensor_buffer[(((coord_s) *shared_int4_0.x + (coord_y)) * shared_int4_0.z + (coord_x))] = res;
+         coord_s++;
+     }
+     if (coord_s < shared_int4_0.y) {
+-        half4 res = convert_half4(r1);
++        float4 res = r1;
+         if (coord_s < 0) {
+-            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
++            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
+         }
+         dst_tensor_buffer[(((coord_s) *shared_int4_0.x + (coord_y)) * shared_int4_0.z + (coord_x))] = res;
+         coord_s++;
+     }
+     if (coord_s < shared_int4_0.y) {
+-        half4 res = convert_half4(r2);
++        float4 res = r2;
+         if (coord_s < 0) {
+-            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
++            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
+         }
+         dst_tensor_buffer[(((coord_s) *shared_int4_0.x + (coord_y)) * shared_int4_0.z + (coord_x))] = res;
+         coord_s++;
+     }
+     if (coord_s < shared_int4_0.y) {
+-        half4 res = convert_half4(r3);
++        float4 res = r3;
+         if (coord_s < 0) {
+-            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
++            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
+         }
+         dst_tensor_buffer[(((coord_s) *shared_int4_0.x + (coord_y)) * shared_int4_0.z + (coord_x))] = res;
+         coord_s++;
+     }
+     if (coord_s < shared_int4_0.y) {
+-        half4 res = convert_half4(r4);
++        float4 res = r4;
+         if (coord_s < 0) {
+-            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
++            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
+         }
+         dst_tensor_buffer[(((coord_s) *shared_int4_0.x + (coord_y)) * shared_int4_0.z + (coord_x))] = res;
+         coord_s++;
+     }
+     if (coord_s < shared_int4_0.y) {
+-        half4 res = convert_half4(r5);
++        float4 res = r5;
+         if (coord_s < 0) {
+-            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
++            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
+         }
+         dst_tensor_buffer[(((coord_s) *shared_int4_0.x + (coord_y)) * shared_int4_0.z + (coord_x))] = res;
+         coord_s++;
+     }
+     if (coord_s < shared_int4_0.y) {
+-        half4 res = convert_half4(r6);
++        float4 res = r6;
+         if (coord_s < 0) {
+-            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
++            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
+         }
+         dst_tensor_buffer[(((coord_s) *shared_int4_0.x + (coord_y)) * shared_int4_0.z + (coord_x))] = res;
+         coord_s++;
+     }
+     if (coord_s < shared_int4_0.y) {
+-        half4 res = convert_half4(r7);
++        float4 res = r7;
+         if (coord_s < 0) {
+-            res += read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0))));
++            res += convert_float4(read_imageh(src_tensor_image2d, smp_zero, (int2) ((0), ((0) * shared_int4_2.x + (0)))));
+         }
+         dst_tensor_buffer[(((coord_s) *shared_int4_0.x + (coord_y)) * shared_int4_0.z + (coord_x))] = res;
+         coord_s++;
+@@ -493,13 +493,13 @@ __kernel void adreno_xmem_attn_softmax_reduce_basic(read_only image1d_buffer_t s
+         int    slice_coord_TMP  = (start_channel) / 4;
+         int    sub_ch_coord_TMP = (start_channel) % 4;
+         float4 src_TMP          = convert_float4(
+-            read_imageh(src_tensor_image_buffer, ((slice_coord_TMP) *shared_int4_1.x + (Y)) * shared_int4_1.y + (X)));
++            read_imagef(src_tensor_image_buffer, ((slice_coord_TMP) *shared_int4_1.x + (Y)) * shared_int4_1.y + (X)));
+         maximum = (float[4]){ src_TMP.x, src_TMP.y, src_TMP.z, src_TMP.w }[sub_ch_coord_TMP];
+     };
+     for (int d = start_slice; d < end_slice; d += 1) {
+         float4 mask_dot = (float4) (1.f);
+         float4 src =
+-            convert_float4(read_imageh(src_tensor_image_buffer, ((d) *shared_int4_1.x + (Y)) * shared_int4_1.y + (X)));
++            convert_float4(read_imagef(src_tensor_image_buffer, ((d) *shared_int4_1.x + (Y)) * shared_int4_1.y + (X)));
+         if (need_per_channels_check && (d == start_slice || d == end_slice - 1)) {
+             if (d * 4 + 0 < start_channel || d * 4 + 0 >= end_channel) {
+                 mask_dot.x = 0.f;
+@@ -529,14 +529,14 @@ __kernel void adreno_xmem_attn_softmax_reduce_basic(read_only image1d_buffer_t s
+         sum += dot(mask_dot, exp_res);
+     }
+     if (!isfinite(maximum) || sum == 0.0f) {
+-        write_imageh(dst_tensor_image2d, (int2) (X, Y), (half4) (0.0h));
++        write_imagef(dst_tensor_image2d, (int2) (X, Y), (float4) (0.0f));
+         return;
+     }
+-    write_imageh(dst_tensor_image2d, (int2) (X, Y),
+-                 (half4) (convert_half(1.0f / sum), convert_half(maximum), 0.0h, 0.0h));
++    // nightmare dit/083: max and 1/sum in fp32 (an fp16 max is +-0.5 at 1000: exp() off by e^0.5)
++    write_imagef(dst_tensor_image2d, (int2) (X, Y), (float4) (1.0f / sum, maximum, 0.0f, 0.0f));
+ }
+ 
+-__kernel void adreno_xmem_attn_softmax_apply_basic(global half4 *             dst_tensor_buffer,
++__kernel void adreno_xmem_attn_softmax_apply_basic(global float4 *             dst_tensor_buffer,
+                                                    read_only image1d_buffer_t src_tensor_image_buffer,
+                                                    read_only image2d_t        src_tensor_1_image2d,
+                                                    const int4                 shared_int4_0,
+@@ -547,26 +547,26 @@ __kernel void adreno_xmem_attn_softmax_apply_basic(global half4 *             ds
+     if (X >= shared_int4_0.z || Y >= shared_int4_0.x || Z >= shared_int4_0.y) {
+         return;
+     }
+-    half4 src = read_imageh(src_tensor_image_buffer, ((Z) *shared_int4_1.x + (Y)) * shared_int4_1.y + (X));
++    float4 src = read_imagef(src_tensor_image_buffer, ((Z) *shared_int4_1.x + (Y)) * shared_int4_1.y + (X));
+     {
+-        half4 src_final;
++        float4 src_final;
+         {
+             {
+-                half4 exp_val = read_imageh(src_tensor_1_image2d, smp_zero, (int2) (X, Y));
++                float4 exp_val = read_imagef(src_tensor_1_image2d, smp_zero, (int2) (X, Y));
+                 src_final = exp(src - exp_val.y) * exp_val.x;
+                 const int k = Z * 4;
+                 const int n_kv = shared_int4_1.z;
+                 if (k + 0 >= n_kv) {
+-                    src_final.x = 0.0h;
++                    src_final.x = 0.0f;
+                 }
+                 if (k + 1 >= n_kv) {
+-                    src_final.y = 0.0h;
++                    src_final.y = 0.0f;
+                 }
+                 if (k + 2 >= n_kv) {
+-                    src_final.z = 0.0h;
++                    src_final.z = 0.0f;
+                 }
+                 if (k + 3 >= n_kv) {
+-                    src_final.w = 0.0h;
++                    src_final.w = 0.0f;
+                 }
+             }
+         }
+@@ -574,7 +574,7 @@ __kernel void adreno_xmem_attn_softmax_apply_basic(global half4 *             ds
+     };
+ }
+ 
+-__kernel void adreno_xmem_attn_mask_scores(global half4 *             dst_score_tensor_buffer,
++__kernel void adreno_xmem_attn_mask_scores(global float4 *             dst_score_tensor_buffer,
+                                            read_only image1d_buffer_t src_score_image_buffer,
+                                            const global half *        mask,
+                                            const ulong                mask_offset,
+@@ -610,7 +610,7 @@ __kernel void adreno_xmem_attn_mask_scores(global half4 *             dst_score_
+     const global half *  mask_row       = (const global half *) (mask_base + mask_batch_idx * mask_nb3 +
+                                                                  mask_head_idx * mask_nb2 + q * mask_nb1);
+ 
+-    const half4 score   = read_imageh(src_score_image_buffer, ((Z * kv_heads_total + Y) * q_width + X));
++    const float4 score   = read_imagef(src_score_image_buffer, ((Z * kv_heads_total + Y) * q_width + X));
+     float       vals[4] = {
+         convert_float(score.x),
+         convert_float(score.y),
+@@ -628,7 +628,7 @@ __kernel void adreno_xmem_attn_mask_scores(global half4 *             dst_score_
+     }
+ 
+     dst_score_tensor_buffer[((Z * kv_heads_total + Y) * q_width + X)] =
+-        (half4) (convert_half(vals[0]), convert_half(vals[1]), convert_half(vals[2]), convert_half(vals[3]));
++        (float4) (vals[0], vals[1], vals[2], vals[3]);
+ }
+ 
+ __kernel void adreno_xmem_attn_pack_v(global half4 *      dst_tensor_buffer,
