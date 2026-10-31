@@ -1,12 +1,16 @@
-dit/083: ggml-opencl's Adreno xmem attention in fp32 where fp16 broke Z-Image (stripes and noise on the GPU, Klein
-right). It summed Q.K in fp16, stored the scores, the row max and 1/sum in fp16 (at logits in the hundreds an fp16
-score is +-0.5), and stored Q PRE-SCALED in fp16: with sd.cpp's kv_scale (1/128, Z-Image) the softmax scale is ~11 and
-Q times it overflows. Now: Q unscaled into fp16, fp32 QK sums with the scale applied on store, fp32 score and
-probability buffers and images, fp32 softmax stats; the PV gemm still reads the probabilities as half ([0, 1]).
-nm-fa-check (dit/082) measures each case against the CPU. Applies after 080 and 081.
+dit/083: ggml-opencl's Adreno xmem attention, made right for Z-Image (stripes and noise on the GPU; Klein was right).
+- The cause (found 2026-10-31 with dit/084's per-call switches on Z-Image 512^2): calls whose query rows are not whole
+  work-groups. The QK and PV gemms load K and V with sub-group collectives (qcom_sub_group_constant_load8 + sync), and
+  the rows past q_width return before them. Z-Image's 1,056 tokens (and the 32-row tail of a 1,024-row split) hit it;
+  xmem on its 1,024-row calls only gave the right picture. Such calls now take the generic kernel.
+- fp32 where fp16 lost Z-Image's sharp attention (nm-fa-check, dit/082: 10% error at large logits, now under 1%): Q
+  is converted unscaled (sd.cpp's kv_scale 1/128 makes the softmax scale ~11, and Q times it overflowed fp16), the QK
+  sums are fp32 with the scale applied on store, the score and probability buffers and images and the softmax stats
+  are fp32; the PV gemm still reads the probabilities as half ([0, 1]).
+Applies after 080 and 081.
 
 diff --git a/src/ggml-opencl/ggml-opencl.cpp b/src/ggml-opencl/ggml-opencl.cpp
-index 4c21247..cfff516 100644
+index 4c21247..175cafa 100644
 --- a/src/ggml-opencl/ggml-opencl.cpp
 +++ b/src/ggml-opencl/ggml-opencl.cpp
 @@ -16970,6 +16970,31 @@ static cl_mem ggml_cl_make_image1d_buffer_half4(cl_context context, cl_mem_flags
@@ -61,7 +65,24 @@ index 4c21247..cfff516 100644
      s.xmem_qk = clCreateBuffer(backend_ctx->context, CL_MEM_READ_ONLY, 6144, nullptr, nullptr);
      s.xmem_pv = clCreateBuffer(backend_ctx->context, CL_MEM_READ_ONLY, 6144, nullptr, nullptr);
      GGML_ASSERT(s.softmax_stats_img2d != nullptr && s.xmem_qk != nullptr && s.xmem_pv != nullptr);
-@@ -17272,10 +17297,13 @@ static void ggml_cl_adreno_xmem_attn_run(
+@@ -17214,6 +17239,16 @@ static bool ggml_cl_adreno_xmem_attn_can_use(
+         return false;
+     }
+ 
++    // nightmare dit/083: only whole work-groups of query rows. The QK and PV gemms load K and V with sub-group
++    // collectives (qcom_sub_group_constant_load8 + sync), and the rows past q_width return before them: with a partial
++    // group those loads go wrong. Z-Image's 1,056 tokens at 512^2 (and the 32-row tail of a 1,024-row split) rendered
++    // as stripes; with xmem on its 1,024-row calls only, the right picture. Klein's 4,096 + 512 never had a tail.
++    const ggml_cl_adreno_xmem_attn_schedule sched = ggml_cl_adreno_xmem_attn_select_schedule(
++        backend_ctx, n_q, n_kv, n_head * n_batch, q_width, gqa_ratio);
++    if (q_width % sched.qk_lws0 != 0 || q_width % sched.pv_lws0 != 0) {
++        return false;
++    }
++
+     return true;
+ }
+ 
+@@ -17272,10 +17307,13 @@ static void ggml_cl_adreno_xmem_attn_run(
          size_t gws[3] = {ggml_cl_round_up((size_t) n_q, 8), (size_t) heads_total, (size_t) qpack};
          size_t lws[3] = {8, 1, (size_t) ((qpack <= 32) ? qpack : 1)};
          cl_kernel kernel = xstate.kernel_q_f32_to_img_scaled;
@@ -76,7 +97,7 @@ index 4c21247..cfff516 100644
          CL_CHECK(clSetKernelArg(kernel, 4, sizeof(int),      &d_head_q));
          CL_CHECK(clSetKernelArg(kernel, 5, sizeof(int),      &n_q));
          CL_CHECK(clSetKernelArg(kernel, 6, sizeof(int),      &n_head));
-@@ -17372,6 +17400,7 @@ static void ggml_cl_adreno_xmem_attn_run(
+@@ -17372,6 +17410,7 @@ static void ggml_cl_adreno_xmem_attn_run(
          ggml_cl_set_arg_int4(kernel, 4, kv_heads_total, npack, q_width, 32);
          ggml_cl_set_arg_int4(kernel, 5, qpack, 0, 0, kv_heads_total);
          ggml_cl_set_arg_int4(kernel, 6, qpack, 1, 1, 0);
