@@ -1392,7 +1392,7 @@
     <string name="gpu_title">GPU</string>
     <string name="gpu_note">For phones whose NPU cannot run the DiT models, and for anyone who wants to try the graphics chip.</string>
     <string name="dit_gpu">Use the GPU for DiT models</string>
-    <string name="dit_gpu_hint">FLUX.2 Klein 4B and Z-Image Turbo render on the graphics chip (Adreno) instead of the NPU. Phones older than the 8 Gen 2 use it for these two whatever this says: there it replaces the CPU, which took up to 20 minutes a picture. A second engine (23 MB) and the Q4_0 model download. Slower than a working NPU; the screen keeps responding while it renders.</string>
+    <string name="dit_gpu_hint">FLUX.2 Klein 4B renders on the graphics chip (Adreno) instead of the NPU. Phones older than the 8 Gen 2 use it for Klein 4B whatever this says: there it replaces the CPU, which took up to 20 minutes a picture. A second engine (23 MB) and the Q4_0 model download. Slower than a working NPU; the screen keeps responding while it renders.</string>
     <string name="dit_taesd">Fast decoder on the GPU</string>
     <string name="dit_taesd_hint">Turns the finished picture into pixels with a tiny decoder in about 15 seconds at 1024x1024, close to the full one. Off uses the full decoder of the model, which takes minutes there.</string>
     <string name="run_heat_start">The battery is at %1$s °C before this clip. Long video renders heat the phone, and heat wears the battery: keep it off the charger and out of the sun, and stop if it gets hot to hold. Settings, Performance can pause a render while the battery is hot</string>

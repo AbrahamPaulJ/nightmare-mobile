@@ -554,7 +554,7 @@ data class ModelSpec(
     val mature: Boolean = false,
     /**
      * ⭐ Measured on the GPU route ([DitGpu], `docs/GPU-ROUTES.md` §8): where [DitGpu.wanted], it renders there from
-     * its GGUF Q4_0 build ([buildFor]). Klein 4B and Z-Image Turbo; the bigger DiTs wait for their limit tests.
+     * its GGUF Q4_0 build ([buildFor]). Klein 4B; Z-Image waits for its faster attention, the bigger DiTs for limit tests.
      */
     val gpu: Boolean = false,
     /**
@@ -2502,7 +2502,8 @@ object ModelCatalog {
         dit(
             "z_image_turbo", "Z-Image Turbo", Family.ZIMAGE, ZIMAGE, steps = 8,
             lowram = true,
-            gpu = true,
+            // ⚠ Off the GPU route for now (the user, 2026-10-31: ship Klein 4B only). Right there with the xmem attention
+            // off (1.6.270) but ~760 s at 1024² 8 steps; back on with the `dit/083` engine if it pays (`ROADMAP.md`).
             files = ZIMAGE_FP8,
             // ⭐ Two builds, Klein's way: Kijai's FP8 on v79+, leejet's Q4_0 GGUF on an 8 Gen 3 (below v79 FP8
             // runs on the CPU). The GGUF went NaN on HTP until engine `dit/025` (`docs/DIT.md` §2e).

@@ -148,7 +148,7 @@ at 1024 x 1024 takes about 4 minutes this way, slower than its NPU.
 
 | switch | default | what it does |
 |---|---|---|
-| **Use the GPU for DiT models** | off | Klein 4B and Z-Image Turbo render on the GPU. A second engine (23 MB) and the Q4_0 model download the first time |
+| **Use the GPU for DiT models** | off | FLUX.2 Klein 4B renders on the GPU. A second engine (23 MB) and the Q4_0 model download the first time |
 | **Fast decoder on the GPU** | on | Turns the finished picture into pixels with a tiny decoder (taef2, taef1) in under 30 seconds at 1024 x 1024. Off uses the full decoder, which takes minutes on the GPU |
 
 ### Keep rendering in the background

@@ -1361,7 +1361,7 @@
     <string name="gpu_title">GPU</string>
     <string name="gpu_note">适用于 NPU 无法运行 DiT 模型的手机，以及想试用显卡芯片的任何人。</string>
     <string name="dit_gpu">用 GPU 运行 DiT 模型</string>
-    <string name="dit_gpu_hint">FLUX.2 Klein 4B 和 Z-Image Turbo 在图形芯片（Adreno）上生成，而不是 NPU。比 8 Gen 2 更旧的手机无论此开关如何都会对这两个模型使用它：在那里它取代 CPU，CPU 每张图最多要 20 分钟。会下载第二个引擎（23 MB）和 Q4_0 模型。比能用的 NPU 慢；生成时屏幕仍可操作。</string>
+    <string name="dit_gpu_hint">FLUX.2 Klein 4B 在图形芯片（Adreno）上生成，而不是 NPU。比 8 Gen 2 更旧的手机无论此开关如何都会对 Klein 4B 使用它：在那里它取代 CPU，CPU 每张图最多要 20 分钟。会下载第二个引擎（23 MB）和 Q4_0 模型。比能用的 NPU 慢；生成时屏幕仍可操作。</string>
     <string name="dit_taesd">GPU 上的快速解码器</string>
     <string name="dit_taesd_hint">用一个很小的解码器把完成的图片转成像素，1024x1024 约 15 秒，接近完整解码器。关闭则使用模型的完整解码器，在那里需要几分钟。</string>
     <string name="run_heat_start">开始这段视频前电池已达 %1$s °C。长时间生成视频会让手机发热，而发热会损耗电池：不要边充电边生成，避免阳光直射，烫手时请停止。设置，性能中可以在电池过热时暂停生成</string>
