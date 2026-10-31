@@ -1,0 +1,129 @@
+dit/082 (diagnostic): nm-fa-check, one FLASH_ATTN_EXT on the GPU backend against the CPU in the DiT models' shapes
+(Z-Image renders garbage with the Adreno xmem attention). Built only with -DGGML_BUILD_TESTS=ON; ships in no engine.
+
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+new file mode 100644
+index 0000000..e6644f9
+--- /dev/null
++++ b/tests/CMakeLists.txt
+@@ -0,0 +1,3 @@
++# nightmare: the vendored ggml has no tests; this holds only the attention check (dit/082).
++add_executable(nm-fa-check nm-fa-check.cpp)
++target_link_libraries(nm-fa-check PRIVATE ggml)
+diff --git a/tests/nm-fa-check.cpp b/tests/nm-fa-check.cpp
+new file mode 100644
+index 0000000..1be50d5
+--- /dev/null
++++ b/tests/nm-fa-check.cpp
+@@ -0,0 +1,111 @@
++// nightmare: one FLASH_ATTN_EXT on the first GPU backend against the CPU, in the shapes and scalings the DiT models send.
++// Z-Image renders garbage with ggml-opencl's Adreno xmem attention (GGML_OPENCL_XMEM_SDPA=1) and right without it;
++// Klein is right with it. Each case isolates one difference. Usage: nm-fa-check [T] (tokens, default 1280).
++#include "ggml.h"
++#include "ggml-alloc.h"
++#include "ggml-backend.h"
++#include "ggml-cpu.h"
++
++#include <cmath>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <random>
++#include <string>
++#include <vector>
++
++struct Case {
++    const char * name;
++    int heads;
++    float kv_scale;   // sd.cpp's ggml_ext_attention_ext: K and V times this, softmax scale divided by it
++    bool mask;
++    float q_std, k_std, v_std;
++};
++
++static std::vector<float> run(ggml_backend_t be, const Case & c, int D, int T,
++                              const std::vector<float> & q, const std::vector<ggml_fp16_t> & k,
++                              const std::vector<ggml_fp16_t> & v, const std::vector<ggml_fp16_t> & m) {
++    ggml_init_params ip = { 16 * ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
++    ggml_context * ctx = ggml_init(ip);
++    ggml_tensor * tq = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, D, T, c.heads, 1);
++    ggml_tensor * tk = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, D, T, c.heads, 1);
++    ggml_tensor * tv = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, D, T, c.heads, 1);
++    ggml_tensor * tm = c.mask ? ggml_new_tensor_4d(ctx, GGML_TYPE_F16, T, T, 1, 1) : nullptr;
++    const float scale = (1.0f / std::sqrt((float) D)) / c.kv_scale;
++    ggml_tensor * out = ggml_flash_attn_ext(ctx, tq, tk, tv, tm, scale, 0.0f, 0.0f);
++    ggml_flash_attn_ext_set_prec(out, GGML_PREC_F32);
++    ggml_cgraph * gf = ggml_new_graph(ctx);
++    ggml_build_forward_expand(gf, out);
++    ggml_backend_buffer_t buf = ggml_backend_alloc_ctx_tensors(ctx, be);
++    ggml_backend_tensor_set(tq, q.data(), 0, ggml_nbytes(tq));
++    ggml_backend_tensor_set(tk, k.data(), 0, ggml_nbytes(tk));
++    ggml_backend_tensor_set(tv, v.data(), 0, ggml_nbytes(tv));
++    if (tm) ggml_backend_tensor_set(tm, m.data(), 0, ggml_nbytes(tm));
++    if (!ggml_backend_supports_op(be, out)) {
++        fprintf(stderr, "  %s: backend %s does not support this op\n", c.name, ggml_backend_name(be));
++    }
++    ggml_backend_graph_compute(be, gf);
++    std::vector<float> r(ggml_nelements(out));
++    ggml_backend_tensor_get(out, r.data(), 0, ggml_nbytes(out));
++    ggml_backend_buffer_free(buf);
++    ggml_free(ctx);
++    return r;
++}
++
++int main(int argc, char ** argv) {
++    const int D = 128;
++    const int T = argc > 1 ? atoi(argv[1]) : 1280;
++    ggml_backend_t gpu = nullptr;
++    for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
++        ggml_backend_dev_t d = ggml_backend_dev_get(i);
++        printf("device %zu: %s (%s)\n", i, ggml_backend_dev_name(d), ggml_backend_dev_description(d));
++        if (!gpu && ggml_backend_dev_type(d) == GGML_BACKEND_DEVICE_TYPE_GPU) gpu = ggml_backend_dev_init(d, nullptr);
++    }
++    if (!gpu) { printf("no GPU backend\n"); return 1; }
++    ggml_backend_t cpu = ggml_backend_cpu_init();
++    ggml_backend_cpu_set_n_threads(cpu, 8);
++    printf("T=%d D=%d XMEM_SDPA=%s\n", T, D, getenv("GGML_OPENCL_XMEM_SDPA") ? getenv("GGML_OPENCL_XMEM_SDPA") : "(unset)");
++
++    const Case cases[] = {
++        { "klein-like  H24 kv1",       24, 1.0f,         false, 3.0f, 3.0f, 3.0f },
++        { "zimage-like H30 kv1/128",   30, 1.0f / 128.f, false, 3.0f, 3.0f, 300.0f },
++        { "kvscale     H24 kv1/128",   24, 1.0f / 128.f, false, 3.0f, 3.0f, 300.0f },
++        { "heads30     H30 kv1",       30, 1.0f,         false, 3.0f, 3.0f, 3.0f },
++        { "zimage+mask H30 kv1/128",   30, 1.0f / 128.f, true,  3.0f, 3.0f, 300.0f },
++        { "big-q       H30 kv1/128",   30, 1.0f / 128.f, false, 30.0f, 30.0f, 300.0f },
++    };
++    for (const Case & c : cases) {
++        std::mt19937 rng(42);
++        std::normal_distribution<float> nd(0.0f, 1.0f);
++        const size_t n = (size_t) D * T * c.heads;
++        std::vector<float> q(n);
++        std::vector<ggml_fp16_t> k(n), v(n), m;
++        for (auto & x : q) x = nd(rng) * c.q_std;
++        for (auto & x : k) x = ggml_fp32_to_fp16(nd(rng) * c.k_std * c.kv_scale);
++        for (auto & x : v) x = ggml_fp32_to_fp16(nd(rng) * c.v_std * c.kv_scale);
++        if (c.mask) {
++            m.resize((size_t) T * T);
++            for (int i = 0; i < T; i++)
++                for (int j = 0; j < T; j++) m[(size_t) i * T + j] = ggml_fp32_to_fp16(j >= T - T / 8 ? -INFINITY : 0.0f);
++        }
++        std::vector<float> a = run(cpu, c, D, T, q, k, v, m);
++        std::vector<float> b = run(gpu, c, D, T, q, k, v, m);
++        double maxref = 0, maxd = 0, sd = 0, sr = 0;
++        size_t bad = 0;
++        for (size_t i = 0; i < a.size(); i++) {
++            const double ref = a[i] / c.kv_scale, got = b[i] / c.kv_scale;
++            if (!std::isfinite(got)) { bad++; continue; }
++            maxref = std::max(maxref, std::fabs(ref));
++            maxd = std::max(maxd, std::fabs(ref - got));
++            sd += (ref - got) * (ref - got);
++            sr += ref * ref;
++        }
++        printf("%-26s rel-rms %.2e  max-diff %.3g of max %.3g  non-finite %zu  %s\n", c.name,
++               std::sqrt(sd / (sr > 0 ? sr : 1)), maxd, maxref, bad,
++               (bad == 0 && std::sqrt(sd / (sr > 0 ? sr : 1)) < 2e-2) ? "OK" : "WRONG");
++        fflush(stdout);
++    }
++    ggml_backend_free(gpu);
++    ggml_backend_free(cpu);
++    return 0;
++}
