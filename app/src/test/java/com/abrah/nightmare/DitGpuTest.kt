@@ -76,6 +76,14 @@ class DitGpuTest {
         val env = DitGpu.launchEnv(ctx, klein, caps(79))
         assertEquals(DitGpu.BACKEND, env["NM_DIT_BACKEND"])
         assertEquals("15", env["GGML_OPENCL_MM_MAX_GFLOP"])
+        assertEquals("Klein keeps the xmem attention", "1", env["GGML_OPENCL_XMEM_SDPA"])
+        val z = DitGpu.launchEnv(ctx, ModelCatalog.byId("z_image_turbo"), caps(79))
+        assertEquals("Z-Image renders garbage with it", "0", z["GGML_OPENCL_XMEM_SDPA"])
+        // ⚠ …and never streams there: 99 s a step streamed on the Adreno.
+        val zimage = ModelCatalog.byId("z_image_turbo")
+        val twelve = 12L shl 30
+        assertEquals(null, BackendProcess.kreaBudget(zimage, twelve, 4_600_000_000L))
+        assertFalse(BackendProcess.streamsLikeKrea(zimage, twelve))
         assertEquals(tae.absolutePath, env["NM_DIT_TAESD"])
         assertTrue("the CPU's cores, not the backend's 4", env.getValue("NM_DIT_THREADS").toInt() in 4..8)
         assertFalse("an 8 GB phone keeps the small decode buffer", "NM_DIT_VAE_DIRECT" in env)

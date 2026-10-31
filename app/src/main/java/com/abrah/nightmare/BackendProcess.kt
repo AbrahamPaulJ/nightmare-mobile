@@ -642,6 +642,8 @@ object BackendProcess {
      */
     internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long, availBytes: Long): String? {
         if (spec?.family == Family.FIBO2 && ramBytes > 0) return if (availBytes >= FIBO_WHOLE_FREE) null else "4"
+        // ⚠ Not Z-Image on the GPU ([gpuWhole]): there it runs whole.
+        if (gpuWhole(spec)) return null
         if (spec?.family !in setOf(Family.KREA2, Family.IDEOGRAM, Family.ZIMAGE, Family.FIBO2) || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
         return when {
             availBytes >= KREA_WHOLE_FREE -> null
@@ -656,7 +658,14 @@ object BackendProcess {
      * so the launch flag and the budget cannot disagree at a threshold.
      */
     internal fun streamsLikeKrea(spec: ModelSpec?, ramBytes: Long): Boolean =
-        spec?.family == Family.ZIMAGE && ramBytes in 1 until Prefs.LOWRAM_BELOW_BYTES
+        spec?.family == Family.ZIMAGE && ramBytes in 1 until Prefs.LOWRAM_BELOW_BYTES && !gpuWhole(spec)
+
+    /**
+     * ⚠⚠ Z-Image on the GPU route ([DitGpu]) never streams: each step re-uploads every streamed weight to the Adreno at
+     * ~40 MB/s (Q4_0 3.5 GB in 36 segments: 99 s a step, 13 min at 1024² on a 12 GB S25, 2026-10-31). Whole it is a
+     * 3.5 GB DiT, not the NPU's 6.2 GB FP8; free RAM went from 6.3 to 1.3 GB.
+     */
+    internal fun gpuWhole(spec: ModelSpec?): Boolean = spec?.family == Family.ZIMAGE && DitGpu.runs(spec)
 
     private const val KREA_WHOLE_FREE = 7_300_000_000L
     private const val KREA_5_FREE = 6_100_000_000L

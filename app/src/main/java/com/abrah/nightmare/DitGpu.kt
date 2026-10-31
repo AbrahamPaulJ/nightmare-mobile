@@ -52,6 +52,14 @@ object DitGpu {
     )
 
     /**
+     * ⚠⚠ [ENV] for [spec]: Z-Image without the Adreno xmem attention, which renders it as stripes and noise (every Z-Image
+     * GPU run since 2026-10-28; sd-cli 512² 4 steps: the fox with `XMEM_SDPA=0`, garbage with it on, with or without
+     * DP4A). Klein is right with it (`docs/GPU-ROUTES.md` §8).
+     */
+    fun envFor(spec: ModelSpec?): Map<String, String> =
+        if (spec?.family == Family.ZIMAGE) ENV + ("GGML_OPENCL_XMEM_SDPA" to "0") else ENV
+
+    /**
      * ⭐ A tiny decoder (madebyollin's TAE family, MIT) that decodes in place of the VAE (backend 052's `NM_DIT_TAESD`).
      * The VAE on this GPU took ~4 min at 1024² in 488 ms dispatches, ~7 min on the CPU; taef2 on the CPU 13.5 s, and
      * Klein's 512² picture looked the same by eye. [Prefs.ditTaesd] (on) turns it off for the full VAE.
@@ -104,7 +112,7 @@ object DitGpu {
         if (!runs(spec, caps)) return emptyMap()
         return buildMap {
             put("NM_DIT_BACKEND", BACKEND)
-            putAll(ENV)
+            putAll(envFor(spec))
             val tae = spec?.let(::taeFor)?.let { taeFile(context, it) }
             if (Prefs.ditTaesd && tae != null && tae.isFile) put("NM_DIT_TAESD", tae.absolutePath)
             put("NM_DIT_THREADS", threads().toString())
