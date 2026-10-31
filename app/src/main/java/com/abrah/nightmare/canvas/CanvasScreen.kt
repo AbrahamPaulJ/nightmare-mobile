@@ -687,7 +687,7 @@ fun CanvasScreen(
         detailsOf = detailsOfNode,
         onDropEnlargement = onDropEnlargement,
         onDropReceived = onDropReceived,
-        onReset = { id -> onEdit { st -> st.resetNode(id, types) } },
+        onReset = { id -> onEdit { st -> st.resetNodeForItsModel(id, types) } },
         onResetDefaults = { id -> onEdit { st -> st.resetSamplerDefaults(id, types) } },
         onAddReference = { id, uri -> onEdit { st -> st.addReference(id, uri, types) } },
         onRemoveReference = { id, port -> onEdit { st -> st.removeReference(id, port, types) } },

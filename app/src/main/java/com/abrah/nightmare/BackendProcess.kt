@@ -1027,6 +1027,9 @@ object BackendProcess {
                         // 1.6.214), the phone idle. The S25 forced to v69 runs both, so it is the hardware. ⇒ The whole
                         // DiT on the CPU there: Anima Turbo 512² 10 steps 520 s on the S25's CPU, so ~15-20 min there.
                         if (ditOnCpu(DeviceProbe.caps()) && !diagnosing) put("NM_DIT_BACKEND", BlankDiagnosis.CPU_ALL)
+                        // ⭐⭐ …unless the GPU takes it ([DitGpu]): there, and wherever the person turned it on, a
+                        // measured model renders on the Adreno with `dit/080`'s cuts and the tiny decoder (backend 052).
+                        if (!diagnosing) putAll(DitGpu.launchEnv(context, spec))
 
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }

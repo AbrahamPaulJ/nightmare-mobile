@@ -870,6 +870,26 @@ data class CanvasState(
         )
     }
 
+    /**
+     * ⭐ The node menu's **Reset**: [resetNode], and a prompt node takes the prompt of the model it FEEDS. ⚠ A prompt
+     * node's declared default is the top-bar model's ([com.abrah.nightmare.Fused]), so a prompt wired into MiniMax H3
+     * reset to an image model's sentence (the user's report, 2026-10-30).
+     */
+    fun resetNodeForItsModel(nodeId: String, types: Map<String, NodeType>): CanvasState {
+        val g = workflow.graph
+        val fed = g.nodes.filter { it.inputs["prompt"]?.node == nodeId }
+        // ⚠ A video node first: the 14B's text to video feeds a picture model AND the 14B, and opens on the 14B's.
+        val video = fed.firstNotNullOfOrNull { com.abrah.nightmare.npu.VideoPrompts.forNode(it, g) }
+        val spec = fed.firstOrNull { !it.params["model"].isNullOrBlank() }
+            ?.let { com.abrah.nightmare.ModelCatalog.byId(it.params["model"].orEmpty()) }
+        val overlay = when {
+            video != null -> mapOf("prompt" to video, "negative" to "")
+            spec != null -> mapOf("prompt" to spec.starterPrompt, "negative" to spec.starterNegative)
+            else -> emptyMap()
+        }
+        return resetNode(nodeId, types, overlay = overlay)
+    }
+
     fun openPalette() = copy(showPalette = true)
 
     fun closePalette() = copy(showPalette = false)

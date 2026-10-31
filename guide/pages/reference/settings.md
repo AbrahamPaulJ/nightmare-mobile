@@ -138,6 +138,19 @@ to 45 °C. Keep the phone off the charger and out of the sun while it renders.
 |---|---|---|
 | **Pause video when the battery is hot** | off | A video render waits between steps when the battery reaches 45 °C and carries on when it cools to 40 °C. Slower in a warm room, easier on the battery. Not for Neodragon, whose clips take seconds |
 
+### GPU
+
+Shown on phones with an OpenCL graphics driver (Snapdragon). FLUX.2 Klein 4B and Z-Image Turbo can render on the
+graphics chip (Adreno) instead of the NPU. Phones older than the Snapdragon 8 Gen 2, whose NPU cannot run these
+models, use it for them whatever the switch says: there it replaces the CPU, which took up to 20 minutes a picture.
+The render is cut into short pieces so the screen keeps responding while it runs. On a Galaxy S25 Ultra, Klein 4B
+at 1024 x 1024 takes about 4 minutes this way, slower than its NPU.
+
+| switch | default | what it does |
+|---|---|---|
+| **Use the GPU for DiT models** | off | Klein 4B and Z-Image Turbo render on the GPU. A second engine (23 MB) and the Q4_0 model download the first time |
+| **Fast decoder on the GPU** | on | Turns the finished picture into pixels with a tiny decoder (taef2, taef1) in under 30 seconds at 1024 x 1024. Off uses the full decoder, which takes minutes on the GPU |
+
 ### Keep rendering in the background
 
 Shown only when your phone's battery manager may stop the app while it is not on screen. Tap

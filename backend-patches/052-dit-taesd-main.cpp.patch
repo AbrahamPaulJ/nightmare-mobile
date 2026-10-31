@@ -1,0 +1,34 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -629,11 +629,29 @@
+             ? DIT_MODEL_Z_IMAGE
+         : qwen ? DIT_MODEL_QWEN_IMAGE_2_1
+                : DIT_MODEL_FLUX2_KLEIN;
++    // ⭐ nightmare (052): NM_DIT_TAESD names a tiny decoder (taef2 for the FLUX.2 VAE) that decodes instead of the
++    // VAE. The app sets it on the GPU route, where the VAE's convolutions took minutes and 488 ms dispatches
++    // (docs/GPU-ROUTES.md 8). Unset or missing: the VAE decodes, as before.
++    std::string taesd_path;
++    if (const char *env_tae = std::getenv("NM_DIT_TAESD");
++        env_tae != nullptr && *env_tae != '\0' && std::filesystem::exists(env_tae)) {
++      taesd_path = env_tae;
++      std::cout << "NM_DIT_TAESD: " << taesd_path << std::endl;
++    }
++    // nightmare (052): the GPU route leaves the CPU free for the text encoder and the decoder, so the app asks for
++    // 8 (Klein 1024^2 in sd-cli: text 12 against 19 s, taef2 12 against 17 s on 4). Unset: 4, as before.
++    int dit_threads = opts.dit_threads;
++    if (const char *env_threads = std::getenv("NM_DIT_THREADS");
++        env_threads != nullptr && std::atoi(env_threads) > 0) {
++      dit_threads = std::atoi(env_threads);
++      std::cout << "NM_DIT_THREADS: " << dit_threads << std::endl;
++    }
+     return std::make_unique<PipelineDit>(
+         text_encoder, opts.model_dir, engine_path, dit_path, llm_path,
+         llm_vision_path, vae_path, kind,
+-        dit_backend, params_backend, opts.dit_threads,
+-        opts.dit_vae_tile_size, !opts.no_img2img, lora_apply_mode);
++        dit_backend, params_backend, dit_threads,
++        opts.dit_vae_tile_size, !opts.no_img2img, lora_apply_mode,
++        /*t5xxl_path=*/"", taesd_path);
+   }
+ 
+   // Anima: Qwen "CLIP" (clip.bin, QNN) + split DiT (unet_part1/2.bin) + 16-ch

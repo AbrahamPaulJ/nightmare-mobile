@@ -180,8 +180,22 @@ object DitEngine {
      * (Same rule, same reason, as `Segmenter.URL`'s "a new filename per
      * revision, never an upload over the old one".)
      */
-    const val URL =
+    private const val NPU_URL =
         "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi110-h3enc/dit-engine-abi110-h3enc.zip"
+
+    /**
+     * ⭐⭐ The GPU variant ([DitGpu]): the same patch line + ggml's OpenCL backend with the Adreno kernels and `dit/067`
+     * (old drivers, Mali), `080` (the screen's turns), `081` (PR #28446). ⚠ It NEEDS `libOpenCL.so`, so only a phone
+     * that has one is ever given it ([DitGpu.hasOpenCl]); it keeps the Hexagon backend, so an NPU model still runs.
+     * Still ABI 110. Its own tag and file name, so the stamp tells the two apart and a switch re-fetches.
+     */
+    private const val GPU_URL =
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi110-gpu/dit-engine-abi110-gpu.zip"
+
+    /** ⭐ Which of the two this phone runs: the GPU's wherever [DitGpu.wanted]. */
+    private val gpu: Boolean get() = DitGpu.wanted()
+
+    val URL: String get() = if (gpu) GPU_URL else NPU_URL
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -190,8 +204,8 @@ object DitEngine {
      * answered, so a second source costs no integrity. ⚠ [URL] stays the version stamp either way.
      * ⚠ A new engine uploads here too, under the same file name as its GitHub asset.
      */
-    const val HF_URL =
-        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/dit-engine-abi110-h3enc.zip"
+    val HF_URL: String get() =
+        "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/" + URL.substringAfterLast('/')
 
     /**
      * ⭐ Where [install] looks, in order: GitHub first, unless the user chose a Hugging Face mirror in
@@ -202,11 +216,16 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    const val BYTES = 23_313_128L
+    val BYTES: Long get() = if (gpu) GPU_BYTES else 23_313_128L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    const val FILE_BYTES = 56_225_464L
+    val FILE_BYTES: Long get() = if (gpu) GPU_FILE_BYTES else 56_225_464L
+
+    /** ⭐ The GPU variant: CI 41164080216 (branch `gpu-110`), the abi110-h3enc list + 067 + 080 + 081, `opencl=true`. */
+    private const val GPU_BYTES = 23_997_222L
+    private const val GPU_FILE_BYTES = 59_069_544L
+    private const val GPU_SHA256 = "4f6a6f0538871aca5845272757ea50435bbfc2e4078a8d81d24278fca47e5fc8"
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -216,7 +235,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private const val SHA256 = "1d47358c1477a1aa74b4d84688d9a50a5c8efa5646f891b4037fea2cb9824353"
+    private val SHA256: String get() = if (gpu) GPU_SHA256 else "1d47358c1477a1aa74b4d84688d9a50a5c8efa5646f891b4037fea2cb9824353"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 
@@ -228,9 +247,9 @@ object DitEngine {
     private fun installedUrl(context: Context): String? =
         runCatching { stamp(context).readText().trim() }.getOrNull()
 
-    /** Present, the right size, AND from the URL this build names. */
+    /** Present, the right size, AND from the URL this build names; on the GPU, with its tiny decoders ([DitGpu]). */
     fun isInstalled(context: Context): Boolean =
-        file(context).length() == FILE_BYTES && installedUrl(context) == URL
+        file(context).length() == FILE_BYTES && installedUrl(context) == URL && (!gpu || DitGpu.taesPresent(context))
 
     fun bytesOnDisk(context: Context): Long = file(context).length()
 
@@ -260,6 +279,12 @@ object DitEngine {
         isCancelled: () -> Boolean = { false },
     ) = synchronized(installLock) {
         if (isInstalled(context)) {
+            refresh(context)
+            return@synchronized
+        }
+        // ⚠ The engine right and only a tiny decoder missing: fetch that, not the 23 MB again.
+        if (gpu && file(context).length() == FILE_BYTES && installedUrl(context) == URL) {
+            DitGpu.installTaes(context, onProgress, isCancelled)
             refresh(context)
             return@synchronized
         }
@@ -303,6 +328,9 @@ object DitEngine {
         }
         if (failures.isNotEmpty()) throw IOException("$LABEL: no source answered. ${failures.joinToString("; ")}")
         unpack(context, zip, onProgress, isCancelled)
+        // ⭐ The GPU variant's tiny decoders come with it (~20 MB), so a model on the GPU never launches without one.
+        if (gpu) DitGpu.installTaes(context, onProgress, isCancelled)
+        refresh(context)
     }
 
     /**

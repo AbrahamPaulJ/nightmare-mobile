@@ -266,20 +266,29 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         Prefs.setLowRam(app, key, on)
         lowRam = Prefs.lowRam(app)
-        val family = when (key) {
-            Prefs.KEY_SDXL_LOWRAM -> Family.SDXL
-            Prefs.KEY_WAN_STREAM -> Family.WAN
-            else -> Family.ANIMA
+        // ⭐ Which resident backend the switch binds at launch. ⚠ Heat pause binds none: it is read per render, and
+        // falling through to Anima's case stopped a resident Anima backend for nothing (until 2026-10-31).
+        val governs: (ModelSpec) -> Boolean = when (key) {
+            Prefs.KEY_SDXL_LOWRAM -> { s -> s.family == Family.SDXL }
+            Prefs.KEY_WAN_STREAM -> { s -> s.family == Family.WAN }
+            Prefs.KEY_ANIMA_LOWRAM, Prefs.KEY_ANIMA_SEQ_DIT -> { s -> s.family == Family.ANIMA }
+            // ⭐ The GPU route ([DitGpu]) changes the engine variant, the build and the launch env of every DiT.
+            Prefs.KEY_DIT_GPU, Prefs.KEY_DIT_TAESD -> { s -> s.isDit }
+            else -> { _ -> false }
+        }
+        if (key == Prefs.KEY_DIT_GPU) {
+            DitEngine.refresh(app)
+            refreshModels()
         }
         val resident = BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }
-        if (resident?.family == family) {
+        if (resident != null && governs(resident)) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 // ⚠ After the render in flight, never under it (canvas or API): the
                 // other stop paths go through `run`, which refuses while busy.
                 while (busy || RunLock.heldBy != null) kotlinx.coroutines.delay(500)
-                if (BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }?.family == family) BackendProcess.stop()
+                if (BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }?.let(governs) == true) BackendProcess.stop()
             }
-            say("${family.label} low RAM setting changed. The next Run relaunches the backend")
+            say("${resident.label}: setting changed. The next Run relaunches the backend")
         }
     }
 

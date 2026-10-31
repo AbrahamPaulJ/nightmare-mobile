@@ -38,6 +38,31 @@ class ResetDefaultsTest {
         assertEquals(denoise, after["denoise"])
     }
 
+    /** ⭐ A prompt node's Reset takes the prompt of what it feeds, not the top-bar model's (the user's report, 2026-10-30). */
+    @Test
+    fun aPromptResetsToTheModelItFeeds() {
+        fun resetPrompt(vararg fed: Node): Map<String, String> {
+            val p = Node("prompt", "core.prompt", params = mapOf("prompt" to "my own words", "negative" to "x"))
+            val s0 = CanvasState(workflow = Workflow(Graph(listOf(p) + fed), emptyMap()))
+            return s0.resetNodeForItsModel("prompt", NODE_TYPES).workflow.graph.byId.getValue("prompt").params
+        }
+        val wired = com.abrah.nightmare.sources("prompt" to "prompt")
+        assertEquals(
+            com.abrah.nightmare.npu.VideoPrompts.H3,
+            resetPrompt(Node("video", com.abrah.nightmare.npu.H3Node.name, inputs = wired))["prompt"],
+        )
+        assertEquals(spec.starterPrompt, resetPrompt(Node("gen", "sdxl.sample", params = mapOf("model" to spec.id), inputs = wired))["prompt"])
+        // The 14B's text to video: a picture model and the 14B on one prompt; the 14B's opens it.
+        val a14 = Node(
+            "video", com.abrah.nightmare.npu.WanA14Node.name,
+            inputs = com.abrah.nightmare.sources("prompt" to "prompt", "image" to "gen"),
+        )
+        assertEquals(
+            com.abrah.nightmare.npu.VideoPrompts.WAN14_T2V,
+            resetPrompt(Node("gen", "sdxl.sample", params = mapOf("model" to spec.id), inputs = wired), a14)["prompt"],
+        )
+    }
+
     /** ⚠ Advanced's Reset node is unchanged: every knob, the seed with them. */
     @Test
     fun resetNodeStillResetsEverything() {

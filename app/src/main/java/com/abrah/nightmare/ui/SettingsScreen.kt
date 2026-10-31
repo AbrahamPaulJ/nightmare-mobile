@@ -644,6 +644,19 @@ fun SettingsScreen(
                             lowRam.heatPause, { onLowRam(Prefs.KEY_HEAT_PAUSE, it) },
                         )
                     }
+                    // ⭐ The DiT models on the GPU ([com.abrah.nightmare.DitGpu], the user 2026-10-31): only where an
+                    // OpenCL driver exists, the one place the route can go.
+                    if (com.abrah.nightmare.DitGpu.hasOpenCl) StudioCard {
+                        SectionHeading(stringResource(R.string.gpu_title), stringResource(R.string.gpu_note))
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.dit_gpu), stringResource(R.string.dit_gpu_hint),
+                            lowRam.ditGpu, { onLowRam(Prefs.KEY_DIT_GPU, it) },
+                        )
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.dit_taesd), stringResource(R.string.dit_taesd_hint),
+                            lowRam.ditTaesd, { onLowRam(Prefs.KEY_DIT_TAESD, it) },
+                        )
+                    }
                 }
                 // ⭐ Shown only while the battery manager may stop the app — see BackendKeepAliveService.
                 if (!batteryUnrestricted) {

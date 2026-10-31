@@ -116,6 +116,10 @@ class CrashReportTest {
     fun aRestartMidJobIsReportedWithItsStages() {
         CrashReport.mark(ctx, "rendering SDXL")
         CrashReport.stage(ctx, "generate")
+        // ⚠ The RAM sampler's first write first: landing after the aging below, it made the crumb new again (the suite
+        // on a loaded PC, 2026-10-31). Robolectric's free RAM never changes, so it writes once.
+        val deadline = System.currentTimeMillis() + 3_000
+        while (crumb.readLines().none { it.startsWith("lowest ") } && System.currentTimeMillis() < deadline) Thread.sleep(20)
         // ⚠ A minute before BOOT, not ten minutes before now: `pending` compares with now - elapsedRealtime, and
         // Robolectric's elapsedRealtime is a fake clock that a long test JVM can carry past ten minutes (it failed so).
         val bootAt = System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime()

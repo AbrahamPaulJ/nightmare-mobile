@@ -1,0 +1,17 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -198,6 +198,14 @@
+       params.enable_mmap = true;
+       params.flash_attn = false;
+       params.diffusion_flash_attn = true;
++    } else if (!taesd_path_.empty()) {
++      // nightmare (052): an image model's tiny decoder (main.cpp's NM_DIT_TAESD) decodes instead of the VAE.
++      params.taesd_path = taesd_path_.c_str();
++      // On the CPU, im2col convs decode taef2 at 1024^2 in 17 s against 24 s direct, for a 1.9 GB buffer
++      // against 0.9 GB; the app picks by the phone's RAM (NM_DIT_VAE_DIRECT=0).
++      if (const char *env_direct = std::getenv("NM_DIT_VAE_DIRECT");
++          env_direct != nullptr && std::string(env_direct) == "0")
++        params.vae_conv_direct = false;
+     }
+ 
+     ctx_ = api_->create(&params);

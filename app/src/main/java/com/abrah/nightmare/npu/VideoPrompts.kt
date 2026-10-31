@@ -110,6 +110,22 @@ N/A - no score, no soundtrack, no musical arrangement at any point."""
         else -> if (i2v) WAN_I2V else WAN_T2V
     }
 
+    private val VIDEO_TYPES = setOf(
+        H3Node.name, WanNsfw13Node.name, WanA14Node.name, WanFunNode.name, VideoGate.VIDEO_TYPE, WanVideoNode.name,
+    )
+
+    /**
+     * ⭐ The opening prompt of the video [node] a prompt feeds, or null when it is not a video node: what the node menu's
+     * Reset puts back ([com.abrah.nightmare.canvas.CanvasState.resetNodeForItsModel]). ⚠ The 14B fed by a picture
+     * model is text to video ([WAN14_T2V]), as its recipe opens.
+     */
+    fun forNode(node: com.abrah.nightmare.Node, graph: com.abrah.nightmare.Graph): String? {
+        if (node.type !in VIDEO_TYPES) return null
+        val image = node.inputs["image"]?.node?.let { graph.byId[it] }
+        if (node.type == WanA14Node.name && image != null && image.type != "core.image") return WAN14_T2V
+        return forType(node.type, i2v = image != null)
+    }
+
     private val ALL = listOf(WAN_T2V, WAN_I2V, WAN14_I2V, WAN14_T2V, NSFW13, NEODRAGON, MOTION, H3, H3_I2V)
 
     /**

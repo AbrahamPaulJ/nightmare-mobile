@@ -76,6 +76,8 @@ object Prefs {
         postOpen = p.getBoolean(KEY_POST_OPEN, false)
         wanStream = p.getBoolean(KEY_WAN_STREAM, false)
         heatPause = p.getBoolean(KEY_HEAT_PAUSE, false)
+        ditGpu = p.getBoolean(KEY_DIT_GPU, false)
+        ditTaesd = p.getBoolean(KEY_DIT_TAESD, true)
     }
 
     /** ⭐ A sampler's "More options" fold open (the user, 2026-10-17: closed by default, remembered). */
@@ -336,6 +338,20 @@ object Prefs {
     @Volatile var heatPause: Boolean = false
         private set
 
+    /** ⭐ The DiT models on the GPU on any phone ([DitGpu], the user 2026-10-31): opt-in; automatic below v73. */
+    const val KEY_DIT_GPU = "dit_gpu"
+
+    /** ⚠ [KEY_DIT_GPU] held in memory: [DitGpu.wanted] is read with no Context. Loaded by [load], set by [setLowRam]. */
+    @Volatile var ditGpu: Boolean = false
+        private set
+
+    /** ⭐ On the GPU route, the tiny decoder instead of the VAE ([DitGpu.Tae], the user 2026-10-31): on by default. */
+    const val KEY_DIT_TAESD = "dit_fast_decoder"
+
+    /** ⚠ [KEY_DIT_TAESD] held in memory, as [ditGpu]. */
+    @Volatile var ditTaesd: Boolean = true
+        private set
+
     /**
      * ⚠ 13 GiB, between the classes rather than at "16": a 12 GB phone reports
      * ~10.9–11.4 GiB of `totalMem` and a 16 GB one ~14.5–15 GiB, the rest being
@@ -352,7 +368,15 @@ object Prefs {
     /** ⚠ The phone class a [minRamBytes] gate names to a person: 16 at [LOWRAM_BELOW_BYTES], else 12. */
     fun ramClassGb(minRamBytes: Long): Int = if (minRamBytes >= LOWRAM_BELOW_BYTES) 16 else 12
 
-    data class LowRam(val sdxl: Boolean, val anima: Boolean, val animaSeqDit: Boolean, val wanStream: Boolean = false, val heatPause: Boolean = false)
+    data class LowRam(
+        val sdxl: Boolean,
+        val anima: Boolean,
+        val animaSeqDit: Boolean,
+        val wanStream: Boolean = false,
+        val heatPause: Boolean = false,
+        val ditGpu: Boolean = false,
+        val ditTaesd: Boolean = true,
+    )
 
     /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */
     fun lowRamDefault(totalRamBytes: Long): Boolean =
@@ -375,12 +399,16 @@ object Prefs {
             animaSeqDit = read(KEY_ANIMA_SEQ_DIT, false),
             wanStream = read(KEY_WAN_STREAM, false),
             heatPause = read(KEY_HEAT_PAUSE, false),
+            ditGpu = read(KEY_DIT_GPU, false),
+            ditTaesd = read(KEY_DIT_TAESD, true),
         )
     }
 
     fun setLowRam(context: Context, key: String, on: Boolean) {
         if (key == KEY_WAN_STREAM) wanStream = on
         if (key == KEY_HEAT_PAUSE) heatPause = on
+        if (key == KEY_DIT_GPU) ditGpu = on
+        if (key == KEY_DIT_TAESD) ditTaesd = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()
     }
 

@@ -132,22 +132,30 @@ object CrashReport {
     private fun watchRam(context: Context) {
         // ⚠ The job's context, read each tick: a sampler still asleep from the last job keeps going for this one.
         watchContext = context
-        if (ramWatch?.isAlive == true) return
-        ramWatch = Thread({
-            while (marked != null) {
-                val context = watchContext ?: break
-                val am = context.getSystemService(ActivityManager::class.java)
-                val mi = ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
-                val mb = mi.availMem shr 20
-                val newLow = synchronized(stages) {
-                    (mb < lowestMb).also { if (it) { lowestMb = mb; lowest = "lowest $mb MB free at ${clock()}" } }
+        // ⚠ Under one lock with the thread's own exit: a sampler that had just seen no job and was leaving still read
+        // as alive, and the new job got no sampler at all (the suite caught it, 2026-10-31). A live one is woken, so
+        // the new job's first sample is now.
+        synchronized(watchLock) {
+            ramWatch?.let { it.interrupt(); return }
+            ramWatch = Thread({
+                while (true) {
+                    val context = synchronized(watchLock) {
+                        watchContext.takeIf { marked != null } ?: run { ramWatch = null; null }
+                    } ?: break
+                    val am = context.getSystemService(ActivityManager::class.java)
+                    val mi = ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
+                    val mb = mi.availMem shr 20
+                    val newLow = synchronized(stages) {
+                        (mb < lowestMb).also { if (it) { lowestMb = mb; lowest = "lowest $mb MB free at ${clock()}" } }
+                    }
+                    if (newLow) write(context)
+                    try { Thread.sleep(RAM_TICK_MS) } catch (_: InterruptedException) { /* a new job: sample now */ }
                 }
-                if (newLow) write(context)
-                try { Thread.sleep(RAM_TICK_MS) } catch (_: InterruptedException) { break }
-            }
-        }, "crash-ram").apply { isDaemon = true; start() }
+            }, "crash-ram").apply { isDaemon = true; start() }
+        }
     }
 
+    private val watchLock = Any()
     @Volatile private var ramWatch: Thread? = null
     @Volatile private var watchContext: Context? = null
     @Volatile private var lowest: String? = null

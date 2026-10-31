@@ -282,6 +282,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "t2i" -> t2i()
             "bench" -> bench()
             "engine_sideload" -> engineSideload(arg)
+            // ⭐ The GPU route ([DitGpu]) on or off as Settings does it: `--es arg on|off`, then `--es arg taesd_off|taesd_on`.
+            "dit_gpu" -> ditGpu(arg)
             // ⭐ Prompt translation, timed (`docs/TRANSLATE.md`). `--es arg "ru|красная шляпа, 8k"`;
             // no arg runs a fixed Russian and Chinese set.
             "translate" -> translateProbe(arg)
@@ -1540,6 +1542,23 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * `dit-engine-test.zip`), checked against this build's size and SHA-256 ([DitEngine.installFrom]): a new engine is
      * A/B'd on the phone before its release exists.
      */
+    private fun ditGpu(arg: String?) {
+        when (arg?.trim()) {
+            "on", "off" -> Prefs.setLowRam(ctx, Prefs.KEY_DIT_GPU, arg.trim() == "on")
+            "taesd_on", "taesd_off" -> Prefs.setLowRam(ctx, Prefs.KEY_DIT_TAESD, arg.trim() == "taesd_on")
+            null, "" -> Unit
+            else -> return say("dit_gpu: arg is on|off|taesd_on|taesd_off", bad = true)
+        }
+        DitEngine.refresh(ctx)
+        BackendProcess.stop()
+        val klein = ModelCatalog.byId("flux2_klein_4b")
+        say(
+            "dit_gpu: pref=${Prefs.ditGpu} taesd=${Prefs.ditTaesd} openCl=${DitGpu.hasOpenCl} wanted=${DitGpu.wanted()} " +
+                "engine=${DitEngine.URL.substringAfterLast('/')} installed=${DitEngine.isInstalled(ctx)} " +
+                "taes=${DitGpu.taesPresent(ctx)} klein build=${klein?.buildFor(DeviceProbe.caps())?.bytes}",
+        )
+    }
+
     private fun engineSideload(arg: String?) {
         val f = java.io.File(ctx.getExternalFilesDir(null), arg?.takeIf { it.isNotBlank() } ?: "dit-engine-test.zip")
         if (!f.isFile) return say("engine_sideload: no ${f.absolutePath}", bad = true)

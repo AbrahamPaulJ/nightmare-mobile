@@ -553,6 +553,11 @@ data class ModelSpec(
      */
     val mature: Boolean = false,
     /**
+     * ⭐ Measured on the GPU route ([DitGpu], `docs/GPU-ROUTES.md` §8): where [DitGpu.wanted], it renders there from
+     * its GGUF Q4_0 build ([buildFor]). Klein 4B and Z-Image Turbo; the bigger DiTs wait for their limit tests.
+     */
+    val gpu: Boolean = false,
+    /**
      * ⭐ An absolute folder this model lives in, outside the models root — Local Dream's imports
      * ([LocalDreamModels]). Null for everything else: [dir] is then root + [id].
      */
@@ -686,7 +691,16 @@ data class ModelSpec(
      * not a slower one, none. Falling back to "download the biggest and hope"
      * is how a user spends 3.5 GB on a file their chip rejects at load.
      */
-    fun buildFor(caps: DeviceProbe.Caps): Build? = builds.firstOrNull { it.runsOn(caps) }?.takeIf { !chipBlocked(caps) }
+    fun buildFor(caps: DeviceProbe.Caps): Build? {
+        // ⭐ The GPU route ([DitGpu]): the GGUF Q4_0 build whatever the NPU's arch, the format the Adreno kernels run
+        // (no FP8 there), and the one a v69 phone, which no DiT build here targets, can render at all.
+        if (gpu && DitGpu.wanted(caps)) gpuBuild()?.takeIf { it.ramOk(caps) }?.let { return it }
+        return builds.firstOrNull { it.runsOn(caps) }?.takeIf { !chipBlocked(caps) }
+    }
+
+    /** ⚠ The smallest build whose DiT is a GGUF (`dit.gguf`): Q4_0 for Klein 4B and Z-Image. */
+    private fun gpuBuild(): Build? =
+        builds.filter { b -> b.files.any { it.name == "dit.gguf" } }.minByOrNull { it.bytes }
 
     /**
      * ⭐ This chip cannot run this model in any way we have: Iris 3B Turbo on a [DeviceProbe.DIT_NO_HMX_SOCS] chip.
@@ -2299,8 +2313,11 @@ object ModelCatalog {
         cfg: Double = 1.0,
         /** ⚠ See [ModelSpec.ownLora]. */
         ownLora: String? = null,
+        /** ⚠ See [ModelSpec.gpu]. */
+        gpu: Boolean = false,
     ) = ModelSpec(
         ownLora = ownLora,
+        gpu = gpu,
         startRes = startRes,
         fixedSizes = sizes != null,
         lowram = lowram,
@@ -2420,6 +2437,7 @@ object ModelCatalog {
         dit(
             "flux2_klein_4b", "FLUX.2 Klein 4B", Family.FLUX2, KLEIN, steps = 4,
             files = KLEIN4B_FP8,
+            gpu = true,
             // ⭐⭐⭐ **NO `lowram`, and the reason it was switched on was
             // a misreading.** It was set in 1.5.514 and reverted 2026-09-20.
             //
@@ -2484,6 +2502,7 @@ object ModelCatalog {
         dit(
             "z_image_turbo", "Z-Image Turbo", Family.ZIMAGE, ZIMAGE, steps = 8,
             lowram = true,
+            gpu = true,
             files = ZIMAGE_FP8,
             // ⭐ Two builds, Klein's way: Kijai's FP8 on v79+, leejet's Q4_0 GGUF on an 8 Gen 3 (below v79 FP8
             // runs on the CPU). The GGUF went NaN on HTP until engine `dit/025` (`docs/DIT.md` §2e).
