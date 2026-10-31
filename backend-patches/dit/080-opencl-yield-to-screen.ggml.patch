@@ -3,7 +3,6 @@ sleeps GGML_OPENCL_YIELD_US; GGML_OPENCL_MM_MAX_GFLOP splits a big matmul into t
 GGML_OPENCL_YIELD_LOG=1 prints the longest wait per graph. The S25 lagged severely running Z-Image on OpenCL with
 2.2 GB of RAM free: the UI and the DiT share the Adreno, and one FFN matmul at 512^2 was an 80 ms dispatch.
 Text before the first diff line is ignored by git apply.
-
 --- a/src/ggml-opencl/ggml-opencl.cpp
 +++ b/src/ggml-opencl/ggml-opencl.cpp
 @@ -49,6 +49,8 @@
@@ -15,7 +14,7 @@ Text before the first diff line is ignored by git apply.
  
  #undef MIN
  #undef MAX
-@@ -8203,9 +8205,47 @@
+@@ -8203,9 +8205,56 @@
      backend_ctx->enqueue_ndrange_kernel(kernel, 3, global_work_size, local_work_size, dst);
  }
  
@@ -26,9 +25,11 @@ Text before the first diff line is ignored by git apply.
 +static double      nm_yield_max_ms   = 0.0;
 +static const char * nm_yield_max_name = "-";
 +static const char * nm_yield_max_op   = "-";
++static char         nm_yield_max_shape[96] = "";
 +
 +// ⭐ Waits for the queue, records how long it took against [node], and gives the screen [nm_yield_us].
-+static double nm_yield_now(ggml_backend_opencl_context * backend_ctx, const ggml_tensor * node) {
++// [chunk] marks a wait between the token chunks of a split matmul.
++static double nm_yield_now(ggml_backend_opencl_context * backend_ctx, const ggml_tensor * node, bool chunk = false) {
 +    const auto t0 = std::chrono::steady_clock::now();
 +    clFinish(backend_ctx->queue);
 +    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -36,6 +37,13 @@ Text before the first diff line is ignored by git apply.
 +        nm_yield_max_ms   = ms;
 +        nm_yield_max_name = node ? node->name : "-";
 +        nm_yield_max_op   = node ? ggml_op_desc(node) : "-";
++        nm_yield_max_shape[0] = 0;
++        if (node && node->src[0] && node->src[1]) {
++            snprintf(nm_yield_max_shape, sizeof(nm_yield_max_shape), " %s [%lld x %lld] x [%lld x %lld x %lld]%s%s",
++                     ggml_type_name(node->src[0]->type), (long long) node->src[0]->ne[0], (long long) node->src[0]->ne[1],
++                     (long long) node->src[1]->ne[0], (long long) node->src[1]->ne[1], (long long) node->src[1]->ne[2],
++                     ggml_is_contiguous(node->src[1]) ? "" : " src1-strided", chunk ? " (a chunk)" : "");
++        }
 +    }
 +    if (nm_yield_us() > 0) {
 +        std::this_thread::sleep_for(std::chrono::microseconds(nm_yield_us()));
@@ -63,7 +71,7 @@ Text before the first diff line is ignored by git apply.
      for (int i = 0; i < cgraph->n_nodes; i++) {
          ggml_tensor * node = cgraph->nodes[i];
  
-@@ -8222,6 +8262,14 @@
+@@ -8222,6 +8271,14 @@
              continue;
          }
  
@@ -78,19 +86,19 @@ Text before the first diff line is ignored by git apply.
          if (!backend_ctx->disable_fusion && ggml_opencl_can_fuse(backend_ctx, cgraph, i, { GGML_OP_NORM, GGML_OP_MUL, GGML_OP_ADD })) {
              ggml_opencl_op_norm_fused(backend, node, cgraph->nodes[i+1], cgraph->nodes[i+2]);
              i += 2;
-@@ -8305,6 +8353,11 @@
+@@ -8305,6 +8362,11 @@
          GGML_ASSERT(ok);
      }
  
 +    if (yield_every > 0 && yield_log) {
-+        GGML_LOG_INFO("ggml_opencl: yield every %d op(s): %d waits, %.1f ms waited, longest %.1f ms after %s (%s)\n",
-+                      yield_every, waits, wait_ms, nm_yield_max_ms, nm_yield_max_name, nm_yield_max_op);
++        GGML_LOG_INFO("ggml_opencl: yield every %d op(s): %d waits, %.1f ms waited, longest %.1f ms after %s (%s%s)\n",
++                      yield_every, waits, wait_ms, nm_yield_max_ms, nm_yield_max_name, nm_yield_max_op, nm_yield_max_shape);
 +    }
 +
      return GGML_STATUS_SUCCESS;
  }
  
-@@ -22035,6 +22088,39 @@
+@@ -22035,6 +22097,39 @@
      GGML_ASSERT(dst);
      GGML_ASSERT(dst->extra);
  
@@ -119,7 +127,7 @@ Text before the first diff line is ignored by git apply.
 +                d.nb[3]      = d.nb[2];
 +                d.view_offs  = dst->view_offs + (size_t) t * dst->nb[1];
 +                if (t > 0 && nm_yield_every() > 0) {
-+                    nm_yield_now(bctx, dst);
++                    nm_yield_now(bctx, dst, true);
 +                }
 +                ggml_cl_mul_mat(backend, src0, &s1, &d);
 +            }
