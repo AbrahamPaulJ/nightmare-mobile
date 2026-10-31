@@ -1,0 +1,40 @@
+dit/084 (diagnostic): which attention calls the Adreno xmem path takes, and a log of each:
+  GGML_OPENCL_XMEM_NO_MASK=1   refuse masked calls
+  GGML_OPENCL_XMEM_MIN_NQ=N / GGML_OPENCL_XMEM_MAX_NQ=N   refuse calls with fewer / more query rows
+  GGML_OPENCL_XMEM_LOG=1       one line per call: shapes, strides, mask, scale, contiguity, taken or not
+Z-Image stays garbage with xmem even with dit/083 (fp32 scores), and nm-fa-check passes: find the call. Applies after 083.
+
+diff --git a/src/ggml-opencl/ggml-opencl.cpp b/src/ggml-opencl/ggml-opencl.cpp
+index cfff516..61bc8c5 100644
+--- a/src/ggml-opencl/ggml-opencl.cpp
++++ b/src/ggml-opencl/ggml-opencl.cpp
+@@ -17239,7 +17239,28 @@ static bool ggml_cl_adreno_xmem_attn_can_use(
+         return false;
+     }
+ 
+-    return true;
++    // nightmare dit/084 (diagnostic): which of a model's attention calls the xmem path may take, and a log of each.
++    static const char * xmem_no_mask = getenv("GGML_OPENCL_XMEM_NO_MASK");
++    static const int    xmem_min_nq  = getenv("GGML_OPENCL_XMEM_MIN_NQ") ? atoi(getenv("GGML_OPENCL_XMEM_MIN_NQ")) : 0;
++    static const int    xmem_max_nq  = getenv("GGML_OPENCL_XMEM_MAX_NQ") ? atoi(getenv("GGML_OPENCL_XMEM_MAX_NQ")) : 0;
++    static const char * xmem_log     = getenv("GGML_OPENCL_XMEM_LOG");
++    bool take = true;
++    if (xmem_no_mask != nullptr && xmem_no_mask[0] == '1' && mask != nullptr) take = false;
++    if (n_q < xmem_min_nq) take = false;
++    if (xmem_max_nq > 0 && n_q > xmem_max_nq) take = false;
++    if (xmem_log != nullptr && xmem_log[0] == '1') {
++        GGML_LOG_INFO("xmem fa %s: q %lldx%lldx%lldx%lld nb %zu/%zu/%zu k %lldx%lldx%lld t%d nb %zu/%zu v t%d nb %zu/%zu "
++                      "mask %s %lldx%lld scale %g dst %lldx%lldx%lld nb %zu/%zu q_cont %d\n",
++                      take ? "TAKE" : "skip",
++                      (long long) q->ne[0], (long long) q->ne[1], (long long) q->ne[2], (long long) q->ne[3],
++                      q->nb[1], q->nb[2], q->nb[3],
++                      (long long) k->ne[0], (long long) k->ne[1], (long long) k->ne[2], (int) k->type, k->nb[1], k->nb[2],
++                      (int) v->type, v->nb[1], v->nb[2],
++                      mask ? "yes" : "no", mask ? (long long) mask->ne[0] : 0LL, mask ? (long long) mask->ne[1] : 0LL,
++                      params[0], (long long) dst->ne[0], (long long) dst->ne[1], (long long) dst->ne[2],
++                      dst->nb[1], dst->nb[2], (int) ggml_is_contiguous(q));
++    }
++    return take;
+ }
+ 
+ static void ggml_cl_adreno_xmem_attn_run(
