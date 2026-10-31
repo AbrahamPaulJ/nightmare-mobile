@@ -4,6 +4,7 @@ attention) against a frame's 8-16 ms. All off unless set:
   GGML_OPENCL_YIELD_EVERY=N     wait for the queue every N ops, then sleep GGML_OPENCL_YIELD_US (2000)
   GGML_OPENCL_MM_MAX_GFLOP=G    a matmul in token chunks of at most G GFLOP (exact: views, sums unchanged)
   GGML_OPENCL_FA_SPLIT_HEADS=H  attention H heads per dispatch (views; whole GQA groups)
+  GGML_OPENCL_FA_SPLIT_Q=R      attention R query rows per dispatch (views; exact, each row on its own)
   GGML_OPENCL_YIELD_LOG=1       each graph's longest wait, with the op and its shapes
 Text before the first diff line is ignored by git apply.
 
@@ -102,13 +103,41 @@ Text before the first diff line is ignored by git apply.
      return GGML_STATUS_SUCCESS;
  }
  
-@@ -17145,6 +17207,42 @@
+@@ -17145,6 +17207,70 @@
      const ggml_tensor * mask = dst->src[3];
      const ggml_tensor * sinks = dst->src[4];
  
 +    // nightmare (dit/080): attention GGML_OPENCL_FA_SPLIT_HEADS heads per dispatch, as views (q, k, v along ne[2], the
 +    // output along its heads, ne[1]), with the screen's turn between, as the matmul split does. Z-Image's 30 heads at
 +    // 512^2 were one 39 ms dispatch on the S25. Whole GQA groups only; not with a per-head mask or sinks.
++    // ⭐ …and GGML_OPENCL_FA_SPLIT_Q query rows at a time (q along ne[1], the output along ne[2], the mask's rows):
++    // every query row attends on its own, so this is exact too. Klein 4B at 1024^2 is 4,608 tokens, ~24 ms a head.
++    static const int fa_split_q = [] { const char * e = getenv("GGML_OPENCL_FA_SPLIT_Q"); int r = e ? atoi(e) : 0; return r > 0 && r < 64 ? 64 : r - r % 64; }();
++    if (fa_split_q > 0 && q->ne[1] > fa_split_q && sinks == nullptr && q->ne[3] == 1 && dst->ne[3] == 1 &&
++        dst->ne[2] == q->ne[1] && (mask == nullptr || (mask->ne[2] == 1 && mask->ne[3] == 1 && mask->ne[1] >= q->ne[1]))) {
++        ggml_backend_opencl_context * bctx = (ggml_backend_opencl_context *) backend->context;
++        for (int64_t r0 = 0; r0 < q->ne[1]; r0 += fa_split_q) {
++            const int64_t r  = q->ne[1] - r0 < fa_split_q ? q->ne[1] - r0 : fa_split_q;
++            ggml_tensor   qc = *q, dc = *dst, mc;
++            qc.ne[1]     = r;
++            qc.view_offs = q->view_offs + (size_t) r0 * q->nb[1];
++            dc.ne[2]     = r;
++            dc.view_offs = dst->view_offs + (size_t) r0 * dst->nb[2];
++            dc.src[0]    = &qc;
++            if (mask) {
++                mc           = *mask;
++                mc.ne[1]     = r;
++                mc.view_offs = mask->view_offs + (size_t) r0 * mask->nb[1];
++                dc.src[3]    = &mc;
++            }
++            if (r0 > 0 && nm_yield_every() > 0) {
++                nm_yield_now(bctx, dst, true);
++            }
++            ggml_cl_flash_attn(backend, &qc, k, &dc);
++        }
++        return;
++    }
++
 +    static const int fa_split = [] { const char * e = getenv("GGML_OPENCL_FA_SPLIT_HEADS"); return e ? atoi(e) : 0; }();
 +    if (fa_split > 0 && sinks == nullptr && (mask == nullptr || mask->ne[2] == 1) && q->ne[3] == 1 &&
 +        k->ne[3] == 1 && v->ne[3] == 1 && dst->ne[3] == 1 && q->ne[2] % k->ne[2] == 0 && dst->ne[1] == q->ne[2]) {
@@ -145,7 +174,7 @@ Text before the first diff line is ignored by git apply.
      GGML_ASSERT(q->extra);
      GGML_ASSERT(k->extra);
      GGML_ASSERT(v->extra);
-@@ -22035,6 +22133,39 @@
+@@ -22035,6 +22161,39 @@
      GGML_ASSERT(dst);
      GGML_ASSERT(dst->extra);
  
