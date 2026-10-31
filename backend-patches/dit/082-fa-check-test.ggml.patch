@@ -26,10 +26,10 @@ index 0000000..e6644f9
 +target_link_libraries(nm-fa-check PRIVATE ggml)
 diff --git a/tests/nm-fa-check.cpp b/tests/nm-fa-check.cpp
 new file mode 100644
-index 0000000..ef16406
+index 0000000..8b0c434
 --- /dev/null
 +++ b/tests/nm-fa-check.cpp
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,121 @@
 +// nightmare: one FLASH_ATTN_EXT on the first GPU backend against the CPU, in the shapes and scalings the DiT models send.
 +// Z-Image renders garbage with ggml-opencl's Adreno xmem attention (GGML_OPENCL_XMEM_SDPA=1) and right without it;
 +// Klein is right with it. Each case isolates one difference. Usage: nm-fa-check [T] (tokens, default 1280).
@@ -85,8 +85,7 @@ index 0000000..ef16406
 +        ggml_backend_synchronize(be);
 +        best = std::min(best, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
 +    }
-+    printf("  %s on %s: %.1f ms
-+", c.name, ggml_backend_name(be), best);
++    printf("  %s on %s: %.1f ms\n", c.name, ggml_backend_name(be), best);
 +    std::vector<float> r(ggml_nelements(out));
 +    ggml_backend_tensor_get(out, r.data(), 0, ggml_nbytes(out));
 +    ggml_backend_buffer_free(buf);
