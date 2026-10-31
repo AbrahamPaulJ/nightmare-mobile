@@ -1,8 +1,12 @@
-dit/080: ggml-opencl gives the GPU back to the screen. GGML_OPENCL_YIELD_EVERY=N waits for the queue every N ops and
-sleeps GGML_OPENCL_YIELD_US; GGML_OPENCL_MM_MAX_GFLOP splits a big matmul into token chunks with a yield between;
-GGML_OPENCL_YIELD_LOG=1 prints the longest wait per graph. The S25 lagged severely running Z-Image on OpenCL with
-2.2 GB of RAM free: the UI and the DiT share the Adreno, and one FFN matmul at 512^2 was an 80 ms dispatch.
+dit/080: ggml-opencl gives the GPU back to the screen. The S25 lagged severely running Z-Image on OpenCL with 2.2 GB
+of RAM free: the UI and the DiT share the Adreno, and single dispatches ran 40-85 ms (an FFN matmul, all 30 heads of
+attention) against a frame's 8-16 ms. All off unless set:
+  GGML_OPENCL_YIELD_EVERY=N     wait for the queue every N ops, then sleep GGML_OPENCL_YIELD_US (2000)
+  GGML_OPENCL_MM_MAX_GFLOP=G    a matmul in token chunks of at most G GFLOP (exact: views, sums unchanged)
+  GGML_OPENCL_FA_SPLIT_HEADS=H  attention H heads per dispatch (views; whole GQA groups)
+  GGML_OPENCL_YIELD_LOG=1       each graph's longest wait, with the op and its shapes
 Text before the first diff line is ignored by git apply.
+
 --- a/src/ggml-opencl/ggml-opencl.cpp
 +++ b/src/ggml-opencl/ggml-opencl.cpp
 @@ -49,6 +49,8 @@
@@ -98,7 +102,50 @@ Text before the first diff line is ignored by git apply.
      return GGML_STATUS_SUCCESS;
  }
  
-@@ -22035,6 +22097,39 @@
+@@ -17145,6 +17207,42 @@
+     const ggml_tensor * mask = dst->src[3];
+     const ggml_tensor * sinks = dst->src[4];
+ 
++    // nightmare (dit/080): attention GGML_OPENCL_FA_SPLIT_HEADS heads per dispatch, as views (q, k, v along ne[2], the
++    // output along its heads, ne[1]), with the screen's turn between, as the matmul split does. Z-Image's 30 heads at
++    // 512^2 were one 39 ms dispatch on the S25. Whole GQA groups only; not with a per-head mask or sinks.
++    static const int fa_split = [] { const char * e = getenv("GGML_OPENCL_FA_SPLIT_HEADS"); return e ? atoi(e) : 0; }();
++    if (fa_split > 0 && sinks == nullptr && (mask == nullptr || mask->ne[2] == 1) && q->ne[3] == 1 &&
++        k->ne[3] == 1 && v->ne[3] == 1 && dst->ne[3] == 1 && q->ne[2] % k->ne[2] == 0 && dst->ne[1] == q->ne[2]) {
++        const int64_t ratio   = q->ne[2] / k->ne[2];
++        int64_t       h_chunk = fa_split - fa_split % ratio;
++        if (h_chunk < ratio) {
++            h_chunk = ratio;
++        }
++        if (q->ne[2] > h_chunk) {
++            ggml_backend_opencl_context * bctx = (ggml_backend_opencl_context *) backend->context;
++            for (int64_t h0 = 0; h0 < q->ne[2]; h0 += h_chunk) {
++                const int64_t h  = q->ne[2] - h0 < h_chunk ? q->ne[2] - h0 : h_chunk;
++                ggml_tensor   qc = *q, kc = *k, vc = *v, dc = *dst;
++                qc.ne[2]     = h;
++                qc.view_offs = q->view_offs + (size_t) h0 * q->nb[2];
++                kc.ne[2]     = h / ratio;
++                kc.view_offs = k->view_offs + (size_t) (h0 / ratio) * k->nb[2];
++                vc.ne[2]     = h / ratio;
++                vc.view_offs = v->view_offs + (size_t) (h0 / ratio) * v->nb[2];
++                dc.ne[1]     = h;
++                dc.view_offs = dst->view_offs + (size_t) h0 * dst->nb[1];
++                dc.src[0]    = &qc;
++                dc.src[1]    = &kc;
++                dc.src[2]    = &vc;
++                if (h0 > 0 && nm_yield_every() > 0) {
++                    nm_yield_now(bctx, dst, true);
++                }
++                ggml_cl_flash_attn(backend, &qc, &kc, &dc);
++            }
++            return;
++        }
++    }
++
+     GGML_ASSERT(q->extra);
+     GGML_ASSERT(k->extra);
+     GGML_ASSERT(v->extra);
+@@ -22035,6 +22133,39 @@
      GGML_ASSERT(dst);
      GGML_ASSERT(dst->extra);
  
