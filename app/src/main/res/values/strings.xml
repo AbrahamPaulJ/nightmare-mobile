@@ -1384,7 +1384,6 @@
     <string name="hint_h3_size">384x384 is the quickest. Up to 768x1344 worth of pixels; a larger size fits fewer seconds (the note below says when). Nothing under 384: smaller clips lose their colours.</string>
     <string name="hint_h3_seconds">Clip length in seconds, in H3\'s own steps: 0.9 to 5.2 (22 to 124 frames at 24 fps). 3.0 at 384x384 takes about 6 minutes on an 8 Elite; the larger the size, the shorter the longest clip.</string>
     <string name="hint_prompt_h3">MiniMax H3 reads its prompt in sections, as in the example: subject_definitions (who is on camera and how they sound: S1 is a woman in her thirties with a calm, low voice), detailed_description (the scene, the camera, the length, and the words said out loud as &lt;d&gt;[English] Hello there.&lt;/d&gt;, any language), overall_soundscape (the sounds: rain on the window) and non_diegetic_music (background music, or N/A for none). Write N/A in a section to leave it out. A plain one-line prompt works too, with no speech and no music.</string>
-    <string name="run_lora_h3_skipped">MiniMax H3 takes no LoRAs: \"%1$s\" from the prompt was skipped</string>
     <!-- Heat on a video render (BatteryHeat.kt) -->
     <string name="heat_title">Heat</string>
     <string name="heat_note">A video render keeps the phone\'s processors busy for minutes and the phone gets hot. The chip protects itself; the battery does not, and heat above about 45 °C wears it out faster. The run log warns when the battery is warm.</string>

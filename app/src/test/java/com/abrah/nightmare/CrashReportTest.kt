@@ -30,6 +30,9 @@ class CrashReportTest {
     private val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
     private val crumb get() = File(ctx.filesDir, "in-flight.txt")
 
+    /** ⚠ Absent for an instant while a write replaces it (on Windows `copyTo` deletes first): read as empty then. */
+    private fun lines(): List<String> = runCatching { crumb.readLines() }.getOrDefault(emptyList())
+
     @Before
     fun clean() {
         CrashReport.clear(ctx)
@@ -59,7 +62,7 @@ class CrashReportTest {
         CrashReport.backendEvent(ctx, "  6306.4ms [  INFO ] [lowram] SDXL UNET loaded")
         CrashReport.backendEvent(ctx, "  6400.0ms [  INFO ] [dit] flux executing segment 3/34")
         val deadline = System.currentTimeMillis() + 3_000
-        while (crumb.readLines().none { it.startsWith("lowest ") } && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        while (lines().none { it.startsWith("lowest ") } && System.currentTimeMillis() < deadline) Thread.sleep(20)
         val lines = crumb.readLines()
         assertTrue(lines.toString(), lines.any { "backend SDXL UNET loaded" in it })
         assertTrue(lines.toString(), lines.none { "executing segment" in it })
@@ -119,7 +122,7 @@ class CrashReportTest {
         // ⚠ The RAM sampler's first write first: landing after the aging below, it made the crumb new again (the suite
         // on a loaded PC, 2026-10-31). Robolectric's free RAM never changes, so it writes once.
         val deadline = System.currentTimeMillis() + 3_000
-        while (crumb.readLines().none { it.startsWith("lowest ") } && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        while (lines().none { it.startsWith("lowest ") } && System.currentTimeMillis() < deadline) Thread.sleep(20)
         // ⚠ A minute before BOOT, not ten minutes before now: `pending` compares with now - elapsedRealtime, and
         // Robolectric's elapsedRealtime is a fake clock that a long test JVM can carry past ten minutes (it failed so).
         val bootAt = System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime()

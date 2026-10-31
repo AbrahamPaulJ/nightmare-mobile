@@ -629,14 +629,11 @@ object WanVideoNode : NodeType {
         // prompt's tags are skipped out loud rather than reaching Fun by the back door. Its FastWan
         // speed LoRA is part of the model ([ModelCatalog.FUN_LORA]), not this list.
         // ⭐ The 14B takes them since 1.6.259 (Joachim, TG #7454): engine `dit/068` binds each to its expert ([expertOf]).
-        // ⭐ MiniMax H3 takes none either: nothing is trained for it, and its tags are skipped out loud the same way.
+        // ⭐ MiniMax H3 takes them since 1.6.269 (a tester's ask, 2026-10-30): CivitAI's H3 LoRAs bind in both their forms,
+        // `lora_A/B` and kohya's `lora_unet_*` (all tensors applied, S25, `docs/MINIMAX-H3.md` §5g).
         val sound = profileOf(node.type).sound
-        val takesLoras = driving == null && !sound
-        if (sound) {
-            (pos.tags + neg.tags).forEach { t ->
-                ctx.warn(ctx.text(R.string.run_lora_h3_skipped, "MiniMax H3 takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
-            }
-        } else if (!takesLoras) {
+        val takesLoras = driving == null
+        if (!takesLoras) {
             (pos.tags + neg.tags).forEach { t ->
                 ctx.warn(ctx.text(R.string.run_lora_motion_skipped, "Motion transfer takes no LoRAs: \"%1\$s\" from the prompt was skipped", t.name))
             }
@@ -661,6 +658,13 @@ object WanVideoNode : NodeType {
             .map { (f, s) -> if (node.type == WanA14Node.name) expertOf(File(f).name).prefix + f to s else f to s }
         if (loras.isNotEmpty()) {
             ctx.say("  LoRAs: " + loras.joinToString { (f, s) -> "${File(f).nameWithoutExtension} $s" })
+        }
+        // ⭐ Integer tensors made float and F32 matrices BF16, once, in place ([LoraClean]): the image nodes' rule, and
+        // an F32 LoRA ran H3 7x slower than the same LoRA in BF16.
+        (picked + tagged).map { File(it.first) }.distinct().forEach { f ->
+            if (runCatching { com.abrah.nightmare.LoraClean.ensure(f, bf16 = true) }.getOrDefault(false)) {
+                ctx.say("  ${f.name}: rewritten for the engine (BF16), once")
+            }
         }
         // ⭐ The NSFW 1.3B's CausVid LoRA rides on every clip ([ModelCatalog.CAUSVID_LORA]): part of the model, as Fun's
         // FastWan is, so it is sent and counted but never shown or advised against as the user's.
@@ -978,6 +982,7 @@ object WanVideoNode : NodeType {
                         }
                         all.fd.sync()
                         marker.writeText("${pi + 1} $total")
+                        showSoFar(ctx, all, raw, w, h, total, fps, key, pi, parts.size)
                         ranPart = true
                     } finally {
                         controlFile.delete()
@@ -1155,6 +1160,7 @@ object WanVideoNode : NodeType {
                         pcm.delete()
                     }
                     marker.writeText("${pi + 1} $total")
+                    showSoFar(ctx, all, raw, w, h, total, fps, key, pi, n)
                 } finally {
                     partRaw.delete()
                     File(partRaw.path + ".pcm").delete()
@@ -1279,6 +1285,28 @@ object WanVideoNode : NodeType {
             i += 7
         }
         return if (n == 0) 0.0 else s.toDouble() / n
+    }
+
+    /**
+     * ⭐ After part [part] of [parts] (not the last: the result follows it), the clip so far as an MP4 on the node's
+     * card ([NodeCtx.onClipSoFar]), so a 10-part clip is watched as it grows (the user's ask, 2026-10-31). [all] is
+     * the frame file being written, [total] frames long. Silent: the parts' sound is joined at the end. ⚠ Never fails
+     * the run: a preview that cannot be made is a line in the log.
+     */
+    private fun showSoFar(ctx: NodeCtx, all: RandomAccessFile, raw: File, w: Int, h: Int, total: Int, fps: Int, key: String, part: Int, parts: Int) {
+        if (part >= parts - 1 || total < 2) return
+        val cache = ctx.android?.cacheDir ?: return
+        runCatching {
+            val t0 = System.currentTimeMillis()
+            all.seek(0)
+            all.write(nmvHeader(w, h, total, fps))
+            all.fd.sync()
+            val out = File(cache, "parts_${key}_$part.mp4")
+            val (poster, _) = encodeClip(raw, out, log = { Log.i(TAG, it) })
+            ctx.onClipSoFar(Value.Video(out.absolutePath, total, w, h, ctx.images.put(poster, id = VideoWriter.posterIdFor(out))))
+            if (part > 0) File(cache, "parts_${key}_${part - 1}.mp4").delete()
+            ctx.say("  parts 1 to ${part + 1} on the node (%.1f s, made in %.1f s)".format(total.toDouble() / fps, (System.currentTimeMillis() - t0) / 1000.0))
+        }.onFailure { ctx.say("  the clip so far could not be shown: ${it.message ?: it.javaClass.simpleName}") }
     }
 
     /** ⚠ RGB8 frame bytes as a PNG: a frame of the clip, the next part's start picture. */

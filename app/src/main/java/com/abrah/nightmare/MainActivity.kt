@@ -150,6 +150,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // ⭐ First: a Java crash's stack for the next launch's report ([CrashReport.installHandler]).
+        CrashReport.installHandler(this)
         enableEdgeToEdge()
         // ⚠ Before anything composes or any op runs: NODE_TYPES reads
         // SelectedModel for its `model` default, and the backend launches

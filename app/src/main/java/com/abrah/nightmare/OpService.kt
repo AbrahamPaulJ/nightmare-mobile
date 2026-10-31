@@ -68,6 +68,7 @@ class OpService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        CrashReport.installHandler(this)
         // ⚠ The headless path never goes through MainActivity, so it must load
         // the selection itself -- otherwise a scripted op renders against
         // V1_MODEL while the UI and the backend use whatever the user picked.

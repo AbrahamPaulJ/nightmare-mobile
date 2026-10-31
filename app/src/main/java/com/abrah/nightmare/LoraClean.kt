@@ -31,13 +31,22 @@ object LoraClean {
     /** ⚠ Larger than any real LoRA header (a few hundred KB); anything bigger is not one. */
     private const val MAX_HEADER = 64L shl 20
 
-    /** ⭐ Rewrites [file] when it has integer tensors. True when it did. ⚠ Blocking: off the main thread. */
-    fun ensure(file: File): Boolean {
+    /**
+     * ⭐ Rewrites [file] when it has integer tensors, and with [bf16] its F32 matrices too. True when it did.
+     * ⚠ Blocking: off the main thread.
+     *
+     * ⭐ [bf16]: the DiT engine applies an F32 LoRA's matrices on the CPU at run time. MiniMax H3 with a 298 MB F32 LoRA
+     * took 898 s against 129 s without it, and 204 s with the same LoRA as BF16, the same look (S25, sd-cli, 384x384
+     * 22 frames, 2026-10-31). A matrix only: a 1-D tensor (an `alpha`) keeps F32. Only the video nodes ask for it, where
+     * it was measured.
+     */
+    fun ensure(file: File, bf16: Boolean = false): Boolean {
         if (!file.isFile || !file.name.endsWith(".safetensors", ignoreCase = true)) return false
         val (headerLen, header) = readHeader(file) ?: return false
         val tensors = header.keys().asSequence().filter { it != "__metadata__" }
             .map { it to header.getJSONObject(it) }.toList()
-        if (tensors.none { (_, t) -> t.optString("dtype") in INT_BYTES }) return false
+        fun narrows(t: JSONObject) = bf16 && t.optString("dtype") == "F32" && t.getJSONArray("shape").length() >= 2
+        if (tensors.none { (_, t) -> t.optString("dtype") in INT_BYTES || narrows(t) }) return false
 
         val dataStart = 8L + headerLen
         // ⚠ In FILE order, so the data is read front to back once.
@@ -51,9 +60,10 @@ object LoraClean {
             // ⚠ A broken table is refused with a reason, not a NegativeArraySize / OOM from the copy below.
             if (b < 0 || e < b || e > dataBytes) throw java.io.IOException("${file.name}: tensor '$name' lies outside the file ($b..$e)")
             val width = INT_BYTES[t.optString("dtype")]
-            val size = if (width != null) (e - b) / width * 4 else e - b
+            val half = narrows(t)
+            val size = if (width != null) (e - b) / width * 4 else if (half) (e - b) / 2 else e - b
             out.put(name, JSONObject().apply {
-                put("dtype", if (width != null) "F32" else t.getString("dtype"))
+                put("dtype", if (width != null) "F32" else if (half) "BF16" else t.getString("dtype"))
                 put("shape", t.getJSONArray("shape"))
                 put("data_offsets", JSONArray().put(at).put(at + size))
             })
@@ -75,7 +85,15 @@ object LoraClean {
                     val dtype = t.optString("dtype")
                     src.seek(dataStart + b)
                     var left = e - b
-                    if (dtype in INT_BYTES) {
+                    if (narrows(t)) {
+                        val slab = ByteArray(buf.size / 4 * 4)
+                        while (left > 0) {
+                            val n = minOf(left, slab.size.toLong()).toInt()
+                            src.readFully(slab, 0, n)
+                            dst.write(toBf16(slab, n))
+                            left -= n
+                        }
+                    } else if (dtype in INT_BYTES) {
                         // ⚠ In slabs of whole elements: one big int tensor read at once, plus its F32 copy, was an
                         // OutOfMemoryError (and past 2 GB an Int overflow).
                         val width = INT_BYTES.getValue(dtype)
@@ -111,6 +129,19 @@ object LoraClean {
             len to JSONObject(String(h, Charsets.UTF_8))
         }
     }.getOrNull()
+
+    /** ⭐ The first [n] bytes of [raw], F32 little-endian, as BF16, rounded to nearest even (as torch does). */
+    internal fun toBf16(raw: ByteArray, n: Int): ByteArray {
+        val src = ByteBuffer.wrap(raw, 0, n).order(ByteOrder.LITTLE_ENDIAN)
+        val dst = ByteBuffer.allocate(n / 2).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(n / 4) {
+            val bits = src.int
+            val h = if ((bits and 0x7F800000) == 0x7F800000 && (bits and 0x7FFFFF) != 0) (bits ushr 16) or 0x40
+            else (bits + 0x7FFF + ((bits ushr 16) and 1)) ushr 16
+            dst.putShort(h.toShort())
+        }
+        return dst.array()
+    }
 
     /** The integers in [raw], little-endian, as `F32`. */
     internal fun toF32(raw: ByteArray, dtype: String): ByteArray {

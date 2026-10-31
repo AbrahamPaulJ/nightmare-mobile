@@ -372,6 +372,11 @@ class NodeCtx(
      * 2026-10-11). Null in tests and any runner that cannot switch.
      */
     val switchKey: (suspend (ContextKey) -> Boolean)? = null,
+    /**
+     * ⭐ A playable MP4 of what this node has made SO FAR, shown on its card while it carries on: a video in parts
+     * plays each part as it lands, joined up to the latest (the user's ask, 2026-10-31). The node's result replaces it.
+     */
+    val onClipSoFar: (Value.Video) -> Unit = {},
 )
 
 /** App resources on-device; the exact English fallback keeps headless JVM graph tests context-free. */
@@ -3090,6 +3095,8 @@ class Executor(
                             val tracked: suspend (ContextKey) -> Boolean = { k -> sw(k).also { ok -> if (ok) loaded = k } }
                             tracked
                         },
+                        // ⭐ The clip so far goes the way a finished value does ([onValue]); the result replaces it.
+                        onClipSoFar = { v -> back { onValue(node.id, v) } },
                     )
                     // ⚠⚠ The node is run with the SAME params the key was computed
                     // from. Keying on the effective values but running on the

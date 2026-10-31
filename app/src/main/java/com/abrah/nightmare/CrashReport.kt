@@ -180,7 +180,11 @@ object CrashReport {
         write(context)
     }
 
-    /** ⭐ "…and it finished." ⚠ Must be reached on EVERY exit path, including failure. */
+    /**
+     * ⭐ "…and it finished." ⚠ Must be reached on EVERY exit path, including failure.
+     * ⚠ [write]'s lock: the RAM sampler writing just after the delete left a breadcrumb behind, a crash report next launch.
+     */
+    @Synchronized
     fun clear(context: Context) {
         if (marked == null && !breadcrumb(context).exists()) return
         marked = null
@@ -306,10 +310,40 @@ object CrashReport {
         val trace = runCatching {
             exit.traceInputStream?.bufferedReader()?.use { it.readText() }
         }.getOrNull()?.takeIf { it.isNotBlank() }
+            // ⭐ A Java crash has no trace from Android: the one [installHandler] wrote as the app died, if it is this exit's.
+            ?: ownTrace(context, exit.timestamp).takeIf { exit.reason == ApplicationExitInfo.REASON_CRASH }
+        traceFile(context).delete()
         Log.i(TAG, "reporting exit ${exit.reason} at ${exit.timestamp} (doing=$doing)")
         val evidence = listOfNotNull(details, trace).joinToString("\n\n").takeIf { it.isNotEmpty() }
         return Report(exit.timestamp, headlineFor(exit), doing, evidence)
     }
+
+    private fun traceFile(context: Context) = File(context.filesDir, "last-crash.txt")
+
+    @Volatile private var handlerInstalled = false
+
+    /**
+     * ⭐⭐ The stack of an uncaught Java exception, written as the app dies, for the next launch's report. ⚠ Android keeps
+     * a trace only for ANRs and native crashes: two testers' MOSS imports crashed at Import and the report said only
+     * "the app crashed. crash" (Telegram, GitHub #77, 2026-10-31). Chains the handler that was there. Once a process.
+     */
+    fun installHandler(context: Context) {
+        if (handlerInstalled) return
+        handlerInstalled = true
+        val app = context.applicationContext
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching { traceFile(app).writeText("${System.currentTimeMillis()}\nthread ${t.name}\n${e.stackTraceToString().take(48_000)}") }
+            previous?.uncaughtException(t, e)
+        }
+    }
+
+    /** ⚠ Only a trace written within a minute before the exit [atMs]: an older one belongs to another crash. */
+    private fun ownTrace(context: Context, atMs: Long): String? = runCatching {
+        val lines = traceFile(context).takeIf { it.isFile }?.readLines() ?: return null
+        val at = lines.firstOrNull()?.toLongOrNull() ?: return null
+        lines.drop(1).joinToString("\n").takeIf { at in (atMs - 60_000L)..(atMs + 5_000L) && it.isNotBlank() }
+    }.getOrNull()
 
     private fun worthReporting(exit: ApplicationExitInfo, doing: String?): Boolean = when (exit.reason) {
         in REAL_CRASH -> true

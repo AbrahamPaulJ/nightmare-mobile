@@ -1709,7 +1709,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     downloadCancelled()
                     refreshModels()
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // ⚠ Throwable: an Error here (an OutOfMemoryError in a 10 GB conversion) killed the app with no trace;
+                // caught, it is a failed import whose stack is in the error report (GitHub #77, 2026-10-31).
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                     installing = null
                     installProgress = null
@@ -1824,7 +1827,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     downloadCancelled()
                     refreshModels()
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // ⚠ Throwable: an Error here (an OutOfMemoryError in a 10 GB conversion) killed the app with no trace;
+                // caught, it is a failed import whose stack is in the error report (GitHub #77, 2026-10-31).
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                     installing = null
                     installProgress = null
@@ -9123,6 +9129,19 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             onValue = { id, v ->
                 if (canvas.workflow.graph.byId[id]?.type == MediaOutputNode.name) {
                     shownPreview(id, v)?.let { canvas = canvas.copy(previews = canvas.previews + it) }
+                }
+                // ⭐ A video as it lands, finished or so far ([NodeCtx.onClipSoFar]: parts, a chain's film), on its
+                // node and on the Output it feeds, so a long clip is watched as it grows (the user's ask, 2026-10-31).
+                // The run's end writes the final ones over these.
+                if (v is Value.Video) {
+                    val g = canvas.workflow.graph
+                    val ids = listOf(id) + g.nodes.filter { n ->
+                        n.type == MediaOutputNode.name && n.inputs.values.any { it.node == id }
+                    }.map { it.id }
+                    canvas = canvas.copy(
+                        videos = canvas.videos + ids.associateWith { v.path },
+                        previews = canvas.previews + ids.mapNotNull { shownPreview(it, v) },
+                    )
                 }
             },
             onProgress = { id, step, total ->

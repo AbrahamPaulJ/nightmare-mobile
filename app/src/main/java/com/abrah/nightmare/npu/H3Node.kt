@@ -66,7 +66,8 @@ object H3Node : NodeType {
         Widget(WanVideoNode.SMOOTH, "bool", "false", hintRes = R.string.hint_wan_smooth),
         // ⭐ Parts (the user, 2026-10-30): each part starts on the last frame of the one before, as Wan's, now that a
         // wired picture works as H3's first frame; the soundtracks join with the frames. Then the framing of a wired picture.
-    ) + WanVideoNode.widgets.filter { it.name in WanParts.KNOBS || it.name in FRAMING }
+        // ⭐ LoRAs since 1.6.269 (a tester's ask): CivitAI's H3 LoRAs bind ([WanVideoNode.runClip]).
+    ) + WanVideoNode.widgets.filter { it.name in WanParts.KNOBS || it.name in FRAMING || it.name == com.abrah.nightmare.SdSampler.LORAS }
 
     private val FRAMING = setOf("x", "y", "w", "h")
 

@@ -1353,7 +1353,6 @@
     <string name="hint_h3_size">384x384 最快。面积最多相当于 768x1344；尺寸越大，能容纳的秒数越少（下方提示会说明）。不要小于 384：更小的视频会失去颜色。</string>
     <string name="hint_h3_seconds">视频长度（秒），按 H3 自己的步长：0.9 到 5.2（24 帧每秒，22 到 124 帧）。在 8 Elite 上 384x384 的 3.0 秒约需 6 分钟；尺寸越大，最长的视频越短。</string>
     <string name="hint_prompt_h3">MiniMax H3 按段落读取提示词，如示例所示：subject_definitions（画面中是谁、声音如何：S1 is a woman in her thirties with a calm, low voice）、detailed_description（场景、镜头、时长，以及说出的台词，写成 &lt;d&gt;[Chinese] 你好。&lt;/d&gt;，任何语言）、overall_soundscape（声音：雨打在窗上）和 non_diegetic_music（背景音乐，不要就写 N/A）。在某段写 N/A 即可省略。普通的一行提示词也可以，只是没有对白和音乐。</string>
-    <string name="run_lora_h3_skipped">MiniMax H3 不使用 LoRA：已跳过提示词中的“%1$s”</string>
     <!-- Heat on a video render (BatteryHeat.kt) -->
     <string name="heat_title">发热</string>
     <string name="heat_note">生成视频会让手机处理器满载数分钟，手机会发热。芯片会自我保护，电池不会：超过约 45 °C 会加快电池老化。电池温度偏高时，运行日志会提醒。</string>

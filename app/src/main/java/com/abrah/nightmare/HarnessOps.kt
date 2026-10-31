@@ -216,6 +216,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "aspect" -> aspectProbe(arg)
             "model_scan" -> scanModels()
             "model_import" -> importModels()
+            "model_import_uri" -> importUri(arg)
             "dit_lora" -> ditLora(arg)
             // ⭐ Diagnose headless (`--es arg "<model id>[|KEY=VALUE;KEY=VALUE]"`, else the selected model): what a
             // tester's button runs. ⚠ The `KEY=VALUE` part is a FAULT for a control on a phone that renders clean
@@ -2146,6 +2147,49 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         }
         for (line in lines) say("  $line", bad = line.startsWith("FAIL"))
         listModels()
+    }
+
+    /**
+     * ⭐ `--es arg "<file name in Downloads>|<name>[|<family>]"`: the Models "+" import of a DiT checkpoint as a person
+     * makes it, from a `content://` stream ([CustomModels.importDit], the breadcrumb included), not the inbox's file
+     * path. For the MOSS bf16 imports that crashed the app at Import (Telegram, GitHub #77, 2026-10-31).
+     */
+    private suspend fun importUri(arg: String?) {
+        val parts = arg.orEmpty().split('|')
+        val file = parts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: return say("model_import_uri: <file in Downloads>|<name>[|family]", bad = true)
+        val name = parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: file.substringBeforeLast('.')
+        val family = parts.getOrNull(2)?.let { f -> Family.entries.firstOrNull { it.name.equals(f, true) } }
+        // ⚠ The files table, not the Downloads view: a file adb or curl put there is in the first only.
+        val files = android.provider.MediaStore.Files.getContentUri("external")
+        val uri = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            ctx.contentResolver.query(
+                files, arrayOf(android.provider.MediaStore.MediaColumns._ID),
+                "${android.provider.MediaStore.MediaColumns.DISPLAY_NAME}=?", arrayOf(file), null,
+            )?.use { c -> if (c.moveToFirst()) android.content.ContentUris.withAppendedId(files, c.getLong(0)) else null }
+        } ?: return say("model_import_uri: $file is not in MediaStore (scan it first)", bad = true)
+        say("importing $uri as $name (${family ?: "family from the file"})")
+        val t0 = System.currentTimeMillis()
+        var lastPct = -1L
+        try {
+            val spec = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                CustomModels.importDit(
+                    ctx, name, family,
+                    open = { ctx.contentResolver.openInputStream(uri) ?: throw java.io.IOException("cannot read $uri") },
+                    onProgress = { p ->
+                        CrashReport.mark(ctx, "downloading $name")
+                        val pct = if (p.total > 0) p.done * 100 / p.total else -1
+                        if (pct / 10 != lastPct / 10) { lastPct = pct; say("  ${p.phase} ${if (pct >= 0) "$pct%" else "${p.done shr 20} MB"}") }
+                    },
+                )
+            }
+            say("imported ${spec.id} in ${(System.currentTimeMillis() - t0) / 1000} s, missing: ${spec.missing(ctx).joinToString().ifEmpty { "none" }}")
+        } catch (e: Throwable) {
+            say("model_import_uri FAILED: $e", bad = true)
+            android.util.Log.e("Harness", "model_import_uri", e)
+            if (e is Error) throw e
+        } finally {
+            CrashReport.clear(ctx)
+        }
     }
 
     /** What the catalog holds, and what is actually on disk. */

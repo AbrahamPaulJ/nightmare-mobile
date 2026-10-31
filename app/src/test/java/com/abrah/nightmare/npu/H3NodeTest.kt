@@ -126,9 +126,12 @@ class H3NodeTest {
         assertEquals("Image to video with sound", H3Node.titleFor(Node("v", H3Node.name, inputs = mapOf("image" to com.abrah.nightmare.Source("img")))))
         val knobs = H3Node.widgets.associateBy { it.name }
         // ⚠ ONE prompt box, the Prompt node's (the user, 2026-10-30): no sentence fields on this node; the framing as Wan's.
-        assertEquals(setOf("width", "height", "seed", "seconds", WanVideoNode.SMOOTH, "x", "y", "w", "h") + WanParts.KNOBS, knobs.keys)
+        // ⭐ LoRAs since 1.6.269 (a tester's ask): CivitAI's H3 LoRAs bind (`docs/MINIMAX-H3.md` §5g).
+        assertEquals(
+            setOf("width", "height", "seed", "seconds", WanVideoNode.SMOOTH, "x", "y", "w", "h", com.abrah.nightmare.SdSampler.LORAS) + WanParts.KNOBS,
+            knobs.keys,
+        )
         assertEquals(VideoPrompts.H3_I2V, VideoPrompts.forType(H3Node.name, i2v = true))
-        assertTrue(com.abrah.nightmare.SdSampler.LORAS !in knobs)
         assertEquals(ModelCatalog.MINIMAX_H3, WanVideoNode.specOf(Node("v", H3Node.name)))
         assertEquals(WanVideoNode.H3, WanVideoNode.profileOf(H3Node.name))
         assertTrue(H3Node.name in com.abrah.nightmare.WAN_TYPES)

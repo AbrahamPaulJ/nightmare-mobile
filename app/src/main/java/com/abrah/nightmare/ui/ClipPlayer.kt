@@ -88,6 +88,26 @@ class LoopingClipView(
     private var player: MediaPlayer? = null
     private var surface: Surface? = null
     private var source: String? = null
+    private var prepared = false
+
+    /**
+     * ⭐⭐ The NEWEST player on screen plays; the ones under it pause until it goes. GitHub #75: the Results page's
+     * clip kept playing under the fullscreen viewer, which started its own, so a clip with sound played twice.
+     * ⚠ Main thread only, as every [TextureView] callback is.
+     */
+    private companion object {
+        val live = mutableListOf<LoopingClipView>()
+    }
+
+    private fun onTop() = live.lastOrNull() === this
+
+    private fun pause() {
+        if (prepared) runCatching { player?.takeIf { it.isPlaying }?.pause() }
+    }
+
+    private fun resume() {
+        if (prepared) runCatching { player?.start() }
+    }
 
     init {
         surfaceTextureListener = this
@@ -106,12 +126,17 @@ class LoopingClipView(
         val src = source ?: return
         release()
         val s = Surface(st).also { surface = it }
+        live.forEach { it.pause() }
+        live += this
         player = try {
             MediaPlayer().apply {
                 if (src.startsWith("content://")) setDataSource(context, android.net.Uri.parse(src)) else setDataSource(src)
                 setSurface(s)
                 isLooping = true
-                setOnPreparedListener { it.start() }
+                setOnPreparedListener {
+                    prepared = true
+                    if (onTop()) it.start()
+                }
                 setOnVideoSizeChangedListener { _, w, h -> if (w > 0 && h > 0) onSize(w, h) }
                 // ⚠ True = handled: no platform "Can't play this video" dialog over ours.
                 setOnErrorListener { _, _, _ -> onFailed(); true }
@@ -126,8 +151,10 @@ class LoopingClipView(
     fun release() {
         player?.let { runCatching { it.stop() }; it.release() }
         player = null
+        prepared = false
         surface?.release()
         surface = null
+        if (live.remove(this) && live.isNotEmpty()) live.last().resume()
     }
 
     override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) = start()
