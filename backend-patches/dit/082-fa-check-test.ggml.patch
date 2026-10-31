@@ -1,5 +1,6 @@
-dit/082 (diagnostic): nm-fa-check, one FLASH_ATTN_EXT on the GPU backend against the CPU in the DiT models' shapes
-(Z-Image renders garbage with the Adreno xmem attention). Built only with -DGGML_BUILD_TESTS=ON; ships in no engine.
+dit/082 (diagnostic): nm-fa-check, one FLASH_ATTN_EXT on the GPU backend against the CPU in the DiT models' shapes,
+timed (NM_FA_REPS, NM_FA_GPU_ONLY). Z-Image renders garbage with the Adreno xmem attention. Built only with
+-DGGML_BUILD_TESTS=ON; ships in no engine.
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 index 7f8a1f7..e0d3de1 100644
@@ -25,10 +26,10 @@ index 0000000..e6644f9
 +target_link_libraries(nm-fa-check PRIVATE ggml)
 diff --git a/tests/nm-fa-check.cpp b/tests/nm-fa-check.cpp
 new file mode 100644
-index 0000000..1be50d5
+index 0000000..ef16406
 --- /dev/null
 +++ b/tests/nm-fa-check.cpp
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,122 @@
 +// nightmare: one FLASH_ATTN_EXT on the first GPU backend against the CPU, in the shapes and scalings the DiT models send.
 +// Z-Image renders garbage with ggml-opencl's Adreno xmem attention (GGML_OPENCL_XMEM_SDPA=1) and right without it;
 +// Klein is right with it. Each case isolates one difference. Usage: nm-fa-check [T] (tokens, default 1280).
@@ -37,6 +38,7 @@ index 0000000..1be50d5
 +#include "ggml-backend.h"
 +#include "ggml-cpu.h"
 +
++#include <chrono>
 +#include <cmath>
 +#include <cstdio>
 +#include <cstdlib>
@@ -75,7 +77,16 @@ index 0000000..1be50d5
 +    if (!ggml_backend_supports_op(be, out)) {
 +        fprintf(stderr, "  %s: backend %s does not support this op\n", c.name, ggml_backend_name(be));
 +    }
-+    ggml_backend_graph_compute(be, gf);
++    const int reps = getenv("NM_FA_REPS") ? atoi(getenv("NM_FA_REPS")) : 1;
++    double best = 1e30;
++    for (int i = 0; i < reps; i++) {
++        auto t0 = std::chrono::steady_clock::now();
++        ggml_backend_graph_compute(be, gf);
++        ggml_backend_synchronize(be);
++        best = std::min(best, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
++    }
++    printf("  %s on %s: %.1f ms
++", c.name, ggml_backend_name(be), best);
 +    std::vector<float> r(ggml_nelements(out));
 +    ggml_backend_tensor_get(out, r.data(), 0, ggml_nbytes(out));
 +    ggml_backend_buffer_free(buf);
@@ -119,6 +130,7 @@ index 0000000..1be50d5
 +            for (int i = 0; i < T; i++)
 +                for (int j = 0; j < T; j++) m[(size_t) i * T + j] = ggml_fp32_to_fp16(j >= T - T / 8 ? -INFINITY : 0.0f);
 +        }
++        if (getenv("NM_FA_GPU_ONLY")) { run(gpu, c, D, T, q, k, v, m); continue; }
 +        std::vector<float> a = run(cpu, c, D, T, q, k, v, m);
 +        std::vector<float> b = run(gpu, c, D, T, q, k, v, m);
 +        double maxref = 0, maxd = 0, sd = 0, sr = 0;
