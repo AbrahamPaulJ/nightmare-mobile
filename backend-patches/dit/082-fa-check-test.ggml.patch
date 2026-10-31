@@ -1,6 +1,19 @@
 dit/082 (diagnostic): nm-fa-check, one FLASH_ATTN_EXT on the GPU backend against the CPU in the DiT models' shapes
 (Z-Image renders garbage with the Adreno xmem attention). Built only with -DGGML_BUILD_TESTS=ON; ships in no engine.
 
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7f8a1f7..e0d3de1 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -309,7 +309,7 @@ add_subdirectory(src)
+ 
+ if (GGML_BUILD_TESTS)
+     enable_testing()
+-    add_subdirectory(tests)
++    add_subdirectory(tests)  # nightmare dit/082: tests/ holds only nm-fa-check
+ endif ()
+ 
+ if (GGML_BUILD_EXAMPLES)
 diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
 new file mode 100644
 index 0000000..e6644f9
