@@ -1404,4 +1404,18 @@
     <string name="part_readout_line">Part %1$d: %2$s</string>
     <string name="part_readout_same">Part %1$d: the same as part %2$d</string>
     <string name="part_readout_unused">%1$d line(s) come after the last part and will not be used. Set Parts to %2$d to use them</string>
+    <string name="flow_no_snapdragon">%1$s is not a Snapdragon chip. This flow needs a Snapdragon NPU.</string>
+    <string name="models_no_snapdragon">%1$s needs a Snapdragon NPU, and %2$s is not a Snapdragon chip</string>
+    <string name="device_no_snapdragon">⚠ %1$s is not a Snapdragon chip, so it has no Hexagon NPU. Nightmare\'s models run on Qualcomm Snapdragon phones only.</string>
+    <string name="run_end_title">When a run ends</string>
+    <string name="run_end_note">For long renders: hear it end, and see it in the notifications when Nightmare is in the background.</string>
+    <string name="run_sound">Sound when a run ends</string>
+    <string name="run_sound_hint">Runs of 15 s or longer. A run you cancel ends quietly.</string>
+    <string name="run_sound_done">Finished</string>
+    <string name="run_sound_failed">Failed</string>
+    <string name="run_sound_choose">Choose</string>
+    <string name="run_sound_default">Default notification sound</string>
+    <string name="run_end_channel">Run finished</string>
+    <string name="run_end_done">Run finished in %1$s</string>
+    <string name="run_end_failed">Run failed after %1$s</string>
 </resources>

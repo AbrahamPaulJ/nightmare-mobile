@@ -1881,7 +1881,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // refused up front rather than after 3.5 GB.
         val build = spec.buildFor(DeviceProbe.caps())
         if (build == null) {
-            modelError = if (spec.noEngineFor(DeviceProbe.caps()))
+            modelError = if (!DeviceProbe.caps().qualcomm)
+                text(R.string.models_no_snapdragon, spec.label, DeviceProbe.caps().soc.ifEmpty { text(R.string.flow_this_chip) })
+            else if (spec.noEngineFor(DeviceProbe.caps()))
                 text(R.string.models_no_engine_arch, spec.label, DeviceProbe.caps().arch)
             else if (spec.chipBlocked(DeviceProbe.caps()))
                 text(R.string.models_not_on_chip, spec.label, DeviceProbe.caps().soc.let { DeviceProbe.DIT_NO_HMX_SOCS[it] ?: it })
@@ -4649,13 +4651,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** ⭐ An imported model's shown name ([CustomModels.Config.writeLabel]). */
     /**
      * ⭐ ⋮ "8-step speed-up" on a MOSS import ([CustomModels.MOSS_NO_SPEED_MARK]): the switch, then every node on that
      * model takes its new steps, CFG and scheduler (Reset defaults' overlay), so the next Run is the recipe it shows.
+     * ⚠ [ModelSpec.dir], never [ModelSpec.home]: only Local Dream's models carry a home, so this and Rename were
+     * unreachable on every import of ours from 1.6.163 to 1.6.273 (a tester's SDXL import, Saved #7783).
      */
     fun toggleMossSpeed(spec: ModelSpec) {
-        val dir = spec.home?.let { java.io.File(it) } ?: return
+        val dir = spec.dir(getApplication())
         val on = spec.ownLora == null
         viewModelScope.launch {
             withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { CustomModels.setMossSpeed(dir, on) } }
@@ -4669,8 +4672,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** ⭐ An imported model's shown name ([CustomModels.Config.writeLabel]), in its own folder ([toggleMossSpeed]'s ⚠). */
     fun renameModel(spec: ModelSpec, name: String) {
-        val dir = spec.home?.let { java.io.File(it) } ?: return
+        val dir = spec.dir(getApplication())
         if (name.isBlank()) return
         viewModelScope.launch {
             val r = withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -9659,10 +9663,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // the likeliest moment for that — it is when gigabytes of checkpoint
         // are resident.
         CrashReport.mark(getApplication(), renderingBreadcrumb())
+        // ⭐ For [RunAlert]: how long the run took, and whether a person stopped it.
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        var cancelled = false
         runJob = viewModelScope.launch {
             try {
                 block()
             } catch (e: kotlinx.coroutines.CancellationException) {
+                cancelled = true
                 // ⚠⚠ Caught SEPARATELY and rethrown. The broad `Throwable` below
                 // would otherwise swallow a cancellation and report it as a
                 // crash -- and a coroutine that eats its own CancellationException
@@ -9700,6 +9708,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 busy = false
                 runJob = null
                 refreshLoad()
+                // ⭐ GitHub #79: a sound (and a notification out of sight) when a Run or a sweep ends.
+                if (label == "canvas" || label == "batch") RunAlert.ended(
+                    getApplication(), android.os.SystemClock.elapsedRealtime() - startedAt,
+                    failure = runError, cancelled = cancelled || (label == "batch" && cancelBatch),
+                )
             }
         }
         return null

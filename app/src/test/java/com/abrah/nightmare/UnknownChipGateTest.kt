@@ -100,6 +100,29 @@ class UnknownChipGateTest {
     }
 
     /**
+     * The downloaded runtime ([QnnPack], QAIRT 2.51 for every arch since 1.6.273) holds a whole trio for every arch
+     * the probe can name, and nothing else: a named arch with no trio is a phone whose NPU init fails.
+     */
+    @Test
+    fun theDownloadedRuntimeServesEveryArchTheAppNames() {
+        assertEquals((DeviceProbe.STAGED_ARCHES + DeviceProbe.PACK_ARCHES).sorted(), QnnPack.RUNTIME_ARCHES)
+        for (a in QnnPack.RUNTIME_ARCHES) {
+            for (n in listOf("libQnnHtpV$a.so", "libQnnHtpV${a}Skel.so", "libQnnHtpV${a}Stub.so")) {
+                assertTrue(n, n in QnnPack.FILES)
+            }
+        }
+        assertTrue("libQnnHtp.so" in QnnPack.FILES && "libQnnSystem.so" in QnnPack.FILES)
+        assertEquals(2 + 3 * QnnPack.RUNTIME_ARCHES.size, QnnPack.FILES.size)
+        // A file at its exact size is kept; any other size (a 2.50 one) is fetched again.
+        val dir = java.nio.file.Files.createTempDirectory("qnnrt").toFile()
+        val stub = "libQnnHtpV79Stub.so"
+        java.io.RandomAccessFile(java.io.File(dir, stub), "rw").use { it.setLength(QnnPack.FILES.getValue(stub).first) }
+        java.io.RandomAccessFile(java.io.File(dir, "libQnnHtp.so"), "rw").use { it.setLength(3_978_976L) }
+        assertEquals(QnnPack.FILES.getValue("libQnnHtp.so").first, QnnPack.missingBytes(dir, listOf(stub, "libQnnHtp.so")))
+        dir.deleteRecursively()
+    }
+
+    /**
      * ⭐⭐⭐ One generation newer (SM8950 / SM8975, the 8 Elite Gen 6) is v85 since 1.6.202: its runtime is
      * DOWNLOADED ([QnnPack], the user's call 2026-10-19), not refused, and every NPU build runs forward on it.
      * ⚠ NOT handed v81 (a user's npuforge compile died "Device Creation failure", 2026-10-09). Two generations
@@ -129,6 +152,34 @@ class UnknownChipGateTest {
         val caps = DeviceProbe.Caps(89, 8, measured = true, soc = "SM9050")
         assertFalse(caps.supportsArch(79))
         assertTrue(caps.npuTooNew)
+    }
+
+    /**
+     * ⭐⭐ GitHub #85: a MediaTek phone (MT6835) read as an unknown chip at the v68 floor, was offered every flow and
+     * the `_min` builds, and failed every launch with `QnnDsp No Snapdragon SOC detected`. A chip KNOWN not to be a
+     * Snapdragon now runs no NPU build and no flow; a Snapdragon, or a chip that says nothing, is unaffected.
+     */
+    @Test
+    fun aChipKnownNotToBeSnapdragonRunsNothing() {
+        assertFalse(DeviceProbe.qualcommVendor("Mediatek", "MT6835"))
+        assertFalse(DeviceProbe.qualcommVendor("", "MT6989"))
+        assertFalse(DeviceProbe.qualcommVendor("Samsung", "S5E9945"))
+        assertFalse(DeviceProbe.qualcommVendor("Google", "TENSOR G4"))
+        // ⚠ The controls: a Snapdragon by its maker, by its part number whatever the maker says, and a silent chip.
+        assertTrue(DeviceProbe.qualcommVendor("QTI", "SM8750"))
+        assertTrue(DeviceProbe.qualcommVendor("Samsung", "SM8750"))
+        assertTrue(DeviceProbe.qualcommVendor("", "SM8975"))
+        assertTrue(DeviceProbe.qualcommVendor("", ""))
+        assertTrue(DeviceProbe.qualcommVendor("Xiaomi", "SM7750"))
+
+        val mtk = DeviceProbe.Caps(DeviceProbe.FLOOR_ARCH, 2, measured = false, soc = "MT6835", qualcomm = false)
+        assertTrue("a known non-Snapdragon is not an unknown chip to be offered everything", mtk.known)
+        assertFalse(mtk.supportsArch(DeviceProbe.FLOOR_ARCH))
+        assertTrue(com.abrah.nightmare.canvas.RECIPES.none { it.runsOnDevice(mtk) })
+        assertEquals(emptyList<String>(), ModelCatalog.builtIn.filter { it.buildFor(mtk) != null }.map { it.id })
+
+        val unknown = DeviceProbe.Caps(DeviceProbe.FLOOR_ARCH, 2, measured = false, soc = "")
+        assertTrue(com.abrah.nightmare.canvas.RECIPES.all { it.runsOnDevice(unknown) })
     }
 
     /**

@@ -53,7 +53,15 @@ fun DeviceSheet(caps: DeviceProbe.Caps, onDismiss: () -> Unit) {
                 // ⚠ The one that actually strands a user: without a Skel for
                 // this arch the NPU cannot initialise AT ALL, whatever model is
                 // installed, and the error names neither the arch nor the file.
-                if (!caps.staged) {
+                // ⭐ Not a Snapdragon at all (GitHub #85): no NPU model runs, and says so before any download.
+                if (!caps.qualcomm) {
+                    Text(
+                        stringResource(R.string.device_no_snapdragon, caps.soc.ifEmpty { stringResource(R.string.flow_this_chip) }),
+                        style = NoteTextStyle,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer()
+                } else if (!caps.staged) {
                     Text(
                         // ⭐ A chip newer than every Skel we ship says so in words, not "v99".
                         if (caps.npuTooNew) stringResource(

@@ -16,7 +16,7 @@ object WanGguf {
     /** NSFW-API's `wan_1.3B_exp_e14.safetensors`, converted (computed from its header: 306 Q8_0 + 519 F32). */
     const val NSFW13_BYTES = 1_511_714_912L
 
-    internal val rule = object : SafetensorsGguf.Rule {
+    internal val rule = object : SafetensorsGguf.Rule() {
         override val prefixes = listOf("model.diffusion_model.")
 
         override fun check(names: List<String>) {

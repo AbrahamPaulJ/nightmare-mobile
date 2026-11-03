@@ -1,4 +1,4 @@
-﻿# Stage the built backend and the QNN runtime into the app.
+﻿# Stage the built backend (and the DiT skels) into the app. The QNN runtime is NOT staged any more.
 #
 # Both destinations are GITIGNORED and must stay that way: the executable is
 # built from backend-src/ (CC BY-NC lineage) and the QNN libs come from the
@@ -17,62 +17,19 @@ $built = Join-Path $root "backend-src\build\android"
 $jni = Join-Path $root "app\src\main\jniLibs\arm64-v8a"
 $assets = Join-Path $root "app\src\main\assets\qnnlibs"
 
-# ⚠⚠ ALL SIX HTP arches, ~150 MB raw.
-#
-# It was V79 only, which meant the APK ran on exactly one phone. `libQnnHtp.so`
-# dispatches on the arch of the DEVICE, not of the context binary, so an 8 Gen 2
-# needs a V73 Skel present to initialise the NPU AT ALL -- even though every
-# model we ship is a context it could otherwise load. A missing Skel is not a
-# slow path, it is `Failed to create context from binary` with nothing in the
-# message pointing at the cause.
-#
-# ⚠ The APK carries all six; the APP unpacks only the one it needs at runtime
-# (DeviceProbe.runtimeLibs), so the 150 MB is a download cost, not a per-start
-# copy. Upstream local-dream and DreamUI both ship all six for this reason.
-#
-# ⚠ Keep this list in step with DeviceProbe.STAGED_ARCHES -- a staged arch with
-# no entry there is dead weight, and an entry with no staged arch is a phone
-# that fails NPU init.
-$arches = @("V68", "V69", "V73", "V75", "V79", "V81")
+# ⭐⭐ The QNN runtime is DOWNLOADED by the app for the phone's own NPU (QnnPack.kt, the user 2026-11-01):
+# QAIRT 2.51's libQnnHtp.so + libQnnSystem.so and one arch trio, ~28 MB once, from HF
+# AbrahamPJ/nightmare-qnn-251 (unchanged copies of ../LocalDream/qairt-runtime/2.51.0.260929). Until 1.6.272 this
+# script copied all six 2.50 trios into assets/qnnlibs: 52 MB of an 85 MB APK, one trio used per phone.
+# ⚠ A leftover assets/qnnlibs would ship again, unused: it is deleted here.
+if (Test-Path $assets) { Remove-Item -Recurse -Force $assets; Write-Output "removed $assets (the runtime is downloaded)" }
 
-New-Item -ItemType Directory -Force -Path $jni, $assets | Out-Null
+New-Item -ItemType Directory -Force -Path $jni | Out-Null
 
 $exe = Join-Path $built "bin\arm64-v8a\libstable_diffusion_core.so"
 if (-not (Test-Path $exe)) { throw "backend not built: $exe" }
 Copy-Item $exe (Join-Path $jni "libstable_diffusion_core.so") -Force
 Write-Output ("exe    {0,10:N0} bytes" -f (Get-Item $exe).Length)
-
-# libQnnHtp.so and libQnnSystem.so are arch-independent; the rest are the
-# per-arch trio (accelerator, stub, skel).
-$want = @("libQnnHtp.so", "libQnnSystem.so")
-foreach ($a in $arches) {
-    $want += @("libQnnHtp$a.so", "libQnnHtp${a}Stub.so", "libQnnHtp${a}Skel.so")
-}
-# ⚠⚠ The RUNTIME is QAIRT 2.50, while the SDK the backend is BUILT against is
-# 2.49 (backend-src/CMakeLists.txt). A QNN runtime loads context binaries from
-# its own version and OLDER, never newer -- and npuforge's SDXL exports are
-# 2.50 builds, which 2.49 refuses with "Using newer context binary on old SDK"
-# (2026-09-16). Measured the same day: the backend built on 2.49 headers runs
-# on these libraries and renders a 2.28 SD 1.5 and a 2.28 SDXL checkpoint
-# BIT-IDENTICAL to 2.49.
-# ⚠ Only the SDK installer needs an account, so this set was taken from an
-# upstream APK's assets/qnnlibs. ⚠⚠ It is local-dream **3.0**'s set, NOT
-# 2.8.1's as this comment used to say: libQnnSystem.so here is byte-identical
-# to v3.0.0-alpha.1's (md5 f050e5d0…), while 2.8.1 ships a different, 2.4 MB
-# build (3f09fefd…) — checked 2026-09-19. Set $env:NM_QNN_RUNTIME to stage a
-# different set.
-$runtime = if ($env:NM_QNN_RUNTIME) { $env:NM_QNN_RUNTIME } else {
-    Join-Path (Split-Path -Parent $root) "LocalDream\qairt-runtime\2.50.0.260828221209"
-}
-if (-not (Test-Path $runtime)) { throw "QNN runtime not found: $runtime" }
-$total = 0
-foreach ($n in $want) {
-    $src = Join-Path $runtime $n
-    if (-not (Test-Path $src)) { throw "missing QNN lib: $src" }
-    Copy-Item $src (Join-Path $assets $n) -Force
-    $total += (Get-Item $src).Length
-}
-Write-Output ("qnnlibs {0,9:N0} bytes across {1} files ({2} arches)" -f $total, $want.Count, $arches.Count)
 
 # ⭐⭐ The DiT engine (FLUX.2 Klein / Z-Image). Taken from local-dream
 # v3.0.0-alpha.2's APK, where upstream builds it from stable-diffusion.cpp with

@@ -76,6 +76,7 @@ object Prefs {
         postOpen = p.getBoolean(KEY_POST_OPEN, false)
         wanStream = p.getBoolean(KEY_WAN_STREAM, false)
         heatPause = p.getBoolean(KEY_HEAT_PAUSE, false)
+        runSound = p.getBoolean(KEY_RUN_SOUND, false)
         ditGpu = p.getBoolean(KEY_DIT_GPU, false)
         ditTaesd = p.getBoolean(KEY_DIT_TAESD, true)
     }
@@ -338,6 +339,28 @@ object Prefs {
     @Volatile var heatPause: Boolean = false
         private set
 
+    /** ⭐ A sound (and a notification out of sight) when a run of 15 s or more ends ([RunAlert], GitHub #79): opt-in. */
+    const val KEY_RUN_SOUND = "run_sound"
+
+    /** ⚠ [KEY_RUN_SOUND] held in memory, as [heatPause]. */
+    @Volatile var runSound: Boolean = false
+        private set
+
+    /** ⭐ The chosen sounds' URIs, one per outcome; none = the phone's default notification sound. */
+    const val KEY_RUN_SOUND_DONE = "run_sound_done"
+    const val KEY_RUN_SOUND_FAILED = "run_sound_failed"
+
+    fun runSoundUri(context: Context, key: String): String? =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(key, null)
+
+    fun runSoundDone(context: Context): String? = runSoundUri(context, KEY_RUN_SOUND_DONE)
+
+    fun runSoundFailed(context: Context): String? = runSoundUri(context, KEY_RUN_SOUND_FAILED)
+
+    fun setRunSoundUri(context: Context, key: String, uri: String?) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(key, uri).apply()
+    }
+
     /** ⭐ The DiT models on the GPU on any phone ([DitGpu], the user 2026-10-31): opt-in; automatic below v73. */
     const val KEY_DIT_GPU = "dit_gpu"
 
@@ -374,6 +397,7 @@ object Prefs {
         val animaSeqDit: Boolean,
         val wanStream: Boolean = false,
         val heatPause: Boolean = false,
+        val runSound: Boolean = false,
         val ditGpu: Boolean = false,
         val ditTaesd: Boolean = true,
     )
@@ -399,6 +423,7 @@ object Prefs {
             animaSeqDit = read(KEY_ANIMA_SEQ_DIT, false),
             wanStream = read(KEY_WAN_STREAM, false),
             heatPause = read(KEY_HEAT_PAUSE, false),
+            runSound = read(KEY_RUN_SOUND, false),
             ditGpu = read(KEY_DIT_GPU, false),
             ditTaesd = read(KEY_DIT_TAESD, true),
         )
@@ -407,6 +432,7 @@ object Prefs {
     fun setLowRam(context: Context, key: String, on: Boolean) {
         if (key == KEY_WAN_STREAM) wanStream = on
         if (key == KEY_HEAT_PAUSE) heatPause = on
+        if (key == KEY_RUN_SOUND) runSound = on
         if (key == KEY_DIT_GPU) ditGpu = on
         if (key == KEY_DIT_TAESD) ditTaesd = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()

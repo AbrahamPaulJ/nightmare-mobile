@@ -121,6 +121,8 @@ object BackendProcess {
         val raw = output.takeWhile { !it.startsWith(EXEC_PREFIX) }.lastOrNull {
             (it.contains("[ ERROR ]") || it.trimStart().startsWith("ERROR")) && HARMLESS_ERRORS.none { h -> h in it }
         } ?: return null
+        // ⭐ QNN's own words for a phone with no Hexagon NPU (GitHub #85, a MediaTek MT6835), said for a person.
+        if ("No Snapdragon SOC detected" in raw) return NO_SNAPDRAGON
         // The engine prefixes `   522.3ms [ ERROR ] [dit] model_loader.cpp:270  - `.
         // Everything before the ` - ` is timing and provenance, and none of it
         // means anything to the person reading the chip.
@@ -135,6 +137,9 @@ object BackendProcess {
     val processId: Int? get() = process?.let { System.identityHashCode(it) }
 
     private const val EXEC_PREFIX = "exec: "
+
+    internal const val NO_SNAPDRAGON =
+        "this phone has no Snapdragon NPU, which this model needs. Nightmare's models run on Qualcomm Snapdragon chips only"
 
     /**
      * ⚠ `[ ERROR ]` lines every healthy launch prints, never a reason: Wan 2.2's 5-D patch tensor makes
@@ -335,14 +340,13 @@ object BackendProcess {
         private set
 
     /**
-     * Unpacks `assets/qnnlibs` into `filesDir/qnnruntime`.
+     * Lays this phone's QNN runtime out in `filesDir/qnnruntime`, downloading what is missing ([QnnPack]).
      *
-     * ⚠ Re-copies rather than skipping when the directory exists. A stale
-     * runtime dir after a backend upgrade is a genuinely nasty failure: the
-     * mismatch shows up as a QNN context that refuses to load, pointing at the
-     * model rather than at the libs. 33 MB of copying is cheap next to that.
+     * ⚠ A file is kept only at the exact size [QnnPack.FILES] names, so a runtime left by another SDK (2.50, before
+     * 1.6.273) is fetched again: a stale runtime shows up as a QNN context that refuses to load, pointing at the
+     * model rather than at the libs.
      *
-     * ⚠⚠⚠ **But it copies through a temp file and a rename, and it does the
+     * ⚠⚠⚠ **It writes through a `.part` file and a rename, and it does the
      * work ONCE PER PROCESS — because these same libraries are `dlopen`'d into
      * THIS process by `libnmqnn.so`, and rewriting a mapped `.so` in place is
      * fatal.** `FileOutputStream` opens with `O_TRUNC`, and truncating a file
@@ -393,7 +397,7 @@ object BackendProcess {
     private val QNN_ARCH_FILE = Regex("""libQnnHtpV\d{2}(Skel|Stub)?\.so""")
 
     @Synchronized
-    fun prepareRuntime(context: Context): File {
+    fun prepareRuntime(context: Context, onProgress: (ModelInstaller.Progress) -> Unit = {}): File {
         // ⚠⚠ Keyed on the arch, not "done once per process": the probe runs ON this runtime and can change the arch
         // under it. A v85 phone that had learned the v81 fallback (#61/#62) unpacked 2.50 + V81, then measured v85,
         // and the backend's 2.50 `libQnnHtp` asked for the V85 stub and found a 2.51 one left by an earlier overlay:
@@ -401,37 +405,20 @@ object BackendProcess {
         val arch = DeviceProbe.caps().arch
         if (runtimeArch == arch) runtimeUnpacked?.let { return it }
         val dir = runtimeDir(context).apply { mkdirs() }
-        val all = context.assets.list("qnnlibs").orEmpty().toList()
-        check(all.isNotEmpty()) {
-            "no qnnlibs in assets. Run tools/stage_backend.ps1 before building"
-        }
-        // ⚠⚠ ONLY this device's arch trio, plus the two shared libraries. The
-        // APK carries all six arches (~150 MB) because `libQnnHtp.so` dispatches
-        // on the arch of the DEVICE and the matching Skel must be present or NPU
-        // init fails outright -- but unpacking all six on every start would copy
-        // 150 MB to answer a question with one answer.
-        // ⚠ An SoC we do not recognise gets every arch and lets QNN choose:
-        // slower to unpack, always correct. A guessed arch is fast and fatal.
-        val names = DeviceProbe.runtimeLibs(all)
+        // ⭐⭐ DOWNLOADED for this phone's NPU ([QnnPack], the user 2026-11-01): QAIRT 2.51's shared pair and the
+        // device's arch trio, ~28 MB once, kept through updates. Until 1.6.272 the APK carried all six 2.50 trios
+        // (52 MB) because `libQnnHtp.so` dispatches on the DEVICE's arch and its Skel must be present or NPU init
+        // fails outright. ⚠ An SoC we do not recognise gets every arch and lets QNN choose: slower, always correct.
+        // A guessed arch is fast and fatal.
+        val names = DeviceProbe.runtimeLibs(QnnPack.FILES.keys.toList())
         // ⚠ Another arch's trio left by an earlier layout is DELETED, never left for `libQnnHtp` to find: the arch it
         // dispatches to is the DEVICE's, so a stale stub of another SDK beside the wrong shared pair is the failure
         // above. Unlinking a mapped file is safe (the inode lives on for whoever has it open).
-        val keepPack = arch in DeviceProbe.PACK_ARCHES
         dir.listFiles().orEmpty()
-            .filter { f -> QNN_ARCH_FILE.matches(f.name) && f.name !in names && !(keepPack && f.name in QnnPack.FILES) }
+            .filter { f -> QNN_ARCH_FILE.matches(f.name) && f.name !in names }
             .forEach { f -> if (f.delete()) Log.i(TAG, "removed stale ${f.name}") }
-        for (n in names) {
-            val dst = File(dir, n)
-            val tmp = File(dir, "$n.tmp")
-            context.assets.open("qnnlibs/$n").use { input ->
-                tmp.outputStream().use { input.copyTo(it) }
-            }
-            tmp.setReadable(true, false)
-            tmp.setExecutable(true, false)
-            // ⚠ `File.renameTo` is `rename(2)` here -- same directory, same
-            // filesystem -- so it is atomic and never truncates `dst`.
-            check(tmp.renameTo(dst)) { "cannot replace ${dst.absolutePath}" }
-        }
+        QnnPack.legacyDir(context).takeIf { it.exists() }?.deleteRecursively()
+        QnnPack.ensure(dir, names, onProgress)
         // ⭐ The DiT engine's Hexagon skels (`libggml-htp-v79/v81.so`), beside
         // the QNN ones on the DSP search path — upstream's `ditlibs`. FastRPC
         // hands them to the DSP by bare name; nothing on the CPU loads them.
@@ -447,10 +434,7 @@ object BackendProcess {
             tmp.setExecutable(true, false)
             check(tmp.renameTo(dst)) { "cannot replace ${dst.absolutePath}" }
         }
-        // ⭐ A v85 phone: QAIRT 2.51's runtime over the APK's 2.50 ([QnnPack], fetched once, ~38 MB). ⚠ Throws when it
-        // cannot be fetched, which a launch reports as its reason rather than a QNN init failure naming nothing.
-        if (DeviceProbe.caps().arch in DeviceProbe.PACK_ARCHES) QnnPack.overlay(context, dir)
-        Log.i(TAG, "runtime: ${names.size}/${all.size} libs (${DeviceProbe.caps()}) in ${dir.absolutePath}")
+        Log.i(TAG, "runtime: ${names.size}/${QnnPack.FILES.size} libs (${DeviceProbe.caps()}) in ${dir.absolutePath}")
         runtimeUnpacked = dir
         runtimeArch = arch
         return dir

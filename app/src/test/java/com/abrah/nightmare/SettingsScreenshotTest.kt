@@ -27,7 +27,7 @@ open class SettingsScreenshotTest {
 
     private fun shoot(
         name: String, page: Int, downloadFolder: Boolean = false, black: Boolean = false,
-        accent: Prefs.Accent = Prefs.Accent.VIOLET, dark: Boolean = true,
+        accent: Prefs.Accent = Prefs.Accent.VIOLET, dark: Boolean = true, lowRam: Prefs.LowRam? = null,
     ) =
         captureRoboImage(filePath = goldenPath(this, name)) {
             NightmareTheme(darkTheme = dark, black = black, accent = accent) {
@@ -46,6 +46,7 @@ open class SettingsScreenshotTest {
                     // ⭐ Tag autocomplete with the Danbooru list installed, no translations yet.
                     tags = TagDictionary.State(true, "danbooru.csv", 140_782, null, 0),
                     initialPage = page,
+                    lowRam = lowRam,
                     // ⭐ The models folder in Download/, access revoked, and
                     // models left behind in app storage — every line it can draw.
                     modelsPlace = if (downloadFolder) ModelStorage.Place.DOWNLOAD else ModelStorage.Place.APP,
@@ -71,4 +72,10 @@ open class SettingsScreenshotTest {
     @Test fun prompts() = shoot("settings-prompts", 1)
     @Test fun models() = shoot("settings-models", 2, downloadFolder = true)
     @Test fun advanced() = shoot("settings-advanced", 3)
+    /** ⭐ Performance, with "Sound when a run ends" on (GitHub #79): its two sound rows, Default each. ⚠ Tall: it is the third card. */
+    @Config(qualifiers = "w411dp-h1600dp-xxhdpi")
+    @Test fun performance() = shoot(
+        "settings-performance", 3,
+        lowRam = Prefs.LowRam(sdxl = true, anima = true, animaSeqDit = false, runSound = true),
+    )
 }

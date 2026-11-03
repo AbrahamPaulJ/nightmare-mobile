@@ -15,7 +15,8 @@ the phone. No server, no account, no cloud.
 ## What your phone needs
 
 Android 12 or newer, arm64, a Snapdragon with a Hexagon NPU. Models are not in the APK: pick one
-and it downloads on first use; the app shows which ones your phone can run.
+and it downloads on first use; the app shows which ones your phone can run. On a phone without a
+Snapdragon (MediaTek Dimensity, Exynos, Google Tensor) the app says so and offers no models.
 
 | chip | runs |
 |---|---|
@@ -24,7 +25,7 @@ and it downloads on first use; the app shows which ones your phone can run.
 | 8 Gen 2, 8s Gen 3 and newer | Z-Image Turbo and FLUX.2 Klein 4B as Q4_0 GGUFs, FLUX.2 Klein 9B, Anima Turbo 1.1 and Iris 3B Turbo on the DiT engine. On the 8s Gen 4 and 8s Gen 3 they run with the NPU's matrix unit off and decode on the CPU for now, because with it the picture comes back grey or as noise: right pictures, but much slower (minutes at 512, far longer at 1024). A model's ⋮ **Test the NPU** finds which part fails, so it can be made fast again, and every error report now says whether the matrix unit computed a test sum right when the model started. Iris 3B Turbo is not offered there: every way of running it gives noise |
 | 8 Gen 3 and newer | SDXL, Anima, community-converted SDXL and SDXL Swap models; FLUX.2 Klein 4B / 9B, Qwen Image 2.1 and 2.1 Turbo, Anima Turbo 1.1 on the DiT engine, Iris 3B Turbo, MOSS-Image, Z-Image Turbo as a Q4_0 GGUF, FLUX.3 Image Klein, Fibo 2.0 Edit (12 GB), MiniMax H3 video with sound (12 GB); **alpha:** your own quantised (GGUF) DiT, Wan 2.2 video |
 | 8 Elite and newer | Z-Image Turbo in FP8, SDXL Swap, Ideogram 4, Neodragon text and image to video, and all of the above |
-| 8 Elite Gen 6 | SD 1.5, SDXL, Anima and the other NPU models, with the newer NPU's runtime (about 38 MB) fetched on first use (1.6.212 fixes the "Stub lib id mismatch" a tester's phone hit); the DiT models through a Gen 6 build of the engine's NPU code, the same change Local Dream made |
+| 8 Elite Gen 6 | SD 1.5, SDXL, Anima and the other NPU models, on the same NPU runtime as every other chip (QAIRT 2.51 since 1.6.273, so no older and newer runtime are mixed, the "Stub lib id mismatch" a tester's phone hit); the DiT models through a Gen 6 build of the engine's NPU code, the same change Local Dream made |
 | 12 GB RAM | Ideogram 4 (8 Elite), Krea 2 Turbo (8 Elite and 8 Gen 3); on 12 GB it renders in parts, about 3.5 to 4 min at 1024² |
 
 ## Features
@@ -123,9 +124,10 @@ The [user guide](https://abrahampaulj.github.io/nightmare-mobile/) explains each
 
 ## Building it
 
-JDK 17 and Android SDK 35: `gradlew assembleDebug`. The NPU backend is a native binary and the QNN
-runtime libraries are not in this repository; without them the app builds and the canvas works, but
-nothing renders. Prompt translation needs Foxlet built once: `tools/build_foxlet.sh` (Git Bash)
+JDK 17 and Android SDK 35: `gradlew assembleDebug`. The NPU backend is a native binary that is not in
+this repository; without it the app builds and the canvas works, but nothing renders. The QNN runtime
+is not in the APK: the app downloads the one for the phone's NPU (QAIRT 2.51, about 28 MB) once, with
+the first model, and keeps it through updates. Prompt translation needs Foxlet built once: `tools/build_foxlet.sh` (Git Bash)
 clones and builds it and copies the AAR into `app/libs/`.
 
 ## Credits

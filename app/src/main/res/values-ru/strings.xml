@@ -1400,4 +1400,18 @@
     <string name="part_readout_line">Часть %1$d: %2$s</string>
     <string name="part_readout_same">Часть %1$d: как часть %2$d</string>
     <string name="part_readout_unused">Строк после последней части: %1$d, они не будут использованы. Поставьте Части на %2$d, чтобы их использовать</string>
+    <string name="flow_no_snapdragon">%1$s: это не чип Snapdragon. Этому потоку нужен NPU Snapdragon.</string>
+    <string name="models_no_snapdragon">Для %1$s нужен NPU Snapdragon, а %2$s: не чип Snapdragon</string>
+    <string name="device_no_snapdragon">⚠ %1$s: не чип Snapdragon, поэтому у него нет NPU Hexagon. Модели Nightmare работают только на телефонах с Qualcomm Snapdragon.</string>
+    <string name="run_end_title">Когда запуск закончится</string>
+    <string name="run_end_note">Для долгих рендеров: услышать окончание и увидеть его в уведомлениях, когда Nightmare в фоне.</string>
+    <string name="run_sound">Звук в конце запуска</string>
+    <string name="run_sound_hint">Запуски от 15 с. Отменённый запуск заканчивается без звука.</string>
+    <string name="run_sound_done">Готово</string>
+    <string name="run_sound_failed">Ошибка</string>
+    <string name="run_sound_choose">Выбрать</string>
+    <string name="run_sound_default">Звук уведомления по умолчанию</string>
+    <string name="run_end_channel">Запуск закончен</string>
+    <string name="run_end_done">Запуск закончен за %1$s</string>
+    <string name="run_end_failed">Запуск не удался через %1$s</string>
 </resources>

@@ -29,7 +29,7 @@ object IrisGguf {
     private val MLP = Regex("""^(?:blocks\.\d+\.mlp(?:_[xy])?|y_embedder\.refiner\.blocks\.\d+\.mlp)\.(w1|w2|w3)\.weight$""")
     private val KEEP = listOf("t_embedder.", "y_embedder.", "final_layer.", "y_pos_embedding")
 
-    internal val rule = object : SafetensorsGguf.Rule {
+    internal val rule = object : SafetensorsGguf.Rule() {
         override fun check(names: List<String>) {
             if ("y_embedder.layer_pool.weight" !in names || "pixel_blocks.0.compress.weight" !in names) {
                 throw IOException("not an Iris-3B DiT (no y_embedder.layer_pool / pixel_blocks)")

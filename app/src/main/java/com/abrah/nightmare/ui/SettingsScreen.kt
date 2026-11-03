@@ -644,6 +644,19 @@ fun SettingsScreen(
                             lowRam.heatPause, { onLowRam(Prefs.KEY_HEAT_PAUSE, it) },
                         )
                     }
+                    // ⭐ GitHub #79: a sound, and a notification out of sight, when a long run ends ([com.abrah.nightmare.RunAlert]).
+                    StudioCard {
+                        SectionHeading(stringResource(R.string.run_end_title), stringResource(R.string.run_end_note))
+                        val askNotify = rememberNotifyAsk()
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.run_sound), stringResource(R.string.run_sound_hint),
+                            lowRam.runSound, { on -> if (on) askNotify(); onLowRam(Prefs.KEY_RUN_SOUND, on) },
+                        )
+                        if (lowRam.runSound) {
+                            RunSoundRow(stringResource(R.string.run_sound_done), Prefs.KEY_RUN_SOUND_DONE)
+                            RunSoundRow(stringResource(R.string.run_sound_failed), Prefs.KEY_RUN_SOUND_FAILED)
+                        }
+                    }
                     // ⭐ The DiT models on the GPU ([com.abrah.nightmare.DitGpu], the user 2026-10-31): only where an
                     // OpenCL driver exists, the one place the route can go.
                     if (com.abrah.nightmare.DitGpu.hasOpenCl) StudioCard {
@@ -842,6 +855,53 @@ private enum class Page(val label: Int) {
     MODELS(R.string.settings_models),
     PERFORMANCE(R.string.settings_performance),
     ADVANCED(R.string.settings_advanced),
+}
+
+/**
+ * ⭐ One outcome's sound (GitHub #79): its name, and Choose, which opens the system's own sound picker (notification
+ * and alarm sounds, with the default on top). Kept in [Prefs] under [key]; the pick plays once so it is heard.
+ */
+@Composable
+private fun RunSoundRow(label: String, key: String) {
+    val ctx = LocalContext.current
+    var chosen by remember(key) { mutableStateOf(Prefs.runSoundUri(ctx, key)) }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) { r ->
+        if (r.resultCode != android.app.Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        @Suppress("DEPRECATION")
+        val uri = r.data?.getParcelableExtra<android.net.Uri>(android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        // ⚠ The picker's "Default" comes back as the default's own URI: kept as none, so it follows the phone's.
+        val s = uri?.toString()?.takeIf { uri != android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION) }
+        Prefs.setRunSoundUri(ctx, key, s)
+        chosen = s
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            Text(
+                com.abrah.nightmare.RunAlert.nameOf(ctx, chosen),
+                style = NoteTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        StudioTextButton(onClick = {
+            pick.launch(
+                android.content.Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER)
+                    .putExtra(
+                        android.media.RingtoneManager.EXTRA_RINGTONE_TYPE,
+                        android.media.RingtoneManager.TYPE_NOTIFICATION or android.media.RingtoneManager.TYPE_ALARM,
+                    )
+                    .putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                    .putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                    .putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TITLE, label)
+                    .putExtra(
+                        android.media.RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
+                        com.abrah.nightmare.RunAlert.soundFor(chosen),
+                    ),
+            )
+        }) { Text(stringResource(R.string.run_sound_choose)) }
+    }
 }
 
 /** ⚠ MB below a gigabyte, one decimal of GB above — the unit the Models tab uses. */

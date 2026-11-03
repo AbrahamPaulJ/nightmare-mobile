@@ -124,7 +124,7 @@ object Int8Gguf {
      * or a row is not a multiple of 32), BF16 / F16 / F32 kept, and the scales and settings dropped: a `weight_scale`
      * left in would be multiplied in again (`Linear` in `ggml_block.hpp` applies one to any weight type).
      */
-    internal fun rule(modules: Map<String, Module>, family: Family?) = object : SafetensorsGguf.Rule {
+    internal fun rule(modules: Map<String, Module>, family: Family?) = object : SafetensorsGguf.Rule() {
         override val kvU32 = listOf("general.quantization_version" to 2, "general.file_type" to 7)
         override fun check(names: List<String>) {}
         override fun keep(name: String): Boolean = DROPPED.none { d -> name.endsWith(d) && owned(name.removeSuffix(d), modules) }

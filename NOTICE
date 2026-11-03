@@ -45,8 +45,9 @@ Qualcomm AI Runtime (QAIRT / QNN)
     Runtime libraries used to execute models on the Hexagon NPU. Distributed
     under Qualcomm's own licence terms, which are separate from and not
     superseded by this project's licence. Not included in this repository.
-    On a Hexagon v85 phone only, QAIRT 2.51's runtime libraries are downloaded
-    unchanged from https://huggingface.co/AbrahamPJ/nightmare-qnn-v85.
+    Not in the APK either: the app downloads QAIRT 2.51's runtime libraries for
+    the phone's own NPU, unchanged, from
+    https://huggingface.co/AbrahamPJ/nightmare-qnn-251.
 
 QuickJS
     Fabrice Bellard and Charlie Gordon

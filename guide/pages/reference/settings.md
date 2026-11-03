@@ -138,6 +138,12 @@ to 45 °C. Keep the phone off the charger and out of the sun while it renders.
 |---|---|---|
 | **Pause video when the battery is hot** | off | A video render waits between steps when the battery reaches 45 °C and carries on when it cools to 40 °C. Slower in a warm room, easier on the battery. Not for Neodragon, whose clips take seconds |
 
+### When a run ends
+
+| switch | default | what it does |
+|---|---|---|
+| **Sound when a run ends** | off | Plays a sound when a Run or a sweep of 15 seconds or longer finishes, and a different one if it fails. **Choose** beside each opens the phone's own sound list (notification and alarm sounds). With Nightmare in the background, a notification also says how long it took, or why it failed. A run you cancel ends quietly |
+
 ### GPU
 
 Shown on phones with an OpenCL graphics driver (Snapdragon). FLUX.2 Klein 4B and Z-Image Turbo can render on the

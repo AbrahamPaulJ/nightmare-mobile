@@ -53,7 +53,7 @@ step.
 ## What your phone needs
 
 - **Android 12 or newer**, and a **Snapdragon** processor. Other chips (Exynos, Tensor,
-  MediaTek) have no supported NPU and cannot run it.
+  MediaTek) have no supported NPU and cannot run it: on one, the app says so and offers no models.
 - Which models you can use depends on the chip:
 
 | chip | can run |
@@ -63,7 +63,7 @@ step.
 | Snapdragon 8 Gen 2, 8s Gen 3 and newer | + Z-Image, FLUX.2 Klein 4B and 9B, Anima DiT, Iris (on the 8s Gen 4 and 8s Gen 3 with the NPU's matrix unit off: right pictures, but much slower; Iris is not offered there, it gives noise) |
 | Snapdragon 8 Gen 3 and newer | + SDXL and Anima, FLUX.2, Qwen Image, Anima DiT, Iris, Z-Image, MOSS-Image, FLUX.3 Klein, Krea 2 and Fibo 2.0 Edit (12 GB) |
 | Snapdragon 8 Elite and newer | + video; Ideogram 4 and Krea 2 with 12 GB of RAM or more |
-| Snapdragon 8 Elite Gen 6 | the NPU and DiT models above, with a newer NPU runtime fetched once |
+| Snapdragon 8 Elite Gen 6 | the NPU and DiT models above |
 
 - **Storage**: models are downloaded separately, from about 1 GB (an SD 1.5 model) to
   13.8 GB (Qwen Image on a 16 GB phone). The app tells you each size before you download.

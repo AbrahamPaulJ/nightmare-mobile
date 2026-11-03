@@ -105,6 +105,11 @@ object ModelInstaller {
         // "9000 MB" appeared, which read as a broken progress display). Its bytes are the
         // head of the package total; its verify/unpack phases hold the bar where it is.
         val engineBytes = if (spec.isDit && !DitEngine.isInstalled(context)) DitEngine.BYTES else 0L
+        // ⭐ The QNN runtime for this phone's NPU ([QnnPack], ~28 MB once) rides at the head of the same bar, so the
+        // first model's download fetches it with progress shown, not the first launch with none.
+        val runtimeBytes = QnnPack.missingBytes(
+            BackendProcess.runtimeDir(context), DeviceProbe.runtimeLibs(QnnPack.FILES.keys.toList()),
+        )
         // ⭐ Less what a donor model holds whole ([ModelSpec.partsFrom]: Fun Control's umT5 and TAEHV).
         val fetchList = spec.toFetch(context)
         // ⚠⚠ What the spec calls MISSING, not every file whose size differs from the catalogue's. A user-swapped
@@ -115,11 +120,16 @@ object ModelInstaller {
         // another folder (Local Dream's): fetch as before, nothing of the user's is in ours.
         val missingNow = if (spec.dir(context) == modelDir) spec.missing(context).toSet() else null
         val wanted = { f: RemoteFile -> missingNow == null || f.name in missingNow }
-        val packageTotal = engineBytes + fetchList.sumOf { maxOf(it.bytes, it.sourceBytes) }
+        val packageTotal = runtimeBytes + engineBytes + fetchList.sumOf { maxOf(it.bytes, it.sourceBytes) }
+        if (runtimeBytes > 0) {
+            BackendProcess.prepareRuntime(context) { p ->
+                onProgress(Progress(p.phase, p.done.coerceAtMost(runtimeBytes), packageTotal.coerceAtLeast(runtimeBytes)))
+            }
+        }
         if (engineBytes > 0) {
             DitEngine.install(context, { p ->
-                val done = if (p.total > 0) p.done.coerceAtMost(engineBytes) else engineBytes
-                onProgress(Progress(p.phase, done, packageTotal.coerceAtLeast(engineBytes)))
+                val done = runtimeBytes + if (p.total > 0) p.done.coerceAtMost(engineBytes) else engineBytes
+                onProgress(Progress(p.phase, done, packageTotal.coerceAtLeast(runtimeBytes + engineBytes)))
             }, isCancelled)
         }
 
@@ -147,7 +157,7 @@ object ModelInstaller {
             // Upstream reports packageOffset + done against the package total
             // for the same reason.
             val total = packageTotal
-            var before = engineBytes
+            var before = runtimeBytes + engineBytes
             for (f in fetchList) {
                 val out = File(modelDir, f.name)
                 val convert = f.convert

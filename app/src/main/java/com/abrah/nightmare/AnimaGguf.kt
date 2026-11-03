@@ -26,7 +26,7 @@ object AnimaGguf {
     const val ANIMA_29_PREVIEW_BYTES = 3_159_131_808L
 
     /** ⭐ The writer is [SafetensorsGguf]'s; this is only Anima's half of it. */
-    internal val rule = object : SafetensorsGguf.Rule {
+    internal val rule = object : SafetensorsGguf.Rule() {
         override val prefixes = listOf("model.diffusion_model.", "net.")
         override val kv = listOf("general.architecture" to "cosmos")
         // ⚠ Bedovyy's file has these too, and TURBO_11_BYTES counts them.

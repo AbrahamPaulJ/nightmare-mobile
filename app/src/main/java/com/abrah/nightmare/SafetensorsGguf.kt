@@ -26,31 +26,37 @@ object SafetensorsGguf {
     private const val ALIGN = 32
     private const val CHUNK = 1 shl 20
 
-    /** What a model decides per tensor. */
-    interface Rule {
+    /**
+     * What a model decides per tensor.
+     * ⚠⚠ An abstract CLASS, never an interface with default bodies: 1.6.272's R8 merged AnimaGguf's and MossGguf's
+     * rules (and IrisGguf's and WanGguf's) into one class each and dropped the empty default [decoded] from both, so
+     * every Anima download and MOSS / Z-Image import died with `AbstractMethodError` in the release build only
+     * (GitHub #77, #86). Inherited methods survive the merge. `tools/check_dex_abstract.py` finds the bug in an APK.
+     */
+    abstract class Rule {
         /** The prefixes stripped from a key (ComfyUI's `model.diffusion_model.`). */
-        val prefixes: List<String> get() = emptyList()
+        open val prefixes: List<String> get() = emptyList()
         /** GGUF key/values written after the header, as (key, string value). */
-        val kv: List<Pair<String, String>> get() = emptyList()
+        open val kv: List<Pair<String, String>> get() = emptyList()
         /**
          * ⚠ …then these, as (key, uint32 value). They are part of the file's SIZE, which the catalogue
          * checks: Anima's two went missing in the 1.6.167 refactor, its file came out 64 bytes short, and
          * every Anima Turbo 1.1 download failed at the end of the conversion (a tester, 2026-10-16).
          */
-        val kvU32: List<Pair<String, Int>> get() = emptyList()
+        open val kvU32: List<Pair<String, Int>> get() = emptyList()
         /** ⭐ False drops a tensor (after the prefix is stripped): Anima 2.9B's RoPE buffers, which the engine builds itself. */
-        fun keep(name: String): Boolean = true
+        open fun keep(name: String): Boolean = true
         /** ⚠ Throws when [names] are not this model's: a wrong file must fail here, not render noise. */
-        fun check(names: List<String>)
+        abstract fun check(names: List<String>)
         /** The output shape (torch order) — [shape] unless the model pads it. */
-        fun outShape(name: String, shape: LongArray): LongArray = shape
+        open fun outShape(name: String, shape: LongArray): LongArray = shape
         /** [F32], [F16], [BF16] or [Q8_0]; [Q8_0] only for a row (last dim) that is a multiple of 32. */
-        fun type(name: String, outShape: LongArray, dtype: String): Int
+        abstract fun type(name: String, outShape: LongArray, dtype: String): Int
         /**
          * ⭐ The decoded values of [rows] source rows of [name] (rows [firstRow]..), each [rowLen] long at a stride of
          * [stride] in [x], before [F32] or [Q8_0] encodes them: [Int8Gguf] scales its I8 rows and undoes ConvRot here.
          */
-        fun decoded(name: String, firstRow: Long, x: FloatArray, rows: Int, rowLen: Int, stride: Int) {}
+        open fun decoded(name: String, firstRow: Long, x: FloatArray, rows: Int, rowLen: Int, stride: Int) {}
     }
 
     internal class Tensor(val name: String, val shape: LongArray, val outShape: LongArray, val dtype: String, val begin: Long, val end: Long, val type: Int) {

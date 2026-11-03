@@ -387,8 +387,9 @@ data class Recipe(
      * — which is the exact shape of the Snapdragon 8 Gen 5 report
      * ([com.abrah.nightmare.DeviceProbe.Caps.known], `docs/DEVICES.md`).
      */
+    // ⭐ ...but a chip KNOWN not to be a Snapdragon runs no flow here (GitHub #85, [DeviceProbe.Caps.qualcomm]).
     fun runsOnDevice(caps: com.abrah.nightmare.DeviceProbe.Caps): Boolean =
-        minArch == 0 || caps.supportsArch(minArch) || !caps.known
+        caps.qualcomm && (minArch == 0 || caps.supportsArch(minArch) || !caps.known)
     /** ⚠ Null families means every family; an entry restricts it. */
     fun servesFamily(family: com.abrah.nightmare.Family?): Boolean =
         families == null || family in families

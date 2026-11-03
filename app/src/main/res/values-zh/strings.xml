@@ -1373,4 +1373,18 @@
     <string name="part_readout_line">第 %1$d 段：%2$s</string>
     <string name="part_readout_same">第 %1$d 段：与第 %2$d 段相同</string>
     <string name="part_readout_unused">有 %1$d 行在最后一段之后，不会被使用。把段数设为 %2$d 即可使用</string>
+    <string name="flow_no_snapdragon">%1$s 不是骁龙芯片。此工作流需要骁龙 NPU。</string>
+    <string name="models_no_snapdragon">%1$s 需要骁龙 NPU，而 %2$s 不是骁龙芯片</string>
+    <string name="device_no_snapdragon">⚠ %1$s 不是骁龙芯片，没有 Hexagon NPU。Nightmare 的模型只能在高通骁龙手机上运行。</string>
+    <string name="run_end_title">运行结束时</string>
+    <string name="run_end_note">适用于耗时长的生成：听到结束提示；Nightmare 在后台时，在通知栏中显示。</string>
+    <string name="run_sound">运行结束时播放声音</string>
+    <string name="run_sound_hint">仅限 15 秒或更长的运行。取消的运行不会发出声音。</string>
+    <string name="run_sound_done">完成</string>
+    <string name="run_sound_failed">失败</string>
+    <string name="run_sound_choose">选择</string>
+    <string name="run_sound_default">默认通知音</string>
+    <string name="run_end_channel">运行结束</string>
+    <string name="run_end_done">运行完成，用时 %1$s</string>
+    <string name="run_end_failed">运行失败，用时 %1$s</string>
 </resources>

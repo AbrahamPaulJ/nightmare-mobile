@@ -14,7 +14,7 @@ import java.io.IOException
  * embedders, the final linear) F32, exact.
  */
 object MossGguf {
-    internal val rule = object : SafetensorsGguf.Rule {
+    internal val rule = object : SafetensorsGguf.Rule() {
         override val prefixes = listOf("model.diffusion_model.")
         override val kv = listOf("general.architecture" to "moss_image")
         override val kvU32 = listOf("general.quantization_version" to 2, "general.file_type" to 7)

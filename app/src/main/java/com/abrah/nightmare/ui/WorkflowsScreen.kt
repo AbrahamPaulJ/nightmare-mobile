@@ -336,11 +336,13 @@ private fun RecipeCard(
                     modifier = Modifier.padding(top = 6.dp),
                 )
                 if (!ok) {
-                    // ⚠⚠ Names THIS phone, not just the requirement.
+                    // ⚠⚠ Names THIS phone, not just the requirement. ⭐ Not a Snapdragon at all: says that (GitHub #85).
+                    val chip = caps.soc.ifEmpty { stringResource(R.string.flow_this_chip) }
                     Text(
-                        stringResource(
+                        if (!caps.qualcomm) stringResource(R.string.flow_no_snapdragon, chip)
+                        else stringResource(
                             R.string.flow_unsupported,
-                            caps.soc.ifEmpty { stringResource(R.string.flow_this_chip) },
+                            chip,
                             caps.arch,
                             r.minArch,
                             archLabel(r.minArch),

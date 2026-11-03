@@ -595,12 +595,15 @@ private fun ModelMenu(
     val canDelete = (row.installed || row.spec.isCustom || row.partial) && row.progress == null
     val canRepair = row.partial && row.build != null && row.progress == null
     // ⭐ Our own imports only: a name lives in the model's `config.json`, and Local Dream's are its files.
-    val canRename = row.spec.isCustom && row.installed && row.spec.home != null && row.progress == null && !row.fromLocalDream
+    // ⚠ Not `spec.home != null`: only Local Dream's models carry one, so that test hid Rename on every import (Saved #7783).
+    val canRename = row.spec.isCustom && row.installed && row.progress == null && !row.fromLocalDream
     // ⭐ Diagnose on demand on these chips: no grey error or static ever offers it.
     val canTestNpu = row.npuTest && row.installed && row.progress == null
     // ⭐ A MOSS import whose donor holds the LoRA; its state is whether the spec carries it.
-    val speedHome = row.spec.home?.takeIf { row.spec.isCustom && row.spec.family == Family.MOSS && row.installed }
-    val canSpeed = remember(speedHome) { speedHome != null && com.abrah.nightmare.CustomModels.mossSpeedAvailable(java.io.File(speedHome)) }
+    // ⚠ Its own folder ([ModelSpec.dir]): `spec.home` is Local Dream's only, and hid this on every MOSS import.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val speedHome = row.spec.takeIf { it.isCustom && it.family == Family.MOSS && row.installed }?.dir(ctx)
+    val canSpeed = remember(speedHome) { speedHome != null && com.abrah.nightmare.CustomModels.mossSpeedAvailable(speedHome) }
     if (!canDelete && !canRepair && !canRename && !canTestNpu && !canSpeed) {
         Spacer(Modifier.size(40.dp))
         return
