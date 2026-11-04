@@ -56,6 +56,7 @@ The clip **loops on the node** that made it; tap it to play it full screen. With
 **Nodes:** Prompt → Video (MiniMax H3) → Output. Needs MiniMax H3 and an 8 Gen 3 or newer with 12 GB of RAM.
 
 1. **Flows → Text to video** (or **Image to video**, to start the clip from your photo), then set the video node's **Model** to **MiniMax H3 (with sound)**, or **Use** on MiniMax H3 in Models. With a photo wired the clip starts on it: describe what the person in it does and says.
+   **A reference instead of a first frame:** wire the photo to the node's **reference** input (advanced view) and the clip keeps its subject in a new scene you describe, as Picture 1 in the prompt. It needs **MiniMax H3 Reference** (Models → Video, 14.4 GB on top of MiniMax H3) and makes one part per clip; a first frame and a reference cannot be wired together.
 2. **Prompt:** it opens on a worked example (a barista speaking one line in a café) in the sections H3 was trained on. Edit it section by section; the hint under the box says what each one is for:
 
     | section | what to write |

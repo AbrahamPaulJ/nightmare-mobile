@@ -121,7 +121,16 @@ class H3NodeTest {
     @Test
     fun theNodeHasOnePromptBoxAndAnOptionalPicture() {
         // ⭐ A wired picture is the first frame (H3's keyframe); nothing wired is text to video.
-        assertEquals(listOf("prompt", "image"), H3Node.inputs.map { it.name })
+        assertEquals(listOf("prompt", "image", H3Node.REFERENCE), H3Node.inputs.map { it.name })
+        // ⭐ A wired reference (GitHub #82) runs the Ref2VA weights, everywhere a node's model is asked.
+        val ref = Node("v", H3Node.name, inputs = mapOf(H3Node.REFERENCE to com.abrah.nightmare.Source("img")))
+        assertEquals("Reference to video with sound", H3Node.titleFor(ref))
+        assertEquals(ModelCatalog.MINIMAX_H3_REF, H3Node.specFor(ref))
+        assertEquals(ModelCatalog.MINIMAX_H3_REF, WanVideoNode.specOf(ref))
+        assertEquals(ModelCatalog.MINIMAX_H3_REF.id, H3Node.contextKey(ref).model)
+        assertEquals("minimax_h3_fast", ModelCatalog.MINIMAX_H3_REF.partsFrom)
+        assertTrue("the prompt names Picture 1", "Picture 1" in H3Prompt.build("she dances in the rain", 73, reference = true))
+        assertFalse("Picture 1" in H3Prompt.build("she dances in the rain", 73))
         assertEquals("Text to video with sound", H3Node.titleFor(Node("v", H3Node.name)))
         assertEquals("Image to video with sound", H3Node.titleFor(Node("v", H3Node.name, inputs = mapOf("image" to com.abrah.nightmare.Source("img")))))
         val knobs = H3Node.widgets.associateBy { it.name }
@@ -248,7 +257,8 @@ class H3NodeTest {
         val krea = ModelCatalog.byId("krea2_turbo")!!.files.first { it.name == "llm.gguf" }
         assertEquals(krea.url, spec.files.first { it.name == "llm.gguf" }.url)
         assertEquals(ModelCatalog.DIT_GGML_MIN_ARCH, spec.builds.minOf { it.minArch })
-        // No other model asks.
-        assertTrue((ModelCatalog.all + ModelCatalog.video - spec).all { it.licence == null })
+        // ⭐ H3 Reference is MiniMax H3 too: the same terms. No other model asks.
+        assertEquals(lic, ModelCatalog.MINIMAX_H3_REF.licence)
+        assertTrue((ModelCatalog.all + ModelCatalog.video - spec - ModelCatalog.MINIMAX_H3_REF).all { it.licence == null })
     }
 }

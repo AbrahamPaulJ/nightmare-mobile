@@ -1345,6 +1345,7 @@
     <!-- MiniMax H3 (npu/H3Node.kt), video with sound -->
     <string name="video_model_h3">MiniMax H3（带声音）</string>
     <string name="h3_about">带声音的文字生成视频：语音、音效和音乐由 MiniMax H3（FastH3，4 步）与画面一起生成。可以只用提示词，也可以用你的照片作为第一帧。在 8 Elite 上，384x384 的 3 秒约 6 分钟，832x480 约 13 分钟。需要 8 Gen 3 或更新的芯片和 12 GB 内存。下载 17.5 GB；已安装 Krea 2 时共用其 2.4 GB 文本编码器。MiniMax H3 Community License：不得在欧盟、英国、韩国或美国使用。请使用 Wi-Fi。</string>
+    <string name="h3_ref_about">带声音的视频，把你图片中的主体放进新的场景：把图片连接到 MiniMax H3 节点的 reference 输入，并描述发生的事情。MiniMax H3 的参考模型（Ref2VA，4 步）；它使用 MiniMax H3 的其他文件，所以请先安装 MiniMax H3。一次一个片段，第一帧和参考图只能二选一。</string>
     <string name="mb_powered_h3">Powered by MiniMax H3</string>
     <string name="licence_h3_title">MiniMax H3 Community License 许可</string>
     <string name="licence_h3_terms">MiniMax H3 由 MiniMax 制作，按 MiniMax H3 Community License 发布。下载即表示你接受该许可。简要来说：\n\n• 许可不适用于欧盟、英国、韩国和美国。请勿在这些地区下载或使用。\n• 用它制作并公开分享的内容必须清楚标明由 AI 生成。\n• 它生成的视频不得用于训练或改进其他 AI 模型。\n• 须遵守其可接受使用政策：不得用于违法或有害用途。\n\nNightmare 在使用该模型的地方显示“Powered by MiniMax H3”。</string>

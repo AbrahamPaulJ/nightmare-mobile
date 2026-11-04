@@ -12,7 +12,7 @@ There are five kinds of node. Every flow, ready-made or yours, is built from the
 | [Video generator](#video-generator) | Generate | prompt, image | video |
 | [Wan video](#wan-video) | Generate | prompt, image | video, last frame |
 | [Motion transfer](#motion-transfer) (Wan Fun Control) | Generate | prompt, image, control | video |
-| [Video with sound](#video-with-sound) (MiniMax H3) | Generate | prompt, image | video, last frame |
+| [Video with sound](#video-with-sound) (MiniMax H3) | Generate | prompt, image, reference | video, last frame |
 | [Output](#output) | Common | media | - |
 
 Every node's sheet ends with **Reset node** (all settings back to default, and any batch sweep on
@@ -179,6 +179,7 @@ film so far, both clips joined ([longer clips](../flows/video.md#longer-clips-on
 
 MiniMax H3: a prompt into a clip with its sound (speech, sound effects, music), up to 5.2 seconds. Needs MiniMax H3
 (Models → Video). Its prompt is written in H3's sections, who speaks, the scene and the line, the sounds, the music ([how](../flows/video.md#text-to-video-with-sound-minimax-h3)).
+A picture on **image** is the clip's first frame; a picture on **reference** is a subject the clip keeps in a new scene (MiniMax H3 Reference, its own download), one or the other.
 
 | setting | what it does |
 |---|---|

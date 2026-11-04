@@ -25,12 +25,29 @@ object H3Node : NodeType {
     override val appSide = false
     override val name = "h3.sample"
     override val version = "1"
-    override val inputs = listOf(Port("prompt", "PROMPT"), Port("image", "IMAGE"))
+    /**
+     * ⭐ [REFERENCE] (GitHub #82): a picture whose subject the clip keeps in a new scene (H3's Ref2VA), on
+     * [ModelCatalog.MINIMAX_H3_REF]. ⚠ Not with `image`: sd.cpp refuses a first frame and references in one run.
+     */
+    const val REFERENCE = "reference"
+
+    override val inputs = listOf(Port("prompt", "PROMPT"), Port("image", "IMAGE"), Port(REFERENCE, "IMAGE"))
+
+    /** ⭐ The weights a node runs: the Ref2VA set with a reference wired, FastH3 otherwise. */
+    fun specFor(node: Node): com.abrah.nightmare.ModelSpec =
+        if (node.inputs[REFERENCE] != null || probeRefWeights) ModelCatalog.MINIMAX_H3_REF else ModelCatalog.MINIMAX_H3
+
+    /** ⚠ Harness only (`h3_video_refw`, `h3_i2v_refw`): the Ref2VA weights with no reference, for the one-model A/B. */
+    @Volatile internal var probeRefWeights = false
     override val outputs get() = WanVideoNode.outputs
     override val category = "generate"
     override val paletteName = "MiniMax H3"
     override fun titleFor(node: Node): String =
-        if (node.inputs["image"] != null) "Image to video with sound" else "Text to video with sound"
+        when {
+            node.inputs[REFERENCE] != null -> "Reference to video with sound"
+            node.inputs["image"] != null -> "Image to video with sound"
+            else -> "Text to video with sound"
+        }
     override val defaultId = "video"
     override val about = "a prompt, or a prompt and a photo, into a clip with sound (speech, effects, music) with MiniMax H3"
     override val showsResult = false
@@ -73,13 +90,13 @@ object H3Node : NodeType {
 
     override fun framesTo(node: Node): Pair<Int, Int> = WanVideoNode.sizeOf(effectiveParams(node), WanVideoNode.H3)
 
-    override fun contextKey(node: Node) = WanVideoNode.keyFor(node, ModelCatalog.MINIMAX_H3)
+    override fun contextKey(node: Node) = WanVideoNode.keyFor(node, specFor(node))
 
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value =
         runPorts(ctx, node, inputs).getValue("video")
 
     override suspend fun runPorts(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Map<String, Value> =
-        WanVideoNode.runClip(ctx, node, inputs, ModelCatalog.MINIMAX_H3, null)
+        WanVideoNode.runClip(ctx, node, inputs, if (inputs[REFERENCE] != null || probeRefWeights) ModelCatalog.MINIMAX_H3_REF else ModelCatalog.MINIMAX_H3, null)
 
     /**
      * ⚠ Pure: H3's frames for [seconds] at 24 fps, on its 17k+5 grid (5 frames, then 17 a latent step), the nearest
@@ -113,15 +130,17 @@ object H3Prompt {
     private val LASTS = Regex("""The target video lasts [0-9]+(\.[0-9]+)? seconds\.""")
 
     /** ⚠ Pure: [prompt] for a clip of [frames]: a structured one with its length set, a plain one wrapped. */
-    fun build(prompt: String, frames: Int, fps: Int = 24): String {
+    fun build(prompt: String, frames: Int, fps: Int = 24, reference: Boolean = false): String {
         val text = prompt.trim()
         val lasts = "The target video lasts " + String.format(java.util.Locale.ROOT, "%.2f", frames.toDouble() / fps) + " seconds."
         if ("subject_definitions:" in text) return if (LASTS.containsMatchIn(text)) text.replace(LASTS, lasts) else text
         val scene = sentence(text)
         return listOf(
             "subject_definitions:\nN/A - no speaking character is defined.",
-            "summary:\nText to video with audio. One continuous shot, no cut." + (if (scene.isNotEmpty()) " $scene" else ""),
-            "retention_analysis:\nN/A - no reference images, video or audio are supplied; everything is generated.",
+            (if (reference) "summary:\nReference to video with audio: the subject of Picture 1 in a new scene. One continuous shot, no cut."
+            else "summary:\nText to video with audio. One continuous shot, no cut.") + (if (scene.isNotEmpty()) " $scene" else ""),
+            if (reference) "retention_analysis:\nPicture 1: keep the subject's identity, face, hair, clothing and colours exactly."
+            else "retention_analysis:\nN/A - no reference images, video or audio are supplied; everything is generated.",
             "detailed_description:\n$lasts\n[Shot 1] $scene".trimEnd(),
             "overall_soundscape:\nDiegetic sound only: the natural sound of the scene.",
             "non_diegetic_music:\nN/A - no score, no soundtrack, no musical arrangement at any point.",

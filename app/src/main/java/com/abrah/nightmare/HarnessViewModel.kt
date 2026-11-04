@@ -4828,14 +4828,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 ModelCatalog.WAN22_A14B_I2V -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.I2V, com.abrah.nightmare.canvas.T2V14)
                 // ⭐ Text to video only: the Text to video flow with its node swapped to the 1.3B.
                 ModelCatalog.WAN21_NSFW13 -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V)
-                ModelCatalog.MINIMAX_H3 -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V)
+                ModelCatalog.MINIMAX_H3, ModelCatalog.MINIMAX_H3_REF -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V)
                 else -> com.abrah.nightmare.canvas.recipesWithId(com.abrah.nightmare.canvas.T2V, com.abrah.nightmare.canvas.I2V)
             },
             unsavedFlow = unsavedFlow(),
             videoType = when (spec) {
                 ModelCatalog.WAN22_A14B_I2V -> com.abrah.nightmare.npu.WanA14Node.name
                 ModelCatalog.WAN21_NSFW13 -> com.abrah.nightmare.npu.WanNsfw13Node.name
-                ModelCatalog.MINIMAX_H3 -> com.abrah.nightmare.npu.H3Node.name
+                ModelCatalog.MINIMAX_H3, ModelCatalog.MINIMAX_H3_REF -> com.abrah.nightmare.npu.H3Node.name
                 // ⚠ Named, not null: a flow reopens from its own autosave (1.6.257), so "keep the node" kept whatever
                 // model it was last switched to, and Use on Wan 2.2 Turbo opened MiniMax H3 (the user, 2026-10-30).
                 ModelCatalog.WAN22 -> com.abrah.nightmare.npu.WanVideoNode.name

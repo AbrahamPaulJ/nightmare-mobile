@@ -1,0 +1,28 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -472,9 +472,13 @@
+     };
+     const std::string dit_path = (dir / "dit.gguf").string();
+     const std::string llm_path = h3Part("llm.gguf");
+-    const std::string vae_path = (dir / "vae.gguf").string();
+-    const std::string audio_vae_path = (dir / "audio_vae.safetensors").string();
+-    const std::string clipproj_path = (dir / "clipproj.safetensors").string();
++    // nightmare (055): every part may be the donor's (--wan_parts): H3 Reference (Ref2VA) ships only its DiT and
++    // borrows FastH3's encoder, VAEs and ClipProj; a vision tower, when present, reads its reference pictures.
++    const std::string vae_path = h3Part("vae.gguf");
++    const std::string audio_vae_path = h3Part("audio_vae.safetensors");
++    const std::string clipproj_path = h3Part("clipproj.safetensors");
++    const std::string llm_vision_path =
++        std::filesystem::exists(h3Part("llm_vision.gguf")) ? h3Part("llm_vision.gguf") : "";
+     for (const auto &p : {dit_path, llm_path, vae_path, audio_vae_path, clipproj_path}) {
+       if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
+     }
+@@ -491,7 +495,7 @@
+       std::cout << "NM_DIT_BACKEND override: " << backend << std::endl;
+     }
+     return std::make_unique<PipelineDit>(
+-        text_encoder, opts.model_dir, engine_path, dit_path, llm_path, "", vae_path,
++        text_encoder, opts.model_dir, engine_path, dit_path, llm_path, llm_vision_path, vae_path,
+         DIT_MODEL_WAN, backend, opts.dit_params_backend, opts.dit_threads,
+         /*vae_tile_size=*/0, /*img2img_enabled=*/false, /*lora_apply_mode=*/0,
+         /*t5xxl_path=*/"", /*taesd_path=*/"", audio_vae_path);

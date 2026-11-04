@@ -1204,6 +1204,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.videoModelItems(
                         com.abrah.nightmare.ModelCatalog.WAN22_A14B_I2V -> R.string.wan14_i2v_about
                         com.abrah.nightmare.ModelCatalog.WAN21_NSFW13 -> R.string.wan13_nsfw_about
                         com.abrah.nightmare.ModelCatalog.MINIMAX_H3 -> R.string.h3_about
+                        com.abrah.nightmare.ModelCatalog.MINIMAX_H3_REF -> R.string.h3_ref_about
                         else -> R.string.wan_about
                     },
                 ),
@@ -1211,7 +1212,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.videoModelItems(
                 // ⭐ MiniMax H3's licence asks for "Powered by MiniMax H3" on the product (`docs/MINIMAX-H3.md` §6).
                 badges = listOfNotNull(
                     stringResource(R.string.mb_sub_community).takeIf { wan.spec.community },
-                    stringResource(R.string.mb_powered_h3).takeIf { wan.spec == com.abrah.nightmare.ModelCatalog.MINIMAX_H3 },
+                    stringResource(R.string.mb_powered_h3).takeIf { wan.spec == com.abrah.nightmare.ModelCatalog.MINIMAX_H3 || wan.spec == com.abrah.nightmare.ModelCatalog.MINIMAX_H3_REF },
                 ),
                 installed = wan.installed,
                 sizeBytes = if (wan.installed) wan.onDisk else wan.fetchBytes.takeIf { it > 0 } ?: wan.build?.bytes,

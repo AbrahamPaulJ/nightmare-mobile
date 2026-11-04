@@ -40,7 +40,9 @@ fun skipEmptyPictures(graph: Graph): Pair<Graph, List<SkippedPicture>> {
 val VIDEO_MODEL_TYPES = setOf("nd.sample", com.abrah.nightmare.npu.WanVideoNode.name, com.abrah.nightmare.npu.WanA14Node.name, com.abrah.nightmare.npu.WanNsfw13Node.name, com.abrah.nightmare.npu.H3Node.name)
 
 private fun optionalPicture(type: String, port: String): Boolean = when (port) {
-    SdSampler.CONTROL, "reference" -> type in IMAGE_SAMPLER_TYPES
+    SdSampler.CONTROL -> type in IMAGE_SAMPLER_TYPES
+    // ⭐ MiniMax H3's too: an empty reference runs FastH3 from the prompt, with the warning, as on a picture model.
+    "reference" -> type in IMAGE_SAMPLER_TYPES || type == com.abrah.nightmare.npu.H3Node.name
     // ⚠ Images 3 and 4 of an edit too: an empty one there failed "no image chosen" where the
     // same node wired into `reference` was skipped with a warning.
     in SdSampler.EXTRA_REFS -> type in IMAGE_SAMPLER_TYPES

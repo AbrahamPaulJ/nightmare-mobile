@@ -134,7 +134,7 @@ object WanVideoNode : NodeType {
         WanFunNode.name -> ModelCatalog.WAN22_FUN
         WanA14Node.name -> WanA14Node.specFor(node)
         WanNsfw13Node.name -> ModelCatalog.WAN21_NSFW13
-        H3Node.name -> ModelCatalog.MINIMAX_H3
+        H3Node.name -> H3Node.specFor(node)
         else -> null
     }
 
@@ -670,6 +670,9 @@ object WanVideoNode : NodeType {
         // FastWan is, so it is sent and counted but never shown or advised against as the user's.
         val clipLoras = loras + listOfNotNull(
             (File(spec.dir(android), ModelCatalog.CAUSVID_LORA).absolutePath to 1.0).takeIf { node.type == WanNsfw13Node.name },
+            // ⭐ A model's own LoRA ([com.abrah.nightmare.ModelSpec.ownLora]) rides on every clip, as on every picture
+            // ([com.abrah.nightmare.BackendProcess.launchedOwnLora]): H3 Reference's 4-step turbo.
+            spec.ownLoraFile(spec.dir(android))?.let { it.absolutePath to 1.0 },
         )
         val p = effectiveParams(node)
         val sizeProf = profileOf(node.type, deviceArch())
@@ -690,7 +693,7 @@ object WanVideoNode : NodeType {
         }
         val frames = framesOf(node, p)
         // ⭐ MiniMax H3 reads a STRUCTURED prompt: its stated length set to the clip's, a plain one wrapped ([H3Prompt]).
-        val promptText = if (!sound) pos.text else H3Prompt.build(pos.text, frames, H3.fps)
+        val promptText = if (!sound) pos.text else H3Prompt.build(pos.text, frames, H3.fps, reference = inputs[H3Node.REFERENCE] != null)
         val seed = p["seed"]?.toLongOrNull() ?: 0L
         // ⚠ A fallback, not the roll: `HarnessOps.runRolled` rolls a 0 before the graph runs
         // ([com.abrah.nightmare.SAMPLER_TYPES]), for the reason [VideoSampleNode] gives.
@@ -749,7 +752,17 @@ object WanVideoNode : NodeType {
         // ⭐⭐ The picture starts the clip. On Motion transfer it is ALSO the reference (identity, the model's `ref_conv`):
         // as the first frame too it kept the strap and brooch the reference alone lost (the user's "A", 2026-10-27).
         val startPng = framedPng
-        val refPng = framedPng.takeIf { motion != null }
+        // ⭐ MiniMax H3's reference (Ref2VA, GitHub #82): the picture as it is; sd.cpp sizes it to the clip's area itself
+        // and reads it through the encoder's vision tower as Picture 1. ⚠ Never with a first frame (sd.cpp refuses the mix).
+        val h3Ref: ByteArray? = (inputs[H3Node.REFERENCE] as? Value.Image)?.let { img ->
+            val bmp = ctx.images.get(img.id)
+                ?: throw IllegalStateException("node \"${node.id}\": image ${img.id} is no longer in the store")
+            ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        }
+        if (h3Ref != null && source != null) throw IllegalArgumentException(
+            "node \"${node.id}\": MiniMax H3 takes a first frame OR a reference picture, not both. Unwire one"
+        )
+        val refPng = h3Ref ?: framedPng.takeIf { motion != null }
 
         // ⭐⭐ Smooth motion ([SMOOTH]). ⚠ A clip CONTINUING a film takes the film's rate, whatever its switch says:
         // [FilmJoin] times both pieces at one fps, so a 32 fps part on a 16 fps film played the film at double speed.
@@ -777,6 +790,10 @@ object WanVideoNode : NodeType {
 
         // ⭐⭐ Parts ([WanParts]): not Motion transfer (its own parts), not a one-frame still.
         val partCount = if (driving == null && frames > 1) WanParts.countOf(p) else 1
+        // ⚠ A later part starts on the last frame of the one before: a first frame, which sd.cpp refuses beside a reference.
+        if (partCount > 1 && h3Ref != null) throw IllegalArgumentException(
+            "node \"${node.id}\": a reference clip is one part. Set Parts to 1, or continue it from its last frame without the reference"
+        )
         val partPrompts = WanParts.promptsFor(
             pos.text, p[WanParts.PART_PROMPTS]?.lines()?.joinToString("\n") { PromptLoras.extract(it).text }, partCount,
         ).let { ps ->
@@ -869,6 +886,7 @@ object WanVideoNode : NodeType {
                 out = raw.absolutePath, startPng = startPng, loras = clipLoras,
                 onProgress = { pr -> ctx.onProgress(pr) },
                 vaeTileSize = vaeTile,
+                refPng = h3Ref,
             ),
             raw,
         ) else {

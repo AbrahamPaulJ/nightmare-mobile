@@ -41,7 +41,7 @@ engine's NPU code.
 Besides picture models, **Models** also holds:
 
 - **Upscalers**: small models that enlarge a picture. [Upscale](../flows/upscale.md)
-- **Video**: the text- and image-to-video models, one 8.6 GB download, Wan 2.2 (6.25 GB), slower and better, and MiniMax H3 (17.5 GB), clips with sound. [Video](../flows/video.md)
+- **Video**: the text- and image-to-video models, one 8.6 GB download, Wan 2.2 (6.25 GB), slower and better, and MiniMax H3 (17.5 GB), clips with sound, and MiniMax H3 Reference (14.4 GB more), a clip that keeps a picture's subject. [Video](../flows/video.md)
 
 <figure markdown>
   ![The Models tab, SD 1.5 family](../img/models-installed.png){ .screen }

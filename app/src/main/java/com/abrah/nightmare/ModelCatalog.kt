@@ -3007,10 +3007,40 @@ object ModelCatalog {
         licence = ModelLicence(R.string.licence_h3_title, R.string.licence_h3_terms, "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE"),
     )
 
+    /** ⭐ H3 Reference's own LoRA ([ModelSpec.ownLora]): Comfy-Org's 4-step turbo for the Ref2VA DiT. */
+    const val H3_REF_LORA = "ref2v_turbo4.safetensors"
+
+    /**
+     * ⭐⭐ **MiniMax H3 Reference** (GitHub #82): H3's Ref2VA weights, a clip that keeps a PICTURE's subject in a new
+     * scene, with sound. Abiray's pruned Ref2VA Q4_K_M requantized to the NPU's Q4_0 (ours, on AbrahamPJ's Hugging Face,
+     * as FastH3's is), run at 4 steps by Comfy-Org's ref2v turbo LoRA ([H3_REF_LORA]). Everything else is FastH3's
+     * ([ModelSpec.partsFrom], backend 055): the encoder, both VAEs, ClipProj; plus bartowski's Qwen3-VL-4B vision tower,
+     * which reads the picture as Picture 1 (sd.cpp's H3 conditioner). Chosen by [npu.H3Node] when a reference is wired.
+     */
+    val MINIMAX_H3_REF: ModelSpec = dit(
+        "minimax_h3_ref", "MiniMax H3 Reference", Family.WAN, H3, steps = 4,
+        prompt = "",
+        ownDitParts = true,
+        partsFrom = "minimax_h3_fast",
+        ownLora = H3_REF_LORA,
+        minArch = DIT_GGML_MIN_ARCH,
+        minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+        files = listOf(
+            RemoteFile(HF + "AbrahamPJ/minimax-h3-ref2va-pruned-q4_0-gguf/resolve/main/h3_ref2va_pruned_q4_0.gguf", "dit.gguf", H3_REF_DIT_BYTES),
+            RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-4B-Instruct-f16.gguf", "llm_vision.gguf", 836_180_256L),
+            RemoteFile(HF + "Comfy-Org/MiniMax-H3/resolve/main/loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors", H3_REF_LORA, 1_956_193_000L),
+        ),
+    ).copy(
+        licence = ModelLicence(R.string.licence_h3_title, R.string.licence_h3_terms, "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE"),
+    )
+
+    /** ⚠ Our Q4_0 of the Ref2VA DiT, read off the converted file. */
+    private const val H3_REF_DIT_BYTES = 11_564_180_576L
+
     /** ⚠ The video models: found by [byId], never listed as checkpoints. */
     // ⚠ Not [WAN22_A14B]: one 14B download, its image to video experts; text to video on the 14B makes the first
     // frame with a picture model (`canvas.T2V14`, the user's call 2026-10-25: two 17 GB downloads was too much).
-    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B_I2V, WAN21_NSFW13, MINIMAX_H3)
+    val video: List<ModelSpec> = listOf(WAN22, WAN22_FUN, WAN22_A14B_I2V, WAN21_NSFW13, MINIMAX_H3, MINIMAX_H3_REF)
 
     fun installed(context: Context): List<ModelSpec> = all.filter { it.installed(context) }
 
