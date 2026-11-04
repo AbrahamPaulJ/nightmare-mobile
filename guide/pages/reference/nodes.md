@@ -179,7 +179,7 @@ film so far, both clips joined ([longer clips](../flows/video.md#longer-clips-on
 
 MiniMax H3: a prompt into a clip with its sound (speech, sound effects, music), up to 5.2 seconds. Needs MiniMax H3
 (Models → Video). Its prompt is written in H3's sections, who speaks, the scene and the line, the sounds, the music ([how](../flows/video.md#text-to-video-with-sound-minimax-h3)).
-A picture on **image** is the clip's first frame; a picture on **reference** is a subject the clip keeps in a new scene (MiniMax H3 Reference, its own download), one or the other.
+A picture on **image** is the clip's first frame; a picture on **reference** is a subject the clip keeps in a new scene (MiniMax H3 Reference, its own download, 1.5 to 2.5 times slower), one or the other.
 
 | setting | what it does |
 |---|---|

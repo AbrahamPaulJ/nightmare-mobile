@@ -1248,6 +1248,21 @@ private val FRAMES = com.abrah.nightmare.FRAMES_PICTURE_TYPES
 private val PAINTS = com.abrah.nightmare.PAINTS_PICTURE_TYPES
 
 /**
+ * ⭐ A reference wired runs MiniMax H3 Reference, its 2 GB turbo LoRA on every clip: say what that costs (measured on
+ * the S25, seed 42, 1.6 s: 384² 457 s vs FastH3's 186, a 384x672 first frame 433 vs 310). ⚠ Outside
+ * [NodeInspectorBody]: blocks added in that body failed ART's verifier twice (HANDOFF).
+ */
+@Composable
+internal fun H3ReferenceNote(node: com.abrah.nightmare.Node) {
+    if (node.type != com.abrah.nightmare.npu.H3Node.name || node.inputs[com.abrah.nightmare.npu.H3Node.REFERENCE] == null) return
+    Text(
+        stringResource(R.string.h3_ref_slower),
+        style = NoteTextStyle,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
  * What the sheet contains — everything except the sheet.
  *
  * ⚠ Split out to be SEEN. A `ModalBottomSheet` renders into its own window, so
@@ -1790,6 +1805,7 @@ internal fun NodeInspectorBody(
                 variesInLength = true,
             )
         }
+        H3ReferenceNote(node)
         if (node.type in com.abrah.nightmare.WAN_TYPES) {
             type?.widgets?.firstOrNull { it.name == com.abrah.nightmare.SdSampler.LORAS }?.let { w ->
                 LoraRow(widget = w, value = node.params[w.name].orEmpty(), why = w.locked, onOpen = { pickingLoras = true })

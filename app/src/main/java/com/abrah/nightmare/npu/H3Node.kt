@@ -39,6 +39,9 @@ object H3Node : NodeType {
 
     /** ⚠ Harness only (`h3_video_refw`, `h3_i2v_refw`): the Ref2VA weights with no reference, for the one-model A/B. */
     @Volatile internal var probeRefWeights = false
+
+    /** ⚠ Harness only (`h3_video_refw_nolora`): the model's own LoRA left off, to measure what it does. */
+    @Volatile internal var probeNoOwnLora = false
     override val outputs get() = WanVideoNode.outputs
     override val category = "generate"
     override val paletteName = "MiniMax H3"

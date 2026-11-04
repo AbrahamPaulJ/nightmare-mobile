@@ -278,11 +278,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ …and with the picture as a REFERENCE (H3 Reference, Ref2VA, GitHub #82): `h3_ref`, the `h3_i2v` arg.
             "h3_ref" -> wanVideo(arg, i2v = true, type = com.abrah.nightmare.npu.H3Node.name, asReference = true)
             // ⚠ The one-model A/B: text-only and first-frame clips on the Ref2VA weights (no reference wired).
-            "h3_video_refw", "h3_i2v_refw" -> try {
+            "h3_video_refw", "h3_i2v_refw", "h3_video_refw_nolora" -> try {
                 com.abrah.nightmare.npu.H3Node.probeRefWeights = true
+                com.abrah.nightmare.npu.H3Node.probeNoOwnLora = op == "h3_video_refw_nolora"
                 wanVideo(arg, i2v = op == "h3_i2v_refw", type = com.abrah.nightmare.npu.H3Node.name)
             } finally {
                 com.abrah.nightmare.npu.H3Node.probeRefWeights = false
+                com.abrah.nightmare.npu.H3Node.probeNoOwnLora = false
             }
             "wan_i2v" -> wanVideo(arg, i2v = true)
             // ⭐ GitHub #23's chaining: clip A's `last_frame` is clip B's first frame. `--es arg "WxH|seconds"`.

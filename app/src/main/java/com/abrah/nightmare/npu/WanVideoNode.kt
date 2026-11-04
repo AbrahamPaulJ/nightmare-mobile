@@ -672,7 +672,7 @@ object WanVideoNode : NodeType {
             (File(spec.dir(android), ModelCatalog.CAUSVID_LORA).absolutePath to 1.0).takeIf { node.type == WanNsfw13Node.name },
             // ⭐ A model's own LoRA ([com.abrah.nightmare.ModelSpec.ownLora]) rides on every clip, as on every picture
             // ([com.abrah.nightmare.BackendProcess.launchedOwnLora]): H3 Reference's 4-step turbo.
-            spec.ownLoraFile(spec.dir(android))?.let { it.absolutePath to 1.0 },
+            spec.ownLoraFile(spec.dir(android))?.takeUnless { H3Node.probeNoOwnLora }?.let { it.absolutePath to 1.0 },
         )
         val p = effectiveParams(node)
         val sizeProf = profileOf(node.type, deviceArch())
