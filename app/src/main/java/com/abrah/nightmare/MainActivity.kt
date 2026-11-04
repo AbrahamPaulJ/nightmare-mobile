@@ -1620,5 +1620,8 @@ internal fun shellLoadOf(l: HarnessViewModel.CanvasLoad, fallback: String): com.
             (names.firstOrNull() ?: fallback) + more to idleOr
         }
     }
-    return com.abrah.nightmare.ui.ShellLoad(model, state, free, total, l.batteryTempC?.let { "%.0f".format(it) })
+    return com.abrah.nightmare.ui.ShellLoad(
+        model, state, free, total, l.batteryTempC?.let { "%.0f".format(it) },
+        chip = l.chipTemps?.let { t -> listOf(t.cpu, t.gpu, t.npu).map { c -> c?.let { "%.0f".format(it) } ?: "?" } },
+    )
 }

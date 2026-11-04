@@ -74,12 +74,15 @@ data class ShellLoad(
     val ramTotal: String,
     /** ⭐ The battery temperature, whole °C, or null ([com.abrah.nightmare.HarnessViewModel.CanvasLoad.batteryTempC]). */
     val tempC: String? = null,
+    /** ⭐ The chip's CPU, GPU and NPU, whole °C, when Settings asks for them ([com.abrah.nightmare.ChipTemps], GitHub #78). */
+    val chip: List<String>? = null,
 )
 
 /** ⭐ THE RAM line, drawer and run bar alike: free / total, and the temperature when the phone gives one. */
 @Composable
 internal fun ramLine(load: ShellLoad): String =
-    load.tempC?.let { stringResource(R.string.shell_ram_temp, load.ramFree, load.ramTotal, it) }
+    load.chip?.let { (c, g, n) -> stringResource(R.string.shell_ram_chip, load.ramFree, load.ramTotal, c, g, n) }
+        ?: load.tempC?.let { stringResource(R.string.shell_ram_temp, load.ramFree, load.ramTotal, it) }
         ?: stringResource(R.string.shell_ram, load.ramFree, load.ramTotal)
 
 /**

@@ -77,6 +77,7 @@ object Prefs {
         wanStream = p.getBoolean(KEY_WAN_STREAM, false)
         heatPause = p.getBoolean(KEY_HEAT_PAUSE, false)
         runSound = p.getBoolean(KEY_RUN_SOUND, false)
+        chipTemps = p.getBoolean(KEY_CHIP_TEMPS, false)
         ditGpu = p.getBoolean(KEY_DIT_GPU, false)
         ditTaesd = p.getBoolean(KEY_DIT_TAESD, true)
     }
@@ -346,6 +347,13 @@ object Prefs {
     @Volatile var runSound: Boolean = false
         private set
 
+    /** ⭐ The RAM readout shows the chip's temperatures, CPU, GPU and NPU ([ChipTemps], GitHub #78), not the battery's. */
+    const val KEY_CHIP_TEMPS = "chip_temps"
+
+    /** ⚠ [KEY_CHIP_TEMPS] held in memory, as [heatPause]. */
+    @Volatile var chipTemps: Boolean = false
+        private set
+
     /** ⭐ The chosen sounds' URIs, one per outcome; none = the phone's default notification sound. */
     const val KEY_RUN_SOUND_DONE = "run_sound_done"
     const val KEY_RUN_SOUND_FAILED = "run_sound_failed"
@@ -398,6 +406,7 @@ object Prefs {
         val wanStream: Boolean = false,
         val heatPause: Boolean = false,
         val runSound: Boolean = false,
+        val chipTemps: Boolean = false,
         val ditGpu: Boolean = false,
         val ditTaesd: Boolean = true,
     )
@@ -424,6 +433,7 @@ object Prefs {
             wanStream = read(KEY_WAN_STREAM, false),
             heatPause = read(KEY_HEAT_PAUSE, false),
             runSound = read(KEY_RUN_SOUND, false),
+            chipTemps = read(KEY_CHIP_TEMPS, false),
             ditGpu = read(KEY_DIT_GPU, false),
             ditTaesd = read(KEY_DIT_TAESD, true),
         )
@@ -433,6 +443,7 @@ object Prefs {
         if (key == KEY_WAN_STREAM) wanStream = on
         if (key == KEY_HEAT_PAUSE) heatPause = on
         if (key == KEY_RUN_SOUND) runSound = on
+        if (key == KEY_CHIP_TEMPS) chipTemps = on
         if (key == KEY_DIT_GPU) ditGpu = on
         if (key == KEY_DIT_TAESD) ditTaesd = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()

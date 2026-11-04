@@ -643,6 +643,11 @@ fun SettingsScreen(
                             stringResource(R.string.heat_pause), stringResource(R.string.heat_pause_hint),
                             lowRam.heatPause, { onLowRam(Prefs.KEY_HEAT_PAUSE, it) },
                         )
+                        // ⭐ GitHub #78: the chip's temperatures in the RAM line, where the phone lets the app read them.
+                        if (com.abrah.nightmare.ChipTemps.available) com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.chip_temps), stringResource(R.string.chip_temps_hint),
+                            lowRam.chipTemps, { onLowRam(Prefs.KEY_CHIP_TEMPS, it) },
+                        )
                     }
                     // ⭐ GitHub #79: a sound, and a notification out of sight, when a long run ends ([com.abrah.nightmare.RunAlert]).
                     StudioCard {

@@ -823,6 +823,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
          * permission; a CPU sensor is not readable on every phone. Null when the phone does not say.
          */
         val batteryTempC: Float? = null,
+        /** ⭐ The chip's CPU, GPU and NPU temperatures, when Settings asks for them and the phone gives them ([ChipTemps]). */
+        val chipTemps: ChipTemps.Temps? = null,
     )
 
     /**
@@ -929,6 +931,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             graphModels = named.ifEmpty { listOf(SelectedModel.spec.label) },
             running = busy,
             batteryTempC = batteryTempC(),
+            chipTemps = if (Prefs.chipTemps) ChipTemps.read() else null,
         )
     }
 
