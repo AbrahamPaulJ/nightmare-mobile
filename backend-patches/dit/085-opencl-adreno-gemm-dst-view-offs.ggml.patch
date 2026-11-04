@@ -1,0 +1,31 @@
+diff --git a/src/ggml-opencl/ggml-opencl.cpp b/src/ggml-opencl/ggml-opencl.cpp
+index 5521ea6..84fb0fb 100644
+--- a/src/ggml-opencl/ggml-opencl.cpp
++++ b/src/ggml-opencl/ggml-opencl.cpp
+@@ -19532,7 +19532,7 @@ static void ggml_cl_mul_mat_q4_0_f32_adreno(ggml_backend_t backend, const ggml_t
+         CL_CHECK((b_img_trans = clCreateImage(context, 0, &img_fmt, &img_desc, NULL, &err), err));
+ 
+         // subbuffer for output
+-        region.origin = extrad->offset; // Specify the starting offset (in bytes)
++        region.origin = extrad->offset + dst->view_offs; // nightmare (dit/085): a token chunk's view (dit/080) writes at ITS rows
+         region.size = M * N * sizeof(float); // Specify the size of the sub-buffer
+         CL_CHECK((d_sub_buf = clCreateSubBuffer(extrad->data_device, CL_MEM_WRITE_ONLY, CL_BUFFER_CREATE_TYPE_REGION, &region, &err), err));
+ 
+@@ -20003,7 +20003,7 @@ static void ggml_cl_mul_mat_q5_0_f32_adreno(ggml_backend_t backend, const ggml_t
+         CL_CHECK((b_img_trans = clCreateImage(context, 0, &img_fmt, &img_desc, NULL, &err), err));
+ 
+         // subbuffer for output
+-        region.origin = extrad->offset;
++        region.origin = extrad->offset + dst->view_offs; // nightmare (dit/085)
+         region.size = M * N * sizeof(float);
+         CL_CHECK((d_sub_buf = clCreateSubBuffer(extrad->data_device, CL_MEM_WRITE_ONLY, CL_BUFFER_CREATE_TYPE_REGION, &region, &err), err));
+ 
+@@ -20184,7 +20184,7 @@ static void ggml_cl_mul_mat_q5_1_f32_adreno(ggml_backend_t backend, const ggml_t
+         CL_CHECK((b_img_trans = clCreateImage(context, 0, &img_fmt, &img_desc, NULL, &err), err));
+ 
+         // subbuffer for output
+-        region.origin = extrad->offset;
++        region.origin = extrad->offset + dst->view_offs; // nightmare (dit/085)
+         region.size = M * N * sizeof(float);
+         CL_CHECK((d_sub_buf = clCreateSubBuffer(extrad->data_device, CL_MEM_WRITE_ONLY, CL_BUFFER_CREATE_TYPE_REGION, &region, &err), err));
+ 
