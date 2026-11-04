@@ -744,6 +744,8 @@
     <string name="flow_t2v_about">Описание в ролик. По умолчанию Wan 2.2 Turbo (минуты, намного лучше); переключите узел видео на Neodragon для 2 с примерно за 30 с.</string>
     <string name="flow_i2v_name">Изображение в видео</string>
     <string name="flow_t2v14_name">Видео из текста (14B)</string>
+    <string name="flow_h3ref_name">Референс в видео</string>
+    <string name="flow_h3ref_about">Объект с вашей картинки (человек, питомец, товар) в новой сцене по вашему описанию, со звуком, моделью MiniMax H3 Reference. Медленно: около 8 минут на 1,6 с на 8 Elite.</string>
     <string name="title_i2v14">Изображение в видео (14B)</string>
     <string name="flow_t2v14_about">Ваша модель картинок делает первый кадр по запросу, затем Wan 2.2 14B его оживляет: лучшее движение и детали, но медленно. Сначала проверьте картинку: новая занимает секунды, новый клип минуты.</string>
     <string name="flow_i2v_about">Картинка как первый кадр ролика, движущегося по описанию. По умолчанию Wan 2.2 Turbo; Neodragon на узле видео для скорости.</string>

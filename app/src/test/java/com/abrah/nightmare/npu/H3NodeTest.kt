@@ -119,6 +119,30 @@ class H3NodeTest {
     }
 
     @Test
+    fun theReferenceFlowWiresItsPictureToReference() {
+        // ⭐ Reference to video (1.6.281): 1.6.280 shipped H3 Reference reachable only through the Advanced view's port.
+        val flow = com.abrah.nightmare.canvas.RECIPES.single { it.id == com.abrah.nightmare.canvas.H3REF }
+        val g = flow.build().graph
+        val video = g.byId.getValue("video")
+        assertEquals(H3Node.name, video.type)
+        assertEquals("image", video.inputs[H3Node.REFERENCE]?.node)
+        assertNull("not a first frame", video.inputs["image"])
+        assertEquals("core.image", g.byId.getValue("image").type)
+        assertEquals(ModelCatalog.MINIMAX_H3_REF, H3Node.specFor(video))
+        // Its opening size is the measured one, and its length is one of H3's chips.
+        assertEquals(listOf("384", "672", "1.6"), listOf(video.params["width"], video.params["height"], video.params["seconds"]))
+        assertTrue("1.6" in H3Node.LENGTH_LABELS)
+        // The prompt names Picture 1, and Reset on the prompt puts the same one back.
+        val prompt = g.byId.getValue("prompt").params["prompt"].orEmpty()
+        assertEquals(VideoPrompts.H3_REF, prompt)
+        assertTrue("Picture 1" in prompt)
+        assertEquals(VideoPrompts.H3_REF, VideoPrompts.forNode(video, g))
+        assertTrue(VideoPrompts.isDefault(prompt))
+        assertFalse(flow.usesCheckpoint)
+        assertEquals(ModelCatalog.MINIMAX_H3_REF.builds.minOf { it.minArch }, flow.minArch)
+    }
+
+    @Test
     fun theNodeHasOnePromptBoxAndAnOptionalPicture() {
         // ⭐ A wired picture is the first frame (H3's keyframe); nothing wired is text to video.
         assertEquals(listOf("prompt", "image", H3Node.REFERENCE), H3Node.inputs.map { it.name })

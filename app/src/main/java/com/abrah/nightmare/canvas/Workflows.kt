@@ -587,6 +587,20 @@ val RECIPES: List<Recipe> = listOf(
         labelRes = R.string.flow_i2v_name,
         aboutRes = R.string.flow_i2v_about,
     ),
+    // ⭐⭐ Reference to video (GitHub #82): a picture's subject in a new scene, with sound, on MiniMax H3 Reference. Its
+    // picture wires to the H3 node's `reference`, not `image` (that is the first frame). After the 5B's flows: the 8 Gen 3
+    // and the 12 GB class, as MiniMax H3. ⚠ Without it the only way in was the Advanced view's hidden port (1.6.280).
+    Recipe(
+        H3REF, "Reference to video",
+        "Your picture's subject (a person, a pet, a product) in a new scene you describe, with sound, by MiniMax H3 " +
+            "Reference. Slow: about 8 minutes for 1.6 s on an 8 Elite.",
+        ::h3ReferenceWorkflow,
+        usesCheckpoint = false,
+        minArch = com.abrah.nightmare.ModelCatalog.MINIMAX_H3_REF.builds.minOf { it.minArch },
+        section = VIDEO,
+        labelRes = R.string.flow_h3ref_name,
+        aboutRes = R.string.flow_h3ref_about,
+    ),
     // ⭐⭐ Text to video on Wan 2.2 14B: the picture model in the top bar makes the first frame, the 14B animates it
     // (the user's call, 2026-10-25: one 14B download, its image to video experts, not two 17 GB pairs). After the
     // 5B's two flows: an 8 Elite and the 12 GB class.
@@ -621,6 +635,7 @@ const val FACE_EDIT = "face_edit"
 const val ANIMATE = "animate_portrait"
 const val I2V = "i2v"
 const val T2V14 = "t2v14"
+const val H3REF = "h3_ref"
 const val MOTION = "motion"
 
 /**
@@ -955,6 +970,27 @@ fun wanVideoWorkflow(i2v: Boolean): Workflow = Workflow(
         )
     ),
     if (i2v) flowLayout("prompt", "image", "video", "output") else flowLayout("prompt", "video", "output"),
+)
+
+/**
+ * ⭐⭐ **Reference to video** ([H3REF]): a picture into MiniMax H3's `reference` ([com.abrah.nightmare.npu.H3Node.REFERENCE]),
+ * so the node runs MiniMax H3 Reference and the clip keeps the picture's subject in the scene the prompt describes. Opens
+ * at the measured size: 384x672 for 1.6 s, 505 s on the S25 (`docs/MINIMAX-H3.md`).
+ */
+fun h3ReferenceWorkflow(): Workflow = Workflow(
+    Graph(
+        listOf(
+            Node("prompt", "core.prompt", params = mapOf("prompt" to com.abrah.nightmare.npu.VideoPrompts.H3_REF, "negative" to "")),
+            Node("image", "core.image", params = mapOf("uri" to "")),
+            Node(
+                "video", com.abrah.nightmare.npu.H3Node.name,
+                params = mapOf("seed" to "0", "seconds" to "1.6", "width" to "384", "height" to "672"),
+                inputs = sources("prompt" to "prompt", com.abrah.nightmare.npu.H3Node.REFERENCE to "image"),
+            ),
+            Node("output", "core.output", inputs = sources("media" to "video:video")),
+        )
+    ),
+    flowLayout("prompt", "image", "video", "output"),
 )
 
 /**

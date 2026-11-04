@@ -26,6 +26,7 @@ The list is ordered by **what the flow asks of your phone**, lightest first:
 | [Image to video](video.md#image-to-video) | A photo brought to life | the video models, 8 Elite |
 | [Text to video, Wan 2.2](video.md#wan-22-better-clips-slower) | Up to 5 seconds, much better, under 3 minutes | Wan 2.2, 8 Elite (alpha on 8 Gen 3) |
 | [Image to video, Wan 2.2](video.md#wan-22-better-clips-slower) | A photo as the first frame of a 5 second clip | Wan 2.2, 8 Elite (alpha on 8 Gen 3) |
+| [Reference to video](video.md#text-to-video-with-sound-minimax-h3) | Your photo's subject in a new scene, with sound | MiniMax H3 Reference, 8 Gen 3, 12 GB |
 
 A flow your phone cannot run is **shown dimmed** and says why, including the chip it has and the
 one it needs, instead of opening and failing later.

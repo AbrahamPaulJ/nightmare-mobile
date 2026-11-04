@@ -372,7 +372,7 @@ private fun recipeIcon(id: String): androidx.compose.ui.graphics.vector.ImageVec
     "face_edit" -> Icons.Filled.Face
     "animate_portrait" -> Icons.Filled.PlayArrow
     "flux_edit" -> Icons.Filled.Edit
-    "t2v", "i2v", "motion" -> Icons.Filled.PlayArrow
+    "t2v", "i2v", "h3_ref", "t2v14", "motion" -> Icons.Filled.PlayArrow
     else -> FlowsIcon
 }
 

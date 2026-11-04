@@ -729,6 +729,8 @@
     <string name="flow_t2v_about">提示词生成视频。默认使用 Wan 2.2 Turbo（需要几分钟，效果好得多）；将视频节点切换为 Neodragon 约 30 秒生成 2 秒。</string>
     <string name="flow_i2v_name">图生视频</string>
     <string name="flow_t2v14_name">文本生成视频（14B）</string>
+    <string name="flow_h3ref_name">参考图生视频</string>
+    <string name="flow_h3ref_about">把你图片中的主体（人物、宠物、产品）放进你描述的新场景，带声音，由 MiniMax H3 Reference 生成。较慢：在 8 Elite 上 1.6 秒约需 8 分钟。</string>
     <string name="title_i2v14">图生视频（14B）</string>
     <string name="flow_t2v14_about">先用你的图片模型按提示词生成第一帧，再由 Wan 2.2 14B 让它动起来：动作和细节最好，但较慢。先检查图片：重新生成图片只需几秒，重新生成视频要几分钟。</string>
     <string name="flow_i2v_about">以图片为第一帧，按提示词运动。默认使用 Wan 2.2 Turbo；为了速度可在视频节点选择 Neodragon。</string>

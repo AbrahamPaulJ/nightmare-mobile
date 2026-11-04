@@ -377,6 +377,17 @@ open class ModelsScreenshotTest {
         )
     }
 
+    /** ⭐ The video flows, Reference to video among them (1.6.281): the default golden stops above this section. */
+    @Test
+    fun workflowsVideoSection() = shoot("workflows-video", LibraryTab.FLOWS) {
+        com.abrah.nightmare.ui.WorkflowsScreen(
+            recipes = com.abrah.nightmare.canvas.RECIPES.filter { it.section == com.abrah.nightmare.canvas.RECIPES.first { r -> r.id == com.abrah.nightmare.canvas.H3REF }.section },
+            saved = emptyList(),
+            error = null,
+            onOpenRecipe = {}, onOpenSaved = {}, onDeleteSaved = {},
+        )
+    }
+
     /** ⚠ And empty, which is what a new user sees — it must say HOW to fill it. */
     @Test
     fun workflowsWithNothingSaved() = shoot("workflows-empty", LibraryTab.FLOWS) {

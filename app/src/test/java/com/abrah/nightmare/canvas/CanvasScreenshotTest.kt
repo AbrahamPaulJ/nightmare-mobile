@@ -335,6 +335,21 @@ open class CanvasScreenshotTest {
         }
     }
 
+    /**
+     * ⭐ Reference to video in the Default view: the picture to pick, then the MiniMax H3 node it feeds as a reference.
+     * ⚠ 1.6.280 shipped H3 Reference with no flow, reachable only through the Advanced view's hidden port (the user, 2026-11-05).
+     */
+    @Test
+    fun theReferenceFlowInTheNodesView() = shoot("screen-nodes-h3ref") {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+            CanvasScreen(
+                version = GOLDEN_VERSION, state = opened(h3ReferenceWorkflow()).copy(editing = "image"), types = NODE_TYPES, status = emptyMap(),
+                busy = false, image = null, onGesture = {}, onRun = {}, onBack = {},
+                mainView = com.abrah.nightmare.MainView.NODES, nodesVertical = true,
+            )
+        }
+    }
+
     @Test
     fun theNodesViewTopToBottom() = shoot("screen-nodes-vertical") {
         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
