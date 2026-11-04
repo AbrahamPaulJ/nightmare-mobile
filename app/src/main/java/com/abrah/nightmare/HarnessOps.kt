@@ -207,6 +207,8 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 if (arg == "go") say("temp_clean: freed ${TempCleaner.clean(ctx, busy) shr 20} MB")
                 else say("temp_clean: ${targets.size} item(s), ${TempCleaner.scan(ctx, busy) shr 20} MB. `--es arg go` deletes them")
             }
+            // ⭐ GitHub #78 (CPU and GPU temperatures, not the battery's): which thermal sensors THIS app may read.
+            "thermal" -> thermalProbe()
             "model_install" -> installModel(arg)
             "model_delete" -> deleteModel(arg)
             "model_use" -> useModel(arg)
@@ -5462,6 +5464,26 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * (the group exists only without `--lowram`), a bare model id prints.
      * `wan_stream=0|1` sets Video: stream the model, the same way (GitHub #59).
      */
+    /**
+     * ⭐ GitHub #78's question, asked from inside the app (an `adb shell` reads with other rights): each
+     * `/sys/class/thermal` zone this process can read, with its type and °C, then Android's own thermal status and
+     * headroom (API 29 / 30), which every app may read.
+     */
+    private fun thermalProbe() {
+        val zones = java.io.File("/sys/class/thermal").listFiles { f -> f.name.startsWith("thermal_zone") }.orEmpty()
+            .sortedBy { it.name.removePrefix("thermal_zone").toIntOrNull() ?: 0 }
+        var readable = 0
+        for (z in zones) {
+            val type = runCatching { java.io.File(z, "type").readText().trim() }.getOrElse { "(type: ${it.javaClass.simpleName})" }
+            val temp = runCatching { java.io.File(z, "temp").readText().trim() }
+            temp.onSuccess { readable++ }
+            say("  ${z.name} $type ${temp.fold({ String.format(java.util.Locale.ROOT, "%.1f °C", it.toLong() / 1000.0) }, { "unreadable: ${it.javaClass.simpleName}" })}")
+        }
+        say("thermal: $readable of ${zones.size} zones readable")
+        val pm = ctx.getSystemService(android.os.PowerManager::class.java)
+        say("thermal: status ${pm.currentThermalStatus}, headroom in 10 s ${pm.getThermalHeadroom(10)}")
+    }
+
     private fun spillFillOp(arg: String?) {
         val (k, v) = arg.orEmpty().split('=', limit = 2).let { it[0] to it.getOrNull(1) }
         when {

@@ -97,6 +97,13 @@ T5 tokenizer (google-t5/t5-base tokenizer.json)
     Apache 2.0. Its vocabulary counts Anima prompt tokens against 512.
     Downloaded by the app once an Anima DiT model is installed; not included here.
 
+MOSS Layout Prompt (Comfyui-Moss-LayoutPrompt)
+    LinXce
+    https://github.com/LinXce/Comfyui-Moss-LayoutPrompt
+    Apache 2.0. Its layout compiler (layout.py) is ported to Kotlin in MossLayout.kt, and its
+    editor is the model for the MOSS sampler's Layout tab. First ported to this app by
+    LoverCat114514 (github.com/LoverCat114514/Nightmare).
+
 DiT engine (libdit_engine.so and its Hexagon skels)
     xororz/local-dream's engine wrapper (v3.0.0-alpha.3) around stable-diffusion.cpp
     with ggml's Hexagon backend, plus this project's LoRA patch

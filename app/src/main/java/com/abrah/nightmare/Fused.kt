@@ -1419,7 +1419,7 @@ class SdSampler(
         // ⭐ `<lora:name:w>` tags leave the text here and join the LoRA list ([PromptLoras]).
         val pos = PromptLoras.extract(wired.positive)
         val neg = PromptLoras.extract(wired.negative)
-        val prompt = if (pos.tags.isEmpty() && neg.tags.isEmpty()) wired else Value.Prompt(pos.text, neg.text)
+        val plain = if (pos.tags.isEmpty() && neg.tags.isEmpty()) wired else Value.Prompt(pos.text, neg.text)
         // ⚠ A tag in the NEGATIVE is stripped like any other but never applied (a LoRA has no
         // negative side), and a pasted CivitAI negative carries them: said, not silently dropped.
         if (neg.tags.isNotEmpty()) {
@@ -1435,6 +1435,16 @@ class SdSampler(
         // 1000x750 reached the engine at a size the grid never offers ([ModelCatalog.ditSnap]).
         val w = int("width").let { if (family.dit && inpaint) ModelCatalog.ditSnap(it) else it }
         val h = int("height").let { if (family.dit && inpaint) ModelCatalog.ditSnap(it) else it }
+        // ⭐ MOSS-Image's layout prompt ([MossLayout], GitHub #77): the Layout tab's boxes with this prompt as their
+        // caption, or a layout pasted into the prompt. ⚠ A layout that cannot compile stops the run with why, never
+        // renders as if there were none.
+        val laid = if (family != Family.MOSS) null else try {
+            MossLayout.forRender(node.params[MossLayout.PARAM], pos.text, w, h)
+        } catch (e: IllegalArgumentException) {
+            throw IllegalArgumentException("node \"${node.id}\": ${e.message}")
+        }
+        if (laid != null) ctx.say(ctx.text(R.string.run_moss_layout, "rendering with its layout"))
+        val prompt = if (laid != null) Value.Prompt(laid, neg.text) else plain
         // ⭐⭐ A DiT model renders whole, so it leaves here — EXCEPT an inpaint
         // one, which first needs the mask this function builds below. That
         // path rejoins at [runDitMasked] and returns before any op endpoint is

@@ -1387,4 +1387,20 @@
     <string name="run_end_channel">运行结束</string>
     <string name="run_end_done">运行完成，用时 %1$s</string>
     <string name="run_end_failed">运行失败，用时 %1$s</string>
+    <string name="run_moss_layout">按布局生成</string>
+    <string name="layout_tab">布局</string>
+    <string name="layout_note">为画面中的每个元素画一个框并说明它是什么。提示词描述整张图。在空白处拖动画框，拖动框可移动，拖动圆点可调整大小。</string>
+    <string name="layout_object">物体</string>
+    <string name="layout_character">角色</string>
+    <string name="layout_text">文字</string>
+    <string name="layout_add_box">添加框</string>
+    <string name="layout_clear">清空</string>
+    <string name="layout_clear_title">清空布局？</string>
+    <string name="layout_clear_body">将删除全部 %1$d 个框及其说明。提示词保留。</string>
+    <string name="layout_box_title">框 %1$d</string>
+    <string name="layout_delete_box">删除框 %1$d</string>
+    <string name="layout_kind">类型</string>
+    <string name="layout_caption">外观描述</string>
+    <string name="layout_words">准确文字</string>
+    <string name="layout_words_needed">文字框需要填写文字</string>
 </resources>

@@ -1418,4 +1418,20 @@
     <string name="run_end_channel">Run finished</string>
     <string name="run_end_done">Run finished in %1$s</string>
     <string name="run_end_failed">Run failed after %1$s</string>
+    <string name="run_moss_layout">rendering with its layout</string>
+    <string name="layout_tab">Layout</string>
+    <string name="layout_note">Draw a box for each thing in the picture and say what it is. The prompt describes the whole picture. Drag on an empty part to draw a box, drag a box to move it, drag its dot to resize it.</string>
+    <string name="layout_object">Object</string>
+    <string name="layout_character">Character</string>
+    <string name="layout_text">Text</string>
+    <string name="layout_add_box">Add box</string>
+    <string name="layout_clear">Clear</string>
+    <string name="layout_clear_title">Clear the layout?</string>
+    <string name="layout_clear_body">All %1$d boxes and what they say are removed. The prompt is kept.</string>
+    <string name="layout_box_title">Box %1$d</string>
+    <string name="layout_delete_box">Delete box %1$d</string>
+    <string name="layout_kind">What it is</string>
+    <string name="layout_caption">What it looks like</string>
+    <string name="layout_words">The exact words</string>
+    <string name="layout_words_needed">A text box needs its words</string>
 </resources>

@@ -2441,6 +2441,16 @@ internal fun NodeInspectorBody(
                 DrivingVideoPanel(node, live, drivingVideo, clipW, clipH) { onSetParams(nodeId, it) }
             }
         }
+        // ⭐⭐ A MOSS sampler's Layout tab (GitHub #77): boxes on the picture, compiled into its prompt ([com.abrah.nightmare.MossLayout]).
+        val layoutTile = if (node.type != com.abrah.nightmare.SdSampler.MOSS.name) null else {
+            val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
+            val lw = live["width"]?.toIntOrNull()?.takeIf { it > 0 } ?: 1024
+            val lh = live["height"]?.toIntOrNull()?.takeIf { it > 0 } ?: 1024
+            val param = node.params[com.abrah.nightmare.MossLayout.PARAM]
+            mossLayoutTile(param, lw, lh) {
+                MossLayoutPanel(param, lw, lh) { onSetParam(nodeId, com.abrah.nightmare.MossLayout.PARAM, it) }
+            }
+        }
         // ⭐ The Default view's References row on a DiT edit (images 2 to 4); Advanced wires them ([ReferencesRow]).
         if (!nodeActions && references != null && onAddReference != null && onRemoveReference != null) {
             ReferencesRow(
@@ -2451,7 +2461,7 @@ internal fun NodeInspectorBody(
                 onRemove = onRemoveReference,
             )
         }
-        if (popup && (cropSource != null || refSource != null || controlTile != null || videoTile != null)) {
+        if (popup && (cropSource != null || refSource != null || controlTile != null || videoTile != null || layoutTile != null)) {
             InpaintEditors(
                 node = node,
                 type = type,
@@ -2464,7 +2474,7 @@ internal fun NodeInspectorBody(
                 paints = node.type in com.abrah.nightmare.INPAINT_TYPES,
                 openCrop = cropRequest?.takeIf { it.first == nodeId }?.second,
                 openTab = cropRequestTab,
-                control = controlTile ?: videoTile,
+                control = controlTile ?: videoTile ?: layoutTile,
                 ip = ipTile,
                 draw = drawSource?.let { d -> drawTile(d, onSaveDrawingOn) },
             )

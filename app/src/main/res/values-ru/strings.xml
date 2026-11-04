@@ -1414,4 +1414,20 @@
     <string name="run_end_channel">Запуск закончен</string>
     <string name="run_end_done">Запуск закончен за %1$s</string>
     <string name="run_end_failed">Запуск не удался через %1$s</string>
+    <string name="run_moss_layout">рендер по разметке</string>
+    <string name="layout_tab">Разметка</string>
+    <string name="layout_note">Нарисуйте рамку для каждого предмета на картинке и опишите его. Промпт описывает всю картинку. Проведите по пустому месту, чтобы нарисовать рамку, перетащите рамку, чтобы сдвинуть, потяните точку, чтобы изменить размер.</string>
+    <string name="layout_object">Предмет</string>
+    <string name="layout_character">Персонаж</string>
+    <string name="layout_text">Текст</string>
+    <string name="layout_add_box">Добавить рамку</string>
+    <string name="layout_clear">Очистить</string>
+    <string name="layout_clear_title">Очистить разметку?</string>
+    <string name="layout_clear_body">Все рамки (%1$d) и их описания будут удалены. Промпт останется.</string>
+    <string name="layout_box_title">Рамка %1$d</string>
+    <string name="layout_delete_box">Удалить рамку %1$d</string>
+    <string name="layout_kind">Что это</string>
+    <string name="layout_caption">Как выглядит</string>
+    <string name="layout_words">Точный текст</string>
+    <string name="layout_words_needed">Текстовой рамке нужен текст</string>
 </resources>

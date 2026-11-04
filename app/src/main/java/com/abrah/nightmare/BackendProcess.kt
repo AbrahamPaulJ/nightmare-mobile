@@ -491,7 +491,10 @@ object BackendProcess {
      * proven on the real chip. ⚠ A 9B edit with a reference at 1024² may need more (4B's needed 2.75).
      */
     internal fun lowArchDitBudget(spec: ModelSpec?, arch: Int): String {
-        val v75 = if (spec?.family == Family.FLUX2 && spec.ownDitParts) 2.25 else 2.75
+        // ⭐ Fibo 2.0 Edit too (1.6.274): a real 8 Gen 3 failed `HTP0 buffer mapping failed` mapping 1 GB at 960x1280 on
+        // 1.6.272 with a 1.78 GB compute buffer, where 1.6.251 rendered it (Saved #7722). Since `dit/064` (1.6.256) the
+        // graph-cut cache keeps segment outputs mapped, on the same ~3.1 GB a session; 2.25 leaves it 0.5 GB more.
+        val v75 = if (spec?.family == Family.FLUX2 && spec.ownDitParts || spec?.family == Family.FIBO2) 2.25 else 2.75
         return (if (arch < 75) v75 - V73_MAP_SHORTFALL_GIB else v75).toString()
     }
 
@@ -609,7 +612,7 @@ object BackendProcess {
      * want that slow down on phones it already worked").
      * Measured on the S25 2026-10-17: at 4 GiB, 5.36 GB free at launch fell to 1.82 at the worst (3.54
      * used), each GiB more costs ~1.07 GB; whole needs ~2.2 GB more than 4. With a 1.5 GB floor: whole
-     * from [KREA_WHOLE_FREE], 5 from [KREA_5_FREE]. Null on a 16 GB phone or unknown RAM, as before.
+     * from [KREA_WHOLE_FREE], 5 from [KREA_5_FREE]. Null on unknown RAM; a 16 GB phone has its own floor ([KREA16_WHOLE_FREE]).
      * ⭐ Ideogram 4 too: its DiT and TurboTime LoRA are 6.2 GB on the NPU, Krea's size. ⚠ Unbudgeted on the S25
      * (2026-10-18, 6.0 GB free) the engine mapped all 6,192 MB as one segment and lmkd reclaimed the APP mid-step
      * ("min watermark is breached and swap is low"); sd-cli at 2.5 GiB rendered. Krea's thresholds, unmeasured whole.
@@ -626,6 +629,13 @@ object BackendProcess {
      */
     internal fun kreaBudget(spec: ModelSpec?, ramBytes: Long, availBytes: Long): String? {
         if (spec?.family == Family.FIBO2 && ramBytes > 0) return if (availBytes >= FIBO_WHOLE_FREE) null else "4"
+        // ⭐ Krea 2 on the 16 GB class too (Saved #7754, a 16 GB phone: whole took 7.9 GB free to 0.5, so ~7.4 GB):
+        // whole only with 2 GB left after, the floor Fibo keeps (the user, 2026-11-04); else 5 or 4 GiB as below 16.
+        if (spec?.family == Family.KREA2 && ramBytes >= Prefs.LOWRAM_BELOW_BYTES) return when {
+            availBytes >= KREA16_WHOLE_FREE -> null
+            availBytes >= KREA16_5_FREE -> "5"
+            else -> "4"
+        }
         // ⚠ Not Z-Image on the GPU ([gpuWhole]): there it runs whole.
         if (gpuWhole(spec)) return null
         if (spec?.family !in setOf(Family.KREA2, Family.IDEOGRAM, Family.ZIMAGE, Family.FIBO2) || ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
@@ -651,6 +661,9 @@ object BackendProcess {
      */
     internal fun gpuWhole(spec: ModelSpec?): Boolean = spec?.family == Family.ZIMAGE && DitGpu.runs(spec)
 
+    /** ⭐ Krea 2 whole on a 16 GB phone: the tester's ~7.4 GB (Saved #7754) + a 2 GB floor; 5 GiB costs ~4.6 GB (S25). */
+    private const val KREA16_WHOLE_FREE = 9_400_000_000L
+    private const val KREA16_5_FREE = 6_600_000_000L
     private const val KREA_WHOLE_FREE = 7_300_000_000L
     private const val KREA_5_FREE = 6_100_000_000L
     /** ⭐ Fibo whole: its ~6.1 GB (the tester's 16 GB phone, Saved #7440) plus a 2 GB floor ([kreaBudget]). */
@@ -1086,6 +1099,12 @@ object BackendProcess {
                         if (spec?.family in NO_MM_ADD_FUSION) put("GGML_HEXAGON_OPFUSION", ANIMA_OPFUSION)
                         // ⭐ A chip that ran short of VTCM runs unfused ([HexFallback]).
                         if (HexFallback.noFusion(context)) put("GGML_HEXAGON_OPFUSION", "0")
+                        // ⭐⭐ Below v79, unfused: the 8 Gen 3 regression from 1.6.251 to 1.6.272 (Wan 2.2 14B all noise,
+                        // Fibo failing; Saved #7721-7761). Below v79 every DiT streams, and a streamed graph fused NOTHING
+                        // until `dit/060` (1.6.256), which turned `MUL_MAT_ADD` on for them, the fusion that computes adds
+                        // wrong for Anima and Iris above. Off is 1.6.251's state. The S25 forced to v75 (Wan 14B 480x832
+                        // 1 s): the same 700 MB compute, sampling 126 s against 138 fused, both clean; a real 8 Gen 3 owed.
+                        if (belowV79) put("GGML_HEXAGON_OPFUSION", "0")
                         // ⭐ MOSS-Image's Qwen3.5 is not Qwen2's vocabulary: the engine reads its tokenizer.json from here
                         // (`dit/028`), and refuses to start without it.
                         // ⭐ Its own tokenizer, else its donor's ([ModelSpec.partsFrom]: MOSS Base borrows SFT's, backend 040).

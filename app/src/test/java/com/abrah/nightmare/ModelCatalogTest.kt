@@ -332,7 +332,10 @@ class ModelCatalogTest {
         assertEquals("5", BackendProcess.kreaBudget(krea, twelve, 6_500_000_000L))
         assertEquals(null, BackendProcess.kreaBudget(krea, twelve, 7_500_000_000L))
         assertEquals("4", BackendProcess.kreaBudget(krea, twelve, 0L))
-        assertEquals(null, BackendProcess.kreaBudget(krea, sixteen, 1_000_000_000L))
+        // ⭐ A 16 GB phone too, since 1.6.274 (Saved #7754: whole took 7.9 GB free to 0.5): whole only with 2 GB left.
+        assertEquals("4", BackendProcess.kreaBudget(krea, sixteen, 1_000_000_000L))
+        assertEquals("5", BackendProcess.kreaBudget(krea, sixteen, 7_900_000_000L))
+        assertEquals(null, BackendProcess.kreaBudget(krea, sixteen, 10_000_000_000L))
         assertEquals(null, BackendProcess.kreaBudget(krea, 0L, 0L))
         assertEquals(null, BackendProcess.kreaBudget(klein9, twelve, 0L))
         // ⭐ Z-Image Turbo too (a 12 GB realme reaped at 1024², Saved #7193), on `all=disk` so the budget evicts;
@@ -358,6 +361,8 @@ class ModelCatalogTest {
         // ⭐ GitHub #30: Klein 9B gets the smaller 8 Gen 3 budget; every other DiT keeps 2.75.
         assertEquals("2.25", BackendProcess.lowArchDitBudget(klein9, 75))
         assertEquals("2.75", BackendProcess.lowArchDitBudget(krea, 75))
+        // ⭐ Fibo too since 1.6.274: a real 8 Gen 3 ran out of NPU map at 960x1280 on 1.6.272 (Saved #7722).
+        assertEquals("2.25", BackendProcess.lowArchDitBudget(fibo, 75))
         assertEquals("2.75", BackendProcess.lowArchDitBudget(ModelCatalog.byId("flux2_klein_4b"), 75))
         // ⭐ A real 8 Gen 2 maps ~2.5 GB per session: each budget 0.75 GiB smaller (an SM8550 failed at 2.5).
         assertEquals("1.5", BackendProcess.lowArchDitBudget(klein9, 73))
