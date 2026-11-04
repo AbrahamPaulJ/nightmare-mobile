@@ -127,6 +127,9 @@ object Backend {
 
     data class Response(val code: Int, val body: String, val millis: Long)
 
+    /** ⚠ JVM tests only ([request]): the fingerprint [com.abrah.nightmare.canvas.ANIMATED] reads too. */
+    private val NO_BACKEND_IN_TESTS: Boolean = android.os.Build.FINGERPRINT == "robolectric"
+
     suspend fun get(path: String): Response = request("GET", path, null)
 
     /**
@@ -276,6 +279,11 @@ object Backend {
         readTimeoutMs: Int = stageTimeoutMs(),
     ): Response =
         withContext(Dispatchers.IO) {
+            // ⚠ Under Robolectric there is never a backend, and on Windows a refused loopback connect takes 2.02 s (it
+            // retries the SYN; the phone refuses at once). HarnessScreen probes /health at start, busy and animating
+            // until it answers, so its Compose tests outran FastIdle's 5 s on a loaded PC ("did not get idle":
+            // ResultsFullscreen, ResultsDelete, VideoDeleteConfirm, 2026-11-04). Refused at once, as on the phone.
+            if (NO_BACKEND_IN_TESTS) return@withContext Response(-1, "ConnectException: no backend under Robolectric", 0)
             val started = System.nanoTime()
             val conn = open(path).apply {
                 requestMethod = method

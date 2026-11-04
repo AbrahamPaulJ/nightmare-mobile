@@ -1,0 +1,21 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -506,8 +506,17 @@
+     // Qwen, which covered a whole 896x1024 edit as ONE tile and needed 3507 MB on the
+     // NPU against an 8 Gen 3's 2816 MB budget (a vivo SM8650, 2026-10-15: 351 s of
+     // sampling, then the decode failed). Halved for Qwen: 512 px for every family.
++    // ⚠⚠ nightmare (053): Fibo 2.0 Edit has a 16x VAE latent too (the FLUX.2 VAE, launched as krea2 so its kind is
++    // Z-Image's), and 64 covered a 960x1280 reference as ONE tile ("VAE Tile size: 60x80, num tiles 1, 1"): an
++    // 1,800 MB encode buffer on the NPU, the 1.78 GB that failed to map on a real 8 Gen 3 (S25 forced to v75,
++    // 2026-11-04). The app knows the family, so it names the tile: NM_VAE_TILE_LATENT, latent px, at launch.
++    static const int env_tile = [] {
++      const char *e = std::getenv("NM_VAE_TILE_LATENT");
++      return e ? std::atoi(e) : 0;
++    }();
+     const int tile_latent =
+-        kind_ == DIT_MODEL_QWEN_IMAGE_2_1 ? std::max(1, vae_tile_size_ / 2) : vae_tile_size_;
++        env_tile > 0 ? env_tile
++        : kind_ == DIT_MODEL_QWEN_IMAGE_2_1 ? std::max(1, vae_tile_size_ / 2) : vae_tile_size_;
+     if (tiled) {
+       params.vae_tile_size = tile_latent;
+       params.vae_tile_overlap = 0.25f;

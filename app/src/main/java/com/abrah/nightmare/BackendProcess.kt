@@ -491,12 +491,21 @@ object BackendProcess {
      * proven on the real chip. ⚠ A 9B edit with a reference at 1024² may need more (4B's needed 2.75).
      */
     internal fun lowArchDitBudget(spec: ModelSpec?, arch: Int): String {
-        // ⭐ Fibo 2.0 Edit too (1.6.274): a real 8 Gen 3 failed `HTP0 buffer mapping failed` mapping 1 GB at 960x1280 on
-        // 1.6.272 with a 1.78 GB compute buffer, where 1.6.251 rendered it (Saved #7722). Since `dit/064` (1.6.256) the
-        // graph-cut cache keeps segment outputs mapped, on the same ~3.1 GB a session; 2.25 leaves it 0.5 GB more.
-        val v75 = if (spec?.family == Family.FLUX2 && spec.ownDitParts || spec?.family == Family.FIBO2) 2.25 else 2.75
+        // ⚠ NOT Fibo 2.0 Edit: 1.6.274 gave it 2.25 for the 8 Gen 3's `HTP0 buffer mapping failed` (Saved #7722), and on
+        // the S25 forced to v75 its 960x1280 edit then failed at DiT segment 3/47 (`need 2187 MB / 2449 budget`). The
+        // 1.78 GB buffer was the reference's VAE encode, untiled: [lowArchVaeTile] is the fix, and 2.75 renders it.
+        val v75 = if (spec?.family == Family.FLUX2 && spec.ownDitParts) 2.25 else 2.75
         return (if (arch < 75) v75 - V73_MAP_SHORTFALL_GIB else v75).toString()
     }
+
+    /**
+     * ⭐ The VAE tile below v79 (`NM_VAE_TILE_LATENT`, backend 053), in latent px, or null for the backend's own.
+     * ⚠⚠ Fibo 2.0 Edit's FLUX.2 VAE is 16x, and the backend's 64 covered a 960x1280 reference as ONE tile: an
+     * 1,800 MB encode on the NPU, the 1.78 GB a real 8 Gen 3 failed to map (Saved #7722). The engine encodes at twice
+     * the decode tile, so 16 = a 512 px encode: 384 MB, and a 160 MB decode (S25 forced to v75, 2026-11-04, 960x1280
+     * edit at 2.75 GiB: renders, no seams; 32 left a 1,440 MB encode).
+     */
+    internal fun lowArchVaeTile(spec: ModelSpec?): Int? = if (spec?.family == Family.FIBO2) 16 else null
 
     /**
      * ⭐ A real 8 Gen 2 maps only ~2.5 GB per FastRPC session (v75: ~3.1). A Xiaomi SM8550 on 1.6.173
@@ -1081,6 +1090,8 @@ object BackendProcess {
                         // at 1 MP (GitHub #35). Backend 034 applies it only to requests with a
                         // reference; engine `dit/021` does the encode. An older engine ignores it.
                         if (belowV79) put("NM_REF_CAP_PIXELS", REF_CAP_PIXELS.toString())
+                        // ⭐ And the VAE in 512 px pieces where one tile would hold the whole picture ([lowArchVaeTile]).
+                        lowArchVaeTile(spec)?.takeIf { belowV79 }?.let { put("NM_VAE_TILE_LATENT", it.toString()) }
                         // ⭐ FLUX.3 Klein edits (GitHub #72): a `krea2` launch is an editor to the backend only with a
                         // vision tower (Fibo) or this, so without it the Image edit flow's picture went in as img2img at
                         // 1.0 and came back a new picture. With it the engine takes sd.cpp's own reference preset for

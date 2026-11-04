@@ -361,8 +361,11 @@ class ModelCatalogTest {
         // ⭐ GitHub #30: Klein 9B gets the smaller 8 Gen 3 budget; every other DiT keeps 2.75.
         assertEquals("2.25", BackendProcess.lowArchDitBudget(klein9, 75))
         assertEquals("2.75", BackendProcess.lowArchDitBudget(krea, 75))
-        // ⭐ Fibo too since 1.6.274: a real 8 Gen 3 ran out of NPU map at 960x1280 on 1.6.272 (Saved #7722).
-        assertEquals("2.25", BackendProcess.lowArchDitBudget(fibo, 75))
+        // ⭐ Fibo keeps 2.75 (at 2.25 its 960x1280 edit failed at DiT segment 3); its VAE goes in 512 px tiles instead,
+        // the untiled 1.8 GB encode being what a real 8 Gen 3 could not map (Saved #7722).
+        assertEquals("2.75", BackendProcess.lowArchDitBudget(fibo, 75))
+        assertEquals(16, BackendProcess.lowArchVaeTile(fibo))
+        assertEquals(null, BackendProcess.lowArchVaeTile(krea))
         assertEquals("2.75", BackendProcess.lowArchDitBudget(ModelCatalog.byId("flux2_klein_4b"), 75))
         // ⭐ A real 8 Gen 2 maps ~2.5 GB per session: each budget 0.75 GiB smaller (an SM8550 failed at 2.5).
         assertEquals("1.5", BackendProcess.lowArchDitBudget(klein9, 73))

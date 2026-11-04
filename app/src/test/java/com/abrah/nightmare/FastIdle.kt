@@ -25,7 +25,7 @@ class FastIdle : ExternalResource() {
     private var applier: ObserverHandle? = null
 
     /** ⭐ On an idle timeout, say WHAT kept the app busy: recomposers, the global snapshot, the main looper, our threads. */
-    override fun apply(base: org.junit.runners.model.Statement, description: org.junit.runner.Description) =
+    private fun applyWithDump(base: org.junit.runners.model.Statement, description: org.junit.runner.Description) =
         super.apply(object : org.junit.runners.model.Statement() {
             override fun evaluate() {
                 try {
@@ -56,9 +56,23 @@ class FastIdle : ExternalResource() {
         System.err.println(out.toString().lines().take(80).joinToString("\n"))
     }
 
+    private var testClass: String? = null
+
+    override fun apply(base: org.junit.runners.model.Statement, description: org.junit.runner.Description): org.junit.runners.model.Statement {
+        testClass = description.className
+        return applyWithDump(base, description)
+    }
+
     override fun before() {
-        IdlingPolicies.setMasterPolicyTimeout(SECONDS, TimeUnit.SECONDS)
-        IdlingPolicies.setIdlingResourceTimeout(SECONDS, TimeUnit.SECONDS)
+        // ⚠⚠ A class's FIRST test gets [COLD_SECONDS] (2026-11-04): its first composition loads and JITs a whole screen
+        // (ModelsScreen, ResultsScreen, HarnessScreen), and on a loaded PC that alone passed 5 s: the first test of
+        // ResultsFullscreen, ResultsDelete and VideoDeleteConfirm failed "did not get idle" while the class's next
+        // tests took 7.9 and 2.4 s (a 5.9 GB chunk push hashing beside the suite). A leak from an earlier class still
+        // fails here, only later; every test after the first keeps [SECONDS].
+        val cold = testClass?.let { warmed.add(it) } ?: false
+        val secs = if (cold) COLD_SECONDS else SECONDS
+        IdlingPolicies.setMasterPolicyTimeout(secs, TimeUnit.SECONDS)
+        IdlingPolicies.setIdlingResourceTimeout(secs, TimeUnit.SECONDS)
         // ⭐ What `GlobalSnapshotManager` does, for this test only: a write queues one apply on the main looper.
         val main = android.os.Handler(android.os.Looper.getMainLooper())
         val queued = AtomicBoolean(false)
@@ -77,5 +91,11 @@ class FastIdle : ExternalResource() {
 
     companion object {
         const val SECONDS = 5L
+
+        /** ⚠ The first test of each class: a cold screen's first composition, not a leak ([before]). */
+        const val COLD_SECONDS = 30L
+
+        /** ⚠ JVM-wide: the classes whose first test has run (test JVMs are recycled every 30 classes). */
+        private val warmed: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
     }
 }
