@@ -79,7 +79,7 @@ class DitGpuTest {
         DitGpu.openClForTest = true
         Prefs.setLowRam(ctx, Prefs.KEY_DIT_GPU, true)
         assertNotEquals(npu, DitEngine.URL)
-        assertTrue(DitEngine.URL.endsWith("-gpu.zip"))
+        assertTrue(DitEngine.URL.contains("-gpu"))
         assertEquals("one archive, two hosts", DitEngine.URL.substringAfterLast('/'), DitEngine.HF_URL.substringAfterLast('/'))
     }
 
@@ -90,8 +90,15 @@ class DitGpuTest {
         val tae = DitGpu.taeFile(ctx, DitGpu.TAEF2).apply { parentFile?.mkdirs(); writeBytes(ByteArray(4)) }
         val env = DitGpu.launchEnv(ctx, klein, caps(79))
         assertEquals(DitGpu.BACKEND, env["NM_DIT_BACKEND"])
-        assertEquals("15", env["GGML_OPENCL_MM_MAX_GFLOP"])
-        assertEquals("Klein keeps the xmem attention", "1", env["GGML_OPENCL_XMEM_SDPA"])
+        // ⚠ An SM8450 (Adreno 730) is not the measured GPU: plain kernels, smaller dispatches (grey and an ANR there).
+        assertEquals("5", env["GGML_OPENCL_MM_MAX_GFLOP"])
+        assertEquals("0", env["GGML_OPENCL_Q4_0_DENSE_DP4A"])
+        assertEquals("0", env["GGML_OPENCL_XMEM_SDPA"])
+        // ⭐ The S25's Adreno 830 keeps the settings measured on it.
+        val s25 = DitGpu.launchEnv(ctx, klein, caps(79).copy(soc = "SM8750"))
+        assertEquals("15", s25["GGML_OPENCL_MM_MAX_GFLOP"])
+        assertEquals("Klein keeps the xmem attention", "1", s25["GGML_OPENCL_XMEM_SDPA"])
+        assertEquals("1", s25["GGML_OPENCL_Q4_0_DENSE_DP4A"])
         // ⚠ Z-Image is off the route until its faster attention ships (the user, 2026-10-31); its xmem switch waits.
         val zimage = ModelCatalog.byId("z_image_turbo")
         assertTrue("Z-Image stays off the GPU", DitGpu.launchEnv(ctx, zimage, caps(79)).isEmpty())

@@ -88,7 +88,14 @@ class CrashReportTest {
         val first = crumb.lastModified()
         repeat(50) { CrashReport.mark(ctx, "downloading FLUX.2 Klein 4B") }
         assertEquals("the file should be written once per job", first, crumb.lastModified())
-        assertEquals("downloading FLUX.2 Klein 4B", crumb.readLines().first())
+        // ⚠ Through [lines], retried: the RAM watch's thread rewrites the file, and on Windows a read during that
+        // write fails "being used by another process" (the 2026-11-04 suite, the PC under load).
+        assertEquals("downloading FLUX.2 Klein 4B", settledFirstLine())
+    }
+
+    private fun settledFirstLine(): String? {
+        repeat(40) { lines().firstOrNull()?.let { return it }; Thread.sleep(25) }
+        return lines().firstOrNull()
     }
 
     /** ⚠ A different job replaces it, so the report names the RIGHT thing. */
@@ -150,5 +157,15 @@ class CrashReportTest {
         CrashReport.mark(ctx, "rendering")
         CrashReport.pending(ctx)
         assertTrue("the breadcrumb must not survive being read", !crumb.exists())
+    }
+
+    /** ⭐ Android 17's memory limiter files its kill as REASON_OTHER, "MemoryLimiter:AnonSwap" (S#7764). */
+    @Test
+    fun theMemoryLimiterIsToldApartFromAnOrdinaryExit() {
+        val other = android.app.ApplicationExitInfo.REASON_OTHER
+        assertTrue(CrashReport.memoryLimited(other, "MemoryLimiter:AnonSwap"))
+        assertTrue(!CrashReport.memoryLimited(other, "user requested"))
+        assertTrue(!CrashReport.memoryLimited(other, null))
+        assertTrue(!CrashReport.memoryLimited(android.app.ApplicationExitInfo.REASON_LOW_MEMORY, "MemoryLimiter:AnonSwap"))
     }
 }

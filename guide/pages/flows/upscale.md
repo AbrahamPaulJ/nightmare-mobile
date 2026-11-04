@@ -14,8 +14,11 @@ model.*
 | **RealESRGAN x4plus anime** | Drawings, anime, flat colour |
 | **4x UltraSharp V2 Lite** | Photos |
 
-You can also import your own converted upscaler (a `.bin` file) with **+** next to the
-**Models** title.
+You can also import your own upscaler with **+** next to the **Models** title: a converted `.bin`,
+or an ESRGAN model as CivitAI and OpenModelDB share them (`.pth` or `.safetensors`, 4x, 2x or 1x,
+for example 4x-UltraSharp or RealESRGAN x2plus). An ESRGAN runs on the NPU: about 22 seconds to take
+a 1024x1024 picture to 4096x4096 on an 8 Elite. The first one you import also downloads the engine
+it runs on (about 23 MB) if no DiT model has fetched it yet.
 
 ## Steps
 

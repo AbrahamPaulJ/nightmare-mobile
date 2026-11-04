@@ -22,4 +22,15 @@ class ImportBudgetTest {
         // Built-ins are measured per family, never through this.
         assertNull(BackendProcess.importBudget(ModelCatalog.byId("moss_image"), 5 * gb, 11L shl 30, 2 * gb))
     }
+
+    @Test
+    fun aKlein9bImportTheSizeOfOursRunsAsOursDoes() {
+        // ⭐ S#7755: leejet's 5,616 MB Klein 9B Q4_0, imported with its own parts, 5.8 GB free on a 12 GB S25. At 4 GiB it
+        // failed at segment 16/34; the built-in renders whole there (768², 45 s).
+        val klein9 = ModelCatalog.byId("flux2_klein_9b")!!.copy(isCustom = true)
+        assertEquals(5_616_208_032L, BackendProcess.builtInDitBytes(Family.FLUX2))
+        assertNull(BackendProcess.importBudget(klein9, 5_616_208_032L, 11L shl 30, 5_790L shl 20))
+        // ⚠ Bigger than anything we ship in the family: the 4 GiB rule still holds.
+        assertEquals("4", BackendProcess.importBudget(klein9, 9 * gb, 11L shl 30, 5_790L shl 20))
+    }
 }

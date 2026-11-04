@@ -1761,6 +1761,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 is CustomModels.ImportKind.Checkpoint ->
                     if (kind.family != null) importDitModel(uri, n, kind.family) else familyAsk = uri to n
                 CustomModels.ImportKind.Upscaler -> importUpscaler(uri)
+                is CustomModels.ImportKind.GgmlUpscaler -> importUpscaler(uri, kind.ext)
                 CustomModels.ImportKind.Lora -> modelError = text(R.string.import_is_lora)
                 CustomModels.ImportKind.Embedding -> modelError = text(R.string.import_is_embedding)
                 is CustomModels.ImportKind.NeedsConverting -> modelError = text(R.string.import_needs_converting, kind.what)
@@ -4617,7 +4618,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * for a checkpoint — a picked file rarely has a name a user would choose
      * to type twice.
      */
-    fun importUpscaler(uri: android.net.Uri) {
+    fun importUpscaler(uri: android.net.Uri, ext: String = "bin") {
         val ctx = getApplication<Application>()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val result = runCatching {
@@ -4628,17 +4629,22 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 // extension should be refused, not silently accepted under a
                 // name that implies it is something it is not.
                 val displayName = uriDisplayName(uri).orEmpty()
-                require(displayName.endsWith(".bin", ignoreCase = true)) {
-                    "only .bin files are supported"
+                require(displayName.endsWith(".$ext", ignoreCase = true)) {
+                    "only .bin, .pth and .safetensors files are supported"
                 }
-                val proposed = displayName.dropLast(4)
+                val proposed = displayName.dropLast(ext.length + 1)
                 val name = java.io.File(proposed).name.let {
                     if (UpscalerCatalog.isValidName(it)) it else "upscaler_${System.currentTimeMillis()}"
                 }
-                UpscalerCatalog.importCustom(ctx, name) {
+                val spec = UpscalerCatalog.importCustom(ctx, name, ext) {
                     ctx.contentResolver.openInputStream(uri)
                         ?: throw java.io.IOException("could not read that file")
                 }
+                // ⭐ An ESRGAN runs on the DiT engine (backend 054): a phone with no DiT model has none yet (23 MB).
+                if (spec.ggml && !com.abrah.nightmare.DitEngine.isInstalled(ctx)) {
+                    com.abrah.nightmare.DitEngine.install(ctx, onProgress = {})
+                }
+                spec
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 result.fold(

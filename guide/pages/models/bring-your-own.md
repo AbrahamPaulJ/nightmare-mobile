@@ -4,7 +4,8 @@ Beyond the catalogue, you can use models you converted or downloaded yourself.
 
 **To import anything:** tap **+** next to the **Models** title, optionally type a name, tap
 **Choose a file** and pick it. The app reads the file and works out what it is: a converted
-`.zip`, a checkpoint `.safetensors` or `.gguf` (and which model it is for), or an upscaler `.bin`.
+`.zip`, a checkpoint `.safetensors` or `.gguf` (and which model it is for), an upscaler `.bin`, or an
+ESRGAN upscaler `.pth` or `.safetensors` (it lands under Upscalers).
 It asks only when a checkpoint does not say which model it was made for. A LoRA or an embedding
 picked by mistake is named, with where to add it instead.
 

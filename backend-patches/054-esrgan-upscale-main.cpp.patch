@@ -1,0 +1,117 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -799,6 +799,43 @@
+ // new request arriving while an aborted one is still winding down).
+ static std::mutex g_generation_mutex;
+ 
++// nightmare (054): an imported ESRGAN (a .pth / .safetensors) upscales through the DiT engine's ABI 111
++// upscale(), from ANY process: the engine file, and whether this process runs a DiT (then the NPU is
++// the engine's own; a QNN pipeline's process keeps it on the CPU, never a second NPU session beside it).
++static std::string g_dit_engine_path;
++static bool g_dit_process = false;
++
++static std::vector<uint8_t> ggmlUpscale(const std::vector<uint8_t> &rgb, int w, int h,
++                                        const std::string &model, const std::string &device,
++                                        int *out_w, int *out_h, int *factor) {
++  // ⚠ Never dlclose: in a DiT process this is the handle PipelineDit holds.
++  void *handle = dlopen(g_dit_engine_path.c_str(), RTLD_NOW | RTLD_LOCAL);
++  if (!handle) throw std::runtime_error(std::string("cannot load the DiT engine: ") + dlerror());
++  auto get_api = reinterpret_cast<dit_engine_get_api_fn>(dlsym(handle, "dit_engine_get_api"));
++  const dit_engine_api *api = get_api ? get_api(DIT_ENGINE_ABI_VERSION) : nullptr;
++  if (!api || !api->upscale)
++    throw std::runtime_error("the installed DiT engine has no upscaler (needs ABI " +
++                             std::to_string(DIT_ENGINE_ABI_VERSION) + ")");
++  dit_upscale_params p{};
++  p.model_path = model.c_str();
++  p.backend = device.c_str();
++  p.n_threads = 4;
++  p.tile_size = 128;  // sd-cli's default: 0 left the whole picture as one graph (5.3 GB on the CPU, 1024^2 x4)
++  p.rgb = rgb.data();
++  p.width = w;
++  p.height = h;
++  uint8_t *out = nullptr;
++  int ow = 0, oh = 0, f = 0;
++  if (!api->upscale(&p, &out, &ow, &oh, &f) || !out)
++    throw std::runtime_error(std::string("upscale failed: ") + api->last_error(nullptr));
++  std::vector<uint8_t> v(out, out + static_cast<size_t>(ow) * oh * 3);
++  api->free_image(out);
++  *out_w = ow;
++  *out_h = oh;
++  *factor = f;
++  return v;
++}
++
+ // --- Nightmare op endpoints -------------------------------------------------
+ // A node graph needs the stage hooks individually. These sit BESIDE /generate
+ // and change nothing about it: same pipeline, same mutex, same stage hooks.
+@@ -1808,6 +1845,16 @@
+         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+         is_mnn_model = (ext == ".mnn");
+       }
++      // nightmare (054): an imported ESRGAN, run by the DiT engine.
++      bool is_ggml_model = false;
++      {
++        std::string lower = upscaler_path;
++        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
++        auto ends = [&](const char *s) {
++          const size_t n = std::strlen(s);
++          return lower.size() >= n && lower.compare(lower.size() - n, n, s) == 0;
++        };
++        is_ggml_model = ends(".pth") || ends(".safetensors");      }
+ 
+       QNN_INFO("Binary upscale request: %dx%d, upscaler: %s, type: %s%s",
+                original_width, original_height, upscaler_path.c_str(),
+@@ -1846,8 +1893,19 @@
+       auto start_time = std::chrono::high_resolution_clock::now();
+ 
+       xt::xarray<uint8_t> upscaled;
+-
+-      if (is_mnn_model) {
++      // nightmare (054): the model's own factor (an imported ESRGAN may be x2 or x1); QNN/MNN are x4.
++      int factor = 4;
++      std::vector<uint8_t> ggml_rgb;
++
++      if (is_ggml_model) {
++        const std::string device = req.has_header("X-Upscaler-Device")
++                                       ? req.get_header_value("X-Upscaler-Device")
++                                       : (g_dit_process ? "HTP0" : "CPU");
++        int ow = 0, oh = 0;
++        ggml_rgb = ggmlUpscale(process_image, process_width, process_height, upscaler_path,
++                               device, &ow, &oh, &factor);
++        QNN_INFO("ggml upscaler on %s: x%d", device.c_str(), factor);
++      } else if (is_mnn_model) {
+         upscaled =
+             upscaler::upscaleWithMnn(process_image, process_width,
+                                      process_height, upscaler_path, use_opencl);
+@@ -1883,13 +1941,14 @@
+                          end_time - start_time)
+                          .count();
+ 
+-      int upscaled_width = process_width * 4;
+-      int upscaled_height = process_height * 4;
++      int upscaled_width = process_width * factor;
++      int upscaled_height = process_height * factor;
+ 
+       // Post-process: resize back to target dimensions if needed.
+-      int final_width = original_width * 4;
+-      int final_height = original_height * 4;
+-      std::vector<uint8_t> final_rgb(upscaled.begin(), upscaled.end());
++      int final_width = original_width * factor;
++      int final_height = original_height * factor;
++      std::vector<uint8_t> final_rgb =
++          is_ggml_model ? std::move(ggml_rgb) : std::vector<uint8_t>(upscaled.begin(), upscaled.end());
+ 
+       if (upscaled_width != final_width || upscaled_height != final_height) {
+         QNN_INFO("Resizing output from %dx%d to %dx%d", upscaled_width,
+@@ -1986,6 +2045,11 @@
+     return EXIT_FAILURE;
+   }
+   ServerOptions opts = processCommandLine(argc, argv);
++  // nightmare (054): see ggmlUpscale.
++  if (!opts.lib_dir.empty())
++    g_dit_engine_path = (std::filesystem::path(opts.lib_dir) / "libdit_engine.so").string();
++  // An upscale-only backend holds no QNN model either: its NPU is free for the engine.
++  g_dit_process = opts.isDit() || opts.upscaler_mode;
+ 
+   if (opts.convert_mode) {
+     runConvertMode(opts);

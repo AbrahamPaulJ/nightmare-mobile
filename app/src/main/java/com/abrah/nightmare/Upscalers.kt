@@ -71,10 +71,18 @@ data class UpscalerSpec(
     val builds: List<UpscalerBuild>,
     @androidx.annotation.StringRes val labelRes: Int? = null,
     @androidx.annotation.StringRes val aboutRes: Int? = null,
+    /**
+     * ⭐ The file in its folder: a QNN context binary (`upscaler.bin`), or an imported ESRGAN the DiT engine runs
+     * (`upscaler.pth` / `upscaler.safetensors`, GitHub S#7774; backend 054 picks the route by this extension).
+     */
+    val fileName: String = UpscalerCatalog.FILE_NAME,
 ) {
+    /** ⭐ An imported ESRGAN, run by the DiT engine rather than QNN ([UpscalerCatalog.GGML_FILES]). */
+    val ggml: Boolean get() = fileName != UpscalerCatalog.FILE_NAME
+
     fun dir(context: Context): File {
         val own = ownDir(context)
-        if (File(own, UpscalerCatalog.FILE_NAME).let { it.isFile && it.length() > 0 }) return own
+        if (File(own, fileName).let { it.isFile && it.length() > 0 }) return own
         // ⭐ Local Dream keeps the same `upscaler_<kind>/upscaler.bin` ([LocalDreamModels]).
         val ld = LocalDreamModels.dirFor(id) ?: return own
         return if (File(ld, UpscalerCatalog.FILE_NAME).let { it.isFile && it.length() > 0 }) ld else own
@@ -88,7 +96,7 @@ data class UpscalerSpec(
      * weights never cross the wire — the same handles-not-buffers rule the rest
      * of the op surface follows (`docs/ARCHITECTURE.md` §6).
      */
-    fun file(context: Context): File = File(dir(context), UpscalerCatalog.FILE_NAME)
+    fun file(context: Context): File = File(dir(context), fileName)
 
     /**
      * ⚠ Existence AND non-zero length, matching what upstream checks. A
@@ -108,6 +116,9 @@ object UpscalerCatalog {
 
     /** ⚠ The name upstream uses, and what `UpscaleNode` hands the backend. */
     const val FILE_NAME = "upscaler.bin"
+
+    /** ⭐ An imported ESRGAN's file, by the extension it came with ([UpscalerSpec.ggml]). */
+    val GGML_FILES = listOf("upscaler.pth", "upscaler.safetensors")
 
     const val BASE_URL = "https://huggingface.co/xororz/upscaler/resolve/main/"
 
@@ -194,12 +205,13 @@ object UpscalerCatalog {
         scanned = BackendProcess.modelsDir(context).listFiles().orEmpty()
             .filter { it.isDirectory && it.name !in reserved }
             .mapNotNull { dir ->
-                val f = File(dir, FILE_NAME)
-                if (f.isFile && f.length() > 0) {
+                val f = (listOf(FILE_NAME) + GGML_FILES).map { File(dir, it) }.firstOrNull { it.isFile && it.length() > 0 }
+                if (f != null) {
                     UpscalerSpec(
                         id = dir.name,
                         label = dir.name,
-                        about = "Imported: ${dir.name}.",
+                        about = if (f.name == FILE_NAME) "Imported: ${dir.name}." else "Imported ESRGAN: ${dir.name}.",
+                        fileName = f.name,
                         remoteDir = "",
                         // ⚠ Empty, like a custom checkpoint's: there is no URL
                         // that could produce this file, and an empty list is
@@ -224,16 +236,20 @@ object UpscalerCatalog {
     fun importCustom(
         context: Context,
         name: String,
+        /** ⭐ "bin" (QNN), or "pth" / "safetensors" for an ESRGAN the DiT engine runs. */
+        ext: String = "bin",
         open: () -> InputStream,
     ): UpscalerSpec {
+        val fileName = "upscaler.$ext"
+        require(fileName == FILE_NAME || fileName in GGML_FILES) { "an upscaler is a .bin, .pth or .safetensors file" }
         require(isValidName(name)) { "\"$name\" is not a usable name" }
         require(ALL.none { it.id == name }) { "\"$name\" is a built-in upscaler's name; pick another" }
         require(ModelCatalog.builtIn.none { it.id == name }) {
             "\"$name\" is a checkpoint's name; pick another"
         }
         val dir = File(BackendProcess.modelsDir(context), name).apply { mkdirs() }
-        val dest = File(dir, FILE_NAME)
-        val tmp = File(dir, "$FILE_NAME.part")
+        val dest = File(dir, fileName)
+        val tmp = File(dir, "$fileName.part")
         try {
             open().use { input -> tmp.outputStream().use { input.copyTo(it) } }
             if (tmp.length() == 0L) throw IOException("that file was empty")

@@ -690,8 +690,20 @@ object BackendProcess {
     internal fun importBudget(spec: ModelSpec?, ditBytes: Long, ramBytes: Long, availBytes: Long): String? {
         if (spec?.isCustom != true || !spec.isDit || ditBytes <= IMPORT_STREAM_FROM) return null
         if (ramBytes !in 1 until Prefs.LOWRAM_BELOW_BYTES) return null
+        // ⚠⚠ An import no bigger than its family's largest built-in runs as that built-in does (S#7755, 2026-11-04): a
+        // tester's Klein 9B Q4_0 import (5,616 MB, leejet's own file) failed at 4 GiB on a 12 GB S25, segment 16/34 short
+        // by 0.9 MB (the graph-cut cache keeps 44 MB a segment; 5 GiB failed at 25/34). The built-in 9B renders whole
+        // there: S25, 768², 45 s, 857 MB free at the worst. This rule is for the fp16 MOSS kind, not a file we ship.
+        if (ditBytes <= builtInDitBytes(spec.family)) return null
         return "4".takeIf { availBytes < ditBytes + IMPORT_HEADROOM }
     }
+
+    /** ⚠ The largest DiT file a built-in of [family] ships, in any build; 0 for a family with none. */
+    internal fun builtInDitBytes(family: Family): Long =
+        ModelCatalog.builtIn.filter { it.family == family && !it.isCustom }
+            .flatMap { s -> s.files + s.builds.flatMap { it.files } }
+            .filter { it.name.startsWith("dit.") }
+            .maxOfOrNull { it.bytes } ?: 0L
 
     /**
      * ⚠ 4 GB, not 6 (1.6.261): the tester's fp16 MOSS, converted to a ~5 GB Q8_0 on import ([MossGguf]), fell under 6 GB and

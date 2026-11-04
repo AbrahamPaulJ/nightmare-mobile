@@ -1,0 +1,47 @@
+--- a/src/DitEngine.h
++++ b/src/DitEngine.h
+@@ -40,7 +40,7 @@
+ // 110: MiniMax-H3 video with audio -- dit_ctx_params.audio_vae_path and
+ // dit_video_params.on_audio appended (108's layout is a prefix of 110's). 109
+ // is skipped: the shelved FlashVSR branch used it.
+-#define DIT_ENGINE_ABI_VERSION 110
++#define DIT_ENGINE_ABI_VERSION 111
+ 
+ // Name of the single symbol the core resolves after dlopen.
+ #define DIT_ENGINE_ENTRY_SYMBOL "dit_engine_get_api"
+@@ -214,6 +214,22 @@
+ typedef bool (*dit_frame_cb)(int index, int count, const uint8_t *rgb,
+                              int width, int height, void *user_data);
+ 
++// --- ABI 111 ---
++// An ESRGAN-family upscaler the person imported (a .pth / .safetensors from CivitAI), through
++// stable-diffusion.cpp's own upscaler. Needs no dit_ctx: the backend calls it from any process.
++typedef struct {
++  const char *model_path;
++  // ggml device spec, e.g. "HTP0" or "CPU"; NULL = the engine's default.
++  const char *backend;
++  int n_threads;
++  // Tile edge in pixels (0 = the engine's default); smaller tiles, less memory.
++  int tile_size;
++  // The picture, interleaved RGB8.
++  const uint8_t *rgb;
++  int width;
++  int height;
++} dit_upscale_params;
++
+ typedef struct {
+   int abi_version;
+ 
+@@ -245,6 +261,12 @@
+   bool (*generate_video)(dit_ctx *ctx, const dit_video_params *params,
+                          dit_progress_cb progress, dit_preview_cb preview,
+                          dit_frame_cb on_frame, void *user_data);
++
++  // --- ABI 111 ---
++  // Upscales params->rgb by the model's own factor into *out_rgb (RGB8, owned by
++  // the engine until free_image()). False on failure, the reason in last_error(NULL).
++  bool (*upscale)(const dit_upscale_params *params, uint8_t **out_rgb,
++                  int *out_width, int *out_height, int *out_factor);
+ } dit_engine_api;
+ 
+ // The engine's only exported symbol. Returns NULL when the engine cannot serve

@@ -350,12 +350,19 @@ object CrashReport {
         // ⚠⚠ The clause the whole design turns on. No breadcrumb means the app
         // was idle when the system took it, which is Android working normally.
         in KILLED -> doing != null
-        else -> false
+        // ⚠ Android 17's per-app memory limit (S#7764): first the app's pages go to zRAM, then the kill, filed as
+        // REASON_OTHER with "MemoryLimiter:AnonSwap" in the description (the Android Developers blog, 2026-08). Mid-job
+        // it is the render's memory, and the person must hear it, not a silent restart.
+        else -> doing != null && memoryLimited(exit.reason, exit.description)
     }
+
+    /** ⚠ Pure: whether an exit is Android 17's memory limiter, not an lmkd reclaim. */
+    internal fun memoryLimited(reason: Int, description: String?): Boolean =
+        reason == ApplicationExitInfo.REASON_OTHER && description?.contains("MemoryLimiter", ignoreCase = true) == true
 
     /** ⚠ Android's own words where it has them; its reason code where it does not. */
     private fun headlineFor(exit: ApplicationExitInfo): String {
-        val what = when (exit.reason) {
+        val what = if (memoryLimited(exit.reason, exit.description)) "Android's per-app memory limit closed the app" else when (exit.reason) {
             ApplicationExitInfo.REASON_CRASH -> "the app crashed"
             ApplicationExitInfo.REASON_CRASH_NATIVE -> "the app crashed in native code"
             ApplicationExitInfo.REASON_ANR -> "the app stopped responding"

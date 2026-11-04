@@ -119,6 +119,8 @@ DiT engine, GPU variant (OpenCL on Adreno)
     (github.com/Mr-J-369/Fancy-Ai, Apache 2.0; backend-patches/dit/067), happyyzy's
     QKV preprocessing (llama.cpp pull request 28446, MIT; backend-patches/dit/081), and
     this project's dispatch splitting that keeps the screen responsive (dit/080).
+    Both engines also carry Fancy AI's Real-ESRGAN x2/x1 support (pixel-unshuffled input,
+    Apache 2.0; backend-patches/dit/087) for upscalers people import.
     Downloaded by the app on the GPU route only. Not included in this repository.
 
 stable-diffusion.cpp

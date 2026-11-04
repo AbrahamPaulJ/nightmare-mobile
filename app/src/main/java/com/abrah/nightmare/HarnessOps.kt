@@ -3597,7 +3597,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
     fun listUpscalers() {
         val caps = DeviceProbe.caps()
         say("upscalers (device arch ${caps.arch}, vtcm ${caps.vtcmMb} MB):")
-        for (spec in UpscalerCatalog.ALL) {
+        // ⭐ Imported ones too (an ESRGAN, S#7774): the UI refreshes at start, a headless op must itself.
+        UpscalerCatalog.refresh(ctx)
+        for (spec in UpscalerCatalog.allSpecs()) {
             val b = spec.buildFor(caps)
             say(
                 "  ${spec.id.padEnd(20)} " +

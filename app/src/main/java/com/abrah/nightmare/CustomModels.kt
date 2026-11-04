@@ -1327,6 +1327,7 @@ object CustomModels {
         is ImportKind.Lora -> "a LoRA"
         is ImportKind.Embedding -> "an embedding"
         is ImportKind.Upscaler -> "an upscaler"
+        is ImportKind.GgmlUpscaler -> "an ESRGAN upscaler"
         is ImportKind.NeedsConverting -> "${kind.what}, which needs converting first"
         is ImportKind.Unknown -> "a file of an unknown kind"
     }
@@ -1341,6 +1342,8 @@ object CustomModels {
         object Embedding : ImportKind
         /** A converted upscaler (`.bin`). */
         object Upscaler : ImportKind
+        /** ⭐ An ESRGAN-family upscaler as CivitAI ships it (`.pth` / `.safetensors`), run by the DiT engine (S#7774). */
+        data class GgmlUpscaler(val ext: String) : ImportKind
         /** A checkpoint of a family that needs converting first; [what] names it. */
         data class NeedsConverting(val what: String) : ImportKind
         object Unknown : ImportKind
@@ -1359,13 +1362,20 @@ object CustomModels {
         val n = open().use { it.readUpTo(magic, 0, 9) }
         if (n >= 4 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte() &&
             magic[2] == 0x03.toByte() && magic[3] == 0x04.toByte()
-        ) return ImportKind.Zip
+        ) {
+            // ⚠ A torch `.pth` is a zip too: an ESRGAN's pickle names its layers, a QNN model zip has none.
+            return if (runCatching { open().use { pthIsEsrgan(it) } }.getOrDefault(false)) ImportKind.GgmlUpscaler("pth") else ImportKind.Zip
+        }
         val gguf = n >= 4 && magic.copyOf(4).contentEquals(GgufHeader.MAGIC)
         val safetensors = n == 9 && magic[8] == '{'.code.toByte()
         if (gguf || safetensors) {
             val json = runCatching { ditHeader(open).json }.getOrNull() ?: return ImportKind.Unknown
             return kindOfHeader(json)
         }
+        // ⚠ PyTorch's older format is a bare pickle, not a zip (4x-UltraSharp: `80 02 8a 0a` then the layer names).
+        if (n >= 2 && magic[0] == 0x80.toByte() && magic[1] == 0x02.toByte() &&
+            runCatching { open().use { isEsrganKeys(String(it.readUpTo(4 shl 20), Charsets.ISO_8859_1)) } }.getOrDefault(false)
+        ) return ImportKind.GgmlUpscaler("pth")
         if (displayName.orEmpty().endsWith(".bin", ignoreCase = true)) return ImportKind.Upscaler
         return ImportKind.Unknown
     }
@@ -1377,10 +1387,31 @@ object CustomModels {
             "model.diffusion_model.input_blocks" to "an SD 1.5 or SDXL checkpoint",
             "cond_stage_model.transformer" to "an SD 1.5 checkpoint",
         )
+        if (isEsrganKeys(json)) return ImportKind.GgmlUpscaler("safetensors")
         LORA_KEYS.firstOrNull { it in json }?.let { return ImportKind.Lora }
         wrong.firstOrNull { it.first in json }?.let { return ImportKind.NeedsConverting(it.second) }
         if (EMBEDDING_KEYS.any { "\"$it\"" in json } && json.length < 4096) return ImportKind.Embedding
         return ImportKind.Checkpoint(ditFamilyOf(json))
+    }
+
+    /**
+     * ⭐ ESRGAN's layer names, both architectures stable-diffusion.cpp's upscaler reads: Real-ESRGAN's (`conv_first`,
+     * `body.N.rdb1`) and the original's (`model.0`, `model.1.sub.N.RDB1`), as 4x-UltraSharp and most CivitAI ones are.
+     */
+    internal fun isEsrganKeys(text: String): Boolean =
+        ("conv_first" in text && ("rdb1" in text || "RDB1" in text)) || ("model.0.weight" in text && "RDB1" in text)
+
+    /** ⚠ A `.pth` zip whose pickle (its `data.pkl` entry) holds ESRGAN's layer names ([isEsrganKeys]). */
+    internal fun pthIsEsrgan(input: InputStream): Boolean {
+        java.util.zip.ZipInputStream(input).use { zip ->
+            while (true) {
+                val e = zip.nextEntry ?: return false
+                if (e.name.endsWith("data.pkl")) {
+                    val head = zip.readUpTo(4 shl 20)
+                    return isEsrganKeys(String(head, Charsets.ISO_8859_1))
+                }
+            }
+        }
     }
 
     private val LORA_KEYS = listOf("lora_down", "lora_up", ".lora_A.", ".lora_B.", "lora_unet_", "lora_te", ".hada_w", ".lokr_w")
