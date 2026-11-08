@@ -597,6 +597,13 @@ data class ModelSpec(
      */
     val partsFrom: String? = null,
     /**
+     * ⭐ [partsFrom]'s own donor lends too: H3 Reference takes FastH3's parts, and FastH3 leaves `llm.gguf` in Krea 2's
+     * folder when Krea 2 is installed (GitHub #93: `File not found: minimax_h3_fast/llm.gguf`, cured by copying it).
+     * ⚠ Only where the backend walks the list (`--wan_parts a:b`, backend 056, the H3 block); every other family's
+     * lookup is one folder, so a chain there would call a model installed and fail its launch.
+     */
+    val partsChain: Boolean = false,
+    /**
      * ⭐ A LoRA file in this model's own folder, applied at full strength on every render before the node's own
      * LoRAs: MOSS-Image's 8-step DMD distillation. ⚠⚠ At run time, never merged: its change to each weight is
      * about 1/1000 of a Q4_0 rounding step, so a merge into the shipped Q4_0 erases it (measured 2026-10-18).
@@ -731,6 +738,13 @@ data class ModelSpec(
     /** ⭐ [partsFrom]'s folder beside [modelDir], or null. */
     fun donorDir(modelDir: File): File? = partsFrom?.let { File(modelDir.parentFile, it) }
 
+    /** ⭐ Every folder that lends to this model, nearest first: [donorDir] and, with [partsChain], its donor's. */
+    fun donorDirs(modelDir: File): List<File> {
+        val first = donorDir(modelDir) ?: return emptyList()
+        val second = if (partsChain) partsFrom?.let { ModelCatalog.byId(it) }?.donorDir(modelDir) else null
+        return listOfNotNull(first, second)
+    }
+
     /** ⭐ [ownLora] on disk: this model's own copy, else its donor's (a MOSS import's speed-up). Null when neither. */
     fun ownLoraFile(modelDir: File): File? = ownLora?.let { name ->
         File(modelDir, name).takeIf { it.isFile } ?: donorDir(modelDir)?.let { File(it, name) }?.takeIf { it.isFile }
@@ -743,10 +757,13 @@ data class ModelSpec(
      * names AND sizes as SFT's (3,217,359,072 and 1,189,176,800 bytes), so a name-and-size match called Base
      * installed with nothing to fetch on any phone with SFT, and its launch found no folder (Saved #6990, 1.6.208).
      */
-    fun borrows(modelDir: File, f: RemoteFile): Boolean =
-        File(modelDir, f.name).length() != f.bytes &&
-            partsFrom?.let { ModelCatalog.byId(it) }?.active?.any { it.name == f.name && it.url == f.url } == true &&
-            donorDir(modelDir)?.let { File(it, f.name).length() == f.bytes } == true
+    fun borrows(modelDir: File, f: RemoteFile): Boolean {
+        if (File(modelDir, f.name).length() == f.bytes) return false
+        val donor = partsFrom?.let { ModelCatalog.byId(it) } ?: return false
+        // ⚠ The same URL either way: a chained part is what the near donor would have borrowed itself.
+        if (donor.active.none { it.name == f.name && it.url == f.url }) return false
+        return donorDirs(modelDir).any { File(it, f.name).length() == f.bytes }
+    }
 
     /** ⭐ What an install must fetch: [active] less what the donor holds whole. */
     fun toFetch(context: Context): List<RemoteFile> = ownDir(context).let { d -> active.filterNot { borrows(d, it) } }
@@ -1072,7 +1089,7 @@ data class ModelSpec(
         // its own folder told the residency gate ~4.4 GB for a ~10 GB load (Wan Fun's umT5 alike).
         // ⚠ A custom spec has no [active] files to match by url: a MOSS import counts what its folder lacks and the donor holds.
         val lent = if (isCustom) requiredFiles.filter { !File(d, it).exists() }.sumOf { n -> donorDir(d)?.let { File(it, n).length() } ?: 0L }
-            else active.filter { borrows(d, it) }.sumOf { f -> donorDir(d)?.let { File(it, f.name).length() } ?: 0L }
+            else active.filter { borrows(d, it) }.sumOf { f -> donorDirs(d).maxOfOrNull { File(it, f.name).length() } ?: 0L }
         if (!usesDitShared) return own + lent
         val shared = File(d.parentFile, CustomModels.DIT_SHARED)
         return own + lent + requiredFiles
@@ -3029,8 +3046,11 @@ object ModelCatalog {
             RemoteFile(HF + "AbrahamPJ/minimax-h3-ref2va-pruned-q4_0-gguf/resolve/main/h3_ref2va_pruned_q4_0.gguf", "dit.gguf", H3_REF_DIT_BYTES),
             RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-4B-Instruct-f16.gguf", "llm_vision.gguf", 836_180_256L),
             RemoteFile(HF + "Comfy-Org/MiniMax-H3/resolve/main/loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors", H3_REF_LORA, 1_956_193_000L),
-        ),
+            // ⭐ FastH3's parts, all but its DiT: borrowed when FastH3 holds them ([ModelSpec.borrows]), as Fun Control lists
+            // Wan's, so H3 Reference on its own installs whole instead of failing at launch (GitHub #93).
+        ) + MINIMAX_H3.files.filter { it.name != "dit.gguf" },
     ).copy(
+        partsChain = true,
         licence = ModelLicence(R.string.licence_h3_title, R.string.licence_h3_terms, "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE"),
     )
 

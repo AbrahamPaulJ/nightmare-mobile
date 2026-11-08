@@ -53,7 +53,8 @@ step.
 ## What your phone needs
 
 - **Android 12 or newer**, and a **Snapdragon** processor. Other chips (Exynos, Tensor,
-  MediaTek) have no supported NPU and cannot run it: on one, the app says so and offers no models.
+  MediaTek) have no supported NPU: on one, the app says so and offers no downloads. Text to image and
+  Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on the GPU or CPU.
 - Which models you can use depends on the chip:
 
 | chip | can run |

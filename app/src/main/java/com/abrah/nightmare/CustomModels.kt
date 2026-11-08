@@ -1328,6 +1328,7 @@ object CustomModels {
         is ImportKind.Embedding -> "an embedding"
         is ImportKind.Upscaler -> "an upscaler"
         is ImportKind.GgmlUpscaler -> "an ESRGAN upscaler"
+        is ImportKind.OtherUpscaler -> "an upscaler the engine cannot read"
         is ImportKind.NeedsConverting -> "${kind.what}, which needs converting first"
         is ImportKind.Unknown -> "a file of an unknown kind"
     }
@@ -1344,6 +1345,8 @@ object CustomModels {
         object Upscaler : ImportKind
         /** ⭐ An ESRGAN-family upscaler as CivitAI ships it (`.pth` / `.safetensors`), run by the DiT engine (S#7774). */
         data class GgmlUpscaler(val ext: String) : ImportKind
+        /** ⭐ An upscaler the engine cannot read ([isOtherUpscalerKeys]): refused, with the reason. */
+        object OtherUpscaler : ImportKind
         /** A checkpoint of a family that needs converting first; [what] names it. */
         data class NeedsConverting(val what: String) : ImportKind
         object Unknown : ImportKind
@@ -1363,8 +1366,17 @@ object CustomModels {
         if (n >= 4 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte() &&
             magic[2] == 0x03.toByte() && magic[3] == 0x04.toByte()
         ) {
-            // ⚠ A torch `.pth` is a zip too: an ESRGAN's pickle names its layers, a QNN model zip has none.
-            return if (runCatching { open().use { pthIsEsrgan(it) } }.getOrDefault(false)) ImportKind.GgmlUpscaler("pth") else ImportKind.Zip
+            // ⚠ A torch `.pth` is a zip too: its first entry is `…/data.pkl`, stored uncompressed, naming the layers.
+            // ⚠⚠ Read off the first bytes, never through `ZipInputStream`: torch sets the data-descriptor flag on STORED
+            // entries, which Java refuses (`only DEFLATED entries can have EXT descriptor`), so every real zip `.pth`
+            // (Remacri, AnimeSharpV3: GitHub #93) fell through as "not a checkpoint"; and walking a QNN zip's entries
+            // read all of it before the import said a word, 3.86 GB of silence (S#7927).
+            val head = runCatching { open().use { String(it.readUpTo(PTH_HEAD_BYTES), Charsets.ISO_8859_1) } }.getOrDefault("")
+            if ("data.pkl" in head.take(1024)) {
+                if (isEsrganKeys(head)) return ImportKind.GgmlUpscaler("pth")
+                if (isOtherUpscalerKeys(head)) return ImportKind.OtherUpscaler
+            }
+            return ImportKind.Zip
         }
         val gguf = n >= 4 && magic.copyOf(4).contentEquals(GgufHeader.MAGIC)
         val safetensors = n == 9 && magic[8] == '{'.code.toByte()
@@ -1388,6 +1400,7 @@ object CustomModels {
             "cond_stage_model.transformer" to "an SD 1.5 checkpoint",
         )
         if (isEsrganKeys(json)) return ImportKind.GgmlUpscaler("safetensors")
+        if (isOtherUpscalerKeys(json)) return ImportKind.OtherUpscaler
         LORA_KEYS.firstOrNull { it in json }?.let { return ImportKind.Lora }
         wrong.firstOrNull { it.first in json }?.let { return ImportKind.NeedsConverting(it.second) }
         if (EMBEDDING_KEYS.any { "\"$it\"" in json } && json.length < 4096) return ImportKind.Embedding
@@ -1401,18 +1414,15 @@ object CustomModels {
     internal fun isEsrganKeys(text: String): Boolean =
         ("conv_first" in text && ("rdb1" in text || "RDB1" in text)) || ("model.0.weight" in text && "RDB1" in text)
 
-    /** ⚠ A `.pth` zip whose pickle (its `data.pkl` entry) holds ESRGAN's layer names ([isEsrganKeys]). */
-    internal fun pthIsEsrgan(input: InputStream): Boolean {
-        java.util.zip.ZipInputStream(input).use { zip ->
-            while (true) {
-                val e = zip.nextEntry ?: return false
-                if (e.name.endsWith("data.pkl")) {
-                    val head = zip.readUpTo(4 shl 20)
-                    return isEsrganKeys(String(head, Charsets.ISO_8859_1))
-                }
-            }
-        }
-    }
+    /**
+     * ⭐ An upscaler of an architecture the engine does not read (DAT, SwinIR: `conv_first` and `conv_last` with no RRDB
+     * blocks; 4xNomos8kDAT, S#7874), told so at once instead of being asked which image model it is. ⚠ After
+     * [isEsrganKeys], which those same two names also appear in.
+     */
+    internal fun isOtherUpscalerKeys(text: String): Boolean =
+        !isEsrganKeys(text) && "conv_first" in text && ("conv_last" in text || "before_RG" in text)
+
+    private const val PTH_HEAD_BYTES = 4 shl 20
 
     private val LORA_KEYS = listOf("lora_down", "lora_up", ".lora_A.", ".lora_B.", "lora_unet_", "lora_te", ".hada_w", ".lokr_w")
     private val EMBEDDING_KEYS = listOf("emb_params", "string_to_param", "clip_l", "clip_g")

@@ -157,10 +157,12 @@ class UnknownChipGateTest {
     /**
      * ⭐⭐ GitHub #85: a MediaTek phone (MT6835) read as an unknown chip at the v68 floor, was offered every flow and
      * the `_min` builds, and failed every launch with `QnnDsp No Snapdragon SOC detected`. A chip KNOWN not to be a
-     * Snapdragon now runs no NPU build and no flow; a Snapdragon, or a chip that says nothing, is unaffected.
+     * Snapdragon now gets no NPU build and no NPU-only flow; a Snapdragon, or a chip that says nothing, is unaffected.
+     * ⚠ Text to image and Image to image stay open (Saved #7881-7883): an imported SDXL MNN or SD 1.5 CPU model renders
+     * them on the GPU or CPU on any chip. Dimming every flow was too wide.
      */
     @Test
-    fun aChipKnownNotToBeSnapdragonRunsNothing() {
+    fun aChipKnownNotToBeSnapdragonRunsOnlyWhatNeedsNoNpu() {
         assertFalse(DeviceProbe.qualcommVendor("Mediatek", "MT6835"))
         assertFalse(DeviceProbe.qualcommVendor("", "MT6989"))
         assertFalse(DeviceProbe.qualcommVendor("Samsung", "S5E9945"))
@@ -175,7 +177,10 @@ class UnknownChipGateTest {
         val mtk = DeviceProbe.Caps(DeviceProbe.FLOOR_ARCH, 2, measured = false, soc = "MT6835", qualcomm = false)
         assertTrue("a known non-Snapdragon is not an unknown chip to be offered everything", mtk.known)
         assertFalse(mtk.supportsArch(DeviceProbe.FLOOR_ARCH))
-        assertTrue(com.abrah.nightmare.canvas.RECIPES.none { it.runsOnDevice(mtk) })
+        assertEquals(
+            setOf("txt2img", "img2img"),
+            com.abrah.nightmare.canvas.RECIPES.filter { it.runsOnDevice(mtk) }.map { it.id }.toSet(),
+        )
         assertEquals(emptyList<String>(), ModelCatalog.builtIn.filter { it.buildFor(mtk) != null }.map { it.id })
 
         val unknown = DeviceProbe.Caps(DeviceProbe.FLOOR_ARCH, 2, measured = false, soc = "")

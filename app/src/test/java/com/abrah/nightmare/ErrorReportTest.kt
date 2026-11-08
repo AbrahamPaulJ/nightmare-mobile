@@ -15,6 +15,32 @@ import org.junit.Test
  */
 class ErrorReportTest {
 
+    /** ⭐ GitHub #88: byte-level BPE tokens ARE the prompt, so the list goes whether or not the prompt is known. */
+    @Test
+    fun theTokenListIsLeftOut() {
+        val bpe = """12.0ms [ DEBUG ] [dit] bpe_tokenizer.cpp:208 - googlesplit prompt "1girl, smile" to 89 tokens ["1", "Ġgirl", ",", "Ġsmile"]"""
+        for (known in listOf(emptyList(), listOf("1girl, smile"))) {
+            val out = ErrorReport.redact(bpe, known)
+            assertFalse(out, out.contains("girl"))
+            assertFalse(out, out.contains("smile"))
+            assertTrue(out, out.contains("to 89 tokens [***]"))
+            assertTrue(out, out.contains("bpe_tokenizer.cpp:208"))
+        }
+        val t5 = ErrorReport.redact("""t5_unigram_tokenizer.cpp:336 - split prompt "a red fox" to tokens ["▁a", "▁red", "▁fox"]""", emptyList())
+        assertFalse(t5, t5.contains("fox"))
+        val parse = ErrorReport.redact("""6103.4ms [ INFO ] [dit] conditioner.hpp:1742 - parse 'a red fox' to [['a red fox', 1], ]""", emptyList())
+        assertFalse(parse, parse.contains("fox"))
+        assertTrue(parse, parse.contains("conditioner.hpp:1742"))
+        // A prompt with a newline: its tail lands on its own line with the list after it.
+        val spill = ErrorReport.redact("""second line" to 12 tokens ["second", "Ġline"]""", emptyList())
+        assertFalse(spill, spill.contains("Ġline"))
+        // ⚠ The controls: an ordinary line naming a parse, or a token count, is left alone.
+        val other = "lora.hpp:980 - failed to parse 'x.safetensors'"
+        assertEquals(other, ErrorReport.redact(other, emptyList()))
+        val count = "llm.hpp:392 - llm: num_layers = 28, 512 tokens"
+        assertEquals(count, ErrorReport.redact(count, emptyList()))
+    }
+
     @Before
     fun clean() = BackendProcess.output.clear()
 

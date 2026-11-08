@@ -88,6 +88,7 @@ object ErrorReport {
             val rest = Regex(""" S:-?\d""").find(out, req)
             out = if (rest != null) head + out.substring(rest.range.first) else head
         }
+        out = redactTokens(out)
         val pieces = prompts.flatMap { p -> listOf(p.trim()) + p.lines().map { it.trim() } }
             .filter { it.length >= 4 }
             .distinct()
@@ -97,6 +98,26 @@ object ErrorReport {
         }
         return out
     }
+
+    /**
+     * ⭐⭐ The engine's tokenizer lines (GitHub #88): `split prompt "…" to 89 tokens ["1", "Ġgirl", …]`, the T5 form with
+     * no count, and `parse '…' to [['…', 1], ]`. Replacing the prompt left the token list, and byte-level BPE tokens ARE
+     * the text, so a report people are asked to post publicly carried the prompt verbatim. ⇒ Everything after the
+     * marker goes, known prompt or not; the count stays. ⚠ The spill-over forms are for a prompt with a newline in it,
+     * whose tail lands on a line of its own.
+     */
+    private fun redactTokens(line: String): String {
+        TOKENIZER_LINE.find(line)?.let { m ->
+            val count = TOKEN_COUNT.findAll(m.value).lastOrNull()?.groupValues?.get(1)
+            return line.substring(0, m.range.first) + m.groupValues[1] + " " + PROMPT + (count?.let { " to $it tokens $TOKENS" } ?: " $TOKENS")
+        }
+        return TOKEN_SPILL.replace(line) { it.groupValues[1] + it.groupValues[2] + TOKENS }
+    }
+
+    private const val TOKENS = "[***]"
+    private val TOKENIZER_LINE = Regex("""(split prompt|[ch]pp:\d+\s+- parse) ["'].*""")
+    private val TOKEN_COUNT = Regex(""" to (\d+) tokens """)
+    private val TOKEN_SPILL = Regex("""( to (?:\d+ )?tokens )\[.*|( to )\[\[.*""")
 
     /** A prompt's first this-many characters identify it in a clipped preview. */
     private const val CLIP_SEED = 12

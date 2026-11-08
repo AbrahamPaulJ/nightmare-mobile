@@ -16,7 +16,8 @@ the phone. No server, no account, no cloud.
 
 Android 12 or newer, arm64, a Snapdragon with a Hexagon NPU. Models are not in the APK: pick one
 and it downloads on first use; the app shows which ones your phone can run. On a phone without a
-Snapdragon (MediaTek Dimensity, Exynos, Google Tensor) the app says so and offers no models.
+Snapdragon (MediaTek Dimensity, Exynos, Google Tensor) the app says so and offers no downloads: Text to image and
+Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on the GPU or CPU.
 
 | chip | runs |
 |---|---|

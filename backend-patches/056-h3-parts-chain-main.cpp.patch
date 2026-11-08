@@ -1,0 +1,28 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -10,6 +10,7 @@
+ #include <memory>
+ #include <mutex>
+ #include <random>
++#include <sstream>
+ #include <string>
+ #include <vector>
+ 
+@@ -468,7 +469,16 @@
+     auto h3Part = [&](const char *name) {
+       const auto own = dir / name;
+       if (std::filesystem::exists(own) || opts.wan_parts.empty()) return own.string();
+-      return (std::filesystem::path(opts.wan_parts) / name).string();
++      // nightmare (056): --wan_parts may name several folders, nearest first (a:b): H3 Reference borrows from FastH3,
++      // which leaves llm.gguf in Krea 2's. The first folder names a part none of them holds, for the error.
++      std::stringstream dirs(opts.wan_parts);
++      std::string folder, first;
++      while (std::getline(dirs, folder, ':')) {
++        const auto part = std::filesystem::path(folder) / name;
++        if (first.empty()) first = part.string();
++        if (std::filesystem::exists(part)) return part.string();
++      }
++      return first;
+     };
+     const std::string dit_path = (dir / "dit.gguf").string();
+     const std::string llm_path = h3Part("llm.gguf");

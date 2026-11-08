@@ -378,6 +378,12 @@ data class Recipe(
      * It stays in Flows and on the Wan 14B's own Use.
      */
     val offeredPerModel: Boolean = true,
+    /**
+     * ⭐ A flow with a route off the NPU, so it opens on a chip with no Snapdragon NPU: an imported SDXL MNN or SD 1.5
+     * CPU model renders it on the GPU or CPU on any chip (`docs/MODELS.md`, a MediaTek tester, Saved #7881-7883).
+     * Everything else here needs the NPU.
+     */
+    val anyChip: Boolean = false,
 ) {
 
     /**
@@ -387,9 +393,9 @@ data class Recipe(
      * — which is the exact shape of the Snapdragon 8 Gen 5 report
      * ([com.abrah.nightmare.DeviceProbe.Caps.known], `docs/DEVICES.md`).
      */
-    // ⭐ ...but a chip KNOWN not to be a Snapdragon runs no flow here (GitHub #85, [DeviceProbe.Caps.qualcomm]).
+    // ⭐ ...but a chip KNOWN not to be a Snapdragon runs only what needs no NPU ([anyChip], [DeviceProbe.Caps.qualcomm]).
     fun runsOnDevice(caps: com.abrah.nightmare.DeviceProbe.Caps): Boolean =
-        caps.qualcomm && (minArch == 0 || caps.supportsArch(minArch) || !caps.known)
+        if (!caps.qualcomm) anyChip else minArch == 0 || caps.supportsArch(minArch) || !caps.known
     /** ⚠ Null families means every family; an entry restricts it. */
     fun servesFamily(family: com.abrah.nightmare.Family?): Boolean =
         families == null || family in families
@@ -455,6 +461,7 @@ val RECIPES: List<Recipe> = listOf(
         "A prompt in, a picture out. The one to start with.",
         ::defaultWorkflow,
         section = PICTURES,
+        anyChip = true,
         labelRes = R.string.flow_txt2img_name,
         aboutRes = R.string.flow_txt2img_about,
     ),
@@ -466,6 +473,7 @@ val RECIPES: List<Recipe> = listOf(
         // and has its own card, further down where its requirements put it.
         families = com.abrah.nightmare.Family.entries.filterNot { it.edit }.toSet(),
         section = PICTURES,
+        anyChip = true,
         labelRes = R.string.flow_img2img_name,
         aboutRes = R.string.flow_img2img_about,
     ),

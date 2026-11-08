@@ -1762,6 +1762,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     if (kind.family != null) importDitModel(uri, n, kind.family) else familyAsk = uri to n
                 CustomModels.ImportKind.Upscaler -> importUpscaler(uri)
                 is CustomModels.ImportKind.GgmlUpscaler -> importUpscaler(uri, kind.ext)
+                CustomModels.ImportKind.OtherUpscaler -> modelError = text(R.string.import_other_upscaler)
                 CustomModels.ImportKind.Lora -> modelError = text(R.string.import_is_lora)
                 CustomModels.ImportKind.Embedding -> modelError = text(R.string.import_is_embedding)
                 is CustomModels.ImportKind.NeedsConverting -> modelError = text(R.string.import_needs_converting, kind.what)
@@ -8854,6 +8855,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
             val label = rolled.labelFor(overrides)
             say("  run ${i + 1}/${combos.size}  $label")
+            // ⚠⚠ Every run, not once before the loop (GitHub #96, 3 testers): [HarnessOps.runWorkflow] ends in
+            // `releaseBackendIfTooBig`, so a model over the RAM gate (MOSS on 12 GB) is gone when run 2 starts, and
+            // `runWorkflow` cannot start one from nothing: `GET /handles unreachable`, 1 of 10 done.
+            if (i > 0 && !ops.ensureBackendFor(graph, typesFor(graph))) {
+                runError = backendRefusal(namesNoKey = false)
+                say("batch: stopped. $runError", bad = true)
+                break
+            }
             val r = ops.runWorkflow(
                 canvas.workflow.copy(graph = graph),
                 onStart = { id, _ ->

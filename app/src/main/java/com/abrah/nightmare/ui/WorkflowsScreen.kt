@@ -335,6 +335,14 @@ private fun RecipeCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = fade),
                     modifier = Modifier.padding(top = 6.dp),
                 )
+                // ⭐ Open on a chip with no Snapdragon NPU ([Recipe.anyChip]), and says what it runs with: no download here will.
+                if (ok && !caps.qualcomm) {
+                    Text(
+                        stringResource(R.string.flow_no_npu_route, caps.soc.ifEmpty { stringResource(R.string.flow_this_chip) }),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (!ok) {
                     // ⚠⚠ Names THIS phone, not just the requirement. ⭐ Not a Snapdragon at all: says that (GitHub #85).
                     val chip = caps.soc.ifEmpty { stringResource(R.string.flow_this_chip) }

@@ -1021,7 +1021,7 @@ object BackendProcess {
                     if (!upscalerOnly && patch != null) { add("--patch"); add(patch.absolutePath) }
                     // ⭐ A Wan model that borrows another's umT5 and TAEHV ([ModelSpec.partsFrom]): the
                     // donor's folder, beside this one (backend 033 reads its own copy first).
-                    if (!upscalerOnly) spec?.donorDir(model)?.let { add("--wan_parts"); add(it.absolutePath) }
+                    if (!upscalerOnly) spec?.donorDirs(model)?.takeIf { it.isNotEmpty() }?.let { d -> add("--wan_parts"); add(d.joinToString(":") { it.absolutePath }) }
                 }
                 val env = buildMap {
                     put(

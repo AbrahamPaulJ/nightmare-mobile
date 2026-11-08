@@ -2,6 +2,8 @@ package com.abrah.nightmare.ui
 
 import com.abrah.nightmare.ui.StudioButton
 import com.abrah.nightmare.ui.StudioTextButton
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -107,7 +109,11 @@ fun FamilyAskDialog(onAnswer: (Family?) -> Unit) {
         onDismissRequest = { onAnswer(null) },
         title = { Text(stringResource(R.string.import_family_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // ⚠ Scrolls: eight families do not fit a phone's dialog, and the last was cut off with no way to it (S#7874).
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(stringResource(R.string.import_family_body), style = MaterialTheme.typography.bodyMedium)
                 for (f in IMPORTABLE_DIT) {
                     Surface(

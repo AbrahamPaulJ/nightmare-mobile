@@ -142,6 +142,40 @@ class H3NodeTest {
         assertEquals(ModelCatalog.MINIMAX_H3_REF.builds.minOf { it.minArch }, flow.minArch)
     }
 
+    /**
+     * ⭐ GitHub #93: H3 Reference alone listed three of its files, so with no FastH3 it read as installed and failed its
+     * launch; and FastH3 keeps `llm.gguf` in Krea 2's folder, one step past the one-folder lookup.
+     */
+    @Test
+    fun h3ReferenceFindsItsPartsThroughFastH3AndKrea() {
+        val ref = ModelCatalog.MINIMAX_H3_REF
+        assertEquals(
+            setOf("dit.gguf", "llm_vision.gguf", ModelCatalog.H3_REF_LORA, "vae.gguf", "audio_vae.safetensors", "clipproj.safetensors", "llm.gguf"),
+            ref.files.map { it.name }.toSet(),
+        )
+        assertEquals("its own DiT, never FastH3's", 1, ref.files.count { it.name == "dit.gguf" })
+        val root = kotlin.io.path.createTempDirectory().toFile()
+        try {
+            val own = java.io.File(root, ref.id).apply { mkdirs() }
+            val fast = java.io.File(root, "minimax_h3_fast").apply { mkdirs() }
+            val krea = java.io.File(root, "krea2_turbo").apply { mkdirs() }
+            assertEquals(listOf(fast, krea), ref.donorDirs(own))
+            val llm = ref.files.first { it.name == "llm.gguf" }
+            val vae = ref.files.first { it.name == "vae.gguf" }
+            assertFalse("nothing installed: fetched", ref.borrows(own, llm))
+            com.abrah.nightmare.sparseFile(java.io.File(krea, "llm.gguf"), llm.bytes)
+            assertTrue("in Krea 2's folder, through FastH3", ref.borrows(own, llm))
+            assertFalse(ref.borrows(own, vae))
+            com.abrah.nightmare.sparseFile(java.io.File(fast, "vae.gguf"), vae.bytes)
+            assertTrue(ref.borrows(own, vae))
+            // ⚠ The control: FastH3 itself still reads one folder, and every other family keeps its one donor.
+            assertEquals(listOf(krea), ModelCatalog.MINIMAX_H3.donorDirs(fast))
+            assertEquals(1, ModelCatalog.WAN22_FUN.donorDirs(java.io.File(root, ModelCatalog.WAN22_FUN.id)).size)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test
     fun theNodeHasOnePromptBoxAndAnOptionalPicture() {
         // ⭐ A wired picture is the first frame (H3's keyframe); nothing wired is text to video.
