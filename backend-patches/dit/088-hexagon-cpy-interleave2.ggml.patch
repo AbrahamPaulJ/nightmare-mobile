@@ -1,0 +1,72 @@
+--- a/src/ggml-hexagon/htp/cpy-ops.c
++++ b/src/ggml-hexagon/htp/cpy-ops.c
+@@ -143,6 +143,49 @@
+     return true;
+ }
+ 
++// nightmare (dit/088): the rope's q/k reorder, j -> 2j, j+D/2 -> 2j+1 (Anima, MOSS, Ideogram: `interleave` before
++// QKNORM_ROPE), a [2, D/2, rows] view of packed rows. The element loop below ran it at ~1 GB/s on one op per block's q
++// and k: 7.6 of 19.8 s of NPU time in an S25 Anima 1024 render. Word shuffles, threaded over rows, byte-identical.
++struct htp_interleave2_f32_context {
++    const float * src;
++    float * dst;
++    uint32_t half;
++    uint32_t rows;
++};
++
++static void cpy_thread_interleave2_f32(unsigned int nth, unsigned int ith, void * data) {
++    const struct htp_interleave2_f32_context * ctx = (const struct htp_interleave2_f32_context *) data;
++    const uint32_t half = ctx->half;
++    const uint32_t per  = (ctx->rows + nth - 1) / nth;
++    const uint32_t r0   = per * ith;
++    const uint32_t r1   = MIN(r0 + per, ctx->rows);
++    for (uint32_t r = r0; r < r1; ++r) {
++        const float * a = ctx->src + (size_t) r * 2u * half;
++        const float * b = a + half;
++        float * d = ctx->dst + (size_t) r * 2u * half;
++        hex_l2fetch(a, 2u * half * sizeof(float), 2u * half * sizeof(float), 2);
++        uint32_t j = 0;
++        for (; j + 32u <= half; j += 32u) {
++            const HVX_VectorPair p = Q6_W_vshuff_VVR(hvx_vmemu(b + j), hvx_vmemu(a + j), -4);
++            hvx_vmemu(d + 2u * j)       = Q6_V_lo_W(p);
++            hvx_vmemu(d + 2u * j + 32u) = Q6_V_hi_W(p);
++        }
++        for (; j < half; ++j) {
++            d[2u * j]      = a[j];
++            d[2u * j + 1u] = b[j];
++        }
++    }
++}
++
++static bool cpy_is_interleave2_f32(const struct htp_tensor * src, const struct htp_tensor * dst) {
++    const uint64_t half = src->ne[1];
++    return src->type == HTP_TYPE_F32 && dst->type == HTP_TYPE_F32 &&
++           src->ne[0] == 2u && src->ne[3] == 1u && half > 0u &&
++           dst->ne[0] == 2u && dst->ne[1] == src->ne[1] && dst->ne[2] == src->ne[2] && dst->ne[3] == 1u &&
++           src->nb[0] == half * sizeof(float) && src->nb[1] == sizeof(float) && src->nb[2] == 2u * half * sizeof(float) &&
++           dst->nb[0] == sizeof(float) && dst->nb[1] == 2u * sizeof(float) && dst->nb[2] == 2u * half * sizeof(float);
++}
++
+ #define cpy_preamble                              \
+     const struct htp_tensor *src0 = octx->src[0]; \
+     const struct htp_tensor *dst  = octx->dst;    \
+@@ -419,6 +462,19 @@
+         }
+         return HTP_STATUS_OK;
+     }
++
++    if (octx->ctx->mdev.count <= 1 && cpy_is_interleave2_f32(src0, dst)) {
++        if (!(octx->flags & HTP_OPFLAGS_SKIP_COMPUTE)) {
++            const struct htp_interleave2_f32_context il = {
++                .src  = (const float *) src0->data,
++                .dst  = (float *) dst->data,
++                .half = ne01,
++                .rows = ne02,
++            };
++            work_queue_run(octx->ctx->work_queue, cpy_thread_interleave2_f32, (void *) &il, octx->n_threads);
++        }
++        return HTP_STATUS_OK;
++    }
+ 
+     struct htp_copy_context ct;
+     ct.octx = octx;
