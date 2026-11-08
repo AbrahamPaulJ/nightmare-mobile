@@ -5,7 +5,7 @@ Text to image, image to image, inpainting, upscaling, image editing, text to vid
 the phone. No server, no account, no cloud.
 
 <p align="center">
-  <img src="media/workflows.png" alt="Text to image, image to image and image to video, each as a node graph on an Android phone">
+  <img src="media/screens.jpg" alt="Nine screens of the app on a phone: a picture from a text prompt, the node graph, a MiniMax H3 clip with sound, painting an inpaint mask, a render in progress, sending a picture to another flow, the Models and Flows pages, and Results">
 </p>
 
 **[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)** ·

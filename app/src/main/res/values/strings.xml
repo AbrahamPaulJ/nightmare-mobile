@@ -1440,7 +1440,7 @@
     <string name="layout_caption">What it looks like</string>
     <string name="layout_words">The exact words</string>
     <string name="layout_words_needed">A text box needs its words</string>
-    <string name="shell_ram_chip">RAM %1$s / %2$s GB free · CPU %3$s° GPU %4$s° NPU %5$s°</string>
+    <string name="shell_ram_chip">RAM %1$s / %2$s GB free · CPU %3$s° GPU %4$s° NPU %5$s° Battery %6$s°</string>
     <string name="chip_temps">Show the chip\'s temperatures</string>
     <string name="chip_temps_hint">The RAM line shows the CPU, GPU and NPU (the hottest sensor of each) instead of the battery. The heat warnings still follow the battery.</string>
 </resources>

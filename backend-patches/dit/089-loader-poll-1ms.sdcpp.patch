@@ -1,0 +1,13 @@
+--- a/src/model_loader.cpp
++++ b/src/model_loader.cpp
+@@ -1260,7 +1260,9 @@
+                                       bytes_processed.load(),
+                                       elapsed_seconds);
+             }
+-            std::this_thread::sleep_for(std::chrono::milliseconds(total_tensors_to_process <= 4 ? 10 : 200));
++            // nightmare (dit/089): a 200 ms tick is only for a progress bar. Without one it set the floor of every load of
++            // more than 4 tensors: a streamed block's 8 read and copied in ~30 ms and took 202.
++            std::this_thread::sleep_for(std::chrono::milliseconds(log_progress && total_tensors_to_process > 4 ? 200 : 1));
+         }
+ 
+         for (auto& w : workers) {

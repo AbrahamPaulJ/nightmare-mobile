@@ -714,13 +714,14 @@ private fun brief(detail: String): String {
 @Composable
 private fun RamPill(text: String) {
     Row(
-        Modifier.height(28.dp).clip(RoundedCornerShape(10.dp))
+        Modifier.heightIn(min = 28.dp).clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(com.abrah.nightmare.ui.ChipIcon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
         Spacer(Modifier.width(6.dp))
-        Text(text, style = MeasureTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        // ⚠ Wraps (GitHub #95): with the chip temperatures on, one line ran off a portrait screen and hid the NPU's.
+        Text(text, style = MeasureTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f, fill = false))
     }
 }
 

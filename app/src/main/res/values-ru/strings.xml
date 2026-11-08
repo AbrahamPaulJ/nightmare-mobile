@@ -1436,7 +1436,7 @@
     <string name="layout_caption">Как выглядит</string>
     <string name="layout_words">Точный текст</string>
     <string name="layout_words_needed">Текстовой рамке нужен текст</string>
-    <string name="shell_ram_chip">ОЗУ %1$s / %2$s ГБ свободно · CPU %3$s° GPU %4$s° NPU %5$s°</string>
+    <string name="shell_ram_chip">ОЗУ %1$s / %2$s ГБ свободно · CPU %3$s° GPU %4$s° NPU %5$s° Батарея %6$s°</string>
     <string name="chip_temps">Температура чипа</string>
     <string name="chip_temps_hint">В строке ОЗУ показываются CPU, GPU и NPU (самый горячий датчик каждого) вместо батареи. Предупреждения о нагреве по-прежнему следят за батареей.</string>
 </resources>

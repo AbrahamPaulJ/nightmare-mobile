@@ -1409,7 +1409,7 @@
     <string name="layout_caption">外观描述</string>
     <string name="layout_words">准确文字</string>
     <string name="layout_words_needed">文字框需要填写文字</string>
-    <string name="shell_ram_chip">内存 %1$s / %2$s GB 可用 · CPU %3$s° GPU %4$s° NPU %5$s°</string>
+    <string name="shell_ram_chip">内存 %1$s / %2$s GB 可用 · CPU %3$s° GPU %4$s° NPU %5$s° 电池 %6$s°</string>
     <string name="chip_temps">显示芯片温度</string>
     <string name="chip_temps_hint">内存一行显示 CPU、GPU 和 NPU 的温度（各取最热的传感器），而不是电池温度。过热提醒仍按电池温度。</string>
 </resources>

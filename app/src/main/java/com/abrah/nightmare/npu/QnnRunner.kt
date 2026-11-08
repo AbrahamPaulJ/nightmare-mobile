@@ -3,6 +3,8 @@ package com.abrah.nightmare.npu
 import android.content.Context
 import android.util.Log
 import com.abrah.nightmare.BackendProcess
+import com.abrah.nightmare.DeviceProbe
+import com.abrah.nightmare.R
 import java.io.File
 
 /**
@@ -51,6 +53,10 @@ class QnnRunner(private val context: Context) {
     @Synchronized
     fun initBackend() {
         if (initialised) return
+        // ⭐ No Hexagon NPU, so the runtime can only fail, as `backendCreate failed` (GitHub #92, a MediaTek phone). Says why.
+        DeviceProbe.caps().let { caps ->
+            check(caps.qualcomm) { context.getString(R.string.flow_no_snapdragon, caps.soc.ifEmpty { context.getString(R.string.flow_this_chip) }) }
+        }
         NativeQnn.ensureLoaded()
         val runtime = BackendProcess.prepareRuntime(context)
         val ok = NativeQnn.init(

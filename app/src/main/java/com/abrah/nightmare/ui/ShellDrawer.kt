@@ -81,7 +81,7 @@ data class ShellLoad(
 /** ⭐ THE RAM line, drawer and run bar alike: free / total, and the temperature when the phone gives one. */
 @Composable
 internal fun ramLine(load: ShellLoad): String =
-    load.chip?.let { (c, g, n) -> stringResource(R.string.shell_ram_chip, load.ramFree, load.ramTotal, c, g, n) }
+    load.chip?.let { (c, g, n) -> stringResource(R.string.shell_ram_chip, load.ramFree, load.ramTotal, c, g, n, load.tempC ?: "?") }
         ?: load.tempC?.let { stringResource(R.string.shell_ram_temp, load.ramFree, load.ramTotal, it) }
         ?: stringResource(R.string.shell_ram, load.ramFree, load.ramTotal)
 

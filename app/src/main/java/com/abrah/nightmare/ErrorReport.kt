@@ -258,7 +258,8 @@ object ErrorReport {
             version = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             device = "${Build.MANUFACTURER} ${Build.MODEL}",
             android = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-            chip = "${caps.soc.ifBlank { Build.HARDWARE }} · HTP v${caps.arch}" +
+            // ⚠ Not "HTP v68 (from the chip table)" on a chip with no Hexagon at all (GitHub #92).
+            chip = if (!caps.qualcomm) "${caps.soc.ifBlank { Build.HARDWARE }} · not a Snapdragon, no Hexagon NPU" else "${caps.soc.ifBlank { Build.HARDWARE }} · HTP v${caps.arch}" +
                 when {
                     caps.measured -> " (measured)"
                     // ⭐ [DeviceProbe.learnPackFallback]: the guessed v85 runtime would not load here.
