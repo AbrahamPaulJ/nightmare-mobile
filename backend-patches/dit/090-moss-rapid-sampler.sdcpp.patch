@@ -1,0 +1,124 @@
+--- a/src/pipeline/diffusion_engine.cpp
++++ b/src/pipeline/diffusion_engine.cpp
+@@ -18,6 +18,11 @@
+ #include "core/ggml_tensor_utils.h"
+ #include "core/layer_split_partition.h"
+ #include "model.h"
++
++#include <cstdlib>
++#include <fstream>
++
++#include "json.hpp"
+ 
+ #include "core/rng.hpp"
+ #include "core/rng_mt19937.hpp"
+@@ -709,6 +714,14 @@
+         if (!model_loader.init_from_file(sd_ctx_params->diffusion_model_path, "model.diffusion_model.")) {
+             LOG_WARN("loading diffusion model from '%s' failed", sd_ctx_params->diffusion_model_path);
+         }
++        // nightmare (dit/090): rapid-moss replaces MOSS-Image's time path (time_embedding.*, the two modulations' biases).
++        // Read after the model, so its tensors win in the loader's name map.
++        if (const char* rapid = std::getenv("NM_MOSS_RAPID"); rapid != nullptr && rapid[0] != 0) {
++            const std::string time_path = std::string(rapid) + "/time_embedding.safetensors";
++            if (!model_loader.init_from_file(time_path.c_str(), "model.diffusion_model.")) {
++                LOG_WARN("loading rapid-moss time path from '%s' failed", time_path.c_str());
++            }
++        }
+     }
+ 
+     if (strlen(SAFE_STR(sd_ctx_params->high_noise_diffusion_model_path)) > 0) {
+@@ -2088,6 +2101,38 @@
+     }
+ 
+     *controls = std::move(*control_result);
++}
++
++// nightmare (dit/090): rapid-moss's dataspace.safetensors: latent_mix.Q [128, 128] and step_codes [4].
++static bool read_moss_rapid(const std::string& dir, std::vector<float>& q, std::vector<float>& codes) {
++    std::ifstream f(dir + "/dataspace.safetensors", std::ios::binary);
++    uint64_t header_bytes = 0;
++    if (!f.read(reinterpret_cast<char*>(&header_bytes), sizeof(header_bytes)) || header_bytes > (1u << 20)) {
++        return false;
++    }
++    std::string header(header_bytes, '\0');
++    if (!f.read(header.data(), static_cast<std::streamsize>(header_bytes))) {
++        return false;
++    }
++    const auto j = nlohmann::json::parse(header, nullptr, false);
++    if (j.is_discarded()) {
++        return false;
++    }
++    auto read = [&](const char* name, std::vector<float>& to, size_t count) {
++        if (!j.contains(name)) {
++            return false;
++        }
++        const size_t begin = j[name]["data_offsets"][0].get<size_t>();
++        const size_t end   = j[name]["data_offsets"][1].get<size_t>();
++        if (end - begin != count * sizeof(float)) {
++            return false;
++        }
++        to.resize(count);
++        f.clear();
++        f.seekg(static_cast<std::streamoff>(sizeof(header_bytes) + header_bytes + begin));
++        return static_cast<bool>(f.read(reinterpret_cast<char*>(to.data()), static_cast<std::streamsize>(end - begin)));
++    };
++    return read("latent_mix.Q", q, 128 * 128) && read("step_codes", codes, 4);
+ }
+ 
+ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionModelRunner>& work_diffusion_model,
+@@ -2508,7 +2553,54 @@
+         return output;
+     };
+ 
+-    auto x0_opt = sample_k_diffusion(method, denoise, x_t, sigmas, sampler_rng, eta, is_flow_denoiser, extra_sample_args, denoiser);
++    // nightmare (dit/090): rapid-moss's data-space sampler, its card's own loop: one fixed z and no re-noising,
++    // x = z + Q x0, x0 = z - v(x, code[r]). The code is the raw timestep. Off without NM_MOSS_RAPID.
++    sd::Tensor<float> x0_opt;
++    std::vector<float> rapid_q, rapid_codes;
++    const char* rapid_dir = std::getenv("NM_MOSS_RAPID");
++    const bool rapid      = version == VERSION_MOSS_IMAGE && rapid_dir != nullptr && rapid_dir[0] != 0 &&
++                       x_t.shape().size() >= 3 && x_t.shape()[2] == 128 && read_moss_rapid(rapid_dir, rapid_q, rapid_codes);
++    if (rapid) {
++        const int rapid_steps = std::min<int>(static_cast<int>(sigmas.size()) - 1, static_cast<int>(rapid_codes.size()));
++        LOG_INFO("rapid-moss sampler: %d steps", rapid_steps);
++        const sd::Tensor<float> z = x_t;
++        const int64_t per_channel = z.numel() / 128;
++        sd::Tensor<float> x0(z.shape());
++        sd::Tensor<float> mixed(z.shape());
++        x0_opt = x0;
++        for (int r = 0; r < rapid_steps; ++r) {
++            float* m       = mixed.data();
++            const float* c = z.data();
++            std::copy(c, c + z.numel(), m);
++            const float* q  = rapid_q.data();
++            const float* x0d = x0.data();
++            for (int o = 0; o < 128; ++o) {
++                float* to = m + per_channel * o;
++                for (int i = 0; i < 128; ++i) {
++                    const float k = q[o * 128 + i];
++                    if (k == 0.0f) {
++                        continue;
++                    }
++                    const float* from = x0d + per_channel * i;
++                    for (int64_t p = 0; p < per_channel; ++p) {
++                        to[p] += k * from[p];
++                    }
++                }
++            }
++            const float sigma = rapid_codes[r] / 1000.f;
++            auto out          = denoise(mixed, sigma, r + 1);
++            if (out.pred.empty()) {
++                x0_opt = sd::Tensor<float>();
++                break;
++            }
++            // denoise() gives x - sigma * v.
++            sd::Tensor<float> v = (mixed - out.pred) / sigma;
++            x0                  = z - v;
++            x0_opt              = x0;
++        }
++    } else {
++        x0_opt = sample_k_diffusion(method, denoise, x_t, sigmas, sampler_rng, eta, is_flow_denoiser, extra_sample_args, denoiser);
++    }
+     if (x0_opt.empty()) {
+         LOG_ERROR("Diffusion model sampling failed");
+         if (control_net) {
