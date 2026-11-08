@@ -18,6 +18,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -216,6 +221,11 @@ class MainActivity : ComponentActivity() {
                     isAppearanceLightNavigationBars = !dark
                 }
             }
+            // ⭐ Sideways, the navigation buttons hide until swiped in (GitHub #95: on the left they covered the sheets).
+            val sideways = com.abrah.nightmare.ui.shortWindow()
+            androidx.compose.runtime.LaunchedEffect(sideways) {
+                com.abrah.nightmare.ui.applySidewaysBars(window, view, sideways)
+            }
             NightmareTheme(darkTheme = dark, black = vm.theme == Prefs.Theme.BLACK, accent = vm.accent) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     // ⭐ What a reportable ErrorNotice's share icon opens.
@@ -224,7 +234,12 @@ class MainActivity : ComponentActivity() {
                         com.abrah.nightmare.ui.LocalBlankDiagnose provides vm::diagnoseBlank,
                         com.abrah.nightmare.ui.LocalUseEnabled provides vm.canUse,
                     ) {
-                        HarnessScreen(op = pending, nonce = pendingNonce, vm = vm)
+                        // ⚠ The camera hole and, while swiped in, the buttons sit at a SIDE when sideways. Zero in portrait.
+                        androidx.compose.foundation.layout.Box(
+                            Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
+                        ) {
+                            HarnessScreen(op = pending, nonce = pendingNonce, vm = vm)
+                        }
                     }
                 }
             }
@@ -360,7 +375,7 @@ fun HarnessScreen(
             onSaved = vm::sendToSaved,
             onDismiss = vm::cancelSend,
         )
-    }
+    }
     // ⭐⭐ A model's licence, asked before its download starts ([HarnessViewModel.installModel]): MiniMax H3's
     // territories and terms, the full text one tap away. Over every screen, as the download can start from any.
     vm.pendingLicence?.let { spec ->

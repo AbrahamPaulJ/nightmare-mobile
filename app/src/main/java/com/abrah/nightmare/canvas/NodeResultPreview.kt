@@ -215,6 +215,7 @@ internal fun NodeResultPreview(
             com.abrah.nightmare.ui.ClipPlayer(
                 drivingVideo,
                 Modifier.fillMaxWidth().height(pictureCap(pair = true)).clip(RoundedCornerShape(10.dp)),
+                muted = true,
             )
         }
     }

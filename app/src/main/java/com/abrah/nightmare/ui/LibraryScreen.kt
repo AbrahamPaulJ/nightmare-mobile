@@ -90,7 +90,12 @@ fun LibraryScreen(
         // ⭐⭐ A [PullDownSheet] again, like Settings (the user, 2026-10-10: "make models, flows,
         // results just like settings — sheet with top bar and close btn"). Settings' layout: the
         // header (☰ + title) under the sheet's bar, the page filling the rest.
-        Column(modifier.fillMaxSize().navigationBarsPadding().padding(16.dp)) {
+        // ⭐ Sideways (GitHub #95) the title goes and the margins tighten: ~290dp of sheet is the picture's and the grid's.
+        val sideways = shortWindow()
+        Column(
+            modifier.fillMaxSize().navigationBarsPadding()
+                .then(if (sideways) Modifier.padding(horizontal = 12.dp, vertical = 4.dp) else Modifier.padding(16.dp)),
+        ) {
             // ⭐⭐ Models and Flows as TWO CARDS at the top, the open one selected (the user, 2026-10-23: "go to Flows
             // from Models and vice versa, both cards on top and we can toggle"); each list's "+" after them.
             if (tab != LibraryTab.RESULTS) Row(
@@ -105,7 +110,7 @@ fun LibraryScreen(
                     onTab(LibraryTab.FLOWS)
                 }
                 if (tab == LibraryTab.MODELS) modelsAction?.invoke() else flowsAction?.invoke()
-            } else ScreenHeader(
+            } else if (!sideways) ScreenHeader(
                 stringResource(R.string.nav_results),
                 onClose = null,
                 // ⭐ No ☰ of its own: the main bar's, in the gap above the sheet, is the one
@@ -113,7 +118,7 @@ fun LibraryScreen(
                 onMenu = null,
             )
             // ⚠ The list scrolls only the list — the sheet is pulled by its bar ([keepScrollInside]).
-            Column(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp).keepScrollInside()) {
+            Column(Modifier.fillMaxWidth().weight(1f).padding(top = if (sideways && tab == LibraryTab.RESULTS) 0.dp else 8.dp).keepScrollInside()) {
                 when (tab) {
                     LibraryTab.MODELS -> models()
                     LibraryTab.FLOWS -> flows()

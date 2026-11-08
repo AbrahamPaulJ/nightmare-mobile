@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -1084,11 +1085,60 @@ private fun TopBar(
     version: String = "",
 ) {
     var explaining by remember { mutableStateOf(false) }
+    // ⭐⭐ The toggle lights on the TAP's frame; the view is switched on the next one — drawing a
+    // whole view in the same frame held the highlight back (the user, 2026-10-08).
+    // ⚠ The tap's own pick wins until the view has changed; otherwise the view itself. Never a
+    // copy updated by an effect: that lagged a frame, the slow frame (2026-10-09).
+    var tapped by remember { mutableStateOf<com.abrah.nightmare.MainView?>(null) }
+    LaunchedEffect(mainView) { tapped = null }
+    val picked = tapped ?: mainView
+    val tileScope = rememberCoroutineScope()
+    val go: (com.abrah.nightmare.MainView) -> Unit = { v ->
+        tapped = v
+        tileScope.launch {
+            androidx.compose.runtime.withFrameNanos { }
+            onView(v)
+        }
+    }
+    // ⭐ Sideways (GitHub #95's mock) the views and the model move up beside the brand: one row, and the rest is canvas.
+    val sideways = com.abrah.nightmare.ui.shortWindow()
+    val viewsAndModel: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        ViewSwitch(picked, go, hideChat)
+        // ⭐ The model, back on the main screen (the user, 2026-10-11; it left with the status
+        // row in 1.6.117). ⚠ WRAPPED, never cut: most names are long, and the old row's rule
+        // was "do not ... the held model" (2026-09-10). ⚠ One line sideways: the row is the bar.
+        Column(
+            Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                .clickable(onClickLabel = stringResource(R.string.nav_models), onClick = onModels)
+                .padding(start = 4.dp),
+        ) {
+            if (modelLabel.isNotBlank()) Text(
+                stringResource(R.string.current_model).uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                letterSpacing = 1.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                modelLabel,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = if (sideways) 1 else 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = { explaining = true }) {
+            Icon(
+                Icons.Outlined.Info, contentDescription = stringResource(R.string.views_info_cd),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp),
+            )
+        }
+    }
     Column(
         modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
-            .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 8.dp),
+            .padding(start = 4.dp, end = 8.dp, top = if (sideways) 0.dp else 4.dp, bottom = if (sideways) 0.dp else 8.dp),
         // ⚠ 12dp under the brand: at 6 the views row sat against the logo (the user, 2026-10-09).
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -1109,7 +1159,12 @@ private fun TopBar(
             Spacer(Modifier.width(8.dp))
             // ⚠ The ONLY weighted child: with a weighted Spacer beside it the two split the room and
             // the wordmark was cut to "Nightma" at 320dp. `BrandMark` shrinks its own type to fit.
-            com.abrah.nightmare.ui.BrandMark(Modifier.weight(1f), version = version)
+            if (sideways && mainView.isCanvas) {
+                // ⚠ The name is measured against what it is given, so the model's name keeps the rest of the row.
+                com.abrah.nightmare.ui.BrandMark(Modifier.widthIn(max = BRAND_SIDEWAYS), version = version)
+                Spacer(Modifier.width(8.dp))
+                viewsAndModel()
+            } else com.abrah.nightmare.ui.BrandMark(Modifier.weight(1f), version = version)
             IconButton(onClick = onSave) {
                 Icon(
                     com.abrah.nightmare.ui.SaveIcon,
@@ -1127,62 +1182,20 @@ private fun TopBar(
                 )
             }
         }
-        // ⭐⭐ The toggle lights on the TAP's frame; the view is switched on the next one — drawing a
-        // whole view in the same frame held the highlight back (the user, 2026-10-08).
-        // ⚠ The tap's own pick wins until the view has changed; otherwise the view itself. Never a
-        // copy updated by an effect: that lagged a frame, the slow frame (2026-10-09).
-        var tapped by remember { mutableStateOf<com.abrah.nightmare.MainView?>(null) }
-        LaunchedEffect(mainView) { tapped = null }
-        val picked = tapped ?: mainView
-        val tileScope = rememberCoroutineScope()
-        val go: (com.abrah.nightmare.MainView) -> Unit = { v ->
-            tapped = v
-            tileScope.launch {
-                androidx.compose.runtime.withFrameNanos { }
-                onView(v)
-            }
-        }
         // ⭐ Only on the three views: Models, Flows and Results get the room (the user, 2026-10-09);
         // Back or the sidebar leaves them.
-        if (mainView.isCanvas) Row(
+        if (mainView.isCanvas && !sideways) Row(
             Modifier.fillMaxWidth().padding(start = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            ViewSwitch(picked, go, hideChat)
-            // ⭐ The model, back on the main screen (the user, 2026-10-11; it left with the status
-            // row in 1.6.117). ⚠ WRAPPED, never cut: most names are long, and the old row's rule
-            // was "do not ... the held model" (2026-09-10).
-            Column(
-                Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
-                    .clickable(onClickLabel = stringResource(R.string.nav_models), onClick = onModels)
-                    .padding(start = 4.dp),
-            ) {
-                if (modelLabel.isNotBlank()) Text(
-                    stringResource(R.string.current_model).uppercase(),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    letterSpacing = 1.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    modelLabel,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            IconButton(onClick = { explaining = true }) {
-                Icon(
-                    Icons.Outlined.Info, contentDescription = stringResource(R.string.views_info_cd),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp),
-                )
-            }
-        }
+            content = viewsAndModel,
+        )
     }
     if (explaining) ViewsInfoDialog { explaining = false }
 }
+
+/** ⚠ The brand's room in the one row a sideways phone has. */
+private val BRAND_SIDEWAYS = 180.dp
 
 /** ⭐ The ⓘ beside the views: what Chat, Default and Advanced each are. */
 @Composable
@@ -1451,6 +1464,9 @@ private fun RunBar(
     onToggleFold: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // ⭐ Sideways (GitHub #95's mock): ONE row. + Node and Run together at the left, the seed and RAM beside them, the
+    // locks and the fold chevron at the end; the portrait strip above and the seed row cost a third of the window.
+    val sideways = com.abrah.nightmare.ui.shortWindow()
     // ⭐⭐ Its own card (`PanelCard`), the page's card's edges: [SCREEN_GUTTER] out, [PANEL_PAD] in
     // (the user, 2026-10-10: containers, and one margin from both edges).
     com.abrah.nightmare.ui.PanelCard(
@@ -1462,14 +1478,14 @@ private fun RunBar(
             // ⚠ The chevron strip IS the top padding, so it costs the bar ~6dp, not a row.
             .padding(
                 start = com.abrah.nightmare.ui.PANEL_PAD, end = com.abrah.nightmare.ui.PANEL_PAD,
-                bottom = com.abrah.nightmare.ui.PANEL_PAD,
-                top = if (onToggleFold != null) 0.dp else com.abrah.nightmare.ui.PANEL_PAD,
+                bottom = if (sideways) 8.dp else com.abrah.nightmare.ui.PANEL_PAD,
+                top = if (sideways) 8.dp else if (onToggleFold != null) 0.dp else com.abrah.nightmare.ui.PANEL_PAD,
             ),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // ⭐⭐ A sheet's handle: the whole strip toggles, the chevron says which way. ⚠ Full width,
         // so an 18dp-tall target is still easy to hit; nothing else in the bar moves.
-        if (onToggleFold != null) Box(
+        if (onToggleFold != null && !sideways) Box(
             Modifier
                 .fillMaxWidth()
                 .height(18.dp)
@@ -1523,10 +1539,11 @@ private fun RunBar(
             batch = batchProgress,
             onCancelBatch = onCancelBatch,
             ram = ram,
+            seedRow = !sideways,
         )
         // ⭐ Folded, the bar still shows the seed locks ([SeedChipRow]; the user's call, 2026-10-23): a locked or
         // random seed changes what Run does, so it is never folded away with the log.
-        else SeedChipRow(
+        else if (!sideways) SeedChipRow(
             seeds, onToggleSeed,
             seedSweeps = armedSweeps.filter { it.param == "seed" },
             onReleaseSeedSweep = onReleaseSweep,
@@ -1634,8 +1651,21 @@ private fun RunBar(
             // put it further in than everything above it (the user, 2026-10-10).
             RunButton(
                 busy = busy, onRun = onRun, onCancelRun = onCancelRun,
-                modifier = if (graphControls) runModifier else Modifier.weight(1f),
+                modifier = when {
+                    sideways -> Modifier.padding(horizontal = 8.dp).defaultMinSize(minWidth = RUN_WIDTH)
+                    graphControls -> runModifier
+                    else -> Modifier.weight(1f)
+                },
             )
+            // ⭐ The seed locks and RAM, between Run and the locks. ⚠ The ONE [SeedChipRow]: it wraps inside its share.
+            if (sideways) Box(Modifier.weight(1f).padding(end = 8.dp)) {
+                SeedChipRow(
+                    seeds, onToggleSeed,
+                    seedSweeps = armedSweeps.filter { it.param == "seed" },
+                    onReleaseSeedSweep = onReleaseSweep,
+                    ram = ram,
+                )
+            }
             // ⚠ The right slot: the zoom readout, then the two locks. It WRAPS
             // its content — see the note on the left slot; every item in here is
             // a fixed size, so a weight would only steal room from the one slot
@@ -1675,6 +1705,14 @@ private fun RunBar(
                 onClick = onTogglePanLock,
                 what = "canvas movement",
             )
+            }
+            // ⭐ The chevron, at the row's end: there is no strip above it sideways.
+            if (sideways && onToggleFold != null) IconButton(onClick = onToggleFold, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    if (folded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = stringResource(if (folded) R.string.cd_open_bar else R.string.cd_fold_bar),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

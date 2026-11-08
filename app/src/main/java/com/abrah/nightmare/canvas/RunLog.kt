@@ -134,6 +134,12 @@ data class RunLogState(
      */
     val step: Pair<Int, Int>? = null,
     /**
+     * ⭐ The steps the node's sampler was asked for, when this is a run whose fraction IS its steps (GitHub #95). A DiT
+     * text-to-image or video reports `step` of `steps + 1`, the +1 being the decode. Anything else (the QNN pipeline's
+     * `steps + 2`, an img2img's trimmed count) stays a plain percentage, for the reason [step] gives.
+     */
+    val askedSteps: Int? = null,
+    /**
      * ⭐ The phase [step] counts, when it is not the node's main work: "pose" while Motion transfer
      * reads the driving video (a large share of its run). Shown with its own count, never a %.
      */
@@ -161,7 +167,9 @@ data class RunLogState(
     val stepLabel: String?
         get() = step?.takeIf { it.second > 0 }?.let { (s, t) ->
             // ⭐ A phase counts real things (frames), so it says how many: "pose 12/49".
-            phase?.let { "$it $s/$t" } ?: "${s * 100 / t}%"
+            phase?.let { "$it $s/$t" }
+                ?: askedSteps?.takeIf { it + 1 == t && s <= it }?.let { "$s/$it · ${s * 100 / t}%" }
+                ?: "${s * 100 / t}%"
         }
 }
 
@@ -253,12 +261,14 @@ fun RunLogPanel(
     onCancelBatch: () -> Unit = {},
     /** ⭐ RAM, worded ("4.2 / 11.7"): a pill at the seed row's end (the sidebar mock, 2026-10-09). */
     ram: String? = null,
+    /** ⚠ False sideways (GitHub #95): the seed and RAM sit in the Run row there ([SeedChipRow]). */
+    seedRow: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     // ⚠ The seed row keeps this panel up with nothing else to report: it is a
     // property of the canvas rather than of the last run, and the panel is the
     // only thing above Run that persists between them.
-    if (state.idle && seeds.isEmpty() && armed.isEmpty() && batch == null) return
+    if (state.idle && (seeds.isEmpty() || !seedRow) && armed.isEmpty() && batch == null) return
     val context = androidx.compose.ui.platform.LocalContext.current
 
     // ⚠⚠ A ticking clock, not a value pushed from the view model. The elapsed
@@ -285,7 +295,7 @@ fun RunLogPanel(
         // ⚠⚠ The seed chip and the RAM pill are items of ONE wrapping row: side by side when they
         // fit, RAM on its own line when not. Beside a fixed RAM pill the chip was squeezed: at 320dp
         // its text wrapped letter by letter and the padlock got no width (2026-10-12).
-        SeedChipRow(seeds, onToggleSeed, seedSweeps, onReleaseSeedSweep, ram)
+        if (seedRow) SeedChipRow(seeds, onToggleSeed, seedSweeps, onReleaseSeedSweep, ram)
         // ⚠⚠ **Only when there is a run to describe.** Closing the panel clears
         // the state, but the seed row above is a property of the CANVAS rather
         // than of a run, so the panel stays up — and this row then rendered

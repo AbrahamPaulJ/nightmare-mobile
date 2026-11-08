@@ -4698,6 +4698,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * ⭐ [RunLogState.askedSteps] (GitHub #95: "show the actual step"): the sampler's own steps, unless a picture is wired
+     * in. An img2img's denoise trims the count and its encode takes a slot, so it stays a percentage.
+     */
+    private fun askedStepsOf(id: String): Int? = canvas.workflow.graph.byId[id]
+        ?.takeIf { isSampler(it.type) && "image" !in it.inputs }
+        ?.let { n -> (NODE_TYPES[n.type]?.effectiveParams(n) ?: n.params)["steps"] }?.trim()?.toIntOrNull()
+
     fun deleteModel(spec: ModelSpec) {
         val ctx = getApplication<Application>()
         // ⚠⚠ The FILES go on IO: a 3 GB SDXL folder on the shared-storage FUSE
@@ -8872,7 +8880,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 onNode = ::noteNodeRun,
                 onProgress = { id, step, total ->
                     canvasStatus[id] = NodeStatus(progress = step to total)
-                    runLog = runLog.copy(now = logName(id), step = step to total)
+                    runLog = runLog.copy(now = logName(id), step = step to total, askedSteps = askedStepsOf(id))
                 },
                 onPhase = { _, ph -> if (runLog.phase != ph) runLog = runLog.copy(phase = ph) },
                 // ⚠ Once per SWEEP per sentence: eight runs refusing the same
@@ -9170,7 +9178,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             },
             onProgress = { id, step, total ->
                 canvasStatus[id] = NodeStatus(progress = step to total)
-                runLog = runLog.copy(now = logName(id), step = step to total)
+                runLog = runLog.copy(now = logName(id), step = step to total, askedSteps = askedStepsOf(id))
             },
             onPhase = { _, ph -> if (runLog.phase != ph) runLog = runLog.copy(phase = ph) },
             // ⭐⭐ A long node's own narration, live in the panel.

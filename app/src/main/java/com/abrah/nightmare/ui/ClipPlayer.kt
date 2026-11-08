@@ -84,6 +84,8 @@ class LoopingClipView(
     ctx: android.content.Context,
     private val onSize: (Int, Int) -> Unit,
     private val onFailed: () -> Unit,
+    /** ⭐ An inline preview: silent, its sound in the fullscreen viewer ([ClipPlayer]). */
+    private val muted: Boolean = false,
 ) : TextureView(ctx), TextureView.SurfaceTextureListener {
     private var player: MediaPlayer? = null
     private var surface: Surface? = null
@@ -135,6 +137,7 @@ class LoopingClipView(
                 isLooping = true
                 setOnPreparedListener {
                     prepared = true
+                    if (muted) it.setVolume(0f, 0f)
                     if (onTop()) it.start()
                 }
                 setOnVideoSizeChangedListener { _, w, h -> if (w > 0 && h > 0) onSize(w, h) }
@@ -167,7 +170,17 @@ class LoopingClipView(
 }
 
 @Composable
-fun ClipPlayer(path: String, modifier: Modifier = Modifier, handle: ClipHandle? = null) {
+fun ClipPlayer(
+    path: String,
+    modifier: Modifier = Modifier,
+    handle: ClipHandle? = null,
+    /**
+     * ⭐⭐ An inline preview plays silently; a tap opens the fullscreen viewer, which has the sound. A clip with sound
+     * looped aloud at full volume the moment it was selected or finished, with nothing asked for: the H3 clip woke the
+     * user at night (2026-11-08).
+     */
+    muted: Boolean = false,
+) {
     val isUri = path.startsWith("content://")
     if (!isUri && !File(path).isFile) return
     // ⚠⚠ A clip that will not decode SAYS so, as a picture does ([UnreadablePicture]): the error listener
@@ -181,7 +194,7 @@ fun ClipPlayer(path: String, modifier: Modifier = Modifier, handle: ClipHandle? 
     Box(modifier, contentAlignment = Alignment.Center) {
         AndroidView(
             factory = { ctx ->
-                LoopingClipView(ctx, onSize = { w, h -> aspect = w.toFloat() / h }, onFailed = { failed = true })
+                LoopingClipView(ctx, onSize = { w, h -> aspect = w.toFloat() / h }, onFailed = { failed = true }, muted = muted)
                     .also { handle?.view = it }
             },
             update = { v ->

@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.foundation.layout.absolutePadding
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -116,6 +117,9 @@ private val BAR = 64.dp
 
 /** ⚠ Space between the bar and the content (asked for with the bigger bar). */
 private val BAR_GAP = 12.dp
+
+/** ⚠ The bar sideways: ~360dp of window is too little to spend 64 of it on a handle (GitHub #95). */
+private val BAR_SIDEWAYS = 36.dp
 
 @Composable
 fun PullDownSheet(
@@ -174,7 +178,12 @@ fun PullDownSheet(
             // phone, 1.6.084), so the band under the sheet stayed black.
             window?.let {
                 androidx.core.view.WindowCompat.setDecorFitsSystemWindows(it, false)
-                it.attributes = it.attributes.apply { fitInsetsTypes = 0 }
+                // ⚠ ALWAYS: a dialog's window otherwise starts beside the camera hole when sideways, keeps the screen's
+                // width, and runs off the far edge with the ✕ and the last icons (S25, 1.6.284). The sheet pads by the inset.
+                it.attributes = it.attributes.apply {
+                    fitInsetsTypes = 0
+                    layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                }
             }
             window?.setLayout(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
@@ -187,7 +196,13 @@ fun PullDownSheet(
             window?.navigationBarColor = navColor.toArgb()
             window?.isNavigationBarContrastEnforced = false
         }
-        val bottomPad = bottomInset(window)
+        // ⭐ Sideways (GitHub #95) the sheet gives the picture its room: a slim bar, and a gap of the status bar alone.
+        val sideways = shortWindow()
+        androidx.compose.runtime.LaunchedEffect(window, sideways) {
+            window?.let { applySidewaysBars(it, it.decorView, sideways) }
+        }
+        val insets = sheetInsets(window, sideways)
+        val bottomPad = insets.bottom
         LaunchedEffect(Unit) { offset.animateTo(0f, tween(220)) }
         val shown = if (sheetH > 0f) (1f - offset.value / sheetH).coerceIn(0f, 1f) else 0f
         Box(Modifier.fillMaxSize()) {
@@ -220,7 +235,7 @@ fun PullDownSheet(
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(top = GAP)
+                    .padding(top = if (sideways) insets.top + 4.dp else GAP)
                     .fillMaxWidth()
                     .onSizeChanged { sheetH = it.height.toFloat() }
                     .offset { IntOffset(0, offset.value.roundToInt()) }
@@ -233,8 +248,9 @@ fun PullDownSheet(
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(BAR)
+                        .height(if (sideways) BAR_SIDEWAYS else BAR)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .absolutePadding(left = insets.left, right = insets.right)
                         .draggable(
                             orientation = Orientation.Vertical,
                             state = rememberDraggableState { d ->
@@ -266,7 +282,7 @@ fun PullDownSheet(
                         )
                     }
                 }
-                androidx.compose.foundation.layout.Spacer(Modifier.height(BAR_GAP))
+                if (!sideways) androidx.compose.foundation.layout.Spacer(Modifier.height(BAR_GAP))
                 // ⚠ CONSUMED as well as padded: the bodies' own `navigationBarsPadding()`
                 // (Library, node sheet, Settings) then read zero instead of doubling it.
                 val padded = androidx.compose.foundation.layout.PaddingValues(bottom = bottomPad)
@@ -274,6 +290,7 @@ fun PullDownSheet(
                     Modifier
                         .weight(1f, fill = false)
                         .padding(padded)
+                        .absolutePadding(left = insets.left, right = insets.right)
                         .consumeWindowInsets(padded),
                 ) { content() }
             }
@@ -282,8 +299,15 @@ fun PullDownSheet(
     }
 }
 
+private data class SheetInsets(
+    val bottom: androidx.compose.ui.unit.Dp,
+    val top: androidx.compose.ui.unit.Dp,
+    val left: androidx.compose.ui.unit.Dp,
+    val right: androidx.compose.ui.unit.Dp,
+)
+
 /**
- * ⭐ The sheet's bottom inset: the nav bar, or the keyboard when it is up.
+ * ⭐ The sheet's insets: at the bottom the nav bar, or the keyboard when it is up.
  *
  * ⚠⚠⚠ From a LISTENER on the dialog's decor view — measured on the phone
  * (1.6.083, `NmSheet`): inside this dialog Compose's `WindowInsets` stay 0
@@ -292,10 +316,13 @@ fun PullDownSheet(
  * insets and CONSUMES them, so no layout under the decor pads a second time.
  */
 @Composable
-private fun bottomInset(window: android.view.Window?): androidx.compose.ui.unit.Dp {
+private fun sheetInsets(window: android.view.Window?, sideways: Boolean): SheetInsets {
     val density = LocalDensity.current
     var px by remember { mutableStateOf(0) }
-    androidx.compose.runtime.DisposableEffect(window) {
+    var topPx by remember { mutableStateOf(0) }
+    var leftPx by remember { mutableStateOf(0) }
+    var rightPx by remember { mutableStateOf(0) }
+    androidx.compose.runtime.DisposableEffect(window, sideways) {
         val decor = window?.decorView
         if (decor != null) {
             androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(decor) { v, insets ->
@@ -311,7 +338,15 @@ private fun bottomInset(window: android.view.Window?): androidx.compose.ui.unit.
                 // the bottom the size of a nav bar"* — the list ending flush at
                 // the bar read as the bar covering it. So: the bar, PLUS a clear
                 // band the bar's height above it. With the keyboard up, its top.
-                val want = if (ime > nav) ime else nav * 2
+                // ⚠ Sideways that band is the room the picture needs, and there is no bar for it to stand clear of.
+                val want = if (ime > nav) ime else if (sideways) nav else nav * 2
+                // ⚠ The camera hole, and the buttons while swiped in, sit at a SIDE when sideways: zero upright.
+                val sides = insets.getInsets(
+                    androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout(),
+                )
+                topPx = sides.top
+                leftPx = sides.left
+                rightPx = sides.right
                 if (want != px) {
                     px = want
                     android.util.Log.i("NmSheet", "inset nav=$nav ime=$ime -> $px px")
@@ -326,5 +361,5 @@ private fun bottomInset(window: android.view.Window?): androidx.compose.ui.unit.
         }
         onDispose { decor?.let { androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(it, null) } }
     }
-    return with(density) { px.toDp() }
+    return with(density) { SheetInsets(px.toDp(), topPx.toDp(), leftPx.toDp(), rightPx.toDp()) }
 }

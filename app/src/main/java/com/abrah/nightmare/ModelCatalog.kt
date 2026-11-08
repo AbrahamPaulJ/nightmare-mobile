@@ -610,6 +610,11 @@ data class ModelSpec(
      */
     val ownLora: String? = null,
     /**
+     * ⭐ The flow shift this model samples at, for the whole launch (`NM_DIT_FLOW_SHIFT`, `dit/048`), when it is not its
+     * family's default. Null = the family's: NitroFusion 2 wants 6 at 2 steps, where Z-Image's default is 3.
+     */
+    val flowShift: String? = null,
+    /**
      * ⭐ The size a node STARTS at when it takes this model — a new flow, or
      * "Use" on the Models tab — when that is not [native]. Null = [native].
      *
@@ -764,6 +769,14 @@ data class ModelSpec(
         if (donor.active.none { it.name == f.name && it.url == f.url }) return false
         return donorDirs(modelDir).any { File(it, f.name).length() == f.bytes }
     }
+
+    /**
+     * ⭐ The folder a launch reads: this model's, unless its DiT is the donor's very file (SFT at 4 steps is SFT with
+     * another LoRA, 3.2 GB not fetched twice). ⚠ The backend reads `dit.gguf` from `--model_dir` alone; the first such
+     * launch exited with its usage text (S25, 2026-11-09). [ownLoraFile] still finds this model's own LoRA first.
+     */
+    fun launchDir(modelDir: File): File =
+        active.firstOrNull { it.name == "dit.gguf" }?.takeIf { borrows(modelDir, it) }?.let { donorDir(modelDir) } ?: modelDir
 
     /** ⭐ What an install must fetch: [active] less what the donor holds whole. */
     fun toFetch(context: Context): List<RemoteFile> = ownDir(context).let { d -> active.filterNot { borrows(d, it) } }
@@ -2347,8 +2360,11 @@ object ModelCatalog {
         ownLora: String? = null,
         /** ⚠ See [ModelSpec.gpu]. */
         gpu: Boolean = false,
+        /** ⚠ See [ModelSpec.flowShift]. */
+        flowShift: String? = null,
     ) = ModelSpec(
         ownLora = ownLora,
+        flowShift = flowShift,
         gpu = gpu,
         startRes = startRes,
         fixedSizes = sizes != null,
@@ -2544,6 +2560,23 @@ object ModelCatalog {
                 Build(TIER_DIT, "", ZIMAGE_Q4.sumOf { it.bytes }, DIT_V73_MIN_ARCH, ditVtcmFloor(DIT_V73_MIN_ARCH), files = ZIMAGE_Q4),
             ),
         ),
+        // ⭐ NitroFusion 2 (ChenDY, Apache 2.0, GitHub item S#7937): a 1-2 step Z-Image Turbo. Same encoder, VAE and tokenizer,
+        // BORROWED when Z-Image is installed ([ModelSpec.partsFrom]). Measured on the S25 (`sd-cli`, 2026-11-09), 1024²:
+        // 1 step 18.5-23 s, 2 steps 39-41 s, against Z-Image Turbo Q4_0's 113 s at 8 steps. ⚠ Q8_0 only: its "Q4_0" file is
+        // mostly q5_1 / q4_1, which the NPU's matmul cannot take: 626 s a step on the CPU. Flow shift 6 is its 2-step
+        // setting; a single step starts at sigma 1 on any shift. The optional de-distill LoRA is not applied. âš  KREA2, not ZIMAGE: only an own-files launch takes a donor, and Z-Image's VAE is not in `_dit_shared`.
+        dit(
+            "nitrofusion2", "NitroFusion 2 (1-2 steps)", Family.ZIMAGE, KREA2, steps = 1,
+            lowram = true,
+            ownDitParts = true,
+            minArch = DIT_MIN_ARCH,
+            partsFrom = "z_image_turbo",
+            flowShift = "6",
+            prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
+            files = listOf(
+                RemoteFile(HF + "ChenDY/NitroFusion2/resolve/main/nf2-Q8_0.gguf", "dit.gguf", 7_222_556_736L),
+            ) + ZIMAGE_PARTS,
+        ),
         // ⭐ Krea 2 Turbo — `happyyzy/stable-diffusion.cpp`'s README, file for
         // file (e70d89b; sizes HEAD-checked 2026-09-28). A 6.8 GB MXFP4 MoE DiT,
         // Qwen3-VL-4B as the text encoder, the Wan 2.1 VAE; 8 steps at cfg 1.
@@ -2669,6 +2702,25 @@ object ModelCatalog {
                 RemoteFile(HF + "realrebelai/MOSS-Image_GGUFs/resolve/main/MOSS-VAE.safetensors", "vae.safetensors", 249_521_372L),
                 RemoteFile(HF + "OpenMOSS-Team/MOSS-Image-Base/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", 19_989_325L),
                 RemoteFile(HF + "lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors", MOSS_LORA, 1_189_176_800L),
+            ),
+        ),
+        // ⭐ MOSS-Image SFT at 4 STEPS (akhaliq's 4-step LoRA, Apache 2.0, on SFT's Q4_0; the idea from HexAnima's notes, which
+        // use darask0's data-space adapter): plain Euler at CFG 1, the engine's own schedule. S25 `sd-cli`, 1024²: 77 s against
+        // 127 s at 8 steps, 1 fox of 1 on every seed tried (darask0's took 73 s, and drew 2 foxes on 2 of 3 seeds:
+        // `docs/MOSS.md` §2). SFT's encoder, VAE and tokenizer BORROWED as Base does; the DiT is its own copy, as Base's is.
+        dit(
+            "moss_image_4step", "MOSS-Image SFT (4 steps)", Family.MOSS, KREA2, steps = 4,
+            ownDitParts = true,
+            minArch = DIT_GGML_MIN_ARCH,
+            partsFrom = "moss_image",
+            prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
+            ownLora = MOSS_LORA,
+            files = listOf(
+                RemoteFile(HF + "AbrahamPJ/nightmare-moss-image/resolve/main/moss-image-sft-q4_0.gguf", "dit.gguf", 3_217_359_072L),
+                RemoteFile(HF + "unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_0.gguf", "llm.gguf", 5_379_417_312L),
+                RemoteFile(HF + "realrebelai/MOSS-Image_GGUFs/resolve/main/MOSS-VAE.safetensors", "vae.safetensors", 249_521_372L),
+                RemoteFile(HF + "OpenMOSS-Team/MOSS-Image-Base/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", 19_989_325L),
+                RemoteFile(HF + "akhaliq/MOSS-Image-SFT-4-steps/resolve/main/moss_image_sft_4step_v2.0.safetensors", MOSS_LORA, 1_189_176_752L),
             ),
         ),
         // ⭐ MOSS-Image BASE (#6960, a tester's wish): the pre-SFT model, as Q4_0 (ours, from realrebelai's Base Q8_0,

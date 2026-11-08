@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -272,10 +273,13 @@ fun ResultsScreen(
             }
         }
 
+        // ⭐ Sideways (GitHub #95): two panes. The picture takes the left half at its full height, and everything else
+        // is stacked on the right, so the frame is not the strip left under a portrait layout's rows.
+        val sideways = shortWindow()
         // ⭐ All / Favourites — pills you TAP (the user's call, 2026-09-17: the
         // swipe belongs to the picture, which walks between results).
-        Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
+        val filterRow: @Composable () -> Unit = { Row(
+            Modifier.fillMaxWidth().padding(top = if (sideways) 0.dp else 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             for (fav in listOf(false, true)) {
@@ -331,7 +335,9 @@ fun ResultsScreen(
                     )
                 }
             }
-        }
+        } }
+        // ⚠ Sideways the row moves into the right pane, unless no picture passed the filter: it holds the way out.
+        if (!sideways || items.isEmpty()) filterRow()
         if (filtering) {
             ResultFilterDialog(
                 models = models,
@@ -363,7 +369,6 @@ fun ResultsScreen(
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
         val gridRows = resultGridHeight(maxWidth)
         val roomHigh = maxHeight
-        Column(Modifier.fillMaxSize()) {
         // ⭐⭐ The big frame SWIPES between results, and the grid follows it
         // (the user's call, 2026-09-17). ⚠ Two effects, one per direction, each
         // a no-op when the other side already agrees — so they cannot chase.
@@ -390,10 +395,10 @@ fun ResultsScreen(
         }
         val shown = items.getOrNull(pager.currentPage) ?: items.first()
 
-        if (previewOpen) androidx.compose.foundation.pager.HorizontalPager(
+        val frame: @Composable (Modifier) -> Unit = { frameModifier -> androidx.compose.foundation.pager.HorizontalPager(
             state = pager,
             key = { items[it].id },
-            modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 10.dp),
+            modifier = frameModifier,
         ) { i ->
             val r = items[i]
             Box(
@@ -427,6 +432,7 @@ fun ResultsScreen(
                     com.abrah.nightmare.ui.ClipPlayer(
                         path = clip,
                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
+                        muted = true,
                     )
                     Box(
                         Modifier.fillMaxSize().clickable {
@@ -452,11 +458,11 @@ fun ResultsScreen(
                     } ?: run { if (unreadable(r.id)) UnreadablePicture() }
                 }
             }
-        }
+        } }
 
         // ⭐⭐ ONE action row. While selecting it BECOMES the selection's row —
         // no second bar at the top (the user's call, 2026-09-17).
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        val controls: @Composable () -> Unit = { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val onSurface = MaterialTheme.colorScheme.onSurface
             if (selecting) {
                 Text(
@@ -585,7 +591,8 @@ fun ResultsScreen(
             }
         }
         Text(
-            listOfNotNull(
+            modifier = Modifier.fillMaxWidth(),
+            text = listOfNotNull(
                 shown.prompt?.takeIf { it.isNotBlank() },
                 stringResource(R.string.results_kept_mb, results.size, onDiskBytes shr 20),
             ).joinToString(" · "),
@@ -593,7 +600,7 @@ fun ResultsScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-        )
+        ) }
         // ⭐ The grid — small previews. Tap shows it above; long-press selects,
         // and while selecting a tap toggles.
         // ⭐⭐ It FOLLOWS the frame: a swipe to a picture whose preview is off
@@ -608,18 +615,13 @@ fun ResultsScreen(
                 seen.offset.y + seen.size.height <= info.viewportEndOffset
             if (!inside) grid.animateScrollToItem(shownIndex)
         }
-        // ⭐ The sheet's handle: a tap folds or opens, a drag up folds and down opens.
-        ResultsSheetHandle(open = previewOpen, onOpen = { previewOpen = it })
-        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+        val thumbs: @Composable (Modifier, Boolean) -> Unit = { gridModifier, frameShown -> androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
             state = grid,
             // ⭐ Four across on most phones with 8dp gutters (Violet Studio), more on a wide screen.
             columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(RESULT_THUMB_MIN),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            // ⚠ Open: at least [gridRows] tall, at most half the room beyond it is the frame's.
-            modifier = Modifier.fillMaxWidth().then(
-                if (previewOpen) Modifier.height(maxOf(gridRows, roomHigh * 0.45f)) else Modifier.weight(1f),
-            ),
+            modifier = gridModifier,
         ) {
             items(items.size, key = { items[it].id }) { i ->
                 val r = items[i]
@@ -633,12 +635,31 @@ fun ResultsScreen(
                     // ⚠ Folded, there is no frame to show it in: a tap opens it full screen.
                     onClick = {
                         if (selecting) onToggleSelect(r)
-                        else { shownId = r.id; if (!previewOpen) onView(r) }
+                        else { shownId = r.id; if (!frameShown) onView(r) }
                     },
                     onLongClick = { onToggleSelect(r) },
                 )
             }
-        }
+        } }
+        if (sideways) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            frame(Modifier.weight(1f).fillMaxHeight().padding(bottom = 4.dp))
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                filterRow()
+                controls()
+                thumbs(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp), true)
+            }
+        } else Column(Modifier.fillMaxSize()) {
+            if (previewOpen) frame(Modifier.fillMaxWidth().weight(1f).padding(top = 10.dp))
+            controls()
+            // ⭐ The sheet's handle: a tap folds or opens, a drag up folds and down opens.
+            ResultsSheetHandle(open = previewOpen, onOpen = { previewOpen = it })
+            thumbs(
+                // ⚠ Open: at least [gridRows] tall, at most half the room beyond it is the frame's.
+                Modifier.fillMaxWidth().then(
+                    if (previewOpen) Modifier.height(maxOf(gridRows, roomHigh * 0.45f)) else Modifier.weight(1f),
+                ),
+                previewOpen,
+            )
         }
         }
     }

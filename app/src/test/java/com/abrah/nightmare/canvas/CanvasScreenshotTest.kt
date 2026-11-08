@@ -1200,6 +1200,51 @@ open class CanvasScreenshotTest {
     }
 
     /**
+     * ⭐ A phone held sideways (GitHub #95, its reporter's 780dp x 360dp): the views and the model beside the brand,
+     * + Node and Run beside the seed and every temperature, and the canvas gets the rest.
+     */
+    @Test
+    @Config(qualifiers = "w780dp-h360dp-xxhdpi")
+    fun theGraphSideways() = shoot("screen-landscape") {
+        CanvasScreen(
+            version = GOLDEN_VERSION, state = opened(), types = NODE_TYPES, status = emptyMap(),
+            busy = false, image = null, onGesture = {}, onRun = {}, onBack = {},
+            modelLabel = "MOSS-Image Turbo (8 steps)",
+            ram = "RAM 2.8 / 11.6 GB free · CPU 40° GPU 40° NPU 38° · Battery 31°",
+        )
+    }
+
+    /** ⭐ …with a run going: the real step beside its percentage (GitHub #95). */
+    @Test
+    @Config(qualifiers = "w780dp-h360dp-xxhdpi")
+    fun theGraphSidewaysMidRender() = shoot("screen-landscape-running") {
+        CanvasScreen(
+            version = GOLDEN_VERSION, state = opened(), types = NODE_TYPES, status = mapOf("sample" to NodeStatus(progress = 3 to 9)),
+            busy = true, image = null, onGesture = {}, onRun = {}, onBack = {},
+            modelLabel = "MOSS-Image Turbo (8 steps)",
+            ram = "RAM 2.8 / 11.6 GB free",
+            runLog = RunLogState(
+                lines = listOf(RunLine("text", "ran 76ms")), now = "sample", step = 3 to 9, askedSteps = 8, totalMs = null,
+            ),
+        )
+    }
+
+    /** ⭐ The Default view sideways: Run keeps its own width so the seed stays beside it. */
+    @Test
+    @Config(qualifiers = "w780dp-h360dp-xxhdpi")
+    fun theNodesViewSideways() = shoot("screen-landscape-nodes") {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+            CanvasScreen(
+                version = GOLDEN_VERSION, state = opened(), types = NODE_TYPES, status = emptyMap(),
+                busy = false, image = null, onGesture = {}, onRun = {}, onBack = {},
+                mainView = com.abrah.nightmare.MainView.NODES,
+                modelLabel = "MOSS-Image Turbo (8 steps)",
+                ram = "RAM 2.8 / 11.6 GB free",
+            )
+        }
+    }
+
+    /**
      * ⚠ …and a TALL frame in portrait, which the old sizing also broke: a 3:4
      * output is 1.33x as tall as it is wide, so deriving the height from the
      * full width ran it off the bottom.

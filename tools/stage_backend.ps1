@@ -1,4 +1,4 @@
-﻿# Stage the built backend (and the DiT skels) into the app. The QNN runtime is NOT staged any more.
+# Stage the built backend (and the DiT skels) into the app. The QNN runtime is NOT staged any more.
 #
 # Both destinations are GITIGNORED and must stay that way: the executable is
 # built from backend-src/ (CC BY-NC lineage) and the QNN libs come from the
@@ -63,12 +63,12 @@ Write-Output ("exe    {0,10:N0} bytes" -f (Get-Item $exe).Length)
 # It was left pointing at alpha.2 after the ABI 105 engine shipped (1.6.046),
 # and a plain run on 2026-09-28 put alpha.2 skels beside the ABI 105 engine:
 # FLUX.2 Klein 9B's first DiT graph died `dsp-rsp INVAL-PARAMS` + SIGABRT.
-# ../LocalDream/dit-engine-skel088: every skel with dit/088 (the rope q/k reorder, -25 % on Anima, byte-identical; ENGINE-PERF 2h). Wrapper: abi111, downloaded.
+# ../LocalDream/dit-engine-skel091: every skel with dit/088 + dit/091 (the rope q/k reorder, -25 % on Anima, byte-identical; ENGINE-PERF 2h). Wrapper: abi111, downloaded.
 # Before it: ../LocalDream/dit-engine-abi110-h3enc (CI 40950650774: abi110 + dit/079, H3's one-frame encode, ABI 110, wrapper only; skels are abi110's) is the CI build's layout: the
 # engine, its release zip and the v73-v81 skels built with it. ⚠ Until 1.6.202 this was dit-engine-abi105-a4, whose
 # skels were patched by hand as engines moved; dit/031 changes the skel side, so the folder moves with each engine now.
 $dit = if ($env:NM_DIT_ENGINE) { $env:NM_DIT_ENGINE } else {
-    Join-Path (Split-Path -Parent $root) "LocalDream\dit-engine-skel088"
+    Join-Path (Split-Path -Parent $root) "LocalDream\dit-engine-skel091"
 }
 $ditAssets = Join-Path $root "app\src\main\assets\ditlibs"
 $ditSo = Join-Path $dit "lib\arm64-v8a\libdit_engine.so"

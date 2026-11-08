@@ -1,0 +1,27 @@
+--- a/src/ggml-hexagon/htp/cpy-ops.c
++++ b/src/ggml-hexagon/htp/cpy-ops.c
+@@ -180,10 +180,12 @@
+ static bool cpy_is_interleave2_f32(const struct htp_tensor * src, const struct htp_tensor * dst) {
+     const uint64_t half = src->ne[1];
+     return src->type == HTP_TYPE_F32 && dst->type == HTP_TYPE_F32 &&
+-           src->ne[0] == 2u && src->ne[3] == 1u && half > 0u &&
+-           dst->ne[0] == 2u && dst->ne[1] == src->ne[1] && dst->ne[2] == src->ne[2] && dst->ne[3] == 1u &&
++           src->ne[0] == 2u && half > 0u &&
++           dst->ne[0] == 2u && dst->ne[1] == src->ne[1] && dst->ne[2] == src->ne[2] && dst->ne[3] == src->ne[3] &&
+            src->nb[0] == half * sizeof(float) && src->nb[1] == sizeof(float) && src->nb[2] == 2u * half * sizeof(float) &&
+-           dst->nb[0] == sizeof(float) && dst->nb[1] == 2u * sizeof(float) && dst->nb[2] == 2u * half * sizeof(float);
++           dst->nb[0] == sizeof(float) && dst->nb[1] == 2u * sizeof(float) && dst->nb[2] == 2u * half * sizeof(float) &&
++           // nightmare (dit/091): MOSS keeps its heads in a fourth dim ([2, D/2, heads, tokens]): still packed rows.
++           (src->ne[3] == 1u || (src->nb[3] == src->ne[2] * src->nb[2] && dst->nb[3] == dst->ne[2] * dst->nb[2]));
+ }
+ 
+ #define cpy_preamble                              \
+@@ -469,7 +471,7 @@
+                 .src  = (const float *) src0->data,
+                 .dst  = (float *) dst->data,
+                 .half = ne01,
+-                .rows = ne02,
++                .rows = ne02 * ne03,
+             };
+             work_queue_run(octx->ctx->work_queue, cpy_thread_interleave2_f32, (void *) &il, octx->n_threads);
+         }

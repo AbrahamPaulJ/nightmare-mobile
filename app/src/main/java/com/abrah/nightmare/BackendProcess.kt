@@ -965,7 +965,7 @@ object BackendProcess {
                         // else about a diffusion launch is skipped.
                         add("--upscaler_mode")
                     } else {
-                        addAll(modelLaunchArgs(ModelCatalog.backendTypeOf(modelId), model))
+                        addAll(modelLaunchArgs(ModelCatalog.backendTypeOf(modelId), ModelCatalog.byId(modelId)?.launchDir(model) ?: model))
                     }
                     // ⭐ Always the runtime dir. ⚠ It used to be the NATIVE
                     // dir for DiT types (upstream BackendService's shape),
@@ -1057,6 +1057,8 @@ object BackendProcess {
                         // ⭐⭐ …unless the GPU takes it ([DitGpu]): there, and wherever the person turned it on, a
                         // measured model renders on the Adreno with `dit/080`'s cuts and the tiny decoder (backend 052).
                         if (!diagnosing) putAll(DitGpu.launchEnv(context, spec))
+                        // ⭐ A model's own flow shift ([ModelSpec.flowShift]).
+                        spec?.flowShift?.let { put("NM_DIT_FLOW_SHIFT", it) }
 
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }

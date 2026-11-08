@@ -145,6 +145,11 @@ Z-Image Turbo
     https://huggingface.co/leejet/Z-Image-Turbo-GGUF
     Apache 2.0. Downloaded by the app at the user's request; not included here.
 
+NitroFusion 2
+    ChenDY; a 1-2 step model built on Z-Image Turbo
+    https://huggingface.co/ChenDY/NitroFusion2
+    Apache 2.0. Downloaded by the app at the user's request; not included here.
+
 Qwen3-4B text encoder, DiT VAEs
     Converted for stable-diffusion.cpp by zhiyuanasad
     https://huggingface.co/zhiyuanasad/flux2_klein_adreno
@@ -262,6 +267,12 @@ MOSS-Image (SFT and Base)
     https://huggingface.co/AbrahamPJ/nightmare-moss-image
     Apache 2.0. Downloaded by the app at the user's request; not included here.
     Its VAE is the FLUX.2 VAE.
+
+MOSS-Image SFT 4-step LoRA
+    akhaliq
+    https://huggingface.co/akhaliq/MOSS-Image-SFT-4-steps
+    Apache 2.0. Downloaded by the app at the user's request and applied at
+    run time, unmodified; not included here.
 
 MOSS-Image 8-step DMD LoRAs (SFT and Base)
     lodestones

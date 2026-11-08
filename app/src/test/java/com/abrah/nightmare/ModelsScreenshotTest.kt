@@ -436,6 +436,11 @@ open class ModelsScreenshotTest {
     @Config(qualifiers = "w360dp-h780dp-xxhdpi")
     fun historyNarrow() = history(name = "history-360", selected = emptySet())
 
+    /** ⭐ Sideways, two panes (GitHub #95: the picture was a strip, the title under the buttons). */
+    @Test
+    @Config(qualifiers = "w780dp-h360dp-xxhdpi")
+    fun historySideways() = history(name = "history-landscape", selected = emptySet())
+
     /** ⭐ History — the big preview over the grid (DreamUI's layout, 2026-09-17). */
     @Test
     fun history() = history(name = "history", selected = emptySet())
