@@ -1,0 +1,11 @@
+--- a/src/ggml-hexagon/CMakeLists.txt
++++ b/src/ggml-hexagon/CMakeLists.txt
+@@ -80,6 +80,8 @@ build_htp_skel(v73)
+ build_htp_skel(v75)
+ build_htp_skel(v79)
+ build_htp_skel(v81)
++# nightmare (dit/033): the 8 Elite Gen 6's v85, built by name like v73/v75.
++build_htp_skel(v85)
+ 
+ # Install Hexagon skels required at runtime
+ install(FILES ${HTP_SKELS} TYPE LIB)
