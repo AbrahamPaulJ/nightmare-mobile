@@ -1,0 +1,19 @@
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -177,6 +177,16 @@
+   if (params->backend && params->backend[0]) sd_params.backend = params->backend;
+   if (params->params_backend && params->params_backend[0])
+     sd_params.params_backend = params->params_backend;
++  // nightmare (dit/092): FLUX.1 from the environment, so the ABI and the backend's own-files launch stay as they are: its
++  // package's `llm.gguf` is the T5, and CLIP-L's path arrives here. T5 and CLIP-L stay on the CPU from a memory map, the DiT
++  // streams: the configuration measured with sd-cli (S25, 1024² 20 steps 425 s, docs/IMPORTS.md).
++  if (const char *clip_l = std::getenv("NM_DIT_CLIP_L"); clip_l && clip_l[0]) {
++    sd_params.clip_l_path = clip_l;
++    sd_params.t5xxl_path = params->llm_path;
++    sd_params.llm_path = nullptr;
++    sd_params.enable_mmap = true;
++    sd_params.params_backend = "diffusion=disk";
++  }
+   // nightmare: a per-device GiB budget for weights and runner buffers, read
+   // from the environment so dit_ctx_params (the ABI) does not move. Below HTP
+   // v79 one fastrpc session maps ~3 GB, and FLUX.2 Klein 4B's 4.1 GB DiT,
