@@ -3759,6 +3759,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                     if (p.done == p.total) say("  ${p.phase} ${p.done}/${p.total}")
                 })
             }
+            // ⚠ The cached list Hires fix and Enlarge read: without this the install was invisible to them until a
+            // screen opened (the demo night, 2026-11-10).
+            UpscalerCatalog.refresh(ctx)
             say("  ok   installed ${spec.file(ctx).length()} B at ${spec.file(ctx).absolutePath}")
         } catch (e: Throwable) {
             // ⚠⚠ The CLASS as well as the message. The first failure of this

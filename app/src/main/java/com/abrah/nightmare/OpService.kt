@@ -16,6 +16,24 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
+ * ⭐ What a process that never opens a screen must load before it renders: [OpService] and the API's
+ * service (`api.ApiService`) both call this, so the two lists cannot drift.
+ *
+ * ⚠ The headless path never goes through MainActivity, so it must load the selection itself, or a scripted op
+ * renders against V1_MODEL; the settings held in memory (a Wan clip's launch key reads `Prefs.wanStream`, GitHub
+ * #59); ⚠ and the installed lists, which only the screens refreshed: an API render after a process start saw no
+ * upscaler, so Hires fix was skipped with "no upscaler installed" while two were installed (the demo night,
+ * 2026-11-10, LIST-N4 item 37).
+ */
+internal fun loadHeadlessState(ctx: android.content.Context) {
+    SelectedModel.load(ctx)
+    DeviceProbe.loadHmxVerdict(ctx)
+    Prefs.load(ctx)
+    UpscalerCatalog.refresh(ctx)
+    ModelCatalog.refreshInstalled(ctx)
+}
+
+/**
  * ⭐ Runs a harness op with NOTHING ON SCREEN.
  *
  * ```
@@ -69,13 +87,7 @@ class OpService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         CrashReport.installHandler(this)
-        // ⚠ The headless path never goes through MainActivity, so it must load
-        // the selection itself -- otherwise a scripted op renders against
-        // V1_MODEL while the UI and the backend use whatever the user picked.
-        SelectedModel.load(this)
-        DeviceProbe.loadHmxVerdict(this)
-        // ⚠ And the settings held in memory: a Wan clip's launch key reads `Prefs.wanStream` (GitHub #59).
-        Prefs.load(this)
+        loadHeadlessState(this)
         // ⚠⚠ FIRST, before any early return. A service started with
         // startForegroundService() that does not call startForeground() within
         // ~5 s is killed with ForegroundServiceDidNotStartInTimeException --

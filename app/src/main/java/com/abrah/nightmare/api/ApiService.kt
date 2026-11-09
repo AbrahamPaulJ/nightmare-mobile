@@ -41,9 +41,7 @@ class ApiService : Service() {
         if (server == null) {
             // ⚠ STICKY: after a process death this restarts with no activity, so it loads what OpService loads
             // (the HMX verdict, `Prefs.wanStream`, the mirror, the CivitAI key) or API renders run on defaults.
-            SelectedModel.load(this)
-            DeviceProbe.loadHmxVerdict(this)
-            Prefs.load(this)
+            com.abrah.nightmare.loadHeadlessState(this)
             val api = NightmareApi(applicationContext)
             server = MiniHttp(
                 ApiSettings.PORT, api::handle, admit = api::authorized,
