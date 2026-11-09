@@ -118,9 +118,11 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
                     .put("inputs", JSONObject(n.inputs.mapValues { it.value.node }))
                     .put("params", JSONObject(t?.let { applyDefaults(it.widgets, n) } ?: n.params))
                     .put("widgets", JSONArray(t?.widgets.orEmpty().map { w ->
+                        // ⚠ The range the API takes, so a frame's says it may hang off the photo (an outpaint).
+                        val (lo, hi) = apiRange(t!!, w)
                         JSONObject().put("name", w.name).put("type", w.type)
                             .put("default", w.default ?: JSONObject.NULL)
-                            .put("min", w.min ?: JSONObject.NULL).put("max", w.max ?: JSONObject.NULL)
+                            .put("min", lo ?: JSONObject.NULL).put("max", hi ?: JSONObject.NULL)
                             .put("options", w.options?.let { JSONArray(it) } ?: JSONObject.NULL)
                     })),
             )

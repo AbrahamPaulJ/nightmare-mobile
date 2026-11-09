@@ -220,6 +220,22 @@ class ApiTest {
         assertTrue(refused("""{"flow":"x","videos":{"image":"AAAA"}}""").contains("not a video node"))
     }
 
+    /**
+     * ⭐ An outpaint over the API: a frame hanging off the photo, as the crop editor writes it (LIST-N4 item 41,
+     * refused as "must be within 0.0..1.0" on the demo night, 2026-11-10). Nonsense past the editor's guard is
+     * still named, and a plain 0..1 knob keeps its own range.
+     */
+    @Test
+    fun aFrameMayHangOffThePhoto() {
+        val g = apply("""{"flow":"x","params":{"generate":{"x":"-0.2","y":"-0.2","w":"1.4","h":"1.4"}}}""")
+        assertEquals("-0.2", g.byId["generate"]!!.params["x"])
+        assertEquals("1.4", g.byId["generate"]!!.params["w"])
+        assertTrue(refused("""{"flow":"x","params":{"generate":{"w":"0"}}}""").contains("\"w\""))
+        assertTrue(refused("""{"flow":"x","params":{"generate":{"x":"1"}}}""").contains("\"x\""))
+        assertTrue(refused("""{"flow":"x","params":{"generate":{"x":"NaN"}}}""").contains("\"x\""))
+        assertTrue(refused("""{"flow":"x","params":{"generate":{"denoise":"1.5"}}}""").contains("0.0..1.0"))
+    }
+
     @Test
     fun everyMistakeIsNamedBeforeAnythingRuns() {
         assertTrue(refused("""{"flow":"x","params":{"nope":{"seed":"1"}}}""").contains("nope"))

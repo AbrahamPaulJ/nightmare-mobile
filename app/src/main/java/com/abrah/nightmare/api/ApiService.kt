@@ -45,7 +45,10 @@ class ApiService : Service() {
             DeviceProbe.loadHmxVerdict(this)
             Prefs.load(this)
             val api = NightmareApi(applicationContext)
-            server = MiniHttp(ApiSettings.PORT, api::handle, admit = api::authorized).also {
+            server = MiniHttp(
+                ApiSettings.PORT, api::handle, admit = api::authorized,
+                onDrop = { why -> android.util.Log.w("NmApi", "dropped: $why") },
+            ).also {
                 try {
                     it.start()
                 } catch (e: Exception) {

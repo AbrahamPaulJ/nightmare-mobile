@@ -589,6 +589,47 @@ class ExecutorTest {
         assertEquals(1, second.ran)
     }
 
+    /**
+     * ⭐ A node that skipped its step on something the params do not hold (no upscaler installed) is not served
+     * again: the install changes nothing in the key, and the cached picture came back with no warning (LIST-N4
+     * item 37, 2026-11-10). It runs again; a node that did not skip still caches.
+     */
+    @Test
+    fun aNodeThatSkippedOnAMissingInstallIsNotCached() = runBlocking {
+        var runs = 0
+        var installed = false
+        val hires = object : NodeType {
+            override val name = "hires"
+            override val version = "1"
+            override val category = "image"
+            override val inputs = listOf(Port("image", "IMAGE"))
+            override val outputs = listOf(Port("image", "IMAGE"))
+            override fun contextKey(node: Node) = null
+            override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
+                runs++
+                if (!installed) ctx.dontCache()
+                return inputs.getValue("image")
+            }
+        }
+        val g = Graph(
+            listOf(
+                text(),
+                sampler("s", 42),
+                decoder("d", "s"),
+                Node("hires", "hires", inputs = sources("image" to "d")),
+            )
+        )
+        val ex = Executor(FakeHost(), types = NODE_TYPES + ("hires" to hires))
+        ex.run(g)
+        installed = true
+        val second = ex.run(g)
+        assertEquals("the skipped run was served from the cache", 2, runs)
+        assertEquals(3, second.cached)
+        val third = ex.run(g)
+        assertEquals("a run that did its step should cache", 2, runs)
+        assertEquals(4, third.cached)
+    }
+
     // --- multi-output wiring ------------------------------------------------
 
     /**

@@ -652,7 +652,7 @@ object WanVideoNode : NodeType {
         val tagged = (if (takesLoras) pos.tags + neg.tags else emptyList()).mapNotNull { t ->
             PromptLoras.resolve(t.name, installed)?.let { File(loraDir, it).absolutePath to t.strength }
                 ?: run {
-                    ctx.warn(ctx.text(R.string.run_lora_tag_missing, "LoRA \"%1\$s\" from the prompt is not installed. Skipped", t.name))
+                    ctx.dontCache(); ctx.warn(ctx.text(R.string.run_lora_tag_missing, "LoRA \"%1\$s\" from the prompt is not installed. Skipped", t.name))
                     null
                 }
         }

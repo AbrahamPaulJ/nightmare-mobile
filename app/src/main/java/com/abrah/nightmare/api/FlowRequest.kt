@@ -9,6 +9,7 @@ import com.abrah.nightmare.PromptNode
 import com.abrah.nightmare.Widget
 import com.abrah.nightmare.modelRecipeRetarget
 import com.abrah.nightmare.retargetedGraph
+import com.abrah.nightmare.canvas.CropRect
 import org.json.JSONObject
 
 /** A refusal with its HTTP status — said to the caller as `{"error": message}`. */
@@ -141,6 +142,24 @@ fun applyOverrides(
     return g
 }
 
+private val FRAME_KEYS = setOf("x", "y", "w", "h")
+
+/**
+ * ⭐ The range the API takes for widget [w] of [t]: its own, except a FRAME's `x`/`y`/`w`/`h`.
+ *
+ * ⚠ Those are declared 0..1, but a frame may hang off the photo (`CropRect`): an outpaint is `x` below 0 and
+ * `w` above 1, which the crop editor writes and the 0..1 range refused (LIST-N4 item 41, the demo's outpaint,
+ * 2026-11-10). So the API takes the guard `cropRectOf` clamps to: a span of [CropRect.MIN]..[CropRect.MAX_SPAN],
+ * a corner from [-MAX_SPAN] to 1 - MIN. The editor's tighter √2 floor needs the photo's size, which is not
+ * known here.
+ */
+internal fun apiRange(t: NodeType, w: Widget): Pair<Double?, Double?> {
+    if (w.name !in FRAME_KEYS || !FRAME_KEYS.all { k -> t.widgets.any { it.name == k } }) return w.min to w.max
+    val min = CropRect.MIN.toDouble()
+    val span = CropRect.MAX_SPAN.toDouble()
+    return if (w.name == "w" || w.name == "h") min to span else -span to 1.0 - min
+}
+
 /** [v] for widget [k] of [t], or a 400 naming what is wrong. */
 private fun checked(t: NodeType, id: String, k: String, v: String): String {
     val w: Widget = t.widgets.firstOrNull { it.name == k }
@@ -154,8 +173,9 @@ private fun checked(t: NodeType, id: String, k: String, v: String): String {
     if (w.type == "int" || w.type == "float") {
         val d = v.toDoubleOrNull() ?: throw ApiError(400, "\"$k\" on \"$id\" must be a number")
         if (w.type == "int" && d != Math.floor(d)) throw ApiError(400, "\"$k\" on \"$id\" must be a whole number")
-        if ((w.min != null && d < w.min!!) || (w.max != null && d > w.max!!)) {
-            throw ApiError(400, "\"$k\" on \"$id\" must be within ${w.min ?: "…"}..${w.max ?: "…"}")
+        val (lo, hi) = apiRange(t, w)
+        if (!d.isFinite() || (lo != null && d < lo) || (hi != null && d > hi)) {
+            throw ApiError(400, "\"$k\" on \"$id\" must be within ${lo ?: "…"}..${hi ?: "…"}")
         }
         return if (w.type == "int") d.toLong().toString() else v
     }

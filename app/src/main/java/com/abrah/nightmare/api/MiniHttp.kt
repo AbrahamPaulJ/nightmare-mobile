@@ -34,6 +34,11 @@ class MiniHttp(
     private val allow: (InetAddress) -> Boolean = ::isLocalPeer,
     /** Asked with the body still EMPTY. Null = every body is read (the tests' plain servers). */
     private val admit: ((Request) -> Boolean)? = null,
+    /**
+     * ⭐ A connection closed with no answer, and why. ⚠ Added for LIST-N4 item 38: `/run` dropped (RemoteDisconnected
+     * after 0 to 26 s) while the render went on, and these paths closed the socket without a word.
+     */
+    private val onDrop: (String) -> Unit = {},
 ) {
     class Request(
         val method: String,
@@ -159,6 +164,7 @@ class MiniHttp(
                 runCatching { res.json(e.code, err(e.message ?: "bad request")) }
                 return
             } catch (e: IOException) {
+                onDrop("request not read: ${e.javaClass.simpleName} ${e.message}")
                 return
             } catch (e: Throwable) {
                 // ⚠⚠ Throwable, here and below: an Error escaping a pool thread (no uncaught handler) kills the WHOLE
@@ -171,6 +177,7 @@ class MiniHttp(
                 if (!res.started) res.json(500, err("no response"))
             } catch (e: Throwable) {
                 if (!res.started) runCatching { res.json(500, err(e.message ?: e.javaClass.simpleName)) }
+                else onDrop("${req.method} ${req.path} broke after its answer started: ${e.javaClass.simpleName} ${e.message}")
             }
         }
     }

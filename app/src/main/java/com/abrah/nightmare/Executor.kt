@@ -377,7 +377,20 @@ class NodeCtx(
      * plays each part as it lands, joined up to the latest (the user's ask, 2026-10-31). The node's result replaces it.
      */
     val onClipSoFar: (Value.Video) -> Unit = {},
-)
+) {
+    /**
+     * ⭐ Set by [dontCache]: this run's result must not be served again for the same params.
+     *
+     * ⚠ For a node that SKIPPED its step on something the params do not hold: a download not installed, a load that
+     * failed. The cache key is params and inputs, so after the upscaler was installed the same request came back
+     * in 46 ms with the un-hired picture and no warning (LIST-N4 item 37, S25, 1.6.287, 2026-11-10).
+     * ⚠ Not every warning: the heat notes are on every hot run and would turn the cache off on a warm phone.
+     */
+    @Volatile var uncacheable = false
+        private set
+
+    fun dontCache() { uncacheable = true }
+}
 
 /** App resources on-device; the exact English fallback keeps headless JVM graph tests context-free. */
 internal fun NodeCtx.text(
@@ -3111,7 +3124,7 @@ class Executor(
                             type.runPorts(ctx, node.copy(params = params), inputs)
                         }
                     } else type.runPorts(ctx, node.copy(params = params), inputs)
-                    if (type.cacheable) {
+                    if (type.cacheable && !ctx.uncacheable) {
                         produced.forEach { (portName, pv) -> cache.put(portKey(key, portName), pv) }
                     }
                     values[node.id] = produced.toMutableMap()

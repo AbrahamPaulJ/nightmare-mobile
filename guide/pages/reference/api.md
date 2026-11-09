@@ -73,7 +73,9 @@ What you can set:
 - **`prompt`**, **`negative`**: every prompt node.
 - **`seed`**, **`steps`**, **`cfg`**, **`denoise`**, **`scheduler`**, **`width`**, **`height`**,
   **`aspect`**, **`loras`**: every generate node that has the setting.
-- **`params`**: any setting of any node: `{"generate": {"controlnet": "canny"}}`.
+- **`params`**: any setting of any node: `{"generate": {"controlnet": "canny"}}`. A frame is `x`, `y`, `w`, `h`
+  as fractions of the picture, and may hang off it: `{"inpaint": {"x": "-0.2", "y": "-0.2", "w": "1.4", "h": "1.4"}}`
+  outpaints a border all round (the editor stops at about 1.41 times the picture per side).
 - **`images`**: a picture for an image node, base64: `{"image": "<base64>"}`.
 - **`videos`**: a clip for a video node, base64 MP4: `{"clip": "<base64>"}` (Motion transfer's driving video, `flow: "motion"`).
 

@@ -116,3 +116,4 @@ icon-source.png
 # video it was cut from is three times the size for no benefit in a README.
 media/*.mp4
 media/*.gif
+__pycache__/
