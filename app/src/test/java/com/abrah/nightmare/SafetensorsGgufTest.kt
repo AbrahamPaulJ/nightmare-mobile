@@ -245,4 +245,42 @@ class SafetensorsGgufTest {
         assertEquals(false, MossGguf.converts(head("F8_E4M3")))
         assertEquals(false, MossGguf.converts(head("I8")))
     }
+
+    /** ⚠ The real fp8-scaled layout (Realism By Stable Yogi Moss v1.5): half BF16, half fp8. It stays a safetensors. */
+    @Test
+    fun aMixedFp8ScaledMossDoesNotConvert() {
+        fun t(dtype: String, vararg shape: Int) =
+            JSONObject().put("dtype", dtype).put("shape", JSONArray(shape.toList())).put("data_offsets", JSONArray(listOf(0, 1)))
+        val mixed = JSONObject()
+            .put("layers.0.norm.weight", t("BF16", 96, 64))
+            .put("layers.0.proj.qkv.weight", t("F8_E4M3", 96, 64))
+            .put("layers.0.proj.qkv.weight_scale", t("F32"))
+            .put("layers.0.proj.qkv.comfy_quant", t("U8", 27))
+            .toString()
+        assertEquals(false, MossGguf.converts(mixed))
+    }
+
+    /**
+     * ⭐ The engine's `Linear` declares a scale as one dimension, and refused `[out, 1]` at launch (Saved #7903). A
+     * `comfy_quant` is U8 and stops the writer (Saved #7822). The scale's values must come through untouched.
+     */
+    @Test
+    fun aMossConversionFlattensARowScaleAndDropsTheSettings() {
+        val src = safetensors(listOf(
+            t("video_embedder.weight", 64, 32),
+            t("shared_block_modulation.weight", 64, 64),
+            t("layers.0.proj.q.weight", 3, 64),
+            t("layers.0.proj.q.weight_scale", 3, 1),
+        ))
+        val (plan, _) = SafetensorsGguf.plan(src, MossGguf.rule)
+        val scale = plan.single { it.name == "layers.0.proj.q.weight_scale" }
+        assertEquals(listOf(3L), scale.outShape.toList())
+        assertEquals(SafetensorsGguf.F32, scale.type)
+        assertEquals("a scale writes as many bytes as it reads", 3L * 4, scale.outBytes)
+        val out = tmp.newFile("scale.gguf")
+        SafetensorsGguf.convert(src, out, MossGguf.rule, { _, _ -> }, { false })
+        assertTrue(out.length() > 0)
+        assertEquals("the settings tensor is dropped by name", false, MossGguf.rule.keep("layers.0.proj.q.weight_scale").not())
+        assertEquals(false, MossGguf.rule.keep("layers.0.proj.q.comfy_quant"))
+    }
 }

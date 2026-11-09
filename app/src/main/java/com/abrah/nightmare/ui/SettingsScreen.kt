@@ -662,6 +662,13 @@ fun SettingsScreen(
                             RunSoundRow(stringResource(R.string.run_sound_failed), Prefs.KEY_RUN_SOUND_FAILED)
                         }
                     }
+                    // ⭐ An 8 Gen 1 asks its NPU again ([Prefs.v69Npu]): a trial, only on such a chip.
+                    if (com.abrah.nightmare.BackendProcess.belowDitNpu(com.abrah.nightmare.DeviceProbe.caps())) StudioCard {
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.dit_v69_npu), stringResource(R.string.dit_v69_npu_hint),
+                            lowRam.v69Npu, { onLowRam(Prefs.KEY_V69_NPU, it) },
+                        )
+                    }
                     // ⭐ The DiT models on the GPU ([com.abrah.nightmare.DitGpu], the user 2026-10-31): only where an
                     // OpenCL driver exists, the one place the route can go.
                     if (com.abrah.nightmare.DitGpu.hasOpenCl) StudioCard {

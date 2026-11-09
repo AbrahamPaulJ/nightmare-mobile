@@ -1416,10 +1416,12 @@ object VaeDecodeNode : NodeType {
  * 8 Gen 3 refuses is not known. IP-Adapter's head runs on the CPU and LoRA rides in the UNet, so
  * neither needs that space.
  */
-internal fun npuSpaceRefused(body: String, log: Iterable<String>): String? {
+internal fun npuSpaceRefused(body: String, log: Iterable<String>, learn: () -> String? = { null }): String? {
     // ⭐ The DiT engine's form of the same wall: the DSP would not map more weights (the first 8 Gen 3
     // report, OnePlus SM8650, 2026-10-10 — `ggml-hex: HTP0 buffer mapping failed`).
     if ("DiT generation failed" in body && log.any { "buffer mapping failed" in it || "fastrpc_mmap failed" in it }) {
+        // ⭐ Below v79 the phone learns its own ceiling (GitHub #97), so the next Run relaunches under it.
+        learn()?.let { return "this phone's NPU could not map the model's weights. It now runs with a smaller budget ($it GiB), a little slower: press Run again [${body.take(80)}]" }
         return "this phone's NPU could not map the model's weights. Try a smaller canvas, and please " +
             "share this report (support below the 8 Elite is new) [${body.take(80)}]"
     }
@@ -1456,7 +1458,7 @@ class OpFailure(op: String, val code: Int, val body: String) :
  * engine left a real error, that error leads.
  */
 internal fun explainOpFailure(code: Int, body: String): String {
-    npuSpaceRefused(body, BackendProcess.newestLaunch())?.let { return it }
+    npuSpaceRefused(body, BackendProcess.newestLaunch(), BackendProcess::learnDitMapLimit)?.let { return it }
     if (code != -1) return body
     // ⚠⚠ A backend that just died is still "running" for a few ms after its
     // socket closed ([BackendProcess.awaitExit]); deciding at that instant is

@@ -106,4 +106,33 @@ class SwapFlowTest {
         vm.setVideoModel(video().id, com.abrah.nightmare.npu.WanA14Node.name)
         assertEquals("Wan 2.2 14B animates a picture only: one flow, so no Swap", 1, vm.swapFlows()!!.size)
     }
+
+    /** ⭐ Use on the model the node already is: a cleared or leftover opening prompt loads, the person's own text stays. */
+    @Test
+    fun useOnTheSameModelFillsABlankPromptButNeverThePersonsText() {
+        opened(com.abrah.nightmare.canvas.T2V)
+        vm.setVideoModel(video().id, h3)
+        vm.editCanvas { s -> s.setParams(prompt().id, mapOf("prompt" to "")) }
+        vm.setVideoModel(video().id, h3)
+        assertEquals("blank", com.abrah.nightmare.npu.VideoPrompts.H3, prompt().params["prompt"])
+
+        vm.editCanvas { s -> s.setParams(prompt().id, mapOf("prompt" to com.abrah.nightmare.npu.VideoPrompts.WAN_T2V)) }
+        vm.setVideoModel(video().id, h3)
+        assertEquals("another model's opening prompt", com.abrah.nightmare.npu.VideoPrompts.H3, prompt().params["prompt"])
+
+        vm.editCanvas { s -> s.setParams(prompt().id, mapOf("prompt" to "a cat says hello")) }
+        vm.setVideoModel(video().id, h3)
+        assertEquals("the person's own", "a cat says hello", prompt().params["prompt"])
+    }
+
+    /** ⚠ `forNode`, not `forType`: the 14B's text to video keeps its own opening prompt on a same-model Use. */
+    @Test
+    fun useOnThe14BKeepsItsTextToVideoPrompt() {
+        opened(com.abrah.nightmare.canvas.T2V14)
+        val a14 = com.abrah.nightmare.npu.WanA14Node.name
+        val video = g().nodes.single { it.type == a14 }
+        val before = g().nodes.first { it.id == video.inputs["prompt"]?.node }.params["prompt"]
+        vm.setVideoModel(video.id, a14)
+        assertEquals(before, g().nodes.first { it.id == video.inputs["prompt"]?.node }.params["prompt"])
+    }
 }

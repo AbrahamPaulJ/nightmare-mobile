@@ -1,0 +1,58 @@
+--- a/src/model/adapter/lora.hpp
++++ b/src/model/adapter/lora.hpp
+@@ -135,6 +135,55 @@
+             return;
+         }
+         tensor_preprocessed = true;
++        // nightmare (dit/093): MOSS-Image's attention projection is `proj.q/k/v` apart in the release weights and fused as
++        // `proj.qkv` in Comfy-Org's layout, which most imports use. A LoRA trained on the first (dmd8, every community
++        // speed-up) left its 9 q/k/v tensors per block unbound on the second: 378 of 756 unused on a 42-block import, with
++        // only a log line to say so. The engine already joins `name`, `name.1`, `name.2` along the output axis in both its
++        // run-time and merged paths, as for SD3's CLIP-G above, so they only need renaming. All three must be there:
++        // the concat would otherwise be short of the fused weight.
++        {
++            bool fused_qkv = false;
++            for (const auto& name : model_tensor_names) {
++                if (contains(name, "layers.0.proj.qkv.weight")) {
++                    fused_qkv = true;
++                    break;
++                }
++            }
++            if (fused_qkv) {
++                static const std::vector<std::pair<std::string, std::string>> parts = {
++                    {".proj.q.weight", ".proj.qkv.weight"},
++                    {".proj.k.weight", ".proj.qkv.weight.1"},
++                    {".proj.v.weight", ".proj.qkv.weight.2"},
++                };
++                std::unordered_map<std::string, ggml_tensor*> joined;
++                size_t moved = 0;
++                for (auto& [old_name, tensor] : lora_tensors) {
++                    std::string new_name = old_name;
++                    for (const auto& part : parts) {
++                        size_t pos = old_name.find(part.first);
++                        if (pos == std::string::npos) {
++                            continue;
++                        }
++                        bool whole = true;
++                        for (const auto& sibling : parts) {
++                            std::string other = old_name;
++                            other.replace(pos, part.first.size(), sibling.first);
++                            whole = whole && lora_tensors.find(other) != lora_tensors.end();
++                        }
++                        if (whole) {
++                            new_name.replace(pos, part.first.size(), part.second);
++                            moved++;
++                        }
++                        break;
++                    }
++                    joined[new_name] = tensor;
++                }
++                lora_tensors = std::move(joined);
++                if (moved > 0) {
++                    LOG_INFO("LoRA q/k/v joined onto a fused proj.qkv: %zu tensors, lora_file_path = %s", moved, file_path.c_str());
++                }
++            }
++        }
+         // I really hate these hardcoded processes.
+         if (model_tensor_names.find("cond_stage_model.1.transformer.text_model.encoder.layers.0.self_attn.in_proj.weight") != model_tensor_names.end()) {
+             std::unordered_map<std::string, ggml_tensor*> new_lora_tensors;

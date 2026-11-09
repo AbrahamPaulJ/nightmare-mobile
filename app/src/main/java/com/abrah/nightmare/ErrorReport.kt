@@ -270,7 +270,9 @@ object ErrorReport {
                 // ⭐ The engine's own reading of the NPU, when a DiT launch has printed it ([BackendProcess.engineNpu]).
                 BackendProcess.engineNpu.let { e ->
                     if (e.isEmpty()) "" else " · engine says ${listOfNotNull(e["arch"], e["hwinfo"], e["hmx"]).joinToString(", ")}"
-                },
+                } +
+                // ⭐ The budget this phone's NPU taught us (GitHub #97), so a report shows why its DiT streams.
+                (DeviceProbe.ditMapCap?.let { " · NPU budget learned: $it GiB" } ?: ""),
             ramTotal = DeviceProbe.totalRamBytes(),
             ramAvailable = availableRamBytes(),
             storageFree = runCatching { ModelStorage.root(context).usableSpace }.getOrDefault(0L),

@@ -135,6 +135,9 @@ object CustomModels {
     /** ⭐ Ours: an imported FLUX.3 Image Klein checkpoint ([Family.FLUX3]), the tester's ask (TG #7254, 2026-10-27). */
     const val FLUX3_MARK = "FLUX3"
 
+    /** ⭐ Ours: an imported FLUX.1 checkpoint ([Family.FLUX1]); it read as Klein 4B before 1.6.285. */
+    const val FLUX1_MARK = "FLUX1"
+
     /** ⭐ Ours: an imported Fibo 2.0 checkpoint ([Family.FIBO2]); a Fibo GGUF read as Z-Image before 1.6.249. */
     const val FIBO2_MARK = "FIBO2"
 
@@ -363,6 +366,7 @@ object CustomModels {
             Family.ANIMA_DIT.takeIf { File(dir, ANIMA_DIT_MARK).isFile },
             Family.MOSS.takeIf { File(dir, MOSS_MARK).isFile },
             Family.FLUX3.takeIf { File(dir, FLUX3_MARK).isFile },
+            Family.FLUX1.takeIf { File(dir, FLUX1_MARK).isFile },
             Family.FIBO2.takeIf { File(dir, FIBO2_MARK).isFile },
         )
         // ⭐⭐⭐ **A DiT folder pushed over adb has no marker, and is a model
@@ -473,6 +477,8 @@ object CustomModels {
         Family.IDEOGRAM -> Defaults("euler", 8, 1.0)
         // FLUX.3 Image Klein, the distilled model: 16 steps, no CFG (upstream sd.cpp's docs/flux3.md).
         Family.FLUX3 -> Defaults("euler", 16, 1.0)
+        // FLUX.1 dev: 20 steps, CFG 1 (its guidance is the distilled 3.5). ⚠ A schnell or a turbo import lowers it by hand.
+        Family.FLUX1 -> Defaults("euler", 20, 1.0)
         // Fibo 2.0 Edit Turbo: 4 steps, CFG 1 (its recipe in upstream sd.cpp, `fibo2-edit-turbo.json`).
         Family.FIBO2 -> Defaults("euler", 4, 1.0)
     }
@@ -508,7 +514,7 @@ object CustomModels {
         // ⚠ Qwen and Krea 2 read their own directory only (backend 013/014);
         // a 9B's encoder is not the family's shared one.
         ownDitParts = klein9b || family == Family.QWEN21 || family == Family.KREA2 || family == Family.ANIMA_DIT ||
-            family == Family.MOSS || family == Family.FLUX3 || family == Family.FIBO2,
+            family == Family.MOSS || family == Family.FLUX3 || family == Family.FLUX1 || family == Family.FIBO2,
         // ⭐ An import that borrows an installed model's parts ([PARTS_FROM_FILE]): MOSS beside the built-in.
         partsFrom = runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull()?.takeIf { isValidName(it) },
         // ⭐ The donor's 8-step LoRA ([mossSpeedOn]), found through [ModelSpec.ownLoraFile].
@@ -559,6 +565,8 @@ object CustomModels {
             Family.IDEOGRAM -> ModelCatalog.KREA2
             // ⭐ An imported FLUX.3 ([FLUX3_MARK]): the built-in's launch (the engine reads FLUX.3 off the weights).
             Family.FLUX3 -> ModelCatalog.KREA2
+            // ⭐ An imported FLUX.1 ([FLUX1_MARK]): the built-in's launch (`dit/092`).
+            Family.FLUX1 -> ModelCatalog.KREA2
             // ⭐ An imported Fibo 2.0 ([FIBO2_MARK]): Krea 2's launch; backend 049 adds the vision tower.
             Family.FIBO2 -> ModelCatalog.KREA2
             // ⚠ Unreachable: nothing imports a video model ([ModelCatalog.WAN22]).
@@ -570,7 +578,7 @@ object CustomModels {
                 Family.SD15, Family.SD15_SWAP -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL, Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
-                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN, Family.MOSS, Family.IDEOGRAM, Family.FLUX3, Family.FIBO2 -> ModelCatalog.DIT_RES
+                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN, Family.MOSS, Family.IDEOGRAM, Family.FLUX3, Family.FLUX1, Family.FIBO2 -> ModelCatalog.DIT_RES
                 // ⚠ Unreachable, as for `backendType`; the catalogue entry carries [ModelCatalog.IRIS_SIZES].
                 Family.IRIS -> ModelCatalog.IRIS_SIZES.first()
             },
@@ -590,6 +598,8 @@ object CustomModels {
             Family.MOSS -> listOf(weights) + DIT_PARTS
             Family.IDEOGRAM -> listOf(weights) + DIT_PARTS + ModelCatalog.IDEOGRAM_LORA
             Family.FLUX3 -> listOf(weights) + DIT_PARTS
+            // ⭐ `llm.gguf` is its T5 (`dit/092`).
+            Family.FLUX1 -> listOf(weights) + DIT_PARTS + ModelCatalog.FLUX1_CLIP_L
             // ⭐ Its vision tower too: Fibo reads the picture through it (backend 049).
             Family.FIBO2 -> listOf(weights) + DIT_PARTS + "llm_vision.gguf"
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
@@ -626,6 +636,8 @@ object CustomModels {
             Family.IDEOGRAM -> false
             // ⚠ The same launch as Krea 2 (all=disk).
             Family.FLUX3 -> false
+            // ⚠ The same launch as Krea 2; the engine streams its DiT alone (`dit/092`).
+            Family.FLUX1 -> false
             // ⚠ The same launch as Krea 2 (all=disk).
             Family.FIBO2 -> false
             Family.WAN -> false
@@ -1147,6 +1159,7 @@ object CustomModels {
         Family.ANIMA_DIT -> ANIMA_DIT_MARK
         Family.MOSS -> MOSS_MARK
         Family.FLUX3 -> FLUX3_MARK
+        Family.FLUX1 -> FLUX1_MARK
         Family.FIBO2 -> FIBO2_MARK
         Family.QWEN21 -> "QWEN_IMAGE_2_1"
         else -> throw IllegalArgumentException("$family does not import a single weights file")
@@ -1236,6 +1249,9 @@ object CustomModels {
             // ⭐ FLUX.3 Image Klein (leejet's GGUF, read 2026-10-27; the engine detects it by `emb_in.image` +
             // `txt_mode_blocks.`, `dit/042`). ⚠ It ALSO has FLUX.2's `single_blocks.` and `txt_in.`: see [OUTRANKS].
             Family.FLUX3 to listOf("content_mode_blocks.", "txt_mode_blocks.", "emb_in.", "single_stream_modulations."),
+            // ⭐ FLUX.1 dev and schnell (city96's GGUF header, read 2026-11-09): `vector_in.` is CLIP's pooled input, which no
+            // FLUX.2 has. ⚠ It ALSO has FLUX.2's four names, and read as Klein 4B: see [OUTRANKS]. Chroma has no `vector_in.`.
+            Family.FLUX1 to listOf("vector_in.", "time_in."),
             // ⭐ Qwen Image 2.1 (leejet's GGUF and unsloth's FP8, read 2026-10-27): shared `modulation.N`, no `txt_mlp`.
             // ⚠ It ALSO has FLUX's `img_in.` and `txt_in.`, and read as Klein 9B until 1.6.249 ([OUTRANKS]).
             Family.QWEN21 to listOf("transformer_blocks.", "img_mlp.gate_up", "txt_in.text_norm", "attn.norm_q"),
@@ -1257,6 +1273,7 @@ object CustomModels {
      */
     private val OUTRANKS = mapOf(
         Family.FLUX3 to setOf(Family.FLUX2),
+        Family.FLUX1 to setOf(Family.FLUX2),
         Family.QWEN21 to setOf(Family.FLUX2),
         Family.FIBO2 to setOf(Family.ZIMAGE),
     )
@@ -1462,13 +1479,15 @@ object CustomModels {
         MOSS(Family.MOSS, "moss_image", true),
         /** ⭐ Borrows an installed FLUX.3's parts when it holds them whole ([partsLender]), else its own copy. */
         FLUX3(Family.FLUX3, "flux3_klein", true),
+        /** ⭐ Borrows an installed FLUX.1's T5, CLIP-L, VAE and tokenizer when it holds them whole ([partsLender]), else its own copy. */
+        FLUX1(Family.FLUX1, "flux1_dev", true),
         /** ⚠ Its OWN copy of Qwen's 6.6 GB of parts, always: Qwen's backend reads the model's folder only (013). */
         QWEN21(Family.QWEN21, "qwen_image_2_1_turbo", true),
         /** ⭐ Borrows an installed Fibo 2.0's encoder, vision tower, VAE and tokenizer, else its own copy (3.6 GB). */
         FIBO2(Family.FIBO2, "fibo2_edit_turbo", true);
 
         /** ⭐ Launched as `krea2`, whose backend reads a donor's folder ([ModelSpec.partsFrom], backend 040). */
-        val lends: Boolean get() = this == MOSS || this == FLUX3 || this == FIBO2
+        val lends: Boolean get() = this == MOSS || this == FLUX3 || this == FLUX1 || this == FIBO2
 
         companion object {
             /** When the file's names say nothing, the tab's family decides. */
@@ -1478,6 +1497,7 @@ object CustomModels {
                 Family.ANIMA_DIT -> ANIMA
                 Family.MOSS -> MOSS
                 Family.FLUX3 -> FLUX3
+                Family.FLUX1 -> FLUX1
                 Family.QWEN21 -> QWEN21
                 Family.FIBO2 -> FIBO2
                 else -> KLEIN_4B
@@ -1797,6 +1817,7 @@ object CustomModels {
         "anima" to Family.ANIMA_DIT,
         "moss" to Family.MOSS,
         "flux3" to Family.FLUX3,
+        "flux1" to Family.FLUX1,
         "qwen21" to Family.QWEN21,
         "fibo2" to Family.FIBO2,
     )

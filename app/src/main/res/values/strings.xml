@@ -600,9 +600,10 @@
     <string name="models_family_krea">About 9.5 GB. 12 GB phones and up, 8 Gen 3 or newer. On a 12 GB phone it renders in parts: about 3.5 to 4 minutes at 1024x1024. Text to image only; it does not edit. Use Wi-Fi.</string>
     <string name="models_family_animadit">About 3.2 GB. Downloads Anima\'s official 4.2 GB file and converts it on the phone, so it needs ~7.5 GB free while it installs. About 1 minute a picture at 1024², any size from 512. 8 Gen 1 or newer (on the 8 Gen 1 several minutes a picture). Not an edit model. Use Wi-Fi.</string>
     <string name="models_family_iris">About 5.8 GB. Downloads the official 6 GB file from speridlabs and converts it on the phone, so it needs ~10 GB free while it installs. About 2.5 minutes a picture at 1024x1024 on an 8 Elite. No VAE. Only the sizes it was trained at (about 1 MP each). 8 Gen 2 or newer. Text to image only. Use Wi-Fi.</string>
-    <string name="models_family_moss">About 10 GB. 8 Gen 3 or newer. A careful, detailed picture model with an 8-step speed-up applied every time. About 50 seconds at 512x512 and under 3 minutes at 1024x1024 on an 8 Elite. Text to image only. Use Wi-Fi.</string>
+    <string name="models_family_moss">About 10 GB. 8 Gen 3 or newer. A careful, detailed picture model with an 8-step speed-up applied every time. About 35 seconds at 512x512 and 2 minutes at 1024x1024; the 4-step one about 20 seconds and 1 minute on an 8 Elite. Text to image only. Use Wi-Fi.</string>
     <string name="models_family_ideogram">About 11.6 GB. 12 GB phones and up, 8 Elite or newer. Best at readable text in a picture: signs, posters, labels. An 8-step speed-up applied every time. About 5.5 minutes at 768x768 on an 8 Elite. Text to image only. Non-commercial use only (Ideogram\'s licence). Use Wi-Fi.</string>
     <string name="models_family_flux3">About 6.2 GB. 8 Gen 3 or newer. The newest picture model from Black Forest Labs: sharp detail and good prompt following, 16 steps. About 45 seconds at 512x512 and 2 minutes at 1024x1024 on an 8 Elite. Text to image only. Under the FLUX Kommunity License. Use Wi-Fi.</string>
+    <string name="models_family_flux1">About 10.8 GB. 12 GB phones and up, 8 Elite or newer. Black Forest Labs\' FLUX.1 dev: about 4 minutes at 512x512 and 6 minutes at 1024x1024, 20 steps. Text to image only. Non-commercial use only.</string>
     <string name="models_family_fibo2">About 8.4 GB. 8 Gen 3 or newer, 12 GB of RAM. Bria\'s Fibo 2.0 Edit: wire a picture in and say what to change, in 4 steps. It keeps the rest of the picture, and writes text on signs. With no picture it is a text to image model too: about a minute at 896x1600 on an 8 Elite. Non-commercial licence (Bria). Use Wi-Fi.</string>
     <string name="models_family_other">About 3.5 GB each, and ~7.5 GB free while it unpacks. Use Wi-Fi.</string>
     <string name="models_import_checkpoint">Import a checkpoint</string>
@@ -1397,6 +1398,8 @@
     <string name="heat_pause_hint">A video render waits between steps when the battery reaches 45 °C and carries on when it cools to 40 °C. Slower in a warm room, easier on the battery. Not for Neodragon, whose clips take seconds.</string>
     <string name="gpu_title">GPU</string>
     <string name="gpu_note">For phones whose NPU cannot run the DiT models, and for anyone who wants to try the graphics chip.</string>
+    <string name="dit_v69_npu">Try the NPU for DiT models (test)</string>
+    <string name="dit_v69_npu_hint">On this chip the NPU has only ever hung on these models, so they run on the GPU or CPU. This tries it again. If a render stops moving for 5 minutes, close the app and turn this off.</string>
     <string name="dit_gpu">Use the GPU for DiT models</string>
     <string name="dit_gpu_hint">FLUX.2 Klein 4B renders on the graphics chip (Adreno) instead of the NPU. Phones older than the 8 Gen 2 use it for Klein 4B whatever this says: there it replaces the CPU, which took up to 20 minutes a picture. A second engine (23 MB) and the Q4_0 model download. Slower than a working NPU; the screen keeps responding while it renders.</string>
     <string name="dit_taesd">Fast decoder on the GPU</string>

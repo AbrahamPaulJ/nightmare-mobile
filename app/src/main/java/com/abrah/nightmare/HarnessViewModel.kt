@@ -273,10 +273,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             Prefs.KEY_WAN_STREAM -> { s -> s.family == Family.WAN }
             Prefs.KEY_ANIMA_LOWRAM, Prefs.KEY_ANIMA_SEQ_DIT -> { s -> s.family == Family.ANIMA }
             // ⭐ The GPU route ([DitGpu]) changes the engine variant, the build and the launch env of every DiT.
-            Prefs.KEY_DIT_GPU, Prefs.KEY_DIT_TAESD -> { s -> s.isDit }
+            Prefs.KEY_DIT_GPU, Prefs.KEY_DIT_TAESD, Prefs.KEY_V69_NPU -> { s -> s.isDit }
             else -> { _ -> false }
         }
-        if (key == Prefs.KEY_DIT_GPU) {
+        if (key == Prefs.KEY_DIT_GPU || key == Prefs.KEY_V69_NPU) {
             DitEngine.refresh(app)
             refreshModels()
         }
@@ -4877,6 +4877,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * ⭐ Use on the model the node already is: nothing to switch, but a blank or leftover opening prompt still becomes this
+     * node's own, or H3's structured prompt never loads (a flow reopened from its autosave with the prompt cleared).
+     * ⚠ [com.abrah.nightmare.npu.VideoPrompts.forNode], not `forType`: the 14B's text to video and H3's reference open on
+     * prompts of their own, which `forType` would overwrite. Never over the person's own text.
+     */
+    private fun refillOpeningPrompt(node: Node) {
+        val g = canvas.workflow.graph
+        val prompt = node.inputs["prompt"]?.node?.let { g.byId[it] }
+            ?.takeIf { it.type == com.abrah.nightmare.PromptNode.name } ?: return
+        val current = prompt.params["prompt"].orEmpty()
+        if (!com.abrah.nightmare.npu.VideoPrompts.isDefault(current)) return
+        val opening = com.abrah.nightmare.npu.VideoPrompts.forNode(node, g) ?: return
+        if (current == opening) return
+        canvas = canvas.copy(workflow = canvas.workflow.copy(graph = Graph(
+            g.nodes.map { if (it.id == prompt.id) it.copy(params = it.params + ("prompt" to opening)) else it },
+        )))
+    }
+
+    /**
      * ⭐⭐ The video flows' model choice: the video node becomes Wan 2.2 (`wan.sample`) or Neodragon
      * (`nd.sample`), keeping its id, wires, seed and framing; the rest goes back to the new type's own
      * defaults (their sizes and lengths differ). The user's call, 2026-10-15: Wan by default.
@@ -4884,7 +4903,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun setVideoModel(nodeId: String, newType: String) {
         val g = canvas.workflow.graph
         val node = g.byId[nodeId] ?: return
-        if (newType !in com.abrah.nightmare.VIDEO_MODEL_TYPES || node.type == newType) return
+        if (newType !in com.abrah.nightmare.VIDEO_MODEL_TYPES) return
+        if (node.type == newType) { refillOpeningPrompt(node); return }
         val ports = nodeTypes[newType]?.inputs?.map { it.name }?.toSet().orEmpty()
         val outs = nodeTypes[newType]?.outputs?.map { it.name }?.toSet().orEmpty()
         val keep = node.params.filterKeys { it in setOf("seed", "x", "y", "w", "h") }
@@ -7113,6 +7133,30 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             openedResultName = name
             say("opened \"" + name + "\"")
             sayNotes(loaded)
+            showResultOnOutput(id, name)
+        }
+    }
+
+    /**
+     * ⭐ The flow from a result opens with that result on its Output: a clip's flow showed an empty node until Run, a
+     * picture's too (found driving the phone, 2026-11-08). Shown only: nothing is cached, so Run still renders.
+     * ⚠ Off the main thread (a PNG up to 2048 px, and `put` hashes every pixel), and dropped if the person has opened
+     * something else by then.
+     */
+    private fun showResultOnOutput(id: String, name: String) {
+        val out = canvas.workflow.graph.nodes.firstOrNull { it.type == MediaOutputNode.name } ?: return
+        viewModelScope.launch {
+            val shown = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                runCatching {
+                    results.full(id)?.let { bmp -> ops.images.put(bmp) to bmp.width.toFloat() / bmp.height.coerceAtLeast(1) }
+                }.getOrNull()
+            } ?: return@launch
+            if (openedResultName != name) return@launch
+            val clip = results.clipFile(id)?.path
+            canvas = canvas.copy(
+                previews = canvas.previews + (out.id to shown),
+                videos = if (clip != null) canvas.videos + (out.id to clip) else canvas.videos,
+            )
         }
     }
 

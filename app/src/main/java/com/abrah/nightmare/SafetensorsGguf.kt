@@ -48,6 +48,11 @@ object SafetensorsGguf {
         open fun keep(name: String): Boolean = true
         /** ⚠ Throws when [names] are not this model's: a wrong file must fail here, not render noise. */
         abstract fun check(names: List<String>)
+        /**
+         * ⭐ How the source's shape is read: the same bytes, another shape. [MossGguf] flattens a row scale, `[3072, 1]`,
+         * into the one dimension the engine's `Linear` declares.
+         */
+        open fun sourceShape(name: String, shape: LongArray): LongArray = shape
         /** The output shape (torch order) — [shape] unless the model pads it. */
         open fun outShape(name: String, shape: LongArray): LongArray = shape
         /** [F32], [F16], [BF16] or [Q8_0]; [Q8_0] only for a row (last dim) that is a multiple of 32. */
@@ -90,9 +95,9 @@ object SafetensorsGguf {
             rule.keep(rule.prefixes.firstOrNull { key.startsWith(it) }?.let { key.removePrefix(it) } ?: key)
         }.map { key ->
             val t = header.getJSONObject(key)
-            val shape = t.getJSONArray("shape").let { a -> LongArray(a.length()) { a.getLong(it) } }
             val off = t.getJSONArray("data_offsets")
             val name = rule.prefixes.firstOrNull { key.startsWith(it) }?.let { key.removePrefix(it) } ?: key
+            val shape = rule.sourceShape(name, t.getJSONArray("shape").let { a -> LongArray(a.length()) { a.getLong(it) } })
             val out = rule.outShape(name, shape)
             val dtype = t.getString("dtype")
             val type = rule.type(name, out, dtype)

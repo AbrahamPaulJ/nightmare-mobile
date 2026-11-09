@@ -30,7 +30,10 @@ object Int8Gguf {
     /** One int8 module: its scales (one per output row, or one for all) and its ConvRot group, 0 for none. */
     internal class Module(val scale: FloatArray, val group: Int)
 
-    private val INT8_WEIGHT = Regex("\"[^\"]*weight\"\\s*:\\s*\\{\\s*\"dtype\"\\s*:\\s*\"I8\"")
+    // ⚠ `[^{}]*`: `dtype` need not come first in a tensor's entry. A writer that sorts its keys, or puts `data_offsets` first,
+    // read as "not int8", so the file stayed a safetensors and the engine aborted at its first render (a 14 GB int8 Krea 2,
+    // `I8 convrot is not available`, Saved #7891; its own header could not be read to confirm the order).
+    private val INT8_WEIGHT = Regex("\"[^\"]*weight\"\\s*:\\s*\\{[^{}]*\"dtype\"\\s*:\\s*\"I8\"")
 
     /** ⭐ Whether an import's header holds int8 weights this converts (a safetensors; a ComfyUI GGUF's I8 is refused). */
     fun converts(head: CustomModels.DitHead): Boolean = !head.gguf && INT8_WEIGHT.containsMatchIn(head.json)

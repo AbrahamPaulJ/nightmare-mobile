@@ -176,6 +176,7 @@ object DeviceProbe {
     fun loadHmxVerdict(context: Context) {
         val prefs = context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE)
         hmxBad = prefs.getBoolean(HMX_BAD_KEY, false)
+        ditMapCap = prefs.getString(DIT_MAP_CAP_KEY, null)
         packFallback = prefs.getInt(PACK_FALLBACK_KEY, 0).takeIf { it > 0 }
         packConfirmed = prefs.getInt(PACK_CONFIRMED_KEY, 0).takeIf { it > 0 }
     }
@@ -247,6 +248,37 @@ object DeviceProbe {
         Log.w(TAG, "HMX self-test failed on ${soc()}: DiT models run with HMX off from now on ($verdict)")
         return true
     }
+
+    /**
+     * ⭐ The DiT budget (GiB) this phone's NPU taught us, or null. Kept per phone, like [hmxBad].
+     * ⚠⚠ GitHub #97: a Zenfone 10 (SM8550) refused `fastrpc_mmap` at about 1.9 GB (Anima, 1,674 MB of weights plus the
+     * graph-cut cache), inside v73's 2.0 ([BackendProcess.lowArchDitBudget]), where a Xiaomi SM8550 reached 2.44 GB. The
+     * ceiling is the firmware's, so it is learned from the failure and not set by chip: other phones keep their speed.
+     */
+    @Volatile
+    var ditMapCap: String? = null
+        internal set
+
+    /** ⚠ Pure: the budget after a map failure under [launched], or null when it cannot go lower. */
+    internal fun nextDitMapCap(launched: String?): String? {
+        val v = launched?.toDoubleOrNull() ?: return null
+        if (v <= DIT_MAP_FLOOR_GIB) return null
+        return maxOf(v - DIT_MAP_STEP_GIB, DIT_MAP_FLOOR_GIB).toString()
+    }
+
+    /** ⭐ Remembers [nextDitMapCap]. Repeating it for the same launch changes nothing. Returns the new budget, or null. */
+    fun learnDitMapLimit(context: Context, launched: String?): String? {
+        val next = nextDitMapCap(launched) ?: return null
+        ditMapCap = next
+        context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit().putString(DIT_MAP_CAP_KEY, next).apply()
+        Log.w(TAG, "the NPU refused a mapping on ${soc()}: DiT budget $next GiB from now on (was $launched)")
+        return next
+    }
+
+    /** ⚠ Below about this, one block's weights and compute no longer fit (Klein 9B's own budget on v73 is 1.5). */
+    private const val DIT_MAP_FLOOR_GIB = 1.25
+    private const val DIT_MAP_STEP_GIB = 0.5
+    private const val DIT_MAP_CAP_KEY = "dit_map_cap_gib"
 
     /** ⚠ Pure: "HMX self-test WRONG (zeros), rel-err 1.0000…" or "…FAILED" is a failure; ok / skipped are not. */
     fun hmxSelfTestFailed(verdict: String): Boolean {

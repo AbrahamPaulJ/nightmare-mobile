@@ -151,6 +151,12 @@ enum class Family(
      * Klein 4B's shared parts.
      */
     FLUX3("FLUX.3", GP_DIT, GP_DIT_NEG, "flux3", dit = true, edit = true),
+    /**
+     * ⭐ **FLUX.1 dev** (Black Forest Labs, non-commercial, S#7926): 12B, T5 + CLIP-L on the CPU, 20 steps at CFG 1 with its
+     * distilled guidance 3.5. Launched as `krea2` with T5 in the package's `llm.gguf` and CLIP-L's path in `NM_DIT_CLIP_L`
+     * (`dit/092`), so neither the ABI nor the backend moved. ⚠ Text to image only: nothing else measured.
+     */
+    FLUX1("FLUX.1", GP_DIT, GP_DIT_NEG, "flux1", dit = true),
     /** ⭐ Bria's Fibo 2.0 Edit Turbo (GH #69, `dit/056`): an 8B editor on Z-Image's DiT, Qwen3-VL-4B with its vision. */
     FIBO2("Fibo 2.0", GP_DIT, GP_DIT_NEG, "fibo2", dit = true, edit = true),
     /**
@@ -1176,6 +1182,9 @@ object ModelCatalog {
     const val KREA2 = "krea2"
     /** ⭐ Iris 3B Turbo (backend-patches/035): Krea 2's own-files launch with no VAE file. */
     const val IRIS = "iris"
+
+    /** ⭐ FLUX.1's CLIP-L, in its folder; its T5 is the package's `llm.gguf` (`dit/092`). */
+    const val FLUX1_CLIP_L = "clip_l.safetensors"
 
     /** ⭐ MOSS-Image's own LoRA, in its folder ([ModelSpec.ownLora]). */
     const val MOSS_LORA = "dmd8.safetensors"
@@ -2576,6 +2585,23 @@ object ModelCatalog {
             files = listOf(
                 RemoteFile(HF + "ChenDY/NitroFusion2/resolve/main/nf2-Q8_0.gguf", "dit.gguf", 7_222_556_736L),
             ) + ZIMAGE_PARTS,
+        ),
+        // ⭐ FLUX.1 dev (`docs/IMPORTS.md`): city96's Q4_0, the NPU's own matmul format. S25 `sd-cli`, streamed at 4 GiB: 512² 20
+        // steps 242 s, 1024² 425 s, clean. ⚠ Not Q6_K (the tester's ask, S#7926): its K-quant matmuls fall to the CPU, ~154 s
+        // a step at 512², 51 min a picture. T5 Q5_K_M, the smallest its author recommends. Its own VAE and tokenizer: an
+        // import's donor is this folder, and the backend walks one donor only. ⚠ The tokenizer only satisfies the backend's
+        // load: the engine tokenizes T5 and CLIP itself.
+        dit(
+            "flux1_dev", "FLUX.1 dev", Family.FLUX1, KREA2, steps = 20,
+            ownDitParts = true,
+            minArch = DIT_MIN_ARCH,
+            minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+            prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
+            files = listOf(
+                RemoteFile(HF + "city96/FLUX.1-dev-gguf/resolve/main/flux1-dev-Q4_0.gguf", "dit.gguf", 6_791_167_136L),
+                RemoteFile(HF + "city96/t5-v1_1-xxl-encoder-gguf/resolve/main/t5-v1_1-xxl-encoder-Q5_K_M.gguf", "llm.gguf", 3_386_856_640L),
+                RemoteFile(HF + "comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors", FLUX1_CLIP_L, 246_144_152L),
+            ) + ZIMAGE_PARTS.filter { it.name != "llm.gguf" },
         ),
         // ⭐ Krea 2 Turbo — `happyyzy/stable-diffusion.cpp`'s README, file for
         // file (e70d89b; sizes HEAD-checked 2026-09-28). A 6.8 GB MXFP4 MoE DiT,

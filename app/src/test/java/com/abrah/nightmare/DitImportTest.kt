@@ -507,6 +507,8 @@ class DitImportTest {
         val int8 = moss.replace("\"F8_E4M3\"", "\"I8\"")
         assertEquals(null, CustomModels.int8Problem(CustomModels.DitHead(int8, false, emptySet())))
         assertTrue(Int8Gguf.converts(CustomModels.DitHead(int8, false, emptySet())))
+        // ⚠ Whatever order a writer puts a tensor's keys in (Saved #7891).
+        assertTrue(Int8Gguf.converts(CustomModels.DitHead("""{"layers.0.proj.qkv.weight":{"data_offsets":[2,3],"shape":[9216,3072],"dtype":"I8"}}""", false, emptySet())))
         val scaleOnly = moss.replace("\"layers.0.proj.qkv.weight\"", "\"layers.0.proj.qkv.comfy_quant\"").replace("\"F8_E4M3\"", "\"U8\"")
         assertEquals(false, Int8Gguf.converts(CustomModels.DitHead(scaleOnly, false, emptySet())))
         assertEquals(false, Int8Gguf.converts(fp8))

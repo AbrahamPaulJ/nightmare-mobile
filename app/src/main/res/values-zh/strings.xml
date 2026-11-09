@@ -573,9 +573,10 @@
     <string name="models_family_krea">约 9.5 GB。12 GB 及以上内存的手机，8 Gen 3 或更新芯片。在 12 GB 手机上分段运行：1024x1024 约需 3.5 到 4 分钟。只能文生图，不能编辑。请使用 Wi-Fi。</string>
     <string name="models_family_animadit">约 3.2 GB。下载 Anima 官方 4.2 GB 文件并在手机上转换，安装时需要约 7.5 GB 可用空间。1024² 每张图片约 1 分钟，支持 512 起的任意尺寸。需要 8 Gen 1 或更新芯片（8 Gen 1 上每张图需要几分钟）。不是编辑模型。请使用 Wi-Fi。</string>
     <string name="models_family_iris">约 5.8 GB。下载 speridlabs 官方的 6 GB 文件并在手机上转换，因此安装时需要约 10 GB 可用空间。在 8 Elite 上 1024x1024 每张约 2.5 分钟。无 VAE。仅支持训练时的尺寸（每张约 100 万像素）。8 Gen 2 或更新。仅文生图。请使用 Wi-Fi。</string>
-    <string name="models_family_moss">约 10 GB。8 Gen 3 或更新芯片。细致、细节丰富的图像模型，每次都会应用 8 步加速。8 Elite 上 512x512 约 50 秒，1024x1024 不到 3 分钟。仅文生图。请使用 Wi-Fi。</string>
+    <string name="models_family_moss">约 10 GB。8 Gen 3 或更新芯片。细致、细节丰富的图像模型，每次都会应用 8 步加速。8 Elite 上 512x512 约 35 秒，1024x1024 约 2 分钟；4 步版约 20 秒和 1 分钟。仅文生图。请使用 Wi-Fi。</string>
     <string name="models_family_ideogram">约 11.6 GB。12 GB 及以上内存的手机，8 Elite 或更新芯片。最擅长在图中写出清晰可读的文字：招牌、海报、标签。每次都会应用 8 步加速。8 Elite 上 768x768 约 5.5 分钟。仅文生图。仅限非商业用途（Ideogram 许可）。请使用 Wi-Fi。</string>
     <string name="models_family_flux3">约 6.2 GB。8 Gen 3 或更新芯片。Black Forest Labs 最新的图像模型：细节清晰，紧跟提示词，16 步。8 Elite 上 512x512 约 45 秒，1024x1024 约 2 分钟。仅文生图。采用 FLUX Kommunity License 许可。请使用 Wi-Fi。</string>
+    <string name="models_family_flux1">约 10.8 GB。12 GB 及以上手机，8 Elite 或更新芯片。Black Forest Labs 的 FLUX.1 dev：512x512 约 4 分钟，1024x1024 约 6 分钟，20 步。仅文生图。仅限非商业用途。</string>
     <string name="models_family_fibo2">约 8.4 GB。8 Gen 3 或更新芯片，12 GB 内存。Bria 的 Fibo 2.0 Edit：连入一张图片并写下要修改的内容，4 步完成。图片其余部分保持不变，也能在牌子上写字。不连图片时也能直接用提示词生成图片：在 8 Elite 上 896x1600 约一分钟。非商业许可（Bria）。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>
@@ -1366,6 +1367,8 @@
     <string name="heat_pause_hint">电池达到 45 °C 时，视频在步骤之间等待，降到 40 °C 后继续。在温暖的房间里会更慢，但更爱护电池。不适用于 Neodragon，它的视频只需几秒。</string>
     <string name="gpu_title">GPU</string>
     <string name="gpu_note">适用于 NPU 无法运行 DiT 模型的手机，以及想试用显卡芯片的任何人。</string>
+    <string name="dit_v69_npu">尝试用 NPU 运行 DiT 模型（测试）</string>
+    <string name="dit_v69_npu_hint">在此芯片上，NPU 运行这些模型至今都会卡住，所以它们在 GPU 或 CPU 上运行。此开关会再试一次。如果生成 5 分钟没有进展，请关闭应用并关掉此开关。</string>
     <string name="dit_gpu">用 GPU 运行 DiT 模型</string>
     <string name="dit_gpu_hint">FLUX.2 Klein 4B 在图形芯片（Adreno）上生成，而不是 NPU。比 8 Gen 2 更旧的手机无论此开关如何都会对 Klein 4B 使用它：在那里它取代 CPU，CPU 每张图最多要 20 分钟。会下载第二个引擎（23 MB）和 Q4_0 模型。比能用的 NPU 慢；生成时屏幕仍可操作。</string>
     <string name="dit_taesd">GPU 上的快速解码器</string>
