@@ -1,5 +1,5 @@
 diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
-index 125f554..c0e3b35 100644
+index 125f554..81cb87d 100644
 --- a/src/pipeline/diffusion_engine.cpp
 +++ b/src/pipeline/diffusion_engine.cpp
 @@ -39,6 +39,8 @@
@@ -11,7 +11,7 @@ index 125f554..c0e3b35 100644
  #include "runtime/denoiser.hpp"
  #include "runtime/guidance.h"
  #include "runtime/preview_interval.h"
-@@ -2160,6 +2162,15 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
+@@ -2160,6 +2162,17 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
          LOG_VERBOSE("using guidance schedule: %s", schedule_str.c_str());
      }
  
@@ -23,11 +23,22 @@ index 125f554..c0e3b35 100644
 +        nm_spectrum.spectrum_warmup_steps = std::atoi(e);
 +        cache_params                      = &nm_spectrum;
 +    }
++    // dit/094: a low-res step (below) has no full-size mask to apply. Text to image's mask is all ones, so nothing is lost.
++    bool nm_low_step = false;
 +
      sd_sample::SampleCacheRuntime cache_runtime = sd_sample::init_sample_cache_runtime(version,
                                                                                         cache_params,
                                                                                         denoiser.get(),
-@@ -2508,7 +2519,104 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
+@@ -2497,7 +2510,7 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
+         if (cache_runtime.spectrum_enabled) {
+             cache_runtime.spectrum.update(denoised);
+         }
+-        if (!denoise_mask.empty()) {
++        if (!denoise_mask.empty() && !nm_low_step) {
+             denoised = denoised * denoise_mask + sampling_init_latent * (1.0f - denoise_mask);
+         }
+         if (preview_needed && sd_should_preview_denoised()) {
+@@ -2508,7 +2521,110 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
          return output;
      };
  
@@ -48,8 +59,12 @@ index 125f554..c0e3b35 100644
 +            }
 +        }
 +    }
-+    if (!nm_lowres.empty() && (method != EULER_SAMPLE_METHOD || !is_flow_denoiser || noise.empty() || sigmas[0] < 0.999f)) {
-+        LOG_WARN("NM_LOWRES needs Euler on a flow model from pure noise: ignored");
++    bool nm_masked = false;
++    for (int64_t i = 0; i < denoise_mask.numel(); i++) {
++        nm_masked = nm_masked || denoise_mask.data()[i] != 1.0f;
++    }
++    if (!nm_lowres.empty() && (method != EULER_SAMPLE_METHOD || !is_flow_denoiser || noise.empty() || sigmas[0] < 0.999f || nm_masked)) {
++        LOG_WARN("NM_LOWRES needs Euler on a flow model from pure noise, unmasked: ignored");
 +        nm_lowres.clear();
 +    }
 +    sd::Tensor<float> nm_x0;
@@ -90,7 +105,9 @@ index 125f554..c0e3b35 100644
 +            }
 +        }
 +        LOG_INFO("NM_LOWRES step %d: %dx%d of %dx%d", step, (int)Wl, (int)Hl, (int)W, (int)H);
++        nm_low_step                    = true;
 +        sd::guidance::GuiderOutput out = denoise(low, sigma, step);
++        nm_low_step                    = false;
 +        if (out.pred.empty()) {
 +            return out;
 +        }
