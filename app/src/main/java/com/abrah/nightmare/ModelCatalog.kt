@@ -134,7 +134,7 @@ enum class Family(
     /**
      * ⭐⭐ **MOSS-Image** (OpenMOSS, Apache 2.0) on the DiT engine (`docs/MOSS.md`, engine `dit/028`): a 5B DiT,
      * Qwen3.5 9B as its text encoder, the FLUX.2 VAE, and lodestones' 8-step DMD LoRA applied on EVERY render
-     * ([ModelSpec.ownLora]). ⚠ Text to image only: nothing else measured.
+     * ([ModelSpec.ownLora]). Text to image and inpaint ([SdSampler.MOSS_INPAINT]).
      */
     MOSS("MOSS-Image", GP_DIT, GP_DIT_NEG, "moss", dit = true),
     /**

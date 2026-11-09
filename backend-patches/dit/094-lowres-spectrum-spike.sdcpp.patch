@@ -1,0 +1,152 @@
+diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
+index 125f554..81cb87d 100644
+--- a/src/pipeline/diffusion_engine.cpp
++++ b/src/pipeline/diffusion_engine.cpp
+@@ -39,6 +39,8 @@
+ #include "model/vae/audio_vae.hpp"
+ #include "model/vae/ltx_vae.hpp"
+ #include "model/vae/vae.hpp"
++#include <cstdlib>
++
+ #include "runtime/denoiser.hpp"
+ #include "runtime/guidance.h"
+ #include "runtime/preview_interval.h"
+@@ -2160,6 +2162,17 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
+         LOG_VERBOSE("using guidance schedule: %s", schedule_str.c_str());
+     }
+ 
++    // dit/094, a spike (GitHub #98): NM_SPECTRUM=<warmup steps> turns on the Spectrum cache sd.cpp already holds.
++    sd_cache_params_t nm_spectrum;
++    if (const char* e = std::getenv("NM_SPECTRUM")) {
++        sd_cache_params_init(&nm_spectrum);
++        nm_spectrum.mode                  = SD_CACHE_SPECTRUM;
++        nm_spectrum.spectrum_warmup_steps = std::atoi(e);
++        cache_params                      = &nm_spectrum;
++    }
++    // dit/094: a low-res step (below) has no full-size mask to apply. Text to image's mask is all ones, so nothing is lost.
++    bool nm_low_step = false;
++
+     sd_sample::SampleCacheRuntime cache_runtime = sd_sample::init_sample_cache_runtime(version,
+                                                                                        cache_params,
+                                                                                        denoiser.get(),
+@@ -2497,7 +2510,7 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
+         if (cache_runtime.spectrum_enabled) {
+             cache_runtime.spectrum.update(denoised);
+         }
+-        if (!denoise_mask.empty()) {
++        if (!denoise_mask.empty() && !nm_low_step) {
+             denoised = denoised * denoise_mask + sampling_init_latent * (1.0f - denoise_mask);
+         }
+         if (preview_needed && sd_should_preview_denoised()) {
+@@ -2508,7 +2521,110 @@ sd::Tensor<float> StableDiffusionGGML::sample(const std::shared_ptr<DiffusionMod
+         return output;
+     };
+ 
+-    auto x0_opt = sample_k_diffusion(method, denoise, x_t, sigmas, sampler_rng, eta, is_flow_denoiser, extra_sample_args, denoiser);
++    // dit/094, a spike (the list's H4, after HexAnima's animad): NM_LOWRES="2,2" runs step i of the DiT on a latent
++    // smaller by factor[i], so 4x fewer tokens at 2. The input is rebuilt from the x0 estimate and the ORIGINAL noise,
++    // not by pooling x_t (a noisy mixture loses the noise's variance); the mean of f*f noises is scaled by f to keep it.
++    // The x0 estimate comes back up bilinearly, and the full-size state lands on (1-s')*x0 + s'*noise.
++    std::vector<int> nm_lowres;
++    if (const char* e = std::getenv("NM_LOWRES")) {
++        for (const char* p = e; *p != '\0';) {
++            nm_lowres.push_back(std::atoi(p));
++            while (*p != '\0' && *p != ',') {
++                p++;
++            }
++            if (*p == ',') {
++                p++;
++            }
++        }
++    }
++    bool nm_masked = false;
++    for (int64_t i = 0; i < denoise_mask.numel(); i++) {
++        nm_masked = nm_masked || denoise_mask.data()[i] != 1.0f;
++    }
++    if (!nm_lowres.empty() && (method != EULER_SAMPLE_METHOD || !is_flow_denoiser || noise.empty() || sigmas[0] < 0.999f || nm_masked)) {
++        LOG_WARN("NM_LOWRES needs Euler on a flow model from pure noise, unmasked: ignored");
++        nm_lowres.clear();
++    }
++    sd::Tensor<float> nm_x0;
++    auto nm_denoise = [&](const sd::Tensor<float>& x, float sigma, int step) -> sd::guidance::GuiderOutput {
++        const int f     = step >= 1 && step <= static_cast<int>(nm_lowres.size()) ? nm_lowres[step - 1] : 1;
++        const int64_t W = x.shape()[0];
++        const int64_t H = x.shape()[1];
++        if (f <= 1 || W % (2 * f) != 0 || H % (2 * f) != 0) {
++            return denoise(x, sigma, step);
++        }
++        const int64_t Wl = W / f;
++        const int64_t Hl = H / f;
++        const int64_t C  = x.numel() / (W * H);
++        if (nm_x0.empty()) {
++            nm_x0 = sd::Tensor<float>(x.shape());
++        }
++        std::vector<int64_t> low_shape = x.shape();
++        low_shape[0]                   = Wl;
++        low_shape[1]                   = Hl;
++        sd::Tensor<float> low(low_shape);
++        const float* n  = noise.data();
++        const float* x0 = nm_x0.data();
++        float* lo       = low.data();
++        for (int64_t c = 0; c < C; c++) {
++            for (int64_t y = 0; y < Hl; y++) {
++                for (int64_t xx = 0; xx < Wl; xx++) {
++                    double sum_n = 0;
++                    double sum_d = 0;
++                    for (int a = 0; a < f; a++) {
++                        for (int b = 0; b < f; b++) {
++                            const int64_t i = (c * H + y * f + a) * W + xx * f + b;
++                            sum_n += n[i];
++                            sum_d += x0[i];
++                        }
++                    }
++                    lo[(c * Hl + y) * Wl + xx] = static_cast<float>((1.0f - sigma) * sum_d / (f * f) + sigma * sum_n / f);
++                }
++            }
++        }
++        LOG_INFO("NM_LOWRES step %d: %dx%d of %dx%d", step, (int)Wl, (int)Hl, (int)W, (int)H);
++        nm_low_step                    = true;
++        sd::guidance::GuiderOutput out = denoise(low, sigma, step);
++        nm_low_step                    = false;
++        if (out.pred.empty()) {
++            return out;
++        }
++        const float next = sigmas[step];
++        const float k    = sigma / (next - sigma);
++        sd::Tensor<float> full(x.shape());
++        const float* pred = out.pred.data();
++        const float* xin  = x.data();
++        float* xo         = nm_x0.data();
++        float* fo         = full.data();
++        for (int64_t c = 0; c < C; c++) {
++            const float* b = pred + c * Hl * Wl;
++            for (int64_t y = 0; y < H; y++) {
++                const float fy = (y + 0.5f) / f - 0.5f;
++                int64_t y0     = static_cast<int64_t>(std::floor(fy));
++                const float wy = fy - y0;
++                int64_t y1     = std::min(std::max<int64_t>(y0 + 1, 0), Hl - 1);
++                y0             = std::min(std::max<int64_t>(y0, 0), Hl - 1);
++                for (int64_t xx = 0; xx < W; xx++) {
++                    const float fx = (xx + 0.5f) / f - 0.5f;
++                    int64_t x0i    = static_cast<int64_t>(std::floor(fx));
++                    const float wx = fx - x0i;
++                    int64_t x1i    = std::min(std::max<int64_t>(x0i + 1, 0), Wl - 1);
++                    x0i            = std::min(std::max<int64_t>(x0i, 0), Wl - 1);
++                    const float up = (1 - wy) * ((1 - wx) * b[y0 * Wl + x0i] + wx * b[y0 * Wl + x1i]) +
++                                     wy * ((1 - wx) * b[y1 * Wl + x0i] + wx * b[y1 * Wl + x1i]);
++                    const int64_t i = (c * H + y) * W + xx;
++                    xo[i]           = up;
++                    // What the Euler step in sample_euler must be handed so that it lands on x_next.
++                    const float x_next = (1.0f - next) * up + next * n[i];
++                    fo[i]              = xin[i] - (x_next - xin[i]) * k;
++                }
++            }
++        }
++        out.pred = std::move(full);
++        return out;
++    };
++
++    auto x0_opt = sample_k_diffusion(method, nm_denoise, x_t, sigmas, sampler_rng, eta, is_flow_denoiser, extra_sample_args, denoiser);
+     if (x0_opt.empty()) {
+         LOG_ERROR("Diffusion model sampling failed");
+         if (control_net) {

@@ -118,6 +118,8 @@ class VideoGraphTest {
         assertTrue(isSampler("iris.sample"))
         // 2026-10-18: `moss.sample`, MOSS-Image (`docs/MOSS.md`).
         assertTrue(isSampler("moss.sample"))
+        // GitHub #100: `moss.inpaint`, the masked render Fix faces already sends.
+        assertTrue(isSampler("moss.inpaint"))
         // 2026-10-18: `ideogram.sample`, Ideogram 4 (`docs/ROADMAP.md`).
         assertTrue(isSampler("ideogram.sample"))
         // 2026-10-25: `flux3.sample`, FLUX.3 Image Klein (`docs/DIT.md`).
@@ -127,9 +129,9 @@ class VideoGraphTest {
         assertTrue(isSampler("fibo2.sample"))
         // 2026-11-09: `flux1.sample`, FLUX.1 dev (`docs/IMPORTS.md`).
         assertTrue(isSampler("flux1.sample"))
-        assertEquals(32, SAMPLER_TYPES.size)  // 2026-10-29: `wan13.sample`, NSFW Wan 1.3B; `h3.sample`, MiniMax H3
-        assertEquals(26, IMAGE_SAMPLER_TYPES.size)
-        assertEquals(10, INPAINT_TYPES.size)
+        assertEquals(33, SAMPLER_TYPES.size)  // 2026-10-29: `wan13.sample`, NSFW Wan 1.3B; `h3.sample`, MiniMax H3
+        assertEquals(27, IMAGE_SAMPLER_TYPES.size)
+        assertEquals(11, INPAINT_TYPES.size)
     }
 
     @Test

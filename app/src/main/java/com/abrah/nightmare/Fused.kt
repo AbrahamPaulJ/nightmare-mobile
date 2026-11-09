@@ -732,7 +732,7 @@ class SdSampler(
          * ([ModelSpec.fixedSizes]); it stays out until a masked render is measured.
          */
         val IRIS = SdSampler("iris.sample", Family.IRIS, inpaint = false)
-        /** ⭐ MOSS-Image (`docs/MOSS.md`) — text to image only, its 8-step LoRA always on ([ModelSpec.ownLora]). */
+        /** ⭐ MOSS-Image (`docs/MOSS.md`): its 8-step LoRA always on ([ModelSpec.ownLora]); inpaint is [MOSS_INPAINT]. */
         val MOSS = SdSampler("moss.sample", Family.MOSS, inpaint = false)
         /** ⭐ Ideogram 4 (`docs/ROADMAP.md`) — text to image only, its TurboTime LoRA always on ([ModelSpec.ownLora]). */
         val IDEOGRAM = SdSampler("ideogram.sample", Family.IDEOGRAM, inpaint = false)
@@ -759,6 +759,8 @@ class SdSampler(
         val QWEN21_INPAINT = SdSampler("qwen21.inpaint", Family.QWEN21, inpaint = true)
         val KREA2_INPAINT = SdSampler("krea2.inpaint", Family.KREA2, inpaint = true)
         val ANIMA_DIT_INPAINT = SdSampler("animadit.inpaint", Family.ANIMA_DIT, inpaint = true)
+        /** ⭐ GitHub #100: the same masked render Fix faces already sends on MOSS ([runDitMasked]). */
+        val MOSS_INPAINT = SdSampler("moss.inpaint", Family.MOSS, inpaint = true)
         /**
          * ⚠⚠ Klein's MASKED redraw ([runDitMasked] with `mask`) regenerates almost nothing inside the mask:
          * measured 2026-09-20 against the mask the SD path uses, SD 1.5 at 0.65 changed 6303 px, Klein 821 at
@@ -779,7 +781,7 @@ class SdSampler(
         val ALL = listOf(
             SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT, IRIS, MOSS, IDEOGRAM, FLUX3, FLUX1, FIBO2,
             SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, SDXL_SWAP_INPAINT, ANIMA_INPAINT,
-            ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT, ANIMA_DIT_INPAINT, FLUX2_INPAINT,
+            ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT, ANIMA_DIT_INPAINT, MOSS_INPAINT, FLUX2_INPAINT,
         )
 
         /**

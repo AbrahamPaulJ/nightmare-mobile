@@ -381,4 +381,18 @@ class RecipeModelTest {
             }
         }
     }
+
+    /** ⭐ GitHub #100: Inpaint's picker and the Use dialog ask [SdSampler.canInpaint], and MOSS had no inpaint type. */
+    @Test
+    fun mossOpensTheInpaintFlowOnItsOwnSampler() {
+        assertTrue(SdSampler.canInpaint(Family.MOSS))
+        assertEquals("moss.inpaint", SdSampler.typeFor(Family.MOSS, inpaint = true))
+        val spec = ModelCatalog.byId("moss_image")!!
+        val recipe = com.abrah.nightmare.canvas.RECIPES.first { it.id == "inpaint" }
+        assertTrue(recipe.runsOn(spec))
+        SelectedModel.set(ctx, spec.id)
+        val node = inpaintWorkflow().graph.nodes.single { (NODE_TYPES[it.type] as? SdSampler)?.inpaint == true }
+        assertEquals("moss.inpaint", node.type)
+        assertEquals("moss_image", (NODE_TYPES[node.type] as SdSampler).effectiveParams(node)["model"])
+    }
 }
