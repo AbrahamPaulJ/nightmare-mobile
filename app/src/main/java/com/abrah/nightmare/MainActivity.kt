@@ -791,7 +791,7 @@ fun HarnessScreen(
                         onCancelUse = vm::cancelUse,
                         // ⭐ Use on the other two KINDS of model. Neither selects
                         // anything globally; both open a flow that uses them.
-                        onUseUpscaler = { vm.askUseUpscaler(it.label) },
+                        onUseUpscaler = { vm.askUseUpscaler(it) },
                         onUseVideo = vm::askUseVideo,
                         importing = vm.importing,
                         importProgress = vm.importProgress,

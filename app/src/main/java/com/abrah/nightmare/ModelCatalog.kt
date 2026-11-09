@@ -1189,6 +1189,26 @@ object ModelCatalog {
     /** ⭐ MOSS-Image's own LoRA, in its folder ([ModelSpec.ownLora]). */
     const val MOSS_LORA = "dmd8.safetensors"
 
+    /**
+     * ⭐ MOSS-Image SFT's own LoRA since GitHub #94: lodestones' `lora_latest`, at 1.0 ([ModelSpec.ownLora] is sent at full
+     * strength). The tester's prompt and seed, S25, 1024²: `lora.safetensors` at 1.0 gives the red skin they reported, this
+     * one natural skin at the same speed; its card's 0.7 stays red (the user's pick from the pictures, 2026-11-09, `docs/MOSS.md`).
+     * ⚠ A new NAME, because it is the SAME size as the old one: under the old name every phone would read as installed.
+     */
+    const val MOSS_SFT_LORA = "lora_latest.safetensors"
+
+    /** ⚠ The exact size of SFT's old LoRA, the one [reclaimObsolete] may delete. */
+    private const val MOSS_OLD_LORA_BYTES = 1_189_176_800L
+
+    /**
+     * ⚠ Pure: removes SFT's old LoRA from [dir] once the new one is in place ([whole]), at the size we shipped: anything
+     * else there is the person's. Base and the 4-step keep a `dmd8.safetensors` of their own, in their own folders.
+     */
+    internal fun reclaimOldMossLora(dir: File, whole: Boolean): Boolean {
+        val old = File(dir, MOSS_LORA)
+        return whole && File(dir, MOSS_SFT_LORA).isFile && old.isFile && old.length() == MOSS_OLD_LORA_BYTES && old.delete()
+    }
+
     /** ⭐ Anima 2.9B's own LoRA ([ModelSpec.ownLora]): Karely_ai's turbo, 8 steps at CFG 1 (GitHub #55). */
     const val ANIMA29_TURBO_LORA = "anima29_turbo.safetensors"
 
@@ -1360,6 +1380,11 @@ object ModelCatalog {
      * theirs. ⚠ Built-in dir only: an import's DiT is its weights.
      */
     fun reclaimObsolete(context: Context) {
+        byId("moss_image")?.let { spec ->
+            if (spec.dir(context) == spec.ownDir(context) && reclaimOldMossLora(spec.ownDir(context), spec.missing(context).isEmpty())) {
+                android.util.Log.i("ModelCatalog", "reclaimed ${spec.label} $MOSS_LORA. $MOSS_SFT_LORA replaces it")
+            }
+        }
         for (id in SHARED_DIR_BUILDS) {
             val spec = byId(id) ?: continue
             if (spec.dir(context) != spec.ownDir(context) || spec.missing(context).isNotEmpty()) continue
@@ -2721,13 +2746,14 @@ object ModelCatalog {
             ownDitParts = true,
             minArch = DIT_GGML_MIN_ARCH,
             prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
-            ownLora = MOSS_LORA,
+            ownLora = MOSS_SFT_LORA,
             files = listOf(
                 RemoteFile(HF + "AbrahamPJ/nightmare-moss-image/resolve/main/moss-image-sft-q4_0.gguf", "dit.gguf", 3_217_359_072L),
                 RemoteFile(HF + "unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_0.gguf", "llm.gguf", 5_379_417_312L),
                 RemoteFile(HF + "realrebelai/MOSS-Image_GGUFs/resolve/main/MOSS-VAE.safetensors", "vae.safetensors", 249_521_372L),
                 RemoteFile(HF + "OpenMOSS-Team/MOSS-Image-Base/resolve/main/tokenizer/tokenizer.json", "tokenizer.json", 19_989_325L),
-                RemoteFile(HF + "lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors", MOSS_LORA, 1_189_176_800L),
+                // ⚠ Pinned to the commit we tested: a file called "latest" on `main` can change under every phone, at this same size.
+                RemoteFile(HF + "lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/f95df83b5e90ae91ea412434b3f9b7f1c8c6314f/lora_latest.safetensors", MOSS_SFT_LORA, MOSS_OLD_LORA_BYTES),
             ),
         ),
         // ⭐ MOSS-Image SFT at 4 STEPS (akhaliq's 4-step LoRA, Apache 2.0, on SFT's Q4_0; the idea from HexAnima's notes, which

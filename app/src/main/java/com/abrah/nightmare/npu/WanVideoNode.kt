@@ -189,6 +189,10 @@ object WanVideoNode : NodeType {
         else -> null
     }
 
+    /** ⭐ Settings' Video: stream the model cannot change this clip: it has a budget with the switch off too. */
+    fun streamsAnyway(pinned: Long, ramBytes: Long, arch: Int, prof: WanProfile = TURBO): Boolean =
+        memoryBudget(pinned, ramBytes, arch, stream = false, prof = prof) != null
+
     private const val H3_BUDGET = "4.5"
 
     private const val STREAM_FLOOR = 2_816L shl 20
@@ -722,6 +726,11 @@ object WanVideoNode : NodeType {
             ctx.warn(ctx.text(R.string.run_wan_npu_warning,
                 "%1\$s for %2\$s s needs about %3\$s GB of NPU memory at once, more than this phone's NPU takes, so it will probably fail. Trying anyway",
                 "${w}x$h", if (sound) H3Node.label(pass) else (pass / fps).toString(), gb(need)))
+        }
+        // ⭐ Why the switch seems to do nothing on this clip: it is off, and the clip streams anyway.
+        if (!com.abrah.nightmare.Prefs.wanStream && streamsAnyway(pinnedBytes(w, h, pass, prof), ram, arch, prof)) {
+            ctx.say(ctx.text(R.string.run_wan_streams_anyway,
+                "This clip streams its model whichever way Video: stream the model is set: it cannot be held whole on this phone's NPU."))
         }
 
         val source = inputs["image"] as? Value.Image

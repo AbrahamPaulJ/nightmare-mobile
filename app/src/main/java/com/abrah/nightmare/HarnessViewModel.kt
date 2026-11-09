@@ -4790,6 +4790,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val neodragon: Boolean = false,
         /** ⭐ The flow's video node becomes this type after it opens (Wan 2.2 14B, [setVideoModel]). */
         val videoType: String? = null,
+        /** ⭐ Use on an upscaler: the flow's Output runs this one, not its default, the first installed (GitHub #99). */
+        val upscaler: String? = null,
     )
 
     var pendingUse by mutableStateOf<PendingUse?>(null)
@@ -4814,12 +4816,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** ⭐ Use on an UPSCALER — it has one flow and no global selection. */
-    fun askUseUpscaler(label: String) {
+    fun askUseUpscaler(upscaler: UpscalerSpec) {
         pendingUse = PendingUse(
             spec = null,
-            title = text(R.string.models_use_named, label),
+            title = text(R.string.models_use_named, upscaler.label),
             offer = com.abrah.nightmare.canvas.recipesWithId("upscale"),
             unsavedFlow = unsavedFlow(),
+            upscaler = upscaler.id,
         )
     }
 
@@ -4939,6 +4942,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun confirmUse(spec: ModelSpec?, recipe: com.abrah.nightmare.canvas.Recipe?) {
         val neodragon = pendingUse?.neodragon == true
         val videoType = pendingUse?.videoType ?: "nd.sample".takeIf { neodragon }
+        val upscaler = pendingUse?.upscaler
         pendingUse = null
         if (recipe == null) {
             // ⚠ Null for an upscaler or the video models: there is no global selection to make.
@@ -4955,6 +4959,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             openRecipeNow(recipe)
             if (videoType != null) canvas.workflow.graph.nodes.firstOrNull { it.type in com.abrah.nightmare.VIDEO_MODEL_TYPES }
                 ?.let { setVideoModel(it.id, videoType) }
+            if (upscaler != null) updateCanvas(canvas.withUpscaler(upscaler))
             // ⭐ …and get out of the way: choosing a flow is asking to work on it (2026-09-15).
             closeLibrary()
         }

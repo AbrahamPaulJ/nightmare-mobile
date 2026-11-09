@@ -78,8 +78,8 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
     (Q4_0, Q8_0 or fp8) of the same model is the fix. Q4_0, Q8_0, MXFP4 and fp8 are the formats
     known to run on the NPU; others (Q4_K, Q6_K…) are untested.
 
-!!! note "int8 and ConvRot files"
-    A `.safetensors` in ComfyUI's int8 format (int8, ConvRot) is converted to Q8_0 while it imports,
+!!! note "int8, ConvRot and mxfp8 files"
+    A `.safetensors` in ComfyUI's int8 format (int8, ConvRot) or in mxfp8 is converted to Q8_0 while it imports,
     which the NPU runs. The result is about the same size and needs the same free space.
 
 !!! warning "4-bit files"

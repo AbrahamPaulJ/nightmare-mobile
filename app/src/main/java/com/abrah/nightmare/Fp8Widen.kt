@@ -166,7 +166,7 @@ object Fp8Widen {
         t.optJSONArray("shape")?.let { a -> List(a.length()) { a.getLong(it) } }.orEmpty()
 
     /** E4M3 (fn: no infinities, S.1111.111 is NaN), all 256 codes. */
-    private val LUT = FloatArray(256) { code ->
+    internal val LUT = FloatArray(256) { code ->
         val sign = if (code and 0x80 != 0) -1f else 1f
         val exp = (code shr 3) and 0xF
         val man = code and 0x7

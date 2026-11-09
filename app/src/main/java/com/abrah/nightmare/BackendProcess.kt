@@ -332,6 +332,10 @@ object BackendProcess {
         return spec.ownLoraFile(spec.dir(ctx))?.absolutePath
     }
 
+    /** ⚠ Diagnostic: `nightmare-own-lora-weight.txt`, the strength [launchedOwnLora] is sent at, for an A/B of a LoRA's card. */
+    fun ownLoraWeight(): Double =
+        appContext?.let { readDiagnosticFile(it, "nightmare-own-lora-weight.txt")?.toDoubleOrNull() } ?: 1.0
+
     /**
      * True when the running process is an upscale-only server — no checkpoint.
      *

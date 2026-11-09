@@ -906,7 +906,7 @@ object Ops {
                 }
                 scheduler?.let { put("scheduler", it) }
                 // ⭐ The running model's own LoRA first, on every render ([BackendProcess.launchedOwnLora]).
-                val sent = listOfNotNull(BackendProcess.launchedOwnLora()?.let { it to 1.0 }) + loras
+                val sent = listOfNotNull(BackendProcess.launchedOwnLora()?.let { it to BackendProcess.ownLoraWeight() }) + loras
                 if (sent.isNotEmpty()) {
                     put(
                         "loras",

@@ -157,9 +157,16 @@ object CustomModels {
 
     /** ⭐ Whether [dir] (a MOSS import) can take the speed-up: not few-step already, and its donor holds the LoRA. */
     fun mossSpeedAvailable(dir: File): Boolean =
-        File(dir, MOSS_MARK).isFile && !File(dir, MOSS_FEW_STEP_MARK).isFile &&
-            runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull()
-                ?.let { File(File(dir.parentFile, it), ModelCatalog.MOSS_LORA).isFile } == true
+        File(dir, MOSS_MARK).isFile && !File(dir, MOSS_FEW_STEP_MARK).isFile && mossSpeedLora(dir) != null
+
+    /**
+     * ⭐ The speed-up's file in [dir]'s donor, or null. SFT's since GitHub #94, else `dmd8.safetensors`: what Base holds,
+     * and what an SFT not yet updated still holds, so an import keeps working until its donor has the new one.
+     */
+    internal fun mossSpeedLora(dir: File): String? {
+        val donor = runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull() ?: return null
+        return listOf(ModelCatalog.MOSS_SFT_LORA, ModelCatalog.MOSS_LORA).firstOrNull { File(File(dir.parentFile, donor), it).isFile }
+    }
 
     fun mossSpeedOn(dir: File): Boolean = mossSpeedAvailable(dir) && !File(dir, MOSS_NO_SPEED_MARK).isFile
 
@@ -518,7 +525,7 @@ object CustomModels {
         // ⭐ An import that borrows an installed model's parts ([PARTS_FROM_FILE]): MOSS beside the built-in.
         partsFrom = runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull()?.takeIf { isValidName(it) },
         // ⭐ The donor's 8-step LoRA ([mossSpeedOn]), found through [ModelSpec.ownLoraFile].
-        ownLora = if (family == Family.MOSS && mossSpeedOn(dir)) ModelCatalog.MOSS_LORA else null,
+        ownLora = if (family == Family.MOSS && mossSpeedOn(dir)) mossSpeedLora(dir) else null,
         id = dir.name,
         label = cfg.label ?: dir.name,
         // ⭐ What the conversion kept ([ModelFeatures]) — the node dims the rest.
@@ -855,14 +862,22 @@ object CustomModels {
             // ⭐⭐ An int8 (ComfyUI `int8_tensorwise`, ConvRot) safetensors becomes a Q8_0 GGUF the same way ([Int8Gguf]):
             // the engine cannot run int8 here (GitHub #71).
             val int8 = Int8Gguf.converts(head)
-            val toQ8 = !int8 && variant == DitVariant.MOSS && !head.gguf && MossGguf.converts(head.json)
+            // ⭐ And an mxfp8 one ([MxFp8Gguf]): its per-block scales are something the engine cannot read at all.
+            val mx = MxFp8Gguf.converts(head)
+            val toQ8 = !int8 && !mx && variant == DitVariant.MOSS && !head.gguf && MossGguf.converts(head.json)
             // ⭐ A `.gguf` keeps its format: the engine picks the loader by name.
-            val dest = File(dir, if (head.gguf || toQ8 || int8) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
+            val dest = File(dir, if (head.gguf || toQ8 || int8 || mx) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
             // ⚠⚠ Into `.part`, renamed when whole: a process killed mid-copy left a truncated `dit.safetensors` whose
             // header [detectDit] read on the next scan and marked, so a custom spec (no sizes to check) listed it
             // installed and Run failed inside the engine. The `catch` below cannot run when the process dies.
             val part = File(dir, dest.name + ".part")
-            if (int8) {
+            if (mx) {
+                val bytes = MxFp8Gguf.convertStream(
+                    open, part, variant.family,
+                    { what, done, total -> onProgress(ModelInstaller.Progress(what, done, total)) }, isCancelled,
+                )
+                Log.i(TAG, "converted mxfp8 '$name' to a Q8_0 GGUF: $bytes bytes")
+            } else if (int8) {
                 val bytes = Int8Gguf.convertStream(
                     open, part, variant.family,
                     { what, done, total -> onProgress(ModelInstaller.Progress(what, done, total)) }, isCancelled,
@@ -1195,7 +1210,10 @@ object CustomModels {
                     "this is not a .safetensors file (its header claims $len bytes)"
                 )
             }
-            val body = ByteArray(minOf(len, 512L * 1024).toInt())
+            // ⚠⚠ All of it, as [Fp8Widen] reads it. It stopped at 512 KB, and a ComfyUI workflow in `__metadata__` comes
+            // first: GitHub #90's 570,872-byte header was cut at block 24 before its width, so a plain Anima 2B was refused
+            // as "25 blocks, width ?". Everything that reads a header (family, size, int8) saw the same cut.
+            val body = ByteArray(len.toInt())
             input.readUpTo(body)
             json = String(body, Charsets.UTF_8)
         }

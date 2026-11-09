@@ -691,6 +691,11 @@ data class CanvasState(
         workflow = workflow.copy(graph = workflow.graph.withParams(nodeId, values)),
     )
 
+    /** ⭐ Every Output runs this upscaler: Use on one names it, else the node's default, the first installed, runs (GitHub #99). */
+    fun withUpscaler(id: String): CanvasState =
+        workflow.graph.nodes.filter { it.type == com.abrah.nightmare.MediaOutputNode.name }
+            .fold(this) { s, n -> s.setParam(n.id, com.abrah.nightmare.MediaOutputNode.UPSCALER, id) }
+
     fun closeInspector() = copy(editing = null, focusField = null, cropRequest = null)
 
     /** ⚠ The pick request, handed to the picker once — see [pickImageFor]. */

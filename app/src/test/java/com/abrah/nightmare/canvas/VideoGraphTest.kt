@@ -362,6 +362,16 @@ class VideoGraphTest {
         assertEquals("2.75", wan.memoryBudget(wan.pinnedBytes(704, 1280, 49), gb16, 75))
     }
 
+    /** ⭐ When Video: stream the model cannot change a clip, the run log says so: below the 8 Elite, and a clip too big to hold. */
+    @Test
+    fun aClipThatStreamsAnywayIsTheOneTheSwitchCannotChange() {
+        val wan = com.abrah.nightmare.npu.WanVideoNode
+        val s25 = 11_652_820_992L
+        assertEquals(false, wan.streamsAnyway(wan.pinnedBytes(832, 480, 121), s25, 79))
+        assertEquals(true, wan.streamsAnyway(wan.pinnedBytes(704, 1280, 121), s25, 79))
+        assertEquals(true, wan.streamsAnyway(wan.pinnedBytes(480, 832, 49), s25, 75))
+    }
+
     /**
      * ⭐ What the slider warning judges, against real runs: a tester's S24 Ultra (SM8650, 1.6.171, two LoRAs)
      * rendered 928x928 for 2 s and failed 5 s (`need 4847 MB device / 2816 MB budget`); the S25 forced to

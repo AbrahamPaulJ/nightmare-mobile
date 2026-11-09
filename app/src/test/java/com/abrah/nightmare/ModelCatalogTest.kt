@@ -381,7 +381,12 @@ class ModelCatalogTest {
         val moss = ModelCatalog.byId("moss_image")!!
         assertEquals(true, BackendProcess.shipsThisEncoder(moss, 5_379_417_312L))
         assertEquals(false, BackendProcess.shipsThisEncoder(moss, 5_680_522_464L))
-        assertEquals("dmd8.safetensors", moss.ownLora)
+        assertEquals("lora_latest.safetensors", moss.ownLora)
+        // ⚠ GitHub #94: pinned to the tested commit, and a name of its own: the old file is the same size.
+        assertTrue(moss.files.first { it.name == moss.ownLora }.url.contains("/resolve/f95df83b5e90ae91ea412434b3f9b7f1c8c6314f/lora_latest.safetensors"))
+        // ⚠ Base and the 4-step stay on their own LoRAs.
+        assertEquals("dmd8.safetensors", ModelCatalog.byId("moss_image_base")!!.ownLora)
+        assertEquals("dmd8.safetensors", ModelCatalog.byId("moss_image_4step")!!.ownLora)
         assertEquals(Family.MOSS, moss.family)
         // ⭐ An import (no files of its own) with its own copy of that encoder passes too (a tester's Moody, 1.6.214).
         val import = moss.copy(id = "moody", files = emptyList(), isCustom = true)

@@ -1226,7 +1226,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val cfg = parts.getOrNull(3)?.trim()?.toDoubleOrNull() ?: 1.0
         val res = if (spec.id == SelectedModel.id) SelectedModel.res else spec.native
         val dir = java.io.File(ctx.getExternalFilesDir(null), "dit_bench").apply { mkdirs() }
-        val negative = "worst quality, low quality, blurry, lowres, watermark, text"
+        // ⭐ Diagnostic: `dit_bench/prompt.txt` is a tester's own render: its seed, its negative, then its prompt, a line each.
+        val custom = java.io.File(dir, "prompt.txt").takeIf { it.isFile }?.readLines()?.takeIf { it.size >= 3 }
+        val negative = custom?.get(1) ?: "worst quality, low quality, blurry, lowres, watermark, text"
         if (!ensureBackend(ContextKey(ModelCatalog.backendTypeOf(spec.id), spec.id, res.width, res.height))) {
             return say("dit_bench: no backend", bad = true)
         }
@@ -1253,9 +1255,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         RunWakeLock.begin(ctx)
         val r = try { Ops.generate(
             // ⚠ Anima leads with its rating tag, as [loraProbePrompt] does: without one it picks its own rating.
-            prompt = if (mode == "edit") "make it winter, snow on the roof and ground"
+            prompt = custom?.drop(2)?.joinToString(" ") ?: if (mode == "edit") "make it winter, snow on the roof and ground"
                 else (if (spec.family == Family.ANIMA_DIT) "safe, " else "") + "a lovely cat holding a sign that says 'Nightmare',",
-            negative = negative, steps = steps, cfg = cfg, seed = 12345,
+            negative = negative, steps = steps, cfg = cfg, seed = custom?.get(0)?.trim()?.toIntOrNull() ?: 12345,
             width = res.width, height = res.height,
             imagePng = base, denoise = 1.0,
         ) } finally { BackendIdle.end(); RunWakeLock.end() }

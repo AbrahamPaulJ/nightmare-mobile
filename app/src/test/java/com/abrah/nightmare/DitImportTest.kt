@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -370,6 +371,20 @@ class DitImportTest {
         assertEquals(null, CustomModels.animaSizeProblem("{}"))
     }
 
+    /** ⚠ GitHub #90: a ComfyUI workflow in `__metadata__` pushed the table past a 512 KB read: "25 blocks, width ?". */
+    @Test
+    fun aHeaderIsReadWholePastAnEmbeddedWorkflow() {
+        val table = buildString {
+            for (i in 0 until 28) append(",\"model.diffusion_model.blocks.$i.self_attn.q_proj.weight\":{\"dtype\":\"BF16\",\"shape\":[2048,2048],\"data_offsets\":[0,1]}")
+            append(",\"model.diffusion_model.x_embedder.proj.1.weight\":{\"dtype\":\"BF16\",\"shape\":[2048,68],\"data_offsets\":[0,1]}}")
+        }
+        val json = "{\"__metadata__\":{\"workflow\":\"" + "x".repeat(600 * 1024) + "\"}" + table
+        val bytes = safetensors(json)
+        val head = CustomModels.ditHeader { java.io.ByteArrayInputStream(bytes) }.json
+        assertEquals(28, CustomModels.animaBlocks(head))
+        assertEquals(null, CustomModels.animaSizeProblem(head))
+    }
+
     /** ⭐ GitHub #50: a 4-bit ComfyUI checkpoint is refused at import; fp8 and int8 are not. Lines from the real header. */
     @Test
     fun packedFourBitCheckpointsAreRefused() {
@@ -434,12 +449,35 @@ class DitImportTest {
         assertEquals(8, spec().steps)
         assertEquals(1.0, spec().cfg, 0.0)
         assertEquals(File(donor, ModelCatalog.MOSS_LORA), spec().ownLoraFile(dir))
+        // ⭐ GitHub #94: SFT's new LoRA once the donor has it; the old one above is a donor not yet updated, or Base.
+        File(donor, ModelCatalog.MOSS_SFT_LORA).writeBytes(ByteArray(16))
+        assertEquals(File(donor, ModelCatalog.MOSS_SFT_LORA), spec().ownLoraFile(dir))
         CustomModels.setMossSpeed(dir, false)
         assertEquals(null, spec().ownLora)
         assertEquals(25, spec().steps)
         CustomModels.setMossSpeed(dir, true)
         File(dir, CustomModels.MOSS_FEW_STEP_MARK).writeBytes(ByteArray(0))
         assertEquals(null, spec().ownLora)
+    }
+
+    /** ⚠ GitHub #94: the old LoRA goes only once the new one is whole, and only at the size we shipped. */
+    @Test
+    fun sftsOldLoraIsReclaimedOnlyAfterTheNewOne() {
+        val dir = File(ModelCatalog.root(ctx), "moss_reclaim").apply { mkdirs() }
+        val old = File(dir, ModelCatalog.MOSS_LORA)
+        java.io.RandomAccessFile(old, "rw").use { it.setLength(1_189_176_800L) }
+        assertFalse(ModelCatalog.reclaimOldMossLora(dir, whole = false))
+        assertFalse("the new file is not there", ModelCatalog.reclaimOldMossLora(dir, whole = true))
+        File(dir, ModelCatalog.MOSS_SFT_LORA).writeBytes(ByteArray(16))
+        assertFalse("still downloading", ModelCatalog.reclaimOldMossLora(dir, whole = false))
+        assertTrue(old.isFile)
+        java.io.RandomAccessFile(old, "rw").use { it.setLength(1_000L) }
+        assertFalse("someone's own file", ModelCatalog.reclaimOldMossLora(dir, whole = true))
+        assertTrue(old.isFile)
+        java.io.RandomAccessFile(old, "rw").use { it.setLength(1_189_176_800L) }
+        assertTrue(ModelCatalog.reclaimOldMossLora(dir, whole = true))
+        assertFalse(old.exists())
+        assertTrue(File(dir, ModelCatalog.MOSS_SFT_LORA).isFile)
     }
 
     /** ⚠ …and the same folder holding Klein weights reads as FLUX.2. */

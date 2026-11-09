@@ -200,7 +200,7 @@ object SafetensorsGguf {
 
             var done = 0L
             for (t in tensors) {
-                val width = when (t.dtype) { "F32" -> 4; "BF16", "F16" -> 2; "I8" -> 1; else -> throw IOException("unsupported dtype ${t.dtype}") }
+                val width = when (t.dtype) { "F32" -> 4; "BF16", "F16" -> 2; "I8", "F8_E4M3" -> 1; else -> throw IOException("unsupported dtype ${t.dtype}") }
                 if (t.end - t.begin != t.elements * width) throw IOException("${t.name}: size does not match its shape")
                 src.seek(t.begin)
                 // ⚠ Row by row, in groups of whole rows: a row is where padding goes and where a Q8_0
@@ -247,6 +247,7 @@ object SafetensorsGguf {
                 "BF16" -> java.lang.Float.intBitsToFloat((bb.getShort(k * 2).toInt() and 0xFFFF) shl 16)
                 "F16" -> Half.toFloat(bb.getShort(k * 2))
                 "I8" -> raw[k].toFloat()
+                "F8_E4M3" -> Fp8Widen.LUT[raw[k].toInt() and 0xFF]
                 else -> bb.getFloat(k * width)
             }
         }
