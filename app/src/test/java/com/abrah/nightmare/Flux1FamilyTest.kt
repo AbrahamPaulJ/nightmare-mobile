@@ -59,6 +59,15 @@ class Flux1FamilyTest {
         assertNull("a 24 GB phone", BackendProcess.kreaBudget(spec, 24 * gb, 18 * gb))
     }
 
+    /** ⭐ The run-log note under 20 steps (a tester's 12-step render, 2026-11-10): FLUX.1 only, and not at its own default. */
+    @Test
+    fun aRenderUnderTwentyStepsGetsTheNote() {
+        assertTrue(SdSampler.FLUX1.fewFlux1Steps(mapOf("steps" to "12")))
+        assertFalse(SdSampler.FLUX1.fewFlux1Steps(mapOf("steps" to "20")))
+        assertFalse("its own default", SdSampler.FLUX1.fewFlux1Steps(emptyMap()))
+        assertFalse("the control: Klein at 4 steps", SdSampler.FLUX3.fewFlux1Steps(mapOf("steps" to "4")))
+    }
+
     /** ⭐ The 8 Gen 1 trial's chip test ([Prefs.v69Npu], off by default): the CPU route stays the default there. */
     @Test
     fun theTrialIsOffByDefault() {

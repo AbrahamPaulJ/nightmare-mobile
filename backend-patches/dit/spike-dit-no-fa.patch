@@ -1,0 +1,18 @@
+SPIKE, test only (2026-11-11, CI 42876412003): NM_DIT_NO_FA=1 turns flash attention off. FLUX.1 512² 8 steps on the S25
+came back as a broken frame (5.2 dB): without flash attention K^T Q is a plain fp16 matmul on HTP and FLUX.1's raw q.k
+overflows it. The attention-on-CPU op filter broke the same way (that filter falls back to the same path). It is what
+pointed dit/096 at attention's kv_scale. docs/IMPORTS.md, FLUX.1 stripes.
+
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -188,4 +188,10 @@
+     sd_params.params_backend = "diffusion=disk";
+   }
++  // nightmare (spike, 2026-11-11): flash attention off in every module when NM_DIT_NO_FA=1, the last NPU suspect for
++  // FLUX.1's stripes (matmuls, rope, VAE and fp16 scales ruled out, docs/IMPORTS.md). Test only.
++  if (const char *nofa = std::getenv("NM_DIT_NO_FA"); nofa && nofa[0] == '1') {
++    sd_params.flash_attn = false;
++    sd_params.diffusion_flash_attn = false;
++  }
+   // nightmare: a per-device GiB budget for weights and runner buffers, read
+   // from the environment so dit_ctx_params (the ABI) does not move. Below HTP

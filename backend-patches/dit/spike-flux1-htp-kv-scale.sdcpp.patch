@@ -1,0 +1,76 @@
+SPIKE, not shipped (2026-11-11, CI 42883762538): FLUX.1's attention kv_scale on HTP (NM_FLUX1_KV_SCALE), the lever
+dit/029 uses for Ideogram 4. Built after spike-dit-no-fa showed FLUX.1's raw q.k overflows a plain fp16 matmul. Refuted on the
+S25 at 1024² 20 steps: 1/128 rendered 58.6 dB from the unscaled picture, the stripes the same, so flash attention does not
+saturate either. docs/IMPORTS.md, FLUX.1 stripes.
+
+diff --git a/src/model/diffusion/flux.hpp b/src/model/diffusion/flux.hpp
+index a961baf..a0e4eff 100644
+--- a/src/model/diffusion/flux.hpp
++++ b/src/model/diffusion/flux.hpp
+@@ -17,8 +17,37 @@
+ 
+ #define FLUX_GRAPH_SIZE 10240
+ 
++// nightmare (dit/096): the measured default (docs/IMPORTS.md, FLUX.1 stripes).
++#ifndef NM_FLUX1_KV_SCALE_DEFAULT
++#define NM_FLUX1_KV_SCALE_DEFAULT 1.f
++#endif
++
+ namespace Flux {
+ 
++    // nightmare (dit/096): FLUX.1's raw q.k overflows fp16 on Hexagon (without flash attention its K^T Q matmul went
++    // inf and the picture broke), and with flash attention it drew fine stripes in fur and skin. ggml_ext_attention_ext's
++    // kv_scale ("avoid overflow", the 1/128 Ideogram 4 takes in dit/029) shrinks K and V before their fp16 cast and
++    // divides the result back. FLUX.1 only (vector_in, not Chroma): FLUX.2 Klein shares this file and is clean.
++    // NM_FLUX1_KV_SCALE replaces the default.
++    static bool& nm_flux1_htp() {
++        static bool on = false;
++        return on;
++    }
++
++    static float nm_flux1_kv_scale(GGMLRunnerContext* ctx) {
++        if (!nm_flux1_htp() || ctx->backend == nullptr || !sd_backend_is(ctx->backend, "HTP")) {
++            return 1.f;
++        }
++        static const float s = [] {
++            const char* e = getenv("NM_FLUX1_KV_SCALE");
++            float v       = e && e[0] ? (float)atof(e) : NM_FLUX1_KV_SCALE_DEFAULT;
++            if (!(v > 0.f)) v = 1.f;
++            LOG_INFO("flux: FLUX.1 HTP attention kv_scale %g", v);
++            return v;
++        }();
++        return s;
++    }
++
+     struct ChromaRadianceConfig {
+         int64_t nerf_hidden_size = 64;
+         int nerf_mlp_ratio       = 4;
+@@ -646,7 +675,8 @@ namespace Flux {
+                                                img_attn->num_heads,
+                                                mask,
+                                                true,
+-                                               ctx->flash_attn_enabled);
++                                               ctx->flash_attn_enabled,
++                                               nm_flux1_kv_scale(ctx));  // nightmare (dit/096)
+             auto txt_attn_out = ggml_view_3d(ctx->ggml_ctx,
+                                              attn,
+                                              attn->ne[0],
+@@ -779,7 +809,8 @@ namespace Flux {
+                                                num_heads,
+                                                mask,
+                                                true,
+-                                               ctx->flash_attn_enabled);  // [N, n_token, hidden_size]
++                                               ctx->flash_attn_enabled,
++                                               nm_flux1_kv_scale(ctx));  // [N, n_token, hidden_size], nightmare (dit/096)
+ 
+             auto mlp = ggml_view_3d(ctx->ggml_ctx, qkv_mlp, mlp_hidden_dim * mlp_mult_factor, qkv_mlp->ne[1], qkv_mlp->ne[2], qkv_mlp->nb[1], qkv_mlp->nb[2], hidden_size * 3 * qkv_mlp->nb[0]);
+             if (use_yak_mlp) {
+@@ -1005,6 +1036,8 @@ namespace Flux {
+         Flux() {}
+         Flux(FluxConfig config)
+             : config(config) {
++            // nightmare (dit/096): FLUX.1 and its variants carry vector_in; FLUX.2, Ovis, SeFi and LongCat set vec_in_dim 0.
++            nm_flux1_htp() = config.vec_in_dim > 0 && !config.is_chroma && !config.is_sefi;
+             if (config.version == VERSION_CHROMA_RADIANCE) {
+                 std::pair<int, int> kernel_size = {config.patch_size, config.patch_size};
+                 if (config.chroma_radiance_params.fake_patch_size_x2) {

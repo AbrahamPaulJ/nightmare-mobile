@@ -1,0 +1,145 @@
+SPIKE, not shipped (2026-11-11): per-projection HTP matmul scales for FLUX.1 (NM_FLUX1_HTP_SCALE), built as dit/096 (CI
+42844291012) to fix FLUX.1's stripes as dit/025 and dit/045 fixed fp16 overflows. Refuted on the S25: every projection at
+1/32 rendered 59.0 dB from the unscaled picture at 1024² 20 steps (stripes the same), and matmuls on the CPU drew the same
+texture at 512² (33.7 dB to the NPU's, error unstructured). Not an overflow. docs/IMPORTS.md, FLUX.1 stripes.
+
+diff --git a/src/model/diffusion/flux.hpp b/src/model/diffusion/flux.hpp
+index a961baf..e6cc558 100644
+--- a/src/model/diffusion/flux.hpp
++++ b/src/model/diffusion/flux.hpp
+@@ -17,8 +17,57 @@
+ 
+ #define FLUX_GRAPH_SIZE 10240
+ 
++// nightmare (dit/096): the measured default (docs/IMPORTS.md, FLUX.1 stripes).
++#ifndef NM_FLUX1_HTP_SCALE_DEFAULT
++#define NM_FLUX1_HTP_SCALE_DEFAULT "none:1"
++#endif
++
+ namespace Flux {
+ 
++    // nightmare (dit/096): FLUX.1 dev on Hexagon draws fine vertical stripes in fur and skin (a tester's 12-step render and
++    // our 20-step bench, 2026-11-10). A matmul's result passes through fp16 there, the class dit/025 (Z-Image) and dit/045
++    // (FLUX.3) fixed: Linear::set_scale runs x * s through the matmul and the result / s. FLUX.1 only (vector_in, not Chroma):
++    // FLUX.2 Klein shares this file and is clean. Per projection, NM_FLUX1_HTP_SCALE="name:scale,..." replaces the default
++    // ("all" matches every one; "none:1" turns it off). Names: img_in txt_in img_qkv img_proj img_mlp0 img_mlp2 txt_qkv
++    // txt_proj txt_mlp0 txt_mlp2 linear1 linear2 final.
++    static bool& nm_flux1_htp() {
++        static bool on = false;
++        return on;
++    }
++
++    static float nm_flux1_scale(GGMLRunnerContext* ctx, const char* name) {
++        if (!nm_flux1_htp() || ctx->backend == nullptr || !sd_backend_is(ctx->backend, "HTP")) {
++            return 1.f;
++        }
++        static const std::vector<std::pair<std::string, float>> table = [] {
++            std::vector<std::pair<std::string, float>> t;
++            const char* e    = getenv("NM_FLUX1_HTP_SCALE");
++            std::string spec = e ? e : NM_FLUX1_HTP_SCALE_DEFAULT;
++            size_t pos       = 0;
++            while (pos < spec.size()) {
++                size_t end = spec.find(',', pos);
++                if (end == std::string::npos) end = spec.size();
++                std::string item = spec.substr(pos, end - pos);
++                size_t colon     = item.find(':');
++                if (colon != std::string::npos) {
++                    t.emplace_back(item.substr(0, colon), (float)atof(item.c_str() + colon + 1));
++                }
++                pos = end + 1;
++            }
++            LOG_INFO("flux: FLUX.1 HTP matmul scales '%s'", spec.c_str());
++            return t;
++        }();
++        for (const auto& [n, v] : table) {
++            if ((n == "all" || n == name) && v > 0.f) return v;
++        }
++        return 1.f;
++    }
++
++    static void nm_flux1_set(GGMLRunnerContext* ctx, const std::shared_ptr<GGMLBlock>& block, const char* name) {
++        auto l = std::dynamic_pointer_cast<Linear>(block);
++        if (l && nm_flux1_htp()) l->set_scale(nm_flux1_scale(ctx, name));
++    }
++
+     struct ChromaRadianceConfig {
+         int64_t nerf_hidden_size = 64;
+         int nerf_mlp_ratio       = 4;
+@@ -305,6 +354,12 @@ namespace Flux {
+             blocks["proj"]   = std::shared_ptr<GGMLBlock>(new Linear(dim, dim, proj_bias));
+         }
+ 
++        // nightmare (dit/096)
++        void nm_flux1_scales(GGMLRunnerContext* ctx, const char* qkv, const char* proj) {
++            nm_flux1_set(ctx, blocks["qkv"], qkv);
++            nm_flux1_set(ctx, blocks["proj"], proj);
++        }
++
+         std::vector<ggml_tensor*> pre_attention(GGMLRunnerContext* ctx,
+                                                 ggml_tensor* x,
+                                                 ggml_tensor* pe = nullptr) {
+@@ -369,6 +424,12 @@ namespace Flux {
+             blocks["2"]             = std::make_shared<Linear>(intermediate_size, hidden_size, bias);
+         }
+ 
++        // nightmare (dit/096)
++        void nm_flux1_scales(GGMLRunnerContext* ctx, const char* in, const char* out) {
++            nm_flux1_set(ctx, blocks["0"], in);
++            nm_flux1_set(ctx, blocks["2"], out);
++        }
++
+         ggml_tensor* forward(GGMLRunnerContext* ctx, ggml_tensor* x) {
+             auto mlp_0 = std::dynamic_pointer_cast<Linear>(blocks["0"]);
+             auto mlp_2 = std::dynamic_pointer_cast<Linear>(blocks["2"]);
+@@ -586,6 +647,13 @@ namespace Flux {
+             auto txt_norm2 = std::dynamic_pointer_cast<LayerNorm>(blocks["txt_norm2"]);
+             auto txt_mlp   = std::dynamic_pointer_cast<UnaryBlock>(blocks["txt_mlp"]);
+ 
++            if (nm_flux1_htp()) {  // nightmare (dit/096)
++                img_attn->nm_flux1_scales(ctx, "img_qkv", "img_proj");
++                txt_attn->nm_flux1_scales(ctx, "txt_qkv", "txt_proj");
++                if (auto m = std::dynamic_pointer_cast<MLP>(img_mlp)) m->nm_flux1_scales(ctx, "img_mlp0", "img_mlp2");
++                if (auto m = std::dynamic_pointer_cast<MLP>(txt_mlp)) m->nm_flux1_scales(ctx, "txt_mlp0", "txt_mlp2");
++            }
++
+             if (img_mods.empty()) {
+                 if (prune_mod) {
+                     img_mods = get_distil_img_mod(ctx, vec);
+@@ -743,6 +811,9 @@ namespace Flux {
+             auto linear2  = std::dynamic_pointer_cast<Linear>(blocks["linear2"]);
+             auto norm     = std::dynamic_pointer_cast<QKNorm>(blocks["norm"]);
+             auto pre_norm = std::dynamic_pointer_cast<LayerNorm>(blocks["pre_norm"]);
++            // nightmare (dit/096): a scaled linear2 leaves the fused segmented matmul for concat + matmul (Linear::forward_segmented).
++            nm_flux1_set(ctx, blocks["linear1"], "linear1");
++            nm_flux1_set(ctx, blocks["linear2"], "linear2");
+ 
+             ModulationOut mod;
+             if (!mods.empty()) {
+@@ -832,6 +903,7 @@ namespace Flux {
+             // return: [N, n_token, patch_size * patch_size * out_channels]
+             auto norm_final = std::dynamic_pointer_cast<LayerNorm>(blocks["norm_final"]);
+             auto linear     = std::dynamic_pointer_cast<Linear>(blocks["linear"]);
++            nm_flux1_set(ctx, blocks["linear"], "final");  // nightmare (dit/096)
+             ggml_tensor *shift, *scale;
+             if (prune_mod) {
+                 auto mod = get_distil_mod(ctx, c);
+@@ -1005,6 +1077,8 @@ namespace Flux {
+         Flux() {}
+         Flux(FluxConfig config)
+             : config(config) {
++            // nightmare (dit/096): FLUX.1 and its variants carry vector_in; FLUX.2, Ovis, SeFi and LongCat set vec_in_dim 0.
++            nm_flux1_htp() = config.vec_in_dim > 0 && !config.is_chroma && !config.is_sefi;
+             if (config.version == VERSION_CHROMA_RADIANCE) {
+                 std::pair<int, int> kernel_size = {config.patch_size, config.patch_size};
+                 if (config.chroma_radiance_params.fake_patch_size_x2) {
+@@ -1118,8 +1192,10 @@ namespace Flux {
+             auto final_layer = std::dynamic_pointer_cast<LastLayer>(blocks["final_layer"]);
+ 
+             if (img_in) {
++                nm_flux1_set(ctx, blocks["img_in"], "img_in");  // nightmare (dit/096)
+                 img = img_in->forward(ctx, img);
+             }
++            nm_flux1_set(ctx, blocks["txt_in"], "txt_in");  // nightmare (dit/096)
+ 
+             ggml_tensor* vec;
+             ggml_tensor* txt_img_mask = nullptr;

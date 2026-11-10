@@ -247,6 +247,7 @@
     <string name="run_wan_npu_warning">%1$s、%2$s 秒一次需要约 %3$s GB 的 NPU 内存，超出这台手机 NPU 的承受范围，很可能会失败。仍然尝试</string>
     <string name="run_wan_streams_anyway">无论流式读取模型开关如何设置，此片段都会流式读取模型：这台手机的 NPU 无法完整容纳它。</string>
     <string name="run_sdxl_lowram_anyway">无论开关如何设置，SDXL 在这台手机上都以低内存模式运行：否则在内存小于 16 GB 的手机上 SDXL 会占满内存，Android 会关闭应用。</string>
+    <string name="run_flux1_few_steps">FLUX.1 dev 需要 20 步或更多：步数更少时，毛发、皮肤和细节会显得未完成。</string>
     <string name="run_ref_fit_warning">%1$s 使用参考图：%2$s 对这台手机可能太大，可能会失败。%3$s 可以。仍然尝试</string>
     <string name="feature_missing_convert">此转换没有 %1$s。请在 npuforge 中勾选 %1$s 后重新转换。</string>
     <string name="feature_missing_builtin">此模型的这份下载没有 %1$s。删除后重新下载即可获得包含它的版本。</string>

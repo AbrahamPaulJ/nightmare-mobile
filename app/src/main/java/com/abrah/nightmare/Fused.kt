@@ -740,6 +740,8 @@ class SdSampler(
         val FLUX3 = SdSampler("flux3.sample", Family.FLUX3, inpaint = false)
         /** ⭐ FLUX.1 dev (`docs/IMPORTS.md`) — text to image only until the rest is measured. */
         val FLUX1 = SdSampler("flux1.sample", Family.FLUX1, inpaint = false)
+        /** ⭐ FLUX.1 dev's catalogue steps; below it the run log says so ([fewFlux1Steps]). */
+        const val FLUX1_MIN_STEPS = 20
         /** ⭐ Fibo 2.0 Edit Turbo (GH #69, `dit/056`): an editor, its picture the reference ([Family.edit]); no inpaint. */
         val FIBO2 = SdSampler("fibo2.sample", Family.FIBO2, inpaint = false)
         /**
@@ -1270,6 +1272,11 @@ class SdSampler(
             ctx.say(ctx.text(R.string.run_sdxl_lowram_anyway,
                 "SDXL runs in low RAM mode on this phone whichever way the switch is set: without it SDXL fills a phone under 16 GB and Android closes apps."))
         }
+        // ⭐ FLUX.1 dev is guidance-distilled, not step-distilled: a tester's 12-step render came back unfinished (LIST-N4, 2026-11-10).
+        if (fewFlux1Steps(effectiveParams(node))) {
+            ctx.say(ctx.text(R.string.run_flux1_few_steps,
+                "FLUX.1 dev is made for 20 steps or more: with fewer, fur, skin and fine detail come out unfinished."))
+        }
         // ⭐⭐ The picture under the fix, remembered without the fix's own params ([com.abrah.nightmare.detail.Detailer.PARAMS]): Fix faces
         // switched on, or a new Fix strength or Fix seed, redraws the faces on the picture already made (Saved #7072,
         // "it reruns the full diffusion sampling"). ⚠ Safe because Run rolls seed 0 into a real seed first
@@ -1285,6 +1292,10 @@ class SdSampler(
         if (baseKey != null) remember(baseKey, big)
         return detail(ctx, node, inputs, big)
     }
+
+    /** ⭐ A FLUX.1 render below [FLUX1_MIN_STEPS], the run-log note's condition. */
+    internal fun fewFlux1Steps(p: Map<String, String>): Boolean =
+        family == Family.FLUX1 && (p["steps"]?.toIntOrNull() ?: FLUX1_MIN_STEPS) < FLUX1_MIN_STEPS
 
     /**
      * ⭐ Where Fix faces / Fix hands are offered ([com.abrah.nightmare.detail.Detailer]): every family with
