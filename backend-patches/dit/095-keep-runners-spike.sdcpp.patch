@@ -1,0 +1,74 @@
+diff --git a/src/core/ggml_runner.cpp b/src/core/ggml_runner.cpp
+index 32c808c..9253cac 100644
+--- a/src/core/ggml_runner.cpp
++++ b/src/core/ggml_runner.cpp
+@@ -1,4 +1,5 @@
+ #include <algorithm>
++#include <cstdlib>
+ #include <map>
+ #include <thread>
+ #include <utility>
+@@ -466,6 +467,17 @@ bool GGMLRunner::runner_start() {
+     return true;
+ }
+ 
++// dit/095, a spike (the list's H1c): NM_KEEP_RUNNERS=1 keeps a runner's weights staged on its compute backend when the
++// stage ends, so the next render does not load the DiT and the text encoder again (~3.4 s of 12.7 s, Anima 512x768).
++// The workspace (activations) is still freed. A LoRA change or a model change sets nm_force_runner_end: a staged copy
++// would not see a LoRA merged into the weights, nor a replaced file.
++bool nm_force_runner_end = false;
++
++static bool nm_keep_runners() {
++    static const bool keep = std::getenv("NM_KEEP_RUNNERS") != nullptr;
++    return keep;
++}
++
+ void GGMLRunner::runner_end() {
+     GGML_ASSERT(!graph_active_);
+     if (!runner_started_) {
+@@ -475,6 +487,17 @@ void GGMLRunner::runner_end() {
+     cache_.clear();
+     logged_compute_bytes_.clear();
+     logged_segment_count_ = 0;
++    if (nm_keep_runners() && !nm_force_runner_end) {
++        // The runner ends as before (its owner and reclaimer go, so the manager no longer sees a render running:
++        // a first try that kept those failed every second render with "cannot update model sources during
++        // execution"), but its staged weights are not evicted.
++        if (auto manager = residency_manager.lock()) {
++            manager->clear_prefetched_params(reinterpret_cast<uintptr_t>(this));
++            manager->remove_runtime_owner(reinterpret_cast<uintptr_t>(this));
++        }
++        runner_started_ = false;
++        return;
++    }
+     if (auto manager = residency_manager.lock()) {
+         manager->clear_prefetched_params(reinterpret_cast<uintptr_t>(this));
+         std::vector<ggml_tensor*> tensors;
+diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
+index 125f554..b6dcc64 100644
+--- a/src/pipeline/diffusion_engine.cpp
++++ b/src/pipeline/diffusion_engine.cpp
+@@ -202,8 +202,12 @@ void StableDiffusionGGML::end_runners() {
+             lora.model->runner_end();
+ }
+ 
++extern bool nm_force_runner_end;  // dit/095, core/ggml_runner.cpp
++
+ bool StableDiffusionGGML::reset_runners(const RunnerGroups& groups) {
++    nm_force_runner_end = true;
+     end_runners();
++    nm_force_runner_end = false;
+     clear_lora_adapters();
+     runtime_lora_models.clear();
+     for (auto group : groups) {
+@@ -1686,7 +1690,10 @@ bool StableDiffusionGGML::apply_loras(const sd_lora_t* loras, uint32_t lora_coun
+     }
+ 
+     int64_t t0 = ggml_time_ms();
++    // dit/095: a render with a LoRA, or the first one after one, ends its runners in full.
++    nm_force_runner_end = !all_loras.empty() || !runtime_lora_models.empty();
+     end_runners();
++    nm_force_runner_end = false;
+     clear_lora_adapters();
+     if (!model_manager->prepare_lora_sources(all_loras))
+         return false;

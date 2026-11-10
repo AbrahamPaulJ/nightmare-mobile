@@ -127,6 +127,16 @@ Three switches the same as LocalDream's, whose defaults are set **from your phon
 Changing a switch takes effect on the next Run (a loaded model of that family is let go). More
 in [Memory and speed](memory.md).
 
+On a phone with 12 GB or more, Anima keeps its model loaded between renders: every render after
+the first is about 20 to 40 percent faster, and the same picture. It holds about 3 GB while the
+model stays loaded. A render with a LoRA loads it again each time.
+
+### Speed
+
+| switch | default | what it does |
+|---|---|---|
+| **Predict some steps (Anima, 8 steps or more)** | off | After the first 4 steps, some steps are predicted from the earlier ones instead of being run. About 20 to 25 percent faster at 10 steps, the same picture a little softer. Renders under 8 steps are not changed |
+
 ### Heat
 
 A video render keeps the phone's processors busy for minutes, and the phone gets hot. The chip

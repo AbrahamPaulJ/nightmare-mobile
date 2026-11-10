@@ -5481,7 +5481,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
      * `<model>=<bytes>` sets (0 clears; a value BELOW the need forces the QNN
      * error the retry learns from), `sdxl_lowram=0|1` sets that real preference
      * (the group exists only without `--lowram`), a bare model id prints.
-     * `wan_stream=0|1` sets Video: stream the model, the same way (GitHub #59).
+     * `wan_stream=0|1` sets Video: stream the model, the same way (GitHub #59); `dit_spectrum=0|1` Spectrum (#98).
      */
     /**
      * ⭐ GitHub #78's question, asked from inside the app (an `adb shell` reads with other rights): each
@@ -5513,6 +5513,11 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             k == "wan_stream" && v != null -> {
                 Prefs.setLowRam(ctx, Prefs.KEY_WAN_STREAM, v == "1")
                 say("spillfill: wan stream = ${Prefs.wanStream}")
+            }
+            // ⭐ Settings, Speed: Spectrum, the same way (GitHub #98). ⚠ A launch variable: the next backend reads it.
+            k == "dit_spectrum" && v != null -> {
+                Prefs.setLowRam(ctx, Prefs.KEY_DIT_SPECTRUM, v == "1")
+                say("spillfill: dit spectrum = ${Prefs.ditSpectrum}")
             }
             v != null -> {
                 SpillFill.setForTest(ctx, k, v.toLongOrNull() ?: 0L)

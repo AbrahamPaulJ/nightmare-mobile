@@ -180,10 +180,11 @@ object DitEngine {
      * (Same rule, same reason, as `Segmenter.URL`'s "a new filename per
      * revision, never an upload over the old one".)
      */
-    // ⭐ Current since 1.6.285: abi111 + `dit/089` (the loader's 200 ms poll), `dit/092` (FLUX.1 through the environment) and
-    // `dit/093` (a q/k/v LoRA on a fused MOSS), CI 42541825077 (NPU), 42541853384 (GPU), branch `dit-088-engine`. Still ABI 111; the wrapper only, skels are `dit/091`'s.
+    // ⭐ Current since 1.6.290: abi111-moss093's line + `dit/094` (Spectrum, `NM_SPECTRUM`) and `dit/095` (weights kept between
+    // renders, `NM_KEEP_RUNNERS`), both off unless [BackendProcess.ditSpeedEnv] sets them. CI 42738336004 (NPU), 42738369300
+    // (GPU), branch `dit-088-engine`. Still ABI 111; the wrapper only, skels are `dit/091`'s.
     private const val NPU_URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-moss093/dit-engine-abi111-moss093.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-keep095/dit-engine-abi111-keep095.zip"
 
     /**
      * ⭐⭐ The GPU variant ([DitGpu]): the same patch line + ggml's OpenCL backend with the Adreno kernels and `dit/067`
@@ -192,7 +193,7 @@ object DitEngine {
      * Still ABI 110. Its own tag and file name, so the stamp tells the two apart and a switch re-fetches.
      */
     private const val GPU_URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-moss093-gpu/dit-engine-abi111-moss093-gpu.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-keep095-gpu/dit-engine-abi111-keep095-gpu.zip"
 
     /** ⭐ Which of the two this phone runs: the GPU's wherever [DitGpu.wanted]. */
     private val gpu: Boolean get() = DitGpu.wanted()
@@ -218,11 +219,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    val BYTES: Long get() = if (gpu) GPU_BYTES else 23_317_536L
+    val BYTES: Long get() = if (gpu) GPU_BYTES else 23_321_126L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    val FILE_BYTES: Long get() = if (gpu) GPU_FILE_BYTES else 56_235_096L
+    val FILE_BYTES: Long get() = if (gpu) GPU_FILE_BYTES else 56_239_152L
 
     /**
      * ⭐ The GPU variant: CI 41781422175 (branch `gpu-110`), the NPU list + 067 + 080 + 081 + `085`, `opencl=true`.
@@ -231,9 +232,9 @@ object DitEngine {
      * ⚠ 085: the Adreno Q4_0/Q5 GEMM wrote every 080 token chunk at the output's first rows: grey pictures on any GPU
      * without the dense DP4A kernel (an 8 Gen 1, Saved #7647; the S25 with it off). Skels unchanged.
      */
-    private const val GPU_BYTES = 24_002_768L
-    private const val GPU_FILE_BYTES = 59_079_240L
-    private const val GPU_SHA256 = "848f81d3d094955a3674119e75455cd597fb6a4ece4fb45c2ee0a0eeb72810a5"
+    private const val GPU_BYTES = 24_005_404L
+    private const val GPU_FILE_BYTES = 59_083_280L
+    private const val GPU_SHA256 = "11f4c9cc29f2d7ce242b7e2a6e210248e57f4fb53ef3efc556d98d396013ede4"
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
@@ -243,7 +244,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private val SHA256: String get() = if (gpu) GPU_SHA256 else "da02371bf8f4ea3f1dd7b66882273d6c9d40d0cb398b840f575514f611f928ed"
+    private val SHA256: String get() = if (gpu) GPU_SHA256 else "d43a819fbb0d1e353c22bc5379ccef4ad8cc27a7078107babfcabf304d76783f"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

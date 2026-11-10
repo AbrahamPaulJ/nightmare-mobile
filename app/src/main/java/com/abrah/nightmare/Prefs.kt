@@ -81,6 +81,7 @@ object Prefs {
         ditGpu = p.getBoolean(KEY_DIT_GPU, false)
         v69Npu = p.getBoolean(KEY_V69_NPU, false)
         ditTaesd = p.getBoolean(KEY_DIT_TAESD, true)
+        ditSpectrum = p.getBoolean(KEY_DIT_SPECTRUM, false)
     }
 
     /** ⭐ A sampler's "More options" fold open (the user, 2026-10-17: closed by default, remembered). */
@@ -395,6 +396,18 @@ object Prefs {
         private set
 
     /**
+     * ⭐ Spectrum (GitHub #98, the user's call 2026-11-10: a setting, off by default): from step 5 on, an Anima render of
+     * 8 steps or more predicts some steps from the earlier ones instead of running the DiT (`dit/094`'s
+     * `NM_SPECTRUM`, sd.cpp's own cache). Anima Turbo 10 steps on the S25: 20-26 % faster, the same composition, a
+     * little softer (PSNR 22-27 dB against off). ⚠ Anima only: the one family measured ([BackendProcess.ditSpeedEnv]).
+     */
+    const val KEY_DIT_SPECTRUM = "dit_spectrum"
+
+    /** ⚠ [KEY_DIT_SPECTRUM] held in memory, as [ditGpu]: a launch reads it with no Context. */
+    @Volatile var ditSpectrum: Boolean = false
+        private set
+
+    /**
      * ⚠ 13 GiB, between the classes rather than at "16": a 12 GB phone reports
      * ~10.9–11.4 GiB of `totalMem` and a 16 GB one ~14.5–15 GiB, the rest being
      * reserved before Android sees it.
@@ -421,6 +434,7 @@ object Prefs {
         val ditGpu: Boolean = false,
         val v69Npu: Boolean = false,
         val ditTaesd: Boolean = true,
+        val ditSpectrum: Boolean = false,
     )
 
     /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */
@@ -449,6 +463,7 @@ object Prefs {
             ditGpu = read(KEY_DIT_GPU, false),
             v69Npu = read(KEY_V69_NPU, false),
             ditTaesd = read(KEY_DIT_TAESD, true),
+            ditSpectrum = read(KEY_DIT_SPECTRUM, false),
         )
     }
 
@@ -460,6 +475,7 @@ object Prefs {
         if (key == KEY_DIT_GPU) ditGpu = on
         if (key == KEY_V69_NPU) v69Npu = on
         if (key == KEY_DIT_TAESD) ditTaesd = on
+        if (key == KEY_DIT_SPECTRUM) ditSpectrum = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()
     }
 

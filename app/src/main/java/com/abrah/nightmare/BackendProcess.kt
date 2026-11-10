@@ -582,6 +582,23 @@ object BackendProcess {
      * ⭐ The decode stays on the NPU: TAEHV's `taew2_1` there is 1.4 s for 17 frames at 480x272 and 49 dB from the CPU's
      * 34 s, with the direct convolution the pipeline uses (`docs/VIDEO-GGML.md` §8; without it, purple mush).
      */
+    /**
+     * ⭐ Two engine speed-ups, both measured on Anima only, so given to Anima only until another family is measured.
+     *
+     * - `NM_KEEP_RUNNERS` (`dit/095`, LIST-N4 H1c, the user's call 2026-11-10: on for 12 GB phones): the encoder's and
+     *   the DiT's weights stay loaded between renders instead of loading again each time. Anima Turbo 4 steps on the
+     *   S25, every render after the first: 512x768 9.8 to 6.1 s, 1024² 22.7 to 18.3 s, byte-identical; ~3 GB more held
+     *   while the backend is up, hence [Prefs.RAM_12GB_CLASS_BYTES]. A render with a LoRA still loads in full.
+     * - `NM_SPECTRUM=4` (`dit/094`, GitHub #98, [Prefs.ditSpectrum]): 4 steps run, then some are predicted; a render of
+     *   under 8 steps is not changed by it.
+     * ⚠ Both bind at launch, as every variable here: a switch stops a resident Anima backend (`chooseLowRam`).
+     */
+    internal fun ditSpeedEnv(spec: ModelSpec?, ramBytes: Long, spectrum: Boolean): Map<String, String> = buildMap {
+        if (spec?.family != Family.ANIMA_DIT) return@buildMap
+        if (ramBytes >= Prefs.RAM_12GB_CLASS_BYTES) put("NM_KEEP_RUNNERS", "1")
+        if (spectrum) put("NM_SPECTRUM", "4")
+    }
+
     internal fun wanA14Env(model: File, arch: Int = 0): Map<String, String> {
         val high = File(model, ModelCatalog.WAN_HIGH_DIT).takeIf { it.isFile } ?: return emptyMap()
         return buildMap {
@@ -1090,6 +1107,8 @@ object BackendProcess {
                         }
                         // ⭐ A model's own flow shift ([ModelSpec.flowShift]).
                         spec?.flowShift?.let { put("NM_DIT_FLOW_SHIFT", it) }
+                        // ⭐ Weights kept between renders, and Spectrum where it is turned on ([ditSpeedEnv]).
+                        if (!diagnosing) putAll(ditSpeedEnv(spec, DeviceProbe.caps().ramBytes, Prefs.ditSpectrum))
 
                         // ⚠ Diagnostic only, and absent on every ordinary launch.
                         readDitBackendOverride(context)?.let { put("NM_DIT_BACKEND", it) }

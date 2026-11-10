@@ -636,6 +636,14 @@ fun SettingsScreen(
                             lowRam.wanStream, { onLowRam(Prefs.KEY_WAN_STREAM, it) },
                         )
                     }
+                    // ⭐ Spectrum (GitHub #98, [Prefs.ditSpectrum]): time for a little detail, opt-in.
+                    StudioCard {
+                        SectionHeading(stringResource(R.string.speed_title), stringResource(R.string.speed_note))
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.dit_spectrum), stringResource(R.string.dit_spectrum_hint),
+                            lowRam.ditSpectrum, { onLowRam(Prefs.KEY_DIT_SPECTRUM, it) },
+                        )
+                    }
                     // ⭐ Heat on a video render ([com.abrah.nightmare.BatteryHeat]): the battery's sake, opt-in.
                     StudioCard {
                         SectionHeading(stringResource(R.string.heat_title), stringResource(R.string.heat_note))
