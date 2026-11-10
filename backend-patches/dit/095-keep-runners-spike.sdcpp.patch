@@ -1,5 +1,5 @@
 diff --git a/src/core/ggml_runner.cpp b/src/core/ggml_runner.cpp
-index 32c808c..3a5fceb 100644
+index 32c808c..9253cac 100644
 --- a/src/core/ggml_runner.cpp
 +++ b/src/core/ggml_runner.cpp
 @@ -1,4 +1,5 @@
@@ -26,11 +26,19 @@ index 32c808c..3a5fceb 100644
  void GGMLRunner::runner_end() {
      GGML_ASSERT(!graph_active_);
      if (!runner_started_) {
-@@ -475,6 +487,9 @@ void GGMLRunner::runner_end() {
+@@ -475,6 +487,17 @@ void GGMLRunner::runner_end() {
      cache_.clear();
      logged_compute_bytes_.clear();
      logged_segment_count_ = 0;
 +    if (nm_keep_runners() && !nm_force_runner_end) {
++        // The runner ends as before (its owner and reclaimer go, so the manager no longer sees a render running:
++        // a first try that kept those failed every second render with "cannot update model sources during
++        // execution"), but its staged weights are not evicted.
++        if (auto manager = residency_manager.lock()) {
++            manager->clear_prefetched_params(reinterpret_cast<uintptr_t>(this));
++            manager->remove_runtime_owner(reinterpret_cast<uintptr_t>(this));
++        }
++        runner_started_ = false;
 +        return;
 +    }
      if (auto manager = residency_manager.lock()) {
