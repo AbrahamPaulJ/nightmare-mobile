@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.assertIsDisplayed
 import com.abrah.nightmare.canvas.LoraPicker
 import com.abrah.nightmare.canvas.NodeInspectorBody
 import com.abrah.nightmare.ui.NightmareTheme
@@ -83,6 +85,25 @@ class DialogGoldenTest {
         rule.waitForIdle()
         org.junit.Assert.assertEquals(listOf("a", "c"), deleted)
         assert(closed)
+    }
+
+    /**
+     * ⭐ GitHub #103: every family listed outgrew an S25 Ultra's screen and the menu could not scroll. Capped at 60 % of
+     * the screen, the last family is reached by scrolling.
+     */
+    @Test
+    fun theFamilyMenuFitsTheScreenAndScrollsToItsLastFamily() {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val counts = Family.values().filter { it != Family.WAN }.map { it to 1 }
+        show { com.abrah.nightmare.ui.FamilyMenu(counts) {} }
+        rule.onNode(hasText(ctx.getString(R.string.mb_family, ctx.getString(R.string.mb_all_families)))).performClick()
+        rule.waitForIdle()
+        capture("dialog-family-menu")
+        val last = com.abrah.nightmare.ui.pageLabel(counts.last { it.first.dit }.first)
+        val menu = rule.onNode(androidx.compose.ui.test.hasScrollAction()).fetchSemanticsNode().boundsInRoot
+        val screenPx = ctx.resources.displayMetrics.heightPixels
+        assert(menu.height <= screenPx * 0.61f) { "the menu is ${menu.height} px on a $screenPx px screen" }
+        rule.onNode(hasText(last)).performScrollTo().assertIsDisplayed()
     }
 
     /** ⭐ Files and Search online as two contained halves, Done under them. */

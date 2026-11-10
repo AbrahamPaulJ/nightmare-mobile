@@ -322,7 +322,12 @@ internal fun FamilyMenu(counts: List<Pair<Family, Int>>, onPick: (Family) -> Uni
         DropdownMenu(
             expanded = open,
             onDismissRequest = { open = false },
-            modifier = Modifier.width(with(LocalDensity.current) { widthPx.toDp() }),
+            // ⚠⚠ A height cap, so the menu's own scroll takes over (GitHub #103, an S25 Ultra on 1.6.290): 22 families
+            // and two headings outgrew the screen, and the popup sized itself to the whole edge-to-edge window, so it
+            // ran under the status bar and off the bottom with nothing to scroll. 60 % of the screen always fits.
+            modifier = Modifier
+                .width(with(LocalDensity.current) { widthPx.toDp() })
+                .heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.6f).dp),
         ) {
             for ((group, members) in counts.groupBy { it.first.isModern() }.toSortedMap()) {
                 Text(
