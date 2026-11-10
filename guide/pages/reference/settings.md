@@ -119,7 +119,7 @@ Three switches the same as LocalDream's, whose defaults are set **from your phon
 
 | switch | default | what it does |
 |---|---|---|
-| **SDXL low RAM mode** | on under 16 GB, off at 16 GB+ | Loads each part of an SDXL model on demand and frees it after use. Required under 16 GB. Disables the live preview while it renders |
+| **SDXL low RAM mode** | on under 16 GB, off at 16 GB+ | Loads each part of an SDXL model on demand and frees it after use. Required under 16 GB, so there it is always on and cannot be turned off: without it SDXL fills the phone's memory and Android closes your apps. Disables the live preview while it renders |
 | **Anima low RAM mode** | on under 16 GB, off at 16 GB+ | The same, for Anima |
 | **Anima DiT sequential loading** | off | Only with Anima low RAM mode: never keeps both halves of Anima's model in memory at once. Turn it on if you have 12 GB and Anima still cannot run. Slower per step |
 | **Video: stream the model** | off | Wan reads its model from storage step by step instead of holding it in memory. About 30% slower. Turn it on if your videos come out as a coloured grid or noise. Some clips stream whichever way it is set, and the run log says so: clips too big to hold, every clip below an 8 Elite, Wan 2.2 14B and MiniMax H3 |

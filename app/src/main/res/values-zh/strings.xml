@@ -246,6 +246,7 @@
     <string name="run_wan_ram_warning">%1$s、%2$s 秒需要约 %3$s GB 的 NPU 内存，超出这台手机 %4$s GB 内存能稳妥容纳的量。应用可能会停止或重启。480p 或更短的时长更稳妥</string>
     <string name="run_wan_npu_warning">%1$s、%2$s 秒一次需要约 %3$s GB 的 NPU 内存，超出这台手机 NPU 的承受范围，很可能会失败。仍然尝试</string>
     <string name="run_wan_streams_anyway">无论流式读取模型开关如何设置，此片段都会流式读取模型：这台手机的 NPU 无法完整容纳它。</string>
+    <string name="run_sdxl_lowram_anyway">无论开关如何设置，SDXL 在这台手机上都以低内存模式运行：否则在内存小于 16 GB 的手机上 SDXL 会占满内存，Android 会关闭应用。</string>
     <string name="run_ref_fit_warning">%1$s 使用参考图：%2$s 对这台手机可能太大，可能会失败。%3$s 可以。仍然尝试</string>
     <string name="feature_missing_convert">此转换没有 %1$s。请在 npuforge 中勾选 %1$s 后重新转换。</string>
     <string name="feature_missing_builtin">此模型的这份下载没有 %1$s。删除后重新下载即可获得包含它的版本。</string>
@@ -469,6 +470,18 @@
     <string name="results_delete_count">删除 %1$d 项</string>
     <string name="results_delete_selected_title">删除 %1$d 张图片？</string>
     <string name="results_delete_selected_body">每张图片及生成它的流程都会被永久删除。\n\n已保存到图库的副本不受影响。</string>
+    <string name="review_title">逐张查看</string>
+    <string name="review_progress">第 %1$d 张，共 %2$d 张 · 待删除 %3$d 张</string>
+    <string name="review_cd_back">回到上一张</string>
+    <string name="review_cd_close">结束查看</string>
+    <string name="review_loading">正在加载图片…</string>
+    <string name="review_marked">待删除</string>
+    <string name="review_keep">保留</string>
+    <string name="results_cd_review_selected">逐张查看所选图片</string>
+    <string name="review_offer_title">已完成 %1$d 张图片</string>
+    <string name="review_offer_body">要逐张查看，决定保留还是删除吗？也可以稍后：在结果中选择图片，然后点逐张查看。</string>
+    <string name="review_offer_yes">逐张查看</string>
+    <string name="review_offer_later">稍后</string>
     <string name="results_delete_picture_title">删除此图片？</string>
     <string name="results_delete_picture_body">此图片及生成它的流程都会被永久删除。\n\n已保存到图库的副本不受影响。</string>
     <plurals name="results_pictures">

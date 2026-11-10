@@ -7272,6 +7272,31 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         refreshResults()
     }
 
+    /** ⭐ The pictures [com.abrah.nightmare.ui.ReviewSheet] is going through (GitHub #101); null when it is closed. */
+    var reviewing by mutableStateOf<List<String>?>(null)
+        private set
+
+    /** ⭐ A sweep just finished with these pictures: the offer to review them, asked once (GitHub #101). */
+    var reviewOffer by mutableStateOf<List<String>?>(null)
+        private set
+
+    fun startReview(ids: List<String>) {
+        reviewOffer = null
+        if (ids.isNotEmpty()) reviewing = ids
+    }
+
+    fun dismissReviewOffer() { reviewOffer = null }
+
+    fun closeReview() { reviewing = null }
+
+    /** ⚠ After the review's own confirm. The selection loses whatever went, as a group delete's does. */
+    fun deleteReviewed(ids: List<String>) {
+        ids.forEach { results.delete(it); forgetCached(it) }
+        selectedResults = selectedResults - ids.toSet()
+        say("review: forgot " + ids.size + " picture" + (if (ids.size == 1) "" else "s"))
+        refreshResults()
+    }
+
     /**
      * ⭐⭐ Write kept pictures into the phone's gallery.
      *
@@ -9004,6 +9029,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         )
         say("batch: $done of ${combos.size} done. All $done are in Results")
         refreshResults()
+        // ⭐ GitHub #101: a popup when a batch is complete, to go through it and keep or delete each picture.
+        if (done >= 2) reviewOffer = kept.filter { it.batchId == batchId }.sortedBy { it.savedAt }.map { it.id }.takeIf { it.size >= 2 }
     }
 
     /**

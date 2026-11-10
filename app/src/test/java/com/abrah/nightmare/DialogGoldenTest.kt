@@ -50,6 +50,41 @@ class DialogGoldenTest {
     @OptIn(com.github.takahirom.roborazzi.ExperimentalRoborazziApi::class)
     private fun capture(name: String) = com.github.takahirom.roborazzi.captureScreenRoboImage(goldenPath(this, name))
 
+    /**
+     * ⭐ Review (GitHub #101): Delete and Keep walk the pictures; nothing goes until the one confirm at the end, which
+     * names the count and deletes exactly the marked ones.
+     */
+    @Test
+    fun aReviewDeletesOnlyWhatWasMarkedAfterOneConfirm() {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val picture = androidx.compose.ui.graphics.ImageBitmap(300, 400).also { bmp ->
+            androidx.compose.ui.graphics.Canvas(bmp).drawRect(
+                0f, 0f, 300f, 400f, androidx.compose.ui.graphics.Paint().apply { color = androidx.compose.ui.graphics.Color(0xFF6A7FA8) },
+            )
+        }
+        var deleted: List<String>? = null
+        var closed = false
+        show {
+            com.abrah.nightmare.ui.ReviewSheet(
+                ids = listOf("a", "b", "c"), imageFor = { picture },
+                onDelete = { deleted = it }, onClose = { closed = true },
+            )
+        }
+        val deleteButton = hasText(ctx.getString(R.string.delete)) and hasClickAction()
+        val keepButton = hasText(ctx.getString(R.string.review_keep)) and hasClickAction()
+        rule.onNode(deleteButton).performClick()
+        rule.onNode(keepButton).performClick()
+        rule.waitForIdle()
+        capture("dialog-review")
+        assert(deleted == null) { "deleted before the confirm" }
+        rule.onNode(deleteButton).performClick()
+        rule.waitForIdle()
+        rule.onNode(hasText(ctx.getString(R.string.results_delete_count, 2)) and hasClickAction()).performClick()
+        rule.waitForIdle()
+        org.junit.Assert.assertEquals(listOf("a", "c"), deleted)
+        assert(closed)
+    }
+
     /** ⭐ Files and Search online as two contained halves, Done under them. */
     @Test
     fun theLoraPickersFooter() {

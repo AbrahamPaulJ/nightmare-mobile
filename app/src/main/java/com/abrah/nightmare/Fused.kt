@@ -1265,6 +1265,11 @@ class SdSampler(
     // ⭐ ONE exit for every family's render, so [ENLARGE] and the detail pass cannot be missed by the
     // next return added. ⚠ Detail LAST: it redraws faces on the final, biggest picture.
     override suspend fun run(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
+        // ⭐ Why the low RAM switch seems to do nothing: it is off, and this phone runs SDXL in low RAM mode anyway.
+        if ((family == Family.SDXL || family == Family.SDXL_SWAP) && ctx.android?.let { Prefs.sdxlLowRamOverridden(it) } == true) {
+            ctx.say(ctx.text(R.string.run_sdxl_lowram_anyway,
+                "SDXL runs in low RAM mode on this phone whichever way the switch is set: without it SDXL fills a phone under 16 GB and Android closes apps."))
+        }
         // ⭐⭐ The picture under the fix, remembered without the fix's own params ([com.abrah.nightmare.detail.Detailer.PARAMS]): Fix faces
         // switched on, or a new Fix strength or Fix seed, redraws the faces on the picture already made (Saved #7072,
         // "it reruns the full diffusion sampling"). ⚠ Safe because Run rolls seed 0 into a real seed first

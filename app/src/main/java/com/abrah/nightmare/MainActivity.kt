@@ -367,6 +367,30 @@ fun HarnessScreen(
         )
     }
 
+    // ⭐ GitHub #101: a finished sweep offers to go through its pictures, keep or delete each; Results' Review does
+    // the same for a selection. Over every screen, as a sweep ends wherever the person is.
+    vm.reviewOffer?.let { ids ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = vm::dismissReviewOffer,
+            title = { Text(stringResource(R.string.review_offer_title, ids.size)) },
+            text = { Text(stringResource(R.string.review_offer_body)) },
+            confirmButton = {
+                com.abrah.nightmare.ui.StudioButton(onClick = { vm.startReview(ids) }) { Text(stringResource(R.string.review_offer_yes)) }
+            },
+            dismissButton = {
+                com.abrah.nightmare.ui.StudioOutlinedButton(onClick = vm::dismissReviewOffer) { Text(stringResource(R.string.review_offer_later)) }
+            },
+        )
+    }
+    vm.reviewing?.let { ids ->
+        com.abrah.nightmare.ui.ReviewSheet(
+            ids = ids,
+            imageFor = vm::resultImage,
+            onDelete = vm::deleteReviewed,
+            onClose = vm::closeReview,
+        )
+    }
+
     vm.pendingSend?.let { s ->
         com.abrah.nightmare.ui.SendToDialog(
             choices = s,
@@ -886,6 +910,7 @@ fun HarnessScreen(
                         onToast = vm::toast,
                         onStarSelected = vm::starSelectedResults,
                         onSendTo = { vm.offerSendResult(it.id) },
+                        onReviewSelected = vm::startReview,
                     )
                 },
                 flows = {

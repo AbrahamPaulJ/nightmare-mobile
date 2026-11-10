@@ -188,6 +188,8 @@ fun ResultsScreen(
     onStarSelected: () -> Unit = {},
     /** ⭐ Send the shown picture into a flow ([SendToDialog]). */
     onSendTo: (Result) -> Unit = {},
+    /** ⭐ Go through the selection one at a time, keep or delete each ([ReviewSheet], GitHub #101), in grid order. */
+    onReviewSelected: (List<String>) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // ⚠ One dialog for the whole list, not one per card — the same reason the
@@ -489,6 +491,10 @@ fun ResultsScreen(
                         ),
                         tint = if (allStarred) StarKept else StarIdle,
                     )
+                }
+                // ⭐ Review the selection picture by picture (GitHub #101). ⚠ Grid order, what the person sees.
+                IconButton(onClick = { onReviewSelected(items.map { it.id }.filter { it in selected }) }, modifier = small) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.results_cd_review_selected), tint = onSurface)
                 }
                 IconButton(onClick = { deletingSelection = true }, modifier = small) {
                     Icon(

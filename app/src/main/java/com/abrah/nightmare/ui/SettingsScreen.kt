@@ -618,9 +618,12 @@ fun SettingsScreen(
                 if (lowRam != null) {
                     StudioCard {
                         SectionHeading(stringResource(R.string.memory_title), stringResource(R.string.memory_note))
+                        // ⭐ Under 16 GB it is on and cannot be turned off ([Prefs.forcesSdxlLowRam], LIST-N4 item 39).
+                        val sdxlForced = Prefs.forcesSdxlLowRam(com.abrah.nightmare.DeviceProbe.caps().ramBytes)
                         com.abrah.nightmare.canvas.BoolKnobRow(
                             stringResource(R.string.sdxl_lowram), stringResource(R.string.sdxl_lowram_hint),
-                            lowRam.sdxl, { onLowRam(Prefs.KEY_SDXL_LOWRAM, it) },
+                            lowRam.sdxl || sdxlForced, { onLowRam(Prefs.KEY_SDXL_LOWRAM, it) },
+                            enabled = !sdxlForced,
                         )
                         com.abrah.nightmare.canvas.BoolKnobRow(
                             stringResource(R.string.anima_lowram), stringResource(R.string.anima_lowram_hint),

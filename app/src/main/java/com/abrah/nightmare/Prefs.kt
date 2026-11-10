@@ -486,10 +486,23 @@ object Prefs {
      * whatever this says).
      */
     fun lowRamFor(context: Context, spec: ModelSpec): Boolean = when (spec.family) {
-        Family.SDXL, Family.SDXL_SWAP -> lowRam(context).sdxl
+        Family.SDXL, Family.SDXL_SWAP -> lowRam(context).sdxl || forcesSdxlLowRam(totalRam(context))
         Family.ANIMA -> lowRam(context).anima
         else -> spec.lowram
     }
+
+    /**
+     * ⭐⭐ SDXL low RAM is not optional below [LOWRAM_BELOW_BYTES] (the user's call, 2026-11-10; upstream's hint
+     * says "required on devices with less than 16GB RAM"). The S25 (12 GB) with the switch off launched SDXL without
+     * `--lowram`: both MNN CLIP sessions held (RSS 3.1 GB) beside the UNet's ~2.5 GB context, MemAvailable 6.6 to
+     * 0.9 GB in 20 s, lmkd reaped the person's apps and then this one (LIST-N4 item 39; an S24 Ultra tester's phone
+     * rebooted the same way). ⚠ Unknown RAM (0) is [lowRamDefault]'s business, not this one.
+     */
+    fun forcesSdxlLowRam(totalRamBytes: Long): Boolean = totalRamBytes in 1 until LOWRAM_BELOW_BYTES
+
+    /** ⭐ The switch is off but this phone runs SDXL in low RAM mode anyway: the run log says so. */
+    fun sdxlLowRamOverridden(context: Context): Boolean =
+        !lowRam(context).sdxl && forcesSdxlLowRam(totalRam(context))
 }
 
 /**

@@ -76,6 +76,14 @@ of them. The ✕ stops selecting.
   ![Selecting several results](../img/history-selecting-360.png){ .screen }
 </figure>
 
+## Review: keep or delete, one at a time
+
+**Review** (▶ in the selection bar) goes through the selected pictures one at a time, full
+screen: **Keep** moves on, **Delete** marks the picture and moves on, and ‹ goes back to change
+your mind. Nothing is deleted until the end, where one question asks to delete the marked ones.
+To clear out a whole tab, tap **All** first. When a sweep of two or more pictures finishes, the
+app offers to review it straight away.
+
 ## UltraFix
 
 Upscaling makes a picture bigger, not more detailed. **UltraFix** (from Local Dream) redraws the fine

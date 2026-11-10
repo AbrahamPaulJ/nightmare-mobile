@@ -269,6 +269,7 @@
     <string name="run_wan_ram_warning">%1$s for %2$s s needs about %3$s GB on the NPU, more than this phone\'s %4$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer</string>
     <string name="run_wan_npu_warning">%1$s for %2$s s needs about %3$s GB of NPU memory at once, more than this phone\'s NPU takes, so it will probably fail. Trying anyway</string>
     <string name="run_wan_streams_anyway">This clip streams its model whichever way Video: stream the model is set: it cannot be held whole on this phone\'s NPU.</string>
+    <string name="run_sdxl_lowram_anyway">SDXL runs in low RAM mode on this phone whichever way the switch is set: without it SDXL fills a phone under 16 GB and Android closes apps.</string>
     <string name="run_ref_fit_warning">%1$s with a reference: %2$s is probably too big for this phone and may fail. %3$s fits. Trying anyway</string>
     <string name="feature_missing_convert">This conversion has no %1$s. Convert it again in npuforge with %1$s ticked.</string>
     <string name="feature_missing_builtin">This download of the model has no %1$s. Delete it and download it again to get the version that has it.</string>
@@ -495,6 +496,18 @@
     <string name="results_delete_count">Delete %1$d</string>
     <string name="results_delete_selected_title">Delete %1$d pictures?</string>
     <string name="results_delete_selected_body">Each picture and the flow that made it both go, and this cannot be undone.\n\nCopies saved to the gallery are not affected.</string>
+    <string name="review_title">Review</string>
+    <string name="review_progress">%1$d of %2$d · %3$d to delete</string>
+    <string name="review_cd_back">Back to the picture before</string>
+    <string name="review_cd_close">Finish reviewing</string>
+    <string name="review_loading">Loading the picture…</string>
+    <string name="review_marked">To delete</string>
+    <string name="review_keep">Keep</string>
+    <string name="results_cd_review_selected">Review the selected pictures one by one</string>
+    <string name="review_offer_title">%1$d pictures done</string>
+    <string name="review_offer_body">Go through them one at a time and keep or delete each? You can also do it later: select pictures in Results and tap Review.</string>
+    <string name="review_offer_yes">Review</string>
+    <string name="review_offer_later">Later</string>
     <string name="results_delete_picture_title">Delete this picture?</string>
     <string name="results_delete_picture_body">The picture and the flow that made it both go, and this cannot be undone.\n\nA copy you saved to the gallery is not affected.</string>
     <plurals name="results_pictures">
