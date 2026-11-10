@@ -1376,8 +1376,8 @@
     <string name="dit_taesd_hint">用一个很小的解码器把完成的图片转成像素，1024x1024 约 15 秒，接近完整解码器。关闭则使用模型的完整解码器，在那里需要几分钟。</string>
     <string name="speed_title">速度</string>
     <string name="speed_note">用少许细节换取更短的生成时间。</string>
-    <string name="dit_spectrum">预测部分步骤（Anima，8 步及以上）</string>
-    <string name="dit_spectrum_hint">前 4 步之后，部分步骤根据之前的步骤预测，而不是实际计算。10 步时约快 20% 到 25%，画面相同，略微柔和。少于 8 步的生成不受影响。</string>
+    <string name="dit_spectrum">预测部分步骤（Anima、MOSS-Image，8 步及以上）</string>
+    <string name="dit_spectrum_hint">前 4 步之后，部分步骤根据之前的步骤预测，而不是实际计算。约快 15% 到 30%，画面相同，略微柔和。少于 8 步的生成不受影响。</string>
     <string name="run_heat_start">开始这段视频前电池已达 %1$s °C。长时间生成视频会让手机发热，而发热会损耗电池：不要边充电边生成，避免阳光直射，烫手时请停止。设置，性能中可以在电池过热时暂停生成</string>
     <string name="run_heat_paused">已暂停：电池温度 %1$s °C。降到 %2$s °C 后继续生成</string>
     <string name="run_heat_end">这段视频让电池达到了 %1$s °C。请让手机冷却后再生成下一段</string>

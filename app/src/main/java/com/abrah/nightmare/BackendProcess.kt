@@ -594,10 +594,18 @@ object BackendProcess {
      * ⚠ Both bind at launch, as every variable here: a switch stops a resident Anima backend (`chooseLowRam`).
      */
     internal fun ditSpeedEnv(spec: ModelSpec?, ramBytes: Long, spectrum: Boolean): Map<String, String> = buildMap {
-        if (spec?.family != Family.ANIMA_DIT) return@buildMap
-        if (ramBytes >= Prefs.RAM_12GB_CLASS_BYTES) put("NM_KEEP_RUNNERS", "1")
-        if (spectrum) put("NM_SPECTRUM", "4")
+        // ⚠⚠ Keeping is Anima's only. MOSS-Image Turbo with it HUNG after its graph-cut plan, 7 GB still free (S25,
+        // 2026-11-10): its 9B encoder stays staged and the DiT's segments find no room; the manager reclaims a runner's
+        // workspace, never a kept runner's weights. Klein 4B on the GPU route gained nothing (96 to 101 s, it keeps its
+        // weights there already). ⚠ Anima 2.9B is ANIMA_DIT too, but its turbo LoRA on every render ends in full.
+        if (spec?.family == Family.ANIMA_DIT && ramBytes >= Prefs.RAM_12GB_CLASS_BYTES) put("NM_KEEP_RUNNERS", "1")
+        // ⭐ Spectrum: Anima, and MOSS-Image from 1.6.291 (S25, 512x512 8 steps: Turbo 29.8 to 24.3 s, SFT 35.1 to 30.0 s,
+        // PSNR 26-29 dB against off, the same picture a little softer).
+        if (spectrum && spec?.family in SPECTRUM_FAMILIES) put("NM_SPECTRUM", "4")
     }
+
+    /** ⭐ The families [Prefs.ditSpectrum] reaches: the ones measured with it. */
+    internal val SPECTRUM_FAMILIES = setOf(Family.ANIMA_DIT, Family.MOSS)
 
     internal fun wanA14Env(model: File, arch: Int = 0): Map<String, String> {
         val high = File(model, ModelCatalog.WAN_HIGH_DIT).takeIf { it.isFile } ?: return emptyMap()

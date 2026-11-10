@@ -399,7 +399,7 @@ object Prefs {
      * ⭐ Spectrum (GitHub #98, the user's call 2026-11-10: a setting, off by default): from step 5 on, an Anima render of
      * 8 steps or more predicts some steps from the earlier ones instead of running the DiT (`dit/094`'s
      * `NM_SPECTRUM`, sd.cpp's own cache). Anima Turbo 10 steps on the S25: 20-26 % faster, the same composition, a
-     * little softer (PSNR 22-27 dB against off). ⚠ Anima only: the one family measured ([BackendProcess.ditSpeedEnv]).
+     * little softer (PSNR 22-27 dB against off). Anima and MOSS-Image, the families measured ([BackendProcess.SPECTRUM_FAMILIES]).
      */
     const val KEY_DIT_SPECTRUM = "dit_spectrum"
 

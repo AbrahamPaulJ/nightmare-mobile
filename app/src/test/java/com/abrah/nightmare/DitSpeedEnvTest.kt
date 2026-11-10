@@ -26,9 +26,18 @@ class DitSpeedEnvTest {
         assertEquals(emptyMap<String, String>(), BackendProcess.ditSpeedEnv(anima, 0L, spectrum = false))
     }
 
+    /** ⭐ MOSS-Image takes Spectrum (measured, 1.6.291) but never keeping: with it MOSS Turbo hung after its graph-cut plan. */
+    @Test
+    fun mossPredictsStepsButNeverKeepsItsWeights() {
+        for (spec in ModelCatalog.all.filter { it.family == Family.MOSS }) {
+            assertEquals(spec.id, mapOf("NM_SPECTRUM" to "4"), BackendProcess.ditSpeedEnv(spec, twelve, spectrum = true))
+            assertEquals(spec.id, emptyMap<String, String>(), BackendProcess.ditSpeedEnv(spec, twelve, spectrum = false))
+        }
+    }
+
     @Test
     fun anUnmeasuredFamilyGetsNeither() {
-        val others = ModelCatalog.all.filter { it.isDit && it.family != Family.ANIMA_DIT }
+        val others = ModelCatalog.all.filter { it.isDit && it.family != Family.ANIMA_DIT && it.family != Family.MOSS }
         assert(others.isNotEmpty())
         for (spec in others) assertEquals(spec.id, emptyMap<String, String>(), BackendProcess.ditSpeedEnv(spec, twelve, spectrum = true))
         assertEquals(emptyMap<String, String>(), BackendProcess.ditSpeedEnv(null, twelve, spectrum = true))

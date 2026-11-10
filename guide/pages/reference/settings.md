@@ -135,7 +135,7 @@ model stays loaded. A render with a LoRA loads it again each time.
 
 | switch | default | what it does |
 |---|---|---|
-| **Predict some steps (Anima, 8 steps or more)** | off | After the first 4 steps, some steps are predicted from the earlier ones instead of being run. About 20 to 25 percent faster at 10 steps, the same picture a little softer. Renders under 8 steps are not changed |
+| **Predict some steps (Anima, MOSS-Image, 8 steps or more)** | off | After the first 4 steps, some steps are predicted from the earlier ones instead of being run. About 15 to 30 percent faster (Anima at 10 steps the most, MOSS-Image at 8 about 15), the same picture a little softer. Renders under 8 steps are not changed |
 
 ### Heat
 
