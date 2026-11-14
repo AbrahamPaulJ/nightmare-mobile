@@ -575,6 +575,11 @@
     <string name="share_credit_name">Your name (optional)</string>
     <string name="share_credit_plain">Made with %1$s</string>
     <string name="share_credit_named">Created by %1$s with %2$s</string>
+    <string name="share_text">Send how it was made as text</string>
+    <string name="share_text_hint">Sharing one picture also sends its prompt, negative, model, seed, steps and sampler as the message text, which chat apps such as Telegram and WhatsApp show under the picture.</string>
+    <string name="run_notice_channel">Generation progress</string>
+    <string name="run_notice_title">Running %1$s</string>
+    <string name="run_notice_running">Generating</string>
     <string name="results_import">Import pictures</string>
     <string name="results_imported">Imported %1$d of %2$d. Pictures without Nightmare\'s info were skipped.</string>
     <string name="flows_import_png_none">This picture has no Nightmare flow inside. Only pictures saved with \"Write how it was made\" on carry one.</string>

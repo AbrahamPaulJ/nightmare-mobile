@@ -157,12 +157,15 @@ to 45 °C. Keep the phone off the charger and out of the sun while it renders.
 |---|---|---|
 | **Sound when a run ends** | off | Plays a sound when a Run or a sweep of 15 seconds or longer finishes, and a different one if it fails. **Choose** beside each opens the phone's own sound list (notification and alarm sounds). With Nightmare in the background, a notification also says how long it took, or why it failed. A run you cancel ends quietly |
 
+Any run that takes longer than 10 seconds also shows a progress bar in the notification shade, like a download: what is running, its step and the time so far. It goes when the run ends. The phone's notification settings for Nightmare (Generation progress) can hide it.
+
 ### Saved pictures
 
 | switch | default | what it does |
 |---|---|---|
 | **Write how it was made into the picture** | on | A saved or shared picture carries its prompt, model, seed, steps, sampler, LoRAs, phone and the whole flow in the PNG. CivitAI and A1111 read it, and Nightmare reads it back when the picture is imported. It also marks the picture as AI-made |
 | **Credit Nightmare on shared pictures** | on | Every picture you share gets a thin dark strip added under it (nothing in the picture is covered): the app icon and "Made with Nightmare Mobile". Fill in **Your name (optional)**, up to 30 characters, and it reads "Created by *your name* with Nightmare Mobile". Pictures saved to the gallery, clips and shared flows are left as they are |
+| **Send how it was made as text** | off | Sharing one picture also sends its prompt, negative, model, seed, steps and sampler as the message text, which chat apps such as Telegram and WhatsApp show under the picture |
 
 ### Try the NPU for DiT models (test)
 

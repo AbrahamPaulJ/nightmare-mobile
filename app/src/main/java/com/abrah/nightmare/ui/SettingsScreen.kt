@@ -698,6 +698,12 @@ fun SettingsScreen(
                             lowRam.shareCredit, { onLowRam(Prefs.KEY_SHARE_CREDIT, it) },
                         )
                         if (lowRam.shareCredit) ShareNameField(shareName, onShareName)
+                        // ⭐ How it was made, as the share's text (the user, 2026-11-14): off by default.
+                        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.share_text), stringResource(R.string.share_text_hint),
+                            lowRam.shareText, { onLowRam(Prefs.KEY_SHARE_TEXT, it) },
+                        )
                     }
                     // ⭐ An 8 Gen 1 asks its NPU again ([Prefs.v69Npu]): a trial, only on such a chip.
                     if (com.abrah.nightmare.BackendProcess.belowDitNpu(com.abrah.nightmare.DeviceProbe.caps())) StudioCard {

@@ -563,6 +563,11 @@
     <string name="share_credit_name">Ваше имя (необязательно)</string>
     <string name="share_credit_plain">Сделано в %1$s</string>
     <string name="share_credit_named">Автор: %1$s, сделано в %2$s</string>
+    <string name="share_text">Отправлять параметры текстом</string>
+    <string name="share_text_hint">Когда вы делитесь одной картинкой, вместе с ней отправляются промпт, негативный промпт, модель, сид, шаги и сэмплер как текст сообщения: Telegram, WhatsApp и другие мессенджеры показывают его под картинкой.</string>
+    <string name="run_notice_channel">Ход генерации</string>
+    <string name="run_notice_title">Идёт: %1$s</string>
+    <string name="run_notice_running">Генерация</string>
     <string name="results_import">Импорт картинок</string>
     <string name="results_imported">Импортировано %1$d из %2$d. Картинки без данных Nightmare пропущены.</string>
     <string name="flows_import_png_none">В этой картинке нет потока Nightmare. Он есть только в картинках, сохранённых с включённой записью.</string>

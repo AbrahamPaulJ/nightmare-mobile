@@ -47,10 +47,10 @@ object Share {
         FileProvider.getUriForFile(context, context.packageName + AUTHORITY_SUFFIX, file)
 
     /** ⭐ Hand a PNG to whatever the user picks. */
-    fun image(context: Context, png: ByteArray, name: String, info: PngInfo.Info? = null) {
+    fun image(context: Context, png: ByteArray, name: String, info: PngInfo.Info? = null, text: String? = null) {
         val f = File(staging(context), sanitise(name) + ".png")
         PngInfo.wrap(f.outputStream(), info).use { it.write(png) }
-        send(context, uriFor(context, f), "image/png", "Share picture")
+        send(context, uriFor(context, f), "image/png", "Share picture", text)
     }
 
     /**
@@ -59,7 +59,7 @@ object Share {
      * picture into a `ByteArray` first costs ~80 MB of heap to write a file
      * that is written incrementally anyway.
      */
-    fun image(context: Context, bitmap: android.graphics.Bitmap, name: String, info: PngInfo.Info? = null) {
+    fun image(context: Context, bitmap: android.graphics.Bitmap, name: String, info: PngInfo.Info? = null, text: String? = null) {
         val f = File(staging(context), sanitise(name) + ".png")
         PngInfo.wrap(f.outputStream(), info).use {
             // ⚠ false, not a throw: an empty file would be shared as the picture.
@@ -67,7 +67,7 @@ object Share {
                 throw java.io.IOException("the picture could not be encoded")
             }
         }
-        send(context, uriFor(context, f), "image/png", "Share picture")
+        send(context, uriFor(context, f), "image/png", "Share picture", text)
     }
 
     /**
@@ -150,10 +150,12 @@ object Share {
         context.startActivity(Intent.createChooser(intent, title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    private fun send(context: Context, uri: android.net.Uri, mime: String, title: String) {
+    private fun send(context: Context, uri: android.net.Uri, mime: String, title: String, text: String? = null) {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mime
             putExtra(Intent.EXTRA_STREAM, uri)
+            // ⭐ A caption the chat apps show with the picture (Telegram, WhatsApp): how it was made ([Prefs.shareText]).
+            text?.let { putExtra(Intent.EXTRA_TEXT, it) }
             // ⚠ The grant is what makes the URI readable by the other app at
             // all; without it the receiver gets a SecurityException that looks
             // like a corrupt file.

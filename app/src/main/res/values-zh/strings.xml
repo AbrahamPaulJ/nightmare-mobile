@@ -548,6 +548,11 @@
     <string name="share_credit_name">你的名字（可选）</string>
     <string name="share_credit_plain">由 %1$s 制作</string>
     <string name="share_credit_named">%1$s 使用 %2$s 创作</string>
+    <string name="share_text">以文字发送生成参数</string>
+    <string name="share_text_hint">分享单张图片时，同时把提示词、反向提示词、模型、种子、步数和采样器作为消息文字发送，Telegram、WhatsApp 等聊天应用会显示在图片下方。</string>
+    <string name="run_notice_channel">生成进度</string>
+    <string name="run_notice_title">正在运行 %1$s</string>
+    <string name="run_notice_running">正在生成</string>
     <string name="results_import">导入图片</string>
     <string name="results_imported">已导入 %1$d / %2$d。没有 Nightmare 信息的图片已跳过。</string>
     <string name="flows_import_png_none">这张图片里没有 Nightmare 流程。只有开启写入后保存的图片才带有流程。</string>

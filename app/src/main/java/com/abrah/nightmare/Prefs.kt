@@ -85,6 +85,7 @@ object Prefs {
         pngInfo = p.getBoolean(KEY_PNG_INFO, true)
         keepFlowEdits = p.getBoolean(KEY_KEEP_FLOW_EDITS, true)
         shareCredit = p.getBoolean(KEY_SHARE_CREDIT, true)
+        shareText = p.getBoolean(KEY_SHARE_TEXT, false)
         shareName = p.getString(KEY_SHARE_NAME, null).orEmpty().take(SHARE_NAME_MAX)
     }
 
@@ -439,6 +440,16 @@ object Prefs {
     @Volatile var shareCredit: Boolean = true
         private set
 
+    /**
+     * ⭐ A shared picture also sends how it was made (the A1111 text: prompt, negative, model, seed, steps...) as the
+     * message's text, which chat apps show as its caption (the user, 2026-11-14). OFF by default: a prompt is the
+     * person's own, and the switch says what it sends. One picture at a time; a selection shares pictures only.
+     */
+    const val KEY_SHARE_TEXT = "share_text"
+
+    @Volatile var shareText: Boolean = false
+        private set
+
     /** ⭐ The optional name in that strip: blank says "Made with Nightmare Mobile". */
     const val KEY_SHARE_NAME = "share_name"
     const val SHARE_NAME_MAX = 30
@@ -482,6 +493,7 @@ object Prefs {
         val pngInfo: Boolean = true,
         val keepFlowEdits: Boolean = true,
         val shareCredit: Boolean = true,
+        val shareText: Boolean = false,
     )
 
     /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */
@@ -514,6 +526,7 @@ object Prefs {
             pngInfo = read(KEY_PNG_INFO, true),
             keepFlowEdits = read(KEY_KEEP_FLOW_EDITS, true),
             shareCredit = read(KEY_SHARE_CREDIT, true),
+            shareText = read(KEY_SHARE_TEXT, false),
         )
     }
 
@@ -529,6 +542,7 @@ object Prefs {
         if (key == KEY_PNG_INFO) pngInfo = on
         if (key == KEY_KEEP_FLOW_EDITS) keepFlowEdits = on
         if (key == KEY_SHARE_CREDIT) shareCredit = on
+        if (key == KEY_SHARE_TEXT) shareText = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()
     }
 

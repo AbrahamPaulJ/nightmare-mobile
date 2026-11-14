@@ -7422,8 +7422,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val png = results.fullBytes(id) ?: return@shareOffMain text(R.string.share_picture_missing)
         // ⭐ The credit strip ([ShareCredit], on by default): re-encoded only when it is on.
         val credited = creditedOrNull(png)
-        if (credited != null) Share.image(getApplication(), credited, "nightmare-" + id, resultPngInfo(id))
-        else Share.image(getApplication(), png, "nightmare-" + id, resultPngInfo(id))
+        // ⭐ How it was made as the message's text too ([Prefs.shareText], the user 2026-11-14): chat apps show it.
+        val text = if (Prefs.shareText) resultPngInfo(id, always = true)?.parameters else null
+        if (credited != null) Share.image(getApplication(), credited, "nightmare-" + id, resultPngInfo(id), text)
+        else Share.image(getApplication(), png, "nightmare-" + id, resultPngInfo(id), text)
         null
     }
 
@@ -7507,6 +7509,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠⚠ The bitmap, for the reason [saveImage] gives.
         val bmp = if (clip == null) ops.images.get(imageId) else null
         val info = if (bmp != null) canvasPngInfo(imageId) else null
+        val text = if (bmp != null && Prefs.shareText) canvasPngInfo(imageId, always = true)?.parameters else null
         shareOffMain {
             when {
                 clip != null -> Share.video(getApplication(), clip, name)
@@ -7514,7 +7517,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 else -> Share.image(
                     getApplication(),
                     if (Prefs.shareCredit) ShareCredit.apply(getApplication(), bmp, Prefs.shareName) else bmp,
-                    name, info,
+                    name, info, text,
                 )
             }
             null
@@ -8067,16 +8070,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** ⭐ [pngInfoOf] for a kept result, from its own stored flow. */
-    private fun resultPngInfo(id: String): PngInfo.Info? {
-        if (!Prefs.pngInfo) return null
+    private fun resultPngInfo(id: String, always: Boolean = false): PngInfo.Info? {
+        if (!Prefs.pngInfo && !always) return null
         val r = kept.firstOrNull { it.id == id } ?: return null
         val loaded = results.flow(id) ?: return null
         return pngInfoOf(loaded.workflow, loaded.view, null, r.width, r.height, r.times, r.savedAt, r.batchLabel) { r.seed }
     }
 
     /** ⭐ [pngInfoOf] for a picture on the canvas, described from the node that shows it. Main thread. */
-    private fun canvasPngInfo(imageId: String): PngInfo.Info? {
-        if (!Prefs.pngInfo) return null
+    private fun canvasPngInfo(imageId: String, always: Boolean = false): PngInfo.Info? {
+        if (!Prefs.pngInfo && !always) return null
         val g = canvas.workflow.graph
         val nodeId = canvas.rendered.entries.firstOrNull { it.value == imageId }?.key
             ?: canvas.previews.entries.firstOrNull { it.value.first == imageId }?.key
@@ -9048,6 +9051,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     var runLog by mutableStateOf(com.abrah.nightmare.canvas.RunLogState())
         private set
+
+    // ⭐ A long run's progress bar in the notification shade ([RunNotice], the user 2026-11-14), like a download's.
+    // ⚠ A one-second tick rather than a hook in every place [runLog] changes: the elapsed time moves on its own, and
+    // a step that takes a minute must still show the clock moving. One notify() a second at most; nothing measurable.
+    init {
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                val app = getApplication<Application>()
+                val log = runLog
+                if (!log.running) { RunNotice.clear(app); continue }
+                val ms = android.os.SystemClock.elapsedRealtime() - log.startedAtMs
+                if (ms < RunNotice.SHOW_AFTER_MS) continue
+                val frac = log.step?.takeIf { it.second > 0 }?.let { (s, t) -> s.toFloat() / t }
+                val title = log.now?.let { app.getString(R.string.run_notice_title, it) } ?: app.getString(R.string.run_notice_running)
+                RunNotice.progress(app, title, RunNotice.textFor(log.stepLabel, ms), frac)
+            }
+        }
+    }
 
     /**
      * Forget the last run.
