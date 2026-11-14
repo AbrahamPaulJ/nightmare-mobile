@@ -1194,6 +1194,11 @@
     <string name="settings_results">结果</string>
     <string name="share_title">分享</string>
     <string name="share_note">分享图片时一起发送的内容。</string>
+    <string name="prompt_expand">全屏编辑</string>
+    <string name="prompt_expand_done">完成</string>
+    <string name="cutout_save">保存抠图</string>
+    <string name="cutout_saved">已保存到相册，背景透明</string>
+    <string name="cutout_empty">还没有选中任何内容</string>
     <string name="settings_performance">性能</string>
     <string name="settings_advanced">高级</string>
     <string name="tag_autocomplete">标签自动补全</string>

@@ -1221,6 +1221,11 @@
     <string name="settings_results">Результаты</string>
     <string name="share_title">Отправка</string>
     <string name="share_note">Что уходит вместе с картинкой, которой вы делитесь.</string>
+    <string name="prompt_expand">Редактировать на весь экран</string>
+    <string name="prompt_expand_done">Готово</string>
+    <string name="cutout_save">Сохранить вырезку</string>
+    <string name="cutout_saved">Сохранено в галерею с прозрачным фоном</string>
+    <string name="cutout_empty">Пока ничего не выбрано</string>
     <string name="settings_performance">Производительность</string>
     <string name="settings_advanced">Дополнительно</string>
     <string name="tag_autocomplete">Автодополнение тегов</string>

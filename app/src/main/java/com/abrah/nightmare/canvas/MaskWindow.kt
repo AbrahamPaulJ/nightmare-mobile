@@ -1082,6 +1082,36 @@ internal fun MaskToolbar(
                             }
                         }
                     }
+                    // ⭐ Saved #8052 (the user, 2026-11-14): what is selected, saved with its background removed, a
+                    // transparent PNG in the gallery ([com.abrah.nightmare.MaskCutout]). The mask as it runs: taps and
+                    // picks resolved on the whole photo, strokes, grow and feather.
+                    if (canTap && stored.ops.isNotEmpty()) {
+                        val cutSaved = stringResource(R.string.cutout_saved)
+                        val cutEmpty = stringResource(R.string.cutout_empty)
+                        com.abrah.nightmare.ui.StudioTextButton(
+                            onClick = {
+                                objectScope.launch {
+                                    val msg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                        runCatching {
+                                            val resolved = com.abrah.nightmare.MaskTaps.resolve(
+                                                ringed(stored),
+                                                pick = { t -> par.pick(context, photoBmp, t) },
+                                            ) { x, y -> seg.segment(context, photoBmp, x, y)?.candidates }
+                                            val mask = com.abrah.nightmare.MaskRaster.rasterise(resolved, photoBmp.width, photoBmp.height)
+                                            val cut = com.abrah.nightmare.MaskCutout.cut(photoBmp, mask)
+                                            if (cut == null) cutEmpty
+                                            else {
+                                                com.abrah.nightmare.ImageSaver.saveBitmap(context, cut, "nightmare-cutout-" + System.currentTimeMillis())
+                                                cutSaved
+                                            }
+                                        }.getOrElse { it.message ?: it.javaClass.simpleName }
+                                    }
+                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.padding(bottom = 4.dp),
+                        ) { Text(stringResource(R.string.cutout_save)) }
+                    }
                 }
             }
         }

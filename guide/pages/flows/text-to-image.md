@@ -29,6 +29,8 @@ The model families read prompts differently:
 - A prompt in **Russian or Chinese** can be translated to English on the phone with the
   **文A** button on the prompt box (SD 1.5 and SDXL only read English). See
   [Settings → Prompts → Translation](../reference/settings.md#translation).
+- A long prompt? The **⤢** button on the prompt box's top edge opens it in the whole screen;
+  **Done** puts it back, **Cancel** leaves the box as it was.
 - No words for it? The **picture button** on the prompt box describes a picture you already
   have, either a render on the canvas or a photo from your gallery, as sentences or, for anime
   models, Danbooru tags, and writes that into the prompt ([Prompt node](../reference/nodes.md#prompt)).

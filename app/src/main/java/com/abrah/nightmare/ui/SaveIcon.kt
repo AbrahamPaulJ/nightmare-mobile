@@ -276,6 +276,9 @@ val SwapIcon: ImageVector by lazy {
 
 val ChevronDownIcon: ImageVector by lazy { glyph("ChevronDown", "M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z") }
 
+/** ⤢ Open in full: a prompt box's full-screen editor (Material `open_in_full`). */
+val OpenInFullIcon: ImageVector by lazy { glyph("OpenInFull", "M21 11V3h-8l3.29 3.29-10 10L3 13v8h8l-3.29-3.29 10-10z") }
+
 /** Collapse — a chevron up. */
 val ChevronUpIcon: ImageVector by lazy { glyph("ChevronUp", "M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z") }
 

@@ -48,7 +48,8 @@ photo as it was. The clip is 25 frames a second, at the photo's size.
 ## From Results
 
 Any picture you kept has **Edit face** in its row and in the full-screen viewer. It opens the same
-window, and **Done** keeps the edited picture as a new result beside the original.
+window, and **Done** keeps the edited picture as a new result beside the original. If the face
+model is not on the phone yet, it offers the download first and opens the window when it lands.
 
 ## Good to know
 

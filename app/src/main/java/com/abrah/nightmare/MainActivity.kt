@@ -479,6 +479,10 @@ fun HarnessScreen(
             com.abrah.nightmare.ui.CrashNotice(r, onDismiss = vm::dismissCrashReport, resumable = vm.resumePending)
         }
         vm.missingModel?.let { m -> MissingModelDialog(m, vm) }
+        // ⭐ Saved #8051: the face editor a Results picture asked for, once its model landed ([HarnessViewModel.askFaceModel]).
+        vm.faceEditReady?.let { r ->
+            com.abrah.nightmare.ui.FaceEditFor(r, vm::resultImage, vm::faceEditResult, vm::toast) { vm.faceEditShown() }
+        }
         vm.diagnosis?.let { d ->
             com.abrah.nightmare.ui.DiagnoseDialog(d.step, d.total, d.what, d.report, onCancel = vm::cancelDiagnose, onClose = vm::closeDiagnosis)
         }
@@ -938,6 +942,7 @@ fun HarnessScreen(
                         onUpscale = { r, u, s -> vm.upscaleResult(r.id, u, s) },
                         onUltraFix = vm::ultrafixResult,
                         onEditFace = vm::faceEditResult,
+                        onEditFaceAsk = vm::askFaceModel,
                         upscalers = vm.upscalerRows,
                         onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
                         upscaling = vm.upscalingResult,
@@ -1013,6 +1018,7 @@ fun HarnessScreen(
                         onUpscale = { r, u, s -> vm.upscaleResult(r.id, u, s) },
                         onUltraFix = vm::ultrafixResult,
                         onEditFace = vm::faceEditResult,
+                        onEditFaceAsk = vm::askFaceModel,
                         onInstallUpscaler = { askToNotify(); vm.installUpscaler(it) },
                         onToast = vm::toast,
                     ) }

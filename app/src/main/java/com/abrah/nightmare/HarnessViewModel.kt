@@ -75,6 +75,24 @@ private const val SHARE_MAX_PICTURES = 8
  */
 internal fun keepsDraft(key: String?, keep: Boolean): Boolean = keep && key != null && !key.startsWith("saved:")
 
+/**
+ * ⚠ Pure: whether [draft] can be the draft of the flow [fresh] builds: what feeds its Output is the same node, of the
+ * same kind (a video node or not). Saved #8046 (a nubia Z80 Ultra, 1.6.284, a screen recording): Use on MiniMax H3,
+ * Text to video, and the canvas stayed on the SD 1.5 Text to image flow. The Text to video draft HELD that flow (a
+ * draft written under a key that was no longer the canvas's), so opening Text to video restored it. ⚠ Both ends ask
+ * this: a draft that does not fit is neither written ([HarnessViewModel.keepDraft]) nor restored (`openRecipeNow`).
+ */
+internal fun draftFits(fresh: Graph, draft: Graph): Boolean {
+    fun fed(g: Graph) = g.nodes.firstOrNull { it.type == "core.output" }?.inputs?.get("media")?.node
+    val main = fed(fresh) ?: return true
+    val got = draft.byId[main] ?: return false
+    return (got.type in VIDEO_MODEL_TYPES) == (fresh.byId[main]?.type in VIDEO_MODEL_TYPES)
+}
+
+/** ⚠ Pure: the recipe id in a draft key (`recipe:<id>` or `recipe:<id>:<model>`), or null for any other key. */
+internal fun draftRecipeId(key: String?): String? =
+    key?.takeIf { it.startsWith("recipe:") }?.removePrefix("recipe:")?.substringBefore(':')?.takeIf { it.isNotBlank() }
+
 internal fun restoredFlowName(key: String?): String? =
     key?.takeIf { it.startsWith("saved:") }?.removePrefix("saved:")?.takeIf { it.isNotBlank() }
 
@@ -639,6 +657,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     /** ⚠ On the caller's thread, once per switch (a few KB): reopening the SAME flow reads it straight back. */
     private fun keepDraft() {
         val key = draftKey ?: return
+        // ⚠ Saved #8046: never a draft of another flow under this flow's key ([draftFits]).
+        val recipe = draftRecipeId(key)?.let { id -> com.abrah.nightmare.canvas.RECIPES.firstOrNull { it.id == id } }
+        if (recipe != null && !runCatching { draftFits(recipe.build().graph, canvas.workflow.graph) }.getOrDefault(true)) {
+            android.util.Log.w("Harness", "draft: the canvas is not a ${recipe.id} flow; not kept under $key")
+            draftKey = null
+            return
+        }
         runCatching { drafts.save(draftName(key), canvas.workflow, nodeTypes, canvas.savedView) }
             .onFailure { say("could not keep this flow's edits. ${it.message}", bad = true) }
     }
@@ -3046,7 +3071,37 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** ⭐ A Results picture waiting on the face model ([askFaceModel]); opened when the download lands. */
+    private var pendingFaceEdit: com.abrah.nightmare.canvas.Result? = null
+
+    /** ⭐ The picture whose face editor opens now (the download popup's OK); MainActivity draws it. */
+    var faceEditReady by mutableStateOf<com.abrah.nightmare.canvas.Result?>(null)
+        private set
+
+    fun faceEditShown() { faceEditReady = null }
+
+    /**
+     * ⭐ Saved #8051 (the user, 2026-11-14: "load, ask to download"): Edit face on a Results picture with the face
+     * model not on the phone asks for it here, rather than opening an editor that says "not installed" and sending
+     * the person to Models, Tools. Installed, it loads by itself ([com.abrah.nightmare.portrait.LivePortrait.using]).
+     * False: nothing to ask, open the editor.
+     */
+    fun askFaceModel(r: com.abrah.nightmare.canvas.Result): Boolean {
+        if (com.abrah.nightmare.portrait.LivePortrait.isInstalled(getApplication())) return false
+        pendingFaceEdit = r
+        missingModel = toolMissing(com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT)
+        missingForKnob = text(R.string.face_edit_open)
+        return true
+    }
+
     fun dismissMissingModel() {
+        // ⭐ The face model landed for a Results picture: its editor opens now ([askFaceModel]). Hidden mid-download,
+        // it still waits; Not now forgets it.
+        pendingFaceEdit?.let { r ->
+            val tool = toolMissing(com.abrah.nightmare.NeedsDownload.LIVEPORTRAIT).installId
+            if (com.abrah.nightmare.portrait.LivePortrait.isInstalled(getApplication())) { faceEditReady = r; pendingFaceEdit = null }
+            else if (installing != tool) pendingFaceEdit = null
+        }
         // ⚠ A describe waiting on this popup will never run: say so, or the
         // prompt box's dialog spins on "Describing…" forever. ⚠ Not on Hide —
         // the download goes on and the describe still happens when it lands.
@@ -4839,7 +4894,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             if (SelectedModel.id == spec.id) {
                 val next = ModelCatalog.installed(ctx).firstOrNull { it.id != spec.id }
                     ?: ModelCatalog.byId(V1_MODEL)
-                if (next != null) selectModel(next)
+                // ⭐ Saved #8050 (b): a saved flow that never named the deleted model is left as saved. [selectModel]
+                // retargets every node on the canvas, so the open flow read as edited ("ruined, as if never saved").
+                // Only a canvas that runs the deleted model is moved to the next one.
+                val canvasUses = canvas.workflow.graph.nodes.any { it.params["model"] == spec.id }
+                if (next != null && canvasUses) selectModel(next)
+                else if (next != null) {
+                    SelectedModel.set(ctx, next.id)
+                    say("model set to ${next.label}")
+                    if (BackendProcess.launchedKey?.model == spec.id) stopBackend()
+                }
             }
         } catch (e: Exception) {
             modelError = e.message
@@ -7042,7 +7106,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         openedRecipeId = r.id
         val key = "recipe:" + r.id + if (r.usesCheckpoint) ":" + SelectedModel.id else ""
         val fresh = r.build()
-        val kept = if (draft && keepsDraft(key, Prefs.keepFlowEdits)) loadDraft(key) else null
+        val kept = (if (draft && keepsDraft(key, Prefs.keepFlowEdits)) loadDraft(key) else null)?.let { d ->
+            // ⚠ Saved #8046: a draft of another flow kept under this key is dropped, and the flow opens fresh.
+            if (draftFits(fresh.graph, d.workflow.graph)) d
+            else { android.util.Log.w("Harness", "draft: $key held another flow; dropped"); dropDraft(key); null }
+        }
         openWorkflow(kept?.workflow ?: fresh, kept?.view)
         // ⚠ The baseline stays the FRESH build, so a restored draft still reads as edited and is kept again on leaving.
         if (kept != null) { savedBaseline = fresh; sayNotes(kept) }

@@ -1225,6 +1225,11 @@
     <string name="settings_results">Results</string>
     <string name="share_title">Sharing</string>
     <string name="share_note">What goes out with a picture you share.</string>
+    <string name="prompt_expand">Edit in full screen</string>
+    <string name="prompt_expand_done">Done</string>
+    <string name="cutout_save">Save cut-out</string>
+    <string name="cutout_saved">Saved to the gallery with a transparent background</string>
+    <string name="cutout_empty">Nothing is selected yet</string>
     <string name="settings_performance">Performance</string>
     <string name="settings_advanced">Advanced</string>
     <string name="tag_autocomplete">Tag autocomplete</string>

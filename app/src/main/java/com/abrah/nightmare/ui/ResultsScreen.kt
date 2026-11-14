@@ -174,6 +174,8 @@ fun ResultsScreen(
     onUltraFix: ((Result, com.abrah.nightmare.UltraFix.Params) -> Unit)? = null,
     /** ⭐ Edit face on a kept picture ([com.abrah.nightmare.canvas.FaceEditSheet]), after Upscale in both rows. */
     onEditFace: ((Result, Map<String, String>) -> Unit)? = null,
+    /** ⭐ Saved #8051: true when it asked for the face model (the download popup) instead ([com.abrah.nightmare.HarnessViewModel.askFaceModel]). */
+    onEditFaceAsk: ((Result) -> Boolean)? = null,
     upscalers: List<UpscalerRow> = emptyList(),
     onInstallUpscaler: (com.abrah.nightmare.UpscalerSpec) -> Unit = {},
     /** ⭐ Non-null while an upscale runs, naming it. */
@@ -551,7 +553,7 @@ fun ResultsScreen(
                 // ⭐ Edit face, after Upscale, refusing a clip by name as Upscale does.
                 onEditFace?.let {
                     IconButton(onClick = {
-                        if (shown.videoPath != null) onToast(faceNotClip) else editingFace = shown
+                        if (shown.videoPath != null) onToast(faceNotClip) else if (onEditFaceAsk?.invoke(shown) != true) editingFace = shown
                     }, modifier = small) {
                         Icon(Icons.Filled.Face, contentDescription = stringResource(R.string.face_edit_open), tint = onSurface)
                     }
@@ -808,6 +810,8 @@ fun ResultViewer(
     onUltraFix: ((Result, com.abrah.nightmare.UltraFix.Params) -> Unit)? = null,
     /** ⭐ Edit face on a kept picture ([com.abrah.nightmare.canvas.FaceEditSheet]), after Upscale in both rows. */
     onEditFace: ((Result, Map<String, String>) -> Unit)? = null,
+    /** ⭐ Saved #8051: true when it asked for the face model (the download popup) instead ([com.abrah.nightmare.HarnessViewModel.askFaceModel]). */
+    onEditFaceAsk: ((Result) -> Boolean)? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // ⭐ The page in view's player, for Save this frame ([saveClipFrame]).
@@ -1143,7 +1147,7 @@ fun ResultViewer(
             // ⭐ Edit face, after Upscale, as in the Results row.
             onEditFace?.let {
                 val notClip = stringResource(R.string.face_edit_not_clip)
-                IconButton(onClick = { if (current.videoPath != null) onToast(notClip) else editingFace = current }, modifier = viewerIcon) {
+                IconButton(onClick = { if (current.videoPath != null) onToast(notClip) else if (onEditFaceAsk?.invoke(current) != true) editingFace = current }, modifier = viewerIcon) {
                     Icon(Icons.Filled.Face, contentDescription = stringResource(R.string.face_edit_open), tint = androidx.compose.ui.graphics.Color.White)
                 }
             }
@@ -1652,7 +1656,7 @@ private fun UltraFixFor(r: Result, onUltraFix: ((Result, com.abrah.nightmare.Ult
 
 /** ⭐ Results' Edit face: the SAME viewer as the node's ([com.abrah.nightmare.canvas.FaceEditSheet]), on the kept picture. */
 @Composable
-private fun FaceEditFor(
+internal fun FaceEditFor(
     r: Result,
     imageFor: (String) -> ImageBitmap?,
     onEditFace: ((Result, Map<String, String>) -> Unit)?,

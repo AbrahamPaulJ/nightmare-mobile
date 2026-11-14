@@ -3401,12 +3401,14 @@ internal fun NodeInspectorBody(
             // ⭐⭐ **Describe sits in the same border row, LEFT of Translate**
             // (`docs/FLORENCE.md`, the user's call 2026-10-08) — positive prompt
             // only, always shown: it needs no text to qualify.
-            if (isProse && why == null && (onTranslate != null || onDescribe != null)) {
+            // ⭐ …and Expand, first in the row, on every prose box: a long prompt in the whole screen ([PromptExpandButton]).
+            if (isProse && why == null) {
                 val name = w.name
                 val show: (String) -> Unit = { text ->
                     seeded.value = TextFieldValue(text, TextRange(text.length))
                 }
                 Row(Modifier.align(Alignment.TopEnd)) {
+                PromptExpandButton(name.localizedKnobLabel(), current) { text -> onSetParam(nodeId, name, text); show(text) }
                 if (name == "prompt" && onDescribe != null) {
                     DescribeToggle(
                         prompt = current,

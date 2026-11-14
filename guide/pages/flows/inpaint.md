@@ -68,6 +68,10 @@ download). In the mask editor, tap an object and the mask follows its outline. T
 to take more of it, and once more to let it go. This is Segment Anything 2.1, running on the
 phone's CPU.
 
+**Save cut-out** under the editor saves what is selected with its background removed: a PNG
+with a transparent background in your gallery, cropped to the selection, for stickers or to
+paste onto something else.
+
 ### Auto mask
 
 Switch on **Enable auto mask** (a 29 MB download) and chips appear in the mask editor:
