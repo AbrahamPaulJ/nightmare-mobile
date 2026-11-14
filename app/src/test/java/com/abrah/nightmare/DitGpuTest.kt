@@ -32,6 +32,21 @@ class DitGpuTest {
         DitEngine.dir(ctx).deleteRecursively()
     }
 
+    /** ⭐ Item 46: a Klein edit with references leaves the GPU route for the NPU where the NPU runs Klein; text to image stays. */
+    @Test
+    fun aKleinEditWithReferencesGoesToTheNpu() {
+        DitGpu.openClForTest = true
+        Prefs.setLowRam(ctx, Prefs.KEY_DIT_GPU, true)
+        val s25 = DeviceProbe.Caps(arch = 79, vtcmMb = 8, measured = true, soc = "SM8750")
+        assertTrue(SdSampler.editOnNpu(Family.FLUX2, 2, klein, s25))
+        assertTrue(SdSampler.editOnNpu(Family.FLUX2, 1, klein, s25))
+        assertFalse("text to image keeps the GPU", SdSampler.editOnNpu(Family.FLUX2, 0, klein, s25))
+        assertFalse("the 8 Gen 1: the GPU is its only fast route", SdSampler.editOnNpu(Family.FLUX2, 2, klein, caps(69)))
+        Prefs.setLowRam(ctx, Prefs.KEY_DIT_GPU, false)
+        assertFalse("no GPU route, nothing to leave", SdSampler.editOnNpu(Family.FLUX2, 2, klein, s25))
+        assertEquals("flux2/flux2_klein_4b/1024x1024 (NPU)", ContextKey("flux2", "flux2_klein_4b", 1024, 1024, npu = true).toString())
+    }
+
     /** ⭐ The user, 2026-11-14: each flip of the GPU switch overwrote the other engine, and the next Run fetched it again. */
     @Test
     fun bothEnginesAreKeptSoTheSwitchDownloadsNothing() {

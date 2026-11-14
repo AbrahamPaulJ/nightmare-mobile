@@ -663,6 +663,17 @@ class SdSampler(
                     ramBytes in 1 until Prefs.LOWRAM_BELOW_BYTES && arch !in 1..78
             }
 
+        /**
+         * ⭐⭐ A Klein edit with reference pictures leaves the GPU route for the NPU, where this phone's NPU runs the model
+         * (item 46). On the Adreno 2 or 3 references at 1024² failed (`failed to allocate 1152.00 MiB (err=-61)`: one
+         * buffer past the GPU's largest, the S25, 1.6.294) and 1 took 639 s; on the NPU 2 references rendered in 182 s
+         * (demo night 3, 2026-11-11). ⚠ Not where the GPU is the only route ([BackendProcess.ditOnCpu]: the CPU is slower).
+         */
+        internal fun editOnNpu(family: Family, pictures: Int, spec: ModelSpec?, caps: DeviceProbe.Caps): Boolean =
+            family == Family.FLUX2 && pictures > 0 && spec != null && DitGpu.runs(spec, caps) &&
+                !BackendProcess.ditOnCpu(caps) && !spec.chipBlocked(caps) &&
+                spec.builds.any { it.files.isNotEmpty() && it.runsOn(caps) }
+
         /** ⚠ The largest Klein edit measured to fit resident on a 12 GB phone ([kleinEditBudget]). */
         const val KLEIN_RESIDENT_EDIT_PX = 512L * 512L
 
@@ -1214,7 +1225,8 @@ class SdSampler(
         )
         // ⭐ What this phone's NPU taught us (GitHub #97): a changed budget in the key is what relaunches the backend.
         val capped = if (family.dit) BackendProcess.cappedDitBudget(budget, DeviceProbe.ditMapCap) else budget
-        return if (capped == null) key else key.copy(memoryBudget = capped)
+        val withBudget = if (capped == null) key else key.copy(memoryBudget = capped)
+        return if (editOnNpu(family, pictures, ModelCatalog.byId(key.model), DeviceProbe.caps())) withBudget.copy(npu = true) else withBudget
     }
 
     /** ⚠ The size a fixed-canvas family renders, not a stray one the node holds ([canvasOf], GitHub #60). */
@@ -1990,6 +2002,7 @@ class SdSampler(
             onProgress = ctx.onProgress,
             scheduler = p["scheduler"]?.takeIf { it in ModelCatalog.schedulersFor(family) },
         )
+        warnPartialLoras(ctx, p[LORAS])
         val out = when (r) {
             is Ops.Result.Ok -> r.value
             is Ops.Result.Err -> throw OpFailure("generate", r.code, r.body)
@@ -2032,12 +2045,26 @@ class SdSampler(
             // an SD id from an old flow is Euler at the backend.
             scheduler = p["scheduler"]?.takeIf { it in ModelCatalog.schedulersFor(family) },
         )
+        warnPartialLoras(ctx, p[LORAS])
         val out = when (r) {
             is Ops.Result.Ok -> r.value
             is Ops.Result.Err -> throw OpFailure("generate", r.code, r.body)
         }
         return android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
+    }
+
+    /**
+     * ⭐ A LoRA the engine applied only in part, as a warning (Saved #8071: an Anima LoRA applied 840 of 1092 tensors,
+     * its `adaln.modulation` ones unused, and nobody was told). The engine says so per file in THIS request's lines
+     * ([LoraPartial]); a render whose weights were kept may not repeat it, so it shows on the render that applied it.
+     */
+    private fun warnPartialLoras(ctx: NodeCtx, spec: String?) {
+        if (spec.isNullOrBlank()) return
+        val lines = runCatching { BackendProcess.newestLaunch() }.getOrDefault(emptyList())
+        for (p in LoraPartial.of(lines)) {
+            ctx.warn(ctx.text(R.string.run_lora_partial, "LoRA \"%1\$s\" fits this model only in part: %2\$d of its %3\$d tensors were used", p.name, p.applied, p.total))
+        }
     }
 
     /**

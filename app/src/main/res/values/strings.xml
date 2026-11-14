@@ -264,6 +264,7 @@
     <string name="ip_about_sdxl">IP-Adapter for SDXL Swap models: a reference picture steers the render. Only a conversion made with IP-Adapter ticked can use it: Illustrious XL Swap downloaded since 1.6.122, or your own from npuforge 1.0.12 or newer.</string>
     <string name="run_lora_tags_unused">LoRA tags in the prompt were left out. This model takes no LoRAs</string>
     <string name="run_lora_tags_negative">LoRA tags in the negative prompt were left out. Put them in the prompt to use them</string>
+    <string name="run_lora_partial">LoRA "%1$s" fits this model only in part: %2$d of its %3$d tensors were used</string>
     <string name="run_lora_tag_missing">LoRA "%1$s" from the prompt is not installed. Skipped</string>
     <string name="run_lora_motion_skipped">Motion transfer takes no LoRAs: "%1$s" from the prompt was skipped</string>
     <string name="run_wan_ram_warning">%1$s for %2$s s needs about %3$s GB on the NPU, more than this phone\'s %4$s GB of RAM comfortably holds. It may stop or restart the app. 480p or fewer seconds is safer</string>

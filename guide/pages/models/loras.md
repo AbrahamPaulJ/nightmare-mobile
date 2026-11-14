@@ -110,6 +110,10 @@ on the phone. While you search, every match shows, folders or not.
 Wan's **Motion transfer** takes no LoRAs: it has no LoRA list, and `<lora:…>` tags in its prompt
 are skipped.
 
+A LoRA trained for a slightly different version of the model may fit only in part. The picture
+still renders, and the run shows a warning naming the LoRA and how many of its parts were used
+(for example 840 of 1092): the rest of what it learned is missing from the picture.
+
 ### Notes
 
 The **⋮** beside each LoRA opens a note for it: its trigger words, the strength and settings it

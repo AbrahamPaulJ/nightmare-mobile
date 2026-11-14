@@ -82,6 +82,9 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
 !!! note "int8, ConvRot and mxfp8 files"
     A `.safetensors` in ComfyUI's int8 format (int8, ConvRot) or in mxfp8 is converted to Q8_0 while it imports,
     which the NPU runs. The result is about the same size and needs the same free space.
+    A Krea 2 fp8 `.safetensors` is converted the same way on phones before the 8 Elite, whose NPU cannot run fp8
+    directly: as fp8 its first block did not fit in the NPU's memory on an 8 Gen 3. A Krea 2 imported before 1.6.303
+    on such a phone needs importing again.
 
 !!! warning "4-bit files"
     Files made for NVIDIA cards in ComfyUI's 4-bit formats (int4, nf4, nvfp4) and int8 `.gguf` files

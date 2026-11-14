@@ -192,7 +192,7 @@ at 1024 x 1024 takes about 4 minutes this way, slower than its NPU.
 
 | switch | default | what it does |
 |---|---|---|
-| **Use the GPU for DiT models** | off | FLUX.2 Klein 4B and NitroFusion 2 render on the GPU. A second engine (23 MB) and the Q4_0 model download the first time. Turned off again, the NPU runs that Q4_0 as it is, with nothing to download or repair. For the NPU's own faster build, delete the model and download it again with the switch off. Both engines stay on the phone, so switching back and forth downloads nothing after the first time |
+| **Use the GPU for DiT models** | off | FLUX.2 Klein 4B and NitroFusion 2 render on the GPU. A second engine (23 MB) and the Q4_0 model download the first time. Turned off again, the NPU runs that Q4_0 as it is, with nothing to download or repair. For the NPU's own faster build, delete the model and download it again with the switch off. Both engines stay on the phone, so switching back and forth downloads nothing after the first time. A Klein edit with reference pictures still runs on the NPU, where the GPU ran out of memory at 1024x1024 |
 | **Fast decoder on the GPU** | on | Turns the finished picture into pixels with a tiny decoder (taef2, taef1) in under 30 seconds at 1024 x 1024. Off uses the full decoder, which takes minutes on the GPU |
 
 ### Keep rendering in the background

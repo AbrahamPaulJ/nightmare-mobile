@@ -900,6 +900,8 @@ object BackendProcess {
         upscalerOnly: Boolean = false,
         /** ⭐ [ContextKey.memoryBudget]: `DIT_MAX_VRAM` and `all=disk` for this launch. */
         memoryBudget: String? = null,
+        /** ⭐ [ContextKey.npu]: no GPU route for this launch, whatever the setting. */
+        npu: Boolean = false,
     ): Start =
         // ⚠⚠ [launchLock] for the whole launch: the API, OpService and the UI all reach here, and two starts at
         // once orphaned one (A won the port; B's monitor cleared `process` and the key for A, so A was never held,
@@ -1105,7 +1107,9 @@ object BackendProcess {
                         if (Prefs.v69Npu && belowDitNpu(DeviceProbe.caps())) put("GGML_HEXAGON_NHVX", "3")
                         // ⭐⭐ …unless the GPU takes it ([DitGpu]): there, and wherever the person turned it on, a
                         // measured model renders on the Adreno with `dit/080`'s cuts and the tiny decoder (backend 052).
-                        if (!diagnosing) putAll(DitGpu.launchEnv(context, spec))
+                        // ⚠ Not for a render that asked for the NPU ([ContextKey.npu]): the GPU route's tiny decoder
+                        // (`NM_DIT_TAESD`) does not decode on HTP (a grey frame, demo night 3), so none of it is sent.
+                        if (!diagnosing && !npu) putAll(DitGpu.launchEnv(context, spec))
                         // ⭐ FLUX.1 ([Family.FLUX1], `dit/092`): CLIP-L's path, this model's or its donor's, and both its text
                         // encoders on the CPU, which is how it was measured. ⚠ Before the diagnostic override, which beats it.
                         if (spec?.family == Family.FLUX1) {
@@ -1265,7 +1269,7 @@ object BackendProcess {
                 // ⚠ Null for an upscale-only process: it holds no checkpoint, so
                 // there is no context key and nothing for the readout to name.
                 launchedKey = if (upscalerOnly) null else ContextKey(
-                    ModelCatalog.backendTypeOf(modelId), modelId, res.width, res.height, memoryBudget,
+                    ModelCatalog.backendTypeOf(modelId), modelId, res.width, res.height, memoryBudget, npu,
                 )
                 upscalerServer = upscalerOnly
                 appContext = context.applicationContext

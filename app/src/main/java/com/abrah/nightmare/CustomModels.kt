@@ -865,8 +865,10 @@ object CustomModels {
             // ⭐ And an mxfp8 one ([MxFp8Gguf]): its per-block scales are something the engine cannot read at all.
             val mx = MxFp8Gguf.converts(head)
             val toQ8 = !int8 && !mx && variant == DitVariant.MOSS && !head.gguf && MossGguf.converts(head.json)
+            // ⭐ And a plain fp8 Krea 2 below v79 ([Fp8Q8Gguf]): its first block outgrew the NPU budget on an 8 Gen 3.
+            val fp8q8 = !int8 && !mx && !toQ8 && Fp8Q8Gguf.converts(head, variant.family, DeviceProbe.caps())
             // ⭐ A `.gguf` keeps its format: the engine picks the loader by name.
-            val dest = File(dir, if (head.gguf || toQ8 || int8 || mx) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
+            val dest = File(dir, if (head.gguf || toQ8 || int8 || mx || fp8q8) DIT_GGUF else ModelSpec.DIT_WEIGHTS)
             // ⚠⚠ Into `.part`, renamed when whole: a process killed mid-copy left a truncated `dit.safetensors` whose
             // header [detectDit] read on the next scan and marked, so a custom spec (no sizes to check) listed it
             // installed and Run failed inside the engine. The `catch` below cannot run when the process dies.
@@ -889,6 +891,12 @@ object CustomModels {
                     { done, total -> onProgress(ModelInstaller.Progress("converting to Q8_0", done, total)) }, isCancelled,
                 )
                 Log.i(TAG, "converted '$name' to a Q8_0 GGUF: $bytes bytes")
+            } else if (fp8q8) {
+                val bytes = SafetensorsGguf.convertStream(
+                    open, part, Fp8Q8Gguf.rule(variant.family),
+                    { done, total -> onProgress(ModelInstaller.Progress("converting fp8 to Q8_0", done, total)) }, isCancelled,
+                )
+                Log.i(TAG, "converted fp8 '$name' to a Q8_0 GGUF for this chip: $bytes bytes")
             }
             // ⭐ A safetensors goes through [Fp8Widen]: its non-matmul fp8 tensors become F32 on the way.
             else if (!head.gguf) open().use { input ->

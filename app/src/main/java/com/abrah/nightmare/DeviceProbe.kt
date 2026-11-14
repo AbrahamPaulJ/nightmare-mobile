@@ -95,6 +95,9 @@ object DeviceProbe {
      */
     val DIT_NO_HMX_SOCS = mapOf(
         "SM8735" to "8s Gen 4", "SM8635" to "8s Gen 3", "SM8450" to "8 Gen 1", "SM8475" to "8+ Gen 1",
+        // ⭐ v69 with 4 MB of VTCM, measured (Saved #8058). VTCM is read off the hardware by the skel and the host
+        // (`HAP_compute_res_query_VTCM`, `htp_iface_hwinfo`), and every kernel sizes its tiles to it, so 4 MB needs no gate.
+        "SM7475" to "7+ Gen 2",
     )
 
     /**
@@ -129,8 +132,13 @@ object DeviceProbe {
         /** ⚠ The APK has to carry this arch's Skel, or NPU init fails whatever the model. */
         val staged: Boolean get() = arch in STAGED_ARCHES || arch in PACK_ARCHES
 
-        /** ⭐ DiT models run with HMX off on this chip: a known one ([DIT_NO_HMX_SOCS]), or its self-test failed ([hmxBad]). */
-        val ditNoHmx: Boolean get() = soc in DIT_NO_HMX_SOCS || hmxBad
+        /**
+         * ⭐ DiT models run with HMX off on this chip: a known one ([DIT_NO_HMX_SOCS]), its self-test failed ([hmxBad]),
+         * or any v69 (or a measured v68-v72): the v69 skel has no HMX kernels (`dit/034`), so the launch must also move
+         * the decode to the CPU. ⚠ A 7+ Gen 2 (SM7475) measures v69 and was in no table: with the v69 trial on it
+         * decoded on the NPU without HMX, which aborts at 1024² (Saved #8058-8063, item 68d, 2026-11-15).
+         */
+        val ditNoHmx: Boolean get() = soc in DIT_NO_HMX_SOCS || hmxBad || (qualcomm && arch in 69 until 73 && (measured || soc in SOC_TO_ARCH))
 
         /**
          * ⭐⭐⭐ **Do we actually KNOW this chip, or is [arch] the floor

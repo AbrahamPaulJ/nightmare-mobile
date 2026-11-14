@@ -241,6 +241,7 @@
     <string name="ip_about_sdxl">SDXL Swap 模型的 IP-Adapter：参考图片引导生成。只有勾选了 IP-Adapter 的转换才能使用：1.6.122 起下载的 Illustrious XL Swap，或你用 npuforge 1.0.12 及以上版本自己转换的模型。</string>
     <string name="run_lora_tags_unused">提示词中的 LoRA 标签已忽略，此模型不支持 LoRA</string>
     <string name="run_lora_tags_negative">反向提示词中的 LoRA 标签已忽略。要使用它们，请放到提示词中</string>
+    <string name="run_lora_partial">LoRA “%1$s” 只部分适用于此模型：使用了其 %3$d 个张量中的 %2$d 个</string>
     <string name="run_lora_tag_missing">提示词中的 LoRA “%1$s” 未安装，已跳过</string>
     <string name="run_lora_motion_skipped">动作迁移不使用 LoRA：已跳过提示词中的“%1$s”</string>
     <string name="run_wan_ram_warning">%1$s、%2$s 秒需要约 %3$s GB 的 NPU 内存，超出这台手机 %4$s GB 内存能稳妥容纳的量。应用可能会停止或重启。480p 或更短的时长更稳妥</string>

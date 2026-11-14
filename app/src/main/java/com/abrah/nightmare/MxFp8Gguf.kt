@@ -47,7 +47,7 @@ object MxFp8Gguf {
         return SafetensorsGguf.convertStream(open, dst, rule(scales, family), { done, total -> onProgress("converting mxfp8 to Q8_0", done, total) }, isCancelled)
     }
 
-    private fun key(name: String): String = PREFIXES.firstOrNull { name.startsWith(it) }?.let { name.removePrefix(it) } ?: name
+    internal fun key(name: String): String = PREFIXES.firstOrNull { name.startsWith(it) }?.let { name.removePrefix(it) } ?: name
 
     /**
      * ⭐ The stored grid in the weights' order. Tiles of [TILE_ROWS] rows by [TILE_COLS] columns run across the columns, then

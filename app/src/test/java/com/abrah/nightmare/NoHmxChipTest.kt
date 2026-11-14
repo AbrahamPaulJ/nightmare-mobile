@@ -62,6 +62,20 @@ class NoHmxChipTest {
         }
     }
 
+    /**
+     * ⭐ Item 68d: any v69, not only the two in the table. A 7+ Gen 2 measures v69 with 4 MB of VTCM; an unlisted v69
+     * part number that was measured gets the same launch. An unknown chip at the v68 floor does not.
+     */
+    @Test
+    fun everyV69RunsWithHmxOffWhateverItsName() {
+        assertTrue(DeviceProbe.Caps(arch = 69, vtcmMb = 4, measured = true, soc = "SM7475").ditNoHmx)
+        assertTrue(DeviceProbe.Caps(arch = 69, vtcmMb = 4, measured = true, soc = "SM7999").ditNoHmx)
+        assertTrue(ModelCatalog.byId("anima_turbo_1_1")!!.noHmxOn(DeviceProbe.Caps(arch = 69, vtcmMb = 4, measured = true, soc = "SM7999")))
+        assertFalse(DeviceProbe.Caps(arch = 68, vtcmMb = 2, measured = false, soc = "unknown").ditNoHmx)
+        assertFalse(DeviceProbe.Caps(arch = 73, vtcmMb = 8, measured = true, soc = "SM8550").ditNoHmx)
+        assertFalse(DeviceProbe.Caps(arch = 79, vtcmMb = 8, measured = true, soc = "SM8750").ditNoHmx)
+    }
+
     @Test
     fun theLaunchTurnsHmxOffByGgmlsOwnSwitch() {
         // ⚠ The leg that came back with a picture on both chips set exactly this ([BlankDiagnosis.LEGS] `no_hmx`).

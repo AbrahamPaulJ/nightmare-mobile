@@ -264,8 +264,15 @@ data class ContextKey(
      * relaunches for it exactly as for a checkpoint change, and every other clip keeps full speed.
      */
     val memoryBudget: String? = null,
+    /**
+     * ⭐ This render declines the GPU route ([DitGpu]) for the NPU: a Klein edit with reference pictures, which the Adreno
+     * cannot fit at 1024² (item 46, `Fused.SdSampler.editOnNpu`). Launch-bound like [memoryBudget], so a changed route
+     * relaunches the backend.
+     */
+    val npu: Boolean = false,
 ) {
-    override fun toString() = "$type/$model/${width}x$height" + (memoryBudget?.let { " (budget $it GiB)" } ?: "")
+    override fun toString() = "$type/$model/${width}x$height" + (memoryBudget?.let { " (budget $it GiB)" } ?: "") +
+        (if (npu) " (NPU)" else "")
 }
 
 /**
