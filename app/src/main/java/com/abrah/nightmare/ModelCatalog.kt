@@ -2525,6 +2525,14 @@ object ModelCatalog {
         RemoteFile(HF + "leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q4_0.gguf", "dit.gguf", 3_683_370_944L),
     ) + ZIMAGE_PARTS
 
+    /** NitroFusion 2: ChenDY's Q8_0 (v79+), and our true Q4_0 of it for the GPU route and v73-v75. */
+    private val NF2_Q8 = listOf(
+        RemoteFile(HF + "ChenDY/NitroFusion2/resolve/main/nf2-Q8_0.gguf", "dit.gguf", 7_222_556_736L),
+    ) + ZIMAGE_PARTS
+    private val NF2_Q4 = listOf(
+        RemoteFile(HF + "AbrahamPJ/nightmare-nitrofusion2/resolve/main/nf2-Q4_0.gguf", "dit.gguf", 3_506_423_872L),
+    ) + ZIMAGE_PARTS
+
     val ditModels: List<ModelSpec> = listOf(
         dit(
             "flux2_klein_4b", "FLUX.2 Klein 4B", Family.FLUX2, KLEIN, steps = 4,
@@ -2608,18 +2616,25 @@ object ModelCatalog {
         // BORROWED when Z-Image is installed ([ModelSpec.partsFrom]). Measured on the S25 (`sd-cli`, 2026-11-09), 1024²:
         // 1 step 18.5-23 s, 2 steps 39-41 s, against Z-Image Turbo Q4_0's 113 s at 8 steps. ⚠ Q8_0 only: its "Q4_0" file is
         // mostly q5_1 / q4_1, which the NPU's matmul cannot take: 626 s a step on the CPU. Flow shift 6 is its 2-step
-        // setting; a single step starts at sigma 1 on any shift. The optional de-distill LoRA is not applied. âš  KREA2, not ZIMAGE: only an own-files launch takes a donor, and Z-Image's VAE is not in `_dit_shared`.
+        // setting; a single step starts at sigma 1 on any shift. The optional de-distill LoRA is not applied. ⚠ KREA2, not ZIMAGE: only an own-files launch takes a donor, and Z-Image's VAE is not in `_dit_shared`.
         dit(
             "nitrofusion2", "NitroFusion 2 (1-2 steps)", Family.ZIMAGE, KREA2, steps = 1,
             lowram = true,
             ownDitParts = true,
-            minArch = DIT_MIN_ARCH,
             partsFrom = "z_image_turbo",
             flowShift = "6",
             prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
-            files = listOf(
-                RemoteFile(HF + "ChenDY/NitroFusion2/resolve/main/nf2-Q8_0.gguf", "dit.gguf", 7_222_556_736L),
-            ) + ZIMAGE_PARTS,
+            files = NF2_Q8,
+            // ⭐ The GPU route (the 8s Gen 4 tester's ask, S#8010-8021) and the 8 Gen 2 / 8 Gen 3 NPU: our requant of the Q8_0
+            // to ALL Q4_0 (`AbrahamPJ/nightmare-nitrofusion2`, its README). ⚠⚠ Not leejet's Z-Image layout, which keeps the 10
+            // context-refiner tensors at Q8_0: on the Adreno those Q8_0 matmuls lose the prompt (a garbled sign, another
+            // scene; 14 dB from a CPU render of the seed), all-Q4_0 matches it at 30.9 dB (S25, 512² 1 step, 2026-11-14).
+            // S25: GPU 1024² 1 step 127-150 s (94-116 s the step, ~26 s the tiny decoder on the CPU), the right sign; the NPU 49 s.
+            gpu = true,
+            builds = listOf(
+                Build(TIER_DIT, "", NF2_Q8.sumOf { it.bytes }, DIT_MIN_ARCH, 8, files = NF2_Q8),
+                Build(TIER_DIT, "", NF2_Q4.sumOf { it.bytes }, DIT_V73_MIN_ARCH, ditVtcmFloor(DIT_V73_MIN_ARCH), files = NF2_Q4),
+            ),
         ),
         // ⭐ FLUX.1 dev (`docs/IMPORTS.md`): city96's Q4_0, the NPU's own matmul format. S25 `sd-cli`, streamed at 4 GiB: 512² 20
         // steps 242 s, 1024² 425 s, clean. ⚠ Not Q6_K (the tester's ask, S#7926): its K-quant matmuls fall to the CPU, ~154 s

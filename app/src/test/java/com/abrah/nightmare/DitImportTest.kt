@@ -465,7 +465,7 @@ class DitImportTest {
     fun sftsOldLoraIsReclaimedOnlyAfterTheNewOne() {
         val dir = File(ModelCatalog.root(ctx), "moss_reclaim").apply { mkdirs() }
         val old = File(dir, ModelCatalog.MOSS_LORA)
-        java.io.RandomAccessFile(old, "rw").use { it.setLength(1_189_176_800L) }
+        sparse(old, 1_189_176_800L)
         assertFalse(ModelCatalog.reclaimOldMossLora(dir, whole = false))
         assertFalse("the new file is not there", ModelCatalog.reclaimOldMossLora(dir, whole = true))
         File(dir, ModelCatalog.MOSS_SFT_LORA).writeBytes(ByteArray(16))
@@ -474,7 +474,8 @@ class DitImportTest {
         java.io.RandomAccessFile(old, "rw").use { it.setLength(1_000L) }
         assertFalse("someone's own file", ModelCatalog.reclaimOldMossLora(dir, whole = true))
         assertTrue(old.isFile)
-        java.io.RandomAccessFile(old, "rw").use { it.setLength(1_189_176_800L) }
+        old.delete()
+        sparse(old, 1_189_176_800L)
         assertTrue(ModelCatalog.reclaimOldMossLora(dir, whole = true))
         assertFalse(old.exists())
         assertTrue(File(dir, ModelCatalog.MOSS_SFT_LORA).isFile)
