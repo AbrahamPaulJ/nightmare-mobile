@@ -75,7 +75,12 @@ open class SettingsScreenshotTest {
     /** ⭐ Performance, with "Sound when a run ends" on (GitHub #79): its two sound rows, Default each. ⚠ Tall: it is the third card. */
     @Config(qualifiers = "w411dp-h1600dp-xxhdpi")
     @Test fun performance() = shoot(
-        "settings-performance", 3,
+        "settings-performance", 4,
         lowRam = Prefs.LowRam(sdxl = true, anima = true, animaSeqDit = false, runSound = true),
+    )
+    /** ⭐ Results (the user, 2026-11-14): the picture info, the credit strip with its name field, the Info as text. */
+    @Test fun results() = shoot(
+        "settings-results", 3,
+        lowRam = Prefs.LowRam(sdxl = true, anima = true, animaSeqDit = false, shareCredit = true, shareText = true),
     )
 }

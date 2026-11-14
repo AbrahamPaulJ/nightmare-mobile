@@ -224,7 +224,8 @@ object DitEngine {
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    val FILE_BYTES: Long get() = if (gpu) GPU_FILE_BYTES else 56_243_224L
+    val FILE_BYTES: Long get() = if (gpu) GPU_FILE_BYTES else NPU_FILE_BYTES
+    private const val NPU_FILE_BYTES = 56_243_224L
 
     /**
      * ⭐ The GPU variant: CI 41781422175 (branch `gpu-110`), the NPU list + 067 + 080 + 081 + `085`, `opencl=true`.
@@ -290,6 +291,14 @@ object DitEngine {
     ) = synchronized(installLock) {
         if (isInstalled(context)) {
             refresh(context)
+            return@synchronized
+        }
+        pruneSpares(context)
+        // ⭐ The GPU switch flipped back: the wanted variant is a spare beside the live one, two renames away.
+        if (restoreSpare(context)) {
+            if (gpu && !DitGpu.taesPresent(context)) DitGpu.installTaes(context, onProgress, isCancelled)
+            refresh(context)
+            Log.i(TAG, "$LABEL: switched to the kept ${variantOf(URL)} engine, nothing downloaded")
             return@synchronized
         }
         // ⚠ The engine right and only a tiny decoder missing: fetch that, not the 23 MB again.
@@ -398,6 +407,8 @@ object DitEngine {
         }
         tmp.setReadable(true, false)
         tmp.setExecutable(true, false)
+        // ⭐ The other variant, when it is the live one, is kept as a spare rather than overwritten ([restoreSpare]).
+        keepLiveAsSpare(context)
         // ⚠ Same directory, same filesystem, so this is `rename(2)`: atomic,
         // and it never truncates the file it replaces.
         if (!tmp.renameTo(file(context))) throw IOException("$LABEL: cannot replace ${file(context)}")
@@ -410,7 +421,61 @@ object DitEngine {
     fun delete(context: Context) {
         file(context).delete()
         stamp(context).delete()
+        for (v in listOf("npu", "gpu")) { spare(context, v).delete(); spareStamp(context, v).delete() }
         refresh(context)
+    }
+
+    // ⭐⭐ Both variants kept (the user, 2026-11-14: turning the GPU switch off asked for downloads). The GPU and NPU
+    // engines are one file name, so each switch overwrote the other and the next Run asked for 23 MB again. Now the
+    // live one is renamed to `libdit_engine.so.<variant>` when the other is installed, and renamed back when the
+    // switch flips back: ~57 MB more on disk, no download either way. ⚠ Renames only, never a write in place: a
+    // backend may hold the live file mapped ([unpack]'s note), and a rename leaves its inode alone.
+
+    internal fun variantOf(url: String?): String? = when (url) {
+        GPU_URL -> "gpu"
+        NPU_URL -> "npu"
+        else -> null
+    }
+
+    private fun spare(context: Context, variant: String) = File(dir(context), "$FILE.$variant")
+    private fun spareStamp(context: Context, variant: String) = File(dir(context), ".dit-engine.$variant")
+    private fun sizeOf(url: String) = if (url == GPU_URL) GPU_FILE_BYTES else NPU_FILE_BYTES
+
+    /** The live engine, when it is the OTHER current variant and whole, becomes that variant's spare. */
+    private fun keepLiveAsSpare(context: Context) {
+        val url = installedUrl(context) ?: return
+        if (url == URL) return
+        val v = variantOf(url) ?: return
+        val live = file(context)
+        if (live.length() != sizeOf(url)) return
+        if (live.renameTo(spare(context, v))) {
+            spareStamp(context, v).writeText(url)
+            stamp(context).delete()
+        }
+    }
+
+    /** ⭐ The wanted variant's spare made live: true when it was there, whole and current. */
+    private fun restoreSpare(context: Context): Boolean {
+        val v = variantOf(URL) ?: return false
+        val s = spare(context, v)
+        if (s.length() != FILE_BYTES) return false
+        if (runCatching { spareStamp(context, v).readText().trim() }.getOrNull() != URL) return false
+        keepLiveAsSpare(context)
+        if (!s.renameTo(file(context))) return false
+        spareStamp(context, v).delete()
+        stamp(context).writeText(URL)
+        return true
+    }
+
+    /** ⚠ A spare from an older engine (its URL is neither current one) is 57 MB nobody will run again. */
+    private fun pruneSpares(context: Context) {
+        for (v in listOf("npu", "gpu")) {
+            val url = runCatching { spareStamp(context, v).readText().trim() }.getOrNull()
+            if (url == null || variantOf(url) != v || spare(context, v).length() != sizeOf(url)) {
+                spare(context, v).delete()
+                spareStamp(context, v).delete()
+            }
+        }
     }
 
     private fun sha256(f: File): String {

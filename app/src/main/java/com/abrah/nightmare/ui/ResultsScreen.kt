@@ -1377,6 +1377,9 @@ internal fun UnreadablePicture(
  * ONE copy button for the whole text (the user's call, 2026-09-17: a copy per
  * row was clutter; what people paste is the lot).
  */
+/** ⭐ The Info dialog's rows as text: what its Copy button copies, and what a share sends with [com.abrah.nightmare.Prefs.shareText]. */
+fun infoText(details: List<Pair<String, String>>): String = details.joinToString("\n") { (k, v) -> "$k: $v" }
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ResultInfoDialog(
@@ -1407,7 +1410,7 @@ fun ResultInfoDialog(
         )
         return
     }
-    val all = details.joinToString("\n") { (k, v) -> "$k: $v" }
+    val all = infoText(details)
     // ⭐ Selected rows by index; -1 is the picture row. Empty = not selecting.
     var selected by remember(details) { mutableStateOf(emptySet<Int>()) }
     val items: Map<Int, TransferItem> = if (transfer == null) emptyMap() else buildMap {

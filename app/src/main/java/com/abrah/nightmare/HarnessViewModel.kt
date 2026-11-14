@@ -316,6 +316,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (key == Prefs.KEY_DIT_GPU || key == Prefs.KEY_V69_NPU) {
             DitEngine.refresh(app)
             refreshModels()
+            // ⭐ The other engine, fetched now rather than at the next Run's popup: two renames when it is kept
+            // ([DitEngine.restoreSpare]), else its 23 MB in the background, as after an app update.
+            if (key == Prefs.KEY_DIT_GPU) updateDitEngineQuietly()
         }
         val resident = BackendProcess.launchedKey?.model?.let { ModelCatalog.byId(it) }
         if (resident != null && governs(resident)) {
@@ -7422,11 +7425,22 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val png = results.fullBytes(id) ?: return@shareOffMain text(R.string.share_picture_missing)
         // ⭐ The credit strip ([ShareCredit], on by default): re-encoded only when it is on.
         val credited = creditedOrNull(png)
-        // ⭐ How it was made as the message's text too ([Prefs.shareText], the user 2026-11-14): chat apps show it.
-        val text = if (Prefs.shareText) resultPngInfo(id, always = true)?.parameters else null
+        val text = shareTextFor(id)
         if (credited != null) Share.image(getApplication(), credited, "nightmare-" + id, resultPngInfo(id), text)
         else Share.image(getApplication(), png, "nightmare-" + id, resultPngInfo(id), text)
         null
+    }
+
+    /**
+     * ⭐ How a kept picture was made, as a share's message text ([Prefs.shareText]): EVERYTHING its Info shows, the
+     * Copy button's text (the user, 2026-11-14), not the A1111 line. ⚠ Every share of a picture asks this: the
+     * selection bar's Share sent none in 1.6.300, and that is the share the user tried in Telegram.
+     */
+    private fun shareTextFor(id: String): String? {
+        if (!Prefs.shareText) return null
+        val r = kept.firstOrNull { it.id == id } ?: return resultPngInfo(id, always = true)?.parameters
+        return com.abrah.nightmare.ui.infoText(detailsOf(r)).takeIf { it.isNotBlank() }
+            ?: resultPngInfo(id, always = true)?.parameters
     }
 
     /** ⭐ [png] decoded with [ShareCredit]'s strip under it, or null when the switch is off (or it will not decode). */
@@ -7509,7 +7523,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠⚠ The bitmap, for the reason [saveImage] gives.
         val bmp = if (clip == null) ops.images.get(imageId) else null
         val info = if (bmp != null) canvasPngInfo(imageId) else null
-        val text = if (bmp != null && Prefs.shareText) canvasPngInfo(imageId, always = true)?.parameters else null
+        // ⭐ The node's Info text ([detailsOfNode]), as Results' shares send ([shareTextFor]).
+        val text = if (bmp == null || !Prefs.shareText) null else {
+            val node = canvas.rendered.entries.firstOrNull { it.value == imageId }?.key
+                ?: canvas.previews.entries.firstOrNull { it.value.first == imageId }?.key
+            node?.let { com.abrah.nightmare.ui.infoText(detailsOfNode(it)) }?.takeIf { it.isNotBlank() }
+                ?: canvasPngInfo(imageId, always = true)?.parameters
+        }
         shareOffMain {
             when {
                 clip != null -> Share.video(getApplication(), clip, name)
@@ -8149,7 +8169,10 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     entries.all { it.first.endsWith(".mp4") } -> "video/mp4"
                     else -> "*/*"
                 }
-                com.abrah.nightmare.Share.many(ctx, entries, mime, "Share")
+                // ⭐ The pictures' Info as the message ([shareTextFor]); several are told apart by a blank line.
+                val text = list.filter { keptClip(it) == null }.mapNotNull { shareTextFor(it) }
+                    .joinToString("\n\n").ifBlank { null }
+                com.abrah.nightmare.Share.many(ctx, entries, mime, "Share", text)
             }
             null
         }

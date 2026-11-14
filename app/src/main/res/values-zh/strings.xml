@@ -549,7 +549,7 @@
     <string name="share_credit_plain">由 %1$s 制作</string>
     <string name="share_credit_named">%1$s 使用 %2$s 创作</string>
     <string name="share_text">以文字发送生成参数</string>
-    <string name="share_text_hint">分享单张图片时，同时把提示词、反向提示词、模型、种子、步数和采样器作为消息文字发送，Telegram、WhatsApp 等聊天应用会显示在图片下方。</string>
+    <string name="share_text_hint">分享图片时，同时把“信息”里显示的全部内容（提示词、反向提示词、模型、种子、步数、采样器、尺寸、耗时）作为消息文字发送，Telegram、WhatsApp 等聊天应用会把它显示在图片旁。</string>
     <string name="run_notice_channel">生成进度</string>
     <string name="run_notice_title">正在运行 %1$s</string>
     <string name="run_notice_running">正在生成</string>
@@ -1191,6 +1191,9 @@
     <string name="settings_appearance">外观</string>
     <string name="settings_prompts">提示词</string>
     <string name="settings_models">模型</string>
+    <string name="settings_results">结果</string>
+    <string name="share_title">分享</string>
+    <string name="share_note">分享图片时一起发送的内容。</string>
     <string name="settings_performance">性能</string>
     <string name="settings_advanced">高级</string>
     <string name="tag_autocomplete">标签自动补全</string>

@@ -225,6 +225,9 @@ fun SettingsScreen(
     // (null hides a section, the same convention as every slot here).
     val pages = listOfNotNull(
         Page.APPEARANCE, Page.PROMPTS, Page.MODELS,
+        // ⭐ What a saved or shared picture carries (the user, 2026-11-14: "the share stuff belongs there, not in
+        // Performance"). ⚠ Hidden with no switches to draw, as Performance is.
+        Page.RESULTS.takeIf { lowRam != null },
         // ⚠ Hidden when it would be empty (a golden with no memory switches, an unrestricted battery).
         Page.PERFORMANCE.takeIf { lowRam != null || !batteryUnrestricted },
         Page.ADVANCED,
@@ -624,6 +627,33 @@ fun SettingsScreen(
                 }
             }
         }
+        Page.RESULTS -> Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (lowRam != null) {
+                // ⭐ GitHub #106: what made a picture, written into it when it is saved or shared ([Prefs.pngInfo]).
+                StudioCard {
+                    SectionHeading(stringResource(R.string.png_info_title), stringResource(R.string.png_info_note))
+                    com.abrah.nightmare.canvas.BoolKnobRow(
+                        stringResource(R.string.png_info), stringResource(R.string.png_info_hint),
+                        lowRam.pngInfo, { onLowRam(Prefs.KEY_PNG_INFO, it) },
+                    )
+                }
+                // ⭐ What goes out with a shared picture (the user, 2026-11-14): the credit strip (on by default, a name
+                // optional) and its Info as the message text (off by default).
+                StudioCard {
+                    SectionHeading(stringResource(R.string.share_title), stringResource(R.string.share_note))
+                    com.abrah.nightmare.canvas.BoolKnobRow(
+                        stringResource(R.string.share_credit), stringResource(R.string.share_credit_hint),
+                        lowRam.shareCredit, { onLowRam(Prefs.KEY_SHARE_CREDIT, it) },
+                    )
+                    if (lowRam.shareCredit) ShareNameField(shareName, onShareName)
+                    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                    com.abrah.nightmare.canvas.BoolKnobRow(
+                        stringResource(R.string.share_text), stringResource(R.string.share_text_hint),
+                        lowRam.shareText, { onLowRam(Prefs.KEY_SHARE_TEXT, it) },
+                    )
+                }
+            }
+        }
         Page.PERFORMANCE -> Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // ⭐ Upstream's low-RAM switches (`docs/UI.md` §8.9a's one bool control).
                 if (lowRam != null) {
@@ -683,27 +713,6 @@ fun SettingsScreen(
                             RunSoundRow(stringResource(R.string.run_sound_done), Prefs.KEY_RUN_SOUND_DONE)
                             RunSoundRow(stringResource(R.string.run_sound_failed), Prefs.KEY_RUN_SOUND_FAILED)
                         }
-                    }
-                    // ⭐ GitHub #106: what made a picture, written into it when it is saved or shared ([Prefs.pngInfo]).
-                    StudioCard {
-                        SectionHeading(stringResource(R.string.png_info_title), stringResource(R.string.png_info_note))
-                        com.abrah.nightmare.canvas.BoolKnobRow(
-                            stringResource(R.string.png_info), stringResource(R.string.png_info_hint),
-                            lowRam.pngInfo, { onLowRam(Prefs.KEY_PNG_INFO, it) },
-                        )
-                        // ⭐ The credit strip under a shared picture (the user, 2026-11-14: on by default, a name optional).
-                        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-                        com.abrah.nightmare.canvas.BoolKnobRow(
-                            stringResource(R.string.share_credit), stringResource(R.string.share_credit_hint),
-                            lowRam.shareCredit, { onLowRam(Prefs.KEY_SHARE_CREDIT, it) },
-                        )
-                        if (lowRam.shareCredit) ShareNameField(shareName, onShareName)
-                        // ⭐ How it was made, as the share's text (the user, 2026-11-14): off by default.
-                        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-                        com.abrah.nightmare.canvas.BoolKnobRow(
-                            stringResource(R.string.share_text), stringResource(R.string.share_text_hint),
-                            lowRam.shareText, { onLowRam(Prefs.KEY_SHARE_TEXT, it) },
-                        )
                     }
                     // ⭐ An 8 Gen 1 asks its NPU again ([Prefs.v69Npu]): a trial, only on such a chip.
                     if (com.abrah.nightmare.BackendProcess.belowDitNpu(com.abrah.nightmare.DeviceProbe.caps())) StudioCard {
@@ -908,6 +917,7 @@ private enum class Page(val label: Int) {
     APPEARANCE(R.string.settings_appearance),
     PROMPTS(R.string.settings_prompts),
     MODELS(R.string.settings_models),
+    RESULTS(R.string.settings_results),
     PERFORMANCE(R.string.settings_performance),
     ADVANCED(R.string.settings_advanced),
 }

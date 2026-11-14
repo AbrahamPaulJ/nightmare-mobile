@@ -33,7 +33,7 @@ always get back to exactly how it was made.
 | 🗑 **Delete** | Removes it (asks first) |
 | ★ **Favourite** | Stars it; starred pictures appear under **Favourites** |
 | ⬇ **Save to gallery** | Writes a copy to your phone's gallery, with how it was made inside (see below) |
-| **Share** | Shares the picture with another app, with the same info, and a thin credit strip under it (Settings, Performance, Saved pictures: on by default, your name optional) |
+| **Share** | Shares the picture with another app, with the same info, and a thin credit strip under it (Settings, Results, Sharing: on by default, your name optional; its Info can go with it as the message text) |
 | **Send to a flow** | Offers the flows that take a photo: Image to image, Inpaint, Image edit, Upscale, Image to video, and opens the one you pick with this picture in it |
 | **Upscale** | Enlarges it with an upscaler; the bigger copy is kept as a new item. The same window offers **UltraFix**: see below |
 | ⓘ **What made this** | The prompt, model, seed and settings, and a way to use them on the open flow; on a DiT picture, **Diagnose**: see below |
@@ -47,7 +47,7 @@ is kept as the whole film plus every part, each with the picture it started from
 A picture you save or share carries its prompt, negative, model, seed, steps, sampler, CFG, size,
 LoRAs, phone and app version as an A1111 `parameters` text (CivitAI and A1111 read it), plus the
 whole flow. Import the picture in Results, or open it with the **+** of the Flows tab, to get the
-flow back. Settings, Performance, **Saved pictures** turns it off.
+flow back. Settings, Results, **Saved pictures** turns it off.
 
 ## Use a picture's prompt, seed or the picture itself
 

@@ -576,7 +576,7 @@
     <string name="share_credit_plain">Made with %1$s</string>
     <string name="share_credit_named">Created by %1$s with %2$s</string>
     <string name="share_text">Send how it was made as text</string>
-    <string name="share_text_hint">Sharing one picture also sends its prompt, negative, model, seed, steps and sampler as the message text, which chat apps such as Telegram and WhatsApp show under the picture.</string>
+    <string name="share_text_hint">Sharing a picture also sends everything its Info shows (prompt, negative, model, seed, steps, sampler, size, times) as the message text, which chat apps such as Telegram and WhatsApp show with the picture.</string>
     <string name="run_notice_channel">Generation progress</string>
     <string name="run_notice_title">Running %1$s</string>
     <string name="run_notice_running">Generating</string>
@@ -1222,6 +1222,9 @@
     <string name="settings_appearance">Appearance</string>
     <string name="settings_prompts">Prompts</string>
     <string name="settings_models">Models</string>
+    <string name="settings_results">Results</string>
+    <string name="share_title">Sharing</string>
+    <string name="share_note">What goes out with a picture you share.</string>
     <string name="settings_performance">Performance</string>
     <string name="settings_advanced">Advanced</string>
     <string name="tag_autocomplete">Tag autocomplete</string>

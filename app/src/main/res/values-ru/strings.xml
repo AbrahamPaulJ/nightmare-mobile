@@ -564,7 +564,7 @@
     <string name="share_credit_plain">Сделано в %1$s</string>
     <string name="share_credit_named">Автор: %1$s, сделано в %2$s</string>
     <string name="share_text">Отправлять параметры текстом</string>
-    <string name="share_text_hint">Когда вы делитесь одной картинкой, вместе с ней отправляются промпт, негативный промпт, модель, сид, шаги и сэмплер как текст сообщения: Telegram, WhatsApp и другие мессенджеры показывают его под картинкой.</string>
+    <string name="share_text_hint">Когда вы делитесь картинкой, вместе с ней отправляется всё, что показывают «Сведения» (промпт, негативный промпт, модель, сид, шаги, сэмплер, размер, время), как текст сообщения: Telegram, WhatsApp и другие мессенджеры показывают его с картинкой.</string>
     <string name="run_notice_channel">Ход генерации</string>
     <string name="run_notice_title">Идёт: %1$s</string>
     <string name="run_notice_running">Генерация</string>
@@ -1218,6 +1218,9 @@
     <string name="settings_appearance">Внешний вид</string>
     <string name="settings_prompts">Промпты</string>
     <string name="settings_models">Модели</string>
+    <string name="settings_results">Результаты</string>
+    <string name="share_title">Отправка</string>
+    <string name="share_note">Что уходит вместе с картинкой, которой вы делитесь.</string>
     <string name="settings_performance">Производительность</string>
     <string name="settings_advanced">Дополнительно</string>
     <string name="tag_autocomplete">Автодополнение тегов</string>

@@ -1,7 +1,7 @@
 # Settings
 
-Open Settings from the sidebar (☰ at the top left). It has five tabs: **Appearance**,
-**Prompts**, **Models**, **Performance** and **Advanced**.
+Open Settings from the sidebar (☰ at the top left). It has six tabs: **Appearance**,
+**Prompts**, **Models**, **Results**, **Performance** and **Advanced**.
 
 ## Appearance
 
@@ -113,6 +113,23 @@ Used by **Search online** in a node's LoRA list ([LoRAs](../models/loras.md)):
 Import `.safetensors` adapters; the list shows each one's size, and Delete removes it.
 [LoRAs](../models/loras.md)
 
+## Results
+
+What a saved or shared picture carries.
+
+### Saved pictures
+
+| switch | default | what it does |
+|---|---|---|
+| **Write how it was made into the picture** | on | A saved or shared picture carries its prompt, model, seed, steps, sampler, LoRAs, phone and the whole flow in the PNG. CivitAI and A1111 read it, and Nightmare reads it back when the picture is imported. It also marks the picture as AI-made |
+
+### Sharing
+
+| switch | default | what it does |
+|---|---|---|
+| **Credit Nightmare on shared pictures** | on | Every picture you share gets a thin dark strip added under it (nothing in the picture is covered): the app icon and "Made with Nightmare Mobile". Fill in **Your name (optional)**, up to 30 characters, and it reads "Created by *your name* with Nightmare Mobile". Pictures saved to the gallery, clips and shared flows are left as they are |
+| **Send how it was made as text** | off | Sharing a picture also sends everything its Info shows (prompt, negative, model, seed, steps, sampler, size, times) as the message text, which chat apps such as Telegram and WhatsApp show with the picture. Several pictures shared at once send each one's, a blank line between |
+
 ## Performance
 
 ### Memory
@@ -159,14 +176,6 @@ to 45 °C. Keep the phone off the charger and out of the sun while it renders.
 
 Any run that takes longer than 10 seconds also shows a progress bar in the notification shade, like a download: what is running, its step and the time so far. It goes when the run ends. The phone's notification settings for Nightmare (Generation progress) can hide it.
 
-### Saved pictures
-
-| switch | default | what it does |
-|---|---|---|
-| **Write how it was made into the picture** | on | A saved or shared picture carries its prompt, model, seed, steps, sampler, LoRAs, phone and the whole flow in the PNG. CivitAI and A1111 read it, and Nightmare reads it back when the picture is imported. It also marks the picture as AI-made |
-| **Credit Nightmare on shared pictures** | on | Every picture you share gets a thin dark strip added under it (nothing in the picture is covered): the app icon and "Made with Nightmare Mobile". Fill in **Your name (optional)**, up to 30 characters, and it reads "Created by *your name* with Nightmare Mobile". Pictures saved to the gallery, clips and shared flows are left as they are |
-| **Send how it was made as text** | off | Sharing one picture also sends its prompt, negative, model, seed, steps and sampler as the message text, which chat apps such as Telegram and WhatsApp show under the picture |
-
 ### Try the NPU for DiT models (test)
 
 Only on the 8 Gen 1 and 8+ Gen 1, whose NPU has so far hung on the DiT models (they run on the GPU or CPU there).
@@ -183,7 +192,7 @@ at 1024 x 1024 takes about 4 minutes this way, slower than its NPU.
 
 | switch | default | what it does |
 |---|---|---|
-| **Use the GPU for DiT models** | off | FLUX.2 Klein 4B and NitroFusion 2 render on the GPU. A second engine (23 MB) and the Q4_0 model download the first time |
+| **Use the GPU for DiT models** | off | FLUX.2 Klein 4B and NitroFusion 2 render on the GPU. A second engine (23 MB) and the Q4_0 model download the first time. Turned off again, the NPU runs that Q4_0 as it is, with nothing to download or repair. For the NPU's own faster build, delete the model and download it again with the switch off. Both engines stay on the phone, so switching back and forth downloads nothing after the first time |
 | **Fast decoder on the GPU** | on | Turns the finished picture into pixels with a tiny decoder (taef2, taef1) in under 30 seconds at 1024 x 1024. Off uses the full decoder, which takes minutes on the GPU |
 
 ### Keep rendering in the background

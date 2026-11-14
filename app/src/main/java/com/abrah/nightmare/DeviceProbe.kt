@@ -291,6 +291,10 @@ object DeviceProbe {
     var measured: Caps? = null
         private set
 
+    /** ⚠ Tests only: a phone's caps in place of the host's. */
+    @androidx.annotation.VisibleForTesting
+    internal fun measuredForTest(c: Caps?) { measured = c }
+
     /**
      * ⭐ The phone's RAM, from `/proc/meminfo` — readable by any app and with no
      * Context, which [caps] does not have. The same figure as
