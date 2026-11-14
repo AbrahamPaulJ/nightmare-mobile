@@ -1076,6 +1076,35 @@ data class CanvasState(
     }
 
     /**
+     * ⭐⭐ Several pictures picked at once on an image node (GitHub #107): the first is this node's; each other goes to
+     * the next free reference of the sampler this node feeds ([addReference]), and once there is none, or this node
+     * feeds no sampler with references, onto a new image node of its own under this one, unwired, for the person to
+     * wire where they want.
+     */
+    fun placePictures(imageId: String, uris: List<String>, types: Map<String, NodeType>): CanvasState {
+        if (uris.isEmpty() || workflow.graph.byId[imageId] == null) return this
+        var s = setParam(imageId, "uri", uris.first())
+        val sampler = s.workflow.graph.nodes.firstOrNull { n ->
+            n.inputs.values.any { it.node == imageId } && s.referencePorts(n.id, types).isNotEmpty()
+        }?.id
+        val type = types["core.image"]
+        val base = s.workflow.positions[imageId] ?: Pt(0f, 0f)
+        var below = 0
+        for (uri in uris.drop(1)) {
+            val free = sampler != null &&
+                s.referencePorts(sampler, types).any { s.workflow.graph.byId[sampler]?.inputs?.get(it) == null }
+            if (free) {
+                s = s.addReference(sampler!!, uri, types)
+            } else if (type != null) {
+                below++
+                s = s.addNode(type, Pt(base.x, base.y + 300f * below))
+                s = s.setParam(s.workflow.graph.nodes.last().id, "uri", uri)
+            }
+        }
+        return s.copy(editing = editing)
+    }
+
+    /**
      * ⭐ The References row's x: the wire goes, and so does its image node when nothing else reads it. ⚠ The later
      * references move up a port, so images stay numbered 2, 3, 4 with no gap (a gap would hide a port in Advanced).
      */

@@ -150,6 +150,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- GitHub #107: Share a picture from the gallery into the flow last opened
+                 (MainActivity.takeShare). Pictures only; each is copied and must decode. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
 
         <!-- The FOREGROUND harness entry: the same activity, reached with the same

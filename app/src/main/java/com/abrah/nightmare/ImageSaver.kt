@@ -46,8 +46,8 @@ object ImageSaver {
      * ⚠ `compress` writes as it goes, so peak heap is the bitmap and a buffer,
      * whatever the picture's size.
      */
-    fun saveBitmap(ctx: Context, bitmap: android.graphics.Bitmap, name: String): String =
-        insert(ctx, name) { out ->
+    fun saveBitmap(ctx: Context, bitmap: android.graphics.Bitmap, name: String, info: PngInfo.Info? = null): String =
+        insert(ctx, name, info) { out ->
             // ⚠ compress says false instead of throwing; ignored, an empty row was published as a saved picture.
             if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)) {
                 throw java.io.IOException("the picture could not be encoded")
@@ -55,15 +55,15 @@ object ImageSaver {
         }
 
     /** ⭐ A PNG already on disk, copied out without passing through the heap. */
-    fun savePngFile(ctx: Context, file: java.io.File, name: String): String =
-        insert(ctx, name) { out -> file.inputStream().use { it.copyTo(out) } }
+    fun savePngFile(ctx: Context, file: java.io.File, name: String, info: PngInfo.Info? = null): String =
+        insert(ctx, name, info) { out -> file.inputStream().use { it.copyTo(out) } }
 
     /**
      * @return the MediaStore uri as a string, for the caller to log.
      * @throws Exception with the platform's own words; the caller reports them.
      */
-    fun savePng(ctx: Context, png: ByteArray, name: String): String =
-        insert(ctx, name) { out -> out.write(png) }
+    fun savePng(ctx: Context, png: ByteArray, name: String, info: PngInfo.Info? = null): String =
+        insert(ctx, name, info) { out -> out.write(png) }
 
     /**
      * The MediaStore dance, once: pending row, write, un-pend.
@@ -74,6 +74,8 @@ object ImageSaver {
     private fun insert(
         ctx: Context,
         name: String,
+        /** ⭐ What made it, written into the file ([PngInfo], GitHub #106); null writes the picture alone. */
+        info: PngInfo.Info?,
         write: (java.io.OutputStream) -> Unit,
     ): String {
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
@@ -97,7 +99,7 @@ object ImageSaver {
             ?: throw IllegalStateException("MediaStore refused to create a row")
 
         try {
-            resolver.openOutputStream(uri)?.use(write)
+            resolver.openOutputStream(uri)?.let { raw -> PngInfo.wrap(raw, info).use(write) }
                 ?: throw IllegalStateException("MediaStore gave no stream for $uri")
         } catch (e: Throwable) {
             // ⚠ The pending row is removed on failure. Leaving it behind means a

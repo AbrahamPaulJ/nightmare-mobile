@@ -131,8 +131,11 @@ object Sizes {
     /** ⚠ ~2x [NODE_WIDTH] — the width a node with prose is born at. */
     const val PROSE_NODE_WIDTH = 380f
 
-    /** ⚠ A ceiling, so a node cannot be resized past anything a finger can pan around. */
-    const val NODE_MAX_WIDTH = 900f
+    /**
+     * ⚠ A ceiling, so a node cannot be resized past anything a finger can pan around. ⭐ 1600 since GitHub #108: in
+     * landscape (#95) a picture node at 900 still left half the screen empty; a pinch out frames 1600 in one view.
+     */
+    const val NODE_MAX_WIDTH = 1600f
 
     /** The drag target at a node's bottom-right corner. Touch-sized, like the ports. */
     const val RESIZE_HIT = 30f

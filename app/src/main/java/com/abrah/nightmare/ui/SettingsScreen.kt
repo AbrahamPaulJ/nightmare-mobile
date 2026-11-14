@@ -673,6 +673,14 @@ fun SettingsScreen(
                             RunSoundRow(stringResource(R.string.run_sound_failed), Prefs.KEY_RUN_SOUND_FAILED)
                         }
                     }
+                    // ⭐ GitHub #106: what made a picture, written into it when it is saved or shared ([Prefs.pngInfo]).
+                    StudioCard {
+                        SectionHeading(stringResource(R.string.png_info_title), stringResource(R.string.png_info_note))
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.png_info), stringResource(R.string.png_info_hint),
+                            lowRam.pngInfo, { onLowRam(Prefs.KEY_PNG_INFO, it) },
+                        )
+                    }
                     // ⭐ An 8 Gen 1 asks its NPU again ([Prefs.v69Npu]): a trial, only on such a chip.
                     if (com.abrah.nightmare.BackendProcess.belowDitNpu(com.abrah.nightmare.DeviceProbe.caps())) StudioCard {
                         com.abrah.nightmare.canvas.BoolKnobRow(

@@ -11,7 +11,12 @@ always get back to exactly how it was made.
 ## Browsing
 
 - **All** / **Favourites** switch between everything and the pictures you starred. The filter
-  icon narrows the list further.
+  icon narrows the list further: pictures or clips; words in the prompt or the negative; a seed; a
+  date (today, 7 days, 30 days or a range); the model, sampler, schedule and size (each with **All**
+  and **None**); ranges of steps, CFG and seconds it took; and whether it was upscaled, made from
+  a picture or given a reference. It says how many of how many are shown; ✕ clears it.
+- The **+** at the top of the Results tab imports pictures a Nightmare app saved (on this phone or
+  another): each comes back with the flow that made it. Pictures without that info are skipped.
 - A [batch](../flows/batch.md) is kept as one group: its pictures are shown together under one
   card.
 - Tap a picture to show it large; tap the large one to see it full screen (pinch or double-tap
@@ -27,8 +32,8 @@ always get back to exactly how it was made.
 |---|---|
 | 🗑 **Delete** | Removes it (asks first) |
 | ★ **Favourite** | Stars it; starred pictures appear under **Favourites** |
-| ⬇ **Save to gallery** | Writes a copy to your phone's gallery |
-| **Share** | Shares the picture with another app |
+| ⬇ **Save to gallery** | Writes a copy to your phone's gallery, with how it was made inside (see below) |
+| **Share** | Shares the picture with another app, with the same info |
 | **Send to a flow** | Offers the flows that take a photo: Image to image, Inpaint, Image edit, Upscale, Image to video, and opens the one you pick with this picture in it |
 | **Upscale** | Enlarges it with an upscaler; the bigger copy is kept as a new item. The same window offers **UltraFix**: see below |
 | ⓘ **What made this** | The prompt, model, seed and settings, and a way to use them on the open flow; on a DiT picture, **Diagnose**: see below |
@@ -36,6 +41,13 @@ always get back to exactly how it was made.
 
 A clip plays on its card; tap it to play it full screen. A [chain of clips](../flows/video.md#longer-clips-one-film)
 is kept as the whole film plus every part, each with the picture it started from, in one group.
+
+## How it was made, inside the picture
+
+A picture you save or share carries its prompt, negative, model, seed, steps, sampler, CFG, size,
+LoRAs, phone and app version as an A1111 `parameters` text (CivitAI and A1111 read it), plus the
+whole flow. Import the picture in Results, or open it with the **+** of the Flows tab, to get the
+flow back. Settings, Performance, **Saved pictures** turns it off.
 
 ## Use a picture's prompt, seed or the picture itself
 

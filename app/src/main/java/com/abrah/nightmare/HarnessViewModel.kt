@@ -57,13 +57,42 @@ data class LogLine(val stamp: String, val text: String, val bad: Boolean = false
  * `companion object` in one class does not compile, and the error it gives
  * names every constant in the FIRST one as unresolved.
  */
-private const val TOTAL_MS_KEY = "@@total"
+private const val TOTAL_MS_KEY = com.abrah.nightmare.ui.ResultFilter.TOTAL_MS_KEY
 
 /** ⭐ Which flow the canvas holds, for its draft ([HarnessViewModel.keepDraft]); survives a cold start. */
 private const val DRAFT_KEY_PREF = "flow_draft_key"
 
+/** ⚠ A shared picture past this is refused, not copied ([HarnessViewModel.receiveShared]): an untrusted app's file. */
+private const val SHARE_MAX_BYTES = 128L shl 20
+
+/** ⚠ The most pictures one share brings in. */
+private const val SHARE_MAX_PICTURES = 8
+
+/** ⚠ Pure: the saved flow a draft key names (`saved:<name>`), or null for a recipe, a result or nothing (GitHub #114). */
+internal fun restoredFlowName(key: String?): String? =
+    key?.takeIf { it.startsWith("saved:") }?.removePrefix("saved:")?.takeIf { it.isNotBlank() }
+
 /** ⭐⭐ What the Results filter reads — see `HarnessViewModel.resultTags`. */
-data class ResultTags(val models: Set<String>, val text: String)
+/**
+ * ⭐ What a kept result can be filtered by ([HarnessViewModel.resultTags], [com.abrah.nightmare.ui.ResultFilter]).
+ * [text] is every prompt, negative and the sweep label (the search before GitHub #117); the rest came with #117.
+ */
+data class ResultTags(
+    val models: Set<String>,
+    val text: String,
+    val prompt: String = "",
+    val negative: String = "",
+    /** Sampler LABELS ("Euler A"). */
+    val samplers: Set<String> = emptySet(),
+    /** Schedule suffixes, `""` = Normal. */
+    val schedules: Set<String> = emptySet(),
+    /** The LAST sampler's, the one whose render this is. */
+    val steps: Int? = null,
+    val cfg: Double? = null,
+    val upscaled: Boolean = false,
+    val fromImage: Boolean = false,
+    val reference: Boolean = false,
+)
 
 class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -594,6 +623,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** ⚠ A file name from any key: model ids carry `:` and `/`; the hash keeps two cleaned keys apart. */
+
     private fun draftName(key: String) =
         key.replace(Regex("[^A-Za-z0-9._-]"), "_").take(80) + "_" + Integer.toHexString(key.hashCode())
 
@@ -651,7 +681,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val current: List<String>,
         val recipes: List<com.abrah.nightmare.canvas.Recipe>,
         val saved: List<String>,
-    )
+        /** ⭐ The other pictures of a multi-picture share (GitHub #107), placed after [file] ([CanvasState.placePictures]). */
+        val more: List<java.io.File> = emptyList(),
+    ) {
+        val all: List<String> get() = (listOf(file) + more).map { it.absolutePath }
+    }
 
     var pendingSend by mutableStateOf<SendChoices?>(null)
         private set
@@ -668,6 +702,46 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     fun offerSendResult(resultId: String) =
         offerSend { f -> results.pngFile(resultId)?.let { it.copyTo(f, overwrite = true); true } ?: false }
 
+    /**
+     * ⭐⭐ Pictures shared INTO the app from another (the phone's gallery's Share, GitHub #107: "send a image from the
+     * gallery to the last opened workflow"). Copied in first, because a share's read grant ends with the activity;
+     * then the same Send to dialog as Results', whose first answer is the flow on the canvas, the last one opened.
+     * ⚠ Untrusted input from any app: each must decode as a picture, and none over [SHARE_MAX_BYTES] is copied.
+     */
+    fun receiveShared(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val dir = java.io.File(ctx.filesDir, "sent").apply { mkdirs() }
+            val files = uris.take(SHARE_MAX_PICTURES).mapIndexedNotNull { i, uri ->
+                runCatching {
+                    val f = java.io.File(dir, "shared_${System.currentTimeMillis()}_$i.img")
+                    ctx.contentResolver.openInputStream(uri)?.use { input ->
+                        f.outputStream().use { out ->
+                            val buf = ByteArray(1 shl 16)
+                            var total = 0L
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                total += n
+                                if (total > SHARE_MAX_BYTES) throw java.io.IOException("too big")
+                                out.write(buf, 0, n)
+                            }
+                        }
+                    } ?: return@runCatching null
+                    val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, o)
+                    if (o.outWidth <= 0) { f.delete(); null } else f
+                }.getOrNull()
+            }
+            if (files.isEmpty()) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) { toast(text(R.string.run_picture_unreadable)) }
+                return@launch
+            }
+            offerFiles(files.first(), files.drop(1))
+        }
+    }
+
     private fun offerSend(write: (java.io.File) -> Boolean) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val dir = java.io.File(getApplication<Application>().filesDir, "sent").apply { mkdirs() }
@@ -676,6 +750,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(kotlinx.coroutines.Dispatchers.Main) { toast(text(R.string.run_picture_unreadable)) }
                 return@launch
             }
+            offerFiles(file, emptyList())
+        }
+    }
+
+    /** ⚠ On IO: lists the flows that take a picture, then raises the Send to dialog. */
+    private suspend fun offerFiles(file: java.io.File, more: List<java.io.File>) {
+        run {
             fun takesPicture(g: Graph) = g.nodes.any { it.type == "core.image" }
             val recipes = com.abrah.nightmare.canvas.RECIPES
                 .filter { !com.abrah.nightmare.npu.VideoGate.hidden || it.id !in com.abrah.nightmare.npu.VideoGate.VIDEO_RECIPES }
@@ -688,6 +769,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     current = canvas.workflow.graph.nodes.filter { it.type == "core.image" }.map { it.id },
                     recipes = recipes,
                     saved = saved,
+                    more = more,
                 )
             }
         }
@@ -704,8 +786,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         pendingSend = null
         closeResult()
         closeLibrary()
-        editCanvas { it.setParam(nodeId, "uri", s.file.absolutePath) }
-        say("sent the picture to $nodeId")
+        // ⭐ GitHub #107: the rest of a multi-picture share go to its references or new image nodes.
+        editCanvas { it.placePictures(nodeId, s.all, typesFor(it.workflow.graph)) }
+        say("sent ${s.all.size} picture(s) to $nodeId")
     }
 
     /** ⭐ Open a built-in flow with the picture on its first image input. */
@@ -716,7 +799,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             closeResult()
             openRecipeNow(r)
             closeLibrary()
-            placeSent(s.file)
+            placeSent(s.all)
         }
     }
 
@@ -731,14 +814,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             currentWorkflowName = name
             sayNotes(loaded)
             closeLibrary()
-            placeSent(s.file)
+            placeSent(s.all)
         }
     }
 
-    private fun placeSent(file: java.io.File) {
+    private fun placeSent(paths: List<String>) {
         val target = canvas.workflow.graph.nodes.firstOrNull { it.type == "core.image" } ?: return
-        editCanvas { it.setParam(target.id, "uri", file.absolutePath) }
-        say("sent the picture to ${target.id}")
+        editCanvas { it.placePictures(target.id, paths, typesFor(it.workflow.graph)) }
+        say("sent ${paths.size} picture(s) to ${target.id}")
     }
 
     // ---- what the device is carrying -------------------------------------
@@ -1022,9 +1105,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val result = runCatching {
-                val text = ctx.contentResolver.openInputStream(uri)?.use {
-                    it.readBytes().decodeToString()
-                } ?: throw java.io.IOException("could not read that file")
+                val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw java.io.IOException("could not read that file")
+                // ⭐ GitHub #106: a picture Nightmare saved carries its flow ([PngInfo]); its flow is what is imported.
+                val text = if (bytes.size > 8 && bytes[1] == 'P'.code.toByte() && bytes[2] == 'N'.code.toByte()) {
+                    PngInfo.read(bytes.inputStream())[PngInfo.NIGHTMARE]
+                        ?.let { org.json.JSONObject(it).optString("flow").takeIf { f -> f.isNotBlank() } }
+                        ?: throw java.io.IOException(ctx.getString(R.string.flows_import_png_none))
+                } else bytes.decodeToString()
                 // ⚠ Parsed BEFORE anything is written. A malformed file must
                 // fail as "this is not a workflow", not as a broken entry in
                 // the library that fails again every time it is opened.
@@ -6124,6 +6212,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             toast(text(R.string.run_picture_not_in_memory))
             return
         }
+        // ⭐ GitHub #106: what made it goes into the file. Read here, on main, where the canvas is.
+        val info = if (clip == null) canvasPngInfo(imageId) else null
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val name = "nightmare-" + System.currentTimeMillis()
             val where = runCatching {
@@ -6131,7 +6221,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     com.abrah.nightmare.npu.VideoWriter
                         .publish(ctx, clip, name + ".mp4").toString()
                 } else {
-                    ImageSaver.saveBitmap(ctx, bmp!!, name)
+                    ImageSaver.saveBitmap(ctx, bmp!!, name, info)
                 }
             }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -7323,7 +7413,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             return@shareOffMain null
         }
         val png = results.fullBytes(id) ?: return@shareOffMain text(R.string.share_picture_missing)
-        Share.image(getApplication(), png, "nightmare-" + id)
+        Share.image(getApplication(), png, "nightmare-" + id, resultPngInfo(id))
         null
     }
 
@@ -7391,11 +7481,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val clip = clipForImage(imageId)
         // ⚠⚠ The bitmap, for the reason [saveImage] gives.
         val bmp = if (clip == null) ops.images.get(imageId) else null
+        val info = if (bmp != null) canvasPngInfo(imageId) else null
         shareOffMain {
             when {
                 clip != null -> Share.video(getApplication(), clip, name)
                 bmp == null -> return@shareOffMain text(R.string.run_picture_not_in_memory)
-                else -> Share.image(getApplication(), bmp, name)
+                else -> Share.image(getApplication(), bmp, name, info)
             }
             null
         }
@@ -7423,7 +7514,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         com.abrah.nightmare.npu.VideoWriter
                             .publish(ctx, clip, "nightmare-" + id + ".mp4")
                     } else {
-                        ImageSaver.savePngFile(ctx, file!!, "nightmare-" + id)
+                        ImageSaver.savePngFile(ctx, file!!, "nightmare-" + id, resultPngInfo(id))
                     }
                 }.fold(
                     onSuccess = { ok++; if (clip != null) clips++ },
@@ -7555,19 +7646,37 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         resultTagCache.getOrPut(r.id) {
             val g = results.flow(r.id)?.workflow?.graph
                 ?: return@getOrPut ResultTags(emptySet(), r.batchLabel)
-            val models = g.nodes.mapNotNull { n ->
-                n.params["model"]?.takeIf { it.isNotBlank() && isSampler(n.type) }
-            }.map { ModelCatalog.byId(it)?.label ?: it }.toSet()
-            // ⚠ Prompt AND negative AND the batch label: a person searching
-            // "cat" means the picture, and they may have typed it into either.
-            val text = buildString {
-                for (n in g.nodes) {
-                    n.params["prompt"]?.let { append(it).append(' ') }
-                    n.params["negative"]?.let { append(it).append(' ') }
-                }
-                append(r.batchLabel)
+            val types = typesFor(g)
+            val order = (topoSort(g) as? Order.Ok)?.nodes ?: g.nodes
+            val samplers = order.filter { isSampler(it.type) }
+            // ⭐ [modelOf], not the `model` knob alone: a video node IS its model and has no knob, so every clip was
+            // missing from the filter's model list (GitHub #117).
+            val models = samplers.mapNotNull { modelOf(it, types) }.toSet()
+            val params = samplers.map { applyDefaults(types[it.type]?.widgets.orEmpty(), it) }
+            val split = params.mapNotNull { it["scheduler"]?.takeIf { v -> v.isNotBlank() } }.map { ModelCatalog.splitScheduler(it) }
+            val prompt = StringBuilder()
+            val negative = StringBuilder()
+            for (n in g.nodes) {
+                n.params["prompt"]?.let { prompt.append(it).append(' ') }
+                n.params["negative"]?.let { negative.append(it).append(' ') }
             }
-            ResultTags(models, text)
+            val on = setOf(SdSampler.HIRES, SdSampler.ENLARGE, MediaOutputNode.UPSCALE)
+            ResultTags(
+                models = models,
+                // ⚠ Prompt AND negative AND the batch label: a person searching
+                // "cat" means the picture, and they may have typed it into either.
+                text = "$prompt$negative${r.batchLabel}",
+                prompt = prompt.toString(),
+                negative = negative.toString(),
+                samplers = split.map { (base, _) -> ModelCatalog.samplerName(base) }.toSet(),
+                schedules = split.filter { (base, _) -> ModelCatalog.schedulesSupported(base) }.map { it.second }.toSet(),
+                steps = params.lastOrNull()?.get("steps")?.toIntOrNull(),
+                cfg = params.lastOrNull()?.get("cfg")?.toDoubleOrNull(),
+                upscaled = g.nodes.any { n -> n.type == UpscaleNode.name || on.any { n.params[it] == "true" } } ||
+                    r.batchLabel.contains("upscal", ignoreCase = true),
+                fromImage = samplers.any { it.inputs["image"] != null },
+                reference = samplers.any { s -> s.inputs.keys.any { it.startsWith("reference") } },
+            )
         }
 
     private val resultTagCache = mutableMapOf<String, ResultTags>()
@@ -7808,6 +7917,146 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         return out
     }
 
+    // ---- what made a picture, written into it (GitHub #106) -----------------
+    /**
+     * ⭐⭐ Pictures back into Results from their own files (GitHub #106: "a user upgrades their phone and the transferred
+     * image will still be recognized"). Each PNG's `nightmare` chunk ([PngInfo]) holds its flow, seed, model, size,
+     * times and the moment it was made, so it comes back as the result it was, flow and Info included. A picture
+     * without the chunk is skipped and counted.
+     */
+    fun importResultPictures(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            var ok = 0
+            for (uri in uris) runCatching {
+                val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@runCatching
+                val j = PngInfo.read(bytes.inputStream())[PngInfo.NIGHTMARE]?.let { org.json.JSONObject(it) } ?: return@runCatching
+                val loaded = com.abrah.nightmare.canvas.workflowFromJson(j.getString("flow"))
+                val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@runCatching
+                val times = j.optJSONObject("times")?.let { t -> t.keys().asSequence().associateWith { k -> t.optLong(k) } }.orEmpty()
+                fun str(k: String) = j.optString(k).takeIf { !j.isNull(k) && it.isNotBlank() }
+                results.keep(
+                    bmp, null, loaded.workflow, nodeTypes,
+                    seed = str("seed"), model = str("model"), prompt = str("prompt"),
+                    batchLabel = j.optString("batchLabel"), times = times,
+                    savedAt = j.optLong("savedAt").takeIf { it > 0 },
+                )
+                bmp.recycle()
+                ok++
+            }.onFailure { android.util.Log.w("PngInfo", "import skipped: $it") }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                refreshResults()
+                toast(text(R.string.results_imported, ok, uris.size))
+            }
+        }
+    }
+
+
+    /**
+     * ⭐⭐ [PngInfo] for a picture [g] made, or null when the switch is off ([Prefs.pngInfo]) or nothing can be said.
+     * The LAST sampler feeding [upTo] (the whole graph when null) is the one described, as [detailsOfGraph] does.
+     * ⚠ Never throws: a save or a share must not fail because its description could not be written.
+     */
+    private fun pngInfoOf(
+        workflow: com.abrah.nightmare.canvas.Workflow,
+        view: com.abrah.nightmare.canvas.SavedView?,
+        upTo: String?,
+        width: Int,
+        height: Int,
+        times: Map<String, Long>,
+        savedAt: Long,
+        batchLabel: String,
+        rolled: (String) -> String?,
+    ): PngInfo.Info? {
+        if (!Prefs.pngInfo) return null
+        return runCatching {
+            val g = workflow.graph
+            val types = typesFor(g)
+            val order = (topoSort(g) as? Order.Ok)?.nodes ?: g.nodes
+            val reach: Set<String>? = upTo?.let { start ->
+                val acc = mutableSetOf<String>()
+                val pending = ArrayDeque(listOf(start))
+                while (pending.isNotEmpty()) {
+                    val id = pending.removeFirst()
+                    if (!acc.add(id)) continue
+                    g.byId[id]?.inputs?.values?.forEach { pending.addLast(it.node) }
+                }
+                acc
+            }
+            val s = order.lastOrNull { isSampler(it.type) && (reach == null || it.id in reach) }
+            val type = s?.let { types[it.type] }
+            val p = s?.let { applyDefaults(type?.widgets.orEmpty(), it) }.orEmpty()
+            val promptNode = s?.inputs?.get("prompt")?.node?.let { g.byId[it] }
+            val prompt = promptNode?.params?.get("prompt").orEmpty()
+            val negative = promptNode?.params?.get("negative").orEmpty()
+            val seed = s?.let { n -> p["seed"]?.takeIf { it != "0" && it.isNotBlank() } ?: rolled(n.id) }
+            val model = s?.let { modelOf(it, types) }
+            val fields = mutableListOf<Pair<String, String>>()
+            p["steps"]?.let { fields += "Steps" to it }
+            p["scheduler"]?.takeIf { it.isNotBlank() }?.let { v ->
+                val (base, sfx) = ModelCatalog.splitScheduler(v)
+                fields += "Sampler" to ModelCatalog.samplerName(base)
+                ModelCatalog.DIT_SCHEDULES.firstOrNull { it.first == sfx && sfx.isNotEmpty() }?.let { fields += "Schedule type" to it.second }
+            }
+            p["cfg"]?.let { fields += "CFG scale" to it }
+            seed?.let { fields += "Seed" to it }
+            if (width > 0) fields += "Size" to "${width}x$height"
+            model?.let { fields += "Model" to it }
+            if (s?.inputs?.get("image") != null) p["denoise"]?.let { fields += "Denoising strength" to it }
+            p[SdSampler.LORAS]?.takeIf { it.isNotBlank() }?.let { fields += "Lora" to it }
+            // ⭐ Every other knob the person changed (Fix faces and its strength, Hires fix...), in the inspector's words.
+            val said = setOf("steps", "scheduler", "cfg", "seed", "model", "denoise", SdSampler.LORAS, "x", "y", "w", "h",
+                "width", "height", MaskNode.OPS, CropNode.LOCKED)
+            for (w in type?.widgets.orEmpty()) {
+                if (w.name in said || w.name.startsWith("ref_")) continue
+                val v = p[w.name]?.takeIf { it.isNotBlank() && it != w.default && it.length <= 200 } ?: continue
+                fields += w.name.knobLabel(getApplication()) to v
+            }
+            times[TOTAL_MS_KEY]?.let { fields += "Time taken" to com.abrah.nightmare.canvas.formatMs(it) }
+            val caps = DeviceProbe.caps()
+            fields += "Device" to (android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL)
+            fields += "Chip" to "${caps.soc} HTP v${caps.arch}"
+            fields += "Date" to java.time.Instant.ofEpochMilli(savedAt).atZone(java.time.ZoneId.systemDefault())
+                .toLocalDateTime().withNano(0).toString()
+            fields += "Version" to "Nightmare ${BuildConfig.VERSION_NAME}"
+            val json = org.json.JSONObject()
+                .put("app", "Nightmare")
+                .put("format", 1)
+                .put("version", BuildConfig.VERSION_NAME)
+                .put("savedAt", savedAt)
+                .put("seed", seed ?: org.json.JSONObject.NULL)
+                .put("model", model ?: org.json.JSONObject.NULL)
+                .put("prompt", prompt)
+                .put("width", width)
+                .put("height", height)
+                .put("batchLabel", batchLabel)
+                .put("times", org.json.JSONObject(times.mapValues { it.value }))
+                .put("flow", workflow.toJson(nodeTypes, view))
+            PngInfo.Info(PngInfo.a1111(prompt, negative, fields), json.toString())
+        }.onFailure { android.util.Log.w("PngInfo", "no info for a picture: $it") }.getOrNull()
+    }
+
+    /** ⭐ [pngInfoOf] for a kept result, from its own stored flow. */
+    private fun resultPngInfo(id: String): PngInfo.Info? {
+        if (!Prefs.pngInfo) return null
+        val r = kept.firstOrNull { it.id == id } ?: return null
+        val loaded = results.flow(id) ?: return null
+        return pngInfoOf(loaded.workflow, loaded.view, null, r.width, r.height, r.times, r.savedAt, r.batchLabel) { r.seed }
+    }
+
+    /** ⭐ [pngInfoOf] for a picture on the canvas, described from the node that shows it. Main thread. */
+    private fun canvasPngInfo(imageId: String): PngInfo.Info? {
+        if (!Prefs.pngInfo) return null
+        val g = canvas.workflow.graph
+        val nodeId = canvas.rendered.entries.firstOrNull { it.value == imageId }?.key
+            ?: canvas.previews.entries.firstOrNull { it.value.first == imageId }?.key
+        val bmp = ops.images.get(imageId)
+        val times = buildMap { nodeMs.forEach { (k, v) -> put(k, v) }; lastRunMs?.let { put(TOTAL_MS_KEY, it) } }
+        return pngInfoOf(canvas.workflow, canvas.savedView, nodeId, bmp?.width ?: 0, bmp?.height ?: 0, times,
+            System.currentTimeMillis(), "") { id -> com.abrah.nightmare.canvas.seedFor(g, id) { n -> canvasStatus[n]?.detail } }
+    }
+
     /** ⭐ The model a sampler runs: its `model` knob, or for a video node the node type itself (Saved #7288). */
     private fun modelOf(n: Node, types: Map<String, NodeType>): String? {
         val type = types[n.type]
@@ -7852,7 +8101,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         return@mapNotNull ("nightmare-$id.mp4") to { f: java.io.File -> clip.copyTo(f, overwrite = true); Unit }
                     }
                     val png = results.imageFile(id).takeIf { it.isFile } ?: return@mapNotNull null
-                    ("nightmare-$id.png") to { f: java.io.File -> png.copyTo(f, overwrite = true); Unit }
+                    // ⭐ GitHub #106: with what made it, as a single share and a gallery save are.
+                    val info = resultPngInfo(id)
+                    ("nightmare-$id.png") to { f: java.io.File ->
+                        PngInfo.wrap(f.outputStream(), info).use { out -> png.inputStream().use { it.copyTo(out) } }
+                        Unit
+                    }
                 }
                 val mime = when {
                     entries.all { it.first.endsWith(".png") } -> "image/png"
@@ -8671,6 +8925,16 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     .withView(loaded.view)
             )
             sayNotes(loaded)
+            // ⭐⭐ GitHub #114: the sidebar read "unsaved flow / Unsaved" for a flow the user HAD saved, after the app
+            // came back from being killed in the background: the name and the baseline lived only in memory. The
+            // persisted [draftKey] names the saved flow; its file is the baseline, so "dirty" means edits since saving.
+            restoredFlowName(draftKey)?.let { name ->
+                val saved = withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { store.load(name) }.getOrNull() }
+                if (saved != null) {
+                    currentWorkflowName = name
+                    savedBaseline = saved.workflow
+                }
+            }
             // ⭐ The photo a restored `load_image` points at is on the node
             // before the user touches anything. A cold start used to open on a
             // graph of empty boxes until something was run.
@@ -9793,6 +10057,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
                         say("the engine was not responding, so it was stopped. The next Run starts it again")
                         BackendProcess.stop()
+                        // ⭐ GitHub #104: the v69 NPU trial hung (an 8 Gen 1 in its first encoder segment), so it ends
+                        // here and the next Run is the GPU or CPU route, said in the run log, not left for Settings.
+                        if (Prefs.v69Npu && BackendProcess.belowDitNpu(DeviceProbe.caps())) {
+                            Prefs.setLowRam(getApplication(), Prefs.KEY_V69_NPU, false)
+                            say(text(R.string.run_v69_npu_off), bad = true)
+                        }
                     }
                 }
                 throw e

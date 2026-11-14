@@ -1,0 +1,128 @@
+diff --git a/include/stable-diffusion.h b/include/stable-diffusion.h
+index e24b84d..8f34ca6 100644
+--- a/include/stable-diffusion.h
++++ b/include/stable-diffusion.h
+@@ -79,6 +79,11 @@ enum scheduler_t {
+     FLUX2_SCHEDULER,
+     FLUX_SCHEDULER,
+     BETA_SCHEDULER,
++    // nightmare (dit/097): ComfyUI's linear_quadratic, RES4LYF's beta57 (beta at
++    // alpha 0.5, beta 0.7) and ComfyUI-UtilsCollection's radiance_shift.
++    LINEAR_QUADRATIC_SCHEDULER,
++    BETA57_SCHEDULER,
++    RADIANCE_SHIFT_SCHEDULER,
+     SCHEDULER_COUNT
+ };
+ 
+diff --git a/src/runtime/denoiser.hpp b/src/runtime/denoiser.hpp
+index 723061f..8dfef42 100644
+--- a/src/runtime/denoiser.hpp
++++ b/src/runtime/denoiser.hpp
+@@ -521,6 +521,72 @@ struct SmoothStepScheduler : SigmaScheduler {
+     }
+ };
+ 
++// nightmare (dit/097): ComfyUI's `linear_quadratic_schedule` (comfy/samplers.py, from genmo's Mochi):
++// threshold_noise 0.025, linear_steps = steps / 2. A schedule in sigma space scaled by sigma_max, so the
++// model's shift does not bend it (as in ComfyUI).
++struct LinearQuadraticScheduler : SigmaScheduler {
++    std::vector<float> get_sigmas(uint32_t n, float /*sigma_min*/, float sigma_max, t_to_sigma_t /*t_to_sigma*/) override {
++        std::vector<float> result;
++        if (n == 0) {
++            return result;
++        }
++        result.reserve(n + 1);
++        if (n == 1) {
++            result.push_back(sigma_max);
++            result.push_back(0.f);
++            return result;
++        }
++        const double threshold_noise = 0.025;
++        const double steps           = static_cast<double>(n);
++        const uint32_t linear_steps  = n / 2;
++        const double ls              = static_cast<double>(linear_steps);
++        const double diff            = ls - threshold_noise * steps;
++        const double quadratic_steps = steps - ls;
++        const double quadratic_coef  = diff / (ls * quadratic_steps * quadratic_steps);
++        const double linear_coef     = threshold_noise / ls - 2.0 * diff / (quadratic_steps * quadratic_steps);
++        const double constant        = quadratic_coef * ls * ls;
++        for (uint32_t i = 0; i < linear_steps; i++) {
++            result.push_back(static_cast<float>((1.0 - static_cast<double>(i) * threshold_noise / ls) * sigma_max));
++        }
++        for (uint32_t i = linear_steps; i < n; i++) {
++            const double x = static_cast<double>(i);
++            result.push_back(static_cast<float>((1.0 - (quadratic_coef * x * x + linear_coef * x + constant)) * sigma_max));
++        }
++        result.push_back(0.f);
++        return result;
++    }
++};
++
++// nightmare (dit/097): ComfyUI-UtilsCollection's `radiance_shift_scheduler` (helpers/scheduler_helpers.py,
++// power 2.4, midpoint_shift 0.98, discard_penultimate): steps+1 points over [0, 1) (endpoint=False),
++// x**0.98, (1 - x**2.4)**2.4 on the 0..999 timestep ladder, rounded half to even like numpy.rint,
++// consecutive repeats dropped, then the last nonzero sigma is discarded.
++struct RadianceShiftScheduler : SigmaScheduler {
++    std::vector<float> get_sigmas(uint32_t n, float /*sigma_min*/, float /*sigma_max*/, t_to_sigma_t t_to_sigma) override {
++        std::vector<float> result;
++        if (n == 0) {
++            return result;
++        }
++        result.reserve(n + 2);
++        const int t_max = TIMESTEPS - 1;
++        int last_t      = -1;
++        for (uint32_t i = 0; i <= n; i++) {
++            const double x  = std::pow(static_cast<double>(i) / (static_cast<double>(n) + 1.0), 0.98);
++            const double ts = std::pow(1.0 - std::pow(x, 2.4), 2.4);
++            const int t     = std::min(static_cast<int>(std::nearbyint(ts * t_max)), t_max);
++            if (t != last_t) {
++                result.push_back(t_to_sigma(static_cast<float>(t)));
++            }
++            last_t = t;
++        }
++        result.push_back(0.f);
++        if (result.size() >= 2) {
++            result.erase(result.end() - 2);
++        }
++        return result;
++    }
++};
++
+ struct BongTangentScheduler : SigmaScheduler {
+     static constexpr float kPi = 3.14159265358979323846f;
+ 
+@@ -1071,6 +1137,19 @@ struct Denoiser {
+                 LOG_INFO("get_sigmas with Beta scheduler");
+                 scheduler = std::make_shared<BetaScheduler>(extra_sample_args);
+                 break;
++            case BETA57_SCHEDULER:
++                // nightmare (dit/097): RES4LYF's beta57 = ComfyUI's beta_scheduler at alpha 0.5, beta 0.7.
++                LOG_INFO("get_sigmas with Beta57 scheduler (alpha 0.5, beta 0.7)");
++                scheduler = std::make_shared<BetaScheduler>("alpha=0.5,beta=0.7");
++                break;
++            case LINEAR_QUADRATIC_SCHEDULER:
++                LOG_INFO("get_sigmas with Linear Quadratic scheduler");
++                scheduler = std::make_shared<LinearQuadraticScheduler>();
++                break;
++            case RADIANCE_SHIFT_SCHEDULER:
++                LOG_INFO("get_sigmas with Radiance Shift scheduler");
++                scheduler = std::make_shared<RadianceShiftScheduler>();
++                break;
+             case EXPONENTIAL_SCHEDULER:
+                 LOG_INFO("get_sigmas exponential scheduler");
+                 scheduler = std::make_shared<ExponentialScheduler>();
+diff --git a/src/stable-diffusion.cpp b/src/stable-diffusion.cpp
+index a50c75d..c7d93b7 100644
+--- a/src/stable-diffusion.cpp
++++ b/src/stable-diffusion.cpp
+@@ -124,6 +124,10 @@ const char* scheduler_to_str[] = {
+     "flux2",
+     "flux",
+     "beta",
++    // nightmare (dit/097)
++    "linear_quadratic",
++    "beta57",
++    "radiance_shift",
+ };
+ 
+ static_assert(SCHEDULER_COUNT == sizeof(scheduler_to_str) / sizeof(scheduler_to_str[0]),

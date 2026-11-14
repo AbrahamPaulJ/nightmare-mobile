@@ -71,7 +71,9 @@ thing travels on it (a prompt, a picture, a video).
 There are only five kinds of node. See [Nodes and their settings](../reference/nodes.md):
 
 - **Prompt**: the text.
-- **Image**: a photo from your gallery.
+- **Image**: a photo from your gallery. Pick several at once: the first goes on this node, the
+  rest into the generator's free reference slots, then onto new Image nodes below it. **Share**
+  in your phone's gallery sends pictures to Nightmare, which offers the flow you have open.
 - **Image** / **Inpaint** generators: the model that makes the picture. Its title follows what
   is wired into it: *Text to image*, *Image to image*, *Image edit* or *Inpaint*.
 - **Video**: the video generator.
@@ -185,4 +187,4 @@ picture's ✕ goes back to Text to video. A prompt you have not changed becomes 
 The canvas saves itself as you go. Close the app and it reopens where you left it, zoom and
 position included. To keep a flow for later, tap 💾 and name it; it then appears under
 **Flows → Saved**. Flows can also be shared as a `.json` file and imported with
-the **+** at the top of the Flows tab.
+the **+** at the top of the Flows tab (a picture Nightmare saved works too: it carries its flow).

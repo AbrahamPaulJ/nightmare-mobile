@@ -261,7 +261,7 @@ private fun AgentChat(ui: AgentUi, act: AgentActions, modifier: Modifier) {
                 }
             }
         }
-        val pick = com.abrah.nightmare.canvas.rememberImagePick(act.onAttach)
+        val pick = com.abrah.nightmare.canvas.rememberImagePick(onPicked = act.onAttach)
         // ⭐ The composer (Violet Studio): one rounded field — attach, the text, a round violet Send
         // (Stop while it works).
         Row(

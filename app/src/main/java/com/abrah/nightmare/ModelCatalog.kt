@@ -1567,6 +1567,12 @@ object ModelCatalog {
         "_bong_tangent" to "Bong Tangent",
         "_simple" to "Simple",
         "_beta" to "Beta",
+        // ⭐ GitHub #111 (a reader's wish; the user's call 2026-11-14: schedules, no new samplers), engine `dit/097`, backend
+        // 057: ComfyUI's Linear Quadratic (made for Mochi: half its steps near full noise, murky at 4 to 8 steps), RES4LYF's
+        // Beta57 (beta with alpha 0.5, beta 0.7) and Radiance Shift. Sigmas match ComfyUI's Python to 5e-7.
+        "_linear_quadratic" to "Linear Quadratic",
+        "_beta57" to "Beta57",
+        "_radiance_shift" to "Radiance Shift",
     )
 
     /**
@@ -1614,6 +1620,10 @@ object ModelCatalog {
 
     /** ⚠ The old Karras-flag form, for its callers. */
     fun joinScheduler(base: String, karras: Boolean): String = joinScheduler(base, if (karras) "_karras" else "")
+
+    /** ⭐ A sampler id's name, without its schedule (`dpm3` -> "DPM++ 3M"); the Results filter's sampler list (#117). */
+    fun samplerName(base: String): String =
+        SAMPLERS.firstOrNull { it.first == base }?.second ?: DIT_SAMPLERS.firstOrNull { it.first == base }?.second ?: base
 
     /** How a wire value should read on screen, e.g. `"DPM++ 2M SDE Karras"`. */
     fun schedulerLabel(value: String): String {

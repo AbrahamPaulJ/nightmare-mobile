@@ -1,0 +1,17 @@
+--- a/src/PipelineDit.hpp
++++ b/src/PipelineDit.hpp
+@@ -79,9 +79,13 @@
+ // str_to_scheduler already knows (no engine change).
+ // nightmare (043): Simple and Beta, ComfyUI's names, likewise already in the
+ // ABI 108 engine (a tester's wish for MOSS-Image, 2026-10-22).
++// nightmare (057): Linear Quadratic, Beta57 and Radiance Shift (GitHub #111),
++// names only the dit/097 engine knows; an older engine reads them as the
++// model's own schedule.
+ inline std::string ditSchedule(const std::string &s) {
+   for (const char *sfx : {"_karras", "_exponential", "_sgm_uniform", "_bong_tangent",
+-                          "_simple", "_beta"}) {
++                          "_simple", "_beta", "_linear_quadratic", "_beta57",
++                          "_radiance_shift"}) {
+     const size_t n = std::strlen(sfx);
+     if (s.size() > n && s.compare(s.size() - n, n, sfx) == 0) return sfx + 1;
+   }

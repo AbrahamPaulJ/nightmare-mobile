@@ -110,6 +110,11 @@ class SamplerNamingTest {
         assertTrue("euler_a_bong_tangent" in ModelCatalog.DIT_SCHEDULERS)
         assertTrue(ModelCatalog.SCHEDULERS.none { it.endsWith("_sgm_uniform") || it.endsWith("_bong_tangent") })
         assertEquals("euler_a" to "_bong_tangent", ModelCatalog.splitScheduler("euler_a_bong_tangent"))
+        // ⭐ GitHub #111: `_beta57` must not read as `_beta` + "57", nor `_beta` as the start of `_beta57`.
+        assertEquals("euler" to "_beta57", ModelCatalog.splitScheduler("euler_beta57"))
+        assertEquals("euler" to "_beta", ModelCatalog.splitScheduler("euler_beta"))
+        assertEquals("euler" to "_radiance_shift", ModelCatalog.splitScheduler("euler_radiance_shift"))
+        assertEquals("heun" to "_linear_quadratic", ModelCatalog.splitScheduler("heun_linear_quadratic"))
         assertEquals("dpm++2m_sde" to "_sgm_uniform", ModelCatalog.splitScheduler("dpm++2m_sde_sgm_uniform"))
         assertEquals("Euler SGM Uniform", ModelCatalog.schedulerLabel("euler_sgm_uniform"))
         assertEquals("lcm", ModelCatalog.joinScheduler("lcm", "_sgm_uniform"))

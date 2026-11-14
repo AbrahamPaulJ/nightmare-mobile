@@ -82,6 +82,7 @@ object Prefs {
         v69Npu = p.getBoolean(KEY_V69_NPU, false)
         ditTaesd = p.getBoolean(KEY_DIT_TAESD, true)
         ditSpectrum = p.getBoolean(KEY_DIT_SPECTRUM, false)
+        pngInfo = p.getBoolean(KEY_PNG_INFO, true)
     }
 
     /** ⭐ A sampler's "More options" fold open (the user, 2026-10-17: closed by default, remembered). */
@@ -408,6 +409,15 @@ object Prefs {
         private set
 
     /**
+     * ⭐ What made a picture written into it when it is saved or shared ([PngInfo], GitHub #106): ON by default (the
+     * user's call 2026-11-14), a switch for people who would rather not carry their prompts in their files.
+     */
+    const val KEY_PNG_INFO = "png_info"
+
+    @Volatile var pngInfo: Boolean = true
+        private set
+
+    /**
      * ⚠ 13 GiB, between the classes rather than at "16": a 12 GB phone reports
      * ~10.9–11.4 GiB of `totalMem` and a 16 GB one ~14.5–15 GiB, the rest being
      * reserved before Android sees it.
@@ -435,6 +445,7 @@ object Prefs {
         val v69Npu: Boolean = false,
         val ditTaesd: Boolean = true,
         val ditSpectrum: Boolean = false,
+        val pngInfo: Boolean = true,
     )
 
     /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */
@@ -464,6 +475,7 @@ object Prefs {
             v69Npu = read(KEY_V69_NPU, false),
             ditTaesd = read(KEY_DIT_TAESD, true),
             ditSpectrum = read(KEY_DIT_SPECTRUM, false),
+            pngInfo = read(KEY_PNG_INFO, true),
         )
     }
 
@@ -476,6 +488,7 @@ object Prefs {
         if (key == KEY_V69_NPU) v69Npu = on
         if (key == KEY_DIT_TAESD) ditTaesd = on
         if (key == KEY_DIT_SPECTRUM) ditSpectrum = on
+        if (key == KEY_PNG_INFO) pngInfo = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()
     }
 

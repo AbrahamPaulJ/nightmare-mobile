@@ -207,6 +207,8 @@ class ResultsStore(private val dir: File) {
         auto: Boolean = false,
         /** ⭐ The run's times by node id (and the whole flow's). See [Result.times]. */
         times: Map<String, Long> = emptyMap(),
+        /** ⭐ When it was MADE, for a picture imported from another phone (GitHub #106); null = now. */
+        savedAt: Long? = null,
     ): Result {
         synchronized(KEEP_LOCK) {
             dir.mkdirs()
@@ -259,7 +261,7 @@ class ResultsStore(private val dir: File) {
                     runCatching { video.copyTo(mp4(id), overwrite = true) }
                 }
                 val r = Result(
-                    id, System.currentTimeMillis(), imageId, seed, model, prompt,
+                    id, savedAt ?: System.currentTimeMillis(), imageId, seed, model, prompt,
                     bitmap.width, bitmap.height, batchId, batchLabel,
                     videoPath = mp4(id).takeIf { it.isFile }?.path,
                     favourite = favourite,

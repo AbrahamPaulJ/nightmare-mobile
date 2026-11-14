@@ -691,6 +691,7 @@ fun CanvasScreen(
         onReset = { id -> onEdit { st -> st.resetNodeForItsModel(id, types) } },
         onResetDefaults = { id -> onEdit { st -> st.resetSamplerDefaults(id, types) } },
         onAddReference = { id, uri -> onEdit { st -> st.addReference(id, uri, types) } },
+        onPickPictures = { id, uris -> onEdit { st -> st.placePictures(id, uris, types) } },
         onRemoveReference = { id, port -> onEdit { st -> st.removeReference(id, port, types) } },
         onInstallSegmenter = onInstallSegmenter,
         onDeleteSegmenter = onDeleteSegmenter,

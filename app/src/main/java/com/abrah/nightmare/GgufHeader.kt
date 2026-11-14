@@ -77,6 +77,41 @@ object GgufHeader {
         blockTypesOutside(parse(head), NPU_MATMUL)
     }.getOrDefault(emptySet())
 
+    /**
+     * ⭐ The weight types a DiT GGUF's matmuls carry that the NPU cannot run (K-quants, Q5_x, IQ types: ggml runs
+     * them on the CPU, GitHub #112: a Krea 2 Q4_K_M made no progress in 10 min where a Q8_0 rendered in 3), or
+     * empty: also when they are under [CPU_SHARE] of the tensors (a stray Q6_K head is not a slow model) or the
+     * header is not readable. ⚠ Cached per file, length and date: it is read before every render.
+     */
+    fun cpuMatmulTypes(file: java.io.File): Set<String> {
+        if (!file.isFile) return emptySet()
+        val key = "${file.absolutePath}:${file.length()}:${file.lastModified()}"
+        cpuCache[key]?.let { return it }
+        val r = runCatching {
+            val head = file.inputStream().use { s ->
+                val buf = ByteArray(minOf(file.length(), 16L shl 20).toInt())
+                var n = 0
+                while (n < buf.size) { val k = s.read(buf, n, buf.size - n); if (k < 0) break; n += k }
+                buf.copyOf(n)
+            }
+            cpuTypes(parse(head))
+        }.getOrDefault(emptySet())
+        cpuCache[key] = r
+        return r
+    }
+
+    private val cpuCache = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
+
+    /** ⭐ The share of a model's tensors in CPU-only types past which [cpuMatmulTypes] names them. */
+    const val CPU_SHARE = 0.1
+
+    /** ⚠ Pure: [cpuMatmulTypes] on a parsed table. */
+    fun cpuTypes(t: Table): Set<String> {
+        if (t.typeOf.isEmpty()) return emptySet()
+        val off = t.typeOf.values.filter { it !in NPU_MATMUL }
+        return if (off.size < t.typeOf.size * CPU_SHARE) emptySet() else off.toSet()
+    }
+
     /** ⚠ Pure: the `blk.*` weight types in [t] not in [allowed]. */
     fun blockTypesOutside(t: Table, allowed: Set<String>): Set<String> =
         t.typeOf.filterKeys { it.startsWith("blk.") }.values.toSet() - allowed

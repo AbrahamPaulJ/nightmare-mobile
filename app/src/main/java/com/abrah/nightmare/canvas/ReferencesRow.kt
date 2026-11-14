@@ -56,7 +56,8 @@ internal fun ReferencesRow(
     val onToast = { text: String -> android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show() }
     // ⚠ Saveable: the picker is another activity, and a recreation while it is open dropped the chosen photo.
     var replacing by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    val pickNew = rememberImagePick { uri -> onAdd(uri) }
+    // ⭐ GitHub #107: several at once, each into the next free reference.
+    val pickNew = rememberImagePick(onPickedMany = { uris -> uris.forEach(onAdd) }, onPicked = { uri -> onAdd(uri) })
     val pickReplace = rememberImagePick { uri -> replacing?.let { onReplace(it, uri) }; replacing = null }
     val full = stringResource(R.string.references_full, com.abrah.nightmare.SdSampler.MAX_REFERENCES)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -15,6 +16,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import java.io.File
 
 /**
@@ -103,12 +106,25 @@ class LoopingClipView(
 
     private fun onTop() = live.lastOrNull() === this
 
+    /**
+     * ⭐⭐ The app is out of sight ([ClipPlayer]'s lifecycle observer). GitHub #116: a clip opened full screen kept
+     * its sound playing after the user left the app, because the viewer's texture outlives ON_STOP and only its
+     * loss released the player. Every player pauses on stop; on start only the top one plays again.
+     */
+    private var backgrounded = false
+
     private fun pause() {
         if (prepared) runCatching { player?.takeIf { it.isPlaying }?.pause() }
     }
 
     private fun resume() {
-        if (prepared) runCatching { player?.start() }
+        if (prepared && !backgrounded) runCatching { player?.start() }
+    }
+
+    /** ⭐ ON_STOP (true) / ON_START (false), from [ClipPlayer]. */
+    fun setBackgrounded(gone: Boolean) {
+        backgrounded = gone
+        if (gone) pause() else if (onTop()) resume()
     }
 
     init {
@@ -138,7 +154,7 @@ class LoopingClipView(
                 setOnPreparedListener {
                     prepared = true
                     if (muted) it.setVolume(0f, 0f)
-                    if (onTop()) it.start()
+                    if (onTop() && !backgrounded) it.start()
                 }
                 setOnVideoSizeChangedListener { _, w, h -> if (w > 0 && h > 0) onSize(w, h) }
                 // ⚠ True = handled: no platform "Can't play this video" dialog over ours.
@@ -191,11 +207,26 @@ fun ClipPlayer(
         return
     }
     var aspect by remember(path) { mutableStateOf<Float?>(null) }
+    var view by remember { mutableStateOf<LoopingClipView?>(null) }
+    // ⭐ GitHub #116: pause with the app, not only with the texture ([LoopingClipView.setBackgrounded]).
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, view) {
+        val v = view
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> v?.setBackgrounded(true)
+                Lifecycle.Event.ON_START -> v?.setBackgrounded(false)
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     Box(modifier, contentAlignment = Alignment.Center) {
         AndroidView(
             factory = { ctx ->
                 LoopingClipView(ctx, onSize = { w, h -> aspect = w.toFloat() / h }, onFailed = { failed = true }, muted = muted)
-                    .also { handle?.view = it }
+                    .also { handle?.view = it; view = it }
             },
             update = { v ->
                 handle?.view = v

@@ -44,6 +44,11 @@ class NpuSpaceTest {
         val floor = npuSpaceRefused("DiT generation failed: generate_image failed", dit) { null }!!
         assertTrue(floor, floor.contains("smaller canvas"))
 
+        // ⭐ GitHub #115: the engine died of it (the socket's EOF, http -1): still learned.
+        val died = npuSpaceRefused("EOFException: no message", dit, died = true) { "2.25" }!!
+        assertTrue(died, died.contains("2.25 GiB"))
+        assertNull(npuSpaceRefused("EOFException: no message", dit) { "2.25" })
+
         assertEquals("1.5", DeviceProbe.nextDitMapCap("2.0"))
         assertEquals("2.25", DeviceProbe.nextDitMapCap("2.75"))
         assertEquals("1.25", DeviceProbe.nextDitMapCap("1.5"))

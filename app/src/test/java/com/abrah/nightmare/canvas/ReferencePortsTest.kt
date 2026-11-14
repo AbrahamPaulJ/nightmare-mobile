@@ -43,6 +43,24 @@ class ReferencePortsTest {
         assertEquals(full, full.addReference("edit", "/x.png", NODE_TYPES))
     }
 
+    /** ⭐ GitHub #107: five pictures picked on the edit's image: one there, three references, the fifth a loose node. */
+    @Test
+    fun severalPicturesFillTheImageThenTheReferencesThenNewNodes() {
+        val st = state("image").placePictures("p_image", listOf("/1.png", "/2.png", "/3.png", "/4.png", "/5.png"), NODE_TYPES)
+        val g = st.workflow.graph
+        val ins = g.byId.getValue("edit").inputs
+        assertEquals("/1.png", g.byId.getValue("p_image").params["uri"])
+        assertEquals(listOf("/2.png", "/3.png", "/4.png"), listOf("reference", "reference_3", "reference_4").map { p ->
+            g.byId.getValue(ins.getValue(p).node).params["uri"]
+        })
+        val loose = g.nodes.filter { n -> n.type == "core.image" && g.nodes.none { m -> m.inputs.values.any { it.node == n.id } } }
+        assertEquals(listOf("/5.png"), loose.map { it.params["uri"] })
+        // ⚠ An image node feeding nothing: every other picture becomes a node of its own.
+        val alone = CanvasState(workflow = Workflow(Graph(listOf(Node("pic", "core.image"))), mapOf("pic" to Pt(0f, 0f))))
+            .placePictures("pic", listOf("/a.png", "/b.png"), NODE_TYPES)
+        assertEquals(listOf("/a.png", "/b.png"), alone.workflow.graph.nodes.map { it.params["uri"] })
+    }
+
     /** ⚠ Removing image 2 moves 3 and 4 up, so no port is left empty in the middle. */
     @Test
     fun removingOneRestacksTheRestAndDropsItsNode() {

@@ -155,6 +155,18 @@ to 45 °C. Keep the phone off the charger and out of the sun while it renders.
 |---|---|---|
 | **Sound when a run ends** | off | Plays a sound when a Run or a sweep of 15 seconds or longer finishes, and a different one if it fails. **Choose** beside each opens the phone's own sound list (notification and alarm sounds). With Nightmare in the background, a notification also says how long it took, or why it failed. A run you cancel ends quietly |
 
+### Saved pictures
+
+| switch | default | what it does |
+|---|---|---|
+| **Write how it was made into the picture** | on | A saved or shared picture carries its prompt, model, seed, steps, sampler, LoRAs, phone and the whole flow in the PNG. CivitAI and A1111 read it, and Nightmare reads it back when the picture is imported. It also marks the picture as AI-made |
+
+### Try the NPU for DiT models (test)
+
+Only on the 8 Gen 1 and 8+ Gen 1, whose NPU has so far hung on the DiT models (they run on the GPU or CPU there).
+This tries the NPU again. If a render stops moving, press **Cancel**: the app turns the switch off and says so,
+and the next Run uses the GPU or CPU.
+
 ### GPU
 
 Shown on phones with an OpenCL graphics driver (Snapdragon). FLUX.2 Klein 4B and Z-Image Turbo can render on the

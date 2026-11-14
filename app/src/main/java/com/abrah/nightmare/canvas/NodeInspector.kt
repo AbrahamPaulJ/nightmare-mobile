@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -280,6 +282,8 @@ fun NodeInspector(
     onSaveDrawing: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
     /** ⭐ A white page on an empty image node, to draw on. */
     onBlankPicture: (String) -> Unit = {},
+    /** ⭐ GitHub #107: (image node, pictures) when several are picked at once. */
+    onPickPictures: ((String, List<String>) -> Unit)? = null,
     /** ⭐ A video node's model: Wan 2.2 or Neodragon. */
     onSetVideoModel: (String, String) -> Unit = { _, _ -> },
     swapFlows: List<com.abrah.nightmare.canvas.SwapFlow>? = null,
@@ -713,6 +717,7 @@ fun NodeInspector(
                     ?.let { img -> DrawSource(img.id, img.params["uri"].orEmpty(), img.params[com.abrah.nightmare.LoadImageNode.DRAWING].orEmpty()) },
             onSaveDrawingOn = { id, bmp -> onSaveDrawing(id, bmp) },
             onBlankPicture = { onBlankPicture(nodeId) },
+            onPickPictures = onPickPictures?.let { f -> { uris: List<String> -> f(nodeId, uris) } },
             onSetVideoModel = { type -> onSetVideoModel(nodeId, type) },
             swapFlows = swapFlows,
             onSwapFlow = onSwapFlow,
@@ -856,7 +861,12 @@ fun NodeInspector(
         // said the usual way, on the canvas this closes onto
         // (`HarnessViewModel.runCanvas`). ⚠ The SAME [RunButton] the canvas bar
         // draws.
-        if (onRun != null) {
+        // ⭐ GitHub #110: sideways with the keyboard up, the tabs and this bar filled all the room left and the prompt
+        // being typed was pushed out of sight. While typing in a short window the bar steps aside; it is back when
+        // the keyboard goes.
+        val typingSideways = com.abrah.nightmare.ui.shortWindow() &&
+            WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
+        if (onRun != null && !typingSideways) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -1458,6 +1468,8 @@ internal fun NodeInspectorBody(
     drawSource: DrawSource? = null,
     onSaveDrawingOn: (String, android.graphics.Bitmap?) -> Unit = { _, _ -> },
     onBlankPicture: () -> Unit = {},
+    /** ⭐ GitHub #107: several pictures onto this image node, the rest as new nodes ([CanvasState.placePictures]). */
+    onPickPictures: ((List<String>) -> Unit)? = null,
     /** ⭐ This video node's model: Wan 2.2 (false) or Neodragon (true). */
     onSetVideoModel: (String) -> Unit = {},
     /** ⭐ Swap flow on the sampler's page, Remove input on the picture's: Default view only. */
@@ -2673,6 +2685,7 @@ internal fun NodeInspectorBody(
                 emptyHeight = pictureCap(),
                 onBlank = { afterBlank = true; onBlankPicture() },
                 onDraw = { drawRequest++ },
+                onPickedMany = onPickPictures,
             )
             DrawControls(
                 nodeId = nodeId,
@@ -5042,29 +5055,52 @@ internal class ImagePick(val photos: () -> Unit, val files: () -> Unit) : () -> 
  * when the result arrives: the picker runs while this activity is stopped.
  */
 @Composable
-internal fun rememberImagePick(onPicked: (String) -> Unit): ImagePick {
+internal fun rememberImagePick(
+    /**
+     * ⭐ GitHub #107: several pictures at once, from the photo picker and Files. Null keeps the one-picture pickers.
+     * ⚠ The phone's own Gallery fallback still hands back one. ⚠ First, so a trailing lambda stays [onPicked].
+     */
+    onPickedMany: ((List<String>) -> Unit)? = null,
+    onPicked: (String) -> Unit,
+): ImagePick {
     val ctx = LocalContext.current
     // ⚠ Read through `rememberUpdatedState`: the launcher outlives the
     // composition that made it, so a captured callback would write the chosen
     // photo into a node the user has since navigated away from.
     val current = rememberUpdatedState(onPicked)
+    val currentMany = rememberUpdatedState(onPickedMany)
+    fun persist(uri: android.net.Uri) {
+        try {
+            ctx.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        } catch (e: SecurityException) {
+            // ⚠ Not fatal: the URI still works for this session. Losing the
+            // persist is a tomorrow problem, and refusing the pick outright
+            // would be a today one.
+        }
+    }
     val onResult: (android.net.Uri?) -> Unit = { uri ->
         if (uri != null) {
-            try {
-                ctx.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            } catch (e: SecurityException) {
-                // ⚠ Not fatal: the URI still works for this session. Losing the
-                // persist is a tomorrow problem, and refusing the pick outright
-                // would be a today one.
-            }
+            persist(uri)
             current.value(uri.toString())
+        }
+    }
+    val onResults: (List<android.net.Uri>) -> Unit = { uris ->
+        uris.forEach { persist(it) }
+        val many = currentMany.value
+        when {
+            uris.isEmpty() -> Unit
+            many != null && uris.size > 1 -> many(uris.map { it.toString() })
+            else -> current.value(uris.first().toString())
         }
     }
     // ⚠ All registered unconditionally, for the reason in the note above.
     val media = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia(), onResult)
     val docs = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), onResult)
+    val mediaMany = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK), onResults)
+    val docsMany = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), onResults)
+    val many = onPickedMany != null
     // ⭐ The phone's own Gallery app (`ACTION_PICK`) — [ImagePick]'s note.
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         onResult(r.data?.data)
@@ -5084,10 +5120,14 @@ internal fun rememberImagePick(onPicked: (String) -> Unit): ImagePick {
     // "Photos and videos" keeps a flow's picture readable after a restart. A
     // denied permission answers at once with no dialog, so this never nags.
     val askPhotos = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { openGallery() }
-    return remember(media, docs, gallery, askPhotos) {
+    return remember(media, docs, gallery, askPhotos, mediaMany, docsMany, many) {
         ImagePick(
             photos = {
-                if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(ctx)) {
+                if (many && ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(ctx)) {
+                    mediaMany.launch(
+                        androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                } else if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(ctx)) {
                     media.launch(
                         androidx.activity.result.PickVisualMediaRequest(
                             ActivityResultContracts.PickVisualMedia.ImageOnly,
@@ -5104,10 +5144,13 @@ internal fun rememberImagePick(onPicked: (String) -> Unit): ImagePick {
                     ) openGallery() else askPhotos.launch(perm)
                 }
             },
-            files = { docs.launch(arrayOf("image/*")) },
+            files = { if (many) docsMany.launch(arrayOf("image/*")) else docs.launch(arrayOf("image/*")) },
         )
     }
 }
+
+/** ⭐ The most pictures one pick takes (GitHub #107): a picture and its references with room to spare. */
+private const val MAX_PICK = 8
 
 /**
  * ⭐ The Video node's picker: Choose a video (the system picker on videos) and Files, then the
@@ -5218,8 +5261,10 @@ private fun ImagePicker(
     onBlank: (() -> Unit)? = null,
     /** ⭐ The Draw tile beside the picker's ([ImageActions] tiles); null draws none. */
     onDraw: (() -> Unit)? = null,
+    /** ⭐ Several pictures picked at once (GitHub #107); null takes one. */
+    onPickedMany: ((List<String>) -> Unit)? = null,
 ) {
-    val pick = rememberImagePick(onPicked)
+    val pick = rememberImagePick(onPickedMany = onPickedMany, onPicked = onPicked)
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // ⭐⭐ A WORD while there is no picture, ICONS once there is one, and the
@@ -5993,7 +6038,7 @@ private fun missingText(spec: com.abrah.nightmare.ModelSpec?, feature: String): 
 
 /** ⭐ A schedule suffix's name in the phone's language ([ModelCatalog.DIT_SCHEDULES]). */
 @Composable
-private fun scheduleLabel(sfx: String): String = stringResource(
+internal fun scheduleLabel(sfx: String): String = stringResource(
     when (sfx) {
         "_karras" -> R.string.schedule_karras
         "_exponential" -> R.string.schedule_exponential
@@ -6001,6 +6046,9 @@ private fun scheduleLabel(sfx: String): String = stringResource(
         "_bong_tangent" -> R.string.schedule_bong_tangent
         "_simple" -> R.string.schedule_simple
         "_beta" -> R.string.schedule_beta
+        "_linear_quadratic" -> R.string.schedule_linear_quadratic
+        "_beta57" -> R.string.schedule_beta57
+        "_radiance_shift" -> R.string.schedule_radiance_shift
         else -> R.string.schedule_normal
     },
 )

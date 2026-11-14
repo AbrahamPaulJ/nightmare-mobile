@@ -1277,6 +1277,12 @@ class SdSampler(
             ctx.say(ctx.text(R.string.run_flux1_few_steps,
                 "FLUX.1 dev is made for 20 steps or more: with fewer, fur, skin and fine detail come out unfinished."))
         }
+        // ⭐ GitHub #112: an imported DiT GGUF in K-quants runs on the CPU, ten times slower or more, with no sign why.
+        cpuOnlyWeights(ctx, effectiveParams(node))?.let { types ->
+            ctx.say(ctx.text(R.string.run_dit_cpu_quant,
+                "The weights of this model are %1\$s, which the NPU cannot run: they run on the CPU, ten times slower or more. A Q4_0 or Q8_0 version of the same model runs on the NPU.",
+                types))
+        }
         // ⭐⭐ The picture under the fix, remembered without the fix's own params ([com.abrah.nightmare.detail.Detailer.PARAMS]): Fix faces
         // switched on, or a new Fix strength or Fix seed, redraws the faces on the picture already made (Saved #7072,
         // "it reruns the full diffusion sampling"). ⚠ Safe because Run rolls seed 0 into a real seed first
@@ -1291,6 +1297,15 @@ class SdSampler(
         val big = enlarge(ctx, node, v)
         if (baseKey != null) remember(baseKey, big)
         return detail(ctx, node, inputs, big)
+    }
+
+    /** ⭐ The CPU-only weight types of this node's DiT GGUF ([GgufHeader.cpuMatmulTypes]), joined, or null. */
+    private fun cpuOnlyWeights(ctx: NodeCtx, p: Map<String, String>): String? {
+        if (!family.dit) return null
+        val c = ctx.android ?: return null
+        val spec = ModelCatalog.byId(p["model"].orEmpty()) ?: return null
+        val types = GgufHeader.cpuMatmulTypes(java.io.File(spec.dir(c), CustomModels.DIT_GGUF))
+        return types.takeIf { it.isNotEmpty() }?.sorted()?.joinToString()
     }
 
     /** ⭐ A FLUX.1 render below [FLUX1_MIN_STEPS], the run-log note's condition. */

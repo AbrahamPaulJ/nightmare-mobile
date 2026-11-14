@@ -50,7 +50,8 @@ to switch.
 - **Open**: Flows → **Saved**, tap the card. The pencil renames it, the bin deletes it (it asks
   first).
 - **Share and import**: a flow is a small `.json` file. The **+** beside **Models** and **Flows**
-  at the top of the Flows tab opens one someone sent you.
+  at the top of the Flows tab opens one someone sent you, or a picture Nightmare saved: it opens
+  the flow that made it.
 - **From a result**: every picture in [Results](../reference/results.md) remembers the flow that
   made it. Open it from there to get the exact settings back.
 

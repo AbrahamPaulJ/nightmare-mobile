@@ -76,7 +76,8 @@ Anima file from CivitAI), then the ones converted for the NPU (zip).
     A checkpoint bigger than about half your phone's RAM is marked *likely too big for this
     phone's RAM* on its row: Android will probably close it while it renders. A smaller quant
     (Q4_0, Q8_0 or fp8) of the same model is the fix. Q4_0, Q8_0, MXFP4 and fp8 are the formats
-    known to run on the NPU; others (Q4_K, Q6_K…) are untested.
+    known to run on the NPU. K-quants (`Q4_K_M`, `Q5_K`, `Q6_K`...) run on the CPU, ten times
+    slower or more, and the run log says so when a render starts: pick the Q4_0 or Q8_0 upload.
 
 !!! note "int8, ConvRot and mxfp8 files"
     A `.safetensors` in ComfyUI's int8 format (int8, ConvRot) or in mxfp8 is converted to Q8_0 while it imports,

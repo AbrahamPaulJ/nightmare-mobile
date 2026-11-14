@@ -198,7 +198,7 @@ class MainActivity : ComponentActivity() {
         Thread { PromptTokens.ensureLoaded(appCtx) }.start()
         // ⚠ Only a fresh launch: a rotation or a relaunch from recents hands back the
         // SAME intent, which replayed the last adb op (`model_delete X`) every time.
-        if (savedInstanceState == null) takeOp(intent)
+        if (savedInstanceState == null) { takeOp(intent); takeShare(intent) }
         setContent {
             // ⚠⚠ Read from the view model, not from `Prefs` directly: the object
             // is a plain singleton with no Compose state, so a write to it would
@@ -206,6 +206,11 @@ class MainActivity : ComponentActivity() {
             val vm: HarnessViewModel = viewModel()
             // ⭐ Ask the chip once, at first launch (the user's call, 2026-09-17).
             androidx.compose.runtime.LaunchedEffect(Unit) { vm.probeVideoSupport() }
+            // ⭐ GitHub #107: pictures shared in from another app go to the Send to dialog.
+            val sharedNow = shared.value
+            androidx.compose.runtime.LaunchedEffect(sharedNow) {
+                if (sharedNow.isNotEmpty()) { vm.receiveShared(sharedNow); shared.value = emptyList() }
+            }
             val dark = when (vm.theme) {
                 Prefs.Theme.DARK, Prefs.Theme.BLACK -> true
                 Prefs.Theme.LIGHT -> false
@@ -256,7 +261,30 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         takeOp(intent)
+        takeShare(intent)
     }
+
+    /**
+     * ⭐ Pictures shared in from another app (GitHub #107), for [HarnessViewModel.receiveShared]. ⚠ Once: the action is
+     * cleared so a rotation or a return from history does not offer them again.
+     */
+    private fun takeShare(intent: Intent?) {
+        intent ?: return
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        val uris: List<android.net.Uri> = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(
+                androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, android.net.Uri::class.java),
+            )
+            Intent.ACTION_SEND_MULTIPLE ->
+                androidx.core.content.IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, android.net.Uri::class.java).orEmpty()
+            else -> return
+        }
+        intent.action = null
+        if (uris.isNotEmpty()) shared.value = uris
+    }
+
+    /** ⭐ What [takeShare] took, handed to the view model by the composition (it owns the VM). */
+    private val shared = androidx.compose.runtime.mutableStateOf<List<android.net.Uri>>(emptyList())
 
     private fun takeOp(intent: Intent?) {
         intent ?: return
@@ -757,6 +785,9 @@ fun HarnessScreen(
             val flowPicker = rememberLauncherForActivityResult(
                 androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
             ) { uri -> if (uri != null) vm.importWorkflow(uri) }
+            val resultPicker = rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+            ) { uris -> vm.importResultPictures(uris) }
             LibraryScreen(
                 tab = vm.libraryTab,
                 onTab = vm::switchLibraryTab,
@@ -769,8 +800,12 @@ fun HarnessScreen(
                 // octet-stream, and filtering on the exact type greys out the file the user came to pick.
                 flowsAction = {
                     com.abrah.nightmare.ui.ImportButton(enabled = !vm.working) {
-                        flowPicker.launch(arrayOf("application/json", "application/octet-stream"))
+                        // ⭐ image/png too: a picture Nightmare saved carries its flow (GitHub #106).
+                        flowPicker.launch(arrayOf("application/json", "application/octet-stream", "image/png"))
                     }
+                },
+                resultsAction = {
+                    com.abrah.nightmare.ui.ImportButton(enabled = !vm.working) { resultPicker.launch(arrayOf("image/png")) }
                 },
                 models = {
                     // ⭐⭐ The ONE import picker (the Models "+", 2026-10-14): the file says what it is

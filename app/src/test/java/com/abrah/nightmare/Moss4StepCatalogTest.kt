@@ -6,7 +6,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.io.RandomAccessFile
 
 /**
  * ⭐ MOSS-Image SFT at 4 steps shares SFT's DiT file. ⚠ The first build called it installed with 1.2 GB on disk, and its
@@ -18,10 +17,17 @@ class Moss4StepCatalogTest {
 
     private val spec = ModelCatalog.byId("moss_image_4step")!!
 
-    /** A sparse file of the right length: [ModelSpec.borrows] compares sizes. */
+    /**
+     * A sparse file of the right length: [ModelSpec.borrows] compares sizes. ⚠ `SPARSE` + one byte at the end: on NTFS
+     * `setLength` alone RESERVES the length, two 5 GB files that failed the suite on a full disk (2026-11-14).
+     */
     private fun place(dir: File, name: String, bytes: Long) {
         dir.mkdirs()
-        RandomAccessFile(File(dir, name), "rw").use { it.setLength(bytes) }
+        java.nio.file.Files.newByteChannel(
+            File(dir, name).toPath(),
+            java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE,
+            java.nio.file.StandardOpenOption.SPARSE,
+        ).use { it.position(bytes - 1).write(java.nio.ByteBuffer.wrap(byteArrayOf(0))) }
     }
 
     private fun bytesOf(name: String) = spec.active.first { it.name == name }.bytes

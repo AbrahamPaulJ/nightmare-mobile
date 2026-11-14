@@ -47,9 +47,9 @@ object Share {
         FileProvider.getUriForFile(context, context.packageName + AUTHORITY_SUFFIX, file)
 
     /** ⭐ Hand a PNG to whatever the user picks. */
-    fun image(context: Context, png: ByteArray, name: String) {
+    fun image(context: Context, png: ByteArray, name: String, info: PngInfo.Info? = null) {
         val f = File(staging(context), sanitise(name) + ".png")
-        f.writeBytes(png)
+        PngInfo.wrap(f.outputStream(), info).use { it.write(png) }
         send(context, uriFor(context, f), "image/png", "Share picture")
     }
 
@@ -59,9 +59,9 @@ object Share {
      * picture into a `ByteArray` first costs ~80 MB of heap to write a file
      * that is written incrementally anyway.
      */
-    fun image(context: Context, bitmap: android.graphics.Bitmap, name: String) {
+    fun image(context: Context, bitmap: android.graphics.Bitmap, name: String, info: PngInfo.Info? = null) {
         val f = File(staging(context), sanitise(name) + ".png")
-        f.outputStream().use {
+        PngInfo.wrap(f.outputStream(), info).use {
             // ⚠ false, not a throw: an empty file would be shared as the picture.
             if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) {
                 throw java.io.IOException("the picture could not be encoded")
