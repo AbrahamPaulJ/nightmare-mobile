@@ -1052,6 +1052,8 @@
     <string name="views_nodes_vertical_hint">所有步骤依次排列，无需左右滑动</string>
     <string name="views_hide_chat">隐藏聊天视图</string>
     <string name="views_hide_chat_hint">视图按钮只提供默认和高级</string>
+    <string name="views_keep_edits">保留每个流程的修改</string>
+    <string name="views_keep_edits_hint">打开其他模型或流程时，保留你在离开的流程中所做的修改，再次打开时恢复。关闭：每次都重新打开。已保存的流程始终按保存时的样子打开。</string>
     <string name="agent_clear_chat">清空对话</string>
     <string name="agent_attach">附加图片</string>
     <string name="agent_detach">移除图片</string>

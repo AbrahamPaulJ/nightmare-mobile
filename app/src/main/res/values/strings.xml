@@ -1081,6 +1081,8 @@
     <string name="views_nodes_vertical_hint">Every step one under another, instead of swiping between them</string>
     <string name="views_hide_chat">Hide chat view</string>
     <string name="views_hide_chat_hint">The view button offers Default and Advanced only</string>
+    <string name="views_keep_edits">Keep the edits of each flow</string>
+    <string name="views_keep_edits_hint">Opening another model or flow keeps the edits you made to the one you leave, and they come back when you open it again. Off: each opens fresh. A saved flow always opens as you saved it.</string>
     <string name="agent_clear_chat">Clear chat</string>
     <string name="agent_attach">Attach a picture</string>
     <string name="agent_detach">Remove the picture</string>

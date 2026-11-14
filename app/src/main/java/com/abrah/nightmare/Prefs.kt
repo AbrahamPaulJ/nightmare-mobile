@@ -83,6 +83,7 @@ object Prefs {
         ditTaesd = p.getBoolean(KEY_DIT_TAESD, true)
         ditSpectrum = p.getBoolean(KEY_DIT_SPECTRUM, false)
         pngInfo = p.getBoolean(KEY_PNG_INFO, true)
+        keepFlowEdits = p.getBoolean(KEY_KEEP_FLOW_EDITS, true)
     }
 
     /** ⭐ A sampler's "More options" fold open (the user, 2026-10-17: closed by default, remembered). */
@@ -418,6 +419,16 @@ object Prefs {
         private set
 
     /**
+     * ⭐ Each model's flow keeps its edits when another is opened, and gets them back when it is opened again (the
+     * per-flow drafts, the user's call 2026-10-29). Off: every flow opens fresh. ⚠ A SAVED flow never has a draft
+     * either way (the user, 2026-11-14, Saved #8050): opened from Flows, it is what was saved.
+     */
+    const val KEY_KEEP_FLOW_EDITS = "keep_flow_edits"
+
+    @Volatile var keepFlowEdits: Boolean = true
+        private set
+
+    /**
      * ⚠ 13 GiB, between the classes rather than at "16": a 12 GB phone reports
      * ~10.9–11.4 GiB of `totalMem` and a 16 GB one ~14.5–15 GiB, the rest being
      * reserved before Android sees it.
@@ -446,6 +457,7 @@ object Prefs {
         val ditTaesd: Boolean = true,
         val ditSpectrum: Boolean = false,
         val pngInfo: Boolean = true,
+        val keepFlowEdits: Boolean = true,
     )
 
     /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */
@@ -476,6 +488,7 @@ object Prefs {
             ditTaesd = read(KEY_DIT_TAESD, true),
             ditSpectrum = read(KEY_DIT_SPECTRUM, false),
             pngInfo = read(KEY_PNG_INFO, true),
+            keepFlowEdits = read(KEY_KEEP_FLOW_EDITS, true),
         )
     }
 
@@ -489,6 +502,7 @@ object Prefs {
         if (key == KEY_DIT_TAESD) ditTaesd = on
         if (key == KEY_DIT_SPECTRUM) ditSpectrum = on
         if (key == KEY_PNG_INFO) pngInfo = on
+        if (key == KEY_KEEP_FLOW_EDITS) keepFlowEdits = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()
     }
 

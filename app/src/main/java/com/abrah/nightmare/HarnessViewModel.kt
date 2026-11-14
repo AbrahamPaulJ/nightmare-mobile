@@ -69,6 +69,12 @@ private const val SHARE_MAX_BYTES = 128L shl 20
 private const val SHARE_MAX_PICTURES = 8
 
 /** ⚠ Pure: the saved flow a draft key names (`saved:<name>`), or null for a recipe, a result or nothing (GitHub #114). */
+/**
+ * ⚠ Pure: whether the flow under [key] keeps a draft ([HarnessViewModel] per-flow autosave): a recipe's, while
+ * [keep] ([Prefs.keepFlowEdits]); a saved flow's never (Saved #8050: it opens as saved); no key, none.
+ */
+internal fun keepsDraft(key: String?, keep: Boolean): Boolean = keep && key != null && !key.startsWith("saved:")
+
 internal fun restoredFlowName(key: String?): String? =
     key?.takeIf { it.startsWith("saved:") }?.removePrefix("saved:")?.takeIf { it.isNotBlank() }
 
@@ -603,7 +609,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         if (refuseWhileRendering(label)) return
         // ⭐ No question any more (testers, Saved #7281-7284: "unnecessary", one tap more to open a model): unsaved
         // work is kept as that flow's DRAFT and comes back when the flow is opened again, Local Dream's way.
-        if (activeFlow.dirty) keepDraft()
+        if (activeFlow.dirty && keepsDraft(draftKey, Prefs.keepFlowEdits)) keepDraft()
         open()
     }
 
@@ -1075,10 +1081,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             }
             guardedOpen(name) {
                 val key = "saved:$name"
-                val kept = loadDraft(key)
-                openWorkflow(kept?.workflow ?: loaded.workflow, kept?.view ?: loaded.view)
-                // ⚠ Against the SAVED file, so edits kept since the last Save still show as unsaved.
-                if (kept != null) savedBaseline = loaded.workflow
+                // ⭐ Saved #8050 (the user, 2026-11-14): a saved flow opens as SAVED. Unsaved edits made to it are not
+                // brought back here (a draft left by an older version is dropped); the canvas left open at a cold
+                // start still comes back as it was, marked unsaved ([restoredFlowName]).
+                dropDraft(key)
+                openWorkflow(loaded.workflow, loaded.view)
                 draftKey = key
                 currentWorkflowName = name
                 say("opened \"$name\"")
@@ -7032,7 +7039,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         openedRecipeId = r.id
         val key = "recipe:" + r.id + if (r.usesCheckpoint) ":" + SelectedModel.id else ""
         val fresh = r.build()
-        val kept = if (draft) loadDraft(key) else null
+        val kept = if (draft && keepsDraft(key, Prefs.keepFlowEdits)) loadDraft(key) else null
         openWorkflow(kept?.workflow ?: fresh, kept?.view)
         // ⚠ The baseline stays the FRESH build, so a restored draft still reads as edited and is kept again on leaving.
         if (kept != null) { savedBaseline = fresh; sayNotes(kept) }

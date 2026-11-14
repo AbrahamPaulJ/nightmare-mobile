@@ -29,6 +29,8 @@ reads the same on every phone.
 (on for new installs). It changes the Default view only; the Advanced view's node sheet always
 swipes side to side.
 **Hide chat view** takes Chat off the view button, leaving Default and Advanced.
+**Keep the edits of each flow** (on): opening another model or flow keeps the changes you made to the one you
+leave, and they come back when you open it again. Off: each opens fresh. A saved flow always opens as you saved it.
 
 ## Prompts
 

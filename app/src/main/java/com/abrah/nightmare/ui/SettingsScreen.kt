@@ -315,6 +315,14 @@ fun SettingsScreen(
                         stringResource(R.string.views_hide_chat), stringResource(R.string.views_hide_chat_hint),
                         hideChat, onHideChat,
                     )
+                    // ⭐ Saved #8050 (the user, 2026-11-14): the per-model flow drafts can be turned off ([Prefs.keepFlowEdits]).
+                    if (lowRam != null) {
+                        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.views_keep_edits), stringResource(R.string.views_keep_edits_hint),
+                            lowRam.keepFlowEdits, { onLowRam(Prefs.KEY_KEEP_FLOW_EDITS, it) },
+                        )
+                    }
                 }
         }
         Page.PROMPTS -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {

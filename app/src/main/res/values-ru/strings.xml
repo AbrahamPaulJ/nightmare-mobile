@@ -1073,6 +1073,8 @@
     <string name="views_nodes_vertical_hint">Все шаги один под другим, без пролистывания</string>
     <string name="views_hide_chat">Скрыть чат</string>
     <string name="views_hide_chat_hint">Кнопка вида предлагает только «Обычный» и «Расширенный»</string>
+    <string name="views_keep_edits">Сохранять правки каждой схемы</string>
+    <string name="views_keep_edits_hint">При переходе к другой модели или схеме правки в той, что вы покидаете, сохраняются и возвращаются, когда вы снова её откроете. Выключено: каждая открывается заново. Сохранённая схема всегда открывается такой, какой вы её сохранили.</string>
     <string name="agent_clear_chat">Очистить чат</string>
     <string name="agent_attach">Прикрепить картинку</string>
     <string name="agent_detach">Убрать картинку</string>
