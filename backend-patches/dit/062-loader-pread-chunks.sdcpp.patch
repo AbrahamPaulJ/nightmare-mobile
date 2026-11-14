@@ -1,0 +1,79 @@
+diff --git a/src/model_loader.cpp b/src/model_loader.cpp
+index 05e8fdc..220fa1c 100644
+--- a/src/model_loader.cpp
++++ b/src/model_loader.cpp
+@@ -31,6 +31,11 @@
+ #include "json.hpp"
+ #include "zip.h"
+ 
++#if !defined(_WIN32)
++#include <fcntl.h>
++#include <unistd.h>
++#endif
++
+ #include "name_conversion.h"
+ 
+ /*================================================= Preprocess ==================================================*/
+@@ -1064,6 +1069,7 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb,
+         for (int i = 0; i < n_threads; ++i) {
+             workers.emplace_back([&, file_path, is_zip]() {
+                 std::ifstream file;
++                int raw_fd = -1;
+                 zip_t* zip = nullptr;
+                 if (is_zip) {
+                     zip = zip_open(file_path.c_str(), 0, 'r');
+@@ -1073,8 +1079,20 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb,
+                         return;
+                     }
+                 } else if (!mmapped) {
+-                    file.open(file_path, std::ios::binary);
+-                    if (!file.is_open()) {
++#if !defined(_WIN32)
++                    // nightmare (dit/062): plain files are read with pread in 16 MiB chunks. libc++'s ifstream
++                    // reads through a small buffer, so a 40 MB tensor was ~10k read calls; through Android's
++                    // /sdcard FUSE that ran at ~0.6 GB/s against ~1.5 GB/s for 1 MiB reads, and a DiT streamed
++                    // under a memory budget reloads gigabytes of weights every step.
++                    raw_fd = ::open(file_path.c_str(), O_RDONLY | O_CLOEXEC);
++                    if (raw_fd >= 0) {
++                        posix_fadvise(raw_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
++                    }
++#endif
++                    if (raw_fd < 0) {
++                        file.open(file_path, std::ios::binary);
++                    }
++                    if (raw_fd < 0 && !file.is_open()) {
+                         LOG_ERROR("failed to open '%s'", file_path.c_str());
+                         failed = true;
+                         return;
+@@ -1167,6 +1185,19 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb,
+                                 LOG_ERROR("read tensor data failed: '%s'", file_path.c_str());
+                                 return false;
+                             }
++                        } else if (raw_fd >= 0) {
++#if !defined(_WIN32)
++                            size_t done = 0;
++                            while (done < n) {
++                                const size_t want = std::min<size_t>(n - done, (size_t) 16 << 20);
++                                const ssize_t got = ::pread(raw_fd, buf + done, want, (off_t) (tensor_storage.offset + done));
++                                if (got <= 0) {
++                                    LOG_ERROR("read tensor data failed: '%s'", file_path.c_str());
++                                    return false;
++                                }
++                                done += (size_t) got;
++                            }
++#endif
+                         } else {
+                             file.seekg(tensor_storage.offset);
+                             file.read(buf, n);
+@@ -1255,6 +1286,11 @@ bool ModelLoader::load_tensors(on_new_tensor_cb_t on_new_tensor_cb,
+ 
+                     bytes_processed.fetch_add((uint64_t)nbytes_to_read);
+                 }
++#if !defined(_WIN32)
++                if (raw_fd >= 0) {
++                    ::close(raw_fd);
++                }
++#endif
+                 if (zip != nullptr) {
+                     zip_close(zip);
+                 }

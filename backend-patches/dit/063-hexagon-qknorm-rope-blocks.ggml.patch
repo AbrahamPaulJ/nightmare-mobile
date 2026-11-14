@@ -1,0 +1,47 @@
+diff --git a/src/ggml-hexagon/htp/qknorm-rope-ops.c b/src/ggml-hexagon/htp/qknorm-rope-ops.c
+index 292f935..bcf7099 100644
+--- a/src/ggml-hexagon/htp/qknorm-rope-ops.c
++++ b/src/ggml-hexagon/htp/qknorm-rope-ops.c
+@@ -63,21 +63,32 @@ static void qknorm_rope_worker(unsigned int n, unsigned int i, void * data) {
+     struct htp_thread_trace * tr = &c->ctx->trace[i];
+     const uint32_t token_first = (uint32_t) (((uint64_t) c->n_tokens * i) / n);
+     const uint32_t token_last = (uint32_t) (((uint64_t) c->n_tokens * (i + 1)) / n);
+-    float theta_packed[256] __attribute__((aligned(128)));
++    // nightmare (dit/063): tokens in blocks of QKR_BLOCK, all heads per block. The output is [head][token], one
++    // plane per head 2 MB apart at Z-Image's 4128 tokens: a token at a time wrote 512 bytes into each of 30 planes
++    // (~6.6 GB/s, 8.6 % of a streamed Z-Image's NPU time); a block writes QKR_BLOCK rows contiguous per plane.
++    // Every row's arithmetic is unchanged.
++    enum { QKR_BLOCK = 4 };  // theta_packed is on a 16 KB worker stack (main.c WORK_QUEUE_STACK_SIZE)
++    float theta_packed[QKR_BLOCK][256] __attribute__((aligned(128)));
+     float normalized[256] __attribute__((aligned(128)));
+ 
+     htp_trace_event_start(tr, HTP_TRACE_EVT_HVX_COMP, token_first);
+-    for (uint32_t token = token_first; token < token_last; ++token) {
+-        qknorm_rope_pack_theta(theta_packed, c->theta + (size_t) token * 2 * c->head_dim, c->head_dim);
++    for (uint32_t block = token_first; block < token_last; block += QKR_BLOCK) {
++        const uint32_t block_end = block + QKR_BLOCK < token_last ? block + QKR_BLOCK : token_last;
++        for (uint32_t token = block; token < block_end; ++token) {
++            qknorm_rope_pack_theta(theta_packed[token - block], c->theta + (size_t) token * 2 * c->head_dim,
++                                   c->head_dim);
++        }
+         for (uint32_t batch = 0; batch < c->n_batches; ++batch) {
+             for (uint32_t head = 0; head < c->n_heads; ++head) {
+-                const float * src = c->src + (size_t) batch * c->src_batch_stride +
+-                                    (size_t) token * c->src_token_stride +
+-                                    (size_t) head * c->src_head_stride;
+-                float * dst = c->dst + (((size_t) batch * c->n_heads + head) * c->n_tokens + token) * c->head_dim;
+-                hvx_fast_rms_norm_mul_f32((const uint8_t *) src, (const uint8_t *) c->weight,
+-                                           (uint8_t *) normalized, c->head_dim, c->epsilon);
+-                qknorm_rope_apply_interleaved(dst, normalized, theta_packed, c->head_dim);
++                for (uint32_t token = block; token < block_end; ++token) {
++                    const float * src = c->src + (size_t) batch * c->src_batch_stride +
++                                        (size_t) token * c->src_token_stride +
++                                        (size_t) head * c->src_head_stride;
++                    float * dst = c->dst + (((size_t) batch * c->n_heads + head) * c->n_tokens + token) * c->head_dim;
++                    hvx_fast_rms_norm_mul_f32((const uint8_t *) src, (const uint8_t *) c->weight,
++                                               (uint8_t *) normalized, c->head_dim, c->epsilon);
++                    qknorm_rope_apply_interleaved(dst, normalized, theta_packed[token - block], c->head_dim);
++                }
+             }
+         }
+     }

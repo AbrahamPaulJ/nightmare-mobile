@@ -1,0 +1,167 @@
+diff --git a/src/ggml-hexagon/ggml-hexagon.cpp b/src/ggml-hexagon/ggml-hexagon.cpp
+index 811fc7e..1065f69 100644
+--- a/src/ggml-hexagon/ggml-hexagon.cpp
++++ b/src/ggml-hexagon/ggml-hexagon.cpp
+@@ -822,6 +822,31 @@ static void pack_mxfp4_quants(block_mxfp4 * x, const uint8_t * qs, unsigned int
+     }
+ }
+ 
++// nightmare (dit/061): a repack's column tiles are independent (each writes only its own tiles), so a
++// large weight is repacked on every core. Streamed DiTs re-upload their weights every step, one tensor
++// at a time under the loader's tensor_set mutex, and these loops ran on one thread.
++template <typename F> static void hex_repack_parallel(int n, size_t bytes, F && fn) {
++    const int n_threads = (int) std::min<size_t>(std::max(1u, std::thread::hardware_concurrency()),
++                                                 std::min<size_t>((size_t) n, std::max<size_t>(1, bytes >> 20)));
++    if (n_threads <= 1) {
++        for (int i = 0; i < n; ++i) {
++            fn(i);
++        }
++        return;
++    }
++    std::vector<std::thread> workers;
++    for (int w = 0; w < n_threads; ++w) {
++        workers.emplace_back([&, w]() {
++            for (int i = (int) ((int64_t) n * w / n_threads); i < (int) ((int64_t) n * (w + 1) / n_threads); ++i) {
++                fn(i);
++            }
++        });
++    }
++    for (auto & w : workers) {
++        w.join();
++    }
++}
++
+ // repack q4_0 data into q4_0_tiled tensor
+ static void repack_q4_0_tiled(ggml_tensor * t, const void * data, size_t offset, size_t size) {
+     const block_q4_0 * src_matrix = (const block_q4_0 *) data;
+@@ -848,7 +873,7 @@ static void repack_q4_0_tiled(ggml_tensor * t, const void * data, size_t offset,
+         const block_q4_0 * src_slice = src_matrix + (slice_idx - start_slice) * (ne1 * (ne0 / 32));
+         uint8_t * matrix_dst = (uint8_t *) t->data + slice_idx * matrix_size;
+ 
+-        for (int ct = 0; ct < n_col_tiles; ct++) {
++        hex_repack_parallel(n_col_tiles, slice_size, [&](int ct) {
+             for (int kt = 0; kt < n_k_tiles; kt++) {
+                 uint8_t * tile_dst = matrix_dst + (ct * n_k_tiles + kt) * tile_size;
+ 
+@@ -874,7 +899,7 @@ static void repack_q4_0_tiled(ggml_tensor * t, const void * data, size_t offset,
+                     scale_dst[row] = (r < ne1 && kt < ne0 / 32) ? src_slice[r * (ne0 / 32) + kt].d : 0;
+                 }
+             }
+-        }
++        });
+     }
+ }
+ 
+@@ -976,7 +1001,7 @@ static void repack_q4_1_tiled(ggml_tensor * t, const void * data, size_t offset,
+         const block_q4_1 * src_slice = src_matrix + (slice_idx - start_slice) * (ne1 * (ne0 / 32));
+         uint8_t * matrix_dst = (uint8_t *) t->data + slice_idx * matrix_size;
+ 
+-        for (int ct = 0; ct < n_col_tiles; ct++) {
++        hex_repack_parallel(n_col_tiles, slice_size, [&](int ct) {
+             for (int kt = 0; kt < n_k_tiles; kt++) {
+                 uint8_t * tile_dst = matrix_dst + (ct * n_k_tiles + kt) * tile_size;
+ 
+@@ -1008,7 +1033,7 @@ static void repack_q4_1_tiled(ggml_tensor * t, const void * data, size_t offset,
+                     }
+                 }
+             }
+-        }
++        });
+     }
+ }
+ 
+@@ -1111,7 +1136,7 @@ static void repack_q8_0_tiled(ggml_tensor * t, const void * data, size_t offset,
+         const block_q8_0 * src_slice = src_matrix + (slice_idx - start_slice) * (ne1 * (ne0 / 32));
+         uint8_t * matrix_dst = (uint8_t *) t->data + slice_idx * matrix_size;
+ 
+-        for (int ct = 0; ct < n_col_tiles; ct++) {
++        hex_repack_parallel(n_col_tiles, slice_size, [&](int ct) {
+             for (int kt = 0; kt < n_k_tiles; kt++) {
+                 uint8_t * tile_dst = matrix_dst + (ct * n_k_tiles + kt) * tile_size;
+ 
+@@ -1132,7 +1157,7 @@ static void repack_q8_0_tiled(ggml_tensor * t, const void * data, size_t offset,
+                     scale_dst[row] = (r < ne1 && kt < ne0 / 32) ? src_slice[r * (ne0 / 32) + kt].d : 0;
+                 }
+             }
+-        }
++        });
+     }
+ }
+ 
+@@ -1231,7 +1256,7 @@ static void repack_mxfp4_tiled(ggml_tensor * t, const void * data, size_t offset
+         const block_mxfp4 * src_slice = src_matrix + (slice_idx - start_slice) * (ne1 * (ne0 / 32));
+         uint8_t * matrix_dst = (uint8_t *) t->data + slice_idx * matrix_size;
+ 
+-        for (int ct = 0; ct < n_col_tiles; ct++) {
++        hex_repack_parallel(n_col_tiles, slice_size, [&](int ct) {
+             for (int kt = 0; kt < n_k_tiles; kt++) {
+                 uint8_t * tile_dst = matrix_dst + (ct * n_k_tiles + kt) * tile_size;
+ 
+@@ -1257,7 +1282,7 @@ static void repack_mxfp4_tiled(ggml_tensor * t, const void * data, size_t offset
+                     scale_dst[row] = (r < ne1 && kt < ne0 / 32) ? src_slice[r * (ne0 / 32) + kt].e : 0;
+                 }
+             }
+-        }
++        });
+     }
+ }
+ 
+@@ -1340,8 +1365,58 @@ static inline size_t f8_e4m3_tile_offset(int row, int col) {
+     return (size_t) tile_row * 32 + tile_col;
+ }
+ 
++// nightmare (dit/061): the aligned fp8 repack a 32-bit word at a time, threaded over column tiles. A
++// streamed DiT re-uploads its weights every step, and the byte loop below (one thread, under the
++// loader's tensor_set mutex) ran at ~0.8 GB/s: Z-Image at a 4 GiB budget spent ~4.5 s a step in it.
++// Same bytes out: tile row 4*g + r/8 holds, for r%8 = 0..7, source row r's k-values 4g..4g+3 in
++// lane order 0, 2, 1, 3, with 0x80 (negative zero) stored as 0.
++static inline uint32_t f8_e4m3_tile_word(uint32_t w) {
++    w = (w & 0xff0000ffu) | ((w & 0x0000ff00u) << 8) | ((w & 0x00ff0000u) >> 8);
++    const uint32_t y = w ^ 0x80808080u;  // a byte that was 0x80 is now 0
++    const uint32_t z = ~(((y & 0x7f7f7f7fu) + 0x7f7f7f7fu) | y | 0x7f7f7f7fu);  // 0x80 in each zero byte
++    return w & ~((z >> 7) * 0xffu);
++}
++
++static bool repack_f8_e4m3_tiled_fast(ggml_tensor * t, const void * data) {
++    const int64_t ne0 = t->ne[0];
++    const int64_t ne1 = t->ne[1];
++    if (ne0 % 32 != 0 || ne1 % 32 != 0 || getenv("NM_F8_REPACK_SLOW") != nullptr) {
++        return false;
++    }
++    const int64_t n_mat = t->ne[2] * t->ne[3];
++    const int n_k_tiles = (int) (ne0 / 32);
++    const int n_col_tiles = (int) (ne1 / 32);
++    const int64_t n_jobs = n_mat * n_col_tiles;
++    auto run = [&](int64_t j0, int64_t j1) {
++        for (int64_t job = j0; job < j1; ++job) {
++            const int64_t m = job / n_col_tiles;
++            const int ct = (int) (job % n_col_tiles);
++            const uint8_t * mat_src = (const uint8_t *) data + m * ne1 * ne0;
++            uint8_t * col_dst = (uint8_t *) t->data +
++                ((size_t) m * n_col_tiles + ct) * n_k_tiles * HTP_MM_WEIGHT_TILE_SIZE_F8_E4M3;
++            for (int kt = 0; kt < n_k_tiles; ++kt) {
++                uint32_t * tile = (uint32_t *) (col_dst + (size_t) kt * HTP_MM_WEIGHT_TILE_SIZE_F8_E4M3);
++                for (int tr = 0; tr < 32; ++tr) {
++                    const int g = tr / 4;
++                    const int r0 = (tr % 4) * 8;
++                    for (int q = 0; q < 8; ++q) {
++                        uint32_t w;
++                        memcpy(&w, mat_src + ((int64_t) ct * 32 + r0 + q) * ne0 + (int64_t) kt * 32 + 4 * g, 4);
++                        tile[tr * 8 + q] = f8_e4m3_tile_word(w);
++                    }
++                }
++            }
++        }
++    };
++    hex_repack_parallel((int) n_jobs, ggml_nbytes(t), [&](int job) { run(job, job + 1); });
++    return true;
++}
++
+ static void repack_f8_e4m3_tiled(ggml_tensor * t, const void * data, size_t size) {
+     GGML_ASSERT(size == ggml_nbytes(t));
++    if (repack_f8_e4m3_tiled_fast(t, data)) {
++        return;
++    }
+ 
+     const uint8_t * src = (const uint8_t *) data;
+     const int64_t ne0 = t->ne[0];
