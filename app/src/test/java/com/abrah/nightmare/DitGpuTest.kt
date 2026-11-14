@@ -65,10 +65,10 @@ class DitGpuTest {
         val npuBytes = DitEngine.FILE_BYTES
         sparseFile(File(dir, DitEngine.FILE + ".npu"), npuBytes)
         File(dir, ".dit-engine.npu").writeText(npuUrl)
-        assertFalse("off: the live one is the GPU's", DitEngine.isInstalled(ctx))
+        // ⭐ Off: the live one is the GPU's, and asking swaps in the kept NPU one (the API asks before a run, 2026-11-15).
         // ⚠ No network in a JVM test: a download would throw, so passing proves two renames did it.
-        DitEngine.install(ctx, onProgress = {})
         assertTrue(DitEngine.isInstalled(ctx))
+        DitEngine.install(ctx, onProgress = {})
         assertEquals(npuBytes, DitEngine.file(ctx).length())
         assertEquals("the GPU engine kept", gpuBytes, File(dir, DitEngine.FILE + ".gpu").length())
         // And back on.

@@ -259,7 +259,20 @@ object DitEngine {
         runCatching { stamp(context).readText().trim() }.getOrNull()
 
     /** Present, the right size, AND from the URL this build names; on the GPU, with its tiny decoders ([DitGpu]). */
-    fun isInstalled(context: Context): Boolean =
+    /**
+     * ⭐ The engine this setting wants is the live one, or is made live from the one kept beside it ([restoreSpare]: two
+     * renames, nothing downloaded). ⚠ The switch flipped anywhere but Settings (the API's `dit_gpu`, a restored backup)
+     * left the other variant live, and `POST /run` refused "needs the DiT engine" with it on the phone (2026-11-15).
+     */
+    fun isInstalled(context: Context): Boolean {
+        if (liveIsWanted(context)) return true
+        if (!synchronized(this) { liveIsWanted(context) || restoreSpare(context) }) return false
+        Log.i(TAG, "switched to the kept ${variantOf(URL)} engine, nothing downloaded")
+        installed = true
+        return liveIsWanted(context)
+    }
+
+    private fun liveIsWanted(context: Context): Boolean =
         file(context).length() == FILE_BYTES && installedUrl(context) == URL && (!gpu || DitGpu.taesPresent(context))
 
     fun bytesOnDisk(context: Context): Long = file(context).length()
