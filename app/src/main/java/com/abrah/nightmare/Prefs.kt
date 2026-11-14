@@ -84,6 +84,8 @@ object Prefs {
         ditSpectrum = p.getBoolean(KEY_DIT_SPECTRUM, false)
         pngInfo = p.getBoolean(KEY_PNG_INFO, true)
         keepFlowEdits = p.getBoolean(KEY_KEEP_FLOW_EDITS, true)
+        shareCredit = p.getBoolean(KEY_SHARE_CREDIT, true)
+        shareName = p.getString(KEY_SHARE_NAME, null).orEmpty().take(SHARE_NAME_MAX)
     }
 
     /** ⭐ A sampler's "More options" fold open (the user, 2026-10-17: closed by default, remembered). */
@@ -429,6 +431,27 @@ object Prefs {
         private set
 
     /**
+     * ⭐ A thin credit strip under every SHARED picture ([ShareCredit]; the user, 2026-11-14: on by default, so shares
+     * carry the app's name). Not on a gallery save, a clip or a shared flow.
+     */
+    const val KEY_SHARE_CREDIT = "share_credit"
+
+    @Volatile var shareCredit: Boolean = true
+        private set
+
+    /** ⭐ The optional name in that strip: blank says "Made with Nightmare Mobile". */
+    const val KEY_SHARE_NAME = "share_name"
+    const val SHARE_NAME_MAX = 30
+
+    @Volatile var shareName: String = ""
+        private set
+
+    fun setShareName(context: Context, value: String) {
+        shareName = value.trim().take(SHARE_NAME_MAX)
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(KEY_SHARE_NAME, shareName).apply()
+    }
+
+    /**
      * ⚠ 13 GiB, between the classes rather than at "16": a 12 GB phone reports
      * ~10.9–11.4 GiB of `totalMem` and a 16 GB one ~14.5–15 GiB, the rest being
      * reserved before Android sees it.
@@ -458,6 +481,7 @@ object Prefs {
         val ditSpectrum: Boolean = false,
         val pngInfo: Boolean = true,
         val keepFlowEdits: Boolean = true,
+        val shareCredit: Boolean = true,
     )
 
     /** ⚠ Unknown RAM (0) answers ON — the safe side is the slow mode, never the kill. */
@@ -489,6 +513,7 @@ object Prefs {
             ditSpectrum = read(KEY_DIT_SPECTRUM, false),
             pngInfo = read(KEY_PNG_INFO, true),
             keepFlowEdits = read(KEY_KEEP_FLOW_EDITS, true),
+            shareCredit = read(KEY_SHARE_CREDIT, true),
         )
     }
 
@@ -503,6 +528,7 @@ object Prefs {
         if (key == KEY_DIT_SPECTRUM) ditSpectrum = on
         if (key == KEY_PNG_INFO) pngInfo = on
         if (key == KEY_KEEP_FLOW_EDITS) keepFlowEdits = on
+        if (key == KEY_SHARE_CREDIT) shareCredit = on
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, on).apply()
     }
 

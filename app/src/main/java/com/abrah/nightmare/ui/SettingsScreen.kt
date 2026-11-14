@@ -157,6 +157,9 @@ fun SettingsScreen(
      */
     civitaiKey: String? = null,
     onCivitaiKey: (String) -> Unit = {},
+    /** ⭐ The name in a shared picture's credit strip ([com.abrah.nightmare.ShareCredit]); blank = the app alone. */
+    shareName: String = "",
+    onShareName: (String) -> Unit = {},
     matureContent: Boolean = false,
     onMatureContent: (Boolean) -> Unit = {},
     /**
@@ -688,6 +691,13 @@ fun SettingsScreen(
                             stringResource(R.string.png_info), stringResource(R.string.png_info_hint),
                             lowRam.pngInfo, { onLowRam(Prefs.KEY_PNG_INFO, it) },
                         )
+                        // ⭐ The credit strip under a shared picture (the user, 2026-11-14: on by default, a name optional).
+                        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        com.abrah.nightmare.canvas.BoolKnobRow(
+                            stringResource(R.string.share_credit), stringResource(R.string.share_credit_hint),
+                            lowRam.shareCredit, { onLowRam(Prefs.KEY_SHARE_CREDIT, it) },
+                        )
+                        if (lowRam.shareCredit) ShareNameField(shareName, onShareName)
                     }
                     // ⭐ An 8 Gen 1 asks its NPU again ([Prefs.v69Npu]): a trial, only on such a chip.
                     if (com.abrah.nightmare.BackendProcess.belowDitNpu(com.abrah.nightmare.DeviceProbe.caps())) StudioCard {
@@ -1182,4 +1192,25 @@ private fun accentName(a: Prefs.Accent): Int = when (a) {
     Prefs.Accent.TEAL -> R.string.accent_teal
     Prefs.Accent.ORANGE -> R.string.accent_orange
     Prefs.Accent.PINK -> R.string.accent_pink
+}
+
+/**
+ * ⭐ The optional name in the share credit, [Prefs.SHARE_NAME_MAX] characters at most. ⚠ Saved on Done or focus loss,
+ * as the mirror address is, not per keystroke.
+ */
+@Composable
+private fun ShareNameField(name: String, onSave: (String) -> Unit) {
+    var text by remember(name) { mutableStateOf(name) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it.take(Prefs.SHARE_NAME_MAX) },
+        singleLine = true,
+        label = { Text(stringResource(R.string.share_credit_name)) },
+        supportingText = { Text("${text.length}/${Prefs.SHARE_NAME_MAX}") },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onSave(text) }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { if (!it.isFocused && text != name) onSave(text) },
+    )
 }

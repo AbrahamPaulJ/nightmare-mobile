@@ -162,6 +162,7 @@ to 45 °C. Keep the phone off the charger and out of the sun while it renders.
 | switch | default | what it does |
 |---|---|---|
 | **Write how it was made into the picture** | on | A saved or shared picture carries its prompt, model, seed, steps, sampler, LoRAs, phone and the whole flow in the PNG. CivitAI and A1111 read it, and Nightmare reads it back when the picture is imported. It also marks the picture as AI-made |
+| **Credit Nightmare on shared pictures** | on | Every picture you share gets a thin dark strip added under it (nothing in the picture is covered): the app icon and "Made with Nightmare Mobile". Fill in **Your name (optional)**, up to 30 characters, and it reads "Created by *your name* with Nightmare Mobile". Pictures saved to the gallery, clips and shared flows are left as they are |
 
 ### Try the NPU for DiT models (test)
 

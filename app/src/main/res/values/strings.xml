@@ -570,6 +570,11 @@
     <string name="png_info_note">What a picture carries when it leaves the app.</string>
     <string name="png_info">Write how it was made into the picture</string>
     <string name="png_info_hint">Prompt, model, seed, steps, sampler, LoRAs, phone and the whole flow, in the PNG. CivitAI and A1111 read it, and Nightmare reads it back when you import the picture on another phone. It also marks the picture as AI-made.</string>
+    <string name="share_credit">Credit Nightmare on shared pictures</string>
+    <string name="share_credit_hint">A thin strip under each picture you share: Made with Nightmare Mobile, or Created by your name with Nightmare Mobile. Pictures saved to the gallery and clips are left as they are.</string>
+    <string name="share_credit_name">Your name (optional)</string>
+    <string name="share_credit_plain">Made with %1$s</string>
+    <string name="share_credit_named">Created by %1$s with %2$s</string>
     <string name="results_import">Import pictures</string>
     <string name="results_imported">Imported %1$d of %2$d. Pictures without Nightmare\'s info were skipped.</string>
     <string name="flows_import_png_none">This picture has no Nightmare flow inside. Only pictures saved with \"Write how it was made\" on carry one.</string>

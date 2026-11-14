@@ -543,6 +543,11 @@
     <string name="png_info_note">图片离开应用时携带的信息。</string>
     <string name="png_info">把生成方式写入图片</string>
     <string name="png_info_hint">提示词、模型、种子、步数、采样器、LoRA、手机和完整的流程，写在 PNG 里。CivitAI 和 A1111 能读取，在另一部手机上导入图片时 Nightmare 也会读回。同时标明这是 AI 生成的图片。</string>
+    <string name="share_credit">在分享的图片上署名 Nightmare</string>
+    <string name="share_credit_hint">在你分享的每张图片下方加一条细栏：“由 Nightmare Mobile 制作”，或“你的名字 使用 Nightmare Mobile 创作”。保存到相册的图片和视频不会改变。</string>
+    <string name="share_credit_name">你的名字（可选）</string>
+    <string name="share_credit_plain">由 %1$s 制作</string>
+    <string name="share_credit_named">%1$s 使用 %2$s 创作</string>
     <string name="results_import">导入图片</string>
     <string name="results_imported">已导入 %1$d / %2$d。没有 Nightmare 信息的图片已跳过。</string>
     <string name="flows_import_png_none">这张图片里没有 Nightmare 流程。只有开启写入后保存的图片才带有流程。</string>

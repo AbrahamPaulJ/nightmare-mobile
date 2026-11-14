@@ -1121,6 +1121,8 @@ fun HarnessScreen(
             // ⭐ The LoRA browser's two settings (`docs/LORA-BROWSER.md`).
             civitaiKey = vm.civitaiKey,
             onCivitaiKey = vm::chooseCivitaiKey,
+            shareName = vm.shareName,
+            onShareName = vm::chooseShareName,
             matureContent = vm.matureContent,
             onMatureContent = vm::chooseMatureContent,
             api = com.abrah.nightmare.ui.ApiState(vm.apiOn, vm.apiToken, vm.apiAddresses, vm.apiCors),

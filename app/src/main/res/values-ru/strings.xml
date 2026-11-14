@@ -558,6 +558,11 @@
     <string name="png_info_note">Что картинка несёт с собой, покидая приложение.</string>
     <string name="png_info">Записывать в картинку, как она сделана</string>
     <string name="png_info_hint">Промпт, модель, сид, шаги, сэмплер, LoRA, телефон и весь поток, внутри PNG. CivitAI и A1111 это читают, а Nightmare прочитает при импорте картинки на другом телефоне. Ещё это помечает картинку как сделанную ИИ.</string>
+    <string name="share_credit">Подпись Nightmare на картинках, которыми вы делитесь</string>
+    <string name="share_credit_hint">Тонкая полоса под каждой картинкой, которой вы делитесь: «Сделано в Nightmare Mobile» или «Автор: ваше имя, сделано в Nightmare Mobile». Картинки, сохранённые в галерею, и клипы не меняются.</string>
+    <string name="share_credit_name">Ваше имя (необязательно)</string>
+    <string name="share_credit_plain">Сделано в %1$s</string>
+    <string name="share_credit_named">Автор: %1$s, сделано в %2$s</string>
     <string name="results_import">Импорт картинок</string>
     <string name="results_imported">Импортировано %1$d из %2$d. Картинки без данных Nightmare пропущены.</string>
     <string name="flows_import_png_none">В этой картинке нет потока Nightmare. Он есть только в картинках, сохранённых с включённой записью.</string>

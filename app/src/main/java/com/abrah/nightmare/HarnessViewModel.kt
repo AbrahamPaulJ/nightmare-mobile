@@ -7420,8 +7420,26 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             return@shareOffMain null
         }
         val png = results.fullBytes(id) ?: return@shareOffMain text(R.string.share_picture_missing)
-        Share.image(getApplication(), png, "nightmare-" + id, resultPngInfo(id))
+        // ⭐ The credit strip ([ShareCredit], on by default): re-encoded only when it is on.
+        val credited = creditedOrNull(png)
+        if (credited != null) Share.image(getApplication(), credited, "nightmare-" + id, resultPngInfo(id))
+        else Share.image(getApplication(), png, "nightmare-" + id, resultPngInfo(id))
         null
+    }
+
+    /** ⭐ [png] decoded with [ShareCredit]'s strip under it, or null when the switch is off (or it will not decode). */
+    private fun creditedOrNull(png: ByteArray): android.graphics.Bitmap? {
+        if (!Prefs.shareCredit) return null
+        val bmp = android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size) ?: return null
+        return ShareCredit.apply(getApplication(), bmp, Prefs.shareName)
+    }
+
+    var shareName by mutableStateOf(Prefs.shareName)
+        private set
+
+    fun chooseShareName(value: String) {
+        Prefs.setShareName(getApplication(), value)
+        shareName = Prefs.shareName
     }
 
     /**
@@ -7493,7 +7511,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             when {
                 clip != null -> Share.video(getApplication(), clip, name)
                 bmp == null -> return@shareOffMain text(R.string.run_picture_not_in_memory)
-                else -> Share.image(getApplication(), bmp, name, info)
+                else -> Share.image(
+                    getApplication(),
+                    if (Prefs.shareCredit) ShareCredit.apply(getApplication(), bmp, Prefs.shareName) else bmp,
+                    name, info,
+                )
             }
             null
         }
@@ -8111,7 +8133,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     // ⭐ GitHub #106: with what made it, as a single share and a gallery save are.
                     val info = resultPngInfo(id)
                     ("nightmare-$id.png") to { f: java.io.File ->
-                        PngInfo.wrap(f.outputStream(), info).use { out -> png.inputStream().use { it.copyTo(out) } }
+                        val credited = creditedOrNull(png.readBytes())
+                        PngInfo.wrap(f.outputStream(), info).use { out ->
+                            if (credited != null) credited.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                            else png.inputStream().use { it.copyTo(out) }
+                        }
                         Unit
                     }
                 }
