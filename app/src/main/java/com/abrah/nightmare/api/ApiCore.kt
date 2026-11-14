@@ -167,6 +167,11 @@ class ApiCore(internal val ctx: Context, val ops: HarnessOps, private val holder
                 if (n.type != "core.image") throw ApiError(400, "input_images: \"$node\" is not an image node")
                 graph = graph.withParam(node, "uri", resultFileOf(url).absolutePath)
             }
+            graph = frameShaped(graph, types, req) { uri ->
+                val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(uri.removePrefix("file://"), o)
+                (o.outWidth to o.outHeight).takeIf { o.outWidth > 0 && o.outHeight > 0 }
+            }
             modelsMissing(graph, types)?.let { throw ApiError(409, it) }
             return Prepared(runId, base.copy(graph = graph))
         } catch (e: Throwable) {

@@ -1289,6 +1289,10 @@ class SdSampler(
             ctx.say(ctx.text(R.string.run_flux1_few_steps,
                 "FLUX.1 dev is made for 20 steps or more: with fewer, fur, skin and fine detail come out unfinished."))
         }
+        fewMossSteps(effectiveParams(node))?.let { own ->
+            ctx.warn(ctx.text(R.string.run_moss_few_steps,
+                "This MOSS model is made for %1\$d steps: with fewer, dark and flat areas come out in blocks. The 4-step model is the one for 4 steps.", own))
+        }
         // ⭐ GitHub #112: an imported DiT GGUF in K-quants runs on the CPU, ten times slower or more, with no sign why.
         cpuOnlyWeights(ctx, effectiveParams(node))?.let { types ->
             ctx.say(ctx.text(R.string.run_dit_cpu_quant,
@@ -1318,6 +1322,19 @@ class SdSampler(
         val spec = ModelCatalog.byId(p["model"].orEmpty()) ?: return null
         val types = GgufHeader.cpuMatmulTypes(java.io.File(spec.dir(c), CustomModels.DIT_GGUF))
         return types.takeIf { it.isNotEmpty() }?.sorted()?.joinToString()
+    }
+
+    /**
+     * ⭐ A MOSS model made for a few steps (8: Turbo, the SFT with its speed LoRA, a few-step import) run with fewer: its
+     * own step count, else null. ⚠ Saved #7949 (item 62): an 8-step import at 4 steps with Bong Tangent came back in
+     * blocks across every dark area; the built-in Turbo at those settings did the same on the S25, and the 4-step model
+     * at them was clean (2026-11-15). The sibling of [fewFlux1Steps].
+     */
+    internal fun fewMossSteps(p: Map<String, String>): Int? {
+        if (family != Family.MOSS) return null
+        val own = p["model"]?.let { ModelCatalog.byId(it) }?.steps ?: return null
+        val asked = p["steps"]?.toIntOrNull() ?: return null
+        return own.takeIf { it in 6..10 && asked < it }
     }
 
     /** ⭐ A FLUX.1 render below [FLUX1_MIN_STEPS], the run-log note's condition. */

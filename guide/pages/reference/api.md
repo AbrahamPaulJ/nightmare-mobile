@@ -75,7 +75,9 @@ What you can set:
   **`aspect`**, **`loras`**: every generate node that has the setting.
 - **`params`**: any setting of any node: `{"generate": {"controlnet": "canny"}}`. A frame is `x`, `y`, `w`, `h`
   as fractions of the picture, and may hang off it: `{"inpaint": {"x": "-0.2", "y": "-0.2", "w": "1.4", "h": "1.4"}}`
-  outpaints a border all round (the editor stops at about 1.41 times the picture per side).
+  outpaints a border all round (the editor stops at about 1.41 times the picture per side). On the DiT models
+  (FLUX.2, Z-Image, MOSS-Image and the rest) a frame sent without `width` / `height` renders in the frame's shape
+  with the node's pixel count, as the editor would; send a size to choose it yourself.
 - **`images`**: a picture for an image node, base64: `{"image": "<base64>"}`.
 - **`videos`**: a clip for a video node, base64 MP4: `{"clip": "<base64>"}` (Motion transfer's driving video, `flow: "motion"`).
 

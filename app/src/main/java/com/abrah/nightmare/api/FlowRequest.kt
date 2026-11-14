@@ -145,6 +145,51 @@ fun applyOverrides(
 private val FRAME_KEYS = setOf("x", "y", "w", "h")
 
 /**
+ * ⭐ An outpaint frame set through the API takes the render's shape with it: a DiT inpaint node whose `x`/`y`/`w`/`h`
+ * the request set, and no size, renders at the frame's aspect with the node's pixel count, on the 16 px grid.
+ *
+ * ⚠⚠ Why (the demo's MOSS outpaint, 2026-11-15): a square frame (`w`/`h` 1.4 of a square photo) on a node still at
+ * 896x1600 from an earlier render was squeezed into that portrait cut (`[mask] frame=1075x1075 cut=896x1600`), and the
+ * new border came back as blocks. On the phone the crop editor keeps the frame to the node's shape, so only a caller
+ * that sets the frame alone meets this. [photoSize] reads a `core.image` node's picture; null leaves the node as it is.
+ */
+fun frameShaped(
+    graph: Graph,
+    types: Map<String, NodeType>,
+    req: RunRequest,
+    photoSize: (uri: String) -> Pair<Int, Int>?,
+): Graph {
+    if (req.knobs.keys.any { it == "width" || it == "height" || it == "aspect" }) return graph
+    var g = graph
+    for ((id, p) in req.params) {
+        if (FRAME_KEYS.none { it in p } || p.keys.any { it == "width" || it == "height" || it == "aspect" }) continue
+        val n = g.byId[id] ?: continue
+        val t = types[n.type] as? com.abrah.nightmare.SdSampler ?: continue
+        if (!t.inpaint || !t.family.dit) continue
+        val photo = n.inputs["image"]?.let { g.byId[it.node] }?.params?.get("uri")?.takeIf { it.isNotBlank() } ?: continue
+        val (pw, ph) = photoSize(photo) ?: continue
+        val fw = n.params["w"]?.toDoubleOrNull() ?: continue
+        val fh = n.params["h"]?.toDoubleOrNull() ?: continue
+        fun size(k: String) = (n.params[k] ?: t.widgets.firstOrNull { it.name == k }?.default)?.toIntOrNull()
+        val w0 = size("width") ?: continue
+        val h0 = size("height") ?: continue
+        val (w, h) = shapeOf(fw * pw, fh * ph, w0.toLong() * h0) ?: continue
+        g = g.withParams(id, mapOf("width" to w.toString(), "height" to h.toString()))
+    }
+    return g
+}
+
+/** ⭐ [area] pixels at the aspect [fw]:[fh], each side on the 16 px grid (a DiT's patch). Null when nothing changes. */
+internal fun shapeOf(fw: Double, fh: Double, area: Long): Pair<Int, Int>? {
+    if (fw <= 0 || fh <= 0 || area <= 0) return null
+    val aspect = fw / fh
+    val h = kotlin.math.sqrt(area / aspect)
+    val w = h * aspect
+    fun grid(v: Double) = (Math.round(v / 16).toInt() * 16).coerceAtLeast(256)
+    return grid(w) to grid(h)
+}
+
+/**
  * ⭐ The range the API takes for widget [w] of [t]: its own, except a FRAME's `x`/`y`/`w`/`h`.
  *
  * ⚠ Those are declared 0..1, but a frame may hang off the photo (`CropRect`): an outpaint is `x` below 0 and

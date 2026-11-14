@@ -271,6 +271,7 @@
     <string name="run_wan_npu_warning">%1$s for %2$s s needs about %3$s GB of NPU memory at once, more than this phone\'s NPU takes, so it will probably fail. Trying anyway</string>
     <string name="run_wan_streams_anyway">This clip streams its model whichever way Video: stream the model is set: it cannot be held whole on this phone\'s NPU.</string>
     <string name="run_sdxl_lowram_anyway">SDXL runs in low RAM mode on this phone whichever way the switch is set: without it SDXL fills a phone under 16 GB and Android closes apps.</string>
+    <string name="run_moss_few_steps">This MOSS model is made for %1$d steps: with fewer, dark and flat areas come out in blocks. The 4-step model is the one for 4 steps.</string>
     <string name="run_flux1_few_steps">FLUX.1 dev is made for 20 steps or more: with fewer, fur, skin and fine detail come out unfinished.</string>
     <string name="run_dit_cpu_quant">The weights of this model are %1$s, which the NPU cannot run: they run on the CPU, ten times slower or more. A Q4_0 or Q8_0 version of the same model runs on the NPU.</string>
     <string name="run_v69_npu_off">The NPU did not answer on this chip, so Try the NPU for DiT models (test) is now off in Settings. The next Run uses the GPU or CPU.</string>
