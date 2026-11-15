@@ -11,6 +11,10 @@ to build one from scratch: the app ships ready-made flows for every job, and you
 one and press Run. When you want more control, the same boxes let you see and change every
 step.
 
+**[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)** · **[Demo video](demo.md)** ·
+**[Telegram group](https://t.me/nightmare_mobile)** · **[All releases](https://github.com/AbrahamPaulJ/nightmare-mobile/releases)** ·
+**[Everything it does](features.md)** · **[Report a problem](https://github.com/AbrahamPaulJ/nightmare-mobile/issues)**
+
 !!! note "This guide is a work in progress"
     It covers everything the app does today, but some pages are still thin and the
     screenshots are drawn by the app itself rather than taken from a real phone, so pictures

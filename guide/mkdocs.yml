@@ -58,6 +58,8 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Demo video: demo.md
+  - Everything it does: features.md
   - Getting started:
       - start/index.md
       - Install and check your phone: start/install.md
@@ -90,3 +92,4 @@ nav:
       - Memory and speed: reference/memory.md
   - Troubleshooting: troubleshooting.md
   - Glossary: glossary.md
+  - Credits: credits.md
