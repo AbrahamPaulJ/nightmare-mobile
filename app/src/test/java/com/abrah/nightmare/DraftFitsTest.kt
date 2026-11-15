@@ -30,6 +30,19 @@ class DraftFitsTest {
         assertTrue(draftFits(t2v, edited))
     }
 
+    /** ⭐ Saved #8080: FLUX.3's Text to image draft held Fibo 2.0 Edit's canvas, same node id, neither a video. */
+    @Test
+    fun aPictureDraftOfAnotherModelDoesNotFit() {
+        val t2i = build("txt2img")
+        val main = t2i.nodes.first { it.type == "core.output" }.inputs.getValue("media").node
+        fun withMain(type: String, model: String) =
+            Graph(t2i.nodes.map { if (it.id == main) it.copy(type = type, params = it.params + ("model" to model)) else it })
+        val flux3 = withMain("flux3.sample", "flux3_klein")
+        assertFalse("another generator", draftFits(flux3, withMain("fibo.sample", "fibo2_edit_turbo")))
+        assertFalse("the same generator, another model", draftFits(flux3, withMain("flux3.sample", "flux3_other")))
+        assertTrue("its own model, edited", draftFits(flux3, withMain("flux3.sample", "flux3_klein")))
+    }
+
     @Test
     fun theRecipeIdComesOutOfItsKey() {
         assertEquals("t2v", draftRecipeId("recipe:t2v"))

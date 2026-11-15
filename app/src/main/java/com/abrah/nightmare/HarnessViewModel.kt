@@ -86,7 +86,16 @@ internal fun draftFits(fresh: Graph, draft: Graph): Boolean {
     fun fed(g: Graph) = g.nodes.firstOrNull { it.type == "core.output" }?.inputs?.get("media")?.node
     val main = fed(fresh) ?: return true
     val got = draft.byId[main] ?: return false
-    return (got.type in VIDEO_MODEL_TYPES) == (fresh.byId[main]?.type in VIDEO_MODEL_TYPES)
+    val want = fresh.byId[main] ?: return true
+    if ((got.type in VIDEO_MODEL_TYPES) != (want.type in VIDEO_MODEL_TYPES)) return false
+    if (want.type in VIDEO_MODEL_TYPES) return true
+    // ⭐ A picture flow's draft renders the model it is filed under: the same generator type and the same model.
+    // ⚠ Saved #8080 (1.6.293, a screen recording): Use on FLUX.3, Text to image, and the canvas stayed on Fibo 2.0 Edit's
+    // Text to image, its current model unchanged. Both flows feed Output from a `generate` node that is not a video one,
+    // so the check above let Fibo's canvas through as FLUX.3's draft.
+    if (got.type != want.type) return false
+    val m = want.params["model"]
+    return m.isNullOrBlank() || got.params["model"].isNullOrBlank() || got.params["model"] == m
 }
 
 /** ⚠ Pure: the recipe id in a draft key (`recipe:<id>` or `recipe:<id>:<model>`), or null for any other key. */
