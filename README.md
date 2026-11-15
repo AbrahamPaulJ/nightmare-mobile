@@ -34,7 +34,7 @@ Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on
 ### The canvas
 - **Built for a phone**: big ports, snap to connect, pinch to zoom (out to 0.15x to see a big flow whole); the picture appears on the node that made it. The run bar folds to one row (+ Node, Run, the time, the locks) for more canvas. Cancel on a run over a minute old asks first, and an Output shows its picture as soon as it is ready.
 - **Local Dream's models, no second download**: models Local Dream keeps in `Download/LocalDream` are listed and run in place, never changed or deleted.
-- **DiT models on the GPU**: Settings, Performance, **Use the GPU for DiT models** renders FLUX.2 Klein 4B on the Adreno GPU on any Snapdragon (automatic below the 8 Gen 2). Each GPU job is kept to about a frame, so the phone stays usable, and a tiny decoder (taef2) turns the picture into pixels in under half a minute instead of several. A second engine (23 MB) and the Q4_0 model download the first time.
+- **DiT models on the GPU**: Settings, Performance, **Use the GPU for DiT models** renders FLUX.2 Klein 4B and NitroFusion 2 on the Adreno GPU on any Snapdragon (automatic below the 8 Gen 2). The phone keeps both engines, so flipping the switch back and forth is instant after the first time. Each GPU job is kept to about a frame, so the phone stays usable, and a tiny decoder (taef2) turns the picture into pixels in under half a minute instead of several. A second engine (23 MB) and the Q4_0 model download the first time.
 - **SDXL without the NPU**: Local Dream's SDXL CPU/GPU zips (`_mnn`) import from **+** and render on the GPU, about 17 s a step at 1024² on an 8 Elite (the CPU is about 4 times slower), for phones whose NPU cannot run SDXL. Prompts up to 231 tokens.
 - **UltraFix**: Local Dream's tiled repair: redraws the detail of an upscaled picture without changing it (SD 1.5 / SDXL).
 - **More options** on the Image node holds the after-render switches below, folded away; closed, it names the ones that are on. **Scheduler, seed and CFG** fold the same way, closed until you open them, showing what they are set to.
@@ -54,6 +54,7 @@ Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on
 - **LoRA library**: sort LoRAs by name, newest, most used or size, filter by base model, star favourites, set a LoRA's model by hand when its file is not recognised, and sort them into your own folders.
 - **Draw on a picture**: doodle shapes and colours over the image node's photo (or a blank page) and let image to image make them real; pinch to zoom, pick a colour from the picture or any colour from a picker.
 - **Recipes**: text to image, image to image, inpaint, upscale, edit a face, image edit, text / image to video, motion transfer and two Advanced flows, grouped as Pictures, Faces, Advanced, Edit and Video, each from least to most demanding; one your phone can't run says so. Import someone's flow from the **+** beside Models and Flows.
+- **Each flow keeps its edits**: leave a flow and come back to it as you left it; a saved flow opens as it was saved. Settings, Views, **Keep the edits of each flow** turns this off.
 - **Several checkpoints in one graph**: each generate node has its own model; the run loads each once and tells you the cost first.
 - **Variation seed**: a second seed and a strength on SD 1.5, SDXL and Anima: small changes around a picture you like, keeping its composition.
 - **Batching**: sweep seed, steps, CFG, denoise or scheduler; two at once makes a grid. Every result keeps the graph that made it.
@@ -87,12 +88,13 @@ Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on
   Klein inpaints as an edit: it edits around the mask and only the masked part is pasted back. MOSS-Image
   inpaints too. **Draw** in the
   same window paints colours and rough shapes for the repaint to follow.
-- **Tap to select**: tap an object and the mask follows its outline (Segment Anything 2.1).
+- **Tap to select**: tap an object and the mask follows its outline (Segment Anything 2.1). **Save cut-out** saves the selection as a picture with a transparent background.
 - **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.
 - **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with up to three reference pictures (images 2 to 4), added from a References row or wired in.
 - **Opening prompts written for each video model**: Text to video, Image to video, the 14B, Motion transfer, Neodragon and MiniMax H3 each open on a prompt that shows what that model does best, and switching the video model swaps it, unless you have written your own.
 - **Heat**: long video renders heat the phone. The run log warns when the battery is already warm before a clip, or got hot during one, and Settings, Performance can pause a video render between steps while the battery is over 45 °C. **Show the chip's temperatures** puts the CPU, GPU and NPU temperatures in the RAM line instead of the battery's (handy with a phone cooler), where the phone lets apps read those sensors.
+- **Progress in the notification shade**: a run past 10 seconds shows a progress bar there.
 - **Sound when a run ends**: Settings can play a sound when a Run of 15 seconds or longer finishes and another if it fails, each picked from the phone's own sound list; with Nightmare in the background a notification says how long it took, or why it failed.
 - **Text and image to video**: **Wan 2.2**, 5 second clips at 832×480 in under 3 minutes (any shape up to 1280×704, 1 to 5 s; Wan 2.2 5B LoRAs from the LoRA picker or a `<lora:name>` tag; **Match picture** sets the clip to the photo's shape), or **Neodragon** from the same flow's Model choice: 49 frames at 1024×640 in about 25 s on an 8 Elite. Big clips are decoded in tiles, so 704×1280 for 5 s renders on a 12 GB phone. **Seconds 0** on the video node makes one still in about 16 s. Full screen saves any frame of a clip to the gallery. **Chain** clips from the last frame and the last node hands the output **one joined film**; every part is kept in Results too, with the picture it started from.
 - **Wan 2.2 14B** (image to video, and **Text to video (14B)**): the big Wan, two 14B models streamed from storage so it runs on a 12 GB phone, with lightx2v's 4-step distilled models. Text to video (14B) makes the first frame with your picture model, then animates it, so you see the picture before the clip and can keep it (lock its seed) while trying new clips. The best motion and detail, and slow: about 9 min for 2 s at 480×832 and 12 min for 1 s at 720×1280 on an 8 Elite; faces are much sharper at the larger size. Runs on an 8 Gen 3 too, up to 832×480. About 21 GB.
@@ -109,6 +111,7 @@ Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on
 
 ### Prompts
 - **A prompt from a picture**: describe any picture on the canvas or in your gallery: **Short** or **Detailed** sentences (Florence-2 PromptGen), or **Tags** in Danbooru style for anime models (WD tagger).
+- **A whole screen for a long prompt**: the expand button on every prompt box opens it full screen.
 - **A tag toolbar**: while you type: make the tag under the cursor heavier or lighter, delete it, add one after it, undo, redo.
 - **Tag autocomplete**: matching Danbooru tags under the prompt box as you type, most used first; one tap downloads the list, or import your own CSV, plus an optional translation CSV to search in your own language.
 - **`<lora:name:0.8>` in a prompt**: a prompt pasted from CivitAI applies the LoRAs it names (when you have them) and the tags never reach the text encoder. Type `<lora:` and your LoRAs are offered as chips, the strength left selected to type over.
