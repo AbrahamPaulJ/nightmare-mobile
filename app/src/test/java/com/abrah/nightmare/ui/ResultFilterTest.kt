@@ -51,6 +51,14 @@ class ResultFilterTest {
         assertTrue(ResultFilter(negative = "blurry").matches(result(), sdxl, utc))
     }
 
+    /** ⭐ GitHub #119: "typing 2048 into the search box would show all images generated with the 2048 resolution". */
+    @Test
+    fun theSearchBoxFindsASize() {
+        assertTrue(ResultFilter(prompt = "2048").matches(result(w = 2048, h = 1024), sdxl, utc))
+        assertTrue(ResultFilter(prompt = "1024x").matches(result(w = 1024, h = 1536), sdxl, utc))
+        assertFalse(ResultFilter(prompt = "2048").matches(result(w = 1024, h = 1024), sdxl, utc))
+    }
+
     @Test
     fun aSeedMatchesWhatWasRolled() {
         assertTrue(ResultFilter(seed = "3456").matches(result(), sdxl, utc))

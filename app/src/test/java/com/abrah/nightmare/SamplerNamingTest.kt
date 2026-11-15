@@ -97,6 +97,9 @@ class SamplerNamingTest {
         assertEquals("DPM++ 2M", ModelCatalog.schedulerLabel("dpm"))
         assertEquals("DPM++ 2M SDE Karras", ModelCatalog.schedulerLabel("dpm_sde_karras"))
         assertEquals("DPM++ 3M SDE Exponential", ModelCatalog.schedulerLabel("dpm3_sde_exponential"))
+        // ⭐ GitHub #121: the single-step SDE, a schedule like the rest, its cost in its name.
+        assertEquals("DPM++ SDE (2x slower) Karras", ModelCatalog.schedulerLabel("dpmpp_sde_karras"))
+        assertEquals("dpmpp_sde" to "_karras", ModelCatalog.splitScheduler("dpmpp_sde_karras"))
         assertEquals("Euler A", ModelCatalog.schedulerLabel("euler_a"))
         assertEquals("LCM", ModelCatalog.schedulerLabel("lcm"))
         assertEquals("ER-SDE", ModelCatalog.schedulerLabel("er_sde"))

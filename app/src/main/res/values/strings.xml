@@ -543,7 +543,7 @@
     <string name="results_filter_kind">Kind</string>
     <string name="results_kind_pictures">Pictures</string>
     <string name="results_kind_clips">Clips</string>
-    <string name="results_filter_prompt">Prompt contains</string>
+    <string name="results_filter_prompt">Prompt or size contains</string>
     <string name="results_filter_negative">Negative contains</string>
     <string name="results_filter_seed">Seed</string>
     <string name="results_filter_date">Date</string>

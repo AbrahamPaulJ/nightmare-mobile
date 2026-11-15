@@ -166,6 +166,8 @@ class ApiTest {
         assertEquals("dpm_karras", A1111.samplerFor(sdxl, "DPM++ 2M Karras", ""))
         assertEquals("euler_a", A1111.samplerFor(sdxl, "Euler a", "Automatic"))
         assertEquals(null, A1111.samplerFor(sdxl, "UniPC", ""))
+        // GitHub #121: A1111 calls it "DPM++ SDE Karras", with no cost note.
+        assertEquals("dpmpp_sde_karras", A1111.samplerFor(sdxl, "DPM++ SDE Karras", ""))
         assertEquals("16:9", A1111.nearestAspect(1920, 1080))
         assertEquals("1:1", A1111.nearestAspect(512, 512))
     }

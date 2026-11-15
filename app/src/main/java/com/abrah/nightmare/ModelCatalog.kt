@@ -1562,6 +1562,9 @@ object ModelCatalog {
         "dpm_sde" to "DPM++ 2M SDE",
         "dpm3" to "DPM++ 3M",
         "dpm3_sde" to "DPM++ 3M SDE",
+        // ⭐ GitHub #121 (an SDXL model made for it): k-diffusion's single-step DPM++ SDE, backend 058. ⚠ Two model calls
+        // a step but the last, so twice the time of the others, said in its name like Heun's.
+        "dpmpp_sde" to "DPM++ SDE (2x slower)",
         "euler_a" to "Euler A",
         "euler" to "Euler",
         "lcm" to "LCM",

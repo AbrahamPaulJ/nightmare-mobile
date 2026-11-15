@@ -726,6 +726,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         val saved: List<String>,
         /** ⭐ The other pictures of a multi-picture share (GitHub #107), placed after [file] ([CanvasState.placePictures]). */
         val more: List<java.io.File> = emptyList(),
+        /** ⭐ The kept result the picture came from (GitHub #119): a built-in flow it opens takes its prompt and LoRAs. */
+        val fromResult: String? = null,
     ) {
         val all: List<String> get() = (listOf(file) + more).map { it.absolutePath }
     }
@@ -743,7 +745,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
     /** ⭐ From Results: the kept PNG. */
     fun offerSendResult(resultId: String) =
-        offerSend { f -> results.pngFile(resultId)?.let { it.copyTo(f, overwrite = true); true } ?: false }
+        offerSend(fromResult = resultId) { f -> results.pngFile(resultId)?.let { it.copyTo(f, overwrite = true); true } ?: false }
 
     /**
      * ⭐⭐ Pictures shared INTO the app from another (the phone's gallery's Share, GitHub #107: "send a image from the
@@ -785,7 +787,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun offerSend(write: (java.io.File) -> Boolean) {
+    private fun offerSend(fromResult: String? = null, write: (java.io.File) -> Boolean) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val dir = java.io.File(getApplication<Application>().filesDir, "sent").apply { mkdirs() }
             val file = java.io.File(dir, "sent_${System.currentTimeMillis()}.png")
@@ -793,12 +795,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(kotlinx.coroutines.Dispatchers.Main) { toast(text(R.string.run_picture_unreadable)) }
                 return@launch
             }
-            offerFiles(file, emptyList())
+            offerFiles(file, emptyList(), fromResult)
         }
     }
 
     /** ⚠ On IO: lists the flows that take a picture, then raises the Send to dialog. */
-    private suspend fun offerFiles(file: java.io.File, more: List<java.io.File>) {
+    private suspend fun offerFiles(file: java.io.File, more: List<java.io.File>, fromResult: String? = null) {
         run {
             fun takesPicture(g: Graph) = g.nodes.any { it.type == "core.image" }
             val recipes = com.abrah.nightmare.canvas.RECIPES
@@ -813,6 +815,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     recipes = recipes,
                     saved = saved,
                     more = more,
+                    fromResult = fromResult,
                 )
             }
         }
@@ -843,7 +846,49 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             openRecipeNow(r)
             closeLibrary()
             placeSent(s.all)
+            s.fromResult?.let(::carryFromResult)
         }
+    }
+
+    /**
+     * ⭐⭐ GitHub #119 ("the used LoRAs and the prompts should carry over to the image to image flow instead of users
+     * having to copy and paste them from the gallery"): a kept picture sent into a BUILT-IN flow brings the prompt and
+     * negative of the sampler that made it, and its LoRAs. ⚠ The LoRAs only onto a model of the same family: a SDXL
+     * LoRA on a Klein does nothing but fail, and the flow opens with the selected model, not the picture's. ⚠ Not into a
+     * saved flow or the open one: their prompts are the user's own.
+     */
+    private fun carryFromResult(resultId: String) {
+        val g = results.flow(resultId)?.workflow?.graph ?: return
+        val src = ((topoSort(g) as? Order.Ok)?.nodes ?: g.nodes).lastOrNull { isSampler(it.type) } ?: return
+        val pp = src.inputs["prompt"]?.node?.let { g.byId[it] }?.takeIf { it.type == "core.prompt" }?.params.orEmpty()
+        val loras = src.params[SdSampler.LORAS].orEmpty().trim()
+        val srcFamily = ModelCatalog.byId(src.params["model"].orEmpty())?.family
+        val carried = mutableListOf<String>()
+        editCanvas { st ->
+            var s = st
+            val cg = s.workflow.graph
+            val types = typesFor(cg)
+            // ⚠ The sampler the sent picture feeds: the one whose image port is wired, else the first.
+            val samplers = cg.nodes.filter { isSampler(it.type) }
+            val dst = samplers.firstOrNull { it.inputs["image"] != null } ?: samplers.firstOrNull() ?: return@editCanvas s
+            val promptId = dst.inputs["prompt"]?.node?.takeIf { cg.byId[it]?.type == "core.prompt" }
+                ?: cg.nodes.firstOrNull { it.type == "core.prompt" }?.id
+            if (promptId != null) {
+                pp["prompt"]?.takeIf { it.isNotBlank() }?.let { s = s.setParam(promptId, "prompt", it); carried += "prompt" }
+                pp["negative"]?.takeIf { it.isNotBlank() }?.let { s = s.setParam(promptId, "negative", it); carried += "negative" }
+            }
+            if (loras.isNotEmpty() && types[dst.type]?.widgets?.any { it.name == SdSampler.LORAS } == true) {
+                val dstFamily = ModelCatalog.byId(dst.params["model"].orEmpty())?.family
+                if (srcFamily != null && srcFamily == dstFamily) {
+                    s = s.setParam(dst.id, SdSampler.LORAS, loras)
+                    carried += "LoRAs"
+                } else {
+                    say("the picture's LoRAs were made for ${srcFamily?.label ?: "another model"}; not carried")
+                }
+            }
+            s
+        }
+        if (carried.isNotEmpty()) say("from the picture: " + carried.joinToString())
     }
 
     /** ⭐ Open a saved flow with the picture on its first image input. */
@@ -4611,22 +4656,22 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * node's film is longer than its own part ([com.abrah.nightmare.npu.FilmJoin]).
      * ⚠ A poster the bounded store dropped during a long chain is read back off its clip.
      */
-    private fun keepChainParts(r: GraphRun) {
-        val order = (topoSort(canvas.workflow.graph) as? Order.Ok)?.nodes ?: canvas.workflow.graph.nodes
+    private fun keepChainParts(r: GraphRun, ran: com.abrah.nightmare.canvas.Workflow) {
+        val order = (topoSort(ran.graph) as? Order.Ok)?.nodes ?: ran.graph.nodes
         val parts = order.mapNotNull { n -> (r.outputs[n.id] as? Value.Video)?.takeIf { it.part != null }?.let { n.id to it } }
         if (parts.none { (_, v) -> v.path != v.part }) return
         val batchId = "c" + System.currentTimeMillis()
         for ((id, v) in parts) {
             val part = java.io.File(v.part!!).takeIf { it.isFile } ?: continue
             v.startId?.takeIf { s -> ops.images.get(s) != null && kept.none { it.imageId == s } }?.let { s ->
-                keepResult(s, canvas.workflow, batchId = batchId, batchLabel = "$id start", auto = true, from = id)
+                keepResult(s, ran, batchId = batchId, batchLabel = "$id start", auto = true, from = id)
             }
             val posterId = com.abrah.nightmare.npu.VideoWriter.posterIdFor(part)
             if (ops.images.get(posterId) == null) {
                 com.abrah.nightmare.npu.FilmJoin.firstFrame(part)?.let { ops.images.put(it, id = posterId) }
             }
             if (kept.none { it.imageId == posterId }) {
-                keepResult(posterId, canvas.workflow, batchId = batchId, batchLabel = "$id clip", auto = true, from = id, video = part)
+                keepResult(posterId, ran, batchId = batchId, batchLabel = "$id clip", auto = true, from = id, video = part)
             }
         }
     }
@@ -7167,6 +7212,20 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             "autosave is on. Every Run is kept. Turn it off on the Output node to keep by hand."
         } else null
 
+    /**
+     * ⭐⭐ The flow each recent picture was rendered from, by image id ([runCanvas], GitHub #119), so a keep after the
+     * canvas moved on still files the prompt, seed and LoRAs that made it. ⚠ Bounded: the image store forgets old
+     * pictures too, and a keep of one it forgot is refused before this is read.
+     */
+    private val ranFlows = object : LinkedHashMap<String, com.abrah.nightmare.canvas.Workflow>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, com.abrah.nightmare.canvas.Workflow>?) = size > 64
+    }
+
+    /** ⭐ Every picture [r] made, poster or output, filed against [ran] for a later keep ([ranFlows]). */
+    private fun rememberRanFlow(r: GraphRun, ran: com.abrah.nightmare.canvas.Workflow) {
+        for (v in r.outputs.values) v.previewImage()?.id?.let { ranFlows[it] = ran }
+    }
+
     /** ⚠ Image ids whose keep is still being written. See [keepResult]. */
     private val keeping = mutableSetOf<String>()
 
@@ -7193,7 +7252,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // ⚠ Synchronous, on Main: [kept] only learns of a keep after the IO write, so a
         // double tap (or autosave plus a tap) stored the same picture twice.
         if (!keeping.add(imageId)) return
-        val kept = flow ?: canvas.workflow
+        // ⭐ GitHub #119: a picture kept by hand after the canvas was edited keeps the flow that MADE it ([ranFlows]).
+        val kept = flow ?: ranFlows[imageId] ?: canvas.workflow
         val graph = kept.graph
         // ⭐⭐ The sampler UPSTREAM OF THIS PICTURE, through [samplerFor] — the
         // same nearest-first walk the canvas viewer's seed uses, so the two
@@ -9408,6 +9468,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // outputs map" — map order is not graph order, and a sweep that
             // collected the crop instead of the render would look like the
             // sampler doing nothing.
+            rememberRanFlow(r, canvas.workflow.copy(graph = graph))
             (r.outputs[terminal]?.previewImage())?.let { img ->
                 keepResult(
                     img.id,
@@ -9640,10 +9701,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
 
         val pinned = runPinned.also { runPinned = emptyMap() }
         val overrides = runOverrides.also { runOverrides = emptyMap() }
+        // ⭐⭐ The flow AS IT RAN, which is what its pictures are kept with ([ranFlows]). ⚠ GitHub #119: autosave read the
+        // canvas when the render ENDED, so a prompt typed for the next run while this one rendered was filed with this
+        // picture ("output A has output B's prompts in the info page").
+        val ran = if (overrides.isEmpty()) canvas.workflow else canvas.workflow.copy(
+            graph = Graph(canvas.workflow.graph.nodes.map { n -> overrides[n.id]?.let { n.copy(params = n.params + it) } ?: n }),
+        )
         val r = ops.runWorkflow(
-            if (overrides.isEmpty()) canvas.workflow else canvas.workflow.copy(
-                graph = Graph(canvas.workflow.graph.nodes.map { n -> overrides[n.id]?.let { n.copy(params = n.params + it) } ?: n }),
-            ),
+            ran,
             pinned = pinned,
             // ⭐ Named before it runs, so a 24 s sampler is a node with a name
             // rather than a frozen screen.
@@ -9741,6 +9806,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             (v as? Value.Video)?.let { id to it.path }
         }.toMap()
         if (clips.isNotEmpty()) canvas = canvas.copy(videos = canvas.videos + clips)
+        rememberRanFlow(r, ran)
 
         // ⭐⭐⭐ **Autosave**: the output node says every Run is worth keeping,
         // so it is kept here — with the flow, the seed and the prompt, exactly
@@ -9756,8 +9822,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         // the viewer walks them together, each labelled with the output node it
         // came from. The user's call, 2026-09-19. ⚠ A single output keeps no
         // batch, so an ordinary Run reads exactly as it always did.
-        if (MediaOutputNode.autosaves(canvas.workflow.graph)) {
-            val outs = canvas.workflow.graph.nodes
+        if (MediaOutputNode.autosaves(ran.graph)) {
+            val outs = ran.graph.nodes
                 .filter { it.type == MediaOutputNode.name }
                 .mapNotNull { n -> r.outputs[n.id]?.previewImage()?.id?.let { n.id to it } }
                 // ⚠ Two outputs wired to ONE picture keep it once. `kept` below
@@ -9769,14 +9835,14 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val batchId = if (outs.size > 1) "b" + System.currentTimeMillis() else null
             outs.forEach { (node, id) ->
                 keepResult(
-                    id, canvas.workflow,
+                    id, ran,
                     batchId = batchId,
                     batchLabel = if (batchId != null) node else "",
                     auto = true,
                     from = node,
                 )
             }
-            keepChainParts(r)
+            keepChainParts(r, ran)
         }
 
         afterCanvasRun(r)

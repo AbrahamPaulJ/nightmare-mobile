@@ -516,7 +516,7 @@
     <string name="results_filter_kind">类型</string>
     <string name="results_kind_pictures">图片</string>
     <string name="results_kind_clips">视频</string>
-    <string name="results_filter_prompt">提示词包含</string>
+    <string name="results_filter_prompt">提示词或尺寸包含</string>
     <string name="results_filter_negative">反向提示词包含</string>
     <string name="results_filter_seed">种子</string>
     <string name="results_filter_date">日期</string>

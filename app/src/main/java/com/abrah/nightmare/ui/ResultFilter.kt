@@ -24,7 +24,7 @@ enum class ResultKind { ANY, PICTURES, CLIPS }
  */
 data class ResultFilter(
     val hiddenModels: Set<String> = emptySet(),
-    /** Searches the positive prompt and the sweep label. */
+    /** Searches the positive prompt, the sweep label and the size (GitHub #119: "2048" finds every 2048 picture). */
     val prompt: String = "",
     val negative: String = "",
     val seed: String = "",
@@ -50,7 +50,7 @@ data class ResultFilter(
 
     fun matches(r: Result, t: ResultTags, zone: ZoneId = ZoneId.systemDefault()): Boolean {
         if (t.models.isNotEmpty() && t.models.none { it !in hiddenModels }) return false
-        if (prompt.isNotBlank() && !(t.prompt + " " + r.batchLabel).contains(prompt.trim(), ignoreCase = true)) return false
+        if (prompt.isNotBlank() && !searchText(r, t).contains(prompt.trim(), ignoreCase = true)) return false
         if (negative.isNotBlank() && !t.negative.contains(negative.trim(), ignoreCase = true)) return false
         if (seed.isNotBlank() && r.seed?.contains(seed.trim()) != true) return false
         if (t.samplers.isNotEmpty() && t.samplers.none { it !in hiddenSamplers }) return false
@@ -79,6 +79,10 @@ data class ResultFilter(
         const val TOTAL_MS_KEY = "@@total"
 
         fun sizeOf(r: Result) = "${r.width}x${r.height}"
+
+        /** ⭐ What the search box reads: the prompt, the sweep label and, when known, the size ([sizeOf]). */
+        fun searchText(r: Result, t: ResultTags): String =
+            t.prompt + " " + r.batchLabel + if (r.width > 0) " " + sizeOf(r) else ""
 
         fun dayOf(millis: Long, zone: ZoneId): Long = Instant.ofEpochMilli(millis).atZone(zone).toLocalDate().toEpochDay()
 

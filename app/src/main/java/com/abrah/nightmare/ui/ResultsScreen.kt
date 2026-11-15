@@ -366,11 +366,22 @@ fun ResultsScreen(
         val shownIndex = items.indexOfFirst { it.id == shownId }
             .takeIf { it >= 0 } ?: lastShownIndex.coerceIn(0, items.lastIndex)
         androidx.compose.runtime.SideEffect { lastShownIndex = shownIndex }
-        val pager = androidx.compose.foundation.pager.rememberPagerState(
-            initialPage = shownIndex, pageCount = { items.size },
-        )
-        LaunchedEffect(pager.settledPage, items.size) {
-            items.getOrNull(pager.settledPage)?.let { if (it.id != shownId) shownId = it.id }
+        // ⭐ A new pager for a new LIST (All / Favourites, a filter), opened on the shown picture: the old one's page
+        // index belongs to another list (GitHub #119: "switching back and forth between all and favorites" flashed).
+        val pager = androidx.compose.runtime.key(favouritesOnly, filter) {
+            androidx.compose.foundation.pager.rememberPagerState(
+                initialPage = shownIndex, pageCount = { items.size },
+            )
+        }
+        // ⚠⚠ The page the pager SETTLED on, and only when that changes (GitHub #119: "when an image has finished
+        // generating while in the gallery page, the image above the tools would flash"). Keyed on `items.size` too, it
+        // ran as a picture landed, BEFORE the pager had followed its page to where the list moved it, and wrote the
+        // picture now at the old index over the one being looked at. The pager follows its page by key itself.
+        val currentItems by androidx.compose.runtime.rememberUpdatedState(items)
+        LaunchedEffect(pager) {
+            androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { page ->
+                currentItems.getOrNull(page)?.let { if (it.id != shownId) shownId = it.id }
+            }
         }
         // ⚠⚠ A JUMP, not `animateScrollToPage` (the user, 2026-10-10: a second quick tap on the grid
         // "isnt registered"). A tap during the slide cancelled it, the pager SETTLED where it had
@@ -379,7 +390,10 @@ fun ResultsScreen(
         LaunchedEffect(shownIndex) {
             if (pager.currentPage != shownIndex) pager.scrollToPage(shownIndex)
         }
-        val shown = items.getOrNull(pager.currentPage) ?: items.first()
+        // ⚠ The pager's page while a finger moves it, so the tools follow a swipe; else the shown picture, which a
+        // list change cannot move for the frame before the pager catches up (GitHub #119).
+        val shown = (if (pager.isScrollInProgress) items.getOrNull(pager.currentPage) else null)
+            ?: items.getOrNull(shownIndex) ?: items.first()
 
         val frame: @Composable (Modifier) -> Unit = { frameModifier -> androidx.compose.foundation.pager.HorizontalPager(
             state = pager,

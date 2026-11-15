@@ -1,0 +1,345 @@
+--- a/src/Scheduler.hpp
++++ b/src/Scheduler.hpp
+@@ -42,6 +42,11 @@
+   // or Karras one. A no-op on schedulers that have no sigma choice (LCM).
+   virtual void set_exponential_sigmas(bool) {}
+ 
++  // nightmare (058): the index into get_timesteps() of step k's first model
++  // call. One call per step everywhere but DPM++ SDE, which runs two
++  // (DPMSolverSDEScheduler), so its img2img start is not the step number.
++  virtual int first_eval_of_step(int step) const { return step; }
++
+   // Get the timesteps array
+   virtual const xt::xarray<float> &get_timesteps() const = 0;
+ 
+--- a/src/Pipeline.hpp
++++ b/src/Pipeline.hpp
+@@ -24,6 +24,7 @@
+ 
+ #include "Config.hpp"
+ #include "DPMSolverMultistepScheduler.hpp"
++#include "DPMSolverSDEScheduler.hpp"
+ #include "EulerAncestralDiscreteScheduler.hpp"
+ #include "EulerDiscreteScheduler.hpp"
+ #include "LCMScheduler.hpp"
+@@ -206,7 +207,7 @@
+ };
+ 
+ // nightmare (029): "<sampler>[_karras|_exponential]". Samplers: dpm (DPM++ 2M),
+-// dpm_sde, dpm3 (DPM++ 3M), dpm3_sde, euler, euler_a, lcm. The old values
++// dpm_sde, dpm3 (DPM++ 3M), dpm3_sde, dpmpp_sde (058), euler, euler_a, lcm. The old values
+ // (dpm_karras, euler_a_karras, ...) parse exactly as before; an unknown base
+ // is still DPM++ 2M.
+ inline std::unique_ptr<Scheduler> createSchedulerBase(
+@@ -221,6 +222,10 @@
+         1000, 0.00085f, 0.012f, "scaled_linear", "epsilon", timestep_spacing, 0,
+         false, use_karras);
+   }
++  // nightmare (058): DPM++ SDE, two model calls a step (GitHub #121).
++  if (base == "dpmpp_sde") {
++    return std::make_unique<DPMSolverSDEScheduler>(timestep_spacing, use_karras);
++  }
+   if (base == "lcm") {
+     return std::make_unique<LCMScheduler>(1000, 0.00085f, 0.012f,
+                                           "scaled_linear", "epsilon", 50, 10.0f,
+@@ -1451,6 +1456,8 @@
+     if (use_v_pred_) scheduler->set_prediction_type("v_prediction");
+     scheduler->set_timesteps(req.steps);
+     xt::xarray<float> timesteps = scheduler->get_timesteps();
++    // nightmare (058): progress counts model calls; DPM++ SDE makes 2n-1.
++    total_run_steps += (int)timesteps.size() - req.steps;
+     const int latent_ch = latentChannels();
+     std::vector<int> shape = {1, latent_ch, sample_height, sample_width};
+     std::vector<int> shape_batch2 = {batch_size, latent_ch, sample_height,
+@@ -1515,6 +1522,8 @@
+       // garbage noise that decoded to a random pattern.
+       if (start_step >= req.steps) start_step = req.steps - 1;
+       if (start_step < 0) start_step = 0;
++      // nightmare (058): from here on an index into `timesteps` (model calls).
++      start_step = scheduler->first_eval_of_step(start_step);
+       total_run_steps -= start_step;
+       scheduler->set_begin_index(start_step);
+       xt::xarray<int> t = {(int)(timesteps(start_step))};
+--- /dev/null
++++ b/src/DPMSolverSDEScheduler.hpp
+@@ -0,0 +1,280 @@
++// nightmare (058): DPM++ SDE, GitHub #121 ("an SDXL model made for it").
++//
++// k-diffusion's sample_dpmpp_sde (eta 1, s_noise 1, r 1/2), the sampler A1111
++// calls "DPM++ SDE" and ComfyUI "dpmpp_sde". A SINGLE-step second-order solver:
++// every step but the last runs the model twice, at sigma_i and at the midpoint
++// sqrt(sigma_i * sigma_{i+1}). The Pipeline loop runs one model call per entry
++// of get_timesteps(), so the schedule is INTERLEAVED (diffusers'
++// DPMSolverSDEScheduler and HeunDiscreteScheduler do the same): 2n-1 entries for
++// n steps, and step() alternates between the two stages.
++//
++// The noise: k-diffusion draws it from a Brownian tree in sigma, so the two
++// draws inside one step are correlated (the first interval [s_mid, sigma] sits
++// inside the second [sigma_next, sigma]) and draws of different steps are not.
++// Reproduced exactly with two Gaussians per step:
++//   n1 = z1,  n2 = (sqrt(a) z1 + sqrt(b - a) z2) / sqrt(b),
++//   a = sigma - s_mid, b = sigma - sigma_next.
++// The Gaussians come from the pipeline's seeded xtensor stream, so a seed
++// repeats; it does not match another tool's pictures (neither do our others).
++//
++// Sigmas: the same scaled-linear SD/SDXL training schedule, timestep spacing,
++// Karras and Exponential conversions as EulerDiscreteScheduler (copied, not
++// shared: that class keeps them private and is a diffusers port kept close to
++// its source).
++#ifndef DPM_SOLVER_SDE_SCHEDULER_HPP
++#define DPM_SOLVER_SDE_SCHEDULER_HPP
++
++#include <algorithm>
++#include <cmath>
++#include <optional>
++#include <stdexcept>
++#include <string>
++#include <vector>
++#include <xtensor/xadapt.hpp>
++#include <xtensor/xarray.hpp>
++#include <xtensor/xmath.hpp>
++#include <xtensor/xrandom.hpp>
++
++#include "Scheduler.hpp"
++
++class DPMSolverSDEScheduler : public Scheduler {
++ public:
++  DPMSolverSDEScheduler(const std::string &timestep_spacing, bool use_karras,
++                        int num_train_timesteps = 1000,
++                        float beta_start = 0.00085f, float beta_end = 0.012f)
++      : num_train_(num_train_timesteps),
++        timestep_spacing_(timestep_spacing),
++        use_karras_(use_karras) {
++    const float a = std::sqrt(beta_start), b = std::sqrt(beta_end);
++    double cum = 1.0;
++    base_sigmas_.resize(num_train_);
++    log_sigmas_.resize(num_train_);
++    for (int i = 0; i < num_train_; ++i) {
++      float r = num_train_ == 1 ? 0.0f : float(i) / float(num_train_ - 1);
++      float sb = a + (b - a) * r;
++      cum *= 1.0 - double(sb) * sb;
++      base_sigmas_[i] = float(std::sqrt((1.0 - cum) / cum));
++      log_sigmas_[i] = std::log(std::max(base_sigmas_[i], 1e-10f));
++    }
++  }
++
++  void set_exponential_sigmas(bool on) override { use_exponential_ = on; }
++
++  void set_timesteps(int n) override {
++    if (n < 1) throw std::invalid_argument("steps must be at least 1");
++    step_sigmas_ = stepSigmas(n);  // n + 1 values, the last 0
++    evals_.clear();
++    for (int i = 0; i < n; ++i) {
++      evals_.push_back({step_sigmas_[i], i, 1});
++      if (step_sigmas_[i + 1] > 0.0f)
++        evals_.push_back(
++            {std::sqrt(step_sigmas_[i] * step_sigmas_[i + 1]), i, 2});
++    }
++    std::vector<float> ts(evals_.size());
++    for (size_t k = 0; k < evals_.size(); ++k)
++      ts[k] = sigmaToT(evals_[k].sigma);
++    timesteps_ = xt::adapt(ts);
++    index_.reset();
++    begin_.reset();
++  }
++
++  // Step k's first model call: the img2img start and its progress count.
++  int first_eval_of_step(int step) const override {
++    for (size_t k = 0; k < evals_.size(); ++k)
++      if (evals_[k].step == step) return int(k);
++    return int(evals_.size()) - 1;
++  }
++
++  xt::xarray<float> scale_model_input(const xt::xarray<float> &sample,
++                                      int) override {
++    if (!index_) index_ = begin_.value_or(0);
++    const float s = evals_.at(*index_).sigma;
++    return sample / std::sqrt(s * s + 1.0f);
++  }
++
++  SchedulerOutput step(const xt::xarray<float> &model_output, int,
++                       const xt::xarray<float> &sample) override {
++    if (evals_.empty())
++      throw std::runtime_error("set_timesteps must be called before stepping");
++    if (!index_) index_ = begin_.value_or(0);
++    const Eval e = evals_.at(*index_);
++    const float s = e.sigma;
++    xt::xarray<float> denoised;
++    if (prediction_type_ == "v_prediction") {
++      denoised = xt::eval(model_output * (-s / std::sqrt(s * s + 1.0f)) +
++                          sample / (s * s + 1.0f));
++    } else {
++      denoised = xt::eval(sample - s * model_output);
++    }
++    const float sigma = step_sigmas_[e.step];
++    const float sigma_next = step_sigmas_[e.step + 1];
++    xt::xarray<float> out;
++    if (e.stage == 1 && sigma_next <= 0.0f) {
++      // The last step: k-diffusion takes a plain Euler step to sigma 0.
++      out = denoised;
++    } else if (e.stage == 1) {
++      x_ = sample;
++      const float s_mid = std::sqrt(sigma * sigma_next);
++      const float a = sigma - s_mid, b = sigma - sigma_next;
++      z1_ = xt::random::randn<float>(sample.shape());
++      xt::xarray<float> z2 = xt::random::randn<float>(sample.shape());
++      n2_ = xt::eval((std::sqrt(a) * z1_ + std::sqrt(std::max(b - a, 0.0f)) * z2) /
++                     std::sqrt(b));
++      float down, up;
++      ancestral(sigma, s_mid, down, up);
++      out = xt::eval(denoised + (down / sigma) * (sample - denoised) + up * z1_);
++    } else {
++      // Stage 2: the midpoint's prediction moves the step's START (x_), not
++      // the midpoint sample (fac = 1 / (2r) = 1, so denoised_d = denoised_2).
++      float down, up;
++      ancestral(sigma, sigma_next, down, up);
++      out = xt::eval(denoised + (down / sigma) * (x_ - denoised) + up * n2_);
++      x_ = xt::xarray<float>();
++      z1_ = xt::xarray<float>();
++      n2_ = xt::xarray<float>();
++    }
++    index_ = *index_ + 1;
++    return {out, denoised};
++  }
++
++  // The sigma of the model call about to run (after a step(), the next one),
++  // as every other scheduler here reads it: the inpaint blend and the img2img
++  // start re-noise the original to exactly where the sample is.
++  xt::xarray<float> add_noise(const xt::xarray<float> &original,
++                              const xt::xarray<float> &noise,
++                              const xt::xarray<int> &timesteps) const override {
++    size_t k;
++    if (index_) {
++      k = std::min<size_t>(*index_, evals_.size() - 1);
++    } else if (begin_) {
++      k = std::min<size_t>(*begin_, evals_.size() - 1);
++    } else {
++      // No position yet: the entry nearest the asked timestep.
++      const float t = timesteps.size() ? float(timesteps(0)) : 0.0f;
++      k = 0;
++      for (size_t j = 1; j < evals_.size(); ++j)
++        if (std::fabs(timesteps_(j) - t) < std::fabs(timesteps_(k) - t)) k = j;
++    }
++    return xt::eval(original + noise * evals_[k].sigma);
++  }
++
++  void set_begin_index(int begin_index) override { begin_ = begin_index; }
++
++  void set_prediction_type(const std::string &p) override {
++    prediction_type_ = p;
++  }
++
++  const xt::xarray<float> &get_timesteps() const override { return timesteps_; }
++
++  size_t get_step_index() const override { return index_.value_or(0); }
++
++  float get_current_sigma() const override {
++    if (evals_.empty()) return 0.0f;
++    return evals_[std::min<size_t>(index_.value_or(0), evals_.size() - 1)]
++        .sigma;
++  }
++
++  float get_init_noise_sigma() const override {
++    const float mx = step_sigmas_.empty() ? base_sigmas_.back()
++                                          : step_sigmas_.front();
++    if (timestep_spacing_ == "linspace" || timestep_spacing_ == "trailing")
++      return mx;
++    return std::sqrt(mx * mx + 1.0f);
++  }
++
++ private:
++  struct Eval {
++    float sigma;
++    int step;
++    int stage;  // 1 = at sigma_i, 2 = at the midpoint
++  };
++
++  int num_train_;
++  std::string timestep_spacing_;
++  bool use_karras_;
++  bool use_exponential_ = false;
++  std::string prediction_type_ = "epsilon";
++  std::vector<float> base_sigmas_;  // ascending with the training timestep
++  std::vector<float> log_sigmas_;
++  std::vector<float> step_sigmas_;
++  std::vector<Eval> evals_;
++  xt::xarray<float> timesteps_;
++  std::optional<int> index_, begin_;
++  xt::xarray<float> x_, z1_, n2_;
++
++  static void ancestral(float from, float to, float &down, float &up) {
++    up = std::min(to, std::sqrt(std::max(
++                          to * to * (from * from - to * to) / (from * from),
++                          0.0f)));
++    down = std::sqrt(std::max(to * to - up * up, 0.0f));
++  }
++
++  // EulerDiscreteScheduler::set_timesteps' sigmas, for n steps, plus a 0.
++  std::vector<float> stepSigmas(int n) const {
++    std::vector<float> out(n + 1, 0.0f);
++    if (use_karras_ || use_exponential_) {
++      std::vector<float> desc(base_sigmas_.rbegin(), base_sigmas_.rend());
++      std::vector<float> s;
++      if (use_exponential_) {
++        s = exponential_sigmas_vec(desc, n);
++      } else {
++        const float rho = 7.0f;
++        const float lo = std::pow(desc.back(), 1.0f / rho);
++        const float hi = std::pow(desc.front(), 1.0f / rho);
++        s.resize(n);
++        for (int i = 0; i < n; ++i) {
++          float ramp = n == 1 ? 0.0f : float(i) / float(n - 1);
++          s[i] = std::pow(hi + ramp * (lo - hi), rho);
++        }
++      }
++      std::copy(s.begin(), s.end(), out.begin());
++      return out;
++    }
++    std::vector<float> ts(n);
++    if (timestep_spacing_ == "linspace") {
++      for (int i = 0; i < n; ++i)
++        ts[i] = n == 1 ? float(num_train_ - 1)
++                       : float(num_train_ - 1) -
++                             float(i) * float(num_train_ - 1) / float(n - 1);
++    } else if (timestep_spacing_ == "leading") {
++      int ratio = num_train_ / n;
++      for (int i = 0; i < n; ++i) ts[i] = float((n - 1 - i) * ratio);
++    } else if (timestep_spacing_ == "trailing") {
++      float ratio = float(num_train_) / float(n);
++      for (int i = 0; i < n; ++i)
++        ts[i] = std::round(float(num_train_) - float(i + 1) * ratio - 1.0f);
++    } else {
++      throw std::runtime_error(timestep_spacing_ + " is not supported");
++    }
++    for (int i = 0; i < n; ++i) {
++      const float t = ts[i];
++      if (t <= 0.0f) {
++        out[i] = base_sigmas_[0];
++      } else if (t >= float(num_train_ - 1)) {
++        out[i] = base_sigmas_[num_train_ - 1];
++      } else {
++        int f = int(std::floor(t)), c = int(std::ceil(t));
++        float w = t - float(f);
++        out[i] = base_sigmas_[f] * (1.0f - w) + base_sigmas_[c] * w;
++      }
++    }
++    return out;
++  }
++
++  // Log-sigma interpolation back to a (fractional) training timestep, as the
++  // Karras branch of every scheduler here does.
++  float sigmaToT(float sigma) const {
++    const float ls = std::log(std::max(sigma, 1e-10f));
++    const int n = int(log_sigmas_.size());
++    int lo = 0;
++    for (int i = 0; i < n; ++i)
++      if (log_sigmas_[i] <= ls) lo = i;
++    if (lo > n - 2) lo = n - 2;
++    const int hi = lo + 1;
++    float w = (log_sigmas_[lo] - ls) / (log_sigmas_[lo] - log_sigmas_[hi]);
++    w = std::clamp(w, 0.0f, 1.0f);
++    return (1.0f - w) * float(lo) + w * float(hi);
++  }
++};
++
++#endif  // DPM_SOLVER_SDE_SCHEDULER_HPP

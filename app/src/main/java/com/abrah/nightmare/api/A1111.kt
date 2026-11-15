@@ -184,7 +184,10 @@ class A1111(private val core: ApiCore) {
             if (name.isBlank()) return null
             val sched = scheduler.trim().takeUnless { it.isEmpty() || it.equals("automatic", true) || it.equals("normal", true) }
             val want = (if (sched != null) "$name $sched" else name).trim().lowercase()
-            return ModelCatalog.schedulersFor(spec.family).firstOrNull { ModelCatalog.schedulerLabel(it).lowercase() == want }
+            // ⚠ Without a cost note in brackets ("Heun (2x slower)", "DPM++ SDE (2x slower)"): A1111 names neither so.
+            return ModelCatalog.schedulersFor(spec.family).firstOrNull {
+                ModelCatalog.schedulerLabel(it).replace(Regex(""" \([^)]*\)"""), "").lowercase() == want
+            }
         }
     }
 }

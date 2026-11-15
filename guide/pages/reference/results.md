@@ -11,7 +11,7 @@ always get back to exactly how it was made.
 ## Browsing
 
 - **All** / **Favourites** switch between everything and the pictures you starred. The filter
-  icon narrows the list further: pictures or clips; words in the prompt or the negative; a seed; a
+  icon narrows the list further: pictures or clips; words in the prompt or the negative, or a size (type `2048` to find every picture 2048 pixels on a side); a seed; a
   date (today, 7 days, 30 days or a range); the model, sampler, schedule and size (each with **All**
   and **None**); ranges of steps, CFG and seconds it took; and whether it was upscaled, made from
   a picture or given a reference. It says how many of how many are shown; ✕ clears it.
@@ -34,7 +34,7 @@ always get back to exactly how it was made.
 | ★ **Favourite** | Stars it; starred pictures appear under **Favourites** |
 | ⬇ **Save to gallery** | Writes a copy to your phone's gallery, with how it was made inside (see below) |
 | **Share** | Shares the picture with another app, with the same info, and a thin credit strip under it (Settings, Results, Sharing: on by default, your name optional; its Info can go with it as the message text) |
-| **Send to a flow** | Offers the flows that take a photo: Image to image, Inpaint, Image edit, Upscale, Image to video, and opens the one you pick with this picture in it |
+| **Send to a flow** | Offers the flows that take a photo: Image to image, Inpaint, Image edit, Upscale, Image to video, and opens the one you pick with this picture in it. A built-in flow also takes the picture's prompt, negative and LoRAs (the LoRAs only when the flow's model is the same kind as the one that made it) |
 | **Upscale** | Enlarges it with an upscaler; the bigger copy is kept as a new item. The same window offers **UltraFix**: see below |
 | ⓘ **What made this** | The prompt, model, seed and settings, and a way to use them on the open flow; on a DiT picture, **Diagnose**: see below |
 | **Open flow** / share the flow | Reopens the flow that made it on the canvas, or shares that flow as a file |

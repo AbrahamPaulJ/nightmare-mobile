@@ -531,7 +531,7 @@
     <string name="results_filter_kind">Тип</string>
     <string name="results_kind_pictures">Картинки</string>
     <string name="results_kind_clips">Клипы</string>
-    <string name="results_filter_prompt">Промпт содержит</string>
+    <string name="results_filter_prompt">Промпт или размер содержит</string>
     <string name="results_filter_negative">Негатив содержит</string>
     <string name="results_filter_seed">Сид</string>
     <string name="results_filter_date">Дата</string>
