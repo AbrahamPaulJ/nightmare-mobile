@@ -1,9 +1,11 @@
 # Credits
 
-**The NPU work is not ours.** The C++ inference server is a fork of
-[xororz/local-dream](https://github.com/xororz/local-dream): the QNN pipelines, model conversions,
-per-chip build tiers and device gating come from there, as do the checkpoint and upscaler archives
-the app downloads. Every component, with its licence and terms, is also listed in
+**Built on Local Dream.** The C++ inference server started as a fork of
+[xororz/local-dream](https://github.com/xororz/local-dream): its QNN pipelines, model conversions,
+per-chip build tiers and device gating, and the SD 1.5, SDXL and upscaler archives the app
+downloads. The DiT and video models run on [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
+with [happyyzy's Hexagon work](https://github.com/happyyzy/stable-diffusion.cpp). What Nightmare added on top is in
+the README's [What we built](https://github.com/AbrahamPaulJ/nightmare-mobile#what-we-built). Every component, with its licence and terms, is also listed in
 [NOTICE](https://github.com/AbrahamPaulJ/nightmare-mobile/blob/main/NOTICE).
 
 ## Engines and runtimes

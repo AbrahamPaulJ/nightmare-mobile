@@ -39,6 +39,32 @@ touch. No server, no account, no cloud.
 
 **[Everything it does](https://abrahampaulj.github.io/nightmare-mobile/features/)**, with measurements, and the **[user guide](https://abrahampaulj.github.io/nightmare-mobile/)**, which explains each part.
 
+## What we built
+
+The app started from Local Dream's NPU server (SD 1.5 and SDXL) and its early DiT engine (FLUX.2 Klein and
+Z-Image). The rest is Nightmare's own work, and every engine change is public in
+[`backend-patches/`](backend-patches/):
+
+- **Most of the models, brought to the phone here**: Qwen Image 2.1, Krea 2, Anima, MOSS-Image, Iris, Ideogram 4,
+  FLUX.3 Klein, Fibo 2.0 Edit and FLUX.1 dev, and all of the video: Wan 2.2 5B and 14B, motion transfer (Wan 2.2
+  Fun Control) and MiniMax H3 with sound. Where the engine lacked a model or ran it wrong on the NPU, we ported or
+  fixed it: 85 patches to stable-diffusion.cpp and ggml's Hexagon backend.
+- **A 14B video model on a 12 GB phone**: Wan 2.2 14B's two experts stream from storage instead of sitting in RAM.
+- **Faster NPU kernels, measured**: tensor concat about 23 times faster, a cheaper softmax and earlier prefetch
+  in flash attention (a 5 s Wan clip renders 8.6 % faster from that alone), threaded copies.
+- **DiT models below the flagships**: the engine runs on the 8 Gen 2 and the 8s chips, and every Snapdragon gets
+  FLUX.2 Klein and NitroFusion 2 on the Adreno GPU, in pieces small enough that the screen keeps responding. On
+  the 8s Gen 3 and 8s Gen 4 the NPU's matrix unit turned out to return wrong results on every model, so those
+  chips run with it off.
+- **Drop-in fine-tunes**: a CivitAI DiT checkpoint imports as it is; int8, fp8, ConvRot and mxfp8 files become
+  Q8_0 on the phone, and a self-made GGUF the engine cannot read is repaired on import.
+- **LoRA, ControlNet and IP-Adapter chosen per render** on SD 1.5 and SDXL, on an NPU whose models are compiled
+  ahead of time (the Swap models, converted with our [npuforge](https://github.com/AbrahamPaulJ/npuforge)).
+- **Diagnose a wrong picture**: it renders again with each part of the NPU moved to the CPU in turn, and the
+  one that comes out right names the faulty part on your chip.
+- **A node graph for fingers**: a touch canvas, plugin nodes in JavaScript (QuickJS), and a scheduler that orders
+  a graph with several checkpoints so each one loads once.
+
 ## What your phone needs
 
 Android 12 or newer and a Snapdragon with a Hexagon NPU. Models are not in the APK: each one downloads when you
@@ -58,11 +84,11 @@ has every model and caveat.
 
 ## Credits
 
-**The NPU work is not ours.** The C++ inference server is a fork of
-[xororz/local-dream](https://github.com/xororz/local-dream): the QNN pipelines, model conversions,
-per-chip build tiers and device gating come from there, as do the checkpoint and upscaler archives
-the app downloads. Anyone interested in how Stable Diffusion runs on a Hexagon NPU should start
-there. The DiT models run on [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) (leejet)
+**Built on Local Dream.** The C++ inference server started as a fork of
+[xororz/local-dream](https://github.com/xororz/local-dream): its QNN pipelines, model conversions,
+per-chip build tiers and device gating, and the SD 1.5, SDXL and upscaler archives the app
+downloads. Anyone interested in how Stable Diffusion runs on a Hexagon NPU should start
+there. The DiT and video models run on [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) (leejet)
 with [happyyzy's Hexagon work](https://github.com/happyyzy/stable-diffusion.cpp), on ggml. Every engine, model
 and helper, with its authors and licence: **[credits](https://abrahampaulj.github.io/nightmare-mobile/credits/)** and [NOTICE](NOTICE).
 
