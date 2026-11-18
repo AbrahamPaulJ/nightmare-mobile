@@ -194,7 +194,7 @@ object DitEngine {
      * Still ABI 110. Its own tag and file name, so the stamp tells the two apart and a switch re-fetches.
      */
     private const val GPU_URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-sched097-gpu/dit-engine-abi111-sched097-gpu.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-zscale099-gpu/dit-engine-abi111-zscale099-gpu.zip"
 
     /** ⭐ Which of the two this phone runs: the GPU's wherever [DitGpu.wanted]. */
     private val gpu: Boolean get() = DitGpu.wanted()
@@ -234,9 +234,13 @@ object DitEngine {
      * ⚠ 085: the Adreno Q4_0/Q5 GEMM wrote every 080 token chunk at the output's first rows: grey pictures on any GPU
      * without the dense DP4A kernel (an 8 Gen 1, Saved #7647; the S25 with it off). Skels unchanged.
      */
-    private const val GPU_BYTES = 24_007_252L
-    private const val GPU_FILE_BYTES = 59_087_304L
-    private const val GPU_SHA256 = "c6c0664af34de001196a89f3510560afcc9b702d78e4ce7d27d4297d96959071"
+    // ⭐ Current since 1.6.309: sched097-gpu + `dit/099`, Z-Image's attention.out scaled 1/16 on OpenCL as on Hexagon
+    // (`dit/025`). The plain Adreno Q4_0 GEMM accumulates in half8, so every Z-Image-family model (NitroFusion 2) came out
+    // a flat green frame on any GPU without the dense DP4A kernel (item 84, an 8s Gen 4; the S25 with it off).
+    // CI 44389663044, branch `dit-099-engine`. Still ABI 111, the wrapper only; the NPU engine is unchanged.
+    private const val GPU_BYTES = 24_006_569L
+    private const val GPU_FILE_BYTES = 59_087_592L
+    private const val GPU_SHA256 = "4bf209296ddc116389c4af87b0d9cc4d1e664b0d650f9f673e744952871f0756"
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
